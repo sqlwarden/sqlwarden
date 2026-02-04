@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.4](https://github.com/sqlwarden/sqlwarden/compare/v0.2.3...v0.2.4) (2026-02-04)
+
+
+### Code Refactoring
+
+* **ci:** update workflow names for clarity and consistency ([d2075b0](https://github.com/sqlwarden/sqlwarden/commit/d2075b0d93eccd7b0793da9e0fe332078c77a161))
+* **ci:** update workflow names for clarity and consistency ([#10](https://github.com/sqlwarden/sqlwarden/issues/10)) ([b5a250b](https://github.com/sqlwarden/sqlwarden/commit/b5a250b2aa702dcd8ee31f66b9279b19a6f5e0eb))
+
 ## [0.2.3](https://github.com/sqlwarden/sqlwarden/compare/v0.2.2...v0.2.3) (2026-02-04)
 
 
