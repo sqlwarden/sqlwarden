@@ -5,7 +5,20 @@ import (
 	"runtime/debug"
 )
 
+// These variables are set via ldflags during build
+var (
+	version = ""
+	commit  = ""
+	date    = ""
+)
+
 func Get() string {
+	// If version was set via ldflags (by goreleaser), use it
+	if version != "" {
+		return version
+	}
+
+	// Otherwise, try to get it from build info
 	bi, ok := debug.ReadBuildInfo()
 	if ok {
 		return bi.Main.Version
@@ -15,6 +28,11 @@ func Get() string {
 }
 
 func GetRevision() string {
+	// If commit was set via ldflags (by goreleaser), use it
+	if commit != "" {
+		return commit
+	}
+
 	var revision string
 	var modified bool
 
@@ -41,4 +59,12 @@ func GetRevision() string {
 	}
 
 	return revision
+}
+
+// GetBuildDate returns the build date
+func GetBuildDate() string {
+	if date != "" {
+		return date
+	}
+	return "unavailable"
 }
