@@ -23,7 +23,7 @@ builds:
       - -X github.com/sqlwarden/internal/version.date={{.Date}}
 
 archives:
-  - format: tar.gz
+  - formats: ['tar.gz']
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
@@ -34,7 +34,7 @@ archives:
       {{- if .Arm }}v{{ .Arm }}{{ end }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats: ['zip']
     files:
       - README.md
       - LICENSE*
