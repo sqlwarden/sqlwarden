@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.3](https://github.com/sqlwarden/sqlwarden/compare/v0.2.2...v0.2.3) (2026-02-04)
+
+
+### Bug Fixes
+
+* **ci:** update name_template to not use capitalized OS names ([0133919](https://github.com/sqlwarden/sqlwarden/commit/0133919315ad288cf15de3d31a4485fcb1db1e1a))
+
+
+### Code Refactoring
+
+* **ci:** standalone goreleaser workflow and change artifact name ([#7](https://github.com/sqlwarden/sqlwarden/issues/7)) ([21e605b](https://github.com/sqlwarden/sqlwarden/commit/21e605b9195a7cfd9ff17812500f07e2da8a261e))
+
 ## [0.2.2](https://github.com/sqlwarden/sqlwarden/compare/v0.2.1...v0.2.2) (2026-02-04)
 
 
