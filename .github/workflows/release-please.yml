@@ -18,21 +18,31 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # GoReleaser steps run only when a release is created
+      # GoReleaser steps run only when a tag was created (release merged, not just PR created)
       - name: Checkout
         if: ${{ steps.release.outputs.releases_created }}
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Go
+      - name: Check if tagged
         if: ${{ steps.release.outputs.releases_created }}
+        id: check_tag
+        run: |
+          if git describe --exact-match --tags HEAD 2>/dev/null; then
+            echo "is_tagged=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_tagged=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Go
+        if: ${{ steps.release.outputs.releases_created && steps.check_tag.outputs.is_tagged == 'true' }}
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
 
       - name: Run GoReleaser
-        if: ${{ steps.release.outputs.releases_created }}
+        if: ${{ steps.release.outputs.releases_created && steps.check_tag.outputs.is_tagged == 'true' }}
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
