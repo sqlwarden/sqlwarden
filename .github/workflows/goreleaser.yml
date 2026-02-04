@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_run:
+    workflows: ["Release Please"]
+    types:
+      - completed
 
 permissions:
   contents: write
@@ -11,18 +15,40 @@ permissions:
 jobs:
   goreleaser:
     runs-on: self-hosted
+    # Only run if workflow_run succeeded or if tag push
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Check for version tag
+        id: check_tag
+        run: |
+          if git describe --exact-match --tags HEAD 2>/dev/null | grep -q '^v[0-9]'; then
+            echo "has_tag=true" >> $GITHUB_OUTPUT
+            echo "tag=$(git describe --exact-match --tags HEAD)" >> $GITHUB_OUTPUT
+          else
+            echo "has_tag=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip if no version tag
+        if: steps.check_tag.outputs.has_tag == 'false'
+        run: |
+          echo "No version tag found, skipping release"
+          exit 0
+
       - name: Set up Go
+        if: steps.check_tag.outputs.has_tag == 'true'
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
 
       - name: Run GoReleaser
+        if: steps.check_tag.outputs.has_tag == 'true'
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
