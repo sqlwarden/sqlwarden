@@ -757,11 +757,35 @@ Using the `backgroundTask()` helper will automatically recover any panics in the
 
 ## Application version
 
-The application version number is generated automatically by Go based on your version control information, and will be either a version tag (e.g. `v1.2.3`) or a pseudo-version (e.g. `v0.0.0-20250219190134-59bdb76fda0c`). It can be retrieved by calling the `version.Get()` function from the `internal/version` package.
+The application version number is managed automatically using [release-please](https://github.com/googleapis/release-please) and follows [semantic versioning](https://semver.org/). Version information is injected at build time using ldflags.
 
-Alternatively, you can retrieve your latest version control system revision number (e.g. Git commit hash) by calling the `version.GetRevision()` function.
+You can retrieve the version by calling `version.Get()`, the commit hash with `version.GetRevision()`, and the build date with `version.GetBuildDate()` from the `internal/version` package.
 
-Important: The version control information will only be available after you have initialized version control for your repository (e.g. run `$ git init`) AND application is built using `go build`. If you run the application using `go run` then `version.Get()` will return the string `"(devel)"` or `"unavailable"`.
+### Release Process
+
+This project uses automated releases:
+
+1. **Conventional Commits**: All commits must follow the [Conventional Commits](https://www.conventionalcommits.org/) specification (enforced via GitHub Actions on PRs)
+2. **Automated PRs**: When commits are pushed to `main`, release-please automatically creates/updates a release PR
+3. **Versioning**: Version bumps are determined by commit types:
+   - `feat:` → minor version bump (0.1.0 → 0.2.0)
+   - `fix:` → patch version bump (0.1.0 → 0.1.1)
+   - `BREAKING CHANGE:` or `!` → major version bump (0.1.0 → 1.0.0)
+4. **Release**: When the release PR is merged, a tag is created and binaries are built for multiple platforms using [GoReleaser](https://goreleaser.com/)
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on commit message format.
+
+### Building Locally
+
+Build with version information:
+```
+$ make build
+```
+
+Test a local release build:
+```
+$ make build/release
+```
 
 ## Changing the module path
 

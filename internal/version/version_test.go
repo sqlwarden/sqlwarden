@@ -8,24 +8,52 @@ import (
 )
 
 func TestGet(t *testing.T) {
-	t.Run("Returns version string or unavailable", func(t *testing.T) {
-		expectedVersion := "unavailable"
-		bi, ok := debug.ReadBuildInfo()
-		if ok {
-			expectedVersion = bi.Main.Version
-		}
+	t.Run("Returns version from ldflags or build info", func(t *testing.T) {
+		v := Get()
+		assert.True(t, v != "")
 
-		version := Get()
-		assert.True(t, version != "")
-		assert.Equal(t, version, expectedVersion)
+		// When built with goreleaser ldflags, version will be set
+		// When built normally, it falls back to build info or "unavailable"
+		if version != "" {
+			assert.Equal(t, v, version)
+		} else {
+			expectedVersion := "unavailable"
+			bi, ok := debug.ReadBuildInfo()
+			if ok && bi.Main.Version != "" {
+				expectedVersion = bi.Main.Version
+			}
+			assert.Equal(t, v, expectedVersion)
+		}
 	})
 }
 
 func TestGetRevision(t *testing.T) {
-	t.Run("Returns revision string or unavailable", func(t *testing.T) {
+	t.Run("Returns revision from ldflags or VCS info", func(t *testing.T) {
+		rev := GetRevision()
+		assert.True(t, rev != "")
 
-		revision := GetRevision()
-		assert.True(t, revision != "")
-		assert.True(t, revision == "unavailable" || len(revision) > 7)
+		// When built with goreleaser ldflags, commit will be set
+		// When built with VCS info, will return commit hash
+		// Otherwise returns "unavailable"
+		if commit != "" {
+			assert.Equal(t, rev, commit)
+		} else {
+			assert.True(t, rev == "unavailable" || len(rev) >= 7)
+		}
+	})
+}
+
+func TestGetBuildDate(t *testing.T) {
+	t.Run("Returns build date from ldflags or unavailable", func(t *testing.T) {
+		buildDate := GetBuildDate()
+		assert.True(t, buildDate != "")
+
+		// When built with goreleaser ldflags, date will be set
+		// Otherwise returns "unavailable"
+		if date != "" {
+			assert.Equal(t, buildDate, date)
+		} else {
+			assert.Equal(t, buildDate, "unavailable")
+		}
 	})
 }

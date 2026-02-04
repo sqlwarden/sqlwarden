@@ -1,3 +1,6 @@
 bin/
 tmp/
 build-errors.log
+
+# GoReleaser build artifacts
+dist/
