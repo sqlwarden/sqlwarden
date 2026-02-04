@@ -52,12 +52,23 @@ tidy:
 ## build: build the cmd/api application
 .PHONY: build
 build:
-	go build -o=/tmp/bin/api ./cmd/api
+	@echo "Building sqlwarden..."
+	@mkdir -p dist
+	go build -ldflags="-s -w -X github.com/sqlwarden/internal/version.version=dev -X github.com/sqlwarden/internal/version.commit=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown) -X github.com/sqlwarden/internal/version.date=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o=dist/sqlwarden ./cmd/api
+
+## build/release: build the application for release (requires goreleaser)
+.PHONY: build/release
+build/release:
+	@if ! command -v goreleaser &> /dev/null; then \
+		echo "goreleaser is not installed. Install it with: go install github.com/goreleaser/goreleaser@latest"; \
+		exit 1; \
+	fi
+	goreleaser build --snapshot --clean
 	
 ## run: run the cmd/api application
 .PHONY: run
 run: build
-	/tmp/bin/api
+	./dist/sqlwarden
 
 ## run/live: run the application with reloading on file changes
 .PHONY: run/live
