@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2](https://github.com/sqlwarden/sqlwarden/compare/v0.2.1...v0.2.2) (2026-02-04)
+
+
+### Bug Fixes
+
+* **ci:** use correct output variable and add tag check ([8c9dc74](https://github.com/sqlwarden/sqlwarden/commit/8c9dc749a42db420f6d1ea52fa0d698fea4b9293))
+* **ci:** use correct output variable and add tag check ([#5](https://github.com/sqlwarden/sqlwarden/issues/5)) ([dec890f](https://github.com/sqlwarden/sqlwarden/commit/dec890f0e25c6e120489658aaa39695f47e745aa))
+
 ## [0.2.1](https://github.com/sqlwarden/sqlwarden/compare/v0.2.0...v0.2.1) (2026-02-04)
 
 
