@@ -1,4 +1,4 @@
-name: Release Please
+name: Release Version and Changelog via Release Please
 
 on:
   push:
