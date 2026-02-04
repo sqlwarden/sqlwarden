@@ -1,4 +1,4 @@
-name: Conventional Commits
+name: Commits and PR Linting
 
 on:
   pull_request:
