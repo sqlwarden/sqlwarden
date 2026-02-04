@@ -4,10 +4,7 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_run:
-    workflows: ["Release Version and Changelog via Release Please"]
-    types:
-      - completed
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,10 +12,6 @@ permissions:
 jobs:
   goreleaser:
     runs-on: self-hosted
-    # Only run if workflow_run succeeded or if tag push
-    if: |
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
