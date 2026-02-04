@@ -1,11 +1,11 @@
-name: GoReleaser
+name: Artifact Release via GoReleaser
 
 on:
   push:
     tags:
       - 'v*'
   workflow_run:
-    workflows: ["Release Please"]
+    workflows: ["Release Version and Changelog via Release Please"]
     types:
       - completed
 
