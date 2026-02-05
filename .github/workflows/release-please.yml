@@ -4,7 +4,8 @@ on:
   push:
     branches:
       - main
-      - release-candidate
+      - release-candidate # for RC releases
+      - 'release-*' # for backport releases
 
 permissions:
   contents: write

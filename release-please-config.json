@@ -27,6 +27,9 @@
     {
       "branch": "release-candidate",
       "prerelease": true
+    },
+    {
+      "branch": "release-0.2.x"
     }
   ]
 }
