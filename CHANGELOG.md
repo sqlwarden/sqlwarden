@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.5](https://github.com/sqlwarden/sqlwarden/compare/v0.2.4...v0.2.5) (2026-02-05)
+
+
+### Code Refactoring
+
+* **workflows:** streamline GoReleaser trigger and remove workflow_run dependency ([3c8850c](https://github.com/sqlwarden/sqlwarden/commit/3c8850ce66807d84eea90b38043ae32f797d8399))
+
 ## [0.2.4](https://github.com/sqlwarden/sqlwarden/compare/v0.2.3...v0.2.4) (2026-02-04)
 
 
