@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/sqlwarden/sqlwarden/compare/v0.2.5...v0.3.0) (2026-02-05)
+
+
+### Features
+
+* release candidate ([#16](https://github.com/sqlwarden/sqlwarden/issues/16)) ([c7dda33](https://github.com/sqlwarden/sqlwarden/commit/c7dda3336be09cfcdff265319aed71e37d7ddc20))
+
 ## [0.2.5](https://github.com/sqlwarden/sqlwarden/compare/v0.2.4...v0.2.5) (2026-02-05)
 
 
