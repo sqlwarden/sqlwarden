@@ -6,37 +6,52 @@ import (
 	"time"
 
 	"github.com/sqlwarden/assets"
+	"github.com/sqlwarden/internal/query"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
-	"github.com/jmoiron/sqlx"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 const defaultTimeout = 3 * time.Second
 
 type DB struct {
 	dsn string
-	*sqlx.DB
+	*pgxpool.Pool
+	*query.Queries
 }
 
 func New(dsn string) (*DB, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	db, err := sqlx.ConnectContext(ctx, "postgres", "postgres://"+dsn)
+	config, err := pgxpool.ParseConfig("postgres://" + dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(25)
-	db.SetConnMaxIdleTime(5 * time.Minute)
-	db.SetConnMaxLifetime(2 * time.Hour)
+	config.MaxConns = 25
+	config.MinConns = 25
+	config.MaxConnIdleTime = 5 * time.Minute
+	config.MaxConnLifetime = 2 * time.Hour
 
-	return &DB{dsn: dsn, DB: db}, nil
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+
+	err = pool.Ping(ctx)
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
+
+	queries := query.New(pool)
+
+	return &DB{dsn: dsn, Pool: pool, Queries: queries}, nil
 }
 
 func (db *DB) MigrateUp() error {

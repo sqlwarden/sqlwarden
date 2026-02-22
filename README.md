@@ -68,7 +68,7 @@ Everything in the codebase is designed to be editable. Feel free to change and a
 | --- | --- |
 | **`internal`** | Contains various helper packages used by the application. |
 | `↳ internal/cookies` | Contains helper functions for reading/writing signed and encrypted cookies. |
-| `↳ internal/database/` | Contains your database-related code (setup, connection and queries). |
+| `↳ internal/database/` | Contains your database-related code (setup, connection and queries), as well as SQL query files and sqlc configuration. |
 | `↳ internal/env` | Contains helper functions for reading configuration settings from environment variables. |
 | `↳ internal/funcs/` | Contains custom template functions. |
 | `↳ internal/password/` | Contains helper functions for hashing and verifying passwords. |
@@ -77,6 +77,7 @@ Everything in the codebase is designed to be editable. Feel free to change and a
 | `↳ internal/smtp/` | Contains a SMTP sender implementation. |
 | `↳ internal/validator/` | Contains validation helpers. |
 | `↳ internal/version/` | Contains the application version number definition. |
+| **`internal/query`** | Contains auto-generated code from sqlc for type-safe database queries. |
 
 ## Configuration settings
 
@@ -313,17 +314,17 @@ Feel free to add your own helper functions to the `internal/validator/helpers.go
 
 ## Working with the database
 
-This codebase is set up to use PostgreSQL with the [lib/pq](https://github.com/lib/pq) driver. You can control which database you connect to using the `DB_DSN` environment variable to pass in a DSN, or by adapting the default value in `run()`.
+This codebase is set up to use PostgreSQL with the [pgx/v5](https://github.com/jackc/pgx) driver and [sqlc](https://sqlc.dev/) for type-safe SQL queries. You can control which database you connect to using the `DB_DSN` environment variable to pass in a DSN, or by adapting the default value in `run()`.
 
-The codebase is also configured to use [jmoiron/sqlx](https://github.com/jmoiron/sqlx), so you have access to the whole range of sqlx extensions as well as the standard library `Exec()`, `Query()` and `QueryRow()` methods .
+The codebase uses sqlc to generate type-safe Go code from SQL queries. SQL queries are defined in `internal/database/queries/` and sqlc generates compiled-checked Go code in the `internal/query/` package.
 
-The database is available to your handlers, middleware and helpers via the `application` struct. If you want, you can access the database and carry out queries directly. For example:
+The database is available to your handlers, middleware and helpers via the `application` struct. If you want, you can access the database connection pool directly. For example:
 
 ```
 func (app *application) yourHandler(w http.ResponseWriter, r *http.Request) {
     ...
 
-    _, err := app.db.Exec("INSERT INTO people (name, age) VALUES ($1, $2)", "Alice", 28)
+    _, err := app.db.Exec(context.Background(), "INSERT INTO people (name, age) VALUES ($1, $2)", "Alice", 28)
     if err != nil {
         app.serverError(w, r, err)
         return
@@ -333,24 +334,62 @@ func (app *application) yourHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-Generally though, it's recommended to isolate your database logic in the `internal/database` package and extend the `DB` type to include your own methods. For example, you could create a `internal/database/people.go` file containing code like:
+Generally though, it's recommended to define your SQL queries in `internal/database/queries/` and use sqlc to generate type-safe methods, then wrap them in the `internal/database` package. For example:
 
+1. Create a SQL query file `internal/database/queries/people.sql`:
+
+```sql
+-- name: InsertPerson :one
+INSERT INTO people (name, age)
+VALUES ($1, $2)
+RETURNING *;
+
+-- name: GetPerson :one
+SELECT * FROM people WHERE id = $1;
 ```
+
+2. Run `make sqlc/generate` to generate the Go code.
+
+3. Create wrapper methods in `internal/database/people.go`:
+
+```go
 type Person struct {
-    ID    int    `db:"id"`
-    Name  string `db:"name"`
-    Age   int    `db:"age"`
+    ID    int32  `json:"id"`
+    Name  string `json:"name"`
+    Age   int32  `json:"age"`
 }
 
-func (db *DB) NewPerson(name string, age int) error {
-    _, err := db.Exec("INSERT INTO people (name, age) VALUES ($1, $2)", name, age)
-    return err
+func fromQueryPerson(p query.Person) Person {
+    return Person{
+        ID:   p.ID,
+        Name: p.Name,
+        Age:  p.Age,
+    }
+}
+
+func (db *DB) NewPerson(name string, age int32) (int, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+    defer cancel()
+
+    person, err := db.Queries.InsertPerson(ctx, query.InsertPersonParams{
+        Name: name,
+        Age:  age,
+    })
+    if err != nil {
+        return 0, err
+    }
+    return int(person.ID), nil
 }
 
 func (db *DB) GetPerson(id int) (Person, error) {
-    var person Person
-    err := db.Get(&person, "SELECT * FROM people WHERE id = $1", id)
-    return person, err
+    ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+    defer cancel()
+
+    person, err := db.Queries.GetPerson(ctx, int32(id))
+    if err != nil {
+        return Person{}, err
+    }
+    return fromQueryPerson(person), nil
 }
 ```
 
@@ -382,6 +421,30 @@ The `Makefile` in the project root contains commands to easily create and work w
 | `$ make migrations/goto version=N` | Migrate up or down to a specific migration (where N is the migration version number). |
 | `$ make migrations/force version=N` | Force the database to be specific version without running any migrations. |
 | `$ make migrations/version` | Display the currently in-use migration version. |
+
+## Working with sqlc
+
+This project uses [sqlc](https://sqlc.dev/) to generate type-safe Go code from SQL queries. The sqlc configuration is located at `internal/database/sqlc.yaml` and points to:
+- SQL migrations in `assets/migrations/` for schema definitions
+- SQL queries in `internal/database/queries/` for query definitions
+- Generated Go code output to `internal/query/`
+
+To add new database queries:
+
+1. Create or edit SQL files in `internal/database/queries/` with sqlc annotations:
+```sql
+-- name: GetUser :one
+SELECT * FROM users WHERE id = $1;
+```
+
+2. Run code generation:
+```
+$ make sqlc/generate
+```
+
+3. Use the generated query methods via the `db.Queries` field or wrap them in `internal/database/` methods.
+
+For more information on sqlc annotations and usage, see the [sqlc documentation](https://docs.sqlc.dev/).
 
 Hint: You can run `$ make help` at any time for a reminder of these commands.
 
