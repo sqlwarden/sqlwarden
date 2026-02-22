@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/sqlwarden/sqlwarden/compare/v0.3.0...v0.4.0) (2026-02-22)
+
+
+### Features
+
+* **db:** change database layer to use pgx and sqlc for type-safe queries ([#23](https://github.com/sqlwarden/sqlwarden/issues/23)) ([1548947](https://github.com/sqlwarden/sqlwarden/commit/1548947d6cb09bcaabc9d2c40bb3d961d33bdfaf))
+* **db:** migrate to pgx and sqlc for type-safe queries ([1548947](https://github.com/sqlwarden/sqlwarden/commit/1548947d6cb09bcaabc9d2c40bb3d961d33bdfaf))
+
 ## [0.3.0](https://github.com/sqlwarden/sqlwarden/compare/v0.2.5...v0.3.0) (2026-02-22)
 
 
