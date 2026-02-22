@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.5](https://github.com/sqlwarden/sqlwarden/compare/v0.2.4...v0.2.5) (2026-02-22)
+
+
+### Code Refactoring
+
+* **ci:** auto trigger goreleaser on release-please tag generation ([#19](https://github.com/sqlwarden/sqlwarden/issues/19)) ([341ba62](https://github.com/sqlwarden/sqlwarden/commit/341ba6270699eec470cbb7011be17e0f2995753f))
+* **ci:** use github PAT token so goreleaser workflow is auto triggered ([341ba62](https://github.com/sqlwarden/sqlwarden/commit/341ba6270699eec470cbb7011be17e0f2995753f))
+
 ## [0.2.4](https://github.com/sqlwarden/sqlwarden/compare/v0.2.3...v0.2.4) (2026-02-04)
 
 
