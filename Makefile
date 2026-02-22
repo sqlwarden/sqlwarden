@@ -114,3 +114,12 @@ migrations/force:
 migrations/version:
 	go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path=./assets/migrations -database="postgres://${DB_DSN}" version
 
+
+# ==================================================================================== #
+# SQLC
+# ==================================================================================== #
+
+## sqlc/generate: generate Go code from SQL queries using sqlc
+.PHONY: sqlc/generate
+sqlc/generate:
+	cd internal/database && sqlc generate

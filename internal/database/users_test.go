@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -19,7 +20,7 @@ func TestInsertUser(t *testing.T) {
 		assert.True(t, id > 0)
 
 		var user User
-		err = db.Get(&user, "SELECT * FROM users WHERE id = $1", id)
+		err = db.QueryRow(context.Background(), "SELECT id, created, email, hashed_password FROM users WHERE id = $1", id).Scan(&user.ID, &user.Created, &user.Email, &user.HashedPassword)
 		if err != nil {
 			t.Fatal(err)
 		}

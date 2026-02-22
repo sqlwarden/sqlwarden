@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"os"
 
 	"testing"
@@ -13,19 +14,19 @@ func TestNew(t *testing.T) {
 		dsn := os.Getenv("TEST_DB_DSN")
 
 		if dsn == "" {
-			t.Fatal("TEST_DB_DSN environment variable must be set in the format user:pass@localhost:port/db")
+			dsn = "user:pass@localhost:5432/db?sslmode=disable"
 		}
 
 		db, err := New(dsn)
 		assert.Nil(t, err)
 		assert.NotNil(t, db)
-		assert.NotNil(t, db.DB)
+		assert.NotNil(t, db.Pool)
 		defer db.Close()
 
-		err = db.Ping()
+		err = db.Ping(context.Background())
 		assert.Nil(t, err)
 
-		assert.Equal(t, 25, db.Stats().MaxOpenConnections)
+		assert.Equal(t, int32(25), db.Stat().MaxConns())
 	})
 
 	t.Run("Fails with invalid DSN", func(t *testing.T) {
@@ -45,7 +46,7 @@ func TestMigrateUp(t *testing.T) {
 		assert.Nil(t, err)
 
 		var version int
-		err = db.Get(&version, "SELECT version FROM schema_migrations LIMIT 1")
+		err = db.QueryRow(context.Background(), "SELECT version FROM schema_migrations LIMIT 1").Scan(&version)
 		assert.Nil(t, err)
 		assert.True(t, version > 0)
 	})

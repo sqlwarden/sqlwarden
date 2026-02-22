@@ -140,7 +140,7 @@ $ make run
 </tr>
 <tr>
 <td><code>↳ internal/database/</code></td>
-<td>Contains your database-related code (setup, connection and queries).</td>
+<td>Contains your database-related code (setup, connection and queries), as well as SQL query files and sqlc configuration.</td>
 </tr>
 <tr>
 <td><code>↳ internal/env</code></td>
@@ -173,6 +173,14 @@ $ make run
 <tr>
 <td><code>↳ internal/version/</code></td>
 <td>Contains the application version number definition.</td>
+</tr>
+</tbody>
+</table>
+<table>
+<tbody>
+<tr>
+<td><strong><code>internal/query</code></strong></td>
+<td>Contains auto-generated code from sqlc for type-safe database queries.</td>
 </tr>
 </tbody>
 </table>
@@ -395,14 +403,14 @@ input.Validator.CheckField(validator.Between(input.Age, 18, 30), "Age", "Age mus
 </pre>
 <p>Feel free to add your own helper functions to the <code>internal/validator/helpers.go</code> file as necessary for your application.</p>
 <h2>Working with the database</h2>
-<p>This codebase is set up to use PostgreSQL with the <a href="https://github.com/lib/pq">lib/pq</a> driver. You can control which database you connect to using the <code>DB_DSN</code> environment variable to pass in a DSN, or by adapting the default value in <code>run()</code>.</p>
-<p>The codebase is also configured to use <a href="https://github.com/jmoiron/sqlx">jmoiron/sqlx</a>, so you have access to the whole range of sqlx extensions as well as the standard library <code>Exec()</code>, <code>Query()</code> and <code>QueryRow()</code> methods .</p>
-<p>The database is available to your handlers, middleware and helpers via the <code>application</code> struct. If you want, you can access the database and carry out queries directly. For example:</p>
+<p>This codebase is set up to use PostgreSQL with the <a href="https://github.com/jackc/pgx">pgx/v5</a> driver and <a href="https://sqlc.dev/">sqlc</a> for type-safe SQL queries. You can control which database you connect to using the <code>DB_DSN</code> environment variable to pass in a DSN, or by adapting the default value in <code>run()</code>.</p>
+<p>The codebase uses sqlc to generate type-safe Go code from SQL queries. SQL queries are defined in <code>internal/database/queries/</code> and sqlc generates compiled-checked Go code in the <code>internal/query/</code> package.</p>
+<p>The database is available to your handlers, middleware and helpers via the <code>application</code> struct. If you want, you can access the database connection pool directly. For example:</p>
 <pre>
 func (app *application) yourHandler(w http.ResponseWriter, r *http.Request) {
     ...
 
-    _, err := app.db.Exec("INSERT INTO people (name, age) VALUES ($1, $2)", "Alice", 28)
+    _, err := app.db.Exec(context.Background(), "INSERT INTO people (name, age) VALUES ($1, $2)", "Alice", 28)
     if err != nil {
         app.serverError(w, r, err)
         return
@@ -411,23 +419,57 @@ func (app *application) yourHandler(w http.ResponseWriter, r *http.Request) {
     ...
 }
 </pre>
-<p>Generally though, it's recommended to isolate your database logic in the <code>internal/database</code> package and extend the <code>DB</code> type to include your own methods. For example, you could create a <code>internal/database/people.go</code> file containing code like:</p>
+<p>Generally though, it's recommended to define your SQL queries in <code>internal/database/queries/</code> and use sqlc to generate type-safe methods, then wrap them in the <code>internal/database</code> package. For example:</p>
+<p>1. Create a SQL query file <code>internal/database/queries/people.sql</code>:</p>
+<pre>
+-- name: InsertPerson :one
+INSERT INTO people (name, age)
+VALUES ($1, $2)
+RETURNING *;
+
+-- name: GetPerson :one
+SELECT * FROM people WHERE id = $1;
+</pre>
+<p>2. Run <code>make sqlc/generate</code> to generate the Go code.</p>
+<p>3. Create wrapper methods in <code>internal/database/people.go</code>:</p>
 <pre>
 type Person struct {
-    ID    int    `db:"id"`
-    Name  string `db:"name"`
-    Age   int    `db:"age"`
+    ID    int32  `json:"id"`
+    Name  string `json:"name"`
+    Age   int32  `json:"age"`
 }
 
-func (db *DB) NewPerson(name string, age int) error {
-    _, err := db.Exec("INSERT INTO people (name, age) VALUES ($1, $2)", name, age)
-    return err
+func fromQueryPerson(p query.Person) Person {
+    return Person{
+        ID:   p.ID,
+        Name: p.Name,
+        Age:  p.Age,
+    }
+}
+
+func (db *DB) NewPerson(name string, age int32) (int, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+    defer cancel()
+
+    person, err := db.Queries.InsertPerson(ctx, query.InsertPersonParams{
+        Name: name,
+        Age:  age,
+    })
+    if err != nil {
+        return 0, err
+    }
+    return int(person.ID), nil
 }
 
 func (db *DB) GetPerson(id int) (Person, error) {
-    var person Person
-    err := db.Get(&amp;person, "SELECT * FROM people WHERE id = $1", id)
-    return person, err
+    ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+    defer cancel()
+
+    person, err := db.Queries.GetPerson(ctx, int32(id))
+    if err != nil {
+        return Person{}, err
+    }
+    return fromQueryPerson(person), nil
 }
 </pre>
 <p>And then call this from your handlers:</p>
@@ -477,6 +519,25 @@ func (app *application) yourHandler(w http.ResponseWriter, r *http.Request) {
 <p>Hint: You can run <code>$ make help</code> at any time for a reminder of these commands.</p>
 <p>These <code>Makefile</code> tasks are simply wrappers around calls to the <code>github.com/golang-migrate/migrate/v4/cmd/migrate</code> tool. For more information, please see the <a href="https://github.com/golang-migrate/migrate/tree/master/cmd/migrate">official documentation</a>.</p>
 <p>By default all 'up' migrations are automatically run on application startup using embeded files from the <code>assets/migrations</code> directory. You can disable this by setting the <code>DB_AUTOMIGRATE</code> environment variable to <code>false</code>.</p>
+<h2>Working with sqlc</h2>
+<p>This project uses <a href="https://sqlc.dev/">sqlc</a> to generate type-safe Go code from SQL queries. The sqlc configuration is located at <code>internal/database/sqlc.yaml</code> and points to:</p>
+<ul>
+<li>SQL migrations in <code>assets/migrations/</code> for schema definitions</li>
+<li>SQL queries in <code>internal/database/queries/</code> for query definitions</li>
+<li>Generated Go code output to <code>internal/query/</code></li>
+</ul>
+<p>To add new database queries:</p>
+<p>1. Create or edit SQL files in <code>internal/database/queries/</code> with sqlc annotations:</p>
+<pre>
+-- name: GetUser :one
+SELECT * FROM users WHERE id = $1;
+</pre>
+<p>2. Run code generation:</p>
+<pre>
+$ make sqlc/generate
+</pre>
+<p>3. Use the generated query methods via the <code>db.Queries</code> field or wrap them in <code>internal/database/</code> methods.</p>
+<p>For more information on sqlc annotations and usage, see the <a href="https://docs.sqlc.dev/">sqlc documentation</a>.</p>
 <h2>Logging</h2>
 <p>Leveled logging is supported using the <a href="https://pkg.go.dev/log/slog">slog</a> and <a href="https://github.com/lmittmann/tint">tint</a> packages.</p>
 <p>By default, a logger is initialized in the <code>main()</code> function. This logger writes all log messages above <code>Debug</code> level to <code>os.Stdout</code>.</p>
