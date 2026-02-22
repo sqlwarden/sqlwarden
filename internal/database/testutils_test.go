@@ -1,8 +1,10 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"testing"
@@ -26,11 +28,15 @@ func newTestDB(t *testing.T) *DB {
 	dsn := os.Getenv("TEST_DB_DSN")
 
 	if dsn == "" {
-		t.Fatal("TEST_DB_DSN environment variable must be set in the format user:pass@localhost:port/db")
+		dsn = "user:pass@localhost:5432/db?sslmode=disable"
 	}
 
 	schemaName := fmt.Sprintf("test_schema_%d", time.Now().UnixNano())
-	dsn = fmt.Sprintf("%s?search_path=%s", dsn, schemaName)
+	separator := "?"
+	if strings.Contains(dsn, "?") {
+		separator = "&"
+	}
+	dsn = fmt.Sprintf("%s%ssearch_path=%s", dsn, separator, schemaName)
 
 	db, err := New(dsn)
 	if err != nil {
@@ -40,13 +46,13 @@ func newTestDB(t *testing.T) *DB {
 	t.Cleanup(func() {
 		defer db.Close()
 
-		_, err = db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
+		_, err = db.Exec(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
 		if err != nil {
 			t.Error(err)
 		}
 	})
 
-	_, err = db.Exec(fmt.Sprintf("CREATE SCHEMA %s", schemaName))
+	_, err = db.Exec(context.Background(), fmt.Sprintf("CREATE SCHEMA %s", schemaName))
 	if err != nil {
 		t.Fatal(err)
 	}
