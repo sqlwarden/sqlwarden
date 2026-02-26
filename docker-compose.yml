@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sqlwarden-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sqlwarden}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sqlwarden_password}
+      POSTGRES_DB: ${POSTGRES_DB:-sqlwarden}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sqlwarden}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sqlwarden-network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sqlwarden-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      BASE_URL: http://localhost:6020
+      HTTP_PORT: 6020
+      DB_DSN: ${POSTGRES_USER:-sqlwarden}:${POSTGRES_PASSWORD:-sqlwarden_password}@postgres:5432/${POSTGRES_DB:-sqlwarden}?sslmode=disable
+      DB_AUTOMIGRATE: "true"
+      COOKIE_SECRET_KEY: ${COOKIE_SECRET_KEY:-cpcgzjcote6h5hakeglpbzixhbuog2zc}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-fb57i5hiud5mzmykaquqsln5gcmolbac}
+      NOTIFICATIONS_EMAIL: ${NOTIFICATIONS_EMAIL:-}
+      SMTP_HOST: ${SMTP_HOST:-example.smtp.host}
+      SMTP_PORT: ${SMTP_PORT:-25}
+      SMTP_USERNAME: ${SMTP_USERNAME:-example_username}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-pa55word}
+      SMTP_FROM: ${SMTP_FROM:-SQLWarden <no_reply@example.org>}
+    ports:
+      - "6020:6020"
+    networks:
+      - sqlwarden-network
+
+volumes:
+  postgres_data:
+
+networks:
+  sqlwarden-network:
