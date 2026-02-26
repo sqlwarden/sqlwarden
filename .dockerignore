@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+README.html
+*.txt
+
+# Test files
+*_test.go
+testdata
+
+# Build artifacts
+dist/
+/tmp/
+*.out
+*.test
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# CI/CD
+.goreleaser.yml
+.commitlintrc.json
+release-please-config.json
+.release-please-manifest.json
+
+# Other
+Makefile
+CONTRIBUTING.md
+CHANGELOG.md
+docker-compose.yml
+.dockerignore

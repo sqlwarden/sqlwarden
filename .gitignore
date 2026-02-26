@@ -4,3 +4,10 @@ build-errors.log
 
 # GoReleaser build artifacts
 dist/
+
+# Environment files
+.env
+.env.local
+
+# Docker volumes
+postgres_data/
