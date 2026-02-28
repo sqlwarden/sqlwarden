@@ -19,7 +19,7 @@ func TestNewAuthenticationToken(t *testing.T) {
 	app := newTestApplication(t)
 
 	t.Run("generates valid JWT token and expiry time", func(t *testing.T) {
-		userID := 123
+		var userID int64 = 123
 
 		token, expiry, err := app.newAuthenticationToken(userID)
 		assert.Nil(t, err)
@@ -28,13 +28,13 @@ func TestNewAuthenticationToken(t *testing.T) {
 	})
 
 	t.Run("token contains correct claims", func(t *testing.T) {
-		userID := 456
+		var userID int64 = 456
 		token, _, err := app.newAuthenticationToken(userID)
 		assert.Nil(t, err)
 
 		claims, err := jwt.HMACCheck([]byte(token), []byte(app.config.jwt.secretKey))
 		assert.Nil(t, err)
-		assert.Equal(t, claims.Subject, strconv.Itoa(userID))
+		assert.Equal(t, claims.Subject, strconv.FormatInt(userID, 10))
 		assert.Equal(t, claims.Issuer, app.config.baseURL)
 		assert.Equal(t, len(claims.Audiences), 1)
 		assert.Equal(t, claims.Audiences[0], app.config.baseURL)
@@ -47,7 +47,7 @@ func TestNewAuthenticationToken(t *testing.T) {
 	})
 
 	t.Run("generates different tokens on subsequent calls", func(t *testing.T) {
-		userID := 100
+		var userID int64 = 100
 		token1, _, err := app.newAuthenticationToken(userID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)

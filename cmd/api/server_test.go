@@ -2,7 +2,6 @@ package main
 
 import (
 	"net"
-
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
@@ -21,7 +20,6 @@ func TestServerConfiguration(t *testing.T) {
 }
 
 func TestServeHTTP(t *testing.T) {
-
 	t.Run("Invalid port configuration causes an error", func(t *testing.T) {
 		app := newTestApplication(t)
 		app.config.httpPort = -1
@@ -31,7 +29,7 @@ func TestServeHTTP(t *testing.T) {
 	})
 }
 
-func getFreePort(t *testing.T) int {
+func GetFreePort(t *testing.T) int {
 	l, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		t.Fatal(err)

@@ -17,6 +17,7 @@ func (app *application) routes() http.Handler {
 	mux.Use(app.authenticate)
 
 	mux.Get("/status", app.status)
+	mux.Get("/users", app.getUsers)
 	mux.Post("/users", app.createUser)
 	mux.Post("/authentication-tokens", app.createAuthenticationToken)
 

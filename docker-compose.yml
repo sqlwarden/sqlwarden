@@ -31,6 +31,7 @@ services:
     environment:
       BASE_URL: http://localhost:6020
       HTTP_PORT: 6020
+      DB_DRIVER: postgres
       DB_DSN: ${POSTGRES_USER:-sqlwarden}:${POSTGRES_PASSWORD:-sqlwarden_password}@postgres:5432/${POSTGRES_DB:-sqlwarden}?sslmode=disable
       DB_AUTOMIGRATE: "true"
       COOKIE_SECRET_KEY: ${COOKIE_SECRET_KEY:-cpcgzjcote6h5hakeglpbzixhbuog2zc}

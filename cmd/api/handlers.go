@@ -21,6 +21,19 @@ func (app *application) status(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (app *application) getUsers(w http.ResponseWriter, r *http.Request) {
+	users, err := app.db.GetUsers()
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = response.JSON(w, http.StatusOK, users)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 func (app *application) createUser(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Email     string              `json:"Email"`
