@@ -85,7 +85,7 @@ func newTestDB(t *testing.T) *database.DB {
 		dsn = fmt.Sprintf("%s%ssearch_path=%s", dsn, separator, schemaName)
 	}
 
-	db, err := database.New(driver, dsn)
+	db, err := database.New(driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 	if err != nil {
 		t.Fatal(err)
 	}

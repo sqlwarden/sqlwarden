@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"os"
 	"testing"
 
@@ -24,7 +26,7 @@ func TestNew(t *testing.T) {
 				defer os.Remove(tc.dsn)
 			}
 
-			db, err := New(tc.driver, tc.dsn)
+			db, err := New(tc.driver, tc.dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 			assert.Nil(t, err)
 			assert.NotNil(t, db)
 			assert.NotNil(t, db.DB)
@@ -39,7 +41,7 @@ func TestNew(t *testing.T) {
 		t.Run("Fails with invalid DSN", func(t *testing.T) {
 			dsn := "fake_user:fake_pass@localhost:5432/fake_db?sslmode=disable"
 
-			db, err := New("postgres", dsn)
+			db, err := New("postgres", dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 			assert.NotNil(t, err)
 			assert.Nil(t, db)
 		})

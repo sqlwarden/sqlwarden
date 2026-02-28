@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -47,7 +48,7 @@ func newTestDB(t *testing.T, drivers ...string) *DB {
 		dsn = fmt.Sprintf("%s%ssearch_path=%s", dsn, separator, schemaName)
 	}
 
-	db, err := New(driver, dsn)
+	db, err := New(driver, dsn, slog.New(slog.NewTextHandler(os.Stdout, nil)), false)
 	if err != nil {
 		t.Fatal(err)
 	}
