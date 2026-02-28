@@ -17,10 +17,10 @@ type slowQueryDetectorHook struct {
 
 // AfterQuery implements [bun.QueryHook].
 func (s *slowQueryDetectorHook) AfterQuery(ctx context.Context, event *bun.QueryEvent) {
-	duration := time.Since(event.StartTime).Milliseconds()
-	if duration > s.threshold {
+	duration := time.Since(event.StartTime)
+	if duration.Milliseconds() > s.threshold {
 		s.logger.Warn("slow query detected",
-			"duration_ms", duration,
+			"duration", duration.String(),
 			"query", event.Query,
 		)
 	}
@@ -42,7 +42,7 @@ type debugQueryLoggerHook struct {
 func (d *debugQueryLoggerHook) AfterQuery(ctx context.Context, event *bun.QueryEvent) {
 	rowsAffected, _ := event.Result.RowsAffected()
 	d.logger.Debug("executed query",
-		"duration_ms", time.Since(event.StartTime).Milliseconds(),
+		"duration", time.Since(event.StartTime).String(),
 		"query", event.Query,
 		"rows_affected", rowsAffected,
 		"error", event.Err,
