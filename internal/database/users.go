@@ -79,7 +79,7 @@ func (db *DB) GetUsers() ([]User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	var users []User
+	users := []User{}
 	err := db.NewSelect().
 		Model(&users).
 		Order("created DESC").

@@ -154,6 +154,7 @@ func newTestRequest(t *testing.T, method, path string, data map[string]any) *htt
 type testResponse struct {
 	*http.Response
 	BodyFields map[string]any
+	BodyBytes  []byte
 }
 
 func send(t *testing.T, req *http.Request, h http.Handler) testResponse {
@@ -179,12 +180,14 @@ func send(t *testing.T, req *http.Request, h http.Handler) testResponse {
 	if len(resBody) > 0 {
 		err := json.Unmarshal(resBody, &fields)
 		if err != nil {
-			t.Fatal(err)
+			// Not a JSON object, might be an array or other type
+			// Don't fail here, let the test handle it
 		}
 	}
 
 	return testResponse{
 		Response:   res,
 		BodyFields: fields,
+		BodyBytes:  resBody,
 	}
 }

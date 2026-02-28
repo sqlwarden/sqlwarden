@@ -129,6 +129,50 @@ func TestGetUsers(t *testing.T) {
 				assert.Equal(t, user.HashedPassword, testUser.hashedPassword)
 			}
 		})
+
+		t.Run(driver+": Returns empty slice when no users exist", func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			// Delete all users
+			_, err := db.ExecContext(context.Background(), "DELETE FROM users")
+			assert.Nil(t, err)
+
+			users, err := db.GetUsers()
+			assert.Nil(t, err)
+			assert.Equal(t, 0, len(users))
+		})
+
+		t.Run(driver+": Returns users ordered by created DESC", func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			// Insert users with specific created timestamps to verify ordering
+			// First, clear existing users
+			_, err := db.ExecContext(context.Background(), "DELETE FROM users")
+			assert.Nil(t, err)
+
+			// Insert users with deliberate timing
+			id1, err := db.InsertUser("first@example.com", "hash1")
+			assert.Nil(t, err)
+
+			id2, err := db.InsertUser("second@example.com", "hash2")
+			assert.Nil(t, err)
+
+			id3, err := db.InsertUser("third@example.com", "hash3")
+			assert.Nil(t, err)
+
+			users, err := db.GetUsers()
+			assert.Nil(t, err)
+			assert.Equal(t, 3, len(users))
+
+			// Verify they're ordered by created DESC (most recent first)
+			assert.Equal(t, int64(id3), users[0].ID)
+			assert.Equal(t, int64(id2), users[1].ID)
+			assert.Equal(t, int64(id1), users[2].ID)
+
+			// Verify timestamps are in descending order
+			assert.True(t, users[0].Created.After(users[1].Created) || users[0].Created.Equal(users[1].Created))
+			assert.True(t, users[1].Created.After(users[2].Created) || users[1].Created.Equal(users[2].Created))
+		})
 	}
 }
 
