@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -187,5 +189,88 @@ func TestRestricted(t *testing.T) {
 		res := send(t, req, app.routes())
 		assert.Equal(t, res.StatusCode, http.StatusOK)
 		assert.Equal(t, res.BodyFields["Message"], "This is a restricted handler")
+	})
+}
+
+func TestGetUsers(t *testing.T) {
+	t.Run("returns all users", func(t *testing.T) {
+		app := newTestApplication(t)
+
+		req := newTestRequest(t, http.MethodGet, "/users", nil)
+		res := send(t, req, app.routes())
+
+		assert.Equal(t, res.StatusCode, http.StatusOK)
+
+		// Verify we got an array with 2 users (alice and bob from test setup)
+		var users []map[string]interface{}
+		err := json.Unmarshal(res.BodyBytes, &users)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assert.Equal(t, len(users), 2)
+	})
+
+	t.Run("returns empty array when no users exist", func(t *testing.T) {
+		app := newTestApplication(t)
+
+		// Delete all users to test empty array response
+		_, err := app.db.ExecContext(context.Background(), "DELETE FROM users")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		req := newTestRequest(t, http.MethodGet, "/users", nil)
+		res := send(t, req, app.routes())
+
+		assert.Equal(t, res.StatusCode, http.StatusOK)
+
+		// Verify we got an empty array, not null
+		var users []map[string]interface{}
+		err = json.Unmarshal(res.BodyBytes, &users)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assert.Equal(t, len(users), 0)
+	})
+
+	t.Run("returns users in descending order by ID", func(t *testing.T) {
+		app := newTestApplication(t)
+
+		// Clear existing users and insert in specific order
+		_, err := app.db.ExecContext(context.Background(), "DELETE FROM users")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Insert bob first, then alice
+		id1, err := app.db.InsertUser(testUsers["bob"].email, testUsers["bob"].hashedPassword)
+		if err != nil {
+			t.Fatal(err)
+		}
+		id2, err := app.db.InsertUser(testUsers["alice"].email, testUsers["alice"].hashedPassword)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		req := newTestRequest(t, http.MethodGet, "/users", nil)
+		res := send(t, req, app.routes())
+
+		assert.Equal(t, res.StatusCode, http.StatusOK)
+
+		var users []map[string]interface{}
+		err = json.Unmarshal(res.BodyBytes, &users)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assert.Equal(t, len(users), 2)
+
+		// Verify ordering: alice should be first (created second, so higher ID)
+		firstUser := users[0]
+		assert.Equal(t, firstUser["email"].(string), testUsers["alice"].email)
+		assert.Equal(t, int64(firstUser["id"].(float64)), int64(id2))
+
+		secondUser := users[1]
+		assert.Equal(t, secondUser["email"].(string), testUsers["bob"].email)
+		assert.Equal(t, int64(secondUser["id"].(float64)), int64(id1))
 	})
 }

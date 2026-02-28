@@ -3,15 +3,15 @@ package database
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
-	"time"
-
 	"testing"
+	"time"
 )
 
 type testUser struct {
-	id             int
+	id             int64
 	email          string
 	password       string
 	hashedPassword string
@@ -22,23 +22,33 @@ var testUsers = map[string]*testUser{
 	"bob":   {email: "bob@example.com", password: "mySecure456#", hashedPassword: "$2a$04$AG864hNeosMGVOZKBePuRejH7ElpHfFBBHTFS6/XFJS4beixwXZB."},
 }
 
-func newTestDB(t *testing.T) *DB {
+func newTestDB(t *testing.T, drivers ...string) *DB {
 	t.Helper()
 
-	dsn := os.Getenv("TEST_DB_DSN")
+	driver := "postgres"
 
-	if dsn == "" {
-		dsn = "user:pass@localhost:5432/db?sslmode=disable"
+	dsn := "user:pass@localhost:5432/db?sslmode=disable"
+
+	if len(drivers) > 0 {
+		driver = drivers[0]
 	}
 
-	schemaName := fmt.Sprintf("test_schema_%d", time.Now().UnixNano())
-	separator := "?"
-	if strings.Contains(dsn, "?") {
-		separator = "&"
+	if driver == "sqlite" {
+		dsn = fmt.Sprintf("test_%d.db", time.Now().UnixNano())
 	}
-	dsn = fmt.Sprintf("%s%ssearch_path=%s", dsn, separator, schemaName)
 
-	db, err := New(dsn)
+	var schemaName string
+
+	if driver == "postgres" {
+		schemaName = fmt.Sprintf("test_schema_%d", time.Now().UnixNano())
+		separator := "?"
+		if strings.Contains(dsn, "?") {
+			separator = "&"
+		}
+		dsn = fmt.Sprintf("%s%ssearch_path=%s", dsn, separator, schemaName)
+	}
+
+	db, err := New(driver, dsn, slog.New(slog.NewTextHandler(os.Stdout, nil)), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,15 +56,22 @@ func newTestDB(t *testing.T) *DB {
 	t.Cleanup(func() {
 		defer db.Close()
 
-		_, err = db.Exec(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
-		if err != nil {
-			t.Error(err)
+		switch driver {
+		case "postgres":
+			_, err = db.ExecContext(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
+			if err != nil {
+				t.Error(err)
+			}
+		case "sqlite":
+			os.Remove(dsn)
 		}
 	})
 
-	_, err = db.Exec(context.Background(), fmt.Sprintf("CREATE SCHEMA %s", schemaName))
-	if err != nil {
-		t.Fatal(err)
+	if driver == "postgres" {
+		_, err = db.ExecContext(context.Background(), fmt.Sprintf("CREATE SCHEMA %s", schemaName))
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	err = db.MigrateUp()
@@ -68,7 +85,7 @@ func newTestDB(t *testing.T) *DB {
 			t.Fatal(err)
 		}
 
-		user.id = id
+		user.id = int64(id)
 	}
 
 	return db

@@ -80,7 +80,7 @@ func (app *application) authenticate(next http.Handler) http.Handler {
 					return
 				}
 
-				userID, err := strconv.Atoi(claims.Subject)
+				userID, err := strconv.ParseInt(claims.Subject, 10, 64)
 				if err != nil {
 					app.serverError(w, r, err)
 					return

@@ -34,6 +34,8 @@ type config struct {
 		secretKey string
 	}
 	db struct {
+		logQueries  bool
+		driver      string
 		dsn         string
 		automigrate bool
 	}
@@ -66,7 +68,9 @@ func run(logger *slog.Logger) error {
 	cfg.baseURL = env.GetString("BASE_URL", "http://localhost:6020")
 	cfg.httpPort = env.GetInt("HTTP_PORT", 6020)
 	cfg.cookie.secretKey = env.GetString("COOKIE_SECRET_KEY", "cpcgzjcote6h5hakeglpbzixhbuog2zc")
-	cfg.db.dsn = env.GetString("DB_DSN", "user:pass@localhost:5432/db")
+	cfg.db.logQueries = env.GetBool("DB_LOG_QUERIES", false)
+	cfg.db.driver = env.GetString("DB_DRIVER", "sqlite")
+	cfg.db.dsn = env.GetString("DB_DSN", "sqlwarden.db")
 	cfg.db.automigrate = env.GetBool("DB_AUTOMIGRATE", true)
 	cfg.jwt.secretKey = env.GetString("JWT_SECRET_KEY", "fb57i5hiud5mzmykaquqsln5gcmolbac")
 	cfg.notifications.email = env.GetString("NOTIFICATIONS_EMAIL", "")
@@ -85,7 +89,7 @@ func run(logger *slog.Logger) error {
 		return nil
 	}
 
-	db, err := database.New(cfg.db.dsn)
+	db, err := database.New(cfg.db.driver, cfg.db.dsn, logger, cfg.db.logQueries)
 	if err != nil {
 		return err
 	}

@@ -22,7 +22,7 @@ import (
 )
 
 type testUser struct {
-	id             int
+	id             int64
 	email          string
 	password       string
 	hashedPassword string
@@ -35,7 +35,7 @@ var testUsers = map[string]*testUser{
 
 func newTestClaims() jwt.Claims {
 	var c jwt.Claims
-	c.Subject = strconv.Itoa(testUsers["alice"].id)
+	c.Subject = strconv.FormatInt(testUsers["alice"].id, 10)
 	c.Issued = jwt.NewNumericTime(time.Now())
 	c.NotBefore = jwt.NewNumericTime(time.Now())
 	c.Expires = jwt.NewNumericTime(time.Now().Add(24 * time.Hour))
@@ -60,20 +60,32 @@ func newTestApplication(t *testing.T) *application {
 func newTestDB(t *testing.T) *database.DB {
 	t.Helper()
 
+	driver := os.Getenv("TEST_DB_DRIVER")
 	dsn := os.Getenv("TEST_DB_DSN")
 
+	if driver == "" {
+		driver = "postgres"
+	}
+
 	if dsn == "" {
-		dsn = "user:pass@localhost:5432/db?sslmode=disable"
+		if driver == "sqlite" {
+			dsn = "test.db"
+		} else {
+			dsn = "user:pass@localhost:5432/db?sslmode=disable"
+		}
 	}
 
-	schemaName := fmt.Sprintf("test_schema_%d", time.Now().UnixNano())
-	separator := "?"
-	if strings.Contains(dsn, "?") {
-		separator = "&"
+	var schemaName string
+	if driver == "postgres" {
+		schemaName = fmt.Sprintf("test_schema_%d", time.Now().UnixNano())
+		separator := "?"
+		if strings.Contains(dsn, "?") {
+			separator = "&"
+		}
+		dsn = fmt.Sprintf("%s%ssearch_path=%s", dsn, separator, schemaName)
 	}
-	dsn = fmt.Sprintf("%s%ssearch_path=%s", dsn, separator, schemaName)
 
-	db, err := database.New(dsn)
+	db, err := database.New(driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,15 +93,22 @@ func newTestDB(t *testing.T) *database.DB {
 	t.Cleanup(func() {
 		defer db.Close()
 
-		_, err = db.Exec(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
-		if err != nil {
-			t.Error(err)
+		switch driver {
+		case "postgres":
+			_, err = db.ExecContext(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
+			if err != nil {
+				t.Fatal(err)
+			}
+		case "sqlite":
+			os.Remove(dsn)
 		}
 	})
 
-	_, err = db.Exec(context.Background(), fmt.Sprintf("CREATE SCHEMA %s", schemaName))
-	if err != nil {
-		t.Fatal(err)
+	if driver == "postgres" {
+		_, err = db.ExecContext(context.Background(), fmt.Sprintf("CREATE SCHEMA %s", schemaName))
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	err = db.MigrateUp()
@@ -103,7 +122,7 @@ func newTestDB(t *testing.T) *database.DB {
 			t.Fatal(err)
 		}
 
-		user.id = id
+		user.id = int64(id)
 	}
 
 	return db
@@ -135,6 +154,7 @@ func newTestRequest(t *testing.T, method, path string, data map[string]any) *htt
 type testResponse struct {
 	*http.Response
 	BodyFields map[string]any
+	BodyBytes  []byte
 }
 
 func send(t *testing.T, req *http.Request, h http.Handler) testResponse {
@@ -160,12 +180,14 @@ func send(t *testing.T, req *http.Request, h http.Handler) testResponse {
 	if len(resBody) > 0 {
 		err := json.Unmarshal(resBody, &fields)
 		if err != nil {
-			t.Fatal(err)
+			// Not a JSON object, might be an array or other type
+			// Don't fail here, let the test handle it
 		}
 	}
 
 	return testResponse{
 		Response:   res,
 		BodyFields: fields,
+		BodyBytes:  resBody,
 	}
 }
