@@ -2,45 +2,31 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
-
-	"github.com/sqlwarden/internal/query"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type User struct {
-	ID             int       `json:"id"`
-	Created        time.Time `json:"created"`
-	Email          string    `json:"email"`
-	HashedPassword string    `json:"hashed_password"`
-}
-
-func fromQueryUser(u query.User) User {
-	return User{
-		ID:             int(u.ID),
-		Created:        u.Created.Time,
-		Email:          u.Email,
-		HashedPassword: u.HashedPassword,
-	}
+	ID             int64     `bun:",pk,autoincrement" json:"id"`
+	Created        time.Time `bun:",nullzero,notnull,default:current_timestamp" json:"created"`
+	Email          string    `bun:",notnull,unique" json:"email"`
+	HashedPassword string    `bun:",notnull" json:"hashed_password"`
 }
 
 func (db *DB) InsertUser(email, hashedPassword string) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	now := pgtype.Timestamptz{
-		Time:  time.Now(),
-		Valid: true,
-	}
-
-	user, err := db.Queries.InsertUser(ctx, query.InsertUserParams{
-		Created:        now,
+	user := &User{
+		Created:        time.Now(),
 		Email:          email,
 		HashedPassword: hashedPassword,
-	})
+	}
+
+	_, err := db.NewInsert().
+		Model(user).
+		Exec(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -48,42 +34,56 @@ func (db *DB) InsertUser(email, hashedPassword string) (int, error) {
 	return int(user.ID), nil
 }
 
-func (db *DB) GetUser(id int) (User, bool, error) {
+func (db *DB) GetUser(id int64) (User, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	user, err := db.Queries.GetUser(ctx, int32(id))
-	if errors.Is(err, pgx.ErrNoRows) {
+	var user User
+	err := db.NewSelect().
+		Model(&user).
+		Where("id = ?", id).
+		Scan(ctx)
+
+	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, false, nil
 	}
+
 	if err != nil {
 		return User{}, false, err
 	}
 
-	return fromQueryUser(user), true, nil
+	return user, true, nil
 }
 
 func (db *DB) GetUserByEmail(email string) (User, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	user, err := db.Queries.GetUserByEmail(ctx, email)
-	if errors.Is(err, pgx.ErrNoRows) {
+	var user User
+	err := db.NewSelect().
+		Model(&user).
+		Where("LOWER(email) = LOWER(?)", email).
+		Scan(ctx)
+
+	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, false, nil
 	}
 	if err != nil {
 		return User{}, false, err
 	}
 
-	return fromQueryUser(user), true, nil
+	return user, true, nil
 }
 
-func (db *DB) UpdateUserHashedPassword(id int, hashedPassword string) error {
+func (db *DB) UpdateUserHashedPassword(id int64, hashedPassword string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	return db.Queries.UpdateUserHashedPassword(ctx, query.UpdateUserHashedPasswordParams{
-		HashedPassword: hashedPassword,
-		ID:             int32(id),
-	})
+	_, err := db.NewUpdate().
+		Model((*User)(nil)).
+		Set("hashed_password = ?", hashedPassword).
+		Where("id = ?", id).
+		Exec(ctx)
+
+	return err
 }

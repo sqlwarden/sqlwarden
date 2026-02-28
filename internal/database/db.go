@@ -2,65 +2,104 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
-
-	"github.com/sqlwarden/assets"
-	"github.com/sqlwarden/internal/query"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sqlwarden/assets"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/dialect/sqlitedialect"
+	"github.com/uptrace/bun/driver/pgdriver"
+	"github.com/uptrace/bun/driver/sqliteshim"
 
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/golang-migrate/migrate/v4/database/sqlite"
 )
 
 const defaultTimeout = 3 * time.Second
 
 type DB struct {
-	dsn string
-	*pgxpool.Pool
-	*query.Queries
+	driver string
+	dsn    string
+	*bun.DB
 }
 
-func New(dsn string) (*DB, error) {
+func New(driver, dsn string) (*DB, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	config, err := pgxpool.ParseConfig("postgres://" + dsn)
+	var sqldb *sql.DB
+	var db *bun.DB
+	var err error
+
+	switch driver {
+	case "postgres":
+		pgDSN := dsn
+		if !strings.HasPrefix(pgDSN, "postgres://") && !strings.HasPrefix(pgDSN, "postgresql://") {
+			pgDSN = "postgres://" + pgDSN
+		}
+
+		sqldb = sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(pgDSN)))
+		db = bun.NewDB(sqldb, pgdialect.New())
+	case "sqlite":
+		sqldb, err = sql.Open(sqliteshim.ShimName, dsn)
+		if err != nil {
+			return nil, err
+		}
+
+		db = bun.NewDB(sqldb, sqlitedialect.New())
+
+		_, err = db.ExecContext(ctx, "PRAGMA foreign_keys = ON")
+		if err != nil {
+			sqldb.Close()
+			return nil, err
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported database driver: %s", driver)
+	}
+
+	sqldb.SetMaxOpenConns(25)
+	sqldb.SetMaxIdleConns(25)
+	sqldb.SetConnMaxIdleTime(5 * time.Minute)
+	sqldb.SetConnMaxLifetime(2 * time.Hour)
+
+	err = db.PingContext(ctx)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 
-	config.MaxConns = 25
-	config.MinConns = 25
-	config.MaxConnIdleTime = 5 * time.Minute
-	config.MaxConnLifetime = 2 * time.Hour
-
-	pool, err := pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		return nil, err
-	}
-
-	err = pool.Ping(ctx)
-	if err != nil {
-		pool.Close()
-		return nil, err
-	}
-
-	queries := query.New(pool)
-
-	return &DB{dsn: dsn, Pool: pool, Queries: queries}, nil
+	return &DB{driver: driver, dsn: dsn, DB: db}, nil
 }
 
 func (db *DB) MigrateUp() error {
-	iofsDriver, err := iofs.New(assets.EmbeddedFiles, "migrations")
+	migrationPath := "migrations_postgres"
+	if db.driver == "sqlite" {
+		migrationPath = "migrations_sqlite"
+	}
+
+	iofsDriver, err := iofs.New(assets.EmbeddedFiles, migrationPath)
 	if err != nil {
 		return err
 	}
 
-	migrator, err := migrate.NewWithSourceInstance("iofs", iofsDriver, "postgres://"+db.dsn)
+	var databaseURL string
+	switch db.driver {
+	case "postgres":
+		databaseURL = "postgres://" + db.dsn
+	case "sqlite":
+		databaseURL = "sqlite://" + db.dsn
+	default:
+		return fmt.Errorf("unsupported database driver for migrations: %s", db.driver)
+	}
+
+	migrator, err := migrate.NewWithSourceInstance("iofs", iofsDriver, databaseURL)
 	if err != nil {
 		return err
 	}

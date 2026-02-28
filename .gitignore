@@ -11,3 +11,10 @@ dist/
 
 # Docker volumes
 postgres_data/
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+!go.sum.db

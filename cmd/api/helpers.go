@@ -17,11 +17,11 @@ func (app *application) newEmailData() map[string]any {
 	return data
 }
 
-func (app *application) newAuthenticationToken(userID int) (string, time.Time, error) {
+func (app *application) newAuthenticationToken(userID int64) (string, time.Time, error) {
 	now := time.Now()
 
 	var claims jwt.Claims
-	claims.Subject = strconv.Itoa(userID)
+	claims.Subject = strconv.FormatInt(userID, 10)
 
 	expiry := now.Add(24 * time.Hour)
 	claims.Issued = jwt.NewNumericTime(now)

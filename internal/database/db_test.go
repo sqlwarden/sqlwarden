@@ -3,51 +3,74 @@ package database
 import (
 	"context"
 	"os"
-
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
 )
 
 func TestNew(t *testing.T) {
-	t.Run("Creates DB connection pool", func(t *testing.T) {
-		dsn := os.Getenv("TEST_DB_DSN")
+	drivers := []struct {
+		name   string
+		driver string
+		dsn    string
+	}{
+		{"PostgreSQL", "postgres", "user:pass@localhost:5432/db?sslmode=disable"},
+		{"SQLite", "sqlite", "test.db"},
+	}
 
-		if dsn == "" {
-			dsn = "user:pass@localhost:5432/db?sslmode=disable"
-		}
+	for _, tc := range drivers {
+		t.Run(tc.name+": Creates DB connection pool", func(t *testing.T) {
+			if tc.driver == "sqlite" {
+				defer os.Remove(tc.dsn)
+			}
 
-		db, err := New(dsn)
-		assert.Nil(t, err)
-		assert.NotNil(t, db)
-		assert.NotNil(t, db.Pool)
-		defer db.Close()
+			db, err := New(tc.driver, tc.dsn)
+			assert.Nil(t, err)
+			assert.NotNil(t, db)
+			assert.NotNil(t, db.DB)
+			defer db.Close()
 
-		err = db.Ping(context.Background())
-		assert.Nil(t, err)
+			err = db.Ping()
+			assert.Nil(t, err)
 
-		assert.Equal(t, int32(25), db.Stat().MaxConns())
-	})
+			assert.Equal(t, 25, db.DB.DB.Stats().MaxOpenConnections)
+		})
 
-	t.Run("Fails with invalid DSN", func(t *testing.T) {
-		dsn := "fake_user:fake_pass@localhost:5432/fake_db"
+		t.Run("Fails with invalid DSN", func(t *testing.T) {
+			dsn := "fake_user:fake_pass@localhost:5432/fake_db?sslmode=disable"
 
-		db, err := New(dsn)
-		assert.NotNil(t, err)
-		assert.Nil(t, db)
-	})
+			db, err := New("postgres", dsn)
+			assert.NotNil(t, err)
+			assert.Nil(t, db)
+		})
+	}
 }
 
 func TestMigrateUp(t *testing.T) {
-	t.Run("Applies all up migrations", func(t *testing.T) {
-		db := newTestDB(t)
+	drivers := []struct {
+		name   string
+		driver string
+		dsn    string
+	}{
+		{"PostgreSQL", "postgres", "user:pass@localhost:5432/db?sslmode=disable"},
+		{"SQLite", "sqlite", "test.db"},
+	}
 
-		err := db.MigrateUp()
-		assert.Nil(t, err)
+	for _, tc := range drivers {
+		t.Run(tc.name+": Applies all up migrations", func(t *testing.T) {
+			if tc.driver == "sqlite" {
+				defer os.Remove(tc.dsn)
+			}
 
-		var version int
-		err = db.QueryRow(context.Background(), "SELECT version FROM schema_migrations LIMIT 1").Scan(&version)
-		assert.Nil(t, err)
-		assert.True(t, version > 0)
-	})
+			db := newTestDB(t, tc.driver)
+
+			err := db.MigrateUp()
+			assert.Nil(t, err)
+
+			var version int
+			err = db.NewSelect().ColumnExpr("version").TableExpr("schema_migrations").Limit(1).Scan(context.Background(), &version)
+			assert.Nil(t, err)
+			assert.True(t, version > 0)
+		})
+	}
 }
