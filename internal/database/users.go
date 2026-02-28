@@ -75,6 +75,19 @@ func (db *DB) GetUserByEmail(email string) (User, bool, error) {
 	return user, true, nil
 }
 
+func (db *DB) GetUsers() ([]User, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	var users []User
+	err := db.NewSelect().
+		Model(&users).
+		Order("created DESC").
+		Scan(ctx)
+
+	return users, err
+}
+
 func (db *DB) UpdateUserHashedPassword(id int64, hashedPassword string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()

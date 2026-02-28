@@ -106,6 +106,32 @@ func TestGetUserByEmail(t *testing.T) {
 	}
 }
 
+func TestGetUsers(t *testing.T) {
+	drivers := []string{"postgres", "sqlite"}
+
+	for _, driver := range drivers {
+		t.Run(driver+": Returns all users", func(t *testing.T) {
+			db := newTestDB(t)
+
+			users, err := db.GetUsers()
+			assert.Nil(t, err)
+			assert.Equal(t, len(users), len(testUsers))
+
+			userMap := make(map[int64]User)
+			for _, user := range users {
+				userMap[user.ID] = user
+			}
+
+			for _, testUser := range testUsers {
+				user, found := userMap[testUser.id]
+				assert.True(t, found)
+				assert.Equal(t, user.Email, testUser.email)
+				assert.Equal(t, user.HashedPassword, testUser.hashedPassword)
+			}
+		})
+	}
+}
+
 func TestUpdateUserHashedPassword(t *testing.T) {
 	drivers := []string{"postgres", "sqlite"}
 
