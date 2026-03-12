@@ -1,9 +1,12 @@
 package main
 
 import (
+	"io"
+	"io/fs"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/assets"
 )
 
 func (app *application) routes() http.Handler {
@@ -14,18 +17,61 @@ func (app *application) routes() http.Handler {
 
 	mux.Use(app.logAccess)
 	mux.Use(app.recoverPanic)
-	mux.Use(app.authenticate)
 
-	mux.Get("/status", app.status)
-	mux.Get("/users", app.getUsers)
-	mux.Post("/users", app.createUser)
-	mux.Post("/authentication-tokens", app.createAuthenticationToken)
+	// API routes under /api
+	mux.Route("/api", func(r chi.Router) {
+		r.Use(app.authenticate)
 
-	mux.Group(func(mux chi.Router) {
-		mux.Use(app.requireAuthenticatedUser)
+		r.Get("/status", app.status)
+		r.Get("/users", app.getUsers)
+		r.Post("/users", app.createUser)
+		r.Post("/authentication-tokens", app.createAuthenticationToken)
 
-		mux.Get("/restricted", app.restricted)
+		r.Group(func(r chi.Router) {
+			r.Use(app.requireAuthenticatedUser)
+
+			r.Get("/restricted", app.restricted)
+		})
 	})
 
+	// Serve the embedded React SPA for all other routes
+	staticFS, err := fs.Sub(assets.EmbeddedFiles, "static")
+	if err != nil {
+		panic(err)
+	}
+	mux.Get("/*", app.spaHandler(staticFS))
+
 	return mux
+}
+
+// spaHandler serves a React SPA from the given filesystem. Any request that
+// does not map to an existing static file is served with index.html so that
+// client-side routing works correctly.
+func (app *application) spaHandler(staticFS fs.FS) http.HandlerFunc {
+	fileServer := http.FileServer(http.FS(staticFS))
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Strip the leading "/" so we can look up the file in the FS.
+		path := r.URL.Path[1:]
+		if path == "" {
+			path = "index.html"
+		}
+
+		_, err := staticFS.Open(path)
+		if err != nil {
+			// File not found – serve index.html for client-side routing.
+			indexFile, err := staticFS.Open("index.html")
+			if err != nil {
+				http.Error(w, "index.html not found", http.StatusNotFound)
+				return
+			}
+			defer indexFile.Close()
+
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			io.Copy(w, indexFile)
+			return
+		}
+
+		fileServer.ServeHTTP(w, r)
+	}
 }

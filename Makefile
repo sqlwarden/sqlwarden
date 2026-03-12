@@ -23,15 +23,15 @@ audit: test
 	go run honnef.co/go/tools/cmd/staticcheck@latest -checks=all,-ST1000,-U1000 ./...
 	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
-## test: run all tests
+## test: run all tests (use VERBOSE=1 for verbose output)
 .PHONY: test
 test:
-	go test -v -race -buildvcs ./...
+	go test $(if $(VERBOSE),-v) -race -buildvcs ./...
 
-## test/cover: run all tests and display coverage
+## test/cover: run all tests and display coverage (use VERBOSE=1 for verbose output)
 .PHONY: test/cover
 test/cover:
-	go test -v -race -buildvcs -coverprofile=/tmp/coverage.out ./...
+	go test $(if $(VERBOSE),-v) -race -buildvcs -coverprofile=/tmp/coverage.out ./...
 	go tool cover -html=/tmp/coverage.out
 
 ## upgradeable: list direct dependencies that have upgrades available
@@ -49,9 +49,25 @@ tidy:
 	go mod tidy -v
 	go fmt ./...
 
-## build: build the cmd/api application
+## frontend/install: install frontend dependencies
+.PHONY: frontend/install
+frontend/install:
+	cd frontend && bun install
+
+## frontend/build: build the frontend and output to assets/static
+.PHONY: frontend/build
+frontend/build:
+	cd frontend && bun run build
+	@touch assets/static/.gitkeep
+
+## frontend/dev: run the frontend dev server with API proxy to the backend
+.PHONY: frontend/dev
+frontend/dev:
+	cd frontend && bun run dev
+
+## build: build the cmd/api application (builds frontend first)
 .PHONY: build
-build:
+build: frontend/build
 	@echo "Building sqlwarden..."
 	@mkdir -p dist
 	go build -ldflags="-s -w -X github.com/sqlwarden/internal/version.version=dev -X github.com/sqlwarden/internal/version.commit=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown) -X github.com/sqlwarden/internal/version.date=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o=dist/sqlwarden ./cmd/api

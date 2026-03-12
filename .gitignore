@@ -5,6 +5,10 @@ build-errors.log
 # GoReleaser build artifacts
 dist/
 
+# Frontend build output (embedded into the Go binary)
+assets/static/*
+!assets/static/.gitkeep
+
 # Environment files
 .env
 .env.local
