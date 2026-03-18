@@ -65,6 +65,11 @@ frontend/build:
 frontend/dev:
 	cd frontend && bun run dev
 
+## frontend/dev-expose: run the frontend dev server with API proxy to the backend and expose on 0.0.0.0
+.PHONY: frontend/dev-expose
+frontend/dev-expose:
+	cd frontend && bun run dev-expose
+
 ## build: build the cmd/api application (builds frontend first)
 .PHONY: build
 build: frontend/build
