@@ -66,7 +66,6 @@ func TestNormalizeColumnType(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.raw, func(t *testing.T) {
 			got := NormalizeColumnType(tc.raw)
 			if got != tc.want {
@@ -147,7 +146,7 @@ func TestValueNullOmitempty(t *testing.T) {
 		t.Fatalf("json.Marshal failed: %v", err)
 	}
 
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal(data, &m); err != nil {
 		t.Fatalf("json.Unmarshal failed: %v", err)
 	}
