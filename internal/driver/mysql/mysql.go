@@ -43,7 +43,7 @@ func ensureParams(dsn string) string {
 
 	existing := map[string]bool{}
 	if query != "" {
-		for _, part := range strings.Split(query, "&") {
+		for part := range strings.SplitSeq(query, "&") {
 			if kv := strings.SplitN(part, "=", 2); len(kv) == 2 {
 				existing[kv[0]] = true
 			}
