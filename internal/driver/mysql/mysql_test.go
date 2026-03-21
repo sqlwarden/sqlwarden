@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,7 +62,7 @@ func TestConnect(t *testing.T) {
 		if err := d.Connect(ctx, driver.ConnectionConfig{DSN: testDSN, Driver: "mysql"}); err != nil {
 			t.Fatalf("expected connect to succeed, got: %v", err)
 		}
-		_ = d.Close()
+		t.Cleanup(func() { _ = d.Close() })
 	})
 
 	t.Run("invalid DSN", func(t *testing.T) {
@@ -383,7 +385,7 @@ func TestEnsureParams(t *testing.T) {
 		dsn := "user:pass@tcp(localhost:3306)/mydb?parseTime=true"
 		result := ensureParams(dsn)
 		// parseTime should not be duplicated
-		count := countOccurrences(result, "parseTime=true")
+		count := strings.Count(result, "parseTime=true")
 		if count != 1 {
 			t.Errorf("expected parseTime=true to appear exactly once, got %d times in %q", count, result)
 		}
@@ -403,45 +405,10 @@ func TestEnsureParams(t *testing.T) {
 }
 
 func containsParam(dsn, param string) bool {
-	sep := len(dsn)
-	for i, c := range dsn {
-		if c == '?' {
-			sep = i
-			break
-		}
-	}
-	if sep == len(dsn) {
+	idx := strings.IndexByte(dsn, '?')
+	if idx == -1 {
 		return false
 	}
-	query := dsn[sep+1:]
-	parts := splitAmpersand(query)
-	for _, p := range parts {
-		if p == param {
-			return true
-		}
-	}
-	return false
-}
-
-func splitAmpersand(s string) []string {
-	var result []string
-	start := 0
-	for i := 0; i <= len(s); i++ {
-		if i == len(s) || s[i] == '&' {
-			result = append(result, s[start:i])
-			start = i + 1
-		}
-	}
-	return result
-}
-
-func countOccurrences(s, sub string) int {
-	count := 0
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			count++
-			i += len(sub) - 1
-		}
-	}
-	return count
+	parts := strings.Split(dsn[idx+1:], "&")
+	return slices.Contains(parts, param)
 }
