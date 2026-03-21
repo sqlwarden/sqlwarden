@@ -182,7 +182,7 @@ func TestInsertAccountDuplicateEmail(t *testing.T) {
 			_, err := db.InsertAccount("dup@example.com", "First", &pw)
 			assert.Nil(t, err)
 
-			_, err = db.InsertAccount(strings.ToUpper("dup@example.com"), "Second", &pw)
+			_, _ = db.InsertAccount(strings.ToUpper("dup@example.com"), "Second", &pw)
 			// Note: unique constraint is on the raw email column, not LOWER(email),
 			// so same-case duplicates fail. Depending on DB, different case may or may not fail.
 			// We just test same-case here.

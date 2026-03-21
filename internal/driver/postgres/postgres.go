@@ -79,9 +79,6 @@ func (d *postgresDriver) Tables(ctx context.Context, database, schema string) ([
 		if err := rows.Scan(&t.Name, &t.Schema); err != nil {
 			return nil, fmt.Errorf("postgres: tables scan: %w", err)
 		}
-		if database != "" {
-			// database filter not applicable via query params here, filtered above by current_database()
-		}
 		if schema != "" && t.Schema != schema {
 			continue
 		}

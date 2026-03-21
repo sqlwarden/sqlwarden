@@ -38,11 +38,11 @@ type Row []Value
 
 // Value holds a single cell value with its normalized type.
 type Value struct {
-	Type    ValueType `json:"type"`
-	Text    string    `json:"text,omitempty"`
-	Integer int64     `json:"integer,omitempty"`
-	Float   float64   `json:"float,omitempty"`
-	Decimal string    `json:"decimal,omitempty"`
+	Type    ValueType  `json:"type"`
+	Text    string     `json:"text,omitempty"`
+	Integer int64      `json:"integer,omitempty"`
+	Float   float64    `json:"float,omitempty"`
+	Decimal string     `json:"decimal,omitempty"`
 	Bool    bool       `json:"bool,omitempty"`
 	Time    *time.Time `json:"time,omitempty"`
 	Bytes   []byte     `json:"bytes,omitempty"`
