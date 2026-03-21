@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -140,6 +141,10 @@ func run(logger *slog.Logger) error {
 		encKey:      encrypt.DeriveKey(cfg.encryption.key),
 		enforcer:    enforcer,
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go app.startGrantReaper(ctx)
 
 	return app.serveHTTP()
 }
