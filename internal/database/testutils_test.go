@@ -27,7 +27,7 @@ func newTestDB(t *testing.T, drivers ...string) *DB {
 
 	driver := "postgres"
 
-	dsn := "user:pass@localhost:5432/db?sslmode=disable"
+	var dsn string
 
 	if len(drivers) > 0 {
 		driver = drivers[0]
@@ -35,6 +35,8 @@ func newTestDB(t *testing.T, drivers ...string) *DB {
 
 	if driver == "sqlite" {
 		dsn = fmt.Sprintf("test_%d.db", time.Now().UnixNano())
+	} else {
+		dsn = pgTestDSN
 	}
 
 	var schemaName string
@@ -51,6 +53,11 @@ func newTestDB(t *testing.T, drivers ...string) *DB {
 	db, err := New(driver, dsn, slog.New(slog.NewTextHandler(os.Stdout, nil)), false)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	if driver == "postgres" {
+		db.SetMaxOpenConns(2)
+		db.SetMaxIdleConns(1)
 	}
 
 	t.Cleanup(func() {
