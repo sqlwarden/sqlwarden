@@ -21,7 +21,17 @@ func (app *application) routes() http.Handler {
 	// API v1 routes
 	mux.Route("/api/v1", func(r chi.Router) {
 		r.Use(app.authenticateV1)
-		// routes added in subsequent steps
+
+		r.Post("/auth/register", app.registerAccount)
+		r.Post("/auth/login", app.loginAccount)
+		r.Post("/auth/refresh", app.refreshToken)
+		r.Post("/auth/logout", app.logoutAccount)
+
+		r.Group(func(r chi.Router) {
+			r.Use(app.requireAccount)
+			r.Get("/user", app.getAccount)
+			r.Get("/user/orgs", app.getAccountOrgs)
+		})
 	})
 
 	// Serve the embedded React SPA for all other routes
