@@ -17,7 +17,7 @@ func TestNormalizeColumnType(t *testing.T) {
 		{"bigint", ColumnTypeInteger},
 		{"smallint", ColumnTypeInteger},
 		{"integer", ColumnTypeInteger},
-		{"INT", ColumnTypeInteger},    // case-insensitive
+		{"INT", ColumnTypeInteger},        // case-insensitive
 		{"  bigint  ", ColumnTypeInteger}, // surrounding whitespace
 
 		// tinyint(1) is boolean, plain tinyint is integer.

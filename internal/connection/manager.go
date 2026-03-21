@@ -27,7 +27,7 @@ func newULID() string {
 
 // Session is an open live connection to a target database.
 type Session struct {
-	ID           string        // ULID
+	ID           string // ULID
 	AccountID    string
 	ConnectionID string
 	Driver       driver.Driver // open connection
