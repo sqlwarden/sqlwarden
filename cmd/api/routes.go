@@ -44,6 +44,57 @@ func (app *application) routes() http.Handler {
 				r.With(app.requireOrgRole("owner")).Patch("/{account_id}", app.updateOrgMemberRole)
 				r.With(app.requirePermission("members", "delete")).Delete("/{account_id}", app.removeOrgMember)
 			})
+
+			r.Route("/teams", func(r chi.Router) {
+				r.Get("/", app.listTeams)
+				r.With(app.requirePermission("teams", "write")).Post("/", app.createTeam)
+				r.Route("/{team_slug}", func(r chi.Router) {
+					r.Get("/", app.getTeam)
+					r.With(app.requirePermission("teams", "delete")).Delete("/", app.deleteTeam)
+					r.Get("/members", app.listTeamMembers)
+					r.With(app.requirePermission("teams", "write")).Post("/members", app.addTeamMember)
+					r.Delete("/members/{account_id}", app.removeTeamMember)
+				})
+			})
+
+			r.Route("/workspaces", func(r chi.Router) {
+				r.Get("/", app.listWorkspaces)
+				r.With(app.requireOrgRole("admin")).Post("/", app.createWorkspace)
+				r.Route("/{ws_id}", func(r chi.Router) {
+					r.Use(app.wsCtx)
+					r.Get("/", app.getWorkspace)
+					r.Patch("/", app.updateWorkspace)
+					r.With(app.requireOrgRole("admin")).Delete("/", app.deleteWorkspace)
+					r.Get("/access", app.listWorkspaceAccess)
+					r.Post("/access", app.grantWorkspaceAccess)
+					r.Delete("/access/{subject}", app.revokeWorkspaceAccess)
+					r.Post("/roles", app.applyWorkspaceRole)
+					r.Delete("/roles/{role_id}/subjects/{subject}", app.revokeWorkspaceRoleAssignment)
+
+					r.Route("/connections", func(r chi.Router) {
+						r.Post("/test", app.testConnection)
+						r.Get("/", app.listConnections)
+						r.Post("/", app.createConnection)
+						r.Route("/{conn_id}", func(r chi.Router) {
+							r.Get("/", app.getConnection)
+							r.Delete("/", app.deleteConnection)
+							r.Get("/access", app.listConnectionOverrides)
+							r.Post("/access", app.grantConnectionOverride)
+							r.Delete("/access/{subject}", app.revokeConnectionOverride)
+							r.Post("/connect", app.connectToDatabase)
+							r.Post("/query", app.executeQuery)
+						})
+					})
+				})
+			})
+
+			r.Route("/roles", func(r chi.Router) {
+				r.Use(app.requireOrgRole("admin"))
+				r.Get("/", app.listRoles)
+				r.Post("/", app.createRole)
+				r.Get("/{role_id}", app.getRole)
+				r.Delete("/{role_id}", app.deleteRole)
+			})
 		})
 	})
 
