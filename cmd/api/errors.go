@@ -82,6 +82,11 @@ func (app *application) invalidAuthenticationToken(w http.ResponseWriter, r *htt
 	app.errorMessage(w, r, http.StatusUnauthorized, "Invalid authentication token", headers)
 }
 
+func (app *application) notPermitted(w http.ResponseWriter, r *http.Request) {
+	message := "You do not have permission to perform this action"
+	app.errorMessage(w, r, http.StatusForbidden, message, nil)
+}
+
 func (app *application) authenticationRequired(w http.ResponseWriter, r *http.Request) {
 	headers := make(http.Header)
 	headers.Set("WWW-Authenticate", "Bearer")
