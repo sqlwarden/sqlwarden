@@ -32,6 +32,19 @@ func (app *application) routes() http.Handler {
 			r.Get("/user", app.getAccount)
 			r.Get("/user/orgs", app.getAccountOrgs)
 		})
+
+		r.Route("/orgs/{org_slug}", func(r chi.Router) {
+			r.Use(app.requireAccount, app.orgCtx)
+
+			r.Get("/", app.getOrg)
+
+			r.Route("/members", func(r chi.Router) {
+				r.With(app.requirePermission("members", "read")).Get("/", app.listOrgMembers)
+				r.With(app.requirePermission("members", "write")).Post("/", app.addOrgMember)
+				r.With(app.requireOrgRole("owner")).Patch("/{account_id}", app.updateOrgMemberRole)
+				r.With(app.requirePermission("members", "delete")).Delete("/{account_id}", app.removeOrgMember)
+			})
+		})
 	})
 
 	// Serve the embedded React SPA for all other routes
