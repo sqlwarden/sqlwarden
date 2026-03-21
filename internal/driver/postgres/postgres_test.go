@@ -70,8 +70,8 @@ func TestConnect(t *testing.T) {
 		ctx := context.Background()
 		err := d.Connect(ctx, driver.ConnectionConfig{DSN: "postgres://invalid:5432/nonexistent?sslmode=disable", Driver: "postgres"})
 		if err == nil {
-			t.Fatal("expected connect to fail with invalid DSN, got nil")
 			_ = d.Close()
+			t.Fatal("expected connect to fail with invalid DSN, got nil")
 		}
 	})
 }
@@ -277,9 +277,19 @@ func TestTables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Tables with schema filter: %v", err)
 	}
-	if !findTable("tables_test_a") {
-		_ = publicTables // just ensure the call succeeded
-		t.Logf("tables_test_a not found when filtering by public schema (may be in different schema)")
+	findPublicTable := func(name string) bool {
+		for _, tb := range publicTables {
+			if tb.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+	if !findPublicTable("tables_test_a") {
+		t.Errorf("tables_test_a not found when filtering by public schema")
+	}
+	if !findPublicTable("tables_test_b") {
+		t.Errorf("tables_test_b not found when filtering by public schema")
 	}
 
 	// Filter by non-existent schema — should return empty
