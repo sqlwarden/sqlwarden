@@ -22,11 +22,10 @@ type mysqlDriver struct {
 	db *sql.DB
 }
 
-// ensureParams ensures parseTime=true and tinyint1isBool=true are in the DSN.
+// ensureParams ensures parseTime=true is in the DSN.
 func ensureParams(dsn string) string {
 	params := map[string]string{
-		"parseTime":     "true",
-		"tinyint1isBool": "true",
+		"parseTime": "true",
 	}
 
 	// Split DSN into base and query string parts.
