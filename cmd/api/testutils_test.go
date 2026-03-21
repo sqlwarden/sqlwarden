@@ -71,7 +71,7 @@ func newTestDB(t *testing.T) *database.DB {
 		if driver == "sqlite" {
 			dsn = "test.db"
 		} else {
-			dsn = "user:pass@localhost:5432/db?sslmode=disable"
+			dsn = pgTestDSN
 		}
 	}
 
@@ -88,6 +88,11 @@ func newTestDB(t *testing.T) *database.DB {
 	db, err := database.New(driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	if driver == "postgres" {
+		db.SetMaxOpenConns(2)
+		db.SetMaxIdleConns(1)
 	}
 
 	t.Cleanup(func() {
