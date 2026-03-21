@@ -214,10 +214,9 @@ func (app *application) grantWorkspaceAccess(w http.ResponseWriter, r *http.Requ
 	// "account:<id>" -> bare account ID (Casbin uses account ID directly)
 	// "team:<slug>" -> "team:<id>" (Casbin uses "team:<id>" as group role)
 	resolvedSubject := input.Subject
-	if strings.HasPrefix(input.Subject, "account:") {
-		resolvedSubject = strings.TrimPrefix(input.Subject, "account:")
-	} else if strings.HasPrefix(input.Subject, "team:") {
-		teamSlug := strings.TrimPrefix(input.Subject, "team:")
+	if id, ok := strings.CutPrefix(input.Subject, "account:"); ok {
+		resolvedSubject = id
+	} else if teamSlug, ok := strings.CutPrefix(input.Subject, "team:"); ok {
 		team, found, err := app.db.GetTeamBySlug(tenant.ID, teamSlug)
 		if err != nil {
 			app.serverError(w, r, err)
