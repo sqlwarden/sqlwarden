@@ -44,15 +44,6 @@ func (d *mockDriver) Columns(ctx context.Context, database, schema, table string
 }
 func (d *mockDriver) Dialect() driver.Dialect { return driver.DialectSQLite }
 
-func newMockOpen() (driver.Driver, func() bool) {
-	d := &mockDriver{}
-	return d, func() bool {
-		d.mu.Lock()
-		defer d.mu.Unlock()
-		return d.closed
-	}
-}
-
 // TestReuse verifies that calling GetOrCreate twice for the same account+conn returns the same session.
 func TestReuse(t *testing.T) {
 	m := New(5 * time.Minute)
