@@ -7,13 +7,21 @@ import (
 	"os"
 	"runtime/debug"
 	"sync"
+	"time"
 
+	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/env"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/version"
 
 	"github.com/lmittmann/tint"
+
+	_ "github.com/sqlwarden/internal/driver/mysql"
+	_ "github.com/sqlwarden/internal/driver/postgres"
+	_ "github.com/sqlwarden/internal/driver/sqlite"
 )
 
 func main() {
@@ -39,6 +47,9 @@ type config struct {
 		dsn         string
 		automigrate bool
 	}
+	encryption struct {
+		key string
+	}
 	jwt struct {
 		secretKey string
 	}
@@ -55,11 +66,14 @@ type config struct {
 }
 
 type application struct {
-	config config
-	db     *database.DB
-	logger *slog.Logger
-	mailer *smtp.Mailer
-	wg     sync.WaitGroup
+	config      config
+	db          *database.DB
+	logger      *slog.Logger
+	mailer      *smtp.Mailer
+	wg          sync.WaitGroup
+	connManager *connection.Manager
+	encKey      []byte
+	enforcer    *access.Enforcer
 }
 
 func run(logger *slog.Logger) error {
@@ -107,11 +121,24 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	cfg.encryption.key = env.GetString("ENCRYPTION_KEY", "dev-insecure-key-32byteslong!!")
+
+	enforcer, err := access.New(db.DB)
+	if err != nil {
+		return fmt.Errorf("casbin init: %w", err)
+	}
+
+	connMgr := connection.New(30 * time.Minute)
+	defer connMgr.Close()
+
 	app := &application{
-		config: cfg,
-		db:     db,
-		logger: logger,
-		mailer: mailer,
+		config:      cfg,
+		db:          db,
+		logger:      logger,
+		mailer:      mailer,
+		connManager: connMgr,
+		encKey:      encrypt.DeriveKey(cfg.encryption.key),
+		enforcer:    enforcer,
 	}
 
 	return app.serveHTTP()
