@@ -18,20 +18,10 @@ func (app *application) routes() http.Handler {
 	mux.Use(app.logAccess)
 	mux.Use(app.recoverPanic)
 
-	// API routes under /api
-	mux.Route("/api", func(r chi.Router) {
-		r.Use(app.authenticate)
-
-		r.Get("/status", app.status)
-		r.Get("/users", app.getUsers)
-		r.Post("/users", app.createUser)
-		r.Post("/authentication-tokens", app.createAuthenticationToken)
-
-		r.Group(func(r chi.Router) {
-			r.Use(app.requireAuthenticatedUser)
-
-			r.Get("/restricted", app.restricted)
-		})
+	// API v1 routes
+	mux.Route("/api/v1", func(r chi.Router) {
+		r.Use(app.authenticateV1)
+		// routes added in subsequent steps
 	})
 
 	// Serve the embedded React SPA for all other routes
