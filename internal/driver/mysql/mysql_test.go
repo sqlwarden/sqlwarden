@@ -405,10 +405,10 @@ func TestEnsureParams(t *testing.T) {
 }
 
 func containsParam(dsn, param string) bool {
-	idx := strings.IndexByte(dsn, '?')
-	if idx == -1 {
+	_, query, ok := strings.Cut(dsn, "?")
+	if !ok {
 		return false
 	}
-	parts := strings.Split(dsn[idx+1:], "&")
+	parts := strings.Split(query, "&")
 	return slices.Contains(parts, param)
 }
