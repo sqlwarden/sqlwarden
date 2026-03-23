@@ -1,0 +1,1 @@
+ALTER TABLE accounts ADD COLUMN is_superadmin INTEGER NOT NULL DEFAULT 0;
