@@ -9,9 +9,28 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as OrgSlugIndexRouteImport } from './routes/$orgSlug/index'
+import { Route as AdminOrganizationsRouteImport } from './routes/admin/organizations'
+import { Route as AdminInstanceSettingsRouteImport } from './routes/admin/instance-settings'
+import { Route as AdminAuthSettingsRouteImport } from './routes/admin/auth-settings'
+import { Route as AdminAccountsRouteImport } from './routes/admin/accounts'
+import { Route as AdminLayoutRouteImport } from './routes/admin/_layout'
+import { Route as OrgSlugTeamsRouteImport } from './routes/$orgSlug/teams'
+import { Route as OrgSlugSettingsRouteImport } from './routes/$orgSlug/settings'
+import { Route as OrgSlugRolesRouteImport } from './routes/$orgSlug/roles'
+import { Route as OrgSlugMembersRouteImport } from './routes/$orgSlug/members'
+import { Route as OrgSlugLayoutRouteImport } from './routes/$orgSlug/_layout'
+import { Route as OrgSlugWorkspacesWorkspaceIdRouteImport } from './routes/$orgSlug/workspaces/$workspaceId'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -22,35 +41,209 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrgSlugIndexRoute = OrgSlugIndexRouteImport.update({
+  id: '/$orgSlug/',
+  path: '/$orgSlug/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminOrganizationsRoute = AdminOrganizationsRouteImport.update({
+  id: '/admin/organizations',
+  path: '/admin/organizations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminInstanceSettingsRoute = AdminInstanceSettingsRouteImport.update({
+  id: '/admin/instance-settings',
+  path: '/admin/instance-settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminAuthSettingsRoute = AdminAuthSettingsRouteImport.update({
+  id: '/admin/auth-settings',
+  path: '/admin/auth-settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminAccountsRoute = AdminAccountsRouteImport.update({
+  id: '/admin/accounts',
+  path: '/admin/accounts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminLayoutRoute = AdminLayoutRouteImport.update({
+  id: '/admin/_layout',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrgSlugTeamsRoute = OrgSlugTeamsRouteImport.update({
+  id: '/$orgSlug/teams',
+  path: '/$orgSlug/teams',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrgSlugSettingsRoute = OrgSlugSettingsRouteImport.update({
+  id: '/$orgSlug/settings',
+  path: '/$orgSlug/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrgSlugRolesRoute = OrgSlugRolesRouteImport.update({
+  id: '/$orgSlug/roles',
+  path: '/$orgSlug/roles',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrgSlugMembersRoute = OrgSlugMembersRouteImport.update({
+  id: '/$orgSlug/members',
+  path: '/$orgSlug/members',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrgSlugLayoutRoute = OrgSlugLayoutRouteImport.update({
+  id: '/$orgSlug/_layout',
+  path: '/$orgSlug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrgSlugWorkspacesWorkspaceIdRoute =
+  OrgSlugWorkspacesWorkspaceIdRouteImport.update({
+    id: '/$orgSlug/workspaces/$workspaceId',
+    path: '/$orgSlug/workspaces/$workspaceId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/login': typeof LoginRoute
+  '/$orgSlug': typeof OrgSlugLayoutRoute
+  '/$orgSlug/members': typeof OrgSlugMembersRoute
+  '/$orgSlug/roles': typeof OrgSlugRolesRoute
+  '/$orgSlug/settings': typeof OrgSlugSettingsRoute
+  '/$orgSlug/teams': typeof OrgSlugTeamsRoute
+  '/admin': typeof AdminLayoutRoute
+  '/admin/accounts': typeof AdminAccountsRoute
+  '/admin/auth-settings': typeof AdminAuthSettingsRoute
+  '/admin/instance-settings': typeof AdminInstanceSettingsRoute
+  '/admin/organizations': typeof AdminOrganizationsRoute
+  '/$orgSlug/': typeof OrgSlugIndexRoute
+  '/admin/': typeof AdminIndexRoute
+  '/$orgSlug/workspaces/$workspaceId': typeof OrgSlugWorkspacesWorkspaceIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/login': typeof LoginRoute
+  '/$orgSlug': typeof OrgSlugIndexRoute
+  '/$orgSlug/members': typeof OrgSlugMembersRoute
+  '/$orgSlug/roles': typeof OrgSlugRolesRoute
+  '/$orgSlug/settings': typeof OrgSlugSettingsRoute
+  '/$orgSlug/teams': typeof OrgSlugTeamsRoute
+  '/admin': typeof AdminIndexRoute
+  '/admin/accounts': typeof AdminAccountsRoute
+  '/admin/auth-settings': typeof AdminAuthSettingsRoute
+  '/admin/instance-settings': typeof AdminInstanceSettingsRoute
+  '/admin/organizations': typeof AdminOrganizationsRoute
+  '/$orgSlug/workspaces/$workspaceId': typeof OrgSlugWorkspacesWorkspaceIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/login': typeof LoginRoute
+  '/$orgSlug/_layout': typeof OrgSlugLayoutRoute
+  '/$orgSlug/members': typeof OrgSlugMembersRoute
+  '/$orgSlug/roles': typeof OrgSlugRolesRoute
+  '/$orgSlug/settings': typeof OrgSlugSettingsRoute
+  '/$orgSlug/teams': typeof OrgSlugTeamsRoute
+  '/admin/_layout': typeof AdminLayoutRoute
+  '/admin/accounts': typeof AdminAccountsRoute
+  '/admin/auth-settings': typeof AdminAuthSettingsRoute
+  '/admin/instance-settings': typeof AdminInstanceSettingsRoute
+  '/admin/organizations': typeof AdminOrganizationsRoute
+  '/$orgSlug/': typeof OrgSlugIndexRoute
+  '/admin/': typeof AdminIndexRoute
+  '/$orgSlug/workspaces/$workspaceId': typeof OrgSlugWorkspacesWorkspaceIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/login'
+    | '/$orgSlug'
+    | '/$orgSlug/members'
+    | '/$orgSlug/roles'
+    | '/$orgSlug/settings'
+    | '/$orgSlug/teams'
+    | '/admin'
+    | '/admin/accounts'
+    | '/admin/auth-settings'
+    | '/admin/instance-settings'
+    | '/admin/organizations'
+    | '/$orgSlug/'
+    | '/admin/'
+    | '/$orgSlug/workspaces/$workspaceId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about'
-  id: '__root__' | '/' | '/about'
+  to:
+    | '/'
+    | '/about'
+    | '/login'
+    | '/$orgSlug'
+    | '/$orgSlug/members'
+    | '/$orgSlug/roles'
+    | '/$orgSlug/settings'
+    | '/$orgSlug/teams'
+    | '/admin'
+    | '/admin/accounts'
+    | '/admin/auth-settings'
+    | '/admin/instance-settings'
+    | '/admin/organizations'
+    | '/$orgSlug/workspaces/$workspaceId'
+  id:
+    | '__root__'
+    | '/'
+    | '/about'
+    | '/login'
+    | '/$orgSlug/_layout'
+    | '/$orgSlug/members'
+    | '/$orgSlug/roles'
+    | '/$orgSlug/settings'
+    | '/$orgSlug/teams'
+    | '/admin/_layout'
+    | '/admin/accounts'
+    | '/admin/auth-settings'
+    | '/admin/instance-settings'
+    | '/admin/organizations'
+    | '/$orgSlug/'
+    | '/admin/'
+    | '/$orgSlug/workspaces/$workspaceId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  LoginRoute: typeof LoginRoute
+  OrgSlugLayoutRoute: typeof OrgSlugLayoutRoute
+  OrgSlugMembersRoute: typeof OrgSlugMembersRoute
+  OrgSlugRolesRoute: typeof OrgSlugRolesRoute
+  OrgSlugSettingsRoute: typeof OrgSlugSettingsRoute
+  OrgSlugTeamsRoute: typeof OrgSlugTeamsRoute
+  AdminLayoutRoute: typeof AdminLayoutRoute
+  AdminAccountsRoute: typeof AdminAccountsRoute
+  AdminAuthSettingsRoute: typeof AdminAuthSettingsRoute
+  AdminInstanceSettingsRoute: typeof AdminInstanceSettingsRoute
+  AdminOrganizationsRoute: typeof AdminOrganizationsRoute
+  OrgSlugIndexRoute: typeof OrgSlugIndexRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+  OrgSlugWorkspacesWorkspaceIdRoute: typeof OrgSlugWorkspacesWorkspaceIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -65,12 +258,117 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/': {
+      id: '/admin/'
+      path: '/admin'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$orgSlug/': {
+      id: '/$orgSlug/'
+      path: '/$orgSlug'
+      fullPath: '/$orgSlug/'
+      preLoaderRoute: typeof OrgSlugIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/organizations': {
+      id: '/admin/organizations'
+      path: '/admin/organizations'
+      fullPath: '/admin/organizations'
+      preLoaderRoute: typeof AdminOrganizationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/instance-settings': {
+      id: '/admin/instance-settings'
+      path: '/admin/instance-settings'
+      fullPath: '/admin/instance-settings'
+      preLoaderRoute: typeof AdminInstanceSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/auth-settings': {
+      id: '/admin/auth-settings'
+      path: '/admin/auth-settings'
+      fullPath: '/admin/auth-settings'
+      preLoaderRoute: typeof AdminAuthSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/accounts': {
+      id: '/admin/accounts'
+      path: '/admin/accounts'
+      fullPath: '/admin/accounts'
+      preLoaderRoute: typeof AdminAccountsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/_layout': {
+      id: '/admin/_layout'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminLayoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$orgSlug/teams': {
+      id: '/$orgSlug/teams'
+      path: '/$orgSlug/teams'
+      fullPath: '/$orgSlug/teams'
+      preLoaderRoute: typeof OrgSlugTeamsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$orgSlug/settings': {
+      id: '/$orgSlug/settings'
+      path: '/$orgSlug/settings'
+      fullPath: '/$orgSlug/settings'
+      preLoaderRoute: typeof OrgSlugSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$orgSlug/roles': {
+      id: '/$orgSlug/roles'
+      path: '/$orgSlug/roles'
+      fullPath: '/$orgSlug/roles'
+      preLoaderRoute: typeof OrgSlugRolesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$orgSlug/members': {
+      id: '/$orgSlug/members'
+      path: '/$orgSlug/members'
+      fullPath: '/$orgSlug/members'
+      preLoaderRoute: typeof OrgSlugMembersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$orgSlug/_layout': {
+      id: '/$orgSlug/_layout'
+      path: '/$orgSlug'
+      fullPath: '/$orgSlug'
+      preLoaderRoute: typeof OrgSlugLayoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$orgSlug/workspaces/$workspaceId': {
+      id: '/$orgSlug/workspaces/$workspaceId'
+      path: '/$orgSlug/workspaces/$workspaceId'
+      fullPath: '/$orgSlug/workspaces/$workspaceId'
+      preLoaderRoute: typeof OrgSlugWorkspacesWorkspaceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  LoginRoute: LoginRoute,
+  OrgSlugLayoutRoute: OrgSlugLayoutRoute,
+  OrgSlugMembersRoute: OrgSlugMembersRoute,
+  OrgSlugRolesRoute: OrgSlugRolesRoute,
+  OrgSlugSettingsRoute: OrgSlugSettingsRoute,
+  OrgSlugTeamsRoute: OrgSlugTeamsRoute,
+  AdminLayoutRoute: AdminLayoutRoute,
+  AdminAccountsRoute: AdminAccountsRoute,
+  AdminAuthSettingsRoute: AdminAuthSettingsRoute,
+  AdminInstanceSettingsRoute: AdminInstanceSettingsRoute,
+  AdminOrganizationsRoute: AdminOrganizationsRoute,
+  OrgSlugIndexRoute: OrgSlugIndexRoute,
+  AdminIndexRoute: AdminIndexRoute,
+  OrgSlugWorkspacesWorkspaceIdRoute: OrgSlugWorkspacesWorkspaceIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
