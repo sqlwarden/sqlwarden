@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/token"
 )
 
@@ -402,5 +403,76 @@ func TestRequireOrgRole_Admin(t *testing.T) {
 				t.Fatalf("expected %d, got %d", tt.wantStatus, rec.Code)
 			}
 		})
+	}
+}
+
+func TestRequireSuperadmin_NoAccount(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+
+	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/test", nil)
+	rec := httptest.NewRecorder()
+	app.requireSuperadmin(finalHandler).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for missing account, got %d", rec.Code)
+	}
+}
+
+func TestRequireSuperadmin_NonSuperadmin(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+
+	regularAccount := database.Account{
+		ID:           "regular-account-id",
+		Email:        "regular@example.com",
+		Name:         "Regular User",
+		IsActive:     true,
+		IsSuperadmin: false,
+	}
+
+	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/test", nil)
+	req = contextSetAccount(req, regularAccount)
+	rec := httptest.NewRecorder()
+	app.requireSuperadmin(finalHandler).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for non-superadmin, got %d", rec.Code)
+	}
+}
+
+func TestRequireSuperadmin_Superadmin(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+
+	superadminAccount := database.Account{
+		ID:           "superadmin-account-id",
+		Email:        "superadmin@example.com",
+		Name:         "Super Admin",
+		IsActive:     true,
+		IsSuperadmin: true,
+	}
+
+	var reached bool
+	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/test", nil)
+	req = contextSetAccount(req, superadminAccount)
+	rec := httptest.NewRecorder()
+	app.requireSuperadmin(finalHandler).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for superadmin, got %d", rec.Code)
+	}
+	if !reached {
+		t.Fatal("expected next handler to be called for superadmin")
 	}
 }

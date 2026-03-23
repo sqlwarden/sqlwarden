@@ -161,6 +161,18 @@ func (app *application) requireOrgRole(role string) func(http.Handler) http.Hand
 	}
 }
 
+// requireSuperadmin returns 403 if the authenticated account is not a superadmin.
+func (app *application) requireSuperadmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		account, ok := contextGetAccount(r)
+		if !ok || !account.IsSuperadmin {
+			app.errorMessage(w, r, http.StatusForbidden, "superadmin access required", nil)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // requirePermission returns middleware that calls enforcer.Can() for a fixed obj+act.
 func (app *application) requirePermission(obj, act string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
