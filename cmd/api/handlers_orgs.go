@@ -81,14 +81,13 @@ func (app *application) getOrg(w http.ResponseWriter, r *http.Request) {
 func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
 	tenant, _ := contextGetTenant(r)
 
-	members, err := app.db.GetTenantMembers(tenant.ID)
+	members, err := app.db.GetTenantMembersWithAccounts(tenant.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	err = response.JSON(w, http.StatusOK, members)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, members); err != nil {
 		app.serverError(w, r, err)
 	}
 }

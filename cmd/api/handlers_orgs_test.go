@@ -77,6 +77,14 @@ func TestListOrgMembers(t *testing.T) {
 	if len(members) < 1 {
 		t.Fatal("expected at least 1 member (the owner)")
 	}
+	// Enriched fields from GetTenantMembersWithAccounts.
+	first := members[0]
+	if _, ok := first["account_name"]; !ok {
+		t.Error("expected account_name in member response")
+	}
+	if _, ok := first["account_email"]; !ok {
+		t.Error("expected account_email in member response")
+	}
 }
 
 func TestAddOrgMember(t *testing.T) {

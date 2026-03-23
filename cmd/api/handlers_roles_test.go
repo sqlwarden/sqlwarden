@@ -13,15 +13,20 @@ func TestCreateAndListRoles(t *testing.T) {
 
 	_, tok, slug := registerAndLogin(t, app, "role-create@example.com", "Role Create", "securepass99")
 
-	// Create a role.
+	// Create a role with actions.
 	req := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/roles", map[string]any{
 		"name":        "analyst",
 		"description": "Read-only analyst role",
+		"actions":     []string{"query", "connect"},
 	})
 	req.Header.Set("Authorization", "Bearer "+tok)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusCreated)
 	assert.Equal(t, res.BodyFields["name"].(string), "analyst")
+	// Response must contain actions array.
+	if _, ok := res.BodyFields["actions"]; !ok {
+		t.Error("expected actions in createRole response")
+	}
 
 	// List roles.
 	listReq := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/roles", nil)
@@ -35,6 +40,25 @@ func TestCreateAndListRoles(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, len(roles), 1)
+	// listRoles response must include actions array.
+	if _, ok := roles[0]["actions"]; !ok {
+		t.Error("expected actions field in listRoles response")
+	}
+}
+
+func TestCreateRoleInvalidAction(t *testing.T) {
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "role-badaction@example.com", "Role BadAction", "securepass99")
+
+	// Create a role with an invalid action — should return 422.
+	req := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/roles", map[string]any{
+		"name":    "bad-role",
+		"actions": []string{"delete_everything"},
+	})
+	req.Header.Set("Authorization", "Bearer "+tok)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
 }
 
 func TestGetAndDeleteRole(t *testing.T) {

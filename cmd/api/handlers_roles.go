@@ -4,11 +4,19 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
 )
+
+// WorkspaceRoleWithActions is a role enriched with its associated enforcer actions.
+type WorkspaceRoleWithActions struct {
+	ID          string   `json:"id"`
+	TenantID    string   `json:"tenant_id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Actions     []string `json:"actions"`
+}
 
 func (app *application) listRoles(w http.ResponseWriter, r *http.Request) {
 	tenant, _ := contextGetTenant(r)
@@ -19,12 +27,19 @@ func (app *application) listRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if roles == nil {
-		roles = []database.WorkspaceRole{}
+	result := make([]WorkspaceRoleWithActions, 0, len(roles))
+	for _, role := range roles {
+		actions := app.enforcer.ListRoleActions(role.ID)
+		result = append(result, WorkspaceRoleWithActions{
+			ID:          role.ID,
+			TenantID:    role.TenantID,
+			Name:        role.Name,
+			Description: role.Description,
+			Actions:     actions,
+		})
 	}
 
-	err = response.JSON(w, http.StatusOK, roles)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, result); err != nil {
 		app.serverError(w, r, err)
 	}
 }
@@ -33,8 +48,9 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 	tenant, _ := contextGetTenant(r)
 
 	var input struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Actions     []string `json:"actions"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -52,14 +68,35 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	validActions := map[string]bool{"connect": true, "query": true, "execute": true, "manage": true}
+	for _, action := range input.Actions {
+		if !validActions[action] {
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, "invalid action: "+action, nil)
+			return
+		}
+	}
+
 	role, err := app.db.InsertWorkspaceRole(tenant.ID, input.Name, input.Description)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	err = response.JSON(w, http.StatusCreated, role)
-	if err != nil {
+	for _, action := range input.Actions {
+		if err := app.enforcer.AddRoleAction(role.ID, tenant.Slug, action); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
+
+	result := WorkspaceRoleWithActions{
+		ID:          role.ID,
+		TenantID:    role.TenantID,
+		Name:        role.Name,
+		Description: role.Description,
+		Actions:     input.Actions,
+	}
+	if err := response.JSON(w, http.StatusCreated, result); err != nil {
 		app.serverError(w, r, err)
 	}
 }
