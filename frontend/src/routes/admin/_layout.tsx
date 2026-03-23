@@ -16,7 +16,7 @@ function AdminGuard() {
     if (isLoading) return
     if (!isAuthenticated) { navigate({ to: '/login' }); return }
     if (!user?.is_superadmin) { navigate({ to: '/' }); return }
-  }, [isLoading, isAuthenticated, user])
+  }, [isLoading, isAuthenticated, user, navigate])
 
   if (isLoading || !isAuthenticated || !user?.is_superadmin) {
     return <div className="min-h-screen bg-zinc-950" />

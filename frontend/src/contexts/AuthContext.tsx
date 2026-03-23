@@ -1,6 +1,5 @@
-import axios from 'axios'
 import { createContext, useContext, useEffect, useReducer, type ReactNode } from 'react'
-import { api, setAccessToken } from '#/lib/api/client'
+import { authApi } from '#/lib/api/auth'
 import type { Account } from '#/lib/types/auth'
 
 interface AuthState {
@@ -36,26 +35,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // On mount: attempt to restore session via httpOnly refresh cookie
   useEffect(() => {
-    axios
-      .post<{ access_token: string }>('/api/v1/auth/refresh', {}, { withCredentials: true })
-      .then(async res => {
-        setAccessToken(res.data.access_token)
-        const userRes = await api.get<Account>('/user')
-        dispatch({ type: 'AUTHENTICATED', user: userRes.data })
+    authApi.restoreSession()
+      .then(user => {
+        if (user) {
+          dispatch({ type: 'AUTHENTICATED', user })
+        } else {
+          dispatch({ type: 'UNAUTHENTICATED' })
+        }
       })
-      .catch(() => dispatch({ type: 'UNAUTHENTICATED' }))
   }, [])
 
   const login = async (email: string, password: string) => {
-    const res = await api.post<{ access_token: string }>('/auth/login', { email, password })
-    setAccessToken(res.data.access_token)
-    const userRes = await api.get<Account>('/user')
-    dispatch({ type: 'AUTHENTICATED', user: userRes.data })
+    const user = await authApi.login(email, password)
+    dispatch({ type: 'AUTHENTICATED', user })
   }
 
   const logout = async () => {
-    await api.post('/auth/logout').catch(() => {})
-    setAccessToken(null)
+    await authApi.logout()
     dispatch({ type: 'UNAUTHENTICATED' })
   }
 
