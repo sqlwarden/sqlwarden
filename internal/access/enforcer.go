@@ -271,3 +271,26 @@ func (enf *Enforcer) ListCustomRoleAssignees(orgSlug, roleID string) ([]string, 
 	users := enf.e.GetUsersForRoleInDomain("role:"+roleID, orgSlug)
 	return users, nil
 }
+
+// ListRoleActions returns the action strings stored in Casbin for the given role ID.
+// Policy format: (sub="role:"+roleID, dom=orgSlug, obj=*, act=action)
+func (enf *Enforcer) ListRoleActions(roleID string) []string {
+	// GetFilteredPolicy(fieldIndex, fieldValues...) filters by value at fieldIndex
+	policies, err := enf.e.GetFilteredPolicy(0, "role:"+roleID)
+	if err != nil {
+		return []string{}
+	}
+	actions := make([]string, 0, len(policies))
+	for _, p := range policies {
+		if len(p) >= 4 {
+			actions = append(actions, p[3]) // act is index 3
+		}
+	}
+	return actions
+}
+
+// AddRoleAction adds a single action policy for a custom role within an org.
+func (enf *Enforcer) AddRoleAction(roleID, orgSlug, action string) error {
+	_, err := enf.e.AddPolicy("role:"+roleID, orgSlug, "*", action)
+	return err
+}
