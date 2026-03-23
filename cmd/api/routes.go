@@ -35,11 +35,20 @@ func (app *application) routes() http.Handler {
 
 		r.Get("/orgs/{org_slug}/auth-info", app.getOrgAuthInfo)
 
+		r.Route("/admin", func(r chi.Router) {
+			r.Use(app.requireAccount, app.requireSuperadmin)
+			r.Get("/orgs", app.adminListOrgs)
+			r.Post("/orgs", app.createOrg)
+			r.Get("/accounts", app.adminListAccounts)
+			r.Get("/settings", app.getInstanceSettings)
+			r.Patch("/settings", app.updateInstanceSetting)
+		})
+
 		r.Route("/orgs/{org_slug}", func(r chi.Router) {
 			r.Use(app.requireAccount, app.orgCtx)
 
 			r.Get("/", app.getOrg)
-			r.Patch("/", app.updateOrg)
+			r.With(app.requireOrgRole("owner")).Patch("/", app.updateOrg)
 
 			r.Route("/members", func(r chi.Router) {
 				r.With(app.requirePermission("members", "read")).Get("/", app.listOrgMembers)
