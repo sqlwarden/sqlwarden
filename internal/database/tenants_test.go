@@ -242,6 +242,139 @@ func TestTenantIDPConfig(t *testing.T) {
 	}
 }
 
+func TestGetTenantMembersWithAccounts(t *testing.T) {
+	drivers := []string{"postgres", "sqlite"}
+
+	for _, driver := range drivers {
+		t.Run(driver+": Returns members with joined account fields", func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			pw := "hashed"
+			account1, err := db.InsertAccount("mwa1@example.com", "Member WA One", &pw)
+			assert.Nil(t, err)
+			account2, err := db.InsertAccount("mwa2@example.com", "Member WA Two", &pw)
+			assert.Nil(t, err)
+
+			tenant, err := db.InsertTenant("mwa-test", "MWA Test")
+			assert.Nil(t, err)
+
+			err = db.AddTenantMember(tenant.ID, account1.ID, "owner")
+			assert.Nil(t, err)
+			err = db.AddTenantMember(tenant.ID, account2.ID, "member")
+			assert.Nil(t, err)
+
+			members, err := db.GetTenantMembersWithAccounts(tenant.ID)
+			assert.Nil(t, err)
+			assert.Equal(t, len(members), 2)
+
+			// Collect by account ID to check fields independent of ordering
+			byID := make(map[string]TenantMemberWithAccount, len(members))
+			for _, m := range members {
+				byID[m.AccountID] = m
+			}
+
+			m1, ok1 := byID[account1.ID]
+			assert.True(t, ok1)
+			assert.Equal(t, m1.AccountName, "Member WA One")
+			assert.Equal(t, m1.AccountEmail, "mwa1@example.com")
+			assert.Equal(t, m1.Role, "owner")
+			assert.Equal(t, m1.TenantID, tenant.ID)
+
+			m2, ok2 := byID[account2.ID]
+			assert.True(t, ok2)
+			assert.Equal(t, m2.AccountName, "Member WA Two")
+			assert.Equal(t, m2.Role, "member")
+		})
+
+		t.Run(driver+": Returns empty slice for tenant with no members", func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			tenant, err := db.InsertTenant("empty-mwa", "Empty MWA")
+			assert.Nil(t, err)
+
+			members, err := db.GetTenantMembersWithAccounts(tenant.ID)
+			assert.Nil(t, err)
+			assert.Equal(t, len(members), 0)
+		})
+	}
+}
+
+func TestListAllTenants(t *testing.T) {
+	drivers := []string{"postgres", "sqlite"}
+
+	for _, driver := range drivers {
+		t.Run(driver+": Returns all tenants with total count", func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			_, err := db.InsertTenant("lat-a", "LAT A")
+			assert.Nil(t, err)
+			_, err = db.InsertTenant("lat-b", "LAT B")
+			assert.Nil(t, err)
+			_, err = db.InsertTenant("lat-c", "LAT C")
+			assert.Nil(t, err)
+
+			tenants, total, err := db.ListAllTenants(1, 10)
+			assert.Nil(t, err)
+			assert.Equal(t, total, 3)
+			assert.Equal(t, len(tenants), 3)
+		})
+
+		t.Run(driver+": Pagination limits results", func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			_, err := db.InsertTenant("pag-a", "Pag A")
+			assert.Nil(t, err)
+			_, err = db.InsertTenant("pag-b", "Pag B")
+			assert.Nil(t, err)
+			_, err = db.InsertTenant("pag-c", "Pag C")
+			assert.Nil(t, err)
+
+			tenants, total, err := db.ListAllTenants(1, 2)
+			assert.Nil(t, err)
+			assert.Equal(t, total, 3)
+			assert.Equal(t, len(tenants), 2)
+
+			tenants2, total2, err := db.ListAllTenants(2, 2)
+			assert.Nil(t, err)
+			assert.Equal(t, total2, 3)
+			assert.Equal(t, len(tenants2), 1)
+		})
+
+		t.Run(driver+": Empty returns zero count", func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			tenants, total, err := db.ListAllTenants(1, 10)
+			assert.Nil(t, err)
+			assert.Equal(t, total, 0)
+			assert.Equal(t, len(tenants), 0)
+		})
+	}
+}
+
+func TestUpdateTenant(t *testing.T) {
+	drivers := []string{"postgres", "sqlite"}
+
+	for _, driver := range drivers {
+		t.Run(driver+": Updates tenant name", func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			tenant, err := db.InsertTenant("update-me", "Original Name")
+			assert.Nil(t, err)
+			assert.Equal(t, tenant.Name, "Original Name")
+
+			tenant.Name = "Updated Name"
+			err = db.UpdateTenant(&tenant)
+			assert.Nil(t, err)
+
+			fetched, found, err := db.GetTenant(tenant.ID)
+			assert.Nil(t, err)
+			assert.True(t, found)
+			assert.Equal(t, fetched.Name, "Updated Name")
+			assert.Equal(t, fetched.Slug, "update-me")
+		})
+	}
+}
+
 func TestTenantCascadeDelete(t *testing.T) {
 	drivers := []string{"postgres", "sqlite"}
 

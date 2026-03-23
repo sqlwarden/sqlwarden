@@ -249,6 +249,87 @@ func TestCustomRole(t *testing.T) {
 	}
 }
 
+func TestListRoleActions(t *testing.T) {
+	enf := newTestEnforcer(t)
+
+	slug := "acme"
+
+	// Seed a custom role with two actions via SeedCustomRole (which uses workspace:* prefix).
+	// ListRoleActions reads all policies where sub == "role:"+roleID so both actions appear.
+	err := enf.SeedCustomRole(slug, "analyst", "ws1", []string{"query", "connect"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	actions := enf.ListRoleActions("analyst")
+	if len(actions) != 2 {
+		t.Errorf("expected 2 actions, got %d: %v", len(actions), actions)
+	}
+
+	// Verify both expected actions are present
+	found := make(map[string]bool)
+	for _, a := range actions {
+		found[a] = true
+	}
+	if !found["query"] {
+		t.Error("expected 'query' in role actions")
+	}
+	if !found["connect"] {
+		t.Error("expected 'connect' in role actions")
+	}
+}
+
+func TestListRoleActionsEmpty(t *testing.T) {
+	enf := newTestEnforcer(t)
+
+	actions := enf.ListRoleActions("nonexistent-role")
+	if len(actions) != 0 {
+		t.Errorf("expected 0 actions for nonexistent role, got %d", len(actions))
+	}
+}
+
+func TestAddRoleAction(t *testing.T) {
+	enf := newTestEnforcer(t)
+
+	slug := "acme"
+	roleID := "analyst"
+
+	err := enf.AddRoleAction(roleID, slug, "query")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// AddRoleAction stores (role:roleID, slug, *, action); verify via ListRoleActions
+	actions := enf.ListRoleActions(roleID)
+	if len(actions) != 1 {
+		t.Errorf("expected 1 action after AddRoleAction, got %d", len(actions))
+	}
+	if actions[0] != "query" {
+		t.Errorf("expected action 'query', got %q", actions[0])
+	}
+}
+
+func TestAddRoleActionMultiple(t *testing.T) {
+	enf := newTestEnforcer(t)
+
+	slug := "acme"
+	roleID := "writer"
+
+	err := enf.AddRoleAction(roleID, slug, "query")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = enf.AddRoleAction(roleID, slug, "execute")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	actions := enf.ListRoleActions(roleID)
+	if len(actions) != 2 {
+		t.Errorf("expected 2 actions, got %d: %v", len(actions), actions)
+	}
+}
+
 func TestSetOrgRole(t *testing.T) {
 	enf := newTestEnforcer(t)
 

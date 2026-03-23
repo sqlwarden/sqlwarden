@@ -191,3 +191,79 @@ func TestInsertAccountDuplicateEmail(t *testing.T) {
 		})
 	}
 }
+
+func TestIsSuperadminDefaultsFalse(t *testing.T) {
+	drivers := []string{"postgres", "sqlite"}
+
+	for _, driver := range drivers {
+		t.Run(driver+": IsSuperadmin defaults to false", func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			pw := "hashed"
+			account, err := db.InsertAccount("superadmin-test@example.com", "Super Test", &pw)
+			assert.Nil(t, err)
+			assert.False(t, account.IsSuperadmin)
+
+			fetched, found, err := db.GetAccount(account.ID)
+			assert.Nil(t, err)
+			assert.True(t, found)
+			assert.False(t, fetched.IsSuperadmin)
+		})
+	}
+}
+
+func TestListAllAccounts(t *testing.T) {
+	drivers := []string{"postgres", "sqlite"}
+
+	for _, driver := range drivers {
+		t.Run(driver+": Returns paginated accounts with total count", func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			pw := "hashed"
+			_, err := db.InsertAccount("list1@example.com", "List One", &pw)
+			assert.Nil(t, err)
+			_, err = db.InsertAccount("list2@example.com", "List Two", &pw)
+			assert.Nil(t, err)
+			_, err = db.InsertAccount("list3@example.com", "List Three", &pw)
+			assert.Nil(t, err)
+
+			accounts, total, err := db.ListAllAccounts(1, 10)
+			assert.Nil(t, err)
+			assert.Equal(t, total, 3)
+			assert.Equal(t, len(accounts), 3)
+		})
+
+		t.Run(driver+": Pagination limits results", func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			pw := "hashed"
+			_, err := db.InsertAccount("page1@example.com", "Page One", &pw)
+			assert.Nil(t, err)
+			_, err = db.InsertAccount("page2@example.com", "Page Two", &pw)
+			assert.Nil(t, err)
+			_, err = db.InsertAccount("page3@example.com", "Page Three", &pw)
+			assert.Nil(t, err)
+
+			accounts, total, err := db.ListAllAccounts(1, 2)
+			assert.Nil(t, err)
+			assert.Equal(t, total, 3)
+			assert.Equal(t, len(accounts), 2)
+
+			// page 2 has the remaining 1
+			accounts2, total2, err := db.ListAllAccounts(2, 2)
+			assert.Nil(t, err)
+			assert.Equal(t, total2, 3)
+			assert.Equal(t, len(accounts2), 1)
+		})
+
+		t.Run(driver+": Empty accounts table returns zero count", func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			// newTestDB does not insert into the accounts table
+			accounts, total, err := db.ListAllAccounts(1, 10)
+			assert.Nil(t, err)
+			assert.Equal(t, total, 0)
+			assert.Equal(t, len(accounts), 0)
+		})
+	}
+}
