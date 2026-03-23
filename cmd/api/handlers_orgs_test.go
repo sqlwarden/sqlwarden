@@ -169,6 +169,54 @@ func TestRemoveOrgMember(t *testing.T) {
 	assert.Equal(t, res2.StatusCode, http.StatusUnprocessableEntity)
 }
 
+func TestGetOrgAuthInfo(t *testing.T) {
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "authinfo@example.com", "AuthInfo User", "securepass99")
+	_ = tok
+
+	// Known org — has_sso should be false (no IDP configured).
+	req := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/auth-info", nil)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	hasSSOVal, ok := res.BodyFields["has_sso"]
+	if !ok {
+		t.Fatal("expected has_sso in response")
+	}
+	assert.Equal(t, hasSSOVal.(bool), false)
+	if _, ok := res.BodyFields["sso_type"]; !ok {
+		t.Fatal("expected sso_type key in response")
+	}
+
+	// Unknown slug — should return 404.
+	req2 := newTestRequest(t, http.MethodGet, "/api/v1/orgs/nonexistent-org/auth-info", nil)
+	res2 := send(t, req2, app.routes())
+	assert.Equal(t, res2.StatusCode, http.StatusNotFound)
+}
+
+func TestUpdateOrg(t *testing.T) {
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "updateorg@example.com", "UpdateOrg User", "securepass99")
+
+	// Empty name — should return 422.
+	req := newTestRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug, map[string]any{
+		"name": "",
+	})
+	req.Header.Set("Authorization", "Bearer "+tok)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+
+	// Valid name — should return 200 with updated name.
+	req2 := newTestRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug, map[string]any{
+		"name": "Updated Org Name",
+	})
+	req2.Header.Set("Authorization", "Bearer "+tok)
+	res2 := send(t, req2, app.routes())
+	assert.Equal(t, res2.StatusCode, http.StatusOK)
+	assert.Equal(t, res2.BodyFields["name"].(string), "Updated Org Name")
+}
+
 func TestOrgPermissionEnforcement(t *testing.T) {
 	app := newTestApp(t)
 

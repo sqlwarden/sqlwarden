@@ -33,10 +33,13 @@ func (app *application) routes() http.Handler {
 			r.Get("/user/orgs", app.getAccountOrgs)
 		})
 
+		r.Get("/orgs/{org_slug}/auth-info", app.getOrgAuthInfo)
+
 		r.Route("/orgs/{org_slug}", func(r chi.Router) {
 			r.Use(app.requireAccount, app.orgCtx)
 
 			r.Get("/", app.getOrg)
+			r.Patch("/", app.updateOrg)
 
 			r.Route("/members", func(r chi.Router) {
 				r.With(app.requirePermission("members", "read")).Get("/", app.listOrgMembers)

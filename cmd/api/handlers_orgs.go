@@ -9,6 +9,66 @@ import (
 	"github.com/sqlwarden/internal/validator"
 )
 
+type orgAuthInfoResponse struct {
+	HasSSO  bool    `json:"has_sso"`
+	SSOType *string `json:"sso_type"`
+}
+
+func (app *application) getOrgAuthInfo(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "org_slug")
+
+	tenant, ok, err := app.db.GetTenantBySlug(slug)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !ok {
+		app.notFound(w, r)
+		return
+	}
+
+	idpConfig, hasConfig, err := app.db.GetTenantIDPConfig(tenant.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	resp := orgAuthInfoResponse{HasSSO: hasConfig, SSOType: nil}
+	if hasConfig {
+		resp.SSOType = &idpConfig.Provider
+	}
+
+	if err := response.JSON(w, http.StatusOK, resp); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) updateOrg(w http.ResponseWriter, r *http.Request) {
+	tenant, _ := contextGetTenant(r)
+
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := request.DecodeJSON(w, r, &input); err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+	if input.Name == "" {
+		app.errorMessage(w, r, http.StatusUnprocessableEntity, "name is required", nil)
+		return
+	}
+
+	tenant.Name = input.Name
+	if err := app.db.UpdateTenant(&tenant); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	if err := response.JSON(w, http.StatusOK, tenant); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 func (app *application) getOrg(w http.ResponseWriter, r *http.Request) {
 	tenant, _ := contextGetTenant(r)
 
