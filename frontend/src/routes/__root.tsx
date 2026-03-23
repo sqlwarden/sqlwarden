@@ -1,37 +1,26 @@
-import { Outlet, createRootRoute } from '@tanstack/react-router'
+import { createRootRoute, Outlet } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
-import { TanStackDevtools } from '@tanstack/react-devtools'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { ThemeProvider } from '#/components/theme-provider'
-import Header from '#/components/Header'
-import Footer from '#/components/Footer'
+import { AuthProvider } from '#/contexts/AuthContext'
 
 import '../styles.css'
 
-export const Route = createRootRoute({
-  component: RootComponent,
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 })
 
-function RootComponent() {
-  return (
+export const Route = createRootRoute({
+  component: () => (
     <ThemeProvider defaultTheme="system" storageKey="theme">
-      <div className="flex min-h-screen flex-col">
-        <Header />
-        <div className="flex-1">
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
           <Outlet />
-        </div>
-        <Footer />
-      </div>
-      <TanStackDevtools
-        config={{
-          position: 'bottom-right',
-        }}
-        plugins={[
-          {
-            name: 'TanStack Router',
-            render: <TanStackRouterDevtoolsPanel />,
-          },
-        ]}
-      />
+          <TanStackRouterDevtoolsPanel />
+          <ReactQueryDevtools initialIsOpen={false} />
+        </AuthProvider>
+      </QueryClientProvider>
     </ThemeProvider>
-  )
-}
+  ),
+})
