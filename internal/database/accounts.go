@@ -8,13 +8,14 @@ import (
 )
 
 type Account struct {
-	ID        string    `bun:",pk"                    json:"id"`
-	Email     string    `bun:",notnull,unique"        json:"email"`
-	Name      string    `bun:",notnull"               json:"name"`
-	Password  *string   `bun:",nullzero"              json:"-"`
-	IsActive  bool      `bun:",notnull,default:true"  json:"is_active"`
-	CreatedAt time.Time `bun:",notnull"               json:"created_at"`
-	UpdatedAt time.Time `bun:",notnull"               json:"updated_at"`
+	ID           string    `bun:",pk"                    json:"id"`
+	Email        string    `bun:",notnull,unique"        json:"email"`
+	Name         string    `bun:",notnull"               json:"name"`
+	Password     *string   `bun:",nullzero"              json:"-"`
+	IsActive     bool      `bun:",notnull,default:true"  json:"is_active"`
+	IsSuperadmin bool      `bun:",notnull"               json:"is_superadmin"`
+	CreatedAt    time.Time `bun:",notnull"               json:"created_at"`
+	UpdatedAt    time.Time `bun:",notnull"               json:"updated_at"`
 }
 
 func (db *DB) InsertAccount(email, name string, password *string) (Account, error) {
