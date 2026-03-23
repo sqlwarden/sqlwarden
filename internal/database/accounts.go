@@ -109,3 +109,24 @@ func (db *DB) DeactivateAccount(id string) error {
 
 	return err
 }
+
+func (db *DB) ListAllAccounts(page, limit int) ([]Account, int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	count, err := db.NewSelect().Model((*Account)(nil)).Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var accounts []Account
+	err = db.NewSelect().Model(&accounts).
+		OrderExpr("created_at DESC").
+		Limit(limit).Offset((page - 1) * limit).
+		Scan(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return accounts, count, nil
+}

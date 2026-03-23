@@ -37,6 +37,17 @@ type TenantMember struct {
 	CreatedAt time.Time `bun:",notnull" json:"created_at"`
 }
 
+// TenantMemberWithAccount enriches TenantMember with account name and email for list views.
+type TenantMemberWithAccount struct {
+	TenantID  string    `bun:"tenant_id"  json:"tenant_id"`
+	AccountID string    `bun:"account_id" json:"account_id"`
+	Role      string    `bun:"role"       json:"role"`
+	CreatedAt time.Time `bun:"created_at" json:"created_at"`
+	// Joined fields from accounts
+	AccountName  string `bun:"account_name"  json:"account_name"`
+	AccountEmail string `bun:"account_email" json:"account_email"`
+}
+
 func (db *DB) InsertTenant(slug, name string) (Tenant, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
@@ -253,5 +264,49 @@ func (db *DB) DeleteTenantIDPConfig(tenantID string) error {
 		Where("tenant_id = ?", tenantID).
 		Exec(ctx)
 
+	return err
+}
+
+func (db *DB) GetTenantMembersWithAccounts(tenantID string) ([]TenantMemberWithAccount, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	var members []TenantMemberWithAccount
+	err := db.NewSelect().
+		TableExpr("tenant_members AS tm").
+		ColumnExpr("tm.tenant_id, tm.account_id, tm.role, tm.created_at, a.name AS account_name, a.email AS account_email").
+		Join("JOIN accounts AS a ON a.id = tm.account_id").
+		Where("tm.tenant_id = ?", tenantID).
+		Scan(ctx, &members)
+	return members, err
+}
+
+func (db *DB) ListAllTenants(page, limit int) ([]Tenant, int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	count, err := db.NewSelect().Model((*Tenant)(nil)).Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var tenants []Tenant
+	err = db.NewSelect().Model(&tenants).
+		OrderExpr("created_at DESC").
+		Limit(limit).Offset((page - 1) * limit).
+		Scan(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return tenants, count, nil
+}
+
+func (db *DB) UpdateTenant(tenant *Tenant) error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	tenant.UpdatedAt = time.Now()
+	_, err := db.NewUpdate().Model(tenant).Column("name", "updated_at").WherePK().Exec(ctx)
 	return err
 }
