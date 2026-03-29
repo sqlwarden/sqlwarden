@@ -178,11 +178,12 @@ func send(t *testing.T, req *http.Request, h http.Handler) testResponse {
 	fields := map[string]any{}
 
 	if len(resBody) > 0 {
-		err := json.Unmarshal(resBody, &fields)
-		if err != nil {
-			// Not a JSON object, might be an array or other type
-			// Don't fail here, let the test handle it
-		}
+		json.Unmarshal(resBody, &fields)
+		// err := json.Unmarshal(resBody, &fields)
+		// if err != nil {
+		// 	// Not a JSON object, might be an array or other type
+		// 	// Don't fail here, let the test handle it
+		// }
 	}
 
 	return testResponse{
