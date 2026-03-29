@@ -8,10 +8,10 @@ import (
 )
 
 func TestRoutes(t *testing.T) {
-	t.Run("Sends a 404 response for non-existent routes", func(t *testing.T) {
+	t.Run("Sends a 404 response for non-existent API routes", func(t *testing.T) {
 		app := newTestApplication(t)
 
-		req := newTestRequest(t, http.MethodGet, "/nonexistent", nil)
+		req := newTestRequest(t, http.MethodGet, "/api/nonexistent", nil)
 
 		res := send(t, req, app.routes())
 		assert.Equal(t, res.StatusCode, http.StatusNotFound)
@@ -21,7 +21,7 @@ func TestRoutes(t *testing.T) {
 	t.Run("Sends a 405 response for routes with a matching route pattern but no matching HTTP method", func(t *testing.T) {
 		app := newTestApplication(t)
 
-		req := newTestRequest(t, http.MethodTrace, "/status", nil)
+		req := newTestRequest(t, http.MethodTrace, "/api/status", nil)
 
 		res := send(t, req, app.routes())
 		assert.Equal(t, res.StatusCode, http.StatusMethodNotAllowed)

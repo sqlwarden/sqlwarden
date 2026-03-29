@@ -13,7 +13,7 @@ func TestStatus(t *testing.T) {
 	t.Run("GET renders the status response", func(t *testing.T) {
 		app := newTestApplication(t)
 
-		req := newTestRequest(t, http.MethodGet, "/status", nil)
+		req := newTestRequest(t, http.MethodGet, "/api/status", nil)
 
 		res := send(t, req, app.routes())
 		assert.Equal(t, res.StatusCode, http.StatusOK)
@@ -25,7 +25,7 @@ func TestCreateUser(t *testing.T) {
 	t.Run("Creates a new user", func(t *testing.T) {
 		app := newTestApplication(t)
 
-		req := newTestRequest(t, http.MethodPost, "/users", map[string]any{
+		req := newTestRequest(t, http.MethodPost, "/api/users", map[string]any{
 			"Email":    "zara@example.com",
 			"Password": "Zara_pw_fake00",
 		})
@@ -88,7 +88,7 @@ func TestCreateUser(t *testing.T) {
 			t.Run(tt.testName, func(t *testing.T) {
 				app := newTestApplication(t)
 
-				req := newTestRequest(t, http.MethodPost, "/users", map[string]any{
+				req := newTestRequest(t, http.MethodPost, "/api/users", map[string]any{
 					"Email":    tt.userEmail,
 					"Password": tt.userPassword,
 				})
@@ -104,7 +104,7 @@ func TestCreateAuthenticationToken(t *testing.T) {
 	t.Run("Creates an authentication token for a valid user", func(t *testing.T) {
 		app := newTestApplication(t)
 
-		req := newTestRequest(t, http.MethodPost, "/authentication-tokens", map[string]any{
+		req := newTestRequest(t, http.MethodPost, "/api/authentication-tokens", map[string]any{
 			"Email":    testUsers["alice"].email,
 			"Password": testUsers["alice"].password,
 		})
@@ -152,7 +152,7 @@ func TestCreateAuthenticationToken(t *testing.T) {
 			t.Run(tt.testName, func(t *testing.T) {
 				app := newTestApplication(t)
 
-				req := newTestRequest(t, http.MethodPost, "/authentication-tokens", map[string]any{
+				req := newTestRequest(t, http.MethodPost, "/api/authentication-tokens", map[string]any{
 					"Email":    tt.userEmail,
 					"Password": tt.userPassword,
 				})
@@ -168,7 +168,7 @@ func TestRestricted(t *testing.T) {
 	t.Run("Unauthenticated users get a 401 response and error message", func(t *testing.T) {
 		app := newTestApplication(t)
 
-		req := newTestRequest(t, http.MethodGet, "/restricted", nil)
+		req := newTestRequest(t, http.MethodGet, "/api/restricted", nil)
 
 		res := send(t, req, app.routes())
 		assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
@@ -183,7 +183,7 @@ func TestRestricted(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		req := newTestRequest(t, http.MethodGet, "/restricted", nil)
+		req := newTestRequest(t, http.MethodGet, "/api/restricted", nil)
 		req.Header.Set("Authorization", "Bearer "+jwt)
 
 		res := send(t, req, app.routes())
@@ -196,7 +196,7 @@ func TestGetUsers(t *testing.T) {
 	t.Run("returns all users", func(t *testing.T) {
 		app := newTestApplication(t)
 
-		req := newTestRequest(t, http.MethodGet, "/users", nil)
+		req := newTestRequest(t, http.MethodGet, "/api/users", nil)
 		res := send(t, req, app.routes())
 
 		assert.Equal(t, res.StatusCode, http.StatusOK)
@@ -219,7 +219,7 @@ func TestGetUsers(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		req := newTestRequest(t, http.MethodGet, "/users", nil)
+		req := newTestRequest(t, http.MethodGet, "/api/users", nil)
 		res := send(t, req, app.routes())
 
 		assert.Equal(t, res.StatusCode, http.StatusOK)
@@ -252,7 +252,7 @@ func TestGetUsers(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		req := newTestRequest(t, http.MethodGet, "/users", nil)
+		req := newTestRequest(t, http.MethodGet, "/api/users", nil)
 		res := send(t, req, app.routes())
 
 		assert.Equal(t, res.StatusCode, http.StatusOK)
