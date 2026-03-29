@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.0](https://github.com/sqlwarden/sqlwarden/compare/v0.4.0...v0.5.0) (2026-03-29)
+
+
+### Features
+
+* **db:** add support for both sqlite and postgres ([#27](https://github.com/sqlwarden/sqlwarden/issues/27)) ([62c127a](https://github.com/sqlwarden/sqlwarden/commit/62c127ab8482aa90f4c9e8e0a2e096636f85b209))
+* **docker:** add docker image support and container registry publish ([#25](https://github.com/sqlwarden/sqlwarden/issues/25)) ([db477d0](https://github.com/sqlwarden/sqlwarden/commit/db477d04a20c3e25a39432b6f35766cd6ae388ee))
+* **ui:** add react project ([#28](https://github.com/sqlwarden/sqlwarden/issues/28)) ([ed86d65](https://github.com/sqlwarden/sqlwarden/commit/ed86d6580f35c7ee3a2c0191dcd01b6ce5964801))
+
 ## [0.4.0](https://github.com/sqlwarden/sqlwarden/compare/v0.3.0...v0.4.0) (2026-02-22)
 
 
