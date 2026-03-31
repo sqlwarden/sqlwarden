@@ -1,88 +1,233 @@
 package access
 
 import (
-	_ "embed"
+	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 
-	"github.com/casbin/casbin/v2"
-	"github.com/casbin/casbin/v2/model"
 	"github.com/uptrace/bun"
 )
 
-//go:embed model.conf
-var modelConfStr string
-
-// actionOrdinal maps action names to ordinal values for implication checks.
-var actionOrdinal = map[string]int{
-	"connect": 1,
-	"query":   2,
-	"execute": 3,
-	"manage":  4,
-}
-
-// PolicyEntry represents a subject-action pair in a policy.
-type PolicyEntry struct {
-	Subject string
-	Action  string
-}
-
-// Enforcer wraps a Casbin SyncedEnforcer for RBAC policy management.
+// Enforcer evaluates permissions using domain tables (no Casbin).
 type Enforcer struct {
-	e *casbin.SyncedEnforcer
+	db    *bun.DB
+	cache Cache
 }
 
-// New creates a new Enforcer backed by the given bun.DB.
+// New creates an Enforcer backed by the given database.
 func New(db *bun.DB) (*Enforcer, error) {
-	m, err := model.NewModelFromString(modelConfStr)
-	if err != nil {
-		return nil, fmt.Errorf("access: load model: %w", err)
-	}
-
-	adapter := newBunAdapter(db)
-
-	e, err := casbin.NewSyncedEnforcer(m, adapter)
-	if err != nil {
-		return nil, fmt.Errorf("access: new enforcer: %w", err)
-	}
-
-	return &Enforcer{e: e}, nil
+	return &Enforcer{db: db, cache: NewMemoryCache()}, nil
 }
 
-// impliedActions returns all actions that satisfy the requested action.
-// Requesting "query" is satisfied by "query", "execute", or "manage".
-func impliedActions(act string) []string {
-	ord, ok := actionOrdinal[act]
-	if !ok {
-		return []string{act}
+// Can returns true if accountID holds permission on the given resource within orgID.
+// ownerType="space" short-circuits to true — users own their space entirely.
+func (e *Enforcer) Can(ctx context.Context,
+	accountID, orgID int64,
+	ownerType, resourceType string, resourceID int64,
+	permission string,
+) bool {
+	if ownerType == "space" {
+		return true
 	}
-	var result []string
-	for a, o := range actionOrdinal {
-		if o >= ord {
-			result = append(result, a)
+
+	teamIDs, err := e.principalsFor(ctx, orgID, accountID)
+	if err != nil {
+		return false
+	}
+
+	ancestors, err := e.ancestryFor(ctx, ownerType, resourceType, resourceID, orgID)
+	if err != nil {
+		return false
+	}
+
+	policy, err := e.orgPolicy(ctx, orgID)
+	if err != nil {
+		return false
+	}
+
+	return e.checkPolicy(policy, accountID, teamIDs, ancestors, permission)
+}
+
+// principalsFor returns the team IDs the account belongs to within orgID.
+func (e *Enforcer) principalsFor(ctx context.Context, orgID, accountID int64) ([]int64, error) {
+	if ids, ok := e.cache.GetPrincipals(orgID, accountID); ok {
+		return ids, nil
+	}
+
+	var rows []struct{ TeamID int64 }
+	err := e.db.NewSelect().
+		TableExpr("team_members tm").
+		ColumnExpr("tm.team_id").
+		Join("JOIN teams t ON t.id = tm.team_id").
+		Where("tm.account_id = ? AND t.org_id = ?", accountID, orgID).
+		Scan(ctx, &rows)
+	if err != nil {
+		return nil, err
+	}
+
+	ids := make([]int64, len(rows))
+	for i, r := range rows {
+		ids[i] = r.TeamID
+	}
+	e.cache.SetPrincipals(orgID, accountID, ids)
+	return ids, nil
+}
+
+// ancestryFor returns all ancestor resource levels for the target resource,
+// including the resource itself and the org.
+func (e *Enforcer) ancestryFor(ctx context.Context, ownerType, resourceType string, resourceID, orgID int64) ([]AncestorLevel, error) {
+	// The resource itself.
+	levels := []AncestorLevel{{ResourceType: resourceType, ResourceID: resourceID}}
+
+	// For org-level resources, no hierarchy lookup needed.
+	if resourceType == "org" {
+		return levels, nil
+	}
+
+	if cached, ok := e.cache.GetAncestry(resourceType, resourceID); ok {
+		return append(levels, cached...), nil
+	}
+
+	var rows []struct {
+		ParentType string
+		ParentID   int64
+	}
+	err := e.db.NewSelect().
+		TableExpr("resource_hierarchy").
+		ColumnExpr("parent_type, parent_id").
+		Where("child_type = ? AND child_id = ?", resourceType, resourceID).
+		Scan(ctx, &rows)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+
+	ancestry := make([]AncestorLevel, len(rows))
+	for i, r := range rows {
+		ancestry[i] = AncestorLevel{ResourceType: r.ParentType, ResourceID: r.ParentID}
+	}
+
+	// Always include the org itself.
+	hasOrg := false
+	for _, a := range ancestry {
+		if a.ResourceType == "org" {
+			hasOrg = true
+			break
 		}
 	}
-	return result
-}
-
-// Can checks if accountID has permission for the given action on obj in orgSlug.
-func (enf *Enforcer) Can(accountID, orgSlug, obj, act string) bool {
-	for _, action := range impliedActions(act) {
-		ok, err := enf.e.Enforce(accountID, orgSlug, obj, action)
-		if err == nil && ok {
-			return true
-		}
+	if !hasOrg && ownerType == "org" {
+		ancestry = append(ancestry, AncestorLevel{ResourceType: "org", ResourceID: orgID})
 	}
-	return false
+
+	e.cache.SetAncestry(resourceType, resourceID, ancestry)
+	return append(levels, ancestry...), nil
 }
 
-// CanOnConnection checks if accountID can perform act on a connection,
-// considering both direct connection policies and workspace-level policies.
-func (enf *Enforcer) CanOnConnection(accountID, orgSlug, connID, wsID, act string) bool {
-	candidates := []string{"connection:" + connID, "workspace:" + wsID}
-	for _, action := range impliedActions(act) {
-		for _, obj := range candidates {
-			ok, err := enf.e.Enforce(accountID, orgSlug, obj, action)
-			if err == nil && ok {
+// orgPolicy loads (or returns cached) the full org policy.
+func (e *Enforcer) orgPolicy(ctx context.Context, orgID int64) (*OrgPolicy, error) {
+	if p, ok := e.cache.GetOrgPolicy(orgID); ok {
+		return p, nil
+	}
+
+	policy := &OrgPolicy{
+		rolePermissions: make(map[int64]map[string]bool),
+		roleBindings:    make(map[resourceKey][]cachedRoleBinding),
+		permBindings:    make(map[resourceKey][]cachedPermBinding),
+	}
+
+	// Load role permissions.
+	var rpRows []struct {
+		RoleID     int64
+		Permission string
+	}
+	err := e.db.NewSelect().
+		TableExpr("role_permissions rp").
+		ColumnExpr("rp.role_id, rp.permission").
+		Join("JOIN roles r ON r.id = rp.role_id").
+		Where("r.org_id = ?", orgID).
+		Scan(ctx, &rpRows)
+	if err != nil {
+		return nil, fmt.Errorf("load role permissions: %w", err)
+	}
+	for _, r := range rpRows {
+		if policy.rolePermissions[r.RoleID] == nil {
+			policy.rolePermissions[r.RoleID] = make(map[string]bool)
+		}
+		policy.rolePermissions[r.RoleID][r.Permission] = true
+	}
+
+	// Load role bindings.
+	var rbRows []struct {
+		RoleID       int64
+		SubjectType  string
+		SubjectID    int64
+		ResourceType string
+		ResourceID   int64
+	}
+	err = e.db.NewSelect().
+		TableExpr("role_bindings").
+		ColumnExpr("role_id, subject_type, subject_id, resource_type, resource_id").
+		Where("org_id = ?", orgID).
+		Scan(ctx, &rbRows)
+	if err != nil {
+		return nil, fmt.Errorf("load role bindings: %w", err)
+	}
+	for _, r := range rbRows {
+		key := resourceKey{r.ResourceType, r.ResourceID}
+		policy.roleBindings[key] = append(policy.roleBindings[key], cachedRoleBinding{
+			roleID:      r.RoleID,
+			subjectType: r.SubjectType,
+			subjectID:   r.SubjectID,
+		})
+	}
+
+	// Load permission bindings.
+	var pbRows []struct {
+		Permission   string
+		SubjectType  string
+		SubjectID    int64
+		ResourceType string
+		ResourceID   int64
+	}
+	err = e.db.NewSelect().
+		TableExpr("permission_bindings").
+		ColumnExpr("permission, subject_type, subject_id, resource_type, resource_id").
+		Where("org_id = ?", orgID).
+		Scan(ctx, &pbRows)
+	if err != nil {
+		return nil, fmt.Errorf("load permission bindings: %w", err)
+	}
+	for _, r := range pbRows {
+		key := resourceKey{r.ResourceType, r.ResourceID}
+		policy.permBindings[key] = append(policy.permBindings[key], cachedPermBinding{
+			permission:  r.Permission,
+			subjectType: r.SubjectType,
+			subjectID:   r.SubjectID,
+		})
+	}
+
+	e.cache.SetOrgPolicy(orgID, policy)
+	return policy, nil
+}
+
+// checkPolicy returns true if any cached binding grants permission to the principals at any ancestor level.
+func (e *Enforcer) checkPolicy(policy *OrgPolicy, accountID int64, teamIDs []int64, ancestors []AncestorLevel, permission string) bool {
+	for _, level := range ancestors {
+		key := resourceKey{level.ResourceType, level.ResourceID}
+
+		// Check role bindings at this level.
+		for _, rb := range policy.roleBindings[key] {
+			if !matchesPrincipal(rb.subjectType, rb.subjectID, accountID, teamIDs) {
+				continue
+			}
+			if perms := policy.rolePermissions[rb.roleID]; perms[permission] {
+				return true
+			}
+		}
+
+		// Check direct permission bindings at this level.
+		for _, pb := range policy.permBindings[key] {
+			if pb.permission == permission && matchesPrincipal(pb.subjectType, pb.subjectID, accountID, teamIDs) {
 				return true
 			}
 		}
@@ -90,184 +235,204 @@ func (enf *Enforcer) CanOnConnection(accountID, orgSlug, connID, wsID, act strin
 	return false
 }
 
-// SeedOrgPolicies creates the default policies for a new organization and
-// assigns the owner role to ownerAccountID.
-func (enf *Enforcer) SeedOrgPolicies(orgSlug, ownerAccountID string) error {
-	policies := [][]string{
-		{"owner", orgSlug, "*", "*"},
-		{"admin", orgSlug, "members", "read"},
-		{"admin", orgSlug, "members", "write"},
-		{"admin", orgSlug, "members", "delete"},
-		{"admin", orgSlug, "teams", "*"},
-		{"admin", orgSlug, "workspace:*", "*"},
-		{"admin", orgSlug, "connection:*", "*"},
+func matchesPrincipal(subjectType string, subjectID, accountID int64, teamIDs []int64) bool {
+	if subjectType == "account" {
+		return subjectID == accountID
 	}
-
-	_, err := enf.e.AddPolicies(policies)
-	if err != nil {
-		return fmt.Errorf("access: seed policies: %w", err)
-	}
-
-	_, err = enf.e.AddRoleForUserInDomain(ownerAccountID, "owner", orgSlug)
-	if err != nil {
-		return fmt.Errorf("access: assign owner role: %w", err)
-	}
-
-	return nil
-}
-
-// SetOrgRole replaces all roles for accountID in orgSlug with the given role.
-func (enf *Enforcer) SetOrgRole(accountID, role, orgSlug string) error {
-	_, err := enf.e.DeleteRolesForUserInDomain(accountID, orgSlug)
-	if err != nil {
-		return fmt.Errorf("access: delete roles: %w", err)
-	}
-
-	_, err = enf.e.AddRoleForUserInDomain(accountID, role, orgSlug)
-	if err != nil {
-		return fmt.Errorf("access: add role: %w", err)
-	}
-
-	return nil
-}
-
-// RemoveOrgMember removes all roles for accountID in orgSlug.
-func (enf *Enforcer) RemoveOrgMember(accountID, orgSlug string) error {
-	_, err := enf.e.DeleteRolesForUserInDomain(accountID, orgSlug)
-	if err != nil {
-		return fmt.Errorf("access: remove member: %w", err)
-	}
-	return nil
-}
-
-// AddTeamMember adds accountID to the given team in orgSlug.
-func (enf *Enforcer) AddTeamMember(accountID, teamID, orgSlug string) error {
-	_, err := enf.e.AddRoleForUserInDomain(accountID, "team:"+teamID, orgSlug)
-	if err != nil {
-		return fmt.Errorf("access: add team member: %w", err)
-	}
-	return nil
-}
-
-// RemoveTeamMember removes accountID from the given team in orgSlug.
-func (enf *Enforcer) RemoveTeamMember(accountID, teamID, orgSlug string) error {
-	_, err := enf.e.DeleteRoleForUserInDomain(accountID, "team:"+teamID, orgSlug)
-	if err != nil {
-		return fmt.Errorf("access: remove team member: %w", err)
-	}
-	return nil
-}
-
-// GrantWorkspaceAccess grants sub permission to perform act on a workspace.
-func (enf *Enforcer) GrantWorkspaceAccess(sub, orgSlug, wsID, act string) error {
-	_, err := enf.e.AddPolicy(sub, orgSlug, "workspace:"+wsID, act)
-	if err != nil {
-		return fmt.Errorf("access: grant workspace access: %w", err)
-	}
-	return nil
-}
-
-// RevokeWorkspaceAccess revokes all of sub's policies on a workspace.
-func (enf *Enforcer) RevokeWorkspaceAccess(sub, orgSlug, wsID string) error {
-	_, err := enf.e.RemoveFilteredPolicy(0, sub, orgSlug, "workspace:"+wsID)
-	if err != nil {
-		return fmt.Errorf("access: revoke workspace access: %w", err)
-	}
-	return nil
-}
-
-// ListWorkspaceAccess returns all policy entries for a workspace.
-func (enf *Enforcer) ListWorkspaceAccess(orgSlug, wsID string) ([]PolicyEntry, error) {
-	policies, err := enf.e.GetFilteredPolicy(1, orgSlug)
-	if err != nil {
-		return nil, fmt.Errorf("access: list workspace access: %w", err)
-	}
-
-	target := "workspace:" + wsID
-	var entries []PolicyEntry
-	for _, p := range policies {
-		if len(p) >= 4 && p[2] == target {
-			entries = append(entries, PolicyEntry{Subject: p[0], Action: p[3]})
+	if subjectType == "team" {
+		for _, tid := range teamIDs {
+			if tid == subjectID {
+				return true
+			}
 		}
 	}
-	return entries, nil
+	return false
 }
 
-// GrantConnectionOverride grants sub a direct override for a connection.
-func (enf *Enforcer) GrantConnectionOverride(sub, orgSlug, connID, act string) error {
-	_, err := enf.e.AddPolicy(sub, orgSlug, "connection:"+connID, act)
-	if err != nil {
-		return fmt.Errorf("access: grant connection override: %w", err)
-	}
-	return nil
-}
-
-// RevokeConnectionOverride revokes sub's direct connection override.
-func (enf *Enforcer) RevokeConnectionOverride(sub, orgSlug, connID string) error {
-	_, err := enf.e.RemoveFilteredPolicy(0, sub, orgSlug, "connection:"+connID)
-	if err != nil {
-		return fmt.Errorf("access: revoke connection override: %w", err)
-	}
-	return nil
-}
-
-// ListConnectionOverrides returns all policy entries for a connection.
-func (enf *Enforcer) ListConnectionOverrides(orgSlug, connID string) ([]PolicyEntry, error) {
-	policies, err := enf.e.GetFilteredPolicy(1, orgSlug)
-	if err != nil {
-		return nil, fmt.Errorf("access: list connection overrides: %w", err)
-	}
-
-	target := "connection:" + connID
-	var entries []PolicyEntry
-	for _, p := range policies {
-		if len(p) >= 4 && p[2] == target {
-			entries = append(entries, PolicyEntry{Subject: p[0], Action: p[3]})
-		}
-	}
-	return entries, nil
-}
-
-// SeedCustomRole creates a custom role with the given actions on a workspace.
-func (enf *Enforcer) SeedCustomRole(orgSlug, roleID, wsID string, actions []string) error {
-	for _, action := range actions {
-		_, err := enf.e.AddPolicy("role:"+roleID, orgSlug, "workspace:"+wsID, action)
+// SeedOrg creates the three builtin roles for a new org and binds ownerAccountID to the owner role.
+// Call this once when creating a new organization.
+func (e *Enforcer) SeedOrg(ctx context.Context, orgID, ownerAccountID int64) error {
+	for roleName, permissions := range BuiltinRoles {
+		roleID, err := e.insertRole(ctx, orgID, roleName, "", "org", true)
 		if err != nil {
-			return fmt.Errorf("access: seed custom role: %w", err)
+			return fmt.Errorf("seed role %s: %w", roleName, err)
+		}
+
+		for _, perm := range permissions {
+			_, err = e.db.NewInsert().
+				TableExpr("role_permissions").
+				Model(map[string]interface{}{
+					"role_id":    roleID,
+					"permission": perm,
+				}).
+				Ignore().
+				Exec(ctx)
+			if err != nil {
+				return fmt.Errorf("seed permission %s: %w", perm, err)
+			}
+		}
+
+		if roleName == "owner" {
+			err = e.bindRoleByID(ctx, orgID, roleID, "account", ownerAccountID, "org", orgID, ownerAccountID)
+			if err != nil {
+				return fmt.Errorf("bind owner role: %w", err)
+			}
 		}
 	}
+
+	e.cache.InvalidateOrgPolicy(orgID)
 	return nil
 }
 
-// DeleteCustomRole removes all policies for a custom role.
-func (enf *Enforcer) DeleteCustomRole(orgSlug, roleID string) error {
-	_, err := enf.e.RemoveFilteredPolicy(0, "role:"+roleID, orgSlug)
-	if err != nil {
-		return fmt.Errorf("access: delete custom role: %w", err)
+// CreateRole creates a custom (non-builtin) role for an org. Returns the new role ID.
+func (e *Enforcer) CreateRole(ctx context.Context, orgID int64, name, description, scopeType string, permissions []string) (int64, error) {
+	for _, p := range permissions {
+		if !ValidForScope(p, scopeType) {
+			return 0, fmt.Errorf("permission %q is not valid for scope %q", p, scopeType)
+		}
 	}
-	return nil
-}
 
-// AssignCustomRole assigns a custom role to a subject in a domain.
-func (enf *Enforcer) AssignCustomRole(sub, orgSlug, roleID string) error {
-	_, err := enf.e.AddRoleForUserInDomain(sub, "role:"+roleID, orgSlug)
+	roleID, err := e.insertRole(ctx, orgID, name, description, scopeType, false)
 	if err != nil {
-		return fmt.Errorf("access: assign custom role: %w", err)
+		return 0, err
 	}
-	return nil
+
+	for _, perm := range permissions {
+		_, err = e.db.NewInsert().
+			TableExpr("role_permissions").
+			Model(map[string]interface{}{"role_id": roleID, "permission": perm}).
+			Exec(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("insert permission: %w", err)
+		}
+	}
+
+	e.cache.InvalidateOrgPolicy(orgID)
+	return roleID, nil
 }
 
-// RevokeCustomRole revokes a custom role from a subject in a domain.
-func (enf *Enforcer) RevokeCustomRole(sub, orgSlug, roleID string) error {
-	_, err := enf.e.DeleteRoleForUserInDomain(sub, "role:"+roleID, orgSlug)
+// DeleteRole deletes a custom role. Returns an error if the role is builtin.
+func (e *Enforcer) DeleteRole(ctx context.Context, roleID, orgID int64) error {
+	var isBuiltin bool
+	err := e.db.NewSelect().
+		TableExpr("roles").
+		ColumnExpr("is_builtin").
+		Where("id = ? AND org_id = ?", roleID, orgID).
+		Scan(ctx, &isBuiltin)
 	if err != nil {
-		return fmt.Errorf("access: revoke custom role: %w", err)
+		return err
 	}
+	if isBuiltin {
+		return errors.New("cannot delete a builtin role")
+	}
+
+	_, err = e.db.NewDelete().TableExpr("roles").Where("id = ?", roleID).Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	e.cache.InvalidateOrgPolicy(orgID)
 	return nil
 }
 
-// ListCustomRoleAssignees returns the subjects assigned to a custom role.
-func (enf *Enforcer) ListCustomRoleAssignees(orgSlug, roleID string) ([]string, error) {
-	users := enf.e.GetUsersForRoleInDomain("role:"+roleID, orgSlug)
-	return users, nil
+// BindRole assigns a role to a subject at a specific resource.
+func (e *Enforcer) BindRole(ctx context.Context, orgID, roleID int64, subjectType string, subjectID int64, resourceType string, resourceID int64, grantedBy int64) error {
+	err := e.bindRoleByID(ctx, orgID, roleID, subjectType, subjectID, resourceType, resourceID, grantedBy)
+	if err != nil {
+		return err
+	}
+	e.cache.InvalidateOrgPolicy(orgID)
+	return nil
+}
+
+// UnbindRole removes a role binding by binding ID.
+func (e *Enforcer) UnbindRole(ctx context.Context, bindingID, orgID int64) error {
+	_, err := e.db.NewDelete().TableExpr("role_bindings").Where("id = ? AND org_id = ?", bindingID, orgID).Exec(ctx)
+	if err != nil {
+		return err
+	}
+	e.cache.InvalidateOrgPolicy(orgID)
+	return nil
+}
+
+// GrantPermission grants a direct permission binding to a subject at a resource.
+func (e *Enforcer) GrantPermission(ctx context.Context, orgID int64, permission, subjectType string, subjectID int64, resourceType string, resourceID int64, grantedBy int64) error {
+	if !ValidPermission(permission) {
+		return fmt.Errorf("unknown permission: %s", permission)
+	}
+
+	_, err := e.db.NewInsert().
+		TableExpr("permission_bindings").
+		Model(map[string]interface{}{
+			"org_id":        orgID,
+			"permission":    permission,
+			"subject_type":  subjectType,
+			"subject_id":    subjectID,
+			"resource_type": resourceType,
+			"resource_id":   resourceID,
+			"created_by":    grantedBy,
+		}).
+		Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	e.cache.InvalidateOrgPolicy(orgID)
+	return nil
+}
+
+// RevokePermission removes a permission binding by binding ID.
+func (e *Enforcer) RevokePermission(ctx context.Context, bindingID, orgID int64) error {
+	_, err := e.db.NewDelete().TableExpr("permission_bindings").Where("id = ? AND org_id = ?", bindingID, orgID).Exec(ctx)
+	if err != nil {
+		return err
+	}
+	e.cache.InvalidateOrgPolicy(orgID)
+	return nil
+}
+
+// insertRole inserts a role row and returns its ID.
+func (e *Enforcer) insertRole(ctx context.Context, orgID int64, name, description, scopeType string, isBuiltin bool) (int64, error) {
+	var id int64
+	err := e.db.NewInsert().
+		TableExpr("roles").
+		Model(map[string]interface{}{
+			"org_id":      orgID,
+			"name":        name,
+			"description": description,
+			"scope_type":  scopeType,
+			"is_builtin":  isBuiltin,
+		}).
+		On("CONFLICT (org_id, name) DO UPDATE SET updated_at = NOW()").
+		Returning("id").
+		Scan(ctx, &id)
+	return id, err
+}
+
+// bindRoleByID inserts a role_bindings row.
+func (e *Enforcer) bindRoleByID(ctx context.Context, orgID, roleID int64, subjectType string, subjectID int64, resourceType string, resourceID int64, grantedBy int64) error {
+	_, err := e.db.NewInsert().
+		TableExpr("role_bindings").
+		Model(map[string]interface{}{
+			"org_id":        orgID,
+			"role_id":       roleID,
+			"subject_type":  subjectType,
+			"subject_id":    subjectID,
+			"resource_type": resourceType,
+			"resource_id":   resourceID,
+			"created_by":    grantedBy,
+		}).
+		Ignore().
+		Exec(ctx)
+	return err
+}
+
+// InvalidatePrincipals invalidates the principal cache for an account.
+func (e *Enforcer) InvalidatePrincipals(orgID, accountID int64) {
+	e.cache.InvalidatePrincipals(orgID, accountID)
+}
+
+// InvalidateAncestry invalidates the ancestry cache for a resource.
+func (e *Enforcer) InvalidateAncestry(resourceType string, resourceID int64) {
+	e.cache.InvalidateAncestry(resourceType, resourceID)
 }
