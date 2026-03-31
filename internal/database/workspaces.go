@@ -8,94 +8,80 @@ import (
 )
 
 type Workspace struct {
-	ID          string    `bun:",pk"      json:"id"`
-	TenantID    string    `bun:",notnull" json:"tenant_id"`
-	Name        string    `bun:",notnull" json:"name"`
-	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `bun:",notnull" json:"created_at"`
-	UpdatedAt   time.Time `bun:",notnull" json:"updated_at"`
+	ID          int64     `bun:",pk,autoincrement" json:"id"`
+	OrgID       *int64    `bun:",nullzero"         json:"org_id,omitempty"`
+	OwnerType   string    `bun:",notnull"          json:"owner_type"`
+	OwnerID     int64     `bun:",notnull"          json:"owner_id"`
+	Name        string    `bun:",notnull"          json:"name"`
+	Description string    `bun:",nullzero"         json:"description,omitempty"`
+	CreatedAt   time.Time `bun:",notnull"          json:"created_at"`
+	UpdatedAt   time.Time `bun:",notnull"          json:"updated_at"`
 }
 
-func (db *DB) InsertWorkspace(tenantID, name, description string) (Workspace, error) {
+func (db *DB) InsertWorkspace(orgID *int64, ownerType string, ownerID int64, name, description string) (Workspace, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	ws := Workspace{
-		ID:          newID(),
-		TenantID:    tenantID,
+		OrgID:       orgID,
+		OwnerType:   ownerType,
+		OwnerID:     ownerID,
 		Name:        name,
 		Description: description,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
-
-	_, err := db.NewInsert().
-		Model(&ws).
-		Exec(ctx)
+	_, err := db.NewInsert().Model(&ws).Returning("id").Exec(ctx)
 	if err != nil {
 		return Workspace{}, err
 	}
-
 	return ws, nil
 }
 
-func (db *DB) GetWorkspace(id string) (Workspace, bool, error) {
+func (db *DB) GetWorkspace(id int64) (Workspace, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	var ws Workspace
-	err := db.NewSelect().
-		Model(&ws).
-		Where("id = ?", id).
-		Scan(ctx)
-
+	err := db.NewSelect().Model(&ws).Where("id = ?", id).Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Workspace{}, false, nil
 	}
 	if err != nil {
 		return Workspace{}, false, err
 	}
-
 	return ws, true, nil
 }
 
-func (db *DB) GetWorkspacesByTenant(tenantID string) ([]Workspace, error) {
+func (db *DB) ListWorkspacesByOwner(ownerType string, ownerID int64) ([]Workspace, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	var workspaces []Workspace
-	err := db.NewSelect().
-		Model(&workspaces).
-		Where("tenant_id = ?", tenantID).
-		Order("created_at ASC").
+	var wss []Workspace
+	err := db.NewSelect().Model(&wss).
+		Where("owner_type = ? AND owner_id = ?", ownerType, ownerID).
+		OrderExpr("name ASC").
 		Scan(ctx)
-
-	return workspaces, err
+	return wss, err
 }
 
-func (db *DB) UpdateWorkspace(id, name, description string) error {
+func (db *DB) UpdateWorkspace(id int64, name, description string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	_, err := db.NewUpdate().
-		Model((*Workspace)(nil)).
+	_, err := db.NewUpdate().Model((*Workspace)(nil)).
 		Set("name = ?", name).
 		Set("description = ?", description).
 		Set("updated_at = ?", time.Now()).
 		Where("id = ?", id).
 		Exec(ctx)
-
 	return err
 }
 
-func (db *DB) DeleteWorkspace(id string) error {
+func (db *DB) DeleteWorkspace(id int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	_, err := db.NewDelete().
-		Model((*Workspace)(nil)).
-		Where("id = ?", id).
-		Exec(ctx)
-
+	_, err := db.NewDelete().Model((*Workspace)(nil)).Where("id = ?", id).Exec(ctx)
 	return err
 }
