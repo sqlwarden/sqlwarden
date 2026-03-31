@@ -1,6 +1,7 @@
 package database
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -105,7 +106,7 @@ func TestAccessGrantCRUD(t *testing.T) {
 			tenant, err := db.InsertTenant("grant-tenant", "Grant Tenant")
 			assert.Nil(t, err)
 
-			grant, err := db.InsertAccessGrant(tenant.ID, "user:alice", "workspace:ws1", "read", account.ID, nil)
+			grant, err := db.InsertAccessGrant(tenant.ID, "user:alice", "workspace:ws1", "read", fmt.Sprintf("%d", account.ID), nil)
 			assert.Nil(t, err)
 			assert.Equal(t, grant.Subject, "user:alice")
 			assert.Equal(t, grant.Object, "workspace:ws1")
@@ -127,7 +128,7 @@ func TestAccessGrantCRUD(t *testing.T) {
 			tenant, err := db.InsertTenant("grant-del-tenant", "Grant Del Tenant")
 			assert.Nil(t, err)
 
-			_, err = db.InsertAccessGrant(tenant.ID, "user:bob", "workspace:ws2", "write", account.ID, nil)
+			_, err = db.InsertAccessGrant(tenant.ID, "user:bob", "workspace:ws2", "write", fmt.Sprintf("%d", account.ID), nil)
 			assert.Nil(t, err)
 
 			err = db.DeleteAccessGrant("user:bob", "workspace:ws2")
@@ -157,11 +158,11 @@ func TestGetExpiredAccessGrants(t *testing.T) {
 			pastTime := time.Now().Add(-1 * time.Hour)
 			futureTime := time.Now().Add(24 * time.Hour)
 
-			_, err = db.InsertAccessGrant(tenant.ID, "user:expired", "obj:1", "read", account.ID, &pastTime)
+			_, err = db.InsertAccessGrant(tenant.ID, "user:expired", "obj:1", "read", fmt.Sprintf("%d", account.ID), &pastTime)
 			assert.Nil(t, err)
-			_, err = db.InsertAccessGrant(tenant.ID, "user:valid", "obj:2", "read", account.ID, &futureTime)
+			_, err = db.InsertAccessGrant(tenant.ID, "user:valid", "obj:2", "read", fmt.Sprintf("%d", account.ID), &futureTime)
 			assert.Nil(t, err)
-			_, err = db.InsertAccessGrant(tenant.ID, "user:noexpiry", "obj:3", "read", account.ID, nil)
+			_, err = db.InsertAccessGrant(tenant.ID, "user:noexpiry", "obj:3", "read", fmt.Sprintf("%d", account.ID), nil)
 			assert.Nil(t, err)
 
 			expired, err := db.GetExpiredAccessGrants()

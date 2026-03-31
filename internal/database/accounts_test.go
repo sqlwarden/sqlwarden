@@ -2,10 +2,8 @@ package database
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
-	"github.com/oklog/ulid/v2"
 	"github.com/sqlwarden/internal/assert"
 )
 
@@ -34,7 +32,7 @@ func TestInsertAndGetAccount(t *testing.T) {
 		t.Run(driver+": Get non-existent account returns not found", func(t *testing.T) {
 			db := newTestDB(t, driver)
 
-			_, found, err := db.GetAccount("nonexistent")
+			_, found, err := db.GetAccount(999999)
 			assert.Nil(t, err)
 			assert.False(t, found)
 		})
@@ -112,9 +110,9 @@ func TestDeactivateAccount(t *testing.T) {
 func TestAccountPasswordAbsentFromJSON(t *testing.T) {
 	pw := "secret"
 	account := Account{
-		ID:       "test",
-		Email:    "test@example.com",
-		Name:     "Test",
+		ID:    1,
+		Email: "test@example.com",
+		Name:  "Test",
 		Password: &pw,
 		IsActive: true,
 	}
@@ -128,24 +126,6 @@ func TestAccountPasswordAbsentFromJSON(t *testing.T) {
 
 	_, hasPassword := m["password"]
 	assert.False(t, hasPassword)
-}
-
-func TestAccountIDIsValidULID(t *testing.T) {
-	drivers := []string{"postgres", "sqlite"}
-
-	for _, driver := range drivers {
-		t.Run(driver+": Returned ID is a valid ULID", func(t *testing.T) {
-			db := newTestDB(t, driver)
-
-			pw := "hashed"
-			account, err := db.InsertAccount("ulid-test@example.com", "ULID Test", &pw)
-			assert.Nil(t, err)
-			assert.Equal(t, len(account.ID), 26)
-
-			_, err = ulid.Parse(account.ID)
-			assert.Nil(t, err)
-		})
-	}
 }
 
 func TestUpdateAccountPassword(t *testing.T) {
@@ -182,10 +162,6 @@ func TestInsertAccountDuplicateEmail(t *testing.T) {
 			_, err := db.InsertAccount("dup@example.com", "First", &pw)
 			assert.Nil(t, err)
 
-			_, _ = db.InsertAccount(strings.ToUpper("dup@example.com"), "Second", &pw)
-			// Note: unique constraint is on the raw email column, not LOWER(email),
-			// so same-case duplicates fail. Depending on DB, different case may or may not fail.
-			// We just test same-case here.
 			_, err = db.InsertAccount("dup@example.com", "Third", &pw)
 			assert.NotNil(t, err)
 		})

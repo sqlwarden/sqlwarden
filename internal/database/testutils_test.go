@@ -18,8 +18,8 @@ type testUser struct {
 }
 
 var testUsers = map[string]*testUser{
-	"alice": {email: "alice@example.com", password: "testPass123!", hashedPassword: "$2a$04$mi5gstbTPDRpEawTIitij.rdzLFM.U8.x4U5LLzK8xVFXKXf2ng2u"},
-	"bob":   {email: "bob@example.com", password: "mySecure456#", hashedPassword: "$2a$04$AG864hNeosMGVOZKBePuRejH7ElpHfFBBHTFS6/XFJS4beixwXZB."},
+	"alice": {email: "fixture-alice@example.com", password: "testPass123!", hashedPassword: "$2a$04$mi5gstbTPDRpEawTIitij.rdzLFM.U8.x4U5LLzK8xVFXKXf2ng2u"},
+	"bob":   {email: "fixture-bob@example.com", password: "mySecure456#", hashedPassword: "$2a$04$AG864hNeosMGVOZKBePuRejH7ElpHfFBBHTFS6/XFJS4beixwXZB."},
 }
 
 func newTestDB(t *testing.T, drivers ...string) *DB {
@@ -87,12 +87,11 @@ func newTestDB(t *testing.T, drivers ...string) *DB {
 	}
 
 	for _, user := range testUsers {
-		id, err := db.InsertUser(user.email, user.hashedPassword)
+		account, err := db.InsertAccount(user.email, user.email, &user.hashedPassword)
 		if err != nil {
 			t.Fatal(err)
 		}
-
-		user.id = int64(id)
+		user.id = account.ID
 	}
 
 	return db

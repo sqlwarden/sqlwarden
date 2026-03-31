@@ -9,7 +9,7 @@ import (
 
 type RefreshToken struct {
 	ID        string     `bun:",pk"             json:"-"`
-	AccountID string     `bun:",notnull"        json:"-"`
+	AccountID int64      `bun:",notnull"        json:"-"`
 	TokenHash string     `bun:",notnull,unique" json:"-"`
 	Family    string     `bun:",notnull"        json:"-"`
 	ExpiresAt time.Time  `bun:",notnull"        json:"-"`
@@ -19,7 +19,7 @@ type RefreshToken struct {
 	IPAddress string     `bun:",nullzero"       json:"-"`
 }
 
-func (db *DB) InsertRefreshToken(accountID, tokenHash, family string, expiresAt time.Time, ua, ip string) (RefreshToken, error) {
+func (db *DB) InsertRefreshToken(accountID int64, tokenHash, family string, expiresAt time.Time, ua, ip string) (RefreshToken, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 

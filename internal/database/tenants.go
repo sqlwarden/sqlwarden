@@ -32,7 +32,7 @@ type TenantIDPConfig struct {
 
 type TenantMember struct {
 	TenantID  string    `bun:",pk" json:"tenant_id"`
-	AccountID string    `bun:",pk" json:"account_id"`
+	AccountID int64     `bun:",pk" json:"account_id"`
 	Role      string    `bun:",notnull,default:'member'" json:"role"`
 	CreatedAt time.Time `bun:",notnull" json:"created_at"`
 }
@@ -99,7 +99,7 @@ func (db *DB) GetTenantBySlug(slug string) (Tenant, bool, error) {
 	return tenant, true, nil
 }
 
-func (db *DB) AddTenantMember(tenantID, accountID, role string) error {
+func (db *DB) AddTenantMember(tenantID string, accountID int64, role string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -117,7 +117,7 @@ func (db *DB) AddTenantMember(tenantID, accountID, role string) error {
 	return err
 }
 
-func (db *DB) RemoveTenantMember(tenantID, accountID string) error {
+func (db *DB) RemoveTenantMember(tenantID string, accountID int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -129,7 +129,7 @@ func (db *DB) RemoveTenantMember(tenantID, accountID string) error {
 	return err
 }
 
-func (db *DB) UpdateTenantMemberRole(tenantID, accountID, role string) error {
+func (db *DB) UpdateTenantMemberRole(tenantID string, accountID int64, role string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -155,7 +155,7 @@ func (db *DB) GetTenantMembers(tenantID string) ([]TenantMember, error) {
 	return members, err
 }
 
-func (db *DB) GetAccountTenants(accountID string) ([]Tenant, error) {
+func (db *DB) GetAccountTenants(accountID int64) ([]Tenant, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -169,7 +169,7 @@ func (db *DB) GetAccountTenants(accountID string) ([]Tenant, error) {
 	return tenants, err
 }
 
-func (db *DB) IsTenantMember(tenantID, accountID string) (bool, error) {
+func (db *DB) IsTenantMember(tenantID string, accountID int64) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 

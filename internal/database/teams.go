@@ -18,7 +18,7 @@ type Team struct {
 
 type TeamMember struct {
 	TeamID    string    `bun:",pk" json:"team_id"`
-	AccountID string    `bun:",pk" json:"account_id"`
+	AccountID int64     `bun:",pk" json:"account_id"`
 	CreatedAt time.Time `bun:",notnull" json:"created_at"`
 }
 
@@ -111,7 +111,7 @@ func (db *DB) DeleteTeam(id string) error {
 	return err
 }
 
-func (db *DB) AddTeamMember(teamID, accountID string) error {
+func (db *DB) AddTeamMember(teamID string, accountID int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -128,7 +128,7 @@ func (db *DB) AddTeamMember(teamID, accountID string) error {
 	return err
 }
 
-func (db *DB) RemoveTeamMember(teamID, accountID string) error {
+func (db *DB) RemoveTeamMember(teamID string, accountID int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -153,7 +153,7 @@ func (db *DB) GetTeamMembers(teamID string) ([]TeamMember, error) {
 	return members, err
 }
 
-func (db *DB) GetAccountTeams(accountID, tenantID string) ([]Team, error) {
+func (db *DB) GetAccountTeams(accountID int64, tenantID string) ([]Team, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 

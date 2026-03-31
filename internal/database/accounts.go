@@ -8,7 +8,7 @@ import (
 )
 
 type Account struct {
-	ID        string    `bun:",pk"                    json:"id"`
+	ID        int64     `bun:",pk,autoincrement"      json:"id"`
 	Email     string    `bun:",notnull,unique"        json:"email"`
 	Name      string    `bun:",notnull"               json:"name"`
 	Password  *string   `bun:",nullzero"              json:"-"`
@@ -22,7 +22,6 @@ func (db *DB) InsertAccount(email, name string, password *string) (Account, erro
 	defer cancel()
 
 	account := Account{
-		ID:        newID(),
 		Email:     email,
 		Name:      name,
 		Password:  password,
@@ -31,33 +30,25 @@ func (db *DB) InsertAccount(email, name string, password *string) (Account, erro
 		UpdatedAt: time.Now(),
 	}
 
-	_, err := db.NewInsert().
-		Model(&account).
-		Exec(ctx)
+	_, err := db.NewInsert().Model(&account).Returning("id").Exec(ctx)
 	if err != nil {
 		return Account{}, err
 	}
-
 	return account, nil
 }
 
-func (db *DB) GetAccount(id string) (Account, bool, error) {
+func (db *DB) GetAccount(id int64) (Account, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	var account Account
-	err := db.NewSelect().
-		Model(&account).
-		Where("id = ?", id).
-		Scan(ctx)
-
+	err := db.NewSelect().Model(&account).Where("id = ?", id).Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, false, nil
 	}
 	if err != nil {
 		return Account{}, false, err
 	}
-
 	return account, true, nil
 }
 
@@ -66,22 +57,17 @@ func (db *DB) GetAccountByEmail(email string) (Account, bool, error) {
 	defer cancel()
 
 	var account Account
-	err := db.NewSelect().
-		Model(&account).
-		Where("LOWER(email) = LOWER(?)", email).
-		Scan(ctx)
-
+	err := db.NewSelect().Model(&account).Where("LOWER(email) = LOWER(?)", email).Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, false, nil
 	}
 	if err != nil {
 		return Account{}, false, err
 	}
-
 	return account, true, nil
 }
 
-func (db *DB) UpdateAccountPassword(id, hashedPassword string) error {
+func (db *DB) UpdateAccountPassword(id int64, hashedPassword string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -91,11 +77,10 @@ func (db *DB) UpdateAccountPassword(id, hashedPassword string) error {
 		Set("updated_at = ?", time.Now()).
 		Where("id = ?", id).
 		Exec(ctx)
-
 	return err
 }
 
-func (db *DB) DeactivateAccount(id string) error {
+func (db *DB) DeactivateAccount(id int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -105,6 +90,5 @@ func (db *DB) DeactivateAccount(id string) error {
 		Set("updated_at = ?", time.Now()).
 		Where("id = ?", id).
 		Exec(ctx)
-
 	return err
 }
