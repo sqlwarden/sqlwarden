@@ -16,11 +16,11 @@ import (
 )
 
 func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 
-	if !app.enforcer.Can(account.ID, tenant.Slug, "workspace:"+ws.ID, "manage") {
+	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
 		app.notPermitted(w, r)
 		return
 	}
@@ -102,7 +102,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) listConnections(w http.ResponseWriter, r *http.Request) {
-	ws, _ := contextGetWorkspace(r)
+	ws := contextGetWorkspace(r)
 
 	conns, err := app.db.GetConnectionsByWorkspace(ws.ID)
 	if err != nil {
@@ -121,11 +121,11 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 }
 
 func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 
-	if !app.enforcer.Can(account.ID, tenant.Slug, "workspace:"+ws.ID, "manage") {
+	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
 		app.notPermitted(w, r)
 		return
 	}
@@ -159,7 +159,7 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	conn, err := app.db.InsertConnection(ws.ID, tenant.ID, input.Name, input.Driver, encryptedDSN)
+	conn, err := app.db.InsertConnection(ws.ID, org.ID, input.Name, input.Driver, encryptedDSN)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -172,9 +172,9 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 }
 
 func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 	connID := chi.URLParam(r, "conn_id")
 
 	conn, found, err := app.db.GetConnection(connID)
@@ -187,7 +187,7 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !app.enforcer.CanOnConnection(account.ID, tenant.Slug, conn.ID, ws.ID, "connect") {
+	if !app.enforcer.CanOnConnection(account.ID, org.Slug, conn.ID, ws.ID, "connect") {
 		app.notPermitted(w, r)
 		return
 	}
@@ -199,9 +199,9 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) deleteConnection(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 	connID := chi.URLParam(r, "conn_id")
 
 	conn, found, err := app.db.GetConnection(connID)
@@ -214,7 +214,7 @@ func (app *application) deleteConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if !app.enforcer.Can(account.ID, tenant.Slug, "workspace:"+ws.ID, "manage") {
+	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
 		app.notPermitted(w, r)
 		return
 	}
@@ -229,17 +229,17 @@ func (app *application) deleteConnection(w http.ResponseWriter, r *http.Request)
 }
 
 func (app *application) listConnectionOverrides(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 	connID := chi.URLParam(r, "conn_id")
 
-	if !app.enforcer.Can(account.ID, tenant.Slug, "workspace:"+ws.ID, "manage") {
+	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
 		app.notPermitted(w, r)
 		return
 	}
 
-	entries, err := app.enforcer.ListConnectionOverrides(tenant.Slug, connID)
+	entries, err := app.enforcer.ListConnectionOverrides(org.Slug, connID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -252,12 +252,12 @@ func (app *application) listConnectionOverrides(w http.ResponseWriter, r *http.R
 }
 
 func (app *application) grantConnectionOverride(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 	connID := chi.URLParam(r, "conn_id")
 
-	if !app.enforcer.Can(account.ID, tenant.Slug, "workspace:"+ws.ID, "manage") {
+	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
 		app.notPermitted(w, r)
 		return
 	}
@@ -283,13 +283,13 @@ func (app *application) grantConnectionOverride(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	err = app.enforcer.GrantConnectionOverride(input.Subject, tenant.Slug, connID, input.Action)
+	err = app.enforcer.GrantConnectionOverride(input.Subject, org.Slug, connID, input.Action)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	_, err = app.db.InsertAccessGrant(tenant.ID, input.Subject, "connection:"+connID, input.Action, account.ID, input.ExpiresAt)
+	_, err = app.db.InsertAccessGrant(org.ID, input.Subject, "connection:"+connID, input.Action, account.ID, input.ExpiresAt)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -299,19 +299,19 @@ func (app *application) grantConnectionOverride(w http.ResponseWriter, r *http.R
 }
 
 func (app *application) revokeConnectionOverride(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 	connID := chi.URLParam(r, "conn_id")
 
-	if !app.enforcer.Can(account.ID, tenant.Slug, "workspace:"+ws.ID, "manage") {
+	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
 		app.notPermitted(w, r)
 		return
 	}
 
 	subject := chi.URLParam(r, "subject")
 
-	err := app.enforcer.RevokeConnectionOverride(subject, tenant.Slug, connID)
+	err := app.enforcer.RevokeConnectionOverride(subject, org.Slug, connID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -327,9 +327,9 @@ func (app *application) revokeConnectionOverride(w http.ResponseWriter, r *http.
 }
 
 func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 	connID := chi.URLParam(r, "conn_id")
 
 	conn, found, err := app.db.GetConnection(connID)
@@ -342,7 +342,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if !app.enforcer.CanOnConnection(account.ID, tenant.Slug, conn.ID, ws.ID, "connect") {
+	if !app.enforcer.CanOnConnection(account.ID, org.Slug, conn.ID, ws.ID, "connect") {
 		app.notPermitted(w, r)
 		return
 	}
@@ -381,9 +381,9 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 }
 
 func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 	connID := chi.URLParam(r, "conn_id")
 
 	sessionID := r.Header.Get("X-Warden-Session")
@@ -425,7 +425,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	isSelect := strings.HasPrefix(trimmedUpper, "SELECT")
 
 	if isSelect {
-		if !app.enforcer.CanOnConnection(account.ID, tenant.Slug, connID, ws.ID, "query") {
+		if !app.enforcer.CanOnConnection(account.ID, org.Slug, connID, ws.ID, "query") {
 			app.notPermitted(w, r)
 			return
 		}
@@ -441,7 +441,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.serverError(w, r, err)
 		}
 	} else {
-		if !app.enforcer.CanOnConnection(account.ID, tenant.Slug, connID, ws.ID, "execute") {
+		if !app.enforcer.CanOnConnection(account.ID, org.Slug, connID, ws.ID, "execute") {
 			app.notPermitted(w, r)
 			return
 		}

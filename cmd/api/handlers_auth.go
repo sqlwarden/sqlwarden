@@ -358,7 +358,7 @@ func (app *application) logoutAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) getAccount(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
+	account := contextGetAccount(r)
 
 	err := response.JSON(w, http.StatusOK, account)
 	if err != nil {
@@ -367,7 +367,7 @@ func (app *application) getAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) getAccountOrgs(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
+	account := contextGetAccount(r)
 
 	tenants, err := app.db.GetAccountTenants(account.ID)
 	if err != nil {

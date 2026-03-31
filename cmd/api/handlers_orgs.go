@@ -10,18 +10,18 @@ import (
 )
 
 func (app *application) getOrg(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 
-	err := response.JSON(w, http.StatusOK, tenant)
+	err := response.JSON(w, http.StatusOK, org)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 
-	members, err := app.db.GetTenantMembers(tenant.ID)
+	members, err := app.db.GetTenantMembers(org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -34,7 +34,7 @@ func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 
 	var input struct {
 		Email string `json:"email"`
@@ -67,13 +67,13 @@ func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = app.db.AddTenantMember(tenant.ID, account.ID, input.Role)
+	err = app.db.AddTenantMember(org.ID, account.ID, input.Role)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	err = app.enforcer.SetOrgRole(account.ID, input.Role, tenant.Slug)
+	err = app.enforcer.SetOrgRole(account.ID, input.Role, org.Slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -83,7 +83,7 @@ func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 
 	var input struct {
 		Role string `json:"role"`
@@ -107,7 +107,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 	accountID := chi.URLParam(r, "account_id")
 
 	if input.Role != "owner" {
-		count, err := app.db.CountTenantOwners(tenant.ID)
+		count, err := app.db.CountTenantOwners(org.ID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -115,7 +115,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 
 		if count == 1 {
 			// Check if the target account is currently an owner.
-			members, err := app.db.GetTenantMembers(tenant.ID)
+			members, err := app.db.GetTenantMembers(org.ID)
 			if err != nil {
 				app.serverError(w, r, err)
 				return
@@ -132,13 +132,13 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	err = app.db.UpdateTenantMemberRole(tenant.ID, accountID, input.Role)
+	err = app.db.UpdateTenantMemberRole(org.ID, accountID, input.Role)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	err = app.enforcer.SetOrgRole(accountID, input.Role, tenant.Slug)
+	err = app.enforcer.SetOrgRole(accountID, input.Role, org.Slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -148,10 +148,10 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 }
 
 func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 	accountID := chi.URLParam(r, "account_id")
 
-	members, err := app.db.GetTenantMembers(tenant.ID)
+	members, err := app.db.GetTenantMembers(org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -173,7 +173,7 @@ func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if memberRole == "owner" {
-		count, err := app.db.CountTenantOwners(tenant.ID)
+		count, err := app.db.CountTenantOwners(org.ID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -187,13 +187,13 @@ func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	err = app.db.RemoveTenantMember(tenant.ID, accountID)
+	err = app.db.RemoveTenantMember(org.ID, accountID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	err = app.enforcer.RemoveOrgMember(accountID, tenant.Slug)
+	err = app.enforcer.RemoveOrgMember(accountID, org.Slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

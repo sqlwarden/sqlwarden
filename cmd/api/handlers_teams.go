@@ -14,9 +14,9 @@ import (
 var rgxSlugValid = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 func (app *application) listTeams(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 
-	teams, err := app.db.GetTeamsByTenant(tenant.ID)
+	teams, err := app.db.GetTeamsByTenant(org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -33,7 +33,7 @@ func (app *application) listTeams(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 
 	var input struct {
 		Slug string `json:"slug"`
@@ -61,7 +61,7 @@ func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	team, err := app.db.InsertTeam(tenant.ID, input.Slug, input.Name)
+	team, err := app.db.InsertTeam(org.ID, input.Slug, input.Name)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -74,10 +74,10 @@ func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) getTeam(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 	teamSlug := chi.URLParam(r, "team_slug")
 
-	team, found, err := app.db.GetTeamBySlug(tenant.ID, teamSlug)
+	team, found, err := app.db.GetTeamBySlug(org.ID, teamSlug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -94,10 +94,10 @@ func (app *application) getTeam(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) deleteTeam(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 	teamSlug := chi.URLParam(r, "team_slug")
 
-	team, found, err := app.db.GetTeamBySlug(tenant.ID, teamSlug)
+	team, found, err := app.db.GetTeamBySlug(org.ID, teamSlug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -117,10 +117,10 @@ func (app *application) deleteTeam(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) listTeamMembers(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 	teamSlug := chi.URLParam(r, "team_slug")
 
-	team, found, err := app.db.GetTeamBySlug(tenant.ID, teamSlug)
+	team, found, err := app.db.GetTeamBySlug(org.ID, teamSlug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -147,10 +147,10 @@ func (app *application) listTeamMembers(w http.ResponseWriter, r *http.Request) 
 }
 
 func (app *application) addTeamMember(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 	teamSlug := chi.URLParam(r, "team_slug")
 
-	team, found, err := app.db.GetTeamBySlug(tenant.ID, teamSlug)
+	team, found, err := app.db.GetTeamBySlug(org.ID, teamSlug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -184,7 +184,7 @@ func (app *application) addTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = app.enforcer.AddTeamMember(input.AccountID, team.ID, tenant.Slug)
+	err = app.enforcer.AddTeamMember(input.AccountID, team.ID, org.Slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -194,11 +194,11 @@ func (app *application) addTeamMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) removeTeamMember(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 	teamSlug := chi.URLParam(r, "team_slug")
 	accountID := chi.URLParam(r, "account_id")
 
-	team, found, err := app.db.GetTeamBySlug(tenant.ID, teamSlug)
+	team, found, err := app.db.GetTeamBySlug(org.ID, teamSlug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -214,7 +214,7 @@ func (app *application) removeTeamMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err = app.enforcer.RemoveTeamMember(accountID, team.ID, tenant.Slug)
+	err = app.enforcer.RemoveTeamMember(accountID, team.ID, org.Slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

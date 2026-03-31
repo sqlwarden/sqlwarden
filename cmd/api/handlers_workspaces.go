@@ -13,17 +13,17 @@ import (
 )
 
 func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
 
-	allWS, err := app.db.GetWorkspacesByTenant(tenant.ID)
+	allWS, err := app.db.GetWorkspacesByTenant(org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
 	// Admin/owner sees all workspaces.
-	if app.enforcer.Can(account.ID, tenant.Slug, "*", "*") {
+	if app.enforcer.Can(account.ID, org.Slug, "*", "*") {
 		if allWS == nil {
 			allWS = []database.Workspace{}
 		}
@@ -37,7 +37,7 @@ func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	// Non-admin: filter to workspaces the user can connect to.
 	var visible []database.Workspace
 	for _, ws := range allWS {
-		if app.enforcer.Can(account.ID, tenant.Slug, "workspace:"+ws.ID, "connect") {
+		if app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "connect") {
 			visible = append(visible, ws)
 		}
 	}
@@ -53,7 +53,7 @@ func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 
 	var input struct {
 		Name        string `json:"name"`
@@ -75,7 +75,7 @@ func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ws, err := app.db.InsertWorkspace(tenant.ID, input.Name, input.Description)
+	ws, err := app.db.InsertWorkspace(org.ID, input.Name, input.Description)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -88,7 +88,7 @@ func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) 
 }
 
 func (app *application) getWorkspace(w http.ResponseWriter, r *http.Request) {
-	ws, _ := contextGetWorkspace(r)
+	ws := contextGetWorkspace(r)
 
 	err := response.JSON(w, http.StatusOK, ws)
 	if err != nil {
@@ -97,11 +97,11 @@ func (app *application) getWorkspace(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) updateWorkspace(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 
-	if !app.enforcer.Can(account.ID, tenant.Slug, "workspace:"+ws.ID, "manage") {
+	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
 		app.notPermitted(w, r)
 		return
 	}
@@ -146,7 +146,7 @@ func (app *application) updateWorkspace(w http.ResponseWriter, r *http.Request) 
 }
 
 func (app *application) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
-	ws, _ := contextGetWorkspace(r)
+	ws := contextGetWorkspace(r)
 
 	err := app.db.DeleteWorkspace(ws.ID)
 	if err != nil {
@@ -158,16 +158,16 @@ func (app *application) deleteWorkspace(w http.ResponseWriter, r *http.Request) 
 }
 
 func (app *application) listWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 
-	if !app.enforcer.Can(account.ID, tenant.Slug, "workspace:"+ws.ID, "manage") {
+	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
 		app.notPermitted(w, r)
 		return
 	}
 
-	entries, err := app.enforcer.ListWorkspaceAccess(tenant.Slug, ws.ID)
+	entries, err := app.enforcer.ListWorkspaceAccess(org.Slug, ws.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -180,11 +180,11 @@ func (app *application) listWorkspaceAccess(w http.ResponseWriter, r *http.Reque
 }
 
 func (app *application) grantWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 
-	if !app.enforcer.Can(account.ID, tenant.Slug, "workspace:"+ws.ID, "manage") {
+	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
 		app.notPermitted(w, r)
 		return
 	}
@@ -217,7 +217,7 @@ func (app *application) grantWorkspaceAccess(w http.ResponseWriter, r *http.Requ
 	if id, ok := strings.CutPrefix(input.Subject, "account:"); ok {
 		resolvedSubject = id
 	} else if teamSlug, ok := strings.CutPrefix(input.Subject, "team:"); ok {
-		team, found, err := app.db.GetTeamBySlug(tenant.ID, teamSlug)
+		team, found, err := app.db.GetTeamBySlug(org.ID, teamSlug)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -229,13 +229,13 @@ func (app *application) grantWorkspaceAccess(w http.ResponseWriter, r *http.Requ
 		resolvedSubject = "team:" + team.ID
 	}
 
-	err = app.enforcer.GrantWorkspaceAccess(resolvedSubject, tenant.Slug, ws.ID, input.Action)
+	err = app.enforcer.GrantWorkspaceAccess(resolvedSubject, org.Slug, ws.ID, input.Action)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	_, err = app.db.InsertAccessGrant(tenant.ID, resolvedSubject, "workspace:"+ws.ID, input.Action, account.ID, input.ExpiresAt)
+	_, err = app.db.InsertAccessGrant(org.ID, resolvedSubject, "workspace:"+ws.ID, input.Action, account.ID, input.ExpiresAt)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -245,18 +245,18 @@ func (app *application) grantWorkspaceAccess(w http.ResponseWriter, r *http.Requ
 }
 
 func (app *application) revokeWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 
-	if !app.enforcer.Can(account.ID, tenant.Slug, "workspace:"+ws.ID, "manage") {
+	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
 		app.notPermitted(w, r)
 		return
 	}
 
 	subject := chi.URLParam(r, "subject")
 
-	err := app.enforcer.RevokeWorkspaceAccess(subject, tenant.Slug, ws.ID)
+	err := app.enforcer.RevokeWorkspaceAccess(subject, org.Slug, ws.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -272,11 +272,11 @@ func (app *application) revokeWorkspaceAccess(w http.ResponseWriter, r *http.Req
 }
 
 func (app *application) applyWorkspaceRole(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 
-	if !app.enforcer.Can(account.ID, tenant.Slug, "workspace:"+ws.ID, "manage") {
+	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
 		app.notPermitted(w, r)
 		return
 	}
@@ -306,18 +306,18 @@ func (app *application) applyWorkspaceRole(w http.ResponseWriter, r *http.Reques
 		app.serverError(w, r, err)
 		return
 	}
-	if !found || role.TenantID != tenant.ID {
+	if !found || role.TenantID != org.ID {
 		app.notFound(w, r)
 		return
 	}
 
-	err = app.enforcer.SeedCustomRole(tenant.Slug, role.ID, ws.ID, []string{"connect", "query", "execute", "manage"})
+	err = app.enforcer.SeedCustomRole(org.Slug, role.ID, ws.ID, []string{"connect", "query", "execute", "manage"})
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	err = app.enforcer.AssignCustomRole(input.Subject, tenant.Slug, role.ID)
+	err = app.enforcer.AssignCustomRole(input.Subject, org.Slug, role.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -327,11 +327,11 @@ func (app *application) applyWorkspaceRole(w http.ResponseWriter, r *http.Reques
 }
 
 func (app *application) revokeWorkspaceRoleAssignment(w http.ResponseWriter, r *http.Request) {
-	account, _ := contextGetAccount(r)
-	tenant, _ := contextGetTenant(r)
-	ws, _ := contextGetWorkspace(r)
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
 
-	if !app.enforcer.Can(account.ID, tenant.Slug, "workspace:"+ws.ID, "manage") {
+	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
 		app.notPermitted(w, r)
 		return
 	}
@@ -339,7 +339,7 @@ func (app *application) revokeWorkspaceRoleAssignment(w http.ResponseWriter, r *
 	roleID := chi.URLParam(r, "role_id")
 	subject := chi.URLParam(r, "subject")
 
-	err := app.enforcer.RevokeCustomRole(subject, tenant.Slug, roleID)
+	err := app.enforcer.RevokeCustomRole(subject, org.Slug, roleID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

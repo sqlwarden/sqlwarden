@@ -11,9 +11,9 @@ import (
 )
 
 func (app *application) listRoles(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 
-	roles, err := app.db.GetWorkspaceRolesByTenant(tenant.ID)
+	roles, err := app.db.GetWorkspaceRolesByTenant(org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -30,7 +30,7 @@ func (app *application) listRoles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 
 	var input struct {
 		Name        string `json:"name"`
@@ -52,7 +52,7 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	role, err := app.db.InsertWorkspaceRole(tenant.ID, input.Name, input.Description)
+	role, err := app.db.InsertWorkspaceRole(org.ID, input.Name, input.Description)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -65,7 +65,7 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) getRole(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 	roleID := chi.URLParam(r, "role_id")
 
 	role, found, err := app.db.GetWorkspaceRole(roleID)
@@ -73,7 +73,7 @@ func (app *application) getRole(w http.ResponseWriter, r *http.Request) {
 		app.serverError(w, r, err)
 		return
 	}
-	if !found || role.TenantID != tenant.ID {
+	if !found || role.TenantID != org.ID {
 		app.notFound(w, r)
 		return
 	}
@@ -85,7 +85,7 @@ func (app *application) getRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) deleteRole(w http.ResponseWriter, r *http.Request) {
-	tenant, _ := contextGetTenant(r)
+	org := contextGetOrg(r)
 	roleID := chi.URLParam(r, "role_id")
 
 	role, found, err := app.db.GetWorkspaceRole(roleID)
@@ -93,12 +93,12 @@ func (app *application) deleteRole(w http.ResponseWriter, r *http.Request) {
 		app.serverError(w, r, err)
 		return
 	}
-	if !found || role.TenantID != tenant.ID {
+	if !found || role.TenantID != org.ID {
 		app.notFound(w, r)
 		return
 	}
 
-	err = app.enforcer.DeleteCustomRole(tenant.Slug, role.ID)
+	err = app.enforcer.DeleteCustomRole(org.Slug, role.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

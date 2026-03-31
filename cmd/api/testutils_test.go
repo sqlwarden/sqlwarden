@@ -122,12 +122,11 @@ func newTestDB(t *testing.T) *database.DB {
 	}
 
 	for _, user := range testUsers {
-		id, err := db.InsertUser(user.email, user.hashedPassword)
+		acc, err := db.InsertAccount(user.email, user.email, &user.hashedPassword)
 		if err != nil {
 			t.Fatal(err)
 		}
-
-		user.id = int64(id)
+		user.id = acc.ID
 	}
 
 	return db
