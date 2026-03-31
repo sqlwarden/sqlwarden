@@ -1,0 +1,15 @@
+DROP TABLE IF EXISTS resource_hierarchy;
+DROP TABLE IF EXISTS permission_bindings;
+DROP TABLE IF EXISTS role_bindings;
+DROP TABLE IF EXISTS role_permissions;
+DROP TABLE IF EXISTS roles;
+DROP TABLE IF EXISTS connections;
+DROP TABLE IF EXISTS environments;
+DROP TABLE IF EXISTS workspaces;
+DROP TABLE IF EXISTS team_members;
+DROP TABLE IF EXISTS teams;
+DROP TABLE IF EXISTS refresh_tokens;
+DROP TABLE IF EXISTS org_members;
+DROP TABLE IF EXISTS org_idp_configs;
+DROP TABLE IF EXISTS organizations;
+DROP TABLE IF EXISTS accounts;
