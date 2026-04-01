@@ -65,11 +65,9 @@ func (app *application) routes() http.Handler {
 					r.Get("/", app.getWorkspace)
 					r.Patch("/", app.updateWorkspace)
 					r.With(app.requireOrgRole("admin")).Delete("/", app.deleteWorkspace)
-					r.Get("/access", app.listWorkspaceAccess)
-					r.Post("/access", app.grantWorkspaceAccess)
-					r.Delete("/access/{subject}", app.revokeWorkspaceAccess)
-					r.Post("/roles", app.applyWorkspaceRole)
-					r.Delete("/roles/{role_id}/subjects/{subject}", app.revokeWorkspaceRoleAssignment)
+					r.Get("/bindings", app.listWorkspaceBindings)
+					r.Post("/bindings", app.grantWorkspaceRoleBinding)
+					r.Delete("/bindings/{binding_id}", app.revokeWorkspaceBinding)
 
 					r.Route("/connections", func(r chi.Router) {
 						r.Post("/test", app.testConnection)
@@ -88,13 +86,6 @@ func (app *application) routes() http.Handler {
 				})
 			})
 
-			r.Route("/roles", func(r chi.Router) {
-				r.Use(app.requireOrgRole("admin"))
-				r.Get("/", app.listRoles)
-				r.Post("/", app.createRole)
-				r.Get("/{role_id}", app.getRole)
-				r.Delete("/{role_id}", app.deleteRole)
-			})
 		})
 	})
 
