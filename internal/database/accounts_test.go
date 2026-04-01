@@ -110,9 +110,9 @@ func TestDeactivateAccount(t *testing.T) {
 func TestAccountPasswordAbsentFromJSON(t *testing.T) {
 	pw := "secret"
 	account := Account{
-		ID:    1,
-		Email: "test@example.com",
-		Name:  "Test",
+		ID:       1,
+		Email:    "test@example.com",
+		Name:     "Test",
 		Password: &pw,
 		IsActive: true,
 	}

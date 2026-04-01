@@ -42,4 +42,3 @@ func (app *application) logAccess(next http.Handler) http.Handler {
 		app.logger.Info("access", userAttrs, requestAttrs, responseAttrs)
 	})
 }
-

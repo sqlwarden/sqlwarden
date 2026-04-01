@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -279,7 +278,7 @@ func slugify(name string) string {
 	if len(s) > 50 {
 		s = s[:50]
 	}
-	return fmt.Sprintf("%s", s)
+	return s
 }
 
 // isValidSlug returns true if s contains only lowercase letters, digits, and hyphens.
