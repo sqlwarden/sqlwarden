@@ -18,6 +18,8 @@ func (app *application) routes() http.Handler {
 	mux.Use(app.logAccess)
 	mux.Use(app.recoverPanic)
 
+	mux.Post("/api/setup", app.setup)
+
 	mux.Route("/api/v1", func(r chi.Router) {
 		r.Use(app.authenticateV1)
 
@@ -26,7 +28,14 @@ func (app *application) routes() http.Handler {
 		r.Post("/auth/refresh", app.refreshToken)
 		r.Post("/auth/logout", app.logoutAccount)
 
-		r.With(app.requireAccount).Post("/orgs", app.createOrg)
+		r.With(app.requireAccount, app.requireInstanceAdmin).Post("/orgs", app.createOrg)
+
+		r.Route("/instance", func(r chi.Router) {
+			r.Use(app.requireAccount, app.requireInstanceAdmin)
+			r.Get("/admins", app.listInstanceAdmins)
+			r.Post("/admins", app.addInstanceAdmin)
+			r.Delete("/admins/{account_id}", app.removeInstanceAdmin)
+		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(app.requireAccount)

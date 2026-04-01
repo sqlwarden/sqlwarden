@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
@@ -20,6 +21,12 @@ func registerAndLogin(t *testing.T, app *application, email, name, password stri
 	loginRes := loginTestUser(t, app, email, password)
 	assert.Equal(t, loginRes.StatusCode, http.StatusOK)
 	accessToken = extractAccessToken(t, loginRes)
+
+	// Grant instance admin so this user can create orgs.
+	idNum, _ := strconv.ParseInt(accountID, 10, 64)
+	if err := app.db.InsertInstanceAdmin(idNum); err != nil {
+		t.Fatalf("registerAndLogin: InsertInstanceAdmin: %v", err)
+	}
 
 	// Create a personal org for the user.
 	orgName := name + "'s Org"

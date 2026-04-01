@@ -223,6 +223,23 @@ func (app *application) requirePermission(permission string) func(http.Handler) 
 	}
 }
 
+// requireInstanceAdmin rejects with 403 if the authenticated account is not an instance admin.
+func (app *application) requireInstanceAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		account := contextGetAccount(r)
+		isAdmin, err := app.db.IsInstanceAdmin(account.ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !isAdmin {
+			app.notPermitted(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // requireOrgRole checks that the account holds a role with PermOrgWrite (admin) or
 // PermOrgTransferOwnership (owner). Use "admin" or "owner" as the roleName parameter.
 func (app *application) requireOrgRole(roleName string) func(http.Handler) http.Handler {

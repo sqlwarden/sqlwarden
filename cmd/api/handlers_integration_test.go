@@ -27,6 +27,12 @@ func TestFullWorkflow(t *testing.T) {
 	assert.Equal(t, loginRes.StatusCode, http.StatusOK)
 	ownerTok := extractAccessToken(t, loginRes)
 
+	// Grant owner instance admin so they can create orgs.
+	ownerIDNum := ownerRes.BodyFields["id"]
+	if err := app.db.InsertInstanceAdmin(int64(ownerIDNum.(float64))); err != nil {
+		t.Fatal(err)
+	}
+
 	// ── Step 3: Create org ───────────────────────────────────────────────────
 	orgRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs",
 		map[string]any{"name": "Flow Corp"}, ownerTok), app.routes())
