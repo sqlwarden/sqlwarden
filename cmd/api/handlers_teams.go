@@ -2,30 +2,21 @@ package main
 
 import (
 	"net/http"
-	"regexp"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
 )
 
-var rgxSlugValid = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
-
 func (app *application) listTeams(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-
-	teams, err := app.db.GetTeamsByTenant(org.ID)
+	teams, err := app.db.ListTeams(org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-
-	if teams == nil {
-		teams = []database.Team{}
-	}
-
 	err = response.JSON(w, http.StatusOK, teams)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -33,11 +24,9 @@ func (app *application) listTeams(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-
 	var input struct {
-		Slug string `json:"slug"`
-		Name string `json:"name"`
+		Name string              `json:"name"`
+		V    validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -46,22 +35,15 @@ func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var v validator.Validator
-
-	v.CheckField(validator.NotBlank(input.Slug), "slug", "Slug is required")
-	v.CheckField(validator.MaxRunes(input.Slug, 50), "slug", "Must not be more than 50 characters")
-	if validator.NotBlank(input.Slug) {
-		v.CheckField(rgxSlugValid.MatchString(input.Slug), "slug", "Must be lowercase alphanumeric with hyphens only")
-	}
-	v.CheckField(validator.NotBlank(input.Name), "name", "Name is required")
-	v.CheckField(validator.MaxRunes(input.Name, 100), "name", "Must not be more than 100 characters")
-
-	if v.HasErrors() {
-		app.failedValidation(w, r, v)
+	input.V.CheckField(input.Name != "", "name", "name is required")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
 		return
 	}
 
-	team, err := app.db.InsertTeam(org.ID, input.Slug, input.Name)
+	org := contextGetOrg(r)
+	slug := slugify(input.Name)
+	team, err := app.db.InsertTeam(org.ID, slug, input.Name)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -75,9 +57,8 @@ func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) getTeam(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-	teamSlug := chi.URLParam(r, "team_slug")
-
-	team, found, err := app.db.GetTeamBySlug(org.ID, teamSlug)
+	slug := chi.URLParam(r, "team_slug")
+	team, found, err := app.db.GetTeam(org.ID, slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -86,7 +67,6 @@ func (app *application) getTeam(w http.ResponseWriter, r *http.Request) {
 		app.notFound(w, r)
 		return
 	}
-
 	err = response.JSON(w, http.StatusOK, team)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -95,9 +75,8 @@ func (app *application) getTeam(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) deleteTeam(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-	teamSlug := chi.URLParam(r, "team_slug")
-
-	team, found, err := app.db.GetTeamBySlug(org.ID, teamSlug)
+	slug := chi.URLParam(r, "team_slug")
+	team, found, err := app.db.GetTeam(org.ID, slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -106,21 +85,18 @@ func (app *application) deleteTeam(w http.ResponseWriter, r *http.Request) {
 		app.notFound(w, r)
 		return
 	}
-
-	err = app.db.DeleteTeam(team.ID)
+	err = app.db.DeleteTeam(team.ID, org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) listTeamMembers(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-	teamSlug := chi.URLParam(r, "team_slug")
-
-	team, found, err := app.db.GetTeamBySlug(org.ID, teamSlug)
+	slug := chi.URLParam(r, "team_slug")
+	team, found, err := app.db.GetTeam(org.ID, slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -129,17 +105,11 @@ func (app *application) listTeamMembers(w http.ResponseWriter, r *http.Request) 
 		app.notFound(w, r)
 		return
 	}
-
-	members, err := app.db.GetTeamMembers(team.ID)
+	members, err := app.db.ListTeamMembers(team.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-
-	if members == nil {
-		members = []database.TeamMember{}
-	}
-
 	err = response.JSON(w, http.StatusOK, members)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -147,34 +117,32 @@ func (app *application) listTeamMembers(w http.ResponseWriter, r *http.Request) 
 }
 
 func (app *application) addTeamMember(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-	teamSlug := chi.URLParam(r, "team_slug")
+	var input struct {
+		AccountID int64               `json:"account_id"`
+		V         validator.Validator `json:"-"`
+	}
 
-	team, found, err := app.db.GetTeamBySlug(org.ID, teamSlug)
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	input.V.CheckField(input.AccountID > 0, "account_id", "account_id is required")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	org := contextGetOrg(r)
+	slug := chi.URLParam(r, "team_slug")
+	team, found, err := app.db.GetTeam(org.ID, slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 	if !found {
 		app.notFound(w, r)
-		return
-	}
-
-	var input struct {
-		AccountID string `json:"account_id"`
-	}
-
-	err = request.DecodeJSON(w, r, &input)
-	if err != nil {
-		app.badRequest(w, r, err)
-		return
-	}
-
-	var v validator.Validator
-	v.CheckField(validator.NotBlank(input.AccountID), "account_id", "Account ID is required")
-
-	if v.HasErrors() {
-		app.failedValidation(w, r, v)
 		return
 	}
 
@@ -184,26 +152,26 @@ func (app *application) addTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = app.enforcer.AddTeamMember(input.AccountID, team.ID, org.Slug)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
+	app.enforcer.InvalidatePrincipals(org.ID, input.AccountID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) removeTeamMember(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-	teamSlug := chi.URLParam(r, "team_slug")
-	accountID := chi.URLParam(r, "account_id")
-
-	team, found, err := app.db.GetTeamBySlug(org.ID, teamSlug)
+	slug := chi.URLParam(r, "team_slug")
+	team, found, err := app.db.GetTeam(org.ID, slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 	if !found {
+		app.notFound(w, r)
+		return
+	}
+
+	accountIDStr := chi.URLParam(r, "account_id")
+	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
+	if err != nil {
 		app.notFound(w, r)
 		return
 	}
@@ -214,11 +182,6 @@ func (app *application) removeTeamMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err = app.enforcer.RemoveTeamMember(accountID, team.ID, org.Slug)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
+	app.enforcer.InvalidatePrincipals(org.ID, accountID)
 	w.WriteHeader(http.StatusNoContent)
 }
