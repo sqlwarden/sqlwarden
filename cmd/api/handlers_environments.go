@@ -132,7 +132,7 @@ func (app *application) listEnvironmentBindings(w http.ResponseWriter, r *http.R
 func (app *application) grantEnvironmentAccess(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		RoleID      int64               `json:"role_id"`
-		Permission  string              `json:"permission"`
+		Permissions []string            `json:"permissions"`
 		SubjectType string              `json:"subject_type"`
 		SubjectID   int64               `json:"subject_id"`
 		V           validator.Validator `json:"-"`
@@ -145,9 +145,9 @@ func (app *application) grantEnvironmentAccess(w http.ResponseWriter, r *http.Re
 	}
 
 	hasRole := input.RoleID > 0
-	hasPerm := input.Permission != ""
-	input.V.CheckField(hasRole || hasPerm, "role_id", "one of role_id or permission is required")
-	input.V.CheckField(!(hasRole && hasPerm), "role_id", "only one of role_id or permission may be set")
+	hasPerms := len(input.Permissions) > 0
+	input.V.CheckField(hasRole || hasPerms, "role_id", "one of role_id or permissions is required")
+	input.V.CheckField(!(hasRole && hasPerms), "role_id", "only one of role_id or permissions may be set")
 	input.V.CheckField(input.SubjectType == "account" || input.SubjectType == "team", "subject_type", "must be account or team")
 	input.V.CheckField(input.SubjectID > 0, "subject_id", "subject_id is required")
 	if input.V.HasErrors() {
@@ -162,7 +162,7 @@ func (app *application) grantEnvironmentAccess(w http.ResponseWriter, r *http.Re
 	if hasRole {
 		err = app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, "environment", env.ID, grantor.ID)
 	} else {
-		err = app.enforcer.GrantPermission(r.Context(), org.ID, input.Permission, input.SubjectType, input.SubjectID, "environment", env.ID, grantor.ID)
+		err = app.enforcer.GrantPermissions(r.Context(), org.ID, input.Permissions, input.SubjectType, input.SubjectID, "environment", env.ID, grantor.ID)
 	}
 	if err != nil {
 		app.serverError(w, r, err)

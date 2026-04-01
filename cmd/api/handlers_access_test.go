@@ -48,7 +48,7 @@ func TestGrantWorkspacePermissionBinding(t *testing.T) {
 	grantRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access",
 		map[string]any{
-			"permission":   "ws:write",
+			"permissions":  []string{"ws:write"},
 			"subject_type": "account",
 			"subject_id":   memberIDInt,
 		}, ownerTok), app.routes())
@@ -69,7 +69,7 @@ func TestRevokeWorkspacePermissionBinding(t *testing.T) {
 	send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access",
 		map[string]any{
-			"permission":   "ws:write",
+			"permissions":  []string{"ws:write"},
 			"subject_type": "account",
 			"subject_id":   memberIDInt,
 		}, ownerTok), app.routes())
@@ -111,7 +111,7 @@ func TestGrantAccessValidation(t *testing.T) {
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access",
 		map[string]any{
 			"role_id":      1,
-			"permission":   "ws:write",
+			"permissions":  []string{"ws:write"},
 			"subject_type": "account",
 			"subject_id":   memberIDInt,
 		}, ownerTok), app.routes())
@@ -130,7 +130,7 @@ func TestGrantAccessValidation(t *testing.T) {
 	res3 := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access",
 		map[string]any{
-			"permission":   "ws:write",
+			"permissions":  []string{"ws:write"},
 			"subject_type": "user",
 			"subject_id":   memberIDInt,
 		}, ownerTok), app.routes())
@@ -156,7 +156,7 @@ func TestGrantConnectionPermissionBinding(t *testing.T) {
 	grantRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections/"+connID+"/access",
 		map[string]any{
-			"permission":   "conn:execute",
+			"permissions":  []string{"conn:execute"},
 			"subject_type": "account",
 			"subject_id":   memberIDInt,
 		}, ownerTok), app.routes())
@@ -195,7 +195,7 @@ func TestGrantEnvironmentPermissionBinding(t *testing.T) {
 	grantRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+envID+"/access",
 		map[string]any{
-			"permission":   "env:deploy",
+			"permissions":  []string{"env:deploy"},
 			"subject_type": "account",
 			"subject_id":   memberIDInt,
 		}, ownerTok), app.routes())
@@ -215,4 +215,45 @@ func TestGrantEnvironmentPermissionBinding(t *testing.T) {
 	if len(pbs) == 0 {
 		t.Fatal("expected permission_bindings to contain the granted binding")
 	}
+}
+
+// TestGrantMultiplePermissions verifies that a single POST /access with multiple permissions
+// creates one binding per permission and all are enforced.
+func TestGrantMultiplePermissions(t *testing.T) {
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupAccessTest(t, app, "multi-perm")
+
+	// Member has no permissions yet.
+	patchRes := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID,
+		map[string]any{"name": "Attempt"}, memberTok), app.routes())
+	assert.Equal(t, patchRes.StatusCode, http.StatusForbidden)
+
+	// Grant ws:write AND ws:read in a single request.
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access",
+		map[string]any{
+			"permissions":  []string{"ws:write", "ws:read"},
+			"subject_type": "account",
+			"subject_id":   memberIDInt,
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	// Both permissions are now enforced: member can update workspace.
+	patchRes2 := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID,
+		map[string]any{"name": "Updated"}, memberTok), app.routes())
+	assert.Equal(t, patchRes2.StatusCode, http.StatusNoContent)
+
+	// Two permission bindings should appear in the list.
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access", nil, ownerTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var body map[string]any
+	if err := json.Unmarshal(listRes.BodyBytes, &body); err != nil {
+		t.Fatal(err)
+	}
+	pbs := body["permission_bindings"].([]any)
+	assert.Equal(t, len(pbs), 2)
 }

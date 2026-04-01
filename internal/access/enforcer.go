@@ -381,6 +381,37 @@ func (e *Enforcer) GrantPermission(ctx context.Context, orgID int64, permission,
 	return nil
 }
 
+// GrantPermissions grants multiple direct permission bindings to a subject at a resource in one call.
+// All permissions are validated before any insert is attempted.
+func (e *Enforcer) GrantPermissions(ctx context.Context, orgID int64, permissions []string, subjectType string, subjectID int64, resourceType string, resourceID int64, grantedBy int64) error {
+	for _, p := range permissions {
+		if !ValidPermission(p) {
+			return fmt.Errorf("unknown permission: %s", p)
+		}
+	}
+	for _, p := range permissions {
+		pbm := map[string]interface{}{
+			"org_id":        orgID,
+			"permission":    p,
+			"subject_type":  subjectType,
+			"subject_id":    subjectID,
+			"resource_type": resourceType,
+			"resource_id":   resourceID,
+			"created_by":    grantedBy,
+		}
+		_, err := e.db.NewInsert().
+			TableExpr("permission_bindings").
+			Model(&pbm).
+			Ignore().
+			Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("grant permission %s: %w", p, err)
+		}
+	}
+	e.cache.InvalidateOrgPolicy(orgID)
+	return nil
+}
+
 // RevokePermission removes a permission binding by binding ID.
 func (e *Enforcer) RevokePermission(ctx context.Context, bindingID, orgID int64) error {
 	_, err := e.db.NewDelete().TableExpr("permission_bindings").Where("id = ? AND org_id = ?", bindingID, orgID).Exec(ctx)
