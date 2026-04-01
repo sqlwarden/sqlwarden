@@ -77,8 +77,8 @@ func (app *application) routes() http.Handler {
 					r.With(app.requireOrgRole("admin")).Delete("/", app.deleteWorkspace)
 
 					r.Get("/access", app.listWorkspaceBindings)
-					r.With(app.requirePermission("policy:modify")).Post("/access", app.grantWorkspaceRoleBinding)
-					r.With(app.requirePermission("policy:modify")).Delete("/access/{binding_id}", app.revokeWorkspaceBinding)
+					r.With(app.requirePermission("policy:modify")).Post("/access", app.grantWorkspaceAccess)
+					r.With(app.requirePermission("policy:modify")).Delete("/access/{binding_id}", app.revokeWorkspaceAccess)
 
 					r.Route("/environments", func(r chi.Router) {
 						r.Get("/", app.listEnvironments)
@@ -90,8 +90,8 @@ func (app *application) routes() http.Handler {
 							r.With(app.requirePermission("env:delete")).Delete("/", app.deleteEnvironment)
 
 							r.Get("/access", app.listEnvironmentBindings)
-							r.With(app.requirePermission("policy:modify")).Post("/access", app.grantEnvironmentRoleBinding)
-							r.With(app.requirePermission("policy:modify")).Delete("/access/{binding_id}", app.revokeEnvironmentBinding)
+							r.With(app.requirePermission("policy:modify")).Post("/access", app.grantEnvironmentAccess)
+							r.With(app.requirePermission("policy:modify")).Delete("/access/{binding_id}", app.revokeEnvironmentAccess)
 						})
 					})
 
@@ -105,8 +105,8 @@ func (app *application) routes() http.Handler {
 							r.With(app.requirePermission("conn:delete")).Delete("/", app.deleteConnection)
 
 							r.Get("/access", app.listConnectionBindings)
-							r.With(app.requirePermission("policy:modify")).Post("/access", app.grantConnectionRoleBinding)
-							r.With(app.requirePermission("policy:modify")).Delete("/access/{binding_id}", app.revokeConnectionBinding)
+							r.With(app.requirePermission("policy:modify")).Post("/access", app.grantConnectionAccess)
+							r.With(app.requirePermission("policy:modify")).Delete("/access/{binding_id}", app.revokeConnectionAccess)
 
 							r.Post("/connect", app.connectToDatabase)
 							r.Post("/query", app.executeQuery)

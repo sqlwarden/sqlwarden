@@ -341,9 +341,10 @@ func (app *application) listConnectionBindings(w http.ResponseWriter, r *http.Re
 	}
 }
 
-func (app *application) grantConnectionRoleBinding(w http.ResponseWriter, r *http.Request) {
+func (app *application) grantConnectionAccess(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		RoleID      int64               `json:"role_id"`
+		Permission  string              `json:"permission"`
 		SubjectType string              `json:"subject_type"`
 		SubjectID   int64               `json:"subject_id"`
 		V           validator.Validator `json:"-"`
@@ -355,7 +356,10 @@ func (app *application) grantConnectionRoleBinding(w http.ResponseWriter, r *htt
 		return
 	}
 
-	input.V.CheckField(input.RoleID > 0, "role_id", "role_id is required")
+	hasRole := input.RoleID > 0
+	hasPerm := input.Permission != ""
+	input.V.CheckField(hasRole || hasPerm, "role_id", "one of role_id or permission is required")
+	input.V.CheckField(!(hasRole && hasPerm), "role_id", "only one of role_id or permission may be set")
 	input.V.CheckField(input.SubjectType == "account" || input.SubjectType == "team", "subject_type", "must be account or team")
 	input.V.CheckField(input.SubjectID > 0, "subject_id", "subject_id is required")
 	if input.V.HasErrors() {
@@ -367,7 +371,11 @@ func (app *application) grantConnectionRoleBinding(w http.ResponseWriter, r *htt
 	conn := contextGetConnection(r)
 	grantor := contextGetAccount(r)
 
-	err = app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, "connection", conn.ID, grantor.ID)
+	if hasRole {
+		err = app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, "connection", conn.ID, grantor.ID)
+	} else {
+		err = app.enforcer.GrantPermission(r.Context(), org.ID, input.Permission, input.SubjectType, input.SubjectID, "connection", conn.ID, grantor.ID)
+	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -376,7 +384,7 @@ func (app *application) grantConnectionRoleBinding(w http.ResponseWriter, r *htt
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) revokeConnectionBinding(w http.ResponseWriter, r *http.Request) {
+func (app *application) revokeConnectionAccess(w http.ResponseWriter, r *http.Request) {
 	bindingIDStr := chi.URLParam(r, "binding_id")
 	bindingID, err := strconv.ParseInt(bindingIDStr, 10, 64)
 	if err != nil {
@@ -385,7 +393,13 @@ func (app *application) revokeConnectionBinding(w http.ResponseWriter, r *http.R
 	}
 
 	org := contextGetOrg(r)
-	err = app.enforcer.UnbindRole(r.Context(), bindingID, org.ID)
+	kind := r.URL.Query().Get("kind")
+
+	if kind == "permission" {
+		err = app.enforcer.RevokePermission(r.Context(), bindingID, org.ID)
+	} else {
+		err = app.enforcer.UnbindRole(r.Context(), bindingID, org.ID)
+	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return
