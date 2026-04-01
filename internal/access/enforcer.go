@@ -76,7 +76,7 @@ func (e *Enforcer) principalsFor(ctx context.Context, orgID, accountID int64) ([
 
 // ancestryFor returns all ancestor resource levels for the target resource,
 // including the resource itself and the org.
-func (e *Enforcer) ancestryFor(ctx context.Context, ownerType, resourceType string, resourceID, orgID int64) ([]AncestorLevel, error) {
+func (e *Enforcer) ancestryFor(ctx context.Context, _ /*ownerType*/ string, resourceType string, resourceID, orgID int64) ([]AncestorLevel, error) {
 	// The resource itself.
 	levels := []AncestorLevel{{ResourceType: resourceType, ResourceID: resourceID}}
 
@@ -107,7 +107,9 @@ func (e *Enforcer) ancestryFor(ctx context.Context, ownerType, resourceType stri
 		ancestry[i] = AncestorLevel{ResourceType: r.ParentType, ResourceID: r.ParentID}
 	}
 
-	// Always include the org itself.
+	// Always include the org itself at the end of the ancestry chain.
+	// The "space" short-circuit in Can() means ownerType=="space" never reaches here,
+	// so it is always safe to append the org level for permission inheritance.
 	hasOrg := false
 	for _, a := range ancestry {
 		if a.ResourceType == "org" {
@@ -115,7 +117,7 @@ func (e *Enforcer) ancestryFor(ctx context.Context, ownerType, resourceType stri
 			break
 		}
 	}
-	if !hasOrg && ownerType == "org" {
+	if !hasOrg && orgID != 0 {
 		ancestry = append(ancestry, AncestorLevel{ResourceType: "org", ResourceID: orgID})
 	}
 

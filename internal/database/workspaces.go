@@ -35,6 +35,22 @@ func (db *DB) InsertWorkspace(orgID *int64, ownerType string, ownerID int64, nam
 	if err != nil {
 		return Workspace{}, err
 	}
+
+	if ownerType == "org" {
+		hm := map[string]interface{}{
+			"child_type":  "workspace",
+			"child_id":    ws.ID,
+			"parent_type": "org",
+			"parent_id":   ownerID,
+			"owner_type":  "org",
+			"owner_id":    ownerID,
+		}
+		_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&hm).Ignore().Exec(ctx)
+		if err != nil {
+			return Workspace{}, err
+		}
+	}
+
 	return ws, nil
 }
 
@@ -83,5 +99,14 @@ func (db *DB) DeleteWorkspace(id int64) error {
 	defer cancel()
 
 	_, err := db.NewDelete().Model((*Workspace)(nil)).Where("id = ?", id).Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Clean up hierarchy rows for this workspace and all its children (environments/connections
+	// are cascade-deleted in the DB but resource_hierarchy has no FK constraints).
+	_, err = db.NewDelete().TableExpr("resource_hierarchy").
+		Where("(child_type = 'workspace' AND child_id = ?) OR (parent_type = 'workspace' AND parent_id = ?)", id, id).
+		Exec(ctx)
 	return err
 }

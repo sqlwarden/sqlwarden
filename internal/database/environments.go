@@ -37,6 +37,24 @@ func (db *DB) InsertEnvironment(workspaceID int64, orgID *int64, ownerType strin
 	if err != nil {
 		return Environment{}, err
 	}
+
+	ownerIDForHierarchy := ownerID
+	if orgID != nil {
+		ownerIDForHierarchy = *orgID
+	}
+	hm := map[string]interface{}{
+		"child_type":  "environment",
+		"child_id":    env.ID,
+		"parent_type": "workspace",
+		"parent_id":   workspaceID,
+		"owner_type":  "org",
+		"owner_id":    ownerIDForHierarchy,
+	}
+	_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&hm).Ignore().Exec(ctx)
+	if err != nil {
+		return Environment{}, err
+	}
+
 	return env, nil
 }
 
@@ -85,5 +103,12 @@ func (db *DB) DeleteEnvironment(id int64) error {
 	defer cancel()
 
 	_, err := db.NewDelete().Model((*Environment)(nil)).Where("id = ?", id).Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.NewDelete().TableExpr("resource_hierarchy").
+		Where("child_type = 'environment' AND child_id = ?", id).
+		Exec(ctx)
 	return err
 }

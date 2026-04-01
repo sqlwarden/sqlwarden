@@ -43,6 +43,24 @@ func (db *DB) InsertConnection(workspaceID int64, envID, orgID *int64, ownerType
 	if err != nil {
 		return Connection{}, err
 	}
+
+	ownerIDForHierarchy := ownerID
+	if orgID != nil {
+		ownerIDForHierarchy = *orgID
+	}
+	hm := map[string]interface{}{
+		"child_type":  "connection",
+		"child_id":    conn.ID,
+		"parent_type": "workspace",
+		"parent_id":   workspaceID,
+		"owner_type":  "org",
+		"owner_id":    ownerIDForHierarchy,
+	}
+	_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&hm).Ignore().Exec(ctx)
+	if err != nil {
+		return Connection{}, err
+	}
+
 	return conn, nil
 }
 
@@ -78,5 +96,12 @@ func (db *DB) DeleteConnection(id int64) error {
 	defer cancel()
 
 	_, err := db.NewDelete().Model((*Connection)(nil)).Where("id = ?", id).Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.NewDelete().TableExpr("resource_hierarchy").
+		Where("child_type = 'connection' AND child_id = ?", id).
+		Exec(ctx)
 	return err
 }
