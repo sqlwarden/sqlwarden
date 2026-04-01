@@ -1,9 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -11,34 +15,16 @@ import (
 
 func (app *application) getOrg(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-
 	err := response.JSON(w, http.StatusOK, org)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
-func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-
-	members, err := app.db.GetTenantMembers(org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	err = response.JSON(w, http.StatusOK, members)
-	if err != nil {
-		app.serverError(w, r, err)
-	}
-}
-
-func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-
+func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Email string `json:"email"`
-		Role  string `json:"role"`
+		Name string              `json:"name"`
+		V    validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -47,16 +33,71 @@ func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var v validator.Validator
+	input.V.CheckField(input.Name != "", "name", "name is required")
 
-	v.CheckField(validator.NotBlank(input.Email), "email", "Email is required")
-	v.CheckField(validator.In(input.Role, "admin", "member"), "role", "Role must be admin or member")
-
-	if v.HasErrors() {
-		app.failedValidation(w, r, v)
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
 		return
 	}
 
+	slug := slugify(input.Name)
+	org, err := app.db.InsertOrg(slug, input.Name)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	account := contextGetAccount(r)
+	err = app.db.AddOrgMember(org.ID, account.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = app.enforcer.SeedOrg(r.Context(), org.ID, account.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = response.JSON(w, http.StatusCreated, org)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
+	org := contextGetOrg(r)
+	members, err := app.db.GetOrgMembers(org.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	err = response.JSON(w, http.StatusOK, members)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Email string              `json:"email"`
+		V     validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	input.V.CheckField(input.Email != "", "email", "email is required")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	org := contextGetOrg(r)
 	account, found, err := app.db.GetAccountByEmail(input.Email)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -67,26 +108,56 @@ func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = app.db.AddTenantMember(org.ID, account.ID, input.Role)
+	err = app.db.AddOrgMember(org.ID, account.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	err = app.enforcer.SetOrgRole(account.ID, input.Role, org.Slug)
+	// Bind the member role to the new member at the org level.
+	roles, err := app.db.ListRoles(org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
+	}
+	grantor := contextGetAccount(r)
+	for _, role := range roles {
+		if role.Name == "member" {
+			err = app.enforcer.BindRole(r.Context(), org.ID, role.ID, "account", account.ID, "org", org.ID, grantor.ID)
+			if err != nil {
+				app.serverError(w, r, err)
+				return
+			}
+			break
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Request) {
+func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
+	accountIDStr := chi.URLParam(r, "account_id")
+	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
+	}
 
+	err = app.db.RemoveOrgMember(org.ID, accountID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	app.enforcer.InvalidatePrincipals(org.ID, accountID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Role string `json:"role"`
+		RoleID int64               `json:"role_id"`
+		V      validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -95,50 +166,32 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var v validator.Validator
-
-	v.CheckField(validator.In(input.Role, "owner", "admin", "member"), "role", "Role must be owner, admin, or member")
-
-	if v.HasErrors() {
-		app.failedValidation(w, r, v)
+	input.V.CheckField(input.RoleID > 0, "role_id", "role_id is required")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
 		return
 	}
 
-	accountID := chi.URLParam(r, "account_id")
-
-	if input.Role != "owner" {
-		count, err := app.db.CountTenantOwners(org.ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-
-		if count == 1 {
-			// Check if the target account is currently an owner.
-			members, err := app.db.GetTenantMembers(org.ID)
-			if err != nil {
-				app.serverError(w, r, err)
-				return
-			}
-			for _, m := range members {
-				if m.AccountID == accountID && m.Role == "owner" {
-					err = response.JSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "Cannot demote the last owner"})
-					if err != nil {
-						app.serverError(w, r, err)
-					}
-					return
-				}
-			}
-		}
+	org := contextGetOrg(r)
+	accountIDStr := chi.URLParam(r, "account_id")
+	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
 	}
 
-	err = app.db.UpdateTenantMemberRole(org.ID, accountID, input.Role)
+	role, found, err := app.db.GetRole(input.RoleID, org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
+	if !found {
+		app.notFound(w, r)
+		return
+	}
 
-	err = app.enforcer.SetOrgRole(accountID, input.Role, org.Slug)
+	grantor := contextGetAccount(r)
+	err = app.enforcer.BindRole(r.Context(), org.ID, role.ID, "account", accountID, "org", org.ID, grantor.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -147,57 +200,26 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-	accountID := chi.URLParam(r, "account_id")
-
-	members, err := app.db.GetTenantMembers(org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	var found bool
-	var memberRole string
-	for _, m := range members {
-		if m.AccountID == accountID {
-			found = true
-			memberRole = m.Role
-			break
+// slugify converts a name to a URL-safe slug.
+func slugify(name string) string {
+	s := strings.ToLower(name)
+	s = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
 		}
-	}
-
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-
-	if memberRole == "owner" {
-		count, err := app.db.CountTenantOwners(org.ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
+		if r == ' ' || r == '-' || r == '_' {
+			return '-'
 		}
-		if count == 1 {
-			err = response.JSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "Cannot remove the last owner"})
-			if err != nil {
-				app.serverError(w, r, err)
-			}
-			return
-		}
+		return -1
+	}, s)
+	s = strings.Trim(s, "-")
+	if len(s) > 50 {
+		s = s[:50]
 	}
+	return fmt.Sprintf("%s", s)
+}
 
-	err = app.db.RemoveTenantMember(org.ID, accountID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	err = app.enforcer.RemoveOrgMember(accountID, org.Slug)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+// allPermissions returns a list of all known permissions (used by the API).
+func allPermissions() []string {
+	return access.AllPermissions()
 }
