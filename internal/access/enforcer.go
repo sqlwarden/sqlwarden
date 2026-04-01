@@ -259,12 +259,10 @@ func (e *Enforcer) SeedOrg(ctx context.Context, orgID, ownerAccountID int64) err
 		}
 
 		for _, perm := range permissions {
+			m := map[string]interface{}{"role_id": roleID, "permission": perm}
 			_, err = e.db.NewInsert().
 				TableExpr("role_permissions").
-				Model(map[string]interface{}{
-					"role_id":    roleID,
-					"permission": perm,
-				}).
+				Model(&m).
 				Ignore().
 				Exec(ctx)
 			if err != nil {
@@ -298,9 +296,10 @@ func (e *Enforcer) CreateRole(ctx context.Context, orgID int64, name, descriptio
 	}
 
 	for _, perm := range permissions {
+		pm := map[string]interface{}{"role_id": roleID, "permission": perm}
 		_, err = e.db.NewInsert().
 			TableExpr("role_permissions").
-			Model(map[string]interface{}{"role_id": roleID, "permission": perm}).
+			Model(&pm).
 			Exec(ctx)
 		if err != nil {
 			return 0, fmt.Errorf("insert permission: %w", err)
@@ -361,17 +360,18 @@ func (e *Enforcer) GrantPermission(ctx context.Context, orgID int64, permission,
 		return fmt.Errorf("unknown permission: %s", permission)
 	}
 
+	pbm := map[string]interface{}{
+		"org_id":        orgID,
+		"permission":    permission,
+		"subject_type":  subjectType,
+		"subject_id":    subjectID,
+		"resource_type": resourceType,
+		"resource_id":   resourceID,
+		"created_by":    grantedBy,
+	}
 	_, err := e.db.NewInsert().
 		TableExpr("permission_bindings").
-		Model(map[string]interface{}{
-			"org_id":        orgID,
-			"permission":    permission,
-			"subject_type":  subjectType,
-			"subject_id":    subjectID,
-			"resource_type": resourceType,
-			"resource_id":   resourceID,
-			"created_by":    grantedBy,
-		}).
+		Model(&pbm).
 		Exec(ctx)
 	if err != nil {
 		return err
@@ -394,15 +394,16 @@ func (e *Enforcer) RevokePermission(ctx context.Context, bindingID, orgID int64)
 // insertRole inserts a role row and returns its ID.
 func (e *Enforcer) insertRole(ctx context.Context, orgID int64, name, description, scopeType string, isBuiltin bool) (int64, error) {
 	var id int64
+	rm := map[string]interface{}{
+		"org_id":      orgID,
+		"name":        name,
+		"description": description,
+		"scope_type":  scopeType,
+		"is_builtin":  isBuiltin,
+	}
 	err := e.db.NewInsert().
 		TableExpr("roles").
-		Model(map[string]interface{}{
-			"org_id":      orgID,
-			"name":        name,
-			"description": description,
-			"scope_type":  scopeType,
-			"is_builtin":  isBuiltin,
-		}).
+		Model(&rm).
 		On("CONFLICT (org_id, name) DO UPDATE SET updated_at = NOW()").
 		Returning("id").
 		Scan(ctx, &id)
@@ -411,17 +412,18 @@ func (e *Enforcer) insertRole(ctx context.Context, orgID int64, name, descriptio
 
 // bindRoleByID inserts a role_bindings row.
 func (e *Enforcer) bindRoleByID(ctx context.Context, orgID, roleID int64, subjectType string, subjectID int64, resourceType string, resourceID int64, grantedBy int64) error {
+	rbm := map[string]interface{}{
+		"org_id":        orgID,
+		"role_id":       roleID,
+		"subject_type":  subjectType,
+		"subject_id":    subjectID,
+		"resource_type": resourceType,
+		"resource_id":   resourceID,
+		"created_by":    grantedBy,
+	}
 	_, err := e.db.NewInsert().
 		TableExpr("role_bindings").
-		Model(map[string]interface{}{
-			"org_id":        orgID,
-			"role_id":       roleID,
-			"subject_type":  subjectType,
-			"subject_id":    subjectID,
-			"resource_type": resourceType,
-			"resource_id":   resourceID,
-			"created_by":    grantedBy,
-		}).
+		Model(&rbm).
 		Ignore().
 		Exec(ctx)
 	return err

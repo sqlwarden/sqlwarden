@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/request"
@@ -15,19 +16,27 @@ import (
 	"github.com/sqlwarden/internal/validator"
 )
 
-func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
-	org := contextGetOrg(r)
+func (app *application) listConnections(w http.ResponseWriter, r *http.Request) {
 	ws := contextGetWorkspace(r)
-
-	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
-		app.notPermitted(w, r)
+	conns, err := app.db.ListConnections(ws.ID)
+	if err != nil {
+		app.serverError(w, r, err)
 		return
 	}
+	err = response.JSON(w, http.StatusOK, conns)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
 
+func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Driver string `json:"driver"`
-		DSN    string `json:"dsn"`
+		Name          string              `json:"name"`
+		Driver        string              `json:"driver"`
+		DSN           string              `json:"dsn"`
+		EnvironmentID *int64              `json:"environment_id"`
+		AccessMode    string              `json:"access_mode"`
+		V             validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -36,13 +45,82 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var v validator.Validator
-	v.CheckField(validator.NotBlank(input.Driver), "driver", "Driver is required")
-	v.CheckField(validator.In(input.Driver, "postgres", "mysql", "sqlite"), "driver", "Driver must be postgres, mysql, or sqlite")
-	v.CheckField(validator.NotBlank(input.DSN), "dsn", "DSN is required")
+	input.V.CheckField(input.Name != "", "name", "name is required")
+	input.V.CheckField(input.Driver != "", "driver", "driver is required")
+	input.V.CheckField(input.DSN != "", "dsn", "dsn is required")
+	if input.AccessMode == "" {
+		input.AccessMode = "open"
+	}
+	input.V.CheckField(
+		input.AccessMode == "open" || input.AccessMode == "restricted",
+		"access_mode", "must be open or restricted",
+	)
 
-	if v.HasErrors() {
-		app.failedValidation(w, r, v)
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	dsnEncrypted, err := encrypt.Encrypt(app.encKey, input.DSN)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
+	conn, err := app.db.InsertConnection(
+		ws.ID, input.EnvironmentID, &org.ID,
+		ws.OwnerType, ws.OwnerID,
+		input.Name, input.Driver, dsnEncrypted, input.AccessMode,
+	)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = response.JSON(w, http.StatusCreated, conn)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
+	conn := contextGetConnection(r)
+	err := response.JSON(w, http.StatusOK, conn)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) deleteConnection(w http.ResponseWriter, r *http.Request) {
+	conn := contextGetConnection(r)
+	err := app.db.DeleteConnection(conn.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	app.enforcer.InvalidateAncestry("connection", conn.ID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Driver string              `json:"driver"`
+		DSN    string              `json:"dsn"`
+		V      validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	input.V.CheckField(input.Driver != "", "driver", "driver is required")
+	input.V.CheckField(input.DSN != "", "dsn", "dsn is required")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
 		return
 	}
 
@@ -53,7 +131,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 
 	d, err := driver.New(input.Driver)
 	if err != nil {
-		err = response.JSON(w, http.StatusOK, map[string]any{
+		err = response.JSON(w, http.StatusUnprocessableEntity, map[string]any{
 			"ok":    false,
 			"error": err.Error(),
 		})
@@ -101,259 +179,31 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *application) listConnections(w http.ResponseWriter, r *http.Request) {
-	ws := contextGetWorkspace(r)
-
-	conns, err := app.db.GetConnectionsByWorkspace(ws.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	if conns == nil {
-		conns = []database.Connection{}
-	}
-
-	err = response.JSON(w, http.StatusOK, conns)
-	if err != nil {
-		app.serverError(w, r, err)
-	}
-}
-
-func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-
-	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
-		app.notPermitted(w, r)
-		return
-	}
-
-	var input struct {
-		Name   string `json:"name"`
-		Driver string `json:"driver"`
-		DSN    string `json:"dsn"`
-	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
-		app.badRequest(w, r, err)
-		return
-	}
-
-	var v validator.Validator
-	v.CheckField(validator.NotBlank(input.Name), "name", "Name is required")
-	v.CheckField(validator.MaxRunes(input.Name, 100), "name", "Must not be more than 100 characters")
-	v.CheckField(validator.In(input.Driver, "postgres", "mysql", "sqlite"), "driver", "Driver must be postgres, mysql, or sqlite")
-	v.CheckField(validator.NotBlank(input.DSN), "dsn", "DSN is required")
-
-	if v.HasErrors() {
-		app.failedValidation(w, r, v)
-		return
-	}
-
-	encryptedDSN, err := encrypt.Encrypt(app.encKey, input.DSN)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	conn, err := app.db.InsertConnection(ws.ID, org.ID, input.Name, input.Driver, encryptedDSN)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	err = response.JSON(w, http.StatusCreated, conn)
-	if err != nil {
-		app.serverError(w, r, err)
-	}
-}
-
-func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	connID := chi.URLParam(r, "conn_id")
-
-	conn, found, err := app.db.GetConnection(connID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found || conn.WorkspaceID != ws.ID {
-		app.notFound(w, r)
-		return
-	}
-
-	if !app.enforcer.CanOnConnection(account.ID, org.Slug, conn.ID, ws.ID, "connect") {
-		app.notPermitted(w, r)
-		return
-	}
-
-	err = response.JSON(w, http.StatusOK, conn)
-	if err != nil {
-		app.serverError(w, r, err)
-	}
-}
-
-func (app *application) deleteConnection(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	connID := chi.URLParam(r, "conn_id")
-
-	conn, found, err := app.db.GetConnection(connID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found || conn.WorkspaceID != ws.ID {
-		app.notFound(w, r)
-		return
-	}
-
-	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
-		app.notPermitted(w, r)
-		return
-	}
-
-	err = app.db.DeleteConnection(connID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (app *application) listConnectionOverrides(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	connID := chi.URLParam(r, "conn_id")
-
-	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
-		app.notPermitted(w, r)
-		return
-	}
-
-	entries, err := app.enforcer.ListConnectionOverrides(org.Slug, connID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	err = response.JSON(w, http.StatusOK, entries)
-	if err != nil {
-		app.serverError(w, r, err)
-	}
-}
-
-func (app *application) grantConnectionOverride(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	connID := chi.URLParam(r, "conn_id")
-
-	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
-		app.notPermitted(w, r)
-		return
-	}
-
-	var input struct {
-		Subject   string     `json:"subject"`
-		Action    string     `json:"action"`
-		ExpiresAt *time.Time `json:"expires_at"`
-	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
-		app.badRequest(w, r, err)
-		return
-	}
-
-	var v validator.Validator
-	v.CheckField(validator.NotBlank(input.Subject), "subject", "Subject is required")
-	v.CheckField(validator.In(input.Action, "connect", "query", "execute", "manage"), "action", "Action must be connect, query, execute, or manage")
-
-	if v.HasErrors() {
-		app.failedValidation(w, r, v)
-		return
-	}
-
-	err = app.enforcer.GrantConnectionOverride(input.Subject, org.Slug, connID, input.Action)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	_, err = app.db.InsertAccessGrant(org.ID, input.Subject, "connection:"+connID, input.Action, account.ID, input.ExpiresAt)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusCreated)
-}
-
-func (app *application) revokeConnectionOverride(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	connID := chi.URLParam(r, "conn_id")
-
-	if !app.enforcer.Can(account.ID, org.Slug, "workspace:"+ws.ID, "manage") {
-		app.notPermitted(w, r)
-		return
-	}
-
-	subject := chi.URLParam(r, "subject")
-
-	err := app.enforcer.RevokeConnectionOverride(subject, org.Slug, connID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	err = app.db.DeleteAccessGrant(subject, "connection:"+connID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request) {
 	account := contextGetAccount(r)
 	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	connID := chi.URLParam(r, "conn_id")
+	conn := contextGetConnection(r)
 
-	conn, found, err := app.db.GetConnection(connID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found || conn.WorkspaceID != ws.ID {
-		app.notFound(w, r)
-		return
-	}
-
-	if !app.enforcer.CanOnConnection(account.ID, org.Slug, conn.ID, ws.ID, "connect") {
+	allowed := app.enforcer.Can(r.Context(),
+		account.ID, org.ID,
+		conn.OwnerType, "connection", conn.ID,
+		access.PermConnExecute,
+	)
+	if !allowed {
 		app.notPermitted(w, r)
 		return
 	}
 
-	plainDSN, err := encrypt.Decrypt(app.encKey, conn.DSN)
+	plainDSN, err := encrypt.Decrypt(app.encKey, conn.DSNEncrypted)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	session, created, err := app.connManager.GetOrCreate(account.ID, conn.ID, func() (driver.Driver, error) {
+	connID := strconv.FormatInt(conn.ID, 10)
+	accountID := strconv.FormatInt(account.ID, 10)
+
+	session, created, err := app.connManager.GetOrCreate(accountID, connID, func() (driver.Driver, error) {
 		d, err := driver.New(conn.Driver)
 		if err != nil {
 			return nil, err
@@ -381,10 +231,26 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 }
 
 func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		SQL string              `json:"sql"`
+		V   validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	input.V.CheckField(input.SQL != "", "sql", "sql is required")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
 	account := contextGetAccount(r)
 	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	connID := chi.URLParam(r, "conn_id")
+	conn := contextGetConnection(r)
 
 	sessionID := r.Header.Get("X-Warden-Session")
 	if sessionID == "" {
@@ -398,26 +264,8 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if session.AccountID != account.ID {
+	if session.AccountID != strconv.FormatInt(account.ID, 10) {
 		app.notPermitted(w, r)
-		return
-	}
-
-	var input struct {
-		SQL string `json:"sql"`
-	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
-		app.badRequest(w, r, err)
-		return
-	}
-
-	var v validator.Validator
-	v.CheckField(validator.NotBlank(input.SQL), "sql", "SQL is required")
-
-	if v.HasErrors() {
-		app.failedValidation(w, r, v)
 		return
 	}
 
@@ -425,7 +273,12 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	isSelect := strings.HasPrefix(trimmedUpper, "SELECT")
 
 	if isSelect {
-		if !app.enforcer.CanOnConnection(account.ID, org.Slug, connID, ws.ID, "query") {
+		allowed := app.enforcer.Can(r.Context(),
+			account.ID, org.ID,
+			conn.OwnerType, "connection", conn.ID,
+			access.PermQueryExecute,
+		)
+		if !allowed {
 			app.notPermitted(w, r)
 			return
 		}
@@ -441,7 +294,12 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.serverError(w, r, err)
 		}
 	} else {
-		if !app.enforcer.CanOnConnection(account.ID, org.Slug, connID, ws.ID, "execute") {
+		allowed := app.enforcer.Can(r.Context(),
+			account.ID, org.ID,
+			conn.OwnerType, "connection", conn.ID,
+			access.PermConnExecute,
+		)
+		if !allowed {
 			app.notPermitted(w, r)
 			return
 		}
@@ -457,4 +315,81 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.serverError(w, r, err)
 		}
 	}
+}
+
+func (app *application) listConnectionBindings(w http.ResponseWriter, r *http.Request) {
+	org := contextGetOrg(r)
+	conn := contextGetConnection(r)
+
+	rbs, err := app.db.ListRoleBindings(org.ID, "connection", conn.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	pbs, err := app.db.ListPermissionBindings(org.ID, "connection", conn.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = response.JSON(w, http.StatusOK, map[string]any{
+		"role_bindings":       rbs,
+		"permission_bindings": pbs,
+	})
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) grantConnectionRoleBinding(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		RoleID      int64               `json:"role_id"`
+		SubjectType string              `json:"subject_type"`
+		SubjectID   int64               `json:"subject_id"`
+		V           validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	input.V.CheckField(input.RoleID > 0, "role_id", "role_id is required")
+	input.V.CheckField(input.SubjectType == "account" || input.SubjectType == "team", "subject_type", "must be account or team")
+	input.V.CheckField(input.SubjectID > 0, "subject_id", "subject_id is required")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	org := contextGetOrg(r)
+	conn := contextGetConnection(r)
+	grantor := contextGetAccount(r)
+
+	err = app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, "connection", conn.ID, grantor.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) revokeConnectionBinding(w http.ResponseWriter, r *http.Request) {
+	bindingIDStr := chi.URLParam(r, "binding_id")
+	bindingID, err := strconv.ParseInt(bindingIDStr, 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
+	}
+
+	org := contextGetOrg(r)
+	err = app.enforcer.UnbindRole(r.Context(), bindingID, org.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -125,7 +125,7 @@ func run(logger *slog.Logger) error {
 
 	enforcer, err := access.New(db.DB)
 	if err != nil {
-		return fmt.Errorf("casbin init: %w", err)
+		return fmt.Errorf("enforcer init: %w", err)
 	}
 
 	connMgr := connection.New(30 * time.Minute)

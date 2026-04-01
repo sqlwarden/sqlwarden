@@ -117,7 +117,7 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 
 	family := database.NewID()
 	tokenHash := token.Hash(family)
-	rt, err := app.db.InsertRefreshToken(
+	_, err = app.db.InsertRefreshToken(
 		account.ID,
 		tokenHash,
 		family,
@@ -132,7 +132,7 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refresh_token",
-		Value:    rt.ID,
+		Value:    family,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Path:     "/api/v1/auth",
@@ -185,7 +185,7 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	family := database.NewID()
-	newRT, err := app.db.InsertRefreshToken(
+	_, err = app.db.InsertRefreshToken(
 		rt.AccountID,
 		token.Hash(family),
 		rt.Family,
@@ -200,7 +200,7 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refresh_token",
-		Value:    newRT.ID,
+		Value:    family,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Path:     "/api/v1/auth",

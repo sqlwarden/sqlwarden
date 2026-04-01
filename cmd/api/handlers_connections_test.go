@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -20,7 +21,7 @@ func TestTestConnectionUnknownDriver(t *testing.T) {
 	wsReq.Header.Set("Authorization", "Bearer "+tok)
 	wsRes := send(t, wsReq, app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
-	wsID := wsRes.BodyFields["id"].(string)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
 
 	// Test connection with unknown driver returns 422.
 	req := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/test", map[string]any{
@@ -44,7 +45,7 @@ func TestTestConnectionUnreachable(t *testing.T) {
 	wsReq.Header.Set("Authorization", "Bearer "+tok)
 	wsRes := send(t, wsReq, app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
-	wsID := wsRes.BodyFields["id"].(string)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
 
 	// Test connection with unreachable host returns 200 with ok:false.
 	req := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/test", map[string]any{
@@ -69,7 +70,7 @@ func TestCreateConnectionAndGetExcludesDSN(t *testing.T) {
 	wsReq.Header.Set("Authorization", "Bearer "+tok)
 	wsRes := send(t, wsReq, app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
-	wsID := wsRes.BodyFields["id"].(string)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
 
 	// Create a connection.
 	createReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections", map[string]any{
@@ -80,7 +81,7 @@ func TestCreateConnectionAndGetExcludesDSN(t *testing.T) {
 	createReq.Header.Set("Authorization", "Bearer "+tok)
 	createRes := send(t, createReq, app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
-	connID := createRes.BodyFields["id"].(string)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 
 	// DSN should not appear in the create response (json:"-").
 	if _, hasDSN := createRes.BodyFields["dsn"]; hasDSN {
@@ -112,7 +113,7 @@ func TestListConnections(t *testing.T) {
 	wsReq.Header.Set("Authorization", "Bearer "+tok)
 	wsRes := send(t, wsReq, app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
-	wsID := wsRes.BodyFields["id"].(string)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
 
 	// Create two connections.
 	for _, name := range []string{"conn1", "conn2"} {

@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
@@ -97,9 +99,11 @@ func TestTeamMemberManagement(t *testing.T) {
 	createRes := send(t, createReq, app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 
+	memberIDInt, _ := strconv.ParseInt(memberID, 10, 64)
+
 	// Add member to team.
 	addReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams/devs/members", map[string]any{
-		"account_id": memberID,
+		"account_id": memberIDInt,
 	})
 	addReq.Header.Set("Authorization", "Bearer "+ownerTok)
 	addRes := send(t, addReq, app.routes())
@@ -117,7 +121,7 @@ func TestTeamMemberManagement(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, len(members), 1)
-	assert.Equal(t, members[0]["account_id"].(string), memberID)
+	assert.Equal(t, fmt.Sprintf("%v", members[0]["account_id"]), memberID)
 
 	// Remove member from team.
 	removeReq := newTestRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug+"/teams/devs/members/"+memberID, nil)

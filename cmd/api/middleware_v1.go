@@ -188,8 +188,8 @@ func (app *application) connCtx(next http.Handler) http.Handler {
 	})
 }
 
-// requirePermission checks that the authenticated account holds the given permission
-// on the workspace resource in context.
+// requirePermission checks that the authenticated account holds the given permission.
+// When a workspace is in context it checks at workspace scope; otherwise at org scope.
 func (app *application) requirePermission(permission string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -197,9 +197,17 @@ func (app *application) requirePermission(permission string) func(http.Handler) 
 			org := contextGetOrg(r)
 			ws := contextGetWorkspace(r)
 
-			ownerType := ws.OwnerType
-			resourceType := "workspace"
-			resourceID := ws.ID
+			var ownerType, resourceType string
+			var resourceID int64
+			if ws.ID != 0 {
+				ownerType = ws.OwnerType
+				resourceType = "workspace"
+				resourceID = ws.ID
+			} else {
+				ownerType = "org"
+				resourceType = "org"
+				resourceID = org.ID
+			}
 
 			allowed := app.enforcer.Can(r.Context(),
 				account.ID, org.ID,

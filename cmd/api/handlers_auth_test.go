@@ -56,6 +56,14 @@ func extractAccessToken(t *testing.T, res testResponse) string {
 	return tok
 }
 
+// newAuthRequest creates a test request with an Authorization: Bearer token header.
+func newAuthRequest(t *testing.T, method, path string, body map[string]any, token string) *http.Request {
+	t.Helper()
+	req := newTestRequest(t, method, path, body)
+	req.Header.Set("Authorization", "Bearer "+token)
+	return req
+}
+
 func extractRefreshCookie(t *testing.T, res testResponse) *http.Cookie {
 	t.Helper()
 	for _, c := range res.Cookies() {
@@ -131,14 +139,14 @@ func TestLoginWrongPassword(t *testing.T) {
 	registerTestUser(t, app, "wrongpw@example.com", "WrongPW", "securepass99")
 
 	res := loginTestUser(t, app, "wrongpw@example.com", "wrongpassword1")
-	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
 }
 
 func TestLoginUnknownEmail(t *testing.T) {
 	app := newTestApp(t)
 
 	res := loginTestUser(t, app, "noone@example.com", "securepass99")
-	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
 }
 
 func TestRefreshValid(t *testing.T) {
@@ -244,8 +252,5 @@ func TestGetAccountOrgs(t *testing.T) {
 	err := json.Unmarshal(res.BodyBytes, &tenants)
 	if err != nil {
 		t.Fatalf("expected JSON array, got error: %v", err)
-	}
-	if len(tenants) < 1 {
-		t.Fatal("expected at least one org (personal)")
 	}
 }

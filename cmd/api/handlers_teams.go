@@ -25,6 +25,7 @@ func (app *application) listTeams(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
 	var input struct {
+		Slug string              `json:"slug"`
 		Name string              `json:"name"`
 		V    validator.Validator `json:"-"`
 	}
@@ -36,13 +37,17 @@ func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input.V.CheckField(input.Name != "", "name", "name is required")
+	input.V.CheckField(input.Slug != "", "slug", "slug is required")
+	if input.Slug != "" {
+		input.V.CheckField(isValidSlug(input.Slug), "slug", "slug may only contain lowercase letters, numbers, and hyphens")
+	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
 	}
 
 	org := contextGetOrg(r)
-	slug := slugify(input.Name)
+	slug := input.Slug
 	team, err := app.db.InsertTeam(org.ID, slug, input.Name)
 	if err != nil {
 		app.serverError(w, r, err)

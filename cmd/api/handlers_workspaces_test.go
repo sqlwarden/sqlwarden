@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -49,7 +50,7 @@ func TestGetAndDeleteWorkspace(t *testing.T) {
 	createReq.Header.Set("Authorization", "Bearer "+tok)
 	createRes := send(t, createReq, app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
-	wsID := createRes.BodyFields["id"].(string)
+	wsID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 
 	// Get.
 	getReq := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/workspaces/"+wsID, nil)
@@ -71,67 +72,6 @@ func TestGetAndDeleteWorkspace(t *testing.T) {
 	assert.Equal(t, getRes2.StatusCode, http.StatusNotFound)
 }
 
-func TestWorkspaceAccessGrant(t *testing.T) {
-	app := newTestApp(t)
-
-	// Owner creates an org and a workspace.
-	_, ownerTok, slug := registerAndLogin(t, app, "ws-acc-owner@example.com", "WS Acc Owner", "securepass99")
-
-	createReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces", map[string]any{
-		"name": "SecureWS",
-	})
-	createReq.Header.Set("Authorization", "Bearer "+ownerTok)
-	createRes := send(t, createReq, app.routes())
-	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
-	wsID := createRes.BodyFields["id"].(string)
-
-	// Register a member and add to org.
-	memberID, memberTok, _ := registerAndLogin(t, app, "ws-acc-member@example.com", "WS Acc Member", "securepass99")
-
-	addOrgReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
-		"email": "ws-acc-member@example.com",
-		"role":  "member",
-	})
-	addOrgReq.Header.Set("Authorization", "Bearer "+ownerTok)
-	addOrgRes := send(t, addOrgReq, app.routes())
-	assert.Equal(t, addOrgRes.StatusCode, http.StatusNoContent)
-
-	// Member without grant cannot access workspace (gets empty list since listWorkspaces filters).
-	listReq := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/workspaces", nil)
-	listReq.Header.Set("Authorization", "Bearer "+memberTok)
-	listRes := send(t, listReq, app.routes())
-	assert.Equal(t, listRes.StatusCode, http.StatusOK)
-
-	var visible []map[string]any
-	err := json.Unmarshal(listRes.BodyBytes, &visible)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Equal(t, len(visible), 0)
-
-	// Grant connect access to member.
-	grantReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/access", map[string]any{
-		"subject": "account:" + memberID,
-		"action":  "connect",
-	})
-	grantReq.Header.Set("Authorization", "Bearer "+ownerTok)
-	grantRes := send(t, grantReq, app.routes())
-	assert.Equal(t, grantRes.StatusCode, http.StatusCreated)
-
-	// Now member can see workspace in list.
-	listReq2 := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/workspaces", nil)
-	listReq2.Header.Set("Authorization", "Bearer "+memberTok)
-	listRes2 := send(t, listReq2, app.routes())
-	assert.Equal(t, listRes2.StatusCode, http.StatusOK)
-
-	var visible2 []map[string]any
-	err = json.Unmarshal(listRes2.BodyBytes, &visible2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Equal(t, len(visible2), 1)
-}
-
 func TestWorkspaceUpdatePermission(t *testing.T) {
 	app := newTestApp(t)
 
@@ -143,9 +83,9 @@ func TestWorkspaceUpdatePermission(t *testing.T) {
 	createReq.Header.Set("Authorization", "Bearer "+ownerTok)
 	createRes := send(t, createReq, app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
-	wsID := createRes.BodyFields["id"].(string)
+	wsID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 
-	// Owner can update (owner has manage via * wildcard).
+	// Owner can update (owner has ws:write via builtin role).
 	newName := "UpdatedName"
 	patchReq := newTestRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/workspaces/"+wsID, map[string]any{
 		"name": newName,

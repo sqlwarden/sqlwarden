@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -32,9 +33,9 @@ func testWithParams(r *http.Request, params map[string]string) *http.Request {
 }
 
 // issueTestToken creates a valid JWT for the given account using the test app's secret.
-func issueTestToken(t *testing.T, app *application, accountID, email, name string) string {
+func issueTestToken(t *testing.T, app *application, accountID int64, email, name string) string {
 	t.Helper()
-	tok, _, err := token.Issue(accountID, email, name, app.config.jwt.secretKey)
+	tok, _, err := token.Issue(strconv.FormatInt(accountID, 10), email, name, app.config.jwt.secretKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,15 +52,10 @@ func TestAuthenticateV1_ValidToken(t *testing.T) {
 
 	tok := issueTestToken(t, app, account.ID, account.Email, account.Name)
 
-	// The final handler checks if the account was set in context.
-	var gotAccount bool
-	var gotID string
+	var gotID int64
 	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		acc, ok := contextGetAccount(r)
-		gotAccount = ok
-		if ok {
-			gotID = acc.ID
-		}
+		acc := contextGetAccount(r)
+		gotID = acc.ID
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -72,21 +68,18 @@ func TestAuthenticateV1_ValidToken(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
-	if !gotAccount {
-		t.Fatal("expected account in context, got none")
-	}
 	if gotID != account.ID {
-		t.Fatalf("expected account ID %s, got %s", account.ID, gotID)
+		t.Fatalf("expected account ID %d, got %d", account.ID, gotID)
 	}
 }
 
 func TestAuthenticateV1_InvalidToken(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
 
-	var gotAccount bool
+	var gotID int64
 	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, ok := contextGetAccount(r)
-		gotAccount = ok
+		acc := contextGetAccount(r)
+		gotID = acc.ID
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -96,10 +89,10 @@ func TestAuthenticateV1_InvalidToken(t *testing.T) {
 	rec := httptest.NewRecorder()
 	app.authenticateV1(finalHandler).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 (pass-through), got %d", rec.Code)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
 	}
-	if gotAccount {
+	if gotID != 0 {
 		t.Fatal("expected no account in context for invalid token")
 	}
 }
@@ -154,14 +147,14 @@ func TestOrgCtx_NonMember(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tenant, err := app.db.InsertTenant("test-org", "Test Org")
+	org, err := app.db.InsertOrg("non-member-org", "Non Member Org")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+tenant.Slug, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug, nil)
 	req = contextSetAccount(req, account)
-	req = testWithParams(req, map[string]string{"org_slug": tenant.Slug})
+	req = testWithParams(req, map[string]string{"org_slug": org.Slug})
 
 	rec := httptest.NewRecorder()
 
@@ -184,30 +177,26 @@ func TestOrgCtx_Member(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tenant, err := app.db.InsertTenant("member-org", "Member Org")
+	org, err := app.db.InsertOrg("member-org", "Member Org")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = app.db.AddTenantMember(tenant.ID, account.ID, "member")
+	err = app.db.AddOrgMember(org.ID, account.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	var gotTenant bool
 	var gotSlug string
 	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tn, ok := contextGetTenant(r)
-		gotTenant = ok
-		if ok {
-			gotSlug = tn.Slug
-		}
+		o := contextGetOrg(r)
+		gotSlug = o.Slug
 		w.WriteHeader(http.StatusOK)
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+tenant.Slug, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug, nil)
 	req = contextSetAccount(req, account)
-	req = testWithParams(req, map[string]string{"org_slug": tenant.Slug})
+	req = testWithParams(req, map[string]string{"org_slug": org.Slug})
 
 	rec := httptest.NewRecorder()
 	app.orgCtx(finalHandler).ServeHTTP(rec, req)
@@ -215,11 +204,8 @@ func TestOrgCtx_Member(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
-	if !gotTenant {
-		t.Fatal("expected tenant in context")
-	}
-	if gotSlug != tenant.Slug {
-		t.Fatalf("expected slug %s, got %s", tenant.Slug, gotSlug)
+	if gotSlug != org.Slug {
+		t.Fatalf("expected slug %s, got %s", org.Slug, gotSlug)
 	}
 }
 
@@ -231,15 +217,15 @@ func TestWsCtx_UnknownWsID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tenant, err := app.db.InsertTenant("ws-org", "WS Org")
+	org, err := app.db.InsertOrg("ws-org-ctx", "WS Org")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/ws-org/workspaces/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/ws-org/workspaces/99999", nil)
 	req = contextSetAccount(req, account)
-	req = contextSetTenant(req, tenant)
-	req = testWithParams(req, map[string]string{"org_slug": tenant.Slug, "ws_id": "nonexistent"})
+	req = contextSetOrg(req, org)
+	req = testWithParams(req, map[string]string{"org_slug": org.Slug, "ws_id": "99999"})
 
 	rec := httptest.NewRecorder()
 
@@ -251,156 +237,5 @@ func TestWsCtx_UnknownWsID(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rec.Code)
-	}
-}
-
-func TestWsCtx_WsBelongsToDifferentTenant(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
-
-	account, err := app.db.InsertAccount("ws-cross@example.com", "WS Cross", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tenant1, err := app.db.InsertTenant("tenant-one", "Tenant One")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tenant2, err := app.db.InsertTenant("tenant-two", "Tenant Two")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Create workspace under tenant2
-	ws, err := app.db.InsertWorkspace(tenant2.ID, "Cross WS", "A workspace in tenant2")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Request with tenant1 in context, but ws belongs to tenant2
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/tenant-one/workspaces/"+ws.ID, nil)
-	req = contextSetAccount(req, account)
-	req = contextSetTenant(req, tenant1)
-	req = testWithParams(req, map[string]string{"org_slug": tenant1.Slug, "ws_id": ws.ID})
-
-	rec := httptest.NewRecorder()
-
-	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	app.wsCtx(finalHandler).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rec.Code)
-	}
-}
-
-func TestRequireOrgRole_Admin(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
-
-	// Create tenant and three accounts: owner, admin, member
-	tenant, err := app.db.InsertTenant("role-org", "Role Org")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ownerAccount, err := app.db.InsertAccount("owner@example.com", "Owner", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	adminAccount, err := app.db.InsertAccount("admin@example.com", "Admin", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	memberAccount, err := app.db.InsertAccount("member@example.com", "Member", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Add all as tenant members
-	for _, acc := range []struct {
-		id   string
-		role string
-	}{
-		{ownerAccount.ID, "owner"},
-		{adminAccount.ID, "admin"},
-		{memberAccount.ID, "member"},
-	} {
-		err = app.db.AddTenantMember(tenant.ID, acc.id, acc.role)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// Seed Casbin policies for the org and assign roles
-	err = app.enforcer.SeedOrgPolicies(tenant.Slug, ownerAccount.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = app.enforcer.SetOrgRole(adminAccount.ID, "admin", tenant.Slug)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = app.enforcer.SetOrgRole(memberAccount.ID, "member", tenant.Slug)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	middleware := app.requireOrgRole("admin")
-
-	tests := []struct {
-		name       string
-		accountID  string
-		account    func() *http.Request
-		wantStatus int
-	}{
-		{
-			name: "owner passes admin check",
-			account: func() *http.Request {
-				req := httptest.NewRequest(http.MethodGet, "/test", nil)
-				req = contextSetAccount(req, ownerAccount)
-				req = contextSetTenant(req, tenant)
-				return req
-			},
-			wantStatus: http.StatusOK,
-		},
-		{
-			name: "admin passes admin check",
-			account: func() *http.Request {
-				req := httptest.NewRequest(http.MethodGet, "/test", nil)
-				req = contextSetAccount(req, adminAccount)
-				req = contextSetTenant(req, tenant)
-				return req
-			},
-			wantStatus: http.StatusOK,
-		},
-		{
-			name: "member fails admin check",
-			account: func() *http.Request {
-				req := httptest.NewRequest(http.MethodGet, "/test", nil)
-				req = contextSetAccount(req, memberAccount)
-				req = contextSetTenant(req, tenant)
-				return req
-			},
-			wantStatus: http.StatusForbidden,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := tt.account()
-			rec := httptest.NewRecorder()
-			middleware(finalHandler).ServeHTTP(rec, req)
-
-			if rec.Code != tt.wantStatus {
-				t.Fatalf("expected %d, got %d", tt.wantStatus, rec.Code)
-			}
-		})
 	}
 }

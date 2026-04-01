@@ -4,70 +4,43 @@ import (
 	"context"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
 )
 
-func TestContextSetAuthenticatedUser(t *testing.T) {
-	testUser := database.User{
-		ID:             123,
-		Created:        time.Now(),
-		Email:          "alice@example.com",
-		HashedPassword: "$2a$12$testhashedpassword",
+func TestContextSetAndGetAccount(t *testing.T) {
+	testAccount := database.Account{
+		ID:    123,
+		Email: "alice@example.com",
+		Name:  "Alice",
 	}
 
-	t.Run("Returns new request with user set and original unchanged", func(t *testing.T) {
+	t.Run("Returns new request with account set and original unchanged", func(t *testing.T) {
 		originalReq := newTestRequest(t, http.MethodGet, "/test", nil)
-		modifiedReq := contextSetAuthenticatedUser(originalReq, testUser)
+		modifiedReq := contextSetAccount(originalReq, testAccount)
 
-		retrievedUser, found := originalReq.Context().Value(authenticatedUserContextKey).(database.User)
-		assert.False(t, found)
-		assert.Equal(t, retrievedUser, database.User{})
+		retrieved := contextGetAccount(originalReq)
+		assert.Equal(t, retrieved.ID, int64(0))
 
-		retrievedUser, found = modifiedReq.Context().Value(authenticatedUserContextKey).(database.User)
-		assert.True(t, found)
-		assert.Equal(t, retrievedUser, testUser)
+		retrieved = contextGetAccount(modifiedReq)
+		assert.Equal(t, retrieved.ID, testAccount.ID)
+		assert.Equal(t, retrieved.Email, testAccount.Email)
 	})
 }
 
-func TestContextGetAuthenticatedUser(t *testing.T) {
-	testUser := database.User{
-		ID:             123,
-		Created:        time.Now(),
-		Email:          "alice@example.com",
-		HashedPassword: "$2a$12$testhashedpassword",
-	}
-
-	t.Run("Successfully returns user when set", func(t *testing.T) {
-
+func TestContextGetAccountEmpty(t *testing.T) {
+	t.Run("Returns zero account when not set", func(t *testing.T) {
 		req := newTestRequest(t, http.MethodGet, "/test", nil)
-		ctx := context.WithValue(req.Context(), authenticatedUserContextKey, testUser)
-		req = req.WithContext(ctx)
-
-		retrievedUser, found := contextGetAuthenticatedUser(req)
-		assert.True(t, found)
-		assert.Equal(t, retrievedUser, testUser)
+		acc := contextGetAccount(req)
+		assert.Equal(t, acc.ID, int64(0))
 	})
 
-	t.Run("Returns zero user and false when not set", func(t *testing.T) {
-
+	t.Run("Returns zero account if wrong type", func(t *testing.T) {
 		req := newTestRequest(t, http.MethodGet, "/test", nil)
-
-		retrievedUser, found := contextGetAuthenticatedUser(req)
-		assert.False(t, found)
-		assert.Equal(t, retrievedUser, database.User{})
-	})
-
-	t.Run("Returns zero user and false if wrong type", func(t *testing.T) {
-
-		req := newTestRequest(t, http.MethodGet, "/test", nil)
-		ctx := context.WithValue(req.Context(), authenticatedUserContextKey, 123)
+		ctx := context.WithValue(req.Context(), authenticatedAccountKey, 123)
 		req = req.WithContext(ctx)
-
-		retrievedUser, found := contextGetAuthenticatedUser(req)
-		assert.False(t, found)
-		assert.Equal(t, retrievedUser, database.User{})
+		acc := contextGetAccount(req)
+		assert.Equal(t, acc.ID, int64(0))
 	})
 }

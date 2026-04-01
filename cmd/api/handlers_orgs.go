@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -144,6 +143,17 @@ func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Prevent removing the last owner.
+	if isLastOwner, checkErr := app.isLastOrgOwner(r, org.ID, accountID); checkErr != nil {
+		app.serverError(w, r, checkErr)
+		return
+	} else if isLastOwner {
+		v := validator.Validator{}
+		v.AddError("cannot remove the last owner of an organization")
+		app.failedValidation(w, r, v)
+		return
+	}
+
 	err = app.db.RemoveOrgMember(org.ID, accountID)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -156,8 +166,8 @@ func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) 
 
 func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		RoleID int64               `json:"role_id"`
-		V      validator.Validator `json:"-"`
+		Role string              `json:"role"`
+		V    validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -166,7 +176,8 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	input.V.CheckField(input.RoleID > 0, "role_id", "role_id is required")
+	input.V.CheckField(input.Role != "", "role", "role is required")
+	input.V.CheckField(input.Role == "owner" || input.Role == "admin" || input.Role == "member", "role", "role must be owner, admin, or member")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -180,24 +191,76 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	role, found, err := app.db.GetRole(input.RoleID, org.ID)
+	// Prevent demoting the last owner.
+	if input.Role != "owner" {
+		if isLastOwner, checkErr := app.isLastOrgOwner(r, org.ID, accountID); checkErr != nil {
+			app.serverError(w, r, checkErr)
+			return
+		} else if isLastOwner {
+			v := validator.Validator{}
+			v.AddError("cannot demote the last owner of an organization")
+			app.failedValidation(w, r, v)
+			return
+		}
+	}
+
+	roles, err := app.db.ListRoles(org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	if !found {
+	var roleID int64
+	for _, role := range roles {
+		if role.Name == input.Role && role.IsBuiltin {
+			roleID = role.ID
+			break
+		}
+	}
+	if roleID == 0 {
 		app.notFound(w, r)
 		return
 	}
 
 	grantor := contextGetAccount(r)
-	err = app.enforcer.BindRole(r.Context(), org.ID, role.ID, "account", accountID, "org", org.ID, grantor.ID)
+	err = app.enforcer.BindRole(r.Context(), org.ID, roleID, "account", accountID, "org", org.ID, grantor.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
+	app.enforcer.InvalidatePrincipals(org.ID, accountID)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// isLastOrgOwner returns true if accountID is the only owner of the org.
+func (app *application) isLastOrgOwner(r *http.Request, orgID, accountID int64) (bool, error) {
+	roles, err := app.db.ListRoles(orgID)
+	if err != nil {
+		return false, err
+	}
+	var ownerRoleID int64
+	for _, role := range roles {
+		if role.Name == "owner" && role.IsBuiltin {
+			ownerRoleID = role.ID
+			break
+		}
+	}
+	if ownerRoleID == 0 {
+		return false, nil
+	}
+	n, err := app.db.CountRoleBinding(r.Context(), orgID, ownerRoleID, "org", orgID)
+	if err != nil {
+		return false, err
+	}
+	if n <= 1 {
+		// Check that the target account actually holds the owner role.
+		holds, err := app.db.AccountHasRoleBinding(r.Context(), orgID, ownerRoleID, accountID, "org", orgID)
+		if err != nil {
+			return false, err
+		}
+		return holds, nil
+	}
+	return false, nil
 }
 
 // slugify converts a name to a URL-safe slug.
@@ -219,7 +282,15 @@ func slugify(name string) string {
 	return fmt.Sprintf("%s", s)
 }
 
-// allPermissions returns a list of all known permissions (used by the API).
-func allPermissions() []string {
-	return access.AllPermissions()
+// isValidSlug returns true if s contains only lowercase letters, digits, and hyphens.
+func isValidSlug(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
+			return false
+		}
+	}
+	return true
 }

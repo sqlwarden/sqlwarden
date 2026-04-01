@@ -9,7 +9,7 @@ import (
 	"github.com/sqlwarden/internal/assert"
 )
 
-// registerAndLogin registers a user, logs in, and returns the account ID, access token, and org slug.
+// registerAndLogin registers a user, logs in, creates an org, and returns the account ID, access token, and org slug.
 func registerAndLogin(t *testing.T, app *application, email, name, password string) (accountID, accessToken, orgSlug string) {
 	t.Helper()
 
@@ -21,21 +21,15 @@ func registerAndLogin(t *testing.T, app *application, email, name, password stri
 	assert.Equal(t, loginRes.StatusCode, http.StatusOK)
 	accessToken = extractAccessToken(t, loginRes)
 
-	// Fetch orgs to get the personal org slug.
-	req := newTestRequest(t, http.MethodGet, "/api/v1/user/orgs", nil)
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	orgsRes := send(t, req, app.routes())
-	assert.Equal(t, orgsRes.StatusCode, http.StatusOK)
-
-	var tenants []map[string]any
-	err := json.Unmarshal(orgsRes.BodyBytes, &tenants)
-	if err != nil {
-		t.Fatalf("expected JSON array: %v", err)
+	// Create a personal org for the user.
+	orgName := name + "'s Org"
+	orgReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{"name": orgName})
+	orgReq.Header.Set("Authorization", "Bearer "+accessToken)
+	orgRes := send(t, orgReq, app.routes())
+	if orgRes.StatusCode != http.StatusCreated {
+		t.Fatalf("registerAndLogin: failed to create org, got %d: %s", orgRes.StatusCode, orgRes.BodyBytes)
 	}
-	if len(tenants) < 1 {
-		t.Fatal("expected at least one org")
-	}
-	orgSlug = tenants[0]["slug"].(string)
+	orgSlug = orgRes.BodyFields["slug"].(string)
 
 	return accountID, accessToken, orgSlug
 }
