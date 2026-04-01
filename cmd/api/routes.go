@@ -69,12 +69,12 @@ func (app *application) routes() http.Handler {
 
 			r.Route("/workspaces", func(r chi.Router) {
 				r.Get("/", app.listWorkspaces)
-				r.With(app.requireOrgRole("admin")).Post("/", app.createWorkspace)
+				r.With(app.requirePermission("ws:create")).Post("/", app.createWorkspace)
 				r.Route("/{ws_id}", func(r chi.Router) {
 					r.Use(app.wsCtx)
 					r.Get("/", app.getWorkspace)
 					r.With(app.requirePermission("ws:write")).Patch("/", app.updateWorkspace)
-					r.With(app.requireOrgRole("admin")).Delete("/", app.deleteWorkspace)
+					r.With(app.requirePermission("ws:delete")).Delete("/", app.deleteWorkspace)
 
 					r.Get("/access", app.listWorkspaceBindings)
 					r.With(app.requirePermission("policy:modify")).Post("/access", app.grantWorkspaceAccess)

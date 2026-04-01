@@ -84,12 +84,12 @@ func seedOrg(t *testing.T, db *database.DB, e *access.Enforcer, suffix string) (
 	return org.ID, owner.ID
 }
 
-// TestSeedOrgCreatesBuiltinRoles verifies that SeedOrg seeds the three builtin roles.
+// TestSeedOrgCreatesBuiltinRoles verifies that SeedOrg seeds the owner and admin builtin roles.
 func TestSeedOrgCreatesBuiltinRoles(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	orgID, _ := seedOrg(t, db, e, "seed")
 
-	roles, err := db.ListRoles(orgID)
+	roles, err := db.ListOrgRoles(orgID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,10 +100,13 @@ func TestSeedOrgCreatesBuiltinRoles(t *testing.T) {
 			byName[r.Name] = true
 		}
 	}
-	for _, name := range []string{"owner", "admin", "member"} {
+	for _, name := range []string{"owner", "admin"} {
 		if !byName[name] {
 			t.Errorf("expected builtin role %q to exist after SeedOrg", name)
 		}
+	}
+	if byName["member"] {
+		t.Error("member role should not exist at org level after SeedOrg")
 	}
 }
 
@@ -121,11 +124,19 @@ func TestCanOwnerHasOrgPermissions(t *testing.T) {
 	}
 }
 
-// TestCanMemberLacksAdminPermissions verifies that a plain member cannot perform admin operations.
-func TestCanMemberLacksAdminPermissions(t *testing.T) {
+// TestCanWsMemberLacksAdminPermissions verifies that a ws:member cannot perform admin operations.
+func TestCanWsMemberLacksAdminPermissions(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	orgID, ownerID := seedOrg(t, db, e, "member-perms")
 	ctx := context.Background()
+
+	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "Main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.SeedWorkspace(ctx, orgID, ws.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
 
 	member, err := db.InsertAccount("member-perms@example.com", "Member", nil)
 	if err != nil {
@@ -135,30 +146,31 @@ func TestCanMemberLacksAdminPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Bind member role.
-	roles, err := db.ListRoles(orgID)
+	// Bind ws:member role at workspace level.
+	roles, err := db.ListWorkspaceRoles(orgID, ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, r := range roles {
-		if r.Name == "member" && r.IsBuiltin {
-			if err = e.BindRole(ctx, orgID, r.ID, "account", member.ID, "org", orgID, ownerID); err != nil {
+		if r.Name == "ws:member" && r.IsBuiltin {
+			if err = e.BindRole(ctx, orgID, r.ID, "account", member.ID, "workspace", ws.ID, ownerID); err != nil {
 				t.Fatal(err)
 			}
 			break
 		}
 	}
 
-	restricted := []string{"org:write", "org:invite", "org:transfer_ownership", "policy:modify"}
+	// ws:member should NOT have org-level admin permissions.
+	restricted := []string{"org:write", "org:invite", "org:transfer_ownership", "policy:modify", "ws:delete"}
 	for _, p := range restricted {
-		if e.Can(ctx, member.ID, orgID, "org", "org", orgID, p) {
-			t.Errorf("member should NOT have permission %q", p)
+		if e.Can(ctx, member.ID, orgID, "org", "workspace", ws.ID, p) {
+			t.Errorf("ws:member should NOT have permission %q", p)
 		}
 	}
 
-	// But member should have ws:read.
-	if !e.Can(ctx, member.ID, orgID, "org", "org", orgID, "ws:read") {
-		t.Error("member should have ws:read")
+	// ws:member should have ws:read via workspace-level binding.
+	if !e.Can(ctx, member.ID, orgID, "org", "workspace", ws.ID, "ws:read") {
+		t.Error("ws:member should have ws:read at workspace level")
 	}
 }
 
@@ -276,7 +288,7 @@ func TestCreateRoleValidScope(t *testing.T) {
 	orgID, _ := seedOrg(t, db, e, "role-valid")
 	ctx := context.Background()
 
-	id, err := e.CreateRole(ctx, orgID, "viewer", "Read-only viewer", "workspace", []string{"ws:read", "env:read"})
+	id, err := e.CreateRole(ctx, orgID, nil, "viewer", "Read-only viewer", "workspace", []string{"ws:read", "env:read"})
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}
@@ -291,7 +303,7 @@ func TestCreateRoleInvalidPermissionForScope(t *testing.T) {
 	orgID, _ := seedOrg(t, db, e, "role-invalid")
 	ctx := context.Background()
 
-	_, err := e.CreateRole(ctx, orgID, "bad-role", "", "connection", []string{"org:write"})
+	_, err := e.CreateRole(ctx, orgID, nil, "bad-role", "", "connection", []string{"org:write"})
 	if err == nil {
 		t.Error("expected error for out-of-scope permission, got nil")
 	}

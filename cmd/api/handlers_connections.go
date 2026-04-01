@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/request"
@@ -17,12 +18,24 @@ import (
 )
 
 func (app *application) listConnections(w http.ResponseWriter, r *http.Request) {
+	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
-	conns, err := app.db.ListConnections(ws.ID)
+
+	var (
+		conns []database.Connection
+		err   error
+	)
+	if app.config.desktopMode {
+		conns, err = app.db.ListConnections(ws.ID)
+	} else {
+		account := contextGetAccount(r)
+		conns, err = app.db.ListAccessibleConnections(account.ID, org.ID, ws.ID)
+	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
+
 	err = response.JSON(w, http.StatusOK, conns)
 	if err != nil {
 		app.serverError(w, r, err)

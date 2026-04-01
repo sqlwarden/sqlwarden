@@ -29,6 +29,7 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 		Name        string              `json:"name"`
 		Description string              `json:"description"`
 		ScopeType   string              `json:"scope_type"`
+		WorkspaceID *int64              `json:"workspace_id"`
 		Permissions []string            `json:"permissions"`
 		V           validator.Validator `json:"-"`
 	}
@@ -43,6 +44,9 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 	input.V.CheckField(input.ScopeType != "", "scope_type", "scope_type is required")
 	validScopes := map[string]bool{"org": true, "workspace": true, "environment": true, "connection": true}
 	input.V.CheckField(validScopes[input.ScopeType], "scope_type", "must be org, workspace, environment, or connection")
+	if input.WorkspaceID != nil {
+		input.V.CheckField(input.ScopeType == "workspace", "scope_type", "workspace-scoped roles must have scope_type=workspace")
+	}
 	for _, p := range input.Permissions {
 		input.V.CheckField(access.ValidForScope(p, input.ScopeType), "permissions", p+" is not valid for scope "+input.ScopeType)
 	}
@@ -53,7 +57,7 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	org := contextGetOrg(r)
-	roleID, err := app.enforcer.CreateRole(r.Context(), org.ID, input.Name, input.Description, input.ScopeType, input.Permissions)
+	roleID, err := app.enforcer.CreateRole(r.Context(), org.ID, input.WorkspaceID, input.Name, input.Description, input.ScopeType, input.Permissions)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

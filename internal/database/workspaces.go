@@ -81,6 +81,67 @@ func (db *DB) ListWorkspacesByOwner(ownerType string, ownerID int64) ([]Workspac
 	return wss, err
 }
 
+// ListAccessibleWorkspaces returns workspaces within orgID that accountID has any binding on,
+// either at the org level (all workspaces visible) or directly at the workspace level.
+func (db *DB) ListAccessibleWorkspaces(accountID, orgID int64) ([]Workspace, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	const q = `
+WITH my_teams AS (
+    SELECT team_id FROM team_members WHERE account_id = ?
+)
+SELECT DISTINCT w.*
+FROM workspaces w
+WHERE w.owner_type = 'org' AND w.owner_id = ?
+  AND (
+    EXISTS (
+        SELECT 1 FROM role_bindings rb
+        WHERE rb.org_id = ? AND rb.resource_type = 'org' AND rb.resource_id = ?
+          AND (
+            (rb.subject_type = 'account' AND rb.subject_id = ?)
+            OR (rb.subject_type = 'team' AND rb.subject_id IN (SELECT team_id FROM my_teams))
+          )
+    )
+    OR EXISTS (
+        SELECT 1 FROM permission_bindings pb
+        WHERE pb.org_id = ? AND pb.resource_type = 'org' AND pb.resource_id = ?
+          AND (
+            (pb.subject_type = 'account' AND pb.subject_id = ?)
+            OR (pb.subject_type = 'team' AND pb.subject_id IN (SELECT team_id FROM my_teams))
+          )
+    )
+    OR EXISTS (
+        SELECT 1 FROM role_bindings rb2
+        WHERE rb2.org_id = ? AND rb2.resource_type = 'workspace' AND rb2.resource_id = w.id
+          AND (
+            (rb2.subject_type = 'account' AND rb2.subject_id = ?)
+            OR (rb2.subject_type = 'team' AND rb2.subject_id IN (SELECT team_id FROM my_teams))
+          )
+    )
+    OR EXISTS (
+        SELECT 1 FROM permission_bindings pb2
+        WHERE pb2.org_id = ? AND pb2.resource_type = 'workspace' AND pb2.resource_id = w.id
+          AND (
+            (pb2.subject_type = 'account' AND pb2.subject_id = ?)
+            OR (pb2.subject_type = 'team' AND pb2.subject_id IN (SELECT team_id FROM my_teams))
+          )
+    )
+  )
+ORDER BY w.name ASC`
+
+	var wss []Workspace
+	err := db.NewRaw(q,
+		accountID,               // my_teams CTE
+		orgID,                   // w.owner_id
+		orgID, orgID, accountID, // org role binding
+		orgID, orgID, accountID, // org perm binding
+		orgID, accountID, // ws role binding
+		orgID, accountID, // ws perm binding
+	).Scan(ctx, &wss)
+	return wss, err
+}
+
 func (db *DB) UpdateWorkspace(id int64, name, description string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()

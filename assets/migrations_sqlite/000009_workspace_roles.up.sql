@@ -1,0 +1,25 @@
+PRAGMA foreign_keys = OFF;
+
+CREATE TABLE roles_new (
+    id           INTEGER  PRIMARY KEY AUTOINCREMENT,
+    org_id       INTEGER  NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    workspace_id INTEGER  REFERENCES workspaces(id) ON DELETE CASCADE,
+    name         TEXT     NOT NULL,
+    description  TEXT,
+    scope_type   TEXT     NOT NULL,
+    is_builtin   INTEGER  NOT NULL DEFAULT 0,
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO roles_new (id, org_id, workspace_id, name, description, scope_type, is_builtin, created_at, updated_at)
+SELECT id, org_id, NULL, name, description, scope_type, is_builtin, created_at, updated_at FROM roles;
+
+DROP TABLE roles;
+ALTER TABLE roles_new RENAME TO roles;
+
+CREATE INDEX        idx_roles_org        ON roles(org_id);
+CREATE UNIQUE INDEX roles_org_name_org_level ON roles(org_id, name)              WHERE workspace_id IS NULL;
+CREATE UNIQUE INDEX roles_org_ws_name        ON roles(org_id, workspace_id, name) WHERE workspace_id IS NOT NULL;
+
+PRAGMA foreign_keys = ON;

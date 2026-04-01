@@ -60,12 +60,13 @@ var ScopePermissions = map[string][]string{
 		PermPolicyRead, PermPolicyModify,
 	},
 	"workspace": {
-		PermWsRead, PermWsWrite, PermWsDelete,
+		PermWsRead, PermWsWrite,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
 		PermConnMetadata, PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermQueryRead, PermQueryWrite, PermQueryDelete, PermQueryExecute, PermQueryShare,
 		PermJobRead, PermJobWrite, PermJobDelete, PermJobExecute,
 		PermFileRead, PermFileWrite, PermFileDelete,
+		PermPolicyRead, PermPolicyModify,
 	},
 	"environment": {
 		PermEnvRead, PermEnvWrite, PermEnvDelete, PermEnvDeploy,
@@ -78,25 +79,42 @@ var ScopePermissions = map[string][]string{
 	},
 }
 
-// BuiltinRoles maps role name to its permission set.
-var BuiltinRoles = map[string][]string{
+// OrgBuiltinRoles are seeded once per org by SeedOrg.
+// owner and admin are bound at the org resource; they gain full access to all workspaces
+// via the ancestry traversal (org → workspace → connection).
+var OrgBuiltinRoles = map[string][]string{
 	"owner": ScopePermissions["org"],
 	"admin": {
-		PermOrgRead, PermOrgInvite,
-		PermWsRead, PermWsWrite, PermWsCreate,
-		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDeploy,
-		PermConnMetadata, PermConnRead, PermConnWrite, PermConnCreate, PermConnExecute,
+		PermOrgRead, PermOrgWrite, PermOrgInvite, PermOrgAssignRoles,
+		PermWsCreate, PermWsDelete, PermWsRead, PermWsWrite,
+		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
+		PermConnMetadata, PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermQueryRead, PermQueryWrite, PermQueryDelete, PermQueryExecute, PermQueryShare,
 		PermJobRead, PermJobWrite, PermJobDelete, PermJobExecute,
 		PermFileRead, PermFileWrite, PermFileDelete,
 		PermPolicyRead,
 	},
-	"member": {
-		PermWsRead, PermEnvRead,
-		PermConnMetadata, PermConnExecute,
-		PermQueryRead, PermQueryWrite, PermQueryExecute, PermQueryShare,
-		PermJobRead, PermJobWrite, PermJobExecute,
-		PermFileRead, PermFileWrite,
+}
+
+// WorkspaceBuiltinRoles are seeded per workspace by SeedWorkspace.
+// They are bound at the workspace resource and scoped to that workspace only.
+var WorkspaceBuiltinRoles = map[string][]string{
+	"ws:admin": {
+		PermWsRead, PermWsWrite,
+		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
+		PermConnMetadata, PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermQueryRead, PermQueryWrite, PermQueryDelete, PermQueryExecute, PermQueryShare,
+		PermJobRead, PermJobWrite, PermJobDelete, PermJobExecute,
+		PermFileRead, PermFileWrite, PermFileDelete,
+		PermPolicyRead, PermPolicyModify,
+	},
+	"ws:member": {
+		PermWsRead,
+		PermEnvRead,
+		PermConnMetadata, PermConnRead, PermConnExecute,
+		PermQueryRead, PermQueryExecute,
+		PermJobRead, PermJobExecute,
+		PermFileRead,
 	},
 }
 

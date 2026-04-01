@@ -112,24 +112,8 @@ func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Bind the member role to the new member at the org level.
-	roles, err := app.db.ListRoles(org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	grantor := contextGetAccount(r)
-	for _, role := range roles {
-		if role.Name == "member" {
-			err = app.enforcer.BindRole(r.Context(), org.ID, role.ID, "account", account.ID, "org", org.ID, grantor.ID)
-			if err != nil {
-				app.serverError(w, r, err)
-				return
-			}
-			break
-		}
-	}
-
+	// No role binding is created here. The new member has no workspace access by default;
+	// a workspace admin must explicitly grant access to each workspace.
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -176,7 +160,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 	}
 
 	input.V.CheckField(input.Role != "", "role", "role is required")
-	input.V.CheckField(input.Role == "owner" || input.Role == "admin" || input.Role == "member", "role", "role must be owner, admin, or member")
+	input.V.CheckField(input.Role == "owner" || input.Role == "admin", "role", "role must be owner or admin")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -203,7 +187,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	roles, err := app.db.ListRoles(org.ID)
+	roles, err := app.db.ListOrgRoles(org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -233,7 +217,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 
 // isLastOrgOwner returns true if accountID is the only owner of the org.
 func (app *application) isLastOrgOwner(r *http.Request, orgID, accountID int64) (bool, error) {
-	roles, err := app.db.ListRoles(orgID)
+	roles, err := app.db.ListOrgRoles(orgID)
 	if err != nil {
 		return false, err
 	}

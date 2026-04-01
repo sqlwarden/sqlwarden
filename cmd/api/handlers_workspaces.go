@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -12,11 +13,22 @@ import (
 
 func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-	wss, err := app.db.ListWorkspacesByOwner("org", org.ID)
+
+	var (
+		wss []database.Workspace
+		err error
+	)
+	if app.config.desktopMode {
+		wss, err = app.db.ListWorkspacesByOwner("org", org.ID)
+	} else {
+		account := contextGetAccount(r)
+		wss, err = app.db.ListAccessibleWorkspaces(account.ID, org.ID)
+	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
+
 	err = response.JSON(w, http.StatusOK, wss)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -43,7 +55,14 @@ func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) 
 	}
 
 	org := contextGetOrg(r)
+	account := contextGetAccount(r)
 	ws, err := app.db.InsertWorkspace(&org.ID, "org", org.ID, input.Name, input.Description)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = app.enforcer.SeedWorkspace(r.Context(), org.ID, ws.ID, account.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

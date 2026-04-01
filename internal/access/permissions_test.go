@@ -24,8 +24,8 @@ func TestValidForScope(t *testing.T) {
 	}
 }
 
-func TestBuiltinRoles(t *testing.T) {
-	ownerPerms := access.BuiltinRoles["owner"]
+func TestOrgBuiltinRoles(t *testing.T) {
+	ownerPerms := access.OrgBuiltinRoles["owner"]
 	if len(ownerPerms) == 0 {
 		t.Fatal("owner must have permissions")
 	}
@@ -39,10 +39,32 @@ func TestBuiltinRoles(t *testing.T) {
 		t.Fatal("owner must have org:transfer_ownership")
 	}
 
-	memberPerms := access.BuiltinRoles["member"]
-	for _, p := range memberPerms {
+	adminPerms := access.OrgBuiltinRoles["admin"]
+	for _, p := range adminPerms {
 		if p == "org:delete" {
-			t.Fatal("member must not have org:delete")
+			t.Fatal("admin must not have org:delete")
+		}
+		if p == "org:transfer_ownership" {
+			t.Fatal("admin must not have org:transfer_ownership")
+		}
+	}
+}
+
+func TestWorkspaceBuiltinRoles(t *testing.T) {
+	adminPerms := access.WorkspaceBuiltinRoles["ws:admin"]
+	if len(adminPerms) == 0 {
+		t.Fatal("ws:admin must have permissions")
+	}
+	for _, p := range adminPerms {
+		if p == "ws:create" || p == "ws:delete" {
+			t.Fatalf("ws:admin must not have %s", p)
+		}
+	}
+
+	memberPerms := access.WorkspaceBuiltinRoles["ws:member"]
+	for _, p := range memberPerms {
+		if p == "ws:write" || p == "conn:delete" {
+			t.Fatalf("ws:member must not have %s", p)
 		}
 	}
 }

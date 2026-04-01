@@ -91,6 +91,85 @@ func (db *DB) ListConnections(workspaceID int64) ([]Connection, error) {
 	return conns, err
 }
 
+// ListAccessibleConnections returns connections in workspaceID that accountID has any binding on,
+// checking org-level, workspace-level, and direct connection-level bindings.
+func (db *DB) ListAccessibleConnections(accountID, orgID, workspaceID int64) ([]Connection, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	const q = `
+WITH my_teams AS (
+    SELECT team_id FROM team_members WHERE account_id = ?
+)
+SELECT DISTINCT c.*
+FROM connections c
+WHERE c.workspace_id = ?
+  AND (
+    EXISTS (
+        SELECT 1 FROM role_bindings rb
+        WHERE rb.org_id = ? AND rb.resource_type = 'org' AND rb.resource_id = ?
+          AND (
+            (rb.subject_type = 'account' AND rb.subject_id = ?)
+            OR (rb.subject_type = 'team' AND rb.subject_id IN (SELECT team_id FROM my_teams))
+          )
+    )
+    OR EXISTS (
+        SELECT 1 FROM permission_bindings pb
+        WHERE pb.org_id = ? AND pb.resource_type = 'org' AND pb.resource_id = ?
+          AND (
+            (pb.subject_type = 'account' AND pb.subject_id = ?)
+            OR (pb.subject_type = 'team' AND pb.subject_id IN (SELECT team_id FROM my_teams))
+          )
+    )
+    OR EXISTS (
+        SELECT 1 FROM role_bindings rb2
+        WHERE rb2.org_id = ? AND rb2.resource_type = 'workspace' AND rb2.resource_id = ?
+          AND (
+            (rb2.subject_type = 'account' AND rb2.subject_id = ?)
+            OR (rb2.subject_type = 'team' AND rb2.subject_id IN (SELECT team_id FROM my_teams))
+          )
+    )
+    OR EXISTS (
+        SELECT 1 FROM permission_bindings pb2
+        WHERE pb2.org_id = ? AND pb2.resource_type = 'workspace' AND pb2.resource_id = ?
+          AND (
+            (pb2.subject_type = 'account' AND pb2.subject_id = ?)
+            OR (pb2.subject_type = 'team' AND pb2.subject_id IN (SELECT team_id FROM my_teams))
+          )
+    )
+    OR EXISTS (
+        SELECT 1 FROM role_bindings rb3
+        WHERE rb3.org_id = ? AND rb3.resource_type = 'connection' AND rb3.resource_id = c.id
+          AND (
+            (rb3.subject_type = 'account' AND rb3.subject_id = ?)
+            OR (rb3.subject_type = 'team' AND rb3.subject_id IN (SELECT team_id FROM my_teams))
+          )
+    )
+    OR EXISTS (
+        SELECT 1 FROM permission_bindings pb3
+        WHERE pb3.org_id = ? AND pb3.resource_type = 'connection' AND pb3.resource_id = c.id
+          AND (
+            (pb3.subject_type = 'account' AND pb3.subject_id = ?)
+            OR (pb3.subject_type = 'team' AND pb3.subject_id IN (SELECT team_id FROM my_teams))
+          )
+    )
+  )
+ORDER BY c.name ASC`
+
+	var conns []Connection
+	err := db.NewRaw(q,
+		accountID,               // my_teams CTE
+		workspaceID,             // c.workspace_id
+		orgID, orgID, accountID, // org role binding
+		orgID, orgID, accountID, // org perm binding
+		orgID, workspaceID, accountID, // ws role binding
+		orgID, workspaceID, accountID, // ws perm binding
+		orgID, accountID, // conn role binding
+		orgID, accountID, // conn perm binding
+	).Scan(ctx, &conns)
+	return conns, err
+}
+
 func (db *DB) DeleteConnection(id int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()

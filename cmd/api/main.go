@@ -36,9 +36,10 @@ func main() {
 }
 
 type config struct {
-	baseURL  string
-	httpPort int
-	cookie   struct {
+	baseURL     string
+	httpPort    int
+	desktopMode bool
+	cookie      struct {
 		secretKey string
 	}
 	db struct {
@@ -81,6 +82,7 @@ func run(logger *slog.Logger) error {
 
 	cfg.baseURL = env.GetString("BASE_URL", "http://localhost:6020")
 	cfg.httpPort = env.GetInt("HTTP_PORT", 6020)
+	cfg.desktopMode = env.GetBool("DESKTOP_MODE", false)
 	cfg.cookie.secretKey = env.GetString("COOKIE_SECRET_KEY", "cpcgzjcote6h5hakeglpbzixhbuog2zc")
 	cfg.db.logQueries = env.GetBool("DB_LOG_QUERIES", false)
 	cfg.db.driver = env.GetString("DB_DRIVER", "sqlite")

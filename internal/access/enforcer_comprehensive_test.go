@@ -8,10 +8,10 @@ import (
 	"github.com/sqlwarden/internal/database"
 )
 
-// findRoleID returns the ID of the named role in the given org, fatal if not found.
+// findRoleID returns the ID of the named org-level role in the given org, fatal if not found.
 func findRoleID(t *testing.T, db *database.DB, orgID int64, name string) int64 {
 	t.Helper()
-	roles, err := db.ListRoles(orgID)
+	roles, err := db.ListOrgRoles(orgID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +20,23 @@ func findRoleID(t *testing.T, db *database.DB, orgID int64, name string) int64 {
 			return r.ID
 		}
 	}
-	t.Fatalf("role %q not found in org %d", name, orgID)
+	t.Fatalf("org role %q not found in org %d", name, orgID)
+	return 0
+}
+
+// findWorkspaceRoleID returns the ID of the named workspace-scoped role, fatal if not found.
+func findWorkspaceRoleID(t *testing.T, db *database.DB, orgID, workspaceID int64, name string) int64 {
+	t.Helper()
+	roles, err := db.ListWorkspaceRoles(orgID, workspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range roles {
+		if r.Name == name {
+			return r.ID
+		}
+	}
+	t.Fatalf("workspace role %q not found in org %d workspace %d", name, orgID, workspaceID)
 	return 0
 }
 
@@ -106,7 +122,7 @@ func TestWorkspaceRoleBindingFlowsToConnection(t *testing.T) {
 	}
 
 	// Create a workspace-scope custom role with conn:execute.
-	roleID, err := e.CreateRole(ctx, orgID, "conn-runner", "", "workspace", []string{access.PermConnExecute})
+	roleID, err := e.CreateRole(ctx, orgID, nil, "conn-runner", "", "workspace", []string{access.PermConnExecute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +160,7 @@ func TestWorkspaceRoleBindingFlowsToEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	roleID, err := e.CreateRole(ctx, orgID, "deployer", "", "workspace", []string{access.PermEnvDeploy})
+	roleID, err := e.CreateRole(ctx, orgID, nil, "deployer", "", "workspace", []string{access.PermEnvDeploy})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -489,7 +505,7 @@ func TestCustomRoleAtWorkspaceScope(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	roleID, err := e.CreateRole(ctx, orgID, "ws-viewer", "read-only", "workspace",
+	roleID, err := e.CreateRole(ctx, orgID, nil, "ws-viewer", "read-only", "workspace",
 		[]string{access.PermWsRead, access.PermEnvRead, access.PermConnMetadata})
 	if err != nil {
 		t.Fatal(err)
@@ -520,7 +536,7 @@ func TestCreateRoleWithOrgPermForWorkspaceScopeFails(t *testing.T) {
 	orgID, _ := seedOrg(t, db, e, "ws-org-perm")
 	ctx := context.Background()
 
-	_, err := e.CreateRole(ctx, orgID, "bad", "", "workspace", []string{access.PermOrgWrite})
+	_, err := e.CreateRole(ctx, orgID, nil, "bad", "", "workspace", []string{access.PermOrgWrite})
 	if err == nil {
 		t.Error("expected error: org:write is not valid for workspace scope")
 	}
@@ -540,7 +556,7 @@ func TestDeleteCustomRoleRevokesAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	roleID, err := e.CreateRole(ctx, orgID, "temp-role", "", "workspace", []string{access.PermWsWrite})
+	roleID, err := e.CreateRole(ctx, orgID, nil, "temp-role", "", "workspace", []string{access.PermWsWrite})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -595,11 +611,11 @@ func TestAccountInMultipleTeamsUnionPermissions(t *testing.T) {
 	}
 
 	// team1 gets ws:read; team2 gets ws:write.
-	readRole, err := e.CreateRole(ctx, orgID, "ws-read-only", "", "workspace", []string{access.PermWsRead})
+	readRole, err := e.CreateRole(ctx, orgID, nil, "ws-read-only", "", "workspace", []string{access.PermWsRead})
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeRole, err := e.CreateRole(ctx, orgID, "ws-write-only", "", "workspace", []string{access.PermWsWrite})
+	writeRole, err := e.CreateRole(ctx, orgID, nil, "ws-write-only", "", "workspace", []string{access.PermWsWrite})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -647,7 +663,7 @@ func TestTeamBindingAtWorkspaceScope(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	roleID, err := e.CreateRole(ctx, orgID, "frontend-role", "", "workspace", []string{access.PermWsRead, access.PermEnvRead})
+	roleID, err := e.CreateRole(ctx, orgID, nil, "frontend-role", "", "workspace", []string{access.PermWsRead, access.PermEnvRead})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -932,6 +948,7 @@ func TestAdminRoleDoesNotHaveOwnerOnlyPermissions(t *testing.T) {
 	}
 
 	ownerOnly := []string{access.PermOrgTransferOwnership, access.PermOrgDelete, access.PermPolicyModify}
+	// policy:modify is owner-only at org level; admin has it only at workspace level via ws:admin
 	for _, p := range ownerOnly {
 		if e.Can(ctx, memberID, orgID, "org", "org", orgID, p) {
 			t.Errorf("admin should NOT have owner-only permission %q", p)
@@ -939,36 +956,44 @@ func TestAdminRoleDoesNotHaveOwnerOnlyPermissions(t *testing.T) {
 	}
 }
 
-// TestMemberRoleBasicPermissions verifies the member builtin role grants exactly its
-// expected permissions and nothing more.
-func TestMemberRoleBasicPermissions(t *testing.T) {
+// TestWsMemberRoleBasicPermissions verifies the ws:member builtin role grants exactly its
+// expected permissions within the workspace and nothing more.
+func TestWsMemberRoleBasicPermissions(t *testing.T) {
 	e, db := newTestEnforcer(t)
-	orgID, ownerID := seedOrg(t, db, e, "member-basic")
+	orgID, ownerID := seedOrg(t, db, e, "wsmember-basic")
 	ctx := context.Background()
 
-	memberID := newMember(t, db, orgID, "member-basic@example.com")
-	memberRoleID := findRoleID(t, db, orgID, "member")
-
-	if err := e.BindRole(ctx, orgID, memberRoleID, "account", memberID, "org", orgID, ownerID); err != nil {
+	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "Main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.SeedWorkspace(ctx, orgID, ws.ID, ownerID); err != nil {
 		t.Fatal(err)
 	}
 
-	// Permissions the member role should have.
+	memberID := newMember(t, db, orgID, "wsmember-basic@example.com")
+	wsMemberRoleID := findWorkspaceRoleID(t, db, orgID, ws.ID, "ws:member")
+
+	if err = e.BindRole(ctx, orgID, wsMemberRoleID, "account", memberID, "workspace", ws.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Permissions ws:member should have at the workspace level.
 	allowed := []string{access.PermWsRead, access.PermEnvRead, access.PermConnExecute, access.PermQueryExecute}
 	for _, p := range allowed {
-		if !e.Can(ctx, memberID, orgID, "org", "org", orgID, p) {
-			t.Errorf("member role should have %q", p)
+		if !e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, p) {
+			t.Errorf("ws:member role should have %q", p)
 		}
 	}
 
-	// Permissions the member role should NOT have.
+	// Permissions ws:member should NOT have.
 	denied := []string{
 		access.PermOrgWrite, access.PermOrgInvite, access.PermWsWrite, access.PermWsDelete,
-		access.PermConnWrite, access.PermConnDelete, access.PermPolicyRead, access.PermPolicyModify,
+		access.PermConnWrite, access.PermConnDelete, access.PermPolicyModify,
 	}
 	for _, p := range denied {
-		if e.Can(ctx, memberID, orgID, "org", "org", orgID, p) {
-			t.Errorf("member role should NOT have %q", p)
+		if e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, p) {
+			t.Errorf("ws:member role should NOT have %q", p)
 		}
 	}
 }
@@ -1012,8 +1037,8 @@ func TestSeedOrgIdempotent(t *testing.T) {
 			builtinCount++
 		}
 	}
-	if builtinCount != 3 {
-		t.Errorf("expected exactly 3 builtin roles after double seed, got %d", builtinCount)
+	if builtinCount != 2 {
+		t.Errorf("expected exactly 2 builtin org roles after double seed, got %d", builtinCount)
 	}
 }
 
