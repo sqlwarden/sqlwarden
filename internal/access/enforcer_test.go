@@ -1,19 +1,474 @@
 package access_test
 
 import (
+	"context"
+	"fmt"
+	"io"
+	"log/slog"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/database"
 )
 
-func TestValidPermission_KnownPerms(t *testing.T) {
-	known := []string{"org:read", "ws:write", "conn:execute", "policy:modify"}
-	for _, p := range known {
-		if !access.ValidPermission(p) {
-			t.Errorf("expected %q to be valid", p)
+// newTestDB creates an isolated postgres schema for a single test.
+func newTestDB(t *testing.T) *database.DB {
+	t.Helper()
+
+	schemaName := fmt.Sprintf("test_access_%d", time.Now().UnixNano())
+	sep := "?"
+	if strings.Contains(pgTestDSN, "?") {
+		sep = "&"
+	}
+	dsn := fmt.Sprintf("%s%ssearch_path=%s", pgTestDSN, sep, schemaName)
+
+	db, err := database.New("postgres", dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(1)
+
+	ctx := context.Background()
+	_, err = db.ExecContext(ctx, fmt.Sprintf("CREATE SCHEMA %s", schemaName))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = db.MigrateUp(); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		defer db.Close()
+		_, _ = db.ExecContext(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
+	})
+
+	return db
+}
+
+// newTestEnforcer returns an Enforcer backed by a fresh isolated schema.
+func newTestEnforcer(t *testing.T) (*access.Enforcer, *database.DB) {
+	t.Helper()
+	db := newTestDB(t)
+	e, err := access.New(db.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e, db
+}
+
+// seedOrg creates an org and runs SeedOrg; returns orgID and ownerAccountID.
+func seedOrg(t *testing.T, db *database.DB, e *access.Enforcer, suffix string) (orgID, ownerID int64) {
+	t.Helper()
+	ctx := context.Background()
+
+	suffix = strings.ReplaceAll(suffix, " ", "-")
+	org, err := db.InsertOrg("test-org-"+suffix, "Test Org "+suffix)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner, err := db.InsertAccount("owner-"+suffix+"@example.com", "Owner "+suffix, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddOrgMember(org.ID, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = e.SeedOrg(ctx, org.ID, owner.ID); err != nil {
+		t.Fatalf("SeedOrg: %v", err)
+	}
+	return org.ID, owner.ID
+}
+
+// TestSeedOrgCreatesBuiltinRoles verifies that SeedOrg seeds the three builtin roles.
+func TestSeedOrgCreatesBuiltinRoles(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, _ := seedOrg(t, db, e, "seed")
+
+	roles, err := db.ListRoles(orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	byName := make(map[string]bool)
+	for _, r := range roles {
+		if r.IsBuiltin {
+			byName[r.Name] = true
 		}
 	}
-	if access.ValidPermission("not:real") {
-		t.Error("expected not:real to be invalid")
+	for _, name := range []string{"owner", "admin", "member"} {
+		if !byName[name] {
+			t.Errorf("expected builtin role %q to exist after SeedOrg", name)
+		}
+	}
+}
+
+// TestCanOwnerHasOrgPermissions verifies that the owner can perform org-level operations.
+func TestCanOwnerHasOrgPermissions(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "owner-perms")
+	ctx := context.Background()
+
+	perms := []string{"org:read", "org:write", "org:invite", "org:transfer_ownership", "policy:read", "policy:modify"}
+	for _, p := range perms {
+		if !e.Can(ctx, ownerID, orgID, "org", "org", orgID, p) {
+			t.Errorf("owner should have permission %q", p)
+		}
+	}
+}
+
+// TestCanMemberLacksAdminPermissions verifies that a plain member cannot perform admin operations.
+func TestCanMemberLacksAdminPermissions(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "member-perms")
+	ctx := context.Background()
+
+	member, err := db.InsertAccount("member-perms@example.com", "Member", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddOrgMember(orgID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Bind member role.
+	roles, err := db.ListRoles(orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range roles {
+		if r.Name == "member" && r.IsBuiltin {
+			if err = e.BindRole(ctx, orgID, r.ID, "account", member.ID, "org", orgID, ownerID); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+
+	restricted := []string{"org:write", "org:invite", "org:transfer_ownership", "policy:modify"}
+	for _, p := range restricted {
+		if e.Can(ctx, member.ID, orgID, "org", "org", orgID, p) {
+			t.Errorf("member should NOT have permission %q", p)
+		}
+	}
+
+	// But member should have ws:read.
+	if !e.Can(ctx, member.ID, orgID, "org", "org", orgID, "ws:read") {
+		t.Error("member should have ws:read")
+	}
+}
+
+// TestCanSpaceOwnerShortCircuits verifies ownerType=="space" always grants permission.
+func TestCanSpaceOwnerShortCircuits(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "space-sc")
+	ctx := context.Background()
+
+	// Even a made-up permission is granted for ownerType=="space".
+	if !e.Can(ctx, ownerID, orgID, "space", "workspace", 999, "org:transfer_ownership") {
+		t.Error("ownerType=space should short-circuit to true")
+	}
+}
+
+// TestCanWorkspaceInheritsOrgRole verifies that an org-level role binding grants workspace permissions.
+func TestCanWorkspaceInheritsOrgRole(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "ws-inherit")
+	ctx := context.Background()
+
+	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "MyWS", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Owner's org-level role should grant ws:write at workspace scope.
+	if !e.Can(ctx, ownerID, orgID, "org", "workspace", ws.ID, "ws:write") {
+		t.Error("owner should inherit ws:write at workspace scope via org role")
+	}
+}
+
+// TestCanViaTeamMembership verifies that team-based role bindings grant permissions.
+func TestCanViaTeamMembership(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "team-rbac")
+	ctx := context.Background()
+
+	member, err := db.InsertAccount("team-member@example.com", "Team Member", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddOrgMember(orgID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	team, err := db.InsertTeam(orgID, "devs", "Developers")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddTeamMember(team.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Bind admin role to the team.
+	roles, err := db.ListRoles(orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range roles {
+		if r.Name == "admin" && r.IsBuiltin {
+			if err = e.BindRole(ctx, orgID, r.ID, "team", team.ID, "org", orgID, ownerID); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+
+	// Member is in the team, so should get admin's permissions.
+	if !e.Can(ctx, member.ID, orgID, "org", "org", orgID, "org:invite") {
+		t.Error("team member should have org:invite via team admin role")
+	}
+	// But still not owner-only permissions.
+	if e.Can(ctx, member.ID, orgID, "org", "org", orgID, "org:transfer_ownership") {
+		t.Error("team member should NOT have org:transfer_ownership")
+	}
+}
+
+// TestCanDirectPermissionBinding verifies that a direct permission binding grants access.
+func TestCanDirectPermissionBinding(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "direct-perm")
+	ctx := context.Background()
+
+	member, err := db.InsertAccount("direct-perm@example.com", "Direct", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddOrgMember(orgID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "DirectWS", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Grant conn:execute directly on the workspace.
+	if err = e.GrantPermission(ctx, orgID, "conn:execute", "account", member.ID, "workspace", ws.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	if !e.Can(ctx, member.ID, orgID, "org", "workspace", ws.ID, "conn:execute") {
+		t.Error("member should have conn:execute via direct permission binding")
+	}
+	// Should not have other permissions.
+	if e.Can(ctx, member.ID, orgID, "org", "workspace", ws.ID, "ws:write") {
+		t.Error("member should NOT have ws:write without a binding")
+	}
+}
+
+// TestCreateRoleValidScope verifies CreateRole accepts valid scope+permissions.
+func TestCreateRoleValidScope(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, _ := seedOrg(t, db, e, "role-valid")
+	ctx := context.Background()
+
+	id, err := e.CreateRole(ctx, orgID, "viewer", "Read-only viewer", "workspace", []string{"ws:read", "env:read"})
+	if err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+	if id == 0 {
+		t.Error("expected non-zero role ID")
+	}
+}
+
+// TestCreateRoleInvalidPermissionForScope verifies CreateRole rejects out-of-scope permissions.
+func TestCreateRoleInvalidPermissionForScope(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, _ := seedOrg(t, db, e, "role-invalid")
+	ctx := context.Background()
+
+	_, err := e.CreateRole(ctx, orgID, "bad-role", "", "connection", []string{"org:write"})
+	if err == nil {
+		t.Error("expected error for out-of-scope permission, got nil")
+	}
+}
+
+// TestDeleteRoleRemovesBindings verifies DeleteRole returns error for builtin roles.
+func TestDeleteBuiltinRoleRejected(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, _ := seedOrg(t, db, e, "del-builtin")
+	ctx := context.Background()
+
+	roles, err := db.ListRoles(orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var builtinID int64
+	for _, r := range roles {
+		if r.IsBuiltin {
+			builtinID = r.ID
+			break
+		}
+	}
+	if builtinID == 0 {
+		t.Skip("no builtin roles")
+	}
+
+	if err = e.DeleteRole(ctx, builtinID, orgID); err == nil {
+		t.Error("expected error when deleting builtin role")
+	}
+}
+
+// TestCacheInvalidationOnRoleChange verifies that InvalidateOrgPolicy causes re-evaluation.
+func TestCacheInvalidationOnRoleChange(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "cache-inv")
+	ctx := context.Background()
+
+	member, err := db.InsertAccount("cache-member@example.com", "CacheMember", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddOrgMember(orgID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// No binding yet — should be false.
+	if e.Can(ctx, member.ID, orgID, "org", "org", orgID, "org:invite") {
+		t.Error("member should not have org:invite before binding")
+	}
+
+	// Bind admin role (which includes org:invite).
+	roles, err := db.ListRoles(orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range roles {
+		if r.Name == "admin" && r.IsBuiltin {
+			if err = e.BindRole(ctx, orgID, r.ID, "account", member.ID, "org", orgID, ownerID); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+
+	// After BindRole (which calls InvalidateOrgPolicy), Can should re-evaluate.
+	if !e.Can(ctx, member.ID, orgID, "org", "org", orgID, "org:invite") {
+		t.Error("member should have org:invite after admin role binding")
+	}
+}
+
+// TestPrincipalCacheInvalidation verifies InvalidatePrincipals clears team memberships.
+func TestPrincipalCacheInvalidation(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "principal-cache")
+	ctx := context.Background()
+
+	member, err := db.InsertAccount("principal-member@example.com", "PMember", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddOrgMember(orgID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	team, err := db.InsertTeam(orgID, "eng", "Engineering")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddTeamMember(team.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Bind admin role to team.
+	roles, err := db.ListRoles(orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range roles {
+		if r.Name == "admin" && r.IsBuiltin {
+			if err = e.BindRole(ctx, orgID, r.ID, "team", team.ID, "org", orgID, ownerID); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+
+	// First call caches principal list.
+	if !e.Can(ctx, member.ID, orgID, "org", "org", orgID, "org:invite") {
+		t.Error("should have org:invite via team")
+	}
+
+	// Remove from team in DB and invalidate principals.
+	if err = db.RemoveTeamMember(team.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	e.InvalidatePrincipals(orgID, member.ID)
+
+	// After invalidation, should no longer have the permission.
+	if e.Can(ctx, member.ID, orgID, "org", "org", orgID, "org:invite") {
+		t.Error("should NOT have org:invite after team removal + cache invalidation")
+	}
+}
+
+// TestUnbindRole verifies that UnbindRole removes a specific binding.
+func TestUnbindRole(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "unbind")
+	ctx := context.Background()
+
+	member, err := db.InsertAccount("unbind-member@example.com", "UnbindMember", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddOrgMember(orgID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	roles, err := db.ListRoles(orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var adminRoleID int64
+	for _, r := range roles {
+		if r.Name == "admin" && r.IsBuiltin {
+			adminRoleID = r.ID
+			break
+		}
+	}
+
+	if err = e.BindRole(ctx, orgID, adminRoleID, "account", member.ID, "org", orgID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if !e.Can(ctx, member.ID, orgID, "org", "org", orgID, "org:invite") {
+		t.Error("should have org:invite after binding")
+	}
+
+	// Get the binding ID.
+	bindings, err := db.ListRoleBindings(orgID, "org", orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bindingID int64
+	for _, b := range bindings {
+		if b.SubjectType == "account" && b.SubjectID == member.ID {
+			bindingID = b.ID
+			break
+		}
+	}
+	if bindingID == 0 {
+		t.Fatal("binding not found")
+	}
+
+	if err = e.UnbindRole(ctx, bindingID, orgID); err != nil {
+		t.Fatal(err)
+	}
+	if e.Can(ctx, member.ID, orgID, "org", "org", orgID, "org:invite") {
+		t.Error("should NOT have org:invite after unbinding")
 	}
 }
