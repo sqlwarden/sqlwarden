@@ -66,16 +66,16 @@ func seedOrg(t *testing.T, db *database.DB, e *access.Enforcer, suffix string) (
 	ctx := context.Background()
 
 	suffix = strings.ReplaceAll(suffix, " ", "-")
-	org, err := db.InsertOrg("test-org-"+suffix, "Test Org "+suffix)
+	org, err := db.InsertOrg(context.Background(), "test-org-"+suffix, "Test Org "+suffix)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	owner, err := db.InsertAccount("owner-"+suffix+"@example.com", "Owner "+suffix, nil)
+	owner, err := db.InsertAccount(context.Background(), "owner-"+suffix+"@example.com", "Owner "+suffix, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddOrgMember(org.ID, owner.ID); err != nil {
+	if err = db.AddOrgMember(context.Background(), org.ID, owner.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err = e.SeedOrg(ctx, org.ID, owner.ID); err != nil {
@@ -89,7 +89,7 @@ func TestSeedOrgCreatesBuiltinRoles(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	orgID, _ := seedOrg(t, db, e, "seed")
 
-	roles, err := db.ListOrgRoles(orgID)
+	roles, err := db.ListOrgRoles(context.Background(), orgID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestCanWsMemberLacksAdminPermissions(t *testing.T) {
 	orgID, ownerID := seedOrg(t, db, e, "member-perms")
 	ctx := context.Background()
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "Main", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "Main", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,16 +138,16 @@ func TestCanWsMemberLacksAdminPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	member, err := db.InsertAccount("member-perms@example.com", "Member", nil)
+	member, err := db.InsertAccount(context.Background(), "member-perms@example.com", "Member", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddOrgMember(orgID, member.ID); err != nil {
+	if err = db.AddOrgMember(context.Background(), orgID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
 	// Bind ws:member role at workspace level.
-	roles, err := db.ListWorkspaceRoles(orgID, ws.ID)
+	roles, err := db.ListWorkspaceRoles(context.Background(), orgID, ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestCanWorkspaceInheritsOrgRole(t *testing.T) {
 	orgID, ownerID := seedOrg(t, db, e, "ws-inherit")
 	ctx := context.Background()
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "MyWS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "MyWS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,24 +209,24 @@ func TestCanViaTeamMembership(t *testing.T) {
 	orgID, ownerID := seedOrg(t, db, e, "team-rbac")
 	ctx := context.Background()
 
-	member, err := db.InsertAccount("team-member@example.com", "Team Member", nil)
+	member, err := db.InsertAccount(context.Background(), "team-member@example.com", "Team Member", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddOrgMember(orgID, member.ID); err != nil {
+	if err = db.AddOrgMember(context.Background(), orgID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
-	team, err := db.InsertTeam(orgID, "devs", "Developers")
+	team, err := db.InsertTeam(context.Background(), orgID, "devs", "Developers")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddTeamMember(team.ID, member.ID); err != nil {
+	if err = db.AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
 	// Bind admin role to the team.
-	roles, err := db.ListRoles(orgID)
+	roles, err := db.ListRoles(context.Background(), orgID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,15 +255,15 @@ func TestCanDirectPermissionBinding(t *testing.T) {
 	orgID, ownerID := seedOrg(t, db, e, "direct-perm")
 	ctx := context.Background()
 
-	member, err := db.InsertAccount("direct-perm@example.com", "Direct", nil)
+	member, err := db.InsertAccount(context.Background(), "direct-perm@example.com", "Direct", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddOrgMember(orgID, member.ID); err != nil {
+	if err = db.AddOrgMember(context.Background(), orgID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "DirectWS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "DirectWS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +315,7 @@ func TestDeleteBuiltinRoleRejected(t *testing.T) {
 	orgID, _ := seedOrg(t, db, e, "del-builtin")
 	ctx := context.Background()
 
-	roles, err := db.ListRoles(orgID)
+	roles, err := db.ListRoles(context.Background(), orgID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,11 +341,11 @@ func TestCacheInvalidationOnRoleChange(t *testing.T) {
 	orgID, ownerID := seedOrg(t, db, e, "cache-inv")
 	ctx := context.Background()
 
-	member, err := db.InsertAccount("cache-member@example.com", "CacheMember", nil)
+	member, err := db.InsertAccount(context.Background(), "cache-member@example.com", "CacheMember", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddOrgMember(orgID, member.ID); err != nil {
+	if err = db.AddOrgMember(context.Background(), orgID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -355,7 +355,7 @@ func TestCacheInvalidationOnRoleChange(t *testing.T) {
 	}
 
 	// Bind admin role (which includes org:invite).
-	roles, err := db.ListRoles(orgID)
+	roles, err := db.ListRoles(context.Background(), orgID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,24 +380,24 @@ func TestPrincipalCacheInvalidation(t *testing.T) {
 	orgID, ownerID := seedOrg(t, db, e, "principal-cache")
 	ctx := context.Background()
 
-	member, err := db.InsertAccount("principal-member@example.com", "PMember", nil)
+	member, err := db.InsertAccount(context.Background(), "principal-member@example.com", "PMember", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddOrgMember(orgID, member.ID); err != nil {
+	if err = db.AddOrgMember(context.Background(), orgID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
-	team, err := db.InsertTeam(orgID, "eng", "Engineering")
+	team, err := db.InsertTeam(context.Background(), orgID, "eng", "Engineering")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddTeamMember(team.ID, member.ID); err != nil {
+	if err = db.AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
 	// Bind admin role to team.
-	roles, err := db.ListRoles(orgID)
+	roles, err := db.ListRoles(context.Background(), orgID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +416,7 @@ func TestPrincipalCacheInvalidation(t *testing.T) {
 	}
 
 	// Remove from team in DB and invalidate principals.
-	if err = db.RemoveTeamMember(team.ID, member.ID); err != nil {
+	if err = db.RemoveTeamMember(context.Background(), team.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	e.InvalidatePrincipals(orgID, member.ID)
@@ -433,15 +433,15 @@ func TestUnbindRole(t *testing.T) {
 	orgID, ownerID := seedOrg(t, db, e, "unbind")
 	ctx := context.Background()
 
-	member, err := db.InsertAccount("unbind-member@example.com", "UnbindMember", nil)
+	member, err := db.InsertAccount(context.Background(), "unbind-member@example.com", "UnbindMember", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddOrgMember(orgID, member.ID); err != nil {
+	if err = db.AddOrgMember(context.Background(), orgID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
-	roles, err := db.ListRoles(orgID)
+	roles, err := db.ListRoles(context.Background(), orgID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +462,7 @@ func TestUnbindRole(t *testing.T) {
 	}
 
 	// Get the binding ID.
-	bindings, err := db.ListRoleBindings(orgID, "org", orgID)
+	bindings, err := db.ListRoleBindings(context.Background(), orgID, "org", orgID)
 	if err != nil {
 		t.Fatal(err)
 	}

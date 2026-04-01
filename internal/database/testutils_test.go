@@ -87,7 +87,7 @@ func newTestDB(t *testing.T, drivers ...string) *DB {
 	}
 
 	for _, user := range testUsers {
-		account, err := db.InsertAccount(user.email, user.email, &user.hashedPassword)
+		account, err := db.InsertAccount(context.Background(), user.email, user.email, &user.hashedPassword)
 		if err != nil {
 			t.Fatal(err)
 		}

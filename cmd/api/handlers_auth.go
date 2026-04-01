@@ -37,7 +37,7 @@ func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, exists, err := app.db.GetAccountByEmail(input.Email)
+	_, exists, err := app.db.GetAccountByEmail(r.Context(), input.Email)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -54,7 +54,7 @@ func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	account, err := app.db.InsertAccount(input.Email, input.Name, &hashedPW)
+	account, err := app.db.InsertAccount(r.Context(), input.Email, input.Name, &hashedPW)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -87,7 +87,7 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account, found, err := app.db.GetAccountByEmail(input.Email)
+	account, found, err := app.db.GetAccountByEmail(r.Context(), input.Email)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -117,7 +117,7 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 
 	family := database.NewID()
 	tokenHash := token.Hash(family)
-	_, err = app.db.InsertRefreshToken(
+	_, err = app.db.InsertRefreshToken(r.Context(),
 		account.ID,
 		tokenHash,
 		family,
@@ -152,22 +152,22 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rt, found, err := app.db.GetRefreshTokenByHash(token.Hash(cookie.Value))
+	rt, found, err := app.db.GetRefreshTokenByHash(r.Context(), token.Hash(cookie.Value))
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 	if !found || rt.RevokedAt != nil || time.Now().After(rt.ExpiresAt) {
 		if found && rt.RevokedAt == nil {
-			_ = app.db.RevokeFamilyTokens(rt.Family)
+			_ = app.db.RevokeFamilyTokens(r.Context(), rt.Family)
 		}
 		app.invalidAuthenticationToken(w, r)
 		return
 	}
 
-	_ = app.db.RevokeRefreshToken(rt.ID)
+	_ = app.db.RevokeRefreshToken(r.Context(), rt.ID)
 
-	account, found, err := app.db.GetAccount(rt.AccountID)
+	account, found, err := app.db.GetAccount(r.Context(), rt.AccountID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -185,7 +185,7 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	family := database.NewID()
-	_, err = app.db.InsertRefreshToken(
+	_, err = app.db.InsertRefreshToken(r.Context(),
 		rt.AccountID,
 		token.Hash(family),
 		rt.Family,
@@ -216,9 +216,9 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 func (app *application) logoutAccount(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("refresh_token")
 	if err == nil {
-		rt, found, err := app.db.GetRefreshTokenByHash(token.Hash(cookie.Value))
+		rt, found, err := app.db.GetRefreshTokenByHash(r.Context(), token.Hash(cookie.Value))
 		if err == nil && found {
-			_ = app.db.RevokeRefreshToken(rt.ID)
+			_ = app.db.RevokeRefreshToken(r.Context(), rt.ID)
 		}
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -242,7 +242,7 @@ func (app *application) getAccount(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) getAccountOrgs(w http.ResponseWriter, r *http.Request) {
 	account := contextGetAccount(r)
-	orgs, err := app.db.GetAccountOrgs(account.ID)
+	orgs, err := app.db.GetAccountOrgs(r.Context(), account.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

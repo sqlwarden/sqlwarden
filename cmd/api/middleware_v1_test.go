@@ -45,7 +45,7 @@ func issueTestToken(t *testing.T, app *application, accountID int64, email, name
 func TestAuthenticateV1_ValidToken(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
 
-	account, err := app.db.InsertAccount("auth-test@example.com", "Auth Test", nil)
+	account, err := app.db.InsertAccount(context.Background(), "auth-test@example.com", "Auth Test", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestRequireAccount_NoAccount(t *testing.T) {
 func TestOrgCtx_UnknownSlug(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
 
-	account, err := app.db.InsertAccount("orgctx-test@example.com", "Org Ctx Test", nil)
+	account, err := app.db.InsertAccount(context.Background(), "orgctx-test@example.com", "Org Ctx Test", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,12 +142,12 @@ func TestOrgCtx_UnknownSlug(t *testing.T) {
 func TestOrgCtx_NonMember(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
 
-	account, err := app.db.InsertAccount("non-member@example.com", "Non Member", nil)
+	account, err := app.db.InsertAccount(context.Background(), "non-member@example.com", "Non Member", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	org, err := app.db.InsertOrg("non-member-org", "Non Member Org")
+	org, err := app.db.InsertOrg(context.Background(), "non-member-org", "Non Member Org")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,17 +172,17 @@ func TestOrgCtx_NonMember(t *testing.T) {
 func TestOrgCtx_Member(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
 
-	account, err := app.db.InsertAccount("member@example.com", "Member", nil)
+	account, err := app.db.InsertAccount(context.Background(), "member@example.com", "Member", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	org, err := app.db.InsertOrg("member-org", "Member Org")
+	org, err := app.db.InsertOrg(context.Background(), "member-org", "Member Org")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = app.db.AddOrgMember(org.ID, account.ID)
+	err = app.db.AddOrgMember(context.Background(), org.ID, account.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,12 +212,12 @@ func TestOrgCtx_Member(t *testing.T) {
 func TestWsCtx_UnknownWsID(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
 
-	account, err := app.db.InsertAccount("wsctx-test@example.com", "WS Ctx Test", nil)
+	account, err := app.db.InsertAccount(context.Background(), "wsctx-test@example.com", "WS Ctx Test", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	org, err := app.db.InsertOrg("ws-org-ctx", "WS Org")
+	org, err := app.db.InsertOrg(context.Background(), "ws-org-ctx", "WS Org")
 	if err != nil {
 		t.Fatal(err)
 	}

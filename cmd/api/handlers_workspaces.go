@@ -19,10 +19,10 @@ func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 		err error
 	)
 	if app.config.desktopMode {
-		wss, err = app.db.ListWorkspacesByOwner("org", org.ID)
+		wss, err = app.db.ListWorkspacesByOwner(r.Context(), "org", org.ID)
 	} else {
 		account := contextGetAccount(r)
-		wss, err = app.db.ListAccessibleWorkspaces(account.ID, org.ID)
+		wss, err = app.db.ListAccessibleWorkspaces(r.Context(), account.ID, org.ID)
 	}
 	if err != nil {
 		app.serverError(w, r, err)
@@ -56,7 +56,7 @@ func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) 
 
 	org := contextGetOrg(r)
 	account := contextGetAccount(r)
-	ws, err := app.db.InsertWorkspace(&org.ID, "org", org.ID, input.Name, input.Description)
+	ws, err := app.db.InsertWorkspace(r.Context(), &org.ID, "org", org.ID, input.Name, input.Description)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -102,7 +102,7 @@ func (app *application) updateWorkspace(w http.ResponseWriter, r *http.Request) 
 	}
 
 	ws := contextGetWorkspace(r)
-	err = app.db.UpdateWorkspace(ws.ID, input.Name, input.Description)
+	err = app.db.UpdateWorkspace(r.Context(), ws.ID, input.Name, input.Description)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -113,7 +113,7 @@ func (app *application) updateWorkspace(w http.ResponseWriter, r *http.Request) 
 
 func (app *application) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	ws := contextGetWorkspace(r)
-	err := app.db.DeleteWorkspace(ws.ID)
+	err := app.db.DeleteWorkspace(r.Context(), ws.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -127,12 +127,12 @@ func (app *application) listWorkspaceBindings(w http.ResponseWriter, r *http.Req
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 
-	rbs, err := app.db.ListRoleBindings(org.ID, "workspace", ws.ID)
+	rbs, err := app.db.ListRoleBindings(r.Context(), org.ID, "workspace", ws.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	pbs, err := app.db.ListPermissionBindings(org.ID, "workspace", ws.ID)
+	pbs, err := app.db.ListPermissionBindings(r.Context(), org.ID, "workspace", ws.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

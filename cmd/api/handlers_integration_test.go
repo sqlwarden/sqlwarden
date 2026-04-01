@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,7 +30,7 @@ func TestFullWorkflow(t *testing.T) {
 
 	// Grant owner instance admin so they can create orgs.
 	ownerIDNum := ownerRes.BodyFields["id"]
-	if err := app.db.InsertInstanceAdmin(int64(ownerIDNum.(float64))); err != nil {
+	if err := app.db.InsertInstanceAdmin(context.Background(), int64(ownerIDNum.(float64))); err != nil {
 		t.Fatal(err)
 	}
 

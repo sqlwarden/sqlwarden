@@ -39,14 +39,14 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slug := slugify(input.Name)
-	org, err := app.db.InsertOrg(slug, input.Name)
+	org, err := app.db.InsertOrg(r.Context(), slug, input.Name)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
 	account := contextGetAccount(r)
-	err = app.db.AddOrgMember(org.ID, account.ID)
+	err = app.db.AddOrgMember(r.Context(), org.ID, account.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -66,7 +66,7 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-	members, err := app.db.GetOrgMembers(org.ID)
+	members, err := app.db.GetOrgMembers(r.Context(), org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -96,7 +96,7 @@ func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	org := contextGetOrg(r)
-	account, found, err := app.db.GetAccountByEmail(input.Email)
+	account, found, err := app.db.GetAccountByEmail(r.Context(), input.Email)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -106,7 +106,7 @@ func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = app.db.AddOrgMember(org.ID, account.ID)
+	err = app.db.AddOrgMember(r.Context(), org.ID, account.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -137,7 +137,7 @@ func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	err = app.db.RemoveOrgMember(org.ID, accountID)
+	err = app.db.RemoveOrgMember(r.Context(), org.ID, accountID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -187,7 +187,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	roles, err := app.db.ListOrgRoles(org.ID)
+	roles, err := app.db.ListOrgRoles(r.Context(), org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -217,7 +217,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 
 // isLastOrgOwner returns true if accountID is the only owner of the org.
 func (app *application) isLastOrgOwner(r *http.Request, orgID, accountID int64) (bool, error) {
-	roles, err := app.db.ListOrgRoles(orgID)
+	roles, err := app.db.ListOrgRoles(r.Context(), orgID)
 	if err != nil {
 		return false, err
 	}

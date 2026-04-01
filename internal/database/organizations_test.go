@@ -1,13 +1,14 @@
 package database
 
 import (
+	"context"
 	"testing"
 )
 
 func TestInsertAndGetOrg(t *testing.T) {
 	db := newTestDB(t)
 
-	org, err := db.InsertOrg("test-org", "Test Org")
+	org, err := db.InsertOrg(context.Background(), "test-org", "Test Org")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -15,7 +16,7 @@ func TestInsertAndGetOrg(t *testing.T) {
 		t.Fatal("expected non-zero ID")
 	}
 
-	found, ok, err := db.GetOrgBySlug("test-org")
+	found, ok, err := db.GetOrgBySlug(context.Background(), "test-org")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,48 +31,48 @@ func TestInsertAndGetOrg(t *testing.T) {
 func TestOrgMembership(t *testing.T) {
 	db := newTestDB(t)
 
-	org, err := db.InsertOrg("member-test", "Member Test")
+	org, err := db.InsertOrg(context.Background(), "member-test", "Member Test")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	pw := "pw"
-	acc, err := db.InsertAccount("member@example.com", "Member", &pw)
+	acc, err := db.InsertAccount(context.Background(), "member@example.com", "Member", &pw)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = db.AddOrgMember(org.ID, acc.ID)
+	err = db.AddOrgMember(context.Background(), org.ID, acc.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ok, err := db.IsOrgMember(org.ID, acc.ID)
+	ok, err := db.IsOrgMember(context.Background(), org.ID, acc.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !ok {
-		t.Fatal("expected account to be org member")
+		t.Fatal("expected account to be an org member")
 	}
 
-	orgs, err := db.GetAccountOrgs(acc.ID)
+	orgs, err := db.GetAccountOrgs(context.Background(), acc.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(orgs) != 1 || orgs[0].ID != org.ID {
-		t.Fatalf("expected 1 org, got %d", len(orgs))
+		t.Fatalf("expected 1 org, got %v", orgs)
 	}
 
-	err = db.RemoveOrgMember(org.ID, acc.ID)
+	err = db.RemoveOrgMember(context.Background(), org.ID, acc.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ok, err = db.IsOrgMember(org.ID, acc.ID)
+	ok, err = db.IsOrgMember(context.Background(), org.ID, acc.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ok {
-		t.Fatal("expected account to no longer be member")
+		t.Fatal("expected account to no longer be a member")
 	}
 }

@@ -41,8 +41,8 @@ type OrgMember struct {
 	JoinedAt  time.Time `bun:",notnull" json:"joined_at"`
 }
 
-func (db *DB) InsertOrg(slug, name string) (Organization, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) InsertOrg(ctx context.Context, slug, name string) (Organization, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	org := Organization{
@@ -58,8 +58,8 @@ func (db *DB) InsertOrg(slug, name string) (Organization, error) {
 	return org, nil
 }
 
-func (db *DB) GetOrg(id int64) (Organization, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetOrg(ctx context.Context, id int64) (Organization, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var org Organization
@@ -73,8 +73,8 @@ func (db *DB) GetOrg(id int64) (Organization, bool, error) {
 	return org, true, nil
 }
 
-func (db *DB) GetOrgBySlug(slug string) (Organization, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetOrgBySlug(ctx context.Context, slug string) (Organization, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var org Organization
@@ -88,8 +88,8 @@ func (db *DB) GetOrgBySlug(slug string) (Organization, bool, error) {
 	return org, true, nil
 }
 
-func (db *DB) AddOrgMember(orgID, accountID int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) AddOrgMember(ctx context.Context, orgID, accountID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	member := OrgMember{OrgID: orgID, AccountID: accountID, JoinedAt: time.Now()}
@@ -97,8 +97,8 @@ func (db *DB) AddOrgMember(orgID, accountID int64) error {
 	return err
 }
 
-func (db *DB) RemoveOrgMember(orgID, accountID int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) RemoveOrgMember(ctx context.Context, orgID, accountID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewDelete().Model((*OrgMember)(nil)).
@@ -106,8 +106,8 @@ func (db *DB) RemoveOrgMember(orgID, accountID int64) error {
 	return err
 }
 
-func (db *DB) GetOrgMembers(orgID int64) ([]OrgMember, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetOrgMembers(ctx context.Context, orgID int64) ([]OrgMember, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var members []OrgMember
@@ -115,16 +115,16 @@ func (db *DB) GetOrgMembers(orgID int64) ([]OrgMember, error) {
 	return members, err
 }
 
-func (db *DB) IsOrgMember(orgID, accountID int64) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) IsOrgMember(ctx context.Context, orgID, accountID int64) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	return db.NewSelect().Model((*OrgMember)(nil)).
 		Where("org_id = ? AND account_id = ?", orgID, accountID).Exists(ctx)
 }
 
-func (db *DB) GetAccountOrgs(accountID int64) ([]Organization, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetAccountOrgs(ctx context.Context, accountID int64) ([]Organization, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var orgs []Organization
@@ -135,8 +135,8 @@ func (db *DB) GetAccountOrgs(accountID int64) ([]Organization, error) {
 	return orgs, err
 }
 
-func (db *DB) UpsertOrgIDPConfig(orgID int64, provider, displayName, encryptedConfig string, ssoRequired bool) (OrgIDPConfig, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) UpsertOrgIDPConfig(ctx context.Context, orgID int64, provider, displayName, encryptedConfig string, ssoRequired bool) (OrgIDPConfig, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	now := time.Now()
@@ -165,8 +165,8 @@ func (db *DB) UpsertOrgIDPConfig(orgID int64, provider, displayName, encryptedCo
 	return config, nil
 }
 
-func (db *DB) GetOrgIDPConfig(orgID int64) (OrgIDPConfig, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetOrgIDPConfig(ctx context.Context, orgID int64) (OrgIDPConfig, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var config OrgIDPConfig

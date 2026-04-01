@@ -18,8 +18,8 @@ type Workspace struct {
 	UpdatedAt   time.Time `bun:",notnull"          json:"updated_at"`
 }
 
-func (db *DB) InsertWorkspace(orgID *int64, ownerType string, ownerID int64, name, description string) (Workspace, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) InsertWorkspace(ctx context.Context, orgID *int64, ownerType string, ownerID int64, name, description string) (Workspace, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	ws := Workspace{
@@ -54,8 +54,8 @@ func (db *DB) InsertWorkspace(orgID *int64, ownerType string, ownerID int64, nam
 	return ws, nil
 }
 
-func (db *DB) GetWorkspace(id int64) (Workspace, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetWorkspace(ctx context.Context, id int64) (Workspace, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var ws Workspace
@@ -69,8 +69,8 @@ func (db *DB) GetWorkspace(id int64) (Workspace, bool, error) {
 	return ws, true, nil
 }
 
-func (db *DB) ListWorkspacesByOwner(ownerType string, ownerID int64) ([]Workspace, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) ListWorkspacesByOwner(ctx context.Context, ownerType string, ownerID int64) ([]Workspace, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var wss []Workspace
@@ -83,8 +83,8 @@ func (db *DB) ListWorkspacesByOwner(ownerType string, ownerID int64) ([]Workspac
 
 // ListAccessibleWorkspaces returns workspaces within orgID that accountID has any binding on,
 // either at the org level (all workspaces visible) or directly at the workspace level.
-func (db *DB) ListAccessibleWorkspaces(accountID, orgID int64) ([]Workspace, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) ListAccessibleWorkspaces(ctx context.Context, accountID, orgID int64) ([]Workspace, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	const q = `
@@ -142,8 +142,8 @@ ORDER BY w.name ASC`
 	return wss, err
 }
 
-func (db *DB) UpdateWorkspace(id int64, name, description string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) UpdateWorkspace(ctx context.Context, id int64, name, description string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewUpdate().Model((*Workspace)(nil)).
@@ -155,8 +155,8 @@ func (db *DB) UpdateWorkspace(id int64, name, description string) error {
 	return err
 }
 
-func (db *DB) DeleteWorkspace(id int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) DeleteWorkspace(ctx context.Context, id int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewDelete().Model((*Workspace)(nil)).Where("id = ?", id).Exec(ctx)

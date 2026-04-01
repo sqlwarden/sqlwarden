@@ -22,8 +22,8 @@ type TeamMember struct {
 	CreatedAt time.Time `bun:",notnull" json:"created_at"`
 }
 
-func (db *DB) InsertTeam(orgID int64, slug, name string) (Team, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) InsertTeam(ctx context.Context, orgID int64, slug, name string) (Team, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	team := Team{OrgID: orgID, Slug: slug, Name: name, CreatedAt: time.Now(), UpdatedAt: time.Now()}
@@ -34,8 +34,8 @@ func (db *DB) InsertTeam(orgID int64, slug, name string) (Team, error) {
 	return team, nil
 }
 
-func (db *DB) GetTeam(orgID int64, slug string) (Team, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetTeam(ctx context.Context, orgID int64, slug string) (Team, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var team Team
@@ -49,8 +49,8 @@ func (db *DB) GetTeam(orgID int64, slug string) (Team, bool, error) {
 	return team, true, nil
 }
 
-func (db *DB) GetTeamByID(id int64) (Team, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetTeamByID(ctx context.Context, id int64) (Team, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var team Team
@@ -64,8 +64,8 @@ func (db *DB) GetTeamByID(id int64) (Team, bool, error) {
 	return team, true, nil
 }
 
-func (db *DB) ListTeams(orgID int64) ([]Team, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) ListTeams(ctx context.Context, orgID int64) ([]Team, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var teams []Team
@@ -73,16 +73,16 @@ func (db *DB) ListTeams(orgID int64) ([]Team, error) {
 	return teams, err
 }
 
-func (db *DB) DeleteTeam(id, orgID int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) DeleteTeam(ctx context.Context, id, orgID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewDelete().Model((*Team)(nil)).Where("id = ? AND org_id = ?", id, orgID).Exec(ctx)
 	return err
 }
 
-func (db *DB) AddTeamMember(teamID, accountID int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) AddTeamMember(ctx context.Context, teamID, accountID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	member := TeamMember{TeamID: teamID, AccountID: accountID, CreatedAt: time.Now()}
@@ -90,8 +90,8 @@ func (db *DB) AddTeamMember(teamID, accountID int64) error {
 	return err
 }
 
-func (db *DB) RemoveTeamMember(teamID, accountID int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) RemoveTeamMember(ctx context.Context, teamID, accountID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewDelete().Model((*TeamMember)(nil)).
@@ -99,8 +99,8 @@ func (db *DB) RemoveTeamMember(teamID, accountID int64) error {
 	return err
 }
 
-func (db *DB) ListTeamMembers(teamID int64) ([]TeamMember, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) ListTeamMembers(ctx context.Context, teamID int64) ([]TeamMember, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var members []TeamMember
@@ -108,8 +108,8 @@ func (db *DB) ListTeamMembers(teamID int64) ([]TeamMember, error) {
 	return members, err
 }
 
-func (db *DB) GetAccountTeams(orgID, accountID int64) ([]Team, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetAccountTeams(ctx context.Context, orgID, accountID int64) ([]Team, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var teams []Team

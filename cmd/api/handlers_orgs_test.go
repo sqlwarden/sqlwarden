@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -24,7 +25,7 @@ func registerAndLogin(t *testing.T, app *application, email, name, password stri
 
 	// Grant instance admin so this user can create orgs.
 	idNum, _ := strconv.ParseInt(accountID, 10, 64)
-	if err := app.db.InsertInstanceAdmin(idNum); err != nil {
+	if err := app.db.InsertInstanceAdmin(context.Background(), idNum); err != nil {
 		t.Fatalf("registerAndLogin: InsertInstanceAdmin: %v", err)
 	}
 

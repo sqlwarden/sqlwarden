@@ -36,7 +36,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	configured, err := app.db.HasAnyInstanceAdmin()
+	configured, err := app.db.HasAnyInstanceAdmin(r.Context())
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -52,13 +52,13 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account, err := app.db.InsertAccount(input.Email, input.Name, &hashedPassword)
+	account, err := app.db.InsertAccount(r.Context(), input.Email, input.Name, &hashedPassword)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	err = app.db.InsertInstanceAdmin(account.ID)
+	err = app.db.InsertInstanceAdmin(r.Context(), account.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -81,7 +81,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 
 // listInstanceAdmins handles GET /api/v1/instance/admins.
 func (app *application) listInstanceAdmins(w http.ResponseWriter, r *http.Request) {
-	admins, err := app.db.ListInstanceAdmins()
+	admins, err := app.db.ListInstanceAdmins(r.Context())
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -112,7 +112,7 @@ func (app *application) addInstanceAdmin(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	account, found, err := app.db.GetAccountByEmail(input.Email)
+	account, found, err := app.db.GetAccountByEmail(r.Context(), input.Email)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -122,7 +122,7 @@ func (app *application) addInstanceAdmin(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err = app.db.InsertInstanceAdmin(account.ID)
+	err = app.db.InsertInstanceAdmin(r.Context(), account.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -141,7 +141,7 @@ func (app *application) removeInstanceAdmin(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	n, err := app.db.CountInstanceAdmins()
+	n, err := app.db.CountInstanceAdmins(r.Context())
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -153,7 +153,7 @@ func (app *application) removeInstanceAdmin(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	err = app.db.RemoveInstanceAdmin(accountID)
+	err = app.db.RemoveInstanceAdmin(r.Context(), accountID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

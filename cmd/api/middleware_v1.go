@@ -37,7 +37,7 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 			return
 		}
 
-		account, found, err := app.db.GetAccount(accountID)
+		account, found, err := app.db.GetAccount(r.Context(), accountID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -69,7 +69,7 @@ func (app *application) requireAccount(next http.Handler) http.Handler {
 func (app *application) orgCtx(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slug := chi.URLParam(r, "org_slug")
-		org, found, err := app.db.GetOrgBySlug(slug)
+		org, found, err := app.db.GetOrgBySlug(r.Context(), slug)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -80,7 +80,7 @@ func (app *application) orgCtx(next http.Handler) http.Handler {
 		}
 
 		account := contextGetAccount(r)
-		isMember, err := app.db.IsOrgMember(org.ID, account.ID)
+		isMember, err := app.db.IsOrgMember(r.Context(), org.ID, account.ID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -105,7 +105,7 @@ func (app *application) wsCtx(next http.Handler) http.Handler {
 			return
 		}
 
-		ws, found, err := app.db.GetWorkspace(wsID)
+		ws, found, err := app.db.GetWorkspace(r.Context(), wsID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -136,7 +136,7 @@ func (app *application) envCtx(next http.Handler) http.Handler {
 			return
 		}
 
-		env, found, err := app.db.GetEnvironment(envID)
+		env, found, err := app.db.GetEnvironment(r.Context(), envID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -167,7 +167,7 @@ func (app *application) connCtx(next http.Handler) http.Handler {
 			return
 		}
 
-		conn, found, err := app.db.GetConnection(connID)
+		conn, found, err := app.db.GetConnection(r.Context(), connID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -227,7 +227,7 @@ func (app *application) requirePermission(permission string) func(http.Handler) 
 func (app *application) requireInstanceAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		account := contextGetAccount(r)
-		isAdmin, err := app.db.IsInstanceAdmin(account.ID)
+		isAdmin, err := app.db.IsInstanceAdmin(r.Context(), account.ID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return

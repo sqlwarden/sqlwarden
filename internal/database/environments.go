@@ -19,8 +19,8 @@ type Environment struct {
 	UpdatedAt   time.Time `bun:",notnull"          json:"updated_at"`
 }
 
-func (db *DB) InsertEnvironment(workspaceID int64, orgID *int64, ownerType string, ownerID int64, name, description string) (Environment, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) InsertEnvironment(ctx context.Context, workspaceID int64, orgID *int64, ownerType string, ownerID int64, name, description string) (Environment, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	env := Environment{
@@ -58,8 +58,8 @@ func (db *DB) InsertEnvironment(workspaceID int64, orgID *int64, ownerType strin
 	return env, nil
 }
 
-func (db *DB) GetEnvironment(id int64) (Environment, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetEnvironment(ctx context.Context, id int64) (Environment, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var env Environment
@@ -73,8 +73,8 @@ func (db *DB) GetEnvironment(id int64) (Environment, bool, error) {
 	return env, true, nil
 }
 
-func (db *DB) ListEnvironments(workspaceID int64) ([]Environment, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) ListEnvironments(ctx context.Context, workspaceID int64) ([]Environment, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var envs []Environment
@@ -85,8 +85,8 @@ func (db *DB) ListEnvironments(workspaceID int64) ([]Environment, error) {
 	return envs, err
 }
 
-func (db *DB) UpdateEnvironment(id int64, name, description string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) UpdateEnvironment(ctx context.Context, id int64, name, description string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewUpdate().Model((*Environment)(nil)).
@@ -98,8 +98,8 @@ func (db *DB) UpdateEnvironment(id int64, name, description string) error {
 	return err
 }
 
-func (db *DB) DeleteEnvironment(id int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) DeleteEnvironment(ctx context.Context, id int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewDelete().Model((*Environment)(nil)).Where("id = ?", id).Exec(ctx)

@@ -19,8 +19,8 @@ type RefreshToken struct {
 	IPAddress string     `bun:",nullzero"       json:"-"`
 }
 
-func (db *DB) InsertRefreshToken(accountID int64, tokenHash, family string, expiresAt time.Time, ua, ip string) (RefreshToken, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) InsertRefreshToken(ctx context.Context, accountID int64, tokenHash, family string, expiresAt time.Time, ua, ip string) (RefreshToken, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	token := RefreshToken{
@@ -44,8 +44,8 @@ func (db *DB) InsertRefreshToken(accountID int64, tokenHash, family string, expi
 	return token, nil
 }
 
-func (db *DB) GetRefreshTokenByHash(hash string) (RefreshToken, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetRefreshTokenByHash(ctx context.Context, hash string) (RefreshToken, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var token RefreshToken
@@ -64,8 +64,8 @@ func (db *DB) GetRefreshTokenByHash(hash string) (RefreshToken, bool, error) {
 	return token, true, nil
 }
 
-func (db *DB) RevokeRefreshToken(id string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) RevokeRefreshToken(ctx context.Context, id string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewUpdate().
@@ -77,8 +77,8 @@ func (db *DB) RevokeRefreshToken(id string) error {
 	return err
 }
 
-func (db *DB) RevokeFamilyTokens(family string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) RevokeFamilyTokens(ctx context.Context, family string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewUpdate().
@@ -90,8 +90,8 @@ func (db *DB) RevokeFamilyTokens(family string) error {
 	return err
 }
 
-func (db *DB) DeleteExpiredRefreshTokens() error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) DeleteExpiredRefreshTokens(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewDelete().

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -15,13 +16,13 @@ func TestInsertAndGetAccount(t *testing.T) {
 			db := newTestDB(t, driver)
 
 			pw := "hashed_password_123"
-			account, err := db.InsertAccount("test@example.com", "Test User", &pw)
+			account, err := db.InsertAccount(context.Background(), "test@example.com", "Test User", &pw)
 			assert.Nil(t, err)
 			assert.Equal(t, account.Email, "test@example.com")
 			assert.Equal(t, account.Name, "Test User")
 			assert.True(t, account.IsActive)
 
-			fetched, found, err := db.GetAccount(account.ID)
+			fetched, found, err := db.GetAccount(context.Background(), account.ID)
 			assert.Nil(t, err)
 			assert.True(t, found)
 			assert.Equal(t, fetched.ID, account.ID)
@@ -32,7 +33,7 @@ func TestInsertAndGetAccount(t *testing.T) {
 		t.Run(driver+": Get non-existent account returns not found", func(t *testing.T) {
 			db := newTestDB(t, driver)
 
-			_, found, err := db.GetAccount(999999)
+			_, found, err := db.GetAccount(context.Background(), 999999)
 			assert.Nil(t, err)
 			assert.False(t, found)
 		})
@@ -40,11 +41,11 @@ func TestInsertAndGetAccount(t *testing.T) {
 		t.Run(driver+": Insert with nil password", func(t *testing.T) {
 			db := newTestDB(t, driver)
 
-			account, err := db.InsertAccount("sso@example.com", "SSO User", nil)
+			account, err := db.InsertAccount(context.Background(), "sso@example.com", "SSO User", nil)
 			assert.Nil(t, err)
 			assert.True(t, account.Password == nil)
 
-			fetched, found, err := db.GetAccount(account.ID)
+			fetched, found, err := db.GetAccount(context.Background(), account.ID)
 			assert.Nil(t, err)
 			assert.True(t, found)
 			assert.True(t, fetched.Password == nil)
@@ -60,15 +61,15 @@ func TestGetAccountByEmail(t *testing.T) {
 			db := newTestDB(t, driver)
 
 			pw := "hashed"
-			_, err := db.InsertAccount("Alice@Example.Com", "Alice", &pw)
+			_, err := db.InsertAccount(context.Background(), "Alice@Example.Com", "Alice", &pw)
 			assert.Nil(t, err)
 
-			account, found, err := db.GetAccountByEmail("alice@example.com")
+			account, found, err := db.GetAccountByEmail(context.Background(), "alice@example.com")
 			assert.Nil(t, err)
 			assert.True(t, found)
 			assert.Equal(t, account.Name, "Alice")
 
-			account2, found2, err := db.GetAccountByEmail("ALICE@EXAMPLE.COM")
+			account2, found2, err := db.GetAccountByEmail(context.Background(), "ALICE@EXAMPLE.COM")
 			assert.Nil(t, err)
 			assert.True(t, found2)
 			assert.Equal(t, account2.Name, "Alice")
@@ -77,7 +78,7 @@ func TestGetAccountByEmail(t *testing.T) {
 		t.Run(driver+": Non-existent email returns not found", func(t *testing.T) {
 			db := newTestDB(t, driver)
 
-			_, found, err := db.GetAccountByEmail("nobody@example.com")
+			_, found, err := db.GetAccountByEmail(context.Background(), "nobody@example.com")
 			assert.Nil(t, err)
 			assert.False(t, found)
 		})
@@ -92,14 +93,14 @@ func TestDeactivateAccount(t *testing.T) {
 			db := newTestDB(t, driver)
 
 			pw := "hashed"
-			account, err := db.InsertAccount("deactivate@example.com", "Deactivate Me", &pw)
+			account, err := db.InsertAccount(context.Background(), "deactivate@example.com", "Deactivate Me", &pw)
 			assert.Nil(t, err)
 			assert.True(t, account.IsActive)
 
-			err = db.DeactivateAccount(account.ID)
+			err = db.DeactivateAccount(context.Background(), account.ID)
 			assert.Nil(t, err)
 
-			fetched, found, err := db.GetAccount(account.ID)
+			fetched, found, err := db.GetAccount(context.Background(), account.ID)
 			assert.Nil(t, err)
 			assert.True(t, found)
 			assert.False(t, fetched.IsActive)
@@ -136,13 +137,13 @@ func TestUpdateAccountPassword(t *testing.T) {
 			db := newTestDB(t, driver)
 
 			pw := "old_hash"
-			account, err := db.InsertAccount("pw-update@example.com", "PW User", &pw)
+			account, err := db.InsertAccount(context.Background(), "pw-update@example.com", "PW User", &pw)
 			assert.Nil(t, err)
 
-			err = db.UpdateAccountPassword(account.ID, "new_hash")
+			err = db.UpdateAccountPassword(context.Background(), account.ID, "new_hash")
 			assert.Nil(t, err)
 
-			fetched, found, err := db.GetAccount(account.ID)
+			fetched, found, err := db.GetAccount(context.Background(), account.ID)
 			assert.Nil(t, err)
 			assert.True(t, found)
 			assert.True(t, fetched.Password != nil)
@@ -159,10 +160,10 @@ func TestInsertAccountDuplicateEmail(t *testing.T) {
 			db := newTestDB(t, driver)
 
 			pw := "hashed"
-			_, err := db.InsertAccount("dup@example.com", "First", &pw)
+			_, err := db.InsertAccount(context.Background(), "dup@example.com", "First", &pw)
 			assert.Nil(t, err)
 
-			_, err = db.InsertAccount("dup@example.com", "Third", &pw)
+			_, err = db.InsertAccount(context.Background(), "dup@example.com", "Third", &pw)
 			assert.NotNil(t, err)
 		})
 	}

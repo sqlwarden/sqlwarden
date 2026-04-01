@@ -52,8 +52,8 @@ type PermissionBinding struct {
 	CreatedAt    time.Time  `bun:",notnull"          json:"created_at"`
 }
 
-func (db *DB) GetRoleBinding(id, orgID int64) (RoleBinding, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetRoleBinding(ctx context.Context, id, orgID int64) (RoleBinding, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var rb RoleBinding
@@ -67,8 +67,8 @@ func (db *DB) GetRoleBinding(id, orgID int64) (RoleBinding, bool, error) {
 	return rb, true, nil
 }
 
-func (db *DB) ListRoleBindings(orgID int64, resourceType string, resourceID int64) ([]RoleBinding, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) ListRoleBindings(ctx context.Context, orgID int64, resourceType string, resourceID int64) ([]RoleBinding, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var rbs []RoleBinding
@@ -78,8 +78,8 @@ func (db *DB) ListRoleBindings(orgID int64, resourceType string, resourceID int6
 	return rbs, err
 }
 
-func (db *DB) GetPermissionBinding(id, orgID int64) (PermissionBinding, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetPermissionBinding(ctx context.Context, id, orgID int64) (PermissionBinding, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var pb PermissionBinding
@@ -93,8 +93,8 @@ func (db *DB) GetPermissionBinding(id, orgID int64) (PermissionBinding, bool, er
 	return pb, true, nil
 }
 
-func (db *DB) ListPermissionBindings(orgID int64, resourceType string, resourceID int64) ([]PermissionBinding, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) ListPermissionBindings(ctx context.Context, orgID int64, resourceType string, resourceID int64) ([]PermissionBinding, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var pbs []PermissionBinding

@@ -11,7 +11,7 @@ import (
 // findRoleID returns the ID of the named org-level role in the given org, fatal if not found.
 func findRoleID(t *testing.T, db *database.DB, orgID int64, name string) int64 {
 	t.Helper()
-	roles, err := db.ListOrgRoles(orgID)
+	roles, err := db.ListOrgRoles(context.Background(), orgID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func findRoleID(t *testing.T, db *database.DB, orgID int64, name string) int64 {
 // findWorkspaceRoleID returns the ID of the named workspace-scoped role, fatal if not found.
 func findWorkspaceRoleID(t *testing.T, db *database.DB, orgID, workspaceID int64, name string) int64 {
 	t.Helper()
-	roles, err := db.ListWorkspaceRoles(orgID, workspaceID)
+	roles, err := db.ListWorkspaceRoles(context.Background(), orgID, workspaceID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,11 +43,11 @@ func findWorkspaceRoleID(t *testing.T, db *database.DB, orgID, workspaceID int64
 // newMember creates an account, adds it to the org, and returns its ID.
 func newMember(t *testing.T, db *database.DB, orgID int64, email string) int64 {
 	t.Helper()
-	acct, err := db.InsertAccount(email, email, nil)
+	acct, err := db.InsertAccount(context.Background(), email, email, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddOrgMember(orgID, acct.ID); err != nil {
+	if err = db.AddOrgMember(context.Background(), orgID, acct.ID); err != nil {
 		t.Fatal(err)
 	}
 	return acct.ID
@@ -64,11 +64,11 @@ func TestConnectionInheritsOrgRoleViaHierarchy(t *testing.T) {
 	orgID, ownerID := seedOrg(t, db, e, "conn-hier")
 	ctx := context.Background()
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(ws.ID, nil, &orgID, "org", orgID, "MyConn", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "MyConn", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,11 +89,11 @@ func TestEnvironmentInheritsOrgRoleViaHierarchy(t *testing.T) {
 	orgID, ownerID := seedOrg(t, db, e, "env-hier")
 	ctx := context.Background()
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := db.InsertEnvironment(ws.ID, &orgID, "org", orgID, "staging", "")
+	env, err := db.InsertEnvironment(context.Background(), ws.ID, &orgID, "org", orgID, "staging", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,11 +112,11 @@ func TestWorkspaceRoleBindingFlowsToConnection(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "ws-to-conn@example.com")
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(ws.ID, nil, &orgID, "org", orgID, "C", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "C", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,11 +151,11 @@ func TestWorkspaceRoleBindingFlowsToEnvironment(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "ws-to-env@example.com")
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := db.InsertEnvironment(ws.ID, &orgID, "org", orgID, "prod", "")
+	env, err := db.InsertEnvironment(context.Background(), ws.ID, &orgID, "org", orgID, "prod", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,11 +182,11 @@ func TestDirectPermissionOnWorkspaceFlowsToConnection(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "ws-perm-conn@example.com")
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(ws.ID, nil, &orgID, "org", orgID, "C", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "C", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,11 +208,11 @@ func TestDirectPermissionOnWorkspaceFlowsToEnvironment(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "ws-perm-env@example.com")
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := db.InsertEnvironment(ws.ID, &orgID, "org", orgID, "dev", "")
+	env, err := db.InsertEnvironment(context.Background(), ws.ID, &orgID, "org", orgID, "dev", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,11 +235,11 @@ func TestOrgRoleFlowsToAllWorkspaces(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "org-all-ws@example.com")
 
-	ws1, err := db.InsertWorkspace(&orgID, "org", orgID, "WS1", "")
+	ws1, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws2, err := db.InsertWorkspace(&orgID, "org", orgID, "WS2", "")
+	ws2, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS2", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,15 +270,15 @@ func TestConnectionBindingDoesNotLeakToSibling(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "conn-sib@example.com")
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn1, err := db.InsertConnection(ws.ID, nil, &orgID, "org", orgID, "C1", "postgres", "enc", "open")
+	conn1, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "C1", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn2, err := db.InsertConnection(ws.ID, nil, &orgID, "org", orgID, "C2", "postgres", "enc", "open")
+	conn2, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "C2", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,15 +304,15 @@ func TestEnvironmentBindingDoesNotLeakToSibling(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "env-sib@example.com")
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	env1, err := db.InsertEnvironment(ws.ID, &orgID, "org", orgID, "staging", "")
+	env1, err := db.InsertEnvironment(context.Background(), ws.ID, &orgID, "org", orgID, "staging", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	env2, err := db.InsertEnvironment(ws.ID, &orgID, "org", orgID, "prod", "")
+	env2, err := db.InsertEnvironment(context.Background(), ws.ID, &orgID, "org", orgID, "prod", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,11 +338,11 @@ func TestWorkspaceBindingDoesNotLeakToSiblingWorkspace(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "ws-sib@example.com")
 
-	ws1, err := db.InsertWorkspace(&orgID, "org", orgID, "WS1", "")
+	ws1, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws2, err := db.InsertWorkspace(&orgID, "org", orgID, "WS2", "")
+	ws2, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS2", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,11 +368,11 @@ func TestChildBindingDoesNotPropagateToParent(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "child-no-parent@example.com")
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(ws.ID, nil, &orgID, "org", orgID, "C", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "C", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func TestCrossOrgIsolation(t *testing.T) {
 		t.Error("ownerA binding in orgA must NOT grant access in orgB")
 	}
 
-	wsB, err := db.InsertWorkspace(&orgBID, "org", orgBID, "WS-B", "")
+	wsB, err := db.InsertWorkspace(context.Background(), &orgBID, "org", orgBID, "WS-B", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,7 +465,7 @@ func TestGrantPermissionsUnknownPermInBatchRejected(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "unk-batch@example.com")
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,7 +478,7 @@ func TestGrantPermissionsUnknownPermInBatchRejected(t *testing.T) {
 	}
 
 	// No bindings should have been inserted (validation runs before any insert).
-	pbs, err := db.ListPermissionBindings(orgID, "workspace", ws.ID)
+	pbs, err := db.ListPermissionBindings(context.Background(), orgID, "workspace", ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,7 +500,7 @@ func TestCustomRoleAtWorkspaceScope(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "custom-ws@example.com")
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -551,7 +551,7 @@ func TestDeleteCustomRoleRevokesAccess(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "del-custom@example.com")
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -590,22 +590,22 @@ func TestAccountInMultipleTeamsUnionPermissions(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "multi-team@example.com")
 
-	team1, err := db.InsertTeam(orgID, "readers", "Readers")
+	team1, err := db.InsertTeam(context.Background(), orgID, "readers", "Readers")
 	if err != nil {
 		t.Fatal(err)
 	}
-	team2, err := db.InsertTeam(orgID, "writers", "Writers")
+	team2, err := db.InsertTeam(context.Background(), orgID, "writers", "Writers")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddTeamMember(team1.ID, memberID); err != nil {
+	if err = db.AddTeamMember(context.Background(), team1.ID, memberID); err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddTeamMember(team2.ID, memberID); err != nil {
+	if err = db.AddTeamMember(context.Background(), team2.ID, memberID); err != nil {
 		t.Fatal(err)
 	}
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -647,18 +647,18 @@ func TestTeamBindingAtWorkspaceScope(t *testing.T) {
 	bob := newMember(t, db, orgID, "bob@team-ws.com")
 	charlie := newMember(t, db, orgID, "charlie@team-ws.com") // not in team
 
-	team, err := db.InsertTeam(orgID, "frontend", "Frontend")
+	team, err := db.InsertTeam(context.Background(), orgID, "frontend", "Frontend")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddTeamMember(team.ID, alice); err != nil {
+	if err = db.AddTeamMember(context.Background(), team.ID, alice); err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddTeamMember(team.ID, bob); err != nil {
+	if err = db.AddTeamMember(context.Background(), team.ID, bob); err != nil {
 		t.Fatal(err)
 	}
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -695,7 +695,7 @@ func TestRevokePermissionTargeted(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "revoke-tgt@example.com")
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -708,7 +708,7 @@ func TestRevokePermissionTargeted(t *testing.T) {
 	}
 
 	// Find the ws:write binding ID.
-	pbs, err := db.ListPermissionBindings(orgID, "workspace", ws.ID)
+	pbs, err := db.ListPermissionBindings(context.Background(), orgID, "workspace", ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -747,7 +747,7 @@ func TestRevokePermissionWrongOrgNoOp(t *testing.T) {
 	otherOrgID, _ := seedOrg(t, db, e, "revoke-other-org")
 
 	memberID := newMember(t, db, orgID, "revoke-wrong@example.com")
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -756,7 +756,7 @@ func TestRevokePermissionWrongOrgNoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pbs, err := db.ListPermissionBindings(orgID, "workspace", ws.ID)
+	pbs, err := db.ListPermissionBindings(context.Background(), orgID, "workspace", ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -790,7 +790,7 @@ func TestUnbindRoleWrongOrgNoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rbs, err := db.ListRoleBindings(orgID, "org", orgID)
+	rbs, err := db.ListRoleBindings(context.Background(), orgID, "org", orgID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -837,7 +837,7 @@ func TestBindRoleIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rbs, err := db.ListRoleBindings(orgID, "org", orgID)
+	rbs, err := db.ListRoleBindings(context.Background(), orgID, "org", orgID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -860,7 +860,7 @@ func TestGrantPermissionsIdempotent(t *testing.T) {
 	ctx := context.Background()
 
 	memberID := newMember(t, db, orgID, "idem-perm@example.com")
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -872,7 +872,7 @@ func TestGrantPermissionsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pbs, err := db.ListPermissionBindings(orgID, "workspace", ws.ID)
+	pbs, err := db.ListPermissionBindings(context.Background(), orgID, "workspace", ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -899,7 +899,7 @@ func TestGrantPermissionsMultipleAllEnforced(t *testing.T) {
 	ctx := context.Background()
 
 	memberID := newMember(t, db, orgID, "batch-perm@example.com")
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -920,7 +920,7 @@ func TestGrantPermissionsMultipleAllEnforced(t *testing.T) {
 		t.Error("member should NOT have ws:delete — it was not in the batch")
 	}
 
-	pbs, err := db.ListPermissionBindings(orgID, "workspace", ws.ID)
+	pbs, err := db.ListPermissionBindings(context.Background(), orgID, "workspace", ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -963,7 +963,7 @@ func TestWsMemberRoleBasicPermissions(t *testing.T) {
 	orgID, ownerID := seedOrg(t, db, e, "wsmember-basic")
 	ctx := context.Background()
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "Main", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "Main", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1008,15 +1008,15 @@ func TestSeedOrgIdempotent(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	ctx := context.Background()
 
-	org, err := db.InsertOrg("idem-org", "Idem Org")
+	org, err := db.InsertOrg(context.Background(), "idem-org", "Idem Org")
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err := db.InsertAccount("idem-seed@example.com", "Owner", nil)
+	owner, err := db.InsertAccount(context.Background(), "idem-seed@example.com", "Owner", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.AddOrgMember(org.ID, owner.ID); err != nil {
+	if err = db.AddOrgMember(context.Background(), org.ID, owner.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1027,7 +1027,7 @@ func TestSeedOrgIdempotent(t *testing.T) {
 		t.Fatalf("second SeedOrg should be idempotent: %v", err)
 	}
 
-	roles, err := db.ListRoles(org.ID)
+	roles, err := db.ListRoles(context.Background(), org.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1056,11 +1056,11 @@ func TestAncestoryCacheInvalidatedAfterDelete(t *testing.T) {
 
 	memberID := newMember(t, db, orgID, "anc-cache@example.com")
 
-	ws, err := db.InsertWorkspace(&orgID, "org", orgID, "WS", "")
+	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(ws.ID, nil, &orgID, "org", orgID, "C", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "C", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1076,7 +1076,7 @@ func TestAncestoryCacheInvalidatedAfterDelete(t *testing.T) {
 	}
 
 	// Delete the workspace and invalidate.
-	if err = db.DeleteWorkspace(ws.ID); err != nil {
+	if err = db.DeleteWorkspace(context.Background(), ws.ID); err != nil {
 		t.Fatal(err)
 	}
 	e.InvalidateAncestry("connection", conn.ID)

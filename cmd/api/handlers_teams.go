@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -12,7 +13,7 @@ import (
 
 func (app *application) listTeams(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-	teams, err := app.db.ListTeams(org.ID)
+	teams, err := app.db.ListTeams(context.Background(), org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -48,7 +49,7 @@ func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
 
 	org := contextGetOrg(r)
 	slug := input.Slug
-	team, err := app.db.InsertTeam(org.ID, slug, input.Name)
+	team, err := app.db.InsertTeam(context.Background(), org.ID, slug, input.Name)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -63,7 +64,7 @@ func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
 func (app *application) getTeam(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 	slug := chi.URLParam(r, "team_slug")
-	team, found, err := app.db.GetTeam(org.ID, slug)
+	team, found, err := app.db.GetTeam(context.Background(), org.ID, slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -81,7 +82,7 @@ func (app *application) getTeam(w http.ResponseWriter, r *http.Request) {
 func (app *application) deleteTeam(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 	slug := chi.URLParam(r, "team_slug")
-	team, found, err := app.db.GetTeam(org.ID, slug)
+	team, found, err := app.db.GetTeam(context.Background(), org.ID, slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -90,7 +91,7 @@ func (app *application) deleteTeam(w http.ResponseWriter, r *http.Request) {
 		app.notFound(w, r)
 		return
 	}
-	err = app.db.DeleteTeam(team.ID, org.ID)
+	err = app.db.DeleteTeam(context.Background(), team.ID, org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -101,7 +102,7 @@ func (app *application) deleteTeam(w http.ResponseWriter, r *http.Request) {
 func (app *application) listTeamMembers(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 	slug := chi.URLParam(r, "team_slug")
-	team, found, err := app.db.GetTeam(org.ID, slug)
+	team, found, err := app.db.GetTeam(context.Background(), org.ID, slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -110,7 +111,7 @@ func (app *application) listTeamMembers(w http.ResponseWriter, r *http.Request) 
 		app.notFound(w, r)
 		return
 	}
-	members, err := app.db.ListTeamMembers(team.ID)
+	members, err := app.db.ListTeamMembers(context.Background(), team.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -141,7 +142,7 @@ func (app *application) addTeamMember(w http.ResponseWriter, r *http.Request) {
 
 	org := contextGetOrg(r)
 	slug := chi.URLParam(r, "team_slug")
-	team, found, err := app.db.GetTeam(org.ID, slug)
+	team, found, err := app.db.GetTeam(context.Background(), org.ID, slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -151,7 +152,7 @@ func (app *application) addTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = app.db.AddTeamMember(team.ID, input.AccountID)
+	err = app.db.AddTeamMember(context.Background(), team.ID, input.AccountID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -164,7 +165,7 @@ func (app *application) addTeamMember(w http.ResponseWriter, r *http.Request) {
 func (app *application) removeTeamMember(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 	slug := chi.URLParam(r, "team_slug")
-	team, found, err := app.db.GetTeam(org.ID, slug)
+	team, found, err := app.db.GetTeam(context.Background(), org.ID, slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -181,7 +182,7 @@ func (app *application) removeTeamMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err = app.db.RemoveTeamMember(team.ID, accountID)
+	err = app.db.RemoveTeamMember(context.Background(), team.ID, accountID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

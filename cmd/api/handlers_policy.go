@@ -13,7 +13,7 @@ import (
 
 func (app *application) listRoles(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-	roles, err := app.db.ListRoles(org.ID)
+	roles, err := app.db.ListRoles(r.Context(), org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -63,7 +63,7 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	role, found, err := app.db.GetRole(roleID, org.ID)
+	role, found, err := app.db.GetRole(r.Context(), roleID, org.ID)
 	if err != nil || !found {
 		app.serverError(w, r, err)
 		return
@@ -84,7 +84,7 @@ func (app *application) getRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	role, found, err := app.db.GetRole(roleID, org.ID)
+	role, found, err := app.db.GetRole(r.Context(), roleID, org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

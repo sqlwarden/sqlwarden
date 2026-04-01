@@ -26,10 +26,10 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 		err   error
 	)
 	if app.config.desktopMode {
-		conns, err = app.db.ListConnections(ws.ID)
+		conns, err = app.db.ListConnections(context.Background(), ws.ID)
 	} else {
 		account := contextGetAccount(r)
-		conns, err = app.db.ListAccessibleConnections(account.ID, org.ID, ws.ID)
+		conns, err = app.db.ListAccessibleConnections(context.Background(), account.ID, org.ID, ws.ID)
 	}
 	if err != nil {
 		app.serverError(w, r, err)
@@ -82,7 +82,7 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
-	conn, err := app.db.InsertConnection(
+	conn, err := app.db.InsertConnection(context.Background(), 
 		ws.ID, input.EnvironmentID, &org.ID,
 		ws.OwnerType, ws.OwnerID,
 		input.Name, input.Driver, dsnEncrypted, input.AccessMode,
@@ -108,7 +108,7 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) deleteConnection(w http.ResponseWriter, r *http.Request) {
 	conn := contextGetConnection(r)
-	err := app.db.DeleteConnection(conn.ID)
+	err := app.db.DeleteConnection(context.Background(), conn.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -334,12 +334,12 @@ func (app *application) listConnectionBindings(w http.ResponseWriter, r *http.Re
 	org := contextGetOrg(r)
 	conn := contextGetConnection(r)
 
-	rbs, err := app.db.ListRoleBindings(org.ID, "connection", conn.ID)
+	rbs, err := app.db.ListRoleBindings(context.Background(), org.ID, "connection", conn.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	pbs, err := app.db.ListPermissionBindings(org.ID, "connection", conn.ID)
+	pbs, err := app.db.ListPermissionBindings(context.Background(), org.ID, "connection", conn.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

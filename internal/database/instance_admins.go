@@ -15,8 +15,8 @@ type InstanceAdmin struct {
 	Account   *Account  `bun:"rel:belongs-to,join:account_id=id" json:"account,omitempty"`
 }
 
-func (db *DB) IsInstanceAdmin(accountID int64) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) IsInstanceAdmin(ctx context.Context, accountID int64) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	exists, err := db.NewSelect().Model((*InstanceAdmin)(nil)).
@@ -25,8 +25,8 @@ func (db *DB) IsInstanceAdmin(accountID int64) (bool, error) {
 	return exists, err
 }
 
-func (db *DB) InsertInstanceAdmin(accountID int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) InsertInstanceAdmin(ctx context.Context, accountID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	admin := &InstanceAdmin{AccountID: accountID, CreatedAt: time.Now()}
@@ -36,8 +36,8 @@ func (db *DB) InsertInstanceAdmin(accountID int64) error {
 	return err
 }
 
-func (db *DB) RemoveInstanceAdmin(accountID int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) RemoveInstanceAdmin(ctx context.Context, accountID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewDelete().Model((*InstanceAdmin)(nil)).
@@ -46,8 +46,8 @@ func (db *DB) RemoveInstanceAdmin(accountID int64) error {
 	return err
 }
 
-func (db *DB) ListInstanceAdmins() ([]InstanceAdmin, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) ListInstanceAdmins(ctx context.Context) ([]InstanceAdmin, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var admins []InstanceAdmin
@@ -58,15 +58,15 @@ func (db *DB) ListInstanceAdmins() ([]InstanceAdmin, error) {
 	return admins, err
 }
 
-func (db *DB) CountInstanceAdmins() (int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) CountInstanceAdmins(ctx context.Context) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	return db.NewSelect().Model((*InstanceAdmin)(nil)).Count(ctx)
 }
 
-func (db *DB) HasAnyInstanceAdmin() (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) HasAnyInstanceAdmin(ctx context.Context) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	return db.NewSelect().Model((*InstanceAdmin)(nil)).Exists(ctx)

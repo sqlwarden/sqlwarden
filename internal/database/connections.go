@@ -22,8 +22,8 @@ type Connection struct {
 	UpdatedAt     time.Time `bun:",notnull"          json:"updated_at"`
 }
 
-func (db *DB) InsertConnection(workspaceID int64, envID, orgID *int64, ownerType string, ownerID int64, name, driver, dsnEncrypted, accessMode string) (Connection, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID, orgID *int64, ownerType string, ownerID int64, name, driver, dsnEncrypted, accessMode string) (Connection, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	conn := Connection{
@@ -64,8 +64,8 @@ func (db *DB) InsertConnection(workspaceID int64, envID, orgID *int64, ownerType
 	return conn, nil
 }
 
-func (db *DB) GetConnection(id int64) (Connection, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetConnection(ctx context.Context, id int64) (Connection, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var conn Connection
@@ -79,8 +79,8 @@ func (db *DB) GetConnection(id int64) (Connection, bool, error) {
 	return conn, true, nil
 }
 
-func (db *DB) ListConnections(workspaceID int64) ([]Connection, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) ListConnections(ctx context.Context, workspaceID int64) ([]Connection, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var conns []Connection
@@ -93,8 +93,8 @@ func (db *DB) ListConnections(workspaceID int64) ([]Connection, error) {
 
 // ListAccessibleConnections returns connections in workspaceID that accountID has any binding on,
 // checking org-level, workspace-level, and direct connection-level bindings.
-func (db *DB) ListAccessibleConnections(accountID, orgID, workspaceID int64) ([]Connection, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) ListAccessibleConnections(ctx context.Context, accountID, orgID, workspaceID int64) ([]Connection, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	const q = `
@@ -170,8 +170,8 @@ ORDER BY c.name ASC`
 	return conns, err
 }
 
-func (db *DB) DeleteConnection(id int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) DeleteConnection(ctx context.Context, id int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewDelete().Model((*Connection)(nil)).Where("id = ?", id).Exec(ctx)

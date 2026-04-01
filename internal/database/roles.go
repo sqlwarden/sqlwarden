@@ -21,8 +21,8 @@ type Role struct {
 	Permissions []string `bun:"-" json:"permissions,omitempty"`
 }
 
-func (db *DB) GetRole(id, orgID int64) (Role, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetRole(ctx context.Context, id, orgID int64) (Role, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var role Role
@@ -48,8 +48,8 @@ func (db *DB) GetRole(id, orgID int64) (Role, bool, error) {
 }
 
 // ListRoles returns all roles for an org (org-level and all workspace-level).
-func (db *DB) ListRoles(orgID int64) ([]Role, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) ListRoles(ctx context.Context, orgID int64) ([]Role, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var roles []Role
@@ -58,8 +58,8 @@ func (db *DB) ListRoles(orgID int64) ([]Role, error) {
 }
 
 // ListOrgRoles returns only the org-level roles (workspace_id IS NULL) for an org.
-func (db *DB) ListOrgRoles(orgID int64) ([]Role, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) ListOrgRoles(ctx context.Context, orgID int64) ([]Role, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var roles []Role
@@ -71,8 +71,8 @@ func (db *DB) ListOrgRoles(orgID int64) ([]Role, error) {
 }
 
 // ListWorkspaceRoles returns only the roles scoped to a specific workspace.
-func (db *DB) ListWorkspaceRoles(orgID, workspaceID int64) ([]Role, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) ListWorkspaceRoles(ctx context.Context, orgID, workspaceID int64) ([]Role, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var roles []Role

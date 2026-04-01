@@ -1,16 +1,17 @@
 package database
 
 import (
+	"context"
 	"testing"
 )
 
 func TestConnectionCRUD(t *testing.T) {
 	db := newTestDB(t)
 
-	org, _ := db.InsertOrg("conn-test-org", "Conn Test Org")
-	ws, _ := db.InsertWorkspace(&org.ID, "org", org.ID, "Main", "")
+	org, _ := db.InsertOrg(context.Background(), "conn-test-org", "Conn Test Org")
+	ws, _ := db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "Main", "")
 
-	conn, err := db.InsertConnection(ws.ID, nil, &org.ID, "org", org.ID, "my-db", "postgres", "encrypted-dsn", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "my-db", "postgres", "encrypted-dsn", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,7 +19,7 @@ func TestConnectionCRUD(t *testing.T) {
 		t.Fatal("expected non-zero connection ID")
 	}
 
-	found, ok, err := db.GetConnection(conn.ID)
+	found, ok, err := db.GetConnection(context.Background(), conn.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +30,7 @@ func TestConnectionCRUD(t *testing.T) {
 		t.Fatalf("name mismatch: %s", found.Name)
 	}
 
-	conns, err := db.ListConnections(ws.ID)
+	conns, err := db.ListConnections(context.Background(), ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,11 +38,11 @@ func TestConnectionCRUD(t *testing.T) {
 		t.Fatalf("expected 1 connection, got %d", len(conns))
 	}
 
-	err = db.DeleteConnection(conn.ID)
+	err = db.DeleteConnection(context.Background(), conn.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, ok, _ = db.GetConnection(conn.ID)
+	_, ok, _ = db.GetConnection(context.Background(), conn.ID)
 	if ok {
 		t.Fatal("expected connection to be deleted")
 	}

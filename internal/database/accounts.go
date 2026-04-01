@@ -17,8 +17,8 @@ type Account struct {
 	UpdatedAt time.Time `bun:",notnull"               json:"updated_at"`
 }
 
-func (db *DB) InsertAccount(email, name string, password *string) (Account, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) InsertAccount(ctx context.Context, email, name string, password *string) (Account, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	account := Account{
@@ -37,8 +37,8 @@ func (db *DB) InsertAccount(email, name string, password *string) (Account, erro
 	return account, nil
 }
 
-func (db *DB) GetAccount(id int64) (Account, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetAccount(ctx context.Context, id int64) (Account, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var account Account
@@ -52,8 +52,8 @@ func (db *DB) GetAccount(id int64) (Account, bool, error) {
 	return account, true, nil
 }
 
-func (db *DB) GetAccountByEmail(email string) (Account, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) GetAccountByEmail(ctx context.Context, email string) (Account, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var account Account
@@ -67,8 +67,8 @@ func (db *DB) GetAccountByEmail(email string) (Account, bool, error) {
 	return account, true, nil
 }
 
-func (db *DB) UpdateAccountPassword(id int64, hashedPassword string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) UpdateAccountPassword(ctx context.Context, id int64, hashedPassword string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewUpdate().
@@ -80,8 +80,8 @@ func (db *DB) UpdateAccountPassword(id int64, hashedPassword string) error {
 	return err
 }
 
-func (db *DB) DeactivateAccount(id int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+func (db *DB) DeactivateAccount(ctx context.Context, id int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewUpdate().

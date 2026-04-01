@@ -122,7 +122,7 @@ func newTestDB(t *testing.T) *database.DB {
 	}
 
 	for _, user := range testUsers {
-		acc, err := db.InsertAccount(user.email, user.email, &user.hashedPassword)
+		acc, err := db.InsertAccount(context.Background(), user.email, user.email, &user.hashedPassword)
 		if err != nil {
 			t.Fatal(err)
 		}

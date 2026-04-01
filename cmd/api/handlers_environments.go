@@ -12,7 +12,7 @@ import (
 
 func (app *application) listEnvironments(w http.ResponseWriter, r *http.Request) {
 	ws := contextGetWorkspace(r)
-	envs, err := app.db.ListEnvironments(ws.ID)
+	envs, err := app.db.ListEnvironments(r.Context(), ws.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -44,7 +44,7 @@ func (app *application) createEnvironment(w http.ResponseWriter, r *http.Request
 
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
-	env, err := app.db.InsertEnvironment(ws.ID, &org.ID, ws.OwnerType, ws.OwnerID, input.Name, input.Description)
+	env, err := app.db.InsertEnvironment(r.Context(), ws.ID, &org.ID, ws.OwnerType, ws.OwnerID, input.Name, input.Description)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -84,7 +84,7 @@ func (app *application) updateEnvironment(w http.ResponseWriter, r *http.Request
 	}
 
 	env := contextGetEnvironment(r)
-	err = app.db.UpdateEnvironment(env.ID, input.Name, input.Description)
+	err = app.db.UpdateEnvironment(r.Context(), env.ID, input.Name, input.Description)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -95,7 +95,7 @@ func (app *application) updateEnvironment(w http.ResponseWriter, r *http.Request
 
 func (app *application) deleteEnvironment(w http.ResponseWriter, r *http.Request) {
 	env := contextGetEnvironment(r)
-	err := app.db.DeleteEnvironment(env.ID)
+	err := app.db.DeleteEnvironment(r.Context(), env.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -109,12 +109,12 @@ func (app *application) listEnvironmentBindings(w http.ResponseWriter, r *http.R
 	org := contextGetOrg(r)
 	env := contextGetEnvironment(r)
 
-	rbs, err := app.db.ListRoleBindings(org.ID, "environment", env.ID)
+	rbs, err := app.db.ListRoleBindings(r.Context(), org.ID, "environment", env.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	pbs, err := app.db.ListPermissionBindings(org.ID, "environment", env.ID)
+	pbs, err := app.db.ListPermissionBindings(r.Context(), org.ID, "environment", env.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
