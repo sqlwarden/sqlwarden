@@ -19,3 +19,6 @@ func newID() string {
 	entropyOnce.Unlock()
 	return id.String()
 }
+
+// NewID generates a new ULID string (exported for use outside the database package).
+func NewID() string { return newID() }
