@@ -222,14 +222,14 @@ func TestGetAccount(t *testing.T) {
 	tok := extractAccessToken(t, loginRes)
 
 	// With valid JWT
-	req := newTestRequest(t, http.MethodGet, "/api/v1/user", nil)
+	req := newTestRequest(t, http.MethodGet, "/api/v1/account", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["email"], "getacc@example.com")
 
 	// Without JWT
-	reqNoAuth := newTestRequest(t, http.MethodGet, "/api/v1/user", nil)
+	reqNoAuth := newTestRequest(t, http.MethodGet, "/api/v1/account", nil)
 	resNoAuth := send(t, reqNoAuth, app.routes())
 	assert.Equal(t, resNoAuth.StatusCode, http.StatusUnauthorized)
 }
@@ -242,7 +242,7 @@ func TestGetAccountOrgs(t *testing.T) {
 	loginRes := loginTestUser(t, app, "orgs@example.com", "securepass99")
 	tok := extractAccessToken(t, loginRes)
 
-	req := newTestRequest(t, http.MethodGet, "/api/v1/user/orgs", nil)
+	req := newTestRequest(t, http.MethodGet, "/api/v1/account/orgs", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)

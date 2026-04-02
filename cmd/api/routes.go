@@ -39,8 +39,8 @@ func (app *application) routes() http.Handler {
 
 		r.Group(func(r chi.Router) {
 			r.Use(app.requireAccount)
-			r.Get("/user", app.getAccount)
-			r.Get("/user/orgs", app.getAccountOrgs)
+			r.Get("/account", app.getAccount)
+			r.Get("/account/orgs", app.getAccountOrgs)
 		})
 
 		r.Route("/orgs/{org_slug}", func(r chi.Router) {
