@@ -38,17 +38,18 @@ func (db *DB) InsertEnvironment(ctx context.Context, workspaceID int64, orgID *i
 		return Environment{}, err
 	}
 
-	ownerIDForHierarchy := ownerID
-	if orgID != nil {
-		ownerIDForHierarchy = *orgID
+	hierarchyOwnerType := ownerType
+	hierarchyOwnerID := ownerID
+	if ownerType == "org" && orgID != nil {
+		hierarchyOwnerID = *orgID
 	}
 	hm := map[string]interface{}{
 		"child_type":  "environment",
 		"child_id":    env.ID,
 		"parent_type": "workspace",
 		"parent_id":   workspaceID,
-		"owner_type":  "org",
-		"owner_id":    ownerIDForHierarchy,
+		"owner_type":  hierarchyOwnerType,
+		"owner_id":    hierarchyOwnerID,
 	}
 	_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&hm).Ignore().Exec(ctx)
 	if err != nil {

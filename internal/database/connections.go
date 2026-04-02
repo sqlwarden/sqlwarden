@@ -44,17 +44,18 @@ func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID, or
 		return Connection{}, err
 	}
 
-	ownerIDForHierarchy := ownerID
-	if orgID != nil {
-		ownerIDForHierarchy = *orgID
+	hierarchyOwnerType := ownerType
+	hierarchyOwnerID := ownerID
+	if ownerType == "org" && orgID != nil {
+		hierarchyOwnerID = *orgID
 	}
 	hm := map[string]interface{}{
 		"child_type":  "connection",
 		"child_id":    conn.ID,
 		"parent_type": "workspace",
 		"parent_id":   workspaceID,
-		"owner_type":  "org",
-		"owner_id":    ownerIDForHierarchy,
+		"owner_type":  hierarchyOwnerType,
+		"owner_id":    hierarchyOwnerID,
 	}
 	_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&hm).Ignore().Exec(ctx)
 	if err != nil {
