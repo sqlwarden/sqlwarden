@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,23 +15,12 @@ func TestFullWorkflow(t *testing.T) {
 	app := newTestApp(t)
 
 	// ── Step 1: Register two users ───────────────────────────────────────────
-	ownerRes := registerTestUser(t, app, "flow-owner@example.com", "Flow Owner", "securepass99")
-	assert.Equal(t, ownerRes.StatusCode, http.StatusCreated)
+	// Owner uses setup (first account = instance admin).
+	ownerTok := setupInstance(t, app, "flow-owner@example.com", "Flow Owner", "securepass99")
 
 	memberRes := registerTestUser(t, app, "flow-member@example.com", "Flow Member", "securepass99")
 	assert.Equal(t, memberRes.StatusCode, http.StatusCreated)
 	memberID := fmt.Sprintf("%v", memberRes.BodyFields["id"])
-
-	// ── Step 2: Owner logs in ────────────────────────────────────────────────
-	loginRes := loginTestUser(t, app, "flow-owner@example.com", "securepass99")
-	assert.Equal(t, loginRes.StatusCode, http.StatusOK)
-	ownerTok := extractAccessToken(t, loginRes)
-
-	// Grant owner instance admin so they can create orgs.
-	ownerIDNum := ownerRes.BodyFields["id"]
-	if err := app.db.InsertInstanceAdmin(context.Background(), int64(ownerIDNum.(float64))); err != nil {
-		t.Fatal(err)
-	}
 
 	// ── Step 3: Create org ───────────────────────────────────────────────────
 	orgRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs",
@@ -175,6 +163,7 @@ func TestRBACIsolation(t *testing.T) {
 // TestRefreshTokenRotation verifies the full refresh token rotation cycle.
 func TestRefreshTokenRotation(t *testing.T) {
 	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
 	registerTestUser(t, app, "rotate@example.com", "Rotate User", "securepass99")
 

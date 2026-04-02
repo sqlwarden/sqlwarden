@@ -37,6 +37,16 @@ func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	configured, err := app.db.HasAnyInstanceAdmin(r.Context())
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !configured {
+		app.errorMessage(w, r, http.StatusForbidden, "instance setup is not complete", nil)
+		return
+	}
+
 	_, exists, err := app.db.GetAccountByEmail(r.Context(), input.Email)
 	if err != nil {
 		app.serverError(w, r, err)

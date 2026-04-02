@@ -12,21 +12,41 @@ import (
 )
 
 // registerAndLogin registers a user, logs in, creates an org, and returns the account ID, access token, and org slug.
+// For the very first account on a fresh instance it uses POST /api/setup (which also makes the account an instance
+// admin). For subsequent accounts it uses POST /api/v1/auth/register + login, which is allowed once setup is done.
 func registerAndLogin(t *testing.T, app *application, email, name, password string) (accountID, accessToken, orgSlug string) {
 	t.Helper()
 
-	regRes := registerTestUser(t, app, email, name, password)
-	assert.Equal(t, regRes.StatusCode, http.StatusCreated)
-	accountID = fmt.Sprintf("%v", regRes.BodyFields["id"])
+	// Try setup first; if the instance is already configured (409) fall back to regular register + login.
+	setupRes := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
+		"email":    email,
+		"name":     name,
+		"password": password,
+	}), app.routes())
 
-	loginRes := loginTestUser(t, app, email, password)
-	assert.Equal(t, loginRes.StatusCode, http.StatusOK)
-	accessToken = extractAccessToken(t, loginRes)
+	if setupRes.StatusCode == http.StatusCreated {
+		accountID = fmt.Sprintf("%v", setupRes.BodyFields["account"].(map[string]any)["id"])
+		accessToken = setupRes.BodyFields["access_token"].(string)
+	} else if setupRes.StatusCode == http.StatusConflict {
+		regRes := registerTestUser(t, app, email, name, password)
+		if regRes.StatusCode != http.StatusCreated {
+			t.Fatalf("registerAndLogin: register failed (%d): %s", regRes.StatusCode, regRes.BodyBytes)
+		}
+		accountID = fmt.Sprintf("%v", regRes.BodyFields["id"])
 
-	// Grant instance admin so this user can create orgs.
-	idNum, _ := strconv.ParseInt(accountID, 10, 64)
-	if err := app.db.InsertInstanceAdmin(context.Background(), idNum); err != nil {
-		t.Fatalf("registerAndLogin: InsertInstanceAdmin: %v", err)
+		// Grant instance admin so this test user can create orgs (test infrastructure only).
+		idNum, _ := strconv.ParseInt(accountID, 10, 64)
+		if err := app.db.InsertInstanceAdmin(context.Background(), idNum); err != nil {
+			t.Fatalf("registerAndLogin: InsertInstanceAdmin: %v", err)
+		}
+
+		loginRes := loginTestUser(t, app, email, password)
+		if loginRes.StatusCode != http.StatusOK {
+			t.Fatalf("registerAndLogin: login failed (%d): %s", loginRes.StatusCode, loginRes.BodyBytes)
+		}
+		accessToken = extractAccessToken(t, loginRes)
+	} else {
+		t.Fatalf("registerAndLogin: setup returned unexpected status %d: %s", setupRes.StatusCode, setupRes.BodyBytes)
 	}
 
 	// Create a personal org for the user.

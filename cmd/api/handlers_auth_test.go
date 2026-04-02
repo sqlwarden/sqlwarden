@@ -75,8 +75,16 @@ func extractRefreshCookie(t *testing.T, res testResponse) *http.Cookie {
 	return nil
 }
 
+func TestRegisterBlockedBeforeSetup(t *testing.T) {
+	app := newTestApp(t)
+
+	res := registerTestUser(t, app, "reg@example.com", "Reg User", "securepass99")
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+}
+
 func TestRegisterSuccess(t *testing.T) {
 	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
 	res := registerTestUser(t, app, "reg@example.com", "Reg User", "securepass99")
 	assert.Equal(t, res.StatusCode, http.StatusCreated)
@@ -116,6 +124,7 @@ func TestRegisterValidation(t *testing.T) {
 
 func TestLoginSuccess(t *testing.T) {
 	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
 	registerTestUser(t, app, "login@example.com", "Login User", "securepass99")
 
@@ -135,6 +144,7 @@ func TestLoginSuccess(t *testing.T) {
 
 func TestLoginWrongPassword(t *testing.T) {
 	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
 	registerTestUser(t, app, "wrongpw@example.com", "WrongPW", "securepass99")
 
@@ -151,6 +161,7 @@ func TestLoginUnknownEmail(t *testing.T) {
 
 func TestRefreshValid(t *testing.T) {
 	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
 	registerTestUser(t, app, "refresh@example.com", "Refresh User", "securepass99")
 
@@ -173,6 +184,7 @@ func TestRefreshValid(t *testing.T) {
 
 func TestRefreshAfterLogout(t *testing.T) {
 	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
 	registerTestUser(t, app, "rlogout@example.com", "RLogout User", "securepass99")
 
@@ -194,6 +206,7 @@ func TestRefreshAfterLogout(t *testing.T) {
 
 func TestLogout(t *testing.T) {
 	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
 	registerTestUser(t, app, "logout@example.com", "Logout User", "securepass99")
 
@@ -215,6 +228,7 @@ func TestLogout(t *testing.T) {
 
 func TestGetAccount(t *testing.T) {
 	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
 	registerTestUser(t, app, "getacc@example.com", "GetAcc User", "securepass99")
 
@@ -236,6 +250,7 @@ func TestGetAccount(t *testing.T) {
 
 func TestGetAccountOrgs(t *testing.T) {
 	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
 	registerTestUser(t, app, "orgs@example.com", "Orgs User", "securepass99")
 
