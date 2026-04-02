@@ -103,13 +103,25 @@ func (db *DB) DeleteEnvironment(ctx context.Context, id int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	// FK: connections.environment_id ON DELETE SET NULL — connections survive but lose their env tag.
 	_, err := db.NewDelete().Model((*Environment)(nil)).Where("id = ?", id).Exec(ctx)
 	if err != nil {
 		return err
 	}
 
+	// Remove the environment's own hierarchy row.
 	_, err = db.NewDelete().TableExpr("resource_hierarchy").
 		Where("child_type = 'environment' AND child_id = ?", id).
+		Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Remove connection → environment hierarchy rows for connections that were in this environment.
+	// Those connections remain (SET NULL) and still have their connection → workspace row, so they
+	// continue to inherit workspace-scope and org-scope bindings.
+	_, err = db.NewDelete().TableExpr("resource_hierarchy").
+		Where("child_type = 'connection' AND parent_type = 'environment' AND parent_id = ?", id).
 		Exec(ctx)
 	return err
 }

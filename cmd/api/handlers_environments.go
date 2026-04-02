@@ -93,13 +93,25 @@ func (app *application) updateEnvironment(w http.ResponseWriter, r *http.Request
 
 func (app *application) deleteEnvironment(w http.ResponseWriter, r *http.Request) {
 	env := contextGetEnvironment(r)
-	err := app.db.DeleteEnvironment(r.Context(), env.ID)
+
+	// Collect connections tagged to this environment before deletion so we can
+	// invalidate their ancestry caches (connection → environment rows will be removed).
+	connIDs, err := app.db.ListConnectionIDsByEnvironment(r.Context(), env.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = app.db.DeleteEnvironment(r.Context(), env.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
 	app.enforcer.InvalidateAncestry("environment", env.ID)
+	for _, cid := range connIDs {
+		app.enforcer.InvalidateAncestry("connection", cid)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

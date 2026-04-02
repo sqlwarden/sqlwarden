@@ -49,7 +49,9 @@ func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID, or
 	if ownerType == "org" && orgID != nil {
 		hierarchyOwnerID = *orgID
 	}
-	hm := map[string]interface{}{
+
+	// Always write a connection → workspace row so workspace-scope bindings cover this connection.
+	wsRow := map[string]interface{}{
 		"child_type":  "connection",
 		"child_id":    conn.ID,
 		"parent_type": "workspace",
@@ -57,9 +59,27 @@ func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID, or
 		"owner_type":  hierarchyOwnerType,
 		"owner_id":    hierarchyOwnerID,
 	}
-	_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&hm).Ignore().Exec(ctx)
+	_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&wsRow).Ignore().Exec(ctx)
 	if err != nil {
 		return Connection{}, err
+	}
+
+	// When the connection is tagged to an environment, also write a connection → environment row
+	// so that environment-scope bindings (e.g. conn:execute on a specific environment) are
+	// inherited by all connections associated with that environment.
+	if envID != nil {
+		envRow := map[string]interface{}{
+			"child_type":  "connection",
+			"child_id":    conn.ID,
+			"parent_type": "environment",
+			"parent_id":   *envID,
+			"owner_type":  hierarchyOwnerType,
+			"owner_id":    hierarchyOwnerID,
+		}
+		_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&envRow).Ignore().Exec(ctx)
+		if err != nil {
+			return Connection{}, err
+		}
 	}
 
 	return conn, nil
@@ -169,6 +189,24 @@ ORDER BY c.name ASC`
 		orgID, accountID, // conn perm binding
 	).Scan(ctx, &conns)
 	return conns, err
+}
+
+// ListConnectionIDsByEnvironment returns the IDs of all connections tagged to the given environment.
+// Used before environment deletion to know which connection ancestry caches need invalidation.
+func (db *DB) ListConnectionIDsByEnvironment(ctx context.Context, envID int64) ([]int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var ids []int64
+	err := db.NewSelect().
+		TableExpr("connections").
+		ColumnExpr("id").
+		Where("environment_id = ?", envID).
+		Scan(ctx, &ids)
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 func (db *DB) DeleteConnection(ctx context.Context, id int64) error {

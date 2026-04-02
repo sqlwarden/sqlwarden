@@ -164,10 +164,21 @@ func (db *DB) DeleteWorkspace(ctx context.Context, id int64) error {
 		return err
 	}
 
-	// Clean up hierarchy rows for this workspace and all its children (environments/connections
-	// are cascade-deleted in the DB but resource_hierarchy has no FK constraints).
+	// Clean up hierarchy rows for this workspace and all its children.
+	// resource_hierarchy has no FK constraints so we must do this manually.
+	//
+	// Covers:
+	//   (workspace, id)        → its own hierarchy row
+	//   (environment, *)       → rows whose parent is this workspace
+	//   (connection, *)        → rows whose parent is this workspace (untagged connections)
+	//   (connection, *)        → rows whose parent is an environment in this workspace
+	//                            (tagged connections write a second row with parent=environment)
 	_, err = db.NewDelete().TableExpr("resource_hierarchy").
-		Where("(child_type = 'workspace' AND child_id = ?) OR (parent_type = 'workspace' AND parent_id = ?)", id, id).
+		Where(`(child_type = 'workspace' AND child_id = ?)
+		    OR (parent_type = 'workspace' AND parent_id = ?)
+		    OR (child_type = 'connection' AND parent_type = 'environment'
+		        AND child_id IN (SELECT id FROM connections WHERE workspace_id = ?))`,
+			id, id, id).
 		Exec(ctx)
 	return err
 }
