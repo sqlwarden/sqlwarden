@@ -484,3 +484,160 @@ func TestUnbindRole(t *testing.T) {
 		t.Error("should NOT have org:invite after unbinding")
 	}
 }
+
+// TestCanEnvironmentScopeCoversTaggedConnections verifies that a permission binding at environment
+// scope is inherited by connections tagged to that environment.
+func TestCanEnvironmentScopeCoversTaggedConnections(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "env-conn-inherit")
+	ctx := context.Background()
+
+	member, err := db.InsertAccount(ctx, "env-conn@example.com", "EnvConn", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddOrgMember(ctx, orgID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := db.InsertWorkspace(ctx, &orgID, "org", orgID, "EnvWS", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.SeedWorkspace(ctx, orgID, ws.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create an environment in the workspace.
+	env, err := db.InsertEnvironment(ctx, ws.ID, &orgID, "org", orgID, "staging", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a connection tagged to that environment.
+	taggedConn, err := db.InsertConnection(ctx, ws.ID, &env.ID, &orgID, "org", orgID, "tagged-db", "sqlite", "enc", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a connection NOT tagged to any environment.
+	untaggedConn, err := db.InsertConnection(ctx, ws.ID, nil, &orgID, "org", orgID, "untagged-db", "sqlite", "enc", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Grant conn:execute at environment scope to member.
+	if err = e.GrantPermission(ctx, orgID, "conn:execute", "account", member.ID, "environment", env.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Member should have conn:execute on the tagged connection (inherits via environment).
+	if !e.Can(ctx, member.ID, orgID, "org", "connection", taggedConn.ID, "conn:execute") {
+		t.Error("member should have conn:execute on connection tagged to the environment")
+	}
+
+	// Member should NOT have conn:execute on the untagged connection.
+	if e.Can(ctx, member.ID, orgID, "org", "connection", untaggedConn.ID, "conn:execute") {
+		t.Error("member should NOT have conn:execute on connection not tagged to the environment")
+	}
+}
+
+// TestCanEnvironmentScopeIsolatesAcrossEnvironments verifies that a binding on env A does not
+// grant access to connections tagged to env B within the same workspace.
+func TestCanEnvironmentScopeIsolatesAcrossEnvironments(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "env-isolation")
+	ctx := context.Background()
+
+	member, err := db.InsertAccount(ctx, "env-iso@example.com", "EnvIso", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddOrgMember(ctx, orgID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := db.InsertWorkspace(ctx, &orgID, "org", orgID, "IsoWS", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.SeedWorkspace(ctx, orgID, ws.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	envA, err := db.InsertEnvironment(ctx, ws.ID, &orgID, "org", orgID, "env-a", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	envB, err := db.InsertEnvironment(ctx, ws.ID, &orgID, "org", orgID, "env-b", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	connA, err := db.InsertConnection(ctx, ws.ID, &envA.ID, &orgID, "org", orgID, "conn-a", "sqlite", "enc", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	connB, err := db.InsertConnection(ctx, ws.ID, &envB.ID, &orgID, "org", orgID, "conn-b", "sqlite", "enc", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Grant conn:execute only on env A.
+	if err = e.GrantPermission(ctx, orgID, "conn:execute", "account", member.ID, "environment", envA.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should have access to conn in env A.
+	if !e.Can(ctx, member.ID, orgID, "org", "connection", connA.ID, "conn:execute") {
+		t.Error("member should have conn:execute on connection in env A")
+	}
+	// Should NOT have access to conn in env B.
+	if e.Can(ctx, member.ID, orgID, "org", "connection", connB.ID, "conn:execute") {
+		t.Error("member should NOT have conn:execute on connection in env B")
+	}
+}
+
+// TestCanWorkspaceScopeStillCoversEnvTaggedConnections verifies that a workspace-scope binding
+// continues to cover connections tagged to environments (workspace scope is always in ancestry).
+func TestCanWorkspaceScopeStillCoversEnvTaggedConnections(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "ws-covers-env-conn")
+	ctx := context.Background()
+
+	member, err := db.InsertAccount(ctx, "ws-env-cov@example.com", "WsEnvCov", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddOrgMember(ctx, orgID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := db.InsertWorkspace(ctx, &orgID, "org", orgID, "CovWS", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.SeedWorkspace(ctx, orgID, ws.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	env, err := db.InsertEnvironment(ctx, ws.ID, &orgID, "org", orgID, "prod", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err := db.InsertConnection(ctx, ws.ID, &env.ID, &orgID, "org", orgID, "prod-db", "sqlite", "enc", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Grant conn:execute at workspace scope.
+	if err = e.GrantPermission(ctx, orgID, "conn:execute", "account", member.ID, "workspace", ws.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should have access even though connection is env-tagged, because workspace is still in ancestry.
+	if !e.Can(ctx, member.ID, orgID, "org", "connection", conn.ID, "conn:execute") {
+		t.Error("member should have conn:execute on env-tagged connection via workspace-scope binding")
+	}
+}
