@@ -131,6 +131,31 @@ func TestDebugQueryLoggerHook(t *testing.T) {
 		returnedCtx := hook.BeforeQuery(ctx, event)
 		assert.Equal(t, ctx, returnedCtx)
 	})
+
+	t.Run("Does not panic when query result is nil", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+		hook := &debugQueryLoggerHook{
+			logger: logger,
+		}
+
+		event := &bun.QueryEvent{
+			StartTime: time.Now().Add(-5 * time.Millisecond),
+			Query:     "SELECT EXISTS(SELECT 1)",
+			Result:    nil,
+		}
+
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("AfterQuery panicked with nil result: %v", r)
+			}
+		}()
+		hook.AfterQuery(context.Background(), event)
+
+		output := buf.String()
+		assert.True(t, strings.Contains(output, "executed query"))
+	})
 }
 
 func TestHooksIntegration(t *testing.T) {

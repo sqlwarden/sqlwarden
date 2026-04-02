@@ -40,7 +40,10 @@ type debugQueryLoggerHook struct {
 
 // AfterQuery implements [bun.QueryHook].
 func (d *debugQueryLoggerHook) AfterQuery(ctx context.Context, event *bun.QueryEvent) {
-	rowsAffected, _ := event.Result.RowsAffected()
+	var rowsAffected int64
+	if event.Result != nil {
+		rowsAffected, _ = event.Result.RowsAffected()
+	}
 	d.logger.Debug("executed query",
 		"duration", time.Since(event.StartTime).String(),
 		"query", event.Query,

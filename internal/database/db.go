@@ -55,10 +55,6 @@ func New(driver, dsn string, logger *slog.Logger, logQueries bool) (*DB, error) 
 		}
 
 		db = bun.NewDB(sqldb, sqlitedialect.New())
-		if logQueries {
-			db.AddQueryHook(&debugQueryLoggerHook{logger: logger})
-		}
-		db.AddQueryHook(&slowQueryDetectorHook{threshold: 100, logger: logger})
 
 		_, err = db.ExecContext(ctx, "PRAGMA foreign_keys = ON")
 		if err != nil {
@@ -69,6 +65,11 @@ func New(driver, dsn string, logger *slog.Logger, logQueries bool) (*DB, error) 
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s", driver)
 	}
+
+	if logQueries {
+		db.AddQueryHook(&debugQueryLoggerHook{logger: logger})
+	}
+	db.AddQueryHook(&slowQueryDetectorHook{threshold: 100, logger: logger})
 
 	sqldb.SetMaxOpenConns(25)
 	sqldb.SetMaxIdleConns(25)
