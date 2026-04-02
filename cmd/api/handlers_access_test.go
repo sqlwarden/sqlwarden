@@ -370,6 +370,132 @@ func TestListPoliciesShowsAllResourceTypes(t *testing.T) {
 	}
 }
 
+// TestEnvScopedRoleGrantsConnectionListAndConnect verifies the full HTTP flow for the
+// "team per environment" use case:
+//   - member with only env-A-scoped permissions can list connections in env A
+//   - member can connect and query via those connections
+//   - member is denied connect on connections in env B
+//   - member does not see env B connections in the list
+func TestEnvScopedRoleGrantsConnectionListAndConnect(t *testing.T) {
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-conn-e2e")
+	baseURL := "/api/v1/orgs/" + orgSlug + "/workspaces/" + wsID
+
+	// Create two environments.
+	envARes := send(t, newAuthRequest(t, http.MethodPost, baseURL+"/environments",
+		map[string]any{"name": "env-a"}, ownerTok), app.routes())
+	assert.Equal(t, envARes.StatusCode, http.StatusCreated)
+	envAID := int64(envARes.BodyFields["id"].(float64))
+
+	envBRes := send(t, newAuthRequest(t, http.MethodPost, baseURL+"/environments",
+		map[string]any{"name": "env-b"}, ownerTok), app.routes())
+	assert.Equal(t, envBRes.StatusCode, http.StatusCreated)
+	envBID := int64(envBRes.BodyFields["id"].(float64))
+
+	// Create one connection tagged to env A, one tagged to env B, one untagged.
+	connARes := send(t, newAuthRequest(t, http.MethodPost, baseURL+"/connections", map[string]any{
+		"name": "conn-a", "driver": "sqlite", "dsn": "file::memory:?cache=shared",
+		"environment_id": envAID,
+	}, ownerTok), app.routes())
+	assert.Equal(t, connARes.StatusCode, http.StatusCreated)
+	connAID := fmt.Sprintf("%v", connARes.BodyFields["id"])
+
+	connBRes := send(t, newAuthRequest(t, http.MethodPost, baseURL+"/connections", map[string]any{
+		"name": "conn-b", "driver": "sqlite", "dsn": "file::memory:?cache=shared",
+		"environment_id": envBID,
+	}, ownerTok), app.routes())
+	assert.Equal(t, connBRes.StatusCode, http.StatusCreated)
+	connBID := fmt.Sprintf("%v", connBRes.BodyFields["id"])
+
+	send(t, newAuthRequest(t, http.MethodPost, baseURL+"/connections", map[string]any{
+		"name": "conn-untagged", "driver": "sqlite", "dsn": "file::memory:?cache=shared",
+	}, ownerTok), app.routes())
+
+	// Grant env-A-scoped permissions to the member only.
+	for _, perm := range []string{"conn:execute", "conn:read", "conn:metadata", "query:execute"} {
+		res := send(t, newAuthRequest(t, http.MethodPost, policiesURL(orgSlug, wsID), map[string]any{
+			"permissions":   []string{perm},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "environment",
+			"resource_id":   envAID,
+		}, ownerTok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusNoContent)
+	}
+
+	// Member lists connections — only conn A should appear.
+	listRes := send(t, newAuthRequest(t, http.MethodGet, baseURL+"/connections", nil, memberTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+	var conns []map[string]any
+	if err := json.Unmarshal(listRes.BodyBytes, &conns); err != nil {
+		t.Fatal(err)
+	}
+	if len(conns) != 1 {
+		t.Fatalf("expected 1 accessible connection, got %d: %v", len(conns), conns)
+	}
+	if fmt.Sprintf("%v", conns[0]["id"]) != connAID {
+		t.Fatalf("expected conn A (%s) in list, got id=%v", connAID, conns[0]["id"])
+	}
+
+	// Member can connect to conn A.
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		baseURL+"/connections/"+connAID+"/connect", nil, memberTok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	// Member can query via conn A.
+	queryReq := newAuthRequest(t, http.MethodPost,
+		baseURL+"/connections/"+connAID+"/query",
+		map[string]any{"sql": "SELECT 1"}, memberTok)
+	queryReq.Header.Set("X-Warden-Session", sessionID)
+	assert.Equal(t, send(t, queryReq, app.routes()).StatusCode, http.StatusOK)
+
+	// Member cannot connect to conn B (env B — no binding there).
+	connectBRes := send(t, newAuthRequest(t, http.MethodPost,
+		baseURL+"/connections/"+connBID+"/connect", nil, memberTok), app.routes())
+	assert.Equal(t, connectBRes.StatusCode, http.StatusForbidden)
+}
+
+// TestEnvScopedRoleFiltersEnvironmentList verifies that listEnvironments returns only
+// the environments the member has a binding on (env-A-only binding hides env B).
+func TestEnvScopedRoleFiltersEnvironmentList(t *testing.T) {
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-list-filter")
+	baseURL := "/api/v1/orgs/" + orgSlug + "/workspaces/" + wsID
+
+	envARes := send(t, newAuthRequest(t, http.MethodPost, baseURL+"/environments",
+		map[string]any{"name": "env-a"}, ownerTok), app.routes())
+	assert.Equal(t, envARes.StatusCode, http.StatusCreated)
+	envAID := int64(envARes.BodyFields["id"].(float64))
+
+	send(t, newAuthRequest(t, http.MethodPost, baseURL+"/environments",
+		map[string]any{"name": "env-b"}, ownerTok), app.routes())
+
+	// Grant env:read on env A only.
+	grantRes := send(t, newAuthRequest(t, http.MethodPost, policiesURL(orgSlug, wsID), map[string]any{
+		"permissions":   []string{"env:read"},
+		"subject_type":  "account",
+		"subject_id":    memberIDInt,
+		"resource_type": "environment",
+		"resource_id":   envAID,
+	}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet, baseURL+"/environments", nil, memberTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var envs []map[string]any
+	if err := json.Unmarshal(listRes.BodyBytes, &envs); err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 1 {
+		t.Fatalf("expected 1 accessible environment, got %d", len(envs))
+	}
+	if int64(envs[0]["id"].(float64)) != envAID {
+		t.Fatalf("expected env A (id=%d), got id=%v", envAID, envs[0]["id"])
+	}
+}
+
 // TestGrantMultiplePermissions verifies that a single POST /policies with multiple
 // permissions creates one binding per permission and all are enforced.
 func TestGrantMultiplePermissions(t *testing.T) {
