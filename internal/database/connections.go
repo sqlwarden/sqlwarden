@@ -113,7 +113,7 @@ func (db *DB) ListConnections(ctx context.Context, workspaceID int64) ([]Connect
 }
 
 // ListAccessibleConnections returns connections in workspaceID that accountID has any binding on,
-// checking org-level, workspace-level, and direct connection-level bindings.
+// checking org-level, workspace-level, environment-level, and direct connection-level bindings.
 func (db *DB) ListAccessibleConnections(ctx context.Context, accountID, orgID, workspaceID int64) ([]Connection, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -158,6 +158,22 @@ WHERE c.workspace_id = ?
             OR (pb2.subject_type = 'team' AND pb2.subject_id IN (SELECT team_id FROM my_teams))
           )
     )
+    OR (c.environment_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM role_bindings rb4
+        WHERE rb4.org_id = ? AND rb4.resource_type = 'environment' AND rb4.resource_id = c.environment_id
+          AND (
+            (rb4.subject_type = 'account' AND rb4.subject_id = ?)
+            OR (rb4.subject_type = 'team' AND rb4.subject_id IN (SELECT team_id FROM my_teams))
+          )
+    ))
+    OR (c.environment_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM permission_bindings pb4
+        WHERE pb4.org_id = ? AND pb4.resource_type = 'environment' AND pb4.resource_id = c.environment_id
+          AND (
+            (pb4.subject_type = 'account' AND pb4.subject_id = ?)
+            OR (pb4.subject_type = 'team' AND pb4.subject_id IN (SELECT team_id FROM my_teams))
+          )
+    ))
     OR EXISTS (
         SELECT 1 FROM role_bindings rb3
         WHERE rb3.org_id = ? AND rb3.resource_type = 'connection' AND rb3.resource_id = c.id
@@ -185,6 +201,8 @@ ORDER BY c.name ASC`
 		orgID, orgID, accountID, // org perm binding
 		orgID, workspaceID, accountID, // ws role binding
 		orgID, workspaceID, accountID, // ws perm binding
+		orgID, accountID, // env role binding
+		orgID, accountID, // env perm binding
 		orgID, accountID, // conn role binding
 		orgID, accountID, // conn perm binding
 	).Scan(ctx, &conns)

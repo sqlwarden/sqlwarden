@@ -62,6 +62,21 @@ func (app *application) createMyWorkspace(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// listMyEnvironments returns all environments within a personal-space workspace.
+// Personal space owner has unconditional access, so all environments are returned.
+func (app *application) listMyEnvironments(w http.ResponseWriter, r *http.Request) {
+	ws := contextGetWorkspace(r)
+	envs, err := app.db.ListEnvironments(r.Context(), ws.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	err = response.JSON(w, http.StatusOK, envs)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 // createMyEnvironment creates an environment within a personal-space workspace.
 // Passes nil orgID (no org for personal spaces).
 func (app *application) createMyEnvironment(w http.ResponseWriter, r *http.Request) {

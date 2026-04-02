@@ -794,3 +794,216 @@ func TestListAccessibleConnections_OwnerSeesAll(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ListAccessibleConnections — environment-scope bindings
+// ---------------------------------------------------------------------------
+
+func envIDs(envs []Environment) []int64 {
+	ids := make([]int64, len(envs))
+	for i, e := range envs {
+		ids[i] = e.ID
+	}
+	return ids
+}
+
+func TestListAccessibleConnections_EnvPermBinding(t *testing.T) {
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-conn-envperm", "Org")
+	ownerID := newAccount(t, db, "owner-conn-envperm@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	env, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "staging", "")
+
+	// Tagged connection (in env) and untagged connection.
+	tagged, _ := db.InsertConnection(context.Background(), ws.ID, &env.ID, &org.ID, "org", org.ID, "tagged", "postgres", "enc", "open")
+	untagged, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "untagged", "postgres", "enc", "open")
+
+	userID := newAccount(t, db, "user-conn-envperm@example.com")
+	// Grant permission at environment scope only.
+	_ = e.GrantPermission(context.Background(), org.ID, "conn:execute", "account", userID, "environment", env.ID, ownerID)
+
+	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := connIDs(conns)
+	if !contains(ids, tagged.ID) {
+		t.Errorf("expected tagged connection to be accessible via env-scope binding")
+	}
+	if contains(ids, untagged.ID) {
+		t.Errorf("untagged connection should NOT be accessible via env-scope binding")
+	}
+}
+
+func TestListAccessibleConnections_EnvRoleBinding(t *testing.T) {
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-conn-envrole", "Org")
+	ownerID := newAccount(t, db, "owner-conn-envrole@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	envA, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "env-a", "")
+	envB, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "env-b", "")
+
+	connA, _ := db.InsertConnection(context.Background(), ws.ID, &envA.ID, &org.ID, "org", org.ID, "conn-a", "postgres", "enc", "open")
+	connB, _ := db.InsertConnection(context.Background(), ws.ID, &envB.ID, &org.ID, "org", org.ID, "conn-b", "postgres", "enc", "open")
+
+	userID := newAccount(t, db, "user-conn-envrole@example.com")
+	// Custom env-scope role with conn:execute.
+	roleID, _ := e.CreateRole(context.Background(), org.ID, nil, "env-viewer", "", "environment", []string{"conn:execute", "conn:read"})
+	_ = e.BindRole(context.Background(), org.ID, roleID, "account", userID, "environment", envA.ID, ownerID)
+
+	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := connIDs(conns)
+	if !contains(ids, connA.ID) {
+		t.Errorf("connA should be accessible via env A role binding")
+	}
+	if contains(ids, connB.ID) {
+		t.Errorf("connB should NOT be accessible — binding is only on env A")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ListAccessibleEnvironments
+// ---------------------------------------------------------------------------
+
+func TestListAccessibleEnvironments_NoBindings(t *testing.T) {
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-env-none", "Org")
+	ownerID := newAccount(t, db, "owner-env-none@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "staging", "")
+	db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "prod", "")
+
+	userID := newAccount(t, db, "user-env-none@example.com")
+	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 0 {
+		t.Fatalf("expected 0 environments, got %d", len(envs))
+	}
+}
+
+func TestListAccessibleEnvironments_OrgRoleGrantsAll(t *testing.T) {
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-env-orgrole", "Org")
+	ownerID := newAccount(t, db, "owner-env-orgrole@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	env1, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "staging", "")
+	env2, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "prod", "")
+
+	userID := newAccount(t, db, "user-env-orgrole@example.com")
+	adminRoleID := findOrgRoleID(t, db, org.ID, "admin")
+	_ = e.BindRole(context.Background(), org.ID, adminRoleID, "account", userID, "org", org.ID, ownerID)
+
+	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 2 {
+		t.Fatalf("expected 2 environments, got %d", len(envs))
+	}
+	ids := envIDs(envs)
+	if !contains(ids, env1.ID) || !contains(ids, env2.ID) {
+		t.Fatalf("missing expected environment IDs in %v", ids)
+	}
+}
+
+func TestListAccessibleEnvironments_WsBindingGrantsAll(t *testing.T) {
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-env-wsrole", "Org")
+	ownerID := newAccount(t, db, "owner-env-wsrole@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	env1, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "alpha", "")
+	env2, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "beta", "")
+
+	userID := newAccount(t, db, "user-env-wsrole@example.com")
+	wsMemberID := findWsRoleID(t, db, org.ID, ws.ID, "ws:member")
+	_ = e.BindRole(context.Background(), org.ID, wsMemberID, "account", userID, "workspace", ws.ID, ownerID)
+
+	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := envIDs(envs)
+	if !contains(ids, env1.ID) || !contains(ids, env2.ID) {
+		t.Fatalf("workspace binding should expose all environments; got %v", ids)
+	}
+}
+
+func TestListAccessibleEnvironments_DirectEnvBinding(t *testing.T) {
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-env-direct", "Org")
+	ownerID := newAccount(t, db, "owner-env-direct@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	envA, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "env-a", "")
+	envB, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "env-b", "")
+
+	userID := newAccount(t, db, "user-env-direct@example.com")
+	// Grant access only to env A.
+	_ = e.GrantPermission(context.Background(), org.ID, "env:read", "account", userID, "environment", envA.ID, ownerID)
+
+	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := envIDs(envs)
+	if !contains(ids, envA.ID) {
+		t.Errorf("env A should be accessible via direct env binding")
+	}
+	if contains(ids, envB.ID) {
+		t.Errorf("env B should NOT be accessible — no binding for it")
+	}
+}
+
+func TestListAccessibleEnvironments_IsolatedAcrossOrgs(t *testing.T) {
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org1, _ := db.InsertOrg(context.Background(), "acc-env-iso1", "Org1")
+	ownerID1 := newAccount(t, db, "owner-env-iso1@example.com")
+	_ = e.SeedOrg(context.Background(), org1.ID, ownerID1)
+	ws1 := seedWorkspace(t, db, e, org1.ID, ownerID1, "WS1")
+	env1, _ := db.InsertEnvironment(context.Background(), ws1.ID, &org1.ID, "org", org1.ID, "prod", "")
+
+	org2, _ := db.InsertOrg(context.Background(), "acc-env-iso2", "Org2")
+	ownerID2 := newAccount(t, db, "owner-env-iso2@example.com")
+	_ = e.SeedOrg(context.Background(), org2.ID, ownerID2)
+	ws2 := seedWorkspace(t, db, e, org2.ID, ownerID2, "WS2")
+	env2, _ := db.InsertEnvironment(context.Background(), ws2.ID, &org2.ID, "org", org2.ID, "prod", "")
+
+	// ownerID1 has org1 bindings; should not see env2.
+	envs1, _ := db.ListAccessibleEnvironments(context.Background(), ownerID1, org1.ID, ws1.ID)
+	ids1 := envIDs(envs1)
+	if !contains(ids1, env1.ID) {
+		t.Errorf("owner1 should see env1")
+	}
+
+	envs2, _ := db.ListAccessibleEnvironments(context.Background(), ownerID1, org2.ID, ws2.ID)
+	ids2 := envIDs(envs2)
+	if contains(ids2, env2.ID) {
+		t.Errorf("owner1 should NOT see env2 in org2")
+	}
+}

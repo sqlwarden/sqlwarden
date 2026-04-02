@@ -3,14 +3,26 @@ package main
 import (
 	"net/http"
 
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
 )
 
 func (app *application) listEnvironments(w http.ResponseWriter, r *http.Request) {
+	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
-	envs, err := app.db.ListEnvironments(r.Context(), ws.ID)
+
+	var (
+		envs []database.Environment
+		err  error
+	)
+	if app.config.desktopMode {
+		envs, err = app.db.ListEnvironments(r.Context(), ws.ID)
+	} else {
+		account := contextGetAccount(r)
+		envs, err = app.db.ListAccessibleEnvironments(r.Context(), account.ID, org.ID, ws.ID)
+	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return

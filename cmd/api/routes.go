@@ -58,7 +58,7 @@ func (app *application) routes() http.Handler {
 					r.Delete("/", app.deleteWorkspace)
 
 					r.Route("/environments", func(r chi.Router) {
-						r.Get("/", app.listEnvironments)
+						r.Get("/", app.listMyEnvironments)
 						r.Post("/", app.createMyEnvironment)
 						r.Route("/{env_id}", func(r chi.Router) {
 							r.Use(app.spaceEnvCtx)
