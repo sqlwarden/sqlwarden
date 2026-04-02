@@ -103,3 +103,28 @@ func (db *DB) ListPermissionBindings(ctx context.Context, orgID int64, resourceT
 		Scan(ctx)
 	return pbs, err
 }
+
+// ListWorkspacePolicies returns all role and permission bindings for resources owned
+// by the workspace: the workspace itself, its environments, and its connections.
+func (db *DB) ListWorkspacePolicies(ctx context.Context, orgID, wsID int64) ([]RoleBinding, []PermissionBinding, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	const where = `org_id = ? AND (
+		(resource_type = 'workspace'   AND resource_id = ?) OR
+		(resource_type = 'environment' AND resource_id IN (SELECT id FROM environments WHERE workspace_id = ?)) OR
+		(resource_type = 'connection'  AND resource_id IN (SELECT id FROM connections  WHERE workspace_id = ?))
+	)`
+
+	var rbs []RoleBinding
+	if err := db.NewSelect().Model(&rbs).Where(where, orgID, wsID, wsID, wsID).Scan(ctx); err != nil {
+		return nil, nil, err
+	}
+
+	var pbs []PermissionBinding
+	if err := db.NewSelect().Model(&pbs).Where(where, orgID, wsID, wsID, wsID).Scan(ctx); err != nil {
+		return nil, nil, err
+	}
+
+	return rbs, pbs, nil
+}

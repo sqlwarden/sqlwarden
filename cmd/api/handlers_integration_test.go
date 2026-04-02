@@ -75,7 +75,7 @@ func TestFullWorkflow(t *testing.T) {
 	fmt.Sscanf(roleID, "%d", &roleIDInt)
 
 	bindRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access",
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/policies",
 		map[string]any{
 			"role_id":      roleIDInt,
 			"subject_type": "account",

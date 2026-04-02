@@ -94,9 +94,11 @@ func (app *application) routes() http.Handler {
 						r.With(app.requirePermission("policy:modify")).Delete("/{role_id}", app.deleteWorkspaceRole)
 					})
 
-					r.Get("/access", app.listWorkspaceBindings)
-					r.With(app.requirePermission("policy:modify")).Post("/access", app.grantWorkspaceAccess)
-					r.With(app.requirePermission("policy:modify")).Delete("/access/{binding_id}", app.revokeWorkspaceAccess)
+					r.Route("/policies", func(r chi.Router) {
+						r.Get("/", app.listWorkspacePolicies)
+						r.With(app.requirePermission("policy:modify")).Post("/", app.grantWorkspacePolicy)
+						r.With(app.requirePermission("policy:modify")).Delete("/{binding_id}", app.revokeWorkspacePolicy)
+					})
 
 					r.Route("/environments", func(r chi.Router) {
 						r.Get("/", app.listEnvironments)
@@ -106,10 +108,6 @@ func (app *application) routes() http.Handler {
 							r.Get("/", app.getEnvironment)
 							r.With(app.requirePermission("env:write")).Patch("/", app.updateEnvironment)
 							r.With(app.requirePermission("env:delete")).Delete("/", app.deleteEnvironment)
-
-							r.Get("/access", app.listEnvironmentBindings)
-							r.With(app.requirePermission("policy:modify")).Post("/access", app.grantEnvironmentAccess)
-							r.With(app.requirePermission("policy:modify")).Delete("/access/{binding_id}", app.revokeEnvironmentAccess)
 						})
 					})
 
@@ -121,10 +119,6 @@ func (app *application) routes() http.Handler {
 							r.Use(app.connCtx)
 							r.Get("/", app.getConnection)
 							r.With(app.requirePermission("conn:delete")).Delete("/", app.deleteConnection)
-
-							r.Get("/access", app.listConnectionBindings)
-							r.With(app.requirePermission("policy:modify")).Post("/access", app.grantConnectionAccess)
-							r.With(app.requirePermission("policy:modify")).Delete("/access/{binding_id}", app.revokeConnectionAccess)
 
 							r.Post("/connect", app.connectToDatabase)
 							r.Post("/query", app.executeQuery)

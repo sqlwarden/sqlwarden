@@ -9,9 +9,9 @@ import (
 	"github.com/sqlwarden/internal/assert"
 )
 
-// setupAccessTest creates an org, a workspace, and a member account.
+// setupPolicyTest creates an org, a workspace, and a member account.
 // Returns ownerTok, memberTok, orgSlug, wsID, memberIDInt.
-func setupAccessTest(t *testing.T, app *application, suffix string) (ownerTok, memberTok, orgSlug string, wsID string, memberIDInt int64) {
+func setupPolicyTest(t *testing.T, app *application, suffix string) (ownerTok, memberTok, orgSlug string, wsID string, memberIDInt int64) {
 	t.Helper()
 
 	_, ownerTok, orgSlug = registerAndLogin(t, app, "access-owner-"+suffix+"@example.com", "Owner", "securepass99")
@@ -34,9 +34,13 @@ func setupAccessTest(t *testing.T, app *application, suffix string) (ownerTok, m
 	return
 }
 
+func policiesURL(orgSlug, wsID string) string {
+	return "/api/v1/orgs/" + orgSlug + "/workspaces/" + wsID + "/policies"
+}
+
 func TestGrantWorkspacePermissionBinding(t *testing.T) {
 	app := newTestApp(t)
-	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupAccessTest(t, app, "ws-perm")
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-perm")
 
 	// Member cannot update workspace yet.
 	patchRes := send(t, newAuthRequest(t, http.MethodPatch,
@@ -46,7 +50,7 @@ func TestGrantWorkspacePermissionBinding(t *testing.T) {
 
 	// Owner grants ws:write directly to member (no role).
 	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access",
+		policiesURL(orgSlug, wsID),
 		map[string]any{
 			"permissions":  []string{"ws:write"},
 			"subject_type": "account",
@@ -63,11 +67,11 @@ func TestGrantWorkspacePermissionBinding(t *testing.T) {
 
 func TestRevokeWorkspacePermissionBinding(t *testing.T) {
 	app := newTestApp(t)
-	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupAccessTest(t, app, "ws-revoke")
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-revoke")
 
 	// Grant ws:write.
 	send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access",
+		policiesURL(orgSlug, wsID),
 		map[string]any{
 			"permissions":  []string{"ws:write"},
 			"subject_type": "account",
@@ -76,7 +80,7 @@ func TestRevokeWorkspacePermissionBinding(t *testing.T) {
 
 	// List bindings to get the permission binding ID.
 	listRes := send(t, newAuthRequest(t, http.MethodGet,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access", nil, ownerTok), app.routes())
+		policiesURL(orgSlug, wsID), nil, ownerTok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
 
 	var body map[string]any
@@ -91,7 +95,7 @@ func TestRevokeWorkspacePermissionBinding(t *testing.T) {
 
 	// Revoke it with ?kind=permission.
 	revokeRes := send(t, newAuthRequest(t, http.MethodDelete,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access/"+pbID+"?kind=permission",
+		policiesURL(orgSlug, wsID)+"/"+pbID+"?kind=permission",
 		nil, ownerTok), app.routes())
 	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
 
@@ -102,13 +106,13 @@ func TestRevokeWorkspacePermissionBinding(t *testing.T) {
 	assert.Equal(t, patchRes.StatusCode, http.StatusForbidden)
 }
 
-func TestGrantAccessValidation(t *testing.T) {
+func TestGrantPolicyValidation(t *testing.T) {
 	app := newTestApp(t)
-	ownerTok, _, orgSlug, wsID, memberIDInt := setupAccessTest(t, app, "ws-val")
+	ownerTok, _, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-val")
 
 	// Both role_id and permission set → 422.
 	res := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access",
+		policiesURL(orgSlug, wsID),
 		map[string]any{
 			"role_id":      1,
 			"permissions":  []string{"ws:write"},
@@ -119,7 +123,7 @@ func TestGrantAccessValidation(t *testing.T) {
 
 	// Neither role_id nor permission → 422.
 	res2 := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access",
+		policiesURL(orgSlug, wsID),
 		map[string]any{
 			"subject_type": "account",
 			"subject_id":   memberIDInt,
@@ -128,18 +132,40 @@ func TestGrantAccessValidation(t *testing.T) {
 
 	// Invalid subject_type → 422.
 	res3 := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access",
+		policiesURL(orgSlug, wsID),
 		map[string]any{
 			"permissions":  []string{"ws:write"},
 			"subject_type": "user",
 			"subject_id":   memberIDInt,
 		}, ownerTok), app.routes())
 	assert.Equal(t, res3.StatusCode, http.StatusUnprocessableEntity)
+
+	// Invalid resource_type → 422.
+	res4 := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"permissions":   []string{"ws:write"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "bucket",
+		}, ownerTok), app.routes())
+	assert.Equal(t, res4.StatusCode, http.StatusUnprocessableEntity)
+
+	// resource_type=connection without resource_id → 422.
+	res5 := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"permissions":   []string{"conn:execute"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "connection",
+		}, ownerTok), app.routes())
+	assert.Equal(t, res5.StatusCode, http.StatusUnprocessableEntity)
 }
 
-func TestGrantConnectionPermissionBinding(t *testing.T) {
+func TestGrantConnectionPolicyBinding(t *testing.T) {
 	app := newTestApp(t)
-	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupAccessTest(t, app, "conn-perm")
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "conn-perm")
 
 	// Create a connection.
 	connRes := send(t, newAuthRequest(t, http.MethodPost,
@@ -150,22 +176,24 @@ func TestGrantConnectionPermissionBinding(t *testing.T) {
 			"dsn":    "postgres://localhost/testdb",
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
-	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
+	connIDFloat := connRes.BodyFields["id"].(float64)
+	connID := int64(connIDFloat)
 
-	// Grant conn:execute directly (no role) to member on the connection.
+	// Grant conn:execute to member via the consolidated /policies endpoint.
 	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections/"+connID+"/access",
+		policiesURL(orgSlug, wsID),
 		map[string]any{
-			"permissions":  []string{"conn:execute"},
-			"subject_type": "account",
-			"subject_id":   memberIDInt,
+			"permissions":   []string{"conn:execute"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "connection",
+			"resource_id":   connID,
 		}, ownerTok), app.routes())
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
-	// Verify binding appears in the list.
+	// Binding appears in the workspace policies list.
 	listRes := send(t, newAuthRequest(t, http.MethodGet,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections/"+connID+"/access",
-		nil, ownerTok), app.routes())
+		policiesURL(orgSlug, wsID), nil, ownerTok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
 
 	var body map[string]any
@@ -173,38 +201,84 @@ func TestGrantConnectionPermissionBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	pbs := body["permission_bindings"].([]any)
-	if len(pbs) == 0 {
-		t.Fatal("expected permission_bindings to contain the granted binding")
+	found := false
+	for _, pb := range pbs {
+		b := pb.(map[string]any)
+		if b["resource_type"] == "connection" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected a connection-scoped permission binding in the list")
 	}
 
 	_ = memberTok
 }
 
-func TestGrantEnvironmentPermissionBinding(t *testing.T) {
+func TestGrantConnectionPolicyWrongWorkspace(t *testing.T) {
 	app := newTestApp(t)
-	ownerTok, _, orgSlug, wsID, memberIDInt := setupAccessTest(t, app, "env-perm")
+	ownerTok, _, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "conn-wrongws")
+
+	// Create a second workspace.
+	ws2Res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces",
+		map[string]any{"name": "OtherWS"}, ownerTok), app.routes())
+	assert.Equal(t, ws2Res.StatusCode, http.StatusCreated)
+	ws2ID := fmt.Sprintf("%v", ws2Res.BodyFields["id"])
+
+	// Create a connection in workspace 2.
+	connRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+ws2ID+"/connections",
+		map[string]any{
+			"name":   "OtherConn",
+			"driver": "postgres",
+			"dsn":    "postgres://localhost/testdb",
+		}, ownerTok), app.routes())
+	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
+	connIDFloat := connRes.BodyFields["id"].(float64)
+	connID := int64(connIDFloat)
+
+	// Try to grant on workspace 1's /policies endpoint using conn from workspace 2 → 404.
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"permissions":   []string{"conn:execute"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "connection",
+			"resource_id":   connID,
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNotFound)
+}
+
+func TestGrantEnvironmentPolicyBinding(t *testing.T) {
+	app := newTestApp(t)
+	ownerTok, _, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-perm")
 
 	// Create environment.
 	envRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments",
 		map[string]any{"name": "staging"}, ownerTok), app.routes())
 	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
-	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+	envIDFloat := envRes.BodyFields["id"].(float64)
+	envID := int64(envIDFloat)
 
-	// Grant env:deploy directly (no role) to member.
+	// Grant env:deploy to member via the consolidated /policies endpoint.
 	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+envID+"/access",
+		policiesURL(orgSlug, wsID),
 		map[string]any{
-			"permissions":  []string{"env:deploy"},
-			"subject_type": "account",
-			"subject_id":   memberIDInt,
+			"permissions":   []string{"env:deploy"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "environment",
+			"resource_id":   envID,
 		}, ownerTok), app.routes())
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
-	// Verify it's listed.
+	// Binding appears in the workspace policies list.
 	listRes := send(t, newAuthRequest(t, http.MethodGet,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+envID+"/access",
-		nil, ownerTok), app.routes())
+		policiesURL(orgSlug, wsID), nil, ownerTok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
 
 	var body map[string]any
@@ -212,16 +286,95 @@ func TestGrantEnvironmentPermissionBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	pbs := body["permission_bindings"].([]any)
-	if len(pbs) == 0 {
-		t.Fatal("expected permission_bindings to contain the granted binding")
+	found := false
+	for _, pb := range pbs {
+		b := pb.(map[string]any)
+		if b["resource_type"] == "environment" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected an environment-scoped permission binding in the list")
 	}
 }
 
-// TestGrantMultiplePermissions verifies that a single POST /access with multiple permissions
-// creates one binding per permission and all are enforced.
+func TestListPoliciesShowsAllResourceTypes(t *testing.T) {
+	app := newTestApp(t)
+	ownerTok, _, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "list-all")
+
+	// Create environment and connection.
+	envRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments",
+		map[string]any{"name": "prod"}, ownerTok), app.routes())
+	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+	envIDFloat := envRes.BodyFields["id"].(float64)
+	envID := int64(envIDFloat)
+
+	connRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections",
+		map[string]any{
+			"name":   "ProdDB",
+			"driver": "postgres",
+			"dsn":    "postgres://localhost/prod",
+		}, ownerTok), app.routes())
+	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
+	connIDFloat := connRes.BodyFields["id"].(float64)
+	connID := int64(connIDFloat)
+
+	// Grant bindings at workspace, environment, and connection scope.
+	for _, body := range []map[string]any{
+		{
+			"permissions":  []string{"ws:read"},
+			"subject_type": "account",
+			"subject_id":   memberIDInt,
+		},
+		{
+			"permissions":   []string{"env:deploy"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "environment",
+			"resource_id":   envID,
+		},
+		{
+			"permissions":   []string{"conn:execute"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "connection",
+			"resource_id":   connID,
+		},
+	} {
+		res := send(t, newAuthRequest(t, http.MethodPost, policiesURL(orgSlug, wsID), body, ownerTok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusNoContent)
+	}
+
+	// Single list call must return all three bindings.
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		policiesURL(orgSlug, wsID), nil, ownerTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var resp map[string]any
+	if err := json.Unmarshal(listRes.BodyBytes, &resp); err != nil {
+		t.Fatal(err)
+	}
+	pbs := resp["permission_bindings"].([]any)
+	assert.Equal(t, len(pbs), 3)
+
+	types := map[string]bool{}
+	for _, pb := range pbs {
+		b := pb.(map[string]any)
+		types[b["resource_type"].(string)] = true
+	}
+	if !types["workspace"] || !types["environment"] || !types["connection"] {
+		t.Fatalf("expected bindings for all three resource types, got: %v", types)
+	}
+}
+
+// TestGrantMultiplePermissions verifies that a single POST /policies with multiple
+// permissions creates one binding per permission and all are enforced.
 func TestGrantMultiplePermissions(t *testing.T) {
 	app := newTestApp(t)
-	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupAccessTest(t, app, "multi-perm")
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "multi-perm")
 
 	// Member has no permissions yet.
 	patchRes := send(t, newAuthRequest(t, http.MethodPatch,
@@ -231,7 +384,7 @@ func TestGrantMultiplePermissions(t *testing.T) {
 
 	// Grant ws:write AND ws:read in a single request.
 	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access",
+		policiesURL(orgSlug, wsID),
 		map[string]any{
 			"permissions":  []string{"ws:write", "ws:read"},
 			"subject_type": "account",
@@ -247,7 +400,7 @@ func TestGrantMultiplePermissions(t *testing.T) {
 
 	// Two permission bindings should appear in the list.
 	listRes := send(t, newAuthRequest(t, http.MethodGet,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/access", nil, ownerTok), app.routes())
+		policiesURL(orgSlug, wsID), nil, ownerTok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
 
 	var body map[string]any

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/driver"
@@ -330,93 +329,3 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *application) listConnectionBindings(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-	conn := contextGetConnection(r)
-
-	rbs, err := app.db.ListRoleBindings(context.Background(), org.ID, "connection", conn.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	pbs, err := app.db.ListPermissionBindings(context.Background(), org.ID, "connection", conn.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	err = response.JSON(w, http.StatusOK, map[string]any{
-		"role_bindings":       rbs,
-		"permission_bindings": pbs,
-	})
-	if err != nil {
-		app.serverError(w, r, err)
-	}
-}
-
-func (app *application) grantConnectionAccess(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		RoleID      int64               `json:"role_id"`
-		Permissions []string            `json:"permissions"`
-		SubjectType string              `json:"subject_type"`
-		SubjectID   int64               `json:"subject_id"`
-		V           validator.Validator `json:"-"`
-	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
-		app.badRequest(w, r, err)
-		return
-	}
-
-	hasRole := input.RoleID > 0
-	hasPerms := len(input.Permissions) > 0
-	input.V.CheckField(hasRole || hasPerms, "role_id", "one of role_id or permissions is required")
-	input.V.CheckField(!(hasRole && hasPerms), "role_id", "only one of role_id or permissions may be set")
-	input.V.CheckField(input.SubjectType == "account" || input.SubjectType == "team", "subject_type", "must be account or team")
-	input.V.CheckField(input.SubjectID > 0, "subject_id", "subject_id is required")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	org := contextGetOrg(r)
-	conn := contextGetConnection(r)
-	grantor := contextGetAccount(r)
-
-	if hasRole {
-		err = app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, "connection", conn.ID, grantor.ID)
-	} else {
-		err = app.enforcer.GrantPermissions(r.Context(), org.ID, input.Permissions, input.SubjectType, input.SubjectID, "connection", conn.ID, grantor.ID)
-	}
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (app *application) revokeConnectionAccess(w http.ResponseWriter, r *http.Request) {
-	bindingIDStr := chi.URLParam(r, "binding_id")
-	bindingID, err := strconv.ParseInt(bindingIDStr, 10, 64)
-	if err != nil {
-		app.notFound(w, r)
-		return
-	}
-
-	org := contextGetOrg(r)
-	kind := r.URL.Query().Get("kind")
-
-	if kind == "permission" {
-		err = app.enforcer.RevokePermission(r.Context(), bindingID, org.ID)
-	} else {
-		err = app.enforcer.UnbindRole(r.Context(), bindingID, org.ID)
-	}
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}

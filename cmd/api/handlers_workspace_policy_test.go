@@ -56,7 +56,7 @@ func wsJoinAs(t *testing.T, app *application, slug, wsID, roleName, email string
 
 	// Bind role via workspace access endpoint.
 	bindRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/access",
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/policies",
 		map[string]any{
 			"subject_type": "account",
 			"subject_id":   int64(accountID),
