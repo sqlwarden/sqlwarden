@@ -43,6 +43,47 @@ func (app *application) routes() http.Handler {
 			r.Get("/account/orgs", app.getAccountOrgs)
 		})
 
+		r.Route("/me", func(r chi.Router) {
+			r.Use(app.requireAccount)
+
+			r.Get("/", app.getAccount)
+
+			r.Route("/workspaces", func(r chi.Router) {
+				r.Get("/", app.listMyWorkspaces)
+				r.Post("/", app.createMyWorkspace)
+				r.Route("/{ws_id}", func(r chi.Router) {
+					r.Use(app.spaceWsCtx)
+					r.Get("/", app.getWorkspace)
+					r.Patch("/", app.updateWorkspace)
+					r.Delete("/", app.deleteWorkspace)
+
+					r.Route("/environments", func(r chi.Router) {
+						r.Get("/", app.listEnvironments)
+						r.Post("/", app.createMyEnvironment)
+						r.Route("/{env_id}", func(r chi.Router) {
+							r.Use(app.spaceEnvCtx)
+							r.Get("/", app.getEnvironment)
+							r.Patch("/", app.updateEnvironment)
+							r.Delete("/", app.deleteEnvironment)
+						})
+					})
+
+					r.Route("/connections", func(r chi.Router) {
+						r.Post("/test", app.testConnection)
+						r.Get("/", app.listMyConnections)
+						r.Post("/", app.createMyConnection)
+						r.Route("/{conn_id}", func(r chi.Router) {
+							r.Use(app.spaceConnCtx)
+							r.Get("/", app.getConnection)
+							r.Delete("/", app.deleteConnection)
+							r.Post("/connect", app.connectToDatabase)
+							r.Post("/query", app.executeQuery)
+						})
+					})
+				})
+			})
+		})
+
 		r.Route("/orgs/{org_slug}", func(r chi.Router) {
 			r.Use(app.requireAccount, app.orgCtx)
 

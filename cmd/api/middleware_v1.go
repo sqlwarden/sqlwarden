@@ -188,6 +188,100 @@ func (app *application) connCtx(next http.Handler) http.Handler {
 	})
 }
 
+// spaceWsCtx resolves a personal-space workspace from {ws_id} and validates ownership.
+// Returns 404 if not found, owner_type != "space", or owner_id != authenticated account.
+func (app *application) spaceWsCtx(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wsIDStr := chi.URLParam(r, "ws_id")
+		wsID, err := strconv.ParseInt(wsIDStr, 10, 64)
+		if err != nil {
+			app.notFound(w, r)
+			return
+		}
+
+		ws, found, err := app.db.GetWorkspace(r.Context(), wsID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !found || ws.OwnerType != "space" {
+			app.notFound(w, r)
+			return
+		}
+
+		account := contextGetAccount(r)
+		if ws.OwnerID != account.ID {
+			app.notFound(w, r)
+			return
+		}
+
+		r = contextSetWorkspace(r, ws)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// spaceEnvCtx resolves an environment from {env_id} within the personal-space workspace in context.
+func (app *application) spaceEnvCtx(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		envIDStr := chi.URLParam(r, "env_id")
+		envID, err := strconv.ParseInt(envIDStr, 10, 64)
+		if err != nil {
+			app.notFound(w, r)
+			return
+		}
+
+		env, found, err := app.db.GetEnvironment(r.Context(), envID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !found {
+			app.notFound(w, r)
+			return
+		}
+
+		ws := contextGetWorkspace(r)
+		if env.WorkspaceID != ws.ID {
+			app.notFound(w, r)
+			return
+		}
+
+		r = contextSetEnvironment(r, env)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// spaceConnCtx resolves a connection from {conn_id} within the personal-space workspace in context.
+func (app *application) spaceConnCtx(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connIDStr := chi.URLParam(r, "conn_id")
+		connID, err := strconv.ParseInt(connIDStr, 10, 64)
+		if err != nil {
+			app.notFound(w, r)
+			return
+		}
+
+		conn, found, err := app.db.GetConnection(r.Context(), connID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !found {
+			app.notFound(w, r)
+			return
+		}
+
+		ws := contextGetWorkspace(r)
+		if conn.WorkspaceID != ws.ID {
+			app.notFound(w, r)
+			return
+		}
+
+		r = contextSetConnection(r, conn)
+		next.ServeHTTP(w, r)
+	})
+}
+
 // requirePermission checks that the authenticated account holds the given permission.
 // When a workspace is in context it checks at workspace scope; otherwise at org scope.
 func (app *application) requirePermission(permission string) func(http.Handler) http.Handler {
