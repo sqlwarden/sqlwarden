@@ -1,12 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"strings"
 
+	"github.com/uptrace/bun/driver/pgdriver"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
 )
@@ -85,6 +87,19 @@ func (app *application) invalidAuthenticationToken(w http.ResponseWriter, r *htt
 func (app *application) notPermitted(w http.ResponseWriter, r *http.Request) {
 	message := "You do not have permission to perform this action"
 	app.errorMessage(w, r, http.StatusForbidden, message, nil)
+}
+
+// isUniqueViolation returns true if err is a unique-constraint violation from
+// either the PostgreSQL (pgx) or SQLite driver.
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr pgdriver.Error
+	if errors.As(err, &pgErr) {
+		return pgErr.Field('C') == "23505"
+	}
+	return strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
 func (app *application) authenticationRequired(w http.ResponseWriter, r *http.Request) {

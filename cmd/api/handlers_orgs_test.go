@@ -203,3 +203,15 @@ func TestOrgPermissionEnforcement(t *testing.T) {
 	res2 := send(t, req2, app.routes())
 	assert.Equal(t, res2.StatusCode, http.StatusForbidden)
 }
+
+func TestCreateOrgDuplicateName(t *testing.T) {
+	app := newTestApp(t)
+	_, tok, _ := registerAndLogin(t, app, "dup-org@example.com", "User", "securepass99")
+
+	body := map[string]any{"name": "Duplicate Org"}
+	res1 := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", body, tok), app.routes())
+	assert.Equal(t, res1.StatusCode, http.StatusCreated)
+
+	res2 := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", body, tok), app.routes())
+	assert.Equal(t, res2.StatusCode, http.StatusUnprocessableEntity)
+}
