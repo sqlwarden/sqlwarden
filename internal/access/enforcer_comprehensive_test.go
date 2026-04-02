@@ -947,8 +947,7 @@ func TestAdminRoleDoesNotHaveOwnerOnlyPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ownerOnly := []string{access.PermOrgTransferOwnership, access.PermOrgDelete, access.PermPolicyModify}
-	// policy:modify is owner-only at org level; admin has it only at workspace level via ws:admin
+	ownerOnly := []string{access.PermOrgTransferOwnership, access.PermOrgDelete}
 	for _, p := range ownerOnly {
 		if e.Can(ctx, memberID, orgID, "org", "org", orgID, p) {
 			t.Errorf("admin should NOT have owner-only permission %q", p)

@@ -1,0 +1,384 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"testing"
+
+	"github.com/sqlwarden/internal/assert"
+)
+
+// wsSetup creates an org + workspace and returns the org slug, workspace ID, and owner token.
+func wsSetup(t *testing.T, app *application, email, name string) (slug, wsID, tok string) {
+	t.Helper()
+	_, tok, slug = registerAndLogin(t, app, email, name, "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Main Workspace"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID = fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	return
+}
+
+// wsJoinAs registers a new user, adds them to the org, binds them to a workspace role, and returns their token.
+func wsJoinAs(t *testing.T, app *application, slug, wsID, roleName, email string, ownerTok string) string {
+	t.Helper()
+	regRes := registerTestUser(t, app, email, email, "securepass99")
+	assert.Equal(t, regRes.StatusCode, http.StatusCreated)
+
+	// Add to org.
+	addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
+		map[string]any{"email": email}, ownerTok), app.routes())
+	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+
+	// List workspace roles to find the target role ID.
+	rolesRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles", nil, ownerTok), app.routes())
+	assert.Equal(t, rolesRes.StatusCode, http.StatusOK)
+	var roles []map[string]any
+	if err := json.Unmarshal(rolesRes.BodyBytes, &roles); err != nil {
+		t.Fatal(err)
+	}
+	var roleID float64
+	for _, r := range roles {
+		if r["name"].(string) == roleName {
+			roleID = r["id"].(float64)
+			break
+		}
+	}
+	if roleID == 0 {
+		t.Fatalf("wsJoinAs: role %q not found in workspace", roleName)
+	}
+
+	// Get new user's account ID (JSON numbers come back as float64).
+	accountID := regRes.BodyFields["id"].(float64)
+
+	// Bind role via workspace access endpoint.
+	bindRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/access",
+		map[string]any{
+			"subject_type": "account",
+			"subject_id":   int64(accountID),
+			"role_id":      int64(roleID),
+		}, ownerTok), app.routes())
+	if bindRes.StatusCode != http.StatusCreated && bindRes.StatusCode != http.StatusNoContent {
+		t.Fatalf("wsJoinAs: bind role got %d: %s", bindRes.StatusCode, bindRes.BodyBytes)
+	}
+
+	loginRes := loginTestUser(t, app, email, "securepass99")
+	return extractAccessToken(t, loginRes)
+}
+
+// ── List workspace roles ──────────────────────────────────────────────────────
+
+func TestListWorkspaceRolesBuiltins(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-list@example.com", "WSR List")
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var roles []map[string]any
+	if err := json.Unmarshal(res.BodyBytes, &roles); err != nil {
+		t.Fatal(err)
+	}
+	// SeedWorkspace creates ws:admin and ws:member builtins.
+	assert.Equal(t, len(roles), 2)
+	names := map[string]bool{}
+	for _, r := range roles {
+		names[r["name"].(string)] = true
+	}
+	assert.Equal(t, names["ws:admin"], true)
+	assert.Equal(t, names["ws:member"], true)
+}
+
+func TestListWorkspaceRolesPermissions(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, ownerTok := wsSetup(t, app, "wsr-lr@example.com", "WSR LR")
+
+	// ws:member does NOT have policy:read → 403.
+	memberTok := wsJoinAs(t, app, slug, wsID, "ws:member", "wsr-lr-member@example.com", ownerTok)
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles", nil, memberTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+
+	// ws:admin has policy:read → 200.
+	wsAdminTok := wsJoinAs(t, app, slug, wsID, "ws:admin", "wsr-lr-admin@example.com", ownerTok)
+	res2 := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles", nil, wsAdminTok), app.routes())
+	assert.Equal(t, res2.StatusCode, http.StatusOK)
+}
+
+// ── Create workspace role ─────────────────────────────────────────────────────
+
+func TestCreateWorkspaceRoleByWsAdmin(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-create@example.com", "WSR Create")
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{
+			"name":        "read-only",
+			"description": "Read only role",
+			"permissions": []string{"ws:read", "conn:read"},
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+	assert.Equal(t, res.BodyFields["name"].(string), "read-only")
+}
+
+func TestCreateWorkspaceRoleByOrgAdmin(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, ownerTok := wsSetup(t, app, "wsr-orgadmin@example.com", "WSR OrgAdmin")
+
+	// Register a second user and promote to org:admin.
+	regRes := registerTestUser(t, app, "wsr-admin@example.com", "Admin", "securepass99")
+	assert.Equal(t, regRes.StatusCode, http.StatusCreated)
+	adminID := fmt.Sprintf("%v", regRes.BodyFields["id"])
+
+	send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
+		map[string]any{"email": "wsr-admin@example.com"}, ownerTok), app.routes())
+
+	send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+adminID,
+		map[string]any{"role": "admin"}, ownerTok), app.routes())
+
+	adminLoginRes := loginTestUser(t, app, "wsr-admin@example.com", "securepass99")
+	adminTok := extractAccessToken(t, adminLoginRes)
+
+	// org:admin can create workspace roles.
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{
+			"name":        "analyst",
+			"permissions": []string{"ws:read", "query:read"},
+		}, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+}
+
+func TestCreateWorkspaceRoleByWsMemberForbidden(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, ownerTok := wsSetup(t, app, "wsr-mforbid@example.com", "WSR MForbid")
+
+	memberTok := wsJoinAs(t, app, slug, wsID, "ws:member", "wsr-mforbid-m@example.com", ownerTok)
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{"name": "sneaky", "permissions": []string{"ws:read"}}, memberTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+}
+
+func TestCreateWorkspaceRoleValidation(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-val@example.com", "WSR Val")
+
+	// Missing name.
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{"permissions": []string{"ws:read"}}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+
+	// Invalid permission for workspace scope.
+	res2 := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{"name": "bad", "permissions": []string{"org:delete"}}, tok), app.routes())
+	assert.Equal(t, res2.StatusCode, http.StatusUnprocessableEntity)
+}
+
+// ── Get workspace role ────────────────────────────────────────────────────────
+
+func TestGetWorkspaceRole(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-get@example.com", "WSR Get")
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{"name": "viewer", "permissions": []string{"ws:read"}}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	roleID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+roleID, nil, tok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	assert.Equal(t, getRes.BodyFields["name"].(string), "viewer")
+}
+
+func TestGetWorkspaceRoleCrossWorkspaceIsolation(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-iso@example.com", "WSR Iso")
+
+	// Create a second workspace.
+	ws2Res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Second WS"}, tok), app.routes())
+	assert.Equal(t, ws2Res.StatusCode, http.StatusCreated)
+	ws2ID := fmt.Sprintf("%v", ws2Res.BodyFields["id"])
+
+	// Create a role in ws2.
+	roleRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+ws2ID+"/roles",
+		map[string]any{"name": "ws2-role", "permissions": []string{"ws:read"}}, tok), app.routes())
+	assert.Equal(t, roleRes.StatusCode, http.StatusCreated)
+	ws2RoleID := fmt.Sprintf("%v", roleRes.BodyFields["id"])
+
+	// Getting ws2's role via ws1's URL returns 404.
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+ws2RoleID, nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestGetWorkspaceRoleNotFound(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-nf@example.com", "WSR NF")
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/9999", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+// ── Delete workspace role ─────────────────────────────────────────────────────
+
+func TestDeleteWorkspaceRole(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-del@example.com", "WSR Del")
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{"name": "temp-role", "permissions": []string{"ws:read"}}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	roleID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	delRes := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+roleID, nil, tok), app.routes())
+	assert.Equal(t, delRes.StatusCode, http.StatusNoContent)
+
+	// Confirm it's gone.
+	getRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+roleID, nil, tok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusNotFound)
+}
+
+func TestDeleteBuiltinWorkspaceRoleForbidden(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-dbuilt@example.com", "WSR DBuilt")
+
+	// Get the ws:admin builtin role ID.
+	rolesRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles", nil, tok), app.routes())
+	var roles []map[string]any
+	if err := json.Unmarshal(rolesRes.BodyBytes, &roles); err != nil {
+		t.Fatal(err)
+	}
+	var builtinID string
+	for _, r := range roles {
+		if r["name"].(string) == "ws:admin" {
+			builtinID = fmt.Sprintf("%v", r["id"])
+			break
+		}
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+builtinID, nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+}
+
+func TestDeleteWorkspaceRoleByWsMemberForbidden(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, ownerTok := wsSetup(t, app, "wsr-dmforbid@example.com", "WSR DMForbid")
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{"name": "deletable", "permissions": []string{"ws:read"}}, ownerTok), app.routes())
+	roleID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	memberTok := wsJoinAs(t, app, slug, wsID, "ws:member", "wsr-dmforbid-m@example.com", ownerTok)
+
+	res := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+roleID, nil, memberTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+}
+
+func TestDeleteWorkspaceRoleCrossWorkspaceIsolation(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-diso@example.com", "WSR DIso")
+
+	ws2Res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Second WS"}, tok), app.routes())
+	ws2ID := fmt.Sprintf("%v", ws2Res.BodyFields["id"])
+
+	roleRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+ws2ID+"/roles",
+		map[string]any{"name": "ws2-role", "permissions": []string{"ws:read"}}, tok), app.routes())
+	ws2RoleID := fmt.Sprintf("%v", roleRes.BodyFields["id"])
+
+	// Deleting ws2's role via ws1's URL returns 404.
+	res := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+ws2RoleID, nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+// ── List workspace permissions ────────────────────────────────────────────────
+
+func TestListWorkspacePermissions(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-perms@example.com", "WSR Perms")
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/permissions", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	perms, ok := res.BodyFields["permissions"].([]any)
+	assert.Equal(t, ok, true)
+	// Workspace scope has more than zero permissions.
+	assert.Equal(t, len(perms) > 0, true)
+
+	// Org-only permissions must NOT appear.
+	for _, p := range perms {
+		pstr := p.(string)
+		if pstr == "org:delete" || pstr == "org:transfer_ownership" || pstr == "ws:create" {
+			t.Errorf("org-only permission %q should not appear in workspace permissions", pstr)
+		}
+	}
+}
+
+func TestListWorkspacePermissionsAccessibleByWsMember(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, ownerTok := wsSetup(t, app, "wsr-perms-m@example.com", "WSR Perms M")
+
+	memberTok := wsJoinAs(t, app, slug, wsID, "ws:member", "wsr-perms-m-m@example.com", ownerTok)
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/permissions", nil, memberTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+}
+
+// ── Org-level role access at workspace scope ──────────────────────────────────
+
+func TestOrgOwnerCanManageWorkspaceRoles(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, ownerTok := wsSetup(t, app, "wsr-owner@example.com", "WSR Owner")
+
+	// Owner creates a workspace role.
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{"name": "owner-created", "permissions": []string{"ws:read"}}, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+}
+
+func TestWsAdminCanCreateAndDeleteWorkspaceRoles(t *testing.T) {
+	app := newTestApp(t)
+	slug, wsID, ownerTok := wsSetup(t, app, "wsr-wsadmin@example.com", "WSR WsAdmin")
+
+	wsAdminTok := wsJoinAs(t, app, slug, wsID, "ws:admin", "wsr-wsadmin-a@example.com", ownerTok)
+
+	// ws:admin creates a role.
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{"name": "custom", "permissions": []string{"ws:read", "conn:read"}}, wsAdminTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	roleID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	// ws:admin deletes it.
+	delRes := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+roleID, nil, wsAdminTok), app.routes())
+	assert.Equal(t, delRes.StatusCode, http.StatusNoContent)
+}

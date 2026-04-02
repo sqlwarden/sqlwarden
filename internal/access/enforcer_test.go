@@ -161,7 +161,7 @@ func TestCanWsMemberLacksAdminPermissions(t *testing.T) {
 	}
 
 	// ws:member should NOT have org-level admin permissions.
-	restricted := []string{"org:write", "org:invite", "org:transfer_ownership", "policy:modify", "ws:delete"}
+	restricted := []string{"org:write", "org:invite", "org:transfer_ownership", "ws:delete"}
 	for _, p := range restricted {
 		if e.Can(ctx, member.ID, orgID, "org", "workspace", ws.ID, p) {
 			t.Errorf("ws:member should NOT have permission %q", p)

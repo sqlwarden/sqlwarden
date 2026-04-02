@@ -92,7 +92,7 @@ var OrgBuiltinRoles = map[string][]string{
 		PermQueryRead, PermQueryWrite, PermQueryDelete, PermQueryExecute, PermQueryShare,
 		PermJobRead, PermJobWrite, PermJobDelete, PermJobExecute,
 		PermFileRead, PermFileWrite, PermFileDelete,
-		PermPolicyRead,
+		PermPolicyRead, PermPolicyModify,
 	},
 }
 

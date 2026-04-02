@@ -85,6 +85,15 @@ func (app *application) routes() http.Handler {
 					r.With(app.requirePermission("ws:write")).Patch("/", app.updateWorkspace)
 					r.With(app.requirePermission("ws:delete")).Delete("/", app.deleteWorkspace)
 
+					r.Get("/permissions", app.listWorkspacePermissions)
+
+					r.Route("/roles", func(r chi.Router) {
+						r.With(app.requirePermission("policy:read")).Get("/", app.listWorkspaceRoles)
+						r.With(app.requirePermission("policy:modify")).Post("/", app.createWorkspaceRole)
+						r.With(app.requirePermission("policy:read")).Get("/{role_id}", app.getWorkspaceRole)
+						r.With(app.requirePermission("policy:modify")).Delete("/{role_id}", app.deleteWorkspaceRole)
+					})
+
 					r.Get("/access", app.listWorkspaceBindings)
 					r.With(app.requirePermission("policy:modify")).Post("/access", app.grantWorkspaceAccess)
 					r.With(app.requirePermission("policy:modify")).Delete("/access/{binding_id}", app.revokeWorkspaceAccess)
