@@ -4,13 +4,17 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/docker/go-connections/nat"
 	"github.com/sqlwarden/internal/driver"
+	"github.com/testcontainers/testcontainers-go"
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 var testDSN string
@@ -19,10 +23,19 @@ func TestMain(m *testing.M) {
 	ctx := context.Background()
 
 	mysqlContainer, err := tcmysql.Run(ctx,
-		"mysql:8",
+		"mysql:8.0.36",
+		tcmysql.WithConfigFile(filepath.Join("testdata", "my.cnf")),
 		tcmysql.WithDatabase("testdb"),
 		tcmysql.WithUsername("testuser"),
 		tcmysql.WithPassword("testpass"),
+		testcontainers.WithTmpfs(map[string]string{
+			"/var/lib/mysql": "rw",
+		}),
+		testcontainers.WithWaitStrategy(
+			wait.ForSQL("3306/tcp", "mysql", func(host string, port nat.Port) string {
+				return fmt.Sprintf("testuser:testpass@tcp(%s:%s)/testdb", host, port.Port())
+			}).WithStartupTimeout(90*time.Second),
+		),
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to start mysql container: %v\n", err)

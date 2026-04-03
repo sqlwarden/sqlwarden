@@ -3,47 +3,46 @@ package access_test
 import (
 	"context"
 	"fmt"
-	"io"
-	"log/slog"
 	"strings"
+	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
 )
 
-// newTestDB creates an isolated postgres schema for a single test.
+// newTestDB creates an isolated postgres database for a single test.
 func newTestDB(t *testing.T) *database.DB {
 	t.Helper()
 
-	schemaName := fmt.Sprintf("test_access_%d", time.Now().UnixNano())
-	sep := "?"
-	if strings.Contains(pgTestDSN, "?") {
-		sep = "&"
+	dbName := fmt.Sprintf("test_access_%d", atomic.AddUint64(&pgTestDBCounter, 1))
+	pgTemplateCloneMu.Lock()
+	_, err := pgAdminDB.ExecContext(context.Background(),
+		fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbName, pgTemplateDBName))
+	pgTemplateCloneMu.Unlock()
+	if err != nil {
+		t.Fatal(err)
 	}
-	dsn := fmt.Sprintf("%s%ssearch_path=%s", pgTestDSN, sep, schemaName)
 
-	db, err := database.New("postgres", dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+	dsn := trimPostgresScheme(dsnWithDatabase("postgres://"+pgAdminDSN, dbName))
+	db, err := database.New("postgres", dsn, nilLogger(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	db.SetMaxOpenConns(2)
 	db.SetMaxIdleConns(1)
 
-	ctx := context.Background()
-	_, err = db.ExecContext(ctx, fmt.Sprintf("CREATE SCHEMA %s", schemaName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err = db.MigrateUp(); err != nil {
-		t.Fatal(err)
-	}
-
 	t.Cleanup(func() {
-		defer db.Close()
-		_, _ = db.ExecContext(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
+		db.Close()
+		pgTemplateCloneMu.Lock()
+		defer pgTemplateCloneMu.Unlock()
+		_, _ = pgAdminDB.ExecContext(context.Background(),
+			"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
+			dbName)
+		_, err := pgAdminDB.ExecContext(context.Background(), fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+		if err != nil {
+			t.Error(err)
+		}
 	})
 
 	return db

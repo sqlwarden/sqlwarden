@@ -2,16 +2,44 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/uptrace/bun/driver/pgdriver"
 )
 
-var pgTestDSN string
+var (
+	pgTestDSN         string
+	pgAdminDSN        string
+	pgTemplateDBName  = "testdb"
+	pgAdminDB         *sql.DB
+	pgTestDBCounter   uint64
+	pgTemplateCloneMu sync.Mutex
+	sqliteTemplateDB  string
+)
+
+func dsnWithDatabase(connStr, dbName string) string {
+	if idx := strings.LastIndex(connStr, "/"); idx != -1 {
+		if q := strings.Index(connStr[idx:], "?"); q != -1 {
+			return connStr[:idx+1] + dbName + connStr[idx+q:]
+		}
+		return connStr[:idx+1] + dbName
+	}
+	return connStr
+}
+
+func trimPostgresScheme(connStr string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(connStr, "postgres://"), "postgresql://")
+}
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
@@ -36,12 +64,99 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	// Strip the scheme prefix — database.New() adds "postgres://" and MigrateUp()
-	// also prepends "postgres://", so the stored DSN must be scheme-free.
-	pgTestDSN = strings.TrimPrefix(strings.TrimPrefix(connStr, "postgres://"), "postgresql://")
+	pgAdminDSN = trimPostgresScheme(dsnWithDatabase(connStr, "postgres"))
+	pgTestDSN = trimPostgresScheme(dsnWithDatabase(connStr, pgTemplateDBName))
+
+	pgAdminDB = sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN("postgres://" + pgAdminDSN)))
+	if err := pgAdminDB.PingContext(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to connect admin db: %v\n", err)
+		_ = pgContainer.Terminate(ctx)
+		os.Exit(1)
+	}
+
+	templateDB, err := New("postgres", pgTestDSN, nilLogger(), false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to open template db: %v\n", err)
+		_ = pgAdminDB.Close()
+		_ = pgContainer.Terminate(ctx)
+		os.Exit(1)
+	}
+	if err := templateDB.MigrateUp(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to migrate template db: %v\n", err)
+		templateDB.Close()
+		_ = pgAdminDB.Close()
+		_ = pgContainer.Terminate(ctx)
+		os.Exit(1)
+	}
+	for _, user := range testUsers {
+		account, err := templateDB.InsertAccount(ctx, user.email, user.email, &user.hashedPassword)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to seed template account %s: %v\n", user.email, err)
+			templateDB.Close()
+			_ = pgAdminDB.Close()
+			_ = pgContainer.Terminate(ctx)
+			os.Exit(1)
+		}
+		user.id = account.ID
+	}
+	templateDB.Close()
+
+	if _, err := pgAdminDB.ExecContext(ctx,
+		"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
+		pgTemplateDBName,
+	); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to terminate template db connections: %v\n", err)
+		_ = pgAdminDB.Close()
+		_ = pgContainer.Terminate(ctx)
+		os.Exit(1)
+	}
+
+	if _, err := pgAdminDB.ExecContext(ctx, fmt.Sprintf("ALTER DATABASE %s WITH ALLOW_CONNECTIONS false", pgTemplateDBName)); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to lock template db connections: %v\n", err)
+		_ = pgAdminDB.Close()
+		_ = pgContainer.Terminate(ctx)
+		os.Exit(1)
+	}
+
+	sqliteTemplateDB = filepath.Join(os.TempDir(), fmt.Sprintf("sqlwarden-internal-database-template-%d.db", os.Getpid()))
+	_ = os.Remove(sqliteTemplateDB)
+	sqliteDB, err := New("sqlite", sqliteTemplateDB, nilLogger(), false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to open sqlite template db: %v\n", err)
+		_ = pgAdminDB.Close()
+		_ = pgContainer.Terminate(ctx)
+		os.Exit(1)
+	}
+	if err := sqliteDB.MigrateUp(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to migrate sqlite template db: %v\n", err)
+		sqliteDB.Close()
+		_ = os.Remove(sqliteTemplateDB)
+		_ = pgAdminDB.Close()
+		_ = pgContainer.Terminate(ctx)
+		os.Exit(1)
+	}
+	for _, user := range testUsers {
+		account, err := sqliteDB.InsertAccount(ctx, user.email, user.email, &user.hashedPassword)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to seed sqlite template account %s: %v\n", user.email, err)
+			sqliteDB.Close()
+			_ = os.Remove(sqliteTemplateDB)
+			_ = pgAdminDB.Close()
+			_ = pgContainer.Terminate(ctx)
+			os.Exit(1)
+		}
+		user.id = account.ID
+	}
+	sqliteDB.Close()
 
 	code := m.Run()
 
+	_ = os.Remove(sqliteTemplateDB)
+	_ = pgAdminDB.Close()
 	_ = pgContainer.Terminate(ctx)
 	os.Exit(code)
+}
+
+func nilLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

@@ -3,11 +3,13 @@ package database
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
-	"time"
 )
 
 type testUser struct {
@@ -34,23 +36,32 @@ func newTestDB(t *testing.T, drivers ...string) *DB {
 	}
 
 	if driver == "sqlite" {
-		dsn = fmt.Sprintf("test_%d.db", time.Now().UnixNano())
+		dsn = filepath.Join(os.TempDir(), fmt.Sprintf("sqlwarden-internal-database-test-%d.db", atomic.AddUint64(&pgTestDBCounter, 1)))
 	} else {
 		dsn = pgTestDSN
 	}
 
-	var schemaName string
-
-	if driver == "postgres" {
-		schemaName = fmt.Sprintf("test_schema_%d", time.Now().UnixNano())
-		separator := "?"
-		if strings.Contains(dsn, "?") {
-			separator = "&"
+	clonedDB := false
+	if driver == "postgres" && dsn == pgTestDSN {
+		dbName := fmt.Sprintf("internal_database_test_%d", atomic.AddUint64(&pgTestDBCounter, 1))
+		pgTemplateCloneMu.Lock()
+		_, err := pgAdminDB.ExecContext(context.Background(),
+			fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbName, pgTemplateDBName))
+		pgTemplateCloneMu.Unlock()
+		if err != nil {
+			t.Fatal(err)
 		}
-		dsn = fmt.Sprintf("%s%ssearch_path=%s", dsn, separator, schemaName)
+		dsn = trimPostgresScheme(dsnWithDatabase("postgres://"+pgAdminDSN, dbName))
+		clonedDB = true
 	}
 
-	db, err := New(driver, dsn, slog.New(slog.NewTextHandler(os.Stdout, nil)), false)
+	if driver == "sqlite" {
+		if err := copyFile(sqliteTemplateDB, dsn); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	db, err := New(driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,38 +72,73 @@ func newTestDB(t *testing.T, drivers ...string) *DB {
 	}
 
 	t.Cleanup(func() {
-		defer db.Close()
+		db.Close()
 
 		switch driver {
 		case "postgres":
-			_, err = db.ExecContext(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
-			if err != nil {
-				t.Error(err)
+			if clonedDB {
+				dbName := databaseNameFromDSN("postgres://" + dsn)
+				pgTemplateCloneMu.Lock()
+				defer pgTemplateCloneMu.Unlock()
+				_, _ = pgAdminDB.ExecContext(context.Background(),
+					"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
+					dbName)
+				_, err = pgAdminDB.ExecContext(context.Background(), fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+				if err != nil {
+					t.Error(err)
+				}
 			}
 		case "sqlite":
 			os.Remove(dsn)
 		}
 	})
 
-	if driver == "postgres" {
-		_, err = db.ExecContext(context.Background(), fmt.Sprintf("CREATE SCHEMA %s", schemaName))
+	if driver == "postgres" && !clonedDB {
+		err = db.MigrateUp()
 		if err != nil {
 			t.Fatal(err)
 		}
-	}
 
-	err = db.MigrateUp()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, user := range testUsers {
-		account, err := db.InsertAccount(context.Background(), user.email, user.email, &user.hashedPassword)
-		if err != nil {
-			t.Fatal(err)
+		for _, user := range testUsers {
+			account, err := db.InsertAccount(context.Background(), user.email, user.email, &user.hashedPassword)
+			if err != nil {
+				t.Fatal(err)
+			}
+			user.id = account.ID
 		}
-		user.id = account.ID
 	}
 
 	return db
+}
+
+func databaseNameFromDSN(connStr string) string {
+	idx := strings.LastIndex(connStr, "/")
+	if idx == -1 {
+		return ""
+	}
+	rest := connStr[idx+1:]
+	if q := strings.Index(rest, "?"); q != -1 {
+		return rest[:q]
+	}
+	return rest
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+
+	return out.Close()
 }
