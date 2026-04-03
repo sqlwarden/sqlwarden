@@ -100,3 +100,27 @@ func TestCreateEnvironmentDuplicateNameReturns422(t *testing.T) {
 		map[string]any{"name": "prod"}, tok), app.routes())
 	assert.Equal(t, create2.StatusCode, http.StatusUnprocessableEntity)
 }
+
+func TestUpdateEnvironmentValidation(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "env-update-val@example.com", "Env Update Val", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Update Val WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	envRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments",
+		map[string]any{"name": "prod"}, tok), app.routes())
+	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+
+	patchRes := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments/"+envID,
+		map[string]any{"description": "missing name"}, tok), app.routes())
+	assert.Equal(t, patchRes.StatusCode, http.StatusUnprocessableEntity)
+}

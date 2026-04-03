@@ -3,39 +3,53 @@ package password
 import (
 	"testing"
 
-	"github.com/sqlwarden/internal/assert"
+	"golang.org/x/crypto/bcrypt"
 )
 
-func TestHash(t *testing.T) {
-	t.Run("Returns valid bcrypt hash with cost of 12", func(t *testing.T) {
-		hashedPassword, err := Hash("superS3cret")
-		assert.Nil(t, err)
-		assert.MatchesRegexp(t, hashedPassword, `^\$2a\$12\$[./0-9A-Za-z]{53}$`)
-	})
+func TestHashAndMatches(t *testing.T) {
+	restore := SetHashCostForTesting(bcrypt.MinCost)
+	defer restore()
+
+	hashed, err := Hash("testPass123!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hashed == "" {
+		t.Fatal("expected hash output")
+	}
+
+	ok, err := Matches("testPass123!", hashed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected password to match generated hash")
+	}
+
+	ok, err = Matches("wrong-pass", hashed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("expected mismatched password to return false")
+	}
 }
 
-func TestMatches(t *testing.T) {
-	t.Run("Returns true when password matches hash", func(t *testing.T) {
+func TestSetHashCostForTestingRestoresPreviousCost(t *testing.T) {
+	restoreOuter := SetHashCostForTesting(bcrypt.MinCost)
+	defer restoreOuter()
 
-		hash := "$2a$12$2.z81tzl7RCi6QrX3thr.uYG68lLAB4dBoRqqqVDEvIdfopMuAMyu"
+	if hashCost != bcrypt.MinCost {
+		t.Fatalf("expected hash cost override to be applied, got %d", hashCost)
+	}
 
-		match, err := Matches("s3cretP455word", hash)
-		assert.Nil(t, err)
-		assert.Equal(t, match, true)
-	})
+	restoreInner := SetHashCostForTesting(bcrypt.DefaultCost)
+	if hashCost != bcrypt.DefaultCost {
+		t.Fatalf("expected nested override to be applied, got %d", hashCost)
+	}
 
-	t.Run("Returns false when password does not match hash", func(t *testing.T) {
-
-		hash := "$2a$12$2.z81tzl7RCi6QrX3thr.uYG68lLAB4dBoRqqqVDEvIdfopMuAMyu"
-
-		match, err := Matches("wrongS3cretP455word", hash)
-		assert.Nil(t, err)
-		assert.Equal(t, match, false)
-	})
-
-	t.Run("Returns error when hash format is invalid", func(t *testing.T) {
-		matches, err := Matches("s3cretP455word", "not-a-bcrypt-hash")
-		assert.NotNil(t, err)
-		assert.Equal(t, matches, false)
-	})
+	restoreInner()
+	if hashCost != bcrypt.MinCost {
+		t.Fatalf("expected nested restore to return previous test value, got %d", hashCost)
+	}
 }

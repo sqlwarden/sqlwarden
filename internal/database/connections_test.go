@@ -38,9 +38,22 @@ func TestConnectionCRUD(t *testing.T) {
 		t.Fatalf("expected 1 connection, got %d", len(conns))
 	}
 
-	_, err = db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "prod", "")
+	env, err := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "prod", "")
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	connInEnv, err := db.InsertConnection(context.Background(), ws.ID, &env.ID, &org.ID, "org", org.ID, "reporting-db", "postgres", "env-dsn", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ids, err := db.ListConnectionIDsByEnvironment(context.Background(), env.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || ids[0] != connInEnv.ID {
+		t.Fatalf("expected only env-tagged connection ID %d, got %v", connInEnv.ID, ids)
 	}
 
 	err = db.UpdateConnection(context.Background(), conn.ID, "my-db-updated", "new-encrypted-dsn", "restricted")
@@ -75,5 +88,10 @@ func TestConnectionCRUD(t *testing.T) {
 	_, ok, _ = db.GetConnection(context.Background(), conn.ID)
 	if ok {
 		t.Fatal("expected connection to be deleted")
+	}
+
+	err = db.DeleteConnection(context.Background(), connInEnv.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
 }

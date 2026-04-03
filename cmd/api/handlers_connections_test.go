@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
@@ -58,6 +60,30 @@ func TestTestConnectionUnreachable(t *testing.T) {
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["ok"], false)
+}
+
+func TestTestConnectionValidationAndSuccess(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-test-validation@example.com", "Conn Test Validation", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "ConnWS3"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	invalidRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/test",
+		map[string]any{"driver": "sqlite"}, tok), app.routes())
+	assert.Equal(t, invalidRes.StatusCode, http.StatusUnprocessableEntity)
+
+	successRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/test",
+		map[string]any{"driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, successRes.StatusCode, http.StatusOK)
+	assert.Equal(t, successRes.BodyFields["ok"], true)
 }
 
 func TestCreateConnectionAndGetExcludesDSN(t *testing.T) {
@@ -263,4 +289,80 @@ func TestCreateConnectionRejectsEnvironmentFromOtherWorkspace(t *testing.T) {
 			"environment_id": envRes.BodyFields["id"],
 		}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusNotFound)
+}
+
+func TestExecuteQuerySessionAndValidationBranches(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, org := seedOrgOwner(t, app, "query-owner@example.com", "Query Owner", "Query Org")
+	member, memberTok := seedAccountWithToken(t, app, "query-member@example.com", "Query Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Query WS", "")
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/connections",
+		map[string]any{"name": "SQLConn", "driver": "sqlite", "dsn": ":memory:"}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+	queryURL := "/api/v1/orgs/" + org.Slug + "/workspaces/" + strconv.FormatInt(ws.ID, 10) + "/connections/" + connID + "/query"
+	connectURL := "/api/v1/orgs/" + org.Slug + "/workspaces/" + strconv.FormatInt(ws.ID, 10) + "/connections/" + connID + "/connect"
+
+	validationRes := send(t, newAuthRequest(t, http.MethodPost, queryURL, map[string]any{}, ownerTok), app.routes())
+	assert.Equal(t, validationRes.StatusCode, http.StatusUnprocessableEntity)
+
+	missingSessionRes := send(t, newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT 1"}, ownerTok), app.routes())
+	assert.Equal(t, missingSessionRes.StatusCode, http.StatusBadRequest)
+
+	expiredSessionReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT 1"}, ownerTok)
+	expiredSessionReq.Header.Set("X-Warden-Session", "missing-session")
+	expiredSessionRes := send(t, expiredSessionReq, app.routes())
+	assert.Equal(t, expiredSessionRes.StatusCode, http.StatusGone)
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost, connectURL, nil, ownerTok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	wrongOwnerReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT 1"}, memberTok)
+	wrongOwnerReq.Header.Set("X-Warden-Session", sessionID)
+	wrongOwnerRes := send(t, wrongOwnerReq, app.routes())
+	assert.Equal(t, wrongOwnerRes.StatusCode, http.StatusForbidden)
+
+	selectErrReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT * FROM missing_table"}, ownerTok)
+	selectErrReq.Header.Set("X-Warden-Session", sessionID)
+	selectErrRes := send(t, selectErrReq, app.routes())
+	assert.Equal(t, selectErrRes.StatusCode, http.StatusInternalServerError)
+}
+
+func TestExecuteQueryExecuteBranch(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "query-exec@example.com", "Query Exec", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Exec WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections",
+		map[string]any{"name": "ExecConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/"+connID+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	execReq := newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/"+connID+"/query",
+		map[string]any{"sql": "CREATE TABLE t (id INTEGER)"}, tok)
+	execReq.Header.Set("X-Warden-Session", sessionID)
+	execRes := send(t, execReq, app.routes())
+	assert.Equal(t, execRes.StatusCode, http.StatusOK)
 }

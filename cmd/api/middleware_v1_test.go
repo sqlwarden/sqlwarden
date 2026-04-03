@@ -239,3 +239,199 @@ func TestWsCtx_UnknownWsID(t *testing.T) {
 		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
+
+func TestWsCtx_InvalidOrWrongOrg(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+
+	account, err := app.db.InsertAccount(context.Background(), "wsctx2@example.com", "WS Ctx 2", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orgA, err := app.db.InsertOrg(context.Background(), "ws-org-a", "WS Org A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	orgB, err := app.db.InsertOrg(context.Background(), "ws-org-b", "WS Org B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := app.db.InsertWorkspace(context.Background(), &orgB.ID, "org", orgB.ID, "Other Org WS", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	invalidReq := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/ws-org-a/workspaces/not-a-number", nil)
+	invalidReq = contextSetAccount(invalidReq, account)
+	invalidReq = contextSetOrg(invalidReq, orgA)
+	invalidReq = testWithParams(invalidReq, map[string]string{"org_slug": orgA.Slug, "ws_id": "not-a-number"})
+	invalidRec := httptest.NewRecorder()
+	app.wsCtx(finalHandler).ServeHTTP(invalidRec, invalidReq)
+	if invalidRec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for invalid workspace ID, got %d", invalidRec.Code)
+	}
+
+	wrongOrgReq := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/ws-org-a/workspaces/1", nil)
+	wrongOrgReq = contextSetAccount(wrongOrgReq, account)
+	wrongOrgReq = contextSetOrg(wrongOrgReq, orgA)
+	wrongOrgReq = testWithParams(wrongOrgReq, map[string]string{"org_slug": orgA.Slug, "ws_id": strconv.FormatInt(ws.ID, 10)})
+	wrongOrgRec := httptest.NewRecorder()
+	app.wsCtx(finalHandler).ServeHTTP(wrongOrgRec, wrongOrgReq)
+	if wrongOrgRec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for cross-org workspace, got %d", wrongOrgRec.Code)
+	}
+}
+
+func TestEnvCtxBranches(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+
+	account, err := app.db.InsertAccount(context.Background(), "envctx@example.com", "EnvCtx", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := app.db.InsertOrg(context.Background(), "env-org", "Env Org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws1, err := app.db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "WS1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws2, err := app.db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "WS2", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := app.db.InsertEnvironment(context.Background(), ws2.ID, &org.ID, "org", org.ID, "prod", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	for name, envID := range map[string]string{"invalid": "bad", "missing": "99999"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/env-org/workspaces/1/environments/"+envID, nil)
+		req = contextSetAccount(req, account)
+		req = contextSetOrg(req, org)
+		req = contextSetWorkspace(req, ws1)
+		req = testWithParams(req, map[string]string{"env_id": envID})
+		rec := httptest.NewRecorder()
+		app.envCtx(finalHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s: expected 404, got %d", name, rec.Code)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/env-org/workspaces/1/environments/"+strconv.FormatInt(env.ID, 10), nil)
+	req = contextSetAccount(req, account)
+	req = contextSetOrg(req, org)
+	req = contextSetWorkspace(req, ws1)
+	req = testWithParams(req, map[string]string{"env_id": strconv.FormatInt(env.ID, 10)})
+	rec := httptest.NewRecorder()
+	app.envCtx(finalHandler).ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for cross-workspace environment, got %d", rec.Code)
+	}
+}
+
+func TestConnCtxBranches(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+
+	account, err := app.db.InsertAccount(context.Background(), "connctx@example.com", "ConnCtx", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := app.db.InsertOrg(context.Background(), "conn-org", "Conn Org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws1, err := app.db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "WS1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws2, err := app.db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "WS2", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := app.db.InsertConnection(context.Background(), ws2.ID, nil, &org.ID, "org", org.ID, "db", "sqlite", ":memory:", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	for name, connID := range map[string]string{"invalid": "bad", "missing": "99999"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/conn-org/workspaces/1/connections/"+connID, nil)
+		req = contextSetAccount(req, account)
+		req = contextSetOrg(req, org)
+		req = contextSetWorkspace(req, ws1)
+		req = testWithParams(req, map[string]string{"conn_id": connID})
+		rec := httptest.NewRecorder()
+		app.connCtx(finalHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s: expected 404, got %d", name, rec.Code)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/conn-org/workspaces/1/connections/"+strconv.FormatInt(conn.ID, 10), nil)
+	req = contextSetAccount(req, account)
+	req = contextSetOrg(req, org)
+	req = contextSetWorkspace(req, ws1)
+	req = testWithParams(req, map[string]string{"conn_id": strconv.FormatInt(conn.ID, 10)})
+	rec := httptest.NewRecorder()
+	app.connCtx(finalHandler).ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for cross-workspace connection, got %d", rec.Code)
+	}
+}
+
+func TestSpaceEnvCtxBranches(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+
+	account, err := app.db.InsertAccount(context.Background(), "spaceenv@example.com", "SpaceEnv", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := app.db.InsertWorkspace(context.Background(), nil, "space", account.ID, "Personal", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherWS, err := app.db.InsertWorkspace(context.Background(), nil, "space", account.ID, "Other", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := app.db.InsertEnvironment(context.Background(), otherWS.ID, nil, "space", account.ID, "prod", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	invalidReq := httptest.NewRequest(http.MethodGet, "/api/v1/me/workspaces/1/environments/not-a-number", nil)
+	invalidReq = contextSetAccount(invalidReq, account)
+	invalidReq = contextSetWorkspace(invalidReq, ws)
+	invalidReq = testWithParams(invalidReq, map[string]string{"env_id": "not-a-number"})
+	invalidRec := httptest.NewRecorder()
+	app.spaceEnvCtx(finalHandler).ServeHTTP(invalidRec, invalidReq)
+	if invalidRec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for invalid personal env ID, got %d", invalidRec.Code)
+	}
+
+	crossReq := httptest.NewRequest(http.MethodGet, "/api/v1/me/workspaces/1/environments/"+strconv.FormatInt(env.ID, 10), nil)
+	crossReq = contextSetAccount(crossReq, account)
+	crossReq = contextSetWorkspace(crossReq, ws)
+	crossReq = testWithParams(crossReq, map[string]string{"env_id": strconv.FormatInt(env.ID, 10)})
+	crossRec := httptest.NewRecorder()
+	app.spaceEnvCtx(finalHandler).ServeHTTP(crossRec, crossReq)
+	if crossRec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for env in different personal workspace, got %d", crossRec.Code)
+	}
+}

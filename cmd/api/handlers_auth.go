@@ -103,7 +103,7 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !found || account.Password == nil {
+	if !found || account.Password == nil || !account.IsActive {
 		app.invalidAuthenticationToken(w, r)
 		return
 	}
@@ -256,6 +256,9 @@ func (app *application) getAccountOrgs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.serverError(w, r, err)
 		return
+	}
+	if orgs == nil {
+		orgs = []database.Organization{}
 	}
 	err = response.JSON(w, http.StatusOK, orgs)
 	if err != nil {

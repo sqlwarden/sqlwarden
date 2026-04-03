@@ -57,6 +57,19 @@ func TestSetupStatus(t *testing.T) {
 	assert.Equal(t, after.BodyFields["configured"], true)
 }
 
+func TestSetupStatusUnaffectedByRegularAccounts(t *testing.T) {
+	app := newTestApp(t)
+
+	account := seedAccount(t, app, "nonadmin@example.com", "Non Admin")
+	if account.ID == 0 {
+		t.Fatal("expected seeded account")
+	}
+
+	res := send(t, newTestRequest(t, http.MethodGet, "/api/setup/status", nil), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["configured"], false)
+}
+
 func TestSetupBlockedAfterFirstAdmin(t *testing.T) {
 	app := newTestApp(t)
 
@@ -133,6 +146,27 @@ func TestListInstanceAdmins(t *testing.T) {
 	assert.Equal(t, len(admins), 1)
 }
 
+func TestListInstanceAdminsAfterPromotion(t *testing.T) {
+	app := newTestApp(t)
+
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+	regRes := registerTestUser(t, app, "list-second@example.com", "List Second", "securepass99")
+	assert.Equal(t, regRes.StatusCode, http.StatusCreated)
+
+	addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/instance/admins",
+		map[string]any{"email": "list-second@example.com"}, adminTok), app.routes())
+	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/admins", nil, adminTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var admins []map[string]any
+	if err := json.Unmarshal(listRes.BodyBytes, &admins); err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, len(admins), 2)
+}
+
 func TestListInstanceAdminsRequiresInstanceAdmin(t *testing.T) {
 	app := newTestApp(t)
 
@@ -185,6 +219,16 @@ func TestAddInstanceAdminUnknownEmail(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/instance/admins",
 		map[string]any{"email": "nobody@example.com"}, adminTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestAddInstanceAdminValidation(t *testing.T) {
+	app := newTestApp(t)
+
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/instance/admins",
+		map[string]any{}, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
 }
 
 func TestAddInstanceAdminRequiresInstanceAdmin(t *testing.T) {
@@ -243,6 +287,15 @@ func TestRemoveLastInstanceAdminBlocked(t *testing.T) {
 
 	delRes := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/instance/admins/"+adminID, nil, adminTok), app.routes())
 	assert.Equal(t, delRes.StatusCode, http.StatusUnprocessableEntity)
+}
+
+func TestRemoveInstanceAdminInvalidID(t *testing.T) {
+	app := newTestApp(t)
+
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	delRes := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/instance/admins/not-a-number", nil, adminTok), app.routes())
+	assert.Equal(t, delRes.StatusCode, http.StatusNotFound)
 }
 
 func TestAddedInstanceAdminCanCreateOrg(t *testing.T) {

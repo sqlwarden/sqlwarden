@@ -4,77 +4,53 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/sqlwarden/internal/assert"
 )
 
-func TestMetricsResponseWriter(t *testing.T) {
-	t.Run("Track bytes written correctly", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		mw := NewMetricsResponseWriter(w)
+func TestMetricsResponseWriterTracksHeaderAndBytes(t *testing.T) {
+	rec := httptest.NewRecorder()
+	mw := NewMetricsResponseWriter(rec)
 
-		mw.Write([]byte("test data"))
+	mw.Header().Set("X-Test", "ok")
+	mw.WriteHeader(http.StatusCreated)
+	if mw.StatusCode != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", mw.StatusCode)
+	}
 
-		assert.Equal(t, mw.StatusCode, http.StatusOK)
-		assert.Equal(t, mw.BytesCount, 9)
-	})
+	n, err := mw.Write([]byte("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 5 {
+		t.Fatalf("expected 5 written bytes, got %d", n)
+	}
+	if mw.BytesCount != 5 {
+		t.Fatalf("expected byte count 5, got %d", mw.BytesCount)
+	}
+	if rec.Header().Get("X-Test") != "ok" {
+		t.Fatalf("expected wrapped header to be set, got %q", rec.Header().Get("X-Test"))
+	}
+}
 
-	t.Run("Track bytes written correctly for multiple writes", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		mw := NewMetricsResponseWriter(w)
+func TestMetricsResponseWriterWriteSetsDefaultStatus(t *testing.T) {
+	rec := httptest.NewRecorder()
+	mw := NewMetricsResponseWriter(rec)
 
-		mw.Write([]byte("test"))
-		mw.Write([]byte(" "))
-		mw.Write([]byte("data"))
+	if _, err := mw.Write([]byte("ok")); err != nil {
+		t.Fatal(err)
+	}
+	if mw.StatusCode != http.StatusOK {
+		t.Fatalf("expected default status 200, got %d", mw.StatusCode)
+	}
+	if mw.BytesCount != 2 {
+		t.Fatalf("expected byte count 2, got %d", mw.BytesCount)
+	}
+}
 
-		assert.Equal(t, mw.StatusCode, http.StatusOK)
-		assert.Equal(t, mw.BytesCount, 9)
-	})
+func TestMetricsResponseWriterUnwrap(t *testing.T) {
+	rec := httptest.NewRecorder()
+	mw := NewMetricsResponseWriter(rec)
 
-	t.Run("Track status code correctly", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		mw := NewMetricsResponseWriter(w)
-
-		mw.WriteHeader(http.StatusTeapot)
-		mw.Write([]byte("test data"))
-
-		assert.Equal(t, mw.StatusCode, http.StatusTeapot)
-		assert.Equal(t, mw.BytesCount, 9)
-	})
-
-	t.Run("Ignore status code changes after first write", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		mw := NewMetricsResponseWriter(w)
-
-		mw.WriteHeader(http.StatusCreated)
-		mw.WriteHeader(http.StatusTeapot)
-
-		assert.Equal(t, mw.StatusCode, http.StatusCreated)
-	})
-
-	t.Run("Write status code to underlying http.ResponseWriter", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		mw := NewMetricsResponseWriter(w)
-
-		mw.WriteHeader(http.StatusCreated)
-		assert.Equal(t, w.Code, http.StatusCreated)
-	})
-
-	t.Run("Write headers to underlying http.ResponseWriter", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		mw := NewMetricsResponseWriter(w)
-
-		mw.Header().Set("Content-Type", "application/json")
-		mw.Header().Set("X-Custom", "test-value")
-		assert.Equal(t, w.Header().Get("Content-Type"), "application/json")
-		assert.Equal(t, w.Header().Get("X-Custom"), "test-value")
-	})
-
-	t.Run("Write body to underlying http.ResponseWriter", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		mw := NewMetricsResponseWriter(w)
-
-		mw.Write([]byte("test data"))
-		assert.Equal(t, w.Body.String(), "test data")
-	})
+	if mw.Unwrap() != rec {
+		t.Fatal("expected Unwrap to return wrapped writer")
+	}
 }

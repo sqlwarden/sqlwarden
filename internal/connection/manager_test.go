@@ -15,6 +15,8 @@ type mockDriver struct {
 	mu     sync.Mutex
 	closed bool
 	pings  int
+	querys int
+	execs  int
 }
 
 func (d *mockDriver) Connect(ctx context.Context, cfg driver.ConnectionConfig) error { return nil }
@@ -31,9 +33,15 @@ func (d *mockDriver) Close() error {
 	return nil
 }
 func (d *mockDriver) Query(ctx context.Context, sql string, args ...any) (*result.ResultSet, error) {
+	d.mu.Lock()
+	d.querys++
+	d.mu.Unlock()
 	return &result.ResultSet{}, nil
 }
 func (d *mockDriver) Execute(ctx context.Context, sql string, args ...any) (*result.ResultSet, error) {
+	d.mu.Lock()
+	d.execs++
+	d.mu.Unlock()
 	return &result.ResultSet{}, nil
 }
 func (d *mockDriver) Tables(ctx context.Context, database, schema string) ([]driver.TableMeta, error) {
@@ -238,5 +246,42 @@ func TestRemove(t *testing.T) {
 	_, ok := m.Get(sess.ID)
 	if ok {
 		t.Fatal("expected session to be gone after Remove")
+	}
+}
+
+func TestSessionQueryAndExecuteUpdateLastUsed(t *testing.T) {
+	m := New(5 * time.Minute)
+	defer m.Close()
+
+	md := &mockDriver{}
+	open := func() (driver.Driver, error) {
+		return md, nil
+	}
+
+	sess, _, err := m.GetOrCreate("alice", "conn1", open)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	before := sess.lastUsed
+	if _, err := sess.Query(context.Background(), "SELECT 1"); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if _, err := sess.Execute(context.Background(), "UPDATE t SET a = 1"); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	md.mu.Lock()
+	querys := md.querys
+	execs := md.execs
+	md.mu.Unlock()
+	if querys != 1 {
+		t.Fatalf("expected 1 query call, got %d", querys)
+	}
+	if execs != 1 {
+		t.Fatalf("expected 1 execute call, got %d", execs)
+	}
+	if !sess.lastUsed.After(before) {
+		t.Fatal("expected lastUsed to be updated by query/execute")
 	}
 }

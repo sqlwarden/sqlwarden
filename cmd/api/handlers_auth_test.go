@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -9,7 +10,9 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/token"
 )
 
 func newTestApp(t *testing.T) *application {
@@ -159,6 +162,29 @@ func TestLoginUnknownEmail(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
 }
 
+func TestLoginValidationAndInactiveAccount(t *testing.T) {
+	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	validationRes := loginTestUser(t, app, "", "")
+	assert.Equal(t, validationRes.StatusCode, http.StatusUnprocessableEntity)
+
+	registerTestUser(t, app, "inactive@example.com", "Inactive", "securepass99")
+	account, found, err := app.db.GetAccountByEmail(context.Background(), "inactive@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("expected inactive test account to exist")
+	}
+	if err := app.db.DeactivateAccount(context.Background(), account.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	inactiveRes := loginTestUser(t, app, "inactive@example.com", "securepass99")
+	assert.Equal(t, inactiveRes.StatusCode, http.StatusUnauthorized)
+}
+
 func TestRefreshValid(t *testing.T) {
 	app := newTestApp(t)
 	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -202,6 +228,73 @@ func TestRefreshAfterLogout(t *testing.T) {
 	refreshReq.AddCookie(cookie)
 	refreshRes := send(t, refreshReq, app.routes())
 	assert.Equal(t, refreshRes.StatusCode, http.StatusUnauthorized)
+}
+
+func TestRefreshMissingOrUnknownCookie(t *testing.T) {
+	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	missingReq := newTestRequest(t, http.MethodPost, "/api/v1/auth/refresh", nil)
+	missingRes := send(t, missingReq, app.routes())
+	assert.Equal(t, missingRes.StatusCode, http.StatusUnauthorized)
+
+	unknownReq := newTestRequest(t, http.MethodPost, "/api/v1/auth/refresh", nil)
+	unknownReq.AddCookie(&http.Cookie{Name: "refresh_token", Value: "missing-family"})
+	unknownRes := send(t, unknownReq, app.routes())
+	assert.Equal(t, unknownRes.StatusCode, http.StatusUnauthorized)
+}
+
+func TestRefreshWithExpiredOrMissingAccount(t *testing.T) {
+	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	registerTestUser(t, app, "refresh-edge@example.com", "Refresh Edge", "securepass99")
+
+	loginRes := loginTestUser(t, app, "refresh-edge@example.com", "securepass99")
+	assert.Equal(t, loginRes.StatusCode, http.StatusOK)
+	cookie := extractRefreshCookie(t, loginRes)
+
+	rt, found, err := app.db.GetRefreshTokenByHash(context.Background(), token.Hash(cookie.Value))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("expected refresh token to exist")
+	}
+
+	if _, err := app.db.NewUpdate().Model((*database.RefreshToken)(nil)).
+		Set("expires_at = ?", time.Now().Add(-time.Hour)).
+		Where("id = ?", rt.ID).
+		Exec(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	expiredReq := newTestRequest(t, http.MethodPost, "/api/v1/auth/refresh", nil)
+	expiredReq.AddCookie(cookie)
+	expiredRes := send(t, expiredReq, app.routes())
+	assert.Equal(t, expiredRes.StatusCode, http.StatusUnauthorized)
+
+	registerTestUser(t, app, "refresh-missing-account@example.com", "Refresh Missing", "securepass99")
+	loginRes = loginTestUser(t, app, "refresh-missing-account@example.com", "securepass99")
+	assert.Equal(t, loginRes.StatusCode, http.StatusOK)
+	cookie = extractRefreshCookie(t, loginRes)
+
+	rt, found, err = app.db.GetRefreshTokenByHash(context.Background(), token.Hash(cookie.Value))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("expected refresh token to exist")
+	}
+
+	if _, err := app.db.NewDelete().Model((*database.Account)(nil)).Where("id = ?", rt.AccountID).Exec(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	missingAccountReq := newTestRequest(t, http.MethodPost, "/api/v1/auth/refresh", nil)
+	missingAccountReq.AddCookie(cookie)
+	missingAccountRes := send(t, missingAccountReq, app.routes())
+	assert.Equal(t, missingAccountRes.StatusCode, http.StatusUnauthorized)
 }
 
 func TestLogout(t *testing.T) {
@@ -308,5 +401,35 @@ func TestGetSession(t *testing.T) {
 	}
 	if len(orgsBody) != 1 {
 		t.Fatalf("expected 1 organization, got %d", len(orgsBody))
+	}
+}
+
+func TestGetSessionRequiresAuth(t *testing.T) {
+	app := newTestApp(t)
+
+	res := send(t, newTestRequest(t, http.MethodGet, "/api/v1/session", nil), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
+}
+
+func TestGetSessionWithoutOrgOrAdmin(t *testing.T) {
+	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	registerTestUser(t, app, "session-plain@example.com", "Session Plain", "securepass99")
+	loginRes := loginTestUser(t, app, "session-plain@example.com", "securepass99")
+	tok := extractAccessToken(t, loginRes)
+
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/session", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["is_instance_admin"], false)
+
+	var body struct {
+		Organizations []map[string]any `json:"organizations"`
+	}
+	if err := json.Unmarshal(res.BodyBytes, &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Organizations) != 0 {
+		t.Fatalf("expected no organizations, got %d", len(body.Organizations))
 	}
 }

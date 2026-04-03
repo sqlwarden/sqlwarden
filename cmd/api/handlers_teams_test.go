@@ -173,3 +173,50 @@ func TestCreateTeamValidation(t *testing.T) {
 	res2 := send(t, req2, app.routes())
 	assert.Equal(t, res2.StatusCode, http.StatusUnprocessableEntity)
 }
+
+func TestTeamNotFoundBranches(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	ownerID, ownerTok, slug := registerAndLogin(t, app, "team-missing@example.com", "Team Missing", "securepass99")
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams/missing", nil, ownerTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusNotFound)
+
+	listMembersRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams/missing/members", nil, ownerTok), app.routes())
+	assert.Equal(t, listMembersRes.StatusCode, http.StatusNotFound)
+
+	addMemberRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams/missing/members", map[string]any{
+		"account_id": 1,
+	}, ownerTok), app.routes())
+	assert.Equal(t, addMemberRes.StatusCode, http.StatusNotFound)
+
+	removeMemberRes := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug+"/teams/missing/members/1", nil, ownerTok), app.routes())
+	assert.Equal(t, removeMemberRes.StatusCode, http.StatusNotFound)
+
+	deleteRes := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug+"/teams/missing", nil, ownerTok), app.routes())
+	assert.Equal(t, deleteRes.StatusCode, http.StatusNotFound)
+
+	_ = ownerID
+}
+
+func TestTeamMemberValidationAndInvalidID(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, ownerTok, slug := registerAndLogin(t, app, "team-validation@example.com", "Team Validation", "securepass99")
+
+	createReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", map[string]any{
+		"slug": "ops",
+		"name": "Operations",
+	})
+	createReq.Header.Set("Authorization", "Bearer "+ownerTok)
+	createRes := send(t, createReq, app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams/ops/members", map[string]any{}, ownerTok), app.routes())
+	assert.Equal(t, addRes.StatusCode, http.StatusUnprocessableEntity)
+
+	removeRes := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug+"/teams/ops/members/not-a-number", nil, ownerTok), app.routes())
+	assert.Equal(t, removeRes.StatusCode, http.StatusNotFound)
+}

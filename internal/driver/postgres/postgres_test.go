@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/driver"
+	"github.com/sqlwarden/pkg/result"
 
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
@@ -373,6 +374,104 @@ func TestColumns(t *testing.T) {
 		if c.Type == "" {
 			t.Errorf("column %q has empty type", c.Name)
 		}
+	}
+}
+
+func TestToValue(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+
+	tests := []struct {
+		name  string
+		input any
+		check func(t *testing.T, got result.Value)
+	}{
+		{
+			name:  "nil",
+			input: nil,
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeNull {
+					t.Fatalf("expected null type, got %v", got.Type)
+				}
+			},
+		},
+		{
+			name:  "int64",
+			input: int64(42),
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeInteger || got.Integer != 42 {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+		{
+			name:  "float64",
+			input: 3.14,
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeFloat || got.Float != 3.14 {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+		{
+			name:  "bool",
+			input: true,
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeBool || !got.Bool {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+		{
+			name:  "time",
+			input: now,
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeTime || got.Time == nil || !got.Time.Equal(now) {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+		{
+			name:  "bytes text",
+			input: []byte("hello"),
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeText || got.Text != "hello" {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+		{
+			name:  "bytes binary",
+			input: []byte{0xff, 0xfe},
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeBytes || len(got.Bytes) != 2 {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+		{
+			name:  "string",
+			input: "sqlwarden",
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeText || got.Text != "sqlwarden" {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+		{
+			name:  "fallback",
+			input: struct{ N int }{N: 7},
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeText || got.Text == "" {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.check(t, toValue(tc.input))
+		})
 	}
 }
 

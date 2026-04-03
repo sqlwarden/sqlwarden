@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type testUser struct {
@@ -141,4 +142,76 @@ func copyFile(src, dst string) error {
 	}
 
 	return out.Close()
+}
+
+func testDrivers() []string {
+	return []string{"postgres", "sqlite"}
+}
+
+func insertTestRole(t *testing.T, db *DB, orgID int64, workspaceID *int64, name, scopeType string, isBuiltin bool, permissions ...string) Role {
+	t.Helper()
+
+	role := Role{
+		OrgID:       orgID,
+		WorkspaceID: workspaceID,
+		Name:        name,
+		Description: name + " description",
+		ScopeType:   scopeType,
+		IsBuiltin:   isBuiltin,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	if _, err := db.NewInsert().Model(&role).Returning("id").Exec(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, permission := range permissions {
+		row := map[string]any{
+			"role_id":    role.ID,
+			"permission": permission,
+		}
+		if _, err := db.NewInsert().TableExpr("role_permissions").Model(&row).Exec(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return role
+}
+
+func insertTestRoleBinding(t *testing.T, db *DB, orgID, roleID int64, subjectType string, subjectID int64, resourceType string, resourceID int64) RoleBinding {
+	t.Helper()
+
+	binding := RoleBinding{
+		OrgID:        orgID,
+		RoleID:       roleID,
+		SubjectType:  subjectType,
+		SubjectID:    subjectID,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		CreatedAt:    time.Now(),
+	}
+	if _, err := db.NewInsert().Model(&binding).Returning("id").Exec(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	return binding
+}
+
+func insertTestPermissionBinding(t *testing.T, db *DB, orgID int64, permission string, subjectType string, subjectID int64, resourceType string, resourceID int64) PermissionBinding {
+	t.Helper()
+
+	binding := PermissionBinding{
+		OrgID:        orgID,
+		Permission:   permission,
+		SubjectType:  subjectType,
+		SubjectID:    subjectID,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		CreatedAt:    time.Now(),
+	}
+	if _, err := db.NewInsert().Model(&binding).Returning("id").Exec(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	return binding
 }

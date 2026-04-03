@@ -63,6 +63,16 @@ func TestCreateMyWorkspaceDuplicateNameReturns422(t *testing.T) {
 	assert.Equal(t, res2.StatusCode, http.StatusUnprocessableEntity)
 }
 
+func TestCreateMyWorkspaceValidation(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok := setupMeTest(t, app, "mews-validation@example.com")
+
+	res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
+		map[string]any{"description": "missing name"}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+}
+
 func TestListMyWorkspaces(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -242,6 +252,38 @@ func TestMyWorkspaceEnvironmentCRUD(t *testing.T) {
 	assert.Equal(t, getAfterDel.StatusCode, http.StatusNotFound)
 }
 
+func TestMyWorkspaceEnvironmentValidationAndIsolation(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok := setupMeTest(t, app, "meenv-validation@example.com")
+
+	ws1Res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
+		map[string]any{"name": "Env WS 1"}, tok), app.routes())
+	assert.Equal(t, ws1Res.StatusCode, http.StatusCreated)
+	ws1ID := fmt.Sprintf("%v", ws1Res.BodyFields["id"])
+
+	ws2Res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
+		map[string]any{"name": "Env WS 2"}, tok), app.routes())
+	assert.Equal(t, ws2Res.StatusCode, http.StatusCreated)
+	ws2ID := fmt.Sprintf("%v", ws2Res.BodyFields["id"])
+
+	badCreate := send(t, newAuthRequest(t, http.MethodPost, meWsURL(ws1ID)+"/environments",
+		map[string]any{"description": "missing name"}, tok), app.routes())
+	assert.Equal(t, badCreate.StatusCode, http.StatusUnprocessableEntity)
+
+	envRes := send(t, newAuthRequest(t, http.MethodPost, meWsURL(ws1ID)+"/environments",
+		map[string]any{"name": "prod"}, tok), app.routes())
+	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+
+	crossGet := send(t, newAuthRequest(t, http.MethodGet, meWsURL(ws2ID)+"/environments/"+envID, nil, tok), app.routes())
+	assert.Equal(t, crossGet.StatusCode, http.StatusNotFound)
+
+	badUpdate := send(t, newAuthRequest(t, http.MethodPatch, meWsURL(ws1ID)+"/environments/"+envID,
+		map[string]any{"description": "missing name"}, tok), app.routes())
+	assert.Equal(t, badUpdate.StatusCode, http.StatusUnprocessableEntity)
+}
+
 // ── Connection CRUD ──────────────────────────────────────────────────────────
 
 func TestMyWorkspaceConnectionCRUD(t *testing.T) {
@@ -316,6 +358,38 @@ func TestMyWorkspaceConnectionFromOtherWorkspaceReturns404(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodGet,
 		meWsURL(ws2ID)+"/connections/"+connID, nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestMyWorkspaceConnectionValidationAndEnvironmentChecks(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok := setupMeTest(t, app, "meconn-validation@example.com")
+
+	ws1Res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
+		map[string]any{"name": "Conn WS 1"}, tok), app.routes())
+	assert.Equal(t, ws1Res.StatusCode, http.StatusCreated)
+	ws1ID := fmt.Sprintf("%v", ws1Res.BodyFields["id"])
+
+	ws2Res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
+		map[string]any{"name": "Conn WS 2"}, tok), app.routes())
+	assert.Equal(t, ws2Res.StatusCode, http.StatusCreated)
+	ws2ID := fmt.Sprintf("%v", ws2Res.BodyFields["id"])
+
+	badCreate := send(t, newAuthRequest(t, http.MethodPost, meWsURL(ws1ID)+"/connections",
+		map[string]any{"name": "Bad Conn", "driver": "sqlite"}, tok), app.routes())
+	assert.Equal(t, badCreate.StatusCode, http.StatusUnprocessableEntity)
+
+	envRes := send(t, newAuthRequest(t, http.MethodPost, meWsURL(ws2ID)+"/environments",
+		map[string]any{"name": "other-env"}, tok), app.routes())
+	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+
+	crossEnvCreate := send(t, newAuthRequest(t, http.MethodPost, meWsURL(ws1ID)+"/connections", map[string]any{
+		"name":           "Cross Env Conn",
+		"driver":         "sqlite",
+		"dsn":            ":memory:",
+		"environment_id": envRes.BodyFields["id"],
+	}, tok), app.routes())
+	assert.Equal(t, crossEnvCreate.StatusCode, http.StatusNotFound)
 }
 
 // ── Connect and Query ────────────────────────────────────────────────────────

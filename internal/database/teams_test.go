@@ -32,6 +32,17 @@ func TestTeamCRUD(t *testing.T) {
 		t.Fatalf("team ID mismatch: got %d, want %d", found.ID, team.ID)
 	}
 
+	byID, ok, err := db.GetTeamByID(context.Background(), team.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected team lookup by ID to succeed")
+	}
+	if byID.Slug != team.Slug {
+		t.Fatalf("team slug mismatch: got %q want %q", byID.Slug, team.Slug)
+	}
+
 	teams, err := db.ListTeams(context.Background(), org.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -70,5 +81,62 @@ func TestTeamMembership(t *testing.T) {
 	members, _ = db.ListTeamMembers(context.Background(), team.ID)
 	if len(members) != 0 {
 		t.Fatal("expected no members after removal")
+	}
+}
+
+func TestGetAccountTeamsAndDeleteTeam(t *testing.T) {
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+
+			org, err := db.InsertOrg(ctx, "account-teams-"+driver, "Account Teams")
+			if err != nil {
+				t.Fatal(err)
+			}
+			teamA, err := db.InsertTeam(ctx, org.ID, "devs", "Developers")
+			if err != nil {
+				t.Fatal(err)
+			}
+			teamB, err := db.InsertTeam(ctx, org.ID, "ops", "Operations")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if err := db.AddTeamMember(ctx, teamA.ID, testUsers["alice"].id); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.AddTeamMember(ctx, teamB.ID, testUsers["alice"].id); err != nil {
+				t.Fatal(err)
+			}
+
+			teams, err := db.GetAccountTeams(ctx, org.ID, testUsers["alice"].id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(teams) != 2 {
+				t.Fatalf("expected 2 account teams, got %d", len(teams))
+			}
+
+			if err := db.DeleteTeam(ctx, teamA.ID, org.ID); err != nil {
+				t.Fatal(err)
+			}
+
+			_, found, err := db.GetTeamByID(ctx, teamA.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if found {
+				t.Fatal("expected deleted team lookup to miss")
+			}
+
+			teams, err = db.GetAccountTeams(ctx, org.ID, testUsers["alice"].id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(teams) != 1 || teams[0].ID != teamB.ID {
+				t.Fatalf("expected only remaining team after delete, got %+v", teams)
+			}
+		})
 	}
 }

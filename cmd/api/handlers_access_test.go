@@ -106,6 +106,104 @@ func TestRevokeWorkspacePermissionBinding(t *testing.T) {
 	assert.Equal(t, patchRes.StatusCode, http.StatusForbidden)
 }
 
+func TestRevokeWorkspaceRoleBinding(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-role-revoke")
+
+	rolesRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/roles", nil, ownerTok), app.routes())
+	assert.Equal(t, rolesRes.StatusCode, http.StatusOK)
+
+	var roles []map[string]any
+	if err := json.Unmarshal(rolesRes.BodyBytes, &roles); err != nil {
+		t.Fatal(err)
+	}
+
+	var roleID int64
+	for _, role := range roles {
+		if role["name"] == "ws:member" {
+			roleID = int64(role["id"].(float64))
+			break
+		}
+	}
+	if roleID == 0 {
+		t.Fatal("expected ws:member role to exist")
+	}
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"role_id":      roleID,
+			"subject_type": "account",
+			"subject_id":   memberIDInt,
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		policiesURL(orgSlug, wsID), nil, ownerTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var body map[string]any
+	if err := json.Unmarshal(listRes.BodyBytes, &body); err != nil {
+		t.Fatal(err)
+	}
+	rbs := body["role_bindings"].([]any)
+	if len(rbs) == 0 {
+		t.Fatal("expected role binding to be listed")
+	}
+	rbID := fmt.Sprintf("%v", rbs[0].(map[string]any)["id"])
+
+	memberListRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/roles", nil, memberTok), app.routes())
+	assert.Equal(t, memberListRes.StatusCode, http.StatusForbidden)
+
+	revokeRes := send(t, newAuthRequest(t, http.MethodDelete,
+		policiesURL(orgSlug, wsID)+"/"+rbID,
+		nil, ownerTok), app.routes())
+	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
+
+	memberListRes = send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/roles", nil, memberTok), app.routes())
+	assert.Equal(t, memberListRes.StatusCode, http.StatusForbidden)
+}
+
+func TestRevokeWorkspacePolicyCrossWorkspaceIsolation(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, _, orgSlug, ws1ID, memberIDInt := setupPolicyTest(t, app, "ws-cross-revoke")
+
+	ws2Res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces",
+		map[string]any{"name": "Other WS"}, ownerTok), app.routes())
+	assert.Equal(t, ws2Res.StatusCode, http.StatusCreated)
+	ws2ID := fmt.Sprintf("%v", ws2Res.BodyFields["id"])
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, ws2ID),
+		map[string]any{
+			"permissions":  []string{"ws:write"},
+			"subject_type": "account",
+			"subject_id":   memberIDInt,
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		policiesURL(orgSlug, ws2ID), nil, ownerTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var body map[string]any
+	if err := json.Unmarshal(listRes.BodyBytes, &body); err != nil {
+		t.Fatal(err)
+	}
+	pbID := fmt.Sprintf("%v", body["permission_bindings"].([]any)[0].(map[string]any)["id"])
+
+	revokeRes := send(t, newAuthRequest(t, http.MethodDelete,
+		policiesURL(orgSlug, ws1ID)+"/"+pbID+"?kind=permission",
+		nil, ownerTok), app.routes())
+	assert.Equal(t, revokeRes.StatusCode, http.StatusNotFound)
+}
+
 func TestGrantPolicyValidation(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

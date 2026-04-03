@@ -38,6 +38,22 @@ func TestEnvironmentCRUD(t *testing.T) {
 		t.Fatalf("expected 1 environment, got %d", len(envs))
 	}
 
+	err = db.UpdateEnvironment(context.Background(), env.ID, "production", "Updated env")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found, ok, err = db.GetEnvironment(context.Background(), env.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected updated environment to exist")
+	}
+	if found.Name != "production" || found.Description != "Updated env" {
+		t.Fatalf("unexpected updated environment: %+v", found)
+	}
+
 	err = db.DeleteEnvironment(context.Background(), env.ID)
 	if err != nil {
 		t.Fatal(err)

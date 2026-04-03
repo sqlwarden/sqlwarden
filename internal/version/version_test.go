@@ -25,6 +25,14 @@ func TestGet(t *testing.T) {
 			assert.Equal(t, v, expectedVersion)
 		}
 	})
+
+	t.Run("Prefers ldflags version when set", func(t *testing.T) {
+		prev := version
+		version = "v1.2.3"
+		t.Cleanup(func() { version = prev })
+
+		assert.Equal(t, Get(), "v1.2.3")
+	})
 }
 
 func TestGetRevision(t *testing.T) {
@@ -41,6 +49,14 @@ func TestGetRevision(t *testing.T) {
 			assert.True(t, rev == "unavailable" || len(rev) >= 7)
 		}
 	})
+
+	t.Run("Prefers ldflags commit when set", func(t *testing.T) {
+		prev := commit
+		commit = "abcdef123456"
+		t.Cleanup(func() { commit = prev })
+
+		assert.Equal(t, GetRevision(), "abcdef123456")
+	})
 }
 
 func TestGetBuildDate(t *testing.T) {
@@ -55,5 +71,13 @@ func TestGetBuildDate(t *testing.T) {
 		} else {
 			assert.Equal(t, buildDate, "unavailable")
 		}
+	})
+
+	t.Run("Prefers ldflags date when set", func(t *testing.T) {
+		prev := date
+		date = "2026-04-03T00:00:00Z"
+		t.Cleanup(func() { date = prev })
+
+		assert.Equal(t, GetBuildDate(), "2026-04-03T00:00:00Z")
 	})
 }

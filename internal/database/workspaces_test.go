@@ -37,6 +37,22 @@ func TestWorkspaceCRUD(t *testing.T) {
 		t.Fatalf("expected 1 workspace, got %d", len(wss))
 	}
 
+	err = db.UpdateWorkspace(context.Background(), ws.ID, "Production Updated", "updated description")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found, ok, err = db.GetWorkspace(context.Background(), ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected updated workspace to exist")
+	}
+	if found.Name != "Production Updated" || found.Description != "updated description" {
+		t.Fatalf("unexpected updated workspace: %+v", found)
+	}
+
 	err = db.DeleteWorkspace(context.Background(), ws.ID)
 	if err != nil {
 		t.Fatal(err)

@@ -11,6 +11,47 @@ import (
 	"github.com/sqlwarden/internal/assert"
 )
 
+func TestResourceBelongsToWorkspace(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, _, org := seedOrgOwner(t, app, "resource-belongs@example.com", "Resource Belongs", "Resource Org")
+	ws1 := seedWorkspaceForAccount(t, app, org, owner, "WS1", "")
+	ws2 := seedWorkspaceForAccount(t, app, org, owner, "WS2", "")
+
+	env, err := app.db.InsertEnvironment(context.Background(), ws2.ID, &org.ID, "org", org.ID, "prod", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := app.db.InsertConnection(context.Background(), ws2.ID, &env.ID, &org.ID, "org", org.ID, "db", "sqlite", ":memory:", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ok, err := app.resourceBelongsToWorkspace(newTestRequest(t, http.MethodGet, "/", nil), "workspace", ws1.ID, ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, ok, true)
+
+	ok, err = app.resourceBelongsToWorkspace(newTestRequest(t, http.MethodGet, "/", nil), "environment", env.ID, ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, ok, false)
+
+	ok, err = app.resourceBelongsToWorkspace(newTestRequest(t, http.MethodGet, "/", nil), "connection", conn.ID, ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, ok, false)
+
+	ok, err = app.resourceBelongsToWorkspace(newTestRequest(t, http.MethodGet, "/", nil), "invalid", 123, ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, ok, false)
+}
+
 // wsSetup creates an org + workspace and returns the org slug, workspace ID, and owner token.
 func wsSetup(t *testing.T, app *application, email, name string) (slug, wsID, tok string) {
 	t.Helper()
