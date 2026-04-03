@@ -16,7 +16,7 @@ func TestNew(t *testing.T) {
 		driver string
 		dsn    string
 	}{
-		{"PostgreSQL", "postgres", "user:pass@localhost:5432/db?sslmode=disable"},
+		{"PostgreSQL", "postgres", pgTestDSN},
 		{"SQLite", "sqlite", "test.db"},
 	}
 
@@ -39,7 +39,7 @@ func TestNew(t *testing.T) {
 		})
 
 		t.Run("Fails with invalid DSN", func(t *testing.T) {
-			dsn := "fake_user:fake_pass@localhost:5432/fake_db?sslmode=disable"
+			dsn := "fake_user:fake_pass@127.0.0.1:1/fake_db?sslmode=disable"
 
 			db, err := New("postgres", dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
 			assert.NotNil(t, err)
@@ -54,7 +54,7 @@ func TestMigrateUp(t *testing.T) {
 		driver string
 		dsn    string
 	}{
-		{"PostgreSQL", "postgres", "user:pass@localhost:5432/db?sslmode=disable"},
+		{"PostgreSQL", "postgres", pgTestDSN},
 		{"SQLite", "sqlite", "test.db"},
 	}
 

@@ -16,6 +16,24 @@ import (
 	"github.com/sqlwarden/internal/validator"
 )
 
+// resolveWorkspaceEnvironmentID validates that envID belongs to workspaceID.
+// It returns a canonical environment ID pointer when valid.
+func (app *application) resolveWorkspaceEnvironmentID(r *http.Request, workspaceID int64, envID *int64) (*int64, bool, error) {
+	if envID == nil {
+		return nil, true, nil
+	}
+
+	env, found, err := app.db.GetEnvironment(r.Context(), *envID)
+	if err != nil {
+		return nil, false, err
+	}
+	if !found || env.WorkspaceID != workspaceID {
+		return nil, false, nil
+	}
+
+	return &env.ID, true, nil
+}
+
 func (app *application) listConnections(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
@@ -81,8 +99,18 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
-	conn, err := app.db.InsertConnection(context.Background(), 
-		ws.ID, input.EnvironmentID, &org.ID,
+	validatedEnvID, ok, err := app.resolveWorkspaceEnvironmentID(r, ws.ID, input.EnvironmentID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !ok {
+		app.notFound(w, r)
+		return
+	}
+
+	conn, err := app.db.InsertConnection(context.Background(),
+		ws.ID, validatedEnvID, &org.ID,
 		ws.OwnerType, ws.OwnerID,
 		input.Name, input.Driver, dsnEncrypted, input.AccessMode,
 	)
@@ -103,6 +131,53 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func (app *application) updateConnection(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Name          string              `json:"name"`
+		Driver        *string             `json:"driver"`
+		DSN           string              `json:"dsn"`
+		EnvironmentID **int64             `json:"environment_id"`
+		AccessMode    string              `json:"access_mode"`
+		V             validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	input.V.CheckField(input.Name != "", "name", "name is required")
+	input.V.CheckField(input.DSN != "", "dsn", "dsn is required")
+	input.V.CheckField(input.Driver == nil, "driver", "driver cannot be changed")
+	input.V.CheckField(input.EnvironmentID == nil, "environment_id", "environment cannot be changed")
+	if input.AccessMode == "" {
+		input.AccessMode = "open"
+	}
+	input.V.CheckField(
+		input.AccessMode == "open" || input.AccessMode == "restricted",
+		"access_mode", "must be open or restricted",
+	)
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	dsnEncrypted, err := encrypt.Encrypt(app.encKey, input.DSN)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	conn := contextGetConnection(r)
+	err = app.db.UpdateConnection(r.Context(), conn.ID, input.Name, dsnEncrypted, input.AccessMode)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) deleteConnection(w http.ResponseWriter, r *http.Request) {
@@ -328,4 +403,3 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-

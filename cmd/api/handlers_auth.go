@@ -262,3 +262,29 @@ func (app *application) getAccountOrgs(w http.ResponseWriter, r *http.Request) {
 		app.serverError(w, r, err)
 	}
 }
+
+// getSession returns the authenticated account plus UI bootstrap metadata.
+func (app *application) getSession(w http.ResponseWriter, r *http.Request) {
+	account := contextGetAccount(r)
+
+	orgs, err := app.db.GetAccountOrgs(r.Context(), account.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	isAdmin, err := app.db.IsInstanceAdmin(r.Context(), account.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = response.JSON(w, http.StatusOK, map[string]any{
+		"account":           account,
+		"organizations":     orgs,
+		"is_instance_admin": isAdmin,
+	})
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}

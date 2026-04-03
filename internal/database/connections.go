@@ -100,6 +100,22 @@ func (db *DB) GetConnection(ctx context.Context, id int64) (Connection, bool, er
 	return conn, true, nil
 }
 
+// UpdateConnection updates only mutable connection fields.
+// Workspace, environment, ownership, and driver are intentionally immutable.
+func (db *DB) UpdateConnection(ctx context.Context, id int64, name, dsnEncrypted, accessMode string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	_, err := db.NewUpdate().Model((*Connection)(nil)).
+		Set("name = ?", name).
+		Set("dsn_encrypted = ?", dsnEncrypted).
+		Set("access_mode = ?", accessMode).
+		Set("updated_at = ?", time.Now()).
+		Where("id = ?", id).
+		Exec(ctx)
+	return err
+}
+
 func (db *DB) ListConnections(ctx context.Context, workspaceID int64) ([]Connection, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()

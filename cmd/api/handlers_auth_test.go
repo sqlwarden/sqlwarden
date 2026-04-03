@@ -269,3 +269,44 @@ func TestGetAccountOrgs(t *testing.T) {
 		t.Fatalf("expected JSON array, got error: %v", err)
 	}
 }
+
+func TestGetSession(t *testing.T) {
+	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	registerTestUser(t, app, "session@example.com", "Session User", "securepass99")
+	loginRes := loginTestUser(t, app, "session@example.com", "securepass99")
+	tok := extractAccessToken(t, loginRes)
+
+	account, found, err := app.db.GetAccountByEmail(t.Context(), "session@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("expected account to exist")
+	}
+	if err := app.db.InsertInstanceAdmin(t.Context(), account.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	orgRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{"name": "Session Org"}, tok), app.routes())
+	assert.Equal(t, orgRes.StatusCode, http.StatusCreated)
+
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/session", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["is_instance_admin"], true)
+
+	accountBody, ok := res.BodyFields["account"].(map[string]any)
+	if !ok {
+		t.Fatal("expected account object in session response")
+	}
+	assert.Equal(t, accountBody["email"], "session@example.com")
+
+	orgsBody, ok := res.BodyFields["organizations"].([]any)
+	if !ok {
+		t.Fatal("expected organizations array in session response")
+	}
+	if len(orgsBody) != 1 {
+		t.Fatalf("expected 1 organization, got %d", len(orgsBody))
+	}
+}

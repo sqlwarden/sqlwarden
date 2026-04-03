@@ -209,6 +209,29 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	isMember, err := app.db.IsOrgMember(r.Context(), org.ID, accountID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !isMember {
+		app.notFound(w, r)
+		return
+	}
+
+	var builtinRoleIDs []int64
+	for _, role := range roles {
+		if role.IsBuiltin && (role.Name == "owner" || role.Name == "admin") {
+			builtinRoleIDs = append(builtinRoleIDs, role.ID)
+		}
+	}
+
+	err = app.db.DeleteAccountRoleBindings(r.Context(), org.ID, accountID, "org", org.ID, builtinRoleIDs)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
 	grantor := contextGetAccount(r)
 	err = app.enforcer.BindRole(r.Context(), org.ID, roleID, "account", accountID, "org", org.ID, grantor.ID)
 	if err != nil {

@@ -75,3 +75,25 @@ func TestCreateEnvironmentValidation(t *testing.T) {
 		map[string]any{"description": "no name"}, tok), app.routes())
 	assert.Equal(t, badRes.StatusCode, http.StatusUnprocessableEntity)
 }
+
+func TestCreateEnvironmentDuplicateNameReturns422(t *testing.T) {
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "envdup@example.com", "Env Dup", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Dup WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	create1 := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments",
+		map[string]any{"name": "prod"}, tok), app.routes())
+	assert.Equal(t, create1.StatusCode, http.StatusCreated)
+
+	create2 := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments",
+		map[string]any{"name": "prod"}, tok), app.routes())
+	assert.Equal(t, create2.StatusCode, http.StatusUnprocessableEntity)
+}

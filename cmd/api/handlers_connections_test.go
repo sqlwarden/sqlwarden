@@ -140,3 +140,120 @@ func TestListConnections(t *testing.T) {
 	}
 	assert.Equal(t, len(conns), 2)
 }
+
+func TestUpdateConnection(t *testing.T) {
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-update@example.com", "Conn Update", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn Update WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	envRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments",
+		map[string]any{"name": "prod"}, tok), app.routes())
+	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections",
+		map[string]any{
+			"name":           "Primary",
+			"driver":         "sqlite",
+			"dsn":            ":memory:",
+			"environment_id": envRes.BodyFields["id"],
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/"+connID,
+		map[string]any{
+			"name":        "Primary Updated",
+			"dsn":         ":memory:",
+			"access_mode": "restricted",
+		}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusNoContent)
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/"+connID,
+		nil, tok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	assert.Equal(t, getRes.BodyFields["name"], "Primary Updated")
+	assert.Equal(t, getRes.BodyFields["access_mode"], "restricted")
+	assert.Equal(t, fmt.Sprintf("%v", getRes.BodyFields["environment_id"]), envID)
+}
+
+func TestUpdateConnectionRejectsImmutableFields(t *testing.T) {
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-update-immutable@example.com", "Conn Update Immutable", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn Immutable WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	envRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments",
+		map[string]any{"name": "prod"}, tok), app.routes())
+	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections",
+		map[string]any{
+			"name":           "Primary",
+			"driver":         "sqlite",
+			"dsn":            ":memory:",
+			"environment_id": envRes.BodyFields["id"],
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/"+connID,
+		map[string]any{
+			"name":           "Primary Updated",
+			"driver":         "postgres",
+			"dsn":            ":memory:",
+			"environment_id": envRes.BodyFields["id"],
+		}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusUnprocessableEntity)
+}
+
+func TestCreateConnectionRejectsEnvironmentFromOtherWorkspace(t *testing.T) {
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-env-check@example.com", "Conn Env Check", "securepass99")
+
+	ws1Res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "WS1"}, tok), app.routes())
+	assert.Equal(t, ws1Res.StatusCode, http.StatusCreated)
+	ws1ID := fmt.Sprintf("%v", ws1Res.BodyFields["id"])
+
+	ws2Res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "WS2"}, tok), app.routes())
+	assert.Equal(t, ws2Res.StatusCode, http.StatusCreated)
+	ws2ID := fmt.Sprintf("%v", ws2Res.BodyFields["id"])
+
+	envRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+ws2ID+"/environments",
+		map[string]any{"name": "other-env"}, tok), app.routes())
+	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+ws1ID+"/connections",
+		map[string]any{
+			"name":           "Bad Conn",
+			"driver":         "sqlite",
+			"dsn":            ":memory:",
+			"environment_id": envRes.BodyFields["id"],
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusNotFound)
+}

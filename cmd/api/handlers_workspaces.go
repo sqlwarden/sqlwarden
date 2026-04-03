@@ -120,4 +120,3 @@ func (app *application) deleteWorkspace(w http.ResponseWriter, r *http.Request) 
 	app.enforcer.InvalidateAncestry("workspace", ws.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
-

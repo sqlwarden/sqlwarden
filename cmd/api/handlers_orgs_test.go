@@ -162,6 +162,52 @@ func TestUpdateOrgMemberRole(t *testing.T) {
 	assert.Equal(t, res2.StatusCode, http.StatusUnprocessableEntity)
 }
 
+func TestUpdateOrgMemberRoleReplacesPreviousBuiltinBinding(t *testing.T) {
+	app := newTestApp(t)
+
+	_, ownerTok, slug := registerAndLogin(t, app, "owner-switch@example.com", "Owner", "securepass99")
+	memberID, _, _ := registerAndLogin(t, app, "member-switch@example.com", "Member", "securepass99")
+
+	addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
+		map[string]any{"email": "member-switch@example.com"}, ownerTok), app.routes())
+	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+
+	promoteRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+memberID,
+		map[string]any{"role": "admin"}, ownerTok), app.routes())
+	assert.Equal(t, promoteRes.StatusCode, http.StatusNoContent)
+
+	promoteAgainRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+memberID,
+		map[string]any{"role": "owner"}, ownerTok), app.routes())
+	assert.Equal(t, promoteAgainRes.StatusCode, http.StatusNoContent)
+
+	org, found, err := app.db.GetOrgBySlug(context.Background(), slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("expected org to exist")
+	}
+
+	count, err := app.db.NewSelect().
+		TableExpr("role_bindings").
+		Where("org_id = ? AND subject_type = 'account' AND subject_id = ? AND resource_type = 'org' AND resource_id = ?",
+			org.ID, mustParseInt64(t, memberID), org.ID).
+		Count(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, count, 1)
+}
+
+func mustParseInt64(t *testing.T, s string) int64 {
+	t.Helper()
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
 func TestRemoveOrgMember(t *testing.T) {
 	app := newTestApp(t)
 

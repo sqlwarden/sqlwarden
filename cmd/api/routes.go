@@ -19,6 +19,7 @@ func (app *application) routes() http.Handler {
 	mux.Use(app.recoverPanic)
 
 	mux.Post("/api/setup", app.setup)
+	mux.Get("/api/setup/status", app.setupStatus)
 
 	mux.Route("/api/v1", func(r chi.Router) {
 		r.Use(app.authenticateV1)
@@ -41,6 +42,7 @@ func (app *application) routes() http.Handler {
 			r.Use(app.requireAccount)
 			r.Get("/account", app.getAccount)
 			r.Get("/account/orgs", app.getAccountOrgs)
+			r.Get("/session", app.getSession)
 		})
 
 		r.Route("/me", func(r chi.Router) {
@@ -75,6 +77,7 @@ func (app *application) routes() http.Handler {
 						r.Route("/{conn_id}", func(r chi.Router) {
 							r.Use(app.spaceConnCtx)
 							r.Get("/", app.getConnection)
+							r.Patch("/", app.updateConnection)
 							r.Delete("/", app.deleteConnection)
 							r.Post("/connect", app.connectToDatabase)
 							r.Post("/query", app.executeQuery)
@@ -159,6 +162,7 @@ func (app *application) routes() http.Handler {
 						r.Route("/{conn_id}", func(r chi.Router) {
 							r.Use(app.connCtx)
 							r.Get("/", app.getConnection)
+							r.With(app.requirePermission("conn:write")).Patch("/", app.updateConnection)
 							r.With(app.requirePermission("conn:delete")).Delete("/", app.deleteConnection)
 
 							r.Post("/connect", app.connectToDatabase)

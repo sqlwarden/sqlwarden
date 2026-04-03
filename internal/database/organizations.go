@@ -93,7 +93,7 @@ func (db *DB) AddOrgMember(ctx context.Context, orgID, accountID int64) error {
 	defer cancel()
 
 	member := OrgMember{OrgID: orgID, AccountID: accountID, JoinedAt: time.Now()}
-	_, err := db.NewInsert().Model(&member).Exec(ctx)
+	_, err := db.NewInsert().Model(&member).On("CONFLICT DO NOTHING").Exec(ctx)
 	return err
 }
 
@@ -133,6 +133,24 @@ func (db *DB) GetAccountOrgs(ctx context.Context, accountID int64) ([]Organizati
 		Where("om.account_id = ?", accountID).
 		Scan(ctx)
 	return orgs, err
+}
+
+// DeleteAccountRoleBindings removes account-scoped role bindings for a specific resource.
+func (db *DB) DeleteAccountRoleBindings(ctx context.Context, orgID, accountID int64, resourceType string, resourceID int64, roleIDs []int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	if len(roleIDs) == 0 {
+		return nil
+	}
+
+	_, err := db.NewDelete().
+		TableExpr("role_bindings").
+		Where("org_id = ? AND subject_type = 'account' AND subject_id = ? AND resource_type = ? AND resource_id = ?",
+			orgID, accountID, resourceType, resourceID).
+		Where("role_id IN (?)", bun.List(roleIDs)).
+		Exec(ctx)
+	return err
 }
 
 func (db *DB) UpsertOrgIDPConfig(ctx context.Context, orgID int64, provider, displayName, encryptedConfig string, ssoRequired bool) (OrgIDPConfig, error) {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
@@ -20,6 +21,7 @@ func TestMain(m *testing.M) {
 		tcpostgres.WithDatabase("testdb"),
 		tcpostgres.WithUsername("testuser"),
 		tcpostgres.WithPassword("testpass"),
+		testcontainers.WithCmdArgs("-c", "max_connections=200"),
 		tcpostgres.BasicWaitStrategies(),
 	)
 	if err != nil {

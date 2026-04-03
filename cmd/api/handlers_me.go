@@ -166,8 +166,18 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 	}
 
 	ws := contextGetWorkspace(r)
+	validatedEnvID, ok, err := app.resolveWorkspaceEnvironmentID(r, ws.ID, input.EnvironmentID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !ok {
+		app.notFound(w, r)
+		return
+	}
+
 	conn, err := app.db.InsertConnection(context.Background(),
-		ws.ID, input.EnvironmentID, nil,
+		ws.ID, validatedEnvID, nil,
 		"space", ws.OwnerID,
 		input.Name, input.Driver, dsnEncrypted, input.AccessMode,
 	)

@@ -38,6 +38,36 @@ func TestConnectionCRUD(t *testing.T) {
 		t.Fatalf("expected 1 connection, got %d", len(conns))
 	}
 
+	_, err = db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "prod", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = db.UpdateConnection(context.Background(), conn.ID, "my-db-updated", "new-encrypted-dsn", "restricted")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updated, ok, err := db.GetConnection(context.Background(), conn.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected updated connection to be found")
+	}
+	if updated.Name != "my-db-updated" {
+		t.Fatalf("expected updated name, got %s", updated.Name)
+	}
+	if updated.Driver != "postgres" {
+		t.Fatalf("expected original driver to remain unchanged, got %s", updated.Driver)
+	}
+	if updated.AccessMode != "restricted" {
+		t.Fatalf("expected updated access mode, got %s", updated.AccessMode)
+	}
+	if updated.EnvironmentID != nil {
+		t.Fatal("expected environment_id to remain unchanged")
+	}
+
 	err = db.DeleteConnection(context.Background(), conn.ID)
 	if err != nil {
 		t.Fatal(err)

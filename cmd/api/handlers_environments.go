@@ -56,6 +56,11 @@ func (app *application) createEnvironment(w http.ResponseWriter, r *http.Request
 	ws := contextGetWorkspace(r)
 	env, err := app.db.InsertEnvironment(r.Context(), ws.ID, &org.ID, ws.OwnerType, ws.OwnerID, input.Name, input.Description)
 	if err != nil {
+		if isUniqueViolation(err) {
+			input.V.AddFieldError("name", "an environment with this name already exists in this workspace")
+			app.failedValidation(w, r, input.V)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}
@@ -96,6 +101,11 @@ func (app *application) updateEnvironment(w http.ResponseWriter, r *http.Request
 	env := contextGetEnvironment(r)
 	err = app.db.UpdateEnvironment(r.Context(), env.ID, input.Name, input.Description)
 	if err != nil {
+		if isUniqueViolation(err) {
+			input.V.AddFieldError("name", "an environment with this name already exists in this workspace")
+			app.failedValidation(w, r, input.V)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}
@@ -126,4 +136,3 @@ func (app *application) deleteEnvironment(w http.ResponseWriter, r *http.Request
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-

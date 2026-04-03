@@ -79,6 +79,22 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// setupStatus reports whether the instance has already been bootstrapped.
+func (app *application) setupStatus(w http.ResponseWriter, r *http.Request) {
+	configured, err := app.db.HasAnyInstanceAdmin(r.Context())
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = response.JSON(w, http.StatusOK, map[string]any{
+		"configured": configured,
+	})
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 // listInstanceAdmins handles GET /api/v1/instance/admins.
 func (app *application) listInstanceAdmins(w http.ResponseWriter, r *http.Request) {
 	admins, err := app.db.ListInstanceAdmins(r.Context())

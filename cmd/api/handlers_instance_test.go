@@ -43,6 +43,20 @@ func TestSetupCreatesFirstInstanceAdmin(t *testing.T) {
 	assert.Equal(t, hasAccount, true)
 }
 
+func TestSetupStatus(t *testing.T) {
+	app := newTestApp(t)
+
+	before := send(t, newTestRequest(t, http.MethodGet, "/api/setup/status", nil), app.routes())
+	assert.Equal(t, before.StatusCode, http.StatusOK)
+	assert.Equal(t, before.BodyFields["configured"], false)
+
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	after := send(t, newTestRequest(t, http.MethodGet, "/api/setup/status", nil), app.routes())
+	assert.Equal(t, after.StatusCode, http.StatusOK)
+	assert.Equal(t, after.BodyFields["configured"], true)
+}
+
 func TestSetupBlockedAfterFirstAdmin(t *testing.T) {
 	app := newTestApp(t)
 
