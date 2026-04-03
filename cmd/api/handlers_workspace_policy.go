@@ -54,6 +54,10 @@ func (app *application) createWorkspaceRole(w http.ResponseWriter, r *http.Reque
 
 	roleID, err := app.enforcer.CreateRole(r.Context(), org.ID, &ws.ID, input.Name, input.Description, "workspace", input.Permissions)
 	if err != nil {
+		if isUniqueViolation(err) {
+			app.failedDuplicateField(w, r, "name", "a role with this name already exists in this workspace")
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}

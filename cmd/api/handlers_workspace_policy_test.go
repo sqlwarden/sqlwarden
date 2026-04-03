@@ -52,6 +52,54 @@ func TestResourceBelongsToWorkspace(t *testing.T) {
 	assert.Equal(t, ok, false)
 }
 
+func TestCreateWorkspacePolicy_WrongWorkspaceResourceReturns404(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "policy-owner"), "Policy Owner", "Policy Org")
+	wsA := seedWorkspaceForAccount(t, app, org, owner, "Workspace A", "")
+	wsB := seedWorkspaceForAccount(t, app, org, owner, "Workspace B", "")
+	envB := seedEnvironment(t, app, wsB.ID, org.ID, "prod")
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(wsA.ID, 10)+"/policies",
+		map[string]any{
+			"permissions":   []string{"env:read"},
+			"subject_type":  "account",
+			"subject_id":    owner.ID,
+			"resource_type": "environment",
+			"resource_id":   envB.ID,
+		}, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestCreateWorkspaceRole_DuplicateNameReturns422(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "role-owner"), "Role Owner", "Role Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Workspace", "")
+
+	first := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/roles",
+		map[string]any{
+			"name":        "analyst",
+			"description": "read only",
+			"permissions": []string{"ws:read"},
+		}, token), app.routes())
+	assert.Equal(t, first.StatusCode, http.StatusCreated)
+
+	second := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/roles",
+		map[string]any{
+			"name":        "analyst",
+			"description": "duplicate",
+			"permissions": []string{"ws:read"},
+		}, token), app.routes())
+	assert.Equal(t, second.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, second, "name")
+}
+
 // wsSetup creates an org + workspace and returns the org slug, workspace ID, and owner token.
 func wsSetup(t *testing.T, app *application, email, name string) (slug, wsID, tok string) {
 	t.Helper()

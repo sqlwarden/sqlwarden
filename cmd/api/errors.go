@@ -77,6 +77,12 @@ func (app *application) failedValidation(w http.ResponseWriter, r *http.Request,
 	}
 }
 
+func (app *application) failedDuplicateField(w http.ResponseWriter, r *http.Request, field, message string) {
+	v := validator.Validator{}
+	v.AddFieldError(field, message)
+	app.failedValidation(w, r, v)
+}
+
 func (app *application) invalidAuthenticationToken(w http.ResponseWriter, r *http.Request) {
 	headers := make(http.Header)
 	headers.Set("WWW-Authenticate", "Bearer")

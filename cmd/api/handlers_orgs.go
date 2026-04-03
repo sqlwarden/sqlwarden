@@ -42,8 +42,7 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 	org, err := app.db.InsertOrg(r.Context(), slug, input.Name)
 	if err != nil {
 		if isUniqueViolation(err) {
-			input.V.AddFieldError("name", "an organization with this name already exists")
-			app.failedValidation(w, r, input.V)
+			app.failedDuplicateField(w, r, "name", "an organization with this name already exists")
 			return
 		}
 		app.serverError(w, r, err)

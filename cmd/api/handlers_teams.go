@@ -51,6 +51,10 @@ func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
 	slug := input.Slug
 	team, err := app.db.InsertTeam(context.Background(), org.ID, slug, input.Name)
 	if err != nil {
+		if isUniqueViolation(err) {
+			app.failedDuplicateField(w, r, "slug", "a team with this slug already exists in this organization")
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}
