@@ -29,3 +29,11 @@ Response fields:
 - `404`: resource missing or not in the requested scope
 - `409`: state conflict
 - `422`: field validation and duplicate-name errors
+
+## Shared List Query Parameters
+
+- `page`
+- `page_size`
+- `sort`
+- `order`
+- `q`

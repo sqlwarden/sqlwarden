@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
@@ -138,4 +139,34 @@ func TestBackgroundTask(t *testing.T) {
 		assert.True(t, strings.Contains(buf.String(), "request.method=GET"))
 		assert.True(t, strings.Contains(buf.String(), "request.url=/test"))
 	})
+}
+
+func TestReadListQuery_Defaults(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/test", nil)
+	q, errs := readListQuery(req.URL.Query(), map[string]string{
+		"created_at": "created_at",
+		"name":       "name",
+	})
+
+	assert.Equal(t, len(errs), 0)
+	assert.Equal(t, q.Page, 1)
+	assert.Equal(t, q.PageSize, 25)
+	assert.Equal(t, q.Sort, "created_at")
+	assert.Equal(t, q.Order, "desc")
+	assert.Equal(t, q.Search, "")
+}
+
+func TestReadListQuery_InvalidPageSize(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/test?page_size=9999", nil)
+	_, errs := readListQuery(req.URL.Query(), map[string]string{
+		"created_at": "created_at",
+	})
+
+	if _, ok := errs["page_size"]; !ok {
+		t.Fatalf("expected page_size validation error, got %#v", errs)
+	}
 }
