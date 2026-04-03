@@ -4,22 +4,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
 )
 
-// setupMeTest registers an account, completes instance setup, and returns the access token and account ID.
+// setupMeTest seeds an authenticated account and returns the access token and account ID.
 func setupMeTest(t *testing.T, app *application, email string) (accountID string, tok string) {
 	t.Helper()
-	tok = setupInstance(t, app, email, "Me User", "securepass99")
-	loginRes := loginTestUser(t, app, email, "securepass99")
-	assert.Equal(t, loginRes.StatusCode, http.StatusOK)
-	// Re-login to get a clean token (setup returns one too, but loginRes has the account fields)
-	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/me", nil, tok), app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-	accountID = fmt.Sprintf("%v", res.BodyFields["id"])
-	return accountID, tok
+	account, tok := seedAccountWithToken(t, app, email, "Me User")
+	return strconv.FormatInt(account.ID, 10), tok
 }
 
 // meWsURL returns the URL for a personal workspace.
@@ -28,8 +23,9 @@ func meWsURL(wsID string) string { return "/api/v1/me/workspaces/" + wsID }
 // ── GET /me ─────────────────────────────────────────────────────────────────
 
 func TestGetMe(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
-	tok := setupInstance(t, app, "me@example.com", "Me User", "securepass99")
+	_, tok := setupMeTest(t, app, "me@example.com")
 
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/me", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
@@ -43,8 +39,9 @@ func TestGetMe(t *testing.T) {
 // ── Workspace CRUD ───────────────────────────────────────────────────────────
 
 func TestCreateMyWorkspace(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
-	tok := setupInstance(t, app, "mews@example.com", "MeWs User", "securepass99")
+	_, tok := setupMeTest(t, app, "mews@example.com")
 
 	res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
 		map[string]any{"name": "My WS", "description": "personal"}, tok), app.routes())
@@ -54,8 +51,9 @@ func TestCreateMyWorkspace(t *testing.T) {
 }
 
 func TestCreateMyWorkspaceDuplicateNameReturns422(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
-	tok := setupInstance(t, app, "medup@example.com", "MeDup User", "securepass99")
+	_, tok := setupMeTest(t, app, "medup@example.com")
 
 	body := map[string]any{"name": "Dupe WS"}
 	res1 := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces", body, tok), app.routes())
@@ -66,8 +64,9 @@ func TestCreateMyWorkspaceDuplicateNameReturns422(t *testing.T) {
 }
 
 func TestListMyWorkspaces(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
-	tok := setupInstance(t, app, "melist@example.com", "MeList User", "securepass99")
+	_, tok := setupMeTest(t, app, "melist@example.com")
 
 	// Create two workspaces.
 	send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces", map[string]any{"name": "WS1"}, tok), app.routes())
@@ -84,8 +83,9 @@ func TestListMyWorkspaces(t *testing.T) {
 }
 
 func TestGetMyWorkspace(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
-	tok := setupInstance(t, app, "meget@example.com", "MeGet User", "securepass99")
+	_, tok := setupMeTest(t, app, "meget@example.com")
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
 		map[string]any{"name": "GetMe WS"}, tok), app.routes())
@@ -98,8 +98,9 @@ func TestGetMyWorkspace(t *testing.T) {
 }
 
 func TestUpdateMyWorkspace(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
-	tok := setupInstance(t, app, "meupd@example.com", "MeUpd User", "securepass99")
+	_, tok := setupMeTest(t, app, "meupd@example.com")
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
 		map[string]any{"name": "Old Name"}, tok), app.routes())
@@ -114,8 +115,9 @@ func TestUpdateMyWorkspace(t *testing.T) {
 }
 
 func TestDeleteMyWorkspace(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
-	tok := setupInstance(t, app, "medel@example.com", "MeDel User", "securepass99")
+	_, tok := setupMeTest(t, app, "medel@example.com")
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
 		map[string]any{"name": "Del WS"}, tok), app.routes())
@@ -131,13 +133,12 @@ func TestDeleteMyWorkspace(t *testing.T) {
 // ── Workspace isolation ──────────────────────────────────────────────────────
 
 func TestMyWorkspaceOwnedByAnotherAccountReturns404(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
-	tok1 := setupInstance(t, app, "owner1@example.com", "Owner1", "securepass99")
+	_, tok1 := setupMeTest(t, app, "owner1@example.com")
 
-	// Register second user.
-	registerTestUser(t, app, "owner2@example.com", "Owner2", "securepass99")
-	loginRes2 := loginTestUser(t, app, "owner2@example.com", "securepass99")
-	tok2 := extractAccessToken(t, loginRes2)
+	// Create second user.
+	_, tok2 := setupMeTest(t, app, "owner2@example.com")
 
 	// Owner1 creates a workspace.
 	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
@@ -151,6 +152,7 @@ func TestMyWorkspaceOwnedByAnotherAccountReturns404(t *testing.T) {
 }
 
 func TestOrgWorkspaceNotAccessibleViaMeRoutes(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, tok, orgSlug := registerAndLogin(t, app, "orguser@example.com", "OrgUser", "securepass99")
 
@@ -167,6 +169,7 @@ func TestOrgWorkspaceNotAccessibleViaMeRoutes(t *testing.T) {
 }
 
 func TestPersonalWorkspaceNotVisibleInOrgWorkspaceList(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, tok, orgSlug := registerAndLogin(t, app, "orgpersonal@example.com", "OrgPersonal", "securepass99")
 
@@ -193,8 +196,9 @@ func TestPersonalWorkspaceNotVisibleInOrgWorkspaceList(t *testing.T) {
 // ── Environment CRUD ─────────────────────────────────────────────────────────
 
 func TestMyWorkspaceEnvironmentCRUD(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
-	tok := setupInstance(t, app, "meenv@example.com", "MeEnv User", "securepass99")
+	_, tok := setupMeTest(t, app, "meenv@example.com")
 
 	// Create workspace.
 	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
@@ -241,8 +245,9 @@ func TestMyWorkspaceEnvironmentCRUD(t *testing.T) {
 // ── Connection CRUD ──────────────────────────────────────────────────────────
 
 func TestMyWorkspaceConnectionCRUD(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
-	tok := setupInstance(t, app, "meconn@example.com", "MeConn User", "securepass99")
+	_, tok := setupMeTest(t, app, "meconn@example.com")
 
 	// Create workspace.
 	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
@@ -285,8 +290,9 @@ func TestMyWorkspaceConnectionCRUD(t *testing.T) {
 }
 
 func TestMyWorkspaceConnectionFromOtherWorkspaceReturns404(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
-	tok := setupInstance(t, app, "mecross@example.com", "MeCross User", "securepass99")
+	_, tok := setupMeTest(t, app, "mecross@example.com")
 
 	// Create two workspaces.
 	ws1Res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
@@ -315,8 +321,9 @@ func TestMyWorkspaceConnectionFromOtherWorkspaceReturns404(t *testing.T) {
 // ── Connect and Query ────────────────────────────────────────────────────────
 
 func TestMyWorkspaceConnectAndQuery(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
-	tok := setupInstance(t, app, "mequery@example.com", "MeQuery User", "securepass99")
+	_, tok := setupMeTest(t, app, "mequery@example.com")
 
 	// Create workspace and connection to in-memory SQLite.
 	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",

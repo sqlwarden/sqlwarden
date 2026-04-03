@@ -6,13 +6,29 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// DefaultHashCost is the bcrypt cost used for production password hashes.
+const DefaultHashCost = 12
+
+var hashCost = DefaultHashCost
+
 func Hash(plaintextPassword string) (string, error) {
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(plaintextPassword), 12)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(plaintextPassword), hashCost)
 	if err != nil {
 		return "", err
 	}
 
 	return string(hashedPassword), nil
+}
+
+// SetHashCostForTesting overrides the package hash cost until the returned restore
+// function is called. Tests use this to reduce bcrypt work without changing
+// production behavior.
+func SetHashCostForTesting(cost int) func() {
+	prev := hashCost
+	hashCost = cost
+	return func() {
+		hashCost = prev
+	}
 }
 
 func Matches(plaintextPassword, hashedPassword string) (bool, error) {

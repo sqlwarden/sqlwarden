@@ -12,11 +12,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/smtp"
+	"github.com/sqlwarden/internal/token"
 
 	"github.com/pascaldekloe/jwt"
 )
@@ -57,6 +59,74 @@ func newTestApplication(t *testing.T) *application {
 	return app
 }
 
+func seedAccount(t *testing.T, app *application, email, name string) database.Account {
+	t.Helper()
+
+	account, err := app.db.InsertAccount(context.Background(), email, name, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return account
+}
+
+func seedAccountWithToken(t *testing.T, app *application, email, name string) (database.Account, string) {
+	t.Helper()
+
+	account := seedAccount(t, app, email, name)
+	tok, _, err := token.Issue(strconv.FormatInt(account.ID, 10), account.Email, account.Name, app.config.jwt.secretKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return account, tok
+}
+
+func seedInstanceAdminAccount(t *testing.T, app *application, email, name string) (database.Account, string) {
+	t.Helper()
+
+	account, tok := seedAccountWithToken(t, app, email, name)
+	if err := app.db.InsertInstanceAdmin(context.Background(), account.ID); err != nil {
+		t.Fatal(err)
+	}
+	return account, tok
+}
+
+func seedOrganizationForAccount(t *testing.T, app *application, account database.Account, orgName string) database.Organization {
+	t.Helper()
+
+	org, err := app.db.InsertOrg(context.Background(), slugify(orgName), orgName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.db.AddOrgMember(context.Background(), org.ID, account.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.enforcer.SeedOrg(context.Background(), org.ID, account.ID); err != nil {
+		t.Fatal(err)
+	}
+	return org
+}
+
+func seedWorkspaceForAccount(t *testing.T, app *application, org database.Organization, account database.Account, name, description string) database.Workspace {
+	t.Helper()
+
+	ws, err := app.db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, name, description)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.enforcer.SeedWorkspace(context.Background(), org.ID, ws.ID, account.ID); err != nil {
+		t.Fatal(err)
+	}
+	return ws
+}
+
+func seedOrgOwner(t *testing.T, app *application, email, name, orgName string) (database.Account, string, database.Organization) {
+	t.Helper()
+
+	account, tok := seedInstanceAdminAccount(t, app, email, name)
+	org := seedOrganizationForAccount(t, app, account, orgName)
+	return account, tok, org
+}
+
 func newTestDB(t *testing.T) *database.DB {
 	t.Helper()
 
@@ -75,14 +145,20 @@ func newTestDB(t *testing.T) *database.DB {
 		}
 	}
 
-	var schemaName string
+	clonedDB := false
 	if driver == "postgres" {
-		schemaName = fmt.Sprintf("test_schema_%d", time.Now().UnixNano())
-		separator := "?"
-		if strings.Contains(dsn, "?") {
-			separator = "&"
+		if dsn == pgTestDSN {
+			dbName := fmt.Sprintf("cmd_api_test_%d", atomic.AddUint64(&pgTestDBCounter, 1))
+			pgTemplateCloneMu.Lock()
+			_, err := pgAdminDB.ExecContext(context.Background(),
+				fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbName, pgTemplateDBName))
+			pgTemplateCloneMu.Unlock()
+			if err != nil {
+				t.Fatal(err)
+			}
+			dsn = trimPostgresScheme(dsnWithDatabase("postgres://"+pgAdminDSN, dbName))
+			clonedDB = true
 		}
-		dsn = fmt.Sprintf("%s%ssearch_path=%s", dsn, separator, schemaName)
 	}
 
 	db, err := database.New(driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
@@ -96,40 +172,70 @@ func newTestDB(t *testing.T) *database.DB {
 	}
 
 	t.Cleanup(func() {
-		defer db.Close()
+		db.Close()
 
 		switch driver {
 		case "postgres":
-			_, err = db.ExecContext(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
-			if err != nil {
-				t.Fatal(err)
+			if clonedDB {
+				dbName := databaseNameFromDSN("postgres://" + dsn)
+				pgTemplateCloneMu.Lock()
+				defer pgTemplateCloneMu.Unlock()
+				_, _ = pgAdminDB.ExecContext(context.Background(),
+					"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
+					dbName)
+				_, err = pgAdminDB.ExecContext(context.Background(), fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 		case "sqlite":
 			os.Remove(dsn)
 		}
 	})
 
-	if driver == "postgres" {
-		_, err = db.ExecContext(context.Background(), fmt.Sprintf("CREATE SCHEMA %s", schemaName))
+	if driver == "sqlite" {
+		err = db.MigrateUp()
 		if err != nil {
 			t.Fatal(err)
 		}
+
+		for _, user := range testUsers {
+			acc, err := db.InsertAccount(context.Background(), user.email, user.email, &user.hashedPassword)
+			if err != nil {
+				t.Fatal(err)
+			}
+			user.id = acc.ID
+		}
 	}
 
-	err = db.MigrateUp()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, user := range testUsers {
-		acc, err := db.InsertAccount(context.Background(), user.email, user.email, &user.hashedPassword)
+	if driver == "postgres" && !clonedDB {
+		err = db.MigrateUp()
 		if err != nil {
 			t.Fatal(err)
 		}
-		user.id = acc.ID
+
+		for _, user := range testUsers {
+			acc, err := db.InsertAccount(context.Background(), user.email, user.email, &user.hashedPassword)
+			if err != nil {
+				t.Fatal(err)
+			}
+			user.id = acc.ID
+		}
 	}
 
 	return db
+}
+
+func databaseNameFromDSN(connStr string) string {
+	idx := strings.LastIndex(connStr, "/")
+	if idx == -1 {
+		return ""
+	}
+	rest := connStr[idx+1:]
+	if q := strings.Index(rest, "?"); q != -1 {
+		return rest[:q]
+	}
+	return rest
 }
 
 func newTestRequest(t *testing.T, method, path string, data map[string]any) *http.Request {

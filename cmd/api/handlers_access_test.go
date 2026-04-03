@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
@@ -14,22 +16,18 @@ import (
 func setupPolicyTest(t *testing.T, app *application, suffix string) (ownerTok, memberTok, orgSlug string, wsID string, memberIDInt int64) {
 	t.Helper()
 
-	_, ownerTok, orgSlug = registerAndLogin(t, app, "access-owner-"+suffix+"@example.com", "Owner", "securepass99")
-	memberIDStr, memberTok2, _ := registerAndLogin(t, app, "access-member-"+suffix+"@example.com", "Member", "securepass99")
-	memberTok = memberTok2
+	owner, ownerToken, org := seedOrgOwner(t, app, "access-owner-"+suffix+"@example.com", "Owner", "Owner's Org")
+	member, memberToken := seedAccountWithToken(t, app, "access-member-"+suffix+"@example.com", "Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	ws := seedWorkspaceForAccount(t, app, org, owner, "AccessWS", "")
 
-	fmt.Sscanf(memberIDStr, "%d", &memberIDInt)
-
-	// Add member to org.
-	addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+orgSlug+"/members",
-		map[string]any{"email": "access-member-" + suffix + "@example.com", "role": "member"}, ownerTok), app.routes())
-	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
-
-	// Create workspace.
-	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+orgSlug+"/workspaces",
-		map[string]any{"name": "AccessWS"}, ownerTok), app.routes())
-	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
-	wsID = fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	ownerTok = ownerToken
+	memberTok = memberToken
+	orgSlug = org.Slug
+	wsID = strconv.FormatInt(ws.ID, 10)
+	memberIDInt = member.ID
 
 	return
 }
@@ -39,6 +37,7 @@ func policiesURL(orgSlug, wsID string) string {
 }
 
 func TestGrantWorkspacePermissionBinding(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-perm")
 
@@ -66,6 +65,7 @@ func TestGrantWorkspacePermissionBinding(t *testing.T) {
 }
 
 func TestRevokeWorkspacePermissionBinding(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-revoke")
 
@@ -107,6 +107,7 @@ func TestRevokeWorkspacePermissionBinding(t *testing.T) {
 }
 
 func TestGrantPolicyValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, _, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-val")
 
@@ -164,6 +165,7 @@ func TestGrantPolicyValidation(t *testing.T) {
 }
 
 func TestGrantConnectionPolicyBinding(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "conn-perm")
 
@@ -217,6 +219,7 @@ func TestGrantConnectionPolicyBinding(t *testing.T) {
 }
 
 func TestGrantConnectionPolicyWrongWorkspace(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, _, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "conn-wrongws")
 
@@ -253,6 +256,7 @@ func TestGrantConnectionPolicyWrongWorkspace(t *testing.T) {
 }
 
 func TestGrantEnvironmentPolicyBinding(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, _, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-perm")
 
@@ -300,6 +304,7 @@ func TestGrantEnvironmentPolicyBinding(t *testing.T) {
 }
 
 func TestListPoliciesShowsAllResourceTypes(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, _, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "list-all")
 
@@ -377,6 +382,7 @@ func TestListPoliciesShowsAllResourceTypes(t *testing.T) {
 //   - member is denied connect on connections in env B
 //   - member does not see env B connections in the list
 func TestEnvScopedRoleGrantsConnectionListAndConnect(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-conn-e2e")
 	baseURL := "/api/v1/orgs/" + orgSlug + "/workspaces/" + wsID
@@ -459,6 +465,7 @@ func TestEnvScopedRoleGrantsConnectionListAndConnect(t *testing.T) {
 // TestEnvScopedRoleFiltersEnvironmentList verifies that listEnvironments returns only
 // the environments the member has a binding on (env-A-only binding hides env B).
 func TestEnvScopedRoleFiltersEnvironmentList(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-list-filter")
 	baseURL := "/api/v1/orgs/" + orgSlug + "/workspaces/" + wsID
@@ -499,6 +506,7 @@ func TestEnvScopedRoleFiltersEnvironmentList(t *testing.T) {
 // TestGrantMultiplePermissions verifies that a single POST /policies with multiple
 // permissions creates one binding per permission and all are enforced.
 func TestGrantMultiplePermissions(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "multi-perm")
 

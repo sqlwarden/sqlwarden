@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"testing"
@@ -11,58 +10,18 @@ import (
 	"github.com/sqlwarden/internal/assert"
 )
 
-// registerAndLogin registers a user, logs in, creates an org, and returns the account ID, access token, and org slug.
-// For the very first account on a fresh instance it uses POST /api/setup (which also makes the account an instance
-// admin). For subsequent accounts it uses POST /api/v1/auth/register + login, which is allowed once setup is done.
+// registerAndLogin seeds an instance-admin account, creates an org, and returns the account ID, access token, and org slug.
 func registerAndLogin(t *testing.T, app *application, email, name, password string) (accountID, accessToken, orgSlug string) {
 	t.Helper()
-
-	// Try setup first; if the instance is already configured (409) fall back to regular register + login.
-	setupRes := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
-		"email":    email,
-		"name":     name,
-		"password": password,
-	}), app.routes())
-
-	if setupRes.StatusCode == http.StatusCreated {
-		accountID = fmt.Sprintf("%v", setupRes.BodyFields["account"].(map[string]any)["id"])
-		accessToken = setupRes.BodyFields["access_token"].(string)
-	} else if setupRes.StatusCode == http.StatusConflict {
-		regRes := registerTestUser(t, app, email, name, password)
-		if regRes.StatusCode != http.StatusCreated {
-			t.Fatalf("registerAndLogin: register failed (%d): %s", regRes.StatusCode, regRes.BodyBytes)
-		}
-		accountID = fmt.Sprintf("%v", regRes.BodyFields["id"])
-
-		// Grant instance admin so this test user can create orgs (test infrastructure only).
-		idNum, _ := strconv.ParseInt(accountID, 10, 64)
-		if err := app.db.InsertInstanceAdmin(context.Background(), idNum); err != nil {
-			t.Fatalf("registerAndLogin: InsertInstanceAdmin: %v", err)
-		}
-
-		loginRes := loginTestUser(t, app, email, password)
-		if loginRes.StatusCode != http.StatusOK {
-			t.Fatalf("registerAndLogin: login failed (%d): %s", loginRes.StatusCode, loginRes.BodyBytes)
-		}
-		accessToken = extractAccessToken(t, loginRes)
-	} else {
-		t.Fatalf("registerAndLogin: setup returned unexpected status %d: %s", setupRes.StatusCode, setupRes.BodyBytes)
-	}
-
-	// Create a personal org for the user.
-	orgName := name + "'s Org"
-	orgReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{"name": orgName})
-	orgReq.Header.Set("Authorization", "Bearer "+accessToken)
-	orgRes := send(t, orgReq, app.routes())
-	if orgRes.StatusCode != http.StatusCreated {
-		t.Fatalf("registerAndLogin: failed to create org, got %d: %s", orgRes.StatusCode, orgRes.BodyBytes)
-	}
-	orgSlug = orgRes.BodyFields["slug"].(string)
-
+	account, tok, org := seedOrgOwner(t, app, email, name, name+"'s Org")
+	accountID = strconv.FormatInt(account.ID, 10)
+	accessToken = tok
+	orgSlug = org.Slug
 	return accountID, accessToken, orgSlug
 }
 
 func TestGetOrg(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "getorg@example.com", "GetOrg User", "securepass99")
@@ -82,6 +41,7 @@ func TestGetOrg(t *testing.T) {
 }
 
 func TestListOrgMembers(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "listmem@example.com", "ListMem User", "securepass99")
@@ -102,6 +62,7 @@ func TestListOrgMembers(t *testing.T) {
 }
 
 func TestAddOrgMember(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	// Owner user.
@@ -130,6 +91,7 @@ func TestAddOrgMember(t *testing.T) {
 }
 
 func TestUpdateOrgMemberRole(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	ownerID, ownerTok, slug := registerAndLogin(t, app, "owner-upd@example.com", "Owner", "securepass99")
@@ -163,6 +125,7 @@ func TestUpdateOrgMemberRole(t *testing.T) {
 }
 
 func TestUpdateOrgMemberRoleReplacesPreviousBuiltinBinding(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, ownerTok, slug := registerAndLogin(t, app, "owner-switch@example.com", "Owner", "securepass99")
@@ -209,6 +172,7 @@ func mustParseInt64(t *testing.T, s string) int64 {
 }
 
 func TestRemoveOrgMember(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	ownerID, ownerTok, slug := registerAndLogin(t, app, "owner-rem@example.com", "Owner", "securepass99")
@@ -238,6 +202,7 @@ func TestRemoveOrgMember(t *testing.T) {
 }
 
 func TestOrgPermissionEnforcement(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	// Owner registers and gets an org.
@@ -271,6 +236,7 @@ func TestOrgPermissionEnforcement(t *testing.T) {
 }
 
 func TestCreateOrgDuplicateName(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	_, tok, _ := registerAndLogin(t, app, "dup-org@example.com", "User", "securepass99")
 

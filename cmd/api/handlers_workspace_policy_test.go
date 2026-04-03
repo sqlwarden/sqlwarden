@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
@@ -12,25 +14,28 @@ import (
 // wsSetup creates an org + workspace and returns the org slug, workspace ID, and owner token.
 func wsSetup(t *testing.T, app *application, email, name string) (slug, wsID, tok string) {
 	t.Helper()
-	_, tok, slug = registerAndLogin(t, app, email, name, "securepass99")
-
-	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces",
-		map[string]any{"name": "Main Workspace"}, tok), app.routes())
-	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
-	wsID = fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	account, token, org := seedOrgOwner(t, app, email, name, name+"'s Org")
+	ws := seedWorkspaceForAccount(t, app, org, account, "Main Workspace", "")
+	slug = org.Slug
+	wsID = strconv.FormatInt(ws.ID, 10)
+	tok = token
 	return
 }
 
 // wsJoinAs registers a new user, adds them to the org, binds them to a workspace role, and returns their token.
 func wsJoinAs(t *testing.T, app *application, slug, wsID, roleName, email string, ownerTok string) string {
 	t.Helper()
-	regRes := registerTestUser(t, app, email, email, "securepass99")
-	assert.Equal(t, regRes.StatusCode, http.StatusCreated)
-
-	// Add to org.
-	addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
-		map[string]any{"email": email}, ownerTok), app.routes())
-	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+	member, memberTok := seedAccountWithToken(t, app, email, email)
+	org, found, err := app.db.GetOrgBySlug(context.Background(), slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatalf("wsJoinAs: org %q not found", slug)
+	}
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	// List workspace roles to find the target role ID.
 	rolesRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -51,28 +56,25 @@ func wsJoinAs(t *testing.T, app *application, slug, wsID, roleName, email string
 		t.Fatalf("wsJoinAs: role %q not found in workspace", roleName)
 	}
 
-	// Get new user's account ID (JSON numbers come back as float64).
-	accountID := regRes.BodyFields["id"].(float64)
-
 	// Bind role via workspace access endpoint.
 	bindRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/policies",
 		map[string]any{
 			"subject_type": "account",
-			"subject_id":   int64(accountID),
+			"subject_id":   member.ID,
 			"role_id":      int64(roleID),
 		}, ownerTok), app.routes())
 	if bindRes.StatusCode != http.StatusCreated && bindRes.StatusCode != http.StatusNoContent {
 		t.Fatalf("wsJoinAs: bind role got %d: %s", bindRes.StatusCode, bindRes.BodyBytes)
 	}
 
-	loginRes := loginTestUser(t, app, email, "securepass99")
-	return extractAccessToken(t, loginRes)
+	return memberTok
 }
 
 // ── List workspace roles ──────────────────────────────────────────────────────
 
 func TestListWorkspaceRolesBuiltins(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, tok := wsSetup(t, app, "wsr-list@example.com", "WSR List")
 
@@ -95,6 +97,7 @@ func TestListWorkspaceRolesBuiltins(t *testing.T) {
 }
 
 func TestListWorkspaceRolesPermissions(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, ownerTok := wsSetup(t, app, "wsr-lr@example.com", "WSR LR")
 
@@ -114,6 +117,7 @@ func TestListWorkspaceRolesPermissions(t *testing.T) {
 // ── Create workspace role ─────────────────────────────────────────────────────
 
 func TestCreateWorkspaceRoleByWsAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, tok := wsSetup(t, app, "wsr-create@example.com", "WSR Create")
 
@@ -129,22 +133,19 @@ func TestCreateWorkspaceRoleByWsAdmin(t *testing.T) {
 }
 
 func TestCreateWorkspaceRoleByOrgAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, ownerTok := wsSetup(t, app, "wsr-orgadmin@example.com", "WSR OrgAdmin")
 
-	// Register a second user and promote to org:admin.
-	regRes := registerTestUser(t, app, "wsr-admin@example.com", "Admin", "securepass99")
-	assert.Equal(t, regRes.StatusCode, http.StatusCreated)
-	adminID := fmt.Sprintf("%v", regRes.BodyFields["id"])
+	// Seed a second user and promote them to org:admin.
+	adminAccount, adminTok := seedAccountWithToken(t, app, "wsr-admin@example.com", "Admin")
+	adminID := fmt.Sprintf("%d", adminAccount.ID)
 
 	send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
 		map[string]any{"email": "wsr-admin@example.com"}, ownerTok), app.routes())
 
 	send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+adminID,
 		map[string]any{"role": "admin"}, ownerTok), app.routes())
-
-	adminLoginRes := loginTestUser(t, app, "wsr-admin@example.com", "securepass99")
-	adminTok := extractAccessToken(t, adminLoginRes)
 
 	// org:admin can create workspace roles.
 	res := send(t, newAuthRequest(t, http.MethodPost,
@@ -157,6 +158,7 @@ func TestCreateWorkspaceRoleByOrgAdmin(t *testing.T) {
 }
 
 func TestCreateWorkspaceRoleByWsMemberForbidden(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, ownerTok := wsSetup(t, app, "wsr-mforbid@example.com", "WSR MForbid")
 
@@ -169,6 +171,7 @@ func TestCreateWorkspaceRoleByWsMemberForbidden(t *testing.T) {
 }
 
 func TestCreateWorkspaceRoleValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, tok := wsSetup(t, app, "wsr-val@example.com", "WSR Val")
 
@@ -188,6 +191,7 @@ func TestCreateWorkspaceRoleValidation(t *testing.T) {
 // ── Get workspace role ────────────────────────────────────────────────────────
 
 func TestGetWorkspaceRole(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, tok := wsSetup(t, app, "wsr-get@example.com", "WSR Get")
 
@@ -204,6 +208,7 @@ func TestGetWorkspaceRole(t *testing.T) {
 }
 
 func TestGetWorkspaceRoleCrossWorkspaceIsolation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, tok := wsSetup(t, app, "wsr-iso@example.com", "WSR Iso")
 
@@ -227,6 +232,7 @@ func TestGetWorkspaceRoleCrossWorkspaceIsolation(t *testing.T) {
 }
 
 func TestGetWorkspaceRoleNotFound(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, tok := wsSetup(t, app, "wsr-nf@example.com", "WSR NF")
 
@@ -238,6 +244,7 @@ func TestGetWorkspaceRoleNotFound(t *testing.T) {
 // ── Delete workspace role ─────────────────────────────────────────────────────
 
 func TestDeleteWorkspaceRole(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, tok := wsSetup(t, app, "wsr-del@example.com", "WSR Del")
 
@@ -258,6 +265,7 @@ func TestDeleteWorkspaceRole(t *testing.T) {
 }
 
 func TestDeleteBuiltinWorkspaceRoleForbidden(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, tok := wsSetup(t, app, "wsr-dbuilt@example.com", "WSR DBuilt")
 
@@ -282,6 +290,7 @@ func TestDeleteBuiltinWorkspaceRoleForbidden(t *testing.T) {
 }
 
 func TestDeleteWorkspaceRoleByWsMemberForbidden(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, ownerTok := wsSetup(t, app, "wsr-dmforbid@example.com", "WSR DMForbid")
 
@@ -298,6 +307,7 @@ func TestDeleteWorkspaceRoleByWsMemberForbidden(t *testing.T) {
 }
 
 func TestDeleteWorkspaceRoleCrossWorkspaceIsolation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, tok := wsSetup(t, app, "wsr-diso@example.com", "WSR DIso")
 
@@ -319,6 +329,7 @@ func TestDeleteWorkspaceRoleCrossWorkspaceIsolation(t *testing.T) {
 // ── List workspace permissions ────────────────────────────────────────────────
 
 func TestListWorkspacePermissions(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, tok := wsSetup(t, app, "wsr-perms@example.com", "WSR Perms")
 
@@ -341,6 +352,7 @@ func TestListWorkspacePermissions(t *testing.T) {
 }
 
 func TestListWorkspacePermissionsAccessibleByWsMember(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, ownerTok := wsSetup(t, app, "wsr-perms-m@example.com", "WSR Perms M")
 
@@ -354,6 +366,7 @@ func TestListWorkspacePermissionsAccessibleByWsMember(t *testing.T) {
 // ── Org-level role access at workspace scope ──────────────────────────────────
 
 func TestOrgOwnerCanManageWorkspaceRoles(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, ownerTok := wsSetup(t, app, "wsr-owner@example.com", "WSR Owner")
 
@@ -365,6 +378,7 @@ func TestOrgOwnerCanManageWorkspaceRoles(t *testing.T) {
 }
 
 func TestWsAdminCanCreateAndDeleteWorkspaceRoles(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	slug, wsID, ownerTok := wsSetup(t, app, "wsr-wsadmin@example.com", "WSR WsAdmin")
 

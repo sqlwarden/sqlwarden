@@ -10,6 +10,7 @@ import (
 )
 
 func TestCreateAndListWorkspaces(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "ws-owner@example.com", "WS Owner", "securepass99")
@@ -39,6 +40,7 @@ func TestCreateAndListWorkspaces(t *testing.T) {
 }
 
 func TestGetAndDeleteWorkspace(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "ws-crud@example.com", "WS CRUD", "securepass99")
@@ -73,6 +75,7 @@ func TestGetAndDeleteWorkspace(t *testing.T) {
 }
 
 func TestWorkspaceUpdatePermission(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, ownerTok, slug := registerAndLogin(t, app, "ws-upd@example.com", "WS Upd", "securepass99")

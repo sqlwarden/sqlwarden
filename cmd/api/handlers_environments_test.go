@@ -9,6 +9,7 @@ import (
 )
 
 func TestEnvironmentLifecycle(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "envowner@example.com", "Env Owner", "securepass99")
@@ -59,6 +60,7 @@ func TestEnvironmentLifecycle(t *testing.T) {
 }
 
 func TestCreateEnvironmentValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "envval@example.com", "Env Val", "securepass99")
@@ -77,6 +79,7 @@ func TestCreateEnvironmentValidation(t *testing.T) {
 }
 
 func TestCreateEnvironmentDuplicateNameReturns422(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "envdup@example.com", "Env Dup", "securepass99")

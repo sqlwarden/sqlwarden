@@ -10,6 +10,7 @@ import (
 )
 
 func TestTestConnectionUnknownDriver(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "conn-test-drv@example.com", "Conn Test Drv", "securepass99")
@@ -34,6 +35,7 @@ func TestTestConnectionUnknownDriver(t *testing.T) {
 }
 
 func TestTestConnectionUnreachable(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "conn-test-unr@example.com", "Conn Test Unr", "securepass99")
@@ -59,6 +61,7 @@ func TestTestConnectionUnreachable(t *testing.T) {
 }
 
 func TestCreateConnectionAndGetExcludesDSN(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "conn-create@example.com", "Conn Create", "securepass99")
@@ -102,6 +105,7 @@ func TestCreateConnectionAndGetExcludesDSN(t *testing.T) {
 }
 
 func TestListConnections(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "conn-list@example.com", "Conn List", "securepass99")
@@ -142,6 +146,7 @@ func TestListConnections(t *testing.T) {
 }
 
 func TestUpdateConnection(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "conn-update@example.com", "Conn Update", "securepass99")
@@ -188,6 +193,7 @@ func TestUpdateConnection(t *testing.T) {
 }
 
 func TestUpdateConnectionRejectsImmutableFields(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "conn-update-immutable@example.com", "Conn Update Immutable", "securepass99")
@@ -226,6 +232,7 @@ func TestUpdateConnectionRejectsImmutableFields(t *testing.T) {
 }
 
 func TestCreateConnectionRejectsEnvironmentFromOtherWorkspace(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "conn-env-check@example.com", "Conn Env Check", "securepass99")

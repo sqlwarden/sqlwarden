@@ -11,6 +11,7 @@ import (
 )
 
 func TestCreateAndListTeams(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "team-owner@example.com", "Team Owner", "securepass99")
@@ -40,6 +41,7 @@ func TestCreateAndListTeams(t *testing.T) {
 }
 
 func TestGetAndDeleteTeam(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "team-crud@example.com", "Team CRUD", "securepass99")
@@ -74,6 +76,7 @@ func TestGetAndDeleteTeam(t *testing.T) {
 }
 
 func TestTeamMemberManagement(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	ownerID, ownerTok, slug := registerAndLogin(t, app, "tm-owner@example.com", "TM Owner", "securepass99")
@@ -147,6 +150,7 @@ func TestTeamMemberManagement(t *testing.T) {
 }
 
 func TestCreateTeamValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "team-val@example.com", "Team Val", "securepass99")

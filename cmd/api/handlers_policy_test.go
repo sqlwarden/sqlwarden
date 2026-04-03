@@ -10,6 +10,7 @@ import (
 )
 
 func TestRoleLifecycle(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "policyowner@example.com", "Policy Owner", "securepass99")
@@ -50,6 +51,7 @@ func TestRoleLifecycle(t *testing.T) {
 }
 
 func TestCreateRoleValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "policy-val@example.com", "Policy Val", "securepass99")
@@ -78,6 +80,7 @@ func TestCreateRoleValidation(t *testing.T) {
 }
 
 func TestListPermissions(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "perm-list@example.com", "Perm List", "securepass99")
@@ -93,6 +96,7 @@ func TestListPermissions(t *testing.T) {
 }
 
 func TestDeleteBuiltinRoleForbidden(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	_, tok, slug := registerAndLogin(t, app, "builtin-del@example.com", "Builtin Del", "securepass99")
