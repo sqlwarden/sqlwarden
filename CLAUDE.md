@@ -65,11 +65,11 @@ All HTTP handlers are methods on `*application` in `cmd/api/`. The struct is ini
 
 ### Access Control
 
-Two-layer RBAC system:
-- **Org roles**: `owner > admin > member` — checked via `requireOrgRole` middleware
-- **Fine-grained permissions**: Casbin enforcer with action hierarchy `connect < query < execute < manage` on resources like `members`, `teams`, `connections`
+Custom RBAC enforcer in `internal/access/` (replaced Casbin). Two binding types stored in the DB:
+- **Role bindings** (`role_bindings`): assign a role to a subject (account or team) at a resource
+- **Permission bindings** (`permission_bindings`): grant a single permission directly to a subject at a resource
 
-Casbin adapter reads/writes policy from the database (`internal/access/adapter.go`). The model is at `internal/access/model.conf`.
+Permission checks traverse the resource ancestry chain (connection → workspace → org) so org-level bindings cover all descendant resources. See `docs/superpowers/architecture/rbac-and-authorization.md` for the full model.
 
 ### Database Layer
 
@@ -91,7 +91,7 @@ When running database tests locally, Docker must be available for testcontainers
 
 ### Multi-Tenant Model
 
-`tenants` → `workspaces` → `connections`. Users belong to a tenant (org), have org-level roles, and can be granted fine-grained permissions per workspace connection. URL structure reflects this: `/api/v1/orgs/{org_slug}/workspaces/{ws_id}/connections/{conn_id}`.
+`orgs` → `workspaces` → `environments` / `connections`. Accounts belong to an org, have org-level roles, and can be granted fine-grained permissions at any resource level. URL structure: `/api/v1/orgs/{org_slug}/workspaces/{ws_id}/connections/{conn_id}`.
 
 ### Cookies and Auth
 
@@ -110,3 +110,38 @@ React 19 + TypeScript SPA in `frontend/`. Built with Vite, routed with TanStack 
 - **Version injection**: `internal/version` package receives `Version`, `Revision`, `BuildDate` via ldflags at build time
 - **Migrations**: Always create paired up/down files; separate files for postgres vs sqlite when SQL differs
 - **Environment config**: All config via env vars, parsed in `main.go` using `internal/env` helpers with defaults
+- **Terminology**: Use "account" everywhere — never "user" — in routes, handler names, JSON fields, and variables
+
+## Invariants
+
+These are load-bearing constraints. Violating them silently breaks authorization or data integrity.
+
+### Setup and registration
+- `POST /api/setup` must be called before `POST /api/v1/auth/register` is usable. `registerAccount` checks `HasAnyInstanceAdmin` and returns 403 if setup is not done.
+- `POST /api/setup` is self-sealing: it returns 409 after the first successful call. Never call it conditionally in application startup code.
+
+### Org membership is the access gate
+- `orgCtx` middleware verifies `org_members` before setting org on context. An account that is not in `org_members` cannot reach any org resource, regardless of any policy bindings.
+- When creating an org, always call `db.AddOrgMember` AND `enforcer.SeedOrg` in the same handler. If either is skipped the org will be inaccessible or have no roles.
+
+### Resource hierarchy must be populated at creation time
+- `InsertWorkspace`, `InsertEnvironment`, and `InsertConnection` write `resource_hierarchy` rows automatically. Do not bypass these methods with raw inserts or the ancestry chain will be broken and permission inheritance will silently fail.
+- `DeleteWorkspace`, `DeleteEnvironment`, `DeleteConnection` cascade-delete hierarchy rows via FK. Always call `enforcer.InvalidateAncestry(resourceType, resourceID)` after deleting a resource so the cache does not serve stale ancestry.
+
+### Workspace seeding
+- When creating a workspace, always call `enforcer.SeedWorkspace(ctx, orgID, wsID, creatorAccountID)` immediately after `InsertWorkspace`. This creates the `ws:admin` and `ws:member` builtin roles and binds the creator to `ws:admin`. Without it the workspace has no roles and nobody can administer it.
+
+### Builtin roles are immutable
+- `enforcer.DeleteRole` rejects roles with `is_builtin=true`. Never set `is_builtin=true` on custom roles. Never attempt to delete builtins.
+
+### Policy binding idempotency
+- `GrantPermissions` uses `INSERT ON CONFLICT DO NOTHING`. Granting the same permission twice is safe and returns no error. Do not add a pre-check before granting.
+- `BindRole` uses the same pattern. Role bindings are also idempotent.
+
+### Cross-resource forgery prevention
+- Before creating a policy binding for an environment or connection resource, validate it belongs to the target workspace. `grantWorkspacePolicy` does this inline. Any future endpoint that creates bindings must do the same validation.
+
+### Permission scope rules
+- `org:*` permissions are only valid at org scope. They cannot be granted on a workspace or connection resource — `ValidForScope` enforces this in `CreateRole` and must be called before any custom role creation.
+- `policy:modify` at org scope covers all workspaces in that org (inheritance). Do not grant it at workspace scope unless you intend workspace-only policy control.
+
