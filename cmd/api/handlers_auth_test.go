@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -361,6 +362,40 @@ func TestGetAccountOrgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected JSON array, got error: %v", err)
 	}
+}
+
+func TestGetSession_ReturnsStableBootstrapPayload(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	account, token := seedAccountWithToken(t, app, uniqueEmail(t, "session"), "Session User")
+	org := seedOrganizationForAccount(t, app, account, "Acme")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/session", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	assertBodyContainsJSONKeys(t, res.BodyBytes, "account", "organizations", "is_instance_admin", "feature_flags")
+
+	var payload struct {
+		Account         map[string]any   `json:"account"`
+		Organizations   []map[string]any `json:"organizations"`
+		IsInstanceAdmin bool             `json:"is_instance_admin"`
+		FeatureFlags    []string         `json:"feature_flags"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+
+	if payload.Account == nil {
+		t.Fatal("expected account in bootstrap payload")
+	}
+	assert.Equal(t, len(payload.Organizations), 1)
+	if payload.Organizations[0]["name"] != org.Name {
+		t.Fatalf("expected first organization name %q, got %v", org.Name, payload.Organizations[0]["name"])
+	}
+	assert.Equal(t, payload.IsInstanceAdmin, false)
+	assert.Equal(t, len(payload.FeatureFlags), 0)
 }
 
 func TestGetSession(t *testing.T) {

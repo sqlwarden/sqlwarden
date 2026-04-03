@@ -302,3 +302,86 @@ func send(t *testing.T, req *http.Request, h http.Handler) testResponse {
 		BodyBytes:  resBody,
 	}
 }
+
+func decodeJSONResponse(t *testing.T, body []byte, dst any) {
+	t.Helper()
+
+	if err := json.Unmarshal(body, dst); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertBodyContainsJSONKeys(t *testing.T, body []byte, keys ...string) {
+	t.Helper()
+
+	var payload map[string]any
+	decodeJSONResponse(t, body, &payload)
+	for _, key := range keys {
+		if _, ok := payload[key]; !ok {
+			t.Fatalf("expected response to contain key %q", key)
+		}
+	}
+}
+
+func assertValidationField(t *testing.T, res testResponse, field string) {
+	t.Helper()
+
+	errorsValue, ok := res.BodyFields["field_errors"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected field_errors in response, got %#v", res.BodyFields)
+	}
+	if _, ok := errorsValue[field]; !ok {
+		t.Fatalf("expected validation field %q in %#v", field, errorsValue)
+	}
+}
+
+func setupWorkspaceOwner(t *testing.T) (*application, database.Organization, database.Workspace, string) {
+	t.Helper()
+
+	app := newTestApp(t)
+	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "workspace-owner"), "Workspace Owner", "Acme")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Primary Workspace", "")
+	return app, org, ws, token
+}
+
+func seedEnvironment(t *testing.T, app *application, workspaceID int64, orgID int64, name string) database.Environment {
+	t.Helper()
+
+	env, err := app.db.InsertEnvironment(context.Background(), workspaceID, &orgID, "org", orgID, name, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return env
+}
+
+func seedConnection(t *testing.T, app *application, workspaceID int64, environmentID *int64, orgID int64, driver, name, accessMode string) database.Connection {
+	t.Helper()
+
+	conn, err := app.db.InsertConnection(context.Background(), workspaceID, environmentID, &orgID, "org", orgID, name, driver, "dsn", accessMode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return conn
+}
+
+func newOrgJSONRequest(t *testing.T, method, path, body, token string) *http.Request {
+	t.Helper()
+
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	return req
+}
+
+func newOrgRequest(t *testing.T, method, path, token string) *http.Request {
+	t.Helper()
+
+	req := httptest.NewRequest(method, path, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	return req
+}
+
+func uniqueEmail(t *testing.T, prefix string) string {
+	t.Helper()
+	return fmt.Sprintf("%s-%d@example.com", prefix, time.Now().UnixNano())
+}

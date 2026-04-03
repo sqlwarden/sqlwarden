@@ -70,6 +70,16 @@ func TestSetupStatusUnaffectedByRegularAccounts(t *testing.T) {
 	assert.Equal(t, res.BodyFields["configured"], false)
 }
 
+func TestSetupStatus_ReturnsStableShape(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+
+	res := send(t, newTestRequest(t, http.MethodGet, "/api/setup/status", nil), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assertBodyContainsJSONKeys(t, res.BodyBytes, "configured")
+}
+
 func TestSetupBlockedAfterFirstAdmin(t *testing.T) {
 	app := newTestApp(t)
 

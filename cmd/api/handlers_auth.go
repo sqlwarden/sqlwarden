@@ -266,6 +266,13 @@ func (app *application) getAccountOrgs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type sessionResponse struct {
+	Account         database.Account        `json:"account"`
+	Organizations   []database.Organization `json:"organizations"`
+	IsInstanceAdmin bool                    `json:"is_instance_admin"`
+	FeatureFlags    []string                `json:"feature_flags"`
+}
+
 // getSession returns the authenticated account plus UI bootstrap metadata.
 func (app *application) getSession(w http.ResponseWriter, r *http.Request) {
 	account := contextGetAccount(r)
@@ -281,11 +288,15 @@ func (app *application) getSession(w http.ResponseWriter, r *http.Request) {
 		app.serverError(w, r, err)
 		return
 	}
+	if orgs == nil {
+		orgs = []database.Organization{}
+	}
 
-	err = response.JSON(w, http.StatusOK, map[string]any{
-		"account":           account,
-		"organizations":     orgs,
-		"is_instance_admin": isAdmin,
+	err = response.JSON(w, http.StatusOK, sessionResponse{
+		Account:         account,
+		Organizations:   orgs,
+		IsInstanceAdmin: isAdmin,
+		FeatureFlags:    []string{},
 	})
 	if err != nil {
 		app.serverError(w, r, err)
