@@ -36,7 +36,7 @@ func TestRecoverPanic(t *testing.T) {
 
 		res := send(t, req, app.recoverPanic(next))
 		assert.Equal(t, res.StatusCode, http.StatusInternalServerError)
-		assert.Equal(t, res.BodyFields["Error"], "The server encountered a problem and could not process your request")
+		assert.Equal(t, res.BodyFields["error"], "The server encountered a problem and could not process your request")
 	})
 }
 

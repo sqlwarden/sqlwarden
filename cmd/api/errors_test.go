@@ -55,7 +55,6 @@ func TestReportServerError(t *testing.T) {
 		assert.True(t, strings.Contains(app.mailer.SentMessages[0], "Request method: GET"))
 		assert.True(t, strings.Contains(app.mailer.SentMessages[0], "Request URL: /test"))
 	})
-
 }
 
 func TestServerError(t *testing.T) {
@@ -72,7 +71,7 @@ func TestServerError(t *testing.T) {
 
 		assert.Equal(t, res.StatusCode, http.StatusInternalServerError)
 		assert.Equal(t, res.Header.Get("Content-Type"), "application/json")
-		assert.Equal(t, res.BodyFields["Error"], "The server encountered a problem and could not process your request")
+		assert.Equal(t, res.BodyFields["error"], "The server encountered a problem and could not process your request")
 
 		assert.True(t, strings.Contains(buf.String(), "level=ERROR"))
 		assert.True(t, strings.Contains(buf.String(), `msg="this is a test error"`))
@@ -107,7 +106,6 @@ func TestServerError(t *testing.T) {
 		assert.True(t, strings.Contains(app.mailer.SentMessages[0], "Request method: GET"))
 		assert.True(t, strings.Contains(app.mailer.SentMessages[0], "Request URL: /test"))
 	})
-
 }
 
 func TestNotFound(t *testing.T) {
@@ -118,7 +116,7 @@ func TestNotFound(t *testing.T) {
 
 		res := send(t, req, http.HandlerFunc(app.notFound))
 		assert.Equal(t, res.StatusCode, http.StatusNotFound)
-		assert.Equal(t, res.BodyFields["Error"], "The requested resource could not be found")
+		assert.Equal(t, res.BodyFields["error"], "The requested resource could not be found")
 	})
 }
 
@@ -130,7 +128,7 @@ func TestMethodNotAllowed(t *testing.T) {
 
 		res := send(t, req, http.HandlerFunc(app.methodNotAllowed))
 		assert.Equal(t, res.StatusCode, http.StatusMethodNotAllowed)
-		assert.Equal(t, res.BodyFields["Error"], "The GET method is not supported for this resource")
+		assert.Equal(t, res.BodyFields["error"], "The GET method is not supported for this resource")
 	})
 }
 
@@ -144,7 +142,7 @@ func TestBadRequest(t *testing.T) {
 			app.badRequest(w, r, errors.New("this is a baaaad request"))
 		}))
 		assert.Equal(t, res.StatusCode, http.StatusBadRequest)
-		assert.Equal(t, res.BodyFields["Error"], "This is a baaaad request")
+		assert.Equal(t, res.BodyFields["error"], "This is a baaaad request")
 	})
 }
 
@@ -161,7 +159,7 @@ func TestFailedValidation(t *testing.T) {
 		}))
 
 		assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
-		assert.Equal(t, fmt.Sprint(res.BodyFields["Errors"]), "[This is an validation failure message]")
+		assert.Equal(t, fmt.Sprint(res.BodyFields["errors"]), "[This is an validation failure message]")
 	})
 }
 
@@ -177,7 +175,7 @@ func TestInvalidAuthenticationToken(t *testing.T) {
 
 		assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
 		assert.Equal(t, res.Header.Get("WWW-Authenticate"), "Bearer")
-		assert.Equal(t, res.BodyFields["Error"], "Invalid authentication token")
+		assert.Equal(t, res.BodyFields["error"], "Invalid authentication token")
 	})
 }
 
@@ -193,6 +191,6 @@ func TestAuthenticationRequired(t *testing.T) {
 
 		assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
 		assert.Equal(t, res.Header.Get("WWW-Authenticate"), "Bearer")
-		assert.Equal(t, res.BodyFields["Error"], "You must be authenticated to access this resource")
+		assert.Equal(t, res.BodyFields["error"], "You must be authenticated to access this resource")
 	})
 }

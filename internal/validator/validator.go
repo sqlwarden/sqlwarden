@@ -1,8 +1,8 @@
 package validator
 
 type Validator struct {
-	Errors      []string          `json:",omitempty"`
-	FieldErrors map[string]string `json:",omitempty"`
+	Errors      []string          `json:"errors,omitempty"`
+	FieldErrors map[string]string `json:"field_errors,omitempty"`
 }
 
 func (v Validator) HasErrors() bool {
