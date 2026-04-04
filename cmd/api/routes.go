@@ -121,6 +121,12 @@ func (app *application) routes() http.Handler {
 				r.With(app.requirePermission("policy:modify")).Delete("/{role_id}", app.deleteRole)
 			})
 
+			r.Route("/policies", func(r chi.Router) {
+				r.With(app.requirePermission("policy:read")).Get("/", app.listOrgPolicies)
+				r.With(app.requirePermission("policy:modify")).Post("/", app.grantOrgPolicy)
+				r.With(app.requirePermission("policy:modify")).Delete("/{binding_id}", app.revokeOrgPolicy)
+			})
+
 			r.Get("/permissions", app.listPermissions)
 
 			r.Route("/workspaces", func(r chi.Router) {

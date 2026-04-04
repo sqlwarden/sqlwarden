@@ -309,7 +309,7 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 	ws := contextGetWorkspace(r)
 	grantor := contextGetAccount(r)
 
-	if ok, err := app.workspacePolicySubjectExists(r, org.ID, input.SubjectType, input.SubjectID); err != nil {
+	if ok, err := app.policySubjectExists(r, org.ID, input.SubjectType, input.SubjectID); err != nil {
 		app.serverError(w, r, err)
 		return
 	} else if !ok {
@@ -472,25 +472,6 @@ func (app *application) resourceBelongsToWorkspace(r *http.Request, resourceType
 			return false, err
 		}
 		return found && conn.WorkspaceID == wsID, nil
-	default:
-		return false, nil
-	}
-}
-
-func (app *application) workspacePolicySubjectExists(r *http.Request, orgID int64, subjectType string, subjectID int64) (bool, error) {
-	switch subjectType {
-	case "account":
-		_, found, err := app.db.GetAccount(r.Context(), subjectID)
-		if err != nil || !found {
-			return found, err
-		}
-		return app.db.IsOrgMember(r.Context(), orgID, subjectID)
-	case "team":
-		team, found, err := app.db.GetTeamByID(r.Context(), subjectID)
-		if err != nil || !found {
-			return found, err
-		}
-		return team.OrgID == orgID, nil
 	default:
 		return false, nil
 	}

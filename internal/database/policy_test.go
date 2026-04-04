@@ -75,6 +75,89 @@ func TestRoleAndPermissionBindingQueries(t *testing.T) {
 	}
 }
 
+func TestListOrgPolicies_SupportsSubjectPermissionFiltersAndMetadata(t *testing.T) {
+	t.Parallel()
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+
+			org, err := db.InsertOrg(ctx, "org-policy-filters-"+driver, "Org Policy Filters")
+			if err != nil {
+				t.Fatal(err)
+			}
+			team, err := db.InsertTeam(ctx, org.ID, "qa-team-"+driver, "QA Team")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			insertTestPermissionBinding(t, db, org.ID, "policy:read", "team", team.ID, "org", org.ID)
+			insertTestPermissionBinding(t, db, org.ID, "org:read", "account", testUsers["alice"].id, "org", org.ID)
+
+			result, err := db.ListOrgPoliciesPage(ctx, ListOrgPoliciesParams{
+				OrgID:       org.ID,
+				Search:      "qa",
+				SubjectType: "team",
+				Permission:  "policy:read",
+				Page:        1,
+				PageSize:    10,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Total != 1 {
+				t.Fatalf("expected total=1, got %d", result.Total)
+			}
+			if len(result.Items) != 1 {
+				t.Fatalf("expected 1 item, got %d", len(result.Items))
+			}
+			if result.Items[0].SubjectName != "QA Team" {
+				t.Fatalf("expected subject name QA Team, got %s", result.Items[0].SubjectName)
+			}
+			if result.Items[0].ResourceName != "Org Policy Filters" {
+				t.Fatalf("expected resource name Org Policy Filters, got %s", result.Items[0].ResourceName)
+			}
+		})
+	}
+}
+
+func TestListOrgPolicies_SupportsSubjectIDFilter(t *testing.T) {
+	t.Parallel()
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+
+			org, err := db.InsertOrg(ctx, "org-policy-ids-"+driver, "Org Policy IDs")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			insertTestPermissionBinding(t, db, org.ID, "policy:read", "account", testUsers["alice"].id, "org", org.ID)
+			insertTestPermissionBinding(t, db, org.ID, "org:read", "account", testUsers["bob"].id, "org", org.ID)
+
+			result, err := db.ListOrgPoliciesPage(ctx, ListOrgPoliciesParams{
+				OrgID:     org.ID,
+				SubjectID: testUsers["alice"].id,
+				Page:      1,
+				PageSize:  10,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Total != 1 {
+				t.Fatalf("expected total=1, got %d", result.Total)
+			}
+			if len(result.Items) != 1 {
+				t.Fatalf("expected 1 item, got %d", len(result.Items))
+			}
+			if result.Items[0].SubjectID != testUsers["alice"].id {
+				t.Fatalf("expected subject id %d, got %d", testUsers["alice"].id, result.Items[0].SubjectID)
+			}
+		})
+	}
+}
+
 func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *testing.T) {
 	t.Parallel()
 	for _, driver := range testDrivers() {

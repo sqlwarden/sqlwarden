@@ -179,6 +179,170 @@ func (app *application) deleteRole(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (app *application) listOrgPolicies(w http.ResponseWriter, r *http.Request) {
+	org := contextGetOrg(r)
+
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"created_at":   "created_at",
+		"subject_name": "subject_name",
+		"permission":   "permission",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	subjectID := int64(0)
+	if raw := strings.TrimSpace(r.URL.Query().Get("subject_id")); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed < 1 {
+			errs["subject_id"] = "must be a positive integer"
+		} else {
+			subjectID = parsed
+		}
+	}
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	result, err := app.db.ListOrgPoliciesPage(r.Context(), database.ListOrgPoliciesParams{
+		OrgID:       org.ID,
+		Search:      q.Search,
+		SubjectID:   subjectID,
+		SubjectType: strings.TrimSpace(r.URL.Query().Get("subject_type")),
+		Permission:  strings.TrimSpace(r.URL.Query().Get("permission")),
+		Sort:        q.Sort,
+		Order:       q.Order,
+		Page:        q.Page,
+		PageSize:    q.PageSize,
+	})
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = response.JSON(w, http.StatusOK, result)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) grantOrgPolicy(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		RoleID      int64               `json:"role_id"`
+		Permissions []string            `json:"permissions"`
+		SubjectType string              `json:"subject_type"`
+		SubjectID   int64               `json:"subject_id"`
+		V           validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	hasRole := input.RoleID > 0
+	hasPerms := len(input.Permissions) > 0
+	input.V.CheckField(hasRole || hasPerms, "role_id", "one of role_id or permissions is required")
+	input.V.CheckField(!(hasRole && hasPerms), "role_id", "only one of role_id or permissions may be set")
+	input.V.CheckField(input.SubjectType == "account" || input.SubjectType == "team", "subject_type", "must be account or team")
+	input.V.CheckField(input.SubjectID > 0, "subject_id", "subject_id is required")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	org := contextGetOrg(r)
+	grantor := contextGetAccount(r)
+
+	if ok, err := app.policySubjectExists(r, org.ID, input.SubjectType, input.SubjectID); err != nil {
+		app.serverError(w, r, err)
+		return
+	} else if !ok {
+		app.notFound(w, r)
+		return
+	}
+
+	if hasRole {
+		role, found, err := app.db.GetRole(r.Context(), input.RoleID, org.ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !found {
+			app.notFound(w, r)
+			return
+		}
+		if role.ScopeType != "org" || role.WorkspaceID != nil {
+			v := validator.Validator{}
+			v.AddFieldError("role_id", "role scope must match resource type")
+			app.failedValidation(w, r, v)
+			return
+		}
+		err = app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, "org", org.ID, grantor.ID)
+	} else {
+		err = app.enforcer.GrantPermissions(r.Context(), org.ID, input.Permissions, input.SubjectType, input.SubjectID, "org", org.ID, grantor.ID)
+	}
+	if err != nil {
+		if errors.Is(err, access.ErrUnknownPermission) {
+			v := validator.Validator{}
+			v.AddFieldError("permissions", err.Error())
+			app.failedValidation(w, r, v)
+			return
+		}
+		app.serverError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) revokeOrgPolicy(w http.ResponseWriter, r *http.Request) {
+	bindingIDStr := chi.URLParam(r, "binding_id")
+	bindingID, err := strconv.ParseInt(bindingIDStr, 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
+	}
+
+	org := contextGetOrg(r)
+	kind := r.URL.Query().Get("kind")
+
+	if kind == "permission" {
+		pb, found, err := app.db.GetPermissionBinding(r.Context(), bindingID, org.ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !found || pb.ResourceType != "org" || pb.ResourceID != org.ID {
+			app.notFound(w, r)
+			return
+		}
+		if err = app.enforcer.RevokePermission(r.Context(), bindingID, org.ID); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	} else {
+		rb, found, err := app.db.GetRoleBinding(r.Context(), bindingID, org.ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !found || rb.ResourceType != "org" || rb.ResourceID != org.ID {
+			app.notFound(w, r)
+			return
+		}
+		if err = app.enforcer.UnbindRole(r.Context(), bindingID, org.ID); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (app *application) listPermissions(w http.ResponseWriter, r *http.Request) {
 	err := response.JSON(w, http.StatusOK, map[string]any{
 		"permissions": access.AllPermissions(),
@@ -186,5 +350,24 @@ func (app *application) listPermissions(w http.ResponseWriter, r *http.Request) 
 	})
 	if err != nil {
 		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) policySubjectExists(r *http.Request, orgID int64, subjectType string, subjectID int64) (bool, error) {
+	switch subjectType {
+	case "account":
+		_, found, err := app.db.GetAccount(r.Context(), subjectID)
+		if err != nil || !found {
+			return found, err
+		}
+		return app.db.IsOrgMember(r.Context(), orgID, subjectID)
+	case "team":
+		team, found, err := app.db.GetTeamByID(r.Context(), subjectID)
+		if err != nil || !found {
+			return found, err
+		}
+		return team.OrgID == orgID, nil
+	default:
+		return false, nil
 	}
 }

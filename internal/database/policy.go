@@ -71,6 +71,18 @@ type ListWorkspacePoliciesParams struct {
 	PageSize     int
 }
 
+type ListOrgPoliciesParams struct {
+	OrgID       int64
+	Search      string
+	SubjectID   int64
+	SubjectType string
+	Permission  string
+	Sort        string
+	Order       string
+	Page        int
+	PageSize    int
+}
+
 type WorkspacePolicyListItem struct {
 	BindingKind  string    `json:"binding_kind"`
 	BindingID    int64     `json:"binding_id"`
@@ -138,6 +150,27 @@ func (db *DB) ListPermissionBindings(ctx context.Context, orgID int64, resourceT
 	return pbs, err
 }
 
+func (db *DB) listOrgPolicies(ctx context.Context, orgID int64) ([]RoleBinding, []PermissionBinding, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var rbs []RoleBinding
+	if err := db.NewSelect().Model(&rbs).
+		Where("org_id = ? AND resource_type = 'org' AND resource_id = ?", orgID, orgID).
+		Scan(ctx); err != nil {
+		return nil, nil, err
+	}
+
+	var pbs []PermissionBinding
+	if err := db.NewSelect().Model(&pbs).
+		Where("org_id = ? AND resource_type = 'org' AND resource_id = ?", orgID, orgID).
+		Scan(ctx); err != nil {
+		return nil, nil, err
+	}
+
+	return rbs, pbs, nil
+}
+
 // ListWorkspacePolicies returns all role and permission bindings for resources owned
 // by the workspace: the workspace itself, its environments, and its connections.
 func (db *DB) listWorkspacePolicies(ctx context.Context, orgID, wsID int64) ([]RoleBinding, []PermissionBinding, error) {
@@ -171,20 +204,9 @@ func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspac
 		return response.Paginated[WorkspacePolicyListItem]{}, err
 	}
 
-	items := make([]WorkspacePolicyListItem, 0, len(roleBindings)+len(permissionBindings))
-	for _, rb := range roleBindings {
-		item, err := db.roleBindingListItem(ctx, params.OrgID, rb)
-		if err != nil {
-			return response.Paginated[WorkspacePolicyListItem]{}, err
-		}
-		items = append(items, item)
-	}
-	for _, pb := range permissionBindings {
-		item, err := db.permissionBindingListItem(ctx, pb)
-		if err != nil {
-			return response.Paginated[WorkspacePolicyListItem]{}, err
-		}
-		items = append(items, item)
+	items, err := db.policyListItems(ctx, params.OrgID, roleBindings, permissionBindings)
+	if err != nil {
+		return response.Paginated[WorkspacePolicyListItem]{}, err
 	}
 
 	filtered := make([]WorkspacePolicyListItem, 0, len(items))
@@ -243,6 +265,90 @@ func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspac
 		PageSize: params.PageSize,
 		Total:    total,
 	}, nil
+}
+
+func (db *DB) ListOrgPoliciesPage(ctx context.Context, params ListOrgPoliciesParams) (response.Paginated[WorkspacePolicyListItem], error) {
+	params = normalizeOrgPolicyParams(params)
+
+	roleBindings, permissionBindings, err := db.listOrgPolicies(ctx, params.OrgID)
+	if err != nil {
+		return response.Paginated[WorkspacePolicyListItem]{}, err
+	}
+
+	items, err := db.policyListItems(ctx, params.OrgID, roleBindings, permissionBindings)
+	if err != nil {
+		return response.Paginated[WorkspacePolicyListItem]{}, err
+	}
+
+	filtered := make([]WorkspacePolicyListItem, 0, len(items))
+	search := strings.ToLower(strings.TrimSpace(params.Search))
+	for _, item := range items {
+		if params.SubjectID > 0 && item.SubjectID != params.SubjectID {
+			continue
+		}
+		if params.SubjectType != "" && item.SubjectType != params.SubjectType {
+			continue
+		}
+		if params.Permission != "" && item.Permission != params.Permission {
+			continue
+		}
+		if search != "" {
+			haystack := strings.ToLower(strings.Join([]string{
+				item.SubjectName,
+				item.ResourceName,
+				item.RoleName,
+				item.Permission,
+			}, " "))
+			if !strings.Contains(haystack, search) {
+				continue
+			}
+		}
+		filtered = append(filtered, item)
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		cmp := compareWorkspacePolicyItem(filtered[i], filtered[j], params.Sort)
+		if params.Order == "asc" {
+			return cmp < 0
+		}
+		return cmp > 0
+	})
+
+	total := len(filtered)
+	start := (params.Page - 1) * params.PageSize
+	if start > total {
+		start = total
+	}
+	end := start + params.PageSize
+	if end > total {
+		end = total
+	}
+
+	return response.Paginated[WorkspacePolicyListItem]{
+		Items:    filtered[start:end],
+		Page:     params.Page,
+		PageSize: params.PageSize,
+		Total:    total,
+	}, nil
+}
+
+func (db *DB) policyListItems(ctx context.Context, orgID int64, roleBindings []RoleBinding, permissionBindings []PermissionBinding) ([]WorkspacePolicyListItem, error) {
+	items := make([]WorkspacePolicyListItem, 0, len(roleBindings)+len(permissionBindings))
+	for _, rb := range roleBindings {
+		item, err := db.roleBindingListItem(ctx, orgID, rb)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	for _, pb := range permissionBindings {
+		item, err := db.permissionBindingListItem(ctx, pb)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
 }
 
 func (db *DB) roleBindingListItem(ctx context.Context, orgID int64, binding RoleBinding) (WorkspacePolicyListItem, error) {
@@ -309,6 +415,14 @@ func (db *DB) populatePolicyNames(ctx context.Context, item *WorkspacePolicyList
 	}
 
 	switch item.ResourceType {
+	case "org":
+		org, found, err := db.GetOrg(ctx, item.ResourceID)
+		if err != nil {
+			return err
+		}
+		if found {
+			item.ResourceName = org.Name
+		}
 	case "workspace":
 		ws, found, err := db.GetWorkspace(ctx, item.ResourceID)
 		if err != nil {
@@ -336,6 +450,35 @@ func (db *DB) populatePolicyNames(ctx context.Context, item *WorkspacePolicyList
 	}
 
 	return nil
+}
+
+func normalizeOrgPolicyParams(params ListOrgPoliciesParams) ListOrgPoliciesParams {
+	if params.Page < 1 {
+		params.Page = 1
+	}
+	if params.PageSize < 1 {
+		params.PageSize = 25
+	}
+	if params.Sort == "" {
+		params.Sort = "created_at"
+	}
+	switch params.Sort {
+	case "subject_name", "resource_name", "permission", "created_at":
+	default:
+		params.Sort = "created_at"
+	}
+	switch params.Order {
+	case "asc", "desc":
+	default:
+		params.Order = "desc"
+	}
+	params.Search = strings.TrimSpace(params.Search)
+	if params.SubjectID < 0 {
+		params.SubjectID = 0
+	}
+	params.SubjectType = strings.TrimSpace(params.SubjectType)
+	params.Permission = strings.TrimSpace(params.Permission)
+	return params
 }
 
 func normalizeWorkspacePolicyParams(params ListWorkspacePoliciesParams) ListWorkspacePoliciesParams {

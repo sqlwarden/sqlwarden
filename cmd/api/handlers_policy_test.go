@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -168,4 +169,141 @@ func TestListRoles_SupportsPaginationSearchAndBuiltinFilter(t *testing.T) {
 	assert.Equal(t, len(items), 1)
 	item := items[0].(map[string]any)
 	assert.Equal(t, item["name"].(string), "qa-viewer")
+}
+
+func TestListOrgPolicies_SupportsFiltersAndMetadata(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-owner"), "Org Policy Owner", "Org Policy Org")
+	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-member"), "Policy Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	team, err := app.db.InsertTeam(context.Background(), org.ID, "qa-team-"+fmt.Sprint(org.ID), "QA Team")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/policies",
+		map[string]any{
+			"permissions":  []string{"policy:read"},
+			"subject_type": "team",
+			"subject_id":   team.ID,
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	res = send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/policies",
+		map[string]any{
+			"permissions":  []string{"org:read"},
+			"subject_type": "account",
+			"subject_id":   owner.ID,
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+org.Slug+"/policies?q=qa&subject_type=team&permission=policy:read&page=1&page_size=10", nil, tok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+	assert.Equal(t, int(listRes.BodyFields["total"].(float64)), 1)
+
+	items := listRes.BodyFields["items"].([]any)
+	assert.Equal(t, len(items), 1)
+	item := items[0].(map[string]any)
+	assert.Equal(t, item["subject_name"].(string), "QA Team")
+	assert.Equal(t, item["resource_name"].(string), org.Name)
+	assert.Equal(t, item["resource_type"].(string), "org")
+}
+
+func TestGrantOrgPolicy_MissingRoleReturns404(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-missing-role-owner"), "Org Policy Owner", "Org Policy Missing Role")
+	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-missing-role-member"), "Policy Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/policies",
+		map[string]any{
+			"role_id":      999999,
+			"subject_type": "account",
+			"subject_id":   member.ID,
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestGrantOrgPolicy_UnknownPermissionReturns422(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-unknown-perm-owner"), "Org Policy Owner", "Org Policy Unknown Perm")
+	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-unknown-perm-member"), "Policy Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/policies",
+		map[string]any{
+			"permissions":  []string{"bogus:perm"},
+			"subject_type": "account",
+			"subject_id":   member.ID,
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "permissions")
+}
+
+func TestRevokeOrgPolicy(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-revoke-owner"), "Org Policy Owner", "Org Policy Revoke")
+	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-revoke-member"), "Policy Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	roles, err := app.db.ListOrgRoles(context.Background(), org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var adminRoleID int64
+	for _, role := range roles {
+		if role.Name == "admin" {
+			adminRoleID = role.ID
+			break
+		}
+	}
+	if adminRoleID == 0 {
+		t.Fatal("expected admin role to exist")
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/policies",
+		map[string]any{
+			"role_id":      adminRoleID,
+			"subject_type": "account",
+			"subject_id":   member.ID,
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+org.Slug+"/policies?subject_id="+fmt.Sprint(member.ID), nil, tok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+	items := listRes.BodyFields["items"].([]any)
+	assert.Equal(t, len(items), 1)
+	bindingID := fmt.Sprintf("%v", items[0].(map[string]any)["binding_id"])
+
+	revokeRes := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+org.Slug+"/policies/"+bindingID, nil, tok), app.routes())
+	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
+
+	listRes = send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+org.Slug+"/policies?subject_id="+fmt.Sprint(member.ID), nil, tok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+	assert.Equal(t, int(listRes.BodyFields["total"].(float64)), 0)
 }
