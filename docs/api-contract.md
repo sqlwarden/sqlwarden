@@ -157,6 +157,12 @@ Supported query parameters:
 - shared list query parameters
 - `name`
 
+### Personal Spaces
+
+- `GET /api/v1/me/workspaces` returns the same paginated workspace envelope and supports shared list query parameters plus `name`
+- `GET /api/v1/me/workspaces/{ws_id}/environments` returns the same paginated environment envelope and supports shared list query parameters plus `name`
+- `GET /api/v1/me/workspaces/{ws_id}/connections` returns the same paginated connection envelope and supports shared list query parameters plus `environment_id`, `driver`, and `access_mode`
+
 ## Search / Filter / Sort / Pagination
 
 - org members: pagination, search, role filter, and sort
@@ -165,6 +171,9 @@ Supported query parameters:
 - environments: pagination, search, name filter, and sort
 - connections: pagination, search, environment filter, driver filter, access-mode filter, and sort
 - workspace policies: pagination, search, subject/resource filtering, permission filtering, and sort
+- personal-space workspaces: pagination, search, name filter, and sort
+- personal-space environments: pagination, search, name filter, and sort
+- personal-space connections: pagination, search, environment filter, driver filter, access-mode filter, and sort
 
 ## Future Resources
 

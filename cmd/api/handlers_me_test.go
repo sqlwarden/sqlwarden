@@ -85,11 +85,50 @@ func TestListMyWorkspaces(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/me/workspaces", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	var wss []map[string]any
-	if err := json.Unmarshal(res.BodyBytes, &wss); err != nil {
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	if err := json.Unmarshal(res.BodyBytes, &payload); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, len(wss), 2)
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 25)
+	assert.Equal(t, payload.Total, 2)
+	assert.Equal(t, len(payload.Items), 2)
+}
+
+func TestListMyWorkspaces_SupportsPaginationSearchFilterAndSort(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok := setupMeTest(t, app, "melist-contract@example.com")
+
+	for _, body := range []map[string]any{
+		{"name": "Alpha Space", "description": "A"},
+		{"name": "Zulu Space", "description": "Z"},
+	} {
+		res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces", body, tok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusCreated)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/me/workspaces?q=space&name=Zulu%20Space&sort=name&order=desc&page=1&page_size=1", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 1)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["name"], "Zulu Space")
 }
 
 func TestGetMyWorkspace(t *testing.T) {
@@ -229,11 +268,16 @@ func TestMyWorkspaceEnvironmentCRUD(t *testing.T) {
 	// List environments.
 	listRes := send(t, newAuthRequest(t, http.MethodGet, envsURL, nil, tok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
-	var envs []map[string]any
-	if err := json.Unmarshal(listRes.BodyBytes, &envs); err != nil {
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	if err := json.Unmarshal(listRes.BodyBytes, &payload); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, len(envs), 1)
+	assert.Equal(t, payload.Total, 1)
 
 	// Get environment.
 	getRes := send(t, newAuthRequest(t, http.MethodGet, envsURL+"/"+envID, nil, tok), app.routes())
@@ -252,6 +296,40 @@ func TestMyWorkspaceEnvironmentCRUD(t *testing.T) {
 	// Gone after delete.
 	getAfterDel := send(t, newAuthRequest(t, http.MethodGet, envsURL+"/"+envID, nil, tok), app.routes())
 	assert.Equal(t, getAfterDel.StatusCode, http.StatusNotFound)
+}
+
+func TestListMyEnvironments_SupportsPaginationSearchFilterAndSort(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok := setupMeTest(t, app, "meenv-list@example.com")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
+		map[string]any{"name": "Env List WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	for _, name := range []string{"staging", "dev", "prod"} {
+		res := send(t, newAuthRequest(t, http.MethodPost, meWsURL(wsID)+"/environments",
+			map[string]any{"name": name}, tok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusCreated)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		meWsURL(wsID)+"/environments?q=pro&name=prod&sort=name&order=asc&page=1&page_size=1", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 1)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["name"], "prod")
 }
 
 func TestMyWorkspaceEnvironmentValidationAndIsolation(t *testing.T) {
@@ -313,11 +391,16 @@ func TestMyWorkspaceConnectionCRUD(t *testing.T) {
 	// List connections.
 	listRes := send(t, newAuthRequest(t, http.MethodGet, connsURL, nil, tok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
-	var conns []map[string]any
-	if err := json.Unmarshal(listRes.BodyBytes, &conns); err != nil {
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	if err := json.Unmarshal(listRes.BodyBytes, &payload); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, len(conns), 1)
+	assert.Equal(t, payload.Total, 1)
 
 	// Get connection.
 	getRes := send(t, newAuthRequest(t, http.MethodGet, connsURL+"/"+connID, nil, tok), app.routes())
@@ -331,6 +414,51 @@ func TestMyWorkspaceConnectionCRUD(t *testing.T) {
 	// Gone after delete.
 	getAfterDel := send(t, newAuthRequest(t, http.MethodGet, connsURL+"/"+connID, nil, tok), app.routes())
 	assert.Equal(t, getAfterDel.StatusCode, http.StatusNotFound)
+}
+
+func TestListMyConnections_SupportsPaginationSearchFilterAndSort(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok := setupMeTest(t, app, "meconn-list@example.com")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
+		map[string]any{"name": "Conn List WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	envARes := send(t, newAuthRequest(t, http.MethodPost, meWsURL(wsID)+"/environments",
+		map[string]any{"name": "prod"}, tok), app.routes())
+	assert.Equal(t, envARes.StatusCode, http.StatusCreated)
+	envAID := fmt.Sprintf("%v", envARes.BodyFields["id"])
+
+	envBRes := send(t, newAuthRequest(t, http.MethodPost, meWsURL(wsID)+"/environments",
+		map[string]any{"name": "staging"}, tok), app.routes())
+	assert.Equal(t, envBRes.StatusCode, http.StatusCreated)
+
+	for _, body := range []map[string]any{
+		{"name": "Primary DB", "driver": "sqlite", "dsn": "file::memory:?cache=shared", "environment_id": envARes.BodyFields["id"]},
+		{"name": "Replica DB", "driver": "sqlite", "dsn": "file::memory:?cache=shared", "environment_id": envBRes.BodyFields["id"], "access_mode": "restricted"},
+	} {
+		res := send(t, newAuthRequest(t, http.MethodPost, meWsURL(wsID)+"/connections", body, tok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusCreated)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		meWsURL(wsID)+"/connections?q=db&environment_id="+envAID+"&driver=sqlite&sort=name&order=asc&page=1&page_size=1", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 1)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["name"], "Primary DB")
 }
 
 func TestMyWorkspaceConnectionFromOtherWorkspaceReturns404(t *testing.T) {

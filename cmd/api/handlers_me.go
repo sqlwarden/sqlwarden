@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"net/http"
+	"strconv"
+	"strings"
 
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/request"
@@ -14,12 +17,26 @@ import (
 // listMyWorkspaces returns all personal-space workspaces owned by the authenticated account.
 func (app *application) listMyWorkspaces(w http.ResponseWriter, r *http.Request) {
 	account := contextGetAccount(r)
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"name":       "name",
+		"created_at": "created_at",
+	})
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
 	wss, err := app.db.ListWorkspacesByOwner(r.Context(), "space", account.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	err = response.JSON(w, http.StatusOK, wss)
+
+	wss = filterAccessibleWorkspaces(wss, q.Search, name, q.Sort, q.Order)
+	result := database.PaginateItems(wss, q.Page, q.PageSize)
+
+	err = response.JSON(w, http.StatusOK, result)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
@@ -67,7 +84,25 @@ func (app *application) createMyWorkspace(w http.ResponseWriter, r *http.Request
 // Personal space owner has unconditional access, so all environments are returned.
 func (app *application) listMyEnvironments(w http.ResponseWriter, r *http.Request) {
 	ws := contextGetWorkspace(r)
-	envs, err := app.db.ListEnvironments(r.Context(), ws.ID)
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"name":       "name",
+		"created_at": "created_at",
+	})
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	envs, err := app.db.ListEnvironmentsPage(r.Context(), database.ListEnvironmentsParams{
+		WorkspaceID: ws.ID,
+		Search:      q.Search,
+		Name:        name,
+		Sort:        q.Sort,
+		Order:       q.Order,
+		Page:        q.Page,
+		PageSize:    q.PageSize,
+	})
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -121,7 +156,40 @@ func (app *application) createMyEnvironment(w http.ResponseWriter, r *http.Reque
 // Personal space owner always has full access, so we always use ListConnections directly.
 func (app *application) listMyConnections(w http.ResponseWriter, r *http.Request) {
 	ws := contextGetWorkspace(r)
-	conns, err := app.db.ListConnections(context.Background(), ws.ID)
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"name":       "name",
+		"created_at": "created_at",
+		"driver":     "driver",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	params := database.ListConnectionsParams{
+		WorkspaceID: ws.ID,
+		Search:      q.Search,
+		Driver:      strings.TrimSpace(r.URL.Query().Get("driver")),
+		AccessMode:  strings.TrimSpace(r.URL.Query().Get("access_mode")),
+		Sort:        q.Sort,
+		Order:       q.Order,
+		Page:        q.Page,
+		PageSize:    q.PageSize,
+	}
+	if params.AccessMode != "" && params.AccessMode != "open" && params.AccessMode != "restricted" {
+		app.failedValidation(w, r, fieldErrors(map[string]string{"access_mode": "must be open or restricted"}))
+		return
+	}
+	if rawEnvID := strings.TrimSpace(r.URL.Query().Get("environment_id")); rawEnvID != "" {
+		envID, err := strconv.ParseInt(rawEnvID, 10, 64)
+		if err != nil || envID < 1 {
+			app.failedValidation(w, r, fieldErrors(map[string]string{"environment_id": "must be a positive integer"}))
+			return
+		}
+		params.EnvironmentID = &envID
+	}
+
+	conns, err := app.db.ListConnectionsPage(context.Background(), params)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
