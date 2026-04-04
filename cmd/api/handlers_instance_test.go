@@ -237,6 +237,46 @@ func TestListInstanceAdminsRequiresAuth(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
 }
 
+func TestListOrganizations(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+	send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{"name": "Alpha Team"}, adminTok), app.routes())
+	send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{"name": "Zeta Labs"}, adminTok), app.routes())
+
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/orgs?q=zeta&slug=zeta-labs&sort=name&order=desc&page=1&page_size=1", nil, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	if err := json.Unmarshal(res.BodyBytes, &payload); err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 1)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["name"], "Zeta Labs")
+}
+
+func TestListOrganizationsRequiresInstanceAdmin(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+	registerTestUser(t, app, "regular@example.com", "Regular", "securepass99")
+	loginRes := loginTestUser(t, app, "regular@example.com", "securepass99")
+	tok := extractAccessToken(t, loginRes)
+
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/orgs", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+}
+
 func TestAddInstanceAdmin(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

@@ -138,6 +138,36 @@ func (app *application) listInstanceAdmins(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+func (app *application) listOrganizations(w http.ResponseWriter, r *http.Request) {
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"name":       "name",
+		"slug":       "slug",
+		"created_at": "created_at",
+	})
+	slug := r.URL.Query().Get("slug")
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	orgs, err := app.db.ListOrganizationsPage(r.Context(), database.ListOrganizationsParams{
+		Search:   q.Search,
+		Slug:     slug,
+		Sort:     q.Sort,
+		Order:    q.Order,
+		Page:     q.Page,
+		PageSize: q.PageSize,
+	})
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	err = response.JSON(w, http.StatusOK, orgs)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 // addInstanceAdmin handles POST /api/v1/instance/admins.
 // Grants instance admin status to an existing account (looked up by email).
 func (app *application) addInstanceAdmin(w http.ResponseWriter, r *http.Request) {

@@ -72,6 +72,15 @@ type ListAccountOrgsParams struct {
 	PageSize  int
 }
 
+type ListOrganizationsParams struct {
+	Search   string
+	Slug     string
+	Sort     string
+	Order    string
+	Page     int
+	PageSize int
+}
+
 func (db *DB) InsertOrg(ctx context.Context, slug, name string) (Organization, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -219,6 +228,29 @@ func (db *DB) GetAccountOrgs(ctx context.Context, accountID int64) ([]Organizati
 	return orgs, err
 }
 
+func (db *DB) ListOrganizationsPage(ctx context.Context, params ListOrganizationsParams) (response.Paginated[Organization], error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	params = normalizeOrganizationParams(params)
+
+	query := db.NewSelect().Model((*Organization)(nil))
+	if params.Search != "" {
+		search := "%" + strings.ToLower(params.Search) + "%"
+		query = query.Where("(LOWER(name) LIKE ? OR LOWER(slug) LIKE ?)", search, search)
+	}
+	if params.Slug != "" {
+		query = query.Where("slug = ?", params.Slug)
+	}
+
+	var orgs []Organization
+	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", organizationSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx, &orgs)
+	if err != nil {
+		return response.Paginated[Organization]{}, err
+	}
+	return response.PaginateItems(orgs, params.Page, params.PageSize), nil
+}
+
 func (db *DB) ListAccountOrgsPage(ctx context.Context, params ListAccountOrgsParams) (response.Paginated[Organization], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -290,6 +322,31 @@ func normalizeAccountOrgParams(params ListAccountOrgsParams) ListAccountOrgsPara
 	return params
 }
 
+func normalizeOrganizationParams(params ListOrganizationsParams) ListOrganizationsParams {
+	if params.Sort == "" {
+		params.Sort = "name"
+	}
+	switch params.Sort {
+	case "name", "slug", "created_at":
+	default:
+		params.Sort = "name"
+	}
+	switch params.Order {
+	case "asc", "desc":
+	default:
+		params.Order = "asc"
+	}
+	params.Search = strings.TrimSpace(params.Search)
+	params.Slug = strings.TrimSpace(params.Slug)
+	if params.Page < 1 {
+		params.Page = 1
+	}
+	if params.PageSize < 1 {
+		params.PageSize = 25
+	}
+	return params
+}
+
 func orgMemberSortColumn(sort string) string {
 	switch sort {
 	case "email":
@@ -309,6 +366,17 @@ func accountOrgSortColumn(sort string) string {
 		return "organization.created_at"
 	default:
 		return "organization.name"
+	}
+}
+
+func organizationSortColumn(sort string) string {
+	switch sort {
+	case "slug":
+		return "slug"
+	case "created_at":
+		return "created_at"
+	default:
+		return "name"
 	}
 }
 
