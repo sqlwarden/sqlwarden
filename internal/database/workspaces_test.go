@@ -29,12 +29,17 @@ func TestWorkspaceCRUD(t *testing.T) {
 		t.Fatalf("name mismatch: %s", found.Name)
 	}
 
-	wss, err := db.ListWorkspacesByOwner(context.Background(), "org", org.ID)
+	wss, err := db.ListWorkspacesPage(context.Background(), ListWorkspacesParams{
+		OwnerType: "org",
+		OwnerID:   org.ID,
+		Page:      1,
+		PageSize:  25,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(wss) != 1 {
-		t.Fatalf("expected 1 workspace, got %d", len(wss))
+	if len(wss.Items) != 1 {
+		t.Fatalf("expected 1 workspace, got %d", len(wss.Items))
 	}
 
 	err = db.UpdateWorkspace(context.Background(), ws.ID, "Production Updated", "updated description")
@@ -77,13 +82,14 @@ func TestListWorkspaces_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	}
 
 	result, err := db.ListWorkspacesPage(context.Background(), ListWorkspacesParams{
-		OrgID:    org.ID,
-		Search:   "data",
-		Name:     "Data Lake",
-		Sort:     "name",
-		Order:    "asc",
-		Page:     1,
-		PageSize: 1,
+		OwnerType: "org",
+		OwnerID:   org.ID,
+		Search:    "data",
+		Name:      "Data Lake",
+		Sort:      "name",
+		Order:     "asc",
+		Page:      1,
+		PageSize:  1,
 	})
 	if err != nil {
 		t.Fatal(err)

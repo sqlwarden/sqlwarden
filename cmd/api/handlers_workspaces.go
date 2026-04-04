@@ -29,13 +29,14 @@ func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	)
 	if app.config.desktopMode {
 		result, err = app.db.ListWorkspacesPage(r.Context(), database.ListWorkspacesParams{
-			OrgID:    org.ID,
-			Search:   q.Search,
-			Name:     name,
-			Sort:     q.Sort,
-			Order:    q.Order,
-			Page:     q.Page,
-			PageSize: q.PageSize,
+			OwnerType: "org",
+			OwnerID:   org.ID,
+			Search:    q.Search,
+			Name:      name,
+			Sort:      q.Sort,
+			Order:     q.Order,
+			Page:      q.Page,
+			PageSize:  q.PageSize,
 		})
 	} else {
 		account := contextGetAccount(r)

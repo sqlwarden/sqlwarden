@@ -27,16 +27,22 @@ func (app *application) listMyWorkspaces(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	wss, err := app.db.ListWorkspacesByOwner(r.Context(), "space", account.ID)
+	wss, err := app.db.ListWorkspacesPage(r.Context(), database.ListWorkspacesParams{
+		OwnerType: "space",
+		OwnerID:   account.ID,
+		Search:    q.Search,
+		Name:      name,
+		Sort:      q.Sort,
+		Order:     q.Order,
+		Page:      q.Page,
+		PageSize:  q.PageSize,
+	})
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	wss = filterAccessibleWorkspaces(wss, q.Search, name, q.Sort, q.Order)
-	result := response.PaginateItems(wss, q.Page, q.PageSize)
-
-	err = response.JSON(w, http.StatusOK, result)
+	err = response.JSON(w, http.StatusOK, wss)
 	if err != nil {
 		app.serverError(w, r, err)
 	}

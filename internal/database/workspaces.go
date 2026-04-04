@@ -23,13 +23,14 @@ type Workspace struct {
 }
 
 type ListWorkspacesParams struct {
-	OrgID    int64
-	Search   string
-	Name     string
-	Sort     string
-	Order    string
-	Page     int
-	PageSize int
+	OwnerType string
+	OwnerID   int64
+	Search    string
+	Name      string
+	Sort      string
+	Order     string
+	Page      int
+	PageSize  int
 }
 
 func (db *DB) InsertWorkspace(ctx context.Context, orgID *int64, ownerType string, ownerID int64, name, description string) (Workspace, error) {
@@ -83,18 +84,6 @@ func (db *DB) GetWorkspace(ctx context.Context, id int64) (Workspace, bool, erro
 	return ws, true, nil
 }
 
-func (db *DB) ListWorkspacesByOwner(ctx context.Context, ownerType string, ownerID int64) ([]Workspace, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
-	var wss []Workspace
-	err := db.NewSelect().Model(&wss).
-		Where("owner_type = ? AND owner_id = ?", ownerType, ownerID).
-		OrderExpr("name ASC").
-		Scan(ctx)
-	return wss, err
-}
-
 func (db *DB) ListWorkspacesPage(ctx context.Context, params ListWorkspacesParams) (response.Paginated[Workspace], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -102,7 +91,7 @@ func (db *DB) ListWorkspacesPage(ctx context.Context, params ListWorkspacesParam
 	params = normalizeWorkspaceListParams(params)
 
 	query := db.NewSelect().Model((*Workspace)(nil)).
-		Where("owner_type = 'org' AND owner_id = ?", params.OrgID)
+		Where("owner_type = ? AND owner_id = ?", params.OwnerType, params.OwnerID)
 	if params.Search != "" {
 		search := "%" + strings.ToLower(params.Search) + "%"
 		query = query.Where("LOWER(name) LIKE ?", search)
@@ -222,6 +211,9 @@ func (db *DB) DeleteWorkspace(ctx context.Context, id int64) error {
 }
 
 func normalizeWorkspaceListParams(params ListWorkspacesParams) ListWorkspacesParams {
+	if params.OwnerType == "" {
+		params.OwnerType = "org"
+	}
 	if params.Sort == "" {
 		params.Sort = "name"
 	}
