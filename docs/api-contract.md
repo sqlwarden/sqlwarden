@@ -38,7 +38,9 @@ Response fields:
 - `order`
 - `q`
 
-## Connections List
+## List Endpoints
+
+### Connections
 
 `GET /api/v1/orgs/{org_slug}/workspaces/{ws_id}/connections` returns:
 
@@ -58,7 +60,7 @@ Supported query parameters:
 - `driver`
 - `access_mode`
 
-## Workspace Policy List
+### Workspace Policies
 
 `GET /api/v1/orgs/{org_slug}/workspaces/{ws_id}/policies` returns:
 
@@ -83,15 +85,24 @@ Each item includes UI-renderable subject and resource metadata:
 - `role_id`
 - `role_name`
 
-## Org Members And Teams
+### Org Members And Teams
 
 - `GET /api/v1/orgs/{org_slug}/members` supports `q`, `sort`, and `order`
 - `GET /api/v1/orgs/{org_slug}/teams` supports `q`, `sort`, and `order`
 
-## Workspaces And Environments
+### Workspaces And Environments
 
 - `GET /api/v1/orgs/{org_slug}/workspaces` supports `q`, `sort`, and `order`
 - `GET /api/v1/orgs/{org_slug}/workspaces/{ws_id}/environments` supports `sort` and `order`
+
+## Search / Filter / Sort / Pagination
+
+- org members: search and sort
+- teams: search and sort
+- workspaces: search and sort
+- environments: sort
+- connections: pagination, search, environment filter, driver filter, access-mode filter, and sort
+- workspace policies: pagination, search, subject/resource filtering, permission filtering, and sort
 
 ## Mutability
 
