@@ -88,7 +88,7 @@ func (db *DB) GetEnvironment(ctx context.Context, id int64) (Environment, bool, 
 	return env, true, nil
 }
 
-func (db *DB) listEnvironmentsFiltered(ctx context.Context, params ListEnvironmentsParams) ([]Environment, error) {
+func (db *DB) ListEnvironmentsPage(ctx context.Context, params ListEnvironmentsParams) (response.Paginated[Environment], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -107,11 +107,6 @@ func (db *DB) listEnvironmentsFiltered(ctx context.Context, params ListEnvironme
 	var envs []Environment
 	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", environmentSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).
 		Scan(ctx, &envs)
-	return envs, err
-}
-
-func (db *DB) ListEnvironmentsPage(ctx context.Context, params ListEnvironmentsParams) (response.Paginated[Environment], error) {
-	envs, err := db.listEnvironmentsFiltered(ctx, params)
 	if err != nil {
 		return response.Paginated[Environment]{}, err
 	}

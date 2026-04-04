@@ -95,7 +95,7 @@ func (db *DB) ListWorkspacesByOwner(ctx context.Context, ownerType string, owner
 	return wss, err
 }
 
-func (db *DB) listWorkspacesFiltered(ctx context.Context, params ListWorkspacesParams) ([]Workspace, error) {
+func (db *DB) ListWorkspacesPage(ctx context.Context, params ListWorkspacesParams) (response.Paginated[Workspace], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -113,11 +113,6 @@ func (db *DB) listWorkspacesFiltered(ctx context.Context, params ListWorkspacesP
 
 	var workspaces []Workspace
 	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", workspaceSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx, &workspaces)
-	return workspaces, err
-}
-
-func (db *DB) ListWorkspacesPage(ctx context.Context, params ListWorkspacesParams) (response.Paginated[Workspace], error) {
-	workspaces, err := db.listWorkspacesFiltered(ctx, params)
 	if err != nil {
 		return response.Paginated[Workspace]{}, err
 	}
