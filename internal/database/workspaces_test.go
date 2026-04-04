@@ -62,3 +62,33 @@ func TestWorkspaceCRUD(t *testing.T) {
 		t.Fatal("expected workspace to be deleted")
 	}
 }
+
+func TestListWorkspaces_SupportsSearchAndSort(t *testing.T) {
+	db := newTestDB(t)
+
+	org, err := db.InsertOrg(context.Background(), "ws-search-org", "WS Search Org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Data Lake", "Analytics"} {
+		if _, err := db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, name, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	workspaces, err := db.ListWorkspacesFiltered(context.Background(), ListWorkspacesParams{
+		OrgID:  org.ID,
+		Search: "data",
+		Sort:   "name",
+		Order:  "asc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaces) != 1 {
+		t.Fatalf("expected 1 workspace, got %d", len(workspaces))
+	}
+	if workspaces[0].Name != "Data Lake" {
+		t.Fatalf("expected Data Lake, got %s", workspaces[0].Name)
+	}
+}

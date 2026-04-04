@@ -39,6 +39,29 @@ func TestCreateAndListWorkspaces(t *testing.T) {
 	assert.Equal(t, workspaces[0]["name"].(string), "Production")
 }
 
+func TestListWorkspaces_SupportsSearchAndSort(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "workspace-list-owner"), "Workspace Owner", "securepass99")
+
+	for _, workspace := range []map[string]any{
+		{"name": "Data Lake"},
+		{"name": "Analytics"},
+	} {
+		res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces", workspace, tok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusCreated)
+	}
+
+	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/workspaces?q=data&sort=name&order=asc", tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var workspaces []map[string]any
+	decodeJSONResponse(t, res.BodyBytes, &workspaces)
+	assert.Equal(t, len(workspaces), 1)
+	assert.Equal(t, workspaces[0]["name"], "Data Lake")
+}
+
 func TestGetAndDeleteWorkspace(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

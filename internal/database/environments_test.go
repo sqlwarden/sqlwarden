@@ -63,3 +63,36 @@ func TestEnvironmentCRUD(t *testing.T) {
 		t.Fatal("expected environment to be deleted")
 	}
 }
+
+func TestListEnvironments_SupportsSort(t *testing.T) {
+	db := newTestDB(t)
+
+	org, err := db.InsertOrg(context.Background(), "env-sort-org", "Env Sort Org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "Main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"staging", "dev", "prod"} {
+		if _, err := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, name, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	envs, err := db.ListEnvironmentsFiltered(context.Background(), ListEnvironmentsParams{
+		WorkspaceID: ws.ID,
+		Sort:        "name",
+		Order:       "asc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 3 {
+		t.Fatalf("expected 3 environments, got %d", len(envs))
+	}
+	if envs[0].Name != "dev" || envs[1].Name != "prod" || envs[2].Name != "staging" {
+		t.Fatalf("unexpected environment order: %+v", envs)
+	}
+}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -16,6 +18,13 @@ type Workspace struct {
 	Description string    `bun:",nullzero"         json:"description,omitempty"`
 	CreatedAt   time.Time `bun:",notnull"          json:"created_at"`
 	UpdatedAt   time.Time `bun:",notnull"          json:"updated_at"`
+}
+
+type ListWorkspacesParams struct {
+	OrgID  int64
+	Search string
+	Sort   string
+	Order  string
 }
 
 func (db *DB) InsertWorkspace(ctx context.Context, orgID *int64, ownerType string, ownerID int64, name, description string) (Workspace, error) {
@@ -79,6 +88,24 @@ func (db *DB) ListWorkspacesByOwner(ctx context.Context, ownerType string, owner
 		OrderExpr("name ASC").
 		Scan(ctx)
 	return wss, err
+}
+
+func (db *DB) ListWorkspacesFiltered(ctx context.Context, params ListWorkspacesParams) ([]Workspace, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	params = normalizeWorkspaceListParams(params)
+
+	query := db.NewSelect().Model((*Workspace)(nil)).
+		Where("owner_type = 'org' AND owner_id = ?", params.OrgID)
+	if params.Search != "" {
+		search := "%" + strings.ToLower(params.Search) + "%"
+		query = query.Where("LOWER(name) LIKE ?", search)
+	}
+
+	var workspaces []Workspace
+	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", workspaceSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx, &workspaces)
+	return workspaces, err
 }
 
 // ListAccessibleWorkspaces returns workspaces within orgID that accountID has any binding on,
@@ -181,4 +208,31 @@ func (db *DB) DeleteWorkspace(ctx context.Context, id int64) error {
 			id, id, id).
 		Exec(ctx)
 	return err
+}
+
+func normalizeWorkspaceListParams(params ListWorkspacesParams) ListWorkspacesParams {
+	if params.Sort == "" {
+		params.Sort = "name"
+	}
+	switch params.Sort {
+	case "name", "created_at":
+	default:
+		params.Sort = "name"
+	}
+	switch params.Order {
+	case "asc", "desc":
+	default:
+		params.Order = "asc"
+	}
+	params.Search = strings.TrimSpace(params.Search)
+	return params
+}
+
+func workspaceSortColumn(sort string) string {
+	switch sort {
+	case "created_at":
+		return "created_at"
+	default:
+		return "name"
+	}
 }

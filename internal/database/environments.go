@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -17,6 +19,12 @@ type Environment struct {
 	Description string    `bun:",nullzero"         json:"description,omitempty"`
 	CreatedAt   time.Time `bun:",notnull"          json:"created_at"`
 	UpdatedAt   time.Time `bun:",notnull"          json:"updated_at"`
+}
+
+type ListEnvironmentsParams struct {
+	WorkspaceID int64
+	Sort        string
+	Order       string
 }
 
 func (db *DB) InsertEnvironment(ctx context.Context, workspaceID int64, orgID *int64, ownerType string, ownerID int64, name, description string) (Environment, error) {
@@ -82,6 +90,20 @@ func (db *DB) ListEnvironments(ctx context.Context, workspaceID int64) ([]Enviro
 	err := db.NewSelect().Model(&envs).
 		Where("workspace_id = ?", workspaceID).
 		OrderExpr("name ASC").
+		Scan(ctx)
+	return envs, err
+}
+
+func (db *DB) ListEnvironmentsFiltered(ctx context.Context, params ListEnvironmentsParams) ([]Environment, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	params = normalizeEnvironmentListParams(params)
+
+	var envs []Environment
+	err := db.NewSelect().Model(&envs).
+		Where("workspace_id = ?", params.WorkspaceID).
+		OrderExpr(fmt.Sprintf("%s %s, id %s", environmentSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).
 		Scan(ctx)
 	return envs, err
 }
@@ -203,4 +225,30 @@ func (db *DB) DeleteEnvironment(ctx context.Context, id int64) error {
 		Where("child_type = 'connection' AND parent_type = 'environment' AND parent_id = ?", id).
 		Exec(ctx)
 	return err
+}
+
+func normalizeEnvironmentListParams(params ListEnvironmentsParams) ListEnvironmentsParams {
+	if params.Sort == "" {
+		params.Sort = "created_at"
+	}
+	switch params.Sort {
+	case "name", "created_at":
+	default:
+		params.Sort = "created_at"
+	}
+	switch params.Order {
+	case "asc", "desc":
+	default:
+		params.Order = "asc"
+	}
+	return params
+}
+
+func environmentSortColumn(sort string) string {
+	switch sort {
+	case "name":
+		return "name"
+	default:
+		return "created_at"
+	}
 }

@@ -2,6 +2,8 @@ package main
 
 import (
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/request"
@@ -11,16 +13,32 @@ import (
 
 func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"name":       "name",
+		"created_at": "created_at",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
 
 	var (
 		wss []database.Workspace
 		err error
 	)
 	if app.config.desktopMode {
-		wss, err = app.db.ListWorkspacesByOwner(r.Context(), "org", org.ID)
+		wss, err = app.db.ListWorkspacesFiltered(r.Context(), database.ListWorkspacesParams{
+			OrgID:  org.ID,
+			Search: q.Search,
+			Sort:   q.Sort,
+			Order:  q.Order,
+		})
 	} else {
 		account := contextGetAccount(r)
 		wss, err = app.db.ListAccessibleWorkspaces(r.Context(), account.ID, org.ID)
+		if err == nil {
+			wss = filterAccessibleWorkspaces(wss, q.Search, q.Sort, q.Order)
+		}
 	}
 	if err != nil {
 		app.serverError(w, r, err)
@@ -31,6 +49,50 @@ func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func filterAccessibleWorkspaces(workspaces []database.Workspace, search, sortBy, order string) []database.Workspace {
+	filtered := make([]database.Workspace, 0, len(workspaces))
+	search = strings.ToLower(strings.TrimSpace(search))
+
+	for _, workspace := range workspaces {
+		if search != "" && !strings.Contains(strings.ToLower(workspace.Name), search) {
+			continue
+		}
+		filtered = append(filtered, workspace)
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		cmp := compareWorkspace(filtered[i], filtered[j], sortBy)
+		if order == "desc" {
+			return cmp > 0
+		}
+		return cmp < 0
+	})
+	return filtered
+}
+
+func compareWorkspace(left, right database.Workspace, sortBy string) int {
+	switch sortBy {
+	case "created_at":
+		if !left.CreatedAt.Equal(right.CreatedAt) {
+			if left.CreatedAt.Before(right.CreatedAt) {
+				return -1
+			}
+			return 1
+		}
+	default:
+		if left.Name != right.Name {
+			return strings.Compare(left.Name, right.Name)
+		}
+	}
+	if left.ID < right.ID {
+		return -1
+	}
+	if left.ID > right.ID {
+		return 1
+	}
+	return 0
 }
 
 func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) {

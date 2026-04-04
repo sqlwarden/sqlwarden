@@ -101,6 +101,37 @@ func TestCreateEnvironmentDuplicateNameReturns422(t *testing.T) {
 	assert.Equal(t, create2.StatusCode, http.StatusUnprocessableEntity)
 }
 
+func TestListEnvironments_SupportsSort(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "env-list-owner"), "Env Owner", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Env List WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	for _, name := range []string{"staging", "dev", "prod"} {
+		res := send(t, newAuthRequest(t, http.MethodPost,
+			"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments",
+			map[string]any{"name": name}, tok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusCreated)
+	}
+
+	res := send(t, newOrgRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments?sort=name&order=asc", tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var envs []map[string]any
+	decodeJSONResponse(t, res.BodyBytes, &envs)
+	assert.Equal(t, len(envs), 3)
+	assert.Equal(t, envs[0]["name"], "dev")
+	assert.Equal(t, envs[1]["name"], "prod")
+	assert.Equal(t, envs[2]["name"], "staging")
+}
+
 func TestUpdateEnvironmentValidation(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

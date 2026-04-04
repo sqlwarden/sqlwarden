@@ -87,3 +87,8 @@ Each item includes UI-renderable subject and resource metadata:
 
 - `GET /api/v1/orgs/{org_slug}/members` supports `q`, `sort`, and `order`
 - `GET /api/v1/orgs/{org_slug}/teams` supports `q`, `sort`, and `order`
+
+## Workspaces And Environments
+
+- `GET /api/v1/orgs/{org_slug}/workspaces` supports `q`, `sort`, and `order`
+- `GET /api/v1/orgs/{org_slug}/workspaces/{ws_id}/environments` supports `sort` and `order`
