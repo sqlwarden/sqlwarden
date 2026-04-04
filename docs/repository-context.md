@@ -69,6 +69,8 @@ Main flow:
 Important access rule:
 - Org membership is the first access gate
 - RBAC never grants access to an org resource unless the account is in `org_members`
+- By design, an org member may read the org member list and the org team list without needing an extra resource-specific binding
+- In desktop mode, the product model is a single local super-user; desktop mode intentionally bypasses normal org/workspace/resource access filtering
 
 ### App database
 
