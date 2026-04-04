@@ -73,6 +73,41 @@ func TestCreateWorkspacePolicy_WrongWorkspaceResourceReturns404(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }
 
+func TestCreateWorkspacePolicy_UnknownPermissionReturns422(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "policy-perm-owner"), "Policy Owner", "Policy Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Workspace", "")
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies",
+		map[string]any{
+			"permissions":  []string{"bogus:perm"},
+			"subject_type": "account",
+			"subject_id":   owner.ID,
+		}, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "permissions")
+}
+
+func TestCreateWorkspacePolicy_MissingRoleReturns404(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "policy-role-owner"), "Policy Owner", "Policy Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Workspace", "")
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies",
+		map[string]any{
+			"role_id":      999999,
+			"subject_type": "account",
+			"subject_id":   owner.ID,
+		}, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
 func TestCreateWorkspaceRole_DuplicateNameReturns422(t *testing.T) {
 	t.Parallel()
 

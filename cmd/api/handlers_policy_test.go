@@ -130,3 +130,14 @@ func TestDeleteBuiltinRoleForbidden(t *testing.T) {
 		"/api/v1/orgs/"+slug+"/roles/"+builtinID, nil, tok), app.routes())
 	assert.Equal(t, delRes.StatusCode, http.StatusForbidden)
 }
+
+func TestDeleteRoleNotFoundReturns404(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "missing-role@example.com", "Missing Role", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+slug+"/roles/999999", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}

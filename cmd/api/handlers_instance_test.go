@@ -221,6 +221,16 @@ func TestAddInstanceAdmin(t *testing.T) {
 	assert.Equal(t, len(admins), 2)
 }
 
+func TestAddInstanceAdminDuplicateIsIdempotent(t *testing.T) {
+	app := newTestApp(t)
+
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/instance/admins",
+		map[string]any{"email": "admin@example.com"}, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+}
+
 func TestAddInstanceAdminUnknownEmail(t *testing.T) {
 	app := newTestApp(t)
 

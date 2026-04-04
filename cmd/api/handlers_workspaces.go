@@ -128,6 +128,10 @@ func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) 
 	account := contextGetAccount(r)
 	ws, err := app.db.InsertWorkspace(r.Context(), &org.ID, "org", org.ID, input.Name, input.Description)
 	if err != nil {
+		if isUniqueViolation(err) {
+			app.failedDuplicateField(w, r, "name", "a workspace with this name already exists in this organization")
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}

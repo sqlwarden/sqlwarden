@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -101,6 +102,11 @@ func (app *application) createMyEnvironment(w http.ResponseWriter, r *http.Reque
 	ws := contextGetWorkspace(r)
 	env, err := app.db.InsertEnvironment(r.Context(), ws.ID, nil, "space", ws.OwnerID, input.Name, input.Description)
 	if err != nil {
+		if isUniqueViolation(err) {
+			input.V.AddFieldError("name", "an environment with this name already exists in this workspace")
+			app.failedValidation(w, r, input.V)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}
@@ -147,6 +153,11 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 	input.V.CheckField(input.Name != "", "name", "name is required")
 	input.V.CheckField(input.Driver != "", "driver", "driver is required")
 	input.V.CheckField(input.DSN != "", "dsn", "dsn is required")
+	if input.Driver != "" {
+		if _, err := driver.New(input.Driver); err != nil {
+			input.V.CheckField(false, "driver", "must be a supported driver")
+		}
+	}
 	if input.AccessMode == "" {
 		input.AccessMode = "open"
 	}
@@ -182,6 +193,10 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 		input.Name, input.Driver, dsnEncrypted, input.AccessMode,
 	)
 	if err != nil {
+		if isForeignKeyViolation(err) {
+			app.notFound(w, r)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}

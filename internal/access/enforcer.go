@@ -322,7 +322,7 @@ func (e *Enforcer) SeedWorkspace(ctx context.Context, orgID, workspaceID, creato
 func (e *Enforcer) CreateRole(ctx context.Context, orgID int64, workspaceID *int64, name, description, scopeType string, permissions []string) (int64, error) {
 	for _, p := range permissions {
 		if !ValidForScope(p, scopeType) {
-			return 0, fmt.Errorf("permission %q is not valid for scope %q", p, scopeType)
+			return 0, fmt.Errorf("%w: permission %q is not valid for scope %q", ErrInvalidScopePermission, p, scopeType)
 		}
 	}
 
@@ -355,10 +355,13 @@ func (e *Enforcer) DeleteRole(ctx context.Context, roleID, orgID int64) error {
 		Where("id = ? AND org_id = ?", roleID, orgID).
 		Scan(ctx, &isBuiltin)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrRoleNotFound
+		}
 		return err
 	}
 	if isBuiltin {
-		return errors.New("cannot delete a builtin role")
+		return ErrBuiltinRole
 	}
 
 	_, err = e.db.NewDelete().TableExpr("roles").Where("id = ?", roleID).Exec(ctx)
@@ -393,7 +396,7 @@ func (e *Enforcer) UnbindRole(ctx context.Context, bindingID, orgID int64) error
 // GrantPermission grants a direct permission binding to a subject at a resource.
 func (e *Enforcer) GrantPermission(ctx context.Context, orgID int64, permission, subjectType string, subjectID int64, resourceType string, resourceID int64, grantedBy int64) error {
 	if !ValidPermission(permission) {
-		return fmt.Errorf("unknown permission: %s", permission)
+		return fmt.Errorf("%w: %s", ErrUnknownPermission, permission)
 	}
 
 	pbm := map[string]interface{}{
@@ -422,7 +425,7 @@ func (e *Enforcer) GrantPermission(ctx context.Context, orgID int64, permission,
 func (e *Enforcer) GrantPermissions(ctx context.Context, orgID int64, permissions []string, subjectType string, subjectID int64, resourceType string, resourceID int64, grantedBy int64) error {
 	for _, p := range permissions {
 		if !ValidPermission(p) {
-			return fmt.Errorf("unknown permission: %s", p)
+			return fmt.Errorf("%w: %s", ErrUnknownPermission, p)
 		}
 	}
 	for _, p := range permissions {

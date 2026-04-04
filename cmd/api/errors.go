@@ -108,6 +108,19 @@ func isUniqueViolation(err error) bool {
 	return strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
+// isForeignKeyViolation returns true if err is a foreign-key constraint violation
+// from either the PostgreSQL (pgx) or SQLite driver.
+func isForeignKeyViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr pgdriver.Error
+	if errors.As(err, &pgErr) {
+		return pgErr.Field('C') == "23503"
+	}
+	return strings.Contains(err.Error(), "FOREIGN KEY constraint failed")
+}
+
 func (app *application) authenticationRequired(w http.ResponseWriter, r *http.Request) {
 	headers := make(http.Header)
 	headers.Set("WWW-Authenticate", "Bearer")

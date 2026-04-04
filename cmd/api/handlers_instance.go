@@ -54,12 +54,21 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 
 	account, err := app.db.InsertAccount(r.Context(), input.Email, input.Name, &hashedPassword)
 	if err != nil {
+		if isUniqueViolation(err) {
+			input.V.AddFieldError("email", "email address is already in use")
+			app.failedValidation(w, r, input.V)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}
 
 	err = app.db.InsertInstanceAdmin(r.Context(), account.ID)
 	if err != nil {
+		if isUniqueViolation(err) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}

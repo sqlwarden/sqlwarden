@@ -61,6 +61,10 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 	account := contextGetAccount(r)
 	err = app.db.AddOrgMember(r.Context(), org.ID, account.ID)
 	if err != nil {
+		if isUniqueViolation(err) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}

@@ -220,6 +220,14 @@ func (app *application) addTeamMember(w http.ResponseWriter, r *http.Request) {
 
 	err = app.db.AddTeamMember(context.Background(), team.ID, input.AccountID)
 	if err != nil {
+		if isUniqueViolation(err) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if isForeignKeyViolation(err) {
+			app.notFound(w, r)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}

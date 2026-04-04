@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -59,13 +60,22 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 	roleID, err := app.enforcer.CreateRole(r.Context(), org.ID, input.WorkspaceID, input.Name, input.Description, input.ScopeType, input.Permissions)
 	if err != nil {
+		if errors.Is(err, access.ErrInvalidScopePermission) || errors.Is(err, access.ErrUnknownPermission) {
+			input.V.AddFieldError("permissions", err.Error())
+			app.failedValidation(w, r, input.V)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}
 
 	role, found, err := app.db.GetRole(r.Context(), roleID, org.ID)
-	if err != nil || !found {
+	if err != nil {
 		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.notFound(w, r)
 		return
 	}
 
@@ -111,8 +121,12 @@ func (app *application) deleteRole(w http.ResponseWriter, r *http.Request) {
 
 	err = app.enforcer.DeleteRole(r.Context(), roleID, org.ID)
 	if err != nil {
-		if err.Error() == "cannot delete a builtin role" {
+		if errors.Is(err, access.ErrBuiltinRole) {
 			app.notPermitted(w, r)
+			return
+		}
+		if errors.Is(err, access.ErrRoleNotFound) {
+			app.notFound(w, r)
 			return
 		}
 		app.serverError(w, r, err)

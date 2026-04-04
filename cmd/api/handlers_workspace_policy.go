@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -56,6 +57,11 @@ func (app *application) createWorkspaceRole(w http.ResponseWriter, r *http.Reque
 
 	roleID, err := app.enforcer.CreateRole(r.Context(), org.ID, &ws.ID, input.Name, input.Description, "workspace", input.Permissions)
 	if err != nil {
+		if errors.Is(err, access.ErrInvalidScopePermission) || errors.Is(err, access.ErrUnknownPermission) {
+			input.V.AddFieldError("permissions", err.Error())
+			app.failedValidation(w, r, input.V)
+			return
+		}
 		if isUniqueViolation(err) {
 			app.failedDuplicateField(w, r, "name", "a role with this name already exists in this workspace")
 			return
@@ -65,8 +71,12 @@ func (app *application) createWorkspaceRole(w http.ResponseWriter, r *http.Reque
 	}
 
 	role, found, err := app.db.GetRole(r.Context(), roleID, org.ID)
-	if err != nil || !found {
+	if err != nil {
 		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.notFound(w, r)
 		return
 	}
 
@@ -126,8 +136,12 @@ func (app *application) deleteWorkspaceRole(w http.ResponseWriter, r *http.Reque
 
 	err = app.enforcer.DeleteRole(r.Context(), roleID, org.ID)
 	if err != nil {
-		if err.Error() == "cannot delete a builtin role" {
+		if errors.Is(err, access.ErrBuiltinRole) {
 			app.notPermitted(w, r)
+			return
+		}
+		if errors.Is(err, access.ErrRoleNotFound) {
+			app.notFound(w, r)
 			return
 		}
 		app.serverError(w, r, err)
@@ -230,6 +244,14 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 	ws := contextGetWorkspace(r)
 	grantor := contextGetAccount(r)
 
+	if ok, err := app.workspacePolicySubjectExists(r, org.ID, input.SubjectType, input.SubjectID); err != nil {
+		app.serverError(w, r, err)
+		return
+	} else if !ok {
+		app.notFound(w, r)
+		return
+	}
+
 	// Resolve and validate the target resource belongs to this workspace.
 	var resourceID int64
 	switch input.ResourceType {
@@ -260,11 +282,46 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 	}
 
 	if hasRole {
+		role, found, err := app.db.GetRole(r.Context(), input.RoleID, org.ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !found {
+			app.notFound(w, r)
+			return
+		}
+		switch input.ResourceType {
+		case "workspace":
+			if role.ScopeType != "workspace" {
+				v := validator.Validator{}
+				v.AddFieldError("role_id", "role scope must match resource type")
+				app.failedValidation(w, r, v)
+				return
+			}
+			if role.WorkspaceID != nil && *role.WorkspaceID != ws.ID {
+				app.notFound(w, r)
+				return
+			}
+		default:
+			if role.ScopeType != input.ResourceType {
+				v := validator.Validator{}
+				v.AddFieldError("role_id", "role scope must match resource type")
+				app.failedValidation(w, r, v)
+				return
+			}
+		}
 		err = app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, input.ResourceType, resourceID, grantor.ID)
 	} else {
 		err = app.enforcer.GrantPermissions(r.Context(), org.ID, input.Permissions, input.SubjectType, input.SubjectID, input.ResourceType, resourceID, grantor.ID)
 	}
 	if err != nil {
+		if errors.Is(err, access.ErrUnknownPermission) {
+			v := validator.Validator{}
+			v.AddFieldError("permissions", err.Error())
+			app.failedValidation(w, r, v)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}
@@ -350,6 +407,25 @@ func (app *application) resourceBelongsToWorkspace(r *http.Request, resourceType
 			return false, err
 		}
 		return found && conn.WorkspaceID == wsID, nil
+	default:
+		return false, nil
+	}
+}
+
+func (app *application) workspacePolicySubjectExists(r *http.Request, orgID int64, subjectType string, subjectID int64) (bool, error) {
+	switch subjectType {
+	case "account":
+		_, found, err := app.db.GetAccount(r.Context(), subjectID)
+		if err != nil || !found {
+			return found, err
+		}
+		return app.db.IsOrgMember(r.Context(), orgID, subjectID)
+	case "team":
+		team, found, err := app.db.GetTeamByID(r.Context(), subjectID)
+		if err != nil || !found {
+			return found, err
+		}
+		return team.OrgID == orgID, nil
 	default:
 		return false, nil
 	}

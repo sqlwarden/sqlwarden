@@ -130,6 +130,25 @@ func TestCreateConnectionAndGetExcludesDSN(t *testing.T) {
 	}
 }
 
+func TestCreateConnectionUnknownDriverReturns422(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-create-driver@example.com", "Conn Create Driver", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn Driver WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections",
+		map[string]any{"name": "Bad Driver", "driver": "oracle", "dsn": "ignored"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, createRes, "driver")
+}
+
 func TestListConnections(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -366,7 +385,7 @@ func TestExecuteQuerySessionAndValidationBranches(t *testing.T) {
 	selectErrReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT * FROM missing_table"}, ownerTok)
 	selectErrReq.Header.Set("X-Warden-Session", sessionID)
 	selectErrRes := send(t, selectErrReq, app.routes())
-	assert.Equal(t, selectErrRes.StatusCode, http.StatusInternalServerError)
+	assert.Equal(t, selectErrRes.StatusCode, http.StatusUnprocessableEntity)
 }
 
 func TestExecuteQueryExecuteBranch(t *testing.T) {
@@ -398,4 +417,31 @@ func TestExecuteQueryExecuteBranch(t *testing.T) {
 	execReq.Header.Set("X-Warden-Session", sessionID)
 	execRes := send(t, execReq, app.routes())
 	assert.Equal(t, execRes.StatusCode, http.StatusOK)
+}
+
+func TestConnectToDatabaseReturns422ForTargetDatabaseError(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-connect-fail@example.com", "Conn Connect Fail", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn Fail WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections",
+		map[string]any{
+			"name":   "Broken Postgres",
+			"driver": "postgres",
+			"dsn":    "host=localhost port=19999 user=test dbname=test sslmode=disable connect_timeout=1",
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/"+connID+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusUnprocessableEntity)
 }

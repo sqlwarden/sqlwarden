@@ -66,6 +66,11 @@ func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) 
 
 	account, err := app.db.InsertAccount(r.Context(), input.Email, input.Name, &hashedPW)
 	if err != nil {
+		if isUniqueViolation(err) {
+			input.V.AddFieldError("email", "email address is already in use")
+			app.failedValidation(w, r, input.V)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}

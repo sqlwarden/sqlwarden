@@ -192,6 +192,11 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 	input.V.CheckField(input.Name != "", "name", "name is required")
 	input.V.CheckField(input.Driver != "", "driver", "driver is required")
 	input.V.CheckField(input.DSN != "", "dsn", "dsn is required")
+	if input.Driver != "" {
+		if _, err := driver.New(input.Driver); err != nil {
+			input.V.CheckField(false, "driver", "must be a supported driver")
+		}
+	}
 	if input.AccessMode == "" {
 		input.AccessMode = "open"
 	}
@@ -281,7 +286,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 
 	dsnEncrypted, err := encrypt.Encrypt(app.encKey, input.DSN)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 		return
 	}
 
@@ -418,7 +423,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		return d, nil
 	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 		return
 	}
 
@@ -486,7 +491,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 
 		rs, err := session.Query(r.Context(), input.SQL)
 		if err != nil {
-			app.serverError(w, r, err)
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 			return
 		}
 
@@ -507,7 +512,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 
 		rs, err := session.Execute(r.Context(), input.SQL)
 		if err != nil {
-			app.serverError(w, r, err)
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 			return
 		}
 
