@@ -85,24 +85,92 @@ Each item includes UI-renderable subject and resource metadata:
 - `role_id`
 - `role_name`
 
-### Org Members And Teams
+### Org Members
 
-- `GET /api/v1/orgs/{org_slug}/members` supports `q`, `sort`, and `order`
-- `GET /api/v1/orgs/{org_slug}/teams` supports `q`, `sort`, and `order`
+`GET /api/v1/orgs/{org_slug}/members` returns:
 
-### Workspaces And Environments
+```json
+{
+  "items": [],
+  "page": 1,
+  "page_size": 25,
+  "total": 0
+}
+```
 
-- `GET /api/v1/orgs/{org_slug}/workspaces` supports `q`, `sort`, and `order`
-- `GET /api/v1/orgs/{org_slug}/workspaces/{ws_id}/environments` supports `sort` and `order`
+Supported query parameters:
+
+- shared list query parameters
+- `role`
+
+### Teams
+
+`GET /api/v1/orgs/{org_slug}/teams` returns:
+
+```json
+{
+  "items": [],
+  "page": 1,
+  "page_size": 25,
+  "total": 0
+}
+```
+
+Supported query parameters:
+
+- shared list query parameters
+- `slug`
+
+### Workspaces
+
+`GET /api/v1/orgs/{org_slug}/workspaces` returns:
+
+```json
+{
+  "items": [],
+  "page": 1,
+  "page_size": 25,
+  "total": 0
+}
+```
+
+Supported query parameters:
+
+- shared list query parameters
+- `name`
+
+### Environments
+
+`GET /api/v1/orgs/{org_slug}/workspaces/{ws_id}/environments` returns:
+
+```json
+{
+  "items": [],
+  "page": 1,
+  "page_size": 25,
+  "total": 0
+}
+```
+
+Supported query parameters:
+
+- shared list query parameters
+- `name`
 
 ## Search / Filter / Sort / Pagination
 
-- org members: search and sort
-- teams: search and sort
-- workspaces: search and sort
-- environments: sort
+- org members: pagination, search, role filter, and sort
+- teams: pagination, search, slug filter, and sort
+- workspaces: pagination, search, name filter, and sort
+- environments: pagination, search, name filter, and sort
 - connections: pagination, search, environment filter, driver filter, access-mode filter, and sort
 - workspace policies: pagination, search, subject/resource filtering, permission filtering, and sort
+
+## Future Resources
+
+- Future UI-facing list resources should use the same paginated response envelope.
+- Future list endpoints should accept the shared query parameters and add only resource-specific flat filters when needed.
+- Clients should be able to assume `items` is always an array and never `null`.
 
 ## Mutability
 

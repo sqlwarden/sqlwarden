@@ -595,15 +595,18 @@ func TestEnvScopedRoleFiltersEnvironmentList(t *testing.T) {
 	listRes := send(t, newAuthRequest(t, http.MethodGet, baseURL+"/environments", nil, memberTok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
 
-	var envs []map[string]any
+	var envs struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
 	if err := json.Unmarshal(listRes.BodyBytes, &envs); err != nil {
 		t.Fatal(err)
 	}
-	if len(envs) != 1 {
-		t.Fatalf("expected 1 accessible environment, got %d", len(envs))
+	if envs.Total != 1 {
+		t.Fatalf("expected 1 accessible environment, got %d", envs.Total)
 	}
-	if int64(envs[0]["id"].(float64)) != envAID {
-		t.Fatalf("expected env A (id=%d), got id=%v", envAID, envs[0]["id"])
+	if int64(envs.Items[0]["id"].(float64)) != envAID {
+		t.Fatalf("expected env A (id=%d), got id=%v", envAID, envs.Items[0]["id"])
 	}
 }
 

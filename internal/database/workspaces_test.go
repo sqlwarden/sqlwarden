@@ -63,7 +63,7 @@ func TestWorkspaceCRUD(t *testing.T) {
 	}
 }
 
-func TestListWorkspaces_SupportsSearchAndSort(t *testing.T) {
+func TestListWorkspaces_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	db := newTestDB(t)
 
 	org, err := db.InsertOrg(context.Background(), "ws-search-org", "WS Search Org")
@@ -76,19 +76,25 @@ func TestListWorkspaces_SupportsSearchAndSort(t *testing.T) {
 		}
 	}
 
-	workspaces, err := db.ListWorkspacesFiltered(context.Background(), ListWorkspacesParams{
-		OrgID:  org.ID,
-		Search: "data",
-		Sort:   "name",
-		Order:  "asc",
+	result, err := db.ListWorkspacesPage(context.Background(), ListWorkspacesParams{
+		OrgID:    org.ID,
+		Search:   "data",
+		Name:     "Data Lake",
+		Sort:     "name",
+		Order:    "asc",
+		Page:     1,
+		PageSize: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(workspaces) != 1 {
-		t.Fatalf("expected 1 workspace, got %d", len(workspaces))
+	if result.Total != 1 {
+		t.Fatalf("expected total=1, got %d", result.Total)
 	}
-	if workspaces[0].Name != "Data Lake" {
-		t.Fatalf("expected Data Lake, got %s", workspaces[0].Name)
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 workspace, got %d", len(result.Items))
+	}
+	if result.Items[0].Name != "Data Lake" {
+		t.Fatalf("expected Data Lake, got %s", result.Items[0].Name)
 	}
 }

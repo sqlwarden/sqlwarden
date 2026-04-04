@@ -31,16 +31,24 @@ func TestCreateAndListTeams(t *testing.T) {
 	res2 := send(t, req2, app.routes())
 	assert.Equal(t, res2.StatusCode, http.StatusOK)
 
-	var teams []map[string]any
-	err := json.Unmarshal(res2.BodyBytes, &teams)
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	err := json.Unmarshal(res2.BodyBytes, &payload)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, len(teams), 1)
-	assert.Equal(t, teams[0]["slug"].(string), "backend")
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 25)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["slug"].(string), "backend")
 }
 
-func TestListTeams_SupportsSearchAndSort(t *testing.T) {
+func TestListTeams_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
@@ -54,13 +62,22 @@ func TestListTeams_SupportsSearchAndSort(t *testing.T) {
 		assert.Equal(t, res.StatusCode, http.StatusCreated)
 	}
 
-	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams?q=ze&sort=name&order=desc", tok), app.routes())
+	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams?q=team&slug=zeta&sort=name&order=desc&page=1&page_size=1", tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	var teams []map[string]any
-	decodeJSONResponse(t, res.BodyBytes, &teams)
-	assert.Equal(t, len(teams), 1)
-	assert.Equal(t, teams[0]["name"], "Zeta Team")
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 1)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["name"], "Zeta Team")
+	assert.Equal(t, payload.Items[0]["slug"], "zeta")
 }
 
 func TestGetAndDeleteTeam(t *testing.T) {

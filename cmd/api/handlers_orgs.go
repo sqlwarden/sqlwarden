@@ -84,16 +84,23 @@ func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
 		"email":      "email",
 		"created_at": "joined_at",
 	})
+	role := strings.TrimSpace(r.URL.Query().Get("role"))
+	if role != "" && role != "owner" && role != "admin" && role != "member" {
+		errs["role"] = "must be owner, admin, or member"
+	}
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
 		return
 	}
 
-	members, err := app.db.ListOrgMembers(r.Context(), database.ListOrgMembersParams{
-		OrgID:  org.ID,
-		Search: q.Search,
-		Sort:   q.Sort,
-		Order:  q.Order,
+	members, err := app.db.ListOrgMembersPage(r.Context(), database.ListOrgMembersParams{
+		OrgID:    org.ID,
+		Search:   q.Search,
+		Role:     role,
+		Sort:     q.Sort,
+		Order:    q.Order,
+		Page:     q.Page,
+		PageSize: q.PageSize,
 	})
 	if err != nil {
 		app.serverError(w, r, err)

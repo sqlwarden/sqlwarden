@@ -30,36 +30,52 @@ func TestCreateAndListWorkspaces(t *testing.T) {
 	res2 := send(t, req2, app.routes())
 	assert.Equal(t, res2.StatusCode, http.StatusOK)
 
-	var workspaces []map[string]any
-	err := json.Unmarshal(res2.BodyBytes, &workspaces)
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	err := json.Unmarshal(res2.BodyBytes, &payload)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, len(workspaces), 1)
-	assert.Equal(t, workspaces[0]["name"].(string), "Production")
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 25)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["name"].(string), "Production")
 }
 
-func TestListWorkspaces_SupportsSearchAndSort(t *testing.T) {
+func TestListWorkspaces_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
 	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "workspace-list-owner"), "Workspace Owner", "securepass99")
 
 	for _, workspace := range []map[string]any{
-		{"name": "Data Lake"},
-		{"name": "Analytics"},
+		{"name": "Data Lake", "description": "Lake"},
+		{"name": "Analytics", "description": "BI"},
 	} {
 		res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces", workspace, tok), app.routes())
 		assert.Equal(t, res.StatusCode, http.StatusCreated)
 	}
 
-	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/workspaces?q=data&sort=name&order=asc", tok), app.routes())
+	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/workspaces?q=data&name=Data%20Lake&sort=name&order=asc&page=1&page_size=1", tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	var workspaces []map[string]any
-	decodeJSONResponse(t, res.BodyBytes, &workspaces)
-	assert.Equal(t, len(workspaces), 1)
-	assert.Equal(t, workspaces[0]["name"], "Data Lake")
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 1)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["name"], "Data Lake")
 }
 
 func TestGetAndDeleteWorkspace(t *testing.T) {

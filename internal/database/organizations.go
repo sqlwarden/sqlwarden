@@ -53,10 +53,13 @@ type OrgMemberListItem struct {
 }
 
 type ListOrgMembersParams struct {
-	OrgID  int64
-	Search string
-	Sort   string
-	Order  string
+	OrgID    int64
+	Search   string
+	Role     string
+	Sort     string
+	Order    string
+	Page     int
+	PageSize int
 }
 
 func (db *DB) InsertOrg(ctx context.Context, slug, name string) (Organization, error) {
@@ -164,6 +167,10 @@ WHERE om.org_id = ?`
 		search := "%" + strings.ToLower(params.Search) + "%"
 		args = append(args, search, search)
 	}
+	if params.Role != "" {
+		query += " AND EXISTS (SELECT 1 FROM roles r JOIN role_bindings rb_role ON rb_role.role_id = r.id WHERE rb_role.org_id = om.org_id AND rb_role.subject_type = 'account' AND rb_role.subject_id = om.account_id AND rb_role.resource_type = 'org' AND rb_role.resource_id = om.org_id AND r.name = ?)"
+		args = append(args, params.Role)
+	}
 
 	query += fmt.Sprintf(`
 GROUP BY om.org_id, om.account_id, a.email, a.name, om.joined_at
@@ -172,6 +179,14 @@ ORDER BY %s %s, om.account_id %s`, orgMemberSortColumn(params.Sort), strings.ToU
 	var items []OrgMemberListItem
 	err := db.NewRaw(query, args...).Scan(ctx, &items)
 	return items, err
+}
+
+func (db *DB) ListOrgMembersPage(ctx context.Context, params ListOrgMembersParams) (PaginatedResult[OrgMemberListItem], error) {
+	items, err := db.ListOrgMembers(ctx, params)
+	if err != nil {
+		return PaginatedResult[OrgMemberListItem]{}, err
+	}
+	return PaginateItems(items, params.Page, params.PageSize), nil
 }
 
 func (db *DB) IsOrgMember(ctx context.Context, orgID, accountID int64) (bool, error) {
@@ -209,6 +224,13 @@ func normalizeOrgMemberParams(params ListOrgMembersParams) ListOrgMembersParams 
 		params.Order = "asc"
 	}
 	params.Search = strings.TrimSpace(params.Search)
+	params.Role = strings.TrimSpace(params.Role)
+	if params.Page < 1 {
+		params.Page = 1
+	}
+	if params.PageSize < 1 {
+		params.PageSize = 25
+	}
 	return params
 }
 

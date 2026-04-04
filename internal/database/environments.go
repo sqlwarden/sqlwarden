@@ -23,8 +23,12 @@ type Environment struct {
 
 type ListEnvironmentsParams struct {
 	WorkspaceID int64
+	Search      string
+	Name        string
 	Sort        string
 	Order       string
+	Page        int
+	PageSize    int
 }
 
 func (db *DB) InsertEnvironment(ctx context.Context, workspaceID int64, orgID *int64, ownerType string, ownerID int64, name, description string) (Environment, error) {
@@ -100,12 +104,28 @@ func (db *DB) ListEnvironmentsFiltered(ctx context.Context, params ListEnvironme
 
 	params = normalizeEnvironmentListParams(params)
 
+	query := db.NewSelect().Model((*Environment)(nil)).
+		Where("workspace_id = ?", params.WorkspaceID)
+	if params.Search != "" {
+		search := "%" + strings.ToLower(params.Search) + "%"
+		query = query.Where("LOWER(name) LIKE ?", search)
+	}
+	if params.Name != "" {
+		query = query.Where("name = ?", params.Name)
+	}
+
 	var envs []Environment
-	err := db.NewSelect().Model(&envs).
-		Where("workspace_id = ?", params.WorkspaceID).
-		OrderExpr(fmt.Sprintf("%s %s, id %s", environmentSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).
-		Scan(ctx)
+	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", environmentSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).
+		Scan(ctx, &envs)
 	return envs, err
+}
+
+func (db *DB) ListEnvironmentsPage(ctx context.Context, params ListEnvironmentsParams) (PaginatedResult[Environment], error) {
+	envs, err := db.ListEnvironmentsFiltered(ctx, params)
+	if err != nil {
+		return PaginatedResult[Environment]{}, err
+	}
+	return PaginateItems(envs, params.Page, params.PageSize), nil
 }
 
 // ListAccessibleEnvironments returns environments in workspaceID that accountID has any binding on,
@@ -240,6 +260,14 @@ func normalizeEnvironmentListParams(params ListEnvironmentsParams) ListEnvironme
 	case "asc", "desc":
 	default:
 		params.Order = "asc"
+	}
+	params.Search = strings.TrimSpace(params.Search)
+	params.Name = strings.TrimSpace(params.Name)
+	if params.Page < 1 {
+		params.Page = 1
+	}
+	if params.PageSize < 1 {
+		params.PageSize = 25
 	}
 	return params
 }

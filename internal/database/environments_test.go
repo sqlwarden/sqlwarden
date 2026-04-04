@@ -64,7 +64,7 @@ func TestEnvironmentCRUD(t *testing.T) {
 	}
 }
 
-func TestListEnvironments_SupportsSort(t *testing.T) {
+func TestListEnvironments_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	db := newTestDB(t)
 
 	org, err := db.InsertOrg(context.Background(), "env-sort-org", "Env Sort Org")
@@ -81,18 +81,25 @@ func TestListEnvironments_SupportsSort(t *testing.T) {
 		}
 	}
 
-	envs, err := db.ListEnvironmentsFiltered(context.Background(), ListEnvironmentsParams{
+	result, err := db.ListEnvironmentsPage(context.Background(), ListEnvironmentsParams{
 		WorkspaceID: ws.ID,
+		Search:      "pro",
+		Name:        "prod",
 		Sort:        "name",
 		Order:       "asc",
+		Page:        1,
+		PageSize:    1,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(envs) != 3 {
-		t.Fatalf("expected 3 environments, got %d", len(envs))
+	if result.Total != 1 {
+		t.Fatalf("expected total=1, got %d", result.Total)
 	}
-	if envs[0].Name != "dev" || envs[1].Name != "prod" || envs[2].Name != "staging" {
-		t.Fatalf("unexpected environment order: %+v", envs)
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 environment, got %d", len(result.Items))
+	}
+	if result.Items[0].Name != "prod" {
+		t.Fatalf("unexpected environment payload: %+v", result.Items[0])
 	}
 }

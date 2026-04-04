@@ -25,10 +25,13 @@ type TeamMember struct {
 }
 
 type ListTeamsParams struct {
-	OrgID  int64
-	Search string
-	Sort   string
-	Order  string
+	OrgID    int64
+	Search   string
+	Slug     string
+	Sort     string
+	Order    string
+	Page     int
+	PageSize int
 }
 
 func (db *DB) InsertTeam(ctx context.Context, orgID int64, slug, name string) (Team, error) {
@@ -93,10 +96,21 @@ func (db *DB) ListTeamsFiltered(ctx context.Context, params ListTeamsParams) ([]
 		search := "%" + strings.ToLower(params.Search) + "%"
 		query = query.Where("(LOWER(name) LIKE ? OR LOWER(slug) LIKE ?)", search, search)
 	}
+	if params.Slug != "" {
+		query = query.Where("slug = ?", params.Slug)
+	}
 
 	var teams []Team
 	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", teamSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx, &teams)
 	return teams, err
+}
+
+func (db *DB) ListTeamsPage(ctx context.Context, params ListTeamsParams) (PaginatedResult[Team], error) {
+	teams, err := db.ListTeamsFiltered(ctx, params)
+	if err != nil {
+		return PaginatedResult[Team]{}, err
+	}
+	return PaginateItems(teams, params.Page, params.PageSize), nil
 }
 
 func (db *DB) DeleteTeam(ctx context.Context, id, orgID int64) error {
@@ -173,6 +187,13 @@ func normalizeTeamListParams(params ListTeamsParams) ListTeamsParams {
 		params.Order = "asc"
 	}
 	params.Search = strings.TrimSpace(params.Search)
+	params.Slug = strings.TrimSpace(params.Slug)
+	if params.Page < 1 {
+		params.Page = 1
+	}
+	if params.PageSize < 1 {
+		params.PageSize = 25
+	}
 	return params
 }
 

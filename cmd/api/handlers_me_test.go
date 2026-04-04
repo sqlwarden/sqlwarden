@@ -192,11 +192,13 @@ func TestPersonalWorkspaceNotVisibleInOrgWorkspaceList(t *testing.T) {
 		"/api/v1/orgs/"+orgSlug+"/workspaces", nil, tok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
 
-	var wss []map[string]any
-	if err := json.Unmarshal(listRes.BodyBytes, &wss); err != nil {
+	var payload struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(listRes.BodyBytes, &payload); err != nil {
 		t.Fatal(err)
 	}
-	for _, ws := range wss {
+	for _, ws := range payload.Items {
 		if ws["name"].(string) == "Personal WS" {
 			t.Fatal("personal workspace should not appear in org workspace list")
 		}

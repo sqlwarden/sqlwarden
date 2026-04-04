@@ -117,7 +117,7 @@ func TestGetOrgMembers(t *testing.T) {
 	}
 }
 
-func TestListOrgMembers_SupportsSearchAndSort(t *testing.T) {
+func TestListOrgMembers_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	for _, driver := range testDrivers() {
 		t.Run(driver, func(t *testing.T) {
 			db := newTestDB(t, driver)
@@ -142,20 +142,31 @@ func TestListOrgMembers_SupportsSearchAndSort(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			items, err := db.ListOrgMembers(ctx, ListOrgMembersParams{
-				OrgID:  org.ID,
-				Search: "ali",
-				Sort:   "name",
-				Order:  "asc",
+			ownerRole := insertTestRole(t, db, org.ID, nil, "owner", "org", true, "org:write")
+			adminRole := insertTestRole(t, db, org.ID, nil, "admin", "org", true, "org:read")
+			insertTestRoleBinding(t, db, org.ID, adminRole.ID, "account", alice.ID, "org", org.ID)
+			insertTestRoleBinding(t, db, org.ID, ownerRole.ID, "account", bob.ID, "org", org.ID)
+
+			result, err := db.ListOrgMembersPage(ctx, ListOrgMembersParams{
+				OrgID:    org.ID,
+				Search:   "ali",
+				Role:     "admin",
+				Sort:     "name",
+				Order:    "asc",
+				Page:     1,
+				PageSize: 1,
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(items) != 1 {
-				t.Fatalf("expected 1 member, got %d", len(items))
+			if result.Total != 1 {
+				t.Fatalf("expected total=1, got %d", result.Total)
 			}
-			if items[0].Name != "Alice Analyst" {
-				t.Fatalf("expected Alice Analyst, got %s", items[0].Name)
+			if len(result.Items) != 1 {
+				t.Fatalf("expected 1 member, got %d", len(result.Items))
+			}
+			if result.Items[0].Name != "Alice Analyst" || result.Items[0].Role != "admin" {
+				t.Fatalf("unexpected member payload: %+v", result.Items[0])
 			}
 		})
 	}

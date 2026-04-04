@@ -51,17 +51,25 @@ func TestListOrgMembers(t *testing.T) {
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	var members []map[string]any
-	err := json.Unmarshal(res.BodyBytes, &members)
-	if err != nil {
-		t.Fatalf("expected JSON array: %v", err)
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
 	}
-	if len(members) < 1 {
+	err := json.Unmarshal(res.BodyBytes, &payload)
+	if err != nil {
+		t.Fatalf("expected paginated JSON object: %v", err)
+	}
+	if payload.Page != 1 || payload.PageSize != 25 {
+		t.Fatalf("unexpected defaults: page=%d page_size=%d", payload.Page, payload.PageSize)
+	}
+	if len(payload.Items) < 1 {
 		t.Fatal("expected at least 1 member (the owner)")
 	}
 }
 
-func TestListOrgMembers_SupportsSearchAndSort(t *testing.T) {
+func TestListOrgMembers_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
@@ -76,13 +84,26 @@ func TestListOrgMembers_SupportsSearchAndSort(t *testing.T) {
 		assert.Equal(t, res.StatusCode, http.StatusNoContent)
 	}
 
-	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members?q=ali&sort=name&order=asc", ownerTok), app.routes())
+	addRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+strconv.FormatInt(alice.ID, 10),
+		map[string]any{"role": "admin"}, ownerTok), app.routes())
+	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+
+	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members?q=ali&role=admin&sort=name&order=asc&page=1&page_size=1", ownerTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	var members []map[string]any
-	decodeJSONResponse(t, res.BodyBytes, &members)
-	assert.Equal(t, len(members), 1)
-	assert.Equal(t, members[0]["name"], "Alice Analyst")
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 1)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["name"], "Alice Analyst")
+	assert.Equal(t, payload.Items[0]["role"], "admin")
 }
 
 func TestAddOrgMember(t *testing.T) {

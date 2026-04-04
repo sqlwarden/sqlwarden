@@ -40,6 +40,15 @@ func TestEnvironmentLifecycle(t *testing.T) {
 		nil, tok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
 
+	var listPayload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	decodeJSONResponse(t, listRes.BodyBytes, &listPayload)
+	assert.Equal(t, listPayload.Total, 1)
+
 	// Update environment.
 	patchRes := send(t, newAuthRequest(t, http.MethodPatch,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments/"+envID,
@@ -101,7 +110,7 @@ func TestCreateEnvironmentDuplicateNameReturns422(t *testing.T) {
 	assert.Equal(t, create2.StatusCode, http.StatusUnprocessableEntity)
 }
 
-func TestListEnvironments_SupportsSort(t *testing.T) {
+func TestListEnvironments_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
@@ -121,15 +130,21 @@ func TestListEnvironments_SupportsSort(t *testing.T) {
 	}
 
 	res := send(t, newOrgRequest(t, http.MethodGet,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments?sort=name&order=asc", tok), app.routes())
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments?q=pro&name=prod&sort=name&order=asc&page=1&page_size=1", tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	var envs []map[string]any
-	decodeJSONResponse(t, res.BodyBytes, &envs)
-	assert.Equal(t, len(envs), 3)
-	assert.Equal(t, envs[0]["name"], "dev")
-	assert.Equal(t, envs[1]["name"], "prod")
-	assert.Equal(t, envs[2]["name"], "staging")
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 1)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["name"], "prod")
 }
 
 func TestUpdateEnvironmentValidation(t *testing.T) {

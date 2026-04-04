@@ -18,47 +18,68 @@ func (app *application) listEnvironments(w http.ResponseWriter, r *http.Request)
 		"name":       "name",
 		"created_at": "created_at",
 	})
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
 		return
 	}
 
 	var (
-		envs []database.Environment
-		err  error
+		result database.PaginatedResult[database.Environment]
+		err    error
 	)
 	if app.config.desktopMode {
-		envs, err = app.db.ListEnvironmentsFiltered(r.Context(), database.ListEnvironmentsParams{
+		result, err = app.db.ListEnvironmentsPage(r.Context(), database.ListEnvironmentsParams{
 			WorkspaceID: ws.ID,
+			Search:      q.Search,
+			Name:        name,
 			Sort:        q.Sort,
 			Order:       q.Order,
+			Page:        q.Page,
+			PageSize:    q.PageSize,
 		})
 	} else {
 		account := contextGetAccount(r)
+		var envs []database.Environment
 		envs, err = app.db.ListAccessibleEnvironments(r.Context(), account.ID, org.ID, ws.ID)
 		if err == nil {
-			envs = sortAccessibleEnvironments(envs, q.Sort, q.Order)
+			envs = filterAndSortAccessibleEnvironments(envs, q.Search, name, q.Sort, q.Order)
+			result = database.PaginateItems(envs, q.Page, q.PageSize)
 		}
 	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	err = response.JSON(w, http.StatusOK, envs)
+	err = response.JSON(w, http.StatusOK, result)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
-func sortAccessibleEnvironments(envs []database.Environment, sortBy, order string) []database.Environment {
-	sort.Slice(envs, func(i, j int) bool {
-		cmp := compareEnvironment(envs[i], envs[j], sortBy)
+func filterAndSortAccessibleEnvironments(envs []database.Environment, search, name, sortBy, order string) []database.Environment {
+	filtered := make([]database.Environment, 0, len(envs))
+	search = strings.ToLower(strings.TrimSpace(search))
+	name = strings.TrimSpace(name)
+
+	for _, env := range envs {
+		if search != "" && !strings.Contains(strings.ToLower(env.Name), search) {
+			continue
+		}
+		if name != "" && env.Name != name {
+			continue
+		}
+		filtered = append(filtered, env)
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		cmp := compareEnvironment(filtered[i], filtered[j], sortBy)
 		if order == "desc" {
 			return cmp > 0
 		}
 		return cmp < 0
 	})
-	return envs
+	return filtered
 }
 
 func compareEnvironment(left, right database.Environment, sortBy string) int {

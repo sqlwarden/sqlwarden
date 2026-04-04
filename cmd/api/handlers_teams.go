@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/database"
@@ -18,16 +19,20 @@ func (app *application) listTeams(w http.ResponseWriter, r *http.Request) {
 		"name":       "name",
 		"created_at": "created_at",
 	})
+	slug := strings.TrimSpace(r.URL.Query().Get("slug"))
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
 		return
 	}
 
-	teams, err := app.db.ListTeamsFiltered(context.Background(), database.ListTeamsParams{
-		OrgID:  org.ID,
-		Search: q.Search,
-		Sort:   q.Sort,
-		Order:  q.Order,
+	teams, err := app.db.ListTeamsPage(context.Background(), database.ListTeamsParams{
+		OrgID:    org.ID,
+		Search:   q.Search,
+		Slug:     slug,
+		Sort:     q.Sort,
+		Order:    q.Order,
+		Page:     q.Page,
+		PageSize: q.PageSize,
 	})
 	if err != nil {
 		app.serverError(w, r, err)

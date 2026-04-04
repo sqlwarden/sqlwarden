@@ -17,27 +17,33 @@ func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 		"name":       "name",
 		"created_at": "created_at",
 	})
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
 		return
 	}
 
 	var (
-		wss []database.Workspace
-		err error
+		result database.PaginatedResult[database.Workspace]
+		err    error
 	)
 	if app.config.desktopMode {
-		wss, err = app.db.ListWorkspacesFiltered(r.Context(), database.ListWorkspacesParams{
-			OrgID:  org.ID,
-			Search: q.Search,
-			Sort:   q.Sort,
-			Order:  q.Order,
+		result, err = app.db.ListWorkspacesPage(r.Context(), database.ListWorkspacesParams{
+			OrgID:    org.ID,
+			Search:   q.Search,
+			Name:     name,
+			Sort:     q.Sort,
+			Order:    q.Order,
+			Page:     q.Page,
+			PageSize: q.PageSize,
 		})
 	} else {
 		account := contextGetAccount(r)
-		wss, err = app.db.ListAccessibleWorkspaces(r.Context(), account.ID, org.ID)
+		var workspaces []database.Workspace
+		workspaces, err = app.db.ListAccessibleWorkspaces(r.Context(), account.ID, org.ID)
 		if err == nil {
-			wss = filterAccessibleWorkspaces(wss, q.Search, q.Sort, q.Order)
+			workspaces = filterAccessibleWorkspaces(workspaces, q.Search, name, q.Sort, q.Order)
+			result = database.PaginateItems(workspaces, q.Page, q.PageSize)
 		}
 	}
 	if err != nil {
@@ -45,18 +51,22 @@ func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = response.JSON(w, http.StatusOK, wss)
+	err = response.JSON(w, http.StatusOK, result)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
-func filterAccessibleWorkspaces(workspaces []database.Workspace, search, sortBy, order string) []database.Workspace {
+func filterAccessibleWorkspaces(workspaces []database.Workspace, search, name, sortBy, order string) []database.Workspace {
 	filtered := make([]database.Workspace, 0, len(workspaces))
 	search = strings.ToLower(strings.TrimSpace(search))
+	name = strings.TrimSpace(name)
 
 	for _, workspace := range workspaces {
 		if search != "" && !strings.Contains(strings.ToLower(workspace.Name), search) {
+			continue
+		}
+		if name != "" && workspace.Name != name {
 			continue
 		}
 		filtered = append(filtered, workspace)
@@ -74,16 +84,16 @@ func filterAccessibleWorkspaces(workspaces []database.Workspace, search, sortBy,
 
 func compareWorkspace(left, right database.Workspace, sortBy string) int {
 	switch sortBy {
-	case "created_at":
+	case "name":
+		if left.Name != right.Name {
+			return strings.Compare(left.Name, right.Name)
+		}
+	default:
 		if !left.CreatedAt.Equal(right.CreatedAt) {
 			if left.CreatedAt.Before(right.CreatedAt) {
 				return -1
 			}
 			return 1
-		}
-	default:
-		if left.Name != right.Name {
-			return strings.Compare(left.Name, right.Name)
 		}
 	}
 	if left.ID < right.ID {

@@ -21,10 +21,13 @@ type Workspace struct {
 }
 
 type ListWorkspacesParams struct {
-	OrgID  int64
-	Search string
-	Sort   string
-	Order  string
+	OrgID    int64
+	Search   string
+	Name     string
+	Sort     string
+	Order    string
+	Page     int
+	PageSize int
 }
 
 func (db *DB) InsertWorkspace(ctx context.Context, orgID *int64, ownerType string, ownerID int64, name, description string) (Workspace, error) {
@@ -102,10 +105,21 @@ func (db *DB) ListWorkspacesFiltered(ctx context.Context, params ListWorkspacesP
 		search := "%" + strings.ToLower(params.Search) + "%"
 		query = query.Where("LOWER(name) LIKE ?", search)
 	}
+	if params.Name != "" {
+		query = query.Where("name = ?", params.Name)
+	}
 
 	var workspaces []Workspace
 	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", workspaceSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx, &workspaces)
 	return workspaces, err
+}
+
+func (db *DB) ListWorkspacesPage(ctx context.Context, params ListWorkspacesParams) (PaginatedResult[Workspace], error) {
+	workspaces, err := db.ListWorkspacesFiltered(ctx, params)
+	if err != nil {
+		return PaginatedResult[Workspace]{}, err
+	}
+	return PaginateItems(workspaces, params.Page, params.PageSize), nil
 }
 
 // ListAccessibleWorkspaces returns workspaces within orgID that accountID has any binding on,
@@ -225,6 +239,13 @@ func normalizeWorkspaceListParams(params ListWorkspacesParams) ListWorkspacesPar
 		params.Order = "asc"
 	}
 	params.Search = strings.TrimSpace(params.Search)
+	params.Name = strings.TrimSpace(params.Name)
+	if params.Page < 1 {
+		params.Page = 1
+	}
+	if params.PageSize < 1 {
+		params.PageSize = 25
+	}
 	return params
 }
 

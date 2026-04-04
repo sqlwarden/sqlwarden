@@ -141,7 +141,7 @@ func TestGetAccountTeamsAndDeleteTeam(t *testing.T) {
 	}
 }
 
-func TestListTeams_SupportsSearchAndSort(t *testing.T) {
+func TestListTeams_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	for _, driver := range testDrivers() {
 		t.Run(driver, func(t *testing.T) {
 			db := newTestDB(t, driver)
@@ -158,20 +158,26 @@ func TestListTeams_SupportsSearchAndSort(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			teams, err := db.ListTeamsFiltered(ctx, ListTeamsParams{
-				OrgID:  org.ID,
-				Search: "ze",
-				Sort:   "name",
-				Order:  "desc",
+			result, err := db.ListTeamsPage(ctx, ListTeamsParams{
+				OrgID:    org.ID,
+				Search:   "team",
+				Slug:     "zeta",
+				Sort:     "name",
+				Order:    "desc",
+				Page:     1,
+				PageSize: 1,
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(teams) != 1 {
-				t.Fatalf("expected 1 team, got %d", len(teams))
+			if result.Total != 1 {
+				t.Fatalf("expected total=1, got %d", result.Total)
 			}
-			if teams[0].Name != "Zeta Team" {
-				t.Fatalf("expected Zeta Team, got %s", teams[0].Name)
+			if len(result.Items) != 1 {
+				t.Fatalf("expected 1 team, got %d", len(result.Items))
+			}
+			if result.Items[0].Name != "Zeta Team" {
+				t.Fatalf("expected Zeta Team, got %s", result.Items[0].Name)
 			}
 		})
 	}

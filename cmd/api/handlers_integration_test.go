@@ -93,12 +93,15 @@ func TestFullWorkflow(t *testing.T) {
 		"/api/v1/orgs/"+orgSlug+"/members", nil, ownerTok), app.routes())
 	assert.Equal(t, membersRes.StatusCode, http.StatusOK)
 
-	var members []map[string]any
+	var members struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
 	if err := json.Unmarshal(membersRes.BodyBytes, &members); err != nil {
 		t.Fatal(err)
 	}
-	if len(members) < 2 {
-		t.Fatalf("expected at least 2 members, got %d", len(members))
+	if members.Total < 2 {
+		t.Fatalf("expected at least 2 members, got %d", members.Total)
 	}
 
 	// ── Step 11: List environments ───────────────────────────────────────────
@@ -107,12 +110,15 @@ func TestFullWorkflow(t *testing.T) {
 		nil, ownerTok), app.routes())
 	assert.Equal(t, listEnvRes.StatusCode, http.StatusOK)
 
-	var envs []map[string]any
+	var envs struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
 	if err := json.Unmarshal(listEnvRes.BodyBytes, &envs); err != nil {
 		t.Fatal(err)
 	}
-	if len(envs) != 1 {
-		t.Fatalf("expected 1 environment, got %d", len(envs))
+	if envs.Total != 1 {
+		t.Fatalf("expected 1 environment, got %d", envs.Total)
 	}
 
 	// ── Step 12: Delete environment ──────────────────────────────────────────
