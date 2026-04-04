@@ -140,3 +140,39 @@ func TestGetAccountTeamsAndDeleteTeam(t *testing.T) {
 		})
 	}
 }
+
+func TestListTeams_SupportsSearchAndSort(t *testing.T) {
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+
+			org, err := db.InsertOrg(ctx, "list-teams-"+driver, "List Teams")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.InsertTeam(ctx, org.ID, "alpha", "Alpha Team"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.InsertTeam(ctx, org.ID, "zeta", "Zeta Team"); err != nil {
+				t.Fatal(err)
+			}
+
+			teams, err := db.ListTeamsFiltered(ctx, ListTeamsParams{
+				OrgID:  org.ID,
+				Search: "ze",
+				Sort:   "name",
+				Order:  "desc",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(teams) != 1 {
+				t.Fatalf("expected 1 team, got %d", len(teams))
+			}
+			if teams[0].Name != "Zeta Team" {
+				t.Fatalf("expected Zeta Team, got %s", teams[0].Name)
+			}
+		})
+	}
+}

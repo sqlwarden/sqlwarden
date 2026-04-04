@@ -82,3 +82,8 @@ Each item includes UI-renderable subject and resource metadata:
 - `permission`
 - `role_id`
 - `role_name`
+
+## Org Members And Teams
+
+- `GET /api/v1/orgs/{org_slug}/members` supports `q`, `sort`, and `order`
+- `GET /api/v1/orgs/{org_slug}/teams` supports `q`, `sort`, and `order`

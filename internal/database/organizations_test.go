@@ -117,6 +117,50 @@ func TestGetOrgMembers(t *testing.T) {
 	}
 }
 
+func TestListOrgMembers_SupportsSearchAndSort(t *testing.T) {
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+
+			org, err := db.InsertOrg(ctx, "org-members-search-"+driver, "Org Members Search")
+			if err != nil {
+				t.Fatal(err)
+			}
+			alice, err := db.InsertAccount(ctx, "alice-search-"+driver+"@example.com", "Alice Analyst", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bob, err := db.InsertAccount(ctx, "bob-search-"+driver+"@example.com", "Bob Builder", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := db.AddOrgMember(ctx, org.ID, alice.ID); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.AddOrgMember(ctx, org.ID, bob.ID); err != nil {
+				t.Fatal(err)
+			}
+
+			items, err := db.ListOrgMembers(ctx, ListOrgMembersParams{
+				OrgID:  org.ID,
+				Search: "ali",
+				Sort:   "name",
+				Order:  "asc",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(items) != 1 {
+				t.Fatalf("expected 1 member, got %d", len(items))
+			}
+			if items[0].Name != "Alice Analyst" {
+				t.Fatalf("expected Alice Analyst, got %s", items[0].Name)
+			}
+		})
+	}
+}
+
 func TestDeleteAccountRoleBindings(t *testing.T) {
 	for _, driver := range testDrivers() {
 		t.Run(driver, func(t *testing.T) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -39,6 +41,22 @@ type OrgMember struct {
 	OrgID     int64     `bun:",pk" json:"org_id"`
 	AccountID int64     `bun:",pk" json:"account_id"`
 	JoinedAt  time.Time `bun:",notnull" json:"joined_at"`
+}
+
+type OrgMemberListItem struct {
+	OrgID     int64     `json:"org_id"`
+	AccountID int64     `json:"account_id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	Role      string    `json:"role"`
+	JoinedAt  time.Time `json:"joined_at"`
+}
+
+type ListOrgMembersParams struct {
+	OrgID  int64
+	Search string
+	Sort   string
+	Order  string
 }
 
 func (db *DB) InsertOrg(ctx context.Context, slug, name string) (Organization, error) {
@@ -115,6 +133,47 @@ func (db *DB) GetOrgMembers(ctx context.Context, orgID int64) ([]OrgMember, erro
 	return members, err
 }
 
+func (db *DB) ListOrgMembers(ctx context.Context, params ListOrgMembersParams) ([]OrgMemberListItem, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	params = normalizeOrgMemberParams(params)
+
+	query := `
+SELECT
+	om.org_id,
+	om.account_id,
+	a.email,
+	a.name,
+	COALESCE(MAX(CASE WHEN ro.name IN ('owner', 'admin') THEN ro.name END), 'member') AS role,
+	om.joined_at
+FROM org_members AS om
+JOIN accounts AS a ON a.id = om.account_id
+LEFT JOIN role_bindings AS rb
+	ON rb.org_id = om.org_id
+	AND rb.subject_type = 'account'
+	AND rb.subject_id = om.account_id
+	AND rb.resource_type = 'org'
+	AND rb.resource_id = om.org_id
+LEFT JOIN roles AS ro ON ro.id = rb.role_id
+WHERE om.org_id = ?`
+
+	args := []any{params.OrgID}
+	if params.Search != "" {
+		query += " AND (LOWER(a.name) LIKE ? OR LOWER(a.email) LIKE ?)"
+		search := "%" + strings.ToLower(params.Search) + "%"
+		args = append(args, search, search)
+	}
+
+	query += fmt.Sprintf(`
+GROUP BY om.org_id, om.account_id, a.email, a.name, om.joined_at
+ORDER BY %s %s, om.account_id %s`, orgMemberSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))
+
+	var items []OrgMemberListItem
+	err := db.NewRaw(query, args...).Scan(ctx, &items)
+	return items, err
+}
+
 func (db *DB) IsOrgMember(ctx context.Context, orgID, accountID int64) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -133,6 +192,35 @@ func (db *DB) GetAccountOrgs(ctx context.Context, accountID int64) ([]Organizati
 		Where("om.account_id = ?", accountID).
 		Scan(ctx)
 	return orgs, err
+}
+
+func normalizeOrgMemberParams(params ListOrgMembersParams) ListOrgMembersParams {
+	if params.Sort == "" {
+		params.Sort = "name"
+	}
+	switch params.Sort {
+	case "name", "email", "joined_at":
+	default:
+		params.Sort = "name"
+	}
+	switch params.Order {
+	case "asc", "desc":
+	default:
+		params.Order = "asc"
+	}
+	params.Search = strings.TrimSpace(params.Search)
+	return params
+}
+
+func orgMemberSortColumn(sort string) string {
+	switch sort {
+	case "email":
+		return "a.email"
+	case "joined_at":
+		return "om.joined_at"
+	default:
+		return "a.name"
+	}
 }
 
 // DeleteAccountRoleBindings removes account-scoped role bindings for a specific resource.

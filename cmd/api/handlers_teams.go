@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -13,7 +14,21 @@ import (
 
 func (app *application) listTeams(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-	teams, err := app.db.ListTeams(context.Background(), org.ID)
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"name":       "name",
+		"created_at": "created_at",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	teams, err := app.db.ListTeamsFiltered(context.Background(), database.ListTeamsParams{
+		OrgID:  org.ID,
+		Search: q.Search,
+		Sort:   q.Sort,
+		Order:  q.Order,
+	})
 	if err != nil {
 		app.serverError(w, r, err)
 		return

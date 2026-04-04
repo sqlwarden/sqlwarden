@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -70,7 +71,22 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-	members, err := app.db.GetOrgMembers(r.Context(), org.ID)
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"name":       "name",
+		"email":      "email",
+		"created_at": "joined_at",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	members, err := app.db.ListOrgMembers(r.Context(), database.ListOrgMembersParams{
+		OrgID:  org.ID,
+		Search: q.Search,
+		Sort:   q.Sort,
+		Order:  q.Order,
+	})
 	if err != nil {
 		app.serverError(w, r, err)
 		return

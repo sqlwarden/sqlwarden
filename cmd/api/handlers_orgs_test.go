@@ -61,6 +61,30 @@ func TestListOrgMembers(t *testing.T) {
 	}
 }
 
+func TestListOrgMembers_SupportsSearchAndSort(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, ownerTok, slug := registerAndLogin(t, app, uniqueEmail(t, "org-members-owner"), "Owner User", "securepass99")
+
+	alice, _ := seedAccountWithToken(t, app, uniqueEmail(t, "alice-member"), "Alice Analyst")
+	bob, _ := seedAccountWithToken(t, app, uniqueEmail(t, "bob-member"), "Bob Builder")
+
+	for _, email := range []string{alice.Email, bob.Email} {
+		res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
+			map[string]any{"email": email}, ownerTok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusNoContent)
+	}
+
+	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members?q=ali&sort=name&order=asc", ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var members []map[string]any
+	decodeJSONResponse(t, res.BodyBytes, &members)
+	assert.Equal(t, len(members), 1)
+	assert.Equal(t, members[0]["name"], "Alice Analyst")
+}
+
 func TestAddOrgMember(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

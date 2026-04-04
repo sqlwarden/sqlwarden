@@ -40,6 +40,29 @@ func TestCreateAndListTeams(t *testing.T) {
 	assert.Equal(t, teams[0]["slug"].(string), "backend")
 }
 
+func TestListTeams_SupportsSearchAndSort(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "team-list-owner"), "Team Owner", "securepass99")
+
+	for _, team := range []map[string]any{
+		{"slug": "alpha", "name": "Alpha Team"},
+		{"slug": "zeta", "name": "Zeta Team"},
+	} {
+		res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", team, tok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusCreated)
+	}
+
+	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams?q=ze&sort=name&order=desc", tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var teams []map[string]any
+	decodeJSONResponse(t, res.BodyBytes, &teams)
+	assert.Equal(t, len(teams), 1)
+	assert.Equal(t, teams[0]["name"], "Zeta Team")
+}
+
 func TestGetAndDeleteTeam(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
