@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sqlwarden/internal/response"
 	"github.com/uptrace/bun"
 )
 
@@ -181,12 +182,12 @@ ORDER BY %s %s, om.account_id %s`, orgMemberSortColumn(params.Sort), strings.ToU
 	return items, err
 }
 
-func (db *DB) ListOrgMembersPage(ctx context.Context, params ListOrgMembersParams) (PaginatedResult[OrgMemberListItem], error) {
+func (db *DB) ListOrgMembersPage(ctx context.Context, params ListOrgMembersParams) (response.Paginated[OrgMemberListItem], error) {
 	items, err := db.ListOrgMembers(ctx, params)
 	if err != nil {
-		return PaginatedResult[OrgMemberListItem]{}, err
+		return response.Paginated[OrgMemberListItem]{}, err
 	}
-	return PaginateItems(items, params.Page, params.PageSize), nil
+	return response.PaginateItems(items, params.Page, params.PageSize), nil
 }
 
 func (db *DB) IsOrgMember(ctx context.Context, orgID, accountID int64) (bool, error) {

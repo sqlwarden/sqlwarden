@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/sqlwarden/internal/response"
 )
 
 type Team struct {
@@ -105,12 +107,12 @@ func (db *DB) ListTeamsFiltered(ctx context.Context, params ListTeamsParams) ([]
 	return teams, err
 }
 
-func (db *DB) ListTeamsPage(ctx context.Context, params ListTeamsParams) (PaginatedResult[Team], error) {
+func (db *DB) ListTeamsPage(ctx context.Context, params ListTeamsParams) (response.Paginated[Team], error) {
 	teams, err := db.ListTeamsFiltered(ctx, params)
 	if err != nil {
-		return PaginatedResult[Team]{}, err
+		return response.Paginated[Team]{}, err
 	}
-	return PaginateItems(teams, params.Page, params.PageSize), nil
+	return response.PaginateItems(teams, params.Page, params.PageSize), nil
 }
 
 func (db *DB) DeleteTeam(ctx context.Context, id, orgID int64) error {

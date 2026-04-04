@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/sqlwarden/internal/response"
 )
 
 type Workspace struct {
@@ -114,12 +116,12 @@ func (db *DB) ListWorkspacesFiltered(ctx context.Context, params ListWorkspacesP
 	return workspaces, err
 }
 
-func (db *DB) ListWorkspacesPage(ctx context.Context, params ListWorkspacesParams) (PaginatedResult[Workspace], error) {
+func (db *DB) ListWorkspacesPage(ctx context.Context, params ListWorkspacesParams) (response.Paginated[Workspace], error) {
 	workspaces, err := db.ListWorkspacesFiltered(ctx, params)
 	if err != nil {
-		return PaginatedResult[Workspace]{}, err
+		return response.Paginated[Workspace]{}, err
 	}
-	return PaginateItems(workspaces, params.Page, params.PageSize), nil
+	return response.PaginateItems(workspaces, params.Page, params.PageSize), nil
 }
 
 // ListAccessibleWorkspaces returns workspaces within orgID that accountID has any binding on,

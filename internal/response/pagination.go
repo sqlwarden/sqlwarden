@@ -1,13 +1,13 @@
-package database
+package response
 
-type PaginatedResult[T any] struct {
+type Paginated[T any] struct {
 	Items    []T `json:"items"`
 	Page     int `json:"page"`
 	PageSize int `json:"page_size"`
 	Total    int `json:"total"`
 }
 
-func PaginateItems[T any](items []T, page, pageSize int) PaginatedResult[T] {
+func PaginateItems[T any](items []T, page, pageSize int) Paginated[T] {
 	if page < 1 {
 		page = 1
 	}
@@ -30,7 +30,7 @@ func PaginateItems[T any](items []T, page, pageSize int) PaginatedResult[T] {
 		paged = []T{}
 	}
 
-	return PaginatedResult[T]{
+	return Paginated[T]{
 		Items:    paged,
 		Page:     page,
 		PageSize: pageSize,

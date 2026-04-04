@@ -24,7 +24,7 @@ func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		result database.PaginatedResult[database.Workspace]
+		result response.Paginated[database.Workspace]
 		err    error
 	)
 	if app.config.desktopMode {
@@ -43,7 +43,7 @@ func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 		workspaces, err = app.db.ListAccessibleWorkspaces(r.Context(), account.ID, org.ID)
 		if err == nil {
 			workspaces = filterAccessibleWorkspaces(workspaces, q.Search, name, q.Sort, q.Order)
-			result = database.PaginateItems(workspaces, q.Page, q.PageSize)
+			result = response.PaginateItems(workspaces, q.Page, q.PageSize)
 		}
 	}
 	if err != nil {

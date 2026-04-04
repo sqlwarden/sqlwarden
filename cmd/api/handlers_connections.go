@@ -73,7 +73,7 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var (
-		result database.PaginatedConnections
+		result response.Paginated[database.Connection]
 		err    error
 	)
 	if app.config.desktopMode {
@@ -98,7 +98,7 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func filterAccessibleConnections(conns []database.Connection, params database.ListConnectionsParams) database.PaginatedConnections {
+func filterAccessibleConnections(conns []database.Connection, params database.ListConnectionsParams) response.Paginated[database.Connection] {
 	filtered := make([]database.Connection, 0, len(conns))
 	search := strings.ToLower(strings.TrimSpace(params.Search))
 
@@ -138,7 +138,7 @@ func filterAccessibleConnections(conns []database.Connection, params database.Li
 		end = total
 	}
 
-	return database.PaginatedConnections{
+	return response.Paginated[database.Connection]{
 		Items:    filtered[start:end],
 		Page:     params.Page,
 		PageSize: params.PageSize,

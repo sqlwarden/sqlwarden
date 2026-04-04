@@ -25,7 +25,7 @@ func (app *application) listEnvironments(w http.ResponseWriter, r *http.Request)
 	}
 
 	var (
-		result database.PaginatedResult[database.Environment]
+		result response.Paginated[database.Environment]
 		err    error
 	)
 	if app.config.desktopMode {
@@ -44,7 +44,7 @@ func (app *application) listEnvironments(w http.ResponseWriter, r *http.Request)
 		envs, err = app.db.ListAccessibleEnvironments(r.Context(), account.ID, org.ID, ws.ID)
 		if err == nil {
 			envs = filterAndSortAccessibleEnvironments(envs, q.Search, name, q.Sort, q.Order)
-			result = database.PaginateItems(envs, q.Page, q.PageSize)
+			result = response.PaginateItems(envs, q.Page, q.PageSize)
 		}
 	}
 	if err != nil {

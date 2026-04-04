@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/sqlwarden/internal/response"
 )
 
 // CountRoleBinding returns the number of accounts bound to roleID at the given resource.
@@ -82,13 +84,6 @@ type WorkspacePolicyListItem struct {
 	RoleID       int64     `json:"role_id,omitempty"`
 	RoleName     string    `json:"role_name,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
-}
-
-type PaginatedWorkspacePolicies struct {
-	Items    []WorkspacePolicyListItem `json:"items"`
-	Page     int                       `json:"page"`
-	PageSize int                       `json:"page_size"`
-	Total    int                       `json:"total"`
 }
 
 func (db *DB) GetRoleBinding(ctx context.Context, id, orgID int64) (RoleBinding, bool, error) {
@@ -168,26 +163,26 @@ func (db *DB) ListWorkspacePolicies(ctx context.Context, orgID, wsID int64) ([]R
 	return rbs, pbs, nil
 }
 
-func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspacePoliciesParams) (PaginatedWorkspacePolicies, error) {
+func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspacePoliciesParams) (response.Paginated[WorkspacePolicyListItem], error) {
 	params = normalizeWorkspacePolicyParams(params)
 
 	roleBindings, permissionBindings, err := db.ListWorkspacePolicies(ctx, params.OrgID, params.WorkspaceID)
 	if err != nil {
-		return PaginatedWorkspacePolicies{}, err
+		return response.Paginated[WorkspacePolicyListItem]{}, err
 	}
 
 	items := make([]WorkspacePolicyListItem, 0, len(roleBindings)+len(permissionBindings))
 	for _, rb := range roleBindings {
 		item, err := db.roleBindingListItem(ctx, params.OrgID, rb)
 		if err != nil {
-			return PaginatedWorkspacePolicies{}, err
+			return response.Paginated[WorkspacePolicyListItem]{}, err
 		}
 		items = append(items, item)
 	}
 	for _, pb := range permissionBindings {
 		item, err := db.permissionBindingListItem(ctx, pb)
 		if err != nil {
-			return PaginatedWorkspacePolicies{}, err
+			return response.Paginated[WorkspacePolicyListItem]{}, err
 		}
 		items = append(items, item)
 	}
@@ -242,7 +237,7 @@ func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspac
 		end = total
 	}
 
-	return PaginatedWorkspacePolicies{
+	return response.Paginated[WorkspacePolicyListItem]{
 		Items:    filtered[start:end],
 		Page:     params.Page,
 		PageSize: params.PageSize,

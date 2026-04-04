@@ -34,7 +34,7 @@ func (app *application) listMyWorkspaces(w http.ResponseWriter, r *http.Request)
 	}
 
 	wss = filterAccessibleWorkspaces(wss, q.Search, name, q.Sort, q.Order)
-	result := database.PaginateItems(wss, q.Page, q.PageSize)
+	result := response.PaginateItems(wss, q.Page, q.PageSize)
 
 	err = response.JSON(w, http.StatusOK, result)
 	if err != nil {

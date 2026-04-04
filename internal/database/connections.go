@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/sqlwarden/internal/response"
 )
 
 type Connection struct {
@@ -34,13 +36,6 @@ type ListConnectionsParams struct {
 	Order         string
 	Page          int
 	PageSize      int
-}
-
-type PaginatedConnections struct {
-	Items    []Connection `json:"items"`
-	Page     int          `json:"page"`
-	PageSize int          `json:"page_size"`
-	Total    int          `json:"total"`
 }
 
 func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID, orgID *int64, ownerType string, ownerID int64, name, driver, dsnEncrypted, accessMode string) (Connection, error) {
@@ -149,7 +144,7 @@ func (db *DB) ListConnections(ctx context.Context, workspaceID int64) ([]Connect
 	return conns, err
 }
 
-func (db *DB) ListConnectionsPage(ctx context.Context, params ListConnectionsParams) (PaginatedConnections, error) {
+func (db *DB) ListConnectionsPage(ctx context.Context, params ListConnectionsParams) (response.Paginated[Connection], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -178,7 +173,7 @@ func (db *DB) ListConnectionsPage(ctx context.Context, params ListConnectionsPar
 
 	total, err := countQuery.Count(ctx)
 	if err != nil {
-		return PaginatedConnections{}, err
+		return response.Paginated[Connection]{}, err
 	}
 
 	var items []Connection
@@ -188,10 +183,10 @@ func (db *DB) ListConnectionsPage(ctx context.Context, params ListConnectionsPar
 		Offset((params.Page-1)*params.PageSize).
 		Scan(ctx, &items)
 	if err != nil {
-		return PaginatedConnections{}, err
+		return response.Paginated[Connection]{}, err
 	}
 
-	return PaginatedConnections{
+	return response.Paginated[Connection]{
 		Items:    items,
 		Page:     params.Page,
 		PageSize: params.PageSize,

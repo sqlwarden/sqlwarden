@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/sqlwarden/internal/response"
 )
 
 type Environment struct {
@@ -120,12 +122,12 @@ func (db *DB) ListEnvironmentsFiltered(ctx context.Context, params ListEnvironme
 	return envs, err
 }
 
-func (db *DB) ListEnvironmentsPage(ctx context.Context, params ListEnvironmentsParams) (PaginatedResult[Environment], error) {
+func (db *DB) ListEnvironmentsPage(ctx context.Context, params ListEnvironmentsParams) (response.Paginated[Environment], error) {
 	envs, err := db.ListEnvironmentsFiltered(ctx, params)
 	if err != nil {
-		return PaginatedResult[Environment]{}, err
+		return response.Paginated[Environment]{}, err
 	}
-	return PaginateItems(envs, params.Page, params.PageSize), nil
+	return response.PaginateItems(envs, params.Page, params.PageSize), nil
 }
 
 // ListAccessibleEnvironments returns environments in workspaceID that accountID has any binding on,
