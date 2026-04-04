@@ -347,7 +347,7 @@ func setupWorkspaceOwner(t *testing.T) (*application, database.Organization, dat
 func seedEnvironment(t *testing.T, app *application, workspaceID int64, orgID int64, name string) database.Environment {
 	t.Helper()
 
-	env, err := app.db.InsertEnvironment(context.Background(), workspaceID, &orgID, "org", orgID, name, "")
+	env, err := app.db.InsertEnvironment(context.Background(), workspaceID, name, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +357,7 @@ func seedEnvironment(t *testing.T, app *application, workspaceID int64, orgID in
 func seedConnection(t *testing.T, app *application, workspaceID int64, environmentID *int64, orgID int64, driver, name, accessMode string) database.Connection {
 	t.Helper()
 
-	conn, err := app.db.InsertConnection(context.Background(), workspaceID, environmentID, &orgID, "org", orgID, name, driver, "dsn", accessMode)
+	conn, err := app.db.InsertConnection(context.Background(), workspaceID, environmentID, name, driver, "dsn", accessMode)
 	if err != nil {
 		t.Fatal(err)
 	}

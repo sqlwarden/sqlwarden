@@ -364,6 +364,27 @@ func TestMyWorkspaceEnvironmentValidationAndIsolation(t *testing.T) {
 	assert.Equal(t, badUpdate.StatusCode, http.StatusUnprocessableEntity)
 }
 
+func TestOrgEnvironmentNotAccessibleViaMeRoutes(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, orgSlug := registerAndLogin(t, app, "org-env-via-me@example.com", "OrgEnvUser", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces",
+		map[string]any{"name": "Org WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	envRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments",
+		map[string]any{"name": "prod"}, tok), app.routes())
+	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+
+	res := send(t, newAuthRequest(t, http.MethodGet, meWsURL(wsID)+"/environments/"+envID, nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
 // ── Connection CRUD ──────────────────────────────────────────────────────────
 
 func TestMyWorkspaceConnectionCRUD(t *testing.T) {
@@ -520,6 +541,67 @@ func TestMyWorkspaceConnectionValidationAndEnvironmentChecks(t *testing.T) {
 		"environment_id": envRes.BodyFields["id"],
 	}, tok), app.routes())
 	assert.Equal(t, crossEnvCreate.StatusCode, http.StatusNotFound)
+}
+
+func TestOrgConnectionNotAccessibleViaMeRoutes(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, orgSlug := registerAndLogin(t, app, "org-conn-via-me@example.com", "OrgConnUser", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces",
+		map[string]any{"name": "Org WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	connRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections",
+		map[string]any{"name": "Org DB", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
+
+	res := send(t, newAuthRequest(t, http.MethodGet, meWsURL(wsID)+"/connections/"+connID, nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestPersonalEnvironmentNotAccessibleViaOrgRoutes(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, orgSlug := registerAndLogin(t, app, "space-env-via-org@example.com", "SpaceEnvUser", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
+		map[string]any{"name": "Personal WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	envRes := send(t, newAuthRequest(t, http.MethodPost, meWsURL(wsID)+"/environments",
+		map[string]any{"name": "personal-env"}, tok), app.routes())
+	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+envID, nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestPersonalConnectionNotAccessibleViaOrgRoutes(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, orgSlug := registerAndLogin(t, app, "space-conn-via-org@example.com", "SpaceConnUser", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
+		map[string]any{"name": "Personal WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	connRes := send(t, newAuthRequest(t, http.MethodPost, meWsURL(wsID)+"/connections",
+		map[string]any{"name": "Personal DB", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections/"+connID, nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }
 
 // ── Connect and Query ────────────────────────────────────────────────────────

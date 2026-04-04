@@ -216,7 +216,6 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 	validatedEnvID, ok, err := app.resolveWorkspaceEnvironmentID(r, ws.ID, input.EnvironmentID)
 	if err != nil {
@@ -229,8 +228,7 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 	}
 
 	conn, err := app.db.InsertConnection(context.Background(),
-		ws.ID, validatedEnvID, &org.ID,
-		ws.OwnerType, ws.OwnerID,
+		ws.ID, validatedEnvID,
 		input.Name, input.Driver, dsnEncrypted, input.AccessMode,
 	)
 	if err != nil {
@@ -403,10 +401,11 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 	account := contextGetAccount(r)
 	org := contextGetOrg(r)
 	conn := contextGetConnection(r)
+	ws := contextGetWorkspace(r)
 
 	allowed := app.enforcer.Can(r.Context(),
 		account.ID, org.ID,
-		conn.OwnerType, "connection", conn.ID,
+		ws.OwnerType, "connection", conn.ID,
 		access.PermConnExecute,
 	)
 	if !allowed {
@@ -471,6 +470,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	account := contextGetAccount(r)
 	org := contextGetOrg(r)
 	conn := contextGetConnection(r)
+	ws := contextGetWorkspace(r)
 
 	sessionID := r.Header.Get("X-Warden-Session")
 	if sessionID == "" {
@@ -495,7 +495,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	if isSelect {
 		allowed := app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
-			conn.OwnerType, "connection", conn.ID,
+			ws.OwnerType, "connection", conn.ID,
 			access.PermQueryExecute,
 		)
 		if !allowed {
@@ -516,7 +516,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	} else {
 		allowed := app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
-			conn.OwnerType, "connection", conn.ID,
+			ws.OwnerType, "connection", conn.ID,
 			access.PermConnExecute,
 		)
 		if !allowed {

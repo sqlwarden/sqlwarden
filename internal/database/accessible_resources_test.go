@@ -439,8 +439,8 @@ func TestListAccessibleConnections_NoBindings(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db1", "postgres", "enc", "open")
-	db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db2", "postgres", "enc", "open")
+	db.InsertConnection(context.Background(), ws.ID, nil, "db1", "postgres", "enc", "open")
+	db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-none@example.com")
 	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
@@ -461,8 +461,8 @@ func TestListAccessibleConnections_OrgRoleGrantsAll(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db1", "postgres", "enc", "open")
-	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db2", "postgres", "enc", "open")
+	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db1", "postgres", "enc", "open")
+	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-orgrole@example.com")
 	adminRoleID := findOrgRoleID(t, db, org.ID, "admin")
@@ -490,8 +490,8 @@ func TestListAccessibleConnections_WsRoleGrantsAllInWorkspace(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db1", "postgres", "enc", "open")
-	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db2", "postgres", "enc", "open")
+	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db1", "postgres", "enc", "open")
+	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-wsrole@example.com")
 	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, "ws:member")
@@ -519,8 +519,8 @@ func TestListAccessibleConnections_DirectConnRoleBinding(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db1", "postgres", "enc", "open")
-	_, _ = db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db2", "postgres", "enc", "open")
+	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db1", "postgres", "enc", "open")
+	_, _ = db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-dirconn@example.com")
 	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, "ws:member")
@@ -544,8 +544,8 @@ func TestListAccessibleConnections_DirectConnPermBinding(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db1", "postgres", "enc", "open")
-	db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db2", "postgres", "enc", "open")
+	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db1", "postgres", "enc", "open")
+	db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-dirperm@example.com")
 	_ = e.GrantPermission(context.Background(), org.ID, access.PermConnMetadata, "account", userID, "connection", c1.ID, ownerID)
@@ -576,8 +576,8 @@ func TestListAccessibleConnections_WsPermBinding(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db1", "postgres", "enc", "open")
-	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db2", "postgres", "enc", "open")
+	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db1", "postgres", "enc", "open")
+	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-wsperm@example.com")
 	_ = e.GrantPermission(context.Background(), org.ID, access.PermWsRead, "account", userID, "workspace", ws.ID, ownerID)
@@ -604,8 +604,8 @@ func TestListAccessibleConnections_TeamOrgBinding(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db1", "postgres", "enc", "open")
-	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db2", "postgres", "enc", "open")
+	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db1", "postgres", "enc", "open")
+	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	team, _ := db.InsertTeam(context.Background(), org.ID, "eng-conn-org", "Eng")
 	userID := newAccount(t, db, "user-conn-team-org@example.com")
@@ -636,8 +636,8 @@ func TestListAccessibleConnections_TeamConnBinding(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db1", "postgres", "enc", "open")
-	_, _ = db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db2", "postgres", "enc", "open")
+	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db1", "postgres", "enc", "open")
+	_, _ = db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	team, _ := db.InsertTeam(context.Background(), org.ID, "eng-conn-conn", "Eng")
 	userID := newAccount(t, db, "user-conn-team-conn@example.com")
@@ -664,7 +664,7 @@ func TestListAccessibleConnections_TeamNotMember(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db1", "postgres", "enc", "open")
+	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db1", "postgres", "enc", "open")
 	_ = c1
 
 	team, _ := db.InsertTeam(context.Background(), org.ID, "eng-nonmember", "Eng")
@@ -695,8 +695,8 @@ func TestListAccessibleConnections_CrossOrgIsolation(t *testing.T) {
 
 	wsA := seedWorkspace(t, db, e, orgA.ID, ownerA, "Main")
 	wsB := seedWorkspace(t, db, e, orgB.ID, ownerB, "Main")
-	db.InsertConnection(context.Background(), wsA.ID, nil, &orgA.ID, "org", orgA.ID, "db-a", "postgres", "enc", "open")
-	cB, _ := db.InsertConnection(context.Background(), wsB.ID, nil, &orgB.ID, "org", orgB.ID, "db-b", "postgres", "enc", "open")
+	db.InsertConnection(context.Background(), wsA.ID, nil, "db-a", "postgres", "enc", "open")
+	cB, _ := db.InsertConnection(context.Background(), wsB.ID, nil, "db-b", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-xorg@example.com")
 	adminRoleB := findOrgRoleID(t, db, orgB.ID, "admin")
@@ -728,8 +728,8 @@ func TestListAccessibleConnections_TwoUsersIsolation(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "alice-db", "postgres", "enc", "open")
-	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "bob-db", "postgres", "enc", "open")
+	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, "alice-db", "postgres", "enc", "open")
+	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, "bob-db", "postgres", "enc", "open")
 
 	aliceID := newAccount(t, db, "alice-conn-2users@example.com")
 	bobID := newAccount(t, db, "bob-conn-2users@example.com")
@@ -759,8 +759,8 @@ func TestListAccessibleConnections_WsBindingDoesNotLeakToOtherWs(t *testing.T) {
 
 	ws1 := seedWorkspace(t, db, e, org.ID, ownerID, "WS1")
 	ws2 := seedWorkspace(t, db, e, org.ID, ownerID, "WS2")
-	c1, _ := db.InsertConnection(context.Background(), ws1.ID, nil, &org.ID, "org", org.ID, "db1", "postgres", "enc", "open")
-	_, _ = db.InsertConnection(context.Background(), ws2.ID, nil, &org.ID, "org", org.ID, "db2", "postgres", "enc", "open")
+	c1, _ := db.InsertConnection(context.Background(), ws1.ID, nil, "db1", "postgres", "enc", "open")
+	_, _ = db.InsertConnection(context.Background(), ws2.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-wsscope@example.com")
 	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws1.ID, "ws:member")
@@ -792,9 +792,9 @@ func TestListAccessibleConnections_OwnerSeesAll(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db1", "postgres", "enc", "open")
-	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db2", "postgres", "enc", "open")
-	c3, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "db3", "postgres", "enc", "open")
+	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db1", "postgres", "enc", "open")
+	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
+	c3, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db3", "postgres", "enc", "open")
 
 	conns, err := db.ListAccessibleConnections(context.Background(), ownerID, org.ID, ws.ID)
 	if err != nil {
@@ -832,11 +832,11 @@ func TestListAccessibleConnections_EnvPermBinding(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	env, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "staging", "")
+	env, _ := db.InsertEnvironment(context.Background(), ws.ID, "staging", "")
 
 	// Tagged connection (in env) and untagged connection.
-	tagged, _ := db.InsertConnection(context.Background(), ws.ID, &env.ID, &org.ID, "org", org.ID, "tagged", "postgres", "enc", "open")
-	untagged, _ := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "untagged", "postgres", "enc", "open")
+	tagged, _ := db.InsertConnection(context.Background(), ws.ID, &env.ID, "tagged", "postgres", "enc", "open")
+	untagged, _ := db.InsertConnection(context.Background(), ws.ID, nil, "untagged", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-envperm@example.com")
 	// Grant permission at environment scope only.
@@ -864,11 +864,11 @@ func TestListAccessibleConnections_EnvRoleBinding(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	envA, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "env-a", "")
-	envB, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "env-b", "")
+	envA, _ := db.InsertEnvironment(context.Background(), ws.ID, "env-a", "")
+	envB, _ := db.InsertEnvironment(context.Background(), ws.ID, "env-b", "")
 
-	connA, _ := db.InsertConnection(context.Background(), ws.ID, &envA.ID, &org.ID, "org", org.ID, "conn-a", "postgres", "enc", "open")
-	connB, _ := db.InsertConnection(context.Background(), ws.ID, &envB.ID, &org.ID, "org", org.ID, "conn-b", "postgres", "enc", "open")
+	connA, _ := db.InsertConnection(context.Background(), ws.ID, &envA.ID, "conn-a", "postgres", "enc", "open")
+	connB, _ := db.InsertConnection(context.Background(), ws.ID, &envB.ID, "conn-b", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-envrole@example.com")
 	// Custom env-scope role with conn:execute.
@@ -900,8 +900,8 @@ func TestListAccessibleEnvironments_NoBindings(t *testing.T) {
 	ownerID := newAccount(t, db, "owner-env-none@example.com")
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "staging", "")
-	db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "prod", "")
+	db.InsertEnvironment(context.Background(), ws.ID, "staging", "")
+	db.InsertEnvironment(context.Background(), ws.ID, "prod", "")
 
 	userID := newAccount(t, db, "user-env-none@example.com")
 	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
@@ -921,8 +921,8 @@ func TestListAccessibleEnvironments_OrgRoleGrantsAll(t *testing.T) {
 	ownerID := newAccount(t, db, "owner-env-orgrole@example.com")
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	env1, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "staging", "")
-	env2, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "prod", "")
+	env1, _ := db.InsertEnvironment(context.Background(), ws.ID, "staging", "")
+	env2, _ := db.InsertEnvironment(context.Background(), ws.ID, "prod", "")
 
 	userID := newAccount(t, db, "user-env-orgrole@example.com")
 	adminRoleID := findOrgRoleID(t, db, org.ID, "admin")
@@ -949,8 +949,8 @@ func TestListAccessibleEnvironments_WsBindingGrantsAll(t *testing.T) {
 	ownerID := newAccount(t, db, "owner-env-wsrole@example.com")
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	env1, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "alpha", "")
-	env2, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "beta", "")
+	env1, _ := db.InsertEnvironment(context.Background(), ws.ID, "alpha", "")
+	env2, _ := db.InsertEnvironment(context.Background(), ws.ID, "beta", "")
 
 	userID := newAccount(t, db, "user-env-wsrole@example.com")
 	wsMemberID := findWsRoleID(t, db, org.ID, ws.ID, "ws:member")
@@ -974,8 +974,8 @@ func TestListAccessibleEnvironments_DirectEnvBinding(t *testing.T) {
 	ownerID := newAccount(t, db, "owner-env-direct@example.com")
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	envA, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "env-a", "")
-	envB, _ := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "env-b", "")
+	envA, _ := db.InsertEnvironment(context.Background(), ws.ID, "env-a", "")
+	envB, _ := db.InsertEnvironment(context.Background(), ws.ID, "env-b", "")
 
 	userID := newAccount(t, db, "user-env-direct@example.com")
 	// Grant access only to env A.
@@ -1010,13 +1010,13 @@ func TestListAccessibleEnvironments_IsolatedAcrossOrgs(t *testing.T) {
 	ownerID1 := newAccount(t, db, "owner-env-iso1@example.com")
 	_ = e.SeedOrg(context.Background(), org1.ID, ownerID1)
 	ws1 := seedWorkspace(t, db, e, org1.ID, ownerID1, "WS1")
-	env1, _ := db.InsertEnvironment(context.Background(), ws1.ID, &org1.ID, "org", org1.ID, "prod", "")
+	env1, _ := db.InsertEnvironment(context.Background(), ws1.ID, "prod", "")
 
 	org2, _ := db.InsertOrg(context.Background(), "acc-env-iso2", "Org2")
 	ownerID2 := newAccount(t, db, "owner-env-iso2@example.com")
 	_ = e.SeedOrg(context.Background(), org2.ID, ownerID2)
 	ws2 := seedWorkspace(t, db, e, org2.ID, ownerID2, "WS2")
-	env2, _ := db.InsertEnvironment(context.Background(), ws2.ID, &org2.ID, "org", org2.ID, "prod", "")
+	env2, _ := db.InsertEnvironment(context.Background(), ws2.ID, "prod", "")
 
 	// ownerID1 has org1 bindings; should not see env2.
 	envs1, _ := db.ListAccessibleEnvironments(context.Background(), ownerID1, org1.ID, ws1.ID)

@@ -15,9 +15,6 @@ type Connection struct {
 	ID            int64     `bun:",pk,autoincrement" json:"id"`
 	WorkspaceID   int64     `bun:",notnull"          json:"workspace_id"`
 	EnvironmentID *int64    `bun:",nullzero"         json:"environment_id,omitempty"`
-	OrgID         *int64    `bun:",nullzero"         json:"org_id,omitempty"`
-	OwnerType     string    `bun:",notnull"          json:"owner_type"`
-	OwnerID       int64     `bun:",notnull"          json:"owner_id"`
 	Name          string    `bun:",notnull"          json:"name"`
 	Driver        string    `bun:",notnull"          json:"driver"`
 	DSNEncrypted  string    `bun:",notnull"          json:"-"`
@@ -38,16 +35,13 @@ type ListConnectionsParams struct {
 	PageSize      int
 }
 
-func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID, orgID *int64, ownerType string, ownerID int64, name, driver, dsnEncrypted, accessMode string) (Connection, error) {
+func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string) (Connection, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	conn := Connection{
 		WorkspaceID:   workspaceID,
 		EnvironmentID: envID,
-		OrgID:         orgID,
-		OwnerType:     ownerType,
-		OwnerID:       ownerID,
 		Name:          name,
 		Driver:        driver,
 		DSNEncrypted:  dsnEncrypted,
@@ -60,10 +54,9 @@ func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID, or
 		return Connection{}, err
 	}
 
-	hierarchyOwnerType := ownerType
-	hierarchyOwnerID := ownerID
-	if ownerType == "org" && orgID != nil {
-		hierarchyOwnerID = *orgID
+	hierarchyOwnerType, hierarchyOwnerID, err := db.workspaceHierarchyOwner(ctx, workspaceID)
+	if err != nil {
+		return Connection{}, err
 	}
 
 	// Always write a connection → workspace row so workspace-scope bindings cover this connection.

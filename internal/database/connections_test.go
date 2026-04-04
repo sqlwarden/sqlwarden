@@ -11,7 +11,7 @@ func TestConnectionCRUD(t *testing.T) {
 	org, _ := db.InsertOrg(context.Background(), "conn-test-org", "Conn Test Org")
 	ws, _ := db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "Main", "")
 
-	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, &org.ID, "org", org.ID, "my-db", "postgres", "encrypted-dsn", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "my-db", "postgres", "encrypted-dsn", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,12 +38,12 @@ func TestConnectionCRUD(t *testing.T) {
 		t.Fatalf("expected 1 connection, got %d", len(conns.Items))
 	}
 
-	env, err := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "prod", "")
+	env, err := db.InsertEnvironment(context.Background(), ws.ID, "prod", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	connInEnv, err := db.InsertConnection(context.Background(), ws.ID, &env.ID, &org.ID, "org", org.ID, "reporting-db", "postgres", "env-dsn", "open")
+	connInEnv, err := db.InsertConnection(context.Background(), ws.ID, &env.ID, "reporting-db", "postgres", "env-dsn", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,19 +107,19 @@ func TestListConnections_SupportsSearchFilterSortAndPagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	envA, err := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "prod", "")
+	envA, err := db.InsertEnvironment(context.Background(), ws.ID, "prod", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	envB, err := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "staging", "")
+	envB, err := db.InsertEnvironment(context.Background(), ws.ID, "staging", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := db.InsertConnection(context.Background(), ws.ID, &envA.ID, &org.ID, "org", org.ID, "Primary DB", "postgres", "dsn-a", "open"); err != nil {
+	if _, err := db.InsertConnection(context.Background(), ws.ID, &envA.ID, "Primary DB", "postgres", "dsn-a", "open"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.InsertConnection(context.Background(), ws.ID, &envB.ID, &org.ID, "org", org.ID, "Replica DB", "mysql", "dsn-b", "restricted"); err != nil {
+	if _, err := db.InsertConnection(context.Background(), ws.ID, &envB.ID, "Replica DB", "mysql", "dsn-b", "restricted"); err != nil {
 		t.Fatal(err)
 	}
 

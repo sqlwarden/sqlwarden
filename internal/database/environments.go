@@ -14,9 +14,6 @@ import (
 type Environment struct {
 	ID          int64     `bun:",pk,autoincrement" json:"id"`
 	WorkspaceID int64     `bun:",notnull"          json:"workspace_id"`
-	OrgID       *int64    `bun:",nullzero"         json:"org_id,omitempty"`
-	OwnerType   string    `bun:",notnull"          json:"owner_type"`
-	OwnerID     int64     `bun:",notnull"          json:"owner_id"`
 	Name        string    `bun:",notnull"          json:"name"`
 	Description string    `bun:",nullzero"         json:"description,omitempty"`
 	CreatedAt   time.Time `bun:",notnull"          json:"created_at"`
@@ -33,15 +30,12 @@ type ListEnvironmentsParams struct {
 	PageSize    int
 }
 
-func (db *DB) InsertEnvironment(ctx context.Context, workspaceID int64, orgID *int64, ownerType string, ownerID int64, name, description string) (Environment, error) {
+func (db *DB) InsertEnvironment(ctx context.Context, workspaceID int64, name, description string) (Environment, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	env := Environment{
 		WorkspaceID: workspaceID,
-		OrgID:       orgID,
-		OwnerType:   ownerType,
-		OwnerID:     ownerID,
 		Name:        name,
 		Description: description,
 		CreatedAt:   time.Now(),
@@ -52,10 +46,9 @@ func (db *DB) InsertEnvironment(ctx context.Context, workspaceID int64, orgID *i
 		return Environment{}, err
 	}
 
-	hierarchyOwnerType := ownerType
-	hierarchyOwnerID := ownerID
-	if ownerType == "org" && orgID != nil {
-		hierarchyOwnerID = *orgID
+	hierarchyOwnerType, hierarchyOwnerID, err := db.workspaceHierarchyOwner(ctx, workspaceID)
+	if err != nil {
+		return Environment{}, err
 	}
 	hm := map[string]interface{}{
 		"child_type":  "environment",

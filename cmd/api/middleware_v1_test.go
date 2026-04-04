@@ -304,7 +304,7 @@ func TestEnvCtxBranches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := app.db.InsertEnvironment(context.Background(), ws2.ID, &org.ID, "org", org.ID, "prod", "")
+	env, err := app.db.InsertEnvironment(context.Background(), ws2.ID, "prod", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +357,7 @@ func TestConnCtxBranches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := app.db.InsertConnection(context.Background(), ws2.ID, nil, &org.ID, "org", org.ID, "db", "sqlite", ":memory:", "open")
+	conn, err := app.db.InsertConnection(context.Background(), ws2.ID, nil, "db", "sqlite", ":memory:", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +406,7 @@ func TestSpaceEnvCtxBranches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := app.db.InsertEnvironment(context.Background(), otherWS.ID, nil, "space", account.ID, "prod", "")
+	env, err := app.db.InsertEnvironment(context.Background(), otherWS.ID, "prod", "")
 	if err != nil {
 		t.Fatal(err)
 	}

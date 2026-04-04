@@ -68,7 +68,7 @@ func TestConnectionInheritsOrgRoleViaHierarchy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "MyConn", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "MyConn", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestEnvironmentInheritsOrgRoleViaHierarchy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := db.InsertEnvironment(context.Background(), ws.ID, &orgID, "org", orgID, "staging", "")
+	env, err := db.InsertEnvironment(context.Background(), ws.ID, "staging", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestWorkspaceRoleBindingFlowsToConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "C", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "C", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestWorkspaceRoleBindingFlowsToEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := db.InsertEnvironment(context.Background(), ws.ID, &orgID, "org", orgID, "prod", "")
+	env, err := db.InsertEnvironment(context.Background(), ws.ID, "prod", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestDirectPermissionOnWorkspaceFlowsToConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "C", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "C", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestDirectPermissionOnWorkspaceFlowsToEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := db.InsertEnvironment(context.Background(), ws.ID, &orgID, "org", orgID, "dev", "")
+	env, err := db.InsertEnvironment(context.Background(), ws.ID, "dev", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,11 +274,11 @@ func TestConnectionBindingDoesNotLeakToSibling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn1, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "C1", "postgres", "enc", "open")
+	conn1, err := db.InsertConnection(context.Background(), ws.ID, nil, "C1", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn2, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "C2", "postgres", "enc", "open")
+	conn2, err := db.InsertConnection(context.Background(), ws.ID, nil, "C2", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,11 +308,11 @@ func TestEnvironmentBindingDoesNotLeakToSibling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env1, err := db.InsertEnvironment(context.Background(), ws.ID, &orgID, "org", orgID, "staging", "")
+	env1, err := db.InsertEnvironment(context.Background(), ws.ID, "staging", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	env2, err := db.InsertEnvironment(context.Background(), ws.ID, &orgID, "org", orgID, "prod", "")
+	env2, err := db.InsertEnvironment(context.Background(), ws.ID, "prod", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func TestChildBindingDoesNotPropagateToParent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "C", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "C", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1038,7 +1038,7 @@ func TestAncestoryCacheInvalidatedAfterDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, &orgID, "org", orgID, "C", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "C", "postgres", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}

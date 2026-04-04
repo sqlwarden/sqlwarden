@@ -11,7 +11,7 @@ func TestEnvironmentCRUD(t *testing.T) {
 	org, _ := db.InsertOrg(context.Background(), "env-test-org", "Env Test Org")
 	ws, _ := db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "Main", "")
 
-	env, err := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "staging", "Staging env")
+	env, err := db.InsertEnvironment(context.Background(), ws.ID, "staging", "Staging env")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestListEnvironments_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"staging", "dev", "prod"} {
-		if _, err := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, name, ""); err != nil {
+		if _, err := db.InsertEnvironment(context.Background(), ws.ID, name, ""); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -18,11 +18,11 @@ func TestResourceBelongsToWorkspace(t *testing.T) {
 	ws1 := seedWorkspaceForAccount(t, app, org, owner, "WS1", "")
 	ws2 := seedWorkspaceForAccount(t, app, org, owner, "WS2", "")
 
-	env, err := app.db.InsertEnvironment(context.Background(), ws2.ID, &org.ID, "org", org.ID, "prod", "")
+	env, err := app.db.InsertEnvironment(context.Background(), ws2.ID, "prod", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := app.db.InsertConnection(context.Background(), ws2.ID, &env.ID, &org.ID, "org", org.ID, "db", "sqlite", ":memory:", "open")
+	conn, err := app.db.InsertConnection(context.Background(), ws2.ID, &env.ID, "db", "sqlite", ":memory:", "open")
 	if err != nil {
 		t.Fatal(err)
 	}

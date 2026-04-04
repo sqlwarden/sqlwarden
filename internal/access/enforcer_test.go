@@ -531,19 +531,19 @@ func TestCanEnvironmentScopeCoversTaggedConnections(t *testing.T) {
 	}
 
 	// Create an environment in the workspace.
-	env, err := db.InsertEnvironment(ctx, ws.ID, &orgID, "org", orgID, "staging", "")
+	env, err := db.InsertEnvironment(ctx, ws.ID, "staging", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create a connection tagged to that environment.
-	taggedConn, err := db.InsertConnection(ctx, ws.ID, &env.ID, &orgID, "org", orgID, "tagged-db", "sqlite", "enc", "open")
+	taggedConn, err := db.InsertConnection(ctx, ws.ID, &env.ID, "tagged-db", "sqlite", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create a connection NOT tagged to any environment.
-	untaggedConn, err := db.InsertConnection(ctx, ws.ID, nil, &orgID, "org", orgID, "untagged-db", "sqlite", "enc", "open")
+	untaggedConn, err := db.InsertConnection(ctx, ws.ID, nil, "untagged-db", "sqlite", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -587,20 +587,20 @@ func TestCanEnvironmentScopeIsolatesAcrossEnvironments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	envA, err := db.InsertEnvironment(ctx, ws.ID, &orgID, "org", orgID, "env-a", "")
+	envA, err := db.InsertEnvironment(ctx, ws.ID, "env-a", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	envB, err := db.InsertEnvironment(ctx, ws.ID, &orgID, "org", orgID, "env-b", "")
+	envB, err := db.InsertEnvironment(ctx, ws.ID, "env-b", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	connA, err := db.InsertConnection(ctx, ws.ID, &envA.ID, &orgID, "org", orgID, "conn-a", "sqlite", "enc", "open")
+	connA, err := db.InsertConnection(ctx, ws.ID, &envA.ID, "conn-a", "sqlite", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
-	connB, err := db.InsertConnection(ctx, ws.ID, &envB.ID, &orgID, "org", orgID, "conn-b", "sqlite", "enc", "open")
+	connB, err := db.InsertConnection(ctx, ws.ID, &envB.ID, "conn-b", "sqlite", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -643,12 +643,12 @@ func TestCanWorkspaceScopeStillCoversEnvTaggedConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	env, err := db.InsertEnvironment(ctx, ws.ID, &orgID, "org", orgID, "prod", "")
+	env, err := db.InsertEnvironment(ctx, ws.ID, "prod", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	conn, err := db.InsertConnection(ctx, ws.ID, &env.ID, &orgID, "org", orgID, "prod-db", "sqlite", "enc", "open")
+	conn, err := db.InsertConnection(ctx, ws.ID, &env.ID, "prod-db", "sqlite", "enc", "open")
 	if err != nil {
 		t.Fatal(err)
 	}

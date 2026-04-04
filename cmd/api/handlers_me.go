@@ -141,7 +141,7 @@ func (app *application) createMyEnvironment(w http.ResponseWriter, r *http.Reque
 	}
 
 	ws := contextGetWorkspace(r)
-	env, err := app.db.InsertEnvironment(r.Context(), ws.ID, nil, "space", ws.OwnerID, input.Name, input.Description)
+	env, err := app.db.InsertEnvironment(r.Context(), ws.ID, input.Name, input.Description)
 	if err != nil {
 		if isUniqueViolation(err) {
 			input.V.AddFieldError("name", "an environment with this name already exists in this workspace")
@@ -262,8 +262,7 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 	}
 
 	conn, err := app.db.InsertConnection(context.Background(),
-		ws.ID, validatedEnvID, nil,
-		"space", ws.OwnerID,
+		ws.ID, validatedEnvID,
 		input.Name, input.Driver, dsnEncrypted, input.AccessMode,
 	)
 	if err != nil {
