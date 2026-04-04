@@ -478,10 +478,7 @@ func TestGrantPermissionsUnknownPermInBatchRejected(t *testing.T) {
 	}
 
 	// No bindings should have been inserted (validation runs before any insert).
-	pbs, err := db.ListPermissionBindings(context.Background(), orgID, "workspace", ws.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pbs := listPermissionBindings(t, db, orgID, "workspace", ws.ID)
 	if len(pbs) != 0 {
 		t.Errorf("expected 0 permission bindings after failed batch, got %d", len(pbs))
 	}
@@ -708,10 +705,7 @@ func TestRevokePermissionTargeted(t *testing.T) {
 	}
 
 	// Find the ws:write binding ID.
-	pbs, err := db.ListPermissionBindings(context.Background(), orgID, "workspace", ws.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pbs := listPermissionBindings(t, db, orgID, "workspace", ws.ID)
 	var writeBindingID int64
 	for _, pb := range pbs {
 		if pb.Permission == access.PermWsWrite {
@@ -756,10 +750,7 @@ func TestRevokePermissionWrongOrgNoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pbs, err := db.ListPermissionBindings(context.Background(), orgID, "workspace", ws.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pbs := listPermissionBindings(t, db, orgID, "workspace", ws.ID)
 	if len(pbs) == 0 {
 		t.Fatal("expected a binding")
 	}
@@ -790,10 +781,7 @@ func TestUnbindRoleWrongOrgNoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rbs, err := db.ListRoleBindings(context.Background(), orgID, "org", orgID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rbs := listRoleBindings(t, db, orgID, "org", orgID)
 	var bindingID int64
 	for _, b := range rbs {
 		if b.SubjectType == "account" && b.SubjectID == memberID {
@@ -806,7 +794,7 @@ func TestUnbindRoleWrongOrgNoOp(t *testing.T) {
 	}
 
 	// Attempt to unbind using the wrong org.
-	if err = e.UnbindRole(ctx, bindingID, otherOrgID); err != nil {
+	if err := e.UnbindRole(ctx, bindingID, otherOrgID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -837,10 +825,7 @@ func TestBindRoleIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rbs, err := db.ListRoleBindings(context.Background(), orgID, "org", orgID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rbs := listRoleBindings(t, db, orgID, "org", orgID)
 	count := 0
 	for _, b := range rbs {
 		if b.SubjectType == "account" && b.SubjectID == memberID && b.RoleID == adminRoleID {
@@ -872,10 +857,7 @@ func TestGrantPermissionsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pbs, err := db.ListPermissionBindings(context.Background(), orgID, "workspace", ws.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pbs := listPermissionBindings(t, db, orgID, "workspace", ws.ID)
 	count := 0
 	for _, pb := range pbs {
 		if pb.Permission == access.PermWsRead && pb.SubjectID == memberID {
@@ -920,10 +902,7 @@ func TestGrantPermissionsMultipleAllEnforced(t *testing.T) {
 		t.Error("member should NOT have ws:delete — it was not in the batch")
 	}
 
-	pbs, err := db.ListPermissionBindings(context.Background(), orgID, "workspace", ws.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pbs := listPermissionBindings(t, db, orgID, "workspace", ws.ID)
 	if len(pbs) != len(perms) {
 		t.Errorf("expected %d permission bindings, got %d", len(perms), len(pbs))
 	}

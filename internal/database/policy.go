@@ -113,17 +113,6 @@ func (db *DB) GetRoleBinding(ctx context.Context, id, orgID int64) (RoleBinding,
 	return rb, true, nil
 }
 
-func (db *DB) ListRoleBindings(ctx context.Context, orgID int64, resourceType string, resourceID int64) ([]RoleBinding, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
-	var rbs []RoleBinding
-	err := db.NewSelect().Model(&rbs).
-		Where("org_id = ? AND resource_type = ? AND resource_id = ?", orgID, resourceType, resourceID).
-		Scan(ctx)
-	return rbs, err
-}
-
 func (db *DB) GetPermissionBinding(ctx context.Context, id, orgID int64) (PermissionBinding, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -137,17 +126,6 @@ func (db *DB) GetPermissionBinding(ctx context.Context, id, orgID int64) (Permis
 		return PermissionBinding{}, false, err
 	}
 	return pb, true, nil
-}
-
-func (db *DB) ListPermissionBindings(ctx context.Context, orgID int64, resourceType string, resourceID int64) ([]PermissionBinding, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
-	var pbs []PermissionBinding
-	err := db.NewSelect().Model(&pbs).
-		Where("org_id = ? AND resource_type = ? AND resource_id = ?", orgID, resourceType, resourceID).
-		Scan(ctx)
-	return pbs, err
 }
 
 func (db *DB) listOrgPolicies(ctx context.Context, orgID int64) ([]RoleBinding, []PermissionBinding, error) {

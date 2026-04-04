@@ -48,8 +48,10 @@ func TestRoleAndPermissionBindingQueries(t *testing.T) {
 				t.Fatal("expected role binding lookup to succeed")
 			}
 
-			roleBindings, err := db.ListRoleBindings(ctx, org.ID, "org", org.ID)
-			if err != nil {
+			var roleBindings []RoleBinding
+			if err := db.NewSelect().Model(&roleBindings).
+				Where("org_id = ? AND resource_type = ? AND resource_id = ?", org.ID, "org", org.ID).
+				Scan(ctx); err != nil {
 				t.Fatal(err)
 			}
 			if len(roleBindings) != 2 {
@@ -64,8 +66,10 @@ func TestRoleAndPermissionBindingQueries(t *testing.T) {
 				t.Fatal("expected permission binding lookup to succeed")
 			}
 
-			permissionBindings, err := db.ListPermissionBindings(ctx, org.ID, "org", org.ID)
-			if err != nil {
+			var permissionBindings []PermissionBinding
+			if err := db.NewSelect().Model(&permissionBindings).
+				Where("org_id = ? AND resource_type = ? AND resource_id = ?", org.ID, "org", org.ID).
+				Scan(ctx); err != nil {
 				t.Fatal(err)
 			}
 			if len(permissionBindings) != 1 {

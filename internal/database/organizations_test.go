@@ -195,8 +195,10 @@ func TestDeleteAccountRoleBindings(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			bindings, err := db.ListRoleBindings(ctx, org.ID, "org", org.ID)
-			if err != nil {
+			var bindings []RoleBinding
+			if err := db.NewSelect().Model(&bindings).
+				Where("org_id = ? AND resource_type = ? AND resource_id = ?", org.ID, "org", org.ID).
+				Scan(ctx); err != nil {
 				t.Fatal(err)
 			}
 			if len(bindings) != 1 {

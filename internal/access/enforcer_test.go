@@ -83,6 +83,32 @@ func seedOrg(t *testing.T, db *database.DB, e *access.Enforcer, suffix string) (
 	return org.ID, owner.ID
 }
 
+func listRoleBindings(t *testing.T, db *database.DB, orgID int64, resourceType string, resourceID int64) []database.RoleBinding {
+	t.Helper()
+
+	var bindings []database.RoleBinding
+	err := db.NewSelect().Model(&bindings).
+		Where("org_id = ? AND resource_type = ? AND resource_id = ?", orgID, resourceType, resourceID).
+		Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bindings
+}
+
+func listPermissionBindings(t *testing.T, db *database.DB, orgID int64, resourceType string, resourceID int64) []database.PermissionBinding {
+	t.Helper()
+
+	var bindings []database.PermissionBinding
+	err := db.NewSelect().Model(&bindings).
+		Where("org_id = ? AND resource_type = ? AND resource_id = ?", orgID, resourceType, resourceID).
+		Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bindings
+}
+
 // TestSeedOrgCreatesBuiltinRoles verifies that SeedOrg seeds the owner and admin builtin roles.
 func TestSeedOrgCreatesBuiltinRoles(t *testing.T) {
 	e, db := newTestEnforcer(t)
@@ -461,10 +487,7 @@ func TestUnbindRole(t *testing.T) {
 	}
 
 	// Get the binding ID.
-	bindings, err := db.ListRoleBindings(context.Background(), orgID, "org", orgID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	bindings := listRoleBindings(t, db, orgID, "org", orgID)
 	var bindingID int64
 	for _, b := range bindings {
 		if b.SubjectType == "account" && b.SubjectID == member.ID {
