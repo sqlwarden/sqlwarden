@@ -87,11 +87,11 @@ func TestRevokeWorkspacePermissionBinding(t *testing.T) {
 	if err := json.Unmarshal(listRes.BodyBytes, &body); err != nil {
 		t.Fatal(err)
 	}
-	pbs := body["permission_bindings"].([]any)
-	if len(pbs) == 0 {
+	items := body["items"].([]any)
+	if len(items) == 0 {
 		t.Fatal("expected at least one permission binding")
 	}
-	pbID := fmt.Sprintf("%v", pbs[0].(map[string]any)["id"])
+	pbID := fmt.Sprintf("%v", items[0].(map[string]any)["binding_id"])
 
 	// Revoke it with ?kind=permission.
 	revokeRes := send(t, newAuthRequest(t, http.MethodDelete,
@@ -148,11 +148,11 @@ func TestRevokeWorkspaceRoleBinding(t *testing.T) {
 	if err := json.Unmarshal(listRes.BodyBytes, &body); err != nil {
 		t.Fatal(err)
 	}
-	rbs := body["role_bindings"].([]any)
-	if len(rbs) == 0 {
+	items := body["items"].([]any)
+	if len(items) == 0 {
 		t.Fatal("expected role binding to be listed")
 	}
-	rbID := fmt.Sprintf("%v", rbs[0].(map[string]any)["id"])
+	rbID := fmt.Sprintf("%v", items[0].(map[string]any)["binding_id"])
 
 	memberListRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/roles", nil, memberTok), app.routes())
@@ -196,7 +196,7 @@ func TestRevokeWorkspacePolicyCrossWorkspaceIsolation(t *testing.T) {
 	if err := json.Unmarshal(listRes.BodyBytes, &body); err != nil {
 		t.Fatal(err)
 	}
-	pbID := fmt.Sprintf("%v", body["permission_bindings"].([]any)[0].(map[string]any)["id"])
+	pbID := fmt.Sprintf("%v", body["items"].([]any)[0].(map[string]any)["binding_id"])
 
 	revokeRes := send(t, newAuthRequest(t, http.MethodDelete,
 		policiesURL(orgSlug, ws1ID)+"/"+pbID+"?kind=permission",
@@ -300,11 +300,11 @@ func TestGrantConnectionPolicyBinding(t *testing.T) {
 	if err := json.Unmarshal(listRes.BodyBytes, &body); err != nil {
 		t.Fatal(err)
 	}
-	pbs := body["permission_bindings"].([]any)
+	pbs := body["items"].([]any)
 	found := false
 	for _, pb := range pbs {
 		b := pb.(map[string]any)
-		if b["resource_type"] == "connection" {
+		if b["resource_type"] == "connection" && b["binding_kind"] == "permission" {
 			found = true
 			break
 		}
@@ -387,11 +387,11 @@ func TestGrantEnvironmentPolicyBinding(t *testing.T) {
 	if err := json.Unmarshal(listRes.BodyBytes, &body); err != nil {
 		t.Fatal(err)
 	}
-	pbs := body["permission_bindings"].([]any)
+	pbs := body["items"].([]any)
 	found := false
 	for _, pb := range pbs {
 		b := pb.(map[string]any)
-		if b["resource_type"] == "environment" {
+		if b["resource_type"] == "environment" && b["binding_kind"] == "permission" {
 			found = true
 			break
 		}
@@ -460,14 +460,18 @@ func TestListPoliciesShowsAllResourceTypes(t *testing.T) {
 	if err := json.Unmarshal(listRes.BodyBytes, &resp); err != nil {
 		t.Fatal(err)
 	}
-	pbs := resp["permission_bindings"].([]any)
-	assert.Equal(t, len(pbs), 3)
+	pbs := resp["items"].([]any)
+	permissionCount := 0
 
 	types := map[string]bool{}
 	for _, pb := range pbs {
 		b := pb.(map[string]any)
-		types[b["resource_type"].(string)] = true
+		if b["binding_kind"] == "permission" {
+			permissionCount++
+			types[b["resource_type"].(string)] = true
+		}
 	}
+	assert.Equal(t, permissionCount, 3)
 	if !types["workspace"] || !types["environment"] || !types["connection"] {
 		t.Fatalf("expected bindings for all three resource types, got: %v", types)
 	}
@@ -530,15 +534,17 @@ func TestEnvScopedRoleGrantsConnectionListAndConnect(t *testing.T) {
 	// Member lists connections — only conn A should appear.
 	listRes := send(t, newAuthRequest(t, http.MethodGet, baseURL+"/connections", nil, memberTok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
-	var conns []map[string]any
-	if err := json.Unmarshal(listRes.BodyBytes, &conns); err != nil {
+	var payload struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(listRes.BodyBytes, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(conns) != 1 {
-		t.Fatalf("expected 1 accessible connection, got %d: %v", len(conns), conns)
+	if len(payload.Items) != 1 {
+		t.Fatalf("expected 1 accessible connection, got %d: %v", len(payload.Items), payload.Items)
 	}
-	if fmt.Sprintf("%v", conns[0]["id"]) != connAID {
-		t.Fatalf("expected conn A (%s) in list, got id=%v", connAID, conns[0]["id"])
+	if fmt.Sprintf("%v", payload.Items[0]["id"]) != connAID {
+		t.Fatalf("expected conn A (%s) in list, got id=%v", connAID, payload.Items[0]["id"])
 	}
 
 	// Member can connect to conn A.
@@ -639,6 +645,12 @@ func TestGrantMultiplePermissions(t *testing.T) {
 	if err := json.Unmarshal(listRes.BodyBytes, &body); err != nil {
 		t.Fatal(err)
 	}
-	pbs := body["permission_bindings"].([]any)
-	assert.Equal(t, len(pbs), 2)
+	items := body["items"].([]any)
+	permissionCount := 0
+	for _, item := range items {
+		if item.(map[string]any)["binding_kind"] == "permission" {
+			permissionCount++
+		}
+	}
+	assert.Equal(t, permissionCount, 2)
 }
