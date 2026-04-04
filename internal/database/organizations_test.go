@@ -88,6 +88,53 @@ func TestOrgMembership(t *testing.T) {
 	}
 }
 
+func TestListAccountOrgsPage_SupportsPaginationSearchAndSort(t *testing.T) {
+	db := newTestDB(t)
+
+	pw := "pw"
+	acc, err := db.InsertAccount(context.Background(), "account-orgs@example.com", "Account Orgs", &pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, org := range []struct {
+		slug string
+		name string
+	}{
+		{slug: "alpha-team", name: "Alpha Team"},
+		{slug: "zeta-labs", name: "Zeta Labs"},
+	} {
+		inserted, err := db.InsertOrg(context.Background(), org.slug, org.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.AddOrgMember(context.Background(), inserted.ID, acc.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := db.ListAccountOrgsPage(context.Background(), ListAccountOrgsParams{
+		AccountID: acc.ID,
+		Search:    "zeta",
+		Sort:      "name",
+		Order:     "desc",
+		Page:      1,
+		PageSize:  1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 1 {
+		t.Fatalf("expected total=1, got %d", result.Total)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 org, got %d", len(result.Items))
+	}
+	if result.Items[0].Name != "Zeta Labs" {
+		t.Fatalf("expected Zeta Labs, got %s", result.Items[0].Name)
+	}
+}
+
 func TestGetOrgMembers(t *testing.T) {
 	for _, driver := range testDrivers() {
 		t.Run(driver, func(t *testing.T) {

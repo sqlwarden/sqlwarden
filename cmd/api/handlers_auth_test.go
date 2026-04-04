@@ -343,6 +343,7 @@ func TestGetAccount(t *testing.T) {
 }
 
 func TestGetAccountOrgs(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
@@ -356,12 +357,56 @@ func TestGetAccountOrgs(t *testing.T) {
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	// Parse as array
-	var tenants []map[string]any
-	err := json.Unmarshal(res.BodyBytes, &tenants)
-	if err != nil {
-		t.Fatalf("expected JSON array, got error: %v", err)
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
 	}
+	err := json.Unmarshal(res.BodyBytes, &payload)
+	if err != nil {
+		t.Fatalf("expected paginated JSON payload, got error: %v", err)
+	}
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 25)
+	assert.Equal(t, payload.Total, 0)
+	assert.Equal(t, len(payload.Items), 0)
+}
+
+func TestGetAccountOrgs_SupportsPaginationSearchAndSort(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	setupInstance(t, app, uniqueEmail(t, "account-orgs-admin"), "Admin", "securepass99")
+
+	account, token := seedAccountWithToken(t, app, uniqueEmail(t, "account-orgs"), "Account Orgs User")
+	alpha := seedOrganizationForAccount(t, app, account, "Alpha Team")
+	zeta := seedOrganizationForAccount(t, app, account, "Zeta Labs")
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/account/orgs?q=zeta&sort=name&order=desc&page=1&page_size=1", nil, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	err := json.Unmarshal(res.BodyBytes, &payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 1)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	if payload.Items[0]["id"] != float64(zeta.ID) {
+		t.Fatalf("expected org id %d, got %v", zeta.ID, payload.Items[0]["id"])
+	}
+	if payload.Items[0]["name"] != zeta.Name {
+		t.Fatalf("expected org name %q, got %v", zeta.Name, payload.Items[0]["name"])
+	}
+	assert.Equal(t, alpha.Name, "Alpha Team")
 }
 
 func TestGetSession_ReturnsStableBootstrapPayload(t *testing.T) {

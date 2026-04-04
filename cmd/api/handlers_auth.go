@@ -257,13 +257,27 @@ func (app *application) getAccount(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) getAccountOrgs(w http.ResponseWriter, r *http.Request) {
 	account := contextGetAccount(r)
-	orgs, err := app.db.GetAccountOrgs(r.Context(), account.ID)
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"name":       "name",
+		"slug":       "slug",
+		"created_at": "created_at",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	orgs, err := app.db.ListAccountOrgsPage(r.Context(), database.ListAccountOrgsParams{
+		AccountID: account.ID,
+		Search:    q.Search,
+		Sort:      q.Sort,
+		Order:     q.Order,
+		Page:      q.Page,
+		PageSize:  q.PageSize,
+	})
 	if err != nil {
 		app.serverError(w, r, err)
 		return
-	}
-	if orgs == nil {
-		orgs = []database.Organization{}
 	}
 	err = response.JSON(w, http.StatusOK, orgs)
 	if err != nil {
