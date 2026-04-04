@@ -91,6 +91,8 @@ func (app *application) routes() http.Handler {
 			r.Use(app.requireAccount, app.orgCtx)
 
 			r.Get("/", app.getOrg)
+			r.Patch("/", app.updateOrg)
+			r.Delete("/", app.deleteOrg)
 
 			r.Route("/members", func(r chi.Router) {
 				r.With(app.requirePermission("org:read")).Get("/", app.listOrgMembers)

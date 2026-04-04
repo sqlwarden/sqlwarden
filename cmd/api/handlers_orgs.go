@@ -20,6 +20,14 @@ func (app *application) getOrg(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (app *application) updateOrg(w http.ResponseWriter, r *http.Request) {
+	app.methodNotAllowed(w, r)
+}
+
+func (app *application) deleteOrg(w http.ResponseWriter, r *http.Request) {
+	app.methodNotAllowed(w, r)
+}
+
 func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name string              `json:"name"`

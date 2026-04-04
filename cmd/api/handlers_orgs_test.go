@@ -271,3 +271,24 @@ func TestCreateOrgDuplicateName(t *testing.T) {
 	res2 := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", body, tok), app.routes())
 	assert.Equal(t, res2.StatusCode, http.StatusUnprocessableEntity)
 }
+
+func TestUpdateOrganization_IsExplicitlyUnsupported(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "org-update-owner"), "Org Owner", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug,
+		map[string]any{"name": "Renamed Org"}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusMethodNotAllowed)
+}
+
+func TestDeleteOrganization_IsExplicitlyUnsupported(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "org-delete-owner"), "Org Owner", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug, nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusMethodNotAllowed)
+}

@@ -99,3 +99,8 @@ Each item includes UI-renderable subject and resource metadata:
 - environments: mutable `name`, `description`; immutable `workspace_id`, `org_id`, `owner_type`, `owner_id`
 - teams: mutable `name`; immutable `slug`, `org_id`
 - connections: mutable `name`, `dsn`, `access_mode`; immutable `workspace_id`, `environment_id`, `driver`
+
+## Explicitly Deferred Items
+
+- organization rename is deferred from v1 and returns `405 Method Not Allowed`
+- organization delete is deferred from v1 and returns `405 Method Not Allowed`
