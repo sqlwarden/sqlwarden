@@ -376,19 +376,27 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 				return
 			}
 		}
-		err = app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, input.ResourceType, resourceID, grantor.ID)
-	} else {
-		err = app.enforcer.GrantPermissions(r.Context(), org.ID, input.Permissions, input.SubjectType, input.SubjectID, input.ResourceType, resourceID, grantor.ID)
-	}
-	if err != nil {
-		if errors.Is(err, access.ErrUnknownPermission) {
-			v := validator.Validator{}
-			v.AddFieldError("permissions", err.Error())
-			app.failedValidation(w, r, v)
+		if err := app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, input.ResourceType, resourceID, grantor.ID); err != nil {
+			if errors.Is(err, access.ErrUnknownPermission) {
+				v := validator.Validator{}
+				v.AddFieldError("permissions", err.Error())
+				app.failedValidation(w, r, v)
+				return
+			}
+			app.serverError(w, r, err)
 			return
 		}
-		app.serverError(w, r, err)
-		return
+	} else {
+		if err := app.enforcer.GrantPermissions(r.Context(), org.ID, input.Permissions, input.SubjectType, input.SubjectID, input.ResourceType, resourceID, grantor.ID); err != nil {
+			if errors.Is(err, access.ErrUnknownPermission) {
+				v := validator.Validator{}
+				v.AddFieldError("permissions", err.Error())
+				app.failedValidation(w, r, v)
+				return
+			}
+			app.serverError(w, r, err)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
