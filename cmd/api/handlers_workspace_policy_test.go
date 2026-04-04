@@ -541,3 +541,41 @@ func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *te
 	assert.Equal(t, payload.Items[0]["resource_name"], "Primary DB")
 	assert.Equal(t, payload.Items[0]["permission"], "conn:execute")
 }
+
+func TestListWorkspacePolicies_ReturnsRenderableSubjectAndResourceMetadata(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "policy-render-owner"), "Policy Render Owner", "Policy Render Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Policy Workspace", "")
+	env := seedEnvironment(t, app, ws.ID, org.ID, "prod")
+	conn := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Primary DB", "open")
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies",
+		map[string]any{
+			"permissions":   []string{"conn:read"},
+			"subject_type":  "account",
+			"subject_id":    owner.ID,
+			"resource_type": "connection",
+			"resource_id":   conn.ID,
+		}, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newOrgRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies?resource_type=connection",
+		ownerTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items []map[string]any `json:"items"`
+	}
+	decodeJSONResponse(t, listRes.BodyBytes, &payload)
+	assert.Equal(t, len(payload.Items) > 0, true)
+	assert.Equal(t, payload.Items[0]["subject_type"], "account")
+	if payload.Items[0]["subject_name"] != owner.Name {
+		t.Fatalf("expected subject_name %q, got %v", owner.Name, payload.Items[0]["subject_name"])
+	}
+	assert.Equal(t, payload.Items[0]["resource_type"], "connection")
+	assert.Equal(t, payload.Items[0]["resource_name"], "Primary DB")
+}
