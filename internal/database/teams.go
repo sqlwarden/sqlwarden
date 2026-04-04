@@ -26,6 +26,14 @@ type TeamMember struct {
 	CreatedAt time.Time `bun:",notnull" json:"created_at"`
 }
 
+type ListTeamMembersParams struct {
+	TeamID   int64
+	Sort     string
+	Order    string
+	Page     int
+	PageSize int
+}
+
 type ListTeamsParams struct {
 	OrgID    int64
 	Search   string
@@ -139,13 +147,21 @@ func (db *DB) RemoveTeamMember(ctx context.Context, teamID, accountID int64) err
 	return err
 }
 
-func (db *DB) ListTeamMembers(ctx context.Context, teamID int64) ([]TeamMember, error) {
+func (db *DB) ListTeamMembersPage(ctx context.Context, params ListTeamMembersParams) (response.Paginated[TeamMember], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	params = normalizeTeamMemberListParams(params)
+
 	var members []TeamMember
-	err := db.NewSelect().Model(&members).Where("team_id = ?", teamID).Scan(ctx)
-	return members, err
+	err := db.NewSelect().Model(&members).
+		Where("team_id = ?", params.TeamID).
+		OrderExpr(teamMemberOrderExpr(params)).
+		Scan(ctx)
+	if err != nil {
+		return response.Paginated[TeamMember]{}, err
+	}
+	return response.PaginateItems(members, params.Page, params.PageSize), nil
 }
 
 func (db *DB) GetAccountTeams(ctx context.Context, orgID, accountID int64) ([]Team, error) {
@@ -191,5 +207,35 @@ func teamSortColumn(sort string) string {
 		return "created_at"
 	default:
 		return "name"
+	}
+}
+
+func normalizeTeamMemberListParams(params ListTeamMembersParams) ListTeamMembersParams {
+	switch params.Sort {
+	case "account_id", "created_at":
+	default:
+		params.Sort = "created_at"
+	}
+	switch params.Order {
+	case "desc":
+		params.Order = "desc"
+	default:
+		params.Order = "asc"
+	}
+	if params.Page < 1 {
+		params.Page = 1
+	}
+	if params.PageSize < 1 {
+		params.PageSize = 25
+	}
+	return params
+}
+
+func teamMemberOrderExpr(params ListTeamMembersParams) string {
+	switch params.Sort {
+	case "account_id":
+		return "account_id " + strings.ToUpper(params.Order) + ", created_at " + strings.ToUpper(params.Order)
+	default:
+		return "created_at " + strings.ToUpper(params.Order) + ", account_id " + strings.ToUpper(params.Order)
 	}
 }

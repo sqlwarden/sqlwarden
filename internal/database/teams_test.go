@@ -66,11 +66,17 @@ func TestTeamMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	members, err := db.ListTeamMembers(context.Background(), team.ID)
+	members, err := db.ListTeamMembersPage(context.Background(), ListTeamMembersParams{
+		TeamID:   team.ID,
+		Sort:     "created_at",
+		Order:    "asc",
+		Page:     1,
+		PageSize: 10,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(members) != 1 || members[0].AccountID != acc.ID {
+	if len(members.Items) != 1 || members.Items[0].AccountID != acc.ID {
 		t.Fatalf("expected 1 member with account_id %d", acc.ID)
 	}
 
@@ -78,9 +84,53 @@ func TestTeamMembership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	members, _ = db.ListTeamMembers(context.Background(), team.ID)
-	if len(members) != 0 {
+	members, _ = db.ListTeamMembersPage(context.Background(), ListTeamMembersParams{
+		TeamID:   team.ID,
+		Sort:     "created_at",
+		Order:    "asc",
+		Page:     1,
+		PageSize: 10,
+	})
+	if len(members.Items) != 0 {
 		t.Fatal("expected no members after removal")
+	}
+}
+
+func TestListTeamMembersPage_SupportsPaginationAndSort(t *testing.T) {
+	db := newTestDB(t)
+
+	org, _ := db.InsertOrg(context.Background(), "team-member-page-org", "Team Member Page Org")
+	team, _ := db.InsertTeam(context.Background(), org.ID, "devs-page", "Devs Page")
+
+	pw := "pw"
+	alice, _ := db.InsertAccount(context.Background(), "dev-page-a@example.com", "Dev A", &pw)
+	bob, _ := db.InsertAccount(context.Background(), "dev-page-b@example.com", "Dev B", &pw)
+
+	if err := db.AddTeamMember(context.Background(), team.ID, alice.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AddTeamMember(context.Background(), team.ID, bob.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := db.ListTeamMembersPage(context.Background(), ListTeamMembersParams{
+		TeamID:   team.ID,
+		Sort:     "account_id",
+		Order:    "desc",
+		Page:     1,
+		PageSize: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 2 {
+		t.Fatalf("expected total=2, got %d", result.Total)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(result.Items))
+	}
+	if result.Items[0].AccountID != bob.ID {
+		t.Fatalf("expected highest account id first, got %d", result.Items[0].AccountID)
 	}
 }
 

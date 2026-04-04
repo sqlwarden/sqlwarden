@@ -64,14 +64,22 @@ func TestInstanceAdminsLifecycle(t *testing.T) {
 				t.Fatal("expected instance admins to exist")
 			}
 
-			admins, err := db.ListInstanceAdmins(ctx)
+			admins, err := db.ListInstanceAdminsPage(ctx, ListInstanceAdminsParams{
+				Sort:     "created_at",
+				Order:    "asc",
+				Page:     1,
+				PageSize: 10,
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(admins) != 2 {
-				t.Fatalf("expected 2 admins, got %d", len(admins))
+			if admins.Total != 2 {
+				t.Fatalf("expected 2 admins total, got %d", admins.Total)
 			}
-			if admins[0].Account == nil || admins[1].Account == nil {
+			if len(admins.Items) != 2 {
+				t.Fatalf("expected 2 admins on first page, got %d", len(admins.Items))
+			}
+			if admins.Items[0].Account == nil || admins.Items[1].Account == nil {
 				t.Fatal("expected related accounts to be loaded")
 			}
 
@@ -85,6 +93,41 @@ func TestInstanceAdminsLifecycle(t *testing.T) {
 			}
 			if isAdmin {
 				t.Fatal("expected account to be removed from instance admins")
+			}
+		})
+	}
+}
+
+func TestListInstanceAdminsPage_SupportsPaginationAndSort(t *testing.T) {
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+
+			if err := db.InsertInstanceAdmin(ctx, testUsers["alice"].id); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.InsertInstanceAdmin(ctx, testUsers["bob"].id); err != nil {
+				t.Fatal(err)
+			}
+
+			result, err := db.ListInstanceAdminsPage(ctx, ListInstanceAdminsParams{
+				Sort:     "account_id",
+				Order:    "desc",
+				Page:     1,
+				PageSize: 1,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Total != 2 {
+				t.Fatalf("expected total=2, got %d", result.Total)
+			}
+			if len(result.Items) != 1 {
+				t.Fatalf("expected 1 item, got %d", len(result.Items))
+			}
+			if result.Items[0].AccountID != testUsers["bob"].id {
+				t.Fatalf("expected highest account id first, got %d", result.Items[0].AccountID)
 			}
 		})
 	}

@@ -177,7 +177,29 @@ func (app *application) listTeamMembers(w http.ResponseWriter, r *http.Request) 
 		app.notFound(w, r)
 		return
 	}
-	members, err := app.db.ListTeamMembers(context.Background(), team.ID)
+
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"account_id": "account_id",
+		"created_at": "created_at",
+	})
+	if _, ok := r.URL.Query()["sort"]; !ok {
+		q.Sort = "created_at"
+	}
+	if _, ok := r.URL.Query()["order"]; !ok {
+		q.Order = "asc"
+	}
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	members, err := app.db.ListTeamMembersPage(context.Background(), database.ListTeamMembersParams{
+		TeamID:   team.ID,
+		Sort:     q.Sort,
+		Order:    q.Order,
+		Page:     q.Page,
+		PageSize: q.PageSize,
+	})
 	if err != nil {
 		app.serverError(w, r, err)
 		return

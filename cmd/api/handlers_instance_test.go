@@ -157,11 +157,15 @@ func TestListInstanceAdmins(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/admins", nil, adminTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	var admins []map[string]any
+	var admins struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
 	if err := json.Unmarshal(res.BodyBytes, &admins); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, len(admins), 1)
+	assert.Equal(t, admins.Total, 1)
+	assert.Equal(t, len(admins.Items), 1)
 }
 
 func TestListInstanceAdminsAfterPromotion(t *testing.T) {
@@ -179,11 +183,35 @@ func TestListInstanceAdminsAfterPromotion(t *testing.T) {
 	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/admins", nil, adminTok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
 
-	var admins []map[string]any
+	var admins struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
 	if err := json.Unmarshal(listRes.BodyBytes, &admins); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, len(admins), 2)
+	assert.Equal(t, admins.Total, 2)
+	assert.Equal(t, len(admins.Items), 2)
+}
+
+func TestListInstanceAdmins_SupportsPaginationAndSort(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+	regRes := registerTestUser(t, app, "third@example.com", "Third", "securepass99")
+	assert.Equal(t, regRes.StatusCode, http.StatusCreated)
+
+	addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/instance/admins",
+		map[string]any{"email": "third@example.com"}, adminTok), app.routes())
+	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/admins?sort=account_id&order=desc&page=1&page_size=1", nil, adminTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+	assert.Equal(t, int(listRes.BodyFields["total"].(float64)), 2)
+
+	items := listRes.BodyFields["items"].([]any)
+	assert.Equal(t, len(items), 1)
 }
 
 func TestListInstanceAdminsRequiresInstanceAdmin(t *testing.T) {
@@ -226,11 +254,15 @@ func TestAddInstanceAdmin(t *testing.T) {
 
 	// Now they show up in the list.
 	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/admins", nil, adminTok), app.routes())
-	var admins []map[string]any
+	var admins struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
 	if err := json.Unmarshal(listRes.BodyBytes, &admins); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, len(admins), 2)
+	assert.Equal(t, admins.Total, 2)
+	assert.Equal(t, len(admins.Items), 2)
 }
 
 func TestAddInstanceAdminDuplicateIsIdempotent(t *testing.T) {
@@ -302,11 +334,15 @@ func TestRemoveInstanceAdmin(t *testing.T) {
 
 	// Back to one admin.
 	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/admins", nil, adminTok), app.routes())
-	var admins []map[string]any
+	var admins struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
 	if err := json.Unmarshal(listRes.BodyBytes, &admins); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, len(admins), 1)
+	assert.Equal(t, admins.Total, 1)
+	assert.Equal(t, len(admins.Items), 1)
 }
 
 func TestRemoveLastInstanceAdminBlocked(t *testing.T) {
@@ -317,11 +353,14 @@ func TestRemoveLastInstanceAdminBlocked(t *testing.T) {
 
 	// Get the admin account ID from the list.
 	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/admins", nil, adminTok), app.routes())
-	var admins []map[string]any
+	var admins struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
 	if err := json.Unmarshal(listRes.BodyBytes, &admins); err != nil {
 		t.Fatal(err)
 	}
-	adminID := fmt.Sprintf("%v", admins[0]["account_id"])
+	adminID := fmt.Sprintf("%v", admins.Items[0]["account_id"])
 
 	delRes := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/instance/admins/"+adminID, nil, adminTok), app.routes())
 	assert.Equal(t, delRes.StatusCode, http.StatusUnprocessableEntity)

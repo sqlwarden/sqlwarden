@@ -174,13 +174,17 @@ func TestTeamMemberManagement(t *testing.T) {
 	listRes := send(t, listReq, app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
 
-	var members []map[string]any
+	var members struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
 	err := json.Unmarshal(listRes.BodyBytes, &members)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, len(members), 1)
-	assert.Equal(t, fmt.Sprintf("%v", members[0]["account_id"]), memberID)
+	assert.Equal(t, members.Total, 1)
+	assert.Equal(t, len(members.Items), 1)
+	assert.Equal(t, fmt.Sprintf("%v", members.Items[0]["account_id"]), memberID)
 
 	// Remove member from team.
 	removeReq := newTestRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug+"/teams/devs/members/"+memberID, nil)
@@ -194,15 +198,59 @@ func TestTeamMemberManagement(t *testing.T) {
 	listRes2 := send(t, listReq2, app.routes())
 	assert.Equal(t, listRes2.StatusCode, http.StatusOK)
 
-	var members2 []map[string]any
+	var members2 struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
 	err = json.Unmarshal(listRes2.BodyBytes, &members2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, len(members2), 0)
+	assert.Equal(t, members2.Total, 0)
+	assert.Equal(t, len(members2.Items), 0)
 
 	// Suppress unused variable warnings.
 	_ = ownerID
+}
+
+func TestListTeamMembers_SupportsPaginationAndSort(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, ownerTok, slug := registerAndLogin(t, app, "tm-page-owner@example.com", "TM Page Owner", "securepass99")
+	memberAID, _, _ := registerAndLogin(t, app, "tm-page-a@example.com", "TM Page A", "securepass99")
+	memberBID, _, _ := registerAndLogin(t, app, "tm-page-b@example.com", "TM Page B", "securepass99")
+
+	for _, email := range []string{"tm-page-a@example.com", "tm-page-b@example.com"} {
+		addOrgRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
+			"email": email,
+			"role":  "member",
+		}, ownerTok), app.routes())
+		assert.Equal(t, addOrgRes.StatusCode, http.StatusNoContent)
+	}
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", map[string]any{
+		"slug": "devs-page",
+		"name": "Developers Page",
+	}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	memberAInt, _ := strconv.ParseInt(memberAID, 10, 64)
+	memberBInt, _ := strconv.ParseInt(memberBID, 10, 64)
+	for _, id := range []int64{memberAInt, memberBInt} {
+		addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams/devs-page/members", map[string]any{
+			"account_id": id,
+		}, ownerTok), app.routes())
+		assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+	}
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams/devs-page/members?sort=account_id&order=desc&page=1&page_size=1", nil, ownerTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+	assert.Equal(t, int(listRes.BodyFields["total"].(float64)), 2)
+
+	items := listRes.BodyFields["items"].([]any)
+	assert.Equal(t, len(items), 1)
+	assert.Equal(t, int64(items[0].(map[string]any)["account_id"].(float64)), memberBInt)
 }
 
 func TestCreateTeamValidation(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -106,7 +107,27 @@ func (app *application) setupStatus(w http.ResponseWriter, r *http.Request) {
 
 // listInstanceAdmins handles GET /api/v1/instance/admins.
 func (app *application) listInstanceAdmins(w http.ResponseWriter, r *http.Request) {
-	admins, err := app.db.ListInstanceAdmins(r.Context())
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"account_id": "account_id",
+		"created_at": "created_at",
+	})
+	if _, ok := r.URL.Query()["sort"]; !ok {
+		q.Sort = "created_at"
+	}
+	if _, ok := r.URL.Query()["order"]; !ok {
+		q.Order = "asc"
+	}
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	admins, err := app.db.ListInstanceAdminsPage(r.Context(), database.ListInstanceAdminsParams{
+		Sort:     q.Sort,
+		Order:    q.Order,
+		Page:     q.Page,
+		PageSize: q.PageSize,
+	})
 	if err != nil {
 		app.serverError(w, r, err)
 		return
