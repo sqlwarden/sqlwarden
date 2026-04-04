@@ -4,9 +4,11 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -14,7 +16,48 @@ import (
 
 func (app *application) listRoles(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-	roles, err := app.db.ListRoles(r.Context(), org.ID)
+
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"name":       "name",
+		"created_at": "created_at",
+	})
+	if _, ok := r.URL.Query()["sort"]; !ok {
+		q.Sort = "name"
+	}
+	if _, ok := r.URL.Query()["order"]; !ok {
+		q.Order = "asc"
+	}
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	var builtin *bool
+	if raw := strings.TrimSpace(r.URL.Query().Get("builtin")); raw != "" {
+		switch raw {
+		case "true":
+			v := true
+			builtin = &v
+		case "false":
+			v := false
+			builtin = &v
+		default:
+			app.failedValidation(w, r, fieldErrors(map[string]string{"builtin": "must be true or false"}))
+			return
+		}
+	}
+
+	roles, err := app.db.ListRolesPage(r.Context(), database.ListRolesParams{
+		OrgID:     org.ID,
+		Scope:     "all",
+		Search:    q.Search,
+		Name:      strings.TrimSpace(r.URL.Query().Get("name")),
+		IsBuiltin: builtin,
+		Sort:      q.Sort,
+		Order:     q.Order,
+		Page:      q.Page,
+		PageSize:  q.PageSize,
+	})
 	if err != nil {
 		app.serverError(w, r, err)
 		return

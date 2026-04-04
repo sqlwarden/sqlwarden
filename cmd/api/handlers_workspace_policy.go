@@ -18,7 +18,47 @@ func (app *application) listWorkspaceRoles(w http.ResponseWriter, r *http.Reques
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 
-	roles, err := app.db.ListWorkspaceRoles(r.Context(), org.ID, ws.ID)
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"name":       "name",
+		"created_at": "created_at",
+	})
+	if _, ok := r.URL.Query()["sort"]; !ok {
+		q.Sort = "name"
+	}
+	if _, ok := r.URL.Query()["order"]; !ok {
+		q.Order = "asc"
+	}
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	var builtin *bool
+	if raw := strings.TrimSpace(r.URL.Query().Get("builtin")); raw != "" {
+		switch raw {
+		case "true":
+			v := true
+			builtin = &v
+		case "false":
+			v := false
+			builtin = &v
+		default:
+			app.failedValidation(w, r, fieldErrors(map[string]string{"builtin": "must be true or false"}))
+			return
+		}
+	}
+
+	roles, err := app.db.ListWorkspaceRolesPage(r.Context(), database.ListRolesParams{
+		OrgID:       org.ID,
+		WorkspaceID: &ws.ID,
+		Search:      q.Search,
+		Name:        strings.TrimSpace(r.URL.Query().Get("name")),
+		IsBuiltin:   builtin,
+		Sort:        q.Sort,
+		Order:       q.Order,
+		Page:        q.Page,
+		PageSize:    q.PageSize,
+	})
 	if err != nil {
 		app.serverError(w, r, err)
 		return

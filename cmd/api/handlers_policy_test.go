@@ -106,15 +106,17 @@ func TestDeleteBuiltinRoleForbidden(t *testing.T) {
 		"/api/v1/orgs/"+slug+"/roles", nil, tok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
 
-	var roles []map[string]any
-	err := json.Unmarshal(listRes.BodyBytes, &roles)
+	var payload struct {
+		Items []map[string]any `json:"items"`
+	}
+	err := json.Unmarshal(listRes.BodyBytes, &payload)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Find a builtin role.
 	var builtinID string
-	for _, r := range roles {
+	for _, r := range payload.Items {
 		if isBuiltin, ok := r["is_builtin"].(bool); ok && isBuiltin {
 			builtinID = fmt.Sprintf("%v", r["id"])
 			break
@@ -140,4 +142,30 @@ func TestDeleteRoleNotFoundReturns404(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodDelete,
 		"/api/v1/orgs/"+slug+"/roles/999999", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestListRoles_SupportsPaginationSearchAndBuiltinFilter(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "role-list@example.com", "Role List", "securepass99")
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/roles",
+		map[string]any{
+			"name":        "qa-viewer",
+			"scope_type":  "workspace",
+			"permissions": []string{"ws:read"},
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/roles?q=viewer&builtin=false&page=1&page_size=1&sort=name&order=asc", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, int(res.BodyFields["total"].(float64)), 1)
+
+	items := res.BodyFields["items"].([]any)
+	assert.Equal(t, len(items), 1)
+	item := items[0].(map[string]any)
+	assert.Equal(t, item["name"].(string), "qa-viewer")
 }

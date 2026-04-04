@@ -165,12 +165,14 @@ func wsJoinAs(t *testing.T, app *application, slug, wsID, roleName, email string
 	rolesRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles", nil, ownerTok), app.routes())
 	assert.Equal(t, rolesRes.StatusCode, http.StatusOK)
-	var roles []map[string]any
-	if err := json.Unmarshal(rolesRes.BodyBytes, &roles); err != nil {
+	var rolePayload struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(rolesRes.BodyBytes, &rolePayload); err != nil {
 		t.Fatal(err)
 	}
 	var roleID float64
-	for _, r := range roles {
+	for _, r := range rolePayload.Items {
 		if r["name"].(string) == roleName {
 			roleID = r["id"].(float64)
 			break
@@ -206,14 +208,16 @@ func TestListWorkspaceRolesBuiltins(t *testing.T) {
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	var roles []map[string]any
-	if err := json.Unmarshal(res.BodyBytes, &roles); err != nil {
+	var payload struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(res.BodyBytes, &payload); err != nil {
 		t.Fatal(err)
 	}
 	// SeedWorkspace creates ws:admin and ws:member builtins.
-	assert.Equal(t, len(roles), 2)
+	assert.Equal(t, len(payload.Items), 2)
 	names := map[string]bool{}
-	for _, r := range roles {
+	for _, r := range payload.Items {
 		names[r["name"].(string)] = true
 	}
 	assert.Equal(t, names["ws:admin"], true)
@@ -236,6 +240,31 @@ func TestListWorkspaceRolesPermissions(t *testing.T) {
 	res2 := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles", nil, wsAdminTok), app.routes())
 	assert.Equal(t, res2.StatusCode, http.StatusOK)
+}
+
+func TestListWorkspaceRoles_SupportsPaginationSearchAndBuiltinFilter(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-filters@example.com", "WSR Filters")
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{
+			"name":        "qa-viewer",
+			"description": "Read only role",
+			"permissions": []string{"ws:read"},
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles?q=viewer&builtin=false&page=1&page_size=1&sort=name&order=asc", nil, tok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+	assert.Equal(t, int(listRes.BodyFields["total"].(float64)), 1)
+
+	items := listRes.BodyFields["items"].([]any)
+	assert.Equal(t, len(items), 1)
+	item := items[0].(map[string]any)
+	assert.Equal(t, item["name"].(string), "qa-viewer")
 }
 
 // ── Create workspace role ─────────────────────────────────────────────────────
@@ -396,12 +425,14 @@ func TestDeleteBuiltinWorkspaceRoleForbidden(t *testing.T) {
 	// Get the ws:admin builtin role ID.
 	rolesRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles", nil, tok), app.routes())
-	var roles []map[string]any
-	if err := json.Unmarshal(rolesRes.BodyBytes, &roles); err != nil {
+	var rolePayload struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(rolesRes.BodyBytes, &rolePayload); err != nil {
 		t.Fatal(err)
 	}
 	var builtinID string
-	for _, r := range roles {
+	for _, r := range rolePayload.Items {
 		if r["name"].(string) == "ws:admin" {
 			builtinID = fmt.Sprintf("%v", r["id"])
 			break

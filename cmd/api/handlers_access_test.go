@@ -115,13 +115,15 @@ func TestRevokeWorkspaceRoleBinding(t *testing.T) {
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/roles", nil, ownerTok), app.routes())
 	assert.Equal(t, rolesRes.StatusCode, http.StatusOK)
 
-	var roles []map[string]any
-	if err := json.Unmarshal(rolesRes.BodyBytes, &roles); err != nil {
+	var rolePayload struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(rolesRes.BodyBytes, &rolePayload); err != nil {
 		t.Fatal(err)
 	}
 
 	var roleID int64
-	for _, role := range roles {
+	for _, role := range rolePayload.Items {
 		if role["name"] == "ws:member" {
 			roleID = int64(role["id"].(float64))
 			break
