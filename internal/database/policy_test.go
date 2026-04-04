@@ -6,6 +6,7 @@ import (
 )
 
 func TestRoleAndPermissionBindingQueries(t *testing.T) {
+	t.Parallel()
 	for _, driver := range testDrivers() {
 		t.Run(driver, func(t *testing.T) {
 			db := newTestDB(t, driver)
@@ -75,6 +76,7 @@ func TestRoleAndPermissionBindingQueries(t *testing.T) {
 }
 
 func TestListWorkspacePolicies(t *testing.T) {
+	t.Parallel()
 	for _, driver := range testDrivers() {
 		t.Run(driver, func(t *testing.T) {
 			db := newTestDB(t, driver)
@@ -119,6 +121,7 @@ func TestListWorkspacePolicies(t *testing.T) {
 }
 
 func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *testing.T) {
+	t.Parallel()
 	for _, driver := range testDrivers() {
 		t.Run(driver, func(t *testing.T) {
 			db := newTestDB(t, driver)
@@ -178,6 +181,7 @@ func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *te
 }
 
 func TestListWorkspacePolicies_SupportsSubjectIDAndResourceIDFilters(t *testing.T) {
+	t.Parallel()
 	for _, driver := range testDrivers() {
 		t.Run(driver, func(t *testing.T) {
 			db := newTestDB(t, driver)

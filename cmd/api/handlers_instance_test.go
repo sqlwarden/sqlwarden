@@ -28,6 +28,7 @@ func setupInstance(t *testing.T, app *application, email, name, password string)
 }
 
 func TestSetupCreatesFirstInstanceAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
@@ -44,6 +45,7 @@ func TestSetupCreatesFirstInstanceAdmin(t *testing.T) {
 }
 
 func TestSetupStatus(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	before := send(t, newTestRequest(t, http.MethodGet, "/api/setup/status", nil), app.routes())
@@ -58,6 +60,7 @@ func TestSetupStatus(t *testing.T) {
 }
 
 func TestSetupStatusUnaffectedByRegularAccounts(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	account := seedAccount(t, app, "nonadmin@example.com", "Non Admin")
@@ -81,6 +84,7 @@ func TestSetupStatus_ReturnsStableShape(t *testing.T) {
 }
 
 func TestSetupBlockedAfterFirstAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	// First setup succeeds.
@@ -96,6 +100,7 @@ func TestSetupBlockedAfterFirstAdmin(t *testing.T) {
 }
 
 func TestSetupValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	// Missing fields.
@@ -115,6 +120,7 @@ func TestSetupValidation(t *testing.T) {
 }
 
 func TestCreateOrgRequiresInstanceAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	// Setup an instance admin.
@@ -132,6 +138,7 @@ func TestCreateOrgRequiresInstanceAdmin(t *testing.T) {
 }
 
 func TestCreateOrgAllowedForInstanceAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -142,6 +149,7 @@ func TestCreateOrgAllowedForInstanceAdmin(t *testing.T) {
 }
 
 func TestListInstanceAdmins(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -157,6 +165,7 @@ func TestListInstanceAdmins(t *testing.T) {
 }
 
 func TestListInstanceAdminsAfterPromotion(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -178,6 +187,7 @@ func TestListInstanceAdminsAfterPromotion(t *testing.T) {
 }
 
 func TestListInstanceAdminsRequiresInstanceAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -192,6 +202,7 @@ func TestListInstanceAdminsRequiresInstanceAdmin(t *testing.T) {
 }
 
 func TestListInstanceAdminsRequiresAuth(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	res := send(t, newTestRequest(t, http.MethodGet, "/api/v1/instance/admins", nil), app.routes())
@@ -199,6 +210,7 @@ func TestListInstanceAdminsRequiresAuth(t *testing.T) {
 }
 
 func TestAddInstanceAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -222,6 +234,7 @@ func TestAddInstanceAdmin(t *testing.T) {
 }
 
 func TestAddInstanceAdminDuplicateIsIdempotent(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -232,6 +245,7 @@ func TestAddInstanceAdminDuplicateIsIdempotent(t *testing.T) {
 }
 
 func TestAddInstanceAdminUnknownEmail(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -242,6 +256,7 @@ func TestAddInstanceAdminUnknownEmail(t *testing.T) {
 }
 
 func TestAddInstanceAdminValidation(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -252,6 +267,7 @@ func TestAddInstanceAdminValidation(t *testing.T) {
 }
 
 func TestAddInstanceAdminRequiresInstanceAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -267,6 +283,7 @@ func TestAddInstanceAdminRequiresInstanceAdmin(t *testing.T) {
 }
 
 func TestRemoveInstanceAdmin(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -293,6 +310,7 @@ func TestRemoveInstanceAdmin(t *testing.T) {
 }
 
 func TestRemoveLastInstanceAdminBlocked(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -310,6 +328,7 @@ func TestRemoveLastInstanceAdminBlocked(t *testing.T) {
 }
 
 func TestRemoveInstanceAdminInvalidID(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -319,6 +338,7 @@ func TestRemoveInstanceAdminInvalidID(t *testing.T) {
 }
 
 func TestAddedInstanceAdminCanCreateOrg(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
 
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
