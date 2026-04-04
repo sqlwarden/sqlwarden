@@ -614,3 +614,62 @@ func TestListWorkspacePolicies_ReturnsRenderableSubjectAndResourceMetadata(t *te
 	assert.Equal(t, payload.Items[0]["resource_type"], "connection")
 	assert.Equal(t, payload.Items[0]["resource_name"], "Primary DB")
 }
+
+func TestListWorkspacePolicies_SupportsSubjectIDAndResourceIDFilters(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "policy-id-list-owner"), "Policy ID Owner", "Policy ID Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Policy Workspace", "")
+	env := seedEnvironment(t, app, ws.ID, org.ID, "prod")
+	connA := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Primary DB", "open")
+	connB := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Replica DB", "open")
+	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "policy-id-member"), "Member User")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, body := range []map[string]any{
+		{
+			"permissions":   []string{"conn:execute"},
+			"subject_type":  "account",
+			"subject_id":    owner.ID,
+			"resource_type": "connection",
+			"resource_id":   connA.ID,
+		},
+		{
+			"permissions":   []string{"conn:read"},
+			"subject_type":  "account",
+			"subject_id":    member.ID,
+			"resource_type": "connection",
+			"resource_id":   connA.ID,
+		},
+		{
+			"permissions":   []string{"conn:execute"},
+			"subject_type":  "account",
+			"subject_id":    owner.ID,
+			"resource_type": "connection",
+			"resource_id":   connB.ID,
+		},
+	} {
+		res := send(t, newAuthRequest(t, http.MethodPost,
+			"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies",
+			body, ownerTok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusNoContent)
+	}
+
+	listRes := send(t, newOrgRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies?subject_id="+strconv.FormatInt(owner.ID, 10)+"&resource_id="+strconv.FormatInt(connA.ID, 10)+"&resource_type=connection",
+		ownerTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	decodeJSONResponse(t, listRes.BodyBytes, &payload)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, int64(payload.Items[0]["subject_id"].(float64)), owner.ID)
+	assert.Equal(t, int64(payload.Items[0]["resource_id"].(float64)), connA.ID)
+}

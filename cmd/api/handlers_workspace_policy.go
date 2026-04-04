@@ -177,12 +177,37 @@ func (app *application) listWorkspacePolicies(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	subjectID := int64(0)
+	if raw := strings.TrimSpace(r.URL.Query().Get("subject_id")); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed < 1 {
+			errs["subject_id"] = "must be a positive integer"
+		} else {
+			subjectID = parsed
+		}
+	}
+	resourceID := int64(0)
+	if raw := strings.TrimSpace(r.URL.Query().Get("resource_id")); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed < 1 {
+			errs["resource_id"] = "must be a positive integer"
+		} else {
+			resourceID = parsed
+		}
+	}
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
 	result, err := app.db.ListWorkspacePoliciesPage(r.Context(), database.ListWorkspacePoliciesParams{
 		OrgID:        org.ID,
 		WorkspaceID:  ws.ID,
 		Search:       q.Search,
+		SubjectID:    subjectID,
 		SubjectType:  strings.TrimSpace(r.URL.Query().Get("subject_type")),
 		Permission:   strings.TrimSpace(r.URL.Query().Get("permission")),
+		ResourceID:   resourceID,
 		ResourceType: strings.TrimSpace(r.URL.Query().Get("resource_type")),
 		Sort:         q.Sort,
 		Order:        q.Order,

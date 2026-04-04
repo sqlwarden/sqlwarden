@@ -176,3 +176,61 @@ func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *te
 		})
 	}
 }
+
+func TestListWorkspacePolicies_SupportsSubjectIDAndResourceIDFilters(t *testing.T) {
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+
+			org, err := db.InsertOrg(ctx, "workspace-policy-id-filters-"+driver, "Workspace Policy ID Filters")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ws, err := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Main", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			env, err := db.InsertEnvironment(ctx, ws.ID, &org.ID, "org", org.ID, "prod", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			connA, err := db.InsertConnection(ctx, ws.ID, &env.ID, &org.ID, "org", org.ID, "Primary DB", "postgres", "dsn", "open")
+			if err != nil {
+				t.Fatal(err)
+			}
+			connB, err := db.InsertConnection(ctx, ws.ID, &env.ID, &org.ID, "org", org.ID, "Replica DB", "postgres", "dsn", "open")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			insertTestPermissionBinding(t, db, org.ID, "conn:execute", "account", testUsers["alice"].id, "connection", connA.ID)
+			insertTestPermissionBinding(t, db, org.ID, "conn:read", "account", testUsers["bob"].id, "connection", connA.ID)
+			insertTestPermissionBinding(t, db, org.ID, "conn:execute", "account", testUsers["alice"].id, "connection", connB.ID)
+
+			result, err := db.ListWorkspacePoliciesPage(ctx, ListWorkspacePoliciesParams{
+				OrgID:       org.ID,
+				WorkspaceID: ws.ID,
+				SubjectID:   testUsers["alice"].id,
+				ResourceID:  connA.ID,
+				Page:        1,
+				PageSize:    10,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Total != 1 {
+				t.Fatalf("expected total=1, got %d", result.Total)
+			}
+			if len(result.Items) != 1 {
+				t.Fatalf("expected 1 item, got %d", len(result.Items))
+			}
+			if result.Items[0].SubjectID != testUsers["alice"].id {
+				t.Fatalf("expected subject id %d, got %d", testUsers["alice"].id, result.Items[0].SubjectID)
+			}
+			if result.Items[0].ResourceID != connA.ID {
+				t.Fatalf("expected resource id %d, got %d", connA.ID, result.Items[0].ResourceID)
+			}
+		})
+	}
+}

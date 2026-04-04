@@ -58,8 +58,10 @@ type ListWorkspacePoliciesParams struct {
 	OrgID        int64
 	WorkspaceID  int64
 	Search       string
+	SubjectID    int64
 	SubjectType  string
 	Permission   string
+	ResourceID   int64
 	ResourceType string
 	Sort         string
 	Order        string
@@ -193,10 +195,16 @@ func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspac
 	filtered := make([]WorkspacePolicyListItem, 0, len(items))
 	search := strings.ToLower(strings.TrimSpace(params.Search))
 	for _, item := range items {
+		if params.SubjectID > 0 && item.SubjectID != params.SubjectID {
+			continue
+		}
 		if params.SubjectType != "" && item.SubjectType != params.SubjectType {
 			continue
 		}
 		if params.Permission != "" && item.Permission != params.Permission {
+			continue
+		}
+		if params.ResourceID > 0 && item.ResourceID != params.ResourceID {
 			continue
 		}
 		if params.ResourceType != "" && item.ResourceType != params.ResourceType {
@@ -356,8 +364,14 @@ func normalizeWorkspacePolicyParams(params ListWorkspacePoliciesParams) ListWork
 		params.Order = "desc"
 	}
 	params.Search = strings.TrimSpace(params.Search)
+	if params.SubjectID < 0 {
+		params.SubjectID = 0
+	}
 	params.SubjectType = strings.TrimSpace(params.SubjectType)
 	params.Permission = strings.TrimSpace(params.Permission)
+	if params.ResourceID < 0 {
+		params.ResourceID = 0
+	}
 	params.ResourceType = strings.TrimSpace(params.ResourceType)
 	return params
 }
