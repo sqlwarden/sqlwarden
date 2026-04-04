@@ -163,12 +163,45 @@ func TestListConnections(t *testing.T) {
 	listRes := send(t, listReq, app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
 
-	var conns []map[string]any
-	err := json.Unmarshal(listRes.BodyBytes, &conns)
+	var payload struct {
+		Items []map[string]any `json:"items"`
+	}
+	err := json.Unmarshal(listRes.BodyBytes, &payload)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, len(conns), 2)
+	assert.Equal(t, len(payload.Items), 2)
+}
+
+func TestListConnections_SupportsSearchFilterSortAndPagination(t *testing.T) {
+	t.Parallel()
+
+	app, org, ws, token := setupWorkspaceOwner(t)
+	envA := seedEnvironment(t, app, ws.ID, org.ID, "prod")
+	envB := seedEnvironment(t, app, ws.ID, org.ID, "staging")
+	seedConnection(t, app, ws.ID, &envA.ID, org.ID, "postgres", "Primary DB", "open")
+	seedConnection(t, app, ws.ID, &envB.ID, org.ID, "mysql", "Replica DB", "restricted")
+
+	req := newOrgRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/connections?q=db&environment_id="+strconv.FormatInt(envA.ID, 10)+"&driver=postgres&sort=name&order=asc&page=1&page_size=10",
+		token,
+	)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 10)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["name"], "Primary DB")
 }
 
 func TestUpdateConnection(t *testing.T) {

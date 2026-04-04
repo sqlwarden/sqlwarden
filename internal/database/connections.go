@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -20,6 +22,25 @@ type Connection struct {
 	AccessMode    string    `bun:",notnull,default:'open'" json:"access_mode"`
 	CreatedAt     time.Time `bun:",notnull"          json:"created_at"`
 	UpdatedAt     time.Time `bun:",notnull"          json:"updated_at"`
+}
+
+type ListConnectionsParams struct {
+	WorkspaceID   int64
+	Search        string
+	EnvironmentID *int64
+	Driver        string
+	AccessMode    string
+	Sort          string
+	Order         string
+	Page          int
+	PageSize      int
+}
+
+type PaginatedConnections struct {
+	Items    []Connection `json:"items"`
+	Page     int          `json:"page"`
+	PageSize int          `json:"page_size"`
+	Total    int          `json:"total"`
 }
 
 func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID, orgID *int64, ownerType string, ownerID int64, name, driver, dsnEncrypted, accessMode string) (Connection, error) {
@@ -126,6 +147,56 @@ func (db *DB) ListConnections(ctx context.Context, workspaceID int64) ([]Connect
 		OrderExpr("name ASC").
 		Scan(ctx)
 	return conns, err
+}
+
+func (db *DB) ListConnectionsPage(ctx context.Context, params ListConnectionsParams) (PaginatedConnections, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	params = normalizeConnectionListParams(params)
+
+	query := db.NewSelect().Model((*Connection)(nil)).Where("workspace_id = ?", params.WorkspaceID)
+	countQuery := db.NewSelect().Model((*Connection)(nil)).Where("workspace_id = ?", params.WorkspaceID)
+
+	if params.Search != "" {
+		searchTerm := "%" + strings.ToLower(params.Search) + "%"
+		query = query.Where("LOWER(name) LIKE ?", searchTerm)
+		countQuery = countQuery.Where("LOWER(name) LIKE ?", searchTerm)
+	}
+	if params.EnvironmentID != nil {
+		query = query.Where("environment_id = ?", *params.EnvironmentID)
+		countQuery = countQuery.Where("environment_id = ?", *params.EnvironmentID)
+	}
+	if params.Driver != "" {
+		query = query.Where("driver = ?", params.Driver)
+		countQuery = countQuery.Where("driver = ?", params.Driver)
+	}
+	if params.AccessMode != "" {
+		query = query.Where("access_mode = ?", params.AccessMode)
+		countQuery = countQuery.Where("access_mode = ?", params.AccessMode)
+	}
+
+	total, err := countQuery.Count(ctx)
+	if err != nil {
+		return PaginatedConnections{}, err
+	}
+
+	var items []Connection
+	err = query.
+		OrderExpr(fmt.Sprintf("%s %s, id %s", connectionSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).
+		Limit(params.PageSize).
+		Offset((params.Page-1)*params.PageSize).
+		Scan(ctx, &items)
+	if err != nil {
+		return PaginatedConnections{}, err
+	}
+
+	return PaginatedConnections{
+		Items:    items,
+		Page:     params.Page,
+		PageSize: params.PageSize,
+		Total:    total,
+	}, nil
 }
 
 // ListAccessibleConnections returns connections in workspaceID that accountID has any binding on,
@@ -256,4 +327,41 @@ func (db *DB) DeleteConnection(ctx context.Context, id int64) error {
 		Where("child_type = 'connection' AND child_id = ?", id).
 		Exec(ctx)
 	return err
+}
+
+func normalizeConnectionListParams(params ListConnectionsParams) ListConnectionsParams {
+	if params.Page < 1 {
+		params.Page = 1
+	}
+	if params.PageSize < 1 {
+		params.PageSize = 25
+	}
+	if params.Sort == "" {
+		params.Sort = "created_at"
+	}
+	switch params.Sort {
+	case "name", "driver", "created_at":
+	default:
+		params.Sort = "created_at"
+	}
+	switch params.Order {
+	case "asc", "desc":
+	default:
+		params.Order = "desc"
+	}
+	params.Search = strings.TrimSpace(params.Search)
+	params.Driver = strings.TrimSpace(params.Driver)
+	params.AccessMode = strings.TrimSpace(params.AccessMode)
+	return params
+}
+
+func connectionSortColumn(sort string) string {
+	switch sort {
+	case "name":
+		return "name"
+	case "driver":
+		return "driver"
+	default:
+		return "created_at"
+	}
 }

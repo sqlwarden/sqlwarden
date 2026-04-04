@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pascaldekloe/jwt"
+	"github.com/sqlwarden/internal/validator"
 )
 
 func (app *application) newEmailData() map[string]any {
@@ -135,4 +136,12 @@ func defaultListSort(allowedSorts map[string]string) string {
 	}
 	sort.Strings(keys)
 	return allowedSorts[keys[0]]
+}
+
+func fieldErrors(errs map[string]string) validator.Validator {
+	v := validator.Validator{}
+	for field, message := range errs {
+		v.AddFieldError(field, message)
+	}
+	return v
 }

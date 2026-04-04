@@ -95,3 +95,55 @@ func TestConnectionCRUD(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestListConnections_SupportsSearchFilterSortAndPagination(t *testing.T) {
+	db := newTestDB(t)
+
+	org, err := db.InsertOrg(context.Background(), "conn-list-filters", "Conn List Filters")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "Main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	envA, err := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "prod", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	envB, err := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "staging", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := db.InsertConnection(context.Background(), ws.ID, &envA.ID, &org.ID, "org", org.ID, "Primary DB", "postgres", "dsn-a", "open"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.InsertConnection(context.Background(), ws.ID, &envB.ID, &org.ID, "org", org.ID, "Replica DB", "mysql", "dsn-b", "restricted"); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := db.ListConnectionsPage(context.Background(), ListConnectionsParams{
+		WorkspaceID:   ws.ID,
+		Search:        "db",
+		EnvironmentID: &envA.ID,
+		Driver:        "postgres",
+		Sort:          "name",
+		Order:         "asc",
+		Page:          1,
+		PageSize:      10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Total != 1 {
+		t.Fatalf("expected total=1, got %d", result.Total)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(result.Items))
+	}
+	if result.Items[0].Name != "Primary DB" {
+		t.Fatalf("expected Primary DB, got %s", result.Items[0].Name)
+	}
+}

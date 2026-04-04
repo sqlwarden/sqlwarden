@@ -37,3 +37,23 @@ Response fields:
 - `sort`
 - `order`
 - `q`
+
+## Connections List
+
+`GET /api/v1/orgs/{org_slug}/workspaces/{ws_id}/connections` returns:
+
+```json
+{
+  "items": [],
+  "page": 1,
+  "page_size": 25,
+  "total": 0
+}
+```
+
+Supported query parameters:
+
+- shared list query parameters
+- `environment_id`
+- `driver`
+- `access_mode`

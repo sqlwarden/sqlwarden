@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -38,25 +39,138 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"name":       "name",
+		"created_at": "created_at",
+		"driver":     "driver",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	params := database.ListConnectionsParams{
+		WorkspaceID: ws.ID,
+		Search:      q.Search,
+		Driver:      strings.TrimSpace(r.URL.Query().Get("driver")),
+		AccessMode:  strings.TrimSpace(r.URL.Query().Get("access_mode")),
+		Sort:        q.Sort,
+		Order:       q.Order,
+		Page:        q.Page,
+		PageSize:    q.PageSize,
+	}
+	if params.AccessMode != "" && params.AccessMode != "open" && params.AccessMode != "restricted" {
+		app.failedValidation(w, r, fieldErrors(map[string]string{"access_mode": "must be open or restricted"}))
+		return
+	}
+	if rawEnvID := strings.TrimSpace(r.URL.Query().Get("environment_id")); rawEnvID != "" {
+		envID, err := strconv.ParseInt(rawEnvID, 10, 64)
+		if err != nil || envID < 1 {
+			app.failedValidation(w, r, fieldErrors(map[string]string{"environment_id": "must be a positive integer"}))
+			return
+		}
+		params.EnvironmentID = &envID
+	}
+
 	var (
-		conns []database.Connection
-		err   error
+		result database.PaginatedConnections
+		err    error
 	)
 	if app.config.desktopMode {
-		conns, err = app.db.ListConnections(context.Background(), ws.ID)
+		result, err = app.db.ListConnectionsPage(context.Background(), params)
 	} else {
 		account := contextGetAccount(r)
-		conns, err = app.db.ListAccessibleConnections(context.Background(), account.ID, org.ID, ws.ID)
+		conns, err := app.db.ListAccessibleConnections(context.Background(), account.ID, org.ID, ws.ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		result = filterAccessibleConnections(conns, params)
 	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	err = response.JSON(w, http.StatusOK, conns)
+	err = response.JSON(w, http.StatusOK, result)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func filterAccessibleConnections(conns []database.Connection, params database.ListConnectionsParams) database.PaginatedConnections {
+	filtered := make([]database.Connection, 0, len(conns))
+	search := strings.ToLower(strings.TrimSpace(params.Search))
+
+	for _, conn := range conns {
+		if search != "" && !strings.Contains(strings.ToLower(conn.Name), search) {
+			continue
+		}
+		if params.EnvironmentID != nil {
+			if conn.EnvironmentID == nil || *conn.EnvironmentID != *params.EnvironmentID {
+				continue
+			}
+		}
+		if params.Driver != "" && conn.Driver != params.Driver {
+			continue
+		}
+		if params.AccessMode != "" && conn.AccessMode != params.AccessMode {
+			continue
+		}
+		filtered = append(filtered, conn)
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		cmp := compareConnection(filtered[i], filtered[j], params.Sort)
+		if params.Order == "asc" {
+			return cmp < 0
+		}
+		return cmp > 0
+	})
+
+	total := len(filtered)
+	start := (params.Page - 1) * params.PageSize
+	if start > total {
+		start = total
+	}
+	end := start + params.PageSize
+	if end > total {
+		end = total
+	}
+
+	return database.PaginatedConnections{
+		Items:    filtered[start:end],
+		Page:     params.Page,
+		PageSize: params.PageSize,
+		Total:    total,
+	}
+}
+
+func compareConnection(left, right database.Connection, sortBy string) int {
+	switch sortBy {
+	case "name":
+		if left.Name != right.Name {
+			return strings.Compare(left.Name, right.Name)
+		}
+	case "driver":
+		if left.Driver != right.Driver {
+			return strings.Compare(left.Driver, right.Driver)
+		}
+	default:
+		if !left.CreatedAt.Equal(right.CreatedAt) {
+			if left.CreatedAt.Before(right.CreatedAt) {
+				return -1
+			}
+			return 1
+		}
+	}
+	if left.ID < right.ID {
+		return -1
+	}
+	if left.ID > right.ID {
+		return 1
+	}
+	return 0
 }
 
 func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
