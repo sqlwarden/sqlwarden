@@ -98,6 +98,48 @@ func (app *application) getTeam(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (app *application) updateTeam(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Name  string              `json:"name"`
+		Slug  *string             `json:"slug"`
+		OrgID *int64              `json:"org_id"`
+		V     validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	input.V.CheckField(input.Name != "", "name", "name is required")
+	input.V.CheckField(input.Slug == nil, "slug", "is immutable")
+	input.V.CheckField(input.OrgID == nil, "org_id", "is immutable")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	org := contextGetOrg(r)
+	slug := chi.URLParam(r, "team_slug")
+	team, found, err := app.db.GetTeam(context.Background(), org.ID, slug)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.notFound(w, r)
+		return
+	}
+
+	if err := app.db.UpdateTeam(context.Background(), team.ID, org.ID, input.Name); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (app *application) deleteTeam(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 	slug := chi.URLParam(r, "team_slug")

@@ -155,3 +155,28 @@ func TestUpdateEnvironmentValidation(t *testing.T) {
 		map[string]any{"description": "missing name"}, tok), app.routes())
 	assert.Equal(t, patchRes.StatusCode, http.StatusUnprocessableEntity)
 }
+
+func TestUpdateEnvironment_RejectsWorkspaceChange(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "env-immutable-owner"), "Env Immutable", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Immutable WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+
+	envRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments",
+		map[string]any{"name": "prod"}, tok), app.routes())
+	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+
+	res := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments/"+envID,
+		map[string]any{"name": "prod", "workspace_id": 9999}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "workspace_id")
+}

@@ -133,6 +133,10 @@ func (app *application) updateEnvironment(w http.ResponseWriter, r *http.Request
 	var input struct {
 		Name        string              `json:"name"`
 		Description string              `json:"description"`
+		WorkspaceID *int64              `json:"workspace_id"`
+		OrgID       *int64              `json:"org_id"`
+		OwnerType   *string             `json:"owner_type"`
+		OwnerID     *int64              `json:"owner_id"`
 		V           validator.Validator `json:"-"`
 	}
 
@@ -143,6 +147,10 @@ func (app *application) updateEnvironment(w http.ResponseWriter, r *http.Request
 	}
 
 	input.V.CheckField(input.Name != "", "name", "name is required")
+	input.V.CheckField(input.WorkspaceID == nil, "workspace_id", "is immutable")
+	input.V.CheckField(input.OrgID == nil, "org_id", "is immutable")
+	input.V.CheckField(input.OwnerType == nil, "owner_type", "is immutable")
+	input.V.CheckField(input.OwnerID == nil, "owner_id", "is immutable")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return

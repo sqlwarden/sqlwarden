@@ -92,3 +92,10 @@ Each item includes UI-renderable subject and resource metadata:
 
 - `GET /api/v1/orgs/{org_slug}/workspaces` supports `q`, `sort`, and `order`
 - `GET /api/v1/orgs/{org_slug}/workspaces/{ws_id}/environments` supports `sort` and `order`
+
+## Mutability
+
+- workspaces: mutable `name`, `description`; immutable `org_id`, `owner_type`, `owner_id`
+- environments: mutable `name`, `description`; immutable `workspace_id`, `org_id`, `owner_type`, `owner_id`
+- teams: mutable `name`; immutable `slug`, `org_id`
+- connections: mutable `name`, `dsn`, `access_mode`; immutable `workspace_id`, `environment_id`, `driver`

@@ -104,6 +104,7 @@ func (app *application) routes() http.Handler {
 				r.With(app.requirePermission("org:write")).Post("/", app.createTeam)
 				r.Route("/{team_slug}", func(r chi.Router) {
 					r.Get("/", app.getTeam)
+					r.With(app.requirePermission("org:write")).Patch("/", app.updateTeam)
 					r.With(app.requirePermission("org:write")).Delete("/", app.deleteTeam)
 					r.Get("/members", app.listTeamMembers)
 					r.With(app.requirePermission("org:write")).Post("/members", app.addTeamMember)

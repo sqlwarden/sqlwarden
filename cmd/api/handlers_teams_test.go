@@ -98,6 +98,22 @@ func TestGetAndDeleteTeam(t *testing.T) {
 	assert.Equal(t, res4.StatusCode, http.StatusNotFound)
 }
 
+func TestUpdateTeam_RejectsOrgChange(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "team-update-owner"), "Team Update Owner", "securepass99")
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams",
+		map[string]any{"slug": "backend", "name": "Backend Team"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/teams/backend",
+		map[string]any{"name": "Backend Team", "org_id": 9999}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "org_id")
+}
+
 func TestTeamMemberManagement(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

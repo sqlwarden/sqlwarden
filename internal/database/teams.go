@@ -107,6 +107,18 @@ func (db *DB) DeleteTeam(ctx context.Context, id, orgID int64) error {
 	return err
 }
 
+func (db *DB) UpdateTeam(ctx context.Context, id, orgID int64, name string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	_, err := db.NewUpdate().Model((*Team)(nil)).
+		Set("name = ?", name).
+		Set("updated_at = ?", time.Now()).
+		Where("id = ? AND org_id = ?", id, orgID).
+		Exec(ctx)
+	return err
+}
+
 func (db *DB) AddTeamMember(ctx context.Context, teamID, accountID int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
