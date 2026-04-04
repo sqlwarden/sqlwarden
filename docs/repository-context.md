@@ -169,6 +169,8 @@ Current list-contract rule:
 - Shared list query params are `page`, `page_size`, `sort`, `order`, and `q`
 - Resource-specific filters stay flat query params such as `role`, `slug`, or `name`
 - New UI-facing list resources should follow the same contract instead of introducing endpoint-specific shapes
+- The shared paginated envelope currently lives in `internal/response`; that is cleaner than keeping HTTP response shapes in `internal/database`
+- Current DB list methods may still return `response.Paginated[T]`; if stricter layering is needed later, move to `items + total` from the DB layer and assemble the envelope closer to the handler/service layer
 
 ## Roadmap state inferred from docs plus code
 
