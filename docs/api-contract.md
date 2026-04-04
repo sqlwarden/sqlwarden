@@ -57,3 +57,28 @@ Supported query parameters:
 - `environment_id`
 - `driver`
 - `access_mode`
+
+## Workspace Policy List
+
+`GET /api/v1/orgs/{org_slug}/workspaces/{ws_id}/policies` returns:
+
+```json
+{
+  "items": [],
+  "page": 1,
+  "page_size": 25,
+  "total": 0
+}
+```
+
+Each item includes UI-renderable subject and resource metadata:
+
+- `subject_id`
+- `subject_type`
+- `subject_name`
+- `resource_id`
+- `resource_type`
+- `resource_name`
+- `permission`
+- `role_id`
+- `role_name`

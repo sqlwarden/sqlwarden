@@ -3,9 +3,11 @@ package main
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -150,16 +152,35 @@ func (app *application) listWorkspacePolicies(w http.ResponseWriter, r *http.Req
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 
-	rbs, pbs, err := app.db.ListWorkspacePolicies(r.Context(), org.ID, ws.ID)
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"created_at":    "created_at",
+		"subject_name":  "subject_name",
+		"resource_name": "resource_name",
+		"permission":    "permission",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	result, err := app.db.ListWorkspacePoliciesPage(r.Context(), database.ListWorkspacePoliciesParams{
+		OrgID:        org.ID,
+		WorkspaceID:  ws.ID,
+		Search:       q.Search,
+		SubjectType:  strings.TrimSpace(r.URL.Query().Get("subject_type")),
+		Permission:   strings.TrimSpace(r.URL.Query().Get("permission")),
+		ResourceType: strings.TrimSpace(r.URL.Query().Get("resource_type")),
+		Sort:         q.Sort,
+		Order:        q.Order,
+		Page:         q.Page,
+		PageSize:     q.PageSize,
+	})
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	err = response.JSON(w, http.StatusOK, map[string]any{
-		"role_bindings":       rbs,
-		"permission_bindings": pbs,
-	})
+	err = response.JSON(w, http.StatusOK, result)
 	if err != nil {
 		app.serverError(w, r, err)
 	}

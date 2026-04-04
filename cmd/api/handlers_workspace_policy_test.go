@@ -485,3 +485,59 @@ func TestWsAdminCanCreateAndDeleteWorkspaceRoles(t *testing.T) {
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+roleID, nil, wsAdminTok), app.routes())
 	assert.Equal(t, delRes.StatusCode, http.StatusNoContent)
 }
+
+func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "policy-list-owner"), "Policy List Owner", "Policy List Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Policy Workspace", "")
+	env := seedEnvironment(t, app, ws.ID, org.ID, "prod")
+	conn := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Primary DB", "open")
+
+	team, err := app.db.InsertTeam(context.Background(), org.ID, "qa-team", "QA Team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "policy-list-member"), "Member User")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.db.AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies",
+		map[string]any{
+			"permissions":   []string{"conn:execute"},
+			"subject_type":  "team",
+			"subject_id":    team.ID,
+			"resource_type": "connection",
+			"resource_id":   conn.ID,
+		}, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newOrgRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies?q=db&subject_type=team&permission=conn:execute&resource_type=connection&page=1&page_size=10",
+		ownerTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	decodeJSONResponse(t, listRes.BodyBytes, &payload)
+
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 10)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["subject_type"], "team")
+	assert.Equal(t, payload.Items[0]["subject_name"], "QA Team")
+	assert.Equal(t, payload.Items[0]["resource_type"], "connection")
+	assert.Equal(t, payload.Items[0]["resource_name"], "Primary DB")
+	assert.Equal(t, payload.Items[0]["permission"], "conn:execute")
+}

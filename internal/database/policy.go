@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -50,6 +52,41 @@ type PermissionBinding struct {
 	ExpiresAt    *time.Time `bun:",nullzero"         json:"expires_at,omitempty"`
 	CreatedBy    *int64     `bun:",nullzero"         json:"created_by,omitempty"`
 	CreatedAt    time.Time  `bun:",notnull"          json:"created_at"`
+}
+
+type ListWorkspacePoliciesParams struct {
+	OrgID        int64
+	WorkspaceID  int64
+	Search       string
+	SubjectType  string
+	Permission   string
+	ResourceType string
+	Sort         string
+	Order        string
+	Page         int
+	PageSize     int
+}
+
+type WorkspacePolicyListItem struct {
+	BindingKind  string    `json:"binding_kind"`
+	BindingID    int64     `json:"binding_id"`
+	SubjectID    int64     `json:"subject_id"`
+	SubjectType  string    `json:"subject_type"`
+	SubjectName  string    `json:"subject_name"`
+	ResourceID   int64     `json:"resource_id"`
+	ResourceType string    `json:"resource_type"`
+	ResourceName string    `json:"resource_name"`
+	Permission   string    `json:"permission,omitempty"`
+	RoleID       int64     `json:"role_id,omitempty"`
+	RoleName     string    `json:"role_name,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type PaginatedWorkspacePolicies struct {
+	Items    []WorkspacePolicyListItem `json:"items"`
+	Page     int                       `json:"page"`
+	PageSize int                       `json:"page_size"`
+	Total    int                       `json:"total"`
 }
 
 func (db *DB) GetRoleBinding(ctx context.Context, id, orgID int64) (RoleBinding, bool, error) {
@@ -127,4 +164,239 @@ func (db *DB) ListWorkspacePolicies(ctx context.Context, orgID, wsID int64) ([]R
 	}
 
 	return rbs, pbs, nil
+}
+
+func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspacePoliciesParams) (PaginatedWorkspacePolicies, error) {
+	params = normalizeWorkspacePolicyParams(params)
+
+	roleBindings, permissionBindings, err := db.ListWorkspacePolicies(ctx, params.OrgID, params.WorkspaceID)
+	if err != nil {
+		return PaginatedWorkspacePolicies{}, err
+	}
+
+	items := make([]WorkspacePolicyListItem, 0, len(roleBindings)+len(permissionBindings))
+	for _, rb := range roleBindings {
+		item, err := db.roleBindingListItem(ctx, params.OrgID, rb)
+		if err != nil {
+			return PaginatedWorkspacePolicies{}, err
+		}
+		items = append(items, item)
+	}
+	for _, pb := range permissionBindings {
+		item, err := db.permissionBindingListItem(ctx, pb)
+		if err != nil {
+			return PaginatedWorkspacePolicies{}, err
+		}
+		items = append(items, item)
+	}
+
+	filtered := make([]WorkspacePolicyListItem, 0, len(items))
+	search := strings.ToLower(strings.TrimSpace(params.Search))
+	for _, item := range items {
+		if params.SubjectType != "" && item.SubjectType != params.SubjectType {
+			continue
+		}
+		if params.Permission != "" && item.Permission != params.Permission {
+			continue
+		}
+		if params.ResourceType != "" && item.ResourceType != params.ResourceType {
+			continue
+		}
+		if search != "" {
+			haystack := strings.ToLower(strings.Join([]string{
+				item.SubjectName,
+				item.ResourceName,
+				item.RoleName,
+				item.Permission,
+			}, " "))
+			if !strings.Contains(haystack, search) {
+				continue
+			}
+		}
+		filtered = append(filtered, item)
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		cmp := compareWorkspacePolicyItem(filtered[i], filtered[j], params.Sort)
+		if params.Order == "asc" {
+			return cmp < 0
+		}
+		return cmp > 0
+	})
+
+	total := len(filtered)
+	start := (params.Page - 1) * params.PageSize
+	if start > total {
+		start = total
+	}
+	end := start + params.PageSize
+	if end > total {
+		end = total
+	}
+
+	return PaginatedWorkspacePolicies{
+		Items:    filtered[start:end],
+		Page:     params.Page,
+		PageSize: params.PageSize,
+		Total:    total,
+	}, nil
+}
+
+func (db *DB) roleBindingListItem(ctx context.Context, orgID int64, binding RoleBinding) (WorkspacePolicyListItem, error) {
+	item := WorkspacePolicyListItem{
+		BindingKind:  "role",
+		BindingID:    binding.ID,
+		SubjectID:    binding.SubjectID,
+		SubjectType:  binding.SubjectType,
+		ResourceID:   binding.ResourceID,
+		ResourceType: binding.ResourceType,
+		RoleID:       binding.RoleID,
+		CreatedAt:    binding.CreatedAt,
+	}
+
+	role, found, err := db.GetRole(ctx, binding.RoleID, orgID)
+	if err != nil {
+		return WorkspacePolicyListItem{}, err
+	}
+	if found {
+		item.RoleName = role.Name
+	}
+
+	if err := db.populatePolicyNames(ctx, &item); err != nil {
+		return WorkspacePolicyListItem{}, err
+	}
+	return item, nil
+}
+
+func (db *DB) permissionBindingListItem(ctx context.Context, binding PermissionBinding) (WorkspacePolicyListItem, error) {
+	item := WorkspacePolicyListItem{
+		BindingKind:  "permission",
+		BindingID:    binding.ID,
+		SubjectID:    binding.SubjectID,
+		SubjectType:  binding.SubjectType,
+		ResourceID:   binding.ResourceID,
+		ResourceType: binding.ResourceType,
+		Permission:   binding.Permission,
+		CreatedAt:    binding.CreatedAt,
+	}
+	if err := db.populatePolicyNames(ctx, &item); err != nil {
+		return WorkspacePolicyListItem{}, err
+	}
+	return item, nil
+}
+
+func (db *DB) populatePolicyNames(ctx context.Context, item *WorkspacePolicyListItem) error {
+	switch item.SubjectType {
+	case "account":
+		account, found, err := db.GetAccount(ctx, item.SubjectID)
+		if err != nil {
+			return err
+		}
+		if found {
+			item.SubjectName = account.Name
+		}
+	case "team":
+		team, found, err := db.GetTeamByID(ctx, item.SubjectID)
+		if err != nil {
+			return err
+		}
+		if found {
+			item.SubjectName = team.Name
+		}
+	}
+
+	switch item.ResourceType {
+	case "workspace":
+		ws, found, err := db.GetWorkspace(ctx, item.ResourceID)
+		if err != nil {
+			return err
+		}
+		if found {
+			item.ResourceName = ws.Name
+		}
+	case "environment":
+		env, found, err := db.GetEnvironment(ctx, item.ResourceID)
+		if err != nil {
+			return err
+		}
+		if found {
+			item.ResourceName = env.Name
+		}
+	case "connection":
+		conn, found, err := db.GetConnection(ctx, item.ResourceID)
+		if err != nil {
+			return err
+		}
+		if found {
+			item.ResourceName = conn.Name
+		}
+	}
+
+	return nil
+}
+
+func normalizeWorkspacePolicyParams(params ListWorkspacePoliciesParams) ListWorkspacePoliciesParams {
+	if params.Page < 1 {
+		params.Page = 1
+	}
+	if params.PageSize < 1 {
+		params.PageSize = 25
+	}
+	if params.Sort == "" {
+		params.Sort = "created_at"
+	}
+	switch params.Sort {
+	case "subject_name", "resource_name", "permission", "created_at":
+	default:
+		params.Sort = "created_at"
+	}
+	switch params.Order {
+	case "asc", "desc":
+	default:
+		params.Order = "desc"
+	}
+	params.Search = strings.TrimSpace(params.Search)
+	params.SubjectType = strings.TrimSpace(params.SubjectType)
+	params.Permission = strings.TrimSpace(params.Permission)
+	params.ResourceType = strings.TrimSpace(params.ResourceType)
+	return params
+}
+
+func compareWorkspacePolicyItem(left, right WorkspacePolicyListItem, sortBy string) int {
+	switch sortBy {
+	case "subject_name":
+		if left.SubjectName != right.SubjectName {
+			return strings.Compare(left.SubjectName, right.SubjectName)
+		}
+	case "resource_name":
+		if left.ResourceName != right.ResourceName {
+			return strings.Compare(left.ResourceName, right.ResourceName)
+		}
+	case "permission":
+		leftValue := left.Permission
+		if leftValue == "" {
+			leftValue = left.RoleName
+		}
+		rightValue := right.Permission
+		if rightValue == "" {
+			rightValue = right.RoleName
+		}
+		if leftValue != rightValue {
+			return strings.Compare(leftValue, rightValue)
+		}
+	default:
+		if !left.CreatedAt.Equal(right.CreatedAt) {
+			if left.CreatedAt.Before(right.CreatedAt) {
+				return -1
+			}
+			return 1
+		}
+	}
+	if left.BindingID < right.BindingID {
+		return -1
+	}
+	if left.BindingID > right.BindingID {
+		return 1
+	}
+	return 0
 }

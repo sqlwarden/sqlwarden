@@ -117,3 +117,62 @@ func TestListWorkspacePolicies(t *testing.T) {
 		})
 	}
 }
+
+func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *testing.T) {
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+
+			org, err := db.InsertOrg(ctx, "workspace-policy-filters-"+driver, "Workspace Policy Filters")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ws, err := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Main", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			env, err := db.InsertEnvironment(ctx, ws.ID, &org.ID, "org", org.ID, "prod", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn, err := db.InsertConnection(ctx, ws.ID, &env.ID, &org.ID, "org", org.ID, "Primary DB", "postgres", "dsn", "open")
+			if err != nil {
+				t.Fatal(err)
+			}
+			team, err := db.InsertTeam(ctx, org.ID, "qa-team-"+driver, "QA Team")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			insertTestPermissionBinding(t, db, org.ID, "conn:execute", "team", team.ID, "connection", conn.ID)
+			insertTestPermissionBinding(t, db, org.ID, "ws:read", "account", testUsers["alice"].id, "workspace", ws.ID)
+
+			result, err := db.ListWorkspacePoliciesPage(ctx, ListWorkspacePoliciesParams{
+				OrgID:        org.ID,
+				WorkspaceID:  ws.ID,
+				Search:       "db",
+				SubjectType:  "team",
+				Permission:   "conn:execute",
+				ResourceType: "connection",
+				Page:         1,
+				PageSize:     10,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Total != 1 {
+				t.Fatalf("expected total=1, got %d", result.Total)
+			}
+			if len(result.Items) != 1 {
+				t.Fatalf("expected 1 item, got %d", len(result.Items))
+			}
+			if result.Items[0].SubjectName != "QA Team" {
+				t.Fatalf("expected subject name QA Team, got %s", result.Items[0].SubjectName)
+			}
+			if result.Items[0].ResourceName != "Primary DB" {
+				t.Fatalf("expected resource name Primary DB, got %s", result.Items[0].ResourceName)
+			}
+		})
+	}
+}
