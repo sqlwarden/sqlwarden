@@ -608,6 +608,23 @@ func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *te
 	assert.Equal(t, payload.Items[0]["permission"], "conn:execute")
 }
 
+func TestListWorkspacePoliciesPermissions(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	slug, wsID, ownerTok := wsSetup(t, app, "wsp-list-perms@example.com", "WSP List Perms")
+
+	memberTok := wsJoinAs(t, app, slug, wsID, "ws:member", "wsp-list-member@example.com", ownerTok)
+	memberRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/policies", nil, memberTok), app.routes())
+	assert.Equal(t, memberRes.StatusCode, http.StatusForbidden)
+
+	wsAdminTok := wsJoinAs(t, app, slug, wsID, "ws:admin", "wsp-list-admin@example.com", ownerTok)
+	adminRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/policies", nil, wsAdminTok), app.routes())
+	assert.Equal(t, adminRes.StatusCode, http.StatusOK)
+}
+
 func TestListWorkspacePolicies_ReturnsRenderableSubjectAndResourceMetadata(t *testing.T) {
 	t.Parallel()
 
