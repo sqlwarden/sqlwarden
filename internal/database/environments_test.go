@@ -30,12 +30,12 @@ func TestEnvironmentCRUD(t *testing.T) {
 		t.Fatalf("name mismatch: %s", found.Name)
 	}
 
-	envs, err := db.ListEnvironments(context.Background(), ws.ID)
+	envs, err := db.ListEnvironmentsPage(context.Background(), ListEnvironmentsParams{WorkspaceID: ws.ID, Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(envs) != 1 {
-		t.Fatalf("expected 1 environment, got %d", len(envs))
+	if len(envs.Items) != 1 {
+		t.Fatalf("expected 1 environment, got %d", len(envs.Items))
 	}
 
 	err = db.UpdateEnvironment(context.Background(), env.ID, "production", "Updated env")

@@ -78,16 +78,7 @@ func (db *DB) GetTeamByID(ctx context.Context, id int64) (Team, bool, error) {
 	return team, true, nil
 }
 
-func (db *DB) ListTeams(ctx context.Context, orgID int64) ([]Team, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
-	var teams []Team
-	err := db.NewSelect().Model(&teams).Where("org_id = ?", orgID).OrderExpr("name ASC").Scan(ctx)
-	return teams, err
-}
-
-func (db *DB) ListTeamsFiltered(ctx context.Context, params ListTeamsParams) ([]Team, error) {
+func (db *DB) listTeamsFiltered(ctx context.Context, params ListTeamsParams) ([]Team, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -108,7 +99,7 @@ func (db *DB) ListTeamsFiltered(ctx context.Context, params ListTeamsParams) ([]
 }
 
 func (db *DB) ListTeamsPage(ctx context.Context, params ListTeamsParams) (response.Paginated[Team], error) {
-	teams, err := db.ListTeamsFiltered(ctx, params)
+	teams, err := db.listTeamsFiltered(ctx, params)
 	if err != nil {
 		return response.Paginated[Team]{}, err
 	}

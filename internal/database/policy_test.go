@@ -75,51 +75,6 @@ func TestRoleAndPermissionBindingQueries(t *testing.T) {
 	}
 }
 
-func TestListWorkspacePolicies(t *testing.T) {
-	t.Parallel()
-	for _, driver := range testDrivers() {
-		t.Run(driver, func(t *testing.T) {
-			db := newTestDB(t, driver)
-			ctx := context.Background()
-
-			org, err := db.InsertOrg(ctx, "workspace-policies-"+driver, "Workspace Policies")
-			if err != nil {
-				t.Fatal(err)
-			}
-			ws, err := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Main", "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			env, err := db.InsertEnvironment(ctx, ws.ID, &org.ID, "org", org.ID, "prod", "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			conn, err := db.InsertConnection(ctx, ws.ID, &env.ID, &org.ID, "org", org.ID, "db", "postgres", "dsn", "open")
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			workspaceRole := insertTestRole(t, db, org.ID, &ws.ID, "ws:viewer", "workspace", true, "ws:read")
-			envRole := insertTestRole(t, db, org.ID, &ws.ID, "env:viewer", "workspace", false, "env:read")
-
-			insertTestRoleBinding(t, db, org.ID, workspaceRole.ID, "account", testUsers["alice"].id, "workspace", ws.ID)
-			insertTestRoleBinding(t, db, org.ID, envRole.ID, "account", testUsers["alice"].id, "environment", env.ID)
-			insertTestPermissionBinding(t, db, org.ID, "conn:execute", "account", testUsers["bob"].id, "connection", conn.ID)
-
-			roleBindings, permissionBindings, err := db.ListWorkspacePolicies(ctx, org.ID, ws.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(roleBindings) != 2 {
-				t.Fatalf("expected 2 role bindings, got %d", len(roleBindings))
-			}
-			if len(permissionBindings) != 1 {
-				t.Fatalf("expected 1 permission binding, got %d", len(permissionBindings))
-			}
-		})
-	}
-}
-
 func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *testing.T) {
 	t.Parallel()
 	for _, driver := range testDrivers() {

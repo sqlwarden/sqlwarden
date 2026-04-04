@@ -137,7 +137,7 @@ func (db *DB) GetOrgMembers(ctx context.Context, orgID int64) ([]OrgMember, erro
 	return members, err
 }
 
-func (db *DB) ListOrgMembers(ctx context.Context, params ListOrgMembersParams) ([]OrgMemberListItem, error) {
+func (db *DB) listOrgMembers(ctx context.Context, params ListOrgMembersParams) ([]OrgMemberListItem, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -183,7 +183,7 @@ ORDER BY %s %s, om.account_id %s`, orgMemberSortColumn(params.Sort), strings.ToU
 }
 
 func (db *DB) ListOrgMembersPage(ctx context.Context, params ListOrgMembersParams) (response.Paginated[OrgMemberListItem], error) {
-	items, err := db.ListOrgMembers(ctx, params)
+	items, err := db.listOrgMembers(ctx, params)
 	if err != nil {
 		return response.Paginated[OrgMemberListItem]{}, err
 	}

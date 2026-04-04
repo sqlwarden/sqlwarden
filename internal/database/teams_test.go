@@ -43,12 +43,12 @@ func TestTeamCRUD(t *testing.T) {
 		t.Fatalf("team slug mismatch: got %q want %q", byID.Slug, team.Slug)
 	}
 
-	teams, err := db.ListTeams(context.Background(), org.ID)
+	teams, err := db.ListTeamsPage(context.Background(), ListTeamsParams{OrgID: org.ID, Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(teams) != 1 {
-		t.Fatalf("expected 1 team, got %d", len(teams))
+	if len(teams.Items) != 1 {
+		t.Fatalf("expected 1 team, got %d", len(teams.Items))
 	}
 }
 

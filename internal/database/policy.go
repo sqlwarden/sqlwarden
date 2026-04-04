@@ -140,7 +140,7 @@ func (db *DB) ListPermissionBindings(ctx context.Context, orgID int64, resourceT
 
 // ListWorkspacePolicies returns all role and permission bindings for resources owned
 // by the workspace: the workspace itself, its environments, and its connections.
-func (db *DB) ListWorkspacePolicies(ctx context.Context, orgID, wsID int64) ([]RoleBinding, []PermissionBinding, error) {
+func (db *DB) listWorkspacePolicies(ctx context.Context, orgID, wsID int64) ([]RoleBinding, []PermissionBinding, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -166,7 +166,7 @@ func (db *DB) ListWorkspacePolicies(ctx context.Context, orgID, wsID int64) ([]R
 func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspacePoliciesParams) (response.Paginated[WorkspacePolicyListItem], error) {
 	params = normalizeWorkspacePolicyParams(params)
 
-	roleBindings, permissionBindings, err := db.ListWorkspacePolicies(ctx, params.OrgID, params.WorkspaceID)
+	roleBindings, permissionBindings, err := db.listWorkspacePolicies(ctx, params.OrgID, params.WorkspaceID)
 	if err != nil {
 		return response.Paginated[WorkspacePolicyListItem]{}, err
 	}

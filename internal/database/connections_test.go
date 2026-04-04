@@ -30,12 +30,12 @@ func TestConnectionCRUD(t *testing.T) {
 		t.Fatalf("name mismatch: %s", found.Name)
 	}
 
-	conns, err := db.ListConnections(context.Background(), ws.ID)
+	conns, err := db.ListConnectionsPage(context.Background(), ListConnectionsParams{WorkspaceID: ws.ID, Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(conns) != 1 {
-		t.Fatalf("expected 1 connection, got %d", len(conns))
+	if len(conns.Items) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(conns.Items))
 	}
 
 	env, err := db.InsertEnvironment(context.Background(), ws.ID, &org.ID, "org", org.ID, "prod", "")

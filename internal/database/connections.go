@@ -132,18 +132,6 @@ func (db *DB) UpdateConnection(ctx context.Context, id int64, name, dsnEncrypted
 	return err
 }
 
-func (db *DB) ListConnections(ctx context.Context, workspaceID int64) ([]Connection, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
-	var conns []Connection
-	err := db.NewSelect().Model(&conns).
-		Where("workspace_id = ?", workspaceID).
-		OrderExpr("name ASC").
-		Scan(ctx)
-	return conns, err
-}
-
 func (db *DB) ListConnectionsPage(ctx context.Context, params ListConnectionsParams) (response.Paginated[Connection], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()

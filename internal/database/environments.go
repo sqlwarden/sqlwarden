@@ -88,19 +88,7 @@ func (db *DB) GetEnvironment(ctx context.Context, id int64) (Environment, bool, 
 	return env, true, nil
 }
 
-func (db *DB) ListEnvironments(ctx context.Context, workspaceID int64) ([]Environment, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
-	var envs []Environment
-	err := db.NewSelect().Model(&envs).
-		Where("workspace_id = ?", workspaceID).
-		OrderExpr("name ASC").
-		Scan(ctx)
-	return envs, err
-}
-
-func (db *DB) ListEnvironmentsFiltered(ctx context.Context, params ListEnvironmentsParams) ([]Environment, error) {
+func (db *DB) listEnvironmentsFiltered(ctx context.Context, params ListEnvironmentsParams) ([]Environment, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -123,7 +111,7 @@ func (db *DB) ListEnvironmentsFiltered(ctx context.Context, params ListEnvironme
 }
 
 func (db *DB) ListEnvironmentsPage(ctx context.Context, params ListEnvironmentsParams) (response.Paginated[Environment], error) {
-	envs, err := db.ListEnvironmentsFiltered(ctx, params)
+	envs, err := db.listEnvironmentsFiltered(ctx, params)
 	if err != nil {
 		return response.Paginated[Environment]{}, err
 	}
