@@ -148,12 +148,12 @@ func (app *application) getEnvironment(w http.ResponseWriter, r *http.Request) {
 	if ws.OwnerType == "org" && !app.config.desktopMode {
 		account := contextGetAccount(r)
 		org := contextGetOrg(r)
-		envs, err := app.db.ListAccessibleEnvironments(r.Context(), account.ID, org.ID, ws.ID)
+		ok, err := app.db.HasAccessibleEnvironment(r.Context(), account.ID, org.ID, ws.ID, env.ID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
 		}
-		if !containsEnvironment(envs, env.ID) {
+		if !ok {
 			app.notFound(w, r)
 			return
 		}
@@ -162,15 +162,6 @@ func (app *application) getEnvironment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.serverError(w, r, err)
 	}
-}
-
-func containsEnvironment(envs []database.Environment, environmentID int64) bool {
-	for _, env := range envs {
-		if env.ID == environmentID {
-			return true
-		}
-	}
-	return false
 }
 
 func (app *application) updateEnvironment(w http.ResponseWriter, r *http.Request) {

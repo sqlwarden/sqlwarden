@@ -250,12 +250,12 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 	if ws.OwnerType == "org" && !app.config.desktopMode {
 		account := contextGetAccount(r)
 		org := contextGetOrg(r)
-		conns, err := app.db.ListAccessibleConnections(r.Context(), account.ID, org.ID, ws.ID)
+		ok, err := app.db.HasAccessibleConnection(r.Context(), account.ID, org.ID, ws.ID, conn.ID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
 		}
-		if !containsConnection(conns, conn.ID) {
+		if !ok {
 			app.notFound(w, r)
 			return
 		}
@@ -264,15 +264,6 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.serverError(w, r, err)
 	}
-}
-
-func containsConnection(conns []database.Connection, connectionID int64) bool {
-	for _, conn := range conns {
-		if conn.ID == connectionID {
-			return true
-		}
-	}
-	return false
 }
 
 func (app *application) updateConnection(w http.ResponseWriter, r *http.Request) {

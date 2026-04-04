@@ -192,6 +192,85 @@ ORDER BY e.name ASC`
 	return envs, err
 }
 
+func (db *DB) HasAccessibleEnvironment(ctx context.Context, accountID, orgID, workspaceID, environmentID int64) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	const q = `
+WITH my_teams AS (
+    SELECT team_id FROM team_members WHERE account_id = ?
+)
+SELECT EXISTS (
+    SELECT 1
+    FROM environments e
+    WHERE e.id = ?
+      AND e.workspace_id = ?
+      AND (
+        EXISTS (
+            SELECT 1 FROM role_bindings rb
+            WHERE rb.org_id = ? AND rb.resource_type = 'org' AND rb.resource_id = ?
+              AND (
+                (rb.subject_type = 'account' AND rb.subject_id = ?)
+                OR (rb.subject_type = 'team' AND rb.subject_id IN (SELECT team_id FROM my_teams))
+              )
+        )
+        OR EXISTS (
+            SELECT 1 FROM permission_bindings pb
+            WHERE pb.org_id = ? AND pb.resource_type = 'org' AND pb.resource_id = ?
+              AND (
+                (pb.subject_type = 'account' AND pb.subject_id = ?)
+                OR (pb.subject_type = 'team' AND pb.subject_id IN (SELECT team_id FROM my_teams))
+              )
+        )
+        OR EXISTS (
+            SELECT 1 FROM role_bindings rb2
+            WHERE rb2.org_id = ? AND rb2.resource_type = 'workspace' AND rb2.resource_id = ?
+              AND (
+                (rb2.subject_type = 'account' AND rb2.subject_id = ?)
+                OR (rb2.subject_type = 'team' AND rb2.subject_id IN (SELECT team_id FROM my_teams))
+              )
+        )
+        OR EXISTS (
+            SELECT 1 FROM permission_bindings pb2
+            WHERE pb2.org_id = ? AND pb2.resource_type = 'workspace' AND pb2.resource_id = ?
+              AND (
+                (pb2.subject_type = 'account' AND pb2.subject_id = ?)
+                OR (pb2.subject_type = 'team' AND pb2.subject_id IN (SELECT team_id FROM my_teams))
+              )
+        )
+        OR EXISTS (
+            SELECT 1 FROM role_bindings rb3
+            WHERE rb3.org_id = ? AND rb3.resource_type = 'environment' AND rb3.resource_id = e.id
+              AND (
+                (rb3.subject_type = 'account' AND rb3.subject_id = ?)
+                OR (rb3.subject_type = 'team' AND rb3.subject_id IN (SELECT team_id FROM my_teams))
+              )
+        )
+        OR EXISTS (
+            SELECT 1 FROM permission_bindings pb3
+            WHERE pb3.org_id = ? AND pb3.resource_type = 'environment' AND pb3.resource_id = e.id
+              AND (
+                (pb3.subject_type = 'account' AND pb3.subject_id = ?)
+                OR (pb3.subject_type = 'team' AND pb3.subject_id IN (SELECT team_id FROM my_teams))
+              )
+        )
+      )
+)`
+
+	var ok bool
+	err := db.NewRaw(q,
+		accountID,
+		environmentID, workspaceID,
+		orgID, orgID, accountID,
+		orgID, orgID, accountID,
+		orgID, workspaceID, accountID,
+		orgID, workspaceID, accountID,
+		orgID, accountID,
+		orgID, accountID,
+	).Scan(ctx, &ok)
+	return ok, err
+}
+
 func (db *DB) UpdateEnvironment(ctx context.Context, id int64, name, description string) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()

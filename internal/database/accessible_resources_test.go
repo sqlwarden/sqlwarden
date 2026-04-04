@@ -196,6 +196,14 @@ func TestListAccessibleWorkspaces_DirectWsPermBinding(t *testing.T) {
 	if len(wss) != 1 || wss[0].ID != ws1.ID {
 		t.Fatalf("expected only ws1, got %v", wsIDs(wss))
 	}
+
+	ok, err := db.HasAccessibleWorkspace(context.Background(), userID, org.ID, ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected ws1 to be directly accessible")
+	}
 }
 
 func TestListAccessibleWorkspaces_OrgPermBinding(t *testing.T) {
@@ -548,6 +556,14 @@ func TestListAccessibleConnections_DirectConnPermBinding(t *testing.T) {
 	}
 	if len(conns) != 1 || conns[0].ID != c1.ID {
 		t.Fatalf("expected only c1, got %v", connIDs(conns))
+	}
+
+	ok, err := db.HasAccessibleConnection(context.Background(), userID, org.ID, ws.ID, c1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected c1 to be directly accessible")
 	}
 }
 
@@ -975,6 +991,14 @@ func TestListAccessibleEnvironments_DirectEnvBinding(t *testing.T) {
 	}
 	if contains(ids, envB.ID) {
 		t.Errorf("env B should NOT be accessible — no binding for it")
+	}
+
+	ok, err := db.HasAccessibleEnvironment(context.Background(), userID, org.ID, ws.ID, envA.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected envA to be directly accessible")
 	}
 }
 
