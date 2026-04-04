@@ -144,10 +144,33 @@ func (app *application) createEnvironment(w http.ResponseWriter, r *http.Request
 
 func (app *application) getEnvironment(w http.ResponseWriter, r *http.Request) {
 	env := contextGetEnvironment(r)
+	ws := contextGetWorkspace(r)
+	if ws.OwnerType == "org" && !app.config.desktopMode {
+		account := contextGetAccount(r)
+		org := contextGetOrg(r)
+		envs, err := app.db.ListAccessibleEnvironments(r.Context(), account.ID, org.ID, ws.ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !containsEnvironment(envs, env.ID) {
+			app.notFound(w, r)
+			return
+		}
+	}
 	err := response.JSON(w, http.StatusOK, env)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func containsEnvironment(envs []database.Environment, environmentID int64) bool {
+	for _, env := range envs {
+		if env.ID == environmentID {
+			return true
+		}
+	}
+	return false
 }
 
 func (app *application) updateEnvironment(w http.ResponseWriter, r *http.Request) {

@@ -64,6 +64,29 @@ func TestGrantWorkspacePermissionBinding(t *testing.T) {
 	assert.Equal(t, patchRes2.StatusCode, http.StatusNoContent)
 }
 
+func TestGetWorkspaceRequiresAccessibleBinding(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-get")
+
+	getBefore := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID, nil, memberTok), app.routes())
+	assert.Equal(t, getBefore.StatusCode, http.StatusNotFound)
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"permissions":  []string{"ws:read"},
+			"subject_type": "account",
+			"subject_id":   memberIDInt,
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	getAfter := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID, nil, memberTok), app.routes())
+	assert.Equal(t, getAfter.StatusCode, http.StatusOK)
+}
+
 func TestRevokeWorkspacePermissionBinding(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -355,6 +378,41 @@ func TestGrantConnectionPolicyWrongWorkspace(t *testing.T) {
 	assert.Equal(t, grantRes.StatusCode, http.StatusNotFound)
 }
 
+func TestGetConnectionRequiresAccessibleBinding(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "conn-get")
+
+	connRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections",
+		map[string]any{
+			"name":   "Primary DB",
+			"driver": "postgres",
+			"dsn":    "postgres://localhost/testdb",
+		}, ownerTok), app.routes())
+	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
+
+	getBefore := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections/"+connID, nil, memberTok), app.routes())
+	assert.Equal(t, getBefore.StatusCode, http.StatusNotFound)
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"permissions":   []string{"conn:metadata"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "connection",
+			"resource_id":   connRes.BodyFields["id"],
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	getAfter := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections/"+connID, nil, memberTok), app.routes())
+	assert.Equal(t, getAfter.StatusCode, http.StatusOK)
+}
+
 func TestGrantEnvironmentPolicyBinding(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -401,6 +459,37 @@ func TestGrantEnvironmentPolicyBinding(t *testing.T) {
 	if !found {
 		t.Fatal("expected an environment-scoped permission binding in the list")
 	}
+}
+
+func TestGetEnvironmentRequiresAccessibleBinding(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-get")
+
+	envRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments",
+		map[string]any{"name": "staging"}, ownerTok), app.routes())
+	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+
+	getBefore := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+envID, nil, memberTok), app.routes())
+	assert.Equal(t, getBefore.StatusCode, http.StatusNotFound)
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"permissions":   []string{"env:read"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "environment",
+			"resource_id":   envRes.BodyFields["id"],
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	getAfter := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+envID, nil, memberTok), app.routes())
+	assert.Equal(t, getAfter.StatusCode, http.StatusOK)
 }
 
 func TestListPoliciesShowsAllResourceTypes(t *testing.T) {

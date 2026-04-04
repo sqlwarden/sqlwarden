@@ -246,10 +246,33 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 
 func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 	conn := contextGetConnection(r)
+	ws := contextGetWorkspace(r)
+	if ws.OwnerType == "org" && !app.config.desktopMode {
+		account := contextGetAccount(r)
+		org := contextGetOrg(r)
+		conns, err := app.db.ListAccessibleConnections(r.Context(), account.ID, org.ID, ws.ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !containsConnection(conns, conn.ID) {
+			app.notFound(w, r)
+			return
+		}
+	}
 	err := response.JSON(w, http.StatusOK, conn)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func containsConnection(conns []database.Connection, connectionID int64) bool {
+	for _, conn := range conns {
+		if conn.ID == connectionID {
+			return true
+		}
+	}
+	return false
 }
 
 func (app *application) updateConnection(w http.ResponseWriter, r *http.Request) {

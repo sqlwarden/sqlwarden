@@ -151,10 +151,32 @@ func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) 
 
 func (app *application) getWorkspace(w http.ResponseWriter, r *http.Request) {
 	ws := contextGetWorkspace(r)
+	if ws.OwnerType == "org" && !app.config.desktopMode {
+		account := contextGetAccount(r)
+		org := contextGetOrg(r)
+		workspaces, err := app.db.ListAccessibleWorkspaces(r.Context(), account.ID, org.ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !containsWorkspace(workspaces, ws.ID) {
+			app.notFound(w, r)
+			return
+		}
+	}
 	err := response.JSON(w, http.StatusOK, ws)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func containsWorkspace(workspaces []database.Workspace, workspaceID int64) bool {
+	for _, workspace := range workspaces {
+		if workspace.ID == workspaceID {
+			return true
+		}
+	}
+	return false
 }
 
 func (app *application) updateWorkspace(w http.ResponseWriter, r *http.Request) {
