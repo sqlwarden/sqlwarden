@@ -42,7 +42,9 @@ Response fields:
 
 ### Connections
 
-`GET /api/v1/orgs/{org_slug}/workspaces/{ws_id}/connections` returns:
+Canonical route:
+
+`GET /api/v1/orgs/{org_slug}/workspaces/{ws_id}/environments/{env_id}/connections` returns:
 
 ```json
 {
@@ -56,9 +58,14 @@ Response fields:
 Supported query parameters:
 
 - shared list query parameters
-- `environment_id`
 - `driver`
 - `access_mode`
+
+Notes:
+
+- every connection must belong to an environment
+- every workspace auto-creates a `Default` environment
+- workspace-level connection routes are still accepted as compatibility aliases, but the environment-nested route is the primary contract
 
 ### Workspace Policies
 
@@ -161,7 +168,7 @@ Supported query parameters:
 
 - `GET /api/v1/me/workspaces` returns the same paginated workspace envelope and supports shared list query parameters plus `name`
 - `GET /api/v1/me/workspaces/{ws_id}/environments` returns the same paginated environment envelope and supports shared list query parameters plus `name`
-- `GET /api/v1/me/workspaces/{ws_id}/connections` returns the same paginated connection envelope and supports shared list query parameters plus `environment_id`, `driver`, and `access_mode`
+- `GET /api/v1/me/workspaces/{ws_id}/environments/{env_id}/connections` returns the same paginated connection envelope and supports shared list query parameters plus `driver` and `access_mode`
 
 ## Search / Filter / Sort / Pagination
 
@@ -169,22 +176,23 @@ Supported query parameters:
 - teams: pagination, search, slug filter, and sort
 - workspaces: pagination, search, name filter, and sort
 - environments: pagination, search, name filter, and sort
-- connections: pagination, search, environment filter, driver filter, access-mode filter, and sort
+- connections: pagination, search, driver filter, access-mode filter, and sort
 - workspace policies: pagination, search, subject/resource filtering, permission filtering, and sort
 - personal-space workspaces: pagination, search, name filter, and sort
 - personal-space environments: pagination, search, name filter, and sort
-- personal-space connections: pagination, search, environment filter, driver filter, access-mode filter, and sort
+- personal-space connections: pagination, search, driver filter, access-mode filter, and sort
 
 ## Future Resources
 
 - Future UI-facing list resources should use the same paginated response envelope.
 - Future list endpoints should accept the shared query parameters and add only resource-specific flat filters when needed.
 - Clients should be able to assume `items` is always an array and never `null`.
+- Future workspace child resources should preserve a strict parent chain in `resource_hierarchy`.
 
 ## Mutability
 
 - workspaces: mutable `name`, `description`; immutable `org_id`, `owner_type`, `owner_id`
-- environments: mutable `name`, `description`; immutable `workspace_id`, `org_id`, `owner_type`, `owner_id`
+- environments: mutable `name`, `description`; immutable `workspace_id`
 - teams: mutable `name`; immutable `slug`, `org_id`
 - connections: mutable `name`, `dsn`, `access_mode`; immutable `workspace_id`, `environment_id`, `driver`
 
