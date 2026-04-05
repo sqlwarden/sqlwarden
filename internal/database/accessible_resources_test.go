@@ -462,6 +462,7 @@ func TestListAccessibleConnections_NoBindings(t *testing.T) {
 }
 
 func TestListAccessibleConnections_OrgRoleGrantsAll(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -487,6 +488,80 @@ func TestListAccessibleConnections_OrgRoleGrantsAll(t *testing.T) {
 	ids := connIDs(conns)
 	if !contains(ids, c1.ID) || !contains(ids, c2.ID) {
 		t.Fatalf("missing connection IDs in %v", ids)
+	}
+}
+
+func TestOrgConnectionRoleGrantsDiscoveryAcrossAllAncestors(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-org-conn-discovery", "Org")
+	ownerID := newAccount(t, db, "owner-org-conn-discovery@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	ws1 := seedWorkspace(t, db, e, org.ID, ownerID, "Alpha")
+	ws2 := seedWorkspace(t, db, e, org.ID, ownerID, "Beta")
+	envA1, _ := db.InsertEnvironment(context.Background(), ws1.ID, "env-a1", "")
+	envA2, _ := db.InsertEnvironment(context.Background(), ws1.ID, "env-a2", "")
+	envB1, _ := db.InsertEnvironment(context.Background(), ws2.ID, "env-b1", "")
+	connA1, _ := db.InsertConnection(context.Background(), ws1.ID, &envA1.ID, "conn-a1", "postgres", "enc", "open")
+	connA2, _ := db.InsertConnection(context.Background(), ws1.ID, &envA2.ID, "conn-a2", "postgres", "enc", "open")
+	connB1, _ := db.InsertConnection(context.Background(), ws2.ID, &envB1.ID, "conn-b1", "postgres", "enc", "open")
+	connB2, _ := db.InsertConnection(context.Background(), ws2.ID, nil, "conn-b2", "postgres", "enc", "open")
+
+	userID := newAccount(t, db, "user-org-conn-discovery@example.com")
+	roleID, err := e.CreateRole(context.Background(), org.ID, nil, "org-conn-reader", "", "org", []string{access.PermConnRead})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.BindRole(context.Background(), org.ID, roleID, "account", userID, "org", org.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaceIDs := wsIDs(wss)
+	if len(workspaceIDs) != 2 || !contains(workspaceIDs, ws1.ID) || !contains(workspaceIDs, ws2.ID) {
+		t.Fatalf("expected both workspaces visible via org conn role, got %v", workspaceIDs)
+	}
+
+	envsWs1, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envIDsWs1 := envIDs(envsWs1)
+	if len(envIDsWs1) != 2 || !contains(envIDsWs1, envA1.ID) || !contains(envIDsWs1, envA2.ID) {
+		t.Fatalf("expected both ws1 environments visible via org conn role, got %v", envIDsWs1)
+	}
+
+	envsWs2, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envIDsWs2 := envIDs(envsWs2)
+	if len(envIDsWs2) != 1 || envIDsWs2[0] != envB1.ID {
+		t.Fatalf("expected only tagged environment in ws2, got %v", envIDsWs2)
+	}
+
+	connsWs1, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connIDsWs1 := connIDs(connsWs1)
+	if len(connIDsWs1) != 2 || !contains(connIDsWs1, connA1.ID) || !contains(connIDsWs1, connA2.ID) {
+		t.Fatalf("expected both ws1 connections visible via org conn role, got %v", connIDsWs1)
+	}
+
+	connsWs2, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connIDsWs2 := connIDs(connsWs2)
+	if len(connIDsWs2) != 2 || !contains(connIDsWs2, connB1.ID) || !contains(connIDsWs2, connB2.ID) {
+		t.Fatalf("expected both ws2 connections visible via org conn role, got %v", connIDsWs2)
 	}
 }
 

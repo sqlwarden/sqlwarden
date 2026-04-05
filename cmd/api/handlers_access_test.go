@@ -633,6 +633,147 @@ func TestGetConnectionAccessibleViaOrgPermission(t *testing.T) {
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
 }
 
+func TestOrgConnectionRoleGrantsDiscoveryAcrossMultipleBranches(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, ws1ID, memberIDInt := setupPolicyTest(t, app, "org-conn-discovery")
+
+	ws2Res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces",
+		map[string]any{"name": "Second WS"}, ownerTok), app.routes())
+	assert.Equal(t, ws2Res.StatusCode, http.StatusCreated)
+	ws2ID := fmt.Sprintf("%v", ws2Res.BodyFields["id"])
+
+	envA1ID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, ws1ID, "env-a1")
+	envA2ID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, ws1ID, "env-a2")
+	envB1ID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, ws2ID, "env-b1")
+
+	_ = createWorkspaceConnection(t, app, ownerTok, orgSlug, ws1ID, "conn-a1", &envA1ID)
+	_ = createWorkspaceConnection(t, app, ownerTok, orgSlug, ws1ID, "conn-a2", &envA2ID)
+	_ = createWorkspaceConnection(t, app, ownerTok, orgSlug, ws2ID, "conn-b1", &envB1ID)
+	_ = createWorkspaceConnection(t, app, ownerTok, orgSlug, ws2ID, "conn-b2", nil)
+
+	rolesRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/roles", nil, ownerTok), app.routes())
+	assert.Equal(t, rolesRes.StatusCode, http.StatusOK)
+
+	var rolePayload struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(rolesRes.BodyBytes, &rolePayload); err != nil {
+		t.Fatal(err)
+	}
+
+	var roleID int64
+	for _, role := range rolePayload.Items {
+		if role["name"] == "org-conn-reader" {
+			roleID = int64(role["id"].(float64))
+			break
+		}
+	}
+	if roleID == 0 {
+		createRoleRes := send(t, newAuthRequest(t, http.MethodPost,
+			"/api/v1/orgs/"+orgSlug+"/roles",
+			map[string]any{
+				"name":        "org-conn-reader",
+				"description": "Org-scoped connection reader",
+				"scope_type":  "org",
+				"permissions": []string{"conn:read"},
+			}, ownerTok), app.routes())
+		assert.Equal(t, createRoleRes.StatusCode, http.StatusCreated)
+		roleID = int64(createRoleRes.BodyFields["id"].(float64))
+	}
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/policies",
+		map[string]any{
+			"role_id":      roleID,
+			"subject_type": "account",
+			"subject_id":   memberIDInt,
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	workspacesRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces", nil, memberTok), app.routes())
+	assert.Equal(t, workspacesRes.StatusCode, http.StatusOK)
+	var workspacesPayload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(workspacesRes.BodyBytes, &workspacesPayload); err != nil {
+		t.Fatal(err)
+	}
+	if workspacesPayload.Total != 2 {
+		t.Fatalf("expected both workspaces visible via org conn role, got %+v", workspacesPayload.Items)
+	}
+
+	envsWs1Res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+ws1ID+"/environments", nil, memberTok), app.routes())
+	assert.Equal(t, envsWs1Res.StatusCode, http.StatusOK)
+	var envsWs1Payload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(envsWs1Res.BodyBytes, &envsWs1Payload); err != nil {
+		t.Fatal(err)
+	}
+	if envsWs1Payload.Total != 2 {
+		t.Fatalf("expected both ws1 environments visible via org conn role, got %+v", envsWs1Payload.Items)
+	}
+
+	envsWs2Res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+ws2ID+"/environments", nil, memberTok), app.routes())
+	assert.Equal(t, envsWs2Res.StatusCode, http.StatusOK)
+	var envsWs2Payload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(envsWs2Res.BodyBytes, &envsWs2Payload); err != nil {
+		t.Fatal(err)
+	}
+	if envsWs2Payload.Total != 1 {
+		t.Fatalf("expected only tagged ws2 environment visible, got %+v", envsWs2Payload.Items)
+	}
+
+	connsWs1Res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+ws1ID+"/connections", nil, memberTok), app.routes())
+	assert.Equal(t, connsWs1Res.StatusCode, http.StatusOK)
+	var connsWs1Payload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(connsWs1Res.BodyBytes, &connsWs1Payload); err != nil {
+		t.Fatal(err)
+	}
+	if connsWs1Payload.Total != 2 {
+		t.Fatalf("expected both ws1 connections visible via org conn role, got %+v", connsWs1Payload.Items)
+	}
+
+	connsWs2Res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+ws2ID+"/connections", nil, memberTok), app.routes())
+	assert.Equal(t, connsWs2Res.StatusCode, http.StatusOK)
+	var connsWs2Payload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(connsWs2Res.BodyBytes, &connsWs2Payload); err != nil {
+		t.Fatal(err)
+	}
+	if connsWs2Payload.Total != 2 {
+		t.Fatalf("expected both ws2 connections visible via org conn role, got %+v", connsWs2Payload.Items)
+	}
+
+	wsPatchRes := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+ws1ID,
+		map[string]any{"name": "Nope"}, memberTok), app.routes())
+	assert.Equal(t, wsPatchRes.StatusCode, http.StatusForbidden)
+
+	envPatchRes := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+ws1ID+"/environments/"+strconv.FormatInt(envA1ID, 10),
+		map[string]any{"name": "Nope"}, memberTok), app.routes())
+	assert.Equal(t, envPatchRes.StatusCode, http.StatusForbidden)
+}
+
 func TestGrantEnvironmentPolicyBinding(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
