@@ -99,6 +99,7 @@ func TestInstanceAdminsLifecycle(t *testing.T) {
 }
 
 func TestListInstanceAdminsPage_SupportsPaginationAndSort(t *testing.T) {
+	t.Parallel()
 	for _, driver := range testDrivers() {
 		t.Run(driver, func(t *testing.T) {
 			db := newTestDB(t, driver)
@@ -126,7 +127,11 @@ func TestListInstanceAdminsPage_SupportsPaginationAndSort(t *testing.T) {
 			if len(result.Items) != 1 {
 				t.Fatalf("expected 1 item, got %d", len(result.Items))
 			}
-			if result.Items[0].AccountID != testUsers["bob"].id {
+			want := testUsers["alice"].id
+			if testUsers["bob"].id > want {
+				want = testUsers["bob"].id
+			}
+			if result.Items[0].AccountID != want {
 				t.Fatalf("expected highest account id first, got %d", result.Items[0].AccountID)
 			}
 		})

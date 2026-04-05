@@ -176,6 +176,7 @@ func TestListAccessibleWorkspaces_WsRoleBinding(t *testing.T) {
 }
 
 func TestListAccessibleWorkspaces_DirectWsPermBinding(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -207,6 +208,7 @@ func TestListAccessibleWorkspaces_DirectWsPermBinding(t *testing.T) {
 }
 
 func TestListAccessibleWorkspaces_OrgPermBinding(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -234,6 +236,7 @@ func TestListAccessibleWorkspaces_OrgPermBinding(t *testing.T) {
 }
 
 func TestListAccessibleWorkspaces_TeamOrgBinding(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -265,6 +268,7 @@ func TestListAccessibleWorkspaces_TeamOrgBinding(t *testing.T) {
 }
 
 func TestListAccessibleWorkspaces_TeamWsBinding(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -292,6 +296,7 @@ func TestListAccessibleWorkspaces_TeamWsBinding(t *testing.T) {
 }
 
 func TestListAccessibleWorkspaces_TeamNotMember(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -316,6 +321,7 @@ func TestListAccessibleWorkspaces_TeamNotMember(t *testing.T) {
 }
 
 func TestListAccessibleWorkspaces_CrossOrgIsolation(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -351,6 +357,7 @@ func TestListAccessibleWorkspaces_CrossOrgIsolation(t *testing.T) {
 }
 
 func TestListAccessibleWorkspaces_TwoUsersIsolation(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -379,6 +386,7 @@ func TestListAccessibleWorkspaces_TwoUsersIsolation(t *testing.T) {
 }
 
 func TestListAccessibleWorkspaces_OwnerSeesAll(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -406,6 +414,7 @@ func TestListAccessibleWorkspaces_OwnerSeesAll(t *testing.T) {
 }
 
 func TestListAccessibleWorkspaces_EmptyOrg(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -784,6 +793,7 @@ func TestListAccessibleConnections_WsBindingDoesNotLeakToOtherWs(t *testing.T) {
 }
 
 func TestListAccessibleConnections_OwnerSeesAll(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -893,6 +903,7 @@ func TestListAccessibleConnections_EnvRoleBinding(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestListAccessibleEnvironments_NoBindings(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -914,6 +925,7 @@ func TestListAccessibleEnvironments_NoBindings(t *testing.T) {
 }
 
 func TestListAccessibleEnvironments_OrgRoleGrantsAll(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -942,6 +954,7 @@ func TestListAccessibleEnvironments_OrgRoleGrantsAll(t *testing.T) {
 }
 
 func TestListAccessibleEnvironments_WsBindingGrantsAll(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -967,6 +980,7 @@ func TestListAccessibleEnvironments_WsBindingGrantsAll(t *testing.T) {
 }
 
 func TestListAccessibleEnvironments_DirectEnvBinding(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -1003,6 +1017,7 @@ func TestListAccessibleEnvironments_DirectEnvBinding(t *testing.T) {
 }
 
 func TestListAccessibleEnvironments_IsolatedAcrossOrgs(t *testing.T) {
+	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -1029,5 +1044,195 @@ func TestListAccessibleEnvironments_IsolatedAcrossOrgs(t *testing.T) {
 	ids2 := envIDs(envs2)
 	if contains(ids2, env2.ID) {
 		t.Errorf("owner1 should NOT see env2 in org2")
+	}
+}
+
+func TestListAccessibleWorkspaces_EnvPermissionPropagatesVisibility(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-ws-env-prop", "Org")
+	ownerID := newAccount(t, db, "owner-ws-env-prop@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	ws1 := seedWorkspace(t, db, e, org.ID, ownerID, "EnvVisible")
+	ws2 := seedWorkspace(t, db, e, org.ID, ownerID, "Hidden")
+	env1, _ := db.InsertEnvironment(context.Background(), ws1.ID, "env-a", "")
+	_, _ = db.InsertEnvironment(context.Background(), ws2.ID, "env-b", "")
+
+	userID := newAccount(t, db, "user-ws-env-prop@example.com")
+	_ = e.GrantPermission(context.Background(), org.ID, access.PermEnvRead, "account", userID, "environment", env1.ID, ownerID)
+
+	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wss) != 1 || wss[0].ID != ws1.ID {
+		t.Fatalf("expected only ws1 from env binding, got %v", wsIDs(wss))
+	}
+
+	ok, err := db.HasAccessibleWorkspace(context.Background(), userID, org.ID, ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected workspace visibility to propagate from environment access")
+	}
+}
+
+func TestListAccessibleWorkspaces_ConnPermissionPropagatesVisibility(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-ws-conn-prop", "Org")
+	ownerID := newAccount(t, db, "owner-ws-conn-prop@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	ws1 := seedWorkspace(t, db, e, org.ID, ownerID, "ConnVisible")
+	ws2 := seedWorkspace(t, db, e, org.ID, ownerID, "Hidden")
+	env1, _ := db.InsertEnvironment(context.Background(), ws1.ID, "env-a", "")
+	conn1, _ := db.InsertConnection(context.Background(), ws1.ID, &env1.ID, "conn-a", "postgres", "enc", "open")
+	_, _ = db.InsertConnection(context.Background(), ws2.ID, nil, "conn-b", "postgres", "enc", "open")
+
+	userID := newAccount(t, db, "user-ws-conn-prop@example.com")
+	_ = e.GrantPermission(context.Background(), org.ID, access.PermConnRead, "account", userID, "connection", conn1.ID, ownerID)
+
+	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wss) != 1 || wss[0].ID != ws1.ID {
+		t.Fatalf("expected only ws1 from conn binding, got %v", wsIDs(wss))
+	}
+
+	ok, err := db.HasAccessibleWorkspace(context.Background(), userID, org.ID, ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected workspace visibility to propagate from connection access")
+	}
+}
+
+func TestListAccessibleWorkspaces_ConnRolePropagatesVisibilityForTeam(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-ws-team-conn-prop", "Org")
+	ownerID := newAccount(t, db, "owner-ws-team-conn-prop@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	ws1 := seedWorkspace(t, db, e, org.ID, ownerID, "Visible")
+	ws2 := seedWorkspace(t, db, e, org.ID, ownerID, "Hidden")
+	env1, _ := db.InsertEnvironment(context.Background(), ws1.ID, "env-a", "")
+	conn1, _ := db.InsertConnection(context.Background(), ws1.ID, &env1.ID, "conn-a", "postgres", "enc", "open")
+	_, _ = db.InsertConnection(context.Background(), ws2.ID, nil, "conn-b", "postgres", "enc", "open")
+
+	team, _ := db.InsertTeam(context.Background(), org.ID, "ops-team-conn-prop", "Ops")
+	userID := newAccount(t, db, "user-ws-team-conn-prop@example.com")
+	_ = db.AddTeamMember(context.Background(), team.ID, userID)
+
+	roleID, err := e.CreateRole(context.Background(), org.ID, &ws1.ID, "conn-reader-prop", "", "connection", []string{access.PermConnRead})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.BindRole(context.Background(), org.ID, roleID, "team", team.ID, "connection", conn1.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wss) != 1 || wss[0].ID != ws1.ID {
+		t.Fatalf("expected only ws1 from team conn role, got %v", wsIDs(wss))
+	}
+
+	ok, err := db.HasAccessibleWorkspace(context.Background(), userID, org.ID, ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected team connection role to propagate workspace visibility")
+	}
+}
+
+func TestListAccessibleEnvironments_ConnPermissionPropagatesVisibility(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-env-conn-prop", "Org")
+	ownerID := newAccount(t, db, "owner-env-conn-prop@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	envA, _ := db.InsertEnvironment(context.Background(), ws.ID, "env-a", "")
+	envB, _ := db.InsertEnvironment(context.Background(), ws.ID, "env-b", "")
+	connA, _ := db.InsertConnection(context.Background(), ws.ID, &envA.ID, "conn-a", "postgres", "enc", "open")
+	_, _ = db.InsertConnection(context.Background(), ws.ID, &envB.ID, "conn-b", "postgres", "enc", "open")
+
+	userID := newAccount(t, db, "user-env-conn-prop@example.com")
+	_ = e.GrantPermission(context.Background(), org.ID, access.PermConnRead, "account", userID, "connection", connA.ID, ownerID)
+
+	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 1 || envs[0].ID != envA.ID {
+		t.Fatalf("expected only envA from conn binding, got %v", envIDs(envs))
+	}
+
+	ok, err := db.HasAccessibleEnvironment(context.Background(), userID, org.ID, ws.ID, envA.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected environment visibility to propagate from connection access")
+	}
+}
+
+func TestListAccessibleEnvironments_ConnRolePropagatesVisibilityForTeam(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-env-team-conn-prop", "Org")
+	ownerID := newAccount(t, db, "owner-env-team-conn-prop@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	envA, _ := db.InsertEnvironment(context.Background(), ws.ID, "env-a", "")
+	envB, _ := db.InsertEnvironment(context.Background(), ws.ID, "env-b", "")
+	connA, _ := db.InsertConnection(context.Background(), ws.ID, &envA.ID, "conn-a", "postgres", "enc", "open")
+	_, _ = db.InsertConnection(context.Background(), ws.ID, &envB.ID, "conn-b", "postgres", "enc", "open")
+
+	team, _ := db.InsertTeam(context.Background(), org.ID, "ops-env-team-prop", "Ops")
+	userID := newAccount(t, db, "user-env-team-conn-prop@example.com")
+	_ = db.AddTeamMember(context.Background(), team.ID, userID)
+
+	roleID, err := e.CreateRole(context.Background(), org.ID, &ws.ID, "conn-reader-env-prop", "", "connection", []string{access.PermConnRead})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.BindRole(context.Background(), org.ID, roleID, "team", team.ID, "connection", connA.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 1 || envs[0].ID != envA.ID {
+		t.Fatalf("expected only envA from team conn role, got %v", envIDs(envs))
+	}
+
+	ok, err := db.HasAccessibleEnvironment(context.Background(), userID, org.ID, ws.ID, envA.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected team connection role to propagate environment visibility")
 	}
 }

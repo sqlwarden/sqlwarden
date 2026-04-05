@@ -106,8 +106,9 @@ func (db *DB) ListEnvironmentsPage(ctx context.Context, params ListEnvironmentsP
 	return response.PaginateItems(envs, params.Page, params.PageSize), nil
 }
 
-// ListAccessibleEnvironments returns environments in workspaceID that accountID has any binding on,
-// checking org-level, workspace-level, and direct environment-level bindings.
+// ListAccessibleEnvironments returns environments in workspaceID that accountID can discover.
+// Discovery includes direct environment access and ancestor visibility propagated from
+// accessible descendant connections.
 func (db *DB) ListAccessibleEnvironments(ctx context.Context, accountID, orgID, workspaceID int64) ([]Environment, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -168,6 +169,32 @@ WHERE e.workspace_id = ?
             OR (pb3.subject_type = 'team' AND pb3.subject_id IN (SELECT team_id FROM my_teams))
           )
     )
+    OR EXISTS (
+        SELECT 1
+        FROM connections c
+        WHERE c.environment_id = e.id
+          AND EXISTS (
+            SELECT 1 FROM role_bindings rb4
+            WHERE rb4.org_id = ? AND rb4.resource_type = 'connection' AND rb4.resource_id = c.id
+              AND (
+                (rb4.subject_type = 'account' AND rb4.subject_id = ?)
+                OR (rb4.subject_type = 'team' AND rb4.subject_id IN (SELECT team_id FROM my_teams))
+              )
+          )
+    )
+    OR EXISTS (
+        SELECT 1
+        FROM connections c
+        WHERE c.environment_id = e.id
+          AND EXISTS (
+            SELECT 1 FROM permission_bindings pb4
+            WHERE pb4.org_id = ? AND pb4.resource_type = 'connection' AND pb4.resource_id = c.id
+              AND (
+                (pb4.subject_type = 'account' AND pb4.subject_id = ?)
+                OR (pb4.subject_type = 'team' AND pb4.subject_id IN (SELECT team_id FROM my_teams))
+              )
+          )
+    )
   )
 ORDER BY e.name ASC`
 
@@ -181,6 +208,8 @@ ORDER BY e.name ASC`
 		orgID, workspaceID, accountID, // ws perm binding
 		orgID, accountID, // env role binding
 		orgID, accountID, // env perm binding
+		orgID, accountID, // conn role binding
+		orgID, accountID, // conn perm binding
 	).Scan(ctx, &envs)
 	return envs, err
 }
@@ -247,6 +276,32 @@ SELECT EXISTS (
                 OR (pb3.subject_type = 'team' AND pb3.subject_id IN (SELECT team_id FROM my_teams))
               )
         )
+        OR EXISTS (
+            SELECT 1
+            FROM connections c
+            WHERE c.environment_id = e.id
+              AND EXISTS (
+                SELECT 1 FROM role_bindings rb4
+                WHERE rb4.org_id = ? AND rb4.resource_type = 'connection' AND rb4.resource_id = c.id
+                  AND (
+                    (rb4.subject_type = 'account' AND rb4.subject_id = ?)
+                    OR (rb4.subject_type = 'team' AND rb4.subject_id IN (SELECT team_id FROM my_teams))
+                  )
+              )
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM connections c
+            WHERE c.environment_id = e.id
+              AND EXISTS (
+                SELECT 1 FROM permission_bindings pb4
+                WHERE pb4.org_id = ? AND pb4.resource_type = 'connection' AND pb4.resource_id = c.id
+                  AND (
+                    (pb4.subject_type = 'account' AND pb4.subject_id = ?)
+                    OR (pb4.subject_type = 'team' AND pb4.subject_id IN (SELECT team_id FROM my_teams))
+                  )
+              )
+        )
       )
 )`
 
@@ -258,6 +313,8 @@ SELECT EXISTS (
 		orgID, orgID, accountID,
 		orgID, workspaceID, accountID,
 		orgID, workspaceID, accountID,
+		orgID, accountID,
+		orgID, accountID,
 		orgID, accountID,
 		orgID, accountID,
 	).Scan(ctx, &ok)

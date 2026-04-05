@@ -36,6 +36,35 @@ func policiesURL(orgSlug, wsID string) string {
 	return "/api/v1/orgs/" + orgSlug + "/workspaces/" + wsID + "/policies"
 }
 
+func createWorkspaceEnvironment(t *testing.T, app *application, ownerTok, orgSlug, wsID, name string) int64 {
+	t.Helper()
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments",
+		map[string]any{"name": name}, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+	return int64(res.BodyFields["id"].(float64))
+}
+
+func createWorkspaceConnection(t *testing.T, app *application, ownerTok, orgSlug, wsID, name string, environmentID *int64) int64 {
+	t.Helper()
+
+	body := map[string]any{
+		"name":   name,
+		"driver": "postgres",
+		"dsn":    "postgres://localhost/testdb",
+	}
+	if environmentID != nil {
+		body["environment_id"] = *environmentID
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections",
+		body, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+	return int64(res.BodyFields["id"].(float64))
+}
+
 func TestGrantWorkspacePermissionBinding(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -104,6 +133,82 @@ func TestGetWorkspaceAccessibleViaOrgPermission(t *testing.T) {
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID, nil, memberTok), app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+}
+
+func TestGetWorkspaceAccessibleViaEnvironmentPermission(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-env-propagated")
+
+	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"permissions":   []string{"env:read"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "environment",
+			"resource_id":   envID,
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID, nil, memberTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+}
+
+func TestGetWorkspaceAccessibleViaConnectionPermission(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-conn-propagated")
+
+	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
+	connID := createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "primary-db", &envID)
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"permissions":   []string{"conn:read"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "connection",
+			"resource_id":   connID,
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID, nil, memberTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+}
+
+func TestWorkspaceVisibilityFromConnectionPermissionDoesNotGrantWrite(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-conn-visible-only")
+
+	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
+	connID := createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "primary-db", &envID)
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"permissions":   []string{"conn:read"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "connection",
+			"resource_id":   connID,
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID, nil, memberTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+
+	patchRes := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID,
+		map[string]any{"name": "Nope"}, memberTok), app.routes())
+	assert.Equal(t, patchRes.StatusCode, http.StatusForbidden)
 }
 
 func TestRevokeWorkspacePermissionBinding(t *testing.T) {
@@ -655,6 +760,129 @@ func TestGetEnvironmentAccessibleViaOrgPermission(t *testing.T) {
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+envID, nil, memberTok), app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+}
+
+func TestGetEnvironmentAccessibleViaConnectionPermission(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-conn-propagated")
+
+	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
+	connID := createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "primary-db", &envID)
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"permissions":   []string{"conn:read"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "connection",
+			"resource_id":   connID,
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+strconv.FormatInt(envID, 10), nil, memberTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+}
+
+func TestEnvironmentVisibilityFromConnectionPermissionDoesNotGrantWrite(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-conn-visible-only")
+
+	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
+	connID := createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "primary-db", &envID)
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"permissions":   []string{"conn:read"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "connection",
+			"resource_id":   connID,
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+strconv.FormatInt(envID, 10), nil, memberTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+
+	patchRes := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+strconv.FormatInt(envID, 10),
+		map[string]any{"name": "Nope"}, memberTok), app.routes())
+	assert.Equal(t, patchRes.StatusCode, http.StatusForbidden)
+}
+
+func TestListWorkspacesIncludesWorkspaceFromConnectionAccess(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-list-conn-propagated")
+
+	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
+	connID := createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "primary-db", &envID)
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"permissions":   []string{"conn:read"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "connection",
+			"resource_id":   connID,
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces", nil, memberTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(listRes.BodyBytes, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Total != 1 || fmt.Sprintf("%v", payload.Items[0]["id"]) != wsID {
+		t.Fatalf("expected propagated workspace visibility for %s, got %+v", wsID, payload.Items)
+	}
+}
+
+func TestListEnvironmentsIncludesEnvironmentFromConnectionAccess(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-list-conn-propagated")
+
+	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
+	connID := createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "primary-db", &envID)
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		policiesURL(orgSlug, wsID),
+		map[string]any{
+			"permissions":   []string{"conn:read"},
+			"subject_type":  "account",
+			"subject_id":    memberIDInt,
+			"resource_type": "connection",
+			"resource_id":   connID,
+		}, ownerTok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments", nil, memberTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(listRes.BodyBytes, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Total != 1 || fmt.Sprintf("%v", payload.Items[0]["id"]) != strconv.FormatInt(envID, 10) {
+		t.Fatalf("expected propagated environment visibility for %d, got %+v", envID, payload.Items)
+	}
 }
 
 func TestListPoliciesShowsAllResourceTypes(t *testing.T) {
