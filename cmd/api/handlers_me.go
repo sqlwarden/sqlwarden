@@ -158,10 +158,10 @@ func (app *application) createMyEnvironment(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-// listMyConnections returns all connections within a personal-space workspace.
-// Personal space owner always has full access, so we always use ListConnections directly.
+// listMyConnections returns all connections within a personal-space environment.
 func (app *application) listMyConnections(w http.ResponseWriter, r *http.Request) {
 	ws := contextGetWorkspace(r)
+	env := contextGetEnvironment(r)
 	q, errs := readListQuery(r.URL.Query(), map[string]string{
 		"name":       "name",
 		"created_at": "created_at",
@@ -173,26 +173,29 @@ func (app *application) listMyConnections(w http.ResponseWriter, r *http.Request
 	}
 
 	params := database.ListConnectionsParams{
-		WorkspaceID: ws.ID,
-		Search:      q.Search,
-		Driver:      strings.TrimSpace(r.URL.Query().Get("driver")),
-		AccessMode:  strings.TrimSpace(r.URL.Query().Get("access_mode")),
-		Sort:        q.Sort,
-		Order:       q.Order,
-		Page:        q.Page,
-		PageSize:    q.PageSize,
+		WorkspaceID:   ws.ID,
+		EnvironmentID: &env.ID,
+		Search:        q.Search,
+		Driver:        strings.TrimSpace(r.URL.Query().Get("driver")),
+		AccessMode:    strings.TrimSpace(r.URL.Query().Get("access_mode")),
+		Sort:          q.Sort,
+		Order:         q.Order,
+		Page:          q.Page,
+		PageSize:      q.PageSize,
 	}
 	if params.AccessMode != "" && params.AccessMode != "open" && params.AccessMode != "restricted" {
 		app.failedValidation(w, r, fieldErrors(map[string]string{"access_mode": "must be open or restricted"}))
 		return
 	}
-	if rawEnvID := strings.TrimSpace(r.URL.Query().Get("environment_id")); rawEnvID != "" {
-		envID, err := strconv.ParseInt(rawEnvID, 10, 64)
-		if err != nil || envID < 1 {
-			app.failedValidation(w, r, fieldErrors(map[string]string{"environment_id": "must be a positive integer"}))
-			return
+	if env.ID == 0 {
+		if rawEnvID := strings.TrimSpace(r.URL.Query().Get("environment_id")); rawEnvID != "" {
+			parsedEnvID, err := strconv.ParseInt(rawEnvID, 10, 64)
+			if err != nil || parsedEnvID < 1 {
+				app.failedValidation(w, r, fieldErrors(map[string]string{"environment_id": "must be a positive integer"}))
+				return
+			}
+			params.EnvironmentID = &parsedEnvID
 		}
-		params.EnvironmentID = &envID
 	}
 
 	conns, err := app.db.ListConnectionsPage(context.Background(), params)
@@ -206,8 +209,7 @@ func (app *application) listMyConnections(w http.ResponseWriter, r *http.Request
 	}
 }
 
-// createMyConnection creates a connection within a personal-space workspace.
-// Passes nil orgID (no org for personal spaces).
+// createMyConnection creates a connection within a personal-space environment.
 func (app *application) createMyConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name          string              `json:"name"`
@@ -251,18 +253,25 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 	}
 
 	ws := contextGetWorkspace(r)
-	validatedEnvID, ok, err := app.resolveWorkspaceEnvironmentID(r, ws.ID, input.EnvironmentID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !ok {
-		app.notFound(w, r)
-		return
+	env := contextGetEnvironment(r)
+	targetEnvID := input.EnvironmentID
+	if env.ID != 0 {
+		targetEnvID = &env.ID
+	} else {
+		var ok bool
+		targetEnvID, ok, err = app.validateConnectionEnvironment(r, ws.ID, targetEnvID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !ok {
+			app.notFound(w, r)
+			return
+		}
 	}
 
 	conn, err := app.db.InsertConnection(context.Background(),
-		ws.ID, validatedEnvID,
+		ws.ID, targetEnvID,
 		input.Name, input.Driver, dsnEncrypted, input.AccessMode,
 	)
 	if err != nil {

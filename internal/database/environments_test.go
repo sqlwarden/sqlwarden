@@ -34,8 +34,8 @@ func TestEnvironmentCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(envs.Items) != 1 {
-		t.Fatalf("expected 1 environment, got %d", len(envs.Items))
+	if len(envs.Items) != 2 {
+		t.Fatalf("expected 2 environments including Default, got %d", len(envs.Items))
 	}
 
 	err = db.UpdateEnvironment(context.Background(), env.ID, "production", "Updated env")

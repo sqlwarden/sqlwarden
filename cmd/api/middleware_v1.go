@@ -182,6 +182,11 @@ func (app *application) connCtx(next http.Handler) http.Handler {
 			app.notFound(w, r)
 			return
 		}
+		env := contextGetEnvironment(r)
+		if env.ID != 0 && conn.EnvironmentID != env.ID {
+			app.notFound(w, r)
+			return
+		}
 
 		r = contextSetConnection(r, conn)
 		next.ServeHTTP(w, r)
@@ -273,6 +278,11 @@ func (app *application) spaceConnCtx(next http.Handler) http.Handler {
 
 		ws := contextGetWorkspace(r)
 		if conn.WorkspaceID != ws.ID {
+			app.notFound(w, r)
+			return
+		}
+		env := contextGetEnvironment(r)
+		if env.ID != 0 && conn.EnvironmentID != env.ID {
 			app.notFound(w, r)
 			return
 		}

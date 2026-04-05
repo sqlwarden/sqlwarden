@@ -68,6 +68,20 @@ func (app *application) routes() http.Handler {
 							r.Get("/", app.getEnvironment)
 							r.Patch("/", app.updateEnvironment)
 							r.Delete("/", app.deleteEnvironment)
+
+							r.Route("/connections", func(r chi.Router) {
+								r.Post("/test", app.testConnection)
+								r.Get("/", app.listMyConnections)
+								r.Post("/", app.createMyConnection)
+								r.Route("/{conn_id}", func(r chi.Router) {
+									r.Use(app.spaceConnCtx)
+									r.Get("/", app.getConnection)
+									r.Patch("/", app.updateConnection)
+									r.Delete("/", app.deleteConnection)
+									r.Post("/connect", app.connectToDatabase)
+									r.Post("/query", app.executeQuery)
+								})
+							})
 						})
 					})
 
@@ -162,6 +176,20 @@ func (app *application) routes() http.Handler {
 							r.Get("/", app.getEnvironment)
 							r.With(app.requirePermission("env:write")).Patch("/", app.updateEnvironment)
 							r.With(app.requirePermission("env:delete")).Delete("/", app.deleteEnvironment)
+
+							r.Route("/connections", func(r chi.Router) {
+								r.Post("/test", app.testConnection)
+								r.Get("/", app.listConnections)
+								r.With(app.requirePermission("conn:create")).Post("/", app.createConnection)
+								r.Route("/{conn_id}", func(r chi.Router) {
+									r.Use(app.connCtx)
+									r.Get("/", app.getConnection)
+									r.With(app.requirePermission("conn:write")).Patch("/", app.updateConnection)
+									r.With(app.requirePermission("conn:delete")).Delete("/", app.deleteConnection)
+									r.Post("/connect", app.connectToDatabase)
+									r.Post("/query", app.executeQuery)
+								})
+							})
 						})
 					})
 
@@ -174,7 +202,6 @@ func (app *application) routes() http.Handler {
 							r.Get("/", app.getConnection)
 							r.With(app.requirePermission("conn:write")).Patch("/", app.updateConnection)
 							r.With(app.requirePermission("conn:delete")).Delete("/", app.deleteConnection)
-
 							r.Post("/connect", app.connectToDatabase)
 							r.Post("/query", app.executeQuery)
 						})

@@ -77,7 +77,7 @@ func TestConnectionCRUD(t *testing.T) {
 	if updated.AccessMode != "restricted" {
 		t.Fatalf("expected updated access mode, got %s", updated.AccessMode)
 	}
-	if updated.EnvironmentID != nil {
+	if updated.EnvironmentID != conn.EnvironmentID {
 		t.Fatal("expected environment_id to remain unchanged")
 	}
 

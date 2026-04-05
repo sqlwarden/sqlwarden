@@ -364,6 +364,28 @@ func seedConnection(t *testing.T, app *application, workspaceID int64, environme
 	return conn
 }
 
+func defaultEnvironmentID(t *testing.T, app *application, workspaceID int64) int64 {
+	t.Helper()
+
+	envID, err := app.db.DefaultEnvironmentID(context.Background(), workspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return envID
+}
+
+func orgEnvConnectionsURL(orgSlug string, workspaceID, environmentID int64) string {
+	return fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/environments/%d/connections", orgSlug, workspaceID, environmentID)
+}
+
+func orgConnectionURL(orgSlug string, workspaceID, environmentID int64, connectionID string) string {
+	return fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/environments/%d/connections/%s", orgSlug, workspaceID, environmentID, connectionID)
+}
+
+func meEnvConnectionsURL(workspaceID, environmentID string) string {
+	return fmt.Sprintf("/api/v1/me/workspaces/%s/environments/%s/connections", workspaceID, environmentID)
+}
+
 func newOrgJSONRequest(t *testing.T, method, path, body, token string) *http.Request {
 	t.Helper()
 

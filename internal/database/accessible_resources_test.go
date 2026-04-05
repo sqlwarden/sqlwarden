@@ -533,8 +533,8 @@ func TestOrgConnectionRoleGrantsDiscoveryAcrossAllAncestors(t *testing.T) {
 		t.Fatal(err)
 	}
 	envIDsWs1 := envIDs(envsWs1)
-	if len(envIDsWs1) != 2 || !contains(envIDsWs1, envA1.ID) || !contains(envIDsWs1, envA2.ID) {
-		t.Fatalf("expected both ws1 environments visible via org conn role, got %v", envIDsWs1)
+	if len(envIDsWs1) != 3 || !contains(envIDsWs1, envA1.ID) || !contains(envIDsWs1, envA2.ID) {
+		t.Fatalf("expected ws1 environments including Default visible via org conn role, got %v", envIDsWs1)
 	}
 
 	envsWs2, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws2.ID)
@@ -542,8 +542,8 @@ func TestOrgConnectionRoleGrantsDiscoveryAcrossAllAncestors(t *testing.T) {
 		t.Fatal(err)
 	}
 	envIDsWs2 := envIDs(envsWs2)
-	if len(envIDsWs2) != 1 || envIDsWs2[0] != envB1.ID {
-		t.Fatalf("expected only tagged environment in ws2, got %v", envIDsWs2)
+	if len(envIDsWs2) != 2 || !contains(envIDsWs2, envB1.ID) {
+		t.Fatalf("expected ws2 environments including Default, got %v", envIDsWs2)
 	}
 
 	connsWs1, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws1.ID)
@@ -1019,8 +1019,8 @@ func TestListAccessibleEnvironments_OrgRoleGrantsAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(envs) != 2 {
-		t.Fatalf("expected 2 environments, got %d", len(envs))
+	if len(envs) != 3 {
+		t.Fatalf("expected 3 environments including Default, got %d", len(envs))
 	}
 	ids := envIDs(envs)
 	if !contains(ids, env1.ID) || !contains(ids, env2.ID) {

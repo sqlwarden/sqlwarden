@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -211,6 +212,10 @@ func (app *application) deleteEnvironment(w http.ResponseWriter, r *http.Request
 
 	err = app.db.DeleteEnvironment(r.Context(), env.ID)
 	if err != nil {
+		if errors.Is(err, database.ErrEnvironmentHasConnections) {
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}

@@ -357,6 +357,14 @@ func TestConnCtxBranches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	env1ID, err := app.db.DefaultEnvironmentID(context.Background(), ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env1, found, err := app.db.GetEnvironment(context.Background(), env1ID)
+	if err != nil || !found {
+		t.Fatal("expected default environment for ws1")
+	}
 	conn, err := app.db.InsertConnection(context.Background(), ws2.ID, nil, "db", "sqlite", ":memory:", "open")
 	if err != nil {
 		t.Fatal(err)
@@ -367,10 +375,11 @@ func TestConnCtxBranches(t *testing.T) {
 	})
 
 	for name, connID := range map[string]string{"invalid": "bad", "missing": "99999"} {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/conn-org/workspaces/1/connections/"+connID, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/conn-org/workspaces/1/environments/1/connections/"+connID, nil)
 		req = contextSetAccount(req, account)
 		req = contextSetOrg(req, org)
 		req = contextSetWorkspace(req, ws1)
+		req = contextSetEnvironment(req, env1)
 		req = testWithParams(req, map[string]string{"conn_id": connID})
 		rec := httptest.NewRecorder()
 		app.connCtx(finalHandler).ServeHTTP(rec, req)
@@ -379,10 +388,11 @@ func TestConnCtxBranches(t *testing.T) {
 		}
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/conn-org/workspaces/1/connections/"+strconv.FormatInt(conn.ID, 10), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/conn-org/workspaces/1/environments/1/connections/"+strconv.FormatInt(conn.ID, 10), nil)
 	req = contextSetAccount(req, account)
 	req = contextSetOrg(req, org)
 	req = contextSetWorkspace(req, ws1)
+	req = contextSetEnvironment(req, env1)
 	req = testWithParams(req, map[string]string{"conn_id": strconv.FormatInt(conn.ID, 10)})
 	rec := httptest.NewRecorder()
 	app.connCtx(finalHandler).ServeHTTP(rec, req)

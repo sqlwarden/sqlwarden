@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/response"
+	"github.com/uptrace/bun"
 )
 
 type Workspace struct {
@@ -37,33 +38,42 @@ func (db *DB) InsertWorkspace(ctx context.Context, orgID *int64, ownerType strin
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	ws := Workspace{
-		OrgID:       orgID,
-		OwnerType:   ownerType,
-		OwnerID:     ownerID,
-		Name:        name,
-		Description: description,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-	}
-	_, err := db.NewInsert().Model(&ws).Returning("id").Exec(ctx)
+	var ws Workspace
+	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		ws = Workspace{
+			OrgID:       orgID,
+			OwnerType:   ownerType,
+			OwnerID:     ownerID,
+			Name:        name,
+			Description: description,
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		}
+		_, err := tx.NewInsert().Model(&ws).Returning("id").Exec(ctx)
+		if err != nil {
+			return err
+		}
+
+		if ownerType == "org" {
+			hm := map[string]interface{}{
+				"child_type":  "workspace",
+				"child_id":    ws.ID,
+				"parent_type": "org",
+				"parent_id":   ownerID,
+				"owner_type":  "org",
+				"owner_id":    ownerID,
+			}
+			_, err = tx.NewInsert().TableExpr("resource_hierarchy").Model(&hm).Ignore().Exec(ctx)
+			if err != nil {
+				return err
+			}
+		}
+
+		_, err = db.insertEnvironmentWithExecutor(ctx, tx, ws.ID, "Default", "")
+		return err
+	})
 	if err != nil {
 		return Workspace{}, err
-	}
-
-	if ownerType == "org" {
-		hm := map[string]interface{}{
-			"child_type":  "workspace",
-			"child_id":    ws.ID,
-			"parent_type": "org",
-			"parent_id":   ownerID,
-			"owner_type":  "org",
-			"owner_id":    ownerID,
-		}
-		_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&hm).Ignore().Exec(ctx)
-		if err != nil {
-			return Workspace{}, err
-		}
 	}
 
 	return ws, nil
@@ -372,9 +382,7 @@ func (db *DB) DeleteWorkspace(ctx context.Context, id int64) error {
 	// Covers:
 	//   (workspace, id)        → its own hierarchy row
 	//   (environment, *)       → rows whose parent is this workspace
-	//   (connection, *)        → rows whose parent is this workspace (untagged connections)
 	//   (connection, *)        → rows whose parent is an environment in this workspace
-	//                            (tagged connections write a second row with parent=environment)
 	_, err = db.NewDelete().TableExpr("resource_hierarchy").
 		Where(`(child_type = 'workspace' AND child_id = ?)
 		    OR (parent_type = 'workspace' AND parent_id = ?)

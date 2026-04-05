@@ -117,8 +117,8 @@ func TestFullWorkflow(t *testing.T) {
 	if err := json.Unmarshal(listEnvRes.BodyBytes, &envs); err != nil {
 		t.Fatal(err)
 	}
-	if envs.Total != 1 {
-		t.Fatalf("expected 1 environment, got %d", envs.Total)
+	if envs.Total != 2 {
+		t.Fatalf("expected 2 environments including Default, got %d", envs.Total)
 	}
 
 	// ── Step 12: Delete environment ──────────────────────────────────────────

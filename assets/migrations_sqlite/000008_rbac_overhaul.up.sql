@@ -109,7 +109,7 @@ CREATE TABLE environments (
 CREATE TABLE connections (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     workspace_id   INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    environment_id INTEGER REFERENCES environments(id) ON DELETE SET NULL,
+    environment_id INTEGER NOT NULL REFERENCES environments(id) ON DELETE RESTRICT,
     name           TEXT    NOT NULL,
     driver         TEXT    NOT NULL,
     dsn_encrypted  TEXT    NOT NULL,

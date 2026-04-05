@@ -49,17 +49,25 @@ func createWorkspaceEnvironment(t *testing.T, app *application, ownerTok, orgSlu
 func createWorkspaceConnection(t *testing.T, app *application, ownerTok, orgSlug, wsID, name string, environmentID *int64) int64 {
 	t.Helper()
 
+	wsIDInt, err := strconv.ParseInt(wsID, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetEnvID := int64(0)
+	if environmentID == nil {
+		targetEnvID = defaultEnvironmentID(t, app, wsIDInt)
+	} else {
+		targetEnvID = *environmentID
+	}
+
 	body := map[string]any{
 		"name":   name,
 		"driver": "postgres",
 		"dsn":    "postgres://localhost/testdb",
 	}
-	if environmentID != nil {
-		body["environment_id"] = *environmentID
-	}
 
 	res := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections",
+		orgEnvConnectionsURL(orgSlug, wsIDInt, targetEnvID),
 		body, ownerTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusCreated)
 	return int64(res.BodyFields["id"].(float64))
@@ -717,8 +725,8 @@ func TestOrgConnectionRoleGrantsDiscoveryAcrossMultipleBranches(t *testing.T) {
 	if err := json.Unmarshal(envsWs1Res.BodyBytes, &envsWs1Payload); err != nil {
 		t.Fatal(err)
 	}
-	if envsWs1Payload.Total != 2 {
-		t.Fatalf("expected both ws1 environments visible via org conn role, got %+v", envsWs1Payload.Items)
+	if envsWs1Payload.Total != 3 {
+		t.Fatalf("expected ws1 environments including Default visible via org conn role, got %+v", envsWs1Payload.Items)
 	}
 
 	envsWs2Res := send(t, newAuthRequest(t, http.MethodGet,
@@ -731,8 +739,8 @@ func TestOrgConnectionRoleGrantsDiscoveryAcrossMultipleBranches(t *testing.T) {
 	if err := json.Unmarshal(envsWs2Res.BodyBytes, &envsWs2Payload); err != nil {
 		t.Fatal(err)
 	}
-	if envsWs2Payload.Total != 1 {
-		t.Fatalf("expected only tagged ws2 environment visible, got %+v", envsWs2Payload.Items)
+	if envsWs2Payload.Total != 2 {
+		t.Fatalf("expected ws2 environments including Default visible, got %+v", envsWs2Payload.Items)
 	}
 
 	connsWs1Res := send(t, newAuthRequest(t, http.MethodGet,

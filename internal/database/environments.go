@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/response"
+	"github.com/uptrace/bun"
 )
 
 type Environment struct {
@@ -34,6 +35,10 @@ func (db *DB) InsertEnvironment(ctx context.Context, workspaceID int64, name, de
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	return db.insertEnvironmentWithExecutor(ctx, db.DB, workspaceID, name, description)
+}
+
+func (db *DB) insertEnvironmentWithExecutor(ctx context.Context, exec bun.IDB, workspaceID int64, name, description string) (Environment, error) {
 	env := Environment{
 		WorkspaceID: workspaceID,
 		Name:        name,
@@ -41,12 +46,12 @@ func (db *DB) InsertEnvironment(ctx context.Context, workspaceID int64, name, de
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
-	_, err := db.NewInsert().Model(&env).Returning("id").Exec(ctx)
+	_, err := exec.NewInsert().Model(&env).Returning("id").Exec(ctx)
 	if err != nil {
 		return Environment{}, err
 	}
 
-	hierarchyOwnerType, hierarchyOwnerID, err := db.workspaceHierarchyOwner(ctx, workspaceID)
+	hierarchyOwnerType, hierarchyOwnerID, err := db.workspaceHierarchyOwnerWithExecutor(ctx, exec, workspaceID)
 	if err != nil {
 		return Environment{}, err
 	}
@@ -58,12 +63,27 @@ func (db *DB) InsertEnvironment(ctx context.Context, workspaceID int64, name, de
 		"owner_type":  hierarchyOwnerType,
 		"owner_id":    hierarchyOwnerID,
 	}
-	_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&hm).Ignore().Exec(ctx)
+	_, err = exec.NewInsert().TableExpr("resource_hierarchy").Model(&hm).Ignore().Exec(ctx)
 	if err != nil {
 		return Environment{}, err
 	}
 
 	return env, nil
+}
+
+func (db *DB) DefaultEnvironmentID(ctx context.Context, workspaceID int64) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var env Environment
+	err := db.NewSelect().
+		Model(&env).
+		Where("workspace_id = ? AND name = 'Default'", workspaceID).
+		Scan(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return env.ID, nil
 }
 
 func (db *DB) GetEnvironment(ctx context.Context, id int64) (Environment, bool, error) {
@@ -338,8 +358,18 @@ func (db *DB) DeleteEnvironment(ctx context.Context, id int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	// FK: connections.environment_id ON DELETE SET NULL — connections survive but lose their env tag.
-	_, err := db.NewDelete().Model((*Environment)(nil)).Where("id = ?", id).Exec(ctx)
+	connCount, err := db.NewSelect().
+		TableExpr("connections").
+		Where("environment_id = ?", id).
+		Count(ctx)
+	if err != nil {
+		return err
+	}
+	if connCount > 0 {
+		return ErrEnvironmentHasConnections
+	}
+
+	_, err = db.NewDelete().Model((*Environment)(nil)).Where("id = ?", id).Exec(ctx)
 	if err != nil {
 		return err
 	}
@@ -352,13 +382,7 @@ func (db *DB) DeleteEnvironment(ctx context.Context, id int64) error {
 		return err
 	}
 
-	// Remove connection → environment hierarchy rows for connections that were in this environment.
-	// Those connections remain (SET NULL) and still have their connection → workspace row, so they
-	// continue to inherit workspace-scope and org-scope bindings.
-	_, err = db.NewDelete().TableExpr("resource_hierarchy").
-		Where("child_type = 'connection' AND parent_type = 'environment' AND parent_id = ?", id).
-		Exec(ctx)
-	return err
+	return nil
 }
 
 func normalizeEnvironmentListParams(params ListEnvironmentsParams) ListEnvironmentsParams {

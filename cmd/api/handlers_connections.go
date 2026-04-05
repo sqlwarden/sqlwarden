@@ -17,9 +17,7 @@ import (
 	"github.com/sqlwarden/internal/validator"
 )
 
-// resolveWorkspaceEnvironmentID validates that envID belongs to workspaceID.
-// It returns a canonical environment ID pointer when valid.
-func (app *application) resolveWorkspaceEnvironmentID(r *http.Request, workspaceID int64, envID *int64) (*int64, bool, error) {
+func (app *application) validateConnectionEnvironment(r *http.Request, workspaceID int64, envID *int64) (*int64, bool, error) {
 	if envID == nil {
 		return nil, true, nil
 	}
@@ -31,13 +29,13 @@ func (app *application) resolveWorkspaceEnvironmentID(r *http.Request, workspace
 	if !found || env.WorkspaceID != workspaceID {
 		return nil, false, nil
 	}
-
 	return &env.ID, true, nil
 }
 
 func (app *application) listConnections(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
+	env := contextGetEnvironment(r)
 
 	q, errs := readListQuery(r.URL.Query(), map[string]string{
 		"name":       "name",
@@ -63,7 +61,9 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 		app.failedValidation(w, r, fieldErrors(map[string]string{"access_mode": "must be open or restricted"}))
 		return
 	}
-	if rawEnvID := strings.TrimSpace(r.URL.Query().Get("environment_id")); rawEnvID != "" {
+	if env.ID != 0 {
+		params.EnvironmentID = &env.ID
+	} else if rawEnvID := strings.TrimSpace(r.URL.Query().Get("environment_id")); rawEnvID != "" {
 		envID, err := strconv.ParseInt(rawEnvID, 10, 64)
 		if err != nil || envID < 1 {
 			app.failedValidation(w, r, fieldErrors(map[string]string{"environment_id": "must be a positive integer"}))
@@ -71,7 +71,6 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 		}
 		params.EnvironmentID = &envID
 	}
-
 	var (
 		result response.Paginated[database.Connection]
 		err    error
@@ -107,7 +106,7 @@ func filterAccessibleConnections(conns []database.Connection, params database.Li
 			continue
 		}
 		if params.EnvironmentID != nil {
-			if conn.EnvironmentID == nil || *conn.EnvironmentID != *params.EnvironmentID {
+			if conn.EnvironmentID != *params.EnvironmentID {
 				continue
 			}
 		}
@@ -217,18 +216,25 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 	}
 
 	ws := contextGetWorkspace(r)
-	validatedEnvID, ok, err := app.resolveWorkspaceEnvironmentID(r, ws.ID, input.EnvironmentID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !ok {
-		app.notFound(w, r)
-		return
+	env := contextGetEnvironment(r)
+	targetEnvID := input.EnvironmentID
+	if env.ID != 0 {
+		targetEnvID = &env.ID
+	} else {
+		var ok bool
+		targetEnvID, ok, err = app.validateConnectionEnvironment(r, ws.ID, targetEnvID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !ok {
+			app.notFound(w, r)
+			return
+		}
 	}
 
 	conn, err := app.db.InsertConnection(context.Background(),
-		ws.ID, validatedEnvID,
+		ws.ID, targetEnvID,
 		input.Name, input.Driver, dsnEncrypted, input.AccessMode,
 	)
 	if err != nil {
@@ -266,12 +272,11 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) updateConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name          string              `json:"name"`
-		Driver        *string             `json:"driver"`
-		DSN           string              `json:"dsn"`
-		EnvironmentID **int64             `json:"environment_id"`
-		AccessMode    string              `json:"access_mode"`
-		V             validator.Validator `json:"-"`
+		Name       string              `json:"name"`
+		Driver     *string             `json:"driver"`
+		DSN        string              `json:"dsn"`
+		AccessMode string              `json:"access_mode"`
+		V          validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -283,7 +288,6 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	input.V.CheckField(input.Name != "", "name", "name is required")
 	input.V.CheckField(input.DSN != "", "dsn", "dsn is required")
 	input.V.CheckField(input.Driver == nil, "driver", "driver cannot be changed")
-	input.V.CheckField(input.EnvironmentID == nil, "environment_id", "environment cannot be changed")
 	if input.AccessMode == "" {
 		input.AccessMode = "open"
 	}

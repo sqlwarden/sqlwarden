@@ -25,9 +25,11 @@ func TestTestConnectionUnknownDriver(t *testing.T) {
 	wsRes := send(t, wsReq, app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
 
 	// Test connection with unknown driver returns 422.
-	req := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/test", map[string]any{
+	req := newTestRequest(t, http.MethodPost, orgEnvConnectionsURL(slug, wsIDInt, envID)+"/test", map[string]any{
 		"driver": "oracle",
 		"dsn":    "some-dsn",
 	})
@@ -50,9 +52,11 @@ func TestTestConnectionUnreachable(t *testing.T) {
 	wsRes := send(t, wsReq, app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
 
 	// Test connection with unreachable host returns 200 with ok:false.
-	req := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/test", map[string]any{
+	req := newTestRequest(t, http.MethodPost, orgEnvConnectionsURL(slug, wsIDInt, envID)+"/test", map[string]any{
 		"driver": "postgres",
 		"dsn":    "host=localhost port=19999 user=test dbname=test sslmode=disable connect_timeout=1",
 	})
@@ -73,14 +77,16 @@ func TestTestConnectionValidationAndSuccess(t *testing.T) {
 		map[string]any{"name": "ConnWS3"}, tok), app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
 
 	invalidRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/test",
+		orgEnvConnectionsURL(slug, wsIDInt, envID)+"/test",
 		map[string]any{"driver": "sqlite"}, tok), app.routes())
 	assert.Equal(t, invalidRes.StatusCode, http.StatusUnprocessableEntity)
 
 	successRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/test",
+		orgEnvConnectionsURL(slug, wsIDInt, envID)+"/test",
 		map[string]any{"driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
 	assert.Equal(t, successRes.StatusCode, http.StatusOK)
 	assert.Equal(t, successRes.BodyFields["ok"], true)
@@ -100,9 +106,11 @@ func TestCreateConnectionAndGetExcludesDSN(t *testing.T) {
 	wsRes := send(t, wsReq, app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
 
 	// Create a connection.
-	createReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections", map[string]any{
+	createReq := newTestRequest(t, http.MethodPost, orgEnvConnectionsURL(slug, wsIDInt, envID), map[string]any{
 		"name":   "My Postgres",
 		"driver": "postgres",
 		"dsn":    "host=localhost port=5432 user=test dbname=test",
@@ -118,7 +126,7 @@ func TestCreateConnectionAndGetExcludesDSN(t *testing.T) {
 	}
 
 	// Get the connection.
-	getReq := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/"+connID, nil)
+	getReq := newTestRequest(t, http.MethodGet, orgConnectionURL(slug, wsIDInt, envID, connID), nil)
 	getReq.Header.Set("Authorization", "Bearer "+tok)
 	getRes := send(t, getReq, app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
@@ -141,9 +149,11 @@ func TestCreateConnectionUnknownDriverReturns422(t *testing.T) {
 		map[string]any{"name": "Conn Driver WS"}, tok), app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections",
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
 		map[string]any{"name": "Bad Driver", "driver": "oracle", "dsn": "ignored"}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusUnprocessableEntity)
 	assertValidationField(t, createRes, "driver")
@@ -163,10 +173,12 @@ func TestListConnections(t *testing.T) {
 	wsRes := send(t, wsReq, app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
 
 	// Create two connections.
 	for _, name := range []string{"conn1", "conn2"} {
-		req := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections", map[string]any{
+		req := newTestRequest(t, http.MethodPost, orgEnvConnectionsURL(slug, wsIDInt, envID), map[string]any{
 			"name":   name,
 			"driver": "sqlite",
 			"dsn":    ":memory:",
@@ -177,7 +189,7 @@ func TestListConnections(t *testing.T) {
 	}
 
 	// List connections.
-	listReq := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections", nil)
+	listReq := newTestRequest(t, http.MethodGet, orgEnvConnectionsURL(slug, wsIDInt, envID), nil)
 	listReq.Header.Set("Authorization", "Bearer "+tok)
 	listRes := send(t, listReq, app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
@@ -202,7 +214,7 @@ func TestListConnections_SupportsSearchFilterSortAndPagination(t *testing.T) {
 	seedConnection(t, app, ws.ID, &envB.ID, org.ID, "mysql", "Replica DB", "restricted")
 
 	req := newOrgRequest(t, http.MethodGet,
-		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/connections?q=db&environment_id="+strconv.FormatInt(envA.ID, 10)+"&driver=postgres&sort=name&order=asc&page=1&page_size=10",
+		orgEnvConnectionsURL(org.Slug, ws.ID, envA.ID)+"?q=db&driver=postgres&sort=name&order=asc&page=1&page_size=10",
 		token,
 	)
 	res := send(t, req, app.routes())
@@ -240,20 +252,21 @@ func TestUpdateConnection(t *testing.T) {
 		map[string]any{"name": "prod"}, tok), app.routes())
 	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
 	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envIDInt, _ := strconv.ParseInt(envID, 10, 64)
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections",
+		orgEnvConnectionsURL(slug, wsIDInt, envIDInt),
 		map[string]any{
-			"name":           "Primary",
-			"driver":         "sqlite",
-			"dsn":            ":memory:",
-			"environment_id": envRes.BodyFields["id"],
+			"name":   "Primary",
+			"driver": "sqlite",
+			"dsn":    ":memory:",
 		}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 
 	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/"+connID,
+		orgConnectionURL(slug, wsIDInt, envIDInt, connID),
 		map[string]any{
 			"name":        "Primary Updated",
 			"dsn":         ":memory:",
@@ -262,7 +275,7 @@ func TestUpdateConnection(t *testing.T) {
 	assert.Equal(t, updateRes.StatusCode, http.StatusNoContent)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/"+connID,
+		orgConnectionURL(slug, wsIDInt, envIDInt, connID),
 		nil, tok), app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
 	assert.Equal(t, getRes.BodyFields["name"], "Primary Updated")
@@ -286,25 +299,26 @@ func TestUpdateConnectionRejectsImmutableFields(t *testing.T) {
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/environments",
 		map[string]any{"name": "prod"}, tok), app.routes())
 	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envIDInt, _ := strconv.ParseInt(envID, 10, 64)
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections",
+		orgEnvConnectionsURL(slug, wsIDInt, envIDInt),
 		map[string]any{
-			"name":           "Primary",
-			"driver":         "sqlite",
-			"dsn":            ":memory:",
-			"environment_id": envRes.BodyFields["id"],
+			"name":   "Primary",
+			"driver": "sqlite",
+			"dsn":    ":memory:",
 		}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 
 	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/"+connID,
+		orgConnectionURL(slug, wsIDInt, envIDInt, connID),
 		map[string]any{
-			"name":           "Primary Updated",
-			"driver":         "postgres",
-			"dsn":            ":memory:",
-			"environment_id": envRes.BodyFields["id"],
+			"name":   "Primary Updated",
+			"driver": "postgres",
+			"dsn":    ":memory:",
 		}, tok), app.routes())
 	assert.Equal(t, updateRes.StatusCode, http.StatusUnprocessableEntity)
 }
@@ -331,14 +345,16 @@ func TestCreateConnectionRejectsEnvironmentFromOtherWorkspace(t *testing.T) {
 		"/api/v1/orgs/"+slug+"/workspaces/"+ws2ID+"/environments",
 		map[string]any{"name": "other-env"}, tok), app.routes())
 	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+	ws1IDInt, _ := strconv.ParseInt(ws1ID, 10, 64)
+	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+	envIDInt, _ := strconv.ParseInt(envID, 10, 64)
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+slug+"/workspaces/"+ws1ID+"/connections",
+		orgEnvConnectionsURL(slug, ws1IDInt, envIDInt),
 		map[string]any{
-			"name":           "Bad Conn",
-			"driver":         "sqlite",
-			"dsn":            ":memory:",
-			"environment_id": envRes.BodyFields["id"],
+			"name":   "Bad Conn",
+			"driver": "sqlite",
+			"dsn":    ":memory:",
 		}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusNotFound)
 }
@@ -353,14 +369,15 @@ func TestExecuteQuerySessionAndValidationBranches(t *testing.T) {
 		t.Fatal(err)
 	}
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Query WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/connections",
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
 		map[string]any{"name": "SQLConn", "driver": "sqlite", "dsn": ":memory:"}, ownerTok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
-	queryURL := "/api/v1/orgs/" + org.Slug + "/workspaces/" + strconv.FormatInt(ws.ID, 10) + "/connections/" + connID + "/query"
-	connectURL := "/api/v1/orgs/" + org.Slug + "/workspaces/" + strconv.FormatInt(ws.ID, 10) + "/connections/" + connID + "/connect"
+	queryURL := orgConnectionURL(org.Slug, ws.ID, envID, connID) + "/query"
+	connectURL := orgConnectionURL(org.Slug, ws.ID, envID, connID) + "/connect"
 
 	validationRes := send(t, newAuthRequest(t, http.MethodPost, queryURL, map[string]any{}, ownerTok), app.routes())
 	assert.Equal(t, validationRes.StatusCode, http.StatusUnprocessableEntity)
@@ -399,20 +416,22 @@ func TestExecuteQueryExecuteBranch(t *testing.T) {
 		map[string]any{"name": "Exec WS"}, tok), app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections",
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
 		map[string]any{"name": "ExecConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 
 	connectRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/"+connID+"/connect", nil, tok), app.routes())
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/connect", nil, tok), app.routes())
 	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
 	sessionID := connectRes.BodyFields["session_id"].(string)
 
 	execReq := newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/"+connID+"/query",
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/query",
 		map[string]any{"sql": "CREATE TABLE t (id INTEGER)"}, tok)
 	execReq.Header.Set("X-Warden-Session", sessionID)
 	execRes := send(t, execReq, app.routes())
@@ -430,9 +449,11 @@ func TestConnectToDatabaseReturns422ForTargetDatabaseError(t *testing.T) {
 		map[string]any{"name": "Conn Fail WS"}, tok), app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections",
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
 		map[string]any{
 			"name":   "Broken Postgres",
 			"driver": "postgres",
@@ -442,6 +463,6 @@ func TestConnectToDatabaseReturns422ForTargetDatabaseError(t *testing.T) {
 	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 
 	connectRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/connections/"+connID+"/connect", nil, tok), app.routes())
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/connect", nil, tok), app.routes())
 	assert.Equal(t, connectRes.StatusCode, http.StatusUnprocessableEntity)
 }

@@ -14,7 +14,7 @@ import (
 type Connection struct {
 	ID            int64     `bun:",pk,autoincrement" json:"id"`
 	WorkspaceID   int64     `bun:",notnull"          json:"workspace_id"`
-	EnvironmentID *int64    `bun:",nullzero"         json:"environment_id,omitempty"`
+	EnvironmentID int64     `bun:",notnull"          json:"environment_id"`
 	Name          string    `bun:",notnull"          json:"name"`
 	Driver        string    `bun:",notnull"          json:"driver"`
 	DSNEncrypted  string    `bun:",notnull"          json:"-"`
@@ -39,9 +39,20 @@ func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID *in
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	resolvedEnvID := int64(0)
+	if envID == nil {
+		var err error
+		resolvedEnvID, err = db.DefaultEnvironmentID(ctx, workspaceID)
+		if err != nil {
+			return Connection{}, err
+		}
+	} else {
+		resolvedEnvID = *envID
+	}
+
 	conn := Connection{
 		WorkspaceID:   workspaceID,
-		EnvironmentID: envID,
+		EnvironmentID: resolvedEnvID,
 		Name:          name,
 		Driver:        driver,
 		DSNEncrypted:  dsnEncrypted,
@@ -59,36 +70,17 @@ func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID *in
 		return Connection{}, err
 	}
 
-	// Always write a connection → workspace row so workspace-scope bindings cover this connection.
-	wsRow := map[string]interface{}{
+	envRow := map[string]interface{}{
 		"child_type":  "connection",
 		"child_id":    conn.ID,
-		"parent_type": "workspace",
-		"parent_id":   workspaceID,
+		"parent_type": "environment",
+		"parent_id":   resolvedEnvID,
 		"owner_type":  hierarchyOwnerType,
 		"owner_id":    hierarchyOwnerID,
 	}
-	_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&wsRow).Ignore().Exec(ctx)
+	_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&envRow).Ignore().Exec(ctx)
 	if err != nil {
 		return Connection{}, err
-	}
-
-	// When the connection is tagged to an environment, also write a connection → environment row
-	// so that environment-scope bindings (e.g. conn:execute on a specific environment) are
-	// inherited by all connections associated with that environment.
-	if envID != nil {
-		envRow := map[string]interface{}{
-			"child_type":  "connection",
-			"child_id":    conn.ID,
-			"parent_type": "environment",
-			"parent_id":   *envID,
-			"owner_type":  hierarchyOwnerType,
-			"owner_id":    hierarchyOwnerID,
-		}
-		_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&envRow).Ignore().Exec(ctx)
-		if err != nil {
-			return Connection{}, err
-		}
 	}
 
 	return conn, nil
@@ -175,8 +167,7 @@ func (db *DB) ListConnectionsPage(ctx context.Context, params ListConnectionsPar
 	}, nil
 }
 
-// ListAccessibleConnections returns connections in workspaceID that accountID has any binding on,
-// checking org-level, workspace-level, environment-level, and direct connection-level bindings.
+// ListAccessibleConnections returns connections in workspaceID that accountID can discover.
 func (db *DB) ListAccessibleConnections(ctx context.Context, accountID, orgID, workspaceID int64) ([]Connection, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -221,22 +212,22 @@ WHERE c.workspace_id = ?
             OR (pb2.subject_type = 'team' AND pb2.subject_id IN (SELECT team_id FROM my_teams))
           )
     )
-    OR (c.environment_id IS NOT NULL AND EXISTS (
+    OR EXISTS (
         SELECT 1 FROM role_bindings rb4
         WHERE rb4.org_id = ? AND rb4.resource_type = 'environment' AND rb4.resource_id = c.environment_id
           AND (
             (rb4.subject_type = 'account' AND rb4.subject_id = ?)
             OR (rb4.subject_type = 'team' AND rb4.subject_id IN (SELECT team_id FROM my_teams))
           )
-    ))
-    OR (c.environment_id IS NOT NULL AND EXISTS (
+    )
+    OR EXISTS (
         SELECT 1 FROM permission_bindings pb4
         WHERE pb4.org_id = ? AND pb4.resource_type = 'environment' AND pb4.resource_id = c.environment_id
           AND (
             (pb4.subject_type = 'account' AND pb4.subject_id = ?)
             OR (pb4.subject_type = 'team' AND pb4.subject_id IN (SELECT team_id FROM my_teams))
           )
-    ))
+    )
     OR EXISTS (
         SELECT 1 FROM role_bindings rb3
         WHERE rb3.org_id = ? AND rb3.resource_type = 'connection' AND rb3.resource_id = c.id
@@ -318,22 +309,22 @@ SELECT EXISTS (
                 OR (pb2.subject_type = 'team' AND pb2.subject_id IN (SELECT team_id FROM my_teams))
               )
         )
-        OR (c.environment_id IS NOT NULL AND EXISTS (
+        OR EXISTS (
             SELECT 1 FROM role_bindings rb4
             WHERE rb4.org_id = ? AND rb4.resource_type = 'environment' AND rb4.resource_id = c.environment_id
               AND (
                 (rb4.subject_type = 'account' AND rb4.subject_id = ?)
                 OR (rb4.subject_type = 'team' AND rb4.subject_id IN (SELECT team_id FROM my_teams))
               )
-        ))
-        OR (c.environment_id IS NOT NULL AND EXISTS (
+        )
+        OR EXISTS (
             SELECT 1 FROM permission_bindings pb4
             WHERE pb4.org_id = ? AND pb4.resource_type = 'environment' AND pb4.resource_id = c.environment_id
               AND (
                 (pb4.subject_type = 'account' AND pb4.subject_id = ?)
                 OR (pb4.subject_type = 'team' AND pb4.subject_id IN (SELECT team_id FROM my_teams))
               )
-        ))
+        )
         OR EXISTS (
             SELECT 1 FROM role_bindings rb3
             WHERE rb3.org_id = ? AND rb3.resource_type = 'connection' AND rb3.resource_id = c.id

@@ -93,11 +93,22 @@ func (e *Enforcer) ancestryFor(ctx context.Context, _ /*ownerType*/ string, reso
 		ParentType string
 		ParentID   int64
 	}
-	err := e.db.NewSelect().
-		TableExpr("resource_hierarchy").
-		ColumnExpr("parent_type, parent_id").
-		Where("child_type = ? AND child_id = ?", resourceType, resourceID).
-		Scan(ctx, &rows)
+	err := e.db.NewRaw(`
+WITH RECURSIVE ancestors(parent_type, parent_id) AS (
+    SELECT parent_type, parent_id
+    FROM resource_hierarchy
+    WHERE child_type = ? AND child_id = ?
+  UNION
+    SELECT rh.parent_type, rh.parent_id
+    FROM resource_hierarchy rh
+    JOIN ancestors a
+      ON rh.child_type = a.parent_type
+     AND rh.child_id = a.parent_id
+)
+SELECT DISTINCT parent_type, parent_id
+FROM ancestors`,
+		resourceType, resourceID,
+	).Scan(ctx, &rows)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}

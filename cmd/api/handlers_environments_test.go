@@ -47,7 +47,7 @@ func TestEnvironmentLifecycle(t *testing.T) {
 		Total    int              `json:"total"`
 	}
 	decodeJSONResponse(t, listRes.BodyBytes, &listPayload)
-	assert.Equal(t, listPayload.Total, 1)
+	assert.Equal(t, listPayload.Total, 2)
 
 	// Update environment.
 	patchRes := send(t, newAuthRequest(t, http.MethodPatch,

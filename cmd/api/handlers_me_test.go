@@ -277,7 +277,7 @@ func TestMyWorkspaceEnvironmentCRUD(t *testing.T) {
 	if err := json.Unmarshal(listRes.BodyBytes, &payload); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, payload.Total, 2)
 
 	// Get environment.
 	getRes := send(t, newAuthRequest(t, http.MethodGet, envsURL+"/"+envID, nil, tok), app.routes())
@@ -397,7 +397,9 @@ func TestMyWorkspaceConnectionCRUD(t *testing.T) {
 		map[string]any{"name": "Conn WS"}, tok), app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
-	connsURL := meWsURL(wsID) + "/connections"
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := strconv.FormatInt(defaultEnvironmentID(t, app, wsIDInt), 10)
+	connsURL := meEnvConnectionsURL(wsID, envID)
 
 	// Create connection.
 	createRes := send(t, newAuthRequest(t, http.MethodPost, connsURL, map[string]any{
@@ -456,16 +458,19 @@ func TestListMyConnections_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 		map[string]any{"name": "staging"}, tok), app.routes())
 	assert.Equal(t, envBRes.StatusCode, http.StatusCreated)
 
-	for _, body := range []map[string]any{
-		{"name": "Primary DB", "driver": "sqlite", "dsn": "file::memory:?cache=shared", "environment_id": envARes.BodyFields["id"]},
-		{"name": "Replica DB", "driver": "sqlite", "dsn": "file::memory:?cache=shared", "environment_id": envBRes.BodyFields["id"], "access_mode": "restricted"},
+	for _, tc := range []struct {
+		envID string
+		body  map[string]any
+	}{
+		{envID: envAID, body: map[string]any{"name": "Primary DB", "driver": "sqlite", "dsn": "file::memory:?cache=shared"}},
+		{envID: fmt.Sprintf("%v", envBRes.BodyFields["id"]), body: map[string]any{"name": "Replica DB", "driver": "sqlite", "dsn": "file::memory:?cache=shared", "access_mode": "restricted"}},
 	} {
-		res := send(t, newAuthRequest(t, http.MethodPost, meWsURL(wsID)+"/connections", body, tok), app.routes())
+		res := send(t, newAuthRequest(t, http.MethodPost, meEnvConnectionsURL(wsID, tc.envID), tc.body, tok), app.routes())
 		assert.Equal(t, res.StatusCode, http.StatusCreated)
 	}
 
 	res := send(t, newAuthRequest(t, http.MethodGet,
-		meWsURL(wsID)+"/connections?q=db&environment_id="+envAID+"&driver=sqlite&sort=name&order=asc&page=1&page_size=1", nil, tok), app.routes())
+		meEnvConnectionsURL(wsID, envAID)+"?q=db&driver=sqlite&sort=name&order=asc&page=1&page_size=1", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
 	var payload struct {
@@ -495,9 +500,13 @@ func TestMyWorkspaceConnectionFromOtherWorkspaceReturns404(t *testing.T) {
 	ws2Res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
 		map[string]any{"name": "WS B"}, tok), app.routes())
 	ws2ID := fmt.Sprintf("%v", ws2Res.BodyFields["id"])
+	ws1IDInt, _ := strconv.ParseInt(ws1ID, 10, 64)
+	defaultEnv1 := strconv.FormatInt(defaultEnvironmentID(t, app, ws1IDInt), 10)
+	ws2IDInt, _ := strconv.ParseInt(ws2ID, 10, 64)
+	defaultEnv2 := strconv.FormatInt(defaultEnvironmentID(t, app, ws2IDInt), 10)
 
 	// Create a connection in WS A.
-	connRes := send(t, newAuthRequest(t, http.MethodPost, meWsURL(ws1ID)+"/connections", map[string]any{
+	connRes := send(t, newAuthRequest(t, http.MethodPost, meEnvConnectionsURL(ws1ID, defaultEnv1), map[string]any{
 		"name":   "Conn A",
 		"driver": "sqlite",
 		"dsn":    "file::memory:",
@@ -507,7 +516,7 @@ func TestMyWorkspaceConnectionFromOtherWorkspaceReturns404(t *testing.T) {
 
 	// Try to access it through WS B — should 404.
 	res := send(t, newAuthRequest(t, http.MethodGet,
-		meWsURL(ws2ID)+"/connections/"+connID, nil, tok), app.routes())
+		meEnvConnectionsURL(ws2ID, defaultEnv2)+"/"+connID, nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }
 
@@ -525,8 +534,10 @@ func TestMyWorkspaceConnectionValidationAndEnvironmentChecks(t *testing.T) {
 		map[string]any{"name": "Conn WS 2"}, tok), app.routes())
 	assert.Equal(t, ws2Res.StatusCode, http.StatusCreated)
 	ws2ID := fmt.Sprintf("%v", ws2Res.BodyFields["id"])
+	ws1IDInt, _ := strconv.ParseInt(ws1ID, 10, 64)
+	defaultEnv1 := strconv.FormatInt(defaultEnvironmentID(t, app, ws1IDInt), 10)
 
-	badCreate := send(t, newAuthRequest(t, http.MethodPost, meWsURL(ws1ID)+"/connections",
+	badCreate := send(t, newAuthRequest(t, http.MethodPost, meEnvConnectionsURL(ws1ID, defaultEnv1),
 		map[string]any{"name": "Bad Conn", "driver": "sqlite"}, tok), app.routes())
 	assert.Equal(t, badCreate.StatusCode, http.StatusUnprocessableEntity)
 
@@ -534,11 +545,10 @@ func TestMyWorkspaceConnectionValidationAndEnvironmentChecks(t *testing.T) {
 		map[string]any{"name": "other-env"}, tok), app.routes())
 	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
 
-	crossEnvCreate := send(t, newAuthRequest(t, http.MethodPost, meWsURL(ws1ID)+"/connections", map[string]any{
-		"name":           "Cross Env Conn",
-		"driver":         "sqlite",
-		"dsn":            ":memory:",
-		"environment_id": envRes.BodyFields["id"],
+	crossEnvCreate := send(t, newAuthRequest(t, http.MethodPost, meEnvConnectionsURL(ws1ID, fmt.Sprintf("%v", envRes.BodyFields["id"])), map[string]any{
+		"name":   "Cross Env Conn",
+		"driver": "sqlite",
+		"dsn":    ":memory:",
 	}, tok), app.routes())
 	assert.Equal(t, crossEnvCreate.StatusCode, http.StatusNotFound)
 }
@@ -553,14 +563,16 @@ func TestOrgConnectionNotAccessibleViaMeRoutes(t *testing.T) {
 		map[string]any{"name": "Org WS"}, tok), app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := strconv.FormatInt(defaultEnvironmentID(t, app, wsIDInt), 10)
 
 	connRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections",
+		fmt.Sprintf("/api/v1/orgs/%s/workspaces/%s/environments/%s/connections", orgSlug, wsID, envID),
 		map[string]any{"name": "Org DB", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
 
-	res := send(t, newAuthRequest(t, http.MethodGet, meWsURL(wsID)+"/connections/"+connID, nil, tok), app.routes())
+	res := send(t, newAuthRequest(t, http.MethodGet, meEnvConnectionsURL(wsID, envID)+"/"+connID, nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }
 
@@ -593,14 +605,16 @@ func TestPersonalConnectionNotAccessibleViaOrgRoutes(t *testing.T) {
 		map[string]any{"name": "Personal WS"}, tok), app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := strconv.FormatInt(defaultEnvironmentID(t, app, wsIDInt), 10)
 
-	connRes := send(t, newAuthRequest(t, http.MethodPost, meWsURL(wsID)+"/connections",
+	connRes := send(t, newAuthRequest(t, http.MethodPost, meEnvConnectionsURL(wsID, envID),
 		map[string]any{"name": "Personal DB", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
 
 	res := send(t, newAuthRequest(t, http.MethodGet,
-		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections/"+connID, nil, tok), app.routes())
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+envID+"/connections/"+connID, nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }
 
@@ -615,8 +629,10 @@ func TestMyWorkspaceConnectAndQuery(t *testing.T) {
 	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
 		map[string]any{"name": "Query WS"}, tok), app.routes())
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := strconv.FormatInt(defaultEnvironmentID(t, app, wsIDInt), 10)
 
-	connRes := send(t, newAuthRequest(t, http.MethodPost, meWsURL(wsID)+"/connections", map[string]any{
+	connRes := send(t, newAuthRequest(t, http.MethodPost, meEnvConnectionsURL(wsID, envID), map[string]any{
 		"name":   "MemDB",
 		"driver": "sqlite",
 		"dsn":    "file::memory:?cache=shared",
@@ -626,7 +642,7 @@ func TestMyWorkspaceConnectAndQuery(t *testing.T) {
 
 	// Connect.
 	connectRes := send(t, newAuthRequest(t, http.MethodPost,
-		meWsURL(wsID)+"/connections/"+connID+"/connect", nil, tok), app.routes())
+		meEnvConnectionsURL(wsID, envID)+"/"+connID+"/connect", nil, tok), app.routes())
 	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
 	sessionID, ok := connectRes.BodyFields["session_id"].(string)
 	if !ok || sessionID == "" {
@@ -635,7 +651,7 @@ func TestMyWorkspaceConnectAndQuery(t *testing.T) {
 
 	// Query.
 	queryReq := newAuthRequest(t, http.MethodPost,
-		meWsURL(wsID)+"/connections/"+connID+"/query",
+		meEnvConnectionsURL(wsID, envID)+"/"+connID+"/query",
 		map[string]any{"sql": "SELECT 1"}, tok)
 	queryReq.Header.Set("X-Warden-Session", sessionID)
 	queryRes := send(t, queryReq, app.routes())

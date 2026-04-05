@@ -112,7 +112,7 @@ CREATE TABLE environments (
 CREATE TABLE connections (
     id             BIGSERIAL   PRIMARY KEY,
     workspace_id   BIGINT      NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    environment_id BIGINT      REFERENCES environments(id) ON DELETE SET NULL,
+    environment_id BIGINT      NOT NULL REFERENCES environments(id) ON DELETE RESTRICT,
     name           TEXT        NOT NULL,
     driver         TEXT        NOT NULL,
     dsn_encrypted  TEXT        NOT NULL,
