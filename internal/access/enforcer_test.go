@@ -96,17 +96,17 @@ func listRoleBindings(t *testing.T, db *database.DB, orgID int64, resourceType s
 	return bindings
 }
 
-func listPermissionBindings(t *testing.T, db *database.DB, orgID int64, resourceType string, resourceID int64) []database.PermissionBinding {
+func createRoleAndBind(t *testing.T, e *access.Enforcer, db *database.DB, orgID int64, workspaceID *int64, roleName, scopeType string, permissions []string, subjectType string, subjectID int64, resourceType string, resourceID int64, grantedBy int64) int64 {
 	t.Helper()
 
-	var bindings []database.PermissionBinding
-	err := db.NewSelect().Model(&bindings).
-		Where("org_id = ? AND resource_type = ? AND resource_id = ?", orgID, resourceType, resourceID).
-		Scan(context.Background())
+	roleID, err := e.CreateRole(context.Background(), orgID, workspaceID, roleName, roleName+" description", scopeType, permissions)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return bindings
+	if err := e.BindRole(context.Background(), orgID, roleID, subjectType, subjectID, resourceType, resourceID, grantedBy); err != nil {
+		t.Fatal(err)
+	}
+	return roleID
 }
 
 // TestSeedOrgCreatesBuiltinRoles verifies that SeedOrg seeds the owner and admin builtin roles.
@@ -274,8 +274,8 @@ func TestCanViaTeamMembership(t *testing.T) {
 	}
 }
 
-// TestCanDirectPermissionBinding verifies that a direct permission binding grants access.
-func TestCanDirectPermissionBinding(t *testing.T) {
+// TestCanScopedRoleBinding verifies that a scoped custom role grants access.
+func TestCanScopedRoleBinding(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	orgID, ownerID := seedOrg(t, db, e, "direct-perm")
 	ctx := context.Background()
@@ -293,13 +293,10 @@ func TestCanDirectPermissionBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Grant conn:execute directly on the workspace.
-	if err = e.GrantPermission(ctx, orgID, "conn:execute", "account", member.ID, "workspace", ws.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	createRoleAndBind(t, e, db, orgID, &ws.ID, "ws-conn-execute", "workspace", []string{"conn:execute"}, "account", member.ID, "workspace", ws.ID, ownerID)
 
 	if !e.Can(ctx, member.ID, orgID, "org", "workspace", ws.ID, "conn:execute") {
-		t.Error("member should have conn:execute via direct permission binding")
+		t.Error("member should have conn:execute via scoped role binding")
 	}
 	// Should not have other permissions.
 	if e.Can(ctx, member.ID, orgID, "org", "workspace", ws.ID, "ws:write") {
@@ -548,10 +545,7 @@ func TestCanEnvironmentScopeCoversTaggedConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Grant conn:execute at environment scope to member.
-	if err = e.GrantPermission(ctx, orgID, "conn:execute", "account", member.ID, "environment", env.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	createRoleAndBind(t, e, db, orgID, nil, "env-conn-execute", "environment", []string{"conn:execute"}, "account", member.ID, "environment", env.ID, ownerID)
 
 	// Member should have conn:execute on the tagged connection (inherits via environment).
 	if !e.Can(ctx, member.ID, orgID, "org", "connection", taggedConn.ID, "conn:execute") {
@@ -605,10 +599,7 @@ func TestCanEnvironmentScopeIsolatesAcrossEnvironments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Grant conn:execute only on env A.
-	if err = e.GrantPermission(ctx, orgID, "conn:execute", "account", member.ID, "environment", envA.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	createRoleAndBind(t, e, db, orgID, nil, "env-a-conn-execute", "environment", []string{"conn:execute"}, "account", member.ID, "environment", envA.ID, ownerID)
 
 	// Should have access to conn in env A.
 	if !e.Can(ctx, member.ID, orgID, "org", "connection", connA.ID, "conn:execute") {
@@ -653,10 +644,7 @@ func TestCanWorkspaceScopeStillCoversEnvTaggedConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Grant conn:execute at workspace scope.
-	if err = e.GrantPermission(ctx, orgID, "conn:execute", "account", member.ID, "workspace", ws.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	createRoleAndBind(t, e, db, orgID, &ws.ID, "ws-conn-execute-tagged", "workspace", []string{"conn:execute"}, "account", member.ID, "workspace", ws.ID, ownerID)
 
 	// Should have access even though connection is env-tagged, because workspace is still in ancestry.
 	if !e.Can(ctx, member.ID, orgID, "org", "connection", conn.ID, "conn:execute") {

@@ -80,6 +80,17 @@ func seedAccountWithToken(t *testing.T, app *application, email, name string) (d
 	return account, tok
 }
 
+func createRoleForTest(t *testing.T, app *application, orgID int64, workspaceID *int64, scopeType string, permissions ...string) int64 {
+	t.Helper()
+
+	name := fmt.Sprintf("test-role-%s-%d", strings.ReplaceAll(scopeType, ":", "-"), atomic.AddUint64(&pgTestDBCounter, 1))
+	roleID, err := app.enforcer.CreateRole(context.Background(), orgID, workspaceID, name, name+" description", scopeType, permissions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return roleID
+}
+
 func seedInstanceAdminAccount(t *testing.T, app *application, email, name string) (database.Account, string) {
 	t.Helper()
 

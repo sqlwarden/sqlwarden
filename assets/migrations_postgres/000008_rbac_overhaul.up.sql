@@ -160,24 +160,6 @@ CREATE TABLE role_bindings (
 CREATE INDEX idx_role_bindings_resource ON role_bindings(org_id, resource_type, resource_id);
 CREATE INDEX idx_role_bindings_subject  ON role_bindings(subject_type, subject_id, org_id);
 
-CREATE TABLE permission_bindings (
-    id            BIGSERIAL   PRIMARY KEY,
-    org_id        BIGINT      NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    permission    TEXT        NOT NULL,
-    subject_type  TEXT        NOT NULL,
-    subject_id    BIGINT      NOT NULL,
-    resource_type TEXT        NOT NULL,
-    resource_id   BIGINT      NOT NULL,
-    expires_at    TIMESTAMPTZ,
-    source_type   TEXT,
-    source_id     BIGINT,
-    created_by    BIGINT      REFERENCES accounts(id) ON DELETE SET NULL,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(permission, subject_type, subject_id, resource_type, resource_id)
-);
-CREATE INDEX idx_perm_bindings_resource ON permission_bindings(org_id, resource_type, resource_id);
-CREATE INDEX idx_perm_bindings_subject  ON permission_bindings(subject_type, subject_id, org_id);
-
 -- Resource ancestry for transitive permission resolution.
 CREATE TABLE resource_hierarchy (
     child_type  TEXT   NOT NULL,

@@ -189,27 +189,11 @@ WHERE c.workspace_id = ?
           )
     )
     OR EXISTS (
-        SELECT 1 FROM permission_bindings pb
-        WHERE pb.org_id = ? AND pb.resource_type = 'org' AND pb.resource_id = ?
-          AND (
-            (pb.subject_type = 'account' AND pb.subject_id = ?)
-            OR (pb.subject_type = 'team' AND pb.subject_id IN (SELECT team_id FROM my_teams))
-          )
-    )
-    OR EXISTS (
         SELECT 1 FROM role_bindings rb2
         WHERE rb2.org_id = ? AND rb2.resource_type = 'workspace' AND rb2.resource_id = ?
           AND (
             (rb2.subject_type = 'account' AND rb2.subject_id = ?)
             OR (rb2.subject_type = 'team' AND rb2.subject_id IN (SELECT team_id FROM my_teams))
-          )
-    )
-    OR EXISTS (
-        SELECT 1 FROM permission_bindings pb2
-        WHERE pb2.org_id = ? AND pb2.resource_type = 'workspace' AND pb2.resource_id = ?
-          AND (
-            (pb2.subject_type = 'account' AND pb2.subject_id = ?)
-            OR (pb2.subject_type = 'team' AND pb2.subject_id IN (SELECT team_id FROM my_teams))
           )
     )
     OR EXISTS (
@@ -221,27 +205,11 @@ WHERE c.workspace_id = ?
           )
     )
     OR EXISTS (
-        SELECT 1 FROM permission_bindings pb4
-        WHERE pb4.org_id = ? AND pb4.resource_type = 'environment' AND pb4.resource_id = c.environment_id
-          AND (
-            (pb4.subject_type = 'account' AND pb4.subject_id = ?)
-            OR (pb4.subject_type = 'team' AND pb4.subject_id IN (SELECT team_id FROM my_teams))
-          )
-    )
-    OR EXISTS (
         SELECT 1 FROM role_bindings rb3
         WHERE rb3.org_id = ? AND rb3.resource_type = 'connection' AND rb3.resource_id = c.id
           AND (
             (rb3.subject_type = 'account' AND rb3.subject_id = ?)
             OR (rb3.subject_type = 'team' AND rb3.subject_id IN (SELECT team_id FROM my_teams))
-          )
-    )
-    OR EXISTS (
-        SELECT 1 FROM permission_bindings pb3
-        WHERE pb3.org_id = ? AND pb3.resource_type = 'connection' AND pb3.resource_id = c.id
-          AND (
-            (pb3.subject_type = 'account' AND pb3.subject_id = ?)
-            OR (pb3.subject_type = 'team' AND pb3.subject_id IN (SELECT team_id FROM my_teams))
           )
     )
   )
@@ -252,13 +220,9 @@ ORDER BY c.name ASC`
 		accountID,               // my_teams CTE
 		workspaceID,             // c.workspace_id
 		orgID, orgID, accountID, // org role binding
-		orgID, orgID, accountID, // org perm binding
 		orgID, workspaceID, accountID, // ws role binding
-		orgID, workspaceID, accountID, // ws perm binding
 		orgID, accountID, // env role binding
-		orgID, accountID, // env perm binding
 		orgID, accountID, // conn role binding
-		orgID, accountID, // conn perm binding
 	).Scan(ctx, &conns)
 	return conns, err
 }
@@ -286,27 +250,11 @@ SELECT EXISTS (
               )
         )
         OR EXISTS (
-            SELECT 1 FROM permission_bindings pb
-            WHERE pb.org_id = ? AND pb.resource_type = 'org' AND pb.resource_id = ?
-              AND (
-                (pb.subject_type = 'account' AND pb.subject_id = ?)
-                OR (pb.subject_type = 'team' AND pb.subject_id IN (SELECT team_id FROM my_teams))
-              )
-        )
-        OR EXISTS (
             SELECT 1 FROM role_bindings rb2
             WHERE rb2.org_id = ? AND rb2.resource_type = 'workspace' AND rb2.resource_id = ?
               AND (
                 (rb2.subject_type = 'account' AND rb2.subject_id = ?)
                 OR (rb2.subject_type = 'team' AND rb2.subject_id IN (SELECT team_id FROM my_teams))
-              )
-        )
-        OR EXISTS (
-            SELECT 1 FROM permission_bindings pb2
-            WHERE pb2.org_id = ? AND pb2.resource_type = 'workspace' AND pb2.resource_id = ?
-              AND (
-                (pb2.subject_type = 'account' AND pb2.subject_id = ?)
-                OR (pb2.subject_type = 'team' AND pb2.subject_id IN (SELECT team_id FROM my_teams))
               )
         )
         OR EXISTS (
@@ -318,27 +266,11 @@ SELECT EXISTS (
               )
         )
         OR EXISTS (
-            SELECT 1 FROM permission_bindings pb4
-            WHERE pb4.org_id = ? AND pb4.resource_type = 'environment' AND pb4.resource_id = c.environment_id
-              AND (
-                (pb4.subject_type = 'account' AND pb4.subject_id = ?)
-                OR (pb4.subject_type = 'team' AND pb4.subject_id IN (SELECT team_id FROM my_teams))
-              )
-        )
-        OR EXISTS (
             SELECT 1 FROM role_bindings rb3
             WHERE rb3.org_id = ? AND rb3.resource_type = 'connection' AND rb3.resource_id = c.id
               AND (
                 (rb3.subject_type = 'account' AND rb3.subject_id = ?)
                 OR (rb3.subject_type = 'team' AND rb3.subject_id IN (SELECT team_id FROM my_teams))
-              )
-        )
-        OR EXISTS (
-            SELECT 1 FROM permission_bindings pb3
-            WHERE pb3.org_id = ? AND pb3.resource_type = 'connection' AND pb3.resource_id = c.id
-              AND (
-                (pb3.subject_type = 'account' AND pb3.subject_id = ?)
-                OR (pb3.subject_type = 'team' AND pb3.subject_id IN (SELECT team_id FROM my_teams))
               )
         )
       )
@@ -349,11 +281,7 @@ SELECT EXISTS (
 		accountID,
 		connectionID, workspaceID,
 		orgID, orgID, accountID,
-		orgID, orgID, accountID,
 		orgID, workspaceID, accountID,
-		orgID, workspaceID, accountID,
-		orgID, accountID,
-		orgID, accountID,
 		orgID, accountID,
 		orgID, accountID,
 	).Scan(ctx, &ok)

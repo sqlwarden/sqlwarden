@@ -197,21 +197,9 @@ func insertTestRoleBinding(t *testing.T, db *DB, orgID, roleID int64, subjectTyp
 	return binding
 }
 
-func insertTestPermissionBinding(t *testing.T, db *DB, orgID int64, permission string, subjectType string, subjectID int64, resourceType string, resourceID int64) PermissionBinding {
+func insertTestScopedRoleBinding(t *testing.T, db *DB, orgID int64, workspaceID *int64, roleName, scopeType string, permissions []string, subjectType string, subjectID int64, resourceType string, resourceID int64) RoleBinding {
 	t.Helper()
 
-	binding := PermissionBinding{
-		OrgID:        orgID,
-		Permission:   permission,
-		SubjectType:  subjectType,
-		SubjectID:    subjectID,
-		ResourceType: resourceType,
-		ResourceID:   resourceID,
-		CreatedAt:    time.Now(),
-	}
-	if _, err := db.NewInsert().Model(&binding).Returning("id").Exec(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
-	return binding
+	role := insertTestRole(t, db, orgID, workspaceID, roleName, scopeType, false, permissions...)
+	return insertTestRoleBinding(t, db, orgID, role.ID, subjectType, subjectID, resourceType, resourceID)
 }

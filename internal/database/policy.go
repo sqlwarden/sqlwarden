@@ -43,19 +43,6 @@ type RoleBinding struct {
 	CreatedAt    time.Time  `bun:",notnull"          json:"created_at"`
 }
 
-type PermissionBinding struct {
-	ID           int64      `bun:",pk,autoincrement" json:"id"`
-	OrgID        int64      `bun:",notnull"          json:"org_id"`
-	Permission   string     `bun:",notnull"          json:"permission"`
-	SubjectType  string     `bun:",notnull"          json:"subject_type"`
-	SubjectID    int64      `bun:",notnull"          json:"subject_id"`
-	ResourceType string     `bun:",notnull"          json:"resource_type"`
-	ResourceID   int64      `bun:",notnull"          json:"resource_id"`
-	ExpiresAt    *time.Time `bun:",nullzero"         json:"expires_at,omitempty"`
-	CreatedBy    *int64     `bun:",nullzero"         json:"created_by,omitempty"`
-	CreatedAt    time.Time  `bun:",notnull"          json:"created_at"`
-}
-
 type ListWorkspacePoliciesParams struct {
 	OrgID        int64
 	WorkspaceID  int64
@@ -96,6 +83,8 @@ type WorkspacePolicyListItem struct {
 	RoleID       int64     `json:"role_id,omitempty"`
 	RoleName     string    `json:"role_name,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
+
+	RolePermissions []string `json:"-"`
 }
 
 func (db *DB) GetRoleBinding(ctx context.Context, id, orgID int64) (RoleBinding, bool, error) {
@@ -113,22 +102,7 @@ func (db *DB) GetRoleBinding(ctx context.Context, id, orgID int64) (RoleBinding,
 	return rb, true, nil
 }
 
-func (db *DB) GetPermissionBinding(ctx context.Context, id, orgID int64) (PermissionBinding, bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
-	var pb PermissionBinding
-	err := db.NewSelect().Model(&pb).Where("id = ? AND org_id = ?", id, orgID).Scan(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-		return PermissionBinding{}, false, nil
-	}
-	if err != nil {
-		return PermissionBinding{}, false, err
-	}
-	return pb, true, nil
-}
-
-func (db *DB) listOrgPolicies(ctx context.Context, orgID int64) ([]RoleBinding, []PermissionBinding, error) {
+func (db *DB) listOrgPolicies(ctx context.Context, orgID int64) ([]RoleBinding, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -136,22 +110,14 @@ func (db *DB) listOrgPolicies(ctx context.Context, orgID int64) ([]RoleBinding, 
 	if err := db.NewSelect().Model(&rbs).
 		Where("org_id = ? AND resource_type = 'org' AND resource_id = ?", orgID, orgID).
 		Scan(ctx); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	var pbs []PermissionBinding
-	if err := db.NewSelect().Model(&pbs).
-		Where("org_id = ? AND resource_type = 'org' AND resource_id = ?", orgID, orgID).
-		Scan(ctx); err != nil {
-		return nil, nil, err
-	}
-
-	return rbs, pbs, nil
+	return rbs, nil
 }
 
-// ListWorkspacePolicies returns all role and permission bindings for resources owned
+// ListWorkspacePolicies returns all role bindings for resources owned
 // by the workspace: the workspace itself, its environments, and its connections.
-func (db *DB) listWorkspacePolicies(ctx context.Context, orgID, wsID int64) ([]RoleBinding, []PermissionBinding, error) {
+func (db *DB) listWorkspacePolicies(ctx context.Context, orgID, wsID int64) ([]RoleBinding, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -163,26 +129,20 @@ func (db *DB) listWorkspacePolicies(ctx context.Context, orgID, wsID int64) ([]R
 
 	var rbs []RoleBinding
 	if err := db.NewSelect().Model(&rbs).Where(where, orgID, wsID, wsID, wsID).Scan(ctx); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	var pbs []PermissionBinding
-	if err := db.NewSelect().Model(&pbs).Where(where, orgID, wsID, wsID, wsID).Scan(ctx); err != nil {
-		return nil, nil, err
-	}
-
-	return rbs, pbs, nil
+	return rbs, nil
 }
 
 func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspacePoliciesParams) (response.Paginated[WorkspacePolicyListItem], error) {
 	params = normalizeWorkspacePolicyParams(params)
 
-	roleBindings, permissionBindings, err := db.listWorkspacePolicies(ctx, params.OrgID, params.WorkspaceID)
+	roleBindings, err := db.listWorkspacePolicies(ctx, params.OrgID, params.WorkspaceID)
 	if err != nil {
 		return response.Paginated[WorkspacePolicyListItem]{}, err
 	}
 
-	items, err := db.policyListItems(ctx, params.OrgID, roleBindings, permissionBindings)
+	items, err := db.policyListItems(ctx, params.OrgID, roleBindings)
 	if err != nil {
 		return response.Paginated[WorkspacePolicyListItem]{}, err
 	}
@@ -197,7 +157,16 @@ func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspac
 			continue
 		}
 		if params.Permission != "" && item.Permission != params.Permission {
-			continue
+			matched := false
+			for _, permission := range item.RolePermissions {
+				if permission == params.Permission {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
 		}
 		if params.ResourceID > 0 && item.ResourceID != params.ResourceID {
 			continue
@@ -211,6 +180,7 @@ func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspac
 				item.ResourceName,
 				item.RoleName,
 				item.Permission,
+				strings.Join(item.RolePermissions, " "),
 			}, " "))
 			if !strings.Contains(haystack, search) {
 				continue
@@ -248,12 +218,12 @@ func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspac
 func (db *DB) ListOrgPoliciesPage(ctx context.Context, params ListOrgPoliciesParams) (response.Paginated[WorkspacePolicyListItem], error) {
 	params = normalizeOrgPolicyParams(params)
 
-	roleBindings, permissionBindings, err := db.listOrgPolicies(ctx, params.OrgID)
+	roleBindings, err := db.listOrgPolicies(ctx, params.OrgID)
 	if err != nil {
 		return response.Paginated[WorkspacePolicyListItem]{}, err
 	}
 
-	items, err := db.policyListItems(ctx, params.OrgID, roleBindings, permissionBindings)
+	items, err := db.policyListItems(ctx, params.OrgID, roleBindings)
 	if err != nil {
 		return response.Paginated[WorkspacePolicyListItem]{}, err
 	}
@@ -268,7 +238,16 @@ func (db *DB) ListOrgPoliciesPage(ctx context.Context, params ListOrgPoliciesPar
 			continue
 		}
 		if params.Permission != "" && item.Permission != params.Permission {
-			continue
+			matched := false
+			for _, permission := range item.RolePermissions {
+				if permission == params.Permission {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
 		}
 		if search != "" {
 			haystack := strings.ToLower(strings.Join([]string{
@@ -276,6 +255,7 @@ func (db *DB) ListOrgPoliciesPage(ctx context.Context, params ListOrgPoliciesPar
 				item.ResourceName,
 				item.RoleName,
 				item.Permission,
+				strings.Join(item.RolePermissions, " "),
 			}, " "))
 			if !strings.Contains(haystack, search) {
 				continue
@@ -310,17 +290,10 @@ func (db *DB) ListOrgPoliciesPage(ctx context.Context, params ListOrgPoliciesPar
 	}, nil
 }
 
-func (db *DB) policyListItems(ctx context.Context, orgID int64, roleBindings []RoleBinding, permissionBindings []PermissionBinding) ([]WorkspacePolicyListItem, error) {
-	items := make([]WorkspacePolicyListItem, 0, len(roleBindings)+len(permissionBindings))
+func (db *DB) policyListItems(ctx context.Context, orgID int64, roleBindings []RoleBinding) ([]WorkspacePolicyListItem, error) {
+	items := make([]WorkspacePolicyListItem, 0, len(roleBindings))
 	for _, rb := range roleBindings {
 		item, err := db.roleBindingListItem(ctx, orgID, rb)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	for _, pb := range permissionBindings {
-		item, err := db.permissionBindingListItem(ctx, pb)
 		if err != nil {
 			return nil, err
 		}
@@ -347,25 +320,9 @@ func (db *DB) roleBindingListItem(ctx context.Context, orgID int64, binding Role
 	}
 	if found {
 		item.RoleName = role.Name
+		item.RolePermissions = append(item.RolePermissions, role.Permissions...)
 	}
 
-	if err := db.populatePolicyNames(ctx, &item); err != nil {
-		return WorkspacePolicyListItem{}, err
-	}
-	return item, nil
-}
-
-func (db *DB) permissionBindingListItem(ctx context.Context, binding PermissionBinding) (WorkspacePolicyListItem, error) {
-	item := WorkspacePolicyListItem{
-		BindingKind:  "permission",
-		BindingID:    binding.ID,
-		SubjectID:    binding.SubjectID,
-		SubjectType:  binding.SubjectType,
-		ResourceID:   binding.ResourceID,
-		ResourceType: binding.ResourceType,
-		Permission:   binding.Permission,
-		CreatedAt:    binding.CreatedAt,
-	}
 	if err := db.populatePolicyNames(ctx, &item); err != nil {
 		return WorkspacePolicyListItem{}, err
 	}

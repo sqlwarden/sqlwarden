@@ -191,9 +191,7 @@ func TestDirectPermissionOnWorkspaceFlowsToConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = e.GrantPermission(ctx, orgID, access.PermConnExecute, "account", memberID, "workspace", ws.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	createRoleAndBind(t, e, db, orgID, &ws.ID, "ws-conn-exec", "workspace", []string{access.PermConnExecute}, "account", memberID, "workspace", ws.ID, ownerID)
 
 	if !e.Can(ctx, memberID, orgID, "org", "connection", conn.ID, access.PermConnExecute) {
 		t.Error("direct permission on workspace should flow to connection via hierarchy")
@@ -217,9 +215,7 @@ func TestDirectPermissionOnWorkspaceFlowsToEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = e.GrantPermission(ctx, orgID, access.PermEnvDeploy, "account", memberID, "workspace", ws.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	createRoleAndBind(t, e, db, orgID, &ws.ID, "ws-env-deploy", "workspace", []string{access.PermEnvDeploy}, "account", memberID, "workspace", ws.ID, ownerID)
 
 	if !e.Can(ctx, memberID, orgID, "org", "environment", env.ID, access.PermEnvDeploy) {
 		t.Error("direct permission on workspace should flow to environment via hierarchy")
@@ -283,9 +279,7 @@ func TestConnectionBindingDoesNotLeakToSibling(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = e.GrantPermission(ctx, orgID, access.PermConnExecute, "account", memberID, "connection", conn1.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	createRoleAndBind(t, e, db, orgID, nil, "conn-exec-only", "connection", []string{access.PermConnExecute}, "account", memberID, "connection", conn1.ID, ownerID)
 
 	if !e.Can(ctx, memberID, orgID, "org", "connection", conn1.ID, access.PermConnExecute) {
 		t.Error("member should have conn:execute on conn1")
@@ -317,9 +311,7 @@ func TestEnvironmentBindingDoesNotLeakToSibling(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = e.GrantPermission(ctx, orgID, access.PermEnvDeploy, "account", memberID, "environment", env1.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	createRoleAndBind(t, e, db, orgID, nil, "env-deploy-only", "environment", []string{access.PermEnvDeploy}, "account", memberID, "environment", env1.ID, ownerID)
 
 	if !e.Can(ctx, memberID, orgID, "org", "environment", env1.ID, access.PermEnvDeploy) {
 		t.Error("member should have env:deploy on env1")
@@ -347,9 +339,7 @@ func TestWorkspaceBindingDoesNotLeakToSiblingWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = e.GrantPermission(ctx, orgID, access.PermWsWrite, "account", memberID, "workspace", ws1.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	createRoleAndBind(t, e, db, orgID, &ws1.ID, "ws-write-only", "workspace", []string{access.PermWsWrite}, "account", memberID, "workspace", ws1.ID, ownerID)
 
 	if !e.Can(ctx, memberID, orgID, "org", "workspace", ws1.ID, access.PermWsWrite) {
 		t.Error("member should have ws:write on ws1")
@@ -377,11 +367,9 @@ func TestChildBindingDoesNotPropagateToParent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Grant ws:write at connection level — note: ws:write is valid for workspace scope
-	// but granting it directly on a connection resource still should not bubble up.
-	if err = e.GrantPermission(ctx, orgID, access.PermWsWrite, "account", memberID, "connection", conn.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	// Grant a valid connection-scoped permission. Child bindings still must not
+	// bubble up into parent workspace permissions.
+	createRoleAndBind(t, e, db, orgID, nil, "conn-read-only", "connection", []string{access.PermConnRead}, "account", memberID, "connection", conn.ID, ownerID)
 
 	// conn → ws: child's binding should NOT appear when checking workspace.
 	if e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, access.PermWsWrite) {
@@ -443,44 +431,39 @@ func TestAccountWithNoBindingDenied(t *testing.T) {
 // Invalid / unknown permissions
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestGrantUnknownPermissionRejected verifies that GrantPermission rejects an
+// TestGrantUnknownPermissionRejected verifies that CreateRole rejects an
 // unrecognised permission string.
 func TestGrantUnknownPermissionRejected(t *testing.T) {
 	e, db := newTestEnforcer(t)
-	orgID, ownerID := seedOrg(t, db, e, "unk-perm")
+	orgID, _ := seedOrg(t, db, e, "unk-perm")
 	ctx := context.Background()
 
-	err := e.GrantPermission(ctx, orgID, "invalid:permission", "account", ownerID, "org", orgID, ownerID)
+	_, err := e.CreateRole(ctx, orgID, nil, "invalid-role", "", "org", []string{"invalid:permission"})
 	if err == nil {
 		t.Error("expected error for unknown permission, got nil")
 	}
 }
 
-// TestGrantPermissionsUnknownPermInBatchRejected verifies that if any permission in a
-// GrantPermissions batch is invalid, the whole call fails and no bindings are inserted.
-func TestGrantPermissionsUnknownPermInBatchRejected(t *testing.T) {
+// TestCreateRoleUnknownPermInBatchRejected verifies that if any permission in a
+// role definition is invalid, the whole call fails and no role is inserted.
+func TestCreateRoleUnknownPermInBatchRejected(t *testing.T) {
 	e, db := newTestEnforcer(t)
-	orgID, ownerID := seedOrg(t, db, e, "unk-batch")
+	orgID, _ := seedOrg(t, db, e, "unk-batch")
 	ctx := context.Background()
 
-	memberID := newMember(t, db, orgID, "unk-batch@example.com")
+	_, err := e.CreateRole(ctx, orgID, nil, "bad-batch", "", "workspace", []string{access.PermWsRead, "completely:bogus"})
+	if err == nil {
+		t.Error("expected error when role contains unknown permission")
+	}
 
-	ws, err := db.InsertWorkspace(context.Background(), &orgID, "org", orgID, "WS", "")
+	roles, err := db.ListRoles(ctx, orgID)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	err = e.GrantPermissions(ctx, orgID,
-		[]string{access.PermWsRead, "completely:bogus"},
-		"account", memberID, "workspace", ws.ID, ownerID)
-	if err == nil {
-		t.Error("expected error when batch contains unknown permission")
-	}
-
-	// No bindings should have been inserted (validation runs before any insert).
-	pbs := listPermissionBindings(t, db, orgID, "workspace", ws.ID)
-	if len(pbs) != 0 {
-		t.Errorf("expected 0 permission bindings after failed batch, got %d", len(pbs))
+	for _, role := range roles {
+		if role.Name == "bad-batch" {
+			t.Fatal("expected invalid role creation to leave no inserted role")
+		}
 	}
 }
 
@@ -683,9 +666,9 @@ func TestTeamBindingAtWorkspaceScope(t *testing.T) {
 // Revocation
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestRevokePermissionTargeted verifies that revoking one permission binding leaves
+// TestUnbindRoleTargeted verifies that revoking one role binding leaves
 // other bindings for the same subject intact.
-func TestRevokePermissionTargeted(t *testing.T) {
+func TestUnbindRoleTargeted(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	orgID, ownerID := seedOrg(t, db, e, "revoke-tgt")
 	ctx := context.Background()
@@ -697,27 +680,23 @@ func TestRevokePermissionTargeted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = e.GrantPermission(ctx, orgID, access.PermWsRead, "account", memberID, "workspace", ws.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
-	if err = e.GrantPermission(ctx, orgID, access.PermWsWrite, "account", memberID, "workspace", ws.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	roleReadID := createRoleAndBind(t, e, db, orgID, &ws.ID, "ws-read-only", "workspace", []string{access.PermWsRead}, "account", memberID, "workspace", ws.ID, ownerID)
+	roleWriteID := createRoleAndBind(t, e, db, orgID, &ws.ID, "ws-write-only-revoke", "workspace", []string{access.PermWsWrite}, "account", memberID, "workspace", ws.ID, ownerID)
 
 	// Find the ws:write binding ID.
-	pbs := listPermissionBindings(t, db, orgID, "workspace", ws.ID)
+	rbs := listRoleBindings(t, db, orgID, "workspace", ws.ID)
 	var writeBindingID int64
-	for _, pb := range pbs {
-		if pb.Permission == access.PermWsWrite {
-			writeBindingID = pb.ID
+	for _, rb := range rbs {
+		if rb.RoleID == roleWriteID && rb.SubjectID == memberID {
+			writeBindingID = rb.ID
 			break
 		}
 	}
 	if writeBindingID == 0 {
-		t.Fatal("ws:write permission binding not found")
+		t.Fatal("ws:write role binding not found")
 	}
 
-	if err = e.RevokePermission(ctx, writeBindingID, orgID); err != nil {
+	if err = e.UnbindRole(ctx, writeBindingID, orgID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -729,11 +708,14 @@ func TestRevokePermissionTargeted(t *testing.T) {
 	if !e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, access.PermWsRead) {
 		t.Error("member should still have ws:read — only ws:write was revoked")
 	}
+	if roleReadID == 0 {
+		t.Fatal("expected ws:read role ID to be set")
+	}
 }
 
-// TestRevokePermissionWrongOrgNoOp verifies that RevokePermission with the wrong org ID
+// TestUnbindRoleWrongOrgNoOpForScopedBinding verifies that UnbindRole with the wrong org ID
 // does not remove the binding (the WHERE clause includes org_id).
-func TestRevokePermissionWrongOrgNoOp(t *testing.T) {
+func TestUnbindRoleWrongOrgNoOpForScopedBinding(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	ctx := context.Background()
 
@@ -746,17 +728,15 @@ func TestRevokePermissionWrongOrgNoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = e.GrantPermission(ctx, orgID, access.PermWsRead, "account", memberID, "workspace", ws.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	createRoleAndBind(t, e, db, orgID, &ws.ID, "ws-read-wrong-org", "workspace", []string{access.PermWsRead}, "account", memberID, "workspace", ws.ID, ownerID)
 
-	pbs := listPermissionBindings(t, db, orgID, "workspace", ws.ID)
-	if len(pbs) == 0 {
+	rbs := listRoleBindings(t, db, orgID, "workspace", ws.ID)
+	if len(rbs) == 0 {
 		t.Fatal("expected a binding")
 	}
 
 	// Attempt to revoke using the wrong org ID — should be a no-op.
-	if err = e.RevokePermission(ctx, pbs[0].ID, otherOrgID); err != nil {
+	if err = e.UnbindRole(ctx, rbs[0].ID, otherOrgID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -837,9 +817,9 @@ func TestBindRoleIdempotent(t *testing.T) {
 	}
 }
 
-// TestGrantPermissionsIdempotent verifies that granting the same permission twice
+// TestBindScopedRoleIdempotent verifies that binding the same scoped role twice
 // results in only one binding row.
-func TestGrantPermissionsIdempotent(t *testing.T) {
+func TestBindScopedRoleIdempotent(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	orgID, ownerID := seedOrg(t, db, e, "idem-perm")
 	ctx := context.Background()
@@ -850,22 +830,26 @@ func TestGrantPermissionsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = e.GrantPermissions(ctx, orgID, []string{access.PermWsRead}, "account", memberID, "workspace", ws.ID, ownerID); err != nil {
+	roleID, err := e.CreateRole(ctx, orgID, &ws.ID, "idem-ws-read", "", "workspace", []string{access.PermWsRead})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err = e.GrantPermissions(ctx, orgID, []string{access.PermWsRead}, "account", memberID, "workspace", ws.ID, ownerID); err != nil {
+	if err = e.BindRole(ctx, orgID, roleID, "account", memberID, "workspace", ws.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if err = e.BindRole(ctx, orgID, roleID, "account", memberID, "workspace", ws.ID, ownerID); err != nil {
 		t.Fatal(err)
 	}
 
-	pbs := listPermissionBindings(t, db, orgID, "workspace", ws.ID)
+	rbs := listRoleBindings(t, db, orgID, "workspace", ws.ID)
 	count := 0
-	for _, pb := range pbs {
-		if pb.Permission == access.PermWsRead && pb.SubjectID == memberID {
+	for _, rb := range rbs {
+		if rb.RoleID == roleID && rb.SubjectID == memberID {
 			count++
 		}
 	}
 	if count != 1 {
-		t.Errorf("expected exactly 1 ws:read binding after two identical grants, got %d", count)
+		t.Errorf("expected exactly 1 ws:read role binding after two identical binds, got %d", count)
 	}
 }
 
@@ -873,9 +857,9 @@ func TestGrantPermissionsIdempotent(t *testing.T) {
 // GrantPermissions (batch)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestGrantPermissionsMultipleAllEnforced verifies that a batch grant of multiple
-// permissions creates individual bindings and all are enforced.
-func TestGrantPermissionsMultipleAllEnforced(t *testing.T) {
+// TestMultiPermissionRoleAllEnforced verifies that a role containing multiple
+// permissions enforces all of them.
+func TestMultiPermissionRoleAllEnforced(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	orgID, ownerID := seedOrg(t, db, e, "batch-perm")
 	ctx := context.Background()
@@ -887,9 +871,7 @@ func TestGrantPermissionsMultipleAllEnforced(t *testing.T) {
 	}
 
 	perms := []string{access.PermWsRead, access.PermWsWrite, access.PermEnvRead}
-	if err = e.GrantPermissions(ctx, orgID, perms, "account", memberID, "workspace", ws.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	createRoleAndBind(t, e, db, orgID, &ws.ID, "multi-ws-role", "workspace", perms, "account", memberID, "workspace", ws.ID, ownerID)
 
 	for _, p := range perms {
 		if !e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, p) {
@@ -902,9 +884,9 @@ func TestGrantPermissionsMultipleAllEnforced(t *testing.T) {
 		t.Error("member should NOT have ws:delete — it was not in the batch")
 	}
 
-	pbs := listPermissionBindings(t, db, orgID, "workspace", ws.ID)
-	if len(pbs) != len(perms) {
-		t.Errorf("expected %d permission bindings, got %d", len(perms), len(pbs))
+	rbs := listRoleBindings(t, db, orgID, "workspace", ws.ID)
+	if len(rbs) != 1 {
+		t.Errorf("expected 1 role binding, got %d", len(rbs))
 	}
 }
 
@@ -1044,9 +1026,7 @@ func TestAncestoryCacheInvalidatedAfterDelete(t *testing.T) {
 	}
 
 	// Grant conn:execute on the workspace (flows to connection).
-	if err = e.GrantPermission(ctx, orgID, access.PermConnExecute, "account", memberID, "workspace", ws.ID, ownerID); err != nil {
-		t.Fatal(err)
-	}
+	createRoleAndBind(t, e, db, orgID, &ws.ID, "anc-cache-conn", "workspace", []string{access.PermConnExecute}, "account", memberID, "workspace", ws.ID, ownerID)
 
 	// Prime the ancestry cache.
 	if !e.Can(ctx, memberID, orgID, "org", "connection", conn.ID, access.PermConnExecute) {
@@ -1060,7 +1040,7 @@ func TestAncestoryCacheInvalidatedAfterDelete(t *testing.T) {
 	e.InvalidateAncestry("connection", conn.ID)
 
 	// After deletion and cache invalidation, the binding at workspace scope is gone
-	// (workspace was deleted, cascading the permission_bindings row).
+	// (workspace was deleted, cascading the role_bindings row).
 	// The org-level ancestry still exists, but there is no org-level binding for this member.
 	if e.Can(ctx, memberID, orgID, "org", "connection", conn.ID, access.PermConnExecute) {
 		t.Error("member should NOT have conn:execute after workspace and its bindings were deleted")

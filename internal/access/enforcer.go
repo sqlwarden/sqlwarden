@@ -145,7 +145,6 @@ func (e *Enforcer) orgPolicy(ctx context.Context, orgID int64) (*OrgPolicy, erro
 	policy := &OrgPolicy{
 		rolePermissions: make(map[int64]map[string]bool),
 		roleBindings:    make(map[resourceKey][]cachedRoleBinding),
-		permBindings:    make(map[resourceKey][]cachedPermBinding),
 	}
 
 	// Load role permissions.
@@ -194,31 +193,6 @@ func (e *Enforcer) orgPolicy(ctx context.Context, orgID int64) (*OrgPolicy, erro
 		})
 	}
 
-	// Load permission bindings.
-	var pbRows []struct {
-		Permission   string
-		SubjectType  string
-		SubjectID    int64
-		ResourceType string
-		ResourceID   int64
-	}
-	err = e.db.NewSelect().
-		TableExpr("permission_bindings").
-		ColumnExpr("permission, subject_type, subject_id, resource_type, resource_id").
-		Where("org_id = ?", orgID).
-		Scan(ctx, &pbRows)
-	if err != nil {
-		return nil, fmt.Errorf("load permission bindings: %w", err)
-	}
-	for _, r := range pbRows {
-		key := resourceKey{r.ResourceType, r.ResourceID}
-		policy.permBindings[key] = append(policy.permBindings[key], cachedPermBinding{
-			permission:  r.Permission,
-			subjectType: r.SubjectType,
-			subjectID:   r.SubjectID,
-		})
-	}
-
 	e.cache.SetOrgPolicy(orgID, policy)
 	return policy, nil
 }
@@ -238,12 +212,6 @@ func (e *Enforcer) checkPolicy(policy *OrgPolicy, accountID int64, teamIDs []int
 			}
 		}
 
-		// Check direct permission bindings at this level.
-		for _, pb := range policy.permBindings[key] {
-			if pb.permission == permission && matchesPrincipal(pb.subjectType, pb.subjectID, accountID, teamIDs) {
-				return true
-			}
-		}
 	}
 	return false
 }
@@ -397,74 +365,6 @@ func (e *Enforcer) BindRole(ctx context.Context, orgID, roleID int64, subjectTyp
 // UnbindRole removes a role binding by binding ID.
 func (e *Enforcer) UnbindRole(ctx context.Context, bindingID, orgID int64) error {
 	_, err := e.db.NewDelete().TableExpr("role_bindings").Where("id = ? AND org_id = ?", bindingID, orgID).Exec(ctx)
-	if err != nil {
-		return err
-	}
-	e.cache.InvalidateOrgPolicy(orgID)
-	return nil
-}
-
-// GrantPermission grants a direct permission binding to a subject at a resource.
-func (e *Enforcer) GrantPermission(ctx context.Context, orgID int64, permission, subjectType string, subjectID int64, resourceType string, resourceID int64, grantedBy int64) error {
-	if !ValidPermission(permission) {
-		return fmt.Errorf("%w: %s", ErrUnknownPermission, permission)
-	}
-
-	pbm := map[string]interface{}{
-		"org_id":        orgID,
-		"permission":    permission,
-		"subject_type":  subjectType,
-		"subject_id":    subjectID,
-		"resource_type": resourceType,
-		"resource_id":   resourceID,
-		"created_by":    grantedBy,
-	}
-	_, err := e.db.NewInsert().
-		TableExpr("permission_bindings").
-		Model(&pbm).
-		Exec(ctx)
-	if err != nil {
-		return err
-	}
-
-	e.cache.InvalidateOrgPolicy(orgID)
-	return nil
-}
-
-// GrantPermissions grants multiple direct permission bindings to a subject at a resource in one call.
-// All permissions are validated before any insert is attempted.
-func (e *Enforcer) GrantPermissions(ctx context.Context, orgID int64, permissions []string, subjectType string, subjectID int64, resourceType string, resourceID int64, grantedBy int64) error {
-	for _, p := range permissions {
-		if !ValidPermission(p) {
-			return fmt.Errorf("%w: %s", ErrUnknownPermission, p)
-		}
-	}
-	for _, p := range permissions {
-		pbm := map[string]interface{}{
-			"org_id":        orgID,
-			"permission":    p,
-			"subject_type":  subjectType,
-			"subject_id":    subjectID,
-			"resource_type": resourceType,
-			"resource_id":   resourceID,
-			"created_by":    grantedBy,
-		}
-		_, err := e.db.NewInsert().
-			TableExpr("permission_bindings").
-			Model(&pbm).
-			Ignore().
-			Exec(ctx)
-		if err != nil {
-			return fmt.Errorf("grant permission %s: %w", p, err)
-		}
-	}
-	e.cache.InvalidateOrgPolicy(orgID)
-	return nil
-}
-
-// RevokePermission removes a permission binding by binding ID.
-func (e *Enforcer) RevokePermission(ctx context.Context, bindingID, orgID int64) error {
-	_, err := e.db.NewDelete().TableExpr("permission_bindings").Where("id = ? AND org_id = ?", bindingID, orgID).Exec(ctx)
 	if err != nil {
 		return err
 	}

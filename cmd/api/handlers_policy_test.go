@@ -184,11 +184,13 @@ func TestListOrgPolicies_SupportsFiltersAndMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	teamRoleID := createRoleForTest(t, app, org.ID, nil, "org", "policy:read")
+	ownerRoleID := createRoleForTest(t, app, org.ID, nil, "org", "org:read")
 
 	res := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+org.Slug+"/policies",
 		map[string]any{
-			"permissions":  []string{"policy:read"},
+			"role_id":      teamRoleID,
 			"subject_type": "team",
 			"subject_id":   team.ID,
 		}, tok), app.routes())
@@ -197,7 +199,7 @@ func TestListOrgPolicies_SupportsFiltersAndMetadata(t *testing.T) {
 	res = send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+org.Slug+"/policies",
 		map[string]any{
-			"permissions":  []string{"org:read"},
+			"role_id":      ownerRoleID,
 			"subject_type": "account",
 			"subject_id":   owner.ID,
 		}, tok), app.routes())
@@ -236,12 +238,12 @@ func TestGrantOrgPolicy_MissingRoleReturns404(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }
 
-func TestGrantOrgPolicy_UnknownPermissionReturns422(t *testing.T) {
+func TestGrantOrgPolicy_MissingRoleIDReturns422(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 
-	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-unknown-perm-owner"), "Org Policy Owner", "Org Policy Unknown Perm")
-	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-unknown-perm-member"), "Policy Member")
+	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-missing-roleid-owner"), "Org Policy Owner", "Org Policy Missing Role ID")
+	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-missing-roleid-member"), "Policy Member")
 	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -249,12 +251,11 @@ func TestGrantOrgPolicy_UnknownPermissionReturns422(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+org.Slug+"/policies",
 		map[string]any{
-			"permissions":  []string{"bogus:perm"},
 			"subject_type": "account",
 			"subject_id":   member.ID,
 		}, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
-	assertValidationField(t, res, "permissions")
+	assertValidationField(t, res, "role_id")
 }
 
 func TestRevokeOrgPolicy(t *testing.T) {

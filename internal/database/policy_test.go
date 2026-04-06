@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestRoleAndPermissionBindingQueries(t *testing.T) {
+func TestRoleBindingQueries(t *testing.T) {
 	t.Parallel()
 	for _, driver := range testDrivers() {
 		t.Run(driver, func(t *testing.T) {
@@ -22,8 +22,6 @@ func TestRoleAndPermissionBindingQueries(t *testing.T) {
 
 			rb := insertTestRoleBinding(t, db, org.ID, role.ID, "account", account.id, "org", org.ID)
 			insertTestRoleBinding(t, db, org.ID, otherRole.ID, "account", account.id, "org", org.ID)
-			pb := insertTestPermissionBinding(t, db, org.ID, "conn:execute", "account", account.id, "org", org.ID)
-
 			count, err := db.CountRoleBinding(ctx, org.ID, role.ID, "org", org.ID)
 			if err != nil {
 				t.Fatal(err)
@@ -58,23 +56,6 @@ func TestRoleAndPermissionBindingQueries(t *testing.T) {
 				t.Fatalf("expected 2 role bindings, got %d", len(roleBindings))
 			}
 
-			gotPermissionBinding, found, err := db.GetPermissionBinding(ctx, pb.ID, org.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !found || gotPermissionBinding.ID != pb.ID {
-				t.Fatal("expected permission binding lookup to succeed")
-			}
-
-			var permissionBindings []PermissionBinding
-			if err := db.NewSelect().Model(&permissionBindings).
-				Where("org_id = ? AND resource_type = ? AND resource_id = ?", org.ID, "org", org.ID).
-				Scan(ctx); err != nil {
-				t.Fatal(err)
-			}
-			if len(permissionBindings) != 1 {
-				t.Fatalf("expected 1 permission binding, got %d", len(permissionBindings))
-			}
 		})
 	}
 }
@@ -95,8 +76,8 @@ func TestListOrgPolicies_SupportsSubjectPermissionFiltersAndMetadata(t *testing.
 				t.Fatal(err)
 			}
 
-			insertTestPermissionBinding(t, db, org.ID, "policy:read", "team", team.ID, "org", org.ID)
-			insertTestPermissionBinding(t, db, org.ID, "org:read", "account", testUsers["alice"].id, "org", org.ID)
+			insertTestScopedRoleBinding(t, db, org.ID, nil, "team-policy-reader", "org", []string{"policy:read"}, "team", team.ID, "org", org.ID)
+			insertTestScopedRoleBinding(t, db, org.ID, nil, "alice-org-reader", "org", []string{"org:read"}, "account", testUsers["alice"].id, "org", org.ID)
 
 			result, err := db.ListOrgPoliciesPage(ctx, ListOrgPoliciesParams{
 				OrgID:       org.ID,
@@ -137,8 +118,8 @@ func TestListOrgPolicies_SupportsSubjectIDFilter(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			insertTestPermissionBinding(t, db, org.ID, "policy:read", "account", testUsers["alice"].id, "org", org.ID)
-			insertTestPermissionBinding(t, db, org.ID, "org:read", "account", testUsers["bob"].id, "org", org.ID)
+			insertTestScopedRoleBinding(t, db, org.ID, nil, "alice-policy-reader", "org", []string{"policy:read"}, "account", testUsers["alice"].id, "org", org.ID)
+			insertTestScopedRoleBinding(t, db, org.ID, nil, "bob-org-reader", "org", []string{"org:read"}, "account", testUsers["bob"].id, "org", org.ID)
 
 			result, err := db.ListOrgPoliciesPage(ctx, ListOrgPoliciesParams{
 				OrgID:     org.ID,
@@ -190,8 +171,8 @@ func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *te
 				t.Fatal(err)
 			}
 
-			insertTestPermissionBinding(t, db, org.ID, "conn:execute", "team", team.ID, "connection", conn.ID)
-			insertTestPermissionBinding(t, db, org.ID, "ws:read", "account", testUsers["alice"].id, "workspace", ws.ID)
+			insertTestScopedRoleBinding(t, db, org.ID, nil, "team-conn-exec", "connection", []string{"conn:execute"}, "team", team.ID, "connection", conn.ID)
+			insertTestScopedRoleBinding(t, db, org.ID, &ws.ID, "alice-ws-reader", "workspace", []string{"ws:read"}, "account", testUsers["alice"].id, "workspace", ws.ID)
 
 			result, err := db.ListWorkspacePoliciesPage(ctx, ListWorkspacePoliciesParams{
 				OrgID:        org.ID,
@@ -250,9 +231,9 @@ func TestListWorkspacePolicies_SupportsSubjectIDAndResourceIDFilters(t *testing.
 				t.Fatal(err)
 			}
 
-			insertTestPermissionBinding(t, db, org.ID, "conn:execute", "account", testUsers["alice"].id, "connection", connA.ID)
-			insertTestPermissionBinding(t, db, org.ID, "conn:read", "account", testUsers["bob"].id, "connection", connA.ID)
-			insertTestPermissionBinding(t, db, org.ID, "conn:execute", "account", testUsers["alice"].id, "connection", connB.ID)
+			insertTestScopedRoleBinding(t, db, org.ID, nil, "alice-conn-exec-a", "connection", []string{"conn:execute"}, "account", testUsers["alice"].id, "connection", connA.ID)
+			insertTestScopedRoleBinding(t, db, org.ID, nil, "bob-conn-read-a", "connection", []string{"conn:read"}, "account", testUsers["bob"].id, "connection", connA.ID)
+			insertTestScopedRoleBinding(t, db, org.ID, nil, "alice-conn-exec-b", "connection", []string{"conn:execute"}, "account", testUsers["alice"].id, "connection", connB.ID)
 
 			result, err := db.ListWorkspacePoliciesPage(ctx, ListWorkspacePoliciesParams{
 				OrgID:       org.ID,

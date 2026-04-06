@@ -28,6 +28,18 @@ func newAccount(t *testing.T, db *DB, email string) int64 {
 	return acc.ID
 }
 
+func grantScopedRole(t *testing.T, db *DB, e *access.Enforcer, orgID int64, workspaceID *int64, roleName, scopeType string, permissions []string, subjectType string, subjectID int64, resourceType string, resourceID int64, grantedBy int64) {
+	t.Helper()
+
+	roleID, err := e.CreateRole(context.Background(), orgID, workspaceID, roleName, roleName+" description", scopeType, permissions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.BindRole(context.Background(), orgID, roleID, subjectType, subjectID, resourceType, resourceID, grantedBy); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // findOrgRoleID looks up an org-level builtin role by name.
 func findOrgRoleID(t *testing.T, db *DB, orgID int64, name string) int64 {
 	t.Helper()
@@ -188,7 +200,7 @@ func TestListAccessibleWorkspaces_DirectWsPermBinding(t *testing.T) {
 	_ = seedWorkspace(t, db, e, org.ID, ownerID, "Unbound")
 
 	userID := newAccount(t, db, "user-ws-dirperm@example.com")
-	_ = e.GrantPermission(context.Background(), org.ID, access.PermWsRead, "account", userID, "workspace", ws1.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, &ws1.ID, "ws-read-bound", "workspace", []string{access.PermWsRead}, "account", userID, "workspace", ws1.ID, ownerID)
 
 	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
 	if err != nil {
@@ -220,7 +232,7 @@ func TestListAccessibleWorkspaces_OrgPermBinding(t *testing.T) {
 	ws2 := seedWorkspace(t, db, e, org.ID, ownerID, "Beta")
 
 	userID := newAccount(t, db, "user-ws-orgperm@example.com")
-	_ = e.GrantPermission(context.Background(), org.ID, access.PermOrgRead, "account", userID, "org", org.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, nil, "org-read-all", "org", []string{access.PermOrgRead}, "account", userID, "org", org.ID, ownerID)
 
 	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
 	if err != nil {
@@ -632,7 +644,7 @@ func TestListAccessibleConnections_DirectConnPermBinding(t *testing.T) {
 	db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-dirperm@example.com")
-	_ = e.GrantPermission(context.Background(), org.ID, access.PermConnMetadata, "account", userID, "connection", c1.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, nil, "conn-metadata-c1", "connection", []string{access.PermConnMetadata}, "account", userID, "connection", c1.ID, ownerID)
 
 	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
 	if err != nil {
@@ -664,7 +676,7 @@ func TestListAccessibleConnections_WsPermBinding(t *testing.T) {
 	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-wsperm@example.com")
-	_ = e.GrantPermission(context.Background(), org.ID, access.PermWsRead, "account", userID, "workspace", ws.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, &ws.ID, "ws-read-access", "workspace", []string{access.PermWsRead}, "account", userID, "workspace", ws.ID, ownerID)
 
 	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
 	if err != nil {
@@ -925,7 +937,7 @@ func TestListAccessibleConnections_EnvPermBinding(t *testing.T) {
 
 	userID := newAccount(t, db, "user-conn-envperm@example.com")
 	// Grant permission at environment scope only.
-	_ = e.GrantPermission(context.Background(), org.ID, "conn:execute", "account", userID, "environment", env.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, nil, "env-conn-execute", "environment", []string{"conn:execute"}, "account", userID, "environment", env.ID, ownerID)
 
 	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
 	if err != nil {
@@ -1068,7 +1080,7 @@ func TestListAccessibleEnvironments_DirectEnvBinding(t *testing.T) {
 
 	userID := newAccount(t, db, "user-env-direct@example.com")
 	// Grant access only to env A.
-	_ = e.GrantPermission(context.Background(), org.ID, "env:read", "account", userID, "environment", envA.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, nil, "env-read-a", "environment", []string{"env:read"}, "account", userID, "environment", envA.ID, ownerID)
 
 	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
 	if err != nil {
@@ -1137,7 +1149,7 @@ func TestListAccessibleWorkspaces_EnvPermissionPropagatesVisibility(t *testing.T
 	_, _ = db.InsertEnvironment(context.Background(), ws2.ID, "env-b", "")
 
 	userID := newAccount(t, db, "user-ws-env-prop@example.com")
-	_ = e.GrantPermission(context.Background(), org.ID, access.PermEnvRead, "account", userID, "environment", env1.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, nil, "env-read-1", "environment", []string{access.PermEnvRead}, "account", userID, "environment", env1.ID, ownerID)
 
 	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
 	if err != nil {
@@ -1172,7 +1184,7 @@ func TestListAccessibleWorkspaces_ConnPermissionPropagatesVisibility(t *testing.
 	_, _ = db.InsertConnection(context.Background(), ws2.ID, nil, "conn-b", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-ws-conn-prop@example.com")
-	_ = e.GrantPermission(context.Background(), org.ID, access.PermConnRead, "account", userID, "connection", conn1.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, nil, "conn-read-1", "connection", []string{access.PermConnRead}, "account", userID, "connection", conn1.ID, ownerID)
 
 	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
 	if err != nil {
@@ -1250,7 +1262,7 @@ func TestListAccessibleEnvironments_ConnPermissionPropagatesVisibility(t *testin
 	_, _ = db.InsertConnection(context.Background(), ws.ID, &envB.ID, "conn-b", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-env-conn-prop@example.com")
-	_ = e.GrantPermission(context.Background(), org.ID, access.PermConnRead, "account", userID, "connection", connA.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, nil, "conn-read-a", "connection", []string{access.PermConnRead}, "account", userID, "connection", connA.ID, ownerID)
 
 	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
 	if err != nil {

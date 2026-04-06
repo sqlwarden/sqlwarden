@@ -19,8 +19,6 @@ type OrgPolicy struct {
 	rolePermissions map[int64]map[string]bool
 	// roleBindings[(type,id)] = []binding
 	roleBindings map[resourceKey][]cachedRoleBinding
-	// permBindings[(type,id)] = []binding
-	permBindings map[resourceKey][]cachedPermBinding
 	loadedAt     time.Time
 }
 
@@ -31,13 +29,6 @@ type resourceKey struct {
 
 type cachedRoleBinding struct {
 	roleID      int64
-	subjectType string
-	subjectID   int64
-	expiresAt   *time.Time
-}
-
-type cachedPermBinding struct {
-	permission  string
 	subjectType string
 	subjectID   int64
 	expiresAt   *time.Time

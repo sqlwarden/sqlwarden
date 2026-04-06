@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/database"
 )
 
 // setupPolicyTest creates an org, a workspace, and a member account.
@@ -34,6 +35,49 @@ func setupPolicyTest(t *testing.T, app *application, suffix string) (ownerTok, m
 
 func policiesURL(orgSlug, wsID string) string {
 	return "/api/v1/orgs/" + orgSlug + "/workspaces/" + wsID + "/policies"
+}
+
+func policyScope(t *testing.T, app *application, orgSlug, wsID string) (database.Organization, int64) {
+	t.Helper()
+
+	org, found, err := app.db.GetOrgBySlug(context.Background(), orgSlug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatalf("org %q not found", orgSlug)
+	}
+	id, err := strconv.ParseInt(wsID, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return org, id
+}
+
+func grantWorkspacePolicyRole(t *testing.T, app *application, ownerTok, orgSlug, wsID string, roleID int64, subjectType string, subjectID int64, resourceType string, resourceID int64) testResponse {
+	t.Helper()
+
+	body := map[string]any{
+		"role_id":      roleID,
+		"subject_type": subjectType,
+		"subject_id":   subjectID,
+	}
+	if resourceType != "" && resourceType != "workspace" {
+		body["resource_type"] = resourceType
+		body["resource_id"] = resourceID
+	}
+	return send(t, newAuthRequest(t, http.MethodPost, policiesURL(orgSlug, wsID), body, ownerTok), app.routes())
+}
+
+func grantOrgPolicyRole(t *testing.T, app *application, ownerTok, orgSlug string, roleID int64, subjectType string, subjectID int64) testResponse {
+	t.Helper()
+	return send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/policies",
+		map[string]any{
+			"role_id":      roleID,
+			"subject_type": subjectType,
+			"subject_id":   subjectID,
+		}, ownerTok), app.routes())
 }
 
 func createWorkspaceEnvironment(t *testing.T, app *application, ownerTok, orgSlug, wsID, name string) int64 {
@@ -77,6 +121,8 @@ func TestGrantWorkspacePermissionBinding(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-perm")
+	org, workspaceID := policyScope(t, app, orgSlug, wsID)
+	roleID := createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "ws:write")
 
 	// Member cannot update workspace yet.
 	patchRes := send(t, newAuthRequest(t, http.MethodPatch,
@@ -85,13 +131,7 @@ func TestGrantWorkspacePermissionBinding(t *testing.T) {
 	assert.Equal(t, patchRes.StatusCode, http.StatusForbidden)
 
 	// Owner grants ws:write directly to member (no role).
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":  []string{"ws:write"},
-			"subject_type": "account",
-			"subject_id":   memberIDInt,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "workspace", 0)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	// Member can now update workspace.
@@ -105,18 +145,14 @@ func TestGetWorkspaceRequiresAccessibleBinding(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-get")
+	org, workspaceID := policyScope(t, app, orgSlug, wsID)
+	roleID := createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "ws:read")
 
 	getBefore := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID, nil, memberTok), app.routes())
 	assert.Equal(t, getBefore.StatusCode, http.StatusNotFound)
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":  []string{"ws:read"},
-			"subject_type": "account",
-			"subject_id":   memberIDInt,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "workspace", 0)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getAfter := send(t, newAuthRequest(t, http.MethodGet,
@@ -128,14 +164,10 @@ func TestGetWorkspaceAccessibleViaOrgPermission(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-org-ancestor")
+	org, _ := policyScope(t, app, orgSlug, wsID)
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", "org:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/policies",
-		map[string]any{
-			"permissions":  []string{"org:read"},
-			"subject_type": "account",
-			"subject_id":   memberIDInt,
-		}, ownerTok), app.routes())
+	grantRes := grantOrgPolicyRole(t, app, ownerTok, orgSlug, roleID, "account", memberIDInt)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -147,18 +179,12 @@ func TestGetWorkspaceAccessibleViaEnvironmentPermission(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-env-propagated")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
+	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "env:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"env:read"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "environment",
-			"resource_id":   envID,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "environment", envID)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -170,19 +196,13 @@ func TestGetWorkspaceAccessibleViaConnectionPermission(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-conn-propagated")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
 	connID := createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "primary-db", &envID)
+	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"conn:read"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "connection",
-			"resource_id":   connID,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "connection", connID)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -194,19 +214,13 @@ func TestWorkspaceVisibilityFromConnectionPermissionDoesNotGrantWrite(t *testing
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-conn-visible-only")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
 	connID := createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "primary-db", &envID)
+	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"conn:read"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "connection",
-			"resource_id":   connID,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "connection", connID)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -223,12 +237,14 @@ func TestRevokeWorkspacePermissionBinding(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-revoke")
+	org, workspaceID := policyScope(t, app, orgSlug, wsID)
+	roleID := createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "ws:write")
 
 	// Grant ws:write.
 	send(t, newAuthRequest(t, http.MethodPost,
 		policiesURL(orgSlug, wsID),
 		map[string]any{
-			"permissions":  []string{"ws:write"},
+			"role_id":      roleID,
 			"subject_type": "account",
 			"subject_id":   memberIDInt,
 		}, ownerTok), app.routes())
@@ -244,13 +260,12 @@ func TestRevokeWorkspacePermissionBinding(t *testing.T) {
 	}
 	items := body["items"].([]any)
 	if len(items) == 0 {
-		t.Fatal("expected at least one permission binding")
+		t.Fatal("expected at least one role binding")
 	}
 	pbID := fmt.Sprintf("%v", items[0].(map[string]any)["binding_id"])
 
-	// Revoke it with ?kind=permission.
 	revokeRes := send(t, newAuthRequest(t, http.MethodDelete,
-		policiesURL(orgSlug, wsID)+"/"+pbID+"?kind=permission",
+		policiesURL(orgSlug, wsID)+"/"+pbID,
 		nil, ownerTok), app.routes())
 	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
 
@@ -329,20 +344,20 @@ func TestRevokeWorkspacePolicyCrossWorkspaceIsolation(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, _, orgSlug, ws1ID, memberIDInt := setupPolicyTest(t, app, "ws-cross-revoke")
+	org, _ := policyScope(t, app, orgSlug, ws1ID)
 
 	ws2Res := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces",
 		map[string]any{"name": "Other WS"}, ownerTok), app.routes())
 	assert.Equal(t, ws2Res.StatusCode, http.StatusCreated)
 	ws2ID := fmt.Sprintf("%v", ws2Res.BodyFields["id"])
+	ws2IDInt, err := strconv.ParseInt(ws2ID, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roleID := createRoleForTest(t, app, org.ID, &ws2IDInt, "workspace", "ws:write")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, ws2ID),
-		map[string]any{
-			"permissions":  []string{"ws:write"},
-			"subject_type": "account",
-			"subject_id":   memberIDInt,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, ws2ID, roleID, "account", memberIDInt, "workspace", 0)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	listRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -356,7 +371,7 @@ func TestRevokeWorkspacePolicyCrossWorkspaceIsolation(t *testing.T) {
 	pbID := fmt.Sprintf("%v", body["items"].([]any)[0].(map[string]any)["binding_id"])
 
 	revokeRes := send(t, newAuthRequest(t, http.MethodDelete,
-		policiesURL(orgSlug, ws1ID)+"/"+pbID+"?kind=permission",
+		policiesURL(orgSlug, ws1ID)+"/"+pbID,
 		nil, ownerTok), app.routes())
 	assert.Equal(t, revokeRes.StatusCode, http.StatusNotFound)
 }
@@ -365,64 +380,57 @@ func TestGrantPolicyValidation(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, _, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-val")
+	org, workspaceID := policyScope(t, app, orgSlug, wsID)
+	wsRoleID := createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "ws:write")
+	connRoleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:execute")
 
-	// Both role_id and permission set → 422.
+	// Missing role_id → 422.
 	res := send(t, newAuthRequest(t, http.MethodPost,
 		policiesURL(orgSlug, wsID),
 		map[string]any{
-			"role_id":      1,
-			"permissions":  []string{"ws:write"},
 			"subject_type": "account",
 			"subject_id":   memberIDInt,
 		}, ownerTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
 
-	// Neither role_id nor permission → 422.
+	// Invalid subject_type → 422.
 	res2 := send(t, newAuthRequest(t, http.MethodPost,
 		policiesURL(orgSlug, wsID),
 		map[string]any{
-			"subject_type": "account",
+			"role_id":      wsRoleID,
+			"subject_type": "user",
 			"subject_id":   memberIDInt,
 		}, ownerTok), app.routes())
 	assert.Equal(t, res2.StatusCode, http.StatusUnprocessableEntity)
 
-	// Invalid subject_type → 422.
+	// Invalid resource_type → 422.
 	res3 := send(t, newAuthRequest(t, http.MethodPost,
 		policiesURL(orgSlug, wsID),
 		map[string]any{
-			"permissions":  []string{"ws:write"},
-			"subject_type": "user",
-			"subject_id":   memberIDInt,
-		}, ownerTok), app.routes())
-	assert.Equal(t, res3.StatusCode, http.StatusUnprocessableEntity)
-
-	// Invalid resource_type → 422.
-	res4 := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"ws:write"},
+			"role_id":       wsRoleID,
 			"subject_type":  "account",
 			"subject_id":    memberIDInt,
 			"resource_type": "bucket",
 		}, ownerTok), app.routes())
-	assert.Equal(t, res4.StatusCode, http.StatusUnprocessableEntity)
+	assert.Equal(t, res3.StatusCode, http.StatusUnprocessableEntity)
 
 	// resource_type=connection without resource_id → 422.
-	res5 := send(t, newAuthRequest(t, http.MethodPost,
+	res4 := send(t, newAuthRequest(t, http.MethodPost,
 		policiesURL(orgSlug, wsID),
 		map[string]any{
-			"permissions":   []string{"conn:execute"},
+			"role_id":       connRoleID,
 			"subject_type":  "account",
 			"subject_id":    memberIDInt,
 			"resource_type": "connection",
 		}, ownerTok), app.routes())
-	assert.Equal(t, res5.StatusCode, http.StatusUnprocessableEntity)
+	assert.Equal(t, res4.StatusCode, http.StatusUnprocessableEntity)
 }
 
 func TestGrantConnectionPolicyBinding(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "conn-perm")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	// Create a connection.
 	connRes := send(t, newAuthRequest(t, http.MethodPost,
@@ -435,17 +443,9 @@ func TestGrantConnectionPolicyBinding(t *testing.T) {
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connIDFloat := connRes.BodyFields["id"].(float64)
 	connID := int64(connIDFloat)
+	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:execute")
 
-	// Grant conn:execute to member via the consolidated /policies endpoint.
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"conn:execute"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "connection",
-			"resource_id":   connID,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "connection", connID)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	// Binding appears in the workspace policies list.
@@ -461,13 +461,13 @@ func TestGrantConnectionPolicyBinding(t *testing.T) {
 	found := false
 	for _, pb := range pbs {
 		b := pb.(map[string]any)
-		if b["resource_type"] == "connection" && b["binding_kind"] == "permission" {
+		if b["resource_type"] == "connection" && b["binding_kind"] == "role" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatal("expected a connection-scoped permission binding in the list")
+		t.Fatal("expected a connection-scoped role binding in the list")
 	}
 
 	_ = memberTok
@@ -477,6 +477,7 @@ func TestGrantConnectionPolicyWrongWorkspace(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, _, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "conn-wrongws")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	// Create a second workspace.
 	ws2Res := send(t, newAuthRequest(t, http.MethodPost,
@@ -496,17 +497,10 @@ func TestGrantConnectionPolicyWrongWorkspace(t *testing.T) {
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connIDFloat := connRes.BodyFields["id"].(float64)
 	connID := int64(connIDFloat)
+	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:execute")
 
 	// Try to grant on workspace 1's /policies endpoint using conn from workspace 2 → 404.
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"conn:execute"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "connection",
-			"resource_id":   connID,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "connection", connID)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNotFound)
 }
 
@@ -514,6 +508,7 @@ func TestGetConnectionRequiresAccessibleBinding(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "conn-get")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	connRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections",
@@ -528,16 +523,9 @@ func TestGetConnectionRequiresAccessibleBinding(t *testing.T) {
 	getBefore := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections/"+connID, nil, memberTok), app.routes())
 	assert.Equal(t, getBefore.StatusCode, http.StatusNotFound)
+	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:metadata")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"conn:metadata"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "connection",
-			"resource_id":   connRes.BodyFields["id"],
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "connection", int64(connRes.BodyFields["id"].(float64)))
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getAfter := send(t, newAuthRequest(t, http.MethodGet,
@@ -549,6 +537,7 @@ func TestGetConnectionAccessibleViaWorkspacePermission(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "conn-ws-ancestor")
+	org, workspaceID := policyScope(t, app, orgSlug, wsID)
 
 	connRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections",
@@ -559,14 +548,9 @@ func TestGetConnectionAccessibleViaWorkspacePermission(t *testing.T) {
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
+	roleID := createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "ws:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":  []string{"ws:read"},
-			"subject_type": "account",
-			"subject_id":   memberIDInt,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "workspace", 0)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -578,6 +562,7 @@ func TestGetConnectionAccessibleViaEnvironmentPermission(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "conn-env-ancestor")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	envRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments",
@@ -595,16 +580,9 @@ func TestGetConnectionAccessibleViaEnvironmentPermission(t *testing.T) {
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
+	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "env:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"env:read"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "environment",
-			"resource_id":   envID,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "environment", envID)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -616,6 +594,7 @@ func TestGetConnectionAccessibleViaOrgPermission(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "conn-org-ancestor")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	connRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections",
@@ -626,14 +605,9 @@ func TestGetConnectionAccessibleViaOrgPermission(t *testing.T) {
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", "org:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/policies",
-		map[string]any{
-			"permissions":  []string{"org:read"},
-			"subject_type": "account",
-			"subject_id":   memberIDInt,
-		}, ownerTok), app.routes())
+	grantRes := grantOrgPolicyRole(t, app, ownerTok, orgSlug, roleID, "account", memberIDInt)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -786,6 +760,7 @@ func TestGrantEnvironmentPolicyBinding(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, _, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-perm")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	// Create environment.
 	envRes := send(t, newAuthRequest(t, http.MethodPost,
@@ -794,17 +769,9 @@ func TestGrantEnvironmentPolicyBinding(t *testing.T) {
 	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
 	envIDFloat := envRes.BodyFields["id"].(float64)
 	envID := int64(envIDFloat)
+	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "env:deploy")
 
-	// Grant env:deploy to member via the consolidated /policies endpoint.
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"env:deploy"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "environment",
-			"resource_id":   envID,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "environment", envID)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	// Binding appears in the workspace policies list.
@@ -820,13 +787,13 @@ func TestGrantEnvironmentPolicyBinding(t *testing.T) {
 	found := false
 	for _, pb := range pbs {
 		b := pb.(map[string]any)
-		if b["resource_type"] == "environment" && b["binding_kind"] == "permission" {
+		if b["resource_type"] == "environment" && b["binding_kind"] == "role" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatal("expected an environment-scoped permission binding in the list")
+		t.Fatal("expected an environment-scoped role binding in the list")
 	}
 }
 
@@ -834,6 +801,7 @@ func TestGetEnvironmentRequiresAccessibleBinding(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-get")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	envRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments",
@@ -844,16 +812,9 @@ func TestGetEnvironmentRequiresAccessibleBinding(t *testing.T) {
 	getBefore := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+envID, nil, memberTok), app.routes())
 	assert.Equal(t, getBefore.StatusCode, http.StatusNotFound)
+	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "env:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"env:read"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "environment",
-			"resource_id":   envRes.BodyFields["id"],
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "environment", int64(envRes.BodyFields["id"].(float64)))
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getAfter := send(t, newAuthRequest(t, http.MethodGet,
@@ -865,20 +826,16 @@ func TestGetEnvironmentAccessibleViaWorkspacePermission(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-ws-ancestor")
+	org, workspaceID := policyScope(t, app, orgSlug, wsID)
 
 	envRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments",
 		map[string]any{"name": "staging"}, ownerTok), app.routes())
 	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
 	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+	roleID := createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "ws:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":  []string{"ws:read"},
-			"subject_type": "account",
-			"subject_id":   memberIDInt,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "workspace", 0)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -890,20 +847,16 @@ func TestGetEnvironmentAccessibleViaOrgPermission(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-org-ancestor")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	envRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments",
 		map[string]any{"name": "staging"}, ownerTok), app.routes())
 	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
 	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", "org:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+orgSlug+"/policies",
-		map[string]any{
-			"permissions":  []string{"org:read"},
-			"subject_type": "account",
-			"subject_id":   memberIDInt,
-		}, ownerTok), app.routes())
+	grantRes := grantOrgPolicyRole(t, app, ownerTok, orgSlug, roleID, "account", memberIDInt)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -915,19 +868,13 @@ func TestGetEnvironmentAccessibleViaConnectionPermission(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-conn-propagated")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
 	connID := createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "primary-db", &envID)
+	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"conn:read"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "connection",
-			"resource_id":   connID,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "connection", connID)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -939,19 +886,13 @@ func TestEnvironmentVisibilityFromConnectionPermissionDoesNotGrantWrite(t *testi
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-conn-visible-only")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
 	connID := createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "primary-db", &envID)
+	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"conn:read"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "connection",
-			"resource_id":   connID,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "connection", connID)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -968,19 +909,13 @@ func TestListWorkspacesIncludesWorkspaceFromConnectionAccess(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-list-conn-propagated")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
 	connID := createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "primary-db", &envID)
+	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"conn:read"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "connection",
-			"resource_id":   connID,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "connection", connID)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	listRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -1003,19 +938,13 @@ func TestListEnvironmentsIncludesEnvironmentFromConnectionAccess(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-list-conn-propagated")
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
 	connID := createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "primary-db", &envID)
+	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:read")
 
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":   []string{"conn:read"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "connection",
-			"resource_id":   connID,
-		}, ownerTok), app.routes())
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "connection", connID)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	listRes := send(t, newAuthRequest(t, http.MethodGet,
@@ -1038,6 +967,7 @@ func TestListPoliciesShowsAllResourceTypes(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, _, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "list-all")
+	org, workspaceID := policyScope(t, app, orgSlug, wsID)
 
 	// Create environment and connection.
 	envRes := send(t, newAuthRequest(t, http.MethodPost,
@@ -1058,29 +988,16 @@ func TestListPoliciesShowsAllResourceTypes(t *testing.T) {
 	connIDFloat := connRes.BodyFields["id"].(float64)
 	connID := int64(connIDFloat)
 
-	// Grant bindings at workspace, environment, and connection scope.
-	for _, body := range []map[string]any{
-		{
-			"permissions":  []string{"ws:read"},
-			"subject_type": "account",
-			"subject_id":   memberIDInt,
-		},
-		{
-			"permissions":   []string{"env:deploy"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "environment",
-			"resource_id":   envID,
-		},
-		{
-			"permissions":   []string{"conn:execute"},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "connection",
-			"resource_id":   connID,
-		},
+	for _, tc := range []struct {
+		roleID       int64
+		resourceType string
+		resourceID   int64
+	}{
+		{roleID: createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "ws:read"), resourceType: "workspace"},
+		{roleID: createRoleForTest(t, app, org.ID, nil, "environment", "env:deploy"), resourceType: "environment", resourceID: envID},
+		{roleID: createRoleForTest(t, app, org.ID, nil, "connection", "conn:execute"), resourceType: "connection", resourceID: connID},
 	} {
-		res := send(t, newAuthRequest(t, http.MethodPost, policiesURL(orgSlug, wsID), body, ownerTok), app.routes())
+		res := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, tc.roleID, "account", memberIDInt, tc.resourceType, tc.resourceID)
 		assert.Equal(t, res.StatusCode, http.StatusNoContent)
 	}
 
@@ -1094,17 +1011,13 @@ func TestListPoliciesShowsAllResourceTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 	pbs := resp["items"].([]any)
-	permissionCount := 0
-
 	types := map[string]bool{}
 	for _, pb := range pbs {
 		b := pb.(map[string]any)
-		if b["binding_kind"] == "permission" {
-			permissionCount++
+		if b["binding_kind"] == "role" {
 			types[b["resource_type"].(string)] = true
 		}
 	}
-	assert.Equal(t, permissionCount, 3)
 	if !types["workspace"] || !types["environment"] || !types["connection"] {
 		t.Fatalf("expected bindings for all three resource types, got: %v", types)
 	}
@@ -1121,6 +1034,7 @@ func TestEnvScopedRoleGrantsConnectionListAndConnect(t *testing.T) {
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-conn-e2e")
 	baseURL := "/api/v1/orgs/" + orgSlug + "/workspaces/" + wsID
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	// Create two environments.
 	envARes := send(t, newAuthRequest(t, http.MethodPost, baseURL+"/environments",
@@ -1152,17 +1066,9 @@ func TestEnvScopedRoleGrantsConnectionListAndConnect(t *testing.T) {
 		"name": "conn-untagged", "driver": "sqlite", "dsn": "file::memory:?cache=shared",
 	}, ownerTok), app.routes())
 
-	// Grant env-A-scoped permissions to the member only.
-	for _, perm := range []string{"conn:execute", "conn:read", "conn:metadata", "query:execute"} {
-		res := send(t, newAuthRequest(t, http.MethodPost, policiesURL(orgSlug, wsID), map[string]any{
-			"permissions":   []string{perm},
-			"subject_type":  "account",
-			"subject_id":    memberIDInt,
-			"resource_type": "environment",
-			"resource_id":   envAID,
-		}, ownerTok), app.routes())
-		assert.Equal(t, res.StatusCode, http.StatusNoContent)
-	}
+	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "conn:execute", "conn:read", "conn:metadata", "query:execute")
+	res := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "environment", envAID)
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
 
 	// Member lists connections — only conn A should appear.
 	listRes := send(t, newAuthRequest(t, http.MethodGet, baseURL+"/connections", nil, memberTok), app.routes())
@@ -1206,6 +1112,7 @@ func TestEnvScopedRoleFiltersEnvironmentList(t *testing.T) {
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-list-filter")
 	baseURL := "/api/v1/orgs/" + orgSlug + "/workspaces/" + wsID
+	org, _ := policyScope(t, app, orgSlug, wsID)
 
 	envARes := send(t, newAuthRequest(t, http.MethodPost, baseURL+"/environments",
 		map[string]any{"name": "env-a"}, ownerTok), app.routes())
@@ -1216,13 +1123,8 @@ func TestEnvScopedRoleFiltersEnvironmentList(t *testing.T) {
 		map[string]any{"name": "env-b"}, ownerTok), app.routes())
 
 	// Grant env:read on env A only.
-	grantRes := send(t, newAuthRequest(t, http.MethodPost, policiesURL(orgSlug, wsID), map[string]any{
-		"permissions":   []string{"env:read"},
-		"subject_type":  "account",
-		"subject_id":    memberIDInt,
-		"resource_type": "environment",
-		"resource_id":   envAID,
-	}, ownerTok), app.routes())
+	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "env:read")
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "environment", envAID)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	listRes := send(t, newAuthRequest(t, http.MethodGet, baseURL+"/environments", nil, memberTok), app.routes())
@@ -1243,12 +1145,13 @@ func TestEnvScopedRoleFiltersEnvironmentList(t *testing.T) {
 	}
 }
 
-// TestGrantMultiplePermissions verifies that a single POST /policies with multiple
-// permissions creates one binding per permission and all are enforced.
-func TestGrantMultiplePermissions(t *testing.T) {
+// TestGrantMultiPermissionRole verifies that a single role with multiple
+// permissions is fully enforced through one binding.
+func TestGrantMultiPermissionRole(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "multi-perm")
+	org, workspaceID := policyScope(t, app, orgSlug, wsID)
 
 	// Member has no permissions yet.
 	patchRes := send(t, newAuthRequest(t, http.MethodPatch,
@@ -1256,14 +1159,8 @@ func TestGrantMultiplePermissions(t *testing.T) {
 		map[string]any{"name": "Attempt"}, memberTok), app.routes())
 	assert.Equal(t, patchRes.StatusCode, http.StatusForbidden)
 
-	// Grant ws:write AND ws:read in a single request.
-	grantRes := send(t, newAuthRequest(t, http.MethodPost,
-		policiesURL(orgSlug, wsID),
-		map[string]any{
-			"permissions":  []string{"ws:write", "ws:read"},
-			"subject_type": "account",
-			"subject_id":   memberIDInt,
-		}, ownerTok), app.routes())
+	roleID := createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "ws:write", "ws:read")
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "workspace", 0)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
 
 	// Both permissions are now enforced: member can update workspace.
@@ -1272,7 +1169,7 @@ func TestGrantMultiplePermissions(t *testing.T) {
 		map[string]any{"name": "Updated"}, memberTok), app.routes())
 	assert.Equal(t, patchRes2.StatusCode, http.StatusNoContent)
 
-	// Two permission bindings should appear in the list.
+	// One role binding should appear in the list.
 	listRes := send(t, newAuthRequest(t, http.MethodGet,
 		policiesURL(orgSlug, wsID), nil, ownerTok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
@@ -1282,11 +1179,12 @@ func TestGrantMultiplePermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	items := body["items"].([]any)
-	permissionCount := 0
+	roleCount := 0
 	for _, item := range items {
-		if item.(map[string]any)["binding_kind"] == "permission" {
-			permissionCount++
+		row := item.(map[string]any)
+		if row["binding_kind"] == "role" && fmt.Sprintf("%v", row["subject_id"]) == fmt.Sprint(memberIDInt) {
+			roleCount++
 		}
 	}
-	assert.Equal(t, permissionCount, 2)
+	assert.Equal(t, roleCount, 1)
 }

@@ -60,11 +60,12 @@ func TestCreateWorkspacePolicy_WrongWorkspaceResourceReturns404(t *testing.T) {
 	wsA := seedWorkspaceForAccount(t, app, org, owner, "Workspace A", "")
 	wsB := seedWorkspaceForAccount(t, app, org, owner, "Workspace B", "")
 	envB := seedEnvironment(t, app, wsB.ID, org.ID, "prod")
+	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "env:read")
 
 	res := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(wsA.ID, 10)+"/policies",
 		map[string]any{
-			"permissions":   []string{"env:read"},
+			"role_id":       roleID,
 			"subject_type":  "account",
 			"subject_id":    owner.ID,
 			"resource_type": "environment",
@@ -73,7 +74,7 @@ func TestCreateWorkspacePolicy_WrongWorkspaceResourceReturns404(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }
 
-func TestCreateWorkspacePolicy_UnknownPermissionReturns422(t *testing.T) {
+func TestCreateWorkspacePolicy_MissingRoleIDReturns422(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
@@ -83,12 +84,11 @@ func TestCreateWorkspacePolicy_UnknownPermissionReturns422(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies",
 		map[string]any{
-			"permissions":  []string{"bogus:perm"},
 			"subject_type": "account",
 			"subject_id":   owner.ID,
 		}, token), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
-	assertValidationField(t, res, "permissions")
+	assertValidationField(t, res, "role_id")
 }
 
 func TestCreateWorkspacePolicy_MissingRoleReturns404(t *testing.T) {
@@ -560,6 +560,7 @@ func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *te
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Policy Workspace", "")
 	env := seedEnvironment(t, app, ws.ID, org.ID, "prod")
 	conn := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Primary DB", "open")
+	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:execute")
 
 	team, err := app.db.InsertTeam(context.Background(), org.ID, "qa-team", "QA Team")
 	if err != nil {
@@ -576,7 +577,7 @@ func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *te
 	res := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies",
 		map[string]any{
-			"permissions":   []string{"conn:execute"},
+			"role_id":       roleID,
 			"subject_type":  "team",
 			"subject_id":    team.ID,
 			"resource_type": "connection",
@@ -605,7 +606,8 @@ func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *te
 	assert.Equal(t, payload.Items[0]["subject_name"], "QA Team")
 	assert.Equal(t, payload.Items[0]["resource_type"], "connection")
 	assert.Equal(t, payload.Items[0]["resource_name"], "Primary DB")
-	assert.Equal(t, payload.Items[0]["permission"], "conn:execute")
+	assert.Equal(t, payload.Items[0]["binding_kind"], "role")
+	assert.Equal(t, payload.Items[0]["role_name"] != "", true)
 }
 
 func TestListWorkspacePoliciesPermissions(t *testing.T) {
@@ -633,11 +635,12 @@ func TestListWorkspacePolicies_ReturnsRenderableSubjectAndResourceMetadata(t *te
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Policy Workspace", "")
 	env := seedEnvironment(t, app, ws.ID, org.ID, "prod")
 	conn := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Primary DB", "open")
+	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:read")
 
 	res := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies",
 		map[string]any{
-			"permissions":   []string{"conn:read"},
+			"role_id":       roleID,
 			"subject_type":  "account",
 			"subject_id":    owner.ID,
 			"resource_type": "connection",
@@ -676,24 +679,27 @@ func TestListWorkspacePolicies_SupportsSubjectIDAndResourceIDFilters(t *testing.
 	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
+	roleExecA := createRoleForTest(t, app, org.ID, nil, "connection", "conn:execute")
+	roleReadA := createRoleForTest(t, app, org.ID, nil, "connection", "conn:read")
+	roleExecB := createRoleForTest(t, app, org.ID, nil, "connection", "conn:execute")
 
 	for _, body := range []map[string]any{
 		{
-			"permissions":   []string{"conn:execute"},
+			"role_id":       roleExecA,
 			"subject_type":  "account",
 			"subject_id":    owner.ID,
 			"resource_type": "connection",
 			"resource_id":   connA.ID,
 		},
 		{
-			"permissions":   []string{"conn:read"},
+			"role_id":       roleReadA,
 			"subject_type":  "account",
 			"subject_id":    member.ID,
 			"resource_type": "connection",
 			"resource_id":   connA.ID,
 		},
 		{
-			"permissions":   []string{"conn:execute"},
+			"role_id":       roleExecB,
 			"subject_type":  "account",
 			"subject_id":    owner.ID,
 			"resource_type": "connection",

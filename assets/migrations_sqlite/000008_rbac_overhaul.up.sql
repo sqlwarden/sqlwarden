@@ -156,24 +156,6 @@ CREATE TABLE role_bindings (
 CREATE INDEX idx_role_bindings_resource ON role_bindings(org_id, resource_type, resource_id);
 CREATE INDEX idx_role_bindings_subject  ON role_bindings(subject_type, subject_id, org_id);
 
-CREATE TABLE permission_bindings (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    org_id        INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    permission    TEXT    NOT NULL,
-    subject_type  TEXT    NOT NULL,
-    subject_id    INTEGER NOT NULL,
-    resource_type TEXT    NOT NULL,
-    resource_id   INTEGER NOT NULL,
-    expires_at    DATETIME,
-    source_type   TEXT,
-    source_id     INTEGER,
-    created_by    INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
-    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(permission, subject_type, subject_id, resource_type, resource_id)
-);
-CREATE INDEX idx_perm_bindings_resource ON permission_bindings(org_id, resource_type, resource_id);
-CREATE INDEX idx_perm_bindings_subject  ON permission_bindings(subject_type, subject_id, org_id);
-
 CREATE TABLE resource_hierarchy (
     child_type  TEXT    NOT NULL,
     child_id    INTEGER NOT NULL,

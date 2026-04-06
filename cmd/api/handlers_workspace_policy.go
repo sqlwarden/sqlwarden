@@ -200,7 +200,7 @@ func (app *application) listWorkspacePermissions(w http.ResponseWriter, r *http.
 	}
 }
 
-// listWorkspacePolicies returns all role and permission bindings for the workspace
+// listWorkspacePolicies returns all role bindings for the workspace
 // and every resource inside it (environments, connections).
 func (app *application) listWorkspacePolicies(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
@@ -265,13 +265,12 @@ func (app *application) listWorkspacePolicies(w http.ResponseWriter, r *http.Req
 	}
 }
 
-// grantWorkspacePolicy creates a role or permission binding for a resource within
+// grantWorkspacePolicy creates a role binding for a resource within
 // the workspace. resource_type defaults to "workspace"; for "environment" or
 // "connection" a resource_id must be supplied and is validated for ownership.
 func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		RoleID       int64               `json:"role_id"`
-		Permissions  []string            `json:"permissions"`
 		SubjectType  string              `json:"subject_type"`
 		SubjectID    int64               `json:"subject_id"`
 		ResourceType string              `json:"resource_type"`
@@ -289,10 +288,7 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 		input.ResourceType = "workspace"
 	}
 
-	hasRole := input.RoleID > 0
-	hasPerms := len(input.Permissions) > 0
-	input.V.CheckField(hasRole || hasPerms, "role_id", "one of role_id or permissions is required")
-	input.V.CheckField(!(hasRole && hasPerms), "role_id", "only one of role_id or permissions may be set")
+	input.V.CheckField(input.RoleID > 0, "role_id", "role_id is required")
 	input.V.CheckField(input.SubjectType == "account" || input.SubjectType == "team", "subject_type", "must be account or team")
 	input.V.CheckField(input.SubjectID > 0, "subject_id", "subject_id is required")
 	validTypes := map[string]bool{"workspace": true, "environment": true, "connection": true}
@@ -346,63 +342,44 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 		resourceID = conn.ID
 	}
 
-	if hasRole {
-		role, found, err := app.db.GetRole(r.Context(), input.RoleID, org.ID)
-		if err != nil {
-			app.serverError(w, r, err)
+	role, found, err := app.db.GetRole(r.Context(), input.RoleID, org.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.notFound(w, r)
+		return
+	}
+	switch input.ResourceType {
+	case "workspace":
+		if role.ScopeType != "workspace" {
+			v := validator.Validator{}
+			v.AddFieldError("role_id", "role scope must match resource type")
+			app.failedValidation(w, r, v)
 			return
 		}
-		if !found {
+		if role.WorkspaceID != nil && *role.WorkspaceID != ws.ID {
 			app.notFound(w, r)
 			return
 		}
-		switch input.ResourceType {
-		case "workspace":
-			if role.ScopeType != "workspace" {
-				v := validator.Validator{}
-				v.AddFieldError("role_id", "role scope must match resource type")
-				app.failedValidation(w, r, v)
-				return
-			}
-			if role.WorkspaceID != nil && *role.WorkspaceID != ws.ID {
-				app.notFound(w, r)
-				return
-			}
-		default:
-			if role.ScopeType != input.ResourceType {
-				v := validator.Validator{}
-				v.AddFieldError("role_id", "role scope must match resource type")
-				app.failedValidation(w, r, v)
-				return
-			}
-		}
-		if err := app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, input.ResourceType, resourceID, grantor.ID); err != nil {
-			if errors.Is(err, access.ErrUnknownPermission) {
-				v := validator.Validator{}
-				v.AddFieldError("permissions", err.Error())
-				app.failedValidation(w, r, v)
-				return
-			}
-			app.serverError(w, r, err)
+	default:
+		if role.ScopeType != input.ResourceType {
+			v := validator.Validator{}
+			v.AddFieldError("role_id", "role scope must match resource type")
+			app.failedValidation(w, r, v)
 			return
 		}
-	} else {
-		if err := app.enforcer.GrantPermissions(r.Context(), org.ID, input.Permissions, input.SubjectType, input.SubjectID, input.ResourceType, resourceID, grantor.ID); err != nil {
-			if errors.Is(err, access.ErrUnknownPermission) {
-				v := validator.Validator{}
-				v.AddFieldError("permissions", err.Error())
-				app.failedValidation(w, r, v)
-				return
-			}
-			app.serverError(w, r, err)
-			return
-		}
+	}
+	if err := app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, input.ResourceType, resourceID, grantor.ID); err != nil {
+		app.serverError(w, r, err)
+		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// revokeWorkspacePolicy removes a role or permission binding. It verifies the
+// revokeWorkspacePolicy removes a role binding. It verifies the
 // binding's resource belongs to this workspace before revoking.
 func (app *application) revokeWorkspacePolicy(w http.ResponseWriter, r *http.Request) {
 	bindingIDStr := chi.URLParam(r, "binding_id")
@@ -414,50 +391,26 @@ func (app *application) revokeWorkspacePolicy(w http.ResponseWriter, r *http.Req
 
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
-	kind := r.URL.Query().Get("kind")
 
-	if kind == "permission" {
-		pb, found, err := app.db.GetPermissionBinding(r.Context(), bindingID, org.ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !found {
-			app.notFound(w, r)
-			return
-		}
-		if ok, err := app.resourceBelongsToWorkspace(r, pb.ResourceType, pb.ResourceID, ws.ID); err != nil {
-			app.serverError(w, r, err)
-			return
-		} else if !ok {
-			app.notFound(w, r)
-			return
-		}
-		if err = app.enforcer.RevokePermission(r.Context(), bindingID, org.ID); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-	} else {
-		rb, found, err := app.db.GetRoleBinding(r.Context(), bindingID, org.ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !found {
-			app.notFound(w, r)
-			return
-		}
-		if ok, err := app.resourceBelongsToWorkspace(r, rb.ResourceType, rb.ResourceID, ws.ID); err != nil {
-			app.serverError(w, r, err)
-			return
-		} else if !ok {
-			app.notFound(w, r)
-			return
-		}
-		if err = app.enforcer.UnbindRole(r.Context(), bindingID, org.ID); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
+	rb, found, err := app.db.GetRoleBinding(r.Context(), bindingID, org.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.notFound(w, r)
+		return
+	}
+	if ok, err := app.resourceBelongsToWorkspace(r, rb.ResourceType, rb.ResourceID, ws.ID); err != nil {
+		app.serverError(w, r, err)
+		return
+	} else if !ok {
+		app.notFound(w, r)
+		return
+	}
+	if err = app.enforcer.UnbindRole(r.Context(), bindingID, org.ID); err != nil {
+		app.serverError(w, r, err)
+		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
