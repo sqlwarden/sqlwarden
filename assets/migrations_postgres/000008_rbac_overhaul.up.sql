@@ -66,6 +66,13 @@ CREATE INDEX idx_refresh_tokens_account ON refresh_tokens(account_id);
 CREATE INDEX idx_refresh_tokens_family  ON refresh_tokens(family);
 CREATE INDEX idx_refresh_tokens_expires ON refresh_tokens(expires_at);
 
+CREATE TABLE instance_settings (
+    id                      SMALLINT    PRIMARY KEY CHECK (id = 1),
+    personal_spaces_enabled BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Teams.
 CREATE TABLE teams (
     id         BIGSERIAL   PRIMARY KEY,

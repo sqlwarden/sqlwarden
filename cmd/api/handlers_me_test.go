@@ -36,6 +36,17 @@ func TestGetMe(t *testing.T) {
 	assert.Equal(t, res2.StatusCode, http.StatusUnauthorized)
 }
 
+func TestGetMeStillWorksWhenPersonalSpacesDisabled(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.config.personalSpacesEnabled = false
+	_, tok := setupMeTest(t, app, "me-disabled@example.com")
+
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/me", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["email"].(string), "me-disabled@example.com")
+}
+
 // ── Workspace CRUD ───────────────────────────────────────────────────────────
 
 func TestCreateMyWorkspace(t *testing.T) {
@@ -177,6 +188,20 @@ func TestDeleteMyWorkspace(t *testing.T) {
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet, meWsURL(wsID), nil, tok), app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusNotFound)
+}
+
+func TestMyWorkspaceRoutesReturn404WhenPersonalSpacesDisabledByConfig(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.config.personalSpacesEnabled = false
+	_, tok := setupMeTest(t, app, "me-gated@example.com")
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/me/workspaces", nil, tok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusNotFound)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
+		map[string]any{"name": "Blocked"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusNotFound)
 }
 
 // ── Workspace isolation ──────────────────────────────────────────────────────
@@ -656,4 +681,49 @@ func TestMyWorkspaceConnectAndQuery(t *testing.T) {
 	queryReq.Header.Set("X-Warden-Session", sessionID)
 	queryRes := send(t, queryReq, app.routes())
 	assert.Equal(t, queryRes.StatusCode, http.StatusOK)
+}
+
+func TestDisablingPersonalSpacesDropsSessionsAndGatesRoutes(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+	_, tok := setupMeTest(t, app, "me-runtime-disable@example.com")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
+		map[string]any{"name": "Query WS"}, tok), app.routes())
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := strconv.FormatInt(defaultEnvironmentID(t, app, wsIDInt), 10)
+
+	connRes := send(t, newAuthRequest(t, http.MethodPost, meEnvConnectionsURL(wsID, envID), map[string]any{
+		"name":   "MemDB",
+		"driver": "sqlite",
+		"dsn":    "file::memory:?cache=shared",
+	}, tok), app.routes())
+	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		meEnvConnectionsURL(wsID, envID)+"/"+connID+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+	if sessionID == "" {
+		t.Fatal("expected session id")
+	}
+	assert.Equal(t, app.connManager.CountForConnection(connID), 1)
+
+	disableRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings",
+		map[string]any{"personal_spaces_enabled": false}, adminTok), app.routes())
+	assert.Equal(t, disableRes.StatusCode, http.StatusOK)
+	assert.Equal(t, app.connManager.CountForConnection(connID), 0)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/me/workspaces", nil, tok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusNotFound)
+
+	queryReq := newAuthRequest(t, http.MethodPost,
+		meEnvConnectionsURL(wsID, envID)+"/"+connID+"/query",
+		map[string]any{"sql": "SELECT 1"}, tok)
+	queryReq.Header.Set("X-Warden-Session", sessionID)
+	queryRes := send(t, queryReq, app.routes())
+	assert.Equal(t, queryRes.StatusCode, http.StatusNotFound)
 }

@@ -168,6 +168,66 @@ func (app *application) listOrganizations(w http.ResponseWriter, r *http.Request
 	}
 }
 
+func (app *application) getInstanceSettings(w http.ResponseWriter, r *http.Request) {
+	enabled, err := app.personalSpacesEnabled(r.Context())
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = response.JSON(w, http.StatusOK, map[string]any{
+		"personal_spaces_enabled": enabled,
+	})
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		PersonalSpacesEnabled *bool               `json:"personal_spaces_enabled"`
+		V                     validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	input.V.CheckField(input.PersonalSpacesEnabled != nil, "personal_spaces_enabled", "personal_spaces_enabled is required")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	currentEnabled, err := app.personalSpacesEnabled(r.Context())
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	settings, err := app.db.UpsertInstanceSettings(r.Context(), *input.PersonalSpacesEnabled)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	if currentEnabled && !settings.PersonalSpacesEnabled {
+		if err := app.dropPersonalSpaceSessions(r.Context()); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
+
+	err = response.JSON(w, http.StatusOK, map[string]any{
+		"personal_spaces_enabled": settings.PersonalSpacesEnabled,
+	})
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 // addInstanceAdmin handles POST /api/v1/instance/admins.
 // Grants instance admin status to an existing account (looked up by email).
 func (app *application) addInstanceAdmin(w http.ResponseWriter, r *http.Request) {

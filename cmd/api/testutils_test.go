@@ -51,6 +51,7 @@ func newTestApplication(t *testing.T) *application {
 
 	app.config.jwt.secretKey = "k7mp29rf4qxhwn8vbtaj6pgucmve53y9"
 	app.config.baseURL = "https://www.example.com"
+	app.config.personalSpacesEnabled = true
 
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)

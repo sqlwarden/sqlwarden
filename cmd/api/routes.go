@@ -35,6 +35,8 @@ func (app *application) routes() http.Handler {
 			r.Use(app.requireAccount, app.requireInstanceAdmin)
 			r.Get("/admins", app.listInstanceAdmins)
 			r.Get("/orgs", app.listOrganizations)
+			r.Get("/settings", app.getInstanceSettings)
+			r.Patch("/settings", app.updateInstanceSettings)
 			r.Post("/admins", app.addInstanceAdmin)
 			r.Delete("/admins/{account_id}", app.removeInstanceAdmin)
 		})
@@ -52,6 +54,7 @@ func (app *application) routes() http.Handler {
 			r.Get("/", app.getAccount)
 
 			r.Route("/workspaces", func(r chi.Router) {
+				r.Use(app.requirePersonalSpacesEnabled)
 				r.Get("/", app.listMyWorkspaces)
 				r.Post("/", app.createMyWorkspace)
 				r.Route("/{ws_id}", func(r chi.Router) {

@@ -237,6 +237,46 @@ func TestListInstanceAdminsRequiresAuth(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
 }
 
+func TestGetInstanceSettings(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], true)
+}
+
+func TestUpdateInstanceSettings(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings",
+		map[string]any{"personal_spaces_enabled": false}, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], false)
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	assert.Equal(t, getRes.BodyFields["personal_spaces_enabled"], false)
+}
+
+func TestUpdateInstanceSettingsRequiresInstanceAdmin(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	regRes := registerTestUser(t, app, "settings-user@example.com", "Settings User", "securepass99")
+	assert.Equal(t, regRes.StatusCode, http.StatusCreated)
+	loginRes := loginTestUser(t, app, "settings-user@example.com", "securepass99")
+	tok := extractAccessToken(t, loginRes)
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings",
+		map[string]any{"personal_spaces_enabled": false}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+}
+
 func TestListOrganizations(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

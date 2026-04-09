@@ -422,13 +422,14 @@ func TestGetSession_ReturnsStableBootstrapPayload(t *testing.T) {
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	assertBodyContainsJSONKeys(t, res.BodyBytes, "account", "organizations", "is_instance_admin", "feature_flags")
+	assertBodyContainsJSONKeys(t, res.BodyBytes, "account", "organizations", "is_instance_admin", "personal_spaces_enabled", "feature_flags")
 
 	var payload struct {
-		Account         map[string]any   `json:"account"`
-		Organizations   []map[string]any `json:"organizations"`
-		IsInstanceAdmin bool             `json:"is_instance_admin"`
-		FeatureFlags    []string         `json:"feature_flags"`
+		Account               map[string]any   `json:"account"`
+		Organizations         []map[string]any `json:"organizations"`
+		IsInstanceAdmin       bool             `json:"is_instance_admin"`
+		PersonalSpacesEnabled bool             `json:"personal_spaces_enabled"`
+		FeatureFlags          []string         `json:"feature_flags"`
 	}
 	decodeJSONResponse(t, res.BodyBytes, &payload)
 
@@ -440,6 +441,7 @@ func TestGetSession_ReturnsStableBootstrapPayload(t *testing.T) {
 		t.Fatalf("expected first organization name %q, got %v", org.Name, payload.Organizations[0]["name"])
 	}
 	assert.Equal(t, payload.IsInstanceAdmin, false)
+	assert.Equal(t, payload.PersonalSpacesEnabled, true)
 	assert.Equal(t, len(payload.FeatureFlags), 0)
 }
 
@@ -468,6 +470,7 @@ func TestGetSession(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/session", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["is_instance_admin"], true)
+	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], true)
 
 	accountBody, ok := res.BodyFields["account"].(map[string]any)
 	if !ok {
@@ -502,6 +505,7 @@ func TestGetSessionWithoutOrgOrAdmin(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/session", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["is_instance_admin"], false)
+	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], true)
 
 	var body struct {
 		Organizations []map[string]any `json:"organizations"`
@@ -512,4 +516,19 @@ func TestGetSessionWithoutOrgOrAdmin(t *testing.T) {
 	if len(body.Organizations) != 0 {
 		t.Fatalf("expected no organizations, got %d", len(body.Organizations))
 	}
+}
+
+func TestGetSessionIncludesPersistedPersonalSpaceFlag(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, token := seedAccountWithToken(t, app, uniqueEmail(t, "session-flag"), "Session Flag")
+	if _, err := app.db.UpsertInstanceSettings(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/session", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], false)
 }

@@ -65,6 +65,13 @@ CREATE INDEX idx_refresh_tokens_account ON refresh_tokens(account_id);
 CREATE INDEX idx_refresh_tokens_family  ON refresh_tokens(family);
 CREATE INDEX idx_refresh_tokens_expires ON refresh_tokens(expires_at);
 
+CREATE TABLE instance_settings (
+    id                      INTEGER  PRIMARY KEY CHECK (id = 1),
+    personal_spaces_enabled BOOLEAN  NOT NULL DEFAULT TRUE,
+    created_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE teams (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     org_id     INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
