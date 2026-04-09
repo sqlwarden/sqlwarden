@@ -218,6 +218,18 @@ Test coverage is substantial in the backend:
 Operational note:
 - DB-layer tests use testcontainers, so local Docker availability matters.
 
+## Go version upgrades
+
+When upgrading Go in this repo, keep all build entrypoints aligned:
+- update the `go` directive in `go.mod`
+- update any GitHub Actions `actions/setup-go` pins in `.github/workflows/*`
+- update the Docker builder image tag in `Dockerfile`
+
+Validation steps:
+- run `go mod tidy`
+- run `make audit`
+- if CI or release images build through Docker, run a local `docker build .` check as well
+
 ## Commands worth remembering
 
 Core commands from `Makefile` and `CLAUDE.md`:
