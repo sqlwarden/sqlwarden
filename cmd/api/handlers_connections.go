@@ -276,6 +276,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		Driver     *string             `json:"driver"`
 		DSN        string              `json:"dsn"`
 		AccessMode string              `json:"access_mode"`
+		Force      bool                `json:"force"`
 		V          validator.Validator `json:"-"`
 	}
 
@@ -307,6 +308,22 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	}
 
 	conn := contextGetConnection(r)
+	currentDSN, err := encrypt.Decrypt(app.encKey, conn.DSNEncrypted)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	dsnChanged := currentDSN != input.DSN
+	if dsnChanged {
+		activeSessions := app.connManager.CountForConnection(strconv.FormatInt(conn.ID, 10))
+		if activeSessions > 0 && !input.Force {
+			app.errorMessage(w, r, http.StatusConflict, "connection has active sessions; retry with force=true to rotate the dsn and drop them", nil)
+			return
+		}
+		if input.Force && activeSessions > 0 {
+			app.connManager.RemoveForConnection(strconv.FormatInt(conn.ID, 10))
+		}
+	}
 	err = app.db.UpdateConnection(r.Context(), conn.ID, input.Name, dsnEncrypted, input.AccessMode)
 	if err != nil {
 		app.serverError(w, r, err)

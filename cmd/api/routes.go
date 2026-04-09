@@ -178,7 +178,7 @@ func (app *application) routes() http.Handler {
 							r.With(app.requirePermission("env:delete")).Delete("/", app.deleteEnvironment)
 
 							r.Route("/connections", func(r chi.Router) {
-								r.Post("/test", app.testConnection)
+								r.With(app.requirePermission("conn:create")).Post("/test", app.testConnection)
 								r.Get("/", app.listConnections)
 								r.With(app.requirePermission("conn:create")).Post("/", app.createConnection)
 								r.Route("/{conn_id}", func(r chi.Router) {
@@ -194,7 +194,7 @@ func (app *application) routes() http.Handler {
 					})
 
 					r.Route("/connections", func(r chi.Router) {
-						r.Post("/test", app.testConnection)
+						r.With(app.requirePermission("conn:create")).Post("/test", app.testConnection)
 						r.Get("/", app.listConnections)
 						r.With(app.requirePermission("conn:create")).Post("/", app.createConnection)
 						r.Route("/{conn_id}", func(r chi.Router) {

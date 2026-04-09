@@ -92,6 +92,33 @@ func TestTestConnectionValidationAndSuccess(t *testing.T) {
 	assert.Equal(t, successRes.BodyFields["ok"], true)
 }
 
+func TestTestConnectionRequiresConnCreate(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, org := seedOrgOwner(t, app, "conn-test-owner@example.com", "Conn Test Owner", "Conn Test Org")
+	member, memberTok := seedAccountWithToken(t, app, "conn-test-member@example.com", "Conn Test Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Conn Test WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	memberReq := newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID)+"/test",
+		map[string]any{"driver": "sqlite", "dsn": ":memory:"}, memberTok)
+	memberRes := send(t, memberReq, app.routes())
+	assert.Equal(t, memberRes.StatusCode, http.StatusForbidden)
+
+	ownerReq := newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID)+"/test",
+		map[string]any{"driver": "sqlite", "dsn": ":memory:"}, ownerTok)
+	ownerRes := send(t, ownerReq, app.routes())
+	assert.Equal(t, ownerRes.StatusCode, http.StatusOK)
+	assert.Equal(t, ownerRes.BodyFields["ok"], true)
+}
+
 func TestCreateConnectionAndGetExcludesDSN(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -321,6 +348,117 @@ func TestUpdateConnectionRejectsImmutableFields(t *testing.T) {
 			"dsn":    ":memory:",
 		}, tok), app.routes())
 	assert.Equal(t, updateRes.StatusCode, http.StatusUnprocessableEntity)
+}
+
+func TestUpdateConnectionBlocksDSNChangeWhileSessionActive(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-update-active@example.com", "Conn Update Active", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn Active WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "Primary", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		orgConnectionURL(slug, wsIDInt, envID, connID),
+		map[string]any{
+			"name":        "Primary Rotated",
+			"dsn":         "file:new.db?mode=memory&cache=shared",
+			"access_mode": "open",
+		}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusConflict)
+}
+
+func TestUpdateConnectionForceDropsActiveSessionsOnDSNChange(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-update-force@example.com", "Conn Update Force", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn Force WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "Primary", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		orgConnectionURL(slug, wsIDInt, envID, connID),
+		map[string]any{
+			"name":        "Primary Rotated",
+			"dsn":         "file:new.db?mode=memory&cache=shared",
+			"access_mode": "open",
+			"force":       true,
+		}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusNoContent)
+
+	queryReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/query",
+		map[string]any{"sql": "SELECT 1"}, tok)
+	queryReq.Header.Set("X-Warden-Session", sessionID)
+	queryRes := send(t, queryReq, app.routes())
+	assert.Equal(t, queryRes.StatusCode, http.StatusGone)
+}
+
+func TestUpdateConnectionAllowsNonDSNChangesWithActiveSession(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-update-non-dsn@example.com", "Conn Update Non DSN", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn Non DSN WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "Primary", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		orgConnectionURL(slug, wsIDInt, envID, connID),
+		map[string]any{
+			"name":        "Primary Updated",
+			"dsn":         ":memory:",
+			"access_mode": "restricted",
+		}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusNoContent)
 }
 
 func TestCreateConnectionRejectsEnvironmentFromOtherWorkspace(t *testing.T) {

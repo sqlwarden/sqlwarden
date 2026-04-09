@@ -249,6 +249,53 @@ func TestRemove(t *testing.T) {
 	}
 }
 
+func TestCountAndRemoveForConnection(t *testing.T) {
+	m := New(5 * time.Minute)
+	defer m.Close()
+
+	open := func() (driver.Driver, error) {
+		return &mockDriver{}, nil
+	}
+
+	sessAlice, _, err := m.GetOrCreate("alice", "conn1", open)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sessBob, _, err := m.GetOrCreate("bob", "conn1", open)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, _, err = m.GetOrCreate("charlie", "conn2", open)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := m.CountForConnection("conn1"); got != 2 {
+		t.Fatalf("expected 2 conn1 sessions, got %d", got)
+	}
+	if got := m.CountForConnection("conn2"); got != 1 {
+		t.Fatalf("expected 1 conn2 session, got %d", got)
+	}
+
+	removed := m.RemoveForConnection("conn1")
+	if removed != 2 {
+		t.Fatalf("expected 2 removed sessions, got %d", removed)
+	}
+	if got := m.CountForConnection("conn1"); got != 0 {
+		t.Fatalf("expected 0 conn1 sessions after removal, got %d", got)
+	}
+
+	if _, ok := m.Get(sessAlice.ID); ok {
+		t.Fatal("expected alice conn1 session to be removed")
+	}
+	if _, ok := m.Get(sessBob.ID); ok {
+		t.Fatal("expected bob conn1 session to be removed")
+	}
+	if got := m.CountForConnection("conn2"); got != 1 {
+		t.Fatalf("expected conn2 session to remain, got %d", got)
+	}
+}
+
 func TestSessionQueryAndExecuteUpdateLastUsed(t *testing.T) {
 	m := New(5 * time.Minute)
 	defer m.Close()

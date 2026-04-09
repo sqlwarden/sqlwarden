@@ -135,6 +135,40 @@ func (m *Manager) Remove(sessionID string) {
 	delete(m.byID, sessionID)
 }
 
+// CountForConnection returns the number of live sessions for the given connection ID.
+func (m *Manager) CountForConnection(connID string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	count := 0
+	for _, sess := range m.byID {
+		if sess.ConnectionID == connID {
+			count++
+		}
+	}
+	return count
+}
+
+// RemoveForConnection closes and removes all live sessions for the given connection ID.
+// Returns the number of removed sessions.
+func (m *Manager) RemoveForConnection(connID string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	removed := 0
+	for id, sess := range m.byID {
+		if sess.ConnectionID != connID {
+			continue
+		}
+		sess.Driver.Close()
+		key := sess.AccountID + ":" + sess.ConnectionID
+		delete(m.byKey, key)
+		delete(m.byID, id)
+		removed++
+	}
+	return removed
+}
+
 // Close closes all sessions and stops the reaper goroutine. Safe to call multiple times.
 func (m *Manager) Close() {
 	m.closeOnce.Do(func() {
