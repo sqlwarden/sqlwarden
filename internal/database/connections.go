@@ -172,7 +172,7 @@ func (db *DB) ListAccessibleConnections(ctx context.Context, accountID, orgID, w
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	const q = `
+	q := `
 WITH my_teams AS (
     SELECT team_id FROM team_members WHERE account_id = ?
 )
@@ -180,49 +180,21 @@ SELECT DISTINCT c.*
 FROM connections c
 WHERE c.workspace_id = ?
   AND (
-    EXISTS (
-        SELECT 1 FROM role_bindings rb
-        WHERE rb.org_id = ? AND rb.resource_type = 'org' AND rb.resource_id = ?
-          AND (
-            (rb.subject_type = 'account' AND rb.subject_id = ?)
-            OR (rb.subject_type = 'team' AND rb.subject_id IN (SELECT team_id FROM my_teams))
-          )
-    )
-    OR EXISTS (
-        SELECT 1 FROM role_bindings rb2
-        WHERE rb2.org_id = ? AND rb2.resource_type = 'workspace' AND rb2.resource_id = ?
-          AND (
-            (rb2.subject_type = 'account' AND rb2.subject_id = ?)
-            OR (rb2.subject_type = 'team' AND rb2.subject_id IN (SELECT team_id FROM my_teams))
-          )
-    )
-    OR EXISTS (
-        SELECT 1 FROM role_bindings rb4
-        WHERE rb4.org_id = ? AND rb4.resource_type = 'environment' AND rb4.resource_id = c.environment_id
-          AND (
-            (rb4.subject_type = 'account' AND rb4.subject_id = ?)
-            OR (rb4.subject_type = 'team' AND rb4.subject_id IN (SELECT team_id FROM my_teams))
-          )
-    )
-    OR EXISTS (
-        SELECT 1 FROM role_bindings rb3
-        WHERE rb3.org_id = ? AND rb3.resource_type = 'connection' AND rb3.resource_id = c.id
-          AND (
-            (rb3.subject_type = 'account' AND rb3.subject_id = ?)
-            OR (rb3.subject_type = 'team' AND rb3.subject_id IN (SELECT team_id FROM my_teams))
-          )
-    )
+    ` + discoveryRoleBindingExists("rb", "rp", "org", "?", connectionDiscoveryPermissionExpr) + `
+    OR ` + discoveryRoleBindingExists("rb2", "rp", "workspace", "?", connectionDiscoveryPermissionExpr) + `
+    OR ` + discoveryRoleBindingExists("rb4", "rp", "environment", "c.environment_id", connectionDiscoveryPermissionExpr) + `
+    OR ` + discoveryRoleBindingExists("rb3", "rp", "connection", "c.id", connectionDiscoveryPermissionExpr) + `
   )
 ORDER BY c.name ASC`
 
 	var conns []Connection
 	err := db.NewRaw(q,
-		accountID,               // my_teams CTE
-		workspaceID,             // c.workspace_id
-		orgID, orgID, accountID, // org role binding
-		orgID, workspaceID, accountID, // ws role binding
-		orgID, accountID, // env role binding
-		orgID, accountID, // conn role binding
+		accountID,   // my_teams CTE
+		workspaceID, // c.workspace_id
+		orgID, orgID, accountID,
+		orgID, workspaceID, accountID,
+		orgID, accountID,
+		orgID, accountID,
 	).Scan(ctx, &conns)
 	return conns, err
 }
@@ -231,7 +203,7 @@ func (db *DB) HasAccessibleConnection(ctx context.Context, accountID, orgID, wor
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	const q = `
+	q := `
 WITH my_teams AS (
     SELECT team_id FROM team_members WHERE account_id = ?
 )
@@ -241,38 +213,10 @@ SELECT EXISTS (
     WHERE c.id = ?
       AND c.workspace_id = ?
       AND (
-        EXISTS (
-            SELECT 1 FROM role_bindings rb
-            WHERE rb.org_id = ? AND rb.resource_type = 'org' AND rb.resource_id = ?
-              AND (
-                (rb.subject_type = 'account' AND rb.subject_id = ?)
-                OR (rb.subject_type = 'team' AND rb.subject_id IN (SELECT team_id FROM my_teams))
-              )
-        )
-        OR EXISTS (
-            SELECT 1 FROM role_bindings rb2
-            WHERE rb2.org_id = ? AND rb2.resource_type = 'workspace' AND rb2.resource_id = ?
-              AND (
-                (rb2.subject_type = 'account' AND rb2.subject_id = ?)
-                OR (rb2.subject_type = 'team' AND rb2.subject_id IN (SELECT team_id FROM my_teams))
-              )
-        )
-        OR EXISTS (
-            SELECT 1 FROM role_bindings rb4
-            WHERE rb4.org_id = ? AND rb4.resource_type = 'environment' AND rb4.resource_id = c.environment_id
-              AND (
-                (rb4.subject_type = 'account' AND rb4.subject_id = ?)
-                OR (rb4.subject_type = 'team' AND rb4.subject_id IN (SELECT team_id FROM my_teams))
-              )
-        )
-        OR EXISTS (
-            SELECT 1 FROM role_bindings rb3
-            WHERE rb3.org_id = ? AND rb3.resource_type = 'connection' AND rb3.resource_id = c.id
-              AND (
-                (rb3.subject_type = 'account' AND rb3.subject_id = ?)
-                OR (rb3.subject_type = 'team' AND rb3.subject_id IN (SELECT team_id FROM my_teams))
-              )
-        )
+        ` + discoveryRoleBindingExists("rb", "rp", "org", "?", connectionDiscoveryPermissionExpr) + `
+        OR ` + discoveryRoleBindingExists("rb2", "rp", "workspace", "?", connectionDiscoveryPermissionExpr) + `
+        OR ` + discoveryRoleBindingExists("rb4", "rp", "environment", "c.environment_id", connectionDiscoveryPermissionExpr) + `
+        OR ` + discoveryRoleBindingExists("rb3", "rp", "connection", "c.id", connectionDiscoveryPermissionExpr) + `
       )
 )`
 

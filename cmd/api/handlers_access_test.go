@@ -165,7 +165,7 @@ func TestGetWorkspaceAccessibleViaOrgPermission(t *testing.T) {
 	app := newTestApp(t)
 	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-org-ancestor")
 	org, _ := policyScope(t, app, orgSlug, wsID)
-	roleID := createRoleForTest(t, app, org.ID, nil, "org", "org:read")
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", "ws:read")
 
 	grantRes := grantOrgPolicyRole(t, app, ownerTok, orgSlug, roleID, "account", memberIDInt)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
@@ -173,6 +173,21 @@ func TestGetWorkspaceAccessibleViaOrgPermission(t *testing.T) {
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID, nil, memberTok), app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+}
+
+func TestGetWorkspaceNotAccessibleViaOrgReadOnly(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "ws-org-read-only")
+	org, _ := policyScope(t, app, orgSlug, wsID)
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", "org:read")
+
+	grantRes := grantOrgPolicyRole(t, app, ownerTok, orgSlug, roleID, "account", memberIDInt)
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID, nil, memberTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusNotFound)
 }
 
 func TestGetWorkspaceAccessibleViaEnvironmentPermission(t *testing.T) {
@@ -548,7 +563,7 @@ func TestGetConnectionAccessibleViaWorkspacePermission(t *testing.T) {
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
-	roleID := createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "ws:read")
+	roleID := createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "conn:read")
 
 	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "workspace", 0)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
@@ -580,7 +595,7 @@ func TestGetConnectionAccessibleViaEnvironmentPermission(t *testing.T) {
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
-	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "env:read")
+	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "conn:read")
 
 	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "environment", envID)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
@@ -588,6 +603,24 @@ func TestGetConnectionAccessibleViaEnvironmentPermission(t *testing.T) {
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections/"+connID, nil, memberTok), app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+}
+
+func TestGetConnectionNotAccessibleViaEnvironmentReadOnly(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "conn-env-read-only")
+	org, _ := policyScope(t, app, orgSlug, wsID)
+
+	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
+	connID := createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "env-db", &envID)
+	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "env:read")
+
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "environment", envID)
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections/"+strconv.FormatInt(connID, 10), nil, memberTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusNotFound)
 }
 
 func TestGetConnectionAccessibleViaOrgPermission(t *testing.T) {
@@ -605,7 +638,7 @@ func TestGetConnectionAccessibleViaOrgPermission(t *testing.T) {
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
-	roleID := createRoleForTest(t, app, org.ID, nil, "org", "org:read")
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", "conn:read")
 
 	grantRes := grantOrgPolicyRole(t, app, ownerTok, orgSlug, roleID, "account", memberIDInt)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
@@ -833,7 +866,7 @@ func TestGetEnvironmentAccessibleViaWorkspacePermission(t *testing.T) {
 		map[string]any{"name": "staging"}, ownerTok), app.routes())
 	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
 	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
-	roleID := createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "ws:read")
+	roleID := createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "env:read")
 
 	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "workspace", 0)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
@@ -841,6 +874,27 @@ func TestGetEnvironmentAccessibleViaWorkspacePermission(t *testing.T) {
 	getRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+envID, nil, memberTok), app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+}
+
+func TestGetEnvironmentNotAccessibleViaWorkspaceReadOnly(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "env-ws-read-only")
+	org, workspaceID := policyScope(t, app, orgSlug, wsID)
+
+	envRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments",
+		map[string]any{"name": "staging"}, ownerTok), app.routes())
+	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
+	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
+	roleID := createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "ws:read")
+
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "workspace", 0)
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/environments/"+envID, nil, memberTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusNotFound)
 }
 
 func TestGetEnvironmentAccessibleViaOrgPermission(t *testing.T) {
@@ -854,7 +908,7 @@ func TestGetEnvironmentAccessibleViaOrgPermission(t *testing.T) {
 		map[string]any{"name": "staging"}, ownerTok), app.routes())
 	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
 	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
-	roleID := createRoleForTest(t, app, org.ID, nil, "org", "org:read")
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", "env:read")
 
 	grantRes := grantOrgPolicyRole(t, app, ownerTok, orgSlug, roleID, "account", memberIDInt)
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
@@ -960,6 +1014,39 @@ func TestListEnvironmentsIncludesEnvironmentFromConnectionAccess(t *testing.T) {
 	}
 	if payload.Total != 1 || fmt.Sprintf("%v", payload.Items[0]["id"]) != strconv.FormatInt(envID, 10) {
 		t.Fatalf("expected propagated environment visibility for %d, got %+v", envID, payload.Items)
+	}
+}
+
+func TestListConnectionsExcludesConnectionsFromEnvironmentReadOnly(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberIDInt := setupPolicyTest(t, app, "conn-list-env-read-only")
+	org, _ := policyScope(t, app, orgSlug, wsID)
+
+	envID := createWorkspaceEnvironment(t, app, ownerTok, orgSlug, wsID, "staging")
+	_ = createWorkspaceConnection(t, app, ownerTok, orgSlug, wsID, "primary-db", &envID)
+	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "env:read")
+
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "environment", envID)
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	wsIDInt, err := strconv.ParseInt(wsID, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		orgEnvConnectionsURL(orgSlug, wsIDInt, envID), nil, memberTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(listRes.BodyBytes, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Total != 0 {
+		t.Fatalf("expected no connections from env:read-only discovery, got %+v", payload.Items)
 	}
 }
 

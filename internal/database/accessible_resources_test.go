@@ -232,7 +232,7 @@ func TestListAccessibleWorkspaces_OrgPermBinding(t *testing.T) {
 	ws2 := seedWorkspace(t, db, e, org.ID, ownerID, "Beta")
 
 	userID := newAccount(t, db, "user-ws-orgperm@example.com")
-	grantScopedRole(t, db, e, org.ID, nil, "org-read-all", "org", []string{access.PermOrgRead}, "account", userID, "org", org.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, nil, "org-ws-read-all", "org", []string{access.PermWsRead}, "account", userID, "org", org.ID, ownerID)
 
 	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
 	if err != nil {
@@ -244,6 +244,29 @@ func TestListAccessibleWorkspaces_OrgPermBinding(t *testing.T) {
 	ids := wsIDs(wss)
 	if !contains(ids, ws1.ID) || !contains(ids, ws2.ID) {
 		t.Fatalf("missing workspace IDs in %v", ids)
+	}
+}
+
+func TestListAccessibleWorkspaces_OrgReadDoesNotGrantWorkspaceDiscovery(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-ws-orgread-only", "Org")
+	ownerID := newAccount(t, db, "owner-ws-orgread-only@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	seedWorkspace(t, db, e, org.ID, ownerID, "Alpha")
+
+	userID := newAccount(t, db, "user-ws-orgread-only@example.com")
+	grantScopedRole(t, db, e, org.ID, nil, "org-read-only", "org", []string{access.PermOrgRead}, "account", userID, "org", org.ID, ownerID)
+
+	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wss) != 0 {
+		t.Fatalf("expected no workspace discovery from org:read, got %v", wsIDs(wss))
 	}
 }
 
@@ -663,7 +686,7 @@ func TestListAccessibleConnections_DirectConnPermBinding(t *testing.T) {
 	}
 }
 
-func TestListAccessibleConnections_WsPermBinding(t *testing.T) {
+func TestListAccessibleConnections_WsReadDoesNotRevealConnections(t *testing.T) {
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -672,8 +695,8 @@ func TestListAccessibleConnections_WsPermBinding(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
-	c1, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db1", "postgres", "enc", "open")
-	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
+	_, _ = db.InsertConnection(context.Background(), ws.ID, nil, "db1", "postgres", "enc", "open")
+	_, _ = db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-wsperm@example.com")
 	grantScopedRole(t, db, e, org.ID, &ws.ID, "ws-read-access", "workspace", []string{access.PermWsRead}, "account", userID, "workspace", ws.ID, ownerID)
@@ -682,12 +705,8 @@ func TestListAccessibleConnections_WsPermBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(conns) != 2 {
-		t.Fatalf("expected 2 connections via ws perm, got %d", len(conns))
-	}
-	ids := connIDs(conns)
-	if !contains(ids, c1.ID) || !contains(ids, c2.ID) {
-		t.Fatalf("missing connection IDs in %v", ids)
+	if len(conns) != 0 {
+		t.Fatalf("expected no connection discovery via ws:read, got %v", connIDs(conns))
 	}
 }
 
@@ -952,6 +971,32 @@ func TestListAccessibleConnections_EnvPermBinding(t *testing.T) {
 	}
 }
 
+func TestListAccessibleConnections_EnvReadDoesNotRevealConnections(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-conn-envread", "Org")
+	ownerID := newAccount(t, db, "owner-conn-envread@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	env, _ := db.InsertEnvironment(context.Background(), ws.ID, "staging", "")
+	tagged, _ := db.InsertConnection(context.Background(), ws.ID, &env.ID, "tagged", "postgres", "enc", "open")
+	_ = tagged
+
+	userID := newAccount(t, db, "user-conn-envread@example.com")
+	grantScopedRole(t, db, e, org.ID, nil, "env-read-only", "environment", []string{access.PermEnvRead}, "account", userID, "environment", env.ID, ownerID)
+
+	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conns) != 0 {
+		t.Fatalf("expected no connection discovery from env:read, got %v", connIDs(conns))
+	}
+}
+
 func TestListAccessibleConnections_EnvRoleBinding(t *testing.T) {
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
@@ -1063,6 +1108,29 @@ func TestListAccessibleEnvironments_WsBindingGrantsAll(t *testing.T) {
 	ids := envIDs(envs)
 	if !contains(ids, env1.ID) || !contains(ids, env2.ID) {
 		t.Fatalf("workspace binding should expose all environments; got %v", ids)
+	}
+}
+
+func TestListAccessibleEnvironments_WsReadDoesNotRevealEnvironments(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-env-wsread", "Org")
+	ownerID := newAccount(t, db, "owner-env-wsread@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	db.InsertEnvironment(context.Background(), ws.ID, "alpha", "")
+
+	userID := newAccount(t, db, "user-env-wsread@example.com")
+	grantScopedRole(t, db, e, org.ID, &ws.ID, "ws-read-only", "workspace", []string{access.PermWsRead}, "account", userID, "workspace", ws.ID, ownerID)
+
+	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 0 {
+		t.Fatalf("expected no environment discovery from ws:read, got %v", envIDs(envs))
 	}
 }
 

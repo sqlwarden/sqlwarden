@@ -1,0 +1,36 @@
+package database
+
+import (
+	"fmt"
+	"strings"
+)
+
+func discoveryPermissionExpr(alias string, prefixes []string) string {
+	parts := make([]string, 0, len(prefixes))
+	for _, prefix := range prefixes {
+		parts = append(parts, fmt.Sprintf("%s.permission LIKE '%s%%'", alias, prefix))
+	}
+	return "(" + strings.Join(parts, " OR ") + ")"
+}
+
+func discoveryRoleBindingExists(bindingAlias, permissionAlias, resourceType, resourceIDExpr, permissionExpr string) string {
+	return fmt.Sprintf(`
+EXISTS (
+    SELECT 1
+    FROM role_bindings %s
+    JOIN role_permissions %s ON %s.role_id = %s.role_id
+    WHERE %s.org_id = ?
+      AND %s.resource_type = '%s' AND %s.resource_id = %s
+      AND %s
+      AND (
+        (%s.subject_type = 'account' AND %s.subject_id = ?)
+        OR (%s.subject_type = 'team' AND %s.subject_id IN (SELECT team_id FROM my_teams))
+      )
+)`, bindingAlias, permissionAlias, permissionAlias, bindingAlias, bindingAlias, bindingAlias, resourceType, bindingAlias, resourceIDExpr, permissionExpr, bindingAlias, bindingAlias, bindingAlias, bindingAlias)
+}
+
+var (
+	workspaceDiscoveryPermissionExpr   = discoveryPermissionExpr("rp", []string{"ws:", "env:", "conn:"})
+	environmentDiscoveryPermissionExpr = discoveryPermissionExpr("rp", []string{"env:", "conn:"})
+	connectionDiscoveryPermissionExpr  = discoveryPermissionExpr("rp", []string{"conn:"})
+)
