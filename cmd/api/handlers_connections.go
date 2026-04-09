@@ -492,6 +492,10 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		app.notPermitted(w, r)
 		return
 	}
+	if session.ConnectionID != strconv.FormatInt(conn.ID, 10) {
+		app.notPermitted(w, r)
+		return
+	}
 
 	trimmedUpper := strings.TrimSpace(strings.ToUpper(input.SQL))
 	isSelect := strings.HasPrefix(trimmedUpper, "SELECT")

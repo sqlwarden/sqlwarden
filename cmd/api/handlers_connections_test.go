@@ -438,6 +438,45 @@ func TestExecuteQueryExecuteBranch(t *testing.T) {
 	assert.Equal(t, execRes.StatusCode, http.StatusOK)
 }
 
+func TestExecuteQueryRejectsSessionFromDifferentConnection(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "query-cross-conn@example.com", "Query Cross Conn", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Cross Conn WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	connARes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "Conn A", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, connARes.StatusCode, http.StatusCreated)
+	connAID := fmt.Sprintf("%v", connARes.BodyFields["id"])
+
+	connBRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "Conn B", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, connBRes.StatusCode, http.StatusCreated)
+	connBID := fmt.Sprintf("%v", connBRes.BodyFields["id"])
+
+	connectARes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connAID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectARes.StatusCode, http.StatusOK)
+	sessionID := connectARes.BodyFields["session_id"].(string)
+
+	crossReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connBID)+"/query",
+		map[string]any{"sql": "SELECT 1"}, tok)
+	crossReq.Header.Set("X-Warden-Session", sessionID)
+	crossRes := send(t, crossReq, app.routes())
+	assert.Equal(t, crossRes.StatusCode, http.StatusForbidden)
+}
+
 func TestConnectToDatabaseReturns422ForTargetDatabaseError(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
