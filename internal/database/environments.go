@@ -141,14 +141,14 @@ SELECT DISTINCT e.*
 FROM environments e
 WHERE e.workspace_id = ?
   AND (
-    ` + discoveryRoleBindingExists("rb", "rp", "org", "?", environmentDiscoveryPermissionExpr) + `
-    OR ` + discoveryRoleBindingExists("rb2", "rp", "workspace", "?", environmentDiscoveryPermissionExpr) + `
-    OR ` + discoveryRoleBindingExists("rb3", "rp", "environment", "e.id", environmentDiscoveryPermissionExpr) + `
+    ` + discoveryRoleBindingExists("rb", "r", "rp", "org", "?", environmentDiscoveryOrgPermissionExpr) + `
+    OR ` + discoveryRoleBindingExists("rb2", "r2", "rp", "workspace", "?", environmentDiscoveryWorkspacePermissionExpr) + `
+    OR ` + discoveryRoleBindingExists("rb3", "r3", "rp", "environment", "e.id", environmentDiscoveryEnvironmentPermissionExpr) + `
     OR EXISTS (
         SELECT 1
         FROM connections c
         WHERE c.environment_id = e.id
-          AND ` + discoveryRoleBindingExists("rb4", "rp", "connection", "c.id", environmentDiscoveryPermissionExpr) + `
+          AND ` + discoveryRoleBindingExists("rb4", "r4", "rp", "connection", "c.id", environmentDiscoveryConnectionPermissionExpr) + `
     )
   )
 ORDER BY e.name ASC`
@@ -179,14 +179,14 @@ SELECT EXISTS (
     WHERE e.id = ?
       AND e.workspace_id = ?
       AND (
-        ` + discoveryRoleBindingExists("rb", "rp", "org", "?", environmentDiscoveryPermissionExpr) + `
-        OR ` + discoveryRoleBindingExists("rb2", "rp", "workspace", "?", environmentDiscoveryPermissionExpr) + `
-        OR ` + discoveryRoleBindingExists("rb3", "rp", "environment", "e.id", environmentDiscoveryPermissionExpr) + `
+        ` + discoveryRoleBindingExists("rb", "r", "rp", "org", "?", environmentDiscoveryOrgPermissionExpr) + `
+        OR ` + discoveryRoleBindingExists("rb2", "r2", "rp", "workspace", "?", environmentDiscoveryWorkspacePermissionExpr) + `
+        OR ` + discoveryRoleBindingExists("rb3", "r3", "rp", "environment", "e.id", environmentDiscoveryEnvironmentPermissionExpr) + `
         OR EXISTS (
             SELECT 1
             FROM connections c
             WHERE c.environment_id = e.id
-              AND ` + discoveryRoleBindingExists("rb4", "rp", "connection", "c.id", environmentDiscoveryPermissionExpr) + `
+              AND ` + discoveryRoleBindingExists("rb4", "r4", "rp", "connection", "c.id", environmentDiscoveryConnectionPermissionExpr) + `
         )
       )
 )`

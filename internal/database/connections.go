@@ -180,10 +180,10 @@ SELECT DISTINCT c.*
 FROM connections c
 WHERE c.workspace_id = ?
   AND (
-    ` + discoveryRoleBindingExists("rb", "rp", "org", "?", connectionDiscoveryPermissionExpr) + `
-    OR ` + discoveryRoleBindingExists("rb2", "rp", "workspace", "?", connectionDiscoveryPermissionExpr) + `
-    OR ` + discoveryRoleBindingExists("rb4", "rp", "environment", "c.environment_id", connectionDiscoveryPermissionExpr) + `
-    OR ` + discoveryRoleBindingExists("rb3", "rp", "connection", "c.id", connectionDiscoveryPermissionExpr) + `
+    ` + discoveryRoleBindingExists("rb", "r", "rp", "org", "?", connectionDiscoveryPermissionExpr) + `
+    OR ` + discoveryRoleBindingExists("rb2", "r2", "rp", "workspace", "?", connectionDiscoveryPermissionExpr) + `
+    OR ` + discoveryRoleBindingExists("rb4", "r4", "rp", "environment", "c.environment_id", connectionDiscoveryPermissionExpr) + `
+    OR ` + discoveryRoleBindingExists("rb3", "r3", "rp", "connection", "c.id", connectionDiscoveryPermissionExpr) + `
   )
 ORDER BY c.name ASC`
 
@@ -213,10 +213,10 @@ SELECT EXISTS (
     WHERE c.id = ?
       AND c.workspace_id = ?
       AND (
-        ` + discoveryRoleBindingExists("rb", "rp", "org", "?", connectionDiscoveryPermissionExpr) + `
-        OR ` + discoveryRoleBindingExists("rb2", "rp", "workspace", "?", connectionDiscoveryPermissionExpr) + `
-        OR ` + discoveryRoleBindingExists("rb4", "rp", "environment", "c.environment_id", connectionDiscoveryPermissionExpr) + `
-        OR ` + discoveryRoleBindingExists("rb3", "rp", "connection", "c.id", connectionDiscoveryPermissionExpr) + `
+        ` + discoveryRoleBindingExists("rb", "r", "rp", "org", "?", connectionDiscoveryPermissionExpr) + `
+        OR ` + discoveryRoleBindingExists("rb2", "r2", "rp", "workspace", "?", connectionDiscoveryPermissionExpr) + `
+        OR ` + discoveryRoleBindingExists("rb4", "r4", "rp", "environment", "c.environment_id", connectionDiscoveryPermissionExpr) + `
+        OR ` + discoveryRoleBindingExists("rb3", "r3", "rp", "connection", "c.id", connectionDiscoveryPermissionExpr) + `
       )
 )`
 

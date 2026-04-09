@@ -1315,6 +1315,32 @@ func TestListAccessibleWorkspaces_ConnRolePropagatesVisibilityForTeam(t *testing
 	}
 }
 
+func TestListAccessibleWorkspaces_IgnoresInvalidConnectionScopedEnvPermission(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-ws-invalid-conn-env", "Org")
+	ownerID := newAccount(t, db, "owner-ws-invalid-conn-env@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	env, _ := db.InsertEnvironment(context.Background(), ws.ID, "env-a", "")
+	conn, _ := db.InsertConnection(context.Background(), ws.ID, &env.ID, "conn-a", "postgres", "enc", "open")
+
+	userID := newAccount(t, db, "user-ws-invalid-conn-env@example.com")
+	binding := insertTestScopedRoleBinding(t, db, org.ID, &ws.ID, "invalid-conn-env", "connection", []string{access.PermEnvRead}, "account", userID, "connection", conn.ID)
+	_ = binding
+
+	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wss) != 0 {
+		t.Fatalf("expected invalid connection-scoped env permission to be ignored for workspace discovery, got %v", wsIDs(wss))
+	}
+}
+
 func TestListAccessibleEnvironments_ConnPermissionPropagatesVisibility(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
@@ -1389,5 +1415,54 @@ func TestListAccessibleEnvironments_ConnRolePropagatesVisibilityForTeam(t *testi
 	}
 	if !ok {
 		t.Fatal("expected team connection role to propagate environment visibility")
+	}
+}
+
+func TestListAccessibleEnvironments_IgnoresInvalidConnectionScopedEnvPermission(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-env-invalid-conn-env", "Org")
+	ownerID := newAccount(t, db, "owner-env-invalid-conn-env@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	envA, _ := db.InsertEnvironment(context.Background(), ws.ID, "env-a", "")
+	connA, _ := db.InsertConnection(context.Background(), ws.ID, &envA.ID, "conn-a", "postgres", "enc", "open")
+
+	userID := newAccount(t, db, "user-env-invalid-conn-env@example.com")
+	_ = insertTestScopedRoleBinding(t, db, org.ID, &ws.ID, "invalid-conn-env", "connection", []string{access.PermEnvRead}, "account", userID, "connection", connA.ID)
+
+	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 0 {
+		t.Fatalf("expected invalid connection-scoped env permission to be ignored for environment discovery, got %v", envIDs(envs))
+	}
+}
+
+func TestListAccessibleConnections_IgnoresInvalidWorkspaceScopedEnvPermission(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-conn-invalid-ws-env", "Org")
+	ownerID := newAccount(t, db, "owner-conn-invalid-ws-env@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	env, _ := db.InsertEnvironment(context.Background(), ws.ID, "staging", "")
+	_, _ = db.InsertConnection(context.Background(), ws.ID, &env.ID, "db1", "postgres", "enc", "open")
+
+	userID := newAccount(t, db, "user-conn-invalid-ws-env@example.com")
+	_ = insertTestScopedRoleBinding(t, db, org.ID, &ws.ID, "invalid-ws-env", "workspace", []string{access.PermEnvRead}, "account", userID, "workspace", ws.ID)
+
+	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conns) != 0 {
+		t.Fatalf("expected invalid workspace-scoped env permission to be ignored for connection discovery, got %v", connIDs(conns))
 	}
 }
