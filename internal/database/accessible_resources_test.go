@@ -644,7 +644,7 @@ func TestListAccessibleConnections_DirectConnPermBinding(t *testing.T) {
 	db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-dirperm@example.com")
-	grantScopedRole(t, db, e, org.ID, nil, "conn-metadata-c1", "connection", []string{access.PermConnMetadata}, "account", userID, "connection", c1.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, nil, "conn-read-c1", "connection", []string{access.PermConnRead}, "account", userID, "connection", c1.ID, ownerID)
 
 	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
 	if err != nil {

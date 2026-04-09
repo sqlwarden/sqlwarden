@@ -51,7 +51,7 @@ func TestFullWorkflow(t *testing.T) {
 		map[string]any{
 			"name":        "viewer",
 			"scope_type":  "workspace",
-			"permissions": []string{"ws:read", "env:read", "conn:metadata"},
+			"permissions": []string{"ws:read", "env:read", "conn:read"},
 		}, ownerTok), app.routes())
 	assert.Equal(t, roleRes.StatusCode, http.StatusCreated)
 	roleID := fmt.Sprintf("%v", roleRes.BodyFields["id"])

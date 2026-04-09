@@ -486,7 +486,7 @@ func TestCustomRoleAtWorkspaceScope(t *testing.T) {
 	}
 
 	roleID, err := e.CreateRole(ctx, orgID, nil, "ws-viewer", "read-only", "workspace",
-		[]string{access.PermWsRead, access.PermEnvRead, access.PermConnMetadata})
+		[]string{access.PermWsRead, access.PermEnvRead, access.PermConnRead})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -496,7 +496,7 @@ func TestCustomRoleAtWorkspaceScope(t *testing.T) {
 	}
 
 	// Permitted by the custom role.
-	for _, perm := range []string{access.PermWsRead, access.PermEnvRead, access.PermConnMetadata} {
+	for _, perm := range []string{access.PermWsRead, access.PermEnvRead, access.PermConnRead} {
 		if !e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, perm) {
 			t.Errorf("member should have %q via custom ws-viewer role", perm)
 		}
@@ -939,7 +939,7 @@ func TestWsMemberRoleBasicPermissions(t *testing.T) {
 	}
 
 	// Permissions ws:member should have at the workspace level.
-	allowed := []string{access.PermWsRead, access.PermEnvRead, access.PermConnExecute, access.PermQueryExecute}
+	allowed := []string{access.PermWsRead, access.PermEnvRead, access.PermConnRead, access.PermConnDQL}
 	for _, p := range allowed {
 		if !e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, p) {
 			t.Errorf("ws:member role should have %q", p)

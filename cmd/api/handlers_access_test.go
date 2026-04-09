@@ -523,7 +523,7 @@ func TestGetConnectionRequiresAccessibleBinding(t *testing.T) {
 	getBefore := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/connections/"+connID, nil, memberTok), app.routes())
 	assert.Equal(t, getBefore.StatusCode, http.StatusNotFound)
-	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:metadata")
+	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:read")
 
 	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "connection", int64(connRes.BodyFields["id"].(float64)))
 	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
@@ -1066,7 +1066,7 @@ func TestEnvScopedRoleGrantsConnectionListAndConnect(t *testing.T) {
 		"name": "conn-untagged", "driver": "sqlite", "dsn": "file::memory:?cache=shared",
 	}, ownerTok), app.routes())
 
-	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "conn:execute", "conn:read", "conn:metadata", "query:execute")
+	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "conn:read", "conn:dql")
 	res := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, roleID, "account", memberIDInt, "environment", envAID)
 	assert.Equal(t, res.StatusCode, http.StatusNoContent)
 

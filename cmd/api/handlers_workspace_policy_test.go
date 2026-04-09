@@ -305,7 +305,7 @@ func TestCreateWorkspaceRoleByOrgAdmin(t *testing.T) {
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
 		map[string]any{
 			"name":        "analyst",
-			"permissions": []string{"ws:read", "query:read"},
+			"permissions": []string{"ws:read", "conn:dql"},
 		}, adminTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusCreated)
 }
@@ -500,10 +500,18 @@ func TestListWorkspacePermissions(t *testing.T) {
 	// Org-only permissions must NOT appear.
 	for _, p := range perms {
 		pstr := p.(string)
-		if pstr == "org:delete" || pstr == "org:transfer_ownership" || pstr == "ws:create" {
+		if pstr == "org:delete" || pstr == "org:transfer_ownership" || pstr == "ws:create" || pstr == "query:execute" || pstr == "job:read" || pstr == "file:read" || pstr == "conn:metadata" {
 			t.Errorf("org-only permission %q should not appear in workspace permissions", pstr)
 		}
 	}
+
+	seen := map[string]bool{}
+	for _, p := range perms {
+		seen[p.(string)] = true
+	}
+	assert.Equal(t, seen["conn:dql"], true)
+	assert.Equal(t, seen["conn:dml"], true)
+	assert.Equal(t, seen["conn:ddl"], true)
 }
 
 func TestListWorkspacePermissionsAccessibleByWsMember(t *testing.T) {

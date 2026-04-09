@@ -17,6 +17,15 @@ import (
 	"github.com/sqlwarden/internal/validator"
 )
 
+type queryClass string
+
+const (
+	queryClassUnknown queryClass = "unknown"
+	queryClassDQL     queryClass = "dql"
+	queryClassDML     queryClass = "dml"
+	queryClassDDL     queryClass = "ddl"
+)
+
 func (app *application) validateConnectionEnvironment(r *http.Request, workspaceID int64, envID *int64) (*int64, bool, error) {
 	if envID == nil {
 		return nil, true, nil
@@ -170,6 +179,30 @@ func compareConnection(left, right database.Connection, sortBy string) int {
 		return 1
 	}
 	return 0
+}
+
+func classifySQL(sql string) queryClass {
+	normalized := strings.ToUpper(strings.TrimSpace(sql))
+	switch {
+	case strings.Contains(normalized, "CREATE "), strings.Contains(normalized, "ALTER "), strings.Contains(normalized, "DROP "), strings.Contains(normalized, "TRUNCATE "), strings.Contains(normalized, "RENAME "):
+		return queryClassDDL
+	case strings.Contains(normalized, "INSERT "), strings.Contains(normalized, "UPDATE "), strings.Contains(normalized, "DELETE "), strings.Contains(normalized, "MERGE "), strings.Contains(normalized, "UPSERT "):
+		return queryClassDML
+	case strings.Contains(normalized, "SELECT "), strings.Contains(normalized, "SHOW "), strings.Contains(normalized, "DESCRIBE "), strings.Contains(normalized, "EXPLAIN "), strings.HasPrefix(normalized, "WITH "):
+		return queryClassDQL
+	default:
+		return queryClassUnknown
+	}
+}
+
+func (app *application) hasAnyConnectionRuntimePermission(r *http.Request, orgID int64, ownerType string, connectionID int64, permissions ...string) bool {
+	account := contextGetAccount(r)
+	for _, permission := range permissions {
+		if app.enforcer.Can(r.Context(), account.ID, orgID, ownerType, "connection", connectionID, permission) {
+			return true
+		}
+	}
+	return false
 }
 
 func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
@@ -424,10 +457,11 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 	conn := contextGetConnection(r)
 	ws := contextGetWorkspace(r)
 
-	allowed := app.enforcer.Can(r.Context(),
-		account.ID, org.ID,
-		ws.OwnerType, "connection", conn.ID,
+	allowed := app.hasAnyConnectionRuntimePermission(r, org.ID, ws.OwnerType, conn.ID,
 		access.PermConnExecute,
+		access.PermConnDQL,
+		access.PermConnDML,
+		access.PermConnDDL,
 	)
 	if !allowed {
 		app.notPermitted(w, r)
@@ -514,20 +548,23 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trimmedUpper := strings.TrimSpace(strings.ToUpper(input.SQL))
-	isSelect := strings.HasPrefix(trimmedUpper, "SELECT")
+	hasBroadExecute := app.enforcer.Can(r.Context(),
+		account.ID, org.ID,
+		ws.OwnerType, "connection", conn.ID,
+		access.PermConnExecute,
+	)
+	queryKind := classifySQL(input.SQL)
 
-	if isSelect {
-		allowed := app.enforcer.Can(r.Context(),
+	switch queryKind {
+	case queryClassDQL:
+		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
 			ws.OwnerType, "connection", conn.ID,
-			access.PermQueryExecute,
-		)
-		if !allowed {
+			access.PermConnDQL,
+		) {
 			app.notPermitted(w, r)
 			return
 		}
-
 		rs, err := session.Query(r.Context(), input.SQL)
 		if err != nil {
 			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
@@ -538,23 +575,53 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			app.serverError(w, r, err)
 		}
-	} else {
-		allowed := app.enforcer.Can(r.Context(),
+	case queryClassDML:
+		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
 			ws.OwnerType, "connection", conn.ID,
-			access.PermConnExecute,
-		)
-		if !allowed {
+			access.PermConnDML,
+		) {
 			app.notPermitted(w, r)
 			return
 		}
-
 		rs, err := session.Execute(r.Context(), input.SQL)
 		if err != nil {
 			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 			return
 		}
 
+		err = response.JSON(w, http.StatusOK, rs)
+		if err != nil {
+			app.serverError(w, r, err)
+		}
+	case queryClassDDL:
+		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
+			account.ID, org.ID,
+			ws.OwnerType, "connection", conn.ID,
+			access.PermConnDDL,
+		) {
+			app.notPermitted(w, r)
+			return
+		}
+		rs, err := session.Execute(r.Context(), input.SQL)
+		if err != nil {
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
+			return
+		}
+		err = response.JSON(w, http.StatusOK, rs)
+		if err != nil {
+			app.serverError(w, r, err)
+		}
+	default:
+		if !hasBroadExecute {
+			app.notPermitted(w, r)
+			return
+		}
+		rs, err := session.Execute(r.Context(), input.SQL)
+		if err != nil {
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
+			return
+		}
 		err = response.JSON(w, http.StatusOK, rs)
 		if err != nil {
 			app.serverError(w, r, err)

@@ -615,6 +615,121 @@ func TestExecuteQueryRejectsSessionFromDifferentConnection(t *testing.T) {
 	assert.Equal(t, crossRes.StatusCode, http.StatusForbidden)
 }
 
+func TestConnectionRuntimePermissionClasses(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, org := seedOrgOwner(t, app, "conn-perm-owner@example.com", "Conn Perm Owner", "Conn Perm Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Conn Perm WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	wsID := strconv.FormatInt(ws.ID, 10)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "PermConn", "driver": "sqlite", "dsn": "file::memory:?cache=shared"}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+	connIDInt, _ := strconv.ParseInt(connID, 10, 64)
+
+	ownerConnectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, ownerTok), app.routes())
+	assert.Equal(t, ownerConnectRes.StatusCode, http.StatusOK)
+	ownerSessionID := ownerConnectRes.BodyFields["session_id"].(string)
+
+	createTableReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "CREATE TABLE t (id INTEGER)"}, ownerTok)
+	createTableReq.Header.Set("X-Warden-Session", ownerSessionID)
+	assert.Equal(t, send(t, createTableReq, app.routes()).StatusCode, http.StatusOK)
+
+	insertReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "INSERT INTO t (id) VALUES (1)"}, ownerTok)
+	insertReq.Header.Set("X-Warden-Session", ownerSessionID)
+	assert.Equal(t, send(t, insertReq, app.routes()).StatusCode, http.StatusOK)
+
+	mkMember := func(email, name string, permissions ...string) (string, string) {
+		member, tok := seedAccountWithToken(t, app, email, name)
+		if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+			t.Fatal(err)
+		}
+		roleID := createRoleForTest(t, app, org.ID, nil, "connection", permissions...)
+		res := grantWorkspacePolicyRole(t, app, ownerTok, org.Slug, wsID, roleID, "account", member.ID, "connection", connIDInt)
+		assert.Equal(t, res.StatusCode, http.StatusNoContent)
+		return strconv.FormatInt(member.ID, 10), tok
+	}
+
+	_, readTok := mkMember("conn-perm-read@example.com", "Conn Perm Read", "conn:read")
+	_, dqlTok := mkMember("conn-perm-dql@example.com", "Conn Perm DQL", "conn:dql")
+	_, dmlTok := mkMember("conn-perm-dml@example.com", "Conn Perm DML", "conn:dml")
+	_, ddlTok := mkMember("conn-perm-ddl@example.com", "Conn Perm DDL", "conn:ddl")
+	_, execTok := mkMember("conn-perm-exec@example.com", "Conn Perm Exec", "conn:execute")
+
+	readConnectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, readTok), app.routes())
+	assert.Equal(t, readConnectRes.StatusCode, http.StatusForbidden)
+
+	connectAndSession := func(tok string) string {
+		res := send(t, newAuthRequest(t, http.MethodPost,
+			orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, tok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusOK)
+		return res.BodyFields["session_id"].(string)
+	}
+
+	dqlSession := connectAndSession(dqlTok)
+	dmlSession := connectAndSession(dmlTok)
+	ddlSession := connectAndSession(ddlTok)
+	execSession := connectAndSession(execTok)
+
+	dqlSelectReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "SELECT 1"}, dqlTok)
+	dqlSelectReq.Header.Set("X-Warden-Session", dqlSession)
+	assert.Equal(t, send(t, dqlSelectReq, app.routes()).StatusCode, http.StatusOK)
+
+	dqlUpdateReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "UPDATE t SET id = 2"}, dqlTok)
+	dqlUpdateReq.Header.Set("X-Warden-Session", dqlSession)
+	assert.Equal(t, send(t, dqlUpdateReq, app.routes()).StatusCode, http.StatusForbidden)
+
+	dmlUpdateReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "UPDATE t SET id = 3"}, dmlTok)
+	dmlUpdateReq.Header.Set("X-Warden-Session", dmlSession)
+	assert.Equal(t, send(t, dmlUpdateReq, app.routes()).StatusCode, http.StatusOK)
+
+	dmlSelectReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "SELECT 1"}, dmlTok)
+	dmlSelectReq.Header.Set("X-Warden-Session", dmlSession)
+	assert.Equal(t, send(t, dmlSelectReq, app.routes()).StatusCode, http.StatusForbidden)
+
+	ddlCreateReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "CREATE TABLE ddl_only (id INTEGER)"}, ddlTok)
+	ddlCreateReq.Header.Set("X-Warden-Session", ddlSession)
+	assert.Equal(t, send(t, ddlCreateReq, app.routes()).StatusCode, http.StatusOK)
+
+	ddlSelectReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "SELECT 1"}, ddlTok)
+	ddlSelectReq.Header.Set("X-Warden-Session", ddlSession)
+	assert.Equal(t, send(t, ddlSelectReq, app.routes()).StatusCode, http.StatusForbidden)
+
+	execSelectReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "SELECT 1"}, execTok)
+	execSelectReq.Header.Set("X-Warden-Session", execSession)
+	assert.Equal(t, send(t, execSelectReq, app.routes()).StatusCode, http.StatusOK)
+
+	execDDLReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "CREATE TABLE exec_only (id INTEGER)"}, execTok)
+	execDDLReq.Header.Set("X-Warden-Session", execSession)
+	assert.Equal(t, send(t, execDDLReq, app.routes()).StatusCode, http.StatusOK)
+}
+
 func TestConnectToDatabaseReturns422ForTargetDatabaseError(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

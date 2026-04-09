@@ -27,7 +27,7 @@ func TestRoleLifecycle(t *testing.T) {
 		map[string]any{
 			"name":        "viewer",
 			"scope_type":  "workspace",
-			"permissions": []string{"ws:read", "env:read", "conn:metadata"},
+			"permissions": []string{"ws:read", "env:read", "conn:read"},
 		}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 	assert.Equal(t, createRes.BodyFields["name"].(string), "viewer")
@@ -94,6 +94,30 @@ func TestListPermissions(t *testing.T) {
 	_, hasScopeMap := res.BodyFields["scope_map"]
 	assert.True(t, hasPerms)
 	assert.True(t, hasScopeMap)
+
+	perms := res.BodyFields["permissions"].([]any)
+	scopeMap := res.BodyFields["scope_map"].(map[string]any)
+	permSet := map[string]bool{}
+	for _, perm := range perms {
+		permSet[perm.(string)] = true
+	}
+	assert.Equal(t, permSet["conn:dql"], true)
+	assert.Equal(t, permSet["conn:dml"], true)
+	assert.Equal(t, permSet["conn:ddl"], true)
+	assert.Equal(t, permSet["query:execute"], false)
+	assert.Equal(t, permSet["job:read"], false)
+	assert.Equal(t, permSet["file:read"], false)
+	assert.Equal(t, permSet["conn:metadata"], false)
+
+	connScope := scopeMap["connection"].([]any)
+	connPerms := map[string]bool{}
+	for _, perm := range connScope {
+		connPerms[perm.(string)] = true
+	}
+	assert.Equal(t, connPerms["conn:dql"], true)
+	assert.Equal(t, connPerms["conn:dml"], true)
+	assert.Equal(t, connPerms["conn:ddl"], true)
+	assert.Equal(t, connPerms["query:execute"], false)
 }
 
 func TestDeleteBuiltinRoleForbidden(t *testing.T) {

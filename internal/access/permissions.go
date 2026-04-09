@@ -20,27 +20,14 @@ const (
 	PermEnvDelete = "env:delete"
 	PermEnvDeploy = "env:deploy"
 
-	PermConnMetadata = "conn:metadata"
-	PermConnRead     = "conn:read"
-	PermConnWrite    = "conn:write"
-	PermConnCreate   = "conn:create"
-	PermConnDelete   = "conn:delete"
-	PermConnExecute  = "conn:execute"
-
-	PermQueryRead    = "query:read"
-	PermQueryWrite   = "query:write"
-	PermQueryDelete  = "query:delete"
-	PermQueryExecute = "query:execute"
-	PermQueryShare   = "query:share"
-
-	PermJobRead    = "job:read"
-	PermJobWrite   = "job:write"
-	PermJobDelete  = "job:delete"
-	PermJobExecute = "job:execute"
-
-	PermFileRead   = "file:read"
-	PermFileWrite  = "file:write"
-	PermFileDelete = "file:delete"
+	PermConnRead    = "conn:read"
+	PermConnWrite   = "conn:write"
+	PermConnCreate  = "conn:create"
+	PermConnDelete  = "conn:delete"
+	PermConnExecute = "conn:execute"
+	PermConnDQL     = "conn:dql"
+	PermConnDML     = "conn:dml"
+	PermConnDDL     = "conn:ddl"
 
 	PermPolicyRead   = "policy:read"
 	PermPolicyModify = "policy:modify"
@@ -53,29 +40,25 @@ var ScopePermissions = map[string][]string{
 		PermOrgAssignRoles, PermOrgTransferOwnership,
 		PermWsRead, PermWsWrite, PermWsCreate, PermWsDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
-		PermConnMetadata, PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
-		PermQueryRead, PermQueryWrite, PermQueryDelete, PermQueryExecute, PermQueryShare,
-		PermJobRead, PermJobWrite, PermJobDelete, PermJobExecute,
-		PermFileRead, PermFileWrite, PermFileDelete,
+		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnDQL, PermConnDML, PermConnDDL,
 		PermPolicyRead, PermPolicyModify,
 	},
 	"workspace": {
 		PermWsRead, PermWsWrite,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
-		PermConnMetadata, PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
-		PermQueryRead, PermQueryWrite, PermQueryDelete, PermQueryExecute, PermQueryShare,
-		PermJobRead, PermJobWrite, PermJobDelete, PermJobExecute,
-		PermFileRead, PermFileWrite, PermFileDelete,
+		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnDQL, PermConnDML, PermConnDDL,
 		PermPolicyRead, PermPolicyModify,
 	},
 	"environment": {
 		PermEnvRead, PermEnvWrite, PermEnvDelete, PermEnvDeploy,
-		PermConnMetadata, PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
-		PermQueryRead, PermQueryWrite, PermQueryDelete, PermQueryExecute, PermQueryShare,
+		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnDQL, PermConnDML, PermConnDDL,
 	},
 	"connection": {
-		PermConnMetadata, PermConnRead, PermConnWrite, PermConnDelete, PermConnExecute,
-		PermQueryRead, PermQueryWrite, PermQueryDelete, PermQueryExecute, PermQueryShare,
+		PermConnRead, PermConnWrite, PermConnDelete, PermConnExecute,
+		PermConnDQL, PermConnDML, PermConnDDL,
 	},
 }
 
@@ -88,10 +71,8 @@ var OrgBuiltinRoles = map[string][]string{
 		PermOrgRead, PermOrgWrite, PermOrgInvite, PermOrgAssignRoles,
 		PermWsCreate, PermWsDelete, PermWsRead, PermWsWrite,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
-		PermConnMetadata, PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
-		PermQueryRead, PermQueryWrite, PermQueryDelete, PermQueryExecute, PermQueryShare,
-		PermJobRead, PermJobWrite, PermJobDelete, PermJobExecute,
-		PermFileRead, PermFileWrite, PermFileDelete,
+		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnDQL, PermConnDML, PermConnDDL,
 		PermPolicyRead, PermPolicyModify,
 	},
 }
@@ -102,19 +83,14 @@ var WorkspaceBuiltinRoles = map[string][]string{
 	"ws:admin": {
 		PermWsRead, PermWsWrite,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
-		PermConnMetadata, PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
-		PermQueryRead, PermQueryWrite, PermQueryDelete, PermQueryExecute, PermQueryShare,
-		PermJobRead, PermJobWrite, PermJobDelete, PermJobExecute,
-		PermFileRead, PermFileWrite, PermFileDelete,
+		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnDQL, PermConnDML, PermConnDDL,
 		PermPolicyRead, PermPolicyModify,
 	},
 	"ws:member": {
 		PermWsRead,
 		PermEnvRead,
-		PermConnMetadata, PermConnRead, PermConnExecute,
-		PermQueryRead, PermQueryExecute,
-		PermJobRead, PermJobExecute,
-		PermFileRead,
+		PermConnRead, PermConnDQL,
 	},
 }
 
