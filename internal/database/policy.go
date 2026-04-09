@@ -79,12 +79,14 @@ type WorkspacePolicyListItem struct {
 	ResourceID   int64     `json:"resource_id"`
 	ResourceType string    `json:"resource_type"`
 	ResourceName string    `json:"resource_name"`
-	Permission   string    `json:"permission,omitempty"`
 	RoleID       int64     `json:"role_id,omitempty"`
 	RoleName     string    `json:"role_name,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
+}
 
-	RolePermissions []string `json:"-"`
+type workspacePolicyListRow struct {
+	item            WorkspacePolicyListItem
+	rolePermissions []string
 }
 
 func (db *DB) GetRoleBinding(ctx context.Context, id, orgID int64) (RoleBinding, bool, error) {
@@ -142,23 +144,24 @@ func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspac
 		return response.Paginated[WorkspacePolicyListItem]{}, err
 	}
 
-	items, err := db.policyListItems(ctx, params.OrgID, roleBindings)
+	rows, err := db.policyListItems(ctx, params.OrgID, roleBindings)
 	if err != nil {
 		return response.Paginated[WorkspacePolicyListItem]{}, err
 	}
 
-	filtered := make([]WorkspacePolicyListItem, 0, len(items))
+	filtered := make([]workspacePolicyListRow, 0, len(rows))
 	search := strings.ToLower(strings.TrimSpace(params.Search))
-	for _, item := range items {
+	for _, row := range rows {
+		item := row.item
 		if params.SubjectID > 0 && item.SubjectID != params.SubjectID {
 			continue
 		}
 		if params.SubjectType != "" && item.SubjectType != params.SubjectType {
 			continue
 		}
-		if params.Permission != "" && item.Permission != params.Permission {
+		if params.Permission != "" {
 			matched := false
-			for _, permission := range item.RolePermissions {
+			for _, permission := range row.rolePermissions {
 				if permission == params.Permission {
 					matched = true
 					break
@@ -179,18 +182,17 @@ func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspac
 				item.SubjectName,
 				item.ResourceName,
 				item.RoleName,
-				item.Permission,
-				strings.Join(item.RolePermissions, " "),
+				strings.Join(row.rolePermissions, " "),
 			}, " "))
 			if !strings.Contains(haystack, search) {
 				continue
 			}
 		}
-		filtered = append(filtered, item)
+		filtered = append(filtered, row)
 	}
 
 	sort.Slice(filtered, func(i, j int) bool {
-		cmp := compareWorkspacePolicyItem(filtered[i], filtered[j], params.Sort)
+		cmp := compareWorkspacePolicyItem(filtered[i].item, filtered[j].item, params.Sort)
 		if params.Order == "asc" {
 			return cmp < 0
 		}
@@ -207,8 +209,13 @@ func (db *DB) ListWorkspacePoliciesPage(ctx context.Context, params ListWorkspac
 		end = total
 	}
 
+	items := make([]WorkspacePolicyListItem, 0, end-start)
+	for _, row := range filtered[start:end] {
+		items = append(items, row.item)
+	}
+
 	return response.Paginated[WorkspacePolicyListItem]{
-		Items:    filtered[start:end],
+		Items:    items,
 		Page:     params.Page,
 		PageSize: params.PageSize,
 		Total:    total,
@@ -223,23 +230,24 @@ func (db *DB) ListOrgPoliciesPage(ctx context.Context, params ListOrgPoliciesPar
 		return response.Paginated[WorkspacePolicyListItem]{}, err
 	}
 
-	items, err := db.policyListItems(ctx, params.OrgID, roleBindings)
+	rows, err := db.policyListItems(ctx, params.OrgID, roleBindings)
 	if err != nil {
 		return response.Paginated[WorkspacePolicyListItem]{}, err
 	}
 
-	filtered := make([]WorkspacePolicyListItem, 0, len(items))
+	filtered := make([]workspacePolicyListRow, 0, len(rows))
 	search := strings.ToLower(strings.TrimSpace(params.Search))
-	for _, item := range items {
+	for _, row := range rows {
+		item := row.item
 		if params.SubjectID > 0 && item.SubjectID != params.SubjectID {
 			continue
 		}
 		if params.SubjectType != "" && item.SubjectType != params.SubjectType {
 			continue
 		}
-		if params.Permission != "" && item.Permission != params.Permission {
+		if params.Permission != "" {
 			matched := false
-			for _, permission := range item.RolePermissions {
+			for _, permission := range row.rolePermissions {
 				if permission == params.Permission {
 					matched = true
 					break
@@ -254,18 +262,17 @@ func (db *DB) ListOrgPoliciesPage(ctx context.Context, params ListOrgPoliciesPar
 				item.SubjectName,
 				item.ResourceName,
 				item.RoleName,
-				item.Permission,
-				strings.Join(item.RolePermissions, " "),
+				strings.Join(row.rolePermissions, " "),
 			}, " "))
 			if !strings.Contains(haystack, search) {
 				continue
 			}
 		}
-		filtered = append(filtered, item)
+		filtered = append(filtered, row)
 	}
 
 	sort.Slice(filtered, func(i, j int) bool {
-		cmp := compareWorkspacePolicyItem(filtered[i], filtered[j], params.Sort)
+		cmp := compareWorkspacePolicyItem(filtered[i].item, filtered[j].item, params.Sort)
 		if params.Order == "asc" {
 			return cmp < 0
 		}
@@ -282,27 +289,32 @@ func (db *DB) ListOrgPoliciesPage(ctx context.Context, params ListOrgPoliciesPar
 		end = total
 	}
 
+	items := make([]WorkspacePolicyListItem, 0, end-start)
+	for _, row := range filtered[start:end] {
+		items = append(items, row.item)
+	}
+
 	return response.Paginated[WorkspacePolicyListItem]{
-		Items:    filtered[start:end],
+		Items:    items,
 		Page:     params.Page,
 		PageSize: params.PageSize,
 		Total:    total,
 	}, nil
 }
 
-func (db *DB) policyListItems(ctx context.Context, orgID int64, roleBindings []RoleBinding) ([]WorkspacePolicyListItem, error) {
-	items := make([]WorkspacePolicyListItem, 0, len(roleBindings))
+func (db *DB) policyListItems(ctx context.Context, orgID int64, roleBindings []RoleBinding) ([]workspacePolicyListRow, error) {
+	items := make([]workspacePolicyListRow, 0, len(roleBindings))
 	for _, rb := range roleBindings {
-		item, err := db.roleBindingListItem(ctx, orgID, rb)
+		item, rolePermissions, err := db.roleBindingListItem(ctx, orgID, rb)
 		if err != nil {
 			return nil, err
 		}
-		items = append(items, item)
+		items = append(items, workspacePolicyListRow{item: item, rolePermissions: rolePermissions})
 	}
 	return items, nil
 }
 
-func (db *DB) roleBindingListItem(ctx context.Context, orgID int64, binding RoleBinding) (WorkspacePolicyListItem, error) {
+func (db *DB) roleBindingListItem(ctx context.Context, orgID int64, binding RoleBinding) (WorkspacePolicyListItem, []string, error) {
 	item := WorkspacePolicyListItem{
 		BindingKind:  "role",
 		BindingID:    binding.ID,
@@ -316,17 +328,18 @@ func (db *DB) roleBindingListItem(ctx context.Context, orgID int64, binding Role
 
 	role, found, err := db.GetRole(ctx, binding.RoleID, orgID)
 	if err != nil {
-		return WorkspacePolicyListItem{}, err
+		return WorkspacePolicyListItem{}, nil, err
 	}
+	var rolePermissions []string
 	if found {
 		item.RoleName = role.Name
-		item.RolePermissions = append(item.RolePermissions, role.Permissions...)
+		rolePermissions = append(rolePermissions, role.Permissions...)
 	}
 
 	if err := db.populatePolicyNames(ctx, &item); err != nil {
-		return WorkspacePolicyListItem{}, err
+		return WorkspacePolicyListItem{}, nil, err
 	}
-	return item, nil
+	return item, rolePermissions, nil
 }
 
 func (db *DB) populatePolicyNames(ctx context.Context, item *WorkspacePolicyListItem) error {
@@ -398,7 +411,7 @@ func normalizeOrgPolicyParams(params ListOrgPoliciesParams) ListOrgPoliciesParam
 		params.Sort = "created_at"
 	}
 	switch params.Sort {
-	case "subject_name", "resource_name", "permission", "created_at":
+	case "subject_name", "resource_name", "created_at":
 	default:
 		params.Sort = "created_at"
 	}
@@ -427,7 +440,7 @@ func normalizeWorkspacePolicyParams(params ListWorkspacePoliciesParams) ListWork
 		params.Sort = "created_at"
 	}
 	switch params.Sort {
-	case "subject_name", "resource_name", "permission", "created_at":
+	case "subject_name", "resource_name", "created_at":
 	default:
 		params.Sort = "created_at"
 	}
@@ -458,18 +471,6 @@ func compareWorkspacePolicyItem(left, right WorkspacePolicyListItem, sortBy stri
 	case "resource_name":
 		if left.ResourceName != right.ResourceName {
 			return strings.Compare(left.ResourceName, right.ResourceName)
-		}
-	case "permission":
-		leftValue := left.Permission
-		if leftValue == "" {
-			leftValue = left.RoleName
-		}
-		rightValue := right.Permission
-		if rightValue == "" {
-			rightValue = right.RoleName
-		}
-		if leftValue != rightValue {
-			return strings.Compare(leftValue, rightValue)
 		}
 	default:
 		if !left.CreatedAt.Equal(right.CreatedAt) {

@@ -210,7 +210,6 @@ func (app *application) listWorkspacePolicies(w http.ResponseWriter, r *http.Req
 		"created_at":    "created_at",
 		"subject_name":  "subject_name",
 		"resource_name": "resource_name",
-		"permission":    "permission",
 	})
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))

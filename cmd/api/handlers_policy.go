@@ -185,7 +185,6 @@ func (app *application) listOrgPolicies(w http.ResponseWriter, r *http.Request) 
 	q, errs := readListQuery(r.URL.Query(), map[string]string{
 		"created_at":   "created_at",
 		"subject_name": "subject_name",
-		"permission":   "permission",
 	})
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
