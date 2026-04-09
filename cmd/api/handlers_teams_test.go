@@ -213,6 +213,39 @@ func TestTeamMemberManagement(t *testing.T) {
 	_ = ownerID
 }
 
+func TestAddTeamMemberRejectsNonOrgMember(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, ownerTok, slug := registerAndLogin(t, app, "tm-nonmember-owner@example.com", "TM Nonmember Owner", "securepass99")
+	memberID, _, _ := registerAndLogin(t, app, "tm-nonmember-target@example.com", "TM Nonmember Target", "securepass99")
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", map[string]any{
+		"slug": "ops",
+		"name": "Operations",
+	}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	memberIDInt, _ := strconv.ParseInt(memberID, 10, 64)
+	addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams/ops/members", map[string]any{
+		"account_id": memberIDInt,
+	}, ownerTok), app.routes())
+	assert.Equal(t, addRes.StatusCode, http.StatusNotFound)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams/ops/members", nil, ownerTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var members struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(listRes.BodyBytes, &members); err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, members.Total, 0)
+	assert.Equal(t, len(members.Items), 0)
+}
+
 func TestListTeamMembers_SupportsPaginationAndSort(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

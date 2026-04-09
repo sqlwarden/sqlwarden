@@ -240,6 +240,16 @@ func (app *application) addTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isMember, err := app.db.IsOrgMember(r.Context(), org.ID, input.AccountID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !isMember {
+		app.notFound(w, r)
+		return
+	}
+
 	err = app.db.AddTeamMember(context.Background(), team.ID, input.AccountID)
 	if err != nil {
 		if isUniqueViolation(err) {
