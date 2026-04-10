@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,7 +12,6 @@ import (
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
-	"github.com/sqlwarden/internal/env"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/version"
 
@@ -79,30 +77,12 @@ type application struct {
 }
 
 func run(logger *slog.Logger) error {
-	var cfg config
+	cfg, showVersion, err := loadConfig(os.Args[1:])
+	if err != nil {
+		return err
+	}
 
-	cfg.baseURL = env.GetString("BASE_URL", "http://localhost:6020")
-	cfg.httpPort = env.GetInt("HTTP_PORT", 6020)
-	cfg.desktopMode = env.GetBool("DESKTOP_MODE", false)
-	cfg.personalSpacesEnabled = env.GetBool("PERSONAL_SPACES_ENABLED", true)
-	cfg.cookie.secretKey = env.GetString("COOKIE_SECRET_KEY", "cpcgzjcote6h5hakeglpbzixhbuog2zc")
-	cfg.db.logQueries = env.GetBool("DB_LOG_QUERIES", false)
-	cfg.db.driver = env.GetString("DB_DRIVER", "sqlite")
-	cfg.db.dsn = env.GetString("DB_DSN", "sqlwarden.db")
-	cfg.db.automigrate = env.GetBool("DB_AUTOMIGRATE", true)
-	cfg.jwt.secretKey = env.GetString("JWT_SECRET_KEY", "fb57i5hiud5mzmykaquqsln5gcmolbac")
-	cfg.notifications.email = env.GetString("NOTIFICATIONS_EMAIL", "")
-	cfg.smtp.host = env.GetString("SMTP_HOST", "example.smtp.host")
-	cfg.smtp.port = env.GetInt("SMTP_PORT", 25)
-	cfg.smtp.username = env.GetString("SMTP_USERNAME", "example_username")
-	cfg.smtp.password = env.GetString("SMTP_PASSWORD", "pa55word")
-	cfg.smtp.from = env.GetString("SMTP_FROM", "Example Name <no_reply@example.org>")
-
-	showVersion := flag.Bool("version", false, "display version and exit")
-
-	flag.Parse()
-
-	if *showVersion {
+	if showVersion {
 		fmt.Printf("version: %s\n", version.Get())
 		return nil
 	}
@@ -124,8 +104,6 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-
-	cfg.encryption.key = env.GetString("ENCRYPTION_KEY", "dev-insecure-key-32byteslong!!")
 
 	enforcer, err := access.New(db.DB)
 	if err != nil {
