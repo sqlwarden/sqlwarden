@@ -114,6 +114,15 @@ export interface SetupStatusResponse {
   configured: boolean
 }
 
+export interface SetupResponse {
+  account: Account
+  access_token: string
+}
+
+export interface AccessTokenResponse {
+  access_token: string
+}
+
 export interface ListQuery {
   page?: number
   page_size?: number
