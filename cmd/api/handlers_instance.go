@@ -123,6 +123,7 @@ func (app *application) listInstanceAdmins(w http.ResponseWriter, r *http.Reques
 	}
 
 	admins, err := app.db.ListInstanceAdminsPage(r.Context(), database.ListInstanceAdminsParams{
+		Search:   q.Search,
 		Sort:     q.Sort,
 		Order:    q.Order,
 		Page:     q.Page,

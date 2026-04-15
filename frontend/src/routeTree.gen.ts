@@ -11,9 +11,15 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as AdministrationRouteImport } from './routes/administration'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdministrationIndexRouteImport } from './routes/administration.index'
+import { Route as AdministrationSettingsRouteImport } from './routes/administration.settings'
+import { Route as AdministrationOverviewRouteImport } from './routes/administration.overview'
+import { Route as AdministrationOrganizationsRouteImport } from './routes/administration.organizations'
+import { Route as AdministrationAdministratorsRouteImport } from './routes/administration.administrators'
 
 const SetupRoute = SetupRouteImport.update({
   id: '/setup',
@@ -23,6 +29,11 @@ const SetupRoute = SetupRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdministrationRoute = AdministrationRouteImport.update({
+  id: '/administration',
+  path: '/administration',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccountRoute = AccountRouteImport.update({
@@ -40,13 +51,46 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdministrationIndexRoute = AdministrationIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdministrationRoute,
+} as any)
+const AdministrationSettingsRoute = AdministrationSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdministrationRoute,
+} as any)
+const AdministrationOverviewRoute = AdministrationOverviewRouteImport.update({
+  id: '/overview',
+  path: '/overview',
+  getParentRoute: () => AdministrationRoute,
+} as any)
+const AdministrationOrganizationsRoute =
+  AdministrationOrganizationsRouteImport.update({
+    id: '/organizations',
+    path: '/organizations',
+    getParentRoute: () => AdministrationRoute,
+  } as any)
+const AdministrationAdministratorsRoute =
+  AdministrationAdministratorsRouteImport.update({
+    id: '/administrators',
+    path: '/administrators',
+    getParentRoute: () => AdministrationRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/account': typeof AccountRoute
+  '/administration': typeof AdministrationRouteWithChildren
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/administration/administrators': typeof AdministrationAdministratorsRoute
+  '/administration/organizations': typeof AdministrationOrganizationsRoute
+  '/administration/overview': typeof AdministrationOverviewRoute
+  '/administration/settings': typeof AdministrationSettingsRoute
+  '/administration/': typeof AdministrationIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,27 +98,72 @@ export interface FileRoutesByTo {
   '/account': typeof AccountRoute
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/administration/administrators': typeof AdministrationAdministratorsRoute
+  '/administration/organizations': typeof AdministrationOrganizationsRoute
+  '/administration/overview': typeof AdministrationOverviewRoute
+  '/administration/settings': typeof AdministrationSettingsRoute
+  '/administration': typeof AdministrationIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/account': typeof AccountRoute
+  '/administration': typeof AdministrationRouteWithChildren
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/administration/administrators': typeof AdministrationAdministratorsRoute
+  '/administration/organizations': typeof AdministrationOrganizationsRoute
+  '/administration/overview': typeof AdministrationOverviewRoute
+  '/administration/settings': typeof AdministrationSettingsRoute
+  '/administration/': typeof AdministrationIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/account' | '/login' | '/setup'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/account'
+    | '/administration'
+    | '/login'
+    | '/setup'
+    | '/administration/administrators'
+    | '/administration/organizations'
+    | '/administration/overview'
+    | '/administration/settings'
+    | '/administration/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/account' | '/login' | '/setup'
-  id: '__root__' | '/' | '/about' | '/account' | '/login' | '/setup'
+  to:
+    | '/'
+    | '/about'
+    | '/account'
+    | '/login'
+    | '/setup'
+    | '/administration/administrators'
+    | '/administration/organizations'
+    | '/administration/overview'
+    | '/administration/settings'
+    | '/administration'
+  id:
+    | '__root__'
+    | '/'
+    | '/about'
+    | '/account'
+    | '/administration'
+    | '/login'
+    | '/setup'
+    | '/administration/administrators'
+    | '/administration/organizations'
+    | '/administration/overview'
+    | '/administration/settings'
+    | '/administration/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   AccountRoute: typeof AccountRoute
+  AdministrationRoute: typeof AdministrationRouteWithChildren
   LoginRoute: typeof LoginRoute
   SetupRoute: typeof SetupRoute
 }
@@ -93,6 +182,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/administration': {
+      id: '/administration'
+      path: '/administration'
+      fullPath: '/administration'
+      preLoaderRoute: typeof AdministrationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/account': {
@@ -116,13 +212,69 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/administration/': {
+      id: '/administration/'
+      path: '/'
+      fullPath: '/administration/'
+      preLoaderRoute: typeof AdministrationIndexRouteImport
+      parentRoute: typeof AdministrationRoute
+    }
+    '/administration/settings': {
+      id: '/administration/settings'
+      path: '/settings'
+      fullPath: '/administration/settings'
+      preLoaderRoute: typeof AdministrationSettingsRouteImport
+      parentRoute: typeof AdministrationRoute
+    }
+    '/administration/overview': {
+      id: '/administration/overview'
+      path: '/overview'
+      fullPath: '/administration/overview'
+      preLoaderRoute: typeof AdministrationOverviewRouteImport
+      parentRoute: typeof AdministrationRoute
+    }
+    '/administration/organizations': {
+      id: '/administration/organizations'
+      path: '/organizations'
+      fullPath: '/administration/organizations'
+      preLoaderRoute: typeof AdministrationOrganizationsRouteImport
+      parentRoute: typeof AdministrationRoute
+    }
+    '/administration/administrators': {
+      id: '/administration/administrators'
+      path: '/administrators'
+      fullPath: '/administration/administrators'
+      preLoaderRoute: typeof AdministrationAdministratorsRouteImport
+      parentRoute: typeof AdministrationRoute
+    }
   }
 }
+
+interface AdministrationRouteChildren {
+  AdministrationAdministratorsRoute: typeof AdministrationAdministratorsRoute
+  AdministrationOrganizationsRoute: typeof AdministrationOrganizationsRoute
+  AdministrationOverviewRoute: typeof AdministrationOverviewRoute
+  AdministrationSettingsRoute: typeof AdministrationSettingsRoute
+  AdministrationIndexRoute: typeof AdministrationIndexRoute
+}
+
+const AdministrationRouteChildren: AdministrationRouteChildren = {
+  AdministrationAdministratorsRoute: AdministrationAdministratorsRoute,
+  AdministrationOrganizationsRoute: AdministrationOrganizationsRoute,
+  AdministrationOverviewRoute: AdministrationOverviewRoute,
+  AdministrationSettingsRoute: AdministrationSettingsRoute,
+  AdministrationIndexRoute: AdministrationIndexRoute,
+}
+
+const AdministrationRouteWithChildren = AdministrationRoute._addFileChildren(
+  AdministrationRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   AccountRoute: AccountRoute,
+  AdministrationRoute: AdministrationRouteWithChildren,
   LoginRoute: LoginRoute,
   SetupRoute: SetupRoute,
 }

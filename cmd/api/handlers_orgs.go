@@ -31,6 +31,7 @@ func (app *application) deleteOrg(w http.ResponseWriter, r *http.Request) {
 func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name string              `json:"name"`
+		Slug string              `json:"slug"`
 		V    validator.Validator `json:"-"`
 	}
 
@@ -40,17 +41,33 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	input.Name = strings.TrimSpace(input.Name)
+	input.Slug = strings.TrimSpace(input.Slug)
+
 	input.V.CheckField(input.Name != "", "name", "name is required")
+
+	slug := input.Slug
+	if slug == "" {
+		slug = slugify(input.Name)
+	}
+
+	input.V.CheckField(slug != "", "slug", "slug is required")
+	if slug != "" {
+		input.V.CheckField(isValidSlug(slug), "slug", "slug may only contain lowercase letters, numbers, and hyphens")
+	}
 
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
 	}
 
-	slug := slugify(input.Name)
 	org, err := app.db.InsertOrg(r.Context(), slug, input.Name)
 	if err != nil {
 		if isUniqueViolation(err) {
+			if input.Slug != "" {
+				app.failedDuplicateField(w, r, "slug", "an organization with this slug already exists")
+				return
+			}
 			app.failedDuplicateField(w, r, "name", "an organization with this name already exists")
 			return
 		}

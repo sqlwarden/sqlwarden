@@ -1,10 +1,12 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
   session: () => ['session'] as const,
+  instanceAdmins: (query?: ListQuery) => ['instance-admins', query ?? {}] as const,
+  instanceOrganizations: (query?: ListQuery) => ['instance-organizations', query ?? {}] as const,
   orgWorkspaces: (slug: string, query?: ListQuery) => ['org-workspaces', slug, query ?? {}] as const,
   myWorkspaces: (query?: ListQuery) => ['my-workspaces', query ?? {}] as const,
   orgEnvironments: (slug: string, workspaceId: string | number, query?: ListQuery) =>
@@ -30,6 +32,22 @@ export function sessionQueryOptions() {
     queryKey: queryKeys.session(),
     queryFn: () => api.get<SessionResponse>('/api/v1/session'),
     staleTime: 60_000,
+  })
+}
+
+export function instanceOrganizationsQueryOptions(query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.instanceOrganizations(query),
+    queryFn: () => api.get<Paginated<Organization>>('/api/v1/instance/orgs', { query }),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function instanceAdminsQueryOptions(query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.instanceAdmins(query),
+    queryFn: () => api.get<Paginated<InstanceAdmin>>('/api/v1/instance/admins', { query }),
+    placeholderData: keepPreviousData,
   })
 }
 

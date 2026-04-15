@@ -103,6 +103,12 @@ export interface InstanceSettings {
   personal_spaces_enabled: boolean
 }
 
+export interface InstanceAdmin {
+  account_id: number
+  created_at: string
+  account?: Account
+}
+
 export interface SessionResponse {
   account: Account
   organizations: Organization[]

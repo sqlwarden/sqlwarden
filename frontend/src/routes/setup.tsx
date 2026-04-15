@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { useSetupStatus } from '#/hooks/use-setup-status'
-import { ApiError, isApiError } from '#/lib/api/errors'
+import { isApiError } from '#/lib/api/errors'
 import { api } from '#/lib/api/client'
 import type { SetupResponse } from '#/lib/api/types'
 import { clearAccessToken } from '#/lib/auth/access-token'
@@ -44,6 +45,13 @@ function SetupPage() {
       clearAccessToken()
       await queryClient.invalidateQueries({ queryKey: queryKeys.setupStatus() })
       await navigate({ to: '/login', replace: true })
+    },
+    onError: (error) => {
+      if (isApiError(error) && error.fieldErrors) {
+        return
+      }
+
+      toast.error(error instanceof Error ? error.message : 'Failed to complete setup')
     },
   })
 
@@ -97,13 +105,12 @@ function SetupPage() {
     if (!validate()) {
       return
     }
-    await mutation.mutateAsync()
+    try {
+      await mutation.mutateAsync()
+    } catch {
+      // handled by mutation onError
+    }
   }
-
-  const globalError =
-    mutation.error instanceof ApiError && !mutation.error.fieldErrors
-      ? mutation.error.message
-      : undefined
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4 py-12">
@@ -172,9 +179,6 @@ function SetupPage() {
               <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
                 This account gets full instance-level access. Organization creation can be skipped later.
               </div>
-
-              {globalError ? <p className="text-sm text-destructive">{globalError}</p> : null}
-
               <Button className="h-10 w-full" disabled={mutation.isPending} size="lg" type="submit">
                 {mutation.isPending ? 'Creating admin account…' : 'Continue to sign in'}
               </Button>

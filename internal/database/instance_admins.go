@@ -17,6 +17,7 @@ type InstanceAdmin struct {
 }
 
 type ListInstanceAdminsParams struct {
+	Search   string
 	Sort     string
 	Order    string
 	Page     int
@@ -61,10 +62,14 @@ func (db *DB) ListInstanceAdminsPage(ctx context.Context, params ListInstanceAdm
 	params = normalizeInstanceAdminListParams(params)
 
 	var admins []InstanceAdmin
-	err := db.NewSelect().Model(&admins).
+	query := db.NewSelect().Model(&admins).
 		Relation("Account").
-		OrderExpr(instanceAdminOrderExpr(params)).
-		Scan(ctx)
+		OrderExpr(instanceAdminOrderExpr(params))
+	if params.Search != "" {
+		search := "%" + params.Search + "%"
+		query = query.Where("(LOWER(account.email) LIKE LOWER(?) OR LOWER(account.name) LIKE LOWER(?))", search, search)
+	}
+	err := query.Scan(ctx)
 	if err != nil {
 		return response.Paginated[InstanceAdmin]{}, err
 	}

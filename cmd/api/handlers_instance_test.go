@@ -148,6 +148,20 @@ func TestCreateOrgAllowedForInstanceAdmin(t *testing.T) {
 	assert.Equal(t, orgRes.BodyFields["name"].(string), "MyOrg")
 }
 
+func TestCreateOrgAllowedForInstanceAdminWithCustomSlug(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	orgRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{
+		"name": "My Org",
+		"slug": "my-org",
+	}, adminTok), app.routes())
+	assert.Equal(t, orgRes.StatusCode, http.StatusCreated)
+	assert.Equal(t, orgRes.BodyFields["slug"].(string), "my-org")
+}
+
 func TestListInstanceAdmins(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -212,6 +226,23 @@ func TestListInstanceAdmins_SupportsPaginationAndSort(t *testing.T) {
 
 	items := listRes.BodyFields["items"].([]any)
 	assert.Equal(t, len(items), 1)
+}
+
+func TestListInstanceAdmins_SupportsSearch(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+	regRes := registerTestUser(t, app, "searchable@example.com", "Searchable User", "securepass99")
+	assert.Equal(t, regRes.StatusCode, http.StatusCreated)
+
+	addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/instance/admins",
+		map[string]any{"email": "searchable@example.com"}, adminTok), app.routes())
+	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/admins?q=searchable", nil, adminTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+	assert.Equal(t, int(listRes.BodyFields["total"].(float64)), 1)
 }
 
 func TestListInstanceAdminsRequiresInstanceAdmin(t *testing.T) {

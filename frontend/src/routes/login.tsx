@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { useSession } from '#/hooks/use-session'
 import { api } from '#/lib/api/client'
 import type { AccessTokenResponse } from '#/lib/api/types'
-import { ApiError, isApiError } from '#/lib/api/errors'
+import { isApiError } from '#/lib/api/errors'
 import { getAccessToken, setAccessToken } from '#/lib/auth/access-token'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
@@ -40,6 +41,13 @@ function LoginPage() {
       setAccessToken(payload.access_token)
       await queryClient.invalidateQueries({ queryKey: queryKeys.session() })
       await navigate({ to: '/account', replace: true })
+    },
+    onError: (error) => {
+      if (isApiError(error) && error.fieldErrors) {
+        return
+      }
+
+      toast.error(error instanceof Error ? error.message : 'Failed to sign in')
     },
   })
 
@@ -78,13 +86,12 @@ function LoginPage() {
     if (!validate()) {
       return
     }
-    await mutation.mutateAsync()
+    try {
+      await mutation.mutateAsync()
+    } catch {
+      // handled by mutation onError
+    }
   }
-
-  const globalError =
-    mutation.error instanceof ApiError && !mutation.error.fieldErrors
-      ? mutation.error.message
-      : undefined
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4 py-12">
@@ -139,9 +146,6 @@ function LoginPage() {
                   }}
                 />
               </Field>
-
-              {globalError ? <p className="text-sm text-destructive">{globalError}</p> : null}
-
               <Button className="h-10 w-full" size="lg" disabled={mutation.isPending} type="submit">
                 {mutation.isPending ? 'Signing in…' : 'Sign in'}
               </Button>

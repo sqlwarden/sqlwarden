@@ -293,6 +293,37 @@ func TestCreateOrgDuplicateName(t *testing.T) {
 	assert.Equal(t, res2.StatusCode, http.StatusUnprocessableEntity)
 }
 
+func TestCreateOrgWithExplicitSlug(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, _ := registerAndLogin(t, app, "custom-org@example.com", "User", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{
+		"name": "Custom Org",
+		"slug": "custom-org",
+	}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+	assert.Equal(t, res.BodyFields["slug"], "custom-org")
+}
+
+func TestCreateOrgDuplicateSlug(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, _ := registerAndLogin(t, app, "dup-slug@example.com", "User", "securepass99")
+
+	res1 := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{
+		"name": "Alpha Org",
+		"slug": "shared-slug",
+	}, tok), app.routes())
+	assert.Equal(t, res1.StatusCode, http.StatusCreated)
+
+	res2 := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{
+		"name": "Beta Org",
+		"slug": "shared-slug",
+	}, tok), app.routes())
+	assert.Equal(t, res2.StatusCode, http.StatusUnprocessableEntity)
+}
+
 func TestUpdateOrganization_IsExplicitlyUnsupported(t *testing.T) {
 	t.Parallel()
 

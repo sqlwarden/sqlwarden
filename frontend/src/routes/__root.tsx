@@ -1,7 +1,10 @@
 import { Outlet, createRootRoute, useRouterState } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import { Toaster } from 'sonner'
+import { LayoutWidthProvider } from '#/components/layout-width-provider'
 import { ThemeProvider } from '#/components/theme-provider'
+import { TooltipProvider } from '#/components/ui/tooltip'
 import Header from '#/components/Header'
 import '../styles.css'
 
@@ -16,12 +19,17 @@ function RootComponent() {
 
   return (
     <ThemeProvider defaultTheme="system" storageKey="theme">
-      <div className="flex min-h-screen flex-col">
-        {!isSetupRoute && !isLoginRoute ? <Header /> : null}
-        <div className="flex-1">
-          <Outlet />
-        </div>
-      </div>
+      <TooltipProvider>
+        <LayoutWidthProvider>
+          <div className="flex min-h-screen flex-col">
+            {!isSetupRoute && !isLoginRoute ? <Header /> : null}
+            <div className="flex-1">
+              <Outlet />
+            </div>
+          </div>
+        </LayoutWidthProvider>
+      </TooltipProvider>
+      <Toaster closeButton position="top-right" theme="system" />
       <TanStackDevtools
         config={{ position: 'bottom-right' }}
         plugins={[

@@ -1,11 +1,13 @@
 import { useMemo } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Briefcase, Building2, LogOut, Settings, User, Wrench } from 'lucide-react'
+import { Briefcase, Building2, LogOut, PanelsLeftRight, Settings, User, Wrench } from 'lucide-react'
 import { useSession } from '#/hooks/use-session'
 import { api } from '#/lib/api/client'
 import { clearAccessToken, getAccessToken } from '#/lib/auth/access-token'
 import { queryKeys } from '#/lib/api/query'
+import { useLayoutWidth } from '#/components/layout-width-provider'
+import { Button } from '#/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +24,7 @@ export default function Header() {
   const queryClient = useQueryClient()
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
+  const { isExpanded, toggleMode } = useLayoutWidth()
 
   const logout = useMutation({
     mutationFn: async () => api.post<void>('/api/v1/auth/logout'),
@@ -41,13 +44,24 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <nav className="container mx-auto flex h-16 items-center justify-between px-4">
+      <nav className={isExpanded ? 'flex h-16 items-center justify-between px-4 sm:px-6' : 'container mx-auto flex h-16 items-center justify-between px-4'}>
         <Link to="/" className="flex items-center gap-2 text-lg font-semibold">
           <span className="h-2 w-2 rounded-full bg-primary" />
           SQLWarden
         </Link>
 
         <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="cursor-pointer"
+            onClick={toggleMode}
+            aria-label={isExpanded ? 'Contract layout width' : 'Expand layout width'}
+            title={isExpanded ? 'Contract layout width' : 'Expand layout width'}
+          >
+            <PanelsLeftRight />
+          </Button>
           <ThemeToggle />
 
           <DropdownMenu>
@@ -70,7 +84,7 @@ export default function Header() {
                 </DropdownMenuLabel>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem disabled>
+              <DropdownMenuItem render={<Link to="/account" />}>
                 <User className="size-4" />
                 Profile
               </DropdownMenuItem>
@@ -85,7 +99,7 @@ export default function Header() {
                 Organizations
               </DropdownMenuItem>
               {session.data?.is_instance_admin ? (
-                <DropdownMenuItem disabled>
+                <DropdownMenuItem render={<Link to="/administration/overview" />}>
                   <Wrench className="size-4" />
                   Administration
                 </DropdownMenuItem>

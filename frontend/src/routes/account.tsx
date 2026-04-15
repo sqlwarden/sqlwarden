@@ -1,7 +1,9 @@
 import { Navigate, createFileRoute } from '@tanstack/react-router'
+import { useLayoutWidth } from '#/components/layout-width-provider'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { useSession } from '#/hooks/use-session'
 import { getAccessToken } from '#/lib/auth/access-token'
+import { cn } from '#/lib/utils'
 import { Badge } from '#/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 
@@ -13,6 +15,7 @@ function AccountPage() {
   const setupStatus = useSetupStatus()
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
+  const { isExpanded } = useLayoutWidth()
 
   if (setupStatus.isLoading) {
     return (
@@ -45,7 +48,12 @@ function AccountPage() {
   const { account, is_instance_admin: isInstanceAdmin, organizations, personal_spaces_enabled: personalSpacesEnabled } = session.data
 
   return (
-    <main className="container mx-auto max-w-3xl px-4 py-12">
+    <main
+      className={cn(
+        'py-12',
+        isExpanded ? 'w-full px-4 sm:px-6' : 'container mx-auto max-w-3xl px-4',
+      )}
+    >
       <div className="space-y-6">
         <div className="space-y-3">
           <Badge variant="outline">Current user</Badge>
