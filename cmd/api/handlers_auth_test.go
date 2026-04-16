@@ -406,7 +406,52 @@ func TestGetAccountOrgs_SupportsPaginationSearchAndSort(t *testing.T) {
 	if payload.Items[0]["name"] != zeta.Name {
 		t.Fatalf("expected org name %q, got %v", zeta.Name, payload.Items[0]["name"])
 	}
+	if payload.Items[0]["member_count"] != float64(1) {
+		t.Fatalf("expected member_count=1, got %v", payload.Items[0]["member_count"])
+	}
+	if payload.Items[0]["team_count"] != float64(0) {
+		t.Fatalf("expected team_count=0, got %v", payload.Items[0]["team_count"])
+	}
 	assert.Equal(t, alpha.Name, "Alpha Team")
+}
+
+func TestGetAccountOrgs_IncludesComputedRole(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	setupInstance(t, app, uniqueEmail(t, "account-orgs-role-admin"), "Admin", "securepass99")
+
+	account, token, org := seedOrgOwner(t, app, uniqueEmail(t, "account-orgs-role"), "Role User", "Role Org")
+
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/account/orgs", nil, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items []struct {
+			ID          int64  `json:"id"`
+			Role        string `json:"role"`
+			MemberCount int    `json:"member_count"`
+			TeamCount   int    `json:"team_count"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(res.BodyBytes, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Items) != 1 {
+		t.Fatalf("expected 1 org, got %d", len(payload.Items))
+	}
+	if payload.Items[0].ID != org.ID {
+		t.Fatalf("expected org id %d, got %d", org.ID, payload.Items[0].ID)
+	}
+	if payload.Items[0].Role != "owner" {
+		t.Fatalf("expected role owner, got %s", payload.Items[0].Role)
+	}
+	if payload.Items[0].MemberCount != 1 {
+		t.Fatalf("expected member_count=1, got %d", payload.Items[0].MemberCount)
+	}
+	if payload.Items[0].TeamCount != 0 {
+		t.Fatalf("expected team_count=0, got %d", payload.Items[0].TeamCount)
+	}
+	_ = account
 }
 
 func TestGetSession_ReturnsStableBootstrapPayload(t *testing.T) {

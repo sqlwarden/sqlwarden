@@ -3,7 +3,16 @@ package database
 import (
 	"context"
 	"testing"
+
+	"github.com/uptrace/bun"
 )
+
+type testRolePermission struct {
+	bun.BaseModel `bun:"table:role_permissions"`
+
+	RoleID     int64  `bun:"role_id"`
+	Permission string `bun:"permission"`
+}
 
 func TestInsertAndGetOrg(t *testing.T) {
 	db := newTestDB(t)
@@ -133,6 +142,81 @@ func TestListAccountOrgsPage_SupportsPaginationSearchAndSort(t *testing.T) {
 	if result.Items[0].Name != "Zeta Labs" {
 		t.Fatalf("expected Zeta Labs, got %s", result.Items[0].Name)
 	}
+	if result.Items[0].MemberCount != 1 {
+		t.Fatalf("expected member_count=1, got %d", result.Items[0].MemberCount)
+	}
+	if result.Items[0].TeamCount != 0 {
+		t.Fatalf("expected team_count=0, got %d", result.Items[0].TeamCount)
+	}
+}
+
+func TestListAccountOrgsPage_IncludesComputedRole(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	pw := "pw"
+	acc, err := db.InsertAccount(ctx, "account-org-role@example.com", "Account Orgs Role", &pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	org, err := db.InsertOrg(ctx, "role-test-org", "Role Test Org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AddOrgMember(ctx, org.ID, acc.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	role := Role{
+		OrgID:      org.ID,
+		Name:       "admin",
+		ScopeType:  "org",
+		IsBuiltin:  true,
+		CreatedAt:  org.CreatedAt,
+		UpdatedAt:  org.UpdatedAt,
+	}
+	if _, err := db.NewInsert().Model(&role).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.NewInsert().Model(&testRolePermission{
+		RoleID:     role.ID,
+		Permission: "org:write",
+	}).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.NewInsert().Model(&RoleBinding{
+		OrgID:        org.ID,
+		SubjectType:  "account",
+		SubjectID:    acc.ID,
+		RoleID:       role.ID,
+		ResourceType: "org",
+		ResourceID:   org.ID,
+		CreatedAt:    org.CreatedAt,
+	}).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := db.ListAccountOrgsPage(ctx, ListAccountOrgsParams{
+		AccountID: acc.ID,
+		Page:      1,
+		PageSize:  10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 org, got %d", len(result.Items))
+	}
+	if result.Items[0].Role != "admin" {
+		t.Fatalf("expected role admin, got %s", result.Items[0].Role)
+	}
+	if result.Items[0].MemberCount != 1 {
+		t.Fatalf("expected member_count=1, got %d", result.Items[0].MemberCount)
+	}
+	if result.Items[0].TeamCount != 0 {
+		t.Fatalf("expected team_count=0, got %d", result.Items[0].TeamCount)
+	}
 }
 
 func TestListOrganizationsPage_SupportsPaginationSearchFilterAndSort(t *testing.T) {
@@ -169,6 +253,12 @@ func TestListOrganizationsPage_SupportsPaginationSearchFilterAndSort(t *testing.
 	}
 	if result.Items[0].Name != "Zeta Labs" {
 		t.Fatalf("expected Zeta Labs, got %s", result.Items[0].Name)
+	}
+	if result.Items[0].MemberCount != 0 {
+		t.Fatalf("expected member_count=0, got %d", result.Items[0].MemberCount)
+	}
+	if result.Items[0].TeamCount != 0 {
+		t.Fatalf("expected team_count=0, got %d", result.Items[0].TeamCount)
 	}
 }
 

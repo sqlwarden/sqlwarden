@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SetupRouteImport } from './routes/setup'
+import { Route as OrganizationsRouteImport } from './routes/organizations'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdministrationRouteImport } from './routes/administration'
 import { Route as AccountRouteImport } from './routes/account'
@@ -20,10 +21,16 @@ import { Route as AdministrationSettingsRouteImport } from './routes/administrat
 import { Route as AdministrationOverviewRouteImport } from './routes/administration.overview'
 import { Route as AdministrationOrganizationsRouteImport } from './routes/administration.organizations'
 import { Route as AdministrationAdministratorsRouteImport } from './routes/administration.administrators'
+import { Route as OrgsOrg_slugWorkspacesRouteImport } from './routes/orgs.$org_slug.workspaces'
 
 const SetupRoute = SetupRouteImport.update({
   id: '/setup',
   path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrganizationsRoute = OrganizationsRouteImport.update({
+  id: '/organizations',
+  path: '/organizations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -78,6 +85,11 @@ const AdministrationAdministratorsRoute =
     path: '/administrators',
     getParentRoute: () => AdministrationRoute,
   } as any)
+const OrgsOrg_slugWorkspacesRoute = OrgsOrg_slugWorkspacesRouteImport.update({
+  id: '/orgs/$org_slug/workspaces',
+  path: '/orgs/$org_slug/workspaces',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -85,24 +97,28 @@ export interface FileRoutesByFullPath {
   '/account': typeof AccountRoute
   '/administration': typeof AdministrationRouteWithChildren
   '/login': typeof LoginRoute
+  '/organizations': typeof OrganizationsRoute
   '/setup': typeof SetupRoute
   '/administration/administrators': typeof AdministrationAdministratorsRoute
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/overview': typeof AdministrationOverviewRoute
   '/administration/settings': typeof AdministrationSettingsRoute
   '/administration/': typeof AdministrationIndexRoute
+  '/orgs/$org_slug/workspaces': typeof OrgsOrg_slugWorkspacesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/account': typeof AccountRoute
   '/login': typeof LoginRoute
+  '/organizations': typeof OrganizationsRoute
   '/setup': typeof SetupRoute
   '/administration/administrators': typeof AdministrationAdministratorsRoute
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/overview': typeof AdministrationOverviewRoute
   '/administration/settings': typeof AdministrationSettingsRoute
   '/administration': typeof AdministrationIndexRoute
+  '/orgs/$org_slug/workspaces': typeof OrgsOrg_slugWorkspacesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -111,12 +127,14 @@ export interface FileRoutesById {
   '/account': typeof AccountRoute
   '/administration': typeof AdministrationRouteWithChildren
   '/login': typeof LoginRoute
+  '/organizations': typeof OrganizationsRoute
   '/setup': typeof SetupRoute
   '/administration/administrators': typeof AdministrationAdministratorsRoute
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/overview': typeof AdministrationOverviewRoute
   '/administration/settings': typeof AdministrationSettingsRoute
   '/administration/': typeof AdministrationIndexRoute
+  '/orgs/$org_slug/workspaces': typeof OrgsOrg_slugWorkspacesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -126,24 +144,28 @@ export interface FileRouteTypes {
     | '/account'
     | '/administration'
     | '/login'
+    | '/organizations'
     | '/setup'
     | '/administration/administrators'
     | '/administration/organizations'
     | '/administration/overview'
     | '/administration/settings'
     | '/administration/'
+    | '/orgs/$org_slug/workspaces'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
     | '/account'
     | '/login'
+    | '/organizations'
     | '/setup'
     | '/administration/administrators'
     | '/administration/organizations'
     | '/administration/overview'
     | '/administration/settings'
     | '/administration'
+    | '/orgs/$org_slug/workspaces'
   id:
     | '__root__'
     | '/'
@@ -151,12 +173,14 @@ export interface FileRouteTypes {
     | '/account'
     | '/administration'
     | '/login'
+    | '/organizations'
     | '/setup'
     | '/administration/administrators'
     | '/administration/organizations'
     | '/administration/overview'
     | '/administration/settings'
     | '/administration/'
+    | '/orgs/$org_slug/workspaces'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -165,7 +189,9 @@ export interface RootRouteChildren {
   AccountRoute: typeof AccountRoute
   AdministrationRoute: typeof AdministrationRouteWithChildren
   LoginRoute: typeof LoginRoute
+  OrganizationsRoute: typeof OrganizationsRoute
   SetupRoute: typeof SetupRoute
+  OrgsOrg_slugWorkspacesRoute: typeof OrgsOrg_slugWorkspacesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -175,6 +201,13 @@ declare module '@tanstack/react-router' {
       path: '/setup'
       fullPath: '/setup'
       preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/organizations': {
+      id: '/organizations'
+      path: '/organizations'
+      fullPath: '/organizations'
+      preLoaderRoute: typeof OrganizationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -247,6 +280,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdministrationAdministratorsRouteImport
       parentRoute: typeof AdministrationRoute
     }
+    '/orgs/$org_slug/workspaces': {
+      id: '/orgs/$org_slug/workspaces'
+      path: '/orgs/$org_slug/workspaces'
+      fullPath: '/orgs/$org_slug/workspaces'
+      preLoaderRoute: typeof OrgsOrg_slugWorkspacesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -276,7 +316,9 @@ const rootRouteChildren: RootRouteChildren = {
   AccountRoute: AccountRoute,
   AdministrationRoute: AdministrationRouteWithChildren,
   LoginRoute: LoginRoute,
+  OrganizationsRoute: OrganizationsRoute,
   SetupRoute: SetupRoute,
+  OrgsOrg_slugWorkspacesRoute: OrgsOrg_slugWorkspacesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -94,7 +94,7 @@ export default function Header() {
                   Workspaces
                 </DropdownMenuItem>
               ) : null}
-              <DropdownMenuItem disabled>
+              <DropdownMenuItem render={<Link to="/organizations" />}>
                 <Building2 className="size-4" />
                 Organizations
               </DropdownMenuItem>

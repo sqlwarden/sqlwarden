@@ -22,6 +22,27 @@ type Organization struct {
 	UpdatedAt time.Time `bun:",notnull"          json:"updated_at"`
 }
 
+type OrganizationListItem struct {
+	ID          int64     `json:"id"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	MemberCount int       `json:"member_count"`
+	TeamCount   int       `json:"team_count"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type AccountOrganizationListItem struct {
+	ID        int64     `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+	Role      string    `json:"role"`
+	MemberCount int     `json:"member_count"`
+	TeamCount   int     `json:"team_count"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type OrgIDPConfig struct {
 	bun.BaseModel `bun:"table:org_idp_configs"`
 
@@ -228,47 +249,87 @@ func (db *DB) GetAccountOrgs(ctx context.Context, accountID int64) ([]Organizati
 	return orgs, err
 }
 
-func (db *DB) ListOrganizationsPage(ctx context.Context, params ListOrganizationsParams) (response.Paginated[Organization], error) {
+func (db *DB) ListOrganizationsPage(ctx context.Context, params ListOrganizationsParams) (response.Paginated[OrganizationListItem], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	params = normalizeOrganizationParams(params)
 
-	query := db.NewSelect().Model((*Organization)(nil))
+	query := `
+SELECT
+	o.id,
+	o.slug,
+	o.name,
+	(SELECT COUNT(*) FROM org_members AS om WHERE om.org_id = o.id) AS member_count,
+	(SELECT COUNT(*) FROM teams AS t WHERE t.org_id = o.id) AS team_count,
+	o.created_at,
+	o.updated_at
+FROM organizations AS o
+WHERE 1 = 1`
+	args := []any{}
 	if params.Search != "" {
 		search := "%" + strings.ToLower(params.Search) + "%"
-		query = query.Where("(LOWER(name) LIKE ? OR LOWER(slug) LIKE ?)", search, search)
+		query += " AND (LOWER(o.name) LIKE ? OR LOWER(o.slug) LIKE ?)"
+		args = append(args, search, search)
 	}
 	if params.Slug != "" {
-		query = query.Where("slug = ?", params.Slug)
+		query += " AND o.slug = ?"
+		args = append(args, params.Slug)
 	}
 
-	var orgs []Organization
-	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", organizationSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx, &orgs)
+	query += fmt.Sprintf(`
+ORDER BY %s %s, o.id %s`, organizationSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))
+
+	var orgs []OrganizationListItem
+	err := db.NewRaw(query, args...).Scan(ctx, &orgs)
 	if err != nil {
-		return response.Paginated[Organization]{}, err
+		return response.Paginated[OrganizationListItem]{}, err
 	}
 	return response.PaginateItems(orgs, params.Page, params.PageSize), nil
 }
 
-func (db *DB) ListAccountOrgsPage(ctx context.Context, params ListAccountOrgsParams) (response.Paginated[Organization], error) {
+func (db *DB) ListAccountOrgsPage(ctx context.Context, params ListAccountOrgsParams) (response.Paginated[AccountOrganizationListItem], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	params = normalizeAccountOrgParams(params)
 
-	query := db.NewSelect().Model((*Organization)(nil)).
-		Join("JOIN org_members AS om ON om.org_id = organization.id").
-		Where("om.account_id = ?", params.AccountID)
+	query := `
+SELECT
+	o.id,
+	o.slug,
+	o.name,
+	COALESCE(MAX(CASE WHEN ro.name IN ('owner', 'admin') THEN ro.name END), 'member') AS role,
+	(SELECT COUNT(*) FROM org_members AS omc WHERE omc.org_id = o.id) AS member_count,
+	(SELECT COUNT(*) FROM teams AS tc WHERE tc.org_id = o.id) AS team_count,
+	o.created_at,
+	o.updated_at
+FROM organizations AS o
+JOIN org_members AS om ON om.org_id = o.id
+LEFT JOIN role_bindings AS rb
+	ON rb.org_id = o.id
+	AND rb.subject_type = 'account'
+	AND rb.subject_id = om.account_id
+	AND rb.resource_type = 'org'
+	AND rb.resource_id = o.id
+LEFT JOIN roles AS ro ON ro.id = rb.role_id
+WHERE om.account_id = ?`
+
+	args := []any{params.AccountID}
 	if params.Search != "" {
 		search := "%" + strings.ToLower(params.Search) + "%"
-		query = query.Where("(LOWER(organization.name) LIKE ? OR LOWER(organization.slug) LIKE ?)", search, search)
+		query += " AND (LOWER(o.name) LIKE ? OR LOWER(o.slug) LIKE ?)"
+		args = append(args, search, search)
 	}
 
-	var orgs []Organization
-	err := query.OrderExpr(fmt.Sprintf("%s %s, organization.id %s", accountOrgSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx, &orgs)
+	query += fmt.Sprintf(`
+GROUP BY o.id, o.slug, o.name, o.created_at, o.updated_at
+ORDER BY %s %s, o.id %s`, accountOrgSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))
+
+	var orgs []AccountOrganizationListItem
+	err := db.NewRaw(query, args...).Scan(ctx, &orgs)
 	if err != nil {
-		return response.Paginated[Organization]{}, err
+		return response.Paginated[AccountOrganizationListItem]{}, err
 	}
 	return response.PaginateItems(orgs, params.Page, params.PageSize), nil
 }
@@ -361,22 +422,22 @@ func orgMemberSortColumn(sort string) string {
 func accountOrgSortColumn(sort string) string {
 	switch sort {
 	case "slug":
-		return "organization.slug"
+		return "o.slug"
 	case "created_at":
-		return "organization.created_at"
+		return "o.created_at"
 	default:
-		return "organization.name"
+		return "o.name"
 	}
 }
 
 func organizationSortColumn(sort string) string {
 	switch sort {
 	case "slug":
-		return "slug"
+		return "o.slug"
 	case "created_at":
-		return "created_at"
+		return "o.created_at"
 	default:
-		return "name"
+		return "o.name"
 	}
 }
 

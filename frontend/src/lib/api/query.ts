@@ -1,10 +1,11 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, AccountOrganization } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
   session: () => ['session'] as const,
+  accountOrganizations: (query?: ListQuery) => ['account-organizations', query ?? {}] as const,
   instanceAdmins: (query?: ListQuery) => ['instance-admins', query ?? {}] as const,
   instanceOrganizations: (query?: ListQuery) => ['instance-organizations', query ?? {}] as const,
   orgWorkspaces: (slug: string, query?: ListQuery) => ['org-workspaces', slug, query ?? {}] as const,
@@ -32,6 +33,14 @@ export function sessionQueryOptions() {
     queryKey: queryKeys.session(),
     queryFn: () => api.get<SessionResponse>('/api/v1/session'),
     staleTime: 60_000,
+  })
+}
+
+export function accountOrganizationsQueryOptions(query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.accountOrganizations(query),
+    queryFn: () => api.get<Paginated<AccountOrganization>>('/api/v1/account/orgs', { query }),
+    placeholderData: keepPreviousData,
   })
 }
 

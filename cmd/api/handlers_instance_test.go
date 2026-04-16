@@ -333,6 +333,12 @@ func TestListOrganizations(t *testing.T) {
 	assert.Equal(t, payload.Total, 1)
 	assert.Equal(t, len(payload.Items), 1)
 	assert.Equal(t, payload.Items[0]["name"], "Zeta Labs")
+	if payload.Items[0]["member_count"] != float64(1) {
+		t.Fatalf("expected member_count=1, got %v", payload.Items[0]["member_count"])
+	}
+	if payload.Items[0]["team_count"] != float64(0) {
+		t.Fatalf("expected team_count=0, got %v", payload.Items[0]["team_count"])
+	}
 }
 
 func TestListOrganizationsRequiresInstanceAdmin(t *testing.T) {

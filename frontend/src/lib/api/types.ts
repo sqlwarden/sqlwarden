@@ -19,8 +19,16 @@ export interface Organization {
   id: number
   slug: string
   name: string
+  member_count?: number
+  team_count?: number
   created_at: string
   updated_at: string
+}
+
+export interface AccountOrganization extends Organization {
+  role: 'owner' | 'admin' | 'member'
+  member_count: number
+  team_count: number
 }
 
 export interface Workspace {
