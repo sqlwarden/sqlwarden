@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Briefcase, LogOut, PanelsLeftRight, Settings, User } from 'lucide-react'
+import { HugeiconsIcon } from "@hugeicons/react"
+import { Briefcase01Icon, Logout01Icon, PanelLeftIcon, Settings01Icon, User02Icon } from "@hugeicons/core-free-icons"
 import { useSession } from '#/hooks/use-session'
 import { api } from '#/lib/api/client'
 import { clearAccessToken, getAccessToken } from '#/lib/auth/access-token'
@@ -43,7 +44,7 @@ export default function Header() {
   }, [session.data?.account.name])
 
   return (
-    <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-50 border-b bg-sidebar backdrop-blur">
       <nav className={isExpanded ? 'flex h-16 items-center justify-between px-4 sm:px-6' : 'container mx-auto flex h-16 items-center justify-between px-4'}>
         <Link to="/" className="flex items-center gap-2 text-lg font-semibold">
           <span className="h-2 w-2 rounded-full bg-primary" />
@@ -60,7 +61,7 @@ export default function Header() {
             aria-label={isExpanded ? 'Contract layout width' : 'Expand layout width'}
             title={isExpanded ? 'Contract layout width' : 'Expand layout width'}
           >
-            <PanelsLeftRight />
+            <HugeiconsIcon icon={PanelLeftIcon} strokeWidth={2} />
           </Button>
           <ThemeToggle />
 
@@ -85,17 +86,17 @@ export default function Header() {
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem render={<Link to="/account" />}>
-                <User className="size-4" />
+                <HugeiconsIcon icon={User02Icon} strokeWidth={2} className="size-4" />
                 Profile
               </DropdownMenuItem>
               {session.data?.personal_spaces_enabled ? (
                 <DropdownMenuItem disabled>
-                  <Briefcase className="size-4" />
+                  <HugeiconsIcon icon={Briefcase01Icon} strokeWidth={2} className="size-4" />
                   Workspaces
                 </DropdownMenuItem>
               ) : null}
               <DropdownMenuItem render={<Link to="/settings" />}>
-                <Settings className="size-4" />
+                <HugeiconsIcon icon={Settings01Icon} strokeWidth={2} className="size-4" />
                 Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator />
@@ -106,7 +107,7 @@ export default function Header() {
                   void logout.mutateAsync()
                 }}
               >
-                <LogOut className="size-4" />
+                <HugeiconsIcon icon={Logout01Icon} strokeWidth={2} className="size-4" />
                 {logout.isPending ? 'Signing out…' : 'Sign out'}
               </DropdownMenuItem>
             </DropdownMenuContent>

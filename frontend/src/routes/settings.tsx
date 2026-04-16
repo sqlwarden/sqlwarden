@@ -1,29 +1,56 @@
 import { useState } from 'react'
 import { Link, Navigate, Outlet, createFileRoute, useRouterState } from '@tanstack/react-router'
-import { Briefcase, Building2, KeyRound, PanelLeftClose, PanelLeftOpen, ShieldCheck, User, type LucideIcon } from 'lucide-react'
 import { useLayoutWidth } from '#/components/layout-width-provider'
 import { useSession } from '#/hooks/use-session'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { getAccessToken } from '#/lib/auth/access-token'
 import { cn } from '#/lib/utils'
-import { Button } from '#/components/ui/button'
 import { Separator } from '#/components/ui/separator'
-import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '#/components/ui/breadcrumb'
+import {
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from '#/components/ui/sidebar'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { Briefcase01Icon, Building04Icon, Key01Icon, ShieldUserIcon, User02Icon } from '@hugeicons/core-free-icons'
 
 export const Route = createFileRoute('/settings')({
   component: SettingsLayout,
 })
 
-const accountItems = [
-  { to: '/settings/account', label: 'Account', icon: User },
-  { to: '/settings/my-organizations', label: 'My Organizations', icon: Briefcase },
-  { to: '/settings/api-tokens', label: 'API Tokens', icon: KeyRound },
-] as const
+type NavItem = { to: string; label: string; icon: typeof User02Icon }
 
-const adminItems = [
-  { to: '/settings/administrators', label: 'Administrators', icon: ShieldCheck },
-  { to: '/settings/organizations', label: 'Organizations', icon: Building2 },
-] as const
+const accountItems: NavItem[] = [
+  { to: '/settings/account', label: 'Account', icon: User02Icon },
+  { to: '/settings/my-organizations', label: 'My Organizations', icon: Briefcase01Icon },
+  { to: '/settings/api-tokens', label: 'API Tokens', icon: Key01Icon },
+]
+
+const adminItems: NavItem[] = [
+  { to: '/settings/administrators', label: 'Administrators', icon: ShieldUserIcon },
+  { to: '/settings/organizations', label: 'Organizations', icon: Building04Icon },
+]
+
+const allItems = [...accountItems, ...adminItems]
+
+function currentPageLabel(pathname: string): string {
+  return allItems.find((item) => item.to === pathname)?.label ?? 'Settings'
+}
 
 function SettingsLayout() {
   const setupStatus = useSetupStatus()
@@ -31,9 +58,9 @@ function SettingsLayout() {
   const session = useSession(hasToken)
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const { isExpanded } = useLayoutWidth()
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
-    const stored = window.localStorage.getItem('sqlwarden.settings_sidebar_collapsed')
-    return stored === 'true'
+  const [initialOpen] = useState(() => {
+    const cookie = document.cookie.split('; ').find((row) => row.startsWith('sidebar_state='))
+    return cookie ? cookie.split('=')[1] === 'true' : true
   })
 
   if (setupStatus.isLoading || (hasToken && session.isLoading)) {
@@ -52,121 +79,109 @@ function SettingsLayout() {
     return <Navigate to="/login" replace />
   }
 
-  function toggleSidebarCollapsed() {
-    setIsSidebarCollapsed((current) => {
-      const next = !current
-      window.localStorage.setItem('sqlwarden.settings_sidebar_collapsed', String(next))
-      return next
-    })
-  }
+  return (
+    <SidebarProvider
+      defaultOpen={initialOpen}
+      style={{
+        '--sidebar-width': '15rem',
+        '--sidebar-width-icon': '3rem',
+        minHeight: 'calc(100vh - 4rem)',
+      } as React.CSSProperties}
+    >
+      <SettingsSidebar session={session.data} pathname={pathname} />
+      <main className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger />
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink render={<Link to="/settings/account" />}>Settings</BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>{currentPageLabel(pathname)}</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        </header>
+        <div
+          className={cn(
+            'flex-1 py-8',
+            isExpanded ? 'px-4 sm:px-6' : 'container mx-auto px-4',
+          )}
+        >
+          <Outlet />
+        </div>
+      </main>
+    </SidebarProvider>
+  )
+}
 
-  function renderNavItem(item: { to: string; label: string; icon: LucideIcon }) {
-    const Icon = item.icon
-    const isActive = pathname === item.to
-
-    const link = (
-      <Link
-        key={item.to}
-        to={item.to}
-        className={cn(
-          'relative flex items-center rounded-md py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
-          isSidebarCollapsed ? 'justify-center px-1' : 'gap-2 px-3',
-          isActive && isSidebarCollapsed ? 'bg-muted text-foreground' : null,
-          isActive && !isSidebarCollapsed ? 'bg-muted text-foreground' : null,
-        )}
-      >
-        {isActive ? (
-          <span
-            className={cn(
-              'absolute top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary',
-              isSidebarCollapsed ? '-start-1' : '-start-1.5',
-            )}
-          />
-        ) : null}
-        <Icon className="size-4" />
-        {isSidebarCollapsed ? null : item.label}
-      </Link>
-    )
-
-    if (!isSidebarCollapsed) {
-      return link
-    }
-
-    return (
-      <Tooltip key={item.to}>
-        <TooltipTrigger render={link} />
-        <TooltipContent side="right">{item.label}</TooltipContent>
-      </Tooltip>
-    )
-  }
+function SettingsSidebar({
+  session,
+  pathname,
+}: {
+  session: { is_instance_admin: boolean }
+  pathname: string
+}) {
+  const { state } = useSidebar()
+  const isCollapsed = state === 'collapsed'
 
   return (
-    <main
-      className={cn(
-        'flex min-h-[calc(100vh-4rem)] py-8',
-        isExpanded ? 'w-full px-4 sm:px-6' : 'container mx-auto px-4',
-      )}
+    <div
+      className="group flex shrink-0 flex-col border-r text-sidebar-foreground transition-[width] duration-200 ease-linear"
+      data-state={state}
+      data-collapsible={isCollapsed ? 'icon' : ''}
+      data-side="left"
+      style={{ width: isCollapsed ? 'var(--sidebar-width-icon)' : 'var(--sidebar-width)' }}
     >
-      <div
-        className={cn(
-          'grid w-full gap-8',
-          isSidebarCollapsed ? 'md:grid-cols-[44px_auto_minmax(0,1fr)]' : 'md:grid-cols-[240px_auto_minmax(0,1fr)]',
-        )}
-      >
-        <aside className="flex flex-col gap-4">
-          <div className={cn('flex items-start pb-2', isSidebarCollapsed ? 'justify-center' : 'justify-between px-3')}>
-            {isSidebarCollapsed ? null : (
-              <div>
-                <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
-                <p className="text-sm text-muted-foreground">Manage your account and instance configuration.</p>
-              </div>
-            )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="cursor-pointer"
-              onClick={toggleSidebarCollapsed}
-              aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              {isSidebarCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
-            </Button>
-          </div>
+      <div data-sidebar="sidebar" className="flex size-full flex-col bg-sidebar">
+        <SidebarHeader className={cn('h-12 justify-center', isCollapsed ? 'items-center' : 'px-4')}>
+          {isCollapsed ? null : (
+            <p className="text-sm font-semibold">Settings</p>
+          )}
+        </SidebarHeader>
 
-          <section className="flex flex-col gap-2">
-            {isSidebarCollapsed ? null : (
-              <div className="flex items-center gap-3 px-3">
-                <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Account</span>
-                <Separator className="flex-1" />
-              </div>
-            )}
-            <nav className="flex flex-col gap-1">
-              {accountItems.map(renderNavItem)}
-            </nav>
-          </section>
+        <SidebarContent className="pt-2">
+          <SidebarGroup>
+            <SidebarGroupLabel>Account</SidebarGroupLabel>
+            <SidebarMenu>
+              {accountItems.map((item) => (
+                <SidebarMenuItem key={item.to}>
+                  <SidebarMenuButton
+                    render={<Link to={item.to} />}
+                    isActive={pathname === item.to}
+                    tooltip={item.label}
+                  >
+                    <HugeiconsIcon icon={item.icon} strokeWidth={2} />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
 
-          {session.data.is_instance_admin ? (
-            <section className="flex flex-col gap-2">
-              {isSidebarCollapsed ? null : (
-                <div className="flex items-center gap-3 px-3">
-                  <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Instance Admin</span>
-                  <Separator className="flex-1" />
-                </div>
-              )}
-              <nav className="flex flex-col gap-1">
-                {adminItems.map(renderNavItem)}
-              </nav>
-            </section>
+          {session.is_instance_admin ? (
+            <SidebarGroup>
+              <SidebarGroupLabel>Instance Admin</SidebarGroupLabel>
+              <SidebarMenu>
+                {adminItems.map((item) => (
+                  <SidebarMenuItem key={item.to}>
+                    <SidebarMenuButton
+                      render={<Link to={item.to} />}
+                      isActive={pathname === item.to}
+                      tooltip={item.label}
+                    >
+                      <HugeiconsIcon icon={item.icon} strokeWidth={2} />
+                      <span>{item.label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroup>
           ) : null}
-        </aside>
-
-        <Separator orientation="vertical" className="hidden h-full md:block" />
-
-        <section className="min-w-0">
-          <Outlet />
-        </section>
+        </SidebarContent>
       </div>
-    </main>
+    </div>
   )
 }

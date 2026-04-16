@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
-import { X } from 'lucide-react'
+import { HugeiconsIcon } from "@hugeicons/react"
+import { Cancel01Icon } from "@hugeicons/core-free-icons"
 import { cn } from '#/lib/utils'
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
@@ -44,7 +45,7 @@ function DialogContent({ className, children, showClose = true, ...props }: Dial
           {children}
           {showClose ? (
             <DialogPrimitive.Close className="absolute end-4 top-4 inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-              <X className="size-4" />
+              <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
               <span className="sr-only">Close</span>
             </DialogPrimitive.Close>
           ) : null}

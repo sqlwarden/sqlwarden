@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, ArrowUpDown, Plus, Search, X } from 'lucide-react'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { ArrowDown01Icon, ArrowUp01Icon, ArrowUpDownIcon, Cancel01Icon, PlusSignIcon, Search01Icon } from '@hugeicons/core-free-icons'
 import { createFileRoute } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
@@ -147,10 +148,10 @@ function SettingsOrganizationsPage() {
 
   function sortIcon(sort: 'name' | 'slug' | 'created_at') {
     if (query.sort !== sort) {
-      return <ArrowUpDown className="size-4" />
+      return <HugeiconsIcon icon={ArrowUpDownIcon} strokeWidth={2} className="size-4" />
     }
 
-    return query.order === 'asc' ? <ArrowUp className="size-4" /> : <ArrowDown className="size-4" />
+    return query.order === 'asc' ? <HugeiconsIcon icon={ArrowUp01Icon} strokeWidth={2} className="size-4" /> : <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={2} className="size-4" />
   }
 
   return (
@@ -171,7 +172,7 @@ function SettingsOrganizationsPage() {
             }}
           >
             <DialogTrigger render={<Button />}>
-              <Plus data-icon="inline-start" />
+              <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
               Create
             </DialogTrigger>
             <DialogContent>
@@ -223,7 +224,7 @@ function SettingsOrganizationsPage() {
         </div>
 
         <div className="relative max-w-sm">
-          <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
@@ -237,7 +238,7 @@ function SettingsOrganizationsPage() {
               className="absolute end-3 top-1/2 inline-flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               onClick={clearSearch}
             >
-              <X className="size-4" />
+              <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
             </button>
           ) : null}
         </div>

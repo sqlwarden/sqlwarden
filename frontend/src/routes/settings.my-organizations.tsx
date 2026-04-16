@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { Building2, Search, X } from 'lucide-react'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { Building04Icon, Cancel01Icon, Search01Icon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 import { accountOrganizationsQueryOptions } from '#/lib/api/query'
 import type { ListQuery } from '#/lib/api/types'
@@ -72,7 +73,7 @@ function SettingsMyOrganizationsPage() {
         </div>
 
         <div className="relative max-w-md">
-          <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
@@ -86,7 +87,7 @@ function SettingsMyOrganizationsPage() {
               className="absolute end-3 top-1/2 inline-flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               onClick={clearSearch}
             >
-              <X className="size-4" />
+              <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
             </button>
           ) : null}
         </div>
@@ -116,7 +117,7 @@ function SettingsMyOrganizationsPage() {
       {organizations.isError ? (
         <Card>
           <CardContent className="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
-            <Building2 className="size-10 text-muted-foreground" />
+            <HugeiconsIcon icon={Building04Icon} strokeWidth={2} className="size-10 text-muted-foreground" />
             <div className="space-y-1">
               <p className="font-medium text-foreground">Failed to load organizations</p>
               <p className="text-sm text-muted-foreground">Refresh the page and try again.</p>
@@ -128,7 +129,7 @@ function SettingsMyOrganizationsPage() {
       {!organizations.isLoading && !organizations.isError && items.length === 0 ? (
         <Card>
           <CardContent className="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
-            <Building2 className="size-10 text-muted-foreground" />
+            <HugeiconsIcon icon={Building04Icon} strokeWidth={2} className="size-10 text-muted-foreground" />
             <div className="space-y-1">
               <p className="font-medium text-foreground">
                 {query.q ? 'No organizations matched your search.' : 'No organizations found'}
