@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Briefcase, Building2, LogOut, PanelsLeftRight, Settings, User, Wrench } from 'lucide-react'
+import { Briefcase, LogOut, PanelsLeftRight, Settings, User } from 'lucide-react'
 import { useSession } from '#/hooks/use-session'
 import { api } from '#/lib/api/client'
 import { clearAccessToken, getAccessToken } from '#/lib/auth/access-token'
@@ -94,17 +94,7 @@ export default function Header() {
                   Workspaces
                 </DropdownMenuItem>
               ) : null}
-              <DropdownMenuItem render={<Link to="/organizations" />}>
-                <Building2 className="size-4" />
-                Organizations
-              </DropdownMenuItem>
-              {session.data?.is_instance_admin ? (
-                <DropdownMenuItem render={<Link to="/administration/overview" />}>
-                  <Wrench className="size-4" />
-                  Administration
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem disabled>
+              <DropdownMenuItem render={<Link to="/settings" />}>
                 <Settings className="size-4" />
                 Settings
               </DropdownMenuItem>

@@ -1,9 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Navigate, createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/administration/settings')({
-  component: AdministrationSettingsPage,
+  component: AdministrationSettingsRedirectPage,
 })
 
-function AdministrationSettingsPage() {
-  return <div className="text-sm text-muted-foreground">Settings works!</div>
+function AdministrationSettingsRedirectPage() {
+  return <Navigate to="/settings/account" replace />
 }

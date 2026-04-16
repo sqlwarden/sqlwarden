@@ -1,9 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Navigate, createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/administration/overview')({
-  component: AdministrationOverviewPage,
+  component: AdministrationOverviewRedirectPage,
 })
 
-function AdministrationOverviewPage() {
-  return <div className="text-sm text-muted-foreground">Overview works!</div>
+function AdministrationOverviewRedirectPage() {
+  return <Navigate to="/settings/administrators" replace />
 }
