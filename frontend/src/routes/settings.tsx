@@ -5,7 +5,6 @@ import { useSession } from '#/hooks/use-session'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { getAccessToken } from '#/lib/auth/access-token'
 import { cn } from '#/lib/utils'
-import { Separator } from '#/components/ui/separator'
 import {
   Breadcrumb,
   BreadcrumbItem,

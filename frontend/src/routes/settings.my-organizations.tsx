@@ -187,6 +187,7 @@ function SettingsMyOrganizationsPage() {
                   <CardDescription className="truncate">@{organization.slug}</CardDescription>
                   <Button
                     className="w-auto px-4"
+                    nativeButton={false}
                     render={<Link to="/orgs/$org_slug/workspaces" params={{ org_slug: organization.slug }} />}
                   >
                     Visit
