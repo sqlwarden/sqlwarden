@@ -16,13 +16,14 @@ function RootComponent() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const isSetupRoute = pathname === '/setup'
   const isLoginRoute = pathname === '/login'
+  const isSettingsRoute = pathname === '/settings' || pathname.startsWith('/settings/')
 
   return (
     <ThemeProvider defaultTheme="system" storageKey="theme">
       <TooltipProvider>
         <LayoutWidthProvider>
           <div className="flex min-h-screen flex-col">
-            {!isSetupRoute && !isLoginRoute ? <Header /> : null}
+            {!isSetupRoute && !isLoginRoute && !isSettingsRoute ? <Header /> : null}
             <div className="flex-1">
               <Outlet />
             </div>
