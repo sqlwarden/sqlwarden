@@ -9,6 +9,7 @@ export const queryKeys = {
   instanceAdmins: (query?: ListQuery) => ['instance-admins', query ?? {}] as const,
   instanceOrganizations: (query?: ListQuery) => ['instance-organizations', query ?? {}] as const,
   orgWorkspaces: (slug: string, query?: ListQuery) => ['org-workspaces', slug, query ?? {}] as const,
+  orgWorkspace: (slug: string, workspaceId: string | number) => ['org-workspace', slug, workspaceId] as const,
   myWorkspaces: (query?: ListQuery) => ['my-workspaces', query ?? {}] as const,
   orgEnvironments: (slug: string, workspaceId: string | number, query?: ListQuery) =>
     ['org-environments', slug, workspaceId, query ?? {}] as const,
@@ -65,6 +66,14 @@ export function orgWorkspacesQueryOptions(slug: string, query?: ListQuery) {
     queryKey: queryKeys.orgWorkspaces(slug, query),
     queryFn: () => api.get<Paginated<Workspace>>(`/api/v1/orgs/${slug}/workspaces`, { query }),
     placeholderData: keepPreviousData,
+  })
+}
+
+export function orgWorkspaceQueryOptions(slug: string, workspaceId: string | number) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspace(slug, workspaceId),
+    queryFn: () => api.get<Workspace>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}`),
+    staleTime: 60_000,
   })
 }
 
