@@ -146,6 +146,7 @@ func (app *application) routes() http.Handler {
 			})
 
 			r.Get("/permissions", app.listPermissions)
+			r.Get("/permissions/effective", app.getEffectivePermissions)
 
 			r.Route("/workspaces", func(r chi.Router) {
 				r.Get("/", app.listWorkspaces)

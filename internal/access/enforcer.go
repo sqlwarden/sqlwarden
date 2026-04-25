@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/uptrace/bun"
 )
@@ -47,6 +48,39 @@ func (e *Enforcer) Can(ctx context.Context,
 	}
 
 	return e.checkPolicy(policy, accountID, teamIDs, ancestors, permission)
+}
+
+// EffectivePermissions returns the sorted set of permissions accountID has for the
+// target resource. It evaluates all bindings on the target and its ancestors once,
+// then filters permissions to those applicable to the target resource type.
+func (e *Enforcer) EffectivePermissions(ctx context.Context,
+	accountID, orgID int64,
+	ownerType, resourceType string, resourceID int64,
+) ([]string, error) {
+	if ownerType == "space" {
+		permissions := append([]string(nil), ScopePermissions[resourceType]...)
+		sort.Strings(permissions)
+		return permissions, nil
+	}
+
+	teamIDs, err := e.principalsFor(ctx, orgID, accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	ancestors, err := e.ancestryFor(ctx, ownerType, resourceType, resourceID, orgID)
+	if err != nil {
+		return nil, err
+	}
+
+	policy, err := e.orgPolicy(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+
+	permissions := e.effectivePolicyPermissions(policy, accountID, teamIDs, ancestors, resourceType)
+	sort.Strings(permissions)
+	return permissions, nil
 }
 
 // principalsFor returns the team IDs the account belongs to within orgID.
@@ -144,17 +178,19 @@ func (e *Enforcer) orgPolicy(ctx context.Context, orgID int64) (*OrgPolicy, erro
 
 	policy := &OrgPolicy{
 		rolePermissions: make(map[int64]map[string]bool),
+		roleScopeTypes:  make(map[int64]string),
 		roleBindings:    make(map[resourceKey][]cachedRoleBinding),
 	}
 
 	// Load role permissions.
 	var rpRows []struct {
 		RoleID     int64
+		ScopeType  string
 		Permission string
 	}
 	err := e.db.NewSelect().
 		TableExpr("role_permissions rp").
-		ColumnExpr("rp.role_id, rp.permission").
+		ColumnExpr("rp.role_id, r.scope_type, rp.permission").
 		Join("JOIN roles r ON r.id = rp.role_id").
 		Where("r.org_id = ?", orgID).
 		Scan(ctx, &rpRows)
@@ -165,6 +201,7 @@ func (e *Enforcer) orgPolicy(ctx context.Context, orgID int64) (*OrgPolicy, erro
 		if policy.rolePermissions[r.RoleID] == nil {
 			policy.rolePermissions[r.RoleID] = make(map[string]bool)
 		}
+		policy.roleScopeTypes[r.RoleID] = r.ScopeType
 		policy.rolePermissions[r.RoleID][r.Permission] = true
 	}
 
@@ -214,6 +251,35 @@ func (e *Enforcer) checkPolicy(policy *OrgPolicy, accountID int64, teamIDs []int
 
 	}
 	return false
+}
+
+func (e *Enforcer) effectivePolicyPermissions(policy *OrgPolicy, accountID int64, teamIDs []int64, ancestors []AncestorLevel, targetResourceType string) []string {
+	seen := make(map[string]bool)
+
+	for _, level := range ancestors {
+		key := resourceKey{level.ResourceType, level.ResourceID}
+		for _, rb := range policy.roleBindings[key] {
+			if !matchesPrincipal(rb.subjectType, rb.subjectID, accountID, teamIDs) {
+				continue
+			}
+			roleScopeType := policy.roleScopeTypes[rb.roleID]
+			for permission := range policy.rolePermissions[rb.roleID] {
+				if !ValidForScope(permission, roleScopeType) {
+					continue
+				}
+				if !ValidForScope(permission, targetResourceType) {
+					continue
+				}
+				seen[permission] = true
+			}
+		}
+	}
+
+	permissions := make([]string, 0, len(seen))
+	for permission := range seen {
+		permissions = append(permissions, permission)
+	}
+	return permissions
 }
 
 func matchesPrincipal(subjectType string, subjectID, accountID int64, teamIDs []int64) bool {

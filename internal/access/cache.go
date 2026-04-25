@@ -17,6 +17,8 @@ type AncestorLevel struct {
 type OrgPolicy struct {
 	// rolePermissions[roleID][permission] = true
 	rolePermissions map[int64]map[string]bool
+	// roleScopeTypes[roleID] = scope_type
+	roleScopeTypes map[int64]string
 	// roleBindings[(type,id)] = []binding
 	roleBindings map[resourceKey][]cachedRoleBinding
 	loadedAt     time.Time
