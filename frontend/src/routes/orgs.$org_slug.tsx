@@ -3,10 +3,13 @@ import { Navigate, Outlet, createFileRoute, useRouterState } from '@tanstack/rea
 import {
   Briefcase01Icon,
   Building04Icon,
-  Key01Icon,
+  Home04Icon,
   Settings02Icon,
-  ShieldUserIcon,
-  User02Icon,
+  UserGroupIcon,
+  UserLock02Icon,
+  UserMultipleIcon,
+  UserShield01Icon,
+  TerminalIcon,
 } from '@hugeicons/core-free-icons'
 import {
   AppShellContent,
@@ -22,26 +25,16 @@ import { useSetupStatus } from '#/hooks/use-setup-status'
 import { getAccessToken } from '#/lib/auth/access-token'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 
-export const Route = createFileRoute('/settings')({
-  component: SettingsLayout,
+export const Route = createFileRoute('/orgs/$org_slug')({
+  component: OrganizationLayout,
 })
 
-const accountItems: AppShellNavItem[] = [
-  { to: '/settings/account', label: 'Account', icon: User02Icon },
-  { to: '/settings/my-organizations', label: 'My Organizations', icon: Briefcase01Icon },
-  { to: '/settings/api-tokens', label: 'API Tokens', icon: Key01Icon },
-]
-
-const adminItems: AppShellNavItem[] = [
-  { to: '/settings/administrators', label: 'Administrators', icon: ShieldUserIcon },
-  { to: '/settings/organizations', label: 'Organizations', icon: Building04Icon },
-]
-
-function SettingsLayout() {
+function OrganizationLayout() {
   const setupStatus = useSetupStatus()
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
   const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const { org_slug: orgSlug } = Route.useParams()
   const { preferences, setPreferences } = useAppShellPreferences()
   const [initialOpen] = useState(() => {
     const cookie = document.cookie.split('; ').find((row) => row.startsWith('sidebar_state='))
@@ -73,17 +66,19 @@ function SettingsLayout() {
       } as React.CSSProperties}
     >
       <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
-        <AppShellHeader label="Settings" icon={Settings02Icon} />
+        <AppShellHeader label="SQLWarden" description={`@${orgSlug}`} icon={Building04Icon} />
         <SidebarContent>
-          <AppShellNavSection label="Account" items={accountItems} pathname={pathname} />
-          {session.data.is_instance_admin ? (
-            <AppShellNavSection label="Instance Admin" items={adminItems} pathname={pathname} />
-          ) : null}
+          <AppShellNavSection items={organizationItems(orgSlug)} pathname={pathname} />
+          <AppShellNavSection label="Access Control" items={accessControlItems(orgSlug)} pathname={pathname} />
+          <AppShellNavSection items={settingsItems(orgSlug)} pathname={pathname} />
         </SidebarContent>
         <AppShellSidebarFooter
           session={session.data}
           preferences={preferences}
           setPreferences={setPreferences}
+          extraUserItems={[
+            { to: '/settings/my-organizations', label: 'Switch Organization', icon: Building04Icon },
+          ]}
         />
         <AppShellRail />
       </Sidebar>
@@ -94,4 +89,27 @@ function SettingsLayout() {
       </SidebarInset>
     </SidebarProvider>
   )
+}
+
+function organizationItems(orgSlug: string): AppShellNavItem[] {
+  return [
+    { to: '/orgs/$org_slug', params: { org_slug: orgSlug }, label: 'Home', icon: Home04Icon },
+    { to: '/orgs/$org_slug/workspaces', params: { org_slug: orgSlug }, label: 'Workspaces', icon: Briefcase01Icon },
+    { to: '/orgs/$org_slug/ide', params: { org_slug: orgSlug }, label: 'IDE', icon: TerminalIcon },
+  ]
+}
+
+function accessControlItems(orgSlug: string): AppShellNavItem[] {
+  return [
+    { to: '/orgs/$org_slug/users', params: { org_slug: orgSlug }, label: 'Users', icon: UserMultipleIcon },
+    { to: '/orgs/$org_slug/teams', params: { org_slug: orgSlug }, label: 'Teams', icon: UserGroupIcon },
+    { to: '/orgs/$org_slug/roles', params: { org_slug: orgSlug }, label: 'Roles', icon: UserShield01Icon },
+    { to: '/orgs/$org_slug/policies', params: { org_slug: orgSlug }, label: 'Policies', icon: UserLock02Icon },
+  ]
+}
+
+function settingsItems(orgSlug: string): AppShellNavItem[] {
+  return [
+    { to: '/orgs/$org_slug/settings', params: { org_slug: orgSlug }, label: 'Settings', icon: Settings02Icon },
+  ]
 }

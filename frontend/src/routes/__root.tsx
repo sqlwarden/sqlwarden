@@ -17,13 +17,14 @@ function RootComponent() {
   const isSetupRoute = pathname === '/setup'
   const isLoginRoute = pathname === '/login'
   const isSettingsRoute = pathname === '/settings' || pathname.startsWith('/settings/')
+  const isOrgRoute = pathname.startsWith('/orgs/')
 
   return (
     <ThemeProvider defaultTheme="system" storageKey="theme">
       <TooltipProvider>
         <LayoutWidthProvider>
           <div className="flex min-h-screen flex-col">
-            {!isSetupRoute && !isLoginRoute && !isSettingsRoute ? <Header /> : null}
+            {!isSetupRoute && !isLoginRoute && !isSettingsRoute && !isOrgRoute ? <Header /> : null}
             <div className="flex-1">
               <Outlet />
             </div>

@@ -1,11 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-export const Route = createFileRoute('/orgs/$org_slug/workspaces')({
-  component: OrganizationWorkspacesPage,
+export const Route = createFileRoute('/orgs/$org_slug/teams')({
+  component: OrganizationTeamsPage,
 })
 
-function OrganizationWorkspacesPage() {
-  return <PlaceholderPage title="Workspaces" />
+function OrganizationTeamsPage() {
+  return <PlaceholderPage title="Teams" />
 }
 
 function PlaceholderPage({ title }: { title: string }) {
