@@ -31,8 +31,8 @@ EXISTS (
 }
 
 var (
-	workspaceDiscoveryOrgPermissionExpr           = discoveryPermissionExpr("rp", []string{"ws:", "env:", "conn:"})
-	workspaceDiscoveryWorkspacePermissionExpr     = discoveryPermissionExpr("rp", []string{"ws:", "env:", "conn:"})
+	workspaceDiscoveryOrgPermissionExpr           = discoveryPermissionExpr("rp", []string{"ws:", "env:", "conn:", "policy:"})
+	workspaceDiscoveryWorkspacePermissionExpr     = discoveryPermissionExpr("rp", []string{"ws:", "env:", "conn:", "policy:"})
 	workspaceDiscoveryEnvironmentPermissionExpr   = discoveryPermissionExpr("rp", []string{"env:", "conn:"})
 	workspaceDiscoveryConnectionPermissionExpr    = discoveryPermissionExpr("rp", []string{"conn:"})
 	environmentDiscoveryOrgPermissionExpr         = discoveryPermissionExpr("rp", []string{"env:", "conn:"})

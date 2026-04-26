@@ -41,6 +41,36 @@ func TestWorkspaceCRUD(t *testing.T) {
 	if len(wss.Items) != 1 {
 		t.Fatalf("expected 1 workspace, got %d", len(wss.Items))
 	}
+	if wss.Items[0].EnvironmentCount != 1 {
+		t.Fatalf("expected default environment count 1, got %d", wss.Items[0].EnvironmentCount)
+	}
+	if wss.Items[0].ConnectionCount != 0 {
+		t.Fatalf("expected connection count 0, got %d", wss.Items[0].ConnectionCount)
+	}
+
+	env, err := db.InsertEnvironment(context.Background(), ws.ID, "Staging", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.InsertConnection(context.Background(), ws.ID, &env.ID, "Primary", "postgres", "dsn", "open"); err != nil {
+		t.Fatal(err)
+	}
+
+	wss, err = db.ListWorkspacesPage(context.Background(), ListWorkspacesParams{
+		OwnerType: "org",
+		OwnerID:   org.ID,
+		Page:      1,
+		PageSize:  25,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wss.Items[0].EnvironmentCount != 2 {
+		t.Fatalf("expected environment count 2, got %d", wss.Items[0].EnvironmentCount)
+	}
+	if wss.Items[0].ConnectionCount != 1 {
+		t.Fatalf("expected connection count 1, got %d", wss.Items[0].ConnectionCount)
+	}
 
 	err = db.UpdateWorkspace(context.Background(), ws.ID, "Production Updated", "updated description")
 	if err != nil {

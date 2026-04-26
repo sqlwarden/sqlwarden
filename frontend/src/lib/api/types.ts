@@ -38,8 +38,18 @@ export interface Workspace {
   owner_id: number
   name: string
   description?: string
+  environment_count: number
+  connection_count: number
   created_at: string
   updated_at: string
+}
+
+export type ResourceType = 'org' | 'workspace' | 'environment' | 'connection'
+
+export interface EffectivePermissions {
+  resource_type: ResourceType
+  resource_id: number
+  permissions: string[]
 }
 
 export interface Environment {

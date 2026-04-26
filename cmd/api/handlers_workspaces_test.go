@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
@@ -23,6 +25,11 @@ func TestCreateAndListWorkspaces(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", res.BodyFields["id"])
+	assert.Equal(t, int(res.BodyFields["environment_count"].(float64)), 1)
+	assert.Equal(t, int(res.BodyFields["connection_count"].(float64)), 0)
+	envID := createWorkspaceEnvironment(t, app, tok, slug, wsID, "Staging")
+	createWorkspaceConnection(t, app, tok, slug, wsID, "Primary", &envID)
 
 	// List workspaces.
 	req2 := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/workspaces", nil)
@@ -45,6 +52,8 @@ func TestCreateAndListWorkspaces(t *testing.T) {
 	assert.Equal(t, payload.Total, 1)
 	assert.Equal(t, len(payload.Items), 1)
 	assert.Equal(t, payload.Items[0]["name"].(string), "Production")
+	assert.Equal(t, int(payload.Items[0]["environment_count"].(float64)), 2)
+	assert.Equal(t, int(payload.Items[0]["connection_count"].(float64)), 1)
 }
 
 func TestListWorkspaces_SupportsPaginationSearchFilterAndSort(t *testing.T) {
@@ -78,6 +87,42 @@ func TestListWorkspaces_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	assert.Equal(t, payload.Items[0]["name"], "Data Lake")
 }
 
+func TestListAndGetWorkspaces_AllowsWorkspacePolicyOnlyAccess(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "workspace-policy-owner"), "Workspace Policy Owner", "Workspace Policy Org")
+	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "workspace-policy-member"), "Workspace Policy Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Policy Managed", "")
+	hidden := seedWorkspaceForAccount(t, app, org, owner, "Hidden", "")
+	_ = hidden
+	wsID := strconv.FormatInt(ws.ID, 10)
+	roleID := createRoleForTest(t, app, org.ID, &ws.ID, "workspace", "policy:read")
+
+	grantRes := grantWorkspacePolicyRole(t, app, ownerTok, org.Slug, wsID, roleID, "account", member.ID, "workspace", 0)
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+org.Slug+"/workspaces", nil, memberTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	decodeJSONResponse(t, listRes.BodyBytes, &payload)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, int64(payload.Items[0]["id"].(float64)), ws.ID)
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+org.Slug+"/workspaces/"+wsID, nil, memberTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	assert.Equal(t, int64(getRes.BodyFields["id"].(float64)), ws.ID)
+}
+
 func TestGetAndDeleteWorkspace(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -99,6 +144,8 @@ func TestGetAndDeleteWorkspace(t *testing.T) {
 	getRes := send(t, getReq, app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
 	assert.Equal(t, getRes.BodyFields["name"].(string), "Staging")
+	assert.Equal(t, int(getRes.BodyFields["environment_count"].(float64)), 1)
+	assert.Equal(t, int(getRes.BodyFields["connection_count"].(float64)), 0)
 
 	// Delete.
 	delReq := newTestRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug+"/workspaces/"+wsID, nil)

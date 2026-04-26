@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, AccountOrganization } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, AccountOrganization, EffectivePermissions, ResourceType } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -8,6 +8,8 @@ export const queryKeys = {
   accountOrganizations: (query?: ListQuery) => ['account-organizations', query ?? {}] as const,
   instanceAdmins: (query?: ListQuery) => ['instance-admins', query ?? {}] as const,
   instanceOrganizations: (query?: ListQuery) => ['instance-organizations', query ?? {}] as const,
+  orgEffectivePermissions: (slug: string, resourceType: ResourceType, resourceId?: string | number) =>
+    ['org-effective-permissions', slug, resourceType, resourceId ?? null] as const,
   orgWorkspaces: (slug: string, query?: ListQuery) => ['org-workspaces', slug, query ?? {}] as const,
   orgWorkspace: (slug: string, workspaceId: string | number) => ['org-workspace', slug, workspaceId] as const,
   myWorkspaces: (query?: ListQuery) => ['my-workspaces', query ?? {}] as const,
@@ -58,6 +60,20 @@ export function instanceAdminsQueryOptions(query?: ListQuery) {
     queryKey: queryKeys.instanceAdmins(query),
     queryFn: () => api.get<Paginated<InstanceAdmin>>('/api/v1/instance/admins', { query }),
     placeholderData: keepPreviousData,
+  })
+}
+
+export function orgEffectivePermissionsQueryOptions(slug: string, resourceType: ResourceType, resourceId?: string | number) {
+  return queryOptions({
+    queryKey: queryKeys.orgEffectivePermissions(slug, resourceType, resourceId),
+    queryFn: () =>
+      api.get<EffectivePermissions>(`/api/v1/orgs/${slug}/permissions/effective`, {
+        query: {
+          resource_type: resourceType,
+          resource_id: resourceId,
+        },
+      }),
+    staleTime: 60_000,
   })
 }
 

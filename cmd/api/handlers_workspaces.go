@@ -45,6 +45,7 @@ func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			workspaces = filterAccessibleWorkspaces(workspaces, q.Search, name, q.Sort, q.Order)
 			result = response.PaginateItems(workspaces, q.Page, q.PageSize)
+			err = app.db.PopulateWorkspaceCounts(r.Context(), result.Items)
 		}
 	}
 	if err != nil {
@@ -143,6 +144,13 @@ func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	workspaces := []database.Workspace{ws}
+	if err := app.db.PopulateWorkspaceCounts(r.Context(), workspaces); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	ws = workspaces[0]
+
 	err = response.JSON(w, http.StatusCreated, ws)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -164,6 +172,13 @@ func (app *application) getWorkspace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	workspaces := []database.Workspace{ws}
+	if err := app.db.PopulateWorkspaceCounts(r.Context(), workspaces); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	ws = workspaces[0]
+
 	err := response.JSON(w, http.StatusOK, ws)
 	if err != nil {
 		app.serverError(w, r, err)

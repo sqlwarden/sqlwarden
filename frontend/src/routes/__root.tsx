@@ -2,6 +2,7 @@ import { Outlet, createRootRoute, useRouterState } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 import { Toaster } from 'sonner'
+import { GlobalLoadingBar } from '#/components/GlobalLoadingBar'
 import { LayoutWidthProvider } from '#/components/layout-width-provider'
 import { ThemeProvider } from '#/components/theme-provider'
 import { TooltipProvider } from '#/components/ui/tooltip'
@@ -22,6 +23,7 @@ function RootComponent() {
   return (
     <ThemeProvider defaultTheme="system" storageKey="theme">
       <TooltipProvider>
+        <GlobalLoadingBar />
         <LayoutWidthProvider>
           <div className="flex min-h-screen flex-col">
             {!isSetupRoute && !isLoginRoute && !isSettingsRoute && !isOrgRoute ? <Header /> : null}

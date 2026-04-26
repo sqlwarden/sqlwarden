@@ -1271,6 +1271,79 @@ func TestListAccessibleWorkspaces_ConnPermissionPropagatesVisibility(t *testing.
 	}
 }
 
+func TestListAccessibleWorkspaces_OrgPolicyPermissionPropagatesVisibility(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-ws-org-policy-prop", "Org")
+	ownerID := newAccount(t, db, "owner-ws-org-policy-prop@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	ws1 := seedWorkspace(t, db, e, org.ID, ownerID, "PolicyVisibleA")
+	ws2 := seedWorkspace(t, db, e, org.ID, ownerID, "PolicyVisibleB")
+
+	userID := newAccount(t, db, "user-ws-org-policy-prop@example.com")
+	grantScopedRole(t, db, e, org.ID, nil, "org-policy-read", "org", []string{access.PermPolicyRead}, "account", userID, "org", org.ID, ownerID)
+
+	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := wsIDs(wss)
+	if len(ids) != 2 || !contains(ids, ws1.ID) || !contains(ids, ws2.ID) {
+		t.Fatalf("expected both workspaces from org policy binding, got %v", ids)
+	}
+
+	ok, err := db.HasAccessibleWorkspace(context.Background(), userID, org.ID, ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected workspace visibility to propagate from org policy access")
+	}
+}
+
+func TestListAccessibleWorkspaces_WorkspacePolicyPermissionPropagatesVisibility(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-ws-policy-prop", "Org")
+	ownerID := newAccount(t, db, "owner-ws-policy-prop@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	ws1 := seedWorkspace(t, db, e, org.ID, ownerID, "PolicyVisible")
+	ws2 := seedWorkspace(t, db, e, org.ID, ownerID, "Hidden")
+
+	userID := newAccount(t, db, "user-ws-policy-prop@example.com")
+	grantScopedRole(t, db, e, org.ID, &ws1.ID, "workspace-policy-read", "workspace", []string{access.PermPolicyRead}, "account", userID, "workspace", ws1.ID, ownerID)
+
+	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wss) != 1 || wss[0].ID != ws1.ID {
+		t.Fatalf("expected only ws1 from workspace policy binding, got %v", wsIDs(wss))
+	}
+
+	ok, err := db.HasAccessibleWorkspace(context.Background(), userID, org.ID, ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected workspace visibility to propagate from workspace policy access")
+	}
+
+	ok, err = db.HasAccessibleWorkspace(context.Background(), userID, org.ID, ws2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("workspace policy access should not expose sibling workspaces")
+	}
+}
+
 func TestListAccessibleWorkspaces_ConnRolePropagatesVisibilityForTeam(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

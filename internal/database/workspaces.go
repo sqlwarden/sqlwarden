@@ -13,14 +13,16 @@ import (
 )
 
 type Workspace struct {
-	ID          int64     `bun:",pk,autoincrement" json:"id"`
-	OrgID       *int64    `bun:",nullzero"         json:"org_id,omitempty"`
-	OwnerType   string    `bun:",notnull"          json:"owner_type"`
-	OwnerID     int64     `bun:",notnull"          json:"owner_id"`
-	Name        string    `bun:",notnull"          json:"name"`
-	Description string    `bun:",nullzero"         json:"description,omitempty"`
-	CreatedAt   time.Time `bun:",notnull"          json:"created_at"`
-	UpdatedAt   time.Time `bun:",notnull"          json:"updated_at"`
+	ID               int64     `bun:",pk,autoincrement" json:"id"`
+	OrgID            *int64    `bun:",nullzero"         json:"org_id,omitempty"`
+	OwnerType        string    `bun:",notnull"          json:"owner_type"`
+	OwnerID          int64     `bun:",notnull"          json:"owner_id"`
+	Name             string    `bun:",notnull"          json:"name"`
+	Description      string    `bun:",nullzero"         json:"description,omitempty"`
+	EnvironmentCount int       `bun:"-"                 json:"environment_count"`
+	ConnectionCount  int       `bun:"-"                 json:"connection_count"`
+	CreatedAt        time.Time `bun:",notnull"          json:"created_at"`
+	UpdatedAt        time.Time `bun:",notnull"          json:"updated_at"`
 }
 
 type ListWorkspacesParams struct {
@@ -115,7 +117,73 @@ func (db *DB) ListWorkspacesPage(ctx context.Context, params ListWorkspacesParam
 	if err != nil {
 		return response.Paginated[Workspace]{}, err
 	}
-	return response.PaginateItems(workspaces, params.Page, params.PageSize), nil
+	result := response.PaginateItems(workspaces, params.Page, params.PageSize)
+	if err = db.PopulateWorkspaceCounts(ctx, result.Items); err != nil {
+		return response.Paginated[Workspace]{}, err
+	}
+	return result, nil
+}
+
+// PopulateWorkspaceCounts adds environment and connection counts for the provided
+// page of workspaces. It is intentionally page-bounded to avoid global aggregates.
+func (db *DB) PopulateWorkspaceCounts(ctx context.Context, workspaces []Workspace) error {
+	if len(workspaces) == 0 {
+		return nil
+	}
+
+	ids := make([]int64, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		ids = append(ids, workspace.ID)
+	}
+
+	var envCounts []struct {
+		WorkspaceID int64 `bun:"workspace_id"`
+		Count       int   `bun:"count"`
+	}
+	if err := db.NewSelect().
+		TableExpr("environments").
+		ColumnExpr("workspace_id, COUNT(*) AS count").
+		Where("workspace_id IN (?)", bun.In(ids)).
+		GroupExpr("workspace_id").
+		Scan(ctx, &envCounts); err != nil {
+		return err
+	}
+
+	var connCounts []struct {
+		WorkspaceID int64 `bun:"workspace_id"`
+		Count       int   `bun:"count"`
+	}
+	if err := db.NewSelect().
+		TableExpr("connections").
+		ColumnExpr("workspace_id, COUNT(*) AS count").
+		Where("workspace_id IN (?)", bun.In(ids)).
+		GroupExpr("workspace_id").
+		Scan(ctx, &connCounts); err != nil {
+		return err
+	}
+
+	countsByWorkspace := make(map[int64]struct {
+		environments int
+		connections  int
+	}, len(workspaces))
+	for _, row := range envCounts {
+		counts := countsByWorkspace[row.WorkspaceID]
+		counts.environments = row.Count
+		countsByWorkspace[row.WorkspaceID] = counts
+	}
+	for _, row := range connCounts {
+		counts := countsByWorkspace[row.WorkspaceID]
+		counts.connections = row.Count
+		countsByWorkspace[row.WorkspaceID] = counts
+	}
+
+	for index := range workspaces {
+		counts := countsByWorkspace[workspaces[index].ID]
+		workspaces[index].EnvironmentCount = counts.environments
+		workspaces[index].ConnectionCount = counts.connections
+	}
+
+	return nil
 }
 
 // ListAccessibleWorkspaces returns workspaces within orgID that accountID can discover.
