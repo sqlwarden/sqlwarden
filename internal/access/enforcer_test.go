@@ -109,7 +109,7 @@ func createRoleAndBind(t *testing.T, e *access.Enforcer, db *database.DB, orgID 
 	return roleID
 }
 
-// TestSeedOrgCreatesBuiltinRoles verifies that SeedOrg seeds the owner and admin builtin roles.
+// TestSeedOrgCreatesBuiltinRoles verifies that SeedOrg seeds org builtin roles.
 func TestSeedOrgCreatesBuiltinRoles(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	orgID, _ := seedOrg(t, db, e, "seed")
@@ -125,13 +125,72 @@ func TestSeedOrgCreatesBuiltinRoles(t *testing.T) {
 			byName[r.Name] = true
 		}
 	}
-	for _, name := range []string{"owner", "admin"} {
+	for _, name := range []string{"owner", "admin", "member"} {
 		if !byName[name] {
 			t.Errorf("expected builtin role %q to exist after SeedOrg", name)
 		}
 	}
-	if byName["member"] {
-		t.Error("member role should not exist at org level after SeedOrg")
+}
+
+func TestSeedOrgBindsMemberRoleToOrgMembersPrincipal(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "member-default")
+	ctx := context.Background()
+
+	member, err := db.InsertAccount(ctx, "member-default@example.com", "Member", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddOrgMember(ctx, orgID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if !e.Can(ctx, member.ID, orgID, "org", "org", orgID, access.PermOrgRead) {
+		t.Fatal("org member should inherit org:read from default org_members binding")
+	}
+	if e.Can(ctx, member.ID, orgID, "org", "org", orgID, access.PermOrgWrite) {
+		t.Fatal("org member baseline should not grant org:write")
+	}
+
+	bindings := listRoleBindings(t, db, orgID, "org", orgID)
+	foundDefaultBinding := false
+	for _, binding := range bindings {
+		if binding.SubjectType == access.SubjectTypeOrgMembers && binding.SubjectID == orgID && binding.CreatedBy != nil && *binding.CreatedBy == ownerID {
+			foundDefaultBinding = true
+			break
+		}
+	}
+	if !foundDefaultBinding {
+		t.Fatal("expected default org_members role binding on org")
+	}
+}
+
+func TestOrgMembersDefaultPolicyCanBeRevoked(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, _ := seedOrg(t, db, e, "member-revoke")
+	ctx := context.Background()
+
+	member, err := db.InsertAccount(ctx, "member-revoke@example.com", "Member", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddOrgMember(ctx, orgID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	var binding database.RoleBinding
+	if err = db.NewSelect().Model(&binding).
+		Where("org_id = ? AND subject_type = ? AND subject_id = ? AND resource_type = 'org' AND resource_id = ?",
+			orgID, access.SubjectTypeOrgMembers, orgID, orgID).
+		Scan(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = e.UnbindRole(ctx, binding.ID, orgID); err != nil {
+		t.Fatal(err)
+	}
+
+	if e.Can(ctx, member.ID, orgID, "org", "org", orgID, access.PermOrgRead) {
+		t.Fatal("revoking default org_members binding should remove baseline org:read")
 	}
 }
 

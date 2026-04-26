@@ -2,6 +2,10 @@ package access
 
 // Permission constants — single source of truth. Never use raw strings elsewhere.
 const (
+	SubjectTypeAccount    = "account"
+	SubjectTypeTeam       = "team"
+	SubjectTypeOrgMembers = "org_members"
+
 	PermOrgRead              = "org:read"
 	PermOrgWrite             = "org:write"
 	PermOrgDelete            = "org:delete"
@@ -74,6 +78,9 @@ var OrgBuiltinRoles = map[string][]string{
 		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
 		PermPolicyRead, PermPolicyModify,
+	},
+	"member": {
+		PermOrgRead,
 	},
 }
 

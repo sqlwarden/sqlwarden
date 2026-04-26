@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 )
 
@@ -280,6 +281,51 @@ func TestGrantOrgPolicy_MissingRoleIDReturns422(t *testing.T) {
 		}, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
 	assertValidationField(t, res, "role_id")
+}
+
+func TestGrantOrgPolicySupportsOrgMembersPrincipal(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-org-members-owner"), "Org Policy Owner", "Org Policy Org Members")
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgWrite)
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/policies",
+		map[string]any{
+			"role_id":      roleID,
+			"subject_type": access.SubjectTypeOrgMembers,
+			"subject_id":   org.ID,
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+org.Slug+"/policies?subject_type=org_members&permission=org:write&page=1&page_size=10", nil, tok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+	assert.Equal(t, int(listRes.BodyFields["total"].(float64)), 1)
+
+	items := listRes.BodyFields["items"].([]any)
+	item := items[0].(map[string]any)
+	assert.Equal(t, item["subject_name"].(string), "All organization members")
+	assert.Equal(t, item["subject_id"].(float64), float64(org.ID))
+}
+
+func TestGrantOrgPolicyRejectsOrgMembersSubjectFromOtherOrg(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-org-members-owner-a"), "Org Policy Owner A", "Org Policy Org Members A")
+	_, _, otherOrg := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-org-members-owner-b"), "Org Policy Owner B", "Org Policy Org Members B")
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgWrite)
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/policies",
+		map[string]any{
+			"role_id":      roleID,
+			"subject_type": access.SubjectTypeOrgMembers,
+			"subject_id":   otherOrg.ID,
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }
 
 func TestRevokeOrgPolicy(t *testing.T) {

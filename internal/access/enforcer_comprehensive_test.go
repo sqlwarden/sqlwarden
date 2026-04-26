@@ -407,22 +407,24 @@ func TestCrossOrgIsolation(t *testing.T) {
 	}
 }
 
-// TestAccountWithNoBindingDenied verifies that an account that is an org member but
-// has no role or permission bindings cannot perform any org operations.
+// TestAccountWithNoExplicitBindingGetsMemberBaseline verifies that org membership
+// grants only the revokable default org member baseline.
 func TestAccountWithNoBindingDenied(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	orgID, _ := seedOrg(t, db, e, "no-bind")
 	ctx := context.Background()
 
-	// Account is in the org but has no role binding.
 	noBindID := newMember(t, db, orgID, "no-bind@example.com")
 
+	if !e.Can(ctx, noBindID, orgID, "org", "org", orgID, access.PermOrgRead) {
+		t.Error("org member should have baseline org:read")
+	}
 	for _, perm := range []string{
-		access.PermOrgRead, access.PermOrgWrite, access.PermWsRead, access.PermWsWrite,
+		access.PermOrgWrite, access.PermWsRead, access.PermWsWrite,
 		access.PermEnvRead, access.PermConnExecute, access.PermPolicyRead,
 	} {
 		if e.Can(ctx, noBindID, orgID, "org", "org", orgID, perm) {
-			t.Errorf("unbound member should NOT have permission %q", perm)
+			t.Errorf("baseline org member should NOT have permission %q", perm)
 		}
 	}
 }
@@ -502,7 +504,7 @@ func TestCustomRoleAtWorkspaceScope(t *testing.T) {
 		}
 	}
 	// Not in the role.
-	for _, perm := range []string{access.PermWsWrite, access.PermConnExecute, access.PermOrgRead} {
+	for _, perm := range []string{access.PermWsWrite, access.PermConnExecute} {
 		if e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, perm) {
 			t.Errorf("member should NOT have %q via ws-viewer role", perm)
 		}
@@ -997,8 +999,8 @@ func TestSeedOrgIdempotent(t *testing.T) {
 			builtinCount++
 		}
 	}
-	if builtinCount != 2 {
-		t.Errorf("expected exactly 2 builtin org roles after double seed, got %d", builtinCount)
+	if builtinCount != 3 {
+		t.Errorf("expected exactly 3 builtin org roles after double seed, got %d", builtinCount)
 	}
 }
 

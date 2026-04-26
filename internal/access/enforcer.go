@@ -32,7 +32,7 @@ func (e *Enforcer) Can(ctx context.Context,
 		return true
 	}
 
-	teamIDs, err := e.principalsFor(ctx, orgID, accountID)
+	principals, err := e.principalsFor(ctx, orgID, accountID)
 	if err != nil {
 		return false
 	}
@@ -47,7 +47,7 @@ func (e *Enforcer) Can(ctx context.Context,
 		return false
 	}
 
-	return e.checkPolicy(policy, accountID, teamIDs, ancestors, permission)
+	return e.checkPolicy(policy, accountID, principals, ancestors, permission)
 }
 
 // EffectivePermissions returns the sorted set of permissions accountID has for the
@@ -63,7 +63,7 @@ func (e *Enforcer) EffectivePermissions(ctx context.Context,
 		return permissions, nil
 	}
 
-	teamIDs, err := e.principalsFor(ctx, orgID, accountID)
+	principals, err := e.principalsFor(ctx, orgID, accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -78,15 +78,15 @@ func (e *Enforcer) EffectivePermissions(ctx context.Context,
 		return nil, err
 	}
 
-	permissions := e.effectivePolicyPermissions(policy, accountID, teamIDs, ancestors, resourceType)
+	permissions := e.effectivePolicyPermissions(policy, accountID, principals, ancestors, resourceType)
 	sort.Strings(permissions)
 	return permissions, nil
 }
 
-// principalsFor returns the team IDs the account belongs to within orgID.
-func (e *Enforcer) principalsFor(ctx context.Context, orgID, accountID int64) ([]int64, error) {
-	if ids, ok := e.cache.GetPrincipals(orgID, accountID); ok {
-		return ids, nil
+// principalsFor returns all principals the account matches within orgID.
+func (e *Enforcer) principalsFor(ctx context.Context, orgID, accountID int64) (Principals, error) {
+	if principals, ok := e.cache.GetPrincipals(orgID, accountID); ok {
+		return principals, nil
 	}
 
 	var rows []struct{ TeamID int64 }
@@ -97,15 +97,25 @@ func (e *Enforcer) principalsFor(ctx context.Context, orgID, accountID int64) ([
 		Where("tm.account_id = ? AND t.org_id = ?", accountID, orgID).
 		Scan(ctx, &rows)
 	if err != nil {
-		return nil, err
+		return Principals{}, err
 	}
 
 	ids := make([]int64, len(rows))
 	for i, r := range rows {
 		ids[i] = r.TeamID
 	}
-	e.cache.SetPrincipals(orgID, accountID, ids)
-	return ids, nil
+
+	orgMember, err := e.db.NewSelect().
+		TableExpr("org_members").
+		Where("org_id = ? AND account_id = ?", orgID, accountID).
+		Exists(ctx)
+	if err != nil {
+		return Principals{}, err
+	}
+
+	principals := Principals{OrgID: orgID, TeamIDs: ids, OrgMember: orgMember}
+	e.cache.SetPrincipals(orgID, accountID, principals)
+	return principals, nil
 }
 
 // ancestryFor returns all ancestor resource levels for the target resource,
@@ -235,13 +245,13 @@ func (e *Enforcer) orgPolicy(ctx context.Context, orgID int64) (*OrgPolicy, erro
 }
 
 // checkPolicy returns true if any cached binding grants permission to the principals at any ancestor level.
-func (e *Enforcer) checkPolicy(policy *OrgPolicy, accountID int64, teamIDs []int64, ancestors []AncestorLevel, permission string) bool {
+func (e *Enforcer) checkPolicy(policy *OrgPolicy, accountID int64, principals Principals, ancestors []AncestorLevel, permission string) bool {
 	for _, level := range ancestors {
 		key := resourceKey{level.ResourceType, level.ResourceID}
 
 		// Check role bindings at this level.
 		for _, rb := range policy.roleBindings[key] {
-			if !matchesPrincipal(rb.subjectType, rb.subjectID, accountID, teamIDs) {
+			if !matchesPrincipal(rb.subjectType, rb.subjectID, accountID, principals) {
 				continue
 			}
 			if perms := policy.rolePermissions[rb.roleID]; perms[permission] {
@@ -253,13 +263,13 @@ func (e *Enforcer) checkPolicy(policy *OrgPolicy, accountID int64, teamIDs []int
 	return false
 }
 
-func (e *Enforcer) effectivePolicyPermissions(policy *OrgPolicy, accountID int64, teamIDs []int64, ancestors []AncestorLevel, targetResourceType string) []string {
+func (e *Enforcer) effectivePolicyPermissions(policy *OrgPolicy, accountID int64, principals Principals, ancestors []AncestorLevel, targetResourceType string) []string {
 	seen := make(map[string]bool)
 
 	for _, level := range ancestors {
 		key := resourceKey{level.ResourceType, level.ResourceID}
 		for _, rb := range policy.roleBindings[key] {
-			if !matchesPrincipal(rb.subjectType, rb.subjectID, accountID, teamIDs) {
+			if !matchesPrincipal(rb.subjectType, rb.subjectID, accountID, principals) {
 				continue
 			}
 			roleScopeType := policy.roleScopeTypes[rb.roleID]
@@ -282,16 +292,19 @@ func (e *Enforcer) effectivePolicyPermissions(policy *OrgPolicy, accountID int64
 	return permissions
 }
 
-func matchesPrincipal(subjectType string, subjectID, accountID int64, teamIDs []int64) bool {
-	if subjectType == "account" {
+func matchesPrincipal(subjectType string, subjectID, accountID int64, principals Principals) bool {
+	if subjectType == SubjectTypeAccount {
 		return subjectID == accountID
 	}
-	if subjectType == "team" {
-		for _, tid := range teamIDs {
+	if subjectType == SubjectTypeTeam {
+		for _, tid := range principals.TeamIDs {
 			if tid == subjectID {
 				return true
 			}
 		}
+	}
+	if subjectType == SubjectTypeOrgMembers {
+		return principals.OrgMember && subjectID == principals.OrgID
 	}
 	return false
 }
@@ -318,9 +331,15 @@ func (e *Enforcer) SeedOrg(ctx context.Context, orgID, ownerAccountID int64) err
 		}
 
 		if roleName == "owner" {
-			err = e.bindRoleByID(ctx, orgID, roleID, "account", ownerAccountID, "org", orgID, ownerAccountID)
+			err = e.bindRoleByID(ctx, orgID, roleID, SubjectTypeAccount, ownerAccountID, "org", orgID, ownerAccountID)
 			if err != nil {
 				return fmt.Errorf("bind owner role: %w", err)
+			}
+		}
+		if roleName == "member" {
+			err = e.bindRoleByID(ctx, orgID, roleID, SubjectTypeOrgMembers, orgID, "org", orgID, ownerAccountID)
+			if err != nil {
+				return fmt.Errorf("bind org member role: %w", err)
 			}
 		}
 	}
@@ -351,7 +370,7 @@ func (e *Enforcer) SeedWorkspace(ctx context.Context, orgID, workspaceID, creato
 		}
 
 		if roleName == "ws:admin" {
-			err = e.bindRoleByID(ctx, orgID, roleID, "account", creatorAccountID, "workspace", workspaceID, creatorAccountID)
+			err = e.bindRoleByID(ctx, orgID, roleID, SubjectTypeAccount, creatorAccountID, "workspace", workspaceID, creatorAccountID)
 			if err != nil {
 				return fmt.Errorf("bind ws:admin role: %w", err)
 			}

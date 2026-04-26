@@ -270,6 +270,35 @@ func TestListAccessibleWorkspaces_OrgReadDoesNotGrantWorkspaceDiscovery(t *testi
 	}
 }
 
+func TestListAccessibleWorkspaces_OrgMembersBinding(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-ws-org-members", "Org")
+	ownerID := newAccount(t, db, "owner-ws-org-members@example.com")
+	if err := db.AddOrgMember(context.Background(), org.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Alpha")
+
+	userID := newAccount(t, db, "user-ws-org-members@example.com")
+	if err := db.AddOrgMember(context.Background(), org.ID, userID); err != nil {
+		t.Fatal(err)
+	}
+	grantScopedRole(t, db, e, org.ID, nil, "all-members-ws-read", "org", []string{access.PermWsRead}, access.SubjectTypeOrgMembers, org.ID, "org", org.ID, ownerID)
+
+	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wss) != 1 || wss[0].ID != ws.ID {
+		t.Fatalf("expected org member to discover workspace %d, got %v", ws.ID, wsIDs(wss))
+	}
+}
+
 func TestListAccessibleWorkspaces_TeamOrgBinding(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

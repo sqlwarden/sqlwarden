@@ -79,7 +79,7 @@ func TestEffectivePermissionsOrgDefaultsToCurrentOrg(t *testing.T) {
 	assertHasPermissions(t, permissions, "org:read", "ws:create", "conn:create", "policy:modify")
 }
 
-func TestEffectivePermissionsOrgMemberWithoutBindingsGetsEmptySet(t *testing.T) {
+func TestEffectivePermissionsOrgMemberGetsDefaultBaseline(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	_, _, org := seedOrgOwner(t, app, uniqueEmail(t, "eff-empty-owner"), "Owner", "Effective Empty")
@@ -90,9 +90,8 @@ func TestEffectivePermissionsOrgMemberWithoutBindingsGetsEmptySet(t *testing.T) 
 
 	permissions := effectivePermissions(t, app, memberTok, org.Slug, "org", org.ID)
 
-	if len(permissions) != 0 {
-		t.Fatalf("expected no effective permissions, got %v", permissions)
-	}
+	assertHasPermissions(t, permissions, "org:read")
+	assertMissingPermissions(t, permissions, "org:write", "org:invite", "policy:modify")
 }
 
 func TestEffectivePermissionsWorkspaceFiltersToWorkspaceApplicablePermissions(t *testing.T) {

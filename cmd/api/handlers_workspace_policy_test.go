@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 )
 
@@ -616,6 +617,38 @@ func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *te
 	assert.Equal(t, payload.Items[0]["resource_name"], "Primary DB")
 	assert.Equal(t, payload.Items[0]["binding_kind"], "role")
 	assert.Equal(t, payload.Items[0]["role_name"] != "", true)
+}
+
+func TestGrantWorkspacePolicySupportsOrgMembersPrincipal(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "ws-policy-org-members-owner"), "Workspace Policy Owner", "Workspace Policy Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Policy Workspace", "")
+	roleID := createRoleForTest(t, app, org.ID, &ws.ID, "workspace", access.PermWsRead)
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies",
+		map[string]any{
+			"role_id":       roleID,
+			"subject_type":  access.SubjectTypeOrgMembers,
+			"subject_id":    org.ID,
+			"resource_type": "workspace",
+		}, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newOrgRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies?subject_type=org_members&permission=ws:read&page=1&page_size=10",
+		ownerTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	decodeJSONResponse(t, listRes.BodyBytes, &payload)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, payload.Items[0]["subject_name"], "All organization members")
 }
 
 func TestListWorkspacePoliciesPermissions(t *testing.T) {

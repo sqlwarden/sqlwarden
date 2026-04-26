@@ -288,7 +288,7 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 	}
 
 	input.V.CheckField(input.RoleID > 0, "role_id", "role_id is required")
-	input.V.CheckField(input.SubjectType == "account" || input.SubjectType == "team", "subject_type", "must be account or team")
+	input.V.CheckField(validPolicySubjectType(input.SubjectType), "subject_type", "must be account, team, or org_members")
 	input.V.CheckField(input.SubjectID > 0, "subject_id", "subject_id is required")
 	validTypes := map[string]bool{"workspace": true, "environment": true, "connection": true}
 	input.V.CheckField(validTypes[input.ResourceType], "resource_type", "must be workspace, environment, or connection")

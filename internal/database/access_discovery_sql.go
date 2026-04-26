@@ -26,8 +26,9 @@ EXISTS (
       AND (
         (%s.subject_type = 'account' AND %s.subject_id = ?)
         OR (%s.subject_type = 'team' AND %s.subject_id IN (SELECT team_id FROM my_teams))
+        OR (%s.subject_type = 'org_members' AND %s.subject_id IN (SELECT org_id FROM my_org_memberships))
       )
-)`, bindingAlias, roleAlias, roleAlias, bindingAlias, permissionAlias, permissionAlias, bindingAlias, bindingAlias, bindingAlias, resourceType, bindingAlias, resourceIDExpr, permissionExpr, bindingAlias, bindingAlias, bindingAlias, bindingAlias)
+)`, bindingAlias, roleAlias, roleAlias, bindingAlias, permissionAlias, permissionAlias, bindingAlias, bindingAlias, bindingAlias, resourceType, bindingAlias, resourceIDExpr, permissionExpr, bindingAlias, bindingAlias, bindingAlias, bindingAlias, bindingAlias, bindingAlias)
 }
 
 var (

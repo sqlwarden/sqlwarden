@@ -175,6 +175,9 @@ func (db *DB) ListAccessibleConnections(ctx context.Context, accountID, orgID, w
 	q := `
 WITH my_teams AS (
     SELECT team_id FROM team_members WHERE account_id = ?
+),
+my_org_memberships AS (
+    SELECT org_id FROM org_members WHERE account_id = ?
 )
 SELECT DISTINCT c.*
 FROM connections c
@@ -190,6 +193,7 @@ ORDER BY c.name ASC`
 	var conns []Connection
 	err := db.NewRaw(q,
 		accountID,   // my_teams CTE
+		accountID,   // my_org_memberships CTE
 		workspaceID, // c.workspace_id
 		orgID, orgID, accountID,
 		orgID, workspaceID, accountID,
@@ -206,6 +210,9 @@ func (db *DB) HasAccessibleConnection(ctx context.Context, accountID, orgID, wor
 	q := `
 WITH my_teams AS (
     SELECT team_id FROM team_members WHERE account_id = ?
+),
+my_org_memberships AS (
+    SELECT org_id FROM org_members WHERE account_id = ?
 )
 SELECT EXISTS (
     SELECT 1
@@ -222,6 +229,7 @@ SELECT EXISTS (
 
 	var ok bool
 	err := db.NewRaw(q,
+		accountID,
 		accountID,
 		connectionID, workspaceID,
 		orgID, orgID, accountID,

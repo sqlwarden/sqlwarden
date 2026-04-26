@@ -264,11 +264,11 @@ func TestOrgPermissionEnforcement(t *testing.T) {
 	addRes := send(t, addReq, app.routes())
 	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
 
-	// Member cannot list members (requires members:read permission).
+	// Member can list members through the default org_members -> member -> org:read policy.
 	req := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members", nil)
 	req.Header.Set("Authorization", "Bearer "+memberTok)
 	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+	assert.Equal(t, res.StatusCode, http.StatusOK)
 
 	// Member cannot add members (requires members:write permission).
 	req2 := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{

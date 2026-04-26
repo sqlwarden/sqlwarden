@@ -242,7 +242,7 @@ func (app *application) grantOrgPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input.V.CheckField(input.RoleID > 0, "role_id", "role_id is required")
-	input.V.CheckField(input.SubjectType == "account" || input.SubjectType == "team", "subject_type", "must be account or team")
+	input.V.CheckField(validPolicySubjectType(input.SubjectType), "subject_type", "must be account, team, or org_members")
 	input.V.CheckField(input.SubjectID > 0, "subject_id", "subject_id is required")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -322,19 +322,30 @@ func (app *application) listPermissions(w http.ResponseWriter, r *http.Request) 
 
 func (app *application) policySubjectExists(r *http.Request, orgID int64, subjectType string, subjectID int64) (bool, error) {
 	switch subjectType {
-	case "account":
+	case access.SubjectTypeAccount:
 		_, found, err := app.db.GetAccount(r.Context(), subjectID)
 		if err != nil || !found {
 			return found, err
 		}
 		return app.db.IsOrgMember(r.Context(), orgID, subjectID)
-	case "team":
+	case access.SubjectTypeTeam:
 		team, found, err := app.db.GetTeamByID(r.Context(), subjectID)
 		if err != nil || !found {
 			return found, err
 		}
 		return team.OrgID == orgID, nil
+	case access.SubjectTypeOrgMembers:
+		return subjectID == orgID, nil
 	default:
 		return false, nil
+	}
+}
+
+func validPolicySubjectType(subjectType string) bool {
+	switch subjectType {
+	case access.SubjectTypeAccount, access.SubjectTypeTeam, access.SubjectTypeOrgMembers:
+		return true
+	default:
+		return false
 	}
 }

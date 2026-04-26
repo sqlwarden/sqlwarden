@@ -42,8 +42,8 @@ type Cache interface {
 	SetOrgPolicy(orgID int64, policy *OrgPolicy)
 	InvalidateOrgPolicy(orgID int64)
 
-	GetPrincipals(orgID, accountID int64) ([]int64, bool)
-	SetPrincipals(orgID, accountID int64, teamIDs []int64)
+	GetPrincipals(orgID, accountID int64) (Principals, bool)
+	SetPrincipals(orgID, accountID int64, principals Principals)
 	InvalidatePrincipals(orgID, accountID int64)
 
 	GetAncestry(resourceType string, resourceID int64) ([]AncestorLevel, bool)
@@ -70,8 +70,14 @@ type principalKey struct {
 }
 
 type cachedPrincipals struct {
-	teamIDs   []int64
-	expiresAt time.Time
+	principals Principals
+	expiresAt  time.Time
+}
+
+type Principals struct {
+	OrgID     int64
+	TeamIDs   []int64
+	OrgMember bool
 }
 
 type cachedAncestry struct {
@@ -110,20 +116,20 @@ func (c *MemoryCache) InvalidateOrgPolicy(orgID int64) {
 	delete(c.orgPolicies, orgID)
 }
 
-func (c *MemoryCache) GetPrincipals(orgID, accountID int64) ([]int64, bool) {
+func (c *MemoryCache) GetPrincipals(orgID, accountID int64) (Principals, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	entry, ok := c.principals[principalKey{orgID, accountID}]
 	if !ok || time.Now().After(entry.expiresAt) {
-		return nil, false
+		return Principals{}, false
 	}
-	return entry.teamIDs, true
+	return entry.principals, true
 }
 
-func (c *MemoryCache) SetPrincipals(orgID, accountID int64, teamIDs []int64) {
+func (c *MemoryCache) SetPrincipals(orgID, accountID int64, principals Principals) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.principals[principalKey{orgID, accountID}] = &cachedPrincipals{teamIDs: teamIDs, expiresAt: time.Now().Add(cacheTTL)}
+	c.principals[principalKey{orgID, accountID}] = &cachedPrincipals{principals: principals, expiresAt: time.Now().Add(cacheTTL)}
 }
 
 func (c *MemoryCache) InvalidatePrincipals(orgID, accountID int64) {

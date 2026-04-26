@@ -196,6 +196,9 @@ func (db *DB) ListAccessibleWorkspaces(ctx context.Context, accountID, orgID int
 	q := `
 WITH my_teams AS (
     SELECT team_id FROM team_members WHERE account_id = ?
+),
+my_org_memberships AS (
+    SELECT org_id FROM org_members WHERE account_id = ?
 )
 SELECT DISTINCT w.*
 FROM workspaces w
@@ -221,6 +224,7 @@ ORDER BY w.name ASC`
 	var wss []Workspace
 	err := db.NewRaw(q,
 		accountID, // my_teams CTE
+		accountID, // my_org_memberships CTE
 		orgID,     // w.owner_id
 		orgID, orgID, accountID,
 		orgID, accountID,
@@ -237,6 +241,9 @@ func (db *DB) HasAccessibleWorkspace(ctx context.Context, accountID, orgID, work
 	q := `
 WITH my_teams AS (
     SELECT team_id FROM team_members WHERE account_id = ?
+),
+my_org_memberships AS (
+    SELECT org_id FROM org_members WHERE account_id = ?
 )
 SELECT EXISTS (
     SELECT 1
@@ -264,6 +271,7 @@ SELECT EXISTS (
 
 	var ok bool
 	err := db.NewRaw(q,
+		accountID,
 		accountID,
 		workspaceID, orgID,
 		orgID, orgID, accountID,

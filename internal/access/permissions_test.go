@@ -48,6 +48,11 @@ func TestOrgBuiltinRoles(t *testing.T) {
 			t.Fatal("admin must not have org:transfer_ownership")
 		}
 	}
+
+	memberPerms := access.OrgBuiltinRoles["member"]
+	if len(memberPerms) != 1 || memberPerms[0] != "org:read" {
+		t.Fatalf("member role should only grant org:read, got %v", memberPerms)
+	}
 }
 
 func TestWorkspaceBuiltinRoles(t *testing.T) {
