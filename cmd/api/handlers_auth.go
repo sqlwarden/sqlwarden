@@ -124,7 +124,7 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	accountIDStr := strconv.FormatInt(account.ID, 10)
-	accessToken, _, err := token.Issue(accountIDStr, account.Email, account.Name, app.config.jwt.secretKey)
+	accessToken, _, err := token.IssueWithTTL(accountIDStr, account.Email, account.Name, app.config.jwt.secretKey, app.config.jwt.accessTokenTTL)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -193,7 +193,7 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	accountIDStr := strconv.FormatInt(account.ID, 10)
-	accessToken, _, err := token.Issue(accountIDStr, account.Email, account.Name, app.config.jwt.secretKey)
+	accessToken, _, err := token.IssueWithTTL(accountIDStr, account.Email, account.Name, app.config.jwt.secretKey, app.config.jwt.accessTokenTTL)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

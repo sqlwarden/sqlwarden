@@ -27,7 +27,11 @@ func (app *application) newAuthenticationToken(userID int64) (string, time.Time,
 	var claims jwt.Claims
 	claims.Subject = strconv.FormatInt(userID, 10)
 
-	expiry := now.Add(24 * time.Hour)
+	tokenTTL := app.config.jwt.accessTokenTTL
+	if tokenTTL <= 0 {
+		tokenTTL = 24 * time.Hour
+	}
+	expiry := now.Add(tokenTTL)
 	claims.Issued = jwt.NewNumericTime(now)
 	claims.NotBefore = jwt.NewNumericTime(now)
 	claims.Expires = jwt.NewNumericTime(expiry)

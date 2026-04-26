@@ -50,6 +50,7 @@ func newTestApplication(t *testing.T) *application {
 	app := new(application)
 
 	app.config.jwt.secretKey = "k7mp29rf4qxhwn8vbtaj6pgucmve53y9"
+	app.config.jwt.accessTokenTTL = 24 * time.Hour
 	app.config.baseURL = "https://www.example.com"
 	app.config.personalSpacesEnabled = true
 

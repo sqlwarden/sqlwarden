@@ -750,6 +750,8 @@ $ export JWT_SECRET_KEY="a1uiBXkmY03pxXok3OkFV39saE8Cn574"
 $ go run ./cmd/api
 ```
 
+Access tokens default to a 24-hour lifetime. You can override this with `JWT_ACCESS_TOKEN_TTL` or `--jwt-access-token-ttl`, using Go duration syntax such as `8h` or `30m`.
+
 A new authentication token can be created by sending the user's email and password to the `POST /authentication-tokens` endpoint.
 
 ```

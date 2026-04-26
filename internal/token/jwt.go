@@ -7,6 +7,8 @@ import (
 	"github.com/pascaldekloe/jwt"
 )
 
+const DefaultAccessTokenTTL = 24 * time.Hour
+
 // Claims holds the parsed fields from an access token.
 type Claims struct {
 	AccountID string
@@ -14,10 +16,19 @@ type Claims struct {
 	Name      string
 }
 
-// Issue signs a 15-minute HS256 access token.
+// Issue signs an HS256 access token with the default lifetime.
 // Returns: (tokenString, expiresAt, error)
 func Issue(accountID, email, name, secretKey string) (string, time.Time, error) {
-	expiresAt := time.Now().Add(15 * time.Minute)
+	return IssueWithTTL(accountID, email, name, secretKey, DefaultAccessTokenTTL)
+}
+
+// IssueWithTTL signs an HS256 access token with a caller-provided lifetime.
+// Returns: (tokenString, expiresAt, error)
+func IssueWithTTL(accountID, email, name, secretKey string, ttl time.Duration) (string, time.Time, error) {
+	if ttl <= 0 {
+		ttl = DefaultAccessTokenTTL
+	}
+	expiresAt := time.Now().Add(ttl)
 
 	c := &jwt.Claims{
 		Registered: jwt.Registered{

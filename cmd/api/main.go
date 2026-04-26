@@ -51,7 +51,8 @@ type config struct {
 		key string
 	}
 	jwt struct {
-		secretKey string
+		secretKey      string
+		accessTokenTTL time.Duration
 	}
 	notifications struct {
 		email string

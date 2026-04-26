@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -20,6 +21,7 @@ const (
 	defaultDBAutomigrate         = true
 	defaultEncryptionKey         = "dev-insecure-key-32byteslong!!"
 	defaultJWTSecretKey          = "fb57i5hiud5mzmykaquqsln5gcmolbac"
+	defaultJWTAccessTokenTTL     = 24 * time.Hour
 	defaultNotificationsEmail    = ""
 	defaultSMTPHost              = "example.smtp.host"
 	defaultSMTPPort              = 25
@@ -48,6 +50,7 @@ var configOptions = []configOption{
 	{key: "db.automigrate", env: "DB_AUTOMIGRATE", flagName: "db-automigrate", defaultValue: defaultDBAutomigrate, usage: "Run database migrations at startup"},
 	{key: "encryption.key", env: "ENCRYPTION_KEY", flagName: "encryption-key", defaultValue: defaultEncryptionKey, usage: "Application encryption key"},
 	{key: "jwt.secret_key", env: "JWT_SECRET_KEY", flagName: "jwt-secret-key", defaultValue: defaultJWTSecretKey, usage: "JWT signing secret"},
+	{key: "jwt.access_token_ttl", env: "JWT_ACCESS_TOKEN_TTL", flagName: "jwt-access-token-ttl", defaultValue: defaultJWTAccessTokenTTL, usage: "JWT access token lifetime (for example: 24h, 8h, 30m)"},
 	{key: "notifications.email", env: "NOTIFICATIONS_EMAIL", flagName: "notifications-email", defaultValue: defaultNotificationsEmail, usage: "Email address that receives error notifications"},
 	{key: "smtp.host", env: "SMTP_HOST", flagName: "smtp-host", defaultValue: defaultSMTPHost, usage: "SMTP server host"},
 	{key: "smtp.port", env: "SMTP_PORT", flagName: "smtp-port", defaultValue: defaultSMTPPort, usage: "SMTP server port"},
@@ -71,6 +74,8 @@ func loadConfig(args []string) (config, bool, error) {
 			flagSet.Int(opt.flagName, value, opt.usage)
 		case bool:
 			flagSet.Bool(opt.flagName, value, opt.usage)
+		case time.Duration:
+			flagSet.Duration(opt.flagName, value, opt.usage)
 		default:
 			return config{}, false, fmt.Errorf("unsupported config default type for %s", opt.key)
 		}
@@ -129,6 +134,7 @@ func loadConfig(args []string) (config, bool, error) {
 	cfg.db.automigrate = v.GetBool("db.automigrate")
 	cfg.encryption.key = v.GetString("encryption.key")
 	cfg.jwt.secretKey = v.GetString("jwt.secret_key")
+	cfg.jwt.accessTokenTTL = v.GetDuration("jwt.access_token_ttl")
 	cfg.notifications.email = v.GetString("notifications.email")
 	cfg.smtp.host = v.GetString("smtp.host")
 	cfg.smtp.port = v.GetInt("smtp.port")

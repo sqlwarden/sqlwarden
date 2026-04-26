@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadConfigDefaults(t *testing.T) {
@@ -34,6 +35,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if !cfg.personalSpacesEnabled {
 		t.Fatal("expected personal spaces to default to true")
 	}
+	if cfg.jwt.accessTokenTTL != defaultJWTAccessTokenTTL {
+		t.Fatalf("jwt.accessTokenTTL = %s, want %s", cfg.jwt.accessTokenTTL, defaultJWTAccessTokenTTL)
+	}
 }
 
 func TestLoadConfigFromExplicitFile(t *testing.T) {
@@ -44,6 +48,8 @@ base_url: https://cfg.example.com
 http_port: 7000
 desktop_mode: true
 personal_spaces_enabled: false
+jwt:
+  access_token_ttl: 12h
 db:
   driver: postgres
   dsn: cfg-dsn
@@ -76,6 +82,9 @@ smtp:
 	if cfg.personalSpacesEnabled {
 		t.Fatal("expected personal spaces disabled from file")
 	}
+	if cfg.jwt.accessTokenTTL != 12*time.Hour {
+		t.Fatalf("jwt.accessTokenTTL = %s, want 12h", cfg.jwt.accessTokenTTL)
+	}
 	if cfg.db.driver != "postgres" || cfg.db.dsn != "cfg-dsn" || cfg.db.automigrate {
 		t.Fatalf("unexpected db config: %+v", cfg.db)
 	}
@@ -87,6 +96,7 @@ smtp:
 func TestLoadConfigEnvOverridesFile(t *testing.T) {
 	t.Setenv("DB_DRIVER", "sqlite")
 	t.Setenv("HTTP_PORT", "8123")
+	t.Setenv("JWT_ACCESS_TOKEN_TTL", "6h")
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -110,6 +120,9 @@ db:
 	if cfg.db.driver != "sqlite" {
 		t.Fatalf("db.driver = %q, want sqlite", cfg.db.driver)
 	}
+	if cfg.jwt.accessTokenTTL != 6*time.Hour {
+		t.Fatalf("jwt.accessTokenTTL = %s, want 6h", cfg.jwt.accessTokenTTL)
+	}
 }
 
 func TestLoadConfigFlagsOverrideEnvAndFile(t *testing.T) {
@@ -132,6 +145,7 @@ db:
 		"--http-port", "9200",
 		"--db-driver", "sqlite",
 		"--base-url", "https://flags.example.com",
+		"--jwt-access-token-ttl", "2h",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -145,6 +159,9 @@ db:
 	}
 	if cfg.baseURL != "https://flags.example.com" {
 		t.Fatalf("baseURL = %q", cfg.baseURL)
+	}
+	if cfg.jwt.accessTokenTTL != 2*time.Hour {
+		t.Fatalf("jwt.accessTokenTTL = %s, want 2h", cfg.jwt.accessTokenTTL)
 	}
 }
 

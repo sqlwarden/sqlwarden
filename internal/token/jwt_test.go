@@ -20,6 +20,9 @@ func TestIssueVerifyRoundTrip(t *testing.T) {
 	if expiresAt.Before(time.Now()) {
 		t.Fatal("Issue returned expiry in the past")
 	}
+	if time.Until(expiresAt) < 23*time.Hour+59*time.Minute || time.Until(expiresAt) > 24*time.Hour+time.Minute {
+		t.Fatalf("Issue expiry = %s, want about 24h", time.Until(expiresAt))
+	}
 
 	claims, err := Verify(tokenStr, testSecret)
 	if err != nil {
@@ -33,6 +36,17 @@ func TestIssueVerifyRoundTrip(t *testing.T) {
 	}
 	if claims.Name != "Test User" {
 		t.Errorf("Name = %q; want %q", claims.Name, "Test User")
+	}
+}
+
+func TestIssueWithTTLUsesCustomLifetime(t *testing.T) {
+	_, expiresAt, err := IssueWithTTL("acc-ttl", "ttl@example.com", "TTL User", testSecret, 2*time.Hour)
+	if err != nil {
+		t.Fatalf("IssueWithTTL returned error: %v", err)
+	}
+
+	if time.Until(expiresAt) < 119*time.Minute || time.Until(expiresAt) > 121*time.Minute {
+		t.Fatalf("IssueWithTTL expiry = %s, want about 2h", time.Until(expiresAt))
 	}
 }
 

@@ -36,6 +36,7 @@ services:
       DB_AUTOMIGRATE: "true"
       COOKIE_SECRET_KEY: ${COOKIE_SECRET_KEY:-cpcgzjcote6h5hakeglpbzixhbuog2zc}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-fb57i5hiud5mzmykaquqsln5gcmolbac}
+      JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:-24h}
       NOTIFICATIONS_EMAIL: ${NOTIFICATIONS_EMAIL:-}
       SMTP_HOST: ${SMTP_HOST:-example.smtp.host}
       SMTP_PORT: ${SMTP_PORT:-25}
