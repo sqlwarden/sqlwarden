@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { ArrowDown01Icon, ArrowUp01Icon, ArrowUpDownIcon, Cancel01Icon, Delete02Icon, PlusSignIcon, Search01Icon } from '@hugeicons/core-free-icons'
+import { Delete02Icon, PlusSignIcon } from '@hugeicons/core-free-icons'
 import { createFileRoute } from '@tanstack/react-router'
 import { toast } from 'sonner'
+import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
 import { instanceAdminsQueryOptions, queryKeys } from '#/lib/api/query'
-import type { ListQuery, SortOrder } from '#/lib/api/types'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
+import { SearchInput } from '#/components/SearchInput'
+import { TableColumnHeader } from '#/components/TableColumnHeader'
+import { TableEmptyState } from '#/components/EmptyState'
+import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 
@@ -25,33 +29,13 @@ function SettingsAdministratorsPage() {
   const [isCreating, setIsCreating] = useState(false)
   const [email, setEmail] = useState('')
   const [fieldError, setFieldError] = useState<string | null>(null)
-  const [searchText, setSearchText] = useState('')
-  const [query, setQuery] = useState<ListQuery>({
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
     page: 1,
     page_size: 10,
     sort: 'created_at',
     order: 'asc',
     q: '',
   })
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setQuery((current) => {
-        const nextSearch = searchText.trim()
-        if ((current.q ?? '') === nextSearch) {
-          return current
-        }
-
-        return {
-          ...current,
-          page: 1,
-          q: nextSearch,
-        }
-      })
-    }, 300)
-
-    return () => window.clearTimeout(timer)
-  }, [searchText])
 
   const administrators = useQuery(instanceAdminsQueryOptions(query))
   const data = administrators.data
@@ -102,28 +86,6 @@ function SettingsAdministratorsPage() {
     toast.error(administrators.error instanceof Error ? administrators.error.message : 'Failed to load administrators')
   }, [administrators.error])
 
-  function toggleSort(sort: 'account_id' | 'created_at') {
-    setQuery((current) => {
-      const currentSort = current.sort
-      const currentOrder = (current.order as SortOrder | undefined) ?? 'asc'
-
-      return {
-        ...current,
-        page: 1,
-        sort,
-        order: currentSort === sort && currentOrder === 'asc' ? 'desc' : 'asc',
-      }
-    })
-  }
-
-  function sortIcon(sort: 'account_id' | 'created_at') {
-    if (query.sort !== sort) {
-      return <HugeiconsIcon icon={ArrowUpDownIcon} strokeWidth={2} className="size-4" />
-    }
-
-    return query.order === 'asc' ? <HugeiconsIcon icon={ArrowUp01Icon} strokeWidth={2} className="size-4" /> : <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={2} className="size-4" />
-  }
-
   function submitCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const value = email.trim()
@@ -135,10 +97,6 @@ function SettingsAdministratorsPage() {
 
     setFieldError(null)
     void addAdministrator.mutateAsync(value).catch(() => {})
-  }
-
-  function clearSearch() {
-    setSearchText('')
   }
 
   return (
@@ -193,25 +151,13 @@ function SettingsAdministratorsPage() {
         </Dialog>
       </div>
 
-      <div className="relative max-w-sm">
-        <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={searchText}
-          onChange={(event) => setSearchText(event.target.value)}
-          placeholder="Search administrators"
-          className="pe-9 ps-9"
-        />
-        {searchText ? (
-          <button
-            type="button"
-            aria-label="Clear search"
-            className="absolute end-3 top-1/2 inline-flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-            onClick={clearSearch}
-          >
-            <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
-          </button>
-        ) : null}
-      </div>
+      <SearchInput
+        value={searchText}
+        onValueChange={setSearchText}
+        onClear={clearSearch}
+        placeholder="Search administrators"
+        className="max-w-sm"
+      />
 
       <Card>
         <CardContent className="flex flex-col gap-4">
@@ -219,52 +165,32 @@ function SettingsAdministratorsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
                   <TableHead>
-                    <button
-                      type="button"
-                      className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-                      onClick={() => toggleSort('account_id')}
-                    >
-                      Account ID
-                      {sortIcon('account_id')}
-                    </button>
+                    <TableColumnHeader label="Name" />
                   </TableHead>
                   <TableHead>
-                    <button
-                      type="button"
-                      className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-                      onClick={() => toggleSort('created_at')}
-                    >
-                      Added
-                      {sortIcon('created_at')}
-                    </button>
+                    <TableColumnHeader label="Email" />
                   </TableHead>
-                  <TableHead className="w-1 text-right">Actions</TableHead>
+                  <TableHead>
+                    <TableColumnHeader label="Account ID" sort="account_id" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  </TableHead>
+                  <TableHead>
+                    <TableColumnHeader label="Added" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  </TableHead>
+                  <TableHead className="w-1 text-right">
+                    <TableColumnHeader label="Actions" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {administrators.isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
-                      Loading administrators…
-                    </TableCell>
-                  </TableRow>
+                  <TableEmptyState colSpan={5} compact message="Loading administrators…" />
                 ) : null}
                 {administrators.isError ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
-                      Failed to load administrators.
-                    </TableCell>
-                  </TableRow>
+                  <TableEmptyState colSpan={5} compact message="Failed to load administrators." />
                 ) : null}
                 {!administrators.isLoading && !administrators.isError && items.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
-                      {query.q ? 'No administrators matched your search.' : 'No administrators exist yet.'}
-                    </TableCell>
-                  </TableRow>
+                  <TableEmptyState colSpan={5} compact message={query.q ? 'No administrators matched your search.' : 'No administrators exist yet.'} />
                 ) : null}
                 {items.map((administrator) => (
                   <TableRow key={administrator.account_id}>
@@ -299,30 +225,16 @@ function SettingsAdministratorsPage() {
             </Table>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              {total === 0 ? '0 administrators' : `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} of ${total} administrators`}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setQuery((current) => ({ ...current, page: Math.max(1, Number(current.page ?? 1) - 1) }))}
-                disabled={page <= 1 || administrators.isFetching}
-              >
-                Previous
-              </Button>
-              <div className="min-w-20 text-center text-sm text-muted-foreground">
-                Page {page} of {pageCount}
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => setQuery((current) => ({ ...current, page: Number(current.page ?? 1) + 1 }))}
-                disabled={page >= pageCount || administrators.isFetching}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <PaginationFooter
+            itemLabel="administrators"
+            page={page}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            total={total}
+            isFetching={administrators.isFetching}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
         </CardContent>
       </Card>
     </div>

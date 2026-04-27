@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { Cancel01Icon, PlusSignIcon, Search01Icon, UserGroupIcon, UserMultipleIcon } from '@hugeicons/core-free-icons'
+import { PlusSignIcon, UserGroupIcon, UserMultipleIcon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
+import { useDebouncedQueryText } from '#/hooks/use-debounced-query-text'
+import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
 import { orgEffectivePermissionsQueryOptions, orgMembersQueryOptions, orgTeamMembersQueryOptions, orgTeamQueryOptions } from '#/lib/api/query'
-import type { ListQuery, OrgMember, TeamMember } from '#/lib/api/types'
+import type { OrgMember, TeamMember } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
-import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
 import {
   Breadcrumb,
@@ -20,8 +21,10 @@ import {
 } from '#/components/ui/breadcrumb'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
-import { Input } from '#/components/ui/input'
+import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { RoutePending } from '#/components/RoutePending'
+import { SearchInput } from '#/components/SearchInput'
+import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 
@@ -40,9 +43,8 @@ function OrganizationTeamContextPage() {
   const { org_slug: orgSlug, team_slug: teamSlug } = Route.useParams()
   const queryClient = useQueryClient()
   const [isAddingMember, setIsAddingMember] = useState(false)
-  const [searchText, setSearchText] = useState('')
-  const [memberSearch, setMemberSearch] = useState('')
-  const [membersQuery] = useState<ListQuery>({
+  const { searchText, setSearchText, debouncedQuery: memberSearch, clearSearch } = useDebouncedQueryText()
+  const { query: membersQuery, toggleSort: toggleMembersSort } = useListPageState({
     page: 1,
     page_size: 25,
     sort: 'created_at',
@@ -65,14 +67,6 @@ function OrganizationTeamContextPage() {
   const existingMemberIDs = new Set(memberItems.map((member) => member.account_id))
   const displayName = team.data?.name ?? teamSlug
   const canManageMembers = hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setMemberSearch(searchText.trim())
-    }, 300)
-
-    return () => window.clearTimeout(timer)
-  }, [searchText])
 
   useEffect(() => {
     if (!team.error) {
@@ -135,8 +129,7 @@ function OrganizationTeamContextPage() {
   })
 
   function resetAddMember() {
-    setSearchText('')
-    setMemberSearch('')
+    clearSearch()
   }
 
   return (
@@ -174,9 +167,7 @@ function OrganizationTeamContextPage() {
           {team.data ? (
             <div className="flex flex-col gap-6">
               <div className="flex items-start gap-4">
-                <Avatar size="lg">
-                  <AvatarFallback>{initials(team.data.name, 'T')}</AvatarFallback>
-                </Avatar>
+                <InitialsAvatar value={team.data.name} fallback="T" size="lg" />
                 <div className="min-w-0 flex-1">
                   <h1 className="truncate text-2xl font-semibold tracking-tight">{team.data.name}</h1>
                   <p className="truncate text-sm text-muted-foreground">@{team.data.slug}</p>
@@ -215,25 +206,13 @@ function OrganizationTeamContextPage() {
                   <DialogTitle>Add User</DialogTitle>
                 </DialogHeader>
                 <div className="mt-6 flex flex-col gap-4">
-                  <div className="relative">
-                    <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={searchText}
-                      onChange={(event) => setSearchText(event.target.value)}
-                      placeholder="Search users"
-                      className="pe-9 ps-9"
-                    />
-                    {searchText ? (
-                      <button
-                        type="button"
-                        aria-label="Clear search"
-                        className="absolute end-3 top-1/2 inline-flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-                        onClick={() => setSearchText('')}
-                      >
-                        <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
-                      </button>
-                    ) : null}
-                  </div>
+                  <SearchInput
+                    value={searchText}
+                    onValueChange={setSearchText}
+                    onClear={clearSearch}
+                    placeholder="Search users"
+                    className="max-w-none"
+                  />
 
                   <div className="min-h-64">
                     <Table>
@@ -271,9 +250,17 @@ function OrganizationTeamContextPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>Added</TableHead>
-                {canManageMembers ? <TableHead className="text-end">Actions</TableHead> : null}
+                <TableHead>
+                  <TableColumnHeader label="User" />
+                </TableHead>
+                <TableHead>
+                  <TableColumnHeader label="Added" sort="created_at" currentSort={membersQuery.sort} currentOrder={membersQuery.order} onSortChange={toggleMembersSort} />
+                </TableHead>
+                {canManageMembers ? (
+                  <TableHead className="text-end">
+                    <TableColumnHeader label="Actions" />
+                  </TableHead>
+                ) : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -325,9 +312,7 @@ function MemberRow({
           params={{ org_slug: orgSlug, account_id: String(member.account_id) }}
           className="flex min-w-0 items-center gap-3"
         >
-          <Avatar>
-            <AvatarFallback>{initials(displayName, 'U')}</AvatarFallback>
-          </Avatar>
+          <InitialsAvatar value={displayName} />
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{displayName}</div>
             <div className="truncate text-muted-foreground">{member.email}</div>
@@ -367,9 +352,7 @@ function OrgMemberPickerRow({
     <TableRow>
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <Avatar>
-            <AvatarFallback>{initials(displayName, 'U')}</AvatarFallback>
-          </Avatar>
+          <InitialsAvatar value={displayName} />
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{displayName}</div>
             <div className="truncate text-muted-foreground">{member.email}</div>
@@ -461,20 +444,6 @@ function MessageRow({ colSpan, icon, message }: { colSpan: number; icon: Paramet
       </TableCell>
     </TableRow>
   )
-}
-
-function initials(value: string, fallback: string) {
-  const parts = value.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) {
-    return fallback
-  }
-  if (parts.length === 1 && parts[0].includes('@')) {
-    return parts[0][0]?.toUpperCase() ?? fallback
-  }
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('')
 }
 
 function formatDate(value: string) {

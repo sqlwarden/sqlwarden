@@ -2,19 +2,24 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { Cancel01Icon, PlusSignIcon, Search01Icon, UserGroupIcon } from '@hugeicons/core-free-icons'
+import { PlusSignIcon, UserGroupIcon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
+import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
 import { orgEffectivePermissionsQueryOptions, orgTeamsQueryOptions } from '#/lib/api/query'
-import type { ListQuery, Team } from '#/lib/api/types'
+import type { Team } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
-import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
+import { InitialsAvatar } from '#/components/InitialsAvatar'
+import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
+import { SearchInput } from '#/components/SearchInput'
+import { TableColumnHeader } from '#/components/TableColumnHeader'
+import { TableEmptyState } from '#/components/EmptyState'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 
@@ -43,38 +48,18 @@ function OrganizationTeamsRoute() {
 
 function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
   const queryClient = useQueryClient()
-  const [searchText, setSearchText] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [teamName, setTeamName] = useState('')
   const [teamSlug, setTeamSlug] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<{ name?: string; slug?: string }>({})
-  const [query, setQuery] = useState<ListQuery>({
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
     page: 1,
     page_size: 10,
     sort: 'name',
     order: 'asc',
     q: '',
   })
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setQuery((current) => {
-        const nextSearch = searchText.trim()
-        if ((current.q ?? '') === nextSearch) {
-          return current
-        }
-
-        return {
-          ...current,
-          page: 1,
-          q: nextSearch,
-        }
-      })
-    }, 300)
-
-    return () => window.clearTimeout(timer)
-  }, [searchText])
 
   useEffect(() => {
     if (slugTouched) {
@@ -136,10 +121,6 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
       toast.error(error instanceof Error ? error.message : 'Failed to create team')
     },
   })
-
-  function clearSearch() {
-    setSearchText('')
-  }
 
   function resetCreateTeam() {
     setTeamName('')
@@ -238,25 +219,12 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
           ) : null}
         </div>
 
-        <div className="relative max-w-md">
-          <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
-            placeholder="Search teams"
-            className="pe-9 ps-9"
-          />
-          {searchText ? (
-            <button
-              type="button"
-              aria-label="Clear search"
-              className="absolute end-3 top-1/2 inline-flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-              onClick={clearSearch}
-            >
-              <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
-            </button>
-          ) : null}
-        </div>
+        <SearchInput
+          value={searchText}
+          onValueChange={setSearchText}
+          onClear={clearSearch}
+          placeholder="Search teams"
+        />
       </div>
 
       <Card>
@@ -264,15 +232,19 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Team</TableHead>
-                <TableHead>Created</TableHead>
+                <TableHead>
+                  <TableColumnHeader label="Team" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                </TableHead>
+                <TableHead>
+                  <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {teams.isLoading ? <TeamsTableSkeleton /> : null}
-              {teams.isError ? <TeamsMessageRow message="Failed to load teams." /> : null}
+              {teams.isError ? <TableEmptyState colSpan={2} icon={UserGroupIcon} message="Failed to load teams." /> : null}
               {!teams.isLoading && !teams.isError && items.length === 0 ? (
-                <TeamsMessageRow message={query.q ? 'No teams matched your search.' : 'No teams found.'} />
+                <TableEmptyState colSpan={2} icon={UserGroupIcon} message={query.q ? 'No teams matched your search.' : 'No teams found.'} />
               ) : null}
               {!teams.isLoading && !teams.isError
                 ? items.map((team) => <TeamRow key={team.id} team={team} />)
@@ -283,30 +255,16 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
       </Card>
 
       {!teams.isLoading && !teams.isError && items.length > 0 ? (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            {total === 0 ? '0 teams' : `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} of ${total} teams`}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setQuery((current) => ({ ...current, page: Math.max(1, Number(current.page ?? 1) - 1) }))}
-              disabled={page <= 1 || teams.isFetching}
-            >
-              Previous
-            </Button>
-            <div className="min-w-20 text-center text-sm text-muted-foreground">
-              Page {page} of {pageCount}
-            </div>
-            <Button
-              variant="outline"
-              onClick={() => setQuery((current) => ({ ...current, page: Number(current.page ?? 1) + 1 }))}
-              disabled={page >= pageCount || teams.isFetching}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
+        <PaginationFooter
+          itemLabel="teams"
+          page={page}
+          pageCount={pageCount}
+          pageSize={pageSize}
+          total={total}
+          isFetching={teams.isFetching}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       ) : null}
     </div>
   )
@@ -348,9 +306,7 @@ function TeamRow({ team }: { team: Team }) {
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <Avatar>
-            <AvatarFallback>{teamInitials(team.name)}</AvatarFallback>
-          </Avatar>
+          <InitialsAvatar value={team.name} />
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{team.name}</div>
             <div className="truncate text-muted-foreground">@{team.slug}</div>
@@ -383,31 +339,6 @@ function TeamsTableSkeleton() {
       ))}
     </>
   )
-}
-
-function TeamsMessageRow({ message }: { message: string }) {
-  return (
-    <TableRow>
-      <TableCell colSpan={2}>
-        <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
-          <HugeiconsIcon icon={UserGroupIcon} strokeWidth={2} className="size-10 text-muted-foreground" />
-          <p className="font-medium text-foreground">{message}</p>
-        </div>
-      </TableCell>
-    </TableRow>
-  )
-}
-
-function teamInitials(value: string) {
-  const parts = value.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) {
-    return 'T'
-  }
-
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('')
 }
 
 function formatDate(value: string) {

@@ -2,18 +2,23 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { Briefcase01Icon, Cancel01Icon, PlusSignIcon, Search01Icon } from '@hugeicons/core-free-icons'
+import { Briefcase01Icon, PlusSignIcon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
+import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
 import { orgEffectivePermissionsQueryOptions, orgWorkspacesQueryOptions } from '#/lib/api/query'
-import type { ListQuery, Workspace } from '#/lib/api/types'
+import type { Workspace } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
+import { EmptyState } from '#/components/EmptyState'
+import { getInitials } from '#/components/InitialsAvatar'
+import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
+import { SearchInput } from '#/components/SearchInput'
 import { Separator } from '#/components/ui/separator'
 import { Skeleton } from '#/components/ui/skeleton'
 
@@ -37,37 +42,17 @@ function OrganizationWorkspacesRoute() {
 function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [searchText, setSearchText] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [newWorkspaceName, setNewWorkspaceName] = useState('')
   const [newWorkspaceDescription, setNewWorkspaceDescription] = useState('')
   const [createFieldErrors, setCreateFieldErrors] = useState<{ name?: string; description?: string }>({})
-  const [query, setQuery] = useState<ListQuery>({
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize } = useListPageState({
     page: 1,
     page_size: 12,
     sort: 'name',
     order: 'asc',
     q: '',
   })
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setQuery((current) => {
-        const nextSearch = searchText.trim()
-        if ((current.q ?? '') === nextSearch) {
-          return current
-        }
-
-        return {
-          ...current,
-          page: 1,
-          q: nextSearch,
-        }
-      })
-    }, 300)
-
-    return () => window.clearTimeout(timer)
-  }, [searchText])
 
   const workspaces = useQuery(orgWorkspacesQueryOptions(orgSlug, query))
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
@@ -127,10 +112,6 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
       toast.error(error instanceof Error ? error.message : 'Failed to create workspace')
     },
   })
-
-  function clearSearch() {
-    setSearchText('')
-  }
 
   function resetCreateWorkspace() {
     setNewWorkspaceName('')
@@ -221,25 +202,12 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
           ) : null}
         </div>
 
-        <div className="relative max-w-md">
-          <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
-            placeholder="Search workspaces"
-            className="pe-9 ps-9"
-          />
-          {searchText ? (
-            <button
-              type="button"
-              aria-label="Clear search"
-              className="absolute end-3 top-1/2 inline-flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-              onClick={clearSearch}
-            >
-              <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
-            </button>
-          ) : null}
-        </div>
+        <SearchInput
+          value={searchText}
+          onValueChange={setSearchText}
+          onClear={clearSearch}
+          placeholder="Search workspaces"
+        />
       </div>
 
       {workspaces.isLoading ? (
@@ -263,28 +231,20 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
 
       {workspaces.isError ? (
         <Card>
-          <CardContent className="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
-            <HugeiconsIcon icon={Briefcase01Icon} strokeWidth={2} className="size-10 text-muted-foreground" />
-            <div className="flex flex-col gap-1">
-              <p className="font-medium text-foreground">Failed to load workspaces</p>
-              <p className="text-sm text-muted-foreground">Refresh the page and try again.</p>
-            </div>
+          <CardContent>
+            <EmptyState icon={Briefcase01Icon} message="Failed to load workspaces" description="Refresh the page and try again." />
           </CardContent>
         </Card>
       ) : null}
 
       {!workspaces.isLoading && !workspaces.isError && items.length === 0 ? (
         <Card>
-          <CardContent className="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
-            <HugeiconsIcon icon={Briefcase01Icon} strokeWidth={2} className="size-10 text-muted-foreground" />
-            <div className="flex flex-col gap-1">
-              <p className="font-medium text-foreground">
-                {query.q ? 'No workspaces matched your search.' : 'No workspaces found'}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {query.q ? 'Try a different workspace name.' : 'This organization does not have any visible workspaces yet.'}
-              </p>
-            </div>
+          <CardContent>
+            <EmptyState
+              icon={Briefcase01Icon}
+              message={query.q ? 'No workspaces matched your search.' : 'No workspaces found'}
+              description={query.q ? 'Try a different workspace name.' : 'This organization does not have any visible workspaces yet.'}
+            />
           </CardContent>
         </Card>
       ) : null}
@@ -299,7 +259,7 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
               >
                 <CardHeader className="flex flex-row items-start gap-4">
                   <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-semibold text-foreground">
-                    {workspaceInitials(workspace.name)}
+                    {getInitials(workspace.name, 'W')}
                   </div>
                   <div className="min-w-0 flex-1">
                     <CardTitle className="truncate text-base">{workspace.name}</CardTitle>
@@ -342,46 +302,21 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
             ))}
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              {total === 0 ? '0 workspaces' : `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} of ${total} workspaces`}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setQuery((current) => ({ ...current, page: Math.max(1, Number(current.page ?? 1) - 1) }))}
-                disabled={page <= 1 || workspaces.isFetching}
-              >
-                Previous
-              </Button>
-              <div className="min-w-20 text-center text-sm text-muted-foreground">
-                Page {page} of {pageCount}
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => setQuery((current) => ({ ...current, page: Number(current.page ?? 1) + 1 }))}
-                disabled={page >= pageCount || workspaces.isFetching}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <PaginationFooter
+            itemLabel="workspaces"
+            page={page}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            total={total}
+            isFetching={workspaces.isFetching}
+            pageSizeOptions={[12, 24, 48, 96]}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
         </>
       ) : null}
     </div>
   )
-}
-
-function workspaceInitials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) {
-    return 'W'
-  }
-
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('')
 }
 
 function trimTrailingSlash(path: string) {

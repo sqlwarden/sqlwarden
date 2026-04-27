@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { Cancel01Icon, PlusSignIcon, Search01Icon, UserGroupIcon, UserMultipleIcon } from '@hugeicons/core-free-icons'
+import { PlusSignIcon, UserGroupIcon, UserMultipleIcon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
+import { useDebouncedQueryText } from '#/hooks/use-debounced-query-text'
+import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
 import { orgEffectivePermissionsQueryOptions, orgMemberQueryOptions, orgMemberTeamsQueryOptions, orgTeamsQueryOptions } from '#/lib/api/query'
-import type { ListQuery, Team } from '#/lib/api/types'
+import type { Team } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
-import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import {
@@ -21,8 +22,10 @@ import {
 } from '#/components/ui/breadcrumb'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
-import { Input } from '#/components/ui/input'
+import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { RoutePending } from '#/components/RoutePending'
+import { SearchInput } from '#/components/SearchInput'
+import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 
@@ -41,9 +44,8 @@ function OrganizationUserContextPage() {
   const { org_slug: orgSlug, account_id: accountId } = Route.useParams()
   const queryClient = useQueryClient()
   const [isAddingTeam, setIsAddingTeam] = useState(false)
-  const [searchText, setSearchText] = useState('')
-  const [teamSearch, setTeamSearch] = useState('')
-  const [teamsQuery] = useState<ListQuery>({
+  const { searchText, setSearchText, debouncedQuery: teamSearch, clearSearch } = useDebouncedQueryText()
+  const { query: teamsQuery, toggleSort: toggleTeamsSort } = useListPageState({
     page: 1,
     page_size: 25,
     sort: 'name',
@@ -66,14 +68,6 @@ function OrganizationUserContextPage() {
   const existingTeamSlugs = new Set(teamItems.map((team) => team.slug))
   const displayName = member.data?.name || member.data?.email || `User #${accountId}`
   const canManageTeams = hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setTeamSearch(searchText.trim())
-    }, 300)
-
-    return () => window.clearTimeout(timer)
-  }, [searchText])
 
   useEffect(() => {
     if (!member.error) {
@@ -136,8 +130,7 @@ function OrganizationUserContextPage() {
   })
 
   function resetAddTeam() {
-    setSearchText('')
-    setTeamSearch('')
+    clearSearch()
   }
 
   return (
@@ -175,9 +168,7 @@ function OrganizationUserContextPage() {
           {member.data ? (
             <div className="flex flex-col gap-6">
               <div className="flex items-start gap-4">
-                <Avatar size="lg">
-                  <AvatarFallback>{userInitials(member.data.name || member.data.email)}</AvatarFallback>
-                </Avatar>
+                <InitialsAvatar value={member.data.name || member.data.email} size="lg" />
                 <div className="min-w-0 flex-1">
                   <h1 className="truncate text-2xl font-semibold tracking-tight">{displayName}</h1>
                   <p className="truncate text-sm text-muted-foreground">{member.data.email}</p>
@@ -216,25 +207,13 @@ function OrganizationUserContextPage() {
                   <DialogTitle>Add Team</DialogTitle>
                 </DialogHeader>
                 <div className="mt-6 flex flex-col gap-4">
-                  <div className="relative">
-                    <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={searchText}
-                      onChange={(event) => setSearchText(event.target.value)}
-                      placeholder="Search teams"
-                      className="pe-9 ps-9"
-                    />
-                    {searchText ? (
-                      <button
-                        type="button"
-                        aria-label="Clear search"
-                        className="absolute end-3 top-1/2 inline-flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-                        onClick={() => setSearchText('')}
-                      >
-                        <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
-                      </button>
-                    ) : null}
-                  </div>
+                  <SearchInput
+                    value={searchText}
+                    onValueChange={setSearchText}
+                    onClear={clearSearch}
+                    placeholder="Search teams"
+                    className="max-w-none"
+                  />
 
                   <div className="min-h-64">
                     <Table>
@@ -272,9 +251,17 @@ function OrganizationUserContextPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Team</TableHead>
-                <TableHead>Created</TableHead>
-                {canManageTeams ? <TableHead className="text-end">Actions</TableHead> : null}
+                <TableHead>
+                  <TableColumnHeader label="Team" sort="name" currentSort={teamsQuery.sort} currentOrder={teamsQuery.order} onSortChange={toggleTeamsSort} />
+                </TableHead>
+                <TableHead>
+                  <TableColumnHeader label="Created" sort="created_at" currentSort={teamsQuery.sort} currentOrder={teamsQuery.order} onSortChange={toggleTeamsSort} />
+                </TableHead>
+                {canManageTeams ? (
+                  <TableHead className="text-end">
+                    <TableColumnHeader label="Actions" />
+                  </TableHead>
+                ) : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -318,9 +305,7 @@ function TeamPickerRow({
     <TableRow>
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <Avatar>
-            <AvatarFallback>{initials(team.name, 'T')}</AvatarFallback>
-          </Avatar>
+          <InitialsAvatar value={team.name} fallback="T" />
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{team.name}</div>
             <div className="truncate text-muted-foreground">@{team.slug}</div>
@@ -384,9 +369,7 @@ function TeamRow({
           params={{ org_slug: orgSlug, team_slug: team.slug }}
           className="flex min-w-0 items-center gap-3"
         >
-          <Avatar>
-            <AvatarFallback>{initials(team.name, 'T')}</AvatarFallback>
-          </Avatar>
+          <InitialsAvatar value={team.name} fallback="T" />
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{team.name}</div>
             <div className="truncate text-muted-foreground">@{team.slug}</div>
@@ -475,24 +458,6 @@ function roleLabel(role: string) {
     return 'Member'
   }
   return role.charAt(0).toUpperCase() + role.slice(1)
-}
-
-function userInitials(value: string) {
-  return initials(value, 'U')
-}
-
-function initials(value: string, fallback: string) {
-  const parts = value.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) {
-    return fallback
-  }
-  if (parts.length === 1 && parts[0].includes('@')) {
-    return parts[0][0]?.toUpperCase() ?? fallback
-  }
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('')
 }
 
 function formatDate(value: string) {

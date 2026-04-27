@@ -13,8 +13,8 @@ import type { SessionResponse } from '#/lib/api/types'
 import { api } from '#/lib/api/client'
 import { queryKeys } from '#/lib/api/query'
 import { clearAccessToken } from '#/lib/auth/access-token'
+import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { useTheme } from '#/components/theme-provider'
-import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
 import {
   DropdownMenu,
@@ -212,7 +212,6 @@ function AppShellUserMenu({
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const initials = accountInitials(session.account.name)
 
   const logout = useMutation({
     mutationFn: async () => api.post<void>('/api/v1/auth/logout'),
@@ -235,9 +234,7 @@ function AppShellUserMenu({
               />
             }
           >
-            <Avatar className="rounded-lg">
-              <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
-            </Avatar>
+            <InitialsAvatar value={session.account.name} className="rounded-lg" />
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">{session.account.name}</span>
               <span className="truncate text-xs text-muted-foreground">{session.account.email}</span>
@@ -252,9 +249,7 @@ function AppShellUserMenu({
             <DropdownMenuGroup>
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-2 py-1.5 text-left text-sm">
-                  <Avatar className="rounded-lg">
-                    <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
-                  </Avatar>
+                  <InitialsAvatar value={session.account.name} className="rounded-lg" />
                   <div className="grid flex-1 text-left text-sm leading-tight">
                     <span className="truncate font-medium text-foreground">{session.account.name}</span>
                     <span className="truncate text-xs text-muted-foreground">{session.account.email}</span>
@@ -454,19 +449,6 @@ function titleCase(value: string) {
     .split('-')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
-}
-
-function accountInitials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-
-  if (parts.length === 0) {
-    return 'U'
-  }
-
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('')
 }
 
 function navItemKey(item: AppShellNavItem) {
