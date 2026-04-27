@@ -81,6 +81,14 @@ export interface Team {
   updated_at: string
 }
 
+export interface TeamMember {
+  team_id: number
+  account_id: number
+  email: string
+  name: string
+  created_at: string
+}
+
 export interface OrgMember {
   org_id: number
   account_id: number
@@ -107,7 +115,7 @@ export interface PolicyBinding {
   binding_kind: string
   binding_id: number
   subject_id: number
-  subject_type: 'account' | 'team'
+  subject_type: 'account' | 'team' | 'org_members'
   subject_name: string
   resource_id: number
   resource_type: 'org' | 'workspace' | 'environment' | 'connection'

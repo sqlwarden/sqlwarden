@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, AccountOrganization, EffectivePermissions, ResourceType } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, AccountOrganization, EffectivePermissions, ResourceType, OrgMember, Team, TeamMember } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -10,6 +10,14 @@ export const queryKeys = {
   instanceOrganizations: (query?: ListQuery) => ['instance-organizations', query ?? {}] as const,
   orgEffectivePermissions: (slug: string, resourceType: ResourceType, resourceId?: string | number) =>
     ['org-effective-permissions', slug, resourceType, resourceId ?? null] as const,
+  orgMembers: (slug: string, query?: ListQuery) => ['org-members', slug, query ?? {}] as const,
+  orgMember: (slug: string, accountId: string | number) => ['org-member', slug, accountId] as const,
+  orgMemberTeams: (slug: string, accountId: string | number, query?: ListQuery) =>
+    ['org-member-teams', slug, accountId, query ?? {}] as const,
+  orgTeams: (slug: string, query?: ListQuery) => ['org-teams', slug, query ?? {}] as const,
+  orgTeam: (slug: string, teamSlug: string) => ['org-team', slug, teamSlug] as const,
+  orgTeamMembers: (slug: string, teamSlug: string, query?: ListQuery) =>
+    ['org-team-members', slug, teamSlug, query ?? {}] as const,
   orgWorkspaces: (slug: string, query?: ListQuery) => ['org-workspaces', slug, query ?? {}] as const,
   orgWorkspace: (slug: string, workspaceId: string | number) => ['org-workspace', slug, workspaceId] as const,
   myWorkspaces: (query?: ListQuery) => ['my-workspaces', query ?? {}] as const,
@@ -74,6 +82,54 @@ export function orgEffectivePermissionsQueryOptions(slug: string, resourceType: 
         },
       }),
     staleTime: 60_000,
+  })
+}
+
+export function orgMembersQueryOptions(slug: string, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgMembers(slug, query),
+    queryFn: () => api.get<Paginated<OrgMember>>(`/api/v1/orgs/${slug}/members`, { query }),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function orgMemberQueryOptions(slug: string, accountId: string | number) {
+  return queryOptions({
+    queryKey: queryKeys.orgMember(slug, accountId),
+    queryFn: () => api.get<OrgMember>(`/api/v1/orgs/${slug}/members/${accountId}`),
+    staleTime: 60_000,
+  })
+}
+
+export function orgMemberTeamsQueryOptions(slug: string, accountId: string | number, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgMemberTeams(slug, accountId, query),
+    queryFn: () => api.get<Paginated<Team>>(`/api/v1/orgs/${slug}/members/${accountId}/teams`, { query }),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function orgTeamsQueryOptions(slug: string, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgTeams(slug, query),
+    queryFn: () => api.get<Paginated<Team>>(`/api/v1/orgs/${slug}/teams`, { query }),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function orgTeamQueryOptions(slug: string, teamSlug: string) {
+  return queryOptions({
+    queryKey: queryKeys.orgTeam(slug, teamSlug),
+    queryFn: () => api.get<Team>(`/api/v1/orgs/${slug}/teams/${teamSlug}`),
+    staleTime: 60_000,
+  })
+}
+
+export function orgTeamMembersQueryOptions(slug: string, teamSlug: string, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgTeamMembers(slug, teamSlug, query),
+    queryFn: () => api.get<Paginated<TeamMember>>(`/api/v1/orgs/${slug}/teams/${teamSlug}/members`, { query }),
+    placeholderData: keepPreviousData,
   })
 }
 

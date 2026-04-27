@@ -33,14 +33,14 @@ type OrganizationListItem struct {
 }
 
 type AccountOrganizationListItem struct {
-	ID        int64     `json:"id"`
-	Slug      string    `json:"slug"`
-	Name      string    `json:"name"`
-	Role      string    `json:"role"`
-	MemberCount int     `json:"member_count"`
-	TeamCount   int     `json:"team_count"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          int64     `json:"id"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	Role        string    `json:"role"`
+	MemberCount int       `json:"member_count"`
+	TeamCount   int       `json:"team_count"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type OrgIDPConfig struct {
@@ -227,6 +227,41 @@ func (db *DB) ListOrgMembersPage(ctx context.Context, params ListOrgMembersParam
 		return response.Paginated[OrgMemberListItem]{}, err
 	}
 	return response.PaginateItems(items, params.Page, params.PageSize), nil
+}
+
+func (db *DB) GetOrgMember(ctx context.Context, orgID, accountID int64) (OrgMemberListItem, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	query := `
+SELECT
+	om.org_id,
+	om.account_id,
+	a.email,
+	a.name,
+	COALESCE(MAX(CASE WHEN ro.name IN ('owner', 'admin') THEN ro.name END), 'member') AS role,
+	om.joined_at
+FROM org_members AS om
+JOIN accounts AS a ON a.id = om.account_id
+LEFT JOIN role_bindings AS rb
+	ON rb.org_id = om.org_id
+	AND rb.subject_type = 'account'
+	AND rb.subject_id = om.account_id
+	AND rb.resource_type = 'org'
+	AND rb.resource_id = om.org_id
+LEFT JOIN roles AS ro ON ro.id = rb.role_id
+WHERE om.org_id = ? AND om.account_id = ?
+GROUP BY om.org_id, om.account_id, a.email, a.name, om.joined_at`
+
+	var item OrgMemberListItem
+	err := db.NewRaw(query, orgID, accountID).Scan(ctx, &item)
+	if errors.Is(err, sql.ErrNoRows) {
+		return OrgMemberListItem{}, false, nil
+	}
+	if err != nil {
+		return OrgMemberListItem{}, false, err
+	}
+	return item, true, nil
 }
 
 func (db *DB) IsOrgMember(ctx context.Context, orgID, accountID int64) (bool, error) {

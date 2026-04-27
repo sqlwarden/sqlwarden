@@ -26,6 +26,14 @@ type TeamMember struct {
 	CreatedAt time.Time `bun:",notnull" json:"created_at"`
 }
 
+type TeamMemberListItem struct {
+	TeamID    int64     `json:"team_id"`
+	AccountID int64     `json:"account_id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type ListTeamMembersParams struct {
 	TeamID   int64
 	Sort     string
@@ -147,21 +155,49 @@ func (db *DB) RemoveTeamMember(ctx context.Context, teamID, accountID int64) err
 	return err
 }
 
-func (db *DB) ListTeamMembersPage(ctx context.Context, params ListTeamMembersParams) (response.Paginated[TeamMember], error) {
+func (db *DB) ListTeamMembersPage(ctx context.Context, params ListTeamMembersParams) (response.Paginated[TeamMemberListItem], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	params = normalizeTeamMemberListParams(params)
 
-	var members []TeamMember
-	err := db.NewSelect().Model(&members).
-		Where("team_id = ?", params.TeamID).
-		OrderExpr(teamMemberOrderExpr(params)).
-		Scan(ctx)
+	var members []TeamMemberListItem
+	query := `
+SELECT tm.team_id, tm.account_id, a.email, a.name, tm.created_at
+FROM team_members AS tm
+JOIN accounts AS a ON a.id = tm.account_id
+WHERE tm.team_id = ?
+ORDER BY ` + teamMemberOrderExpr(params)
+	err := db.NewRaw(query, params.TeamID).Scan(ctx, &members)
 	if err != nil {
-		return response.Paginated[TeamMember]{}, err
+		return response.Paginated[TeamMemberListItem]{}, err
 	}
 	return response.PaginateItems(members, params.Page, params.PageSize), nil
+}
+
+func (db *DB) ListAccountTeamsPage(ctx context.Context, params ListTeamsParams, accountID int64) (response.Paginated[Team], error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	params = normalizeTeamListParams(params)
+
+	query := db.NewSelect().Model((*Team)(nil)).
+		Join("JOIN team_members AS tm ON tm.team_id = team.id").
+		Where("team.org_id = ? AND tm.account_id = ?", params.OrgID, accountID)
+	if params.Search != "" {
+		search := "%" + strings.ToLower(params.Search) + "%"
+		query = query.Where("(LOWER(team.name) LIKE ? OR LOWER(team.slug) LIKE ?)", search, search)
+	}
+	if params.Slug != "" {
+		query = query.Where("team.slug = ?", params.Slug)
+	}
+
+	var teams []Team
+	err := query.OrderExpr(fmt.Sprintf("team.%s %s, team.id %s", teamSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx, &teams)
+	if err != nil {
+		return response.Paginated[Team]{}, err
+	}
+	return response.PaginateItems(teams, params.Page, params.PageSize), nil
 }
 
 func (db *DB) GetAccountTeams(ctx context.Context, orgID, accountID int64) ([]Team, error) {
@@ -234,8 +270,8 @@ func normalizeTeamMemberListParams(params ListTeamMembersParams) ListTeamMembers
 func teamMemberOrderExpr(params ListTeamMembersParams) string {
 	switch params.Sort {
 	case "account_id":
-		return "account_id " + strings.ToUpper(params.Order) + ", created_at " + strings.ToUpper(params.Order)
+		return "tm.account_id " + strings.ToUpper(params.Order) + ", tm.created_at " + strings.ToUpper(params.Order)
 	default:
-		return "created_at " + strings.ToUpper(params.Order) + ", account_id " + strings.ToUpper(params.Order)
+		return "tm.created_at " + strings.ToUpper(params.Order) + ", tm.account_id " + strings.ToUpper(params.Order)
 	}
 }

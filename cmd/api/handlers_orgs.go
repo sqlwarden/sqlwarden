@@ -173,6 +173,76 @@ func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (app *application) getOrgMember(w http.ResponseWriter, r *http.Request) {
+	org := contextGetOrg(r)
+	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
+	}
+
+	member, found, err := app.db.GetOrgMember(r.Context(), org.ID, accountID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.notFound(w, r)
+		return
+	}
+	err = response.JSON(w, http.StatusOK, member)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) listOrgMemberTeams(w http.ResponseWriter, r *http.Request) {
+	org := contextGetOrg(r)
+	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
+	}
+
+	isMember, err := app.db.IsOrgMember(r.Context(), org.ID, accountID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !isMember {
+		app.notFound(w, r)
+		return
+	}
+
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"name":       "name",
+		"created_at": "created_at",
+	})
+	slug := strings.TrimSpace(r.URL.Query().Get("slug"))
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	teams, err := app.db.ListAccountTeamsPage(r.Context(), database.ListTeamsParams{
+		OrgID:    org.ID,
+		Search:   q.Search,
+		Slug:     slug,
+		Sort:     q.Sort,
+		Order:    q.Order,
+		Page:     q.Page,
+		PageSize: q.PageSize,
+	}, accountID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	err = response.JSON(w, http.StatusOK, teams)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 	accountIDStr := chi.URLParam(r, "account_id")

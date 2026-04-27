@@ -106,6 +106,41 @@ func TestListOrgMembers_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	assert.Equal(t, payload.Items[0]["role"], "admin")
 }
 
+func TestGetOrgMemberAndTeams(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, ownerTok, slug := registerAndLogin(t, app, uniqueEmail(t, "org-member-context-owner"), "Owner User", "securepass99")
+	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-member-context-member"), "Member User")
+
+	addMemberRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
+		map[string]any{"email": member.Email}, ownerTok), app.routes())
+	assert.Equal(t, addMemberRes.StatusCode, http.StatusNoContent)
+
+	createTeamRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams",
+		map[string]any{"slug": "engineering", "name": "Engineering"}, ownerTok), app.routes())
+	assert.Equal(t, createTeamRes.StatusCode, http.StatusCreated)
+
+	addTeamMemberRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams/engineering/members",
+		map[string]any{"account_id": member.ID}, ownerTok), app.routes())
+	assert.Equal(t, addTeamMemberRes.StatusCode, http.StatusNoContent)
+
+	getMemberRes := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members/"+strconv.FormatInt(member.ID, 10), ownerTok), app.routes())
+	assert.Equal(t, getMemberRes.StatusCode, http.StatusOK)
+	assert.Equal(t, getMemberRes.BodyFields["email"].(string), member.Email)
+	assert.Equal(t, getMemberRes.BodyFields["role"].(string), "member")
+
+	teamsRes := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members/"+strconv.FormatInt(member.ID, 10)+"/teams", ownerTok), app.routes())
+	assert.Equal(t, teamsRes.StatusCode, http.StatusOK)
+	var payload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	decodeJSONResponse(t, teamsRes.BodyBytes, &payload)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, payload.Items[0]["slug"], "engineering")
+}
+
 func TestAddOrgMember(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

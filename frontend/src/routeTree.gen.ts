@@ -39,6 +39,8 @@ import { Route as OrgsOrg_slugRolesRouteImport } from './routes/orgs.$org_slug.r
 import { Route as OrgsOrg_slugPoliciesRouteImport } from './routes/orgs.$org_slug.policies'
 import { Route as OrgsOrg_slugIdeRouteImport } from './routes/orgs.$org_slug.ide'
 import { Route as OrgsOrg_slugWorkspacesWorkspace_idRouteImport } from './routes/orgs.$org_slug.workspaces.$workspace_id'
+import { Route as OrgsOrg_slugUsersAccount_idRouteImport } from './routes/orgs.$org_slug.users.$account_id'
+import { Route as OrgsOrg_slugTeamsTeam_slugRouteImport } from './routes/orgs.$org_slug.teams.$team_slug'
 import { Route as OrgsOrg_slugWorkspacesWorkspace_idUsersRouteImport } from './routes/orgs.$org_slug.workspaces.$workspace_id.users'
 import { Route as OrgsOrg_slugWorkspacesWorkspace_idTeamsRouteImport } from './routes/orgs.$org_slug.workspaces.$workspace_id.teams'
 import { Route as OrgsOrg_slugWorkspacesWorkspace_idSettingsRouteImport } from './routes/orgs.$org_slug.workspaces.$workspace_id.settings'
@@ -199,6 +201,18 @@ const OrgsOrg_slugWorkspacesWorkspace_idRoute =
     path: '/$workspace_id',
     getParentRoute: () => OrgsOrg_slugWorkspacesRoute,
   } as any)
+const OrgsOrg_slugUsersAccount_idRoute =
+  OrgsOrg_slugUsersAccount_idRouteImport.update({
+    id: '/$account_id',
+    path: '/$account_id',
+    getParentRoute: () => OrgsOrg_slugUsersRoute,
+  } as any)
+const OrgsOrg_slugTeamsTeam_slugRoute =
+  OrgsOrg_slugTeamsTeam_slugRouteImport.update({
+    id: '/$team_slug',
+    path: '/$team_slug',
+    getParentRoute: () => OrgsOrg_slugTeamsRoute,
+  } as any)
 const OrgsOrg_slugWorkspacesWorkspace_idUsersRoute =
   OrgsOrg_slugWorkspacesWorkspace_idUsersRouteImport.update({
     id: '/users',
@@ -262,10 +276,12 @@ export interface FileRoutesByFullPath {
   '/orgs/$org_slug/policies': typeof OrgsOrg_slugPoliciesRoute
   '/orgs/$org_slug/roles': typeof OrgsOrg_slugRolesRoute
   '/orgs/$org_slug/settings': typeof OrgsOrg_slugSettingsRoute
-  '/orgs/$org_slug/teams': typeof OrgsOrg_slugTeamsRoute
-  '/orgs/$org_slug/users': typeof OrgsOrg_slugUsersRoute
+  '/orgs/$org_slug/teams': typeof OrgsOrg_slugTeamsRouteWithChildren
+  '/orgs/$org_slug/users': typeof OrgsOrg_slugUsersRouteWithChildren
   '/orgs/$org_slug/workspaces': typeof OrgsOrg_slugWorkspacesRouteWithChildren
   '/orgs/$org_slug/': typeof OrgsOrg_slugIndexRoute
+  '/orgs/$org_slug/teams/$team_slug': typeof OrgsOrg_slugTeamsTeam_slugRoute
+  '/orgs/$org_slug/users/$account_id': typeof OrgsOrg_slugUsersAccount_idRoute
   '/orgs/$org_slug/workspaces/$workspace_id': typeof OrgsOrg_slugWorkspacesWorkspace_idRouteWithChildren
   '/orgs/$org_slug/workspaces/$workspace_id/connections': typeof OrgsOrg_slugWorkspacesWorkspace_idConnectionsRoute
   '/orgs/$org_slug/workspaces/$workspace_id/environments': typeof OrgsOrg_slugWorkspacesWorkspace_idEnvironmentsRoute
@@ -297,10 +313,12 @@ export interface FileRoutesByTo {
   '/orgs/$org_slug/policies': typeof OrgsOrg_slugPoliciesRoute
   '/orgs/$org_slug/roles': typeof OrgsOrg_slugRolesRoute
   '/orgs/$org_slug/settings': typeof OrgsOrg_slugSettingsRoute
-  '/orgs/$org_slug/teams': typeof OrgsOrg_slugTeamsRoute
-  '/orgs/$org_slug/users': typeof OrgsOrg_slugUsersRoute
+  '/orgs/$org_slug/teams': typeof OrgsOrg_slugTeamsRouteWithChildren
+  '/orgs/$org_slug/users': typeof OrgsOrg_slugUsersRouteWithChildren
   '/orgs/$org_slug/workspaces': typeof OrgsOrg_slugWorkspacesRouteWithChildren
   '/orgs/$org_slug': typeof OrgsOrg_slugIndexRoute
+  '/orgs/$org_slug/teams/$team_slug': typeof OrgsOrg_slugTeamsTeam_slugRoute
+  '/orgs/$org_slug/users/$account_id': typeof OrgsOrg_slugUsersAccount_idRoute
   '/orgs/$org_slug/workspaces/$workspace_id': typeof OrgsOrg_slugWorkspacesWorkspace_idRouteWithChildren
   '/orgs/$org_slug/workspaces/$workspace_id/connections': typeof OrgsOrg_slugWorkspacesWorkspace_idConnectionsRoute
   '/orgs/$org_slug/workspaces/$workspace_id/environments': typeof OrgsOrg_slugWorkspacesWorkspace_idEnvironmentsRoute
@@ -336,10 +354,12 @@ export interface FileRoutesById {
   '/orgs/$org_slug/policies': typeof OrgsOrg_slugPoliciesRoute
   '/orgs/$org_slug/roles': typeof OrgsOrg_slugRolesRoute
   '/orgs/$org_slug/settings': typeof OrgsOrg_slugSettingsRoute
-  '/orgs/$org_slug/teams': typeof OrgsOrg_slugTeamsRoute
-  '/orgs/$org_slug/users': typeof OrgsOrg_slugUsersRoute
+  '/orgs/$org_slug/teams': typeof OrgsOrg_slugTeamsRouteWithChildren
+  '/orgs/$org_slug/users': typeof OrgsOrg_slugUsersRouteWithChildren
   '/orgs/$org_slug/workspaces': typeof OrgsOrg_slugWorkspacesRouteWithChildren
   '/orgs/$org_slug/': typeof OrgsOrg_slugIndexRoute
+  '/orgs/$org_slug/teams/$team_slug': typeof OrgsOrg_slugTeamsTeam_slugRoute
+  '/orgs/$org_slug/users/$account_id': typeof OrgsOrg_slugUsersAccount_idRoute
   '/orgs/$org_slug/workspaces/$workspace_id': typeof OrgsOrg_slugWorkspacesWorkspace_idRouteWithChildren
   '/orgs/$org_slug/workspaces/$workspace_id/connections': typeof OrgsOrg_slugWorkspacesWorkspace_idConnectionsRoute
   '/orgs/$org_slug/workspaces/$workspace_id/environments': typeof OrgsOrg_slugWorkspacesWorkspace_idEnvironmentsRoute
@@ -380,6 +400,8 @@ export interface FileRouteTypes {
     | '/orgs/$org_slug/users'
     | '/orgs/$org_slug/workspaces'
     | '/orgs/$org_slug/'
+    | '/orgs/$org_slug/teams/$team_slug'
+    | '/orgs/$org_slug/users/$account_id'
     | '/orgs/$org_slug/workspaces/$workspace_id'
     | '/orgs/$org_slug/workspaces/$workspace_id/connections'
     | '/orgs/$org_slug/workspaces/$workspace_id/environments'
@@ -415,6 +437,8 @@ export interface FileRouteTypes {
     | '/orgs/$org_slug/users'
     | '/orgs/$org_slug/workspaces'
     | '/orgs/$org_slug'
+    | '/orgs/$org_slug/teams/$team_slug'
+    | '/orgs/$org_slug/users/$account_id'
     | '/orgs/$org_slug/workspaces/$workspace_id'
     | '/orgs/$org_slug/workspaces/$workspace_id/connections'
     | '/orgs/$org_slug/workspaces/$workspace_id/environments'
@@ -453,6 +477,8 @@ export interface FileRouteTypes {
     | '/orgs/$org_slug/users'
     | '/orgs/$org_slug/workspaces'
     | '/orgs/$org_slug/'
+    | '/orgs/$org_slug/teams/$team_slug'
+    | '/orgs/$org_slug/users/$account_id'
     | '/orgs/$org_slug/workspaces/$workspace_id'
     | '/orgs/$org_slug/workspaces/$workspace_id/connections'
     | '/orgs/$org_slug/workspaces/$workspace_id/environments'
@@ -686,6 +712,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrgsOrg_slugWorkspacesWorkspace_idRouteImport
       parentRoute: typeof OrgsOrg_slugWorkspacesRoute
     }
+    '/orgs/$org_slug/users/$account_id': {
+      id: '/orgs/$org_slug/users/$account_id'
+      path: '/$account_id'
+      fullPath: '/orgs/$org_slug/users/$account_id'
+      preLoaderRoute: typeof OrgsOrg_slugUsersAccount_idRouteImport
+      parentRoute: typeof OrgsOrg_slugUsersRoute
+    }
+    '/orgs/$org_slug/teams/$team_slug': {
+      id: '/orgs/$org_slug/teams/$team_slug'
+      path: '/$team_slug'
+      fullPath: '/orgs/$org_slug/teams/$team_slug'
+      preLoaderRoute: typeof OrgsOrg_slugTeamsTeam_slugRouteImport
+      parentRoute: typeof OrgsOrg_slugTeamsRoute
+    }
     '/orgs/$org_slug/workspaces/$workspace_id/users': {
       id: '/orgs/$org_slug/workspaces/$workspace_id/users'
       path: '/users'
@@ -775,6 +815,28 @@ const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
   SettingsRouteChildren,
 )
 
+interface OrgsOrg_slugTeamsRouteChildren {
+  OrgsOrg_slugTeamsTeam_slugRoute: typeof OrgsOrg_slugTeamsTeam_slugRoute
+}
+
+const OrgsOrg_slugTeamsRouteChildren: OrgsOrg_slugTeamsRouteChildren = {
+  OrgsOrg_slugTeamsTeam_slugRoute: OrgsOrg_slugTeamsTeam_slugRoute,
+}
+
+const OrgsOrg_slugTeamsRouteWithChildren =
+  OrgsOrg_slugTeamsRoute._addFileChildren(OrgsOrg_slugTeamsRouteChildren)
+
+interface OrgsOrg_slugUsersRouteChildren {
+  OrgsOrg_slugUsersAccount_idRoute: typeof OrgsOrg_slugUsersAccount_idRoute
+}
+
+const OrgsOrg_slugUsersRouteChildren: OrgsOrg_slugUsersRouteChildren = {
+  OrgsOrg_slugUsersAccount_idRoute: OrgsOrg_slugUsersAccount_idRoute,
+}
+
+const OrgsOrg_slugUsersRouteWithChildren =
+  OrgsOrg_slugUsersRoute._addFileChildren(OrgsOrg_slugUsersRouteChildren)
+
 interface OrgsOrg_slugWorkspacesWorkspace_idRouteChildren {
   OrgsOrg_slugWorkspacesWorkspace_idConnectionsRoute: typeof OrgsOrg_slugWorkspacesWorkspace_idConnectionsRoute
   OrgsOrg_slugWorkspacesWorkspace_idEnvironmentsRoute: typeof OrgsOrg_slugWorkspacesWorkspace_idEnvironmentsRoute
@@ -825,8 +887,8 @@ interface OrgsOrg_slugRouteChildren {
   OrgsOrg_slugPoliciesRoute: typeof OrgsOrg_slugPoliciesRoute
   OrgsOrg_slugRolesRoute: typeof OrgsOrg_slugRolesRoute
   OrgsOrg_slugSettingsRoute: typeof OrgsOrg_slugSettingsRoute
-  OrgsOrg_slugTeamsRoute: typeof OrgsOrg_slugTeamsRoute
-  OrgsOrg_slugUsersRoute: typeof OrgsOrg_slugUsersRoute
+  OrgsOrg_slugTeamsRoute: typeof OrgsOrg_slugTeamsRouteWithChildren
+  OrgsOrg_slugUsersRoute: typeof OrgsOrg_slugUsersRouteWithChildren
   OrgsOrg_slugWorkspacesRoute: typeof OrgsOrg_slugWorkspacesRouteWithChildren
   OrgsOrg_slugIndexRoute: typeof OrgsOrg_slugIndexRoute
 }
@@ -836,8 +898,8 @@ const OrgsOrg_slugRouteChildren: OrgsOrg_slugRouteChildren = {
   OrgsOrg_slugPoliciesRoute: OrgsOrg_slugPoliciesRoute,
   OrgsOrg_slugRolesRoute: OrgsOrg_slugRolesRoute,
   OrgsOrg_slugSettingsRoute: OrgsOrg_slugSettingsRoute,
-  OrgsOrg_slugTeamsRoute: OrgsOrg_slugTeamsRoute,
-  OrgsOrg_slugUsersRoute: OrgsOrg_slugUsersRoute,
+  OrgsOrg_slugTeamsRoute: OrgsOrg_slugTeamsRouteWithChildren,
+  OrgsOrg_slugUsersRoute: OrgsOrg_slugUsersRouteWithChildren,
   OrgsOrg_slugWorkspacesRoute: OrgsOrg_slugWorkspacesRouteWithChildren,
   OrgsOrg_slugIndexRoute: OrgsOrg_slugIndexRoute,
 }

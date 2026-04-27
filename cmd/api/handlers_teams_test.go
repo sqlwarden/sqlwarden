@@ -185,6 +185,8 @@ func TestTeamMemberManagement(t *testing.T) {
 	assert.Equal(t, members.Total, 1)
 	assert.Equal(t, len(members.Items), 1)
 	assert.Equal(t, fmt.Sprintf("%v", members.Items[0]["account_id"]), memberID)
+	assert.Equal(t, members.Items[0]["email"], "tm-member@example.com")
+	assert.Equal(t, members.Items[0]["name"], "TM Member")
 
 	// Remove member from team.
 	removeReq := newTestRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug+"/teams/devs/members/"+memberID, nil)
