@@ -13,11 +13,13 @@ import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
+import { RoutePending } from '#/components/RoutePending'
 import { Separator } from '#/components/ui/separator'
 import { Skeleton } from '#/components/ui/skeleton'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces')({
   component: OrganizationWorkspacesRoute,
+  pendingComponent: RoutePending,
 })
 
 function OrganizationWorkspacesRoute() {

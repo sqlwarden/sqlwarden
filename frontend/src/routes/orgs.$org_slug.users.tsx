@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Outlet, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
+import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Cancel01Icon, PlusSignIcon, Search01Icon, UserMultipleIcon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
@@ -15,11 +15,13 @@ import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
+import { RoutePending } from '#/components/RoutePending'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 
 export const Route = createFileRoute('/orgs/$org_slug/users')({
   component: OrganizationUsersRoute,
+  pendingComponent: RoutePending,
 })
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -284,7 +286,15 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
 
 function UserRow({ member }: { member: OrgMember }) {
   const { org_slug: orgSlug } = Route.useParams()
+  const router = useRouter()
   const navigate = useNavigate()
+
+  function preloadUser() {
+    void router.preloadRoute({
+      to: '/orgs/$org_slug/users/$account_id',
+      params: { org_slug: orgSlug, account_id: String(member.account_id) },
+    })
+  }
 
   function openUser() {
     void navigate({
@@ -298,6 +308,8 @@ function UserRow({ member }: { member: OrgMember }) {
       className="cursor-pointer"
       tabIndex={0}
       role="link"
+      onFocus={preloadUser}
+      onMouseEnter={preloadUser}
       onClick={openUser}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {

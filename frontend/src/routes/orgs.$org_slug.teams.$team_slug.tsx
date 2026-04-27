@@ -21,11 +21,13 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
+import { RoutePending } from '#/components/RoutePending'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 
 export const Route = createFileRoute('/orgs/$org_slug/teams/$team_slug')({
   component: OrganizationTeamContextPage,
+  pendingComponent: RoutePending,
 })
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {

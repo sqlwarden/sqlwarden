@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Outlet, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
+import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Cancel01Icon, PlusSignIcon, Search01Icon, UserGroupIcon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
@@ -14,11 +14,13 @@ import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
+import { RoutePending } from '#/components/RoutePending'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 
 export const Route = createFileRoute('/orgs/$org_slug/teams')({
   component: OrganizationTeamsRoute,
+  pendingComponent: RoutePending,
 })
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -312,7 +314,15 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
 
 function TeamRow({ team }: { team: Team }) {
   const { org_slug: orgSlug } = Route.useParams()
+  const router = useRouter()
   const navigate = useNavigate()
+
+  function preloadTeam() {
+    void router.preloadRoute({
+      to: '/orgs/$org_slug/teams/$team_slug',
+      params: { org_slug: orgSlug, team_slug: team.slug },
+    })
+  }
 
   function openTeam() {
     void navigate({
@@ -326,6 +336,8 @@ function TeamRow({ team }: { team: Team }) {
       className="cursor-pointer"
       tabIndex={0}
       role="link"
+      onFocus={preloadTeam}
+      onMouseEnter={preloadTeam}
       onClick={openTeam}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {

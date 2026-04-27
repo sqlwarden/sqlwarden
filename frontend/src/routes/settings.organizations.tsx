@@ -12,10 +12,12 @@ import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
+import { RoutePending } from '#/components/RoutePending'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 
 export const Route = createFileRoute('/settings/organizations')({
   component: SettingsOrganizationsPage,
+  pendingComponent: RoutePending,
 })
 
 function SettingsOrganizationsPage() {

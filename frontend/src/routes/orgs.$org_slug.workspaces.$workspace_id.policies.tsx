@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { RoutePending } from '#/components/RoutePending'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/policies')({
   component: WorkspacePoliciesPage,
+  pendingComponent: RoutePending,
 })
 
 function WorkspacePoliciesPage() {
@@ -16,4 +18,3 @@ function PlaceholderPage({ title }: { title: string }) {
     </div>
   )
 }
-

@@ -10,9 +10,11 @@ import { Button } from '#/components/ui/button'
 import { Badge } from '#/components/ui/badge'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, CardAction } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
+import { RoutePending } from '#/components/RoutePending'
 
 export const Route = createFileRoute('/settings/my-organizations')({
   component: SettingsMyOrganizationsPage,
+  pendingComponent: RoutePending,
 })
 
 function SettingsMyOrganizationsPage() {
