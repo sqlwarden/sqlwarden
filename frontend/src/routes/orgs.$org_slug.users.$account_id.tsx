@@ -146,54 +146,62 @@ function OrganizationUserContextPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink render={<Link to="/orgs/$org_slug/users" params={{ org_slug: orgSlug }} />}>
-              Users
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage>{displayName}</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
+      <div className="flex flex-col gap-4">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link to="/orgs/$org_slug/users" params={{ org_slug: orgSlug }} />}>
+                Users
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{displayName}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
 
-      <Card className="overflow-hidden">
-        {member.isLoading ? (
-          <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">
-            <Skeleton className="size-12 shrink-0 rounded-full" />
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-5 w-40" />
-              <Skeleton className="h-4 w-56" />
+        <div className="flex min-w-0 items-center gap-3">
+          {member.data ? (
+            <InitialsAvatar value={member.data.name || member.data.email} size="lg" />
+          ) : (
+            <Skeleton className="size-10 shrink-0 rounded-full" />
+          )}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
+              {member.data ? (
+                <Badge variant={roleBadgeVariant(member.data.role)}>{roleLabel(member.data.role)}</Badge>
+              ) : null}
             </div>
+            {member.data ? (
+              <p className="mt-0.5 text-sm text-muted-foreground">{member.data.email}</p>
+            ) : null}
           </div>
-        ) : null}
+        </div>
+      </div>
 
+      <Card>
         {member.isError ? (
           <CardContent>
             <ContextMessage icon={UserMultipleIcon} message="Failed to load user." />
           </CardContent>
         ) : null}
-
-        {member.data ? (
-          <>
-            <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">
-              <InitialsAvatar value={member.data.name || member.data.email} size="lg" />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl font-semibold leading-tight tracking-tight">{displayName}</h1>
-                  <Badge variant={roleBadgeVariant(member.data.role)}>{roleLabel(member.data.role)}</Badge>
-                </div>
-                <p className="mt-0.5 truncate text-sm text-muted-foreground">{member.data.email}</p>
+        {member.isLoading ? (
+          <div className="grid gap-5 px-6 py-5 sm:grid-cols-2">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="flex flex-col gap-1.5 border-l-2 border-border pl-3">
+                <Skeleton className="h-2.5 w-16" />
+                <Skeleton className="h-4 w-24" />
               </div>
-            </div>
-            <div className="grid gap-5 px-6 py-5 sm:grid-cols-2">
-              <InfoBlock label="Account ID" value={String(member.data.account_id)} />
-              <InfoBlock label="Joined" value={formatDate(member.data.joined_at)} />
-            </div>
-          </>
+            ))}
+          </div>
+        ) : null}
+        {member.data ? (
+          <div className="grid gap-5 px-6 py-5 sm:grid-cols-2">
+            <InfoBlock label="Account ID" value={String(member.data.account_id)} />
+            <InfoBlock label="Joined" value={formatDate(member.data.joined_at)} />
+          </div>
         ) : null}
       </Card>
 

@@ -32,6 +32,7 @@ import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import { RoutePending } from '#/components/RoutePending'
 import { Skeleton } from '#/components/ui/skeleton'
+import { cn } from '#/lib/utils'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/roles/$role_id')({
   component: WorkspaceRoleContextPage,
@@ -121,11 +122,30 @@ function WorkspaceRoleContextPage() {
         </Breadcrumb>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
-            <p className="text-sm text-muted-foreground">
-              {role.data?.description || 'Permission set used by workspace policies.'}
-            </p>
+          <div className="flex min-w-0 items-center gap-3">
+            {role.data ? (
+              <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold', roleColor(role.data.name))}>
+                {displayName.slice(0, 2).toUpperCase()}
+              </div>
+            ) : (
+              <Skeleton className="size-10 shrink-0 rounded-md" />
+            )}
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
+                {role.data ? (
+                  <>
+                    <Badge variant={role.data.is_builtin ? 'secondary' : 'outline'}>
+                      {role.data.is_builtin ? 'System' : 'Custom'}
+                    </Badge>
+                    <Badge variant="outline">{scopeLabel(role.data.scope_type)}</Badge>
+                  </>
+                ) : null}
+              </div>
+              {role.data?.description ? (
+                <p className="mt-0.5 text-sm text-muted-foreground">{role.data.description}</p>
+              ) : null}
+            </div>
           </div>
 
           {role.data && canDeleteRole && !role.data.is_builtin ? (
@@ -158,52 +178,33 @@ function WorkspaceRoleContextPage() {
         </div>
       </div>
 
-      <Card className="overflow-hidden">
-        {effectivePermissions.isLoading || role.isLoading ? (
-          <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">
-            <Skeleton className="size-12 shrink-0 rounded-md" />
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-5 w-40" />
-              <Skeleton className="h-4 w-56" />
-            </div>
-          </div>
-        ) : null}
-
+      <Card>
         {role.isError ? (
           <CardContent>
             <ContextMessage message="Failed to load role." />
           </CardContent>
         ) : null}
-
         {!effectivePermissions.isLoading && !canReadRole ? (
           <CardContent>
             <ContextMessage message="You do not have permission to view this role." />
           </CardContent>
         ) : null}
-
+        {effectivePermissions.isLoading || role.isLoading ? (
+          <div className="grid gap-5 px-6 py-5 sm:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex flex-col gap-1.5 border-l-2 border-border pl-3">
+                <Skeleton className="h-2.5 w-16" />
+                <Skeleton className="h-4 w-24" />
+              </div>
+            ))}
+          </div>
+        ) : null}
         {role.data ? (
-          <>
-            <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted text-sm font-semibold text-muted-foreground">
-                {roleDisplayName(role.data.name).slice(0, 2).toUpperCase()}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-xl font-semibold leading-tight tracking-tight">{roleDisplayName(role.data.name)}</h2>
-                  <Badge variant={role.data.is_builtin ? 'secondary' : 'outline'}>
-                    {role.data.is_builtin ? 'System' : 'Custom'}
-                  </Badge>
-                  <Badge variant="outline">{scopeLabel(role.data.scope_type)}</Badge>
-                </div>
-                <p className="mt-0.5 truncate text-sm text-muted-foreground">{role.data.description || 'No description'}</p>
-              </div>
-            </div>
-            <div className="grid gap-5 px-6 py-5 sm:grid-cols-3">
-              <InfoBlock label="Role ID" value={String(role.data.id)} />
-              <InfoBlock label="Created" value={formatDate(role.data.created_at)} />
-              <InfoBlock label="Updated" value={formatDate(role.data.updated_at)} />
-            </div>
-          </>
+          <div className="grid gap-5 px-6 py-5 sm:grid-cols-3">
+            <InfoBlock label="Role ID" value={String(role.data.id)} />
+            <InfoBlock label="Created" value={formatDate(role.data.created_at)} />
+            <InfoBlock label="Updated" value={formatDate(role.data.updated_at)} />
+          </div>
         ) : null}
       </Card>
 
@@ -228,18 +229,20 @@ function PermissionGroups({ permissions, permissionDefinitions }: { permissions:
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid gap-6 sm:grid-cols-2">
       {groupedPermissions.map((group) => (
-        <div key={group.name} className="flex flex-col gap-2 rounded-md border border-border p-4">
-          <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{group.name}</p>
-          <div className="flex flex-col gap-2">
+        <div key={group.name} className="flex flex-col gap-3">
+          <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{group.name}</p>
+          <div className="flex flex-col gap-3">
             {group.permissions.map((item) => (
-              <div key={item} className="rounded-md border border-border p-3">
+              <div key={item}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{permissionDisplayName(item, permissionDefinitions)}</span>
-                  <Badge variant="outline">{item}</Badge>
+                  <span className="text-sm font-medium text-foreground">{permissionDisplayName(item, permissionDefinitions)}</span>
+                  <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">{item}</Badge>
                 </div>
-                <p className="mt-1 text-sm text-muted-foreground">{permissionDescription(item, permissionDefinitions) ?? 'No description available.'}</p>
+                {permissionDescription(item, permissionDefinitions) ? (
+                  <p className="mt-0.5 text-xs text-muted-foreground">{permissionDescription(item, permissionDefinitions)}</p>
+                ) : null}
               </div>
             ))}
           </div>
@@ -251,14 +254,14 @@ function PermissionGroups({ permissions, permissionDefinitions }: { permissions:
 
 function PermissionGroupsSkeleton() {
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid gap-6 sm:grid-cols-2">
       {Array.from({ length: 4 }).map((_, index) => (
-        <div key={index} className="flex flex-col gap-3 rounded-md border border-border p-4">
-          <Skeleton className="h-4 w-28" />
-          <div className="flex flex-wrap gap-2">
-            <Skeleton className="h-5 w-20" />
-            <Skeleton className="h-5 w-24" />
-            <Skeleton className="h-5 w-16" />
+        <div key={index} className="flex flex-col gap-3">
+          <Skeleton className="h-3 w-24" />
+          <div className="flex flex-col gap-3">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-4 w-36" />
+            <Skeleton className="h-4 w-44" />
           </div>
         </div>
       ))}
@@ -323,4 +326,19 @@ function formatDate(value: string) {
     return 'Unknown'
   }
   return dateFormatter.format(date)
+}
+
+const ROLE_COLORS = [
+  'bg-violet-500/10 text-violet-600',
+  'bg-blue-500/10 text-blue-600',
+  'bg-emerald-500/10 text-emerald-600',
+  'bg-orange-500/10 text-orange-600',
+  'bg-rose-500/10 text-rose-600',
+  'bg-amber-500/10 text-amber-600',
+  'bg-cyan-500/10 text-cyan-600',
+]
+
+function roleColor(name: string): string {
+  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+  return ROLE_COLORS[hash % ROLE_COLORS.length]
 }

@@ -145,52 +145,58 @@ function OrganizationTeamContextPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink render={<Link to="/orgs/$org_slug/teams" params={{ org_slug: orgSlug }} />}>
-              Teams
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage>{displayName}</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
+      <div className="flex flex-col gap-4">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link to="/orgs/$org_slug/teams" params={{ org_slug: orgSlug }} />}>
+                Teams
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{displayName}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
 
-      <Card className="overflow-hidden">
-        {team.isLoading ? (
-          <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">
-            <Skeleton className="size-12 shrink-0 rounded-full" />
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-5 w-40" />
-              <Skeleton className="h-4 w-28" />
-            </div>
+        <div className="flex min-w-0 items-center gap-3">
+          {team.data ? (
+            <InitialsAvatar value={team.data.name} fallback="T" size="lg" />
+          ) : (
+            <Skeleton className="size-10 shrink-0 rounded-full" />
+          )}
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
+            {team.data ? (
+              <p className="mt-0.5 text-sm text-muted-foreground">@{team.data.slug}</p>
+            ) : null}
           </div>
-        ) : null}
+        </div>
+      </div>
 
+      <Card>
         {team.isError ? (
           <CardContent>
             <ContextMessage icon={UserGroupIcon} message="Failed to load team." />
           </CardContent>
         ) : null}
-
-        {team.data ? (
-          <>
-            <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">
-              <InitialsAvatar value={team.data.name} fallback="T" size="lg" />
-              <div className="min-w-0 flex-1">
-                <h1 className="text-xl font-semibold leading-tight tracking-tight">{team.data.name}</h1>
-                <p className="mt-0.5 truncate text-sm text-muted-foreground">@{team.data.slug}</p>
+        {team.isLoading ? (
+          <div className="grid gap-5 px-6 py-5 sm:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex flex-col gap-1.5 border-l-2 border-border pl-3">
+                <Skeleton className="h-2.5 w-16" />
+                <Skeleton className="h-4 w-24" />
               </div>
-            </div>
-            <div className="grid gap-5 px-6 py-5 sm:grid-cols-3">
-              <InfoBlock label="Team ID" value={String(team.data.id)} />
-              <InfoBlock label="Created" value={formatDate(team.data.created_at)} />
-              <InfoBlock label="Members" value={String(members.data?.total ?? 0)} />
-            </div>
-          </>
+            ))}
+          </div>
+        ) : null}
+        {team.data ? (
+          <div className="grid gap-5 px-6 py-5 sm:grid-cols-3">
+            <InfoBlock label="Team ID" value={String(team.data.id)} />
+            <InfoBlock label="Created" value={formatDate(team.data.created_at)} />
+            <InfoBlock label="Members" value={String(members.data?.total ?? 0)} />
+          </div>
         ) : null}
       </Card>
 

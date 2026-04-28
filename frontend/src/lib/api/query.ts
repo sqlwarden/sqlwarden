@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, Team, TeamMember, Role } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, Team, TeamMember, Role, PolicyBinding } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -36,6 +36,8 @@ export const queryKeys = {
     ['org-connections', slug, workspaceId, environmentId, query ?? {}] as const,
   myConnections: (workspaceId: string | number, environmentId: string | number, query?: ListQuery) =>
     ['my-connections', workspaceId, environmentId, query ?? {}] as const,
+  orgPolicies: (slug: string, query?: ListQuery) => ['org-policies', slug, query ?? {}] as const,
+  orgPolicy: (slug: string, bindingId: string | number) => ['org-policy', slug, bindingId] as const,
 }
 
 export function setupStatusQueryOptions() {
@@ -233,6 +235,22 @@ export function orgConnectionsQueryOptions(
         `/api/v1/orgs/${slug}/workspaces/${workspaceId}/environments/${environmentId}/connections`,
         { query },
       ),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function orgPolicyQueryOptions(slug: string, bindingId: string | number) {
+  return queryOptions({
+    queryKey: queryKeys.orgPolicy(slug, bindingId),
+    queryFn: () => api.get<PolicyBinding>(`/api/v1/orgs/${slug}/policies/${bindingId}`),
+    staleTime: 60_000,
+  })
+}
+
+export function orgPoliciesQueryOptions(slug: string, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgPolicies(slug, query),
+    queryFn: () => api.get<Paginated<PolicyBinding>>(`/api/v1/orgs/${slug}/policies`, { query }),
     placeholderData: keepPreviousData,
   })
 }

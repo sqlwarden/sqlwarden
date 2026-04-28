@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { PlusSignIcon, UserShield01Icon } from '@hugeicons/core-free-icons'
+import { Cancel01Icon, PlusSignIcon, Search01Icon, UserShield01Icon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
@@ -10,21 +10,35 @@ import { isApiError } from '#/lib/api/errors'
 import { orgEffectivePermissionsQueryOptions, orgPermissionsQueryOptions, orgRolesQueryOptions } from '#/lib/api/query'
 import type { PermissionDefinition, Role, RoleScope } from '#/lib/api/types'
 import { hasPermission, permission, permissionDefinitionMap, permissionDescription, permissionDisplayName, permissionGroupName, scopePermissions, type Permission } from '#/lib/permissions'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '#/components/ui/alert-dialog'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Checkbox } from '#/components/ui/checkbox'
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '#/components/ui/tooltip'
 import { Skeleton } from '#/components/ui/skeleton'
 import { TableEmptyState } from '#/components/EmptyState'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { Textarea } from '#/components/ui/textarea'
+import { ScrollArea } from '#/components/ui/scroll-area'
+import { cn } from '#/lib/utils'
 
 export const Route = createFileRoute('/orgs/$org_slug/roles')({
   component: OrganizationRolesRoute,
@@ -69,6 +83,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
   const permissionDefinitions = permissionDefinitionMap(permissionsCatalog.data?.permission_details)
   const canReadRoles = hasPermission(effectivePermissions.data?.permissions, permission.policyRead)
   const canCreateRole = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
+  const canDeleteRole = canCreateRole
   const roles = useQuery({
     ...orgRolesQueryOptions(orgSlug, { ...query, scope: 'org' }),
     enabled: canReadRoles,
@@ -132,6 +147,17 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
       }
 
       toast.error(error instanceof Error ? error.message : 'Failed to create role')
+    },
+  })
+
+  const deleteRole = useMutation({
+    mutationFn: async (roleId: number) => api.delete<void>(`/api/v1/orgs/${orgSlug}/roles/${roleId}`),
+    onSuccess: async () => {
+      toast.success('Role deleted')
+      await queryClient.invalidateQueries({ queryKey: ['org-roles', orgSlug] })
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete role')
     },
   })
 
@@ -201,11 +227,12 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
                 <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
                 Create
               </DialogTrigger>
-              <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+              <DialogContent className="sm:max-w-2xl">
                 <DialogHeader>
                   <DialogTitle>Create role</DialogTitle>
+                  <DialogDescription>Define a permission set that can be assigned via organization policies.</DialogDescription>
                 </DialogHeader>
-                <form className="mt-6 flex flex-col gap-5" onSubmit={submitCreateRole}>
+                <form className="mt-6 flex flex-col gap-6" onSubmit={submitCreateRole}>
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="role-name">Name</Label>
                     <Input
@@ -223,7 +250,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
                   </div>
 
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="role-description">Description</Label>
+                    <Label htmlFor="role-description">Description <span className="font-normal text-muted-foreground">(optional)</span></Label>
                     <Textarea
                       id="role-description"
                       value={description}
@@ -285,19 +312,32 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
                 <TableHead>
                   <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
                 </TableHead>
+                {canDeleteRole ? (
+                  <TableHead className="text-end">
+                    <TableColumnHeader label="Actions" />
+                  </TableHead>
+                ) : null}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {effectivePermissions.isLoading || roles.isLoading ? <RolesTableSkeleton /> : null}
-              {roles.isError ? <TableEmptyState colSpan={4} icon={UserShield01Icon} message="Failed to load roles." /> : null}
+              {effectivePermissions.isLoading || roles.isLoading ? <RolesTableSkeleton canDeleteRole={canDeleteRole} /> : null}
+              {roles.isError ? <TableEmptyState colSpan={canDeleteRole ? 5 : 4} icon={UserShield01Icon} message="Failed to load roles." /> : null}
               {!effectivePermissions.isLoading && !canReadRoles ? (
-                <TableEmptyState colSpan={4} icon={UserShield01Icon} message="You do not have permission to view roles." />
+                <TableEmptyState colSpan={canDeleteRole ? 5 : 4} icon={UserShield01Icon} message="You do not have permission to view roles." />
               ) : null}
               {!effectivePermissions.isLoading && canReadRoles && !roles.isLoading && !roles.isError && items.length === 0 ? (
-                <TableEmptyState colSpan={4} icon={UserShield01Icon} message={query.q ? 'No roles matched your search.' : 'No roles found.'} />
+                <TableEmptyState colSpan={canDeleteRole ? 5 : 4} icon={UserShield01Icon} message={query.q ? 'No roles matched your search.' : 'No roles found.'} />
               ) : null}
               {!effectivePermissions.isLoading && canReadRoles && !roles.isLoading && !roles.isError
-                ? items.map((role) => <RoleRow key={role.id} role={role} />)
+                ? items.map((role) => (
+                    <RoleRow
+                      key={role.id}
+                      role={role}
+                      canDeleteRole={canDeleteRole}
+                      isDeleting={deleteRole.isPending}
+                      onDelete={(roleId) => deleteRole.mutate(roleId)}
+                    />
+                  ))
                 : null}
             </TableBody>
           </Table>
@@ -320,7 +360,17 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
   )
 }
 
-function RoleRow({ role }: { role: Role }) {
+function RoleRow({
+  role,
+  canDeleteRole,
+  isDeleting,
+  onDelete,
+}: {
+  role: Role
+  canDeleteRole: boolean
+  isDeleting: boolean
+  onDelete: (roleId: number) => void
+}) {
   const { org_slug: orgSlug } = Route.useParams()
   const router = useRouter()
   const navigate = useNavigate()
@@ -356,12 +406,12 @@ function RoleRow({ role }: { role: Role }) {
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', roleColor(role.name))}>
             {roleDisplayName(role).slice(0, 2).toUpperCase()}
           </div>
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{roleDisplayName(role)}</div>
-            <div className="truncate text-muted-foreground">{role.description || 'No description'}</div>
+            {role.description ? <div className="truncate text-sm text-muted-foreground">{role.description}</div> : null}
           </div>
         </div>
       </TableCell>
@@ -372,6 +422,64 @@ function RoleRow({ role }: { role: Role }) {
         <Badge variant={role.is_builtin ? 'secondary' : 'outline'}>{role.is_builtin ? 'System' : 'Custom'}</Badge>
       </TableCell>
       <TableCell className="text-muted-foreground">{formatDate(role.created_at)}</TableCell>
+      {canDeleteRole ? (
+        <TableCell className="text-end">
+          {role.is_builtin ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger render={<span className="inline-flex" onClick={(e) => e.stopPropagation()} />}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled
+                    className="pointer-events-none text-muted-foreground/50"
+                  >
+                    Delete
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>System roles cannot be deleted</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            <AlertDialog>
+              <AlertDialogTrigger
+                render={
+                  <Button
+                    variant="destructive"
+                    disabled={isDeleting}
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                }
+              >
+                Delete
+              </AlertDialogTrigger>
+              <AlertDialogContent size="sm" onClick={(event) => event.stopPropagation()}>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete role?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This permanently deletes {roleDisplayName(role)}. Any policies using this role will no longer grant its permissions.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel variant="ghost" disabled={isDeleting}>
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    disabled={isDeleting}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onDelete(role.id)
+                    }}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </TableCell>
+      ) : null}
     </TableRow>
   )
 }
@@ -389,47 +497,93 @@ function PermissionPicker({
   error?: string
   onPermissionChecked: (value: Permission, checked: boolean) => void
 }) {
+  const [search, setSearch] = useState('')
+  const totalPermissions = scopePermissions.org.length
   const groupedPermissions = groupPermissions(scopePermissions.org, permissionDefinitions)
+
+  const filteredGroups = search
+    ? groupedPermissions
+        .map((group) => ({
+          ...group,
+          permissions: group.permissions.filter((item) => {
+            const q = search.toLowerCase()
+            return (
+              permissionDisplayName(item, permissionDefinitions).toLowerCase().includes(q) ||
+              (permissionDescription(item, permissionDefinitions) ?? '').toLowerCase().includes(q) ||
+              item.toLowerCase().includes(q)
+            )
+          }),
+        }))
+        .filter((group) => group.permissions.length > 0)
+    : groupedPermissions
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <Label>Permissions</Label>
-        <p className="text-sm text-muted-foreground">Select the capabilities this role should grant.</p>
+      <div className="flex items-end justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <Label>Permissions</Label>
+          <p className="text-sm text-muted-foreground">Select the capabilities this role should grant.</p>
+        </div>
+        {selectedPermissions.size > 0 ? (
+          <span className="shrink-0 text-xs text-muted-foreground">{selectedPermissions.size} of {totalPermissions} selected</span>
+        ) : null}
       </div>
-      <div className="grid gap-4 rounded-md border border-border p-4 sm:grid-cols-2">
-        {groupedPermissions.map((group) => (
-          <div key={group.name} className="flex flex-col gap-2">
-            <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{group.name}</p>
-            <div className="flex flex-col gap-2">
-              {group.permissions.map((item) => {
-                const id = `permission-${item.replace(/[^a-z0-9]+/g, '-')}`
-                return (
-                  <label key={item} htmlFor={id} className="flex cursor-pointer items-start gap-2 text-sm">
-                    <Checkbox
-                      id={id}
-                      className="mt-0.5"
-                      checked={selectedPermissions.has(item)}
-                      disabled={disabled}
-                      onCheckedChange={(checked) => onPermissionChecked(item, checked === true)}
-                    />
-                    <span className="flex flex-col gap-0.5">
-                      <span className="font-medium text-foreground">{permissionDisplayName(item, permissionDefinitions)}</span>
-                      <span className="text-xs text-muted-foreground">{permissionDescription(item, permissionDefinitions) ?? item}</span>
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
+      <div className="rounded-md border border-border">
+        <div className="flex items-center gap-2 border-b border-border px-3">
+          <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="size-4 shrink-0 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Filter permissions…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-9 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          {search ? (
+            <button type="button" onClick={() => setSearch('')} className="shrink-0 text-muted-foreground hover:text-foreground">
+              <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-3.5" />
+            </button>
+          ) : null}
+        </div>
+        <ScrollArea className="h-60">
+          <div className="flex flex-col gap-5 p-4">
+            {filteredGroups.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">No permissions match your search.</p>
+            ) : null}
+            {filteredGroups.map((group) => (
+              <div key={group.name} className="flex flex-col gap-3">
+                <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{group.name}</p>
+                <div className="flex flex-col gap-3">
+                  {group.permissions.map((item) => {
+                    const id = `permission-${item.replace(/[^a-z0-9]+/g, '-')}`
+                    const description = permissionDescription(item, permissionDefinitions)
+                    return (
+                      <label key={item} htmlFor={id} className="flex cursor-pointer items-start gap-2.5">
+                        <Checkbox
+                          id={id}
+                          className="mt-0.5"
+                          checked={selectedPermissions.has(item)}
+                          disabled={disabled}
+                          onCheckedChange={(checked) => onPermissionChecked(item, checked === true)}
+                        />
+                        <span className="flex flex-col gap-0.5">
+                          <span className="text-sm font-medium text-foreground">{permissionDisplayName(item, permissionDefinitions)}</span>
+                          {description ? <span className="text-xs text-muted-foreground">{description}</span> : null}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
+        </ScrollArea>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </div>
   )
 }
 
-function RolesTableSkeleton() {
+function RolesTableSkeleton({ canDeleteRole }: { canDeleteRole: boolean }) {
   return (
     <>
       {Array.from({ length: 5 }).map((_, index) => (
@@ -452,6 +606,11 @@ function RolesTableSkeleton() {
           <TableCell>
             <Skeleton className="h-4 w-24" />
           </TableCell>
+          {canDeleteRole ? (
+            <TableCell className="text-end">
+              <Skeleton className="ms-auto h-8 w-16" />
+            </TableCell>
+          ) : null}
         </TableRow>
       ))}
     </>
@@ -503,4 +662,19 @@ function formatDate(value: string) {
 
 function trimTrailingSlash(path: string) {
   return path === '/' ? path : path.replace(/\/$/, '')
+}
+
+const ROLE_COLORS = [
+  'bg-violet-500/10 text-violet-600',
+  'bg-blue-500/10 text-blue-600',
+  'bg-emerald-500/10 text-emerald-600',
+  'bg-orange-500/10 text-orange-600',
+  'bg-rose-500/10 text-rose-600',
+  'bg-amber-500/10 text-amber-600',
+  'bg-cyan-500/10 text-cyan-600',
+]
+
+function roleColor(name: string): string {
+  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+  return ROLE_COLORS[hash % ROLE_COLORS.length]
 }

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { PlusSignIcon, UserShield01Icon } from '@hugeicons/core-free-icons'
+import { Cancel01Icon, PlusSignIcon, Search01Icon, UserShield01Icon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
@@ -25,11 +25,12 @@ import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Checkbox } from '#/components/ui/checkbox'
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '#/components/ui/tooltip'
 import { SearchInput } from '#/components/SearchInput'
 import {
   Select,
@@ -44,6 +45,8 @@ import { TableEmptyState } from '#/components/EmptyState'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { Textarea } from '#/components/ui/textarea'
+import { ScrollArea } from '#/components/ui/scroll-area'
+import { cn } from '#/lib/utils'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/roles')({
   component: WorkspaceRolesRoute,
@@ -216,7 +219,7 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">Roles</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Workspace Roles</h1>
             <p className="text-sm text-muted-foreground">
               {!roles.isLoading && total > 0
                 ? `${total} workspace role${total !== 1 ? 's' : ''}`
@@ -238,11 +241,12 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
                 <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
                 Create
               </DialogTrigger>
-              <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+              <DialogContent className="sm:max-w-2xl">
                 <DialogHeader>
                   <DialogTitle>Create workspace role</DialogTitle>
+                  <DialogDescription>Define a permission set that can be assigned via workspace policies.</DialogDescription>
                 </DialogHeader>
-                <form className="mt-6 flex flex-col gap-5" onSubmit={submitCreateRole}>
+                <form className="mt-6 flex flex-col gap-6" onSubmit={submitCreateRole}>
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="workspace-role-name">Name</Label>
                     <Input
@@ -260,22 +264,6 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
                   </div>
 
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="workspace-role-description">Description</Label>
-                    <Textarea
-                      id="workspace-role-description"
-                      value={description}
-                      onChange={(event) => {
-                        setDescription(event.target.value)
-                        setFieldErrors((current) => ({ ...current, description: undefined }))
-                      }}
-                      placeholder="Describe when this role should be used"
-                      aria-invalid={fieldErrors.description ? true : undefined}
-                      disabled={createRole.isPending}
-                    />
-                    {fieldErrors.description ? <p className="text-sm text-destructive">{fieldErrors.description}</p> : null}
-                  </div>
-
-                  <div className="flex flex-col gap-2">
                     <Label>Scope</Label>
                     <Select
                       items={workspaceRoleScopes.map((scope) => ({ label: scopeLabel(scope), value: scope }))}
@@ -287,7 +275,7 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
                       }}
                       disabled={createRole.isPending}
                     >
-                      <SelectTrigger aria-invalid={fieldErrors.scope_type ? true : undefined}>
+                      <SelectTrigger className="w-full" aria-invalid={fieldErrors.scope_type ? true : undefined}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -303,7 +291,24 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
                     {fieldErrors.scope_type ? <p className="text-sm text-destructive">{fieldErrors.scope_type}</p> : null}
                   </div>
 
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="workspace-role-description">Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                    <Textarea
+                      id="workspace-role-description"
+                      value={description}
+                      onChange={(event) => {
+                        setDescription(event.target.value)
+                        setFieldErrors((current) => ({ ...current, description: undefined }))
+                      }}
+                      placeholder="Describe when this role should be used"
+                      aria-invalid={fieldErrors.description ? true : undefined}
+                      disabled={createRole.isPending}
+                    />
+                    {fieldErrors.description ? <p className="text-sm text-destructive">{fieldErrors.description}</p> : null}
+                  </div>
+
                   <PermissionPicker
+                    key={scopeType}
                     scopeType={scopeType}
                     selectedPermissions={selectedPermissions}
                     permissionDefinitions={permissionDefinitions}
@@ -445,12 +450,12 @@ function RoleRow({
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', roleColor(role.name))}>
             {roleDisplayName(role).slice(0, 2).toUpperCase()}
           </div>
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{roleDisplayName(role)}</div>
-            <div className="truncate text-muted-foreground">{role.description || 'No description'}</div>
+            {role.description ? <div className="truncate text-sm text-muted-foreground">{role.description}</div> : null}
           </div>
         </div>
       </TableCell>
@@ -463,7 +468,23 @@ function RoleRow({
       <TableCell className="text-muted-foreground">{formatDate(role.created_at)}</TableCell>
       {canModifyRoles ? (
         <TableCell className="text-end">
-          {!role.is_builtin ? (
+          {role.is_builtin ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger render={<span className="inline-flex" onClick={(e) => e.stopPropagation()} />}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled
+                    className="pointer-events-none text-muted-foreground/50"
+                  >
+                    Delete
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>System roles cannot be deleted</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
             <AlertDialog>
               <AlertDialogTrigger
                 render={
@@ -500,7 +521,7 @@ function RoleRow({
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-          ) : null}
+          )}
         </TableCell>
       ) : null}
     </TableRow>
@@ -522,40 +543,87 @@ function PermissionPicker({
   error?: string
   onPermissionChecked: (value: Permission, checked: boolean) => void
 }) {
-  const groupedPermissions = groupPermissions(scopePermissions[scopeType], permissionDefinitions)
+  const [search, setSearch] = useState('')
+  const allPermissions = scopePermissions[scopeType]
+  const totalPermissions = allPermissions.length
+  const groupedPermissions = groupPermissions(allPermissions, permissionDefinitions)
+
+  const filteredGroups = search
+    ? groupedPermissions
+        .map((group) => ({
+          ...group,
+          permissions: group.permissions.filter((item) => {
+            const q = search.toLowerCase()
+            return (
+              permissionDisplayName(item, permissionDefinitions).toLowerCase().includes(q) ||
+              (permissionDescription(item, permissionDefinitions) ?? '').toLowerCase().includes(q) ||
+              item.toLowerCase().includes(q)
+            )
+          }),
+        }))
+        .filter((group) => group.permissions.length > 0)
+    : groupedPermissions
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <Label>Permissions</Label>
-        <p className="text-sm text-muted-foreground">Select the capabilities this role should grant for {scopeLabel(scopeType).toLowerCase()} resources.</p>
+      <div className="flex items-end justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <Label>Permissions</Label>
+          <p className="text-sm text-muted-foreground">Select the capabilities this role should grant for {scopeLabel(scopeType).toLowerCase()} resources.</p>
+        </div>
+        {selectedPermissions.size > 0 ? (
+          <span className="shrink-0 text-xs text-muted-foreground">{selectedPermissions.size} of {totalPermissions} selected</span>
+        ) : null}
       </div>
-      <div className="grid gap-4 rounded-md border border-border p-4 sm:grid-cols-2">
-        {groupedPermissions.map((group) => (
-          <div key={group.name} className="flex flex-col gap-2">
-            <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{group.name}</p>
-            <div className="flex flex-col gap-2">
-              {group.permissions.map((item) => {
-                const id = `workspace-permission-${item.replace(/[^a-z0-9]+/g, '-')}`
-                return (
-                  <label key={item} htmlFor={id} className="flex cursor-pointer items-start gap-2 text-sm">
-                    <Checkbox
-                      id={id}
-                      className="mt-0.5"
-                      checked={selectedPermissions.has(item)}
-                      disabled={disabled}
-                      onCheckedChange={(checked) => onPermissionChecked(item, checked === true)}
-                    />
-                    <span className="flex flex-col gap-0.5">
-                      <span className="font-medium text-foreground">{permissionDisplayName(item, permissionDefinitions)}</span>
-                      <span className="text-xs text-muted-foreground">{permissionDescription(item, permissionDefinitions) ?? item}</span>
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
+      <div className="rounded-md border border-border">
+        <div className="flex items-center gap-2 border-b border-border px-3">
+          <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="size-4 shrink-0 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Filter permissions…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-9 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          {search ? (
+            <button type="button" onClick={() => setSearch('')} className="shrink-0 text-muted-foreground hover:text-foreground">
+              <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-3.5" />
+            </button>
+          ) : null}
+        </div>
+        <ScrollArea className="h-60">
+          <div className="flex flex-col gap-5 p-4">
+            {filteredGroups.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">No permissions match your search.</p>
+            ) : null}
+            {filteredGroups.map((group) => (
+              <div key={group.name} className="flex flex-col gap-3">
+                <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{group.name}</p>
+                <div className="flex flex-col gap-3">
+                  {group.permissions.map((item) => {
+                    const id = `workspace-permission-${item.replace(/[^a-z0-9]+/g, '-')}`
+                    const description = permissionDescription(item, permissionDefinitions)
+                    return (
+                      <label key={item} htmlFor={id} className="flex cursor-pointer items-start gap-2.5">
+                        <Checkbox
+                          id={id}
+                          className="mt-0.5"
+                          checked={selectedPermissions.has(item)}
+                          disabled={disabled}
+                          onCheckedChange={(checked) => onPermissionChecked(item, checked === true)}
+                        />
+                        <span className="flex flex-col gap-0.5">
+                          <span className="text-sm font-medium text-foreground">{permissionDisplayName(item, permissionDefinitions)}</span>
+                          {description ? <span className="text-xs text-muted-foreground">{description}</span> : null}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
+        </ScrollArea>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </div>
@@ -643,4 +711,19 @@ function formatDate(value: string) {
 
 function trimTrailingSlash(path: string) {
   return path === '/' ? path : path.replace(/\/$/, '')
+}
+
+const ROLE_COLORS = [
+  'bg-violet-500/10 text-violet-600',
+  'bg-blue-500/10 text-blue-600',
+  'bg-emerald-500/10 text-emerald-600',
+  'bg-orange-500/10 text-orange-600',
+  'bg-rose-500/10 text-rose-600',
+  'bg-amber-500/10 text-amber-600',
+  'bg-cyan-500/10 text-cyan-600',
+]
+
+function roleColor(name: string): string {
+  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+  return ROLE_COLORS[hash % ROLE_COLORS.length]
 }
