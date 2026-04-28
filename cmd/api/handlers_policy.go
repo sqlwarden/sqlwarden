@@ -96,11 +96,12 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input.V.CheckField(input.Name != "", "name", "name is required")
-	input.V.CheckField(input.ScopeType != "", "scope_type", "scope_type is required")
-	validScopes := map[string]bool{"org": true, "workspace": true, "environment": true, "connection": true}
-	input.V.CheckField(validScopes[input.ScopeType], "scope_type", "must be org, workspace, environment, or connection")
+	if input.ScopeType == "" {
+		input.ScopeType = "org"
+	}
+	input.V.CheckField(input.ScopeType == "org", "scope_type", "org roles must have scope_type=org")
 	if input.WorkspaceID != nil {
-		input.V.CheckField(input.ScopeType == "workspace", "scope_type", "workspace-scoped roles must have scope_type=workspace")
+		input.V.AddFieldError("workspace_id", "org roles cannot set workspace_id")
 	}
 	for _, p := range input.Permissions {
 		input.V.CheckField(access.ValidForScope(p, input.ScopeType), "permissions", p+" is not valid for scope "+input.ScopeType)
@@ -323,8 +324,10 @@ func (app *application) revokeOrgPolicy(w http.ResponseWriter, r *http.Request) 
 
 func (app *application) listPermissions(w http.ResponseWriter, r *http.Request) {
 	err := response.JSON(w, http.StatusOK, map[string]any{
-		"permissions": access.AllPermissions(),
-		"scope_map":   access.ScopePermissions,
+		"permissions":        access.AllPermissions(),
+		"permission_details": access.AllPermissionDefinitions(),
+		"scope_map":          access.ScopePermissions,
+		"scope_details":      access.ScopePermissionDefinitionMap(),
 	})
 	if err != nil {
 		app.serverError(w, r, err)

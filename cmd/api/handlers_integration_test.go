@@ -46,8 +46,8 @@ func TestFullWorkflow(t *testing.T) {
 	assert.Equal(t, envRes.StatusCode, http.StatusCreated)
 	envID := fmt.Sprintf("%v", envRes.BodyFields["id"])
 
-	// ── Step 7: Create a custom role ─────────────────────────────────────────
-	roleRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+orgSlug+"/roles",
+	// ── Step 7: Create a custom workspace role ───────────────────────────────
+	roleRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID+"/roles",
 		map[string]any{
 			"name":        "viewer",
 			"scope_type":  "workspace",

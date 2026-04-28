@@ -119,15 +119,56 @@ func TestSeedOrgCreatesBuiltinRoles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	byName := make(map[string]bool)
+	byName := make(map[string]database.Role)
 	for _, r := range roles {
 		if r.IsBuiltin {
-			byName[r.Name] = true
+			byName[r.Name] = r
 		}
 	}
 	for _, name := range []string{"owner", "admin", "member"} {
-		if !byName[name] {
+		role, ok := byName[name]
+		if !ok {
 			t.Errorf("expected builtin role %q to exist after SeedOrg", name)
+			continue
+		}
+		if role.Description != access.OrgBuiltinRoleDescriptions[name] {
+			t.Errorf("expected builtin role %q description %q, got %q", name, access.OrgBuiltinRoleDescriptions[name], role.Description)
+		}
+	}
+}
+
+func TestSeedWorkspaceCreatesBuiltinRoleDescriptions(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "workspace-descriptions")
+	ctx := context.Background()
+
+	ws, err := db.InsertWorkspace(ctx, &orgID, "org", orgID, "Main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.SeedWorkspace(ctx, orgID, ws.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	roles, err := db.ListWorkspaceRoles(ctx, orgID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	byName := make(map[string]database.Role)
+	for _, role := range roles {
+		if role.IsBuiltin {
+			byName[role.Name] = role
+		}
+	}
+	for _, name := range []string{"ws:admin", "ws:member"} {
+		role, ok := byName[name]
+		if !ok {
+			t.Errorf("expected builtin workspace role %q to exist after SeedWorkspace", name)
+			continue
+		}
+		if role.Description != access.WorkspaceBuiltinRoleDescriptions[name] {
+			t.Errorf("expected builtin workspace role %q description %q, got %q", name, access.WorkspaceBuiltinRoleDescriptions[name], role.Description)
 		}
 	}
 }

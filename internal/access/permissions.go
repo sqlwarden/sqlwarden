@@ -37,6 +37,45 @@ const (
 	PermPolicyModify = "policy:modify"
 )
 
+type PermissionDefinition struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Group       string `json:"group"`
+}
+
+var PermissionCatalog = []PermissionDefinition{
+	{Key: PermOrgRead, Label: "View organization", Description: "View organization details, members, teams, and other non-sensitive organization metadata.", Group: "Organization"},
+	{Key: PermOrgWrite, Label: "Manage organization", Description: "Update organization settings and manage organization-level membership structures.", Group: "Organization"},
+	{Key: PermOrgDelete, Label: "Delete organization", Description: "Delete the organization and its owned resources.", Group: "Organization"},
+	{Key: PermOrgInvite, Label: "Invite members", Description: "Add existing accounts to the organization and invite new members.", Group: "Organization"},
+	{Key: PermOrgAssignRoles, Label: "Assign organization roles", Description: "Change organization member roles and role assignments.", Group: "Organization"},
+	{Key: PermOrgTransferOwnership, Label: "Transfer ownership", Description: "Transfer organization ownership to another account.", Group: "Organization"},
+
+	{Key: PermWsRead, Label: "View workspaces", Description: "View workspace details and discover accessible workspace content.", Group: "Workspace"},
+	{Key: PermWsWrite, Label: "Manage workspaces", Description: "Update workspace details and workspace-level settings.", Group: "Workspace"},
+	{Key: PermWsCreate, Label: "Create workspaces", Description: "Create new workspaces in the organization.", Group: "Workspace"},
+	{Key: PermWsDelete, Label: "Delete workspaces", Description: "Delete workspaces and their owned resources.", Group: "Workspace"},
+
+	{Key: PermEnvRead, Label: "View environments", Description: "View environment details and discover accessible environment content.", Group: "Environment"},
+	{Key: PermEnvWrite, Label: "Manage environments", Description: "Update environment details and environment-level settings.", Group: "Environment"},
+	{Key: PermEnvCreate, Label: "Create environments", Description: "Create environments inside accessible workspaces.", Group: "Environment"},
+	{Key: PermEnvDelete, Label: "Delete environments", Description: "Delete environments and their owned resources.", Group: "Environment"},
+	{Key: PermEnvDeploy, Label: "Deploy to environments", Description: "Run deployment-oriented environment actions.", Group: "Environment"},
+
+	{Key: PermConnRead, Label: "View connections", Description: "View connection metadata without exposing the DSN.", Group: "Connection"},
+	{Key: PermConnWrite, Label: "Manage connections", Description: "Update connection configuration, including sensitive DSN changes where allowed.", Group: "Connection"},
+	{Key: PermConnCreate, Label: "Create connections", Description: "Create and test new database connections.", Group: "Connection"},
+	{Key: PermConnDelete, Label: "Delete connections", Description: "Delete database connections.", Group: "Connection"},
+	{Key: PermConnExecute, Label: "Execute all queries", Description: "Run DQL, DML, and DDL queries through accessible connections.", Group: "Connection"},
+	{Key: PermConnDQL, Label: "Run read queries", Description: "Run DQL read queries such as SELECT.", Group: "Connection"},
+	{Key: PermConnDML, Label: "Run data-change queries", Description: "Run DML queries such as INSERT, UPDATE, and DELETE.", Group: "Connection"},
+	{Key: PermConnDDL, Label: "Run schema-change queries", Description: "Run DDL queries such as CREATE, ALTER, and DROP.", Group: "Connection"},
+
+	{Key: PermPolicyRead, Label: "View policies", Description: "View roles, permissions, and policy bindings for the resource scope.", Group: "Policy"},
+	{Key: PermPolicyModify, Label: "Manage policies", Description: "Create, update, grant, revoke, and delete roles and policy bindings for the resource scope.", Group: "Policy"},
+}
+
 // ScopePermissions maps scope_type to permissions valid for roles of that scope.
 var ScopePermissions = map[string][]string{
 	"org": {
@@ -84,6 +123,12 @@ var OrgBuiltinRoles = map[string][]string{
 	},
 }
 
+var OrgBuiltinRoleDescriptions = map[string]string{
+	"owner":  "Full organization owner access, including all organization, workspace, environment, connection, and policy permissions.",
+	"admin":  "Administrative organization access for day-to-day management without ownership transfer or organization deletion.",
+	"member": "Baseline organization membership with read access to organization-level information.",
+}
+
 // WorkspaceBuiltinRoles are seeded per workspace by SeedWorkspace.
 // They are bound at the workspace resource and scoped to that workspace only.
 var WorkspaceBuiltinRoles = map[string][]string{
@@ -101,14 +146,20 @@ var WorkspaceBuiltinRoles = map[string][]string{
 	},
 }
 
+var WorkspaceBuiltinRoleDescriptions = map[string]string{
+	"ws:admin":  "Full workspace administration access, including workspace updates, environments, connections, queries, and workspace policies.",
+	"ws:member": "Baseline workspace member access with workspace visibility, environment visibility, connection metadata, and read-query access.",
+}
+
 var allPermissionSet map[string]bool
+var PermissionDefinitions map[string]PermissionDefinition
 
 func init() {
 	allPermissionSet = make(map[string]bool)
-	for _, perms := range ScopePermissions {
-		for _, p := range perms {
-			allPermissionSet[p] = true
-		}
+	PermissionDefinitions = make(map[string]PermissionDefinition, len(PermissionCatalog))
+	for _, definition := range PermissionCatalog {
+		allPermissionSet[definition.Key] = true
+		PermissionDefinitions[definition.Key] = definition
 	}
 }
 
@@ -125,11 +176,36 @@ func ValidForScope(p, scopeType string) bool {
 	return false
 }
 
-// AllPermissions returns all known permission strings (non-deterministic order).
+// AllPermissions returns all known permission strings in catalog order.
 func AllPermissions() []string {
-	all := make([]string, 0, len(allPermissionSet))
-	for p := range allPermissionSet {
-		all = append(all, p)
+	all := make([]string, 0, len(PermissionCatalog))
+	for _, definition := range PermissionCatalog {
+		all = append(all, definition.Key)
 	}
 	return all
+}
+
+func AllPermissionDefinitions() []PermissionDefinition {
+	definitions := make([]PermissionDefinition, len(PermissionCatalog))
+	copy(definitions, PermissionCatalog)
+	return definitions
+}
+
+func ScopePermissionDefinitions(scopeType string) []PermissionDefinition {
+	permissions := ScopePermissions[scopeType]
+	definitions := make([]PermissionDefinition, 0, len(permissions))
+	for _, permission := range permissions {
+		if definition, ok := PermissionDefinitions[permission]; ok {
+			definitions = append(definitions, definition)
+		}
+	}
+	return definitions
+}
+
+func ScopePermissionDefinitionMap() map[string][]PermissionDefinition {
+	result := make(map[string][]PermissionDefinition, len(ScopePermissions))
+	for scopeType := range ScopePermissions {
+		result[scopeType] = ScopePermissionDefinitions(scopeType)
+	}
+	return result
 }

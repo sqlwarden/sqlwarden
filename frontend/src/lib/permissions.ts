@@ -1,5 +1,7 @@
 // Mirrors internal/access/permissions.go. Keep names and groupings aligned with
 // the backend permission model so UI capability checks use backend vocabulary.
+import type { PermissionDefinition } from '#/lib/api/types'
+
 export const permission = {
   orgRead: 'org:read',
   orgWrite: 'org:write',
@@ -182,4 +184,38 @@ export function hasPermission(permissions: readonly string[] | undefined, requir
 
 export function hasAnyPermission(permissions: readonly string[] | undefined, required: readonly Permission[]) {
   return required.some((item) => permissions?.includes(item) === true)
+}
+
+export function permissionDefinitionMap(definitions: readonly PermissionDefinition[] | undefined) {
+  return new Map((definitions ?? []).map((definition) => [definition.key, definition]))
+}
+
+export function permissionDisplayName(value: string, definitions: ReadonlyMap<string, PermissionDefinition>) {
+  return definitions.get(value)?.label ?? value
+}
+
+export function permissionDescription(value: string, definitions: ReadonlyMap<string, PermissionDefinition>) {
+  return definitions.get(value)?.description
+}
+
+export function permissionGroupName(value: string, definitions: ReadonlyMap<string, PermissionDefinition>) {
+  const [prefix] = value.split(':')
+  return definitions.get(value)?.group ?? permissionGroupFallback(prefix)
+}
+
+function permissionGroupFallback(prefix: string) {
+  switch (prefix) {
+    case 'org':
+      return 'Organization'
+    case 'ws':
+      return 'Workspace'
+    case 'env':
+      return 'Environment'
+    case 'conn':
+      return 'Connection'
+    case 'policy':
+      return 'Policy'
+    default:
+      return prefix.toUpperCase()
+  }
 }

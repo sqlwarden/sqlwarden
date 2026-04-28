@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, AccountOrganization, EffectivePermissions, ResourceType, OrgMember, Team, TeamMember, Role } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, Team, TeamMember, Role } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -10,6 +10,7 @@ export const queryKeys = {
   instanceOrganizations: (query?: ListQuery) => ['instance-organizations', query ?? {}] as const,
   orgEffectivePermissions: (slug: string, resourceType: ResourceType, resourceId?: string | number) =>
     ['org-effective-permissions', slug, resourceType, resourceId ?? null] as const,
+  orgPermissions: (slug: string) => ['org-permissions', slug] as const,
   orgMembers: (slug: string, query?: ListQuery) => ['org-members', slug, query ?? {}] as const,
   orgMember: (slug: string, accountId: string | number) => ['org-member', slug, accountId] as const,
   orgMemberTeams: (slug: string, accountId: string | number, query?: ListQuery) =>
@@ -74,6 +75,14 @@ export function instanceAdminsQueryOptions(query?: ListQuery) {
     queryKey: queryKeys.instanceAdmins(query),
     queryFn: () => api.get<Paginated<InstanceAdmin>>('/api/v1/instance/admins', { query }),
     placeholderData: keepPreviousData,
+  })
+}
+
+export function orgPermissionsQueryOptions(slug: string) {
+  return queryOptions({
+    queryKey: queryKeys.orgPermissions(slug),
+    queryFn: () => api.get<PermissionsCatalog>(`/api/v1/orgs/${slug}/permissions`),
+    staleTime: 300_000,
   })
 }
 

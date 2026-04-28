@@ -109,6 +109,48 @@ func TestCreateWorkspacePolicy_MissingRoleReturns404(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }
 
+func TestCreateWorkspacePolicyRejectsCrossOrgAccountSubject(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "policy-account-owner-a"), "Policy Owner A", "Policy Account A")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Workspace", "")
+	otherOwner, _, _ := seedOrgOwner(t, app, uniqueEmail(t, "policy-account-owner-b"), "Policy Owner B", "Policy Account B")
+	roleID := createRoleForTest(t, app, org.ID, &ws.ID, "workspace", access.PermWsRead)
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies",
+		map[string]any{
+			"role_id":      roleID,
+			"subject_type": "account",
+			"subject_id":   otherOwner.ID,
+		}, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestCreateWorkspacePolicyRejectsCrossOrgTeamSubject(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "policy-team-owner-a"), "Policy Owner A", "Policy Team A")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Workspace", "")
+	_, _, otherOrg := seedOrgOwner(t, app, uniqueEmail(t, "policy-team-owner-b"), "Policy Owner B", "Policy Team B")
+	otherTeam, err := app.db.InsertTeam(context.Background(), otherOrg.ID, "other-team", "Other Team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	roleID := createRoleForTest(t, app, org.ID, &ws.ID, "workspace", access.PermWsRead)
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/policies",
+		map[string]any{
+			"role_id":      roleID,
+			"subject_type": "team",
+			"subject_id":   otherTeam.ID,
+		}, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
 func TestCreateWorkspaceRole_DuplicateNameReturns422(t *testing.T) {
 	t.Parallel()
 
@@ -284,6 +326,43 @@ func TestCreateWorkspaceRoleByWsAdmin(t *testing.T) {
 		}, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusCreated)
 	assert.Equal(t, res.BodyFields["name"].(string), "read-only")
+}
+
+func TestCreateWorkspaceRoleSupportsChildScopes(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-child-scope@example.com", "WSR Child Scope")
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{
+			"name":        "env-operator",
+			"description": "Environment operator",
+			"scope_type":  "environment",
+			"permissions": []string{"env:read", "conn:read"},
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+	assert.Equal(t, res.BodyFields["scope_type"].(string), "environment")
+
+	badScope := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{
+			"name":        "org-role",
+			"scope_type":  "org",
+			"permissions": []string{"org:read"},
+		}, tok), app.routes())
+	assert.Equal(t, badScope.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, badScope, "scope_type")
+
+	badPermission := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{
+			"name":        "bad-env-role",
+			"scope_type":  "environment",
+			"permissions": []string{"ws:read"},
+		}, tok), app.routes())
+	assert.Equal(t, badPermission.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, badPermission, "permissions")
 }
 
 func TestCreateWorkspaceRoleByOrgAdmin(t *testing.T) {
@@ -495,8 +574,16 @@ func TestListWorkspacePermissions(t *testing.T) {
 
 	perms, ok := res.BodyFields["permissions"].([]any)
 	assert.Equal(t, ok, true)
+	details, ok := res.BodyFields["permission_details"].([]any)
+	assert.Equal(t, ok, true)
+	assert.Equal(t, len(details), len(perms))
 	// Workspace scope has more than zero permissions.
 	assert.Equal(t, len(perms) > 0, true)
+	firstDetail := details[0].(map[string]any)
+	assert.True(t, firstDetail["key"] != "")
+	assert.True(t, firstDetail["label"] != "")
+	assert.True(t, firstDetail["description"] != "")
+	assert.True(t, firstDetail["group"] != "")
 
 	// Org-only permissions must NOT appear.
 	for _, p := range perms {
@@ -666,6 +753,27 @@ func TestListWorkspacePoliciesPermissions(t *testing.T) {
 	adminRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/policies", nil, wsAdminTok), app.routes())
 	assert.Equal(t, adminRes.StatusCode, http.StatusOK)
+}
+
+func TestWorkspacePolicyPermissionsDoNotGrantOrgPolicyAccess(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	slug, wsID, ownerTok := wsSetup(t, app, "wsp-no-org-policy@example.com", "WSP No Org Policy")
+
+	wsAdminTok := wsJoinAs(t, app, slug, wsID, "ws:admin", "wsp-no-org-policy-admin@example.com", ownerTok)
+
+	workspaceReadRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/policies", nil, wsAdminTok), app.routes())
+	assert.Equal(t, workspaceReadRes.StatusCode, http.StatusOK)
+
+	orgReadRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/policies", nil, wsAdminTok), app.routes())
+	assert.Equal(t, orgReadRes.StatusCode, http.StatusForbidden)
+
+	orgModifyRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/policies", map[string]any{}, wsAdminTok), app.routes())
+	assert.Equal(t, orgModifyRes.StatusCode, http.StatusForbidden)
 }
 
 func TestListWorkspacePolicies_ReturnsRenderableSubjectAndResourceMetadata(t *testing.T) {

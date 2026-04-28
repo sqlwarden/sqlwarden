@@ -313,7 +313,7 @@ func matchesPrincipal(subjectType string, subjectID, accountID int64, principals
 // the owner role. Call this once when creating a new organization.
 func (e *Enforcer) SeedOrg(ctx context.Context, orgID, ownerAccountID int64) error {
 	for roleName, permissions := range OrgBuiltinRoles {
-		roleID, err := e.insertRole(ctx, orgID, nil, roleName, "", "org", true)
+		roleID, err := e.insertRole(ctx, orgID, nil, roleName, OrgBuiltinRoleDescriptions[roleName], "org", true)
 		if err != nil {
 			return fmt.Errorf("seed role %s: %w", roleName, err)
 		}
@@ -352,7 +352,7 @@ func (e *Enforcer) SeedOrg(ctx context.Context, orgID, ownerAccountID int64) err
 // creatorAccountID to ws:admin. Call this once when creating a new workspace.
 func (e *Enforcer) SeedWorkspace(ctx context.Context, orgID, workspaceID, creatorAccountID int64) error {
 	for roleName, permissions := range WorkspaceBuiltinRoles {
-		roleID, err := e.insertRole(ctx, orgID, &workspaceID, roleName, "", "workspace", true)
+		roleID, err := e.insertRole(ctx, orgID, &workspaceID, roleName, WorkspaceBuiltinRoleDescriptions[roleName], "workspace", true)
 		if err != nil {
 			return fmt.Errorf("seed workspace role %s: %w", roleName, err)
 		}
@@ -489,6 +489,16 @@ func (e *Enforcer) insertRole(ctx context.Context, orgID int64, workspaceID *int
 		}
 		if err = q.Scan(ctx, &id); err != nil {
 			return 0, err
+		}
+		if isBuiltin && description != "" {
+			_, err = e.db.NewUpdate().
+				TableExpr("roles").
+				Set("description = ?", description).
+				Where("id = ?", id).
+				Exec(ctx)
+			if err != nil {
+				return 0, err
+			}
 		}
 	}
 	return id, nil

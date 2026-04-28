@@ -5,8 +5,9 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { UserShield01Icon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
-import { orgEffectivePermissionsQueryOptions, orgWorkspaceRoleQueryOptions } from '#/lib/api/query'
-import { hasPermission, permission, type Permission } from '#/lib/permissions'
+import { orgEffectivePermissionsQueryOptions, orgPermissionsQueryOptions, orgWorkspaceRoleQueryOptions } from '#/lib/api/query'
+import type { PermissionDefinition, RoleScope } from '#/lib/api/types'
+import { hasPermission, permission, permissionDefinitionMap, permissionDescription, permissionDisplayName, permissionGroupName, type Permission } from '#/lib/permissions'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,6 +51,8 @@ function WorkspaceRoleContextPage() {
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId))
   const canReadRole = hasPermission(effectivePermissions.data?.permissions, permission.policyRead)
   const canDeleteRole = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
+  const permissionsCatalog = useQuery(orgPermissionsQueryOptions(orgSlug))
+  const permissionDefinitions = permissionDefinitionMap(permissionsCatalog.data?.permission_details)
   const role = useQuery({
     ...orgWorkspaceRoleQueryOptions(orgSlug, workspaceId, roleId),
     enabled: canReadRole,
@@ -71,6 +74,14 @@ function WorkspaceRoleContextPage() {
 
     toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load role permissions')
   }, [effectivePermissions.error])
+
+  useEffect(() => {
+    if (!permissionsCatalog.error) {
+      return
+    }
+
+    toast.error(permissionsCatalog.error instanceof Error ? permissionsCatalog.error.message : 'Failed to load permission catalog')
+  }, [permissionsCatalog.error])
 
   const deleteRole = useMutation({
     mutationFn: async () => api.delete<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/roles/${roleId}`),
@@ -182,7 +193,7 @@ function WorkspaceRoleContextPage() {
                   <Badge variant={role.data.is_builtin ? 'secondary' : 'outline'}>
                     {role.data.is_builtin ? 'System' : 'Custom'}
                   </Badge>
-                  <Badge variant="outline">Workspace</Badge>
+                  <Badge variant="outline">{scopeLabel(role.data.scope_type)}</Badge>
                 </div>
                 <p className="mt-0.5 truncate text-sm text-muted-foreground">{role.data.description || 'No description'}</p>
               </div>
@@ -202,15 +213,15 @@ function WorkspaceRoleContextPage() {
         </CardHeader>
         <CardContent>
           {effectivePermissions.isLoading || role.isLoading ? <PermissionGroupsSkeleton /> : null}
-          {role.data ? <PermissionGroups permissions={(role.data.permissions ?? []) as Permission[]} /> : null}
+          {role.data ? <PermissionGroups permissions={(role.data.permissions ?? []) as Permission[]} permissionDefinitions={permissionDefinitions} /> : null}
         </CardContent>
       </Card>
     </div>
   )
 }
 
-function PermissionGroups({ permissions }: { permissions: Permission[] }) {
-  const groupedPermissions = groupPermissions(permissions)
+function PermissionGroups({ permissions, permissionDefinitions }: { permissions: Permission[]; permissionDefinitions: ReadonlyMap<string, PermissionDefinition> }) {
+  const groupedPermissions = groupPermissions(permissions, permissionDefinitions)
 
   if (permissions.length === 0) {
     return <ContextMessage message="This role does not grant any permissions." />
@@ -221,11 +232,15 @@ function PermissionGroups({ permissions }: { permissions: Permission[] }) {
       {groupedPermissions.map((group) => (
         <div key={group.name} className="flex flex-col gap-2 rounded-md border border-border p-4">
           <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{group.name}</p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-2">
             {group.permissions.map((item) => (
-              <Badge key={item} variant="outline">
-                {item}
-              </Badge>
+              <div key={item} className="rounded-md border border-border p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{permissionDisplayName(item, permissionDefinitions)}</span>
+                  <Badge variant="outline">{item}</Badge>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">{permissionDescription(item, permissionDefinitions) ?? 'No description available.'}</p>
+              </div>
             ))}
           </div>
         </div>
@@ -251,28 +266,25 @@ function PermissionGroupsSkeleton() {
   )
 }
 
-function groupPermissions(permissions: readonly Permission[]) {
+function groupPermissions(permissions: readonly Permission[], definitions: ReadonlyMap<string, PermissionDefinition>) {
   const groups = new Map<string, Permission[]>()
   for (const item of permissions) {
-    const [prefix] = item.split(':')
-    const group = permissionGroupLabel(prefix)
+    const group = permissionGroupName(item, definitions)
     groups.set(group, [...(groups.get(group) ?? []), item])
   }
   return Array.from(groups.entries()).map(([name, items]) => ({ name, permissions: items }))
 }
 
-function permissionGroupLabel(prefix: string) {
-  switch (prefix) {
-    case 'ws':
+function scopeLabel(value: RoleScope) {
+  switch (value) {
+    case 'org':
+      return 'Organization'
+    case 'workspace':
       return 'Workspace'
-    case 'env':
+    case 'environment':
       return 'Environment'
-    case 'conn':
+    case 'connection':
       return 'Connection'
-    case 'policy':
-      return 'Policy'
-    default:
-      return prefix.toUpperCase()
   }
 }
 

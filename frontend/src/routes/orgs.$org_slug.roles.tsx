@@ -7,9 +7,9 @@ import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
-import { orgEffectivePermissionsQueryOptions, orgRolesQueryOptions } from '#/lib/api/query'
-import type { Role, RoleScope } from '#/lib/api/types'
-import { hasPermission, permission, scopePermissions, type Permission } from '#/lib/permissions'
+import { orgEffectivePermissionsQueryOptions, orgPermissionsQueryOptions, orgRolesQueryOptions } from '#/lib/api/query'
+import type { PermissionDefinition, Role, RoleScope } from '#/lib/api/types'
+import { hasPermission, permission, permissionDefinitionMap, permissionDescription, permissionDisplayName, permissionGroupName, scopePermissions, type Permission } from '#/lib/permissions'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
@@ -65,6 +65,8 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
   })
 
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
+  const permissionsCatalog = useQuery(orgPermissionsQueryOptions(orgSlug))
+  const permissionDefinitions = permissionDefinitionMap(permissionsCatalog.data?.permission_details)
   const canReadRoles = hasPermission(effectivePermissions.data?.permissions, permission.policyRead)
   const canCreateRole = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
   const roles = useQuery({
@@ -93,6 +95,14 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
 
     toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load role permissions')
   }, [effectivePermissions.error])
+
+  useEffect(() => {
+    if (!permissionsCatalog.error) {
+      return
+    }
+
+    toast.error(permissionsCatalog.error instanceof Error ? permissionsCatalog.error.message : 'Failed to load permission catalog')
+  }, [permissionsCatalog.error])
 
   const createRole = useMutation({
     mutationFn: async () =>
@@ -230,6 +240,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
 
                   <PermissionPicker
                     selectedPermissions={selectedPermissions}
+                    permissionDefinitions={permissionDefinitions}
                     disabled={createRole.isPending}
                     error={fieldErrors.permissions}
                     onPermissionChecked={setPermissionChecked}
@@ -367,16 +378,18 @@ function RoleRow({ role }: { role: Role }) {
 
 function PermissionPicker({
   selectedPermissions,
+  permissionDefinitions,
   disabled,
   error,
   onPermissionChecked,
 }: {
   selectedPermissions: Set<Permission>
+  permissionDefinitions: ReadonlyMap<string, PermissionDefinition>
   disabled: boolean
   error?: string
   onPermissionChecked: (value: Permission, checked: boolean) => void
 }) {
-  const groupedPermissions = groupPermissions(scopePermissions.org)
+  const groupedPermissions = groupPermissions(scopePermissions.org, permissionDefinitions)
 
   return (
     <div className="flex flex-col gap-3">
@@ -392,14 +405,18 @@ function PermissionPicker({
               {group.permissions.map((item) => {
                 const id = `permission-${item.replace(/[^a-z0-9]+/g, '-')}`
                 return (
-                  <label key={item} htmlFor={id} className="flex cursor-pointer items-center gap-2 text-sm">
+                  <label key={item} htmlFor={id} className="flex cursor-pointer items-start gap-2 text-sm">
                     <Checkbox
                       id={id}
+                      className="mt-0.5"
                       checked={selectedPermissions.has(item)}
                       disabled={disabled}
                       onCheckedChange={(checked) => onPermissionChecked(item, checked === true)}
                     />
-                    <span>{permissionLabel(item)}</span>
+                    <span className="flex flex-col gap-0.5">
+                      <span className="font-medium text-foreground">{permissionDisplayName(item, permissionDefinitions)}</span>
+                      <span className="text-xs text-muted-foreground">{permissionDescription(item, permissionDefinitions) ?? item}</span>
+                    </span>
                   </label>
                 )
               })}
@@ -441,35 +458,13 @@ function RolesTableSkeleton() {
   )
 }
 
-function groupPermissions(permissions: readonly Permission[]) {
+function groupPermissions(permissions: readonly Permission[], definitions: ReadonlyMap<string, PermissionDefinition>) {
   const groups = new Map<string, Permission[]>()
   for (const item of permissions) {
-    const [prefix] = item.split(':')
-    const group = permissionGroupLabel(prefix)
+    const group = permissionGroupName(item, definitions)
     groups.set(group, [...(groups.get(group) ?? []), item])
   }
   return Array.from(groups.entries()).map(([name, items]) => ({ name, permissions: items }))
-}
-
-function permissionGroupLabel(prefix: string) {
-  switch (prefix) {
-    case 'org':
-      return 'Organization'
-    case 'ws':
-      return 'Workspace'
-    case 'env':
-      return 'Environment'
-    case 'conn':
-      return 'Connection'
-    case 'policy':
-      return 'Policy'
-    default:
-      return prefix.toUpperCase()
-  }
-}
-
-function permissionLabel(value: Permission) {
-  return value
 }
 
 function scopeLabel(value: RoleScope) {

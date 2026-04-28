@@ -73,6 +73,7 @@ func (app *application) createWorkspaceRole(w http.ResponseWriter, r *http.Reque
 	var input struct {
 		Name        string              `json:"name"`
 		Description string              `json:"description"`
+		ScopeType   string              `json:"scope_type"`
 		Permissions []string            `json:"permissions"`
 		V           validator.Validator `json:"-"`
 	}
@@ -84,8 +85,13 @@ func (app *application) createWorkspaceRole(w http.ResponseWriter, r *http.Reque
 	}
 
 	input.V.CheckField(input.Name != "", "name", "name is required")
+	if input.ScopeType == "" {
+		input.ScopeType = "workspace"
+	}
+	validScopes := map[string]bool{"workspace": true, "environment": true, "connection": true}
+	input.V.CheckField(validScopes[input.ScopeType], "scope_type", "must be workspace, environment, or connection")
 	for _, p := range input.Permissions {
-		input.V.CheckField(access.ValidForScope(p, "workspace"), "permissions", p+" is not valid for workspace scope")
+		input.V.CheckField(access.ValidForScope(p, input.ScopeType), "permissions", p+" is not valid for "+input.ScopeType+" scope")
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -95,7 +101,7 @@ func (app *application) createWorkspaceRole(w http.ResponseWriter, r *http.Reque
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 
-	roleID, err := app.enforcer.CreateRole(r.Context(), org.ID, &ws.ID, input.Name, input.Description, "workspace", input.Permissions)
+	roleID, err := app.enforcer.CreateRole(r.Context(), org.ID, &ws.ID, input.Name, input.Description, input.ScopeType, input.Permissions)
 	if err != nil {
 		if errors.Is(err, access.ErrInvalidScopePermission) || errors.Is(err, access.ErrUnknownPermission) {
 			input.V.AddFieldError("permissions", err.Error())
@@ -193,7 +199,8 @@ func (app *application) deleteWorkspaceRole(w http.ResponseWriter, r *http.Reque
 
 func (app *application) listWorkspacePermissions(w http.ResponseWriter, r *http.Request) {
 	err := response.JSON(w, http.StatusOK, map[string]any{
-		"permissions": access.ScopePermissions["workspace"],
+		"permissions":        access.ScopePermissions["workspace"],
+		"permission_details": access.ScopePermissionDefinitions("workspace"),
 	})
 	if err != nil {
 		app.serverError(w, r, err)
@@ -367,6 +374,10 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 			v := validator.Validator{}
 			v.AddFieldError("role_id", "role scope must match resource type")
 			app.failedValidation(w, r, v)
+			return
+		}
+		if role.WorkspaceID != nil && *role.WorkspaceID != ws.ID {
+			app.notFound(w, r)
 			return
 		}
 	}

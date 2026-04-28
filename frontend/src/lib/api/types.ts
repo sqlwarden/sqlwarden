@@ -47,6 +47,20 @@ export interface Workspace {
 export type ResourceType = 'org' | 'workspace' | 'environment' | 'connection'
 export type RoleScope = ResourceType
 
+export interface PermissionDefinition {
+  key: string
+  label: string
+  description: string
+  group: string
+}
+
+export interface PermissionsCatalog {
+  permissions: string[]
+  permission_details: PermissionDefinition[]
+  scope_map: Record<RoleScope, string[]>
+  scope_details: Record<RoleScope, PermissionDefinition[]>
+}
+
 export interface EffectivePermissions {
   resource_type: ResourceType
   resource_id: number

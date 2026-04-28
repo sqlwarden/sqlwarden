@@ -28,8 +28,8 @@ func TestRoleLifecycle(t *testing.T) {
 		"/api/v1/orgs/"+slug+"/roles",
 		map[string]any{
 			"name":        "viewer",
-			"scope_type":  "workspace",
-			"permissions": []string{"ws:read", "env:read", "conn:read"},
+			"scope_type":  "org",
+			"permissions": []string{"org:read", "ws:read", "env:read", "conn:read"},
 		}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 	assert.Equal(t, createRes.BodyFields["name"].(string), "viewer")
@@ -62,7 +62,7 @@ func TestCreateRoleValidation(t *testing.T) {
 	// Missing name returns 422.
 	badRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+slug+"/roles",
-		map[string]any{"scope_type": "workspace"}, tok), app.routes())
+		map[string]any{"scope_type": "org"}, tok), app.routes())
 	assert.Equal(t, badRes.StatusCode, http.StatusUnprocessableEntity)
 
 	// Invalid scope_type returns 422.
@@ -71,13 +71,27 @@ func TestCreateRoleValidation(t *testing.T) {
 		map[string]any{"name": "test", "scope_type": "invalid"}, tok), app.routes())
 	assert.Equal(t, badRes2.StatusCode, http.StatusUnprocessableEntity)
 
+	// Child scope through org role endpoint returns 422.
+	badResChildScope := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/roles",
+		map[string]any{"name": "test", "scope_type": "workspace", "permissions": []string{"ws:read"}}, tok), app.routes())
+	assert.Equal(t, badResChildScope.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, badResChildScope, "scope_type")
+
+	// Explicit workspace_id through org role endpoint returns 422.
+	badResWorkspaceID := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/roles",
+		map[string]any{"name": "test", "scope_type": "org", "workspace_id": 1, "permissions": []string{"org:read"}}, tok), app.routes())
+	assert.Equal(t, badResWorkspaceID.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, badResWorkspaceID, "workspace_id")
+
 	// Permission not valid for scope returns 422.
 	badRes3 := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+slug+"/roles",
 		map[string]any{
 			"name":        "test",
-			"scope_type":  "connection",
-			"permissions": []string{"org:write"},
+			"scope_type":  "org",
+			"permissions": []string{"not:a_permission"},
 		}, tok), app.routes())
 	assert.Equal(t, badRes3.StatusCode, http.StatusUnprocessableEntity)
 }
@@ -94,15 +108,27 @@ func TestListPermissions(t *testing.T) {
 
 	_, hasPerms := res.BodyFields["permissions"]
 	_, hasScopeMap := res.BodyFields["scope_map"]
+	_, hasPermissionDetails := res.BodyFields["permission_details"]
+	_, hasScopeDetails := res.BodyFields["scope_details"]
 	assert.True(t, hasPerms)
 	assert.True(t, hasScopeMap)
+	assert.True(t, hasPermissionDetails)
+	assert.True(t, hasScopeDetails)
 
 	perms := res.BodyFields["permissions"].([]any)
+	details := res.BodyFields["permission_details"].([]any)
 	scopeMap := res.BodyFields["scope_map"].(map[string]any)
+	scopeDetails := res.BodyFields["scope_details"].(map[string]any)
 	permSet := map[string]bool{}
 	for _, perm := range perms {
 		permSet[perm.(string)] = true
 	}
+	assert.Equal(t, len(details), len(perms))
+	firstDetail := details[0].(map[string]any)
+	assert.True(t, firstDetail["key"] != "")
+	assert.True(t, firstDetail["label"] != "")
+	assert.True(t, firstDetail["description"] != "")
+	assert.True(t, firstDetail["group"] != "")
 	assert.Equal(t, permSet["conn:dql"], true)
 	assert.Equal(t, permSet["conn:dml"], true)
 	assert.Equal(t, permSet["conn:ddl"], true)
@@ -112,6 +138,8 @@ func TestListPermissions(t *testing.T) {
 	assert.Equal(t, permSet["conn:metadata"], false)
 
 	connScope := scopeMap["connection"].([]any)
+	connScopeDetails := scopeDetails["connection"].([]any)
+	assert.Equal(t, len(connScopeDetails), len(connScope))
 	connPerms := map[string]bool{}
 	for _, perm := range connScope {
 		connPerms[perm.(string)] = true
@@ -181,8 +209,8 @@ func TestListRoles_SupportsPaginationSearchAndBuiltinFilter(t *testing.T) {
 		"/api/v1/orgs/"+slug+"/roles",
 		map[string]any{
 			"name":        "qa-viewer",
-			"scope_type":  "workspace",
-			"permissions": []string{"ws:read"},
+			"scope_type":  "org",
+			"permissions": []string{"org:read"},
 		}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 
@@ -374,6 +402,46 @@ func TestGrantOrgPolicyRejectsOrgMembersSubjectFromOtherOrg(t *testing.T) {
 			"role_id":      roleID,
 			"subject_type": access.SubjectTypeOrgMembers,
 			"subject_id":   otherOrg.ID,
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestGrantOrgPolicyRejectsCrossOrgAccountSubject(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-account-owner-a"), "Org Policy Owner A", "Org Policy Account A")
+	otherOwner, _, _ := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-account-owner-b"), "Org Policy Owner B", "Org Policy Account B")
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgWrite)
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/policies",
+		map[string]any{
+			"role_id":      roleID,
+			"subject_type": "account",
+			"subject_id":   otherOwner.ID,
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestGrantOrgPolicyRejectsCrossOrgTeamSubject(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-team-owner-a"), "Org Policy Owner A", "Org Policy Team A")
+	_, _, otherOrg := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-team-owner-b"), "Org Policy Owner B", "Org Policy Team B")
+	otherTeam, err := app.db.InsertTeam(context.Background(), otherOrg.ID, "other-team", "Other Team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgWrite)
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/policies",
+		map[string]any{
+			"role_id":      roleID,
+			"subject_type": "team",
+			"subject_id":   otherTeam.ID,
 		}, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }
