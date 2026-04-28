@@ -79,6 +79,8 @@ func (db *DB) listRoles(ctx context.Context, params ListRolesParams) ([]Role, er
 	case "workspace":
 		if params.WorkspaceID != nil {
 			query = query.Where("workspace_id = ?", *params.WorkspaceID)
+		} else {
+			query = query.Where("workspace_id IS NOT NULL")
 		}
 	}
 

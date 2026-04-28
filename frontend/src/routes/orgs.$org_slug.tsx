@@ -205,6 +205,7 @@ function workspaceAccessControlItems(orgSlug: string, workspaceId: string, permi
   return [
     { to: '/orgs/$org_slug/workspaces/$workspace_id/users', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Users', icon: UserMultipleIcon },
     { to: '/orgs/$org_slug/workspaces/$workspace_id/teams', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Teams', icon: UserGroupIcon },
+    { to: '/orgs/$org_slug/workspaces/$workspace_id/roles', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Roles', icon: UserShield01Icon },
     { to: '/orgs/$org_slug/workspaces/$workspace_id/policies', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Policies', icon: PolicyIcon },
   ]
 }
@@ -230,7 +231,7 @@ function isWorkspacePathAllowed(pathname: string, orgSlug: string, workspaceId: 
   if (isPathInSection(path, basePath, 'connections')) {
     return hasAnyPermission(permissions, workspaceConnectionPagePermissions)
   }
-  if (isPathInSection(path, basePath, 'users') || isPathInSection(path, basePath, 'teams') || isPathInSection(path, basePath, 'policies')) {
+  if (isPathInSection(path, basePath, 'users') || isPathInSection(path, basePath, 'teams') || isPathInSection(path, basePath, 'roles') || isPathInSection(path, basePath, 'policies')) {
     return hasAnyPermission(permissions, workspacePolicyPagePermissions)
   }
   if (isPathInSection(path, basePath, 'settings')) {

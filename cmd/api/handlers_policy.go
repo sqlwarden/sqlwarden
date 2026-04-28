@@ -47,9 +47,20 @@ func (app *application) listRoles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	scope := "all"
+	if raw := strings.TrimSpace(r.URL.Query().Get("scope")); raw != "" {
+		switch raw {
+		case "all", "org", "workspace":
+			scope = raw
+		default:
+			app.failedValidation(w, r, fieldErrors(map[string]string{"scope": "must be all, org, or workspace"}))
+			return
+		}
+	}
+
 	roles, err := app.db.ListRolesPage(r.Context(), database.ListRolesParams{
 		OrgID:     org.ID,
-		Scope:     "all",
+		Scope:     scope,
 		Search:    q.Search,
 		Name:      strings.TrimSpace(r.URL.Query().Get("name")),
 		IsBuiltin: builtin,

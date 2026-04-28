@@ -7,9 +7,20 @@ import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
-import { orgEffectivePermissionsQueryOptions, orgRolesQueryOptions } from '#/lib/api/query'
-import type { Role, RoleScope } from '#/lib/api/types'
+import { orgEffectivePermissionsQueryOptions, orgWorkspaceRolesQueryOptions } from '#/lib/api/query'
+import type { Role } from '#/lib/api/types'
 import { hasPermission, permission, scopePermissions, type Permission } from '#/lib/permissions'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '#/components/ui/alert-dialog'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
@@ -26,8 +37,8 @@ import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { Textarea } from '#/components/ui/textarea'
 
-export const Route = createFileRoute('/orgs/$org_slug/roles')({
-  component: OrganizationRolesRoute,
+export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/roles')({
+  component: WorkspaceRolesRoute,
   pendingComponent: RoutePending,
 })
 
@@ -37,25 +48,25 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
   year: 'numeric',
 })
 
-function OrganizationRolesRoute() {
-  const { org_slug: orgSlug } = Route.useParams()
+function WorkspaceRolesRoute() {
+  const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
-  const listPath = `/orgs/${orgSlug}/roles`
+  const listPath = `/orgs/${orgSlug}/workspaces/${workspaceId}/roles`
 
   if (trimTrailingSlash(pathname) !== listPath) {
     return <Outlet />
   }
 
-  return <OrganizationRolesPage orgSlug={orgSlug} />
+  return <WorkspaceRolesPage orgSlug={orgSlug} workspaceId={workspaceId} />
 }
 
-function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
+function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspaceId: string }) {
   const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)
   const [roleName, setRoleName] = useState('')
   const [description, setDescription] = useState('')
   const [selectedPermissions, setSelectedPermissions] = useState<Set<Permission>>(new Set())
-  const [fieldErrors, setFieldErrors] = useState<{ name?: string; description?: string; scope_type?: string; permissions?: string }>({})
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; description?: string; permissions?: string }>({})
   const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
     page: 1,
     page_size: 10,
@@ -64,11 +75,11 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
     q: '',
   })
 
-  const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
+  const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId))
   const canReadRoles = hasPermission(effectivePermissions.data?.permissions, permission.policyRead)
-  const canCreateRole = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
+  const canModifyRoles = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
   const roles = useQuery({
-    ...orgRolesQueryOptions(orgSlug, { ...query, scope: 'org' }),
+    ...orgWorkspaceRolesQueryOptions(orgSlug, workspaceId, query),
     enabled: canReadRoles,
   })
   const data = roles.data
@@ -82,46 +93,52 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
     if (!roles.error) {
       return
     }
-
-    toast.error(roles.error instanceof Error ? roles.error.message : 'Failed to load roles')
+    toast.error(roles.error instanceof Error ? roles.error.message : 'Failed to load workspace roles')
   }, [roles.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) {
       return
     }
-
     toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load role permissions')
   }, [effectivePermissions.error])
 
   const createRole = useMutation({
     mutationFn: async () =>
-      api.post<Role>(`/api/v1/orgs/${orgSlug}/roles`, {
+      api.post<Role>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/roles`, {
         name: roleName.trim(),
         description: description.trim(),
-        scope_type: 'org',
         permissions: Array.from(selectedPermissions),
       }),
     onSuccess: async () => {
       setIsCreating(false)
       resetCreateRole()
       toast.success('Role created')
-      await queryClient.invalidateQueries({ queryKey: ['org-roles', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: ['org-workspace-roles', orgSlug, workspaceId] })
     },
     onError: (error) => {
       if (isApiError(error)) {
         setFieldErrors({
           name: error.fieldErrors?.name,
           description: error.fieldErrors?.description,
-          scope_type: error.fieldErrors?.scope_type,
           permissions: error.fieldErrors?.permissions,
         })
-        if (error.fieldErrors?.name || error.fieldErrors?.description || error.fieldErrors?.scope_type || error.fieldErrors?.permissions) {
+        if (error.fieldErrors?.name || error.fieldErrors?.description || error.fieldErrors?.permissions) {
           return
         }
       }
-
       toast.error(error instanceof Error ? error.message : 'Failed to create role')
+    },
+  })
+
+  const deleteRole = useMutation({
+    mutationFn: async (roleId: number) => api.delete<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/roles/${roleId}`),
+    onSuccess: async () => {
+      toast.success('Role deleted')
+      await queryClient.invalidateQueries({ queryKey: ['org-workspace-roles', orgSlug, workspaceId] })
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete role')
     },
   })
 
@@ -134,7 +151,6 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
 
   function submitCreateRole(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-
     const errors: typeof fieldErrors = {}
     if (!roleName.trim()) {
       errors.name = 'Name is required'
@@ -146,7 +162,6 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
       setFieldErrors(errors)
       return
     }
-
     setFieldErrors({})
     void createRole.mutateAsync().catch(() => {})
   }
@@ -172,12 +187,12 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
             <h1 className="text-2xl font-semibold tracking-tight">Roles</h1>
             <p className="text-sm text-muted-foreground">
               {!roles.isLoading && total > 0
-                ? `${total} organization role${total !== 1 ? 's' : ''}`
-                : 'Organization-scoped permission sets available for policies.'}
+                ? `${total} workspace role${total !== 1 ? 's' : ''}`
+                : 'Workspace-scoped permission sets available for policies.'}
             </p>
           </div>
 
-          {canCreateRole ? (
+          {canModifyRoles ? (
             <Dialog
               open={isCreating}
               onOpenChange={(open) => {
@@ -193,19 +208,19 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
               </DialogTrigger>
               <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
                 <DialogHeader>
-                  <DialogTitle>Create role</DialogTitle>
+                  <DialogTitle>Create workspace role</DialogTitle>
                 </DialogHeader>
                 <form className="mt-6 flex flex-col gap-5" onSubmit={submitCreateRole}>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="role-name">Name</Label>
+                    <Label htmlFor="workspace-role-name">Name</Label>
                     <Input
-                      id="role-name"
+                      id="workspace-role-name"
                       value={roleName}
                       onChange={(event) => {
                         setRoleName(event.target.value)
                         setFieldErrors((current) => ({ ...current, name: undefined }))
                       }}
-                      placeholder="database-reader"
+                      placeholder="workspace-reader"
                       aria-invalid={fieldErrors.name ? true : undefined}
                       disabled={createRole.isPending}
                     />
@@ -213,9 +228,9 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
                   </div>
 
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="role-description">Description</Label>
+                    <Label htmlFor="workspace-role-description">Description</Label>
                     <Textarea
-                      id="role-description"
+                      id="workspace-role-description"
                       value={description}
                       onChange={(event) => {
                         setDescription(event.target.value)
@@ -266,27 +281,37 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
                   <TableColumnHeader label="Role" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Scope" />
-                </TableHead>
-                <TableHead>
                   <TableColumnHeader label="Type" />
                 </TableHead>
                 <TableHead>
                   <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
                 </TableHead>
+                {canModifyRoles ? (
+                  <TableHead className="text-end">
+                    <TableColumnHeader label="Actions" />
+                  </TableHead>
+                ) : null}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {effectivePermissions.isLoading || roles.isLoading ? <RolesTableSkeleton /> : null}
-              {roles.isError ? <TableEmptyState colSpan={4} icon={UserShield01Icon} message="Failed to load roles." /> : null}
+              {effectivePermissions.isLoading || roles.isLoading ? <RolesTableSkeleton canModifyRoles={canModifyRoles} /> : null}
+              {roles.isError ? <TableEmptyState colSpan={canModifyRoles ? 4 : 3} icon={UserShield01Icon} message="Failed to load roles." /> : null}
               {!effectivePermissions.isLoading && !canReadRoles ? (
-                <TableEmptyState colSpan={4} icon={UserShield01Icon} message="You do not have permission to view roles." />
+                <TableEmptyState colSpan={canModifyRoles ? 4 : 3} icon={UserShield01Icon} message="You do not have permission to view roles." />
               ) : null}
               {!effectivePermissions.isLoading && canReadRoles && !roles.isLoading && !roles.isError && items.length === 0 ? (
-                <TableEmptyState colSpan={4} icon={UserShield01Icon} message={query.q ? 'No roles matched your search.' : 'No roles found.'} />
+                <TableEmptyState colSpan={canModifyRoles ? 4 : 3} icon={UserShield01Icon} message={query.q ? 'No roles matched your search.' : 'No roles found.'} />
               ) : null}
               {!effectivePermissions.isLoading && canReadRoles && !roles.isLoading && !roles.isError
-                ? items.map((role) => <RoleRow key={role.id} role={role} />)
+                ? items.map((role) => (
+                    <RoleRow
+                      key={role.id}
+                      role={role}
+                      canModifyRoles={canModifyRoles}
+                      isDeleting={deleteRole.isPending}
+                      onDelete={(roleId) => deleteRole.mutate(roleId)}
+                    />
+                  ))
                 : null}
             </TableBody>
           </Table>
@@ -309,22 +334,32 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
   )
 }
 
-function RoleRow({ role }: { role: Role }) {
-  const { org_slug: orgSlug } = Route.useParams()
+function RoleRow({
+  role,
+  canModifyRoles,
+  isDeleting,
+  onDelete,
+}: {
+  role: Role
+  canModifyRoles: boolean
+  isDeleting: boolean
+  onDelete: (roleId: number) => void
+}) {
+  const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
   const router = useRouter()
   const navigate = useNavigate()
 
   function preloadRole() {
     void router.preloadRoute({
-      to: '/orgs/$org_slug/roles/$role_id',
-      params: { org_slug: orgSlug, role_id: String(role.id) },
+      to: '/orgs/$org_slug/workspaces/$workspace_id/roles/$role_id',
+      params: { org_slug: orgSlug, workspace_id: workspaceId, role_id: String(role.id) },
     })
   }
 
   function openRole() {
     void navigate({
-      to: '/orgs/$org_slug/roles/$role_id',
-      params: { org_slug: orgSlug, role_id: String(role.id) },
+      to: '/orgs/$org_slug/workspaces/$workspace_id/roles/$role_id',
+      params: { org_slug: orgSlug, workspace_id: workspaceId, role_id: String(role.id) },
     })
   }
 
@@ -355,12 +390,51 @@ function RoleRow({ role }: { role: Role }) {
         </div>
       </TableCell>
       <TableCell>
-        <Badge variant="outline">{scopeLabel(role.scope_type)}</Badge>
-      </TableCell>
-      <TableCell>
         <Badge variant={role.is_builtin ? 'secondary' : 'outline'}>{role.is_builtin ? 'System' : 'Custom'}</Badge>
       </TableCell>
       <TableCell className="text-muted-foreground">{formatDate(role.created_at)}</TableCell>
+      {canModifyRoles ? (
+        <TableCell className="text-end">
+          {!role.is_builtin ? (
+            <AlertDialog>
+              <AlertDialogTrigger
+                render={
+                  <Button
+                    variant="destructive"
+                    disabled={isDeleting}
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                }
+              >
+                Delete
+              </AlertDialogTrigger>
+              <AlertDialogContent size="sm" onClick={(event) => event.stopPropagation()}>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete role?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This permanently deletes {roleDisplayName(role)}. Any policies using this role will no longer grant its permissions.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel variant="ghost" disabled={isDeleting}>
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    disabled={isDeleting}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onDelete(role.id)
+                    }}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : null}
+        </TableCell>
+      ) : null}
     </TableRow>
   )
 }
@@ -376,13 +450,13 @@ function PermissionPicker({
   error?: string
   onPermissionChecked: (value: Permission, checked: boolean) => void
 }) {
-  const groupedPermissions = groupPermissions(scopePermissions.org)
+  const groupedPermissions = groupPermissions(scopePermissions.workspace)
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
         <Label>Permissions</Label>
-        <p className="text-sm text-muted-foreground">Select the capabilities this role should grant.</p>
+        <p className="text-sm text-muted-foreground">Select the capabilities this role should grant in this workspace.</p>
       </div>
       <div className="grid gap-4 rounded-md border border-border p-4 sm:grid-cols-2">
         {groupedPermissions.map((group) => (
@@ -390,7 +464,7 @@ function PermissionPicker({
             <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{group.name}</p>
             <div className="flex flex-col gap-2">
               {group.permissions.map((item) => {
-                const id = `permission-${item.replace(/[^a-z0-9]+/g, '-')}`
+                const id = `workspace-permission-${item.replace(/[^a-z0-9]+/g, '-')}`
                 return (
                   <label key={item} htmlFor={id} className="flex cursor-pointer items-center gap-2 text-sm">
                     <Checkbox
@@ -399,7 +473,7 @@ function PermissionPicker({
                       disabled={disabled}
                       onCheckedChange={(checked) => onPermissionChecked(item, checked === true)}
                     />
-                    <span>{permissionLabel(item)}</span>
+                    <span>{item}</span>
                   </label>
                 )
               })}
@@ -412,7 +486,7 @@ function PermissionPicker({
   )
 }
 
-function RolesTableSkeleton() {
+function RolesTableSkeleton({ canModifyRoles }: { canModifyRoles: boolean }) {
   return (
     <>
       {Array.from({ length: 5 }).map((_, index) => (
@@ -427,14 +501,16 @@ function RolesTableSkeleton() {
             </div>
           </TableCell>
           <TableCell>
-            <Skeleton className="h-5 w-20" />
-          </TableCell>
-          <TableCell>
             <Skeleton className="h-5 w-16" />
           </TableCell>
           <TableCell>
             <Skeleton className="h-4 w-24" />
           </TableCell>
+          {canModifyRoles ? (
+            <TableCell className="text-end">
+              <Skeleton className="ms-auto h-8 w-16" />
+            </TableCell>
+          ) : null}
         </TableRow>
       ))}
     </>
@@ -453,8 +529,6 @@ function groupPermissions(permissions: readonly Permission[]) {
 
 function permissionGroupLabel(prefix: string) {
   switch (prefix) {
-    case 'org':
-      return 'Organization'
     case 'ws':
       return 'Workspace'
     case 'env':
@@ -468,31 +542,12 @@ function permissionGroupLabel(prefix: string) {
   }
 }
 
-function permissionLabel(value: Permission) {
-  return value
-}
-
-function scopeLabel(value: RoleScope) {
-  switch (value) {
-    case 'org':
-      return 'Organization'
-    case 'workspace':
-      return 'Workspace'
-    case 'environment':
-      return 'Environment'
-    case 'connection':
-      return 'Connection'
-  }
-}
-
 function roleDisplayName(role: Role) {
   switch (role.name) {
-    case 'owner':
-      return 'Owner'
-    case 'admin':
-      return 'Admin'
-    case 'member':
-      return 'Member'
+    case 'ws:admin':
+      return 'Workspace Admin'
+    case 'ws:member':
+      return 'Workspace Member'
     default:
       return role.name
   }

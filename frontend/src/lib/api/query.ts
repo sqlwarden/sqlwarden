@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, AccountOrganization, EffectivePermissions, ResourceType, OrgMember, Team, TeamMember } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, AccountOrganization, EffectivePermissions, ResourceType, OrgMember, Team, TeamMember, Role } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -18,6 +18,12 @@ export const queryKeys = {
   orgTeam: (slug: string, teamSlug: string) => ['org-team', slug, teamSlug] as const,
   orgTeamMembers: (slug: string, teamSlug: string, query?: ListQuery) =>
     ['org-team-members', slug, teamSlug, query ?? {}] as const,
+  orgRoles: (slug: string, query?: ListQuery) => ['org-roles', slug, query ?? {}] as const,
+  orgRole: (slug: string, roleId: string | number) => ['org-role', slug, roleId] as const,
+  orgWorkspaceRoles: (slug: string, workspaceId: string | number, query?: ListQuery) =>
+    ['org-workspace-roles', slug, workspaceId, query ?? {}] as const,
+  orgWorkspaceRole: (slug: string, workspaceId: string | number, roleId: string | number) =>
+    ['org-workspace-role', slug, workspaceId, roleId] as const,
   orgWorkspaces: (slug: string, query?: ListQuery) => ['org-workspaces', slug, query ?? {}] as const,
   orgWorkspace: (slug: string, workspaceId: string | number) => ['org-workspace', slug, workspaceId] as const,
   myWorkspaces: (query?: ListQuery) => ['my-workspaces', query ?? {}] as const,
@@ -130,6 +136,38 @@ export function orgTeamMembersQueryOptions(slug: string, teamSlug: string, query
     queryKey: queryKeys.orgTeamMembers(slug, teamSlug, query),
     queryFn: () => api.get<Paginated<TeamMember>>(`/api/v1/orgs/${slug}/teams/${teamSlug}/members`, { query }),
     placeholderData: keepPreviousData,
+  })
+}
+
+export function orgRolesQueryOptions(slug: string, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgRoles(slug, query),
+    queryFn: () => api.get<Paginated<Role>>(`/api/v1/orgs/${slug}/roles`, { query }),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function orgRoleQueryOptions(slug: string, roleId: string | number) {
+  return queryOptions({
+    queryKey: queryKeys.orgRole(slug, roleId),
+    queryFn: () => api.get<Role>(`/api/v1/orgs/${slug}/roles/${roleId}`),
+    staleTime: 60_000,
+  })
+}
+
+export function orgWorkspaceRolesQueryOptions(slug: string, workspaceId: string | number, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspaceRoles(slug, workspaceId, query),
+    queryFn: () => api.get<Paginated<Role>>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/roles`, { query }),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function orgWorkspaceRoleQueryOptions(slug: string, workspaceId: string | number, roleId: string | number) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspaceRole(slug, workspaceId, roleId),
+    queryFn: () => api.get<Role>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/roles/${roleId}`),
+    staleTime: 60_000,
   })
 }
 

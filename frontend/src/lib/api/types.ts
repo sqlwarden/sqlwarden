@@ -45,6 +45,7 @@ export interface Workspace {
 }
 
 export type ResourceType = 'org' | 'workspace' | 'environment' | 'connection'
+export type RoleScope = ResourceType
 
 export interface EffectivePermissions {
   resource_type: ResourceType
@@ -104,7 +105,7 @@ export interface Role {
   workspace_id?: number
   name: string
   description?: string
-  scope_type: string
+  scope_type: RoleScope
   is_builtin: boolean
   created_at: string
   updated_at: string

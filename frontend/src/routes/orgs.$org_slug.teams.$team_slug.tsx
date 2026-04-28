@@ -10,6 +10,17 @@ import { api } from '#/lib/api/client'
 import { orgEffectivePermissionsQueryOptions, orgMembersQueryOptions, orgTeamMembersQueryOptions, orgTeamQueryOptions } from '#/lib/api/query'
 import type { OrgMember, TeamMember } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '#/components/ui/alert-dialog'
 import { Button } from '#/components/ui/button'
 import {
   Breadcrumb,
@@ -321,13 +332,31 @@ function MemberRow({
       <TableCell className="text-muted-foreground">{formatDate(member.created_at)}</TableCell>
       {canManageMembers ? (
         <TableCell className="text-end">
-          <Button
-            variant="ghost"
-            disabled={isRemoving}
-            onClick={() => onRemove(member.account_id)}
-          >
-            Remove
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger render={<Button variant="destructive" disabled={isRemoving} />}>
+              Remove
+            </AlertDialogTrigger>
+            <AlertDialogContent size="sm">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remove user from team?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will remove {displayName} from this team. Access granted through this team will no longer apply.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel variant="ghost" disabled={isRemoving}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  disabled={isRemoving}
+                  onClick={() => onRemove(member.account_id)}
+                >
+                  Remove
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </TableCell>
       ) : null}
     </TableRow>

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/sqlwarden/internal/access"
@@ -194,6 +195,55 @@ func TestListRoles_SupportsPaginationSearchAndBuiltinFilter(t *testing.T) {
 	assert.Equal(t, len(items), 1)
 	item := items[0].(map[string]any)
 	assert.Equal(t, item["name"].(string), "qa-viewer")
+}
+
+func TestListRoles_SupportsScopeFilter(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "role-scope-owner"), "Role Scope Owner", "Role Scope Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Scoped Workspace", "")
+
+	orgRoleRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/roles",
+		map[string]any{
+			"name":        "org-auditor",
+			"scope_type":  "org",
+			"permissions": []string{"org:read"},
+		}, tok), app.routes())
+	assert.Equal(t, orgRoleRes.StatusCode, http.StatusCreated)
+
+	workspaceRoleRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+strconv.FormatInt(ws.ID, 10)+"/roles",
+		map[string]any{
+			"name":        "workspace-auditor",
+			"permissions": []string{"ws:read"},
+		}, tok), app.routes())
+	assert.Equal(t, workspaceRoleRes.StatusCode, http.StatusCreated)
+
+	orgRolesRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+org.Slug+"/roles?scope=org&page=1&page_size=100", nil, tok), app.routes())
+	assert.Equal(t, orgRolesRes.StatusCode, http.StatusOK)
+
+	orgItems := orgRolesRes.BodyFields["items"].([]any)
+	for _, raw := range orgItems {
+		item := raw.(map[string]any)
+		assert.Equal(t, item["scope_type"].(string), "org")
+	}
+
+	workspaceRolesRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+org.Slug+"/roles?scope=workspace&page=1&page_size=100", nil, tok), app.routes())
+	assert.Equal(t, workspaceRolesRes.StatusCode, http.StatusOK)
+
+	workspaceItems := workspaceRolesRes.BodyFields["items"].([]any)
+	for _, raw := range workspaceItems {
+		item := raw.(map[string]any)
+		assert.Equal(t, item["scope_type"].(string), "workspace")
+	}
+
+	badScopeRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+org.Slug+"/roles?scope=connection", nil, tok), app.routes())
+	assert.Equal(t, badScopeRes.StatusCode, http.StatusUnprocessableEntity)
 }
 
 func TestListOrgPolicies_SupportsFiltersAndMetadata(t *testing.T) {

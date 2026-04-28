@@ -134,7 +134,10 @@ export const orgBuiltinRoles = {
     permission.policyRead,
     permission.policyModify,
   ],
-} as const satisfies Record<'owner' | 'admin', readonly Permission[]>
+  member: [
+    permission.orgRead,
+  ],
+} as const satisfies Record<'owner' | 'admin' | 'member', readonly Permission[]>
 
 export const workspaceBuiltinRoles = {
   'ws:admin': [
