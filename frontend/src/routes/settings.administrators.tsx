@@ -12,6 +12,7 @@ import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
+import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
@@ -100,143 +101,155 @@ function SettingsAdministratorsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-2xl font-semibold tracking-tight">Administrators</h2>
-        <Dialog
-          open={isCreating}
-          onOpenChange={(open) => {
-            setIsCreating(open)
-            if (!open) {
-              setEmail('')
-              setFieldError(null)
-            }
-          }}
-        >
-          <DialogTrigger render={<Button />}>
-            <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
-            Create
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add administrator</DialogTitle>
-              <DialogDescription>Grant instance administrator access to an existing account by email.</DialogDescription>
-            </DialogHeader>
-            <form className="mt-6 flex flex-col gap-4" onSubmit={submitCreate}>
-              <div className="flex flex-col gap-2">
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={(event) => {
-                    setEmail(event.target.value)
-                    setFieldError(null)
-                  }}
-                  placeholder="admin@example.com"
-                  aria-invalid={fieldError ? true : undefined}
-                  disabled={addAdministrator.isPending}
-                />
-                {fieldError ? <p className="text-sm text-destructive">{fieldError}</p> : null}
-              </div>
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-1.5">
+            <h2 className="text-2xl font-semibold tracking-tight">Administrators</h2>
+            <p className="text-sm text-muted-foreground">
+              {!administrators.isLoading && total > 0
+                ? `${total} instance administrator${total !== 1 ? 's' : ''}`
+                : 'Accounts with full instance access.'}
+            </p>
+          </div>
+          <Dialog
+            open={isCreating}
+            onOpenChange={(open) => {
+              setIsCreating(open)
+              if (!open) {
+                setEmail('')
+                setFieldError(null)
+              }
+            }}
+          >
+            <DialogTrigger render={<Button />}>
+              <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
+              Add
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add administrator</DialogTitle>
+                <DialogDescription>Grant instance administrator access to an existing account by email.</DialogDescription>
+              </DialogHeader>
+              <form className="mt-6 flex flex-col gap-4" onSubmit={submitCreate}>
+                <div className="flex flex-col gap-2">
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(event) => {
+                      setEmail(event.target.value)
+                      setFieldError(null)
+                    }}
+                    placeholder="admin@example.com"
+                    aria-invalid={fieldError ? true : undefined}
+                    disabled={addAdministrator.isPending}
+                  />
+                  {fieldError ? <p className="text-sm text-destructive">{fieldError}</p> : null}
+                </div>
 
-              <DialogFooter>
-                <DialogClose render={<Button type="button" variant="ghost" disabled={addAdministrator.isPending} />}>
-                  Cancel
-                </DialogClose>
-                <Button type="submit" disabled={addAdministrator.isPending}>
-                  {addAdministrator.isPending ? 'Adding…' : 'Add'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <DialogFooter>
+                  <DialogClose render={<Button type="button" variant="ghost" disabled={addAdministrator.isPending} />}>
+                    Cancel
+                  </DialogClose>
+                  <Button type="submit" disabled={addAdministrator.isPending}>
+                    {addAdministrator.isPending ? 'Adding…' : 'Add'}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        <SearchInput
+          value={searchText}
+          onValueChange={setSearchText}
+          onClear={clearSearch}
+          placeholder="Search administrators"
+        />
       </div>
 
-      <SearchInput
-        value={searchText}
-        onValueChange={setSearchText}
-        onClear={clearSearch}
-        placeholder="Search administrators"
-        className="max-w-sm"
-      />
-
       <Card>
-        <CardContent className="flex flex-col gap-4">
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>
-                    <TableColumnHeader label="Name" />
-                  </TableHead>
-                  <TableHead>
-                    <TableColumnHeader label="Email" />
-                  </TableHead>
-                  <TableHead>
-                    <TableColumnHeader label="Account ID" sort="account_id" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                  </TableHead>
-                  <TableHead>
-                    <TableColumnHeader label="Added" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                  </TableHead>
-                  <TableHead className="w-1 text-right">
-                    <TableColumnHeader label="Actions" />
-                  </TableHead>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>
+                  <TableColumnHeader label="Account" />
+                </TableHead>
+                <TableHead>
+                  <TableColumnHeader label="Account ID" sort="account_id" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                </TableHead>
+                <TableHead>
+                  <TableColumnHeader label="Added" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                </TableHead>
+                <TableHead className="w-1 text-right">
+                  <TableColumnHeader label="Actions" />
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {administrators.isLoading ? (
+                <TableEmptyState colSpan={4} compact message="Loading administrators…" />
+              ) : null}
+              {administrators.isError ? (
+                <TableEmptyState colSpan={4} compact message="Failed to load administrators." />
+              ) : null}
+              {!administrators.isLoading && !administrators.isError && items.length === 0 ? (
+                <TableEmptyState colSpan={4} compact message={query.q ? 'No administrators matched your search.' : 'No administrators exist yet.'} />
+              ) : null}
+              {items.map((administrator) => (
+                <TableRow key={administrator.account_id}>
+                  <TableCell>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <InitialsAvatar value={administrator.account?.name || administrator.account?.email || 'A'} />
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-foreground">{administrator.account?.name ?? 'Unknown'}</div>
+                        <div className="truncate text-muted-foreground">{administrator.account?.email ?? 'Unknown'}</div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{administrator.account_id}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {new Intl.DateTimeFormat(undefined, {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    }).format(new Date(administrator.created_at))}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="cursor-pointer text-destructive hover:text-destructive"
+                      disabled={removeAdministrator.isPending}
+                      onClick={() => {
+                        void removeAdministrator.mutateAsync(administrator.account_id).catch(() => {})
+                      }}
+                    >
+                      <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} data-icon="inline-start" />
+                      Remove
+                    </Button>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {administrators.isLoading ? (
-                  <TableEmptyState colSpan={5} compact message="Loading administrators…" />
-                ) : null}
-                {administrators.isError ? (
-                  <TableEmptyState colSpan={5} compact message="Failed to load administrators." />
-                ) : null}
-                {!administrators.isLoading && !administrators.isError && items.length === 0 ? (
-                  <TableEmptyState colSpan={5} compact message={query.q ? 'No administrators matched your search.' : 'No administrators exist yet.'} />
-                ) : null}
-                {items.map((administrator) => (
-                  <TableRow key={administrator.account_id}>
-                    <TableCell className="font-medium text-foreground">{administrator.account?.name ?? 'Unknown'}</TableCell>
-                    <TableCell className="text-muted-foreground">{administrator.account?.email ?? 'Unknown'}</TableCell>
-                    <TableCell className="text-muted-foreground">{administrator.account_id}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {new Intl.DateTimeFormat(undefined, {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                      }).format(new Date(administrator.created_at))}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="cursor-pointer text-destructive hover:text-destructive"
-                        disabled={removeAdministrator.isPending}
-                        onClick={() => {
-                          void removeAdministrator.mutateAsync(administrator.account_id).catch(() => {})
-                        }}
-                      >
-                        <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} data-icon="inline-start" />
-                        Remove
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          <PaginationFooter
-            itemLabel="administrators"
-            page={page}
-            pageCount={pageCount}
-            pageSize={pageSize}
-            total={total}
-            isFetching={administrators.isFetching}
-            onPageChange={setPage}
-            onPageSizeChange={setPageSize}
-          />
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
+
+      {!administrators.isLoading && !administrators.isError && items.length > 0 ? (
+        <PaginationFooter
+          itemLabel="administrators"
+          page={page}
+          pageCount={pageCount}
+          pageSize={pageSize}
+          total={total}
+          isFetching={administrators.isFetching}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+      ) : null}
     </div>
   )
 }

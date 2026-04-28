@@ -149,44 +149,45 @@ function OrganizationUserContextPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <Card>
-        <CardContent>
-          {member.isLoading ? (
-            <div className="flex items-center gap-4">
-              <Skeleton className="size-12 rounded-full" />
-              <div className="flex flex-col gap-2">
-                <Skeleton className="h-5 w-40" />
-                <Skeleton className="h-4 w-56" />
-              </div>
+      <Card className="overflow-hidden">
+        {member.isLoading ? (
+          <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">
+            <Skeleton className="size-12 shrink-0 rounded-full" />
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-4 w-56" />
             </div>
-          ) : null}
+          </div>
+        ) : null}
 
-          {member.isError ? (
+        {member.isError ? (
+          <CardContent>
             <ContextMessage icon={UserMultipleIcon} message="Failed to load user." />
-          ) : null}
+          </CardContent>
+        ) : null}
 
-          {member.data ? (
-            <div className="flex flex-col gap-6">
-              <div className="flex items-start gap-4">
-                <InitialsAvatar value={member.data.name || member.data.email} size="lg" />
-                <div className="min-w-0 flex-1">
-                  <h1 className="truncate text-2xl font-semibold tracking-tight">{displayName}</h1>
-                  <p className="truncate text-sm text-muted-foreground">{member.data.email}</p>
+        {member.data ? (
+          <>
+            <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">
+              <InitialsAvatar value={member.data.name || member.data.email} size="lg" />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-xl font-semibold leading-tight tracking-tight">{displayName}</h1>
+                  <Badge variant={roleBadgeVariant(member.data.role)}>{roleLabel(member.data.role)}</Badge>
                 </div>
-                <Badge variant={roleBadgeVariant(member.data.role)}>{roleLabel(member.data.role)}</Badge>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <InfoBlock label="Account ID" value={String(member.data.account_id)} />
-                <InfoBlock label="Joined" value={formatDate(member.data.joined_at)} />
+                <p className="mt-0.5 truncate text-sm text-muted-foreground">{member.data.email}</p>
               </div>
             </div>
-          ) : null}
-        </CardContent>
+            <div className="grid gap-5 px-6 py-5 sm:grid-cols-2">
+              <InfoBlock label="Account ID" value={String(member.data.account_id)} />
+              <InfoBlock label="Joined" value={formatDate(member.data.joined_at)} />
+            </div>
+          </>
+        ) : null}
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-border">
           <CardTitle>Teams</CardTitle>
           {canManageTeams ? (
             <Dialog
@@ -417,9 +418,9 @@ function TeamsTableSkeleton() {
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs text-muted-foreground uppercase">{label}</span>
-      <span className="text-sm text-foreground">{value}</span>
+    <div className="flex flex-col gap-0.5 border-l-2 border-border pl-3">
+      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{label}</span>
+      <span className="text-sm font-medium text-foreground">{value}</span>
     </div>
   )
 }

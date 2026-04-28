@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { Briefcase01Icon, PlusSignIcon } from '@hugeicons/core-free-icons'
+import { Briefcase01Icon, DatabaseIcon, FlowConnectionIcon, PlusSignIcon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
@@ -11,7 +11,7 @@ import { orgEffectivePermissionsQueryOptions, orgWorkspacesQueryOptions } from '
 import type { Workspace } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
 import { Button } from '#/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '#/components/ui/card'
+import { Card, CardContent } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { EmptyState } from '#/components/EmptyState'
@@ -19,8 +19,8 @@ import { getInitials } from '#/components/InitialsAvatar'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
-import { Separator } from '#/components/ui/separator'
 import { Skeleton } from '#/components/ui/skeleton'
+import { cn } from '#/lib/utils'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces')({
   component: OrganizationWorkspacesRoute,
@@ -135,9 +135,13 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
             <h1 className="text-2xl font-semibold tracking-tight">Workspaces</h1>
-            <p className="text-sm text-muted-foreground">Choose a workspace to continue.</p>
+            <p className="text-sm text-muted-foreground">
+              {!workspaces.isLoading && total > 0
+                ? `${total} workspace${total !== 1 ? 's' : ''} in @${orgSlug}`
+                : 'Choose a workspace to continue.'}
+            </p>
           </div>
 
           {canCreateWorkspace ? (
@@ -213,18 +217,22 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
       {workspaces.isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, index) => (
-            <Card key={index}>
-              <CardContent className="flex min-h-48 flex-col justify-between gap-6">
-                <div className="flex items-start gap-4">
-                  <Skeleton className="size-12 shrink-0 rounded-lg" />
-                  <div className="flex flex-1 flex-col gap-2">
-                    <Skeleton className="h-5 w-32" />
-                    <Skeleton className="h-4 w-48" />
+            <div key={index} className="flex flex-col border border-border bg-card">
+              <div className="flex flex-col gap-3 p-5">
+                <div className="flex items-start gap-3">
+                  <Skeleton className="size-10 shrink-0" />
+                  <div className="flex flex-1 flex-col gap-2 pt-1">
+                    <Skeleton className="h-4 w-28" />
+                    <Skeleton className="h-3 w-44" />
+                    <Skeleton className="h-3 w-36" />
                   </div>
                 </div>
-                <Skeleton className="h-9 w-20 self-end" />
-              </CardContent>
-            </Card>
+              </div>
+              <div className="flex items-center gap-5 border-t border-border/60 px-5 py-3">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-3 w-20" />
+              </div>
+            </div>
           ))}
         </div>
       ) : null}
@@ -253,52 +261,38 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {items.map((workspace) => (
-              <Card
+              <Link
                 key={workspace.id}
-                className="h-full gap-4 py-4 transition-colors hover:border-foreground/20 hover:bg-muted/30"
+                to="/orgs/$org_slug/workspaces/$workspace_id"
+                params={{ org_slug: orgSlug, workspace_id: String(workspace.id) }}
+                className="group flex flex-col border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:bg-muted/20 hover:shadow-sm"
               >
-                <CardHeader className="flex flex-row items-start gap-4">
-                  <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-semibold text-foreground">
-                    {getInitials(workspace.name, 'W')}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <CardTitle className="truncate text-base">{workspace.name}</CardTitle>
-                    <CardDescription className="line-clamp-2">
-                      {workspace.description || 'No description provided.'}
-                    </CardDescription>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-col gap-4">
-                    <Separator />
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-xs text-muted-foreground uppercase">Environments</span>
-                        <span className="text-lg font-semibold text-foreground">{workspace.environment_count}</span>
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <span className="text-xs text-muted-foreground uppercase">Connections</span>
-                        <span className="text-lg font-semibold text-foreground">{workspace.connection_count}</span>
-                      </div>
+                <div className="flex flex-1 flex-col gap-3 p-5">
+                  <div className="flex items-start gap-3">
+                    <div className={cn('flex size-10 shrink-0 items-center justify-center text-sm font-semibold', workspaceColor(workspace.name))}>
+                      {getInitials(workspace.name, 'W')}
                     </div>
-                    <Separator />
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
+                        {workspace.name}
+                      </p>
+                      <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                        {workspace.description || 'No description provided.'}
+                      </p>
+                    </div>
                   </div>
-                </CardContent>
-                <CardFooter className="justify-end">
-                  <Button
-                    className="w-auto px-4"
-                    nativeButton={false}
-                    render={
-                      <Link
-                        to="/orgs/$org_slug/workspaces/$workspace_id"
-                        params={{ org_slug: orgSlug, workspace_id: String(workspace.id) }}
-                      />
-                    }
-                  >
-                    Open
-                  </Button>
-                </CardFooter>
-              </Card>
+                </div>
+                <div className="flex items-center gap-5 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
+                    <HugeiconsIcon icon={DatabaseIcon} strokeWidth={2} />
+                    <span>{workspace.environment_count} {workspace.environment_count === 1 ? 'environment' : 'environments'}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
+                    <HugeiconsIcon icon={FlowConnectionIcon} strokeWidth={2} />
+                    <span>{workspace.connection_count} {workspace.connection_count === 1 ? 'connection' : 'connections'}</span>
+                  </div>
+                </div>
+              </Link>
             ))}
           </div>
 
@@ -317,6 +311,21 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
       ) : null}
     </div>
   )
+}
+
+const WORKSPACE_COLORS = [
+  'bg-orange-500/10 text-orange-600',
+  'bg-blue-500/10 text-blue-600',
+  'bg-emerald-500/10 text-emerald-600',
+  'bg-violet-500/10 text-violet-600',
+  'bg-rose-500/10 text-rose-600',
+  'bg-amber-500/10 text-amber-600',
+  'bg-cyan-500/10 text-cyan-600',
+]
+
+function workspaceColor(name: string): string {
+  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+  return WORKSPACE_COLORS[hash % WORKSPACE_COLORS.length]
 }
 
 function trimTrailingSlash(path: string) {

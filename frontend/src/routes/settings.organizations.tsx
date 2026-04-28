@@ -12,12 +12,14 @@ import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
+import { getInitials } from '#/components/InitialsAvatar'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import { cn } from '#/lib/utils'
 
 export const Route = createFileRoute('/settings/organizations')({
   component: SettingsOrganizationsPage,
@@ -115,10 +117,17 @@ function SettingsOrganizationsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-2xl font-semibold tracking-tight">Organizations</h2>
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-1.5">
+            <h2 className="text-2xl font-semibold tracking-tight">Organizations</h2>
+            <p className="text-sm text-muted-foreground">
+              {!organizations.isLoading && total > 0
+                ? `${total} organization${total !== 1 ? 's' : ''} on this instance`
+                : 'All organizations on this instance.'}
+            </p>
+          </div>
           <Dialog
             open={isCreating}
             onOpenChange={(open) => {
@@ -188,68 +197,88 @@ function SettingsOrganizationsPage() {
           onValueChange={setSearchText}
           onClear={clearSearch}
           placeholder="Search organizations"
-          className="max-w-sm"
         />
       </div>
 
       <Card>
-        <CardContent className="flex flex-col gap-4">
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>
-                    <TableColumnHeader label="Name" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                  </TableHead>
-                  <TableHead>
-                    <TableColumnHeader label="Slug" sort="slug" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                  </TableHead>
-                  <TableHead>
-                    <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                  </TableHead>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>
+                  <TableColumnHeader label="Organization" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                </TableHead>
+                <TableHead>
+                  <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {organizations.isLoading ? (
+                <TableEmptyState colSpan={2} compact message="Loading organizations…" />
+              ) : null}
+              {organizations.isError ? (
+                <TableEmptyState colSpan={2} compact message="Failed to load organizations." />
+              ) : null}
+              {!organizations.isLoading && !organizations.isError && items.length === 0 ? (
+                <TableEmptyState colSpan={2} compact message={query.q ? 'No organizations matched your search.' : 'No organizations exist yet.'} />
+              ) : null}
+              {items.map((organization) => (
+                <TableRow key={organization.id}>
+                  <TableCell>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className={cn('flex size-8 shrink-0 items-center justify-center text-xs font-semibold', orgColor(organization.name))}>
+                        {getInitials(organization.name, 'O')}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-foreground">{organization.name}</div>
+                        <div className="truncate text-muted-foreground">@{organization.slug}</div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {new Intl.DateTimeFormat(undefined, {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    }).format(new Date(organization.created_at))}
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {organizations.isLoading ? (
-                  <TableEmptyState colSpan={3} compact message="Loading organizations…" />
-                ) : null}
-                {organizations.isError ? (
-                  <TableEmptyState colSpan={3} compact message="Failed to load organizations." />
-                ) : null}
-                {!organizations.isLoading && !organizations.isError && items.length === 0 ? (
-                  <TableEmptyState colSpan={3} compact message={query.q ? 'No organizations matched your search.' : 'No organizations exist yet.'} />
-                ) : null}
-                {items.map((organization) => (
-                  <TableRow key={organization.id}>
-                    <TableCell className="font-medium text-foreground">{organization.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{organization.slug}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {new Intl.DateTimeFormat(undefined, {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                      }).format(new Date(organization.created_at))}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          <PaginationFooter
-            itemLabel="organizations"
-            page={page}
-            pageCount={pageCount}
-            pageSize={pageSize}
-            total={total}
-            isFetching={organizations.isFetching}
-            onPageChange={setPage}
-            onPageSizeChange={setPageSize}
-          />
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
+
+      {!organizations.isLoading && !organizations.isError && items.length > 0 ? (
+        <PaginationFooter
+          itemLabel="organizations"
+          page={page}
+          pageCount={pageCount}
+          pageSize={pageSize}
+          total={total}
+          isFetching={organizations.isFetching}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+      ) : null}
     </div>
   )
+}
+
+const ORG_COLORS = [
+  'bg-orange-500/10 text-orange-600',
+  'bg-blue-500/10 text-blue-600',
+  'bg-emerald-500/10 text-emerald-600',
+  'bg-violet-500/10 text-violet-600',
+  'bg-rose-500/10 text-rose-600',
+  'bg-amber-500/10 text-amber-600',
+  'bg-cyan-500/10 text-cyan-600',
+]
+
+function orgColor(name: string): string {
+  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+  return ORG_COLORS[hash % ORG_COLORS.length]
 }
 
 function slugify(value: string) {

@@ -92,19 +92,21 @@ export function AppShellHeader({
   description?: string
 }) {
   return (
-    <SidebarHeader>
-      <div className="flex items-start gap-2">
+    <SidebarHeader className="border-b border-sidebar-border">
+      <div className="flex items-center gap-2">
         <SidebarMenu className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip={label}
-              className={description ? 'h-auto items-start py-2' : undefined}
+              className={description ? 'h-auto items-center py-2 hover:bg-transparent' : 'hover:bg-transparent'}
             >
-              <HugeiconsIcon icon={icon} strokeWidth={2} />
+              <div className="flex size-6 shrink-0 items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-3.5">
+                <HugeiconsIcon icon={icon} strokeWidth={2.5} />
+              </div>
               <span className="grid min-w-0 flex-1 gap-0.5 text-left">
-                <span className="truncate font-semibold">{label}</span>
+                <span className="truncate font-semibold tracking-tight">{label}</span>
                 {description ? (
-                  <span className="truncate text-xs font-normal text-muted-foreground">{description}</span>
+                  <span className="truncate text-[11px] font-normal leading-none text-sidebar-foreground/50">{description}</span>
                 ) : null}
               </span>
             </SidebarMenuButton>
@@ -131,9 +133,9 @@ export function AppShellNavSection({
   return (
     <div className="flex flex-col gap-1 px-2 py-1 group-data-[collapsible=icon]:px-2">
       {label ? (
-        <div className="flex h-8 items-center gap-2 px-2 text-xs font-medium tracking-wide text-sidebar-foreground/70 uppercase group-data-[collapsible=icon]:hidden">
+        <div className="flex h-6 items-center gap-1.5 px-2 text-[10px] font-semibold tracking-widest text-sidebar-foreground/40 uppercase group-data-[collapsible=icon]:hidden">
+          <span className="size-1 shrink-0 rounded-full bg-sidebar-foreground/30" />
           <span>{label}</span>
-          <span className="h-px flex-1 bg-sidebar-border" />
         </div>
       ) : null}
       <SidebarMenu>
@@ -157,7 +159,7 @@ export function AppShellSidebarFooter({
   extraUserItems?: AppShellNavItem[]
 }) {
   return (
-    <SidebarFooter>
+    <SidebarFooter className="border-t border-sidebar-border">
       <AppShellPreferencesPopover preferences={preferences} setPreferences={setPreferences} />
       <AppShellUserMenu session={session} extraItems={extraUserItems} />
     </SidebarFooter>
@@ -191,6 +193,7 @@ function AppShellNavMenuItem({
 }) {
   return (
     <SidebarMenuItem>
+      <div className="pointer-events-none absolute inset-y-0.5 left-0 w-0.5 bg-sidebar-primary opacity-0 transition-opacity peer-data-active/menu-button:opacity-100" />
       <SidebarMenuButton
         render={<Link to={item.to as never} params={item.params as never} />}
         isActive={isActive}

@@ -1,18 +1,20 @@
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { Building04Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { Building04Icon, UserGroupIcon, UserMultipleIcon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { accountOrganizationsQueryOptions } from '#/lib/api/query'
-import { Button } from '#/components/ui/button'
 import { Badge } from '#/components/ui/badge'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, CardAction } from '#/components/ui/card'
+import { Card, CardContent } from '#/components/ui/card'
 import { EmptyState } from '#/components/EmptyState'
 import { getInitials } from '#/components/InitialsAvatar'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
+import { Skeleton } from '#/components/ui/skeleton'
+import { cn } from '#/lib/utils'
 
 export const Route = createFileRoute('/settings/my-organizations')({
   component: SettingsMyOrganizationsPage,
@@ -47,9 +49,13 @@ function SettingsMyOrganizationsPage() {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3">
-        <div className="space-y-2">
+        <div className="flex flex-col gap-1.5">
           <h2 className="text-2xl font-semibold tracking-tight">My Organizations</h2>
-          <p className="text-sm text-muted-foreground">Choose an organization to continue.</p>
+          <p className="text-sm text-muted-foreground">
+            {!organizations.isLoading && total > 0
+              ? `${total} organization${total !== 1 ? 's' : ''} you belong to`
+              : 'Choose an organization to continue.'}
+          </p>
         </div>
 
         <SearchInput
@@ -63,20 +69,24 @@ function SettingsMyOrganizationsPage() {
       {organizations.isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, index) => (
-            <Card key={index}>
-              <CardContent className="flex min-h-56 flex-col justify-between gap-6">
-                <div className="flex items-start gap-4">
-                  <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-semibold text-muted-foreground">
-                    --
-                  </div>
-                  <div className="flex flex-1 flex-col gap-2">
-                    <div className="h-5 w-32 rounded bg-muted" />
-                    <div className="h-4 w-24 rounded bg-muted" />
+            <div key={index} className="flex flex-col border border-border bg-card">
+              <div className="flex flex-col gap-3 p-5">
+                <div className="flex items-start gap-3">
+                  <Skeleton className="size-10 shrink-0" />
+                  <div className="flex flex-1 flex-col gap-2 pt-1">
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-4 w-12" />
+                    </div>
+                    <Skeleton className="h-3 w-20" />
                   </div>
                 </div>
-                <div className="h-9 w-full rounded bg-muted" />
-              </CardContent>
-            </Card>
+              </div>
+              <div className="flex items-center gap-5 border-t border-border/60 px-5 py-3">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+            </div>
           ))}
         </div>
       ) : null}
@@ -104,55 +114,42 @@ function SettingsMyOrganizationsPage() {
       {!organizations.isLoading && !organizations.isError && items.length > 0 ? (
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {items.map((organization) => (
-                <Card
-                  key={organization.id}
-                  className="h-full gap-4 py-4 transition-colors hover:border-foreground/20 hover:bg-muted/30"
-                >
-                  <CardHeader className="flex flex-row items-center gap-4 space-y-0">
-                    <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-semibold text-foreground">
+            {items.map((organization) => (
+              <Link
+                key={organization.id}
+                to="/orgs/$org_slug/workspaces"
+                params={{ org_slug: organization.slug }}
+                className="group flex flex-col border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:bg-muted/20 hover:shadow-sm"
+              >
+                <div className="flex flex-1 flex-col gap-3 p-5">
+                  <div className="flex items-start gap-3">
+                    <div className={cn('flex size-10 shrink-0 items-center justify-center text-sm font-semibold', organizationColor(organization.name))}>
                       {getInitials(organization.name, 'O')}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <CardTitle className="truncate text-base">{organization.name}</CardTitle>
-                        </div>
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
+                          {organization.name}
+                        </p>
+                        <Badge variant="outline" className="shrink-0 capitalize text-[10px] px-1.5 h-4 py-0">
+                          {organization.role}
+                        </Badge>
                       </div>
+                      <p className="mt-1.5 text-xs text-muted-foreground">@{organization.slug}</p>
                     </div>
-                    <CardAction>
-                      <Badge variant="outline" className="shrink-0 capitalize">
-                        {organization.role}
-                      </Badge>
-                    </CardAction>
-                  </CardHeader>
-                <CardContent>
-                  <div className="flex flex-col justify-center gap-4">
-                    <span className="border w-full" />
-                    <div className="flex h-16 items-center justify-around gap-4">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-xs text-muted-foreground uppercase">Members</span>
-                        <span className="text-lg font-semibold text-foreground">{organization.member_count}</span>
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <span className="text-xs text-muted-foreground uppercase">Teams</span>
-                        <span className="text-lg font-semibold text-foreground">{organization.team_count}</span>
-                      </div>
-                    </div>
-                    <span className="border w-full" />
                   </div>
-                </CardContent>
-                <CardFooter className="flex justify-between">
-                  <CardDescription className="truncate">@{organization.slug}</CardDescription>
-                  <Button
-                    className="w-auto px-4"
-                    nativeButton={false}
-                    render={<Link to="/orgs/$org_slug/workspaces" params={{ org_slug: organization.slug }} />}
-                  >
-                    Visit
-                  </Button>
-                </CardFooter>
-              </Card>
+                </div>
+                <div className="flex items-center gap-5 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
+                    <HugeiconsIcon icon={UserMultipleIcon} strokeWidth={2} />
+                    <span>{organization.member_count} {organization.member_count === 1 ? 'member' : 'members'}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
+                    <HugeiconsIcon icon={UserGroupIcon} strokeWidth={2} />
+                    <span>{organization.team_count} {organization.team_count === 1 ? 'team' : 'teams'}</span>
+                  </div>
+                </div>
+              </Link>
             ))}
           </div>
 
@@ -171,4 +168,19 @@ function SettingsMyOrganizationsPage() {
       ) : null}
     </div>
   )
+}
+
+const ORGANIZATION_COLORS = [
+  'bg-orange-500/10 text-orange-600',
+  'bg-blue-500/10 text-blue-600',
+  'bg-emerald-500/10 text-emerald-600',
+  'bg-violet-500/10 text-violet-600',
+  'bg-rose-500/10 text-rose-600',
+  'bg-amber-500/10 text-amber-600',
+  'bg-cyan-500/10 text-cyan-600',
+]
+
+function organizationColor(name: string): string {
+  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+  return ORGANIZATION_COLORS[hash % ORGANIZATION_COLORS.length]
 }

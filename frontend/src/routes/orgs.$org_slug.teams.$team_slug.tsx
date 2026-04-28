@@ -148,44 +148,43 @@ function OrganizationTeamContextPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <Card>
-        <CardContent>
-          {team.isLoading ? (
-            <div className="flex items-center gap-4">
-              <Skeleton className="size-12 rounded-full" />
-              <div className="flex flex-col gap-2">
-                <Skeleton className="h-5 w-40" />
-                <Skeleton className="h-4 w-28" />
-              </div>
+      <Card className="overflow-hidden">
+        {team.isLoading ? (
+          <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">
+            <Skeleton className="size-12 shrink-0 rounded-full" />
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-4 w-28" />
             </div>
-          ) : null}
+          </div>
+        ) : null}
 
-          {team.isError ? (
+        {team.isError ? (
+          <CardContent>
             <ContextMessage icon={UserGroupIcon} message="Failed to load team." />
-          ) : null}
+          </CardContent>
+        ) : null}
 
-          {team.data ? (
-            <div className="flex flex-col gap-6">
-              <div className="flex items-start gap-4">
-                <InitialsAvatar value={team.data.name} fallback="T" size="lg" />
-                <div className="min-w-0 flex-1">
-                  <h1 className="truncate text-2xl font-semibold tracking-tight">{team.data.name}</h1>
-                  <p className="truncate text-sm text-muted-foreground">@{team.data.slug}</p>
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-3">
-                <InfoBlock label="Team ID" value={String(team.data.id)} />
-                <InfoBlock label="Created" value={formatDate(team.data.created_at)} />
-                <InfoBlock label="Members" value={String(members.data?.total ?? 0)} />
+        {team.data ? (
+          <>
+            <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">
+              <InitialsAvatar value={team.data.name} fallback="T" size="lg" />
+              <div className="min-w-0 flex-1">
+                <h1 className="text-xl font-semibold leading-tight tracking-tight">{team.data.name}</h1>
+                <p className="mt-0.5 truncate text-sm text-muted-foreground">@{team.data.slug}</p>
               </div>
             </div>
-          ) : null}
-        </CardContent>
+            <div className="grid gap-5 px-6 py-5 sm:grid-cols-3">
+              <InfoBlock label="Team ID" value={String(team.data.id)} />
+              <InfoBlock label="Created" value={formatDate(team.data.created_at)} />
+              <InfoBlock label="Members" value={String(members.data?.total ?? 0)} />
+            </div>
+          </>
+        ) : null}
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-border">
           <CardTitle>Members</CardTitle>
           {canManageMembers ? (
             <Dialog
@@ -420,9 +419,9 @@ function MembersTableSkeleton() {
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs text-muted-foreground uppercase">{label}</span>
-      <span className="text-sm text-foreground">{value}</span>
+    <div className="flex flex-col gap-0.5 border-l-2 border-border pl-3">
+      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{label}</span>
+      <span className="text-sm font-medium text-foreground">{value}</span>
     </div>
   )
 }

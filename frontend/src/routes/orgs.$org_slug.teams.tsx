@@ -152,9 +152,13 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
             <h1 className="text-2xl font-semibold tracking-tight">Teams</h1>
-            <p className="text-sm text-muted-foreground">Groups used for organization access control.</p>
+            <p className="text-sm text-muted-foreground">
+              {!teams.isLoading && total > 0
+                ? `${total} team${total !== 1 ? 's' : ''} in this organization`
+                : 'Groups used for organization access control.'}
+            </p>
           </div>
 
           {canCreateTeam ? (
