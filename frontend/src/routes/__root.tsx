@@ -33,7 +33,7 @@ function RootComponent() {
           </div>
         </LayoutWidthProvider>
       </TooltipProvider>
-      <Toaster closeButton position="top-right" theme="system" />
+      <Toaster closeButton position="top-center" theme="system" />
       <TanStackDevtools
         config={{ position: 'bottom-right' }}
         plugins={[

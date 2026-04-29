@@ -47,6 +47,10 @@ function OrganizationLayout() {
     ...orgWorkspaceQueryOptions(orgSlug, workspaceId ?? ''),
     enabled: Boolean(workspaceId && hasToken),
   })
+  const orgEffectivePermissions = useQuery({
+    ...orgEffectivePermissionsQueryOptions(orgSlug, 'org'),
+    enabled: Boolean(!workspaceId && hasToken),
+  })
   const workspaceEffectivePermissions = useQuery({
     ...orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId ?? ''),
     enabled: Boolean(workspaceId && hasToken),
@@ -77,6 +81,7 @@ function OrganizationLayout() {
   const workspacePrimaryNavItems = workspaceId ? workspacePrimaryItems(orgSlug, workspaceId, workspacePermissions) : []
   const workspaceAccessControlNavItems = workspaceId ? workspaceAccessControlItems(orgSlug, workspaceId, workspacePermissions) : []
   const workspaceSettingsNavItems = workspaceId ? workspaceSettingsItems(orgSlug, workspaceId, workspacePermissions) : []
+  const orgAccessControlNavItems = !workspaceId ? accessControlItems(orgSlug, orgEffectivePermissions.data?.permissions) : []
 
   if (
     workspaceId &&
@@ -120,7 +125,9 @@ function OrganizationLayout() {
           ) : (
             <>
               <AppShellNavSection items={organizationItems(orgSlug)} pathname={pathname} />
-              <AppShellNavSection label="Access Control" items={accessControlItems(orgSlug)} pathname={pathname} />
+              {orgAccessControlNavItems.length > 0 ? (
+                <AppShellNavSection label="Access Control" items={orgAccessControlNavItems} pathname={pathname} />
+              ) : null}
               <AppShellNavSection items={settingsItems(orgSlug)} pathname={pathname} />
             </>
           )}
@@ -254,13 +261,24 @@ function organizationItems(orgSlug: string): AppShellNavItem[] {
   ]
 }
 
-function accessControlItems(orgSlug: string): AppShellNavItem[] {
-  return [
-    { to: '/orgs/$org_slug/users', params: { org_slug: orgSlug }, label: 'Users', icon: UserMultipleIcon },
-    { to: '/orgs/$org_slug/teams', params: { org_slug: orgSlug }, label: 'Teams', icon: UserGroupIcon },
-    { to: '/orgs/$org_slug/roles', params: { org_slug: orgSlug }, label: 'Roles', icon: UserShield01Icon },
-    { to: '/orgs/$org_slug/policies', params: { org_slug: orgSlug }, label: 'Policies', icon: UserLock02Icon },
-  ]
+function accessControlItems(orgSlug: string, permissions: readonly string[] | undefined): AppShellNavItem[] {
+  const items: AppShellNavItem[] = []
+
+  if (hasAnyPermission(permissions, [permission.orgRead])) {
+    items.push(
+      { to: '/orgs/$org_slug/users', params: { org_slug: orgSlug }, label: 'Users', icon: UserMultipleIcon },
+      { to: '/orgs/$org_slug/teams', params: { org_slug: orgSlug }, label: 'Teams', icon: UserGroupIcon },
+    )
+  }
+
+  if (hasAnyPermission(permissions, [permission.policyRead])) {
+    items.push(
+      { to: '/orgs/$org_slug/roles', params: { org_slug: orgSlug }, label: 'Roles', icon: UserShield01Icon },
+      { to: '/orgs/$org_slug/policies', params: { org_slug: orgSlug }, label: 'Policies', icon: UserLock02Icon },
+    )
+  }
+
+  return items
 }
 
 function settingsItems(orgSlug: string): AppShellNavItem[] {
