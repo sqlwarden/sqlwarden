@@ -178,6 +178,20 @@ WITH my_teams AS (
 ),
 my_org_memberships AS (
     SELECT org_id FROM org_members WHERE account_id = ?
+),
+my_workspace_memberships AS (
+    SELECT wm.workspace_id
+    FROM workspace_members wm
+    JOIN workspaces wm_w ON wm_w.id = wm.workspace_id
+    JOIN org_members wm_om ON wm_om.org_id = wm_w.owner_id AND wm_om.account_id = wm.account_id
+    WHERE wm.account_id = ? AND wm_w.owner_type = 'org' AND wm_w.owner_id = ?
+  UNION
+    SELECT wt.workspace_id
+    FROM workspace_teams wt
+    JOIN team_members tm ON tm.team_id = wt.team_id
+    JOIN workspaces wt_w ON wt_w.id = wt.workspace_id
+    JOIN org_members wt_om ON wt_om.org_id = wt_w.owner_id AND wt_om.account_id = tm.account_id
+    WHERE tm.account_id = ? AND wt_w.owner_type = 'org' AND wt_w.owner_id = ?
 )
 SELECT DISTINCT c.*
 FROM connections c
@@ -192,8 +206,9 @@ ORDER BY c.name ASC`
 
 	var conns []Connection
 	err := db.NewRaw(q,
-		accountID,   // my_teams CTE
-		accountID,   // my_org_memberships CTE
+		accountID,                          // my_teams CTE
+		accountID,                          // my_org_memberships CTE
+		accountID, orgID, accountID, orgID, // my_workspace_memberships CTE
 		workspaceID, // c.workspace_id
 		orgID, orgID, accountID,
 		orgID, workspaceID, accountID,
@@ -213,6 +228,20 @@ WITH my_teams AS (
 ),
 my_org_memberships AS (
     SELECT org_id FROM org_members WHERE account_id = ?
+),
+my_workspace_memberships AS (
+    SELECT wm.workspace_id
+    FROM workspace_members wm
+    JOIN workspaces wm_w ON wm_w.id = wm.workspace_id
+    JOIN org_members wm_om ON wm_om.org_id = wm_w.owner_id AND wm_om.account_id = wm.account_id
+    WHERE wm.account_id = ? AND wm_w.owner_type = 'org' AND wm_w.owner_id = ?
+  UNION
+    SELECT wt.workspace_id
+    FROM workspace_teams wt
+    JOIN team_members tm ON tm.team_id = wt.team_id
+    JOIN workspaces wt_w ON wt_w.id = wt.workspace_id
+    JOIN org_members wt_om ON wt_om.org_id = wt_w.owner_id AND wt_om.account_id = tm.account_id
+    WHERE tm.account_id = ? AND wt_w.owner_type = 'org' AND wt_w.owner_id = ?
 )
 SELECT EXISTS (
     SELECT 1
@@ -231,6 +260,7 @@ SELECT EXISTS (
 	err := db.NewRaw(q,
 		accountID,
 		accountID,
+		accountID, orgID, accountID, orgID,
 		connectionID, workspaceID,
 		orgID, orgID, accountID,
 		orgID, workspaceID, accountID,

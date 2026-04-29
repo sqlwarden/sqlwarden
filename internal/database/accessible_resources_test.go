@@ -384,6 +384,139 @@ func TestListAccessibleWorkspaces_TeamNotMember(t *testing.T) {
 	}
 }
 
+func TestListAccessibleWorkspaces_WorkspaceMembersDirectPrincipal(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-ws-members-direct", "Org")
+	ownerID := newAccount(t, db, "owner-ws-members-direct@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws1 := seedWorkspace(t, db, e, org.ID, ownerID, "Bound")
+	ws2 := seedWorkspace(t, db, e, org.ID, ownerID, "Unbound")
+	userID := newAccount(t, db, "user-ws-members-direct@example.com")
+	if err := db.AddOrgMember(context.Background(), org.ID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AddWorkspaceMember(context.Background(), ws1.ID, userID, &ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wss) != 1 || wss[0].ID != ws1.ID {
+		t.Fatalf("expected only direct workspace member workspace, got %v; unbound=%d", wsIDs(wss), ws2.ID)
+	}
+
+	ok, err := db.HasAccessibleWorkspace(context.Background(), userID, org.ID, ws1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected direct workspace member workspace to be accessible")
+	}
+}
+
+func TestListAccessibleWorkspaces_WorkspaceMembersTeamPrincipal(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-ws-members-team", "Org")
+	ownerID := newAccount(t, db, "owner-ws-members-team@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Team Bound")
+	userID := newAccount(t, db, "user-ws-members-team@example.com")
+	if err := db.AddOrgMember(context.Background(), org.ID, userID); err != nil {
+		t.Fatal(err)
+	}
+	team, err := db.InsertTeam(context.Background(), org.ID, "acc-ws-members-team", "Team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddTeamMember(context.Background(), team.ID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AddWorkspaceTeam(context.Background(), ws.ID, team.ID, &ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wss) != 1 || wss[0].ID != ws.ID {
+		t.Fatalf("expected team-derived workspace member workspace, got %v", wsIDs(wss))
+	}
+}
+
+func TestListAccessibleWorkspaces_WorkspaceMembersRequiresOrgMembership(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-ws-members-invalid", "Org")
+	ownerID := newAccount(t, db, "owner-ws-members-invalid@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Invalid Direct")
+	userID := newAccount(t, db, "user-ws-members-invalid@example.com")
+	if err := db.AddWorkspaceMember(context.Background(), ws.ID, userID, &ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wss) != 0 {
+		t.Fatalf("expected invalid workspace membership to be ignored, got %v", wsIDs(wss))
+	}
+}
+
+func TestListAccessibleWorkspaces_WorkspaceMembersRevocation(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-ws-members-revoke", "Org")
+	ownerID := newAccount(t, db, "owner-ws-members-revoke@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Revoked")
+	userID := newAccount(t, db, "user-ws-members-revoke@example.com")
+	if err := db.AddOrgMember(context.Background(), org.ID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AddWorkspaceMember(context.Background(), ws.ID, userID, &ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	var binding struct {
+		ID int64
+	}
+	if err := db.NewSelect().
+		TableExpr("role_bindings AS rb").
+		ColumnExpr("rb.id").
+		Join("JOIN roles AS r ON r.id = rb.role_id").
+		Where("rb.org_id = ? AND rb.subject_type = ? AND rb.subject_id = ? AND rb.resource_type = 'workspace' AND rb.resource_id = ? AND r.name = ?",
+			org.ID, access.SubjectTypeWorkspaceMembers, ws.ID, ws.ID, access.BuiltinWorkspaceMemberRole).
+		Scan(context.Background(), &binding); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.UnbindRole(context.Background(), binding.ID, org.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wss) != 0 {
+		t.Fatalf("expected workspace_members policy revocation to remove visibility, got %v", wsIDs(wss))
+	}
+}
+
 func TestListAccessibleWorkspaces_CrossOrgIsolation(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
@@ -629,7 +762,7 @@ func TestOrgConnectionRoleGrantsDiscoveryAcrossAllAncestors(t *testing.T) {
 	}
 }
 
-func TestListAccessibleConnections_WsRoleGrantsAllInWorkspace(t *testing.T) {
+func TestListAccessibleConnections_WorkspaceRoleWithConnReadGrantsAllInWorkspace(t *testing.T) {
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
 
@@ -642,8 +775,7 @@ func TestListAccessibleConnections_WsRoleGrantsAllInWorkspace(t *testing.T) {
 	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-wsrole@example.com")
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, access.BuiltinWorkspaceMemberRole)
-	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "account", userID, "workspace", ws.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, &ws.ID, "workspace-conn-read", "workspace", []string{access.PermConnRead}, "account", userID, "workspace", ws.ID, ownerID)
 
 	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
 	if err != nil {
@@ -655,6 +787,31 @@ func TestListAccessibleConnections_WsRoleGrantsAllInWorkspace(t *testing.T) {
 	ids := connIDs(conns)
 	if !contains(ids, c1.ID) || !contains(ids, c2.ID) {
 		t.Fatalf("missing connection IDs in %v", ids)
+	}
+}
+
+func TestListAccessibleConnections_WorkspaceMemberRoleDoesNotRevealConnections(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-conn-wsmember-no-conns", "Org")
+	ownerID := newAccount(t, db, "owner-conn-wsmember-no-conns@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	_, _ = db.InsertConnection(context.Background(), ws.ID, nil, "db1", "postgres", "enc", "open")
+
+	userID := newAccount(t, db, "user-conn-wsmember-no-conns@example.com")
+	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, access.BuiltinWorkspaceMemberRole)
+	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "account", userID, "workspace", ws.ID, ownerID)
+
+	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conns) != 0 {
+		t.Fatalf("expected no connection discovery from Workspace Member role, got %v", connIDs(conns))
 	}
 }
 
@@ -671,8 +828,7 @@ func TestListAccessibleConnections_DirectConnRoleBinding(t *testing.T) {
 	_, _ = db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-dirconn@example.com")
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, access.BuiltinWorkspaceMemberRole)
-	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "account", userID, "connection", c1.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, nil, "direct-conn-read", "connection", []string{access.PermConnRead}, "account", userID, "connection", c1.ID, ownerID)
 
 	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
 	if err != nil {
@@ -787,8 +943,7 @@ func TestListAccessibleConnections_TeamConnBinding(t *testing.T) {
 	userID := newAccount(t, db, "user-conn-team-conn@example.com")
 	_ = db.AddTeamMember(context.Background(), team.ID, userID)
 
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, access.BuiltinWorkspaceMemberRole)
-	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "team", team.ID, "connection", c1.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, nil, "team-conn-read", "connection", []string{access.PermConnRead}, "team", team.ID, "connection", c1.ID, ownerID)
 
 	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
 	if err != nil {
@@ -878,9 +1033,8 @@ func TestListAccessibleConnections_TwoUsersIsolation(t *testing.T) {
 	aliceID := newAccount(t, db, "alice-conn-2users@example.com")
 	bobID := newAccount(t, db, "bob-conn-2users@example.com")
 
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, access.BuiltinWorkspaceMemberRole)
-	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "account", aliceID, "connection", c1.ID, ownerID)
-	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "account", bobID, "connection", c2.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, nil, "alice-conn-read", "connection", []string{access.PermConnRead}, "account", aliceID, "connection", c1.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, nil, "bob-conn-read", "connection", []string{access.PermConnRead}, "account", bobID, "connection", c2.ID, ownerID)
 
 	aliceConns, _ := db.ListAccessibleConnections(context.Background(), aliceID, org.ID, ws.ID)
 	if len(aliceConns) != 1 || aliceConns[0].ID != c1.ID {
@@ -907,8 +1061,7 @@ func TestListAccessibleConnections_WsBindingDoesNotLeakToOtherWs(t *testing.T) {
 	_, _ = db.InsertConnection(context.Background(), ws2.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-wsscope@example.com")
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws1.ID, access.BuiltinWorkspaceMemberRole)
-	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "account", userID, "workspace", ws1.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, &ws1.ID, "workspace-conn-read-ws1", "workspace", []string{access.PermConnRead}, "account", userID, "workspace", ws1.ID, ownerID)
 
 	connsWs2, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws2.ID)
 	if err != nil {
@@ -1114,7 +1267,7 @@ func TestListAccessibleEnvironments_OrgRoleGrantsAll(t *testing.T) {
 	}
 }
 
-func TestListAccessibleEnvironments_WsBindingGrantsAll(t *testing.T) {
+func TestListAccessibleEnvironments_WorkspaceRoleWithEnvReadGrantsAll(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 	e := newEnforcer(t, db)
@@ -1127,8 +1280,7 @@ func TestListAccessibleEnvironments_WsBindingGrantsAll(t *testing.T) {
 	env2, _ := db.InsertEnvironment(context.Background(), ws.ID, "beta", "")
 
 	userID := newAccount(t, db, "user-env-wsrole@example.com")
-	wsMemberID := findWsRoleID(t, db, org.ID, ws.ID, access.BuiltinWorkspaceMemberRole)
-	_ = e.BindRole(context.Background(), org.ID, wsMemberID, "account", userID, "workspace", ws.ID, ownerID)
+	grantScopedRole(t, db, e, org.ID, &ws.ID, "workspace-env-read", "workspace", []string{access.PermEnvRead}, "account", userID, "workspace", ws.ID, ownerID)
 
 	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
 	if err != nil {
@@ -1137,6 +1289,30 @@ func TestListAccessibleEnvironments_WsBindingGrantsAll(t *testing.T) {
 	ids := envIDs(envs)
 	if !contains(ids, env1.ID) || !contains(ids, env2.ID) {
 		t.Fatalf("workspace binding should expose all environments; got %v", ids)
+	}
+}
+
+func TestListAccessibleEnvironments_WorkspaceMemberRoleDoesNotRevealEnvironments(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-env-wsmember-no-envs", "Org")
+	ownerID := newAccount(t, db, "owner-env-wsmember-no-envs@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Main")
+	db.InsertEnvironment(context.Background(), ws.ID, "alpha", "")
+
+	userID := newAccount(t, db, "user-env-wsmember-no-envs@example.com")
+	wsMemberID := findWsRoleID(t, db, org.ID, ws.ID, access.BuiltinWorkspaceMemberRole)
+	_ = e.BindRole(context.Background(), org.ID, wsMemberID, "account", userID, "workspace", ws.ID, ownerID)
+
+	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 0 {
+		t.Fatalf("expected no environment discovery from Workspace Member role, got %v", envIDs(envs))
 	}
 }
 

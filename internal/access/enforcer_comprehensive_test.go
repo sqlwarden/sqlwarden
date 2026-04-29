@@ -941,7 +941,7 @@ func TestWsMemberRoleBasicPermissions(t *testing.T) {
 	}
 
 	// Permissions Workspace Member should have at the workspace level.
-	allowed := []string{access.PermWsRead, access.PermEnvRead, access.PermConnRead, access.PermConnDQL}
+	allowed := []string{access.PermWsRead}
 	for _, p := range allowed {
 		if !e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, p) {
 			t.Errorf("%s role should have %q", access.BuiltinWorkspaceMemberRole, p)
@@ -951,6 +951,7 @@ func TestWsMemberRoleBasicPermissions(t *testing.T) {
 	// Permissions Workspace Member should NOT have.
 	denied := []string{
 		access.PermOrgWrite, access.PermOrgInvite, access.PermWsWrite, access.PermWsDelete,
+		access.PermEnvRead, access.PermConnRead, access.PermConnDQL,
 		access.PermConnWrite, access.PermConnDelete, access.PermPolicyModify,
 	}
 	for _, p := range denied {

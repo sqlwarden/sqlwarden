@@ -163,9 +163,25 @@ func (db *DB) RemoveOrgMember(ctx context.Context, orgID, accountID int64) error
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := db.NewDelete().Model((*OrgMember)(nil)).
-		Where("org_id = ? AND account_id = ?", orgID, accountID).Exec(ctx)
-	return err
+	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if _, err := tx.NewDelete().Model((*WorkspaceMember)(nil)).
+			Where("account_id = ?", accountID).
+			Where("workspace_id IN (SELECT id FROM workspaces WHERE owner_type = 'org' AND owner_id = ?)", orgID).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		if _, err := tx.NewDelete().Model((*TeamMember)(nil)).
+			Where("account_id = ?", accountID).
+			Where("team_id IN (SELECT id FROM teams WHERE org_id = ?)", orgID).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		_, err := tx.NewDelete().Model((*OrgMember)(nil)).
+			Where("org_id = ? AND account_id = ?", orgID, accountID).Exec(ctx)
+		return err
+	})
 }
 
 func (db *DB) GetOrgMembers(ctx context.Context, orgID int64) ([]OrgMember, error) {

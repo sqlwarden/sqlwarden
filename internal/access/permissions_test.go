@@ -67,6 +67,9 @@ func TestWorkspaceBuiltinRoles(t *testing.T) {
 	}
 
 	memberPerms := access.WorkspaceBuiltinRoles[access.BuiltinWorkspaceMemberRole]
+	if len(memberPerms) != 1 || memberPerms[0] != access.PermWsRead {
+		t.Fatalf("%s must only grant %s by default, got %v", access.BuiltinWorkspaceMemberRole, access.PermWsRead, memberPerms)
+	}
 	for _, p := range memberPerms {
 		if p == "ws:write" || p == "conn:delete" {
 			t.Fatalf("%s must not have %s", access.BuiltinWorkspaceMemberRole, p)

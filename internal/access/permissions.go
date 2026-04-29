@@ -2,9 +2,10 @@ package access
 
 // Permission constants — single source of truth. Never use raw strings elsewhere.
 const (
-	SubjectTypeAccount    = "account"
-	SubjectTypeTeam       = "team"
-	SubjectTypeOrgMembers = "org_members"
+	SubjectTypeAccount          = "account"
+	SubjectTypeTeam             = "team"
+	SubjectTypeOrgMembers       = "org_members"
+	SubjectTypeWorkspaceMembers = "workspace_members"
 
 	PermOrgRead              = "org:read"
 	PermOrgWrite             = "org:write"
@@ -149,14 +150,12 @@ var WorkspaceBuiltinRoles = map[string][]string{
 	},
 	BuiltinWorkspaceMemberRole: {
 		PermWsRead,
-		PermEnvRead,
-		PermConnRead, PermConnDQL,
 	},
 }
 
 var WorkspaceBuiltinRoleDescriptions = map[string]string{
 	BuiltinWorkspaceAdminRole:  "Full workspace administration access, including workspace updates, environments, connections, queries, and workspace policies.",
-	BuiltinWorkspaceMemberRole: "Baseline workspace member access with workspace visibility, environment visibility, connection metadata, and read-query access.",
+	BuiltinWorkspaceMemberRole: "Baseline workspace member access with workspace visibility.",
 }
 
 var allPermissionSet map[string]bool

@@ -371,6 +371,8 @@ func (db *DB) populatePolicyNames(ctx context.Context, item *WorkspacePolicyList
 		}
 	case "org_members":
 		item.SubjectName = "All organization members"
+	case "workspace_members":
+		item.SubjectName = "All workspace members"
 	}
 
 	switch item.ResourceType {

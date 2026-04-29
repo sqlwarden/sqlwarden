@@ -1,5 +1,8 @@
 PRAGMA foreign_keys = OFF;
 
+DROP TABLE IF EXISTS workspace_teams;
+DROP TABLE IF EXISTS workspace_members;
+
 CREATE TABLE roles_old (
     id          INTEGER  PRIMARY KEY AUTOINCREMENT,
     org_id      INTEGER  NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,

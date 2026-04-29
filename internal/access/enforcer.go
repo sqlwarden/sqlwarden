@@ -105,6 +105,34 @@ func (e *Enforcer) principalsFor(ctx context.Context, orgID, accountID int64) (P
 		ids[i] = r.TeamID
 	}
 
+	var workspaceRows []struct{ WorkspaceID int64 }
+	err = e.db.NewRaw(`
+SELECT DISTINCT workspace_id
+FROM (
+    SELECT wm.workspace_id
+    FROM workspace_members wm
+    JOIN workspaces w ON w.id = wm.workspace_id
+    JOIN org_members om ON om.org_id = w.owner_id AND om.account_id = wm.account_id
+    WHERE wm.account_id = ? AND w.owner_type = 'org' AND w.owner_id = ?
+  UNION
+    SELECT wt.workspace_id
+    FROM workspace_teams wt
+    JOIN team_members tm ON tm.team_id = wt.team_id
+    JOIN workspaces w ON w.id = wt.workspace_id
+    JOIN org_members om ON om.org_id = w.owner_id AND om.account_id = tm.account_id
+    WHERE tm.account_id = ? AND w.owner_type = 'org' AND w.owner_id = ?
+) workspace_principals`,
+		accountID, orgID, accountID, orgID,
+	).Scan(ctx, &workspaceRows)
+	if err != nil {
+		return Principals{}, err
+	}
+
+	workspaceIDs := make([]int64, len(workspaceRows))
+	for i, r := range workspaceRows {
+		workspaceIDs[i] = r.WorkspaceID
+	}
+
 	orgMember, err := e.db.NewSelect().
 		TableExpr("org_members").
 		Where("org_id = ? AND account_id = ?", orgID, accountID).
@@ -113,7 +141,7 @@ func (e *Enforcer) principalsFor(ctx context.Context, orgID, accountID int64) (P
 		return Principals{}, err
 	}
 
-	principals := Principals{OrgID: orgID, TeamIDs: ids, OrgMember: orgMember}
+	principals := Principals{OrgID: orgID, TeamIDs: ids, WorkspaceMemberIDs: workspaceIDs, OrgMember: orgMember}
 	e.cache.SetPrincipals(orgID, accountID, principals)
 	return principals, nil
 }
@@ -306,6 +334,13 @@ func matchesPrincipal(subjectType string, subjectID, accountID int64, principals
 	if subjectType == SubjectTypeOrgMembers {
 		return principals.OrgMember && subjectID == principals.OrgID
 	}
+	if subjectType == SubjectTypeWorkspaceMembers {
+		for _, workspaceID := range principals.WorkspaceMemberIDs {
+			if workspaceID == subjectID {
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -375,9 +410,30 @@ func (e *Enforcer) SeedWorkspace(ctx context.Context, orgID, workspaceID, creato
 				return fmt.Errorf("bind %s role: %w", BuiltinWorkspaceAdminRole, err)
 			}
 		}
+		if roleName == BuiltinWorkspaceMemberRole {
+			err = e.bindRoleByID(ctx, orgID, roleID, SubjectTypeWorkspaceMembers, workspaceID, "workspace", workspaceID, creatorAccountID)
+			if err != nil {
+				return fmt.Errorf("bind workspace member role: %w", err)
+			}
+		}
+	}
+
+	wm := map[string]interface{}{
+		"workspace_id": workspaceID,
+		"account_id":   creatorAccountID,
+		"created_by":   creatorAccountID,
+	}
+	_, err := e.db.NewInsert().
+		TableExpr("workspace_members").
+		Model(&wm).
+		Ignore().
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("bind creator workspace membership: %w", err)
 	}
 
 	e.cache.InvalidateOrgPolicy(orgID)
+	e.cache.InvalidatePrincipals(orgID, creatorAccountID)
 	return nil
 }
 

@@ -295,7 +295,7 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 	}
 
 	input.V.CheckField(input.RoleID > 0, "role_id", "role_id is required")
-	input.V.CheckField(validPolicySubjectType(input.SubjectType), "subject_type", "must be account, team, or org_members")
+	input.V.CheckField(validWorkspacePolicySubjectType(input.SubjectType), "subject_type", "must be account, team, org_members, or workspace_members")
 	input.V.CheckField(input.SubjectID > 0, "subject_id", "subject_id is required")
 	validTypes := map[string]bool{"workspace": true, "environment": true, "connection": true}
 	input.V.CheckField(validTypes[input.ResourceType], "resource_type", "must be workspace, environment, or connection")
@@ -311,7 +311,7 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 	ws := contextGetWorkspace(r)
 	grantor := contextGetAccount(r)
 
-	if ok, err := app.policySubjectExists(r, org.ID, input.SubjectType, input.SubjectID); err != nil {
+	if ok, err := app.workspacePolicySubjectExists(r, org.ID, ws.ID, input.SubjectType, input.SubjectID); err != nil {
 		app.serverError(w, r, err)
 		return
 	} else if !ok {
@@ -387,6 +387,20 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) workspacePolicySubjectExists(r *http.Request, orgID, workspaceID int64, subjectType string, subjectID int64) (bool, error) {
+	if subjectType == access.SubjectTypeWorkspaceMembers {
+		return subjectID == workspaceID, nil
+	}
+	return app.policySubjectExists(r, orgID, subjectType, subjectID)
+}
+
+func validWorkspacePolicySubjectType(subjectType string) bool {
+	if subjectType == access.SubjectTypeWorkspaceMembers {
+		return true
+	}
+	return validPolicySubjectType(subjectType)
 }
 
 // revokeWorkspacePolicy removes a role binding. It verifies the

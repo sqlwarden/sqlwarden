@@ -75,9 +75,10 @@ type cachedPrincipals struct {
 }
 
 type Principals struct {
-	OrgID     int64
-	TeamIDs   []int64
-	OrgMember bool
+	OrgID              int64
+	TeamIDs            []int64
+	WorkspaceMemberIDs []int64
+	OrgMember          bool
 }
 
 type cachedAncestry struct {
