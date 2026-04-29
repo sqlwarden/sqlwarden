@@ -20,6 +20,15 @@ func (db *DB) CountRoleBinding(ctx context.Context, orgID, roleID int64, resourc
 	return n, err
 }
 
+// CountRoleBindings returns the number of bindings for roleID at the given resource across all subject types.
+func (db *DB) CountRoleBindings(ctx context.Context, orgID, roleID int64, resourceType string, resourceID int64) (int, error) {
+	n, err := db.NewSelect().
+		TableExpr("role_bindings").
+		Where("org_id = ? AND role_id = ? AND resource_type = ? AND resource_id = ?", orgID, roleID, resourceType, resourceID).
+		Count(ctx)
+	return n, err
+}
+
 // AccountHasRoleBinding returns true if the account is directly bound to roleID at the given resource.
 func (db *DB) AccountHasRoleBinding(ctx context.Context, orgID, roleID, accountID int64, resourceType string, resourceID int64) (bool, error) {
 	n, err := db.NewSelect().

@@ -314,6 +314,15 @@ func (app *application) revokeOrgPolicy(w http.ResponseWriter, r *http.Request) 
 		app.notFound(w, r)
 		return
 	}
+	if isLastOwnerPolicy, checkErr := app.isLastOrgOwnerPolicy(r, org.ID, rb); checkErr != nil {
+		app.serverError(w, r, checkErr)
+		return
+	} else if isLastOwnerPolicy {
+		v := validator.Validator{}
+		v.AddError("cannot revoke the last owner policy of an organization")
+		app.failedValidation(w, r, v)
+		return
+	}
 	if err = app.enforcer.UnbindRole(r.Context(), bindingID, org.ID); err != nil {
 		app.serverError(w, r, err)
 		return
@@ -332,6 +341,26 @@ func (app *application) listPermissions(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func (app *application) isLastOrgOwnerPolicy(r *http.Request, orgID int64, binding database.RoleBinding) (bool, error) {
+	if binding.ResourceType != "org" || binding.ResourceID != orgID {
+		return false, nil
+	}
+
+	role, found, err := app.db.GetRole(r.Context(), binding.RoleID, orgID)
+	if err != nil || !found {
+		return false, err
+	}
+	if !role.IsBuiltin || role.Name != access.BuiltinOrgOwnerRole || role.ScopeType != "org" || role.WorkspaceID != nil {
+		return false, nil
+	}
+
+	count, err := app.db.CountRoleBindings(r.Context(), orgID, binding.RoleID, "org", orgID)
+	if err != nil {
+		return false, err
+	}
+	return count <= 1, nil
 }
 
 func (app *application) policySubjectExists(r *http.Request, orgID int64, subjectType string, subjectID int64) (bool, error) {

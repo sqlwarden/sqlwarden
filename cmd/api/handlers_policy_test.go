@@ -496,3 +496,98 @@ func TestRevokeOrgPolicy(t *testing.T) {
 	assert.Equal(t, listRes.StatusCode, http.StatusOK)
 	assert.Equal(t, int(listRes.BodyFields["total"].(float64)), 0)
 }
+
+func TestRevokeOnlyOrgOwnerPolicyForbidden(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-last-owner"), "Policy Owner", "Policy Last Owner")
+
+	bindingID := orgPolicyBindingID(t, app, tok, org.Slug, owner.ID, access.BuiltinOrgOwnerRole)
+	revokeRes := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+org.Slug+"/policies/"+bindingID, nil, tok), app.routes())
+	assert.Equal(t, revokeRes.StatusCode, http.StatusUnprocessableEntity)
+
+	roles, err := app.db.ListOrgRoles(context.Background(), org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ownerRoleID int64
+	for _, role := range roles {
+		if role.Name == access.BuiltinOrgOwnerRole && role.IsBuiltin {
+			ownerRoleID = role.ID
+			break
+		}
+	}
+	if ownerRoleID == 0 {
+		t.Fatal("expected owner role to exist")
+	}
+	count, err := app.db.CountRoleBindings(context.Background(), org.ID, ownerRoleID, "org", org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, count, 1)
+}
+
+func TestRevokeOrgOwnerPolicyAllowedWhenAnotherOwnerPolicyExists(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-extra-owner"), "Policy Owner", "Policy Extra Owner")
+	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-extra-owner-member"), "Second Owner")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	roles, err := app.db.ListOrgRoles(context.Background(), org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ownerRoleID int64
+	for _, role := range roles {
+		if role.Name == access.BuiltinOrgOwnerRole && role.IsBuiltin {
+			ownerRoleID = role.ID
+			break
+		}
+	}
+	if ownerRoleID == 0 {
+		t.Fatal("expected owner role to exist")
+	}
+
+	grantRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+org.Slug+"/policies",
+		map[string]any{
+			"role_id":      ownerRoleID,
+			"subject_type": "account",
+			"subject_id":   member.ID,
+		}, tok), app.routes())
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	bindingID := orgPolicyBindingID(t, app, tok, org.Slug, owner.ID, access.BuiltinOrgOwnerRole)
+	revokeRes := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+org.Slug+"/policies/"+bindingID, nil, tok), app.routes())
+	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
+
+	count, err := app.db.CountRoleBindings(context.Background(), org.ID, ownerRoleID, "org", org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, count, 1)
+}
+
+func orgPolicyBindingID(t *testing.T, app *application, token, orgSlug string, accountID int64, roleName string) string {
+	t.Helper()
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/policies?subject_type=account&subject_id="+fmt.Sprint(accountID), nil, token), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+	items := listRes.BodyFields["items"].([]any)
+	for _, raw := range items {
+		item := raw.(map[string]any)
+		if item["role_name"] == roleName {
+			return fmt.Sprintf("%v", item["binding_id"])
+		}
+	}
+	t.Fatalf("expected policy binding for role %q", roleName)
+	return ""
+}
