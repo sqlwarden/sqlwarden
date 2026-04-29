@@ -61,9 +61,16 @@ function OrganizationTeamContextPage() {
     sort: 'created_at',
     order: 'asc',
   })
-  const team = useQuery(orgTeamQueryOptions(orgSlug, teamSlug))
-  const members = useQuery(orgTeamMembersQueryOptions(orgSlug, teamSlug, membersQuery))
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
+  const canReadTeam = hasPermission(effectivePermissions.data?.permissions, permission.orgRead)
+  const team = useQuery({
+    ...orgTeamQueryOptions(orgSlug, teamSlug),
+    enabled: canReadTeam,
+  })
+  const members = useQuery({
+    ...orgTeamMembersQueryOptions(orgSlug, teamSlug, membersQuery),
+    enabled: canReadTeam,
+  })
   const orgMembers = useQuery({
     ...orgMembersQueryOptions(orgSlug, {
       page: 1,
@@ -72,26 +79,26 @@ function OrganizationTeamContextPage() {
       order: 'asc',
       q: memberSearch,
     }),
-    enabled: isAddingMember,
+    enabled: isAddingMember && canReadTeam,
   })
   const memberItems = members.data?.items ?? []
   const existingMemberIDs = new Set(memberItems.map((member) => member.account_id))
   const displayName = team.data?.name ?? teamSlug
-  const canManageMembers = hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
+  const canManageMembers = canReadTeam && hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
 
   useEffect(() => {
-    if (!team.error) {
+    if (!canReadTeam || !team.error) {
       return
     }
     toast.error(team.error instanceof Error ? team.error.message : 'Failed to load team')
-  }, [team.error])
+  }, [canReadTeam, team.error])
 
   useEffect(() => {
-    if (!members.error) {
+    if (!canReadTeam || !members.error) {
       return
     }
     toast.error(members.error instanceof Error ? members.error.message : 'Failed to load team members')
-  }, [members.error])
+  }, [canReadTeam, members.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) {
@@ -101,11 +108,11 @@ function OrganizationTeamContextPage() {
   }, [effectivePermissions.error])
 
   useEffect(() => {
-    if (!orgMembers.error) {
+    if (!canReadTeam || !orgMembers.error) {
       return
     }
     toast.error(orgMembers.error instanceof Error ? orgMembers.error.message : 'Failed to load users')
-  }, [orgMembers.error])
+  }, [canReadTeam, orgMembers.error])
 
   const addMember = useMutation({
     mutationFn: async (accountID: number) =>
@@ -181,7 +188,12 @@ function OrganizationTeamContextPage() {
             <ContextMessage icon={UserGroupIcon} message="Failed to load team." />
           </CardContent>
         ) : null}
-        {team.isLoading ? (
+        {!effectivePermissions.isLoading && !canReadTeam ? (
+          <CardContent>
+            <ContextMessage icon={UserGroupIcon} message="You do not have permission to view this team." />
+          </CardContent>
+        ) : null}
+        {effectivePermissions.isLoading || team.isLoading ? (
           <div className="grid gap-5 px-6 py-5 sm:grid-cols-3">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="flex flex-col gap-1.5 border-l-2 border-border pl-3">
@@ -280,12 +292,15 @@ function OrganizationTeamContextPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {members.isLoading ? <MembersTableSkeleton /> : null}
+              {effectivePermissions.isLoading || members.isLoading ? <MembersTableSkeleton /> : null}
               {members.isError ? <MessageRow colSpan={canManageMembers ? 3 : 2} icon={UserMultipleIcon} message="Failed to load members." /> : null}
-              {!members.isLoading && !members.isError && memberItems.length === 0 ? (
+              {!effectivePermissions.isLoading && !canReadTeam ? (
+                <MessageRow colSpan={canManageMembers ? 3 : 2} icon={UserMultipleIcon} message="You do not have permission to view team members." />
+              ) : null}
+              {!effectivePermissions.isLoading && canReadTeam && !members.isLoading && !members.isError && memberItems.length === 0 ? (
                 <MessageRow colSpan={canManageMembers ? 3 : 2} icon={UserMultipleIcon} message="This team does not have any members." />
               ) : null}
-              {!members.isLoading && !members.isError
+              {!effectivePermissions.isLoading && canReadTeam && !members.isLoading && !members.isError
                 ? memberItems.map((member) => (
                     <MemberRow
                       key={member.account_id}

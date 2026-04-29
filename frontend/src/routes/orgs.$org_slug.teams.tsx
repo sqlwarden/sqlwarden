@@ -69,9 +69,13 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
     setTeamSlug(slugify(teamName))
   }, [teamName, slugTouched])
 
-  const teams = useQuery(orgTeamsQueryOptions(orgSlug, query))
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
-  const canCreateTeam = hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
+  const canReadTeams = hasPermission(effectivePermissions.data?.permissions, permission.orgRead)
+  const canCreateTeam = canReadTeams && hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
+  const teams = useQuery({
+    ...orgTeamsQueryOptions(orgSlug, query),
+    enabled: canReadTeams,
+  })
   const data = teams.data
   const items = data?.items ?? []
   const page = data?.page ?? Number(query.page ?? 1)
@@ -80,12 +84,12 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
   const pageCount = total > 0 ? Math.ceil(total / pageSize) : 1
 
   useEffect(() => {
-    if (!teams.error) {
+    if (!canReadTeams || !teams.error) {
       return
     }
 
     toast.error(teams.error instanceof Error ? teams.error.message : 'Failed to load teams')
-  }, [teams.error])
+  }, [canReadTeams, teams.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) {
@@ -245,12 +249,15 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {teams.isLoading ? <TeamsTableSkeleton /> : null}
+              {effectivePermissions.isLoading || teams.isLoading ? <TeamsTableSkeleton /> : null}
               {teams.isError ? <TableEmptyState colSpan={2} icon={UserGroupIcon} message="Failed to load teams." /> : null}
-              {!teams.isLoading && !teams.isError && items.length === 0 ? (
+              {!effectivePermissions.isLoading && !canReadTeams ? (
+                <TableEmptyState colSpan={2} icon={UserGroupIcon} message="You do not have permission to view teams." />
+              ) : null}
+              {!effectivePermissions.isLoading && canReadTeams && !teams.isLoading && !teams.isError && items.length === 0 ? (
                 <TableEmptyState colSpan={2} icon={UserGroupIcon} message={query.q ? 'No teams matched your search.' : 'No teams found.'} />
               ) : null}
-              {!teams.isLoading && !teams.isError
+              {!effectivePermissions.isLoading && canReadTeams && !teams.isLoading && !teams.isError
                 ? items.map((team) => <TeamRow key={team.id} team={team} />)
                 : null}
             </TableBody>
@@ -258,7 +265,7 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
         </CardContent>
       </Card>
 
-      {!teams.isLoading && !teams.isError && items.length > 0 ? (
+      {canReadTeams && !teams.isLoading && !teams.isError && items.length > 0 ? (
         <PaginationFooter
           itemLabel="teams"
           page={page}

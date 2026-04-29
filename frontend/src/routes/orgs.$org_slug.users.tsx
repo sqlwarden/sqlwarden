@@ -60,9 +60,13 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
     q: '',
   })
 
-  const members = useQuery(orgMembersQueryOptions(orgSlug, query))
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
-  const canAddUser = hasPermission(effectivePermissions.data?.permissions, permission.orgInvite)
+  const canReadUsers = hasPermission(effectivePermissions.data?.permissions, permission.orgRead)
+  const canAddUser = canReadUsers && hasPermission(effectivePermissions.data?.permissions, permission.orgInvite)
+  const members = useQuery({
+    ...orgMembersQueryOptions(orgSlug, query),
+    enabled: canReadUsers,
+  })
   const data = members.data
   const items = data?.items ?? []
   const page = data?.page ?? Number(query.page ?? 1)
@@ -71,12 +75,12 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
   const pageCount = total > 0 ? Math.ceil(total / pageSize) : 1
 
   useEffect(() => {
-    if (!members.error) {
+    if (!canReadUsers || !members.error) {
       return
     }
 
     toast.error(members.error instanceof Error ? members.error.message : 'Failed to load users')
-  }, [members.error])
+  }, [canReadUsers, members.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) {
@@ -219,12 +223,15 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {members.isLoading ? <UsersTableSkeleton /> : null}
+              {effectivePermissions.isLoading || members.isLoading ? <UsersTableSkeleton /> : null}
               {members.isError ? <TableEmptyState colSpan={3} icon={UserMultipleIcon} message="Failed to load users." /> : null}
-              {!members.isLoading && !members.isError && items.length === 0 ? (
+              {!effectivePermissions.isLoading && !canReadUsers ? (
+                <TableEmptyState colSpan={3} icon={UserMultipleIcon} message="You do not have permission to view users." />
+              ) : null}
+              {!effectivePermissions.isLoading && canReadUsers && !members.isLoading && !members.isError && items.length === 0 ? (
                 <TableEmptyState colSpan={3} icon={UserMultipleIcon} message={query.q ? 'No users matched your search.' : 'No users found.'} />
               ) : null}
-              {!members.isLoading && !members.isError
+              {!effectivePermissions.isLoading && canReadUsers && !members.isLoading && !members.isError
                 ? items.map((member) => <UserRow key={member.account_id} member={member} />)
                 : null}
             </TableBody>
@@ -232,7 +239,7 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
         </CardContent>
       </Card>
 
-      {!members.isLoading && !members.isError && items.length > 0 ? (
+      {canReadUsers && !members.isLoading && !members.isError && items.length > 0 ? (
         <PaginationFooter
           itemLabel="users"
           page={page}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -130,6 +131,45 @@ func TestUpdateTeam_RejectsOrgChange(t *testing.T) {
 		map[string]any{"name": "Backend Team", "org_id": 9999}, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
 	assertValidationField(t, res, "org_id")
+}
+
+func TestReadTeamsRequiresOrgRead(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "team-read-owner"), "Team Owner", "Team Read Org")
+	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "team-read-member"), "Team Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+org.Slug+"/teams",
+		map[string]any{"slug": "private-team", "name": "Private Team"}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	var defaultMemberBinding struct {
+		ID int64
+	}
+	if err := app.db.NewSelect().
+		TableExpr("role_bindings").
+		ColumnExpr("id").
+		Where("org_id = ? AND subject_type = ? AND subject_id = ? AND resource_type = 'org' AND resource_id = ?",
+			org.ID, access.SubjectTypeOrgMembers, org.ID, org.ID).
+		Scan(context.Background(), &defaultMemberBinding); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.enforcer.UnbindRole(context.Background(), defaultMemberBinding.ID, org.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		"/api/v1/orgs/" + org.Slug + "/teams",
+		"/api/v1/orgs/" + org.Slug + "/teams/private-team",
+		"/api/v1/orgs/" + org.Slug + "/teams/private-team/members",
+	} {
+		res := send(t, newAuthRequest(t, http.MethodGet, path, nil, memberTok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusForbidden)
+	}
 }
 
 func TestTeamMemberManagement(t *testing.T) {
