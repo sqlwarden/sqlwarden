@@ -287,20 +287,7 @@ function scopeLabel(value: RoleScope) {
 }
 
 function roleDisplayName(value: string) {
-  switch (value) {
-    case 'owner':
-      return 'Owner'
-    case 'admin':
-      return 'Admin'
-    case 'member':
-      return 'Member'
-    case 'ws:admin':
-      return 'Workspace Admin'
-    case 'ws:member':
-      return 'Workspace Member'
-    default:
-      return value
-  }
+  return value
 }
 
 function InfoBlock({ label, value }: { label: string; value: string }) {

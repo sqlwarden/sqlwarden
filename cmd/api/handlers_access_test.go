@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
 )
@@ -309,13 +310,13 @@ func TestRevokeWorkspaceRoleBinding(t *testing.T) {
 
 	var roleID int64
 	for _, role := range rolePayload.Items {
-		if role["name"] == "ws:member" {
+		if role["name"] == access.BuiltinWorkspaceMemberRole {
 			roleID = int64(role["id"].(float64))
 			break
 		}
 	}
 	if roleID == 0 {
-		t.Fatal("expected ws:member role to exist")
+		t.Fatalf("expected %q role to exist", access.BuiltinWorkspaceMemberRole)
 	}
 
 	grantRes := send(t, newAuthRequest(t, http.MethodPost,

@@ -26,7 +26,7 @@ export interface Organization {
 }
 
 export interface AccountOrganization extends Organization {
-  role: 'owner' | 'admin' | 'member'
+  role: string
   member_count: number
   team_count: number
 }

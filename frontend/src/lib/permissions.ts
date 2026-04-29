@@ -37,6 +37,21 @@ export const permission = {
 export type Permission = (typeof permission)[keyof typeof permission]
 export type PermissionScope = 'org' | 'workspace' | 'environment' | 'connection'
 
+export const builtinRole = {
+  organizationOwner: 'Organization Owner',
+  organizationAdmin: 'Organization Admin',
+  organizationMember: 'Organization Member',
+  workspaceAdmin: 'Workspace Admin',
+  workspaceMember: 'Workspace Member',
+} as const
+
+export type BuiltinRole = (typeof builtinRole)[keyof typeof builtinRole]
+export type OrgBuiltinRole =
+  | typeof builtinRole.organizationOwner
+  | typeof builtinRole.organizationAdmin
+  | typeof builtinRole.organizationMember
+export type WorkspaceBuiltinRole = typeof builtinRole.workspaceAdmin | typeof builtinRole.workspaceMember
+
 export const scopePermissions = {
   org: [
     permission.orgRead,
@@ -110,8 +125,8 @@ export const scopePermissions = {
 } as const satisfies Record<PermissionScope, readonly Permission[]>
 
 export const orgBuiltinRoles = {
-  owner: scopePermissions.org,
-  admin: [
+  [builtinRole.organizationOwner]: scopePermissions.org,
+  [builtinRole.organizationAdmin]: [
     permission.orgRead,
     permission.orgWrite,
     permission.orgInvite,
@@ -136,13 +151,13 @@ export const orgBuiltinRoles = {
     permission.policyRead,
     permission.policyModify,
   ],
-  member: [
+  [builtinRole.organizationMember]: [
     permission.orgRead,
   ],
-} as const satisfies Record<'owner' | 'admin' | 'member', readonly Permission[]>
+} as const satisfies Record<OrgBuiltinRole, readonly Permission[]>
 
 export const workspaceBuiltinRoles = {
-  'ws:admin': [
+  [builtinRole.workspaceAdmin]: [
     permission.wsRead,
     permission.wsWrite,
     permission.envRead,
@@ -161,13 +176,13 @@ export const workspaceBuiltinRoles = {
     permission.policyRead,
     permission.policyModify,
   ],
-  'ws:member': [
+  [builtinRole.workspaceMember]: [
     permission.wsRead,
     permission.envRead,
     permission.connRead,
     permission.connDql,
   ],
-} as const satisfies Record<'ws:admin' | 'ws:member', readonly Permission[]>
+} as const satisfies Record<WorkspaceBuiltinRole, readonly Permission[]>
 
 export const runnableConnectionPermissions = [
   permission.connExecute,

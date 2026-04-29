@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 )
 
@@ -143,7 +144,7 @@ func TestTeamMemberManagement(t *testing.T) {
 	// Add second user to the org.
 	addOrgReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
 		"email": "tm-member@example.com",
-		"role":  "member",
+		"role":  access.BuiltinOrgMemberRole,
 	})
 	addOrgReq.Header.Set("Authorization", "Bearer "+ownerTok)
 	addOrgRes := send(t, addOrgReq, app.routes())
@@ -259,7 +260,7 @@ func TestListTeamMembers_SupportsPaginationAndSort(t *testing.T) {
 	for _, email := range []string{"tm-page-a@example.com", "tm-page-b@example.com"} {
 		addOrgRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
 			"email": email,
-			"role":  "member",
+			"role":  access.BuiltinOrgMemberRole,
 		}, ownerTok), app.routes())
 		assert.Equal(t, addOrgRes.StatusCode, http.StatusNoContent)
 	}

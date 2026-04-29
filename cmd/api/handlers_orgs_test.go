@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 )
 
@@ -85,10 +86,10 @@ func TestListOrgMembers_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	}
 
 	addRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+strconv.FormatInt(alice.ID, 10),
-		map[string]any{"role": "admin"}, ownerTok), app.routes())
+		map[string]any{"role": access.BuiltinOrgAdminRole}, ownerTok), app.routes())
 	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
 
-	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members?q=ali&role=admin&sort=name&order=asc&page=1&page_size=1", ownerTok), app.routes())
+	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members?q=ali&role=Organization%20Admin&sort=name&order=asc&page=1&page_size=1", ownerTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
 	var payload struct {
@@ -103,7 +104,7 @@ func TestListOrgMembers_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	assert.Equal(t, payload.Total, 1)
 	assert.Equal(t, len(payload.Items), 1)
 	assert.Equal(t, payload.Items[0]["name"], "Alice Analyst")
-	assert.Equal(t, payload.Items[0]["role"], "admin")
+	assert.Equal(t, payload.Items[0]["role"], access.BuiltinOrgAdminRole)
 }
 
 func TestGetOrgMemberAndTeams(t *testing.T) {
@@ -128,7 +129,7 @@ func TestGetOrgMemberAndTeams(t *testing.T) {
 	getMemberRes := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members/"+strconv.FormatInt(member.ID, 10), ownerTok), app.routes())
 	assert.Equal(t, getMemberRes.StatusCode, http.StatusOK)
 	assert.Equal(t, getMemberRes.BodyFields["email"].(string), member.Email)
-	assert.Equal(t, getMemberRes.BodyFields["role"].(string), "member")
+	assert.Equal(t, getMemberRes.BodyFields["role"].(string), access.BuiltinOrgMemberRole)
 
 	teamsRes := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members/"+strconv.FormatInt(member.ID, 10)+"/teams", ownerTok), app.routes())
 	assert.Equal(t, teamsRes.StatusCode, http.StatusOK)
@@ -154,7 +155,7 @@ func TestAddOrgMember(t *testing.T) {
 	// Add second user as member.
 	req := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
 		"email": "member-add@example.com",
-		"role":  "member",
+		"role":  access.BuiltinOrgMemberRole,
 	})
 	req.Header.Set("Authorization", "Bearer "+ownerTok)
 	res := send(t, req, app.routes())
@@ -163,7 +164,7 @@ func TestAddOrgMember(t *testing.T) {
 	// Non-existent email returns 404.
 	req2 := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
 		"email": "nobody@example.com",
-		"role":  "member",
+		"role":  access.BuiltinOrgMemberRole,
 	})
 	req2.Header.Set("Authorization", "Bearer "+ownerTok)
 	res2 := send(t, req2, app.routes())
@@ -181,7 +182,7 @@ func TestUpdateOrgMemberRole(t *testing.T) {
 
 	addReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
 		"email": "member-upd@example.com",
-		"role":  "member",
+		"role":  access.BuiltinOrgMemberRole,
 	})
 	addReq.Header.Set("Authorization", "Bearer "+ownerTok)
 	addRes := send(t, addReq, app.routes())
@@ -189,7 +190,7 @@ func TestUpdateOrgMemberRole(t *testing.T) {
 
 	// Promote member to admin.
 	req := newTestRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+memberID, map[string]any{
-		"role": "admin",
+		"role": access.BuiltinOrgAdminRole,
 	})
 	req.Header.Set("Authorization", "Bearer "+ownerTok)
 	res := send(t, req, app.routes())
@@ -197,7 +198,7 @@ func TestUpdateOrgMemberRole(t *testing.T) {
 
 	// Demoting last owner should fail with 422.
 	req2 := newTestRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+ownerID, map[string]any{
-		"role": "member",
+		"role": access.BuiltinOrgMemberRole,
 	})
 	req2.Header.Set("Authorization", "Bearer "+ownerTok)
 	res2 := send(t, req2, app.routes())
@@ -216,11 +217,11 @@ func TestUpdateOrgMemberRoleReplacesPreviousBuiltinBinding(t *testing.T) {
 	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
 
 	promoteRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+memberID,
-		map[string]any{"role": "admin"}, ownerTok), app.routes())
+		map[string]any{"role": access.BuiltinOrgAdminRole}, ownerTok), app.routes())
 	assert.Equal(t, promoteRes.StatusCode, http.StatusNoContent)
 
 	promoteAgainRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+memberID,
-		map[string]any{"role": "owner"}, ownerTok), app.routes())
+		map[string]any{"role": access.BuiltinOrgOwnerRole}, ownerTok), app.routes())
 	assert.Equal(t, promoteAgainRes.StatusCode, http.StatusNoContent)
 
 	org, found, err := app.db.GetOrgBySlug(context.Background(), slug)
@@ -262,7 +263,7 @@ func TestRemoveOrgMember(t *testing.T) {
 
 	addReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
 		"email": "member-rem@example.com",
-		"role":  "member",
+		"role":  access.BuiltinOrgMemberRole,
 	})
 	addReq.Header.Set("Authorization", "Bearer "+ownerTok)
 	addRes := send(t, addReq, app.routes())
@@ -293,7 +294,7 @@ func TestOrgPermissionEnforcement(t *testing.T) {
 
 	addReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
 		"email": "member-perm@example.com",
-		"role":  "member",
+		"role":  access.BuiltinOrgMemberRole,
 	})
 	addReq.Header.Set("Authorization", "Bearer "+ownerTok)
 	addRes := send(t, addReq, app.routes())
@@ -308,7 +309,7 @@ func TestOrgPermissionEnforcement(t *testing.T) {
 	// Member cannot add members (requires members:write permission).
 	req2 := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
 		"email": "another@example.com",
-		"role":  "member",
+		"role":  access.BuiltinOrgMemberRole,
 	})
 	req2.Header.Set("Authorization", "Bearer "+memberTok)
 	res2 := send(t, req2, app.routes())

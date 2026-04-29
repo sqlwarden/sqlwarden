@@ -462,7 +462,7 @@ func TestRevokeOrgPolicy(t *testing.T) {
 	}
 	var adminRoleID int64
 	for _, role := range roles {
-		if role.Name == "admin" {
+		if role.Name == access.BuiltinOrgAdminRole {
 			adminRoleID = role.ID
 			break
 		}

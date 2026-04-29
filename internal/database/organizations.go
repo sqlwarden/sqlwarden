@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/response"
 	"github.com/uptrace/bun"
 )
@@ -188,7 +189,7 @@ SELECT
 	om.account_id,
 	a.email,
 	a.name,
-	COALESCE(MAX(CASE WHEN ro.name IN ('owner', 'admin') THEN ro.name END), 'member') AS role,
+	COALESCE(MAX(CASE WHEN ro.name IN (?, ?) THEN ro.name END), ?) AS role,
 	om.joined_at
 FROM org_members AS om
 JOIN accounts AS a ON a.id = om.account_id
@@ -201,7 +202,7 @@ LEFT JOIN role_bindings AS rb
 LEFT JOIN roles AS ro ON ro.id = rb.role_id
 WHERE om.org_id = ?`
 
-	args := []any{params.OrgID}
+	args := []any{access.BuiltinOrgOwnerRole, access.BuiltinOrgAdminRole, access.BuiltinOrgMemberRole, params.OrgID}
 	if params.Search != "" {
 		query += " AND (LOWER(a.name) LIKE ? OR LOWER(a.email) LIKE ?)"
 		search := "%" + strings.ToLower(params.Search) + "%"
@@ -239,7 +240,7 @@ SELECT
 	om.account_id,
 	a.email,
 	a.name,
-	COALESCE(MAX(CASE WHEN ro.name IN ('owner', 'admin') THEN ro.name END), 'member') AS role,
+	COALESCE(MAX(CASE WHEN ro.name IN (?, ?) THEN ro.name END), ?) AS role,
 	om.joined_at
 FROM org_members AS om
 JOIN accounts AS a ON a.id = om.account_id
@@ -254,7 +255,7 @@ WHERE om.org_id = ? AND om.account_id = ?
 GROUP BY om.org_id, om.account_id, a.email, a.name, om.joined_at`
 
 	var item OrgMemberListItem
-	err := db.NewRaw(query, orgID, accountID).Scan(ctx, &item)
+	err := db.NewRaw(query, access.BuiltinOrgOwnerRole, access.BuiltinOrgAdminRole, access.BuiltinOrgMemberRole, orgID, accountID).Scan(ctx, &item)
 	if errors.Is(err, sql.ErrNoRows) {
 		return OrgMemberListItem{}, false, nil
 	}
@@ -334,7 +335,7 @@ SELECT
 	o.id,
 	o.slug,
 	o.name,
-	COALESCE(MAX(CASE WHEN ro.name IN ('owner', 'admin') THEN ro.name END), 'member') AS role,
+	COALESCE(MAX(CASE WHEN ro.name IN (?, ?) THEN ro.name END), ?) AS role,
 	(SELECT COUNT(*) FROM org_members AS omc WHERE omc.org_id = o.id) AS member_count,
 	(SELECT COUNT(*) FROM teams AS tc WHERE tc.org_id = o.id) AS team_count,
 	o.created_at,
@@ -350,7 +351,7 @@ LEFT JOIN role_bindings AS rb
 LEFT JOIN roles AS ro ON ro.id = rb.role_id
 WHERE om.account_id = ?`
 
-	args := []any{params.AccountID}
+	args := []any{access.BuiltinOrgOwnerRole, access.BuiltinOrgAdminRole, access.BuiltinOrgMemberRole, params.AccountID}
 	if params.Search != "" {
 		search := "%" + strings.ToLower(params.Search) + "%"
 		query += " AND (LOWER(o.name) LIKE ? OR LOWER(o.slug) LIKE ?)"

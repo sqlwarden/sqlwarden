@@ -691,14 +691,7 @@ function isWorkspaceRoleScope(value: string | null): value is RoleScope {
 }
 
 function roleDisplayName(role: Role) {
-  switch (role.name) {
-    case 'ws:admin':
-      return 'Workspace Admin'
-    case 'ws:member':
-      return 'Workspace Member'
-    default:
-      return role.name
-  }
+  return role.name
 }
 
 function formatDate(value: string) {

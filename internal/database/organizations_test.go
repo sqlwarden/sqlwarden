@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/uptrace/bun"
 )
 
@@ -169,12 +170,12 @@ func TestListAccountOrgsPage_IncludesComputedRole(t *testing.T) {
 	}
 
 	role := Role{
-		OrgID:      org.ID,
-		Name:       "admin",
-		ScopeType:  "org",
-		IsBuiltin:  true,
-		CreatedAt:  org.CreatedAt,
-		UpdatedAt:  org.UpdatedAt,
+		OrgID:     org.ID,
+		Name:      access.BuiltinOrgAdminRole,
+		ScopeType: "org",
+		IsBuiltin: true,
+		CreatedAt: org.CreatedAt,
+		UpdatedAt: org.UpdatedAt,
 	}
 	if _, err := db.NewInsert().Model(&role).Exec(ctx); err != nil {
 		t.Fatal(err)
@@ -208,7 +209,7 @@ func TestListAccountOrgsPage_IncludesComputedRole(t *testing.T) {
 	if len(result.Items) != 1 {
 		t.Fatalf("expected 1 org, got %d", len(result.Items))
 	}
-	if result.Items[0].Role != "admin" {
+	if result.Items[0].Role != access.BuiltinOrgAdminRole {
 		t.Fatalf("expected role admin, got %s", result.Items[0].Role)
 	}
 	if result.Items[0].MemberCount != 1 {
@@ -316,15 +317,15 @@ func TestListOrgMembers_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			ownerRole := insertTestRole(t, db, org.ID, nil, "owner", "org", true, "org:write")
-			adminRole := insertTestRole(t, db, org.ID, nil, "admin", "org", true, "org:read")
+			ownerRole := insertTestRole(t, db, org.ID, nil, access.BuiltinOrgOwnerRole, "org", true, "org:write")
+			adminRole := insertTestRole(t, db, org.ID, nil, access.BuiltinOrgAdminRole, "org", true, "org:read")
 			insertTestRoleBinding(t, db, org.ID, adminRole.ID, "account", alice.ID, "org", org.ID)
 			insertTestRoleBinding(t, db, org.ID, ownerRole.ID, "account", bob.ID, "org", org.ID)
 
 			result, err := db.ListOrgMembersPage(ctx, ListOrgMembersParams{
 				OrgID:    org.ID,
 				Search:   "ali",
-				Role:     "admin",
+				Role:     access.BuiltinOrgAdminRole,
 				Sort:     "name",
 				Order:    "asc",
 				Page:     1,
@@ -339,7 +340,7 @@ func TestListOrgMembers_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 			if len(result.Items) != 1 {
 				t.Fatalf("expected 1 member, got %d", len(result.Items))
 			}
-			if result.Items[0].Name != "Alice Analyst" || result.Items[0].Role != "admin" {
+			if result.Items[0].Name != "Alice Analyst" || result.Items[0].Role != access.BuiltinOrgAdminRole {
 				t.Fatalf("unexpected member payload: %+v", result.Items[0])
 			}
 		})
@@ -357,8 +358,8 @@ func TestDeleteAccountRoleBindings(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			ownerRole := insertTestRole(t, db, org.ID, nil, "owner", "org", true, "org:write")
-			adminRole := insertTestRole(t, db, org.ID, nil, "admin", "org", true, "org:read")
+			ownerRole := insertTestRole(t, db, org.ID, nil, access.BuiltinOrgOwnerRole, "org", true, "org:write")
+			adminRole := insertTestRole(t, db, org.ID, nil, access.BuiltinOrgAdminRole, "org", true, "org:read")
 			keptRole := insertTestRole(t, db, org.ID, nil, "viewer", "org", false, "org:read")
 
 			insertTestRoleBinding(t, db, org.ID, ownerRole.ID, "account", testUsers["alice"].id, "org", org.ID)

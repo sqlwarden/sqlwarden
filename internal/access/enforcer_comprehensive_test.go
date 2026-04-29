@@ -240,7 +240,7 @@ func TestOrgRoleFlowsToAllWorkspaces(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	adminRoleID := findRoleID(t, db, orgID, "admin")
+	adminRoleID := findRoleID(t, db, orgID, access.BuiltinOrgAdminRole)
 	if err = e.BindRole(ctx, orgID, adminRoleID, "account", memberID, "org", orgID, ownerID); err != nil {
 		t.Fatal(err)
 	}
@@ -757,7 +757,7 @@ func TestUnbindRoleWrongOrgNoOp(t *testing.T) {
 	otherOrgID, _ := seedOrg(t, db, e, "unbind-other-org")
 
 	memberID := newMember(t, db, orgID, "unbind-wrong@example.com")
-	adminRoleID := findRoleID(t, db, orgID, "admin")
+	adminRoleID := findRoleID(t, db, orgID, access.BuiltinOrgAdminRole)
 
 	if err := e.BindRole(ctx, orgID, adminRoleID, "account", memberID, "org", orgID, ownerID); err != nil {
 		t.Fatal(err)
@@ -797,7 +797,7 @@ func TestBindRoleIdempotent(t *testing.T) {
 	ctx := context.Background()
 
 	memberID := newMember(t, db, orgID, "idem-role@example.com")
-	adminRoleID := findRoleID(t, db, orgID, "admin")
+	adminRoleID := findRoleID(t, db, orgID, access.BuiltinOrgAdminRole)
 
 	if err := e.BindRole(ctx, orgID, adminRoleID, "account", memberID, "org", orgID, ownerID); err != nil {
 		t.Fatal(err)
@@ -904,7 +904,7 @@ func TestAdminRoleDoesNotHaveOwnerOnlyPermissions(t *testing.T) {
 	ctx := context.Background()
 
 	memberID := newMember(t, db, orgID, "admin-no-owner@example.com")
-	adminRoleID := findRoleID(t, db, orgID, "admin")
+	adminRoleID := findRoleID(t, db, orgID, access.BuiltinOrgAdminRole)
 
 	if err := e.BindRole(ctx, orgID, adminRoleID, "account", memberID, "org", orgID, ownerID); err != nil {
 		t.Fatal(err)
@@ -918,7 +918,7 @@ func TestAdminRoleDoesNotHaveOwnerOnlyPermissions(t *testing.T) {
 	}
 }
 
-// TestWsMemberRoleBasicPermissions verifies the ws:member builtin role grants exactly its
+// TestWsMemberRoleBasicPermissions verifies the Workspace Member builtin role grants exactly its
 // expected permissions within the workspace and nothing more.
 func TestWsMemberRoleBasicPermissions(t *testing.T) {
 	e, db := newTestEnforcer(t)
@@ -934,28 +934,28 @@ func TestWsMemberRoleBasicPermissions(t *testing.T) {
 	}
 
 	memberID := newMember(t, db, orgID, "wsmember-basic@example.com")
-	wsMemberRoleID := findWorkspaceRoleID(t, db, orgID, ws.ID, "ws:member")
+	wsMemberRoleID := findWorkspaceRoleID(t, db, orgID, ws.ID, access.BuiltinWorkspaceMemberRole)
 
 	if err = e.BindRole(ctx, orgID, wsMemberRoleID, "account", memberID, "workspace", ws.ID, ownerID); err != nil {
 		t.Fatal(err)
 	}
 
-	// Permissions ws:member should have at the workspace level.
+	// Permissions Workspace Member should have at the workspace level.
 	allowed := []string{access.PermWsRead, access.PermEnvRead, access.PermConnRead, access.PermConnDQL}
 	for _, p := range allowed {
 		if !e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, p) {
-			t.Errorf("ws:member role should have %q", p)
+			t.Errorf("%s role should have %q", access.BuiltinWorkspaceMemberRole, p)
 		}
 	}
 
-	// Permissions ws:member should NOT have.
+	// Permissions Workspace Member should NOT have.
 	denied := []string{
 		access.PermOrgWrite, access.PermOrgInvite, access.PermWsWrite, access.PermWsDelete,
 		access.PermConnWrite, access.PermConnDelete, access.PermPolicyModify,
 	}
 	for _, p := range denied {
 		if e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, p) {
-			t.Errorf("ws:member role should NOT have %q", p)
+			t.Errorf("%s role should NOT have %q", access.BuiltinWorkspaceMemberRole, p)
 		}
 	}
 }

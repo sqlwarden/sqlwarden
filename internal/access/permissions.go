@@ -37,6 +37,14 @@ const (
 	PermPolicyModify = "policy:modify"
 )
 
+const (
+	BuiltinOrgOwnerRole        = "Organization Owner"
+	BuiltinOrgAdminRole        = "Organization Admin"
+	BuiltinOrgMemberRole       = "Organization Member"
+	BuiltinWorkspaceAdminRole  = "Workspace Admin"
+	BuiltinWorkspaceMemberRole = "Workspace Member"
+)
+
 type PermissionDefinition struct {
 	Key         string `json:"key"`
 	Label       string `json:"label"`
@@ -109,8 +117,8 @@ var ScopePermissions = map[string][]string{
 // owner and admin are bound at the org resource; they gain full access to all workspaces
 // via the ancestry traversal (org → workspace → connection).
 var OrgBuiltinRoles = map[string][]string{
-	"owner": ScopePermissions["org"],
-	"admin": {
+	BuiltinOrgOwnerRole: ScopePermissions["org"],
+	BuiltinOrgAdminRole: {
 		PermOrgRead, PermOrgWrite, PermOrgInvite, PermOrgAssignRoles,
 		PermWsCreate, PermWsDelete, PermWsRead, PermWsWrite,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
@@ -118,28 +126,28 @@ var OrgBuiltinRoles = map[string][]string{
 		PermConnDQL, PermConnDML, PermConnDDL,
 		PermPolicyRead, PermPolicyModify,
 	},
-	"member": {
+	BuiltinOrgMemberRole: {
 		PermOrgRead,
 	},
 }
 
 var OrgBuiltinRoleDescriptions = map[string]string{
-	"owner":  "Full organization owner access, including all organization, workspace, environment, connection, and policy permissions.",
-	"admin":  "Administrative organization access for day-to-day management without ownership transfer or organization deletion.",
-	"member": "Baseline organization membership with read access to organization-level information.",
+	BuiltinOrgOwnerRole:  "Full organization owner access, including all organization, workspace, environment, connection, and policy permissions.",
+	BuiltinOrgAdminRole:  "Administrative organization access for day-to-day management without ownership transfer or organization deletion.",
+	BuiltinOrgMemberRole: "Baseline organization membership with read access to organization-level information.",
 }
 
 // WorkspaceBuiltinRoles are seeded per workspace by SeedWorkspace.
 // They are bound at the workspace resource and scoped to that workspace only.
 var WorkspaceBuiltinRoles = map[string][]string{
-	"ws:admin": {
+	BuiltinWorkspaceAdminRole: {
 		PermWsRead, PermWsWrite,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
 		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
 		PermPolicyRead, PermPolicyModify,
 	},
-	"ws:member": {
+	BuiltinWorkspaceMemberRole: {
 		PermWsRead,
 		PermEnvRead,
 		PermConnRead, PermConnDQL,
@@ -147,8 +155,8 @@ var WorkspaceBuiltinRoles = map[string][]string{
 }
 
 var WorkspaceBuiltinRoleDescriptions = map[string]string{
-	"ws:admin":  "Full workspace administration access, including workspace updates, environments, connections, queries, and workspace policies.",
-	"ws:member": "Baseline workspace member access with workspace visibility, environment visibility, connection metadata, and read-query access.",
+	BuiltinWorkspaceAdminRole:  "Full workspace administration access, including workspace updates, environments, connections, queries, and workspace policies.",
+	BuiltinWorkspaceMemberRole: "Baseline workspace member access with workspace visibility, environment visibility, connection metadata, and read-query access.",
 }
 
 var allPermissionSet map[string]bool

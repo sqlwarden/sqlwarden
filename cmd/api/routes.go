@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/assets"
+	"github.com/sqlwarden/internal/access"
 )
 
 func (app *application) routes() http.Handler {
@@ -117,7 +118,7 @@ func (app *application) routes() http.Handler {
 				r.With(app.requirePermission("org:invite")).Post("/", app.addOrgMember)
 				r.With(app.requirePermission("org:read")).Get("/{account_id}", app.getOrgMember)
 				r.With(app.requirePermission("org:read")).Get("/{account_id}/teams", app.listOrgMemberTeams)
-				r.With(app.requireOrgRole("owner")).Patch("/{account_id}", app.updateOrgMemberRole)
+				r.With(app.requireOrgRole(access.BuiltinOrgOwnerRole)).Patch("/{account_id}", app.updateOrgMemberRole)
 				r.With(app.requirePermission("org:write")).Delete("/{account_id}", app.removeOrgMember)
 			})
 

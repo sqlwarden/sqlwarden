@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/token"
 )
 
@@ -345,7 +346,7 @@ func (app *application) requireInstanceAdmin(next http.Handler) http.Handler {
 }
 
 // requireOrgRole checks that the account holds a role with PermOrgWrite (admin) or
-// PermOrgTransferOwnership (owner). Use "admin" or "owner" as the roleName parameter.
+// PermOrgTransferOwnership (owner).
 func (app *application) requireOrgRole(roleName string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -354,9 +355,9 @@ func (app *application) requireOrgRole(roleName string) func(http.Handler) http.
 
 			var permission string
 			switch roleName {
-			case "owner":
+			case access.BuiltinOrgOwnerRole:
 				permission = "org:transfer_ownership"
-			case "admin":
+			case access.BuiltinOrgAdminRole:
 				permission = "org:write"
 			default:
 				app.notPermitted(w, r)

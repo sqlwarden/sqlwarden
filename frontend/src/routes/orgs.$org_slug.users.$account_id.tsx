@@ -9,7 +9,7 @@ import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
 import { orgEffectivePermissionsQueryOptions, orgMemberQueryOptions, orgMemberTeamsQueryOptions, orgTeamsQueryOptions } from '#/lib/api/query'
 import type { Team } from '#/lib/api/types'
-import { hasPermission, permission } from '#/lib/permissions'
+import { builtinRole, hasPermission, permission } from '#/lib/permissions'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -482,20 +482,17 @@ function MessageRow({ colSpan, icon, message }: { colSpan: number; icon: Paramet
 }
 
 function roleBadgeVariant(role: string): 'default' | 'secondary' | 'outline' {
-  if (role === 'owner') {
+  if (role === builtinRole.organizationOwner) {
     return 'default'
   }
-  if (role === 'admin') {
+  if (role === builtinRole.organizationAdmin) {
     return 'secondary'
   }
   return 'outline'
 }
 
 function roleLabel(role: string) {
-  if (!role) {
-    return 'Member'
-  }
-  return role.charAt(0).toUpperCase() + role.slice(1)
+  return role || builtinRole.organizationMember
 }
 
 function formatDate(value: string) {

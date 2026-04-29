@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 )
 
@@ -30,7 +31,7 @@ func TestFullWorkflow(t *testing.T) {
 
 	// ── Step 4: Add member to org ────────────────────────────────────────────
 	addMemberRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+orgSlug+"/members",
-		map[string]any{"email": "flow-member@example.com", "role": "member"}, ownerTok), app.routes())
+		map[string]any{"email": "flow-member@example.com", "role": access.BuiltinOrgMemberRole}, ownerTok), app.routes())
 	assert.Equal(t, addMemberRes.StatusCode, http.StatusNoContent)
 
 	// ── Step 5: Create workspace ─────────────────────────────────────────────

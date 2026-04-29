@@ -125,7 +125,7 @@ func TestSeedOrgCreatesBuiltinRoles(t *testing.T) {
 			byName[r.Name] = r
 		}
 	}
-	for _, name := range []string{"owner", "admin", "member"} {
+	for _, name := range []string{access.BuiltinOrgOwnerRole, access.BuiltinOrgAdminRole, access.BuiltinOrgMemberRole} {
 		role, ok := byName[name]
 		if !ok {
 			t.Errorf("expected builtin role %q to exist after SeedOrg", name)
@@ -161,7 +161,7 @@ func TestSeedWorkspaceCreatesBuiltinRoleDescriptions(t *testing.T) {
 			byName[role.Name] = role
 		}
 	}
-	for _, name := range []string{"ws:admin", "ws:member"} {
+	for _, name := range []string{access.BuiltinWorkspaceAdminRole, access.BuiltinWorkspaceMemberRole} {
 		role, ok := byName[name]
 		if !ok {
 			t.Errorf("expected builtin workspace role %q to exist after SeedWorkspace", name)
@@ -249,7 +249,7 @@ func TestCanOwnerHasOrgPermissions(t *testing.T) {
 	}
 }
 
-// TestCanWsMemberLacksAdminPermissions verifies that a ws:member cannot perform admin operations.
+// TestCanWsMemberLacksAdminPermissions verifies that Workspace Member cannot perform admin operations.
 func TestCanWsMemberLacksAdminPermissions(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	orgID, ownerID := seedOrg(t, db, e, "member-perms")
@@ -271,13 +271,13 @@ func TestCanWsMemberLacksAdminPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Bind ws:member role at workspace level.
+	// Bind Workspace Member role at workspace level.
 	roles, err := db.ListWorkspaceRoles(context.Background(), orgID, ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, r := range roles {
-		if r.Name == "ws:member" && r.IsBuiltin {
+		if r.Name == access.BuiltinWorkspaceMemberRole && r.IsBuiltin {
 			if err = e.BindRole(ctx, orgID, r.ID, "account", member.ID, "workspace", ws.ID, ownerID); err != nil {
 				t.Fatal(err)
 			}
@@ -285,17 +285,17 @@ func TestCanWsMemberLacksAdminPermissions(t *testing.T) {
 		}
 	}
 
-	// ws:member should NOT have org-level admin permissions.
+	// Workspace Member should NOT have org-level admin permissions.
 	restricted := []string{"org:write", "org:invite", "org:transfer_ownership", "ws:delete"}
 	for _, p := range restricted {
 		if e.Can(ctx, member.ID, orgID, "org", "workspace", ws.ID, p) {
-			t.Errorf("ws:member should NOT have permission %q", p)
+			t.Errorf("%s should NOT have permission %q", access.BuiltinWorkspaceMemberRole, p)
 		}
 	}
 
-	// ws:member should have ws:read via workspace-level binding.
+	// Workspace Member should have ws:read via workspace-level binding.
 	if !e.Can(ctx, member.ID, orgID, "org", "workspace", ws.ID, "ws:read") {
-		t.Error("ws:member should have ws:read at workspace level")
+		t.Errorf("%s should have ws:read at workspace level", access.BuiltinWorkspaceMemberRole)
 	}
 }
 
@@ -356,7 +356,7 @@ func TestCanViaTeamMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range roles {
-		if r.Name == "admin" && r.IsBuiltin {
+		if r.Name == access.BuiltinOrgAdminRole && r.IsBuiltin {
 			if err = e.BindRole(ctx, orgID, r.ID, "team", team.ID, "org", orgID, ownerID); err != nil {
 				t.Fatal(err)
 			}
@@ -482,7 +482,7 @@ func TestCacheInvalidationOnRoleChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range roles {
-		if r.Name == "admin" && r.IsBuiltin {
+		if r.Name == access.BuiltinOrgAdminRole && r.IsBuiltin {
 			if err = e.BindRole(ctx, orgID, r.ID, "account", member.ID, "org", orgID, ownerID); err != nil {
 				t.Fatal(err)
 			}
@@ -524,7 +524,7 @@ func TestPrincipalCacheInvalidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range roles {
-		if r.Name == "admin" && r.IsBuiltin {
+		if r.Name == access.BuiltinOrgAdminRole && r.IsBuiltin {
 			if err = e.BindRole(ctx, orgID, r.ID, "team", team.ID, "org", orgID, ownerID); err != nil {
 				t.Fatal(err)
 			}
@@ -570,7 +570,7 @@ func TestUnbindRole(t *testing.T) {
 
 	var adminRoleID int64
 	for _, r := range roles {
-		if r.Name == "admin" && r.IsBuiltin {
+		if r.Name == access.BuiltinOrgAdminRole && r.IsBuiltin {
 			adminRoleID = r.ID
 			break
 		}

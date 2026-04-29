@@ -800,14 +800,7 @@ export function subjectDisplayName(binding: PolicyBinding): string {
 }
 
 export function roleDisplayName(name: string): string {
-  switch (name) {
-    case 'owner': return 'Owner'
-    case 'admin': return 'Admin'
-    case 'member': return 'Member'
-    case 'ws:admin': return 'Workspace Admin'
-    case 'ws:member': return 'Workspace Member'
-    default: return name
-  }
+  return name
 }
 
 function formatDate(value: string) {

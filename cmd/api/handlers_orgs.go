@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -106,8 +107,8 @@ func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
 		"created_at": "joined_at",
 	})
 	role := strings.TrimSpace(r.URL.Query().Get("role"))
-	if role != "" && role != "owner" && role != "admin" && role != "member" {
-		errs["role"] = "must be owner, admin, or member"
+	if role != "" && role != access.BuiltinOrgOwnerRole && role != access.BuiltinOrgAdminRole && role != access.BuiltinOrgMemberRole {
+		errs["role"] = "must be Organization Owner, Organization Admin, or Organization Member"
 	}
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
@@ -286,7 +287,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 	}
 
 	input.V.CheckField(input.Role != "", "role", "role is required")
-	input.V.CheckField(input.Role == "owner" || input.Role == "admin", "role", "role must be owner or admin")
+	input.V.CheckField(input.Role == access.BuiltinOrgOwnerRole || input.Role == access.BuiltinOrgAdminRole, "role", "role must be Organization Owner or Organization Admin")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -301,7 +302,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Prevent demoting the last owner.
-	if input.Role != "owner" {
+	if input.Role != access.BuiltinOrgOwnerRole {
 		if isLastOwner, checkErr := app.isLastOrgOwner(r, org.ID, accountID); checkErr != nil {
 			app.serverError(w, r, checkErr)
 			return
@@ -342,7 +343,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 
 	var builtinRoleIDs []int64
 	for _, role := range roles {
-		if role.IsBuiltin && (role.Name == "owner" || role.Name == "admin") {
+		if role.IsBuiltin && (role.Name == access.BuiltinOrgOwnerRole || role.Name == access.BuiltinOrgAdminRole) {
 			builtinRoleIDs = append(builtinRoleIDs, role.ID)
 		}
 	}
@@ -372,7 +373,7 @@ func (app *application) isLastOrgOwner(r *http.Request, orgID, accountID int64) 
 	}
 	var ownerRoleID int64
 	for _, role := range roles {
-		if role.Name == "owner" && role.IsBuiltin {
+		if role.Name == access.BuiltinOrgOwnerRole && role.IsBuiltin {
 			ownerRoleID = role.ID
 			break
 		}

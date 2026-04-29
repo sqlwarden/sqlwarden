@@ -640,16 +640,7 @@ function scopeLabel(value: RoleScope) {
 }
 
 function roleDisplayName(role: Role) {
-  switch (role.name) {
-    case 'owner':
-      return 'Owner'
-    case 'admin':
-      return 'Admin'
-    case 'member':
-      return 'Member'
-    default:
-      return role.name
-  }
+  return role.name
 }
 
 function formatDate(value: string) {

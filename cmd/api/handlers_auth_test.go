@@ -442,8 +442,8 @@ func TestGetAccountOrgs_IncludesComputedRole(t *testing.T) {
 	if payload.Items[0].ID != org.ID {
 		t.Fatalf("expected org id %d, got %d", org.ID, payload.Items[0].ID)
 	}
-	if payload.Items[0].Role != "owner" {
-		t.Fatalf("expected role owner, got %s", payload.Items[0].Role)
+	if payload.Items[0].Role != access.BuiltinOrgOwnerRole {
+		t.Fatalf("expected role %q, got %s", access.BuiltinOrgOwnerRole, payload.Items[0].Role)
 	}
 	if payload.Items[0].MemberCount != 1 {
 		t.Fatalf("expected member_count=1, got %d", payload.Items[0].MemberCount)

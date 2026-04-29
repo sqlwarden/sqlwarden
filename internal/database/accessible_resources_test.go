@@ -147,7 +147,7 @@ func TestListAccessibleWorkspaces_OrgRoleGrantsAll(t *testing.T) {
 	ws2 := seedWorkspace(t, db, e, org.ID, ownerID, "Beta")
 
 	userID := newAccount(t, db, "user-ws-orgrole@example.com")
-	adminRoleID := findOrgRoleID(t, db, org.ID, "admin")
+	adminRoleID := findOrgRoleID(t, db, org.ID, access.BuiltinOrgAdminRole)
 	_ = e.BindRole(context.Background(), org.ID, adminRoleID, "account", userID, "org", org.ID, ownerID)
 
 	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
@@ -175,7 +175,7 @@ func TestListAccessibleWorkspaces_WsRoleBinding(t *testing.T) {
 	_ = seedWorkspace(t, db, e, org.ID, ownerID, "Unbound")
 
 	userID := newAccount(t, db, "user-ws-dirws@example.com")
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws1.ID, "ws:member")
+	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws1.ID, access.BuiltinWorkspaceMemberRole)
 	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "account", userID, "workspace", ws1.ID, ownerID)
 
 	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
@@ -315,7 +315,7 @@ func TestListAccessibleWorkspaces_TeamOrgBinding(t *testing.T) {
 	userID := newAccount(t, db, "user-ws-team-org@example.com")
 	_ = db.AddTeamMember(context.Background(), team.ID, userID)
 
-	adminRoleID := findOrgRoleID(t, db, org.ID, "admin")
+	adminRoleID := findOrgRoleID(t, db, org.ID, access.BuiltinOrgAdminRole)
 	_ = e.BindRole(context.Background(), org.ID, adminRoleID, "team", team.ID, "org", org.ID, ownerID)
 
 	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
@@ -347,7 +347,7 @@ func TestListAccessibleWorkspaces_TeamWsBinding(t *testing.T) {
 	userID := newAccount(t, db, "user-ws-team-ws@example.com")
 	_ = db.AddTeamMember(context.Background(), team.ID, userID)
 
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws1.ID, "ws:member")
+	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws1.ID, access.BuiltinWorkspaceMemberRole)
 	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "team", team.ID, "workspace", ws1.ID, ownerID)
 
 	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
@@ -370,7 +370,7 @@ func TestListAccessibleWorkspaces_TeamNotMember(t *testing.T) {
 
 	ws1 := seedWorkspace(t, db, e, org.ID, ownerID, "Alpha")
 	team, _ := db.InsertTeam(context.Background(), org.ID, "devs-nonmember", "Devs")
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws1.ID, "ws:member")
+	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws1.ID, access.BuiltinWorkspaceMemberRole)
 	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "team", team.ID, "workspace", ws1.ID, ownerID)
 
 	// userID is NOT added to the team
@@ -400,7 +400,7 @@ func TestListAccessibleWorkspaces_CrossOrgIsolation(t *testing.T) {
 	wsB := seedWorkspace(t, db, e, orgB.ID, ownerB, "WS-B")
 
 	userID := newAccount(t, db, "user-ws-xorg@example.com")
-	adminRoleB := findOrgRoleID(t, db, orgB.ID, "admin")
+	adminRoleB := findOrgRoleID(t, db, orgB.ID, access.BuiltinOrgAdminRole)
 	_ = e.BindRole(context.Background(), orgB.ID, adminRoleB, "account", userID, "org", orgB.ID, ownerB)
 
 	wssA, err := db.ListAccessibleWorkspaces(context.Background(), userID, orgA.ID)
@@ -435,8 +435,8 @@ func TestListAccessibleWorkspaces_TwoUsersIsolation(t *testing.T) {
 	aliceID := newAccount(t, db, "alice-ws-2users@example.com")
 	bobID := newAccount(t, db, "bob-ws-2users@example.com")
 
-	_ = e.BindRole(context.Background(), org.ID, findWsRoleID(t, db, org.ID, ws1.ID, "ws:member"), "account", aliceID, "workspace", ws1.ID, ownerID)
-	_ = e.BindRole(context.Background(), org.ID, findWsRoleID(t, db, org.ID, ws2.ID, "ws:member"), "account", bobID, "workspace", ws2.ID, ownerID)
+	_ = e.BindRole(context.Background(), org.ID, findWsRoleID(t, db, org.ID, ws1.ID, access.BuiltinWorkspaceMemberRole), "account", aliceID, "workspace", ws1.ID, ownerID)
+	_ = e.BindRole(context.Background(), org.ID, findWsRoleID(t, db, org.ID, ws2.ID, access.BuiltinWorkspaceMemberRole), "account", bobID, "workspace", ws2.ID, ownerID)
 
 	aliceWss, _ := db.ListAccessibleWorkspaces(context.Background(), aliceID, org.ID)
 	if len(aliceWss) != 1 || aliceWss[0].ID != ws1.ID {
@@ -487,7 +487,7 @@ func TestListAccessibleWorkspaces_EmptyOrg(t *testing.T) {
 	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
 
 	userID := newAccount(t, db, "user-ws-empty@example.com")
-	adminRoleID := findOrgRoleID(t, db, org.ID, "admin")
+	adminRoleID := findOrgRoleID(t, db, org.ID, access.BuiltinOrgAdminRole)
 	_ = e.BindRole(context.Background(), org.ID, adminRoleID, "account", userID, "org", org.ID, ownerID)
 
 	wss, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
@@ -539,7 +539,7 @@ func TestListAccessibleConnections_OrgRoleGrantsAll(t *testing.T) {
 	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-orgrole@example.com")
-	adminRoleID := findOrgRoleID(t, db, org.ID, "admin")
+	adminRoleID := findOrgRoleID(t, db, org.ID, access.BuiltinOrgAdminRole)
 	_ = e.BindRole(context.Background(), org.ID, adminRoleID, "account", userID, "org", org.ID, ownerID)
 
 	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
@@ -642,7 +642,7 @@ func TestListAccessibleConnections_WsRoleGrantsAllInWorkspace(t *testing.T) {
 	c2, _ := db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-wsrole@example.com")
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, "ws:member")
+	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, access.BuiltinWorkspaceMemberRole)
 	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "account", userID, "workspace", ws.ID, ownerID)
 
 	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
@@ -671,7 +671,7 @@ func TestListAccessibleConnections_DirectConnRoleBinding(t *testing.T) {
 	_, _ = db.InsertConnection(context.Background(), ws.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-dirconn@example.com")
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, "ws:member")
+	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, access.BuiltinWorkspaceMemberRole)
 	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "account", userID, "connection", c1.ID, ownerID)
 
 	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
@@ -755,7 +755,7 @@ func TestListAccessibleConnections_TeamOrgBinding(t *testing.T) {
 	userID := newAccount(t, db, "user-conn-team-org@example.com")
 	_ = db.AddTeamMember(context.Background(), team.ID, userID)
 
-	adminRoleID := findOrgRoleID(t, db, org.ID, "admin")
+	adminRoleID := findOrgRoleID(t, db, org.ID, access.BuiltinOrgAdminRole)
 	_ = e.BindRole(context.Background(), org.ID, adminRoleID, "team", team.ID, "org", org.ID, ownerID)
 
 	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
@@ -787,7 +787,7 @@ func TestListAccessibleConnections_TeamConnBinding(t *testing.T) {
 	userID := newAccount(t, db, "user-conn-team-conn@example.com")
 	_ = db.AddTeamMember(context.Background(), team.ID, userID)
 
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, "ws:member")
+	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, access.BuiltinWorkspaceMemberRole)
 	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "team", team.ID, "connection", c1.ID, ownerID)
 
 	conns, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws.ID)
@@ -812,7 +812,7 @@ func TestListAccessibleConnections_TeamNotMember(t *testing.T) {
 	_ = c1
 
 	team, _ := db.InsertTeam(context.Background(), org.ID, "eng-nonmember", "Eng")
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, "ws:member")
+	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, access.BuiltinWorkspaceMemberRole)
 	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "team", team.ID, "workspace", ws.ID, ownerID)
 
 	// userID is NOT in the team
@@ -843,7 +843,7 @@ func TestListAccessibleConnections_CrossOrgIsolation(t *testing.T) {
 	cB, _ := db.InsertConnection(context.Background(), wsB.ID, nil, "db-b", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-xorg@example.com")
-	adminRoleB := findOrgRoleID(t, db, orgB.ID, "admin")
+	adminRoleB := findOrgRoleID(t, db, orgB.ID, access.BuiltinOrgAdminRole)
 	_ = e.BindRole(context.Background(), orgB.ID, adminRoleB, "account", userID, "org", orgB.ID, ownerB)
 
 	connsA, err := db.ListAccessibleConnections(context.Background(), userID, orgA.ID, wsA.ID)
@@ -878,7 +878,7 @@ func TestListAccessibleConnections_TwoUsersIsolation(t *testing.T) {
 	aliceID := newAccount(t, db, "alice-conn-2users@example.com")
 	bobID := newAccount(t, db, "bob-conn-2users@example.com")
 
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, "ws:member")
+	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws.ID, access.BuiltinWorkspaceMemberRole)
 	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "account", aliceID, "connection", c1.ID, ownerID)
 	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "account", bobID, "connection", c2.ID, ownerID)
 
@@ -907,7 +907,7 @@ func TestListAccessibleConnections_WsBindingDoesNotLeakToOtherWs(t *testing.T) {
 	_, _ = db.InsertConnection(context.Background(), ws2.ID, nil, "db2", "postgres", "enc", "open")
 
 	userID := newAccount(t, db, "user-conn-wsscope@example.com")
-	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws1.ID, "ws:member")
+	wsMemberRoleID := findWsRoleID(t, db, org.ID, ws1.ID, access.BuiltinWorkspaceMemberRole)
 	_ = e.BindRole(context.Background(), org.ID, wsMemberRoleID, "account", userID, "workspace", ws1.ID, ownerID)
 
 	connsWs2, err := db.ListAccessibleConnections(context.Background(), userID, org.ID, ws2.ID)
@@ -1098,7 +1098,7 @@ func TestListAccessibleEnvironments_OrgRoleGrantsAll(t *testing.T) {
 	env2, _ := db.InsertEnvironment(context.Background(), ws.ID, "prod", "")
 
 	userID := newAccount(t, db, "user-env-orgrole@example.com")
-	adminRoleID := findOrgRoleID(t, db, org.ID, "admin")
+	adminRoleID := findOrgRoleID(t, db, org.ID, access.BuiltinOrgAdminRole)
 	_ = e.BindRole(context.Background(), org.ID, adminRoleID, "account", userID, "org", org.ID, ownerID)
 
 	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
@@ -1127,7 +1127,7 @@ func TestListAccessibleEnvironments_WsBindingGrantsAll(t *testing.T) {
 	env2, _ := db.InsertEnvironment(context.Background(), ws.ID, "beta", "")
 
 	userID := newAccount(t, db, "user-env-wsrole@example.com")
-	wsMemberID := findWsRoleID(t, db, org.ID, ws.ID, "ws:member")
+	wsMemberID := findWsRoleID(t, db, org.ID, ws.ID, access.BuiltinWorkspaceMemberRole)
 	_ = e.BindRole(context.Background(), org.ID, wsMemberID, "account", userID, "workspace", ws.ID, ownerID)
 
 	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)

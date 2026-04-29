@@ -257,14 +257,14 @@ func TestListWorkspaceRolesBuiltins(t *testing.T) {
 	if err := json.Unmarshal(res.BodyBytes, &payload); err != nil {
 		t.Fatal(err)
 	}
-	// SeedWorkspace creates ws:admin and ws:member builtins.
+	// SeedWorkspace creates the workspace builtins.
 	assert.Equal(t, len(payload.Items), 2)
 	names := map[string]bool{}
 	for _, r := range payload.Items {
 		names[r["name"].(string)] = true
 	}
-	assert.Equal(t, names["ws:admin"], true)
-	assert.Equal(t, names["ws:member"], true)
+	assert.Equal(t, names[access.BuiltinWorkspaceAdminRole], true)
+	assert.Equal(t, names[access.BuiltinWorkspaceMemberRole], true)
 }
 
 func TestListWorkspaceRolesPermissions(t *testing.T) {
@@ -272,14 +272,14 @@ func TestListWorkspaceRolesPermissions(t *testing.T) {
 	app := newTestApp(t)
 	slug, wsID, ownerTok := wsSetup(t, app, "wsr-lr@example.com", "WSR LR")
 
-	// ws:member does NOT have policy:read → 403.
-	memberTok := wsJoinAs(t, app, slug, wsID, "ws:member", "wsr-lr-member@example.com", ownerTok)
+	// Workspace Member does NOT have policy:read → 403.
+	memberTok := wsJoinAs(t, app, slug, wsID, access.BuiltinWorkspaceMemberRole, "wsr-lr-member@example.com", ownerTok)
 	res := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles", nil, memberTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusForbidden)
 
-	// ws:admin has policy:read → 200.
-	wsAdminTok := wsJoinAs(t, app, slug, wsID, "ws:admin", "wsr-lr-admin@example.com", ownerTok)
+	// Workspace Admin has policy:read → 200.
+	wsAdminTok := wsJoinAs(t, app, slug, wsID, access.BuiltinWorkspaceAdminRole, "wsr-lr-admin@example.com", ownerTok)
 	res2 := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles", nil, wsAdminTok), app.routes())
 	assert.Equal(t, res2.StatusCode, http.StatusOK)
@@ -378,7 +378,7 @@ func TestCreateWorkspaceRoleByOrgAdmin(t *testing.T) {
 		map[string]any{"email": "wsr-admin@example.com"}, ownerTok), app.routes())
 
 	send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+adminID,
-		map[string]any{"role": "admin"}, ownerTok), app.routes())
+		map[string]any{"role": access.BuiltinOrgAdminRole}, ownerTok), app.routes())
 
 	// org:admin can create workspace roles.
 	res := send(t, newAuthRequest(t, http.MethodPost,
@@ -395,7 +395,7 @@ func TestCreateWorkspaceRoleByWsMemberForbidden(t *testing.T) {
 	app := newTestApp(t)
 	slug, wsID, ownerTok := wsSetup(t, app, "wsr-mforbid@example.com", "WSR MForbid")
 
-	memberTok := wsJoinAs(t, app, slug, wsID, "ws:member", "wsr-mforbid-m@example.com", ownerTok)
+	memberTok := wsJoinAs(t, app, slug, wsID, access.BuiltinWorkspaceMemberRole, "wsr-mforbid-m@example.com", ownerTok)
 
 	res := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
@@ -502,7 +502,7 @@ func TestDeleteBuiltinWorkspaceRoleForbidden(t *testing.T) {
 	app := newTestApp(t)
 	slug, wsID, tok := wsSetup(t, app, "wsr-dbuilt@example.com", "WSR DBuilt")
 
-	// Get the ws:admin builtin role ID.
+	// Get the Workspace Admin builtin role ID.
 	rolesRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles", nil, tok), app.routes())
 	var rolePayload struct {
@@ -513,7 +513,7 @@ func TestDeleteBuiltinWorkspaceRoleForbidden(t *testing.T) {
 	}
 	var builtinID string
 	for _, r := range rolePayload.Items {
-		if r["name"].(string) == "ws:admin" {
+		if r["name"].(string) == access.BuiltinWorkspaceAdminRole {
 			builtinID = fmt.Sprintf("%v", r["id"])
 			break
 		}
@@ -534,7 +534,7 @@ func TestDeleteWorkspaceRoleByWsMemberForbidden(t *testing.T) {
 		map[string]any{"name": "deletable", "permissions": []string{"ws:read"}}, ownerTok), app.routes())
 	roleID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 
-	memberTok := wsJoinAs(t, app, slug, wsID, "ws:member", "wsr-dmforbid-m@example.com", ownerTok)
+	memberTok := wsJoinAs(t, app, slug, wsID, access.BuiltinWorkspaceMemberRole, "wsr-dmforbid-m@example.com", ownerTok)
 
 	res := send(t, newAuthRequest(t, http.MethodDelete,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+roleID, nil, memberTok), app.routes())
@@ -607,7 +607,7 @@ func TestListWorkspacePermissionsAccessibleByWsMember(t *testing.T) {
 	app := newTestApp(t)
 	slug, wsID, ownerTok := wsSetup(t, app, "wsr-perms-m@example.com", "WSR Perms M")
 
-	memberTok := wsJoinAs(t, app, slug, wsID, "ws:member", "wsr-perms-m-m@example.com", ownerTok)
+	memberTok := wsJoinAs(t, app, slug, wsID, access.BuiltinWorkspaceMemberRole, "wsr-perms-m-m@example.com", ownerTok)
 
 	res := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/permissions", nil, memberTok), app.routes())
@@ -633,16 +633,16 @@ func TestWsAdminCanCreateAndDeleteWorkspaceRoles(t *testing.T) {
 	app := newTestApp(t)
 	slug, wsID, ownerTok := wsSetup(t, app, "wsr-wsadmin@example.com", "WSR WsAdmin")
 
-	wsAdminTok := wsJoinAs(t, app, slug, wsID, "ws:admin", "wsr-wsadmin-a@example.com", ownerTok)
+	wsAdminTok := wsJoinAs(t, app, slug, wsID, access.BuiltinWorkspaceAdminRole, "wsr-wsadmin-a@example.com", ownerTok)
 
-	// ws:admin creates a role.
+	// Workspace Admin creates a role.
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
 		map[string]any{"name": "custom", "permissions": []string{"ws:read", "conn:read"}}, wsAdminTok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 	roleID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 
-	// ws:admin deletes it.
+	// Workspace Admin deletes it.
 	delRes := send(t, newAuthRequest(t, http.MethodDelete,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+roleID, nil, wsAdminTok), app.routes())
 	assert.Equal(t, delRes.StatusCode, http.StatusNoContent)
@@ -744,12 +744,12 @@ func TestListWorkspacePoliciesPermissions(t *testing.T) {
 	app := newTestApp(t)
 	slug, wsID, ownerTok := wsSetup(t, app, "wsp-list-perms@example.com", "WSP List Perms")
 
-	memberTok := wsJoinAs(t, app, slug, wsID, "ws:member", "wsp-list-member@example.com", ownerTok)
+	memberTok := wsJoinAs(t, app, slug, wsID, access.BuiltinWorkspaceMemberRole, "wsp-list-member@example.com", ownerTok)
 	memberRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/policies", nil, memberTok), app.routes())
 	assert.Equal(t, memberRes.StatusCode, http.StatusForbidden)
 
-	wsAdminTok := wsJoinAs(t, app, slug, wsID, "ws:admin", "wsp-list-admin@example.com", ownerTok)
+	wsAdminTok := wsJoinAs(t, app, slug, wsID, access.BuiltinWorkspaceAdminRole, "wsp-list-admin@example.com", ownerTok)
 	adminRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/policies", nil, wsAdminTok), app.routes())
 	assert.Equal(t, adminRes.StatusCode, http.StatusOK)
@@ -761,7 +761,7 @@ func TestWorkspacePolicyPermissionsDoNotGrantOrgPolicyAccess(t *testing.T) {
 	app := newTestApp(t)
 	slug, wsID, ownerTok := wsSetup(t, app, "wsp-no-org-policy@example.com", "WSP No Org Policy")
 
-	wsAdminTok := wsJoinAs(t, app, slug, wsID, "ws:admin", "wsp-no-org-policy-admin@example.com", ownerTok)
+	wsAdminTok := wsJoinAs(t, app, slug, wsID, access.BuiltinWorkspaceAdminRole, "wsp-no-org-policy-admin@example.com", ownerTok)
 
 	workspaceReadRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/policies", nil, wsAdminTok), app.routes())

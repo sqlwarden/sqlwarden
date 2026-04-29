@@ -9,7 +9,7 @@ import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
 import { orgEffectivePermissionsQueryOptions, orgMembersQueryOptions } from '#/lib/api/query'
 import type { OrgMember } from '#/lib/api/types'
-import { hasPermission, permission } from '#/lib/permissions'
+import { builtinRole, hasPermission, permission } from '#/lib/permissions'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
@@ -326,20 +326,17 @@ function UsersTableSkeleton() {
 }
 
 function roleBadgeVariant(role: string): 'default' | 'secondary' | 'outline' {
-  if (role === 'owner') {
+  if (role === builtinRole.organizationOwner) {
     return 'default'
   }
-  if (role === 'admin') {
+  if (role === builtinRole.organizationAdmin) {
     return 'secondary'
   }
   return 'outline'
 }
 
 function roleLabel(role: string) {
-  if (!role) {
-    return 'Member'
-  }
-  return role.charAt(0).toUpperCase() + role.slice(1)
+  return role || builtinRole.organizationMember
 }
 
 function formatDate(value: string) {

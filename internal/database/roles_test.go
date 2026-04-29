@@ -3,6 +3,8 @@ package database
 import (
 	"context"
 	"testing"
+
+	"github.com/sqlwarden/internal/access"
 )
 
 func TestGetRoleAndListRoles(t *testing.T) {
@@ -73,9 +75,9 @@ func TestListRolesPage_SupportsScopeFilterPaginationSearchAndSort(t *testing.T) 
 				t.Fatal(err)
 			}
 
-			insertTestRole(t, db, org.ID, nil, "admin", "org", true, "policy:read")
+			insertTestRole(t, db, org.ID, nil, access.BuiltinOrgAdminRole, "org", true, "policy:read")
 			insertTestRole(t, db, org.ID, nil, "auditor", "org", false, "org:read")
-			insertTestRole(t, db, org.ID, &ws.ID, "ws:admin", "workspace", true, "ws:write")
+			insertTestRole(t, db, org.ID, &ws.ID, access.BuiltinWorkspaceAdminRole, "workspace", true, "ws:write")
 			insertTestRole(t, db, org.ID, &ws.ID, "ws:viewer", "workspace", false, "ws:read")
 
 			falseValue := false
@@ -106,7 +108,7 @@ func TestListRolesPage_SupportsScopeFilterPaginationSearchAndSort(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			if orgRoles.Total != 2 || len(orgRoles.Items) != 1 || orgRoles.Items[0].Name != "admin" {
+			if orgRoles.Total != 2 || len(orgRoles.Items) != 1 || orgRoles.Items[0].Name != access.BuiltinOrgAdminRole {
 				t.Fatalf("unexpected org roles result: %+v", orgRoles)
 			}
 

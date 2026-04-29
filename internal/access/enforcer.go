@@ -330,13 +330,13 @@ func (e *Enforcer) SeedOrg(ctx context.Context, orgID, ownerAccountID int64) err
 			}
 		}
 
-		if roleName == "owner" {
+		if roleName == BuiltinOrgOwnerRole {
 			err = e.bindRoleByID(ctx, orgID, roleID, SubjectTypeAccount, ownerAccountID, "org", orgID, ownerAccountID)
 			if err != nil {
 				return fmt.Errorf("bind owner role: %w", err)
 			}
 		}
-		if roleName == "member" {
+		if roleName == BuiltinOrgMemberRole {
 			err = e.bindRoleByID(ctx, orgID, roleID, SubjectTypeOrgMembers, orgID, "org", orgID, ownerAccountID)
 			if err != nil {
 				return fmt.Errorf("bind org member role: %w", err)
@@ -348,8 +348,8 @@ func (e *Enforcer) SeedOrg(ctx context.Context, orgID, ownerAccountID int64) err
 	return nil
 }
 
-// SeedWorkspace creates the ws:admin and ws:member builtin roles for a new workspace and binds
-// creatorAccountID to ws:admin. Call this once when creating a new workspace.
+// SeedWorkspace creates the workspace builtin roles for a new workspace and binds
+// creatorAccountID to BuiltinWorkspaceAdminRole. Call this once when creating a new workspace.
 func (e *Enforcer) SeedWorkspace(ctx context.Context, orgID, workspaceID, creatorAccountID int64) error {
 	for roleName, permissions := range WorkspaceBuiltinRoles {
 		roleID, err := e.insertRole(ctx, orgID, &workspaceID, roleName, WorkspaceBuiltinRoleDescriptions[roleName], "workspace", true)
@@ -369,10 +369,10 @@ func (e *Enforcer) SeedWorkspace(ctx context.Context, orgID, workspaceID, creato
 			}
 		}
 
-		if roleName == "ws:admin" {
+		if roleName == BuiltinWorkspaceAdminRole {
 			err = e.bindRoleByID(ctx, orgID, roleID, SubjectTypeAccount, creatorAccountID, "workspace", workspaceID, creatorAccountID)
 			if err != nil {
-				return fmt.Errorf("bind ws:admin role: %w", err)
+				return fmt.Errorf("bind %s role: %w", BuiltinWorkspaceAdminRole, err)
 			}
 		}
 	}
