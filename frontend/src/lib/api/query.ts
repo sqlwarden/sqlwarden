@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, Team, TeamMember, Role, PolicyBinding } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -27,6 +27,12 @@ export const queryKeys = {
     ['org-workspace-role', slug, workspaceId, roleId] as const,
   orgWorkspaces: (slug: string, query?: ListQuery) => ['org-workspaces', slug, query ?? {}] as const,
   orgWorkspace: (slug: string, workspaceId: string | number) => ['org-workspace', slug, workspaceId] as const,
+  orgWorkspaceMembers: (slug: string, workspaceId: string | number, query?: ListQuery) =>
+    ['org-workspace-members', slug, workspaceId, query ?? {}] as const,
+  orgWorkspaceEffectiveMembers: (slug: string, workspaceId: string | number, query?: ListQuery) =>
+    ['org-workspace-effective-members', slug, workspaceId, query ?? {}] as const,
+  orgWorkspaceTeams: (slug: string, workspaceId: string | number, query?: ListQuery) =>
+    ['org-workspace-teams', slug, workspaceId, query ?? {}] as const,
   myWorkspaces: (query?: ListQuery) => ['my-workspaces', query ?? {}] as const,
   orgEnvironments: (slug: string, workspaceId: string | number, query?: ListQuery) =>
     ['org-environments', slug, workspaceId, query ?? {}] as const,
@@ -195,6 +201,30 @@ export function orgWorkspaceQueryOptions(slug: string, workspaceId: string | num
     queryKey: queryKeys.orgWorkspace(slug, workspaceId),
     queryFn: () => api.get<Workspace>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}`),
     staleTime: 60_000,
+  })
+}
+
+export function orgWorkspaceMembersQueryOptions(slug: string, workspaceId: string | number, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspaceMembers(slug, workspaceId, query),
+    queryFn: () => api.get<Paginated<WorkspaceMember>>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/users`, { query }),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function orgWorkspaceEffectiveMembersQueryOptions(slug: string, workspaceId: string | number, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspaceEffectiveMembers(slug, workspaceId, query),
+    queryFn: () => api.get<Paginated<WorkspaceEffectiveMember>>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/users/effective`, { query }),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function orgWorkspaceTeamsQueryOptions(slug: string, workspaceId: string | number, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspaceTeams(slug, workspaceId, query),
+    queryFn: () => api.get<Paginated<WorkspaceTeam>>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/teams`, { query }),
+    placeholderData: keepPreviousData,
   })
 }
 

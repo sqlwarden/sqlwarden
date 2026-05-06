@@ -164,6 +164,7 @@ func (app *application) routes() http.Handler {
 
 					r.Route("/users", func(r chi.Router) {
 						r.With(app.requirePermission("policy:read")).Get("/", app.listWorkspaceMembers)
+						r.With(app.requirePermission("policy:read")).Get("/effective", app.listWorkspaceEffectiveMembers)
 						r.With(app.requirePermission("policy:modify")).Post("/", app.addWorkspaceMember)
 						r.With(app.requirePermission("policy:modify")).Delete("/{account_id}", app.removeWorkspaceMember)
 					})

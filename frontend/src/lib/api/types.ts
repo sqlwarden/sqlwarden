@@ -113,6 +113,38 @@ export interface OrgMember {
   joined_at: string
 }
 
+export interface WorkspaceMember {
+  workspace_id: number
+  account_id: number
+  email: string
+  name: string
+  created_by?: number
+  created_at: string
+}
+
+export interface WorkspaceMembershipSource {
+  type: 'direct' | 'team'
+  team_id?: number
+  team_slug?: string
+  team_name?: string
+  created_at?: string
+}
+
+export interface WorkspaceEffectiveMember extends WorkspaceMember {
+  is_direct_member: boolean
+  membership_sources: WorkspaceMembershipSource[]
+}
+
+export interface WorkspaceTeam {
+  workspace_id: number
+  team_id: number
+  slug: string
+  name: string
+  member_count: number
+  created_by?: number
+  created_at: string
+}
+
 export interface Role {
   id: number
   org_id: number
@@ -130,7 +162,7 @@ export interface PolicyBinding {
   binding_kind: string
   binding_id: number
   subject_id: number
-  subject_type: 'account' | 'team' | 'org_members'
+  subject_type: 'account' | 'team' | 'org_members' | 'workspace_members'
   subject_name: string
   resource_id: number
   resource_type: 'org' | 'workspace' | 'environment' | 'connection'

@@ -178,9 +178,6 @@ export const workspaceBuiltinRoles = {
   ],
   [builtinRole.workspaceMember]: [
     permission.wsRead,
-    permission.envRead,
-    permission.connRead,
-    permission.connDql,
   ],
 } as const satisfies Record<WorkspaceBuiltinRole, readonly Permission[]>
 

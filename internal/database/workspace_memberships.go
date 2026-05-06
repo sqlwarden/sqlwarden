@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,6 +31,24 @@ type WorkspaceMemberListItem struct {
 	Name        string    `json:"name"`
 	CreatedBy   *int64    `json:"created_by,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
+}
+
+type WorkspaceMembershipSource struct {
+	Type      string     `json:"type"`
+	TeamID    *int64     `json:"team_id,omitempty"`
+	TeamSlug  string     `json:"team_slug,omitempty"`
+	TeamName  string     `json:"team_name,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+}
+
+type WorkspaceEffectiveMemberListItem struct {
+	WorkspaceID    int64                       `json:"workspace_id"`
+	AccountID      int64                       `json:"account_id"`
+	Email          string                      `json:"email"`
+	Name           string                      `json:"name"`
+	IsDirectMember bool                        `json:"is_direct_member"`
+	Sources        []WorkspaceMembershipSource `json:"membership_sources"`
+	CreatedAt      time.Time                   `json:"created_at"`
 }
 
 type WorkspaceTeamListItem struct {
@@ -124,6 +143,62 @@ WHERE wm.workspace_id = ?`
 	return response.PaginateItems(members, params.Page, params.PageSize), nil
 }
 
+func (db *DB) ListWorkspaceEffectiveMembersPage(ctx context.Context, orgID int64, params ListWorkspaceMembersParams) (response.Paginated[WorkspaceEffectiveMemberListItem], error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	params = normalizeWorkspaceMemberListParams(params)
+
+	// Query 1: direct workspace members — all columns non-nullable, no scan issues.
+	directQuery := `
+SELECT a.id AS account_id, a.email, a.name, wm.created_at
+FROM workspace_members AS wm
+JOIN accounts AS a ON a.id = wm.account_id
+JOIN org_members AS om ON om.account_id = a.id AND om.org_id = ?
+WHERE wm.workspace_id = ?`
+	directArgs := []any{orgID, params.WorkspaceID}
+
+	// Query 2: team-based members — all columns non-nullable.
+	teamQuery := `
+SELECT a.id AS account_id, a.email, a.name, t.id AS team_id, t.slug AS team_slug, t.name AS team_name, wt.created_at
+FROM workspace_teams AS wt
+JOIN teams AS t ON t.id = wt.team_id AND t.org_id = ?
+JOIN team_members AS tm ON tm.team_id = t.id
+JOIN accounts AS a ON a.id = tm.account_id
+JOIN org_members AS om ON om.account_id = a.id AND om.org_id = ?
+WHERE wt.workspace_id = ?`
+	teamArgs := []any{orgID, orgID, params.WorkspaceID}
+
+	if params.Search != "" {
+		search := "%" + strings.ToLower(params.Search) + "%"
+		directQuery += " AND (LOWER(a.name) LIKE ? OR LOWER(a.email) LIKE ?)"
+		directArgs = append(directArgs, search, search)
+		teamQuery += " AND (LOWER(a.name) LIKE ? OR LOWER(a.email) LIKE ?)"
+		teamArgs = append(teamArgs, search, search)
+	}
+
+	var directRows []workspaceDirectMemberRow
+	if err := db.NewRaw(directQuery, directArgs...).Scan(ctx, &directRows); err != nil {
+		return response.Paginated[WorkspaceEffectiveMemberListItem]{}, err
+	}
+
+	var teamRows []workspaceTeamMemberRow
+	if err := db.NewRaw(teamQuery, teamArgs...).Scan(ctx, &teamRows); err != nil {
+		return response.Paginated[WorkspaceEffectiveMemberListItem]{}, err
+	}
+
+	members := aggregateWorkspaceEffectiveMembers(params.WorkspaceID, directRows, teamRows)
+	sort.Slice(members, func(i, j int) bool {
+		cmp := compareWorkspaceEffectiveMembers(members[i], members[j], params.Sort)
+		if params.Order == "desc" {
+			return cmp > 0
+		}
+		return cmp < 0
+	})
+
+	return response.PaginateItems(members, params.Page, params.PageSize), nil
+}
+
 func (db *DB) ListWorkspaceTeamsPage(ctx context.Context, params ListWorkspaceTeamsParams) (response.Paginated[WorkspaceTeamListItem], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -155,6 +230,115 @@ WHERE wt.workspace_id = ?`
 		return response.Paginated[WorkspaceTeamListItem]{}, err
 	}
 	return response.PaginateItems(teams, params.Page, params.PageSize), nil
+}
+
+type workspaceDirectMemberRow struct {
+	AccountID int64     `bun:"account_id"`
+	Email     string    `bun:"email"`
+	Name      string    `bun:"name"`
+	CreatedAt time.Time `bun:"created_at"`
+}
+
+type workspaceTeamMemberRow struct {
+	AccountID int64     `bun:"account_id"`
+	Email     string    `bun:"email"`
+	Name      string    `bun:"name"`
+	TeamID    int64     `bun:"team_id"`
+	TeamSlug  string    `bun:"team_slug"`
+	TeamName  string    `bun:"team_name"`
+	CreatedAt time.Time `bun:"created_at"`
+}
+
+func aggregateWorkspaceEffectiveMembers(workspaceID int64, directRows []workspaceDirectMemberRow, teamRows []workspaceTeamMemberRow) []WorkspaceEffectiveMemberListItem {
+	byAccountID := make(map[int64]*WorkspaceEffectiveMemberListItem)
+
+	getOrCreate := func(accountID int64, email, name string) *WorkspaceEffectiveMemberListItem {
+		if item, ok := byAccountID[accountID]; ok {
+			return item
+		}
+		item := &WorkspaceEffectiveMemberListItem{
+			WorkspaceID: workspaceID,
+			AccountID:   accountID,
+			Email:       email,
+			Name:        name,
+		}
+		byAccountID[accountID] = item
+		return item
+	}
+
+	for _, row := range directRows {
+		item := getOrCreate(row.AccountID, row.Email, row.Name)
+		item.IsDirectMember = true
+		item.Sources = append(item.Sources, WorkspaceMembershipSource{
+			Type:      "direct",
+			CreatedAt: &row.CreatedAt,
+		})
+		setEffectiveMemberCreatedAt(item, row.CreatedAt)
+	}
+
+	for _, row := range teamRows {
+		item := getOrCreate(row.AccountID, row.Email, row.Name)
+		teamID := row.TeamID
+		source := WorkspaceMembershipSource{
+			Type:      "team",
+			TeamID:    &teamID,
+			TeamSlug:  row.TeamSlug,
+			TeamName:  row.TeamName,
+			CreatedAt: &row.CreatedAt,
+		}
+		setEffectiveMemberCreatedAt(item, row.CreatedAt)
+		item.Sources = append(item.Sources, source)
+	}
+
+	members := make([]WorkspaceEffectiveMemberListItem, 0, len(byAccountID))
+	for _, item := range byAccountID {
+		sort.Slice(item.Sources, func(i, j int) bool {
+			if item.Sources[i].Type != item.Sources[j].Type {
+				return item.Sources[i].Type == "direct"
+			}
+			return item.Sources[i].TeamName < item.Sources[j].TeamName
+		})
+		members = append(members, *item)
+	}
+	return members
+}
+
+func setEffectiveMemberCreatedAt(item *WorkspaceEffectiveMemberListItem, createdAt time.Time) {
+	if item.CreatedAt.IsZero() || createdAt.Before(item.CreatedAt) {
+		item.CreatedAt = createdAt
+	}
+}
+
+func compareWorkspaceEffectiveMembers(a, b WorkspaceEffectiveMemberListItem, sortBy string) int {
+	var cmp int
+	switch sortBy {
+	case "email":
+		cmp = strings.Compare(strings.ToLower(a.Email), strings.ToLower(b.Email))
+	case "created_at":
+		if a.CreatedAt.Equal(b.CreatedAt) {
+			return compareInt64(a.AccountID, b.AccountID)
+		}
+		if a.CreatedAt.Before(b.CreatedAt) {
+			return -1
+		}
+		return 1
+	default:
+		cmp = strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	}
+	if cmp != 0 {
+		return cmp
+	}
+	return compareInt64(a.AccountID, b.AccountID)
+}
+
+func compareInt64(a, b int64) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
 }
 
 func (db *DB) ListWorkspaceTeamMemberAccountIDs(ctx context.Context, workspaceID, teamID int64) ([]int64, error) {

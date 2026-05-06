@@ -14,6 +14,10 @@ func workspaceMembersURL(orgSlug string, workspaceID int64) string {
 	return "/api/v1/orgs/" + orgSlug + "/workspaces/" + strconv.FormatInt(workspaceID, 10) + "/users"
 }
 
+func workspaceEffectiveMembersURL(orgSlug string, workspaceID int64) string {
+	return workspaceMembersURL(orgSlug, workspaceID) + "/effective"
+}
+
 func workspaceTeamsURL(orgSlug string, workspaceID int64) string {
 	return "/api/v1/orgs/" + orgSlug + "/workspaces/" + strconv.FormatInt(workspaceID, 10) + "/teams"
 }
@@ -237,6 +241,138 @@ func TestWorkspaceTeamsAPI_AddListRemoveAndDerivedVisibility(t *testing.T) {
 	}
 }
 
+func TestWorkspaceEffectiveMembersAPI_ReturnsDirectAndTeamInheritedSources(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "ws-effective-owner"), "Workspace Owner", "Workspace Effective Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Primary", "")
+	direct, _ := seedAccountWithToken(t, app, uniqueEmail(t, "ws-effective-direct"), "Direct User")
+	inherited, _ := seedAccountWithToken(t, app, uniqueEmail(t, "ws-effective-inherited"), "Inherited User")
+	both, _ := seedAccountWithToken(t, app, uniqueEmail(t, "ws-effective-both"), "Both User")
+	for _, accountID := range []int64{direct.ID, inherited.ID, both.ID} {
+		if err := app.db.AddOrgMember(context.Background(), org.ID, accountID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	teamA, err := app.db.InsertTeam(context.Background(), org.ID, "team-a", "Team A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	teamB, err := app.db.InsertTeam(context.Background(), org.ID, "team-b", "Team B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, membership := range []struct {
+		teamID    int64
+		accountID int64
+	}{
+		{teamA.ID, inherited.ID},
+		{teamA.ID, both.ID},
+		{teamB.ID, both.ID},
+	} {
+		if err = app.db.AddTeamMember(context.Background(), membership.teamID, membership.accountID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	assert.Equal(t, send(t, newAuthRequest(t, http.MethodPost, workspaceMembersURL(org.Slug, ws.ID), map[string]any{"account_id": direct.ID}, ownerTok), app.routes()).StatusCode, http.StatusNoContent)
+	assert.Equal(t, send(t, newAuthRequest(t, http.MethodPost, workspaceMembersURL(org.Slug, ws.ID), map[string]any{"account_id": both.ID}, ownerTok), app.routes()).StatusCode, http.StatusNoContent)
+	assert.Equal(t, send(t, newAuthRequest(t, http.MethodPost, workspaceTeamsURL(org.Slug, ws.ID), map[string]any{"team_id": teamA.ID}, ownerTok), app.routes()).StatusCode, http.StatusNoContent)
+	assert.Equal(t, send(t, newAuthRequest(t, http.MethodPost, workspaceTeamsURL(org.Slug, ws.ID), map[string]any{"team_id": teamB.ID}, ownerTok), app.routes()).StatusCode, http.StatusNoContent)
+
+	res := send(t, newAuthRequest(t, http.MethodGet, workspaceEffectiveMembersURL(org.Slug, ws.ID)+"?sort=name&order=asc&page=1&page_size=10", nil, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Total int `json:"total"`
+		Items []struct {
+			AccountID      int64  `json:"account_id"`
+			Name           string `json:"name"`
+			IsDirectMember bool   `json:"is_direct_member"`
+			Sources        []struct {
+				Type     string `json:"type"`
+				TeamID   int64  `json:"team_id,omitempty"`
+				TeamSlug string `json:"team_slug,omitempty"`
+				TeamName string `json:"team_name,omitempty"`
+			} `json:"membership_sources"`
+		} `json:"items"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+	assert.Equal(t, payload.Total, 4) // workspace creator plus the three test users
+
+	byAccountID := map[int64]struct {
+		IsDirectMember bool
+		Sources        []struct {
+			Type     string `json:"type"`
+			TeamID   int64  `json:"team_id,omitempty"`
+			TeamSlug string `json:"team_slug,omitempty"`
+			TeamName string `json:"team_name,omitempty"`
+		}
+	}{}
+	for _, item := range payload.Items {
+		byAccountID[item.AccountID] = struct {
+			IsDirectMember bool
+			Sources        []struct {
+				Type     string `json:"type"`
+				TeamID   int64  `json:"team_id,omitempty"`
+				TeamSlug string `json:"team_slug,omitempty"`
+				TeamName string `json:"team_name,omitempty"`
+			}
+		}{item.IsDirectMember, item.Sources}
+	}
+
+	assert.Equal(t, byAccountID[direct.ID].IsDirectMember, true)
+	assert.Equal(t, len(byAccountID[direct.ID].Sources), 1)
+	assert.Equal(t, byAccountID[direct.ID].Sources[0].Type, "direct")
+
+	assert.Equal(t, byAccountID[inherited.ID].IsDirectMember, false)
+	assert.Equal(t, len(byAccountID[inherited.ID].Sources), 1)
+	assert.Equal(t, byAccountID[inherited.ID].Sources[0].Type, "team")
+	assert.Equal(t, byAccountID[inherited.ID].Sources[0].TeamSlug, "team-a")
+
+	assert.Equal(t, byAccountID[both.ID].IsDirectMember, true)
+	assert.Equal(t, len(byAccountID[both.ID].Sources), 3)
+	assert.Equal(t, byAccountID[both.ID].Sources[0].Type, "direct")
+}
+
+func TestWorkspaceEffectiveMembersAPI_SearchPaginationAndCrossWorkspaceIsolation(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "ws-effective-isolation-owner"), "Workspace Owner", "Workspace Effective Isolation Org")
+	wsA := seedWorkspaceForAccount(t, app, org, owner, "A", "")
+	wsB := seedWorkspaceForAccount(t, app, org, owner, "B", "")
+	alice, _ := seedAccountWithToken(t, app, uniqueEmail(t, "ws-effective-alice"), "Alice Effective")
+	bob, _ := seedAccountWithToken(t, app, uniqueEmail(t, "ws-effective-bob"), "Bob Effective")
+	for _, accountID := range []int64{alice.ID, bob.ID} {
+		if err := app.db.AddOrgMember(context.Background(), org.ID, accountID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	assert.Equal(t, send(t, newAuthRequest(t, http.MethodPost, workspaceMembersURL(org.Slug, wsA.ID), map[string]any{"account_id": alice.ID}, ownerTok), app.routes()).StatusCode, http.StatusNoContent)
+	assert.Equal(t, send(t, newAuthRequest(t, http.MethodPost, workspaceMembersURL(org.Slug, wsB.ID), map[string]any{"account_id": bob.ID}, ownerTok), app.routes()).StatusCode, http.StatusNoContent)
+
+	res := send(t, newAuthRequest(t, http.MethodGet, workspaceEffectiveMembersURL(org.Slug, wsA.ID)+"?q=alice&page=1&page_size=1", nil, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	var payload struct {
+		Total int `json:"total"`
+		Items []struct {
+			AccountID int64 `json:"account_id"`
+		} `json:"items"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0].AccountID, alice.ID)
+
+	res = send(t, newAuthRequest(t, http.MethodGet, workspaceEffectiveMembersURL(org.Slug, wsA.ID)+"?q=bob", nil, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+	assert.Equal(t, payload.Total, 0)
+}
+
 func TestWorkspaceTeamsAPI_RejectsCrossOrgTeam(t *testing.T) {
 	t.Parallel()
 
@@ -276,11 +412,15 @@ func TestWorkspaceMembershipAPIPermissions(t *testing.T) {
 
 	readList := send(t, newAuthRequest(t, http.MethodGet, workspaceMembersURL(org.Slug, ws.ID), nil, readerTok), app.routes())
 	assert.Equal(t, readList.StatusCode, http.StatusOK)
+	readEffectiveList := send(t, newAuthRequest(t, http.MethodGet, workspaceEffectiveMembersURL(org.Slug, ws.ID), nil, readerTok), app.routes())
+	assert.Equal(t, readEffectiveList.StatusCode, http.StatusOK)
 	readAdd := send(t, newAuthRequest(t, http.MethodPost, workspaceMembersURL(org.Slug, ws.ID), map[string]any{"account_id": target.ID}, readerTok), app.routes())
 	assert.Equal(t, readAdd.StatusCode, http.StatusForbidden)
 
 	writeList := send(t, newAuthRequest(t, http.MethodGet, workspaceMembersURL(org.Slug, ws.ID), nil, writerTok), app.routes())
 	assert.Equal(t, writeList.StatusCode, http.StatusForbidden)
+	writeEffectiveList := send(t, newAuthRequest(t, http.MethodGet, workspaceEffectiveMembersURL(org.Slug, ws.ID), nil, writerTok), app.routes())
+	assert.Equal(t, writeEffectiveList.StatusCode, http.StatusForbidden)
 	writeAdd := send(t, newAuthRequest(t, http.MethodPost, workspaceMembersURL(org.Slug, ws.ID), map[string]any{"account_id": target.ID}, writerTok), app.routes())
 	assert.Equal(t, writeAdd.StatusCode, http.StatusNoContent)
 	writeDelete := send(t, newAuthRequest(t, http.MethodDelete, workspaceMembersURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(target.ID, 10), nil, writerTok), app.routes())

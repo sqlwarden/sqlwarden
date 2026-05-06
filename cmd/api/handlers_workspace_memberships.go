@@ -40,6 +40,36 @@ func (app *application) listWorkspaceMembers(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+func (app *application) listWorkspaceEffectiveMembers(w http.ResponseWriter, r *http.Request) {
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"name":       "name",
+		"email":      "email",
+		"created_at": "created_at",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	members, err := app.db.ListWorkspaceEffectiveMembersPage(r.Context(), org.ID, database.ListWorkspaceMembersParams{
+		WorkspaceID: ws.ID,
+		Search:      q.Search,
+		Sort:        q.Sort,
+		Order:       q.Order,
+		Page:        q.Page,
+		PageSize:    q.PageSize,
+	})
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if err = response.JSON(w, http.StatusOK, members); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 func (app *application) addWorkspaceMember(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		AccountID int64               `json:"account_id"`
