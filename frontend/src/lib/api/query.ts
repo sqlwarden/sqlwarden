@@ -11,6 +11,7 @@ export const queryKeys = {
   orgEffectivePermissions: (slug: string, resourceType: ResourceType, resourceId?: string | number) =>
     ['org-effective-permissions', slug, resourceType, resourceId ?? null] as const,
   orgPermissions: (slug: string) => ['org-permissions', slug] as const,
+  org: (slug: string) => ['org', slug] as const,
   orgMembers: (slug: string, query?: ListQuery) => ['org-members', slug, query ?? {}] as const,
   orgMember: (slug: string, accountId: string | number) => ['org-member', slug, accountId] as const,
   orgMemberTeams: (slug: string, accountId: string | number, query?: ListQuery) =>
@@ -33,6 +34,8 @@ export const queryKeys = {
     ['org-workspace-effective-members', slug, workspaceId, query ?? {}] as const,
   orgWorkspaceTeams: (slug: string, workspaceId: string | number, query?: ListQuery) =>
     ['org-workspace-teams', slug, workspaceId, query ?? {}] as const,
+  orgWorkspacePolicies: (slug: string, workspaceId: string | number, query?: ListQuery) =>
+    ['org-workspace-policies', slug, workspaceId, query ?? {}] as const,
   myWorkspaces: (query?: ListQuery) => ['my-workspaces', query ?? {}] as const,
   orgEnvironments: (slug: string, workspaceId: string | number, query?: ListQuery) =>
     ['org-environments', slug, workspaceId, query ?? {}] as const,
@@ -40,6 +43,8 @@ export const queryKeys = {
     ['my-environments', workspaceId, query ?? {}] as const,
   orgConnections: (slug: string, workspaceId: string | number, environmentId: string | number, query?: ListQuery) =>
     ['org-connections', slug, workspaceId, environmentId, query ?? {}] as const,
+  orgWorkspaceConnections: (slug: string, workspaceId: string | number, query?: ListQuery) =>
+    ['org-workspace-connections', slug, workspaceId, query ?? {}] as const,
   myConnections: (workspaceId: string | number, environmentId: string | number, query?: ListQuery) =>
     ['my-connections', workspaceId, environmentId, query ?? {}] as const,
   orgPolicies: (slug: string, query?: ListQuery) => ['org-policies', slug, query ?? {}] as const,
@@ -91,6 +96,14 @@ export function orgPermissionsQueryOptions(slug: string) {
     queryKey: queryKeys.orgPermissions(slug),
     queryFn: () => api.get<PermissionsCatalog>(`/api/v1/orgs/${slug}/permissions`),
     staleTime: 300_000,
+  })
+}
+
+export function orgQueryOptions(slug: string) {
+  return queryOptions({
+    queryKey: queryKeys.org(slug),
+    queryFn: () => api.get<Organization>(`/api/v1/orgs/${slug}`),
+    staleTime: 60_000,
   })
 }
 
@@ -228,6 +241,14 @@ export function orgWorkspaceTeamsQueryOptions(slug: string, workspaceId: string 
   })
 }
 
+export function orgWorkspacePoliciesQueryOptions(slug: string, workspaceId: string | number, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspacePolicies(slug, workspaceId, query),
+    queryFn: () => api.get<Paginated<PolicyBinding>>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/policies`, { query }),
+    placeholderData: keepPreviousData,
+  })
+}
+
 export function myWorkspacesQueryOptions(query?: ListQuery) {
   return queryOptions({
     queryKey: queryKeys.myWorkspaces(query),
@@ -265,6 +286,14 @@ export function orgConnectionsQueryOptions(
         `/api/v1/orgs/${slug}/workspaces/${workspaceId}/environments/${environmentId}/connections`,
         { query },
       ),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function orgWorkspaceConnectionsQueryOptions(slug: string, workspaceId: string | number, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspaceConnections(slug, workspaceId, query),
+    queryFn: () => api.get<Paginated<Connection>>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections`, { query }),
     placeholderData: keepPreviousData,
   })
 }
