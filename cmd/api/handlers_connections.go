@@ -67,7 +67,7 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 		PageSize:    q.PageSize,
 	}
 	if params.AccessMode != "" && params.AccessMode != "open" && params.AccessMode != "restricted" {
-		app.failedValidation(w, r, fieldErrors(map[string]string{"access_mode": "must be open or restricted"}))
+		app.failedValidation(w, r, fieldErrors(map[string]string{"access_mode": "Access mode must be open or restricted."}))
 		return
 	}
 	if env.ID != 0 {
@@ -75,7 +75,7 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 	} else if rawEnvID := strings.TrimSpace(r.URL.Query().Get("environment_id")); rawEnvID != "" {
 		envID, err := strconv.ParseInt(rawEnvID, 10, 64)
 		if err != nil || envID < 1 {
-			app.failedValidation(w, r, fieldErrors(map[string]string{"environment_id": "must be a positive integer"}))
+			app.failedValidation(w, r, fieldErrors(map[string]string{"environment_id": "Environment must be a positive integer."}))
 			return
 		}
 		params.EnvironmentID = &envID
@@ -221,12 +221,12 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
-	input.V.CheckField(input.Driver != "", "driver", "driver is required")
-	input.V.CheckField(input.DSN != "", "dsn", "dsn is required")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	input.V.CheckField(input.Driver != "", "driver", "Driver is required.")
+	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
 	if input.Driver != "" {
 		if _, err := driver.New(input.Driver); err != nil {
-			input.V.CheckField(false, "driver", "must be a supported driver")
+			input.V.CheckField(false, "driver", "Driver must be a supported driver.")
 		}
 	}
 	if input.AccessMode == "" {
@@ -234,7 +234,7 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 	}
 	input.V.CheckField(
 		input.AccessMode == "open" || input.AccessMode == "restricted",
-		"access_mode", "must be open or restricted",
+		"access_mode", "Access mode must be open or restricted.",
 	)
 
 	if input.V.HasErrors() {
@@ -319,15 +319,15 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
-	input.V.CheckField(input.DSN != "", "dsn", "dsn is required")
-	input.V.CheckField(input.Driver == nil, "driver", "driver cannot be changed")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
+	input.V.CheckField(input.Driver == nil, "driver", "Driver cannot be changed.")
 	if input.AccessMode == "" {
 		input.AccessMode = "open"
 	}
 	input.V.CheckField(
 		input.AccessMode == "open" || input.AccessMode == "restricted",
-		"access_mode", "must be open or restricted",
+		"access_mode", "Access mode must be open or restricted.",
 	)
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -350,7 +350,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	if dsnChanged {
 		activeSessions := app.connManager.CountForConnection(strconv.FormatInt(conn.ID, 10))
 		if activeSessions > 0 && !input.Force {
-			app.errorMessage(w, r, http.StatusConflict, "connection has active sessions; retry with force=true to rotate the dsn and drop them", nil)
+			app.errorMessage(w, r, http.StatusConflict, "Connection has active sessions. Retry with force=true to rotate the DSN and drop them.", nil)
 			return
 		}
 		if input.Force && activeSessions > 0 {
@@ -389,8 +389,8 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.V.CheckField(input.Driver != "", "driver", "driver is required")
-	input.V.CheckField(input.DSN != "", "dsn", "dsn is required")
+	input.V.CheckField(input.Driver != "", "driver", "Driver is required.")
+	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -516,7 +516,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.V.CheckField(input.SQL != "", "sql", "sql is required")
+	input.V.CheckField(input.SQL != "", "sql", "SQL is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -529,13 +529,13 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 
 	sessionID := r.Header.Get("X-Warden-Session")
 	if sessionID == "" {
-		app.errorMessage(w, r, http.StatusBadRequest, "X-Warden-Session header is required", nil)
+		app.errorMessage(w, r, http.StatusBadRequest, "X-Warden-Session header is required.", nil)
 		return
 	}
 
 	session, ok := app.connManager.Get(sessionID)
 	if !ok {
-		app.errorMessage(w, r, http.StatusGone, "Session has expired or does not exist", nil)
+		app.errorMessage(w, r, http.StatusGone, "Session has expired or does not exist.", nil)
 		return
 	}
 

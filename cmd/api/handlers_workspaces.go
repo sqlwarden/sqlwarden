@@ -120,7 +120,7 @@ func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -131,7 +131,7 @@ func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) 
 	ws, err := app.db.InsertWorkspace(r.Context(), &org.ID, "org", org.ID, input.Name, input.Description)
 	if err != nil {
 		if isUniqueViolation(err) {
-			app.failedDuplicateField(w, r, "name", "a workspace with this name already exists in this organization")
+			app.failedDuplicateField(w, r, "name", "A workspace with this name already exists in this organization.")
 			return
 		}
 		app.serverError(w, r, err)
@@ -201,10 +201,10 @@ func (app *application) updateWorkspace(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
-	input.V.CheckField(input.OrgID == nil, "org_id", "is immutable")
-	input.V.CheckField(input.OwnerType == nil, "owner_type", "is immutable")
-	input.V.CheckField(input.OwnerID == nil, "owner_id", "is immutable")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	input.V.CheckField(input.OrgID == nil, "org_id", "Organization is immutable.")
+	input.V.CheckField(input.OwnerType == nil, "owner_type", "Owner type is immutable.")
+	input.V.CheckField(input.OwnerID == nil, "owner_id", "Owner is immutable.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return

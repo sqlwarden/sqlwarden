@@ -49,6 +49,28 @@ async function parseJson(response: Response) {
   return response.json()
 }
 
+function firstValidationMessage(payload: unknown) {
+  if (typeof payload !== 'object' || payload === null) {
+    return undefined
+  }
+
+  if ('field_errors' in payload && typeof payload.field_errors === 'object' && payload.field_errors !== null) {
+    const [message] = Object.values(payload.field_errors as Record<string, unknown>)
+    if (typeof message === 'string' && message.trim() !== '') {
+      return message
+    }
+  }
+
+  if ('errors' in payload && Array.isArray(payload.errors)) {
+    const [message] = payload.errors
+    if (typeof message === 'string' && message.trim() !== '') {
+      return message
+    }
+  }
+
+  return undefined
+}
+
 export async function apiRequest<T>(path: string, options: ApiClientOptions = {}): Promise<T> {
   const url = new URL(path, window.location.origin)
   const params = buildSearchParams(options.query)
@@ -79,6 +101,7 @@ export async function apiRequest<T>(path: string, options: ApiClientOptions = {}
       ((typeof payload === 'object' && payload !== null && 'error' in payload && typeof payload.error === 'string'
         ? payload.error
         : undefined) ??
+        firstValidationMessage(payload) ??
         response.statusText) ||
       'Request failed'
 

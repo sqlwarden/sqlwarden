@@ -71,7 +71,7 @@ func TestServerError(t *testing.T) {
 
 		assert.Equal(t, res.StatusCode, http.StatusInternalServerError)
 		assert.Equal(t, res.Header.Get("Content-Type"), "application/json")
-		assert.Equal(t, res.BodyFields["error"], "The server encountered a problem and could not process your request")
+		assert.Equal(t, res.BodyFields["error"], "The server encountered a problem and could not process your request.")
 
 		assert.True(t, strings.Contains(buf.String(), "level=ERROR"))
 		assert.True(t, strings.Contains(buf.String(), `msg="this is a test error"`))
@@ -116,7 +116,7 @@ func TestNotFound(t *testing.T) {
 
 		res := send(t, req, http.HandlerFunc(app.notFound))
 		assert.Equal(t, res.StatusCode, http.StatusNotFound)
-		assert.Equal(t, res.BodyFields["error"], "The requested resource could not be found")
+		assert.Equal(t, res.BodyFields["error"], "The requested resource could not be found.")
 	})
 }
 
@@ -128,7 +128,7 @@ func TestMethodNotAllowed(t *testing.T) {
 
 		res := send(t, req, http.HandlerFunc(app.methodNotAllowed))
 		assert.Equal(t, res.StatusCode, http.StatusMethodNotAllowed)
-		assert.Equal(t, res.BodyFields["error"], "The GET method is not supported for this resource")
+		assert.Equal(t, res.BodyFields["error"], "The GET method is not supported for this resource.")
 	})
 }
 
@@ -139,10 +139,10 @@ func TestBadRequest(t *testing.T) {
 		req := newTestRequest(t, http.MethodGet, "/test", nil)
 
 		res := send(t, req, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			app.badRequest(w, r, errors.New("this is a baaaad request"))
+			app.badRequest(w, r, errors.New("This is a baaaad request."))
 		}))
 		assert.Equal(t, res.StatusCode, http.StatusBadRequest)
-		assert.Equal(t, res.BodyFields["error"], "This is a baaaad request")
+		assert.Equal(t, res.BodyFields["error"], "This is a baaaad request.")
 	})
 }
 
@@ -175,7 +175,7 @@ func TestInvalidAuthenticationToken(t *testing.T) {
 
 		assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
 		assert.Equal(t, res.Header.Get("WWW-Authenticate"), "Bearer")
-		assert.Equal(t, res.BodyFields["error"], "Invalid authentication token")
+		assert.Equal(t, res.BodyFields["error"], "Invalid authentication token.")
 	})
 }
 
@@ -191,6 +191,6 @@ func TestAuthenticationRequired(t *testing.T) {
 
 		assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
 		assert.Equal(t, res.Header.Get("WWW-Authenticate"), "Bearer")
-		assert.Equal(t, res.BodyFields["error"], "You must be authenticated to access this resource")
+		assert.Equal(t, res.BodyFields["error"], "You must be authenticated to access this resource.")
 	})
 }

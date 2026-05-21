@@ -15,6 +15,6 @@ func TestRoutes(t *testing.T) {
 
 		res := send(t, req, app.routes())
 		assert.Equal(t, res.StatusCode, http.StatusNotFound)
-		assert.Equal(t, res.BodyFields["error"], "The requested resource could not be found")
+		assert.Equal(t, res.BodyFields["error"], "The requested resource could not be found.")
 	})
 }

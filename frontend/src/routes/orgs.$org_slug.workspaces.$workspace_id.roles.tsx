@@ -179,10 +179,10 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
     event.preventDefault()
     const errors: typeof fieldErrors = {}
     if (!roleName.trim()) {
-      errors.name = 'Name is required'
+      errors.name = 'Name is required.'
     }
     if (selectedPermissions.size === 0) {
-      errors.permissions = 'Select at least one permission'
+      errors.permissions = 'Select at least one permission.'
     }
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)

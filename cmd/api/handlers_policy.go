@@ -42,7 +42,7 @@ func (app *application) listRoles(w http.ResponseWriter, r *http.Request) {
 			v := false
 			builtin = &v
 		default:
-			app.failedValidation(w, r, fieldErrors(map[string]string{"builtin": "must be true or false"}))
+			app.failedValidation(w, r, fieldErrors(map[string]string{"builtin": "Built-in flag must be true or false."}))
 			return
 		}
 	}
@@ -53,7 +53,7 @@ func (app *application) listRoles(w http.ResponseWriter, r *http.Request) {
 		case "all", "org", "workspace":
 			scope = raw
 		default:
-			app.failedValidation(w, r, fieldErrors(map[string]string{"scope": "must be all, org, or workspace"}))
+			app.failedValidation(w, r, fieldErrors(map[string]string{"scope": "Scope must be all, org, or workspace."}))
 			return
 		}
 	}
@@ -95,16 +95,16 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
 	if input.ScopeType == "" {
 		input.ScopeType = "org"
 	}
-	input.V.CheckField(input.ScopeType == "org", "scope_type", "org roles must have scope_type=org")
+	input.V.CheckField(input.ScopeType == "org", "scope_type", "Organization roles must have scope_type=org.")
 	if input.WorkspaceID != nil {
-		input.V.AddFieldError("workspace_id", "org roles cannot set workspace_id")
+		input.V.AddFieldError("workspace_id", "Organization roles cannot set workspace_id.")
 	}
 	for _, p := range input.Permissions {
-		input.V.CheckField(access.ValidForScope(p, input.ScopeType), "permissions", p+" is not valid for scope "+input.ScopeType)
+		input.V.CheckField(access.ValidForScope(p, input.ScopeType), "permissions", "Permission "+p+" is not valid for scope "+input.ScopeType+".")
 	}
 
 	if input.V.HasErrors() {
@@ -116,7 +116,7 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 	roleID, err := app.enforcer.CreateRole(r.Context(), org.ID, input.WorkspaceID, input.Name, input.Description, input.ScopeType, input.Permissions)
 	if err != nil {
 		if errors.Is(err, access.ErrInvalidScopePermission) || errors.Is(err, access.ErrUnknownPermission) {
-			input.V.AddFieldError("permissions", err.Error())
+			input.V.AddFieldError("permissions", "Permissions include a permission that is not valid for this scope.")
 			app.failedValidation(w, r, input.V)
 			return
 		}
@@ -207,7 +207,7 @@ func (app *application) listOrgPolicies(w http.ResponseWriter, r *http.Request) 
 	if raw := strings.TrimSpace(r.URL.Query().Get("subject_id")); raw != "" {
 		parsed, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || parsed < 1 {
-			errs["subject_id"] = "must be a positive integer"
+			errs["subject_id"] = "Subject must be a positive integer."
 		} else {
 			subjectID = parsed
 		}
@@ -253,9 +253,9 @@ func (app *application) grantOrgPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.V.CheckField(input.RoleID > 0, "role_id", "role_id is required")
-	input.V.CheckField(validPolicySubjectType(input.SubjectType), "subject_type", "must be account, team, or org_members")
-	input.V.CheckField(input.SubjectID > 0, "subject_id", "subject_id is required")
+	input.V.CheckField(input.RoleID > 0, "role_id", "Role is required.")
+	input.V.CheckField(validPolicySubjectType(input.SubjectType), "subject_type", "Subject type must be account, team, or org_members.")
+	input.V.CheckField(input.SubjectID > 0, "subject_id", "Subject is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -283,7 +283,7 @@ func (app *application) grantOrgPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	if role.ScopeType != "org" || role.WorkspaceID != nil {
 		v := validator.Validator{}
-		v.AddFieldError("role_id", "role scope must match resource type")
+		v.AddFieldError("role_id", "Role scope must match resource type.")
 		app.failedValidation(w, r, v)
 		return
 	}
@@ -319,7 +319,7 @@ func (app *application) revokeOrgPolicy(w http.ResponseWriter, r *http.Request) 
 		return
 	} else if isLastOwnerPolicy {
 		v := validator.Validator{}
-		v.AddError("cannot revoke the last owner policy of an organization")
+		v.AddError("Cannot revoke the last owner policy of an organization.")
 		app.failedValidation(w, r, v)
 		return
 	}

@@ -80,7 +80,7 @@ func (app *application) addWorkspaceMember(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	input.V.CheckField(input.AccountID > 0, "account_id", "account_id is required")
+	input.V.CheckField(input.AccountID > 0, "account_id", "Account is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -166,7 +166,7 @@ func (app *application) addWorkspaceTeam(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	input.V.CheckField(input.TeamID > 0, "team_id", "team_id is required")
+	input.V.CheckField(input.TeamID > 0, "team_id", "Team is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return

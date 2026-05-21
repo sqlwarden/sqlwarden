@@ -138,10 +138,10 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
 
     const errors: { name?: string; slug?: string } = {}
     if (!teamName.trim()) {
-      errors.name = 'Name is required'
+      errors.name = 'Name is required.'
     }
     if (!teamSlug.trim()) {
-      errors.slug = 'Slug is required'
+      errors.slug = 'Slug is required.'
     }
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)

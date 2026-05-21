@@ -216,10 +216,10 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
     event.preventDefault()
     const errors: typeof fieldErrors = {}
     if (subjectType !== 'org_members' && !subjectId) {
-      errors.subject = subjectType === 'account' ? 'Select a user' : 'Select a team'
+      errors.subject = subjectType === 'account' ? 'Select a user.' : 'Select a team.'
     }
     if (!roleId) {
-      errors.role = 'Select a role'
+      errors.role = 'Select a role.'
     }
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)

@@ -134,7 +134,7 @@ func (app *application) resolveEffectivePermissionResource(w http.ResponseWriter
 
 	default:
 		app.failedValidation(w, r, fieldErrors(map[string]string{
-			"resource_type": "must be org, workspace, environment, or connection",
+			"resource_type": "Resource type must be org, workspace, environment, or connection.",
 		}))
 		return 0, false
 	}
@@ -144,7 +144,7 @@ func (app *application) requiredEffectivePermissionResourceID(w http.ResponseWri
 	rawID := strings.TrimSpace(r.URL.Query().Get("resource_id"))
 	if rawID == "" {
 		app.failedValidation(w, r, fieldErrors(map[string]string{
-			"resource_id": "is required",
+			"resource_id": "Resource is required.",
 		}))
 		return 0, false
 	}
@@ -154,14 +154,14 @@ func (app *application) requiredEffectivePermissionResourceID(w http.ResponseWri
 func (app *application) parseEffectivePermissionResourceID(w http.ResponseWriter, r *http.Request, rawID string) (int64, bool) {
 	if rawID == "" {
 		app.failedValidation(w, r, fieldErrors(map[string]string{
-			"resource_id": "is required",
+			"resource_id": "Resource is required.",
 		}))
 		return 0, false
 	}
 	resourceID, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || resourceID <= 0 {
 		app.failedValidation(w, r, fieldErrors(map[string]string{
-			"resource_id": "must be a positive integer",
+			"resource_id": "Resource must be a positive integer.",
 		}))
 		return 0, false
 	}

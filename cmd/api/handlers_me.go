@@ -62,7 +62,7 @@ func (app *application) createMyWorkspace(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -72,7 +72,7 @@ func (app *application) createMyWorkspace(w http.ResponseWriter, r *http.Request
 	ws, err := app.db.InsertWorkspace(r.Context(), nil, "space", account.ID, input.Name, input.Description)
 	if err != nil {
 		if isUniqueViolation(err) {
-			input.V.AddFieldError("name", "a workspace with this name already exists")
+			input.V.AddFieldError("name", "A workspace with this name already exists.")
 			app.failedValidation(w, r, input.V)
 			return
 		}
@@ -134,7 +134,7 @@ func (app *application) createMyEnvironment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -144,7 +144,7 @@ func (app *application) createMyEnvironment(w http.ResponseWriter, r *http.Reque
 	env, err := app.db.InsertEnvironment(r.Context(), ws.ID, input.Name, input.Description)
 	if err != nil {
 		if isUniqueViolation(err) {
-			input.V.AddFieldError("name", "an environment with this name already exists in this workspace")
+			input.V.AddFieldError("name", "An environment with this name already exists in this workspace.")
 			app.failedValidation(w, r, input.V)
 			return
 		}
@@ -184,14 +184,14 @@ func (app *application) listMyConnections(w http.ResponseWriter, r *http.Request
 		PageSize:      q.PageSize,
 	}
 	if params.AccessMode != "" && params.AccessMode != "open" && params.AccessMode != "restricted" {
-		app.failedValidation(w, r, fieldErrors(map[string]string{"access_mode": "must be open or restricted"}))
+		app.failedValidation(w, r, fieldErrors(map[string]string{"access_mode": "Access mode must be open or restricted."}))
 		return
 	}
 	if env.ID == 0 {
 		if rawEnvID := strings.TrimSpace(r.URL.Query().Get("environment_id")); rawEnvID != "" {
 			parsedEnvID, err := strconv.ParseInt(rawEnvID, 10, 64)
 			if err != nil || parsedEnvID < 1 {
-				app.failedValidation(w, r, fieldErrors(map[string]string{"environment_id": "must be a positive integer"}))
+				app.failedValidation(w, r, fieldErrors(map[string]string{"environment_id": "Environment must be a positive integer."}))
 				return
 			}
 			params.EnvironmentID = &parsedEnvID
@@ -226,12 +226,12 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
-	input.V.CheckField(input.Driver != "", "driver", "driver is required")
-	input.V.CheckField(input.DSN != "", "dsn", "dsn is required")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	input.V.CheckField(input.Driver != "", "driver", "Driver is required.")
+	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
 	if input.Driver != "" {
 		if _, err := driver.New(input.Driver); err != nil {
-			input.V.CheckField(false, "driver", "must be a supported driver")
+			input.V.CheckField(false, "driver", "Driver must be a supported driver.")
 		}
 	}
 	if input.AccessMode == "" {
@@ -239,7 +239,7 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 	}
 	input.V.CheckField(
 		input.AccessMode == "open" || input.AccessMode == "restricted",
-		"access_mode", "must be open or restricted",
+		"access_mode", "Access mode must be open or restricted.",
 	)
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)

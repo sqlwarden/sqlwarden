@@ -27,10 +27,10 @@ func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input.V.CheckField(input.Email != "", "email", "email is required")
-	input.V.CheckField(validator.IsEmail(input.Email), "email", "must be a valid email address")
-	input.V.CheckField(input.Name != "", "name", "name is required")
-	input.V.CheckField(len(input.Password) >= 8, "password", "must be at least 8 characters")
+	input.V.CheckField(input.Email != "", "email", "Email is required.")
+	input.V.CheckField(validator.IsEmail(input.Email), "email", "Enter a valid email address.")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	input.V.CheckField(len(input.Password) >= 8, "password", "Password must be at least 8 characters.")
 
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -43,7 +43,7 @@ func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !configured {
-		app.errorMessage(w, r, http.StatusForbidden, "instance setup is not complete", nil)
+		app.errorMessage(w, r, http.StatusForbidden, "Instance setup is not complete.", nil)
 		return
 	}
 
@@ -53,7 +53,7 @@ func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if exists {
-		input.V.AddFieldError("email", "email address is already in use")
+		input.V.AddFieldError("email", "An account with this email already exists.")
 		app.failedValidation(w, r, input.V)
 		return
 	}
@@ -67,7 +67,7 @@ func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) 
 	account, err := app.db.InsertAccount(r.Context(), input.Email, input.Name, &hashedPW)
 	if err != nil {
 		if isUniqueViolation(err) {
-			input.V.AddFieldError("email", "email address is already in use")
+			input.V.AddFieldError("email", "An account with this email already exists.")
 			app.failedValidation(w, r, input.V)
 			return
 		}
@@ -94,8 +94,8 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.V.CheckField(input.Email != "", "email", "email is required")
-	input.V.CheckField(input.Password != "", "password", "password is required")
+	input.V.CheckField(input.Email != "", "email", "Email is required.")
+	input.V.CheckField(input.Password != "", "password", "Password is required.")
 
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)

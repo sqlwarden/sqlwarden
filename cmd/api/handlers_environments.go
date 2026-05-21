@@ -119,7 +119,7 @@ func (app *application) createEnvironment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -129,7 +129,7 @@ func (app *application) createEnvironment(w http.ResponseWriter, r *http.Request
 	env, err := app.db.InsertEnvironment(r.Context(), ws.ID, input.Name, input.Description)
 	if err != nil {
 		if isUniqueViolation(err) {
-			app.failedDuplicateField(w, r, "name", "an environment with this name already exists in this workspace")
+			app.failedDuplicateField(w, r, "name", "An environment with this name already exists in this workspace.")
 			return
 		}
 		app.serverError(w, r, err)
@@ -178,8 +178,8 @@ func (app *application) updateEnvironment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
-	input.V.CheckField(input.WorkspaceID == nil, "workspace_id", "is immutable")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	input.V.CheckField(input.WorkspaceID == nil, "workspace_id", "Workspace is immutable.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -189,7 +189,7 @@ func (app *application) updateEnvironment(w http.ResponseWriter, r *http.Request
 	err = app.db.UpdateEnvironment(r.Context(), env.ID, input.Name, input.Description)
 	if err != nil {
 		if isUniqueViolation(err) {
-			app.failedDuplicateField(w, r, "name", "an environment with this name already exists in this workspace")
+			app.failedDuplicateField(w, r, "name", "An environment with this name already exists in this workspace.")
 			return
 		}
 		app.serverError(w, r, err)
@@ -213,7 +213,7 @@ func (app *application) deleteEnvironment(w http.ResponseWriter, r *http.Request
 	err = app.db.DeleteEnvironment(r.Context(), env.ID)
 	if err != nil {
 		if errors.Is(err, database.ErrEnvironmentHasConnections) {
-			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, "Environment has connections.", nil)
 			return
 		}
 		app.serverError(w, r, err)

@@ -123,7 +123,7 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
     event.preventDefault()
 
     if (!newWorkspaceName.trim()) {
-      setCreateFieldErrors({ name: 'Workspace name is required' })
+      setCreateFieldErrors({ name: 'Workspace name is required.' })
       return
     }
 

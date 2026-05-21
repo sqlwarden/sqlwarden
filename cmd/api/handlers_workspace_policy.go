@@ -43,7 +43,7 @@ func (app *application) listWorkspaceRoles(w http.ResponseWriter, r *http.Reques
 			v := false
 			builtin = &v
 		default:
-			app.failedValidation(w, r, fieldErrors(map[string]string{"builtin": "must be true or false"}))
+			app.failedValidation(w, r, fieldErrors(map[string]string{"builtin": "Built-in flag must be true or false."}))
 			return
 		}
 	}
@@ -84,14 +84,14 @@ func (app *application) createWorkspaceRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
 	if input.ScopeType == "" {
 		input.ScopeType = "workspace"
 	}
 	validScopes := map[string]bool{"workspace": true, "environment": true, "connection": true}
-	input.V.CheckField(validScopes[input.ScopeType], "scope_type", "must be workspace, environment, or connection")
+	input.V.CheckField(validScopes[input.ScopeType], "scope_type", "Scope type must be workspace, environment, or connection.")
 	for _, p := range input.Permissions {
-		input.V.CheckField(access.ValidForScope(p, input.ScopeType), "permissions", p+" is not valid for "+input.ScopeType+" scope")
+		input.V.CheckField(access.ValidForScope(p, input.ScopeType), "permissions", "Permission "+p+" is not valid for "+input.ScopeType+" scope.")
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -104,12 +104,12 @@ func (app *application) createWorkspaceRole(w http.ResponseWriter, r *http.Reque
 	roleID, err := app.enforcer.CreateRole(r.Context(), org.ID, &ws.ID, input.Name, input.Description, input.ScopeType, input.Permissions)
 	if err != nil {
 		if errors.Is(err, access.ErrInvalidScopePermission) || errors.Is(err, access.ErrUnknownPermission) {
-			input.V.AddFieldError("permissions", err.Error())
+			input.V.AddFieldError("permissions", "Permissions include a permission that is not valid for this scope.")
 			app.failedValidation(w, r, input.V)
 			return
 		}
 		if isUniqueViolation(err) {
-			app.failedDuplicateField(w, r, "name", "a role with this name already exists in this workspace")
+			app.failedDuplicateField(w, r, "name", "A role with this name already exists in this workspace.")
 			return
 		}
 		app.serverError(w, r, err)
@@ -227,7 +227,7 @@ func (app *application) listWorkspacePolicies(w http.ResponseWriter, r *http.Req
 	if raw := strings.TrimSpace(r.URL.Query().Get("subject_id")); raw != "" {
 		parsed, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || parsed < 1 {
-			errs["subject_id"] = "must be a positive integer"
+			errs["subject_id"] = "Subject must be a positive integer."
 		} else {
 			subjectID = parsed
 		}
@@ -236,7 +236,7 @@ func (app *application) listWorkspacePolicies(w http.ResponseWriter, r *http.Req
 	if raw := strings.TrimSpace(r.URL.Query().Get("resource_id")); raw != "" {
 		parsed, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || parsed < 1 {
-			errs["resource_id"] = "must be a positive integer"
+			errs["resource_id"] = "Resource must be a positive integer."
 		} else {
 			resourceID = parsed
 		}
@@ -294,13 +294,13 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 		input.ResourceType = "workspace"
 	}
 
-	input.V.CheckField(input.RoleID > 0, "role_id", "role_id is required")
-	input.V.CheckField(validWorkspacePolicySubjectType(input.SubjectType), "subject_type", "must be account, team, org_members, or workspace_members")
-	input.V.CheckField(input.SubjectID > 0, "subject_id", "subject_id is required")
+	input.V.CheckField(input.RoleID > 0, "role_id", "Role is required.")
+	input.V.CheckField(validWorkspacePolicySubjectType(input.SubjectType), "subject_type", "Subject type must be account, team, org_members, or workspace_members.")
+	input.V.CheckField(input.SubjectID > 0, "subject_id", "Subject is required.")
 	validTypes := map[string]bool{"workspace": true, "environment": true, "connection": true}
-	input.V.CheckField(validTypes[input.ResourceType], "resource_type", "must be workspace, environment, or connection")
+	input.V.CheckField(validTypes[input.ResourceType], "resource_type", "Resource type must be workspace, environment, or connection.")
 	if input.ResourceType != "workspace" {
-		input.V.CheckField(input.ResourceID > 0, "resource_id", "resource_id is required for non-workspace resources")
+		input.V.CheckField(input.ResourceID > 0, "resource_id", "Resource is required for non-workspace resources.")
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -361,7 +361,7 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 	case "workspace":
 		if role.ScopeType != "workspace" {
 			v := validator.Validator{}
-			v.AddFieldError("role_id", "role scope must match resource type")
+			v.AddFieldError("role_id", "Role scope must match resource type.")
 			app.failedValidation(w, r, v)
 			return
 		}
@@ -372,7 +372,7 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 	default:
 		if role.ScopeType != input.ResourceType {
 			v := validator.Validator{}
-			v.AddFieldError("role_id", "role scope must match resource type")
+			v.AddFieldError("role_id", "Role scope must match resource type.")
 			app.failedValidation(w, r, v)
 			return
 		}

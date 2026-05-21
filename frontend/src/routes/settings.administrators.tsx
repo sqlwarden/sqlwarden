@@ -92,7 +92,7 @@ function SettingsAdministratorsPage() {
     const value = email.trim()
 
     if (!value) {
-      setFieldError('Email is required')
+      setFieldError('Email is required.')
       return
     }
 

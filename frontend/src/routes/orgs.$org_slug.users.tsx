@@ -130,7 +130,7 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
     event.preventDefault()
 
     if (!email.trim()) {
-      setFieldErrors({ email: 'Email is required' })
+      setFieldErrors({ email: 'Email is required.' })
       return
     }
 

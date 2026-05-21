@@ -75,8 +75,8 @@ function LoginPage() {
 
   function validate() {
     const nextErrors: Record<string, string> = {}
-    if (!values.email.trim()) nextErrors.email = 'Email is required'
-    if (!values.password) nextErrors.password = 'Password is required'
+    if (!values.email.trim()) nextErrors.email = 'Email is required.'
+    if (!values.password) nextErrors.password = 'Password is required.'
     setLocalErrors(nextErrors)
     return Object.keys(nextErrors).length === 0
   }

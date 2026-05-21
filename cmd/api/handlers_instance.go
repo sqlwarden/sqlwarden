@@ -30,9 +30,9 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
-	input.V.CheckField(input.Email != "", "email", "email is required")
-	input.V.CheckField(len(input.Password) >= 8, "password", "password must be at least 8 characters")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	input.V.CheckField(input.Email != "", "email", "Email is required.")
+	input.V.CheckField(len(input.Password) >= 8, "password", "Password must be at least 8 characters.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -44,7 +44,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if configured {
-		app.errorMessage(w, r, http.StatusConflict, "instance already configured", nil)
+		app.errorMessage(w, r, http.StatusConflict, "Instance is already configured.", nil)
 		return
 	}
 
@@ -57,7 +57,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 	account, err := app.db.InsertAccount(r.Context(), input.Email, input.Name, &hashedPassword)
 	if err != nil {
 		if isUniqueViolation(err) {
-			input.V.AddFieldError("email", "email address is already in use")
+			input.V.AddFieldError("email", "An account with this email already exists.")
 			app.failedValidation(w, r, input.V)
 			return
 		}
@@ -216,10 +216,10 @@ func (app *application) createInstanceAccount(w http.ResponseWriter, r *http.Req
 	input.Name = strings.TrimSpace(input.Name)
 	input.Email = strings.TrimSpace(input.Email)
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
-	input.V.CheckField(input.Email != "", "email", "email is required")
-	input.V.CheckField(input.Email == "" || validator.IsEmail(input.Email), "email", "must be a valid email address")
-	input.V.CheckField(len(input.Password) >= 8, "password", "password must be at least 8 characters")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	input.V.CheckField(input.Email != "", "email", "Email is required.")
+	input.V.CheckField(input.Email == "" || validator.IsEmail(input.Email), "email", "Enter a valid email address.")
+	input.V.CheckField(len(input.Password) >= 8, "password", "Password must be at least 8 characters.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -231,7 +231,7 @@ func (app *application) createInstanceAccount(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if exists {
-		input.V.AddFieldError("email", "email address is already in use")
+		input.V.AddFieldError("email", "An account with this email already exists.")
 		app.failedValidation(w, r, input.V)
 		return
 	}
@@ -245,7 +245,7 @@ func (app *application) createInstanceAccount(w http.ResponseWriter, r *http.Req
 	account, err := app.db.InsertAccount(r.Context(), input.Email, input.Name, &hashedPassword)
 	if err != nil {
 		if isUniqueViolation(err) {
-			input.V.AddFieldError("email", "email address is already in use")
+			input.V.AddFieldError("email", "An account with this email already exists.")
 			app.failedValidation(w, r, input.V)
 			return
 		}
@@ -285,7 +285,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	input.V.CheckField(input.PersonalSpacesEnabled != nil, "personal_spaces_enabled", "personal_spaces_enabled is required")
+	input.V.CheckField(input.PersonalSpacesEnabled != nil, "personal_spaces_enabled", "Personal spaces setting is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -332,7 +332,7 @@ func (app *application) addInstanceAdmin(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	input.V.CheckField(input.Email != "", "email", "email is required")
+	input.V.CheckField(input.Email != "", "email", "Email is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -374,7 +374,7 @@ func (app *application) removeInstanceAdmin(w http.ResponseWriter, r *http.Reque
 	}
 	if n <= 1 {
 		v := validator.Validator{}
-		v.AddError("cannot remove the last instance admin")
+		v.AddError("Cannot remove the last instance admin.")
 		app.failedValidation(w, r, v)
 		return
 	}

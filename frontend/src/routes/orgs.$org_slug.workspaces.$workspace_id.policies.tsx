@@ -229,11 +229,11 @@ function WorkspacePoliciesPage() {
   function submitCreatePolicy(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const errors: typeof fieldErrors = {}
-    if (subjectType === 'account' && !subjectId) errors.subject = 'Select a user'
-    if (subjectType === 'team' && !subjectId) errors.subject = 'Select a team'
-    if (subjectType === 'org_members' && !org.data?.id) errors.subject = 'Organization is still loading'
-    if (resourceType !== 'workspace' && !resourceId) errors.resource = `Select a ${resourceLabelFor(resourceType).toLowerCase()}`
-    if (!roleId) errors.role = 'Select a role'
+    if (subjectType === 'account' && !subjectId) errors.subject = 'Select a user.'
+    if (subjectType === 'team' && !subjectId) errors.subject = 'Select a team.'
+    if (subjectType === 'org_members' && !org.data?.id) errors.subject = 'Organization is still loading.'
+    if (resourceType !== 'workspace' && !resourceId) errors.resource = `Select a ${resourceLabelFor(resourceType).toLowerCase()}.`
+    if (!roleId) errors.role = 'Select a role.'
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)
       return

@@ -85,7 +85,7 @@ func readListQuery(values url.Values, allowedSorts map[string]string) (listQuery
 	if raw := strings.TrimSpace(values.Get("page")); raw != "" {
 		page, err := strconv.Atoi(raw)
 		if err != nil || page < 1 {
-			errs["page"] = "must be a positive integer"
+			errs["page"] = "Page must be a positive integer."
 		} else {
 			q.Page = page
 		}
@@ -94,7 +94,7 @@ func readListQuery(values url.Values, allowedSorts map[string]string) (listQuery
 	if raw := strings.TrimSpace(values.Get("page_size")); raw != "" {
 		pageSize, err := strconv.Atoi(raw)
 		if err != nil || pageSize < 1 || pageSize > 100 {
-			errs["page_size"] = "must be between 1 and 100"
+			errs["page_size"] = "Page size must be between 1 and 100."
 		} else {
 			q.PageSize = pageSize
 		}
@@ -104,14 +104,14 @@ func readListQuery(values url.Values, allowedSorts map[string]string) (listQuery
 		if column, ok := allowedSorts[raw]; ok {
 			q.Sort = column
 		} else {
-			errs["sort"] = "must be one of the supported sort fields"
+			errs["sort"] = "Sort must be one of the supported sort fields."
 		}
 	}
 
 	if raw := strings.TrimSpace(values.Get("order")); raw != "" {
 		raw = strings.ToLower(raw)
 		if raw != "asc" && raw != "desc" {
-			errs["order"] = "must be asc or desc"
+			errs["order"] = "Order must be asc or desc."
 		} else {
 			q.Order = raw
 		}

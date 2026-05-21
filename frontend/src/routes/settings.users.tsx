@@ -114,12 +114,12 @@ function SettingsUsersPage() {
     event.preventDefault()
 
     const nextErrors: Partial<Record<keyof CreateUserValues, string>> = {}
-    if (!values.name.trim()) nextErrors.name = 'Name is required'
-    if (!values.email.trim()) nextErrors.email = 'Email is required'
-    if (!values.password) nextErrors.password = 'Password is required'
-    else if (values.password.length < 8) nextErrors.password = 'Password must be at least 8 characters'
-    if (!values.confirmPassword) nextErrors.confirmPassword = 'Confirm the password'
-    else if (values.password !== values.confirmPassword) nextErrors.confirmPassword = 'Passwords do not match'
+    if (!values.name.trim()) nextErrors.name = 'Name is required.'
+    if (!values.email.trim()) nextErrors.email = 'Email is required.'
+    if (!values.password) nextErrors.password = 'Password is required.'
+    else if (values.password.length < 8) nextErrors.password = 'Password must be at least 8 characters.'
+    if (!values.confirmPassword) nextErrors.confirmPassword = 'Confirm the password.'
+    else if (values.password !== values.confirmPassword) nextErrors.confirmPassword = 'Passwords do not match.'
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors)
       return

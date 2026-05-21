@@ -89,12 +89,12 @@ function SetupPage() {
   function validate() {
     const nextErrors: Record<string, string> = {}
 
-    if (!values.name.trim()) nextErrors.name = 'Name is required'
-    if (!values.email.trim()) nextErrors.email = 'Email is required'
-    if (!values.password) nextErrors.password = 'Password is required'
-    else if (values.password.length < 8) nextErrors.password = 'Password must be at least 8 characters'
-    if (!values.confirmPassword) nextErrors.confirmPassword = 'Please confirm the password'
-    else if (values.password !== values.confirmPassword) nextErrors.confirmPassword = 'Passwords do not match'
+    if (!values.name.trim()) nextErrors.name = 'Name is required.'
+    if (!values.email.trim()) nextErrors.email = 'Email is required.'
+    if (!values.password) nextErrors.password = 'Password is required.'
+    else if (values.password.length < 8) nextErrors.password = 'Password must be at least 8 characters.'
+    if (!values.confirmPassword) nextErrors.confirmPassword = 'Please confirm the password.'
+    else if (values.password !== values.confirmPassword) nextErrors.confirmPassword = 'Passwords do not match.'
 
     setLocalErrors(nextErrors)
     return Object.keys(nextErrors).length === 0

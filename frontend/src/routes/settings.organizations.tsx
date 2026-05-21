@@ -103,12 +103,12 @@ function SettingsOrganizationsPage() {
     const name = newOrganizationName.trim()
     const slug = newOrganizationSlug.trim()
     if (!name) {
-      setCreateFieldErrors({ name: 'Organization name is required' })
+      setCreateFieldErrors({ name: 'Organization name is required.' })
       return
     }
 
     if (!slug) {
-      setCreateFieldErrors({ slug: 'Slug is required' })
+      setCreateFieldErrors({ slug: 'Slug is required.' })
       return
     }
 

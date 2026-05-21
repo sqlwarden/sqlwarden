@@ -45,16 +45,16 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 	input.Name = strings.TrimSpace(input.Name)
 	input.Slug = strings.TrimSpace(input.Slug)
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
 
 	slug := input.Slug
 	if slug == "" {
 		slug = slugify(input.Name)
 	}
 
-	input.V.CheckField(slug != "", "slug", "slug is required")
+	input.V.CheckField(slug != "", "slug", "Slug is required.")
 	if slug != "" {
-		input.V.CheckField(isValidSlug(slug), "slug", "slug may only contain lowercase letters, numbers, and hyphens")
+		input.V.CheckField(isValidSlug(slug), "slug", "Slug may only contain lowercase letters, numbers, and hyphens.")
 	}
 
 	if input.V.HasErrors() {
@@ -66,10 +66,10 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if isUniqueViolation(err) {
 			if input.Slug != "" {
-				app.failedDuplicateField(w, r, "slug", "an organization with this slug already exists")
+				app.failedDuplicateField(w, r, "slug", "An organization with this slug already exists.")
 				return
 			}
-			app.failedDuplicateField(w, r, "name", "an organization with this name already exists")
+			app.failedDuplicateField(w, r, "name", "An organization with this name already exists.")
 			return
 		}
 		app.serverError(w, r, err)
@@ -108,7 +108,7 @@ func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
 	})
 	role := strings.TrimSpace(r.URL.Query().Get("role"))
 	if role != "" && role != access.BuiltinOrgOwnerRole && role != access.BuiltinOrgAdminRole && role != access.BuiltinOrgMemberRole {
-		errs["role"] = "must be Organization Owner, Organization Admin, or Organization Member"
+		errs["role"] = "Role must be Organization Owner, Organization Admin, or Organization Member."
 	}
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
@@ -146,7 +146,7 @@ func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.V.CheckField(input.Email != "", "email", "email is required")
+	input.V.CheckField(input.Email != "", "email", "Email is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -259,7 +259,7 @@ func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) 
 		return
 	} else if isLastOwner {
 		v := validator.Validator{}
-		v.AddError("cannot remove the last owner of an organization")
+		v.AddError("Cannot remove the last owner of an organization.")
 		app.failedValidation(w, r, v)
 		return
 	}
@@ -286,8 +286,8 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	input.V.CheckField(input.Role != "", "role", "role is required")
-	input.V.CheckField(input.Role == access.BuiltinOrgOwnerRole || input.Role == access.BuiltinOrgAdminRole, "role", "role must be Organization Owner or Organization Admin")
+	input.V.CheckField(input.Role != "", "role", "Role is required.")
+	input.V.CheckField(input.Role == access.BuiltinOrgOwnerRole || input.Role == access.BuiltinOrgAdminRole, "role", "Role must be Organization Owner or Organization Admin.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -308,7 +308,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 			return
 		} else if isLastOwner {
 			v := validator.Validator{}
-			v.AddError("cannot demote the last owner of an organization")
+			v.AddError("Cannot demote the last owner of an organization.")
 			app.failedValidation(w, r, v)
 			return
 		}

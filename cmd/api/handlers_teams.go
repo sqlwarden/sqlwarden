@@ -57,10 +57,10 @@ func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
-	input.V.CheckField(input.Slug != "", "slug", "slug is required")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	input.V.CheckField(input.Slug != "", "slug", "Slug is required.")
 	if input.Slug != "" {
-		input.V.CheckField(isValidSlug(input.Slug), "slug", "slug may only contain lowercase letters, numbers, and hyphens")
+		input.V.CheckField(isValidSlug(input.Slug), "slug", "Slug may only contain lowercase letters, numbers, and hyphens.")
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -72,7 +72,7 @@ func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
 	team, err := app.db.InsertTeam(context.Background(), org.ID, slug, input.Name)
 	if err != nil {
 		if isUniqueViolation(err) {
-			app.failedDuplicateField(w, r, "slug", "a team with this slug already exists in this organization")
+			app.failedDuplicateField(w, r, "slug", "A team with this slug already exists in this organization.")
 			return
 		}
 		app.serverError(w, r, err)
@@ -117,9 +117,9 @@ func (app *application) updateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "name is required")
-	input.V.CheckField(input.Slug == nil, "slug", "is immutable")
-	input.V.CheckField(input.OrgID == nil, "org_id", "is immutable")
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	input.V.CheckField(input.Slug == nil, "slug", "Slug is immutable.")
+	input.V.CheckField(input.OrgID == nil, "org_id", "Organization is immutable.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -222,7 +222,7 @@ func (app *application) addTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.V.CheckField(input.AccountID > 0, "account_id", "account_id is required")
+	input.V.CheckField(input.AccountID > 0, "account_id", "Account is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
