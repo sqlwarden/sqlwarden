@@ -7,6 +7,7 @@ import {
   Settings02Icon,
   ShieldUserIcon,
   User02Icon,
+  UserMultiple02Icon,
 } from '@hugeicons/core-free-icons'
 import {
   AppShellContent,
@@ -33,6 +34,7 @@ const accountItems: AppShellNavItem[] = [
 ]
 
 const adminItems: AppShellNavItem[] = [
+  { to: '/settings/users', label: 'Users', icon: UserMultiple02Icon },
   { to: '/settings/administrators', label: 'Administrators', icon: ShieldUserIcon },
   { to: '/settings/organizations', label: 'Organizations', icon: Building04Icon },
 ]

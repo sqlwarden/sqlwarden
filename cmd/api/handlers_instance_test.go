@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/database"
 )
 
 // setupInstance calls POST /api/setup and returns the access token.
@@ -352,6 +353,89 @@ func TestListOrganizationsRequiresInstanceAdmin(t *testing.T) {
 
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/orgs", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+}
+
+func TestListInstanceAccounts(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+	assert.Equal(t, registerTestUser(t, app, "zeta-account@example.com", "Zeta Account", "securepass99").StatusCode, http.StatusCreated)
+	assert.Equal(t, registerTestUser(t, app, "alpha-account@example.com", "Alpha Account", "securepass99").StatusCode, http.StatusCreated)
+
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/accounts?q=account&sort=email&order=asc&page=1&page_size=1", nil, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	if err := json.Unmarshal(res.BodyBytes, &payload); err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 1)
+	assert.Equal(t, payload.Total, 2)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["email"], "alpha-account@example.com")
+}
+
+func TestCreateInstanceAccount(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/instance/accounts",
+		map[string]any{"email": "created@example.com", "name": "Created User", "password": "securepass99"}, adminTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	assert.Equal(t, createRes.BodyFields["email"], "created@example.com")
+	assert.Equal(t, createRes.BodyFields["name"], "Created User")
+
+	loginRes := loginTestUser(t, app, "created@example.com", "securepass99")
+	assert.Equal(t, loginRes.StatusCode, http.StatusOK)
+
+	account, found, err := app.db.GetAccountByEmail(t.Context(), "created@example.com")
+	assert.Nil(t, err)
+	assert.True(t, found)
+	orgs, err := app.db.ListAccountOrgsPage(t.Context(), database.ListAccountOrgsParams{AccountID: account.ID, Page: 1, PageSize: 10})
+	assert.Nil(t, err)
+	assert.Equal(t, orgs.Total, 0)
+}
+
+func TestCreateInstanceAccountDuplicateAndValidation(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+	duplicateRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/instance/accounts",
+		map[string]any{"email": "admin@example.com", "name": "Admin Again", "password": "securepass99"}, adminTok), app.routes())
+	assert.Equal(t, duplicateRes.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, duplicateRes, "email")
+
+	invalidRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/instance/accounts",
+		map[string]any{"email": "not-an-email", "name": "", "password": "short"}, adminTok), app.routes())
+	assert.Equal(t, invalidRes.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, invalidRes, "email")
+	assertValidationField(t, invalidRes, "name")
+	assertValidationField(t, invalidRes, "password")
+}
+
+func TestInstanceAccountsRequireInstanceAdmin(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+	assert.Equal(t, registerTestUser(t, app, "regular@example.com", "Regular", "securepass99").StatusCode, http.StatusCreated)
+	loginRes := loginTestUser(t, app, "regular@example.com", "securepass99")
+	tok := extractAccessToken(t, loginRes)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/accounts", nil, tok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusForbidden)
+	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/instance/accounts",
+		map[string]any{"email": "created@example.com", "name": "Created User", "password": "securepass99"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusForbidden)
 }
 
 func TestAddInstanceAdmin(t *testing.T) {

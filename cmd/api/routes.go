@@ -35,10 +35,12 @@ func (app *application) routes() http.Handler {
 		r.Route("/instance", func(r chi.Router) {
 			r.Use(app.requireAccount, app.requireInstanceAdmin)
 			r.Get("/admins", app.listInstanceAdmins)
+			r.Get("/accounts", app.listInstanceAccounts)
 			r.Get("/orgs", app.listOrganizations)
 			r.Get("/settings", app.getInstanceSettings)
 			r.Patch("/settings", app.updateInstanceSettings)
 			r.Post("/admins", app.addInstanceAdmin)
+			r.Post("/accounts", app.createInstanceAccount)
 			r.Delete("/admins/{account_id}", app.removeInstanceAdmin)
 		})
 

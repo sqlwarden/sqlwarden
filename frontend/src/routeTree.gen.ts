@@ -18,6 +18,7 @@ import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as AdministrationIndexRouteImport } from './routes/administration.index'
+import { Route as SettingsUsersRouteImport } from './routes/settings.users'
 import { Route as SettingsProfileRouteImport } from './routes/settings.profile'
 import { Route as SettingsOrganizationsRouteImport } from './routes/settings.organizations'
 import { Route as SettingsMyOrganizationsRouteImport } from './routes/settings.my-organizations'
@@ -94,6 +95,11 @@ const AdministrationIndexRoute = AdministrationIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdministrationRoute,
+} as any)
+const SettingsUsersRoute = SettingsUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsProfileRoute = SettingsProfileRouteImport.update({
   id: '/profile',
@@ -283,6 +289,7 @@ export interface FileRoutesByFullPath {
   '/settings/my-organizations': typeof SettingsMyOrganizationsRoute
   '/settings/organizations': typeof SettingsOrganizationsRoute
   '/settings/profile': typeof SettingsProfileRoute
+  '/settings/users': typeof SettingsUsersRoute
   '/administration/': typeof AdministrationIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/orgs/$org_slug/ide': typeof OrgsOrg_slugIdeRoute
@@ -322,6 +329,7 @@ export interface FileRoutesByTo {
   '/settings/my-organizations': typeof SettingsMyOrganizationsRoute
   '/settings/organizations': typeof SettingsOrganizationsRoute
   '/settings/profile': typeof SettingsProfileRoute
+  '/settings/users': typeof SettingsUsersRoute
   '/administration': typeof AdministrationIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/orgs/$org_slug/ide': typeof OrgsOrg_slugIdeRoute
@@ -365,6 +373,7 @@ export interface FileRoutesById {
   '/settings/my-organizations': typeof SettingsMyOrganizationsRoute
   '/settings/organizations': typeof SettingsOrganizationsRoute
   '/settings/profile': typeof SettingsProfileRoute
+  '/settings/users': typeof SettingsUsersRoute
   '/administration/': typeof AdministrationIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/orgs/$org_slug/ide': typeof OrgsOrg_slugIdeRoute
@@ -409,6 +418,7 @@ export interface FileRouteTypes {
     | '/settings/my-organizations'
     | '/settings/organizations'
     | '/settings/profile'
+    | '/settings/users'
     | '/administration/'
     | '/settings/'
     | '/orgs/$org_slug/ide'
@@ -448,6 +458,7 @@ export interface FileRouteTypes {
     | '/settings/my-organizations'
     | '/settings/organizations'
     | '/settings/profile'
+    | '/settings/users'
     | '/administration'
     | '/settings'
     | '/orgs/$org_slug/ide'
@@ -490,6 +501,7 @@ export interface FileRouteTypes {
     | '/settings/my-organizations'
     | '/settings/organizations'
     | '/settings/profile'
+    | '/settings/users'
     | '/administration/'
     | '/settings/'
     | '/orgs/$org_slug/ide'
@@ -590,6 +602,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/administration/'
       preLoaderRoute: typeof AdministrationIndexRouteImport
       parentRoute: typeof AdministrationRoute
+    }
+    '/settings/users': {
+      id: '/settings/users'
+      path: '/users'
+      fullPath: '/settings/users'
+      preLoaderRoute: typeof SettingsUsersRouteImport
+      parentRoute: typeof SettingsRoute
     }
     '/settings/profile': {
       id: '/settings/profile'
@@ -836,6 +855,7 @@ interface SettingsRouteChildren {
   SettingsMyOrganizationsRoute: typeof SettingsMyOrganizationsRoute
   SettingsOrganizationsRoute: typeof SettingsOrganizationsRoute
   SettingsProfileRoute: typeof SettingsProfileRoute
+  SettingsUsersRoute: typeof SettingsUsersRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
 
@@ -846,6 +866,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsMyOrganizationsRoute: SettingsMyOrganizationsRoute,
   SettingsOrganizationsRoute: SettingsOrganizationsRoute,
   SettingsProfileRoute: SettingsProfileRoute,
+  SettingsUsersRoute: SettingsUsersRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }
 

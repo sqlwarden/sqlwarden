@@ -4,7 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
+
+	"github.com/sqlwarden/internal/response"
 )
 
 type Account struct {
@@ -15,6 +19,14 @@ type Account struct {
 	IsActive  bool      `bun:",notnull,default:true"  json:"is_active"`
 	CreatedAt time.Time `bun:",notnull"               json:"created_at"`
 	UpdatedAt time.Time `bun:",notnull"               json:"updated_at"`
+}
+
+type ListAccountsParams struct {
+	Search   string
+	Sort     string
+	Order    string
+	Page     int
+	PageSize int
 }
 
 func (db *DB) InsertAccount(ctx context.Context, email, name string, password *string) (Account, error) {
@@ -67,6 +79,25 @@ func (db *DB) GetAccountByEmail(ctx context.Context, email string) (Account, boo
 	return account, true, nil
 }
 
+func (db *DB) ListAccountsPage(ctx context.Context, params ListAccountsParams) (response.Paginated[Account], error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	params = normalizeAccountListParams(params)
+
+	var accounts []Account
+	query := db.NewSelect().Model(&accounts)
+	if params.Search != "" {
+		search := "%" + strings.ToLower(params.Search) + "%"
+		query = query.Where("(LOWER(email) LIKE ? OR LOWER(name) LIKE ?)", search, search)
+	}
+	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", accountSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx)
+	if err != nil {
+		return response.Paginated[Account]{}, err
+	}
+	return response.PaginateItems(accounts, params.Page, params.PageSize), nil
+}
+
 func (db *DB) UpdateAccountPassword(ctx context.Context, id int64, hashedPassword string) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -91,4 +122,38 @@ func (db *DB) DeactivateAccount(ctx context.Context, id int64) error {
 		Where("id = ?", id).
 		Exec(ctx)
 	return err
+}
+
+func normalizeAccountListParams(params ListAccountsParams) ListAccountsParams {
+	switch params.Sort {
+	case "id", "email", "name", "created_at":
+	default:
+		params.Sort = "created_at"
+	}
+	switch params.Order {
+	case "asc", "desc":
+	default:
+		params.Order = "desc"
+	}
+	params.Search = strings.TrimSpace(params.Search)
+	if params.Page < 1 {
+		params.Page = 1
+	}
+	if params.PageSize < 1 {
+		params.PageSize = 25
+	}
+	return params
+}
+
+func accountSortColumn(sort string) string {
+	switch sort {
+	case "id":
+		return "id"
+	case "email":
+		return "email"
+	case "name":
+		return "name"
+	default:
+		return "created_at"
+	}
 }

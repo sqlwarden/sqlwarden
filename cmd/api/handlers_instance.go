@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/database"
@@ -164,6 +165,94 @@ func (app *application) listOrganizations(w http.ResponseWriter, r *http.Request
 		return
 	}
 	err = response.JSON(w, http.StatusOK, orgs)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) listInstanceAccounts(w http.ResponseWriter, r *http.Request) {
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"id":         "id",
+		"email":      "email",
+		"name":       "name",
+		"created_at": "created_at",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	accounts, err := app.db.ListAccountsPage(r.Context(), database.ListAccountsParams{
+		Search:   q.Search,
+		Sort:     q.Sort,
+		Order:    q.Order,
+		Page:     q.Page,
+		PageSize: q.PageSize,
+	})
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	err = response.JSON(w, http.StatusOK, accounts)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) createInstanceAccount(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Name     string              `json:"name"`
+		Email    string              `json:"email"`
+		Password string              `json:"password"`
+		V        validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	input.Name = strings.TrimSpace(input.Name)
+	input.Email = strings.TrimSpace(input.Email)
+
+	input.V.CheckField(input.Name != "", "name", "name is required")
+	input.V.CheckField(input.Email != "", "email", "email is required")
+	input.V.CheckField(input.Email == "" || validator.IsEmail(input.Email), "email", "must be a valid email address")
+	input.V.CheckField(len(input.Password) >= 8, "password", "password must be at least 8 characters")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	_, exists, err := app.db.GetAccountByEmail(r.Context(), input.Email)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if exists {
+		input.V.AddFieldError("email", "email address is already in use")
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	hashedPassword, err := password.Hash(input.Password)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	account, err := app.db.InsertAccount(r.Context(), input.Email, input.Name, &hashedPassword)
+	if err != nil {
+		if isUniqueViolation(err) {
+			input.V.AddFieldError("email", "email address is already in use")
+			app.failedValidation(w, r, input.V)
+			return
+		}
+		app.serverError(w, r, err)
+		return
+	}
+	err = response.JSON(w, http.StatusCreated, account)
 	if err != nil {
 		app.serverError(w, r, err)
 	}

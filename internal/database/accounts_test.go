@@ -108,6 +108,37 @@ func TestDeactivateAccount(t *testing.T) {
 	}
 }
 
+func TestListAccountsPage(t *testing.T) {
+	drivers := []string{"postgres", "sqlite"}
+
+	for _, driver := range drivers {
+		t.Run(driver+": Supports search sort and pagination", func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			pw := "hashed"
+			_, err := db.InsertAccount(context.Background(), "zeta-user@example.com", "Zeta User", &pw)
+			assert.Nil(t, err)
+			_, err = db.InsertAccount(context.Background(), "alpha-user@example.com", "Alpha User", &pw)
+			assert.Nil(t, err)
+			_, err = db.InsertAccount(context.Background(), "beta-user@example.com", "Beta User", &pw)
+			assert.Nil(t, err)
+
+			result, err := db.ListAccountsPage(context.Background(), ListAccountsParams{
+				Search:   "user",
+				Sort:     "email",
+				Order:    "asc",
+				Page:     1,
+				PageSize: 2,
+			})
+			assert.Nil(t, err)
+			assert.Equal(t, result.Total, 3)
+			assert.Equal(t, len(result.Items), 2)
+			assert.Equal(t, result.Items[0].Email, "alpha-user@example.com")
+			assert.Equal(t, result.Items[1].Email, "beta-user@example.com")
+		})
+	}
+}
+
 func TestAccountPasswordAbsentFromJSON(t *testing.T) {
 	pw := "secret"
 	account := Account{
