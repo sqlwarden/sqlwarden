@@ -11,8 +11,8 @@ import {
 } from '@hugeicons/core-free-icons'
 import type { SessionResponse } from '#/lib/api/types'
 import { api } from '#/lib/api/client'
-import { queryKeys } from '#/lib/api/query'
 import { clearAccessToken } from '#/lib/auth/access-token'
+import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { useTheme } from '#/components/theme-provider'
 import { Button } from '#/components/ui/button'
@@ -220,7 +220,7 @@ function AppShellUserMenu({
     mutationFn: async () => api.post<void>('/api/v1/auth/logout'),
     onSettled: async () => {
       clearAccessToken()
-      await queryClient.invalidateQueries({ queryKey: queryKeys.session() })
+      clearAuthScopedQueryCache(queryClient)
       await navigate({ to: '/login', replace: true })
     },
   })

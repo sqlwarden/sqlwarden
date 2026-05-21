@@ -8,11 +8,11 @@ import { api } from '#/lib/api/client'
 import type { AccessTokenResponse } from '#/lib/api/types'
 import { isApiError } from '#/lib/api/errors'
 import { getAccessToken, setAccessToken } from '#/lib/auth/access-token'
+import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
-import { queryKeys } from '#/lib/api/query'
 
 export const Route = createFileRoute('/login')({
   component: LoginPage,
@@ -38,8 +38,8 @@ function LoginPage() {
         { skipAuth: true },
       ),
     onSuccess: async (payload) => {
+      clearAuthScopedQueryCache(queryClient)
       setAccessToken(payload.access_token)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.session() })
       await navigate({ to: '/account', replace: true })
     },
     onError: (error) => {

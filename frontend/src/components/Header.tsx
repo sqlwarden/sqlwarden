@@ -6,7 +6,7 @@ import { Briefcase01Icon, Logout01Icon, PanelLeftIcon, Settings01Icon, User02Ico
 import { useSession } from '#/hooks/use-session'
 import { api } from '#/lib/api/client'
 import { clearAccessToken, getAccessToken } from '#/lib/auth/access-token'
-import { queryKeys } from '#/lib/api/query'
+import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { useLayoutWidth } from '#/components/layout-width-provider'
 import { Button } from '#/components/ui/button'
 import {
@@ -31,7 +31,7 @@ export default function Header() {
     mutationFn: async () => api.post<void>('/api/v1/auth/logout'),
     onSettled: async () => {
       clearAccessToken()
-      await queryClient.invalidateQueries({ queryKey: queryKeys.session() })
+      clearAuthScopedQueryCache(queryClient)
       await navigate({ to: '/login', replace: true })
     },
   })
