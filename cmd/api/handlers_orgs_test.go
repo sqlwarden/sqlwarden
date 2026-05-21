@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
 	"testing"
 
@@ -105,6 +106,47 @@ func TestListOrgMembers_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	assert.Equal(t, len(payload.Items), 1)
 	assert.Equal(t, payload.Items[0]["name"], "Alice Analyst")
 	assert.Equal(t, payload.Items[0]["role"], access.BuiltinOrgAdminRole)
+}
+
+func TestListOrgMemberCandidates(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, ownerTok, slug := registerAndLogin(t, app, uniqueEmail(t, "org-candidates-owner"), "Owner User", "securepass99")
+	candidate, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-candidates-alice"), "Alice Candidate")
+	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-candidates-bob"), "Bob Member")
+
+	addMemberRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
+		map[string]any{"account_id": member.ID}, ownerTok), app.routes())
+	assert.Equal(t, addMemberRes.StatusCode, http.StatusNoContent)
+
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members/candidates?q="+url.QueryEscape(candidate.Email)+"&sort=name&order=asc&page=1&page_size=10", nil, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["email"].(string), candidate.Email)
+}
+
+func TestAddOrgMemberByAccountID(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, ownerTok, slug := registerAndLogin(t, app, uniqueEmail(t, "org-add-id-owner"), "Owner User", "securepass99")
+	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-add-id-member"), "Member User")
+
+	addMemberRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
+		map[string]any{"account_id": member.ID}, ownerTok), app.routes())
+	assert.Equal(t, addMemberRes.StatusCode, http.StatusNoContent)
+
+	getMemberRes := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members/"+strconv.FormatInt(member.ID, 10), ownerTok), app.routes())
+	assert.Equal(t, getMemberRes.StatusCode, http.StatusOK)
+	assert.Equal(t, getMemberRes.BodyFields["email"].(string), member.Email)
 }
 
 func TestGetOrgMemberAndTeams(t *testing.T) {

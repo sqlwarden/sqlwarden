@@ -139,6 +139,39 @@ func TestListAccountsPage(t *testing.T) {
 	}
 }
 
+func TestListAccountsPage_ExcludesOrganizationMembers(t *testing.T) {
+	drivers := []string{"postgres", "sqlite"}
+
+	for _, driver := range drivers {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			pw := "hashed"
+			org, err := db.InsertOrg(context.Background(), "exclude-org", "Exclude Org")
+			assert.Nil(t, err)
+			member, err := db.InsertAccount(context.Background(), "member@example.com", "Member User", &pw)
+			assert.Nil(t, err)
+			candidate, err := db.InsertAccount(context.Background(), "candidate@example.com", "Candidate User", &pw)
+			assert.Nil(t, err)
+			err = db.AddOrgMember(context.Background(), org.ID, member.ID)
+			assert.Nil(t, err)
+
+			result, err := db.ListAccountsPage(context.Background(), ListAccountsParams{
+				ExcludeOrgID: org.ID,
+				Search:       "user",
+				Sort:         "email",
+				Order:        "asc",
+				Page:         1,
+				PageSize:     10,
+			})
+			assert.Nil(t, err)
+			assert.Equal(t, result.Total, 1)
+			assert.Equal(t, len(result.Items), 1)
+			assert.Equal(t, result.Items[0].ID, candidate.ID)
+		})
+	}
+}
+
 func TestAccountPasswordAbsentFromJSON(t *testing.T) {
 	pw := "secret"
 	account := Account{

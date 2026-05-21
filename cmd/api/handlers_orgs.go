@@ -134,10 +134,42 @@ func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (app *application) listOrgMemberCandidates(w http.ResponseWriter, r *http.Request) {
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"id":         "id",
+		"email":      "email",
+		"name":       "name",
+		"created_at": "created_at",
+	})
+	if len(errs) > 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	org := contextGetOrg(r)
+	accounts, err := app.db.ListAccountsPage(r.Context(), database.ListAccountsParams{
+		ExcludeOrgID: org.ID,
+		Search:       q.Search,
+		Sort:         q.Sort,
+		Order:        q.Order,
+		Page:         q.Page,
+		PageSize:     q.PageSize,
+	})
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	err = response.JSON(w, http.StatusOK, accounts)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Email string              `json:"email"`
-		V     validator.Validator `json:"-"`
+		AccountID int64               `json:"account_id"`
+		Email     string              `json:"email"`
+		V         validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -146,14 +178,23 @@ func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.V.CheckField(input.Email != "", "email", "Email is required.")
+	input.Email = strings.TrimSpace(input.Email)
+	input.V.CheckField(input.AccountID > 0 || input.Email != "", "account", "Select a user.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
 	}
 
 	org := contextGetOrg(r)
-	account, found, err := app.db.GetAccountByEmail(r.Context(), input.Email)
+	var (
+		account database.Account
+		found   bool
+	)
+	if input.AccountID > 0 {
+		account, found, err = app.db.GetAccount(r.Context(), input.AccountID)
+	} else {
+		account, found, err = app.db.GetAccountByEmail(r.Context(), input.Email)
+	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return

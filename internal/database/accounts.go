@@ -22,11 +22,12 @@ type Account struct {
 }
 
 type ListAccountsParams struct {
-	Search   string
-	Sort     string
-	Order    string
-	Page     int
-	PageSize int
+	ExcludeOrgID int64
+	Search       string
+	Sort         string
+	Order        string
+	Page         int
+	PageSize     int
 }
 
 func (db *DB) InsertAccount(ctx context.Context, email, name string, password *string) (Account, error) {
@@ -87,6 +88,14 @@ func (db *DB) ListAccountsPage(ctx context.Context, params ListAccountsParams) (
 
 	var accounts []Account
 	query := db.NewSelect().Model(&accounts)
+	if params.ExcludeOrgID > 0 {
+		query = query.Where(`
+NOT EXISTS (
+	SELECT 1
+	FROM org_members AS om
+	WHERE om.org_id = ? AND om.account_id = account.id
+)`, params.ExcludeOrgID)
+	}
 	if params.Search != "" {
 		search := "%" + strings.ToLower(params.Search) + "%"
 		query = query.Where("(LOWER(email) LIKE ? OR LOWER(name) LIKE ?)", search, search)

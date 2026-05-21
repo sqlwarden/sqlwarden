@@ -14,6 +14,7 @@ export const queryKeys = {
   orgPermissions: (slug: string) => ['org-permissions', slug] as const,
   org: (slug: string) => ['org', slug] as const,
   orgMembers: (slug: string, query?: ListQuery) => ['org-members', slug, query ?? {}] as const,
+  orgMemberCandidates: (slug: string, query?: ListQuery) => ['org-member-candidates', slug, query ?? {}] as const,
   orgMember: (slug: string, accountId: string | number) => ['org-member', slug, accountId] as const,
   orgMemberTeams: (slug: string, accountId: string | number, query?: ListQuery) =>
     ['org-member-teams', slug, accountId, query ?? {}] as const,
@@ -134,6 +135,14 @@ export function orgMembersQueryOptions(slug: string, query?: ListQuery) {
   return queryOptions({
     queryKey: queryKeys.orgMembers(slug, query),
     queryFn: () => api.get<Paginated<OrgMember>>(`/api/v1/orgs/${slug}/members`, { query }),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function orgMemberCandidatesQueryOptions(slug: string, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgMemberCandidates(slug, query),
+    queryFn: () => api.get<Paginated<Account>>(`/api/v1/orgs/${slug}/members/candidates`, { query }),
     placeholderData: keepPreviousData,
   })
 }

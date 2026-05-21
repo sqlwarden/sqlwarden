@@ -117,6 +117,7 @@ func (app *application) routes() http.Handler {
 
 			r.Route("/members", func(r chi.Router) {
 				r.With(app.requirePermission("org:read")).Get("/", app.listOrgMembers)
+				r.With(app.requirePermission("org:invite")).Get("/candidates", app.listOrgMemberCandidates)
 				r.With(app.requirePermission("org:invite")).Post("/", app.addOrgMember)
 				r.With(app.requirePermission("org:read")).Get("/{account_id}", app.getOrgMember)
 				r.With(app.requirePermission("org:read")).Get("/{account_id}/teams", app.listOrgMemberTeams)
