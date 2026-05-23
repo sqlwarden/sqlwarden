@@ -80,25 +80,13 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 		}
 		params.EnvironmentID = &envID
 	}
-	var (
-		result response.Paginated[database.Connection]
-		err    error
-	)
-	if app.config.DesktopMode {
-		result, err = app.db.ListConnectionsPage(context.Background(), params)
-	} else {
-		account := contextGetAccount(r)
-		conns, err := app.db.ListAccessibleConnections(context.Background(), account.ID, org.ID, ws.ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		result = filterAccessibleConnections(conns, params)
-	}
+	account := contextGetAccount(r)
+	conns, err := app.db.ListAccessibleConnections(r.Context(), account.ID, org.ID, ws.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
+	result := filterAccessibleConnections(conns, params)
 
 	err = response.JSON(w, http.StatusOK, result)
 	if err != nil {
@@ -284,7 +272,7 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 	conn := contextGetConnection(r)
 	ws := contextGetWorkspace(r)
-	if ws.OwnerType == "org" && !app.config.DesktopMode {
+	if ws.OwnerType == "org" {
 		account := contextGetAccount(r)
 		org := contextGetOrg(r)
 		ok, err := app.db.HasAccessibleConnection(r.Context(), account.ID, org.ID, ws.ID, conn.ID)

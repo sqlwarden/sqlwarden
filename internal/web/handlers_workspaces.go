@@ -23,30 +23,13 @@ func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var (
-		result response.Paginated[database.Workspace]
-		err    error
-	)
-	if app.config.DesktopMode {
-		result, err = app.db.ListWorkspacesPage(r.Context(), database.ListWorkspacesParams{
-			OwnerType: "org",
-			OwnerID:   org.ID,
-			Search:    q.Search,
-			Name:      name,
-			Sort:      q.Sort,
-			Order:     q.Order,
-			Page:      q.Page,
-			PageSize:  q.PageSize,
-		})
-	} else {
-		account := contextGetAccount(r)
-		var workspaces []database.Workspace
-		workspaces, err = app.db.ListAccessibleWorkspaces(r.Context(), account.ID, org.ID)
-		if err == nil {
-			workspaces = filterAccessibleWorkspaces(workspaces, q.Search, name, q.Sort, q.Order)
-			result = response.PaginateItems(workspaces, q.Page, q.PageSize)
-			err = app.db.PopulateWorkspaceCounts(r.Context(), result.Items)
-		}
+	account := contextGetAccount(r)
+	workspaces, err := app.db.ListAccessibleWorkspaces(r.Context(), account.ID, org.ID)
+	var result response.Paginated[database.Workspace]
+	if err == nil {
+		workspaces = filterAccessibleWorkspaces(workspaces, q.Search, name, q.Sort, q.Order)
+		result = response.PaginateItems(workspaces, q.Page, q.PageSize)
+		err = app.db.PopulateWorkspaceCounts(r.Context(), result.Items)
 	}
 	if err != nil {
 		app.serverError(w, r, err)
@@ -159,7 +142,7 @@ func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) 
 
 func (app *application) getWorkspace(w http.ResponseWriter, r *http.Request) {
 	ws := contextGetWorkspace(r)
-	if ws.OwnerType == "org" && !app.config.DesktopMode {
+	if ws.OwnerType == "org" {
 		account := contextGetAccount(r)
 		org := contextGetOrg(r)
 		ok, err := app.db.HasAccessibleWorkspace(r.Context(), account.ID, org.ID, ws.ID)

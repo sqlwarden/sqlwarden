@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
 )
@@ -43,6 +44,58 @@ func TestSetupCreatesFirstInstanceAdmin(t *testing.T) {
 	assert.Equal(t, hasToken, true)
 	_, hasAccount := res.BodyFields["account"]
 	assert.Equal(t, hasAccount, true)
+}
+
+func TestSetupInMultiUserModeDoesNotSeedOrganization(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.config.AccessMode = AccessModeMultiUser
+
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	account, found, err := app.db.GetAccountByEmail(t.Context(), "admin@example.com")
+	assert.Nil(t, err)
+	assert.True(t, found)
+
+	orgs, err := app.db.ListAccountOrgsPage(t.Context(), database.ListAccountOrgsParams{
+		AccountID: account.ID,
+		Page:      1,
+		PageSize:  10,
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, orgs.Total, 0)
+}
+
+func TestSetupInSingleUserModeSeedsLocalOrganizationAndOwnerPolicy(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.config.AccessMode = AccessModeSingleUser
+
+	token := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	account, found, err := app.db.GetAccountByEmail(t.Context(), "admin@example.com")
+	assert.Nil(t, err)
+	assert.True(t, found)
+
+	orgs, err := app.db.ListAccountOrgsPage(t.Context(), database.ListAccountOrgsParams{
+		AccountID: account.ID,
+		Page:      1,
+		PageSize:  10,
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, orgs.Total, 1)
+	assert.Equal(t, orgs.Items[0].Slug, singleUserDefaultOrgSlug)
+	assert.Equal(t, orgs.Items[0].Name, singleUserDefaultOrgName)
+	assert.Equal(t, orgs.Items[0].Role, access.BuiltinOrgOwnerRole)
+
+	createWorkspaceRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/local/workspaces", map[string]any{
+		"name": "Default",
+	}, token), app.routes())
+	assert.Equal(t, createWorkspaceRes.StatusCode, http.StatusCreated)
+
+	listWorkspaceRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/local/workspaces", nil, token), app.routes())
+	assert.Equal(t, listWorkspaceRes.StatusCode, http.StatusOK)
+	assert.Equal(t, int(listWorkspaceRes.BodyFields["total"].(float64)), 1)
 }
 
 func TestSetupStatus(t *testing.T) {

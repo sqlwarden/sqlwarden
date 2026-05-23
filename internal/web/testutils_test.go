@@ -52,6 +52,8 @@ func newTestApplication(t *testing.T) *application {
 	app.config.JWT.SecretKey = "k7mp29rf4qxhwn8vbtaj6pgucmve53y9"
 	app.config.JWT.AccessTokenTTL = 24 * time.Hour
 	app.config.BaseURL = "https://www.example.com"
+	app.config.DeploymentMode = DeploymentModeServer
+	app.config.AccessMode = AccessModeMultiUser
 	app.config.PersonalSpacesEnabled = true
 
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))

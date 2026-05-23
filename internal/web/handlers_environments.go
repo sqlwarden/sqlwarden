@@ -25,28 +25,12 @@ func (app *application) listEnvironments(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var (
-		result response.Paginated[database.Environment]
-		err    error
-	)
-	if app.config.DesktopMode {
-		result, err = app.db.ListEnvironmentsPage(r.Context(), database.ListEnvironmentsParams{
-			WorkspaceID: ws.ID,
-			Search:      q.Search,
-			Name:        name,
-			Sort:        q.Sort,
-			Order:       q.Order,
-			Page:        q.Page,
-			PageSize:    q.PageSize,
-		})
-	} else {
-		account := contextGetAccount(r)
-		var envs []database.Environment
-		envs, err = app.db.ListAccessibleEnvironments(r.Context(), account.ID, org.ID, ws.ID)
-		if err == nil {
-			envs = filterAndSortAccessibleEnvironments(envs, q.Search, name, q.Sort, q.Order)
-			result = response.PaginateItems(envs, q.Page, q.PageSize)
-		}
+	account := contextGetAccount(r)
+	envs, err := app.db.ListAccessibleEnvironments(r.Context(), account.ID, org.ID, ws.ID)
+	var result response.Paginated[database.Environment]
+	if err == nil {
+		envs = filterAndSortAccessibleEnvironments(envs, q.Search, name, q.Sort, q.Order)
+		result = response.PaginateItems(envs, q.Page, q.PageSize)
 	}
 	if err != nil {
 		app.serverError(w, r, err)
@@ -145,7 +129,7 @@ func (app *application) createEnvironment(w http.ResponseWriter, r *http.Request
 func (app *application) getEnvironment(w http.ResponseWriter, r *http.Request) {
 	env := contextGetEnvironment(r)
 	ws := contextGetWorkspace(r)
-	if ws.OwnerType == "org" && !app.config.DesktopMode {
+	if ws.OwnerType == "org" {
 		account := contextGetAccount(r)
 		org := contextGetOrg(r)
 		ok, err := app.db.HasAccessibleEnvironment(r.Context(), account.ID, org.ID, ws.ID, env.ID)

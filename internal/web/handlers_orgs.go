@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,30 @@ import (
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
 )
+
+const (
+	singleUserDefaultOrgName = "Local"
+	singleUserDefaultOrgSlug = "local"
+)
+
+func (app *application) createOwnedOrganization(ctx context.Context, slug, name string, ownerAccountID int64) (database.Organization, error) {
+	org, err := app.db.InsertOrg(ctx, slug, name)
+	if err != nil {
+		return database.Organization{}, err
+	}
+
+	err = app.db.AddOrgMember(ctx, org.ID, ownerAccountID)
+	if err != nil {
+		return database.Organization{}, err
+	}
+
+	err = app.enforcer.SeedOrg(ctx, org.ID, ownerAccountID)
+	if err != nil {
+		return database.Organization{}, err
+	}
+
+	return org, nil
+}
 
 func (app *application) getOrg(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
@@ -62,7 +87,8 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	org, err := app.db.InsertOrg(r.Context(), slug, input.Name)
+	account := contextGetAccount(r)
+	org, err := app.createOwnedOrganization(r.Context(), slug, input.Name, account.ID)
 	if err != nil {
 		if isUniqueViolation(err) {
 			if input.Slug != "" {
@@ -72,23 +98,6 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 			app.failedDuplicateField(w, r, "name", "An organization with this name already exists.")
 			return
 		}
-		app.serverError(w, r, err)
-		return
-	}
-
-	account := contextGetAccount(r)
-	err = app.db.AddOrgMember(r.Context(), org.ID, account.ID)
-	if err != nil {
-		if isUniqueViolation(err) {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		app.serverError(w, r, err)
-		return
-	}
-
-	err = app.enforcer.SeedOrg(r.Context(), org.ID, account.ID)
-	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}

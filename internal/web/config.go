@@ -12,7 +12,8 @@ import (
 const (
 	defaultBaseURL               = "http://localhost:6020"
 	defaultHTTPPort              = 6020
-	defaultDesktopMode           = false
+	defaultDeploymentMode        = DeploymentModeServer
+	defaultAccessMode            = AccessModeMultiUser
 	defaultPersonalSpacesEnabled = true
 	defaultCookieSecretKey       = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
 	defaultDBLogQueries          = false
@@ -28,12 +29,31 @@ const (
 	defaultSMTPUsername          = "example_username"
 	defaultSMTPPassword          = "pa55word"
 	defaultSMTPFrom              = "Example Name <no_reply@example.org>"
+	defaultDesktopAppDir         = ""
+	defaultDesktopActiveBackend  = "local"
+	defaultAllowUserBackends     = true
+)
+
+const (
+	DeploymentModeServer  = "server"
+	DeploymentModeDesktop = "desktop"
+)
+
+const (
+	AccessModeMultiUser  = "multi_user"
+	AccessModeSingleUser = "single_user"
+)
+
+const (
+	DesktopBackendKindLocal  = "local"
+	DesktopBackendKindRemote = "remote"
 )
 
 type Config struct {
 	BaseURL               string
 	HTTPPort              int
-	DesktopMode           bool
+	DeploymentMode        string
+	AccessMode            string
 	PersonalSpacesEnabled bool
 	Cookie                struct {
 		SecretKey string
@@ -61,13 +81,30 @@ type Config struct {
 		Password string
 		From     string
 	}
+	Desktop struct {
+		AppDir            string
+		ActiveBackend     string
+		AllowUserBackends bool
+		Backends          []DesktopBackend
+	}
+}
+
+type DesktopBackend struct {
+	ID          string `mapstructure:"id"`
+	Name        string `mapstructure:"name"`
+	Kind        string `mapstructure:"kind"`
+	URL         string `mapstructure:"url"`
+	Environment string `mapstructure:"environment"`
+	AccessMode  string `mapstructure:"access_mode"`
+	Locked      bool   `mapstructure:"locked"`
 }
 
 func DefaultConfig() Config {
 	cfg := Config{}
 	cfg.BaseURL = defaultBaseURL
 	cfg.HTTPPort = defaultHTTPPort
-	cfg.DesktopMode = defaultDesktopMode
+	cfg.DeploymentMode = defaultDeploymentMode
+	cfg.AccessMode = defaultAccessMode
 	cfg.PersonalSpacesEnabled = defaultPersonalSpacesEnabled
 	cfg.Cookie.SecretKey = defaultCookieSecretKey
 	cfg.DB.LogQueries = defaultDBLogQueries
@@ -83,7 +120,22 @@ func DefaultConfig() Config {
 	cfg.SMTP.Username = defaultSMTPUsername
 	cfg.SMTP.Password = defaultSMTPPassword
 	cfg.SMTP.From = defaultSMTPFrom
+	cfg.Desktop.AppDir = defaultDesktopAppDir
+	cfg.Desktop.ActiveBackend = defaultDesktopActiveBackend
+	cfg.Desktop.AllowUserBackends = defaultAllowUserBackends
+	cfg.Desktop.Backends = defaultDesktopBackends()
 	return cfg
+}
+
+func defaultDesktopBackends() []DesktopBackend {
+	return []DesktopBackend{
+		{
+			ID:         "local",
+			Name:       "Local",
+			Kind:       DesktopBackendKindLocal,
+			AccessMode: AccessModeSingleUser,
+		},
+	}
 }
 
 type configOption struct {
@@ -97,7 +149,9 @@ type configOption struct {
 var configOptions = []configOption{
 	{key: "base_url", env: "BASE_URL", flagName: "base-url", defaultValue: defaultBaseURL, usage: "Application base URL used in generated links and JWT claims"},
 	{key: "http_port", env: "HTTP_PORT", flagName: "http-port", defaultValue: defaultHTTPPort, usage: "HTTP server port"},
-	{key: "desktop_mode", env: "DESKTOP_MODE", flagName: "desktop-mode", defaultValue: defaultDesktopMode, usage: "Enable desktop mode shortcuts and bypasses"},
+	{key: "deployment_mode", env: "DEPLOYMENT_MODE", flagName: "deployment-mode", defaultValue: defaultDeploymentMode, usage: "Deployment mode (server or desktop)"},
+	{key: "access_mode", env: "ACCESS_MODE", flagName: "access-mode", defaultValue: defaultAccessMode, usage: "Access model (multi_user or single_user)"},
+	{key: "desktop_mode", env: "DESKTOP_MODE", flagName: "desktop-mode", defaultValue: false, usage: "Deprecated alias for deployment-mode=desktop and access-mode=single_user"},
 	{key: "personal_spaces_enabled", env: "PERSONAL_SPACES_ENABLED", flagName: "personal-spaces-enabled", defaultValue: defaultPersonalSpacesEnabled, usage: "Enable personal spaces by default"},
 	{key: "cookie.secret_key", env: "COOKIE_SECRET_KEY", flagName: "cookie-secret-key", defaultValue: defaultCookieSecretKey, usage: "Cookie signing secret"},
 	{key: "db.log_queries", env: "DB_LOG_QUERIES", flagName: "db-log-queries", defaultValue: defaultDBLogQueries, usage: "Enable database query logging"},
@@ -113,6 +167,9 @@ var configOptions = []configOption{
 	{key: "smtp.username", env: "SMTP_USERNAME", flagName: "smtp-username", defaultValue: defaultSMTPUsername, usage: "SMTP username"},
 	{key: "smtp.password", env: "SMTP_PASSWORD", flagName: "smtp-password", defaultValue: defaultSMTPPassword, usage: "SMTP password"},
 	{key: "smtp.from", env: "SMTP_FROM", flagName: "smtp-from", defaultValue: defaultSMTPFrom, usage: "Default SMTP sender"},
+	{key: "desktop.app_dir", env: "DESKTOP_APP_DIR", flagName: "desktop-app-dir", defaultValue: defaultDesktopAppDir, usage: "Desktop application data directory"},
+	{key: "desktop.active_backend", env: "DESKTOP_ACTIVE_BACKEND", flagName: "desktop-active-backend", defaultValue: defaultDesktopActiveBackend, usage: "Active desktop backend ID"},
+	{key: "desktop.allow_user_backends", env: "DESKTOP_ALLOW_USER_BACKENDS", flagName: "desktop-allow-user-backends", defaultValue: defaultAllowUserBackends, usage: "Allow desktop users to add backends"},
 }
 
 func LoadConfig(args []string) (Config, bool, error) {
@@ -158,6 +215,7 @@ func loadConfig(args []string) (Config, bool, error) {
 			return Config{}, false, fmt.Errorf("bind flag %s: %w", opt.flagName, err)
 		}
 	}
+	v.SetDefault("desktop.backends", defaultDesktopBackends())
 
 	if *configPath != "" {
 		v.SetConfigFile(*configPath)
@@ -182,10 +240,15 @@ func loadConfig(args []string) (Config, bool, error) {
 		}
 	}
 
-	cfg := Config{}
+	cfg := DefaultConfig()
 	cfg.BaseURL = v.GetString("base_url")
 	cfg.HTTPPort = v.GetInt("http_port")
-	cfg.DesktopMode = v.GetBool("desktop_mode")
+	cfg.DeploymentMode = v.GetString("deployment_mode")
+	cfg.AccessMode = v.GetString("access_mode")
+	if v.GetBool("desktop_mode") {
+		cfg.DeploymentMode = DeploymentModeDesktop
+		cfg.AccessMode = AccessModeSingleUser
+	}
 	cfg.PersonalSpacesEnabled = v.GetBool("personal_spaces_enabled")
 	cfg.Cookie.SecretKey = v.GetString("cookie.secret_key")
 	cfg.DB.LogQueries = v.GetBool("db.log_queries")
@@ -201,6 +264,67 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.SMTP.Username = v.GetString("smtp.username")
 	cfg.SMTP.Password = v.GetString("smtp.password")
 	cfg.SMTP.From = v.GetString("smtp.from")
+	cfg.Desktop.AppDir = v.GetString("desktop.app_dir")
+	cfg.Desktop.ActiveBackend = v.GetString("desktop.active_backend")
+	cfg.Desktop.AllowUserBackends = v.GetBool("desktop.allow_user_backends")
+	if err := v.UnmarshalKey("desktop.backends", &cfg.Desktop.Backends); err != nil {
+		return Config{}, false, fmt.Errorf("read desktop backends: %w", err)
+	}
+	if len(cfg.Desktop.Backends) == 0 {
+		cfg.Desktop.Backends = defaultDesktopBackends()
+	}
+
+	if err := validateConfig(cfg); err != nil {
+		return Config{}, false, err
+	}
 
 	return cfg, *showVersion, nil
+}
+
+func validateConfig(cfg Config) error {
+	if cfg.DeploymentMode != DeploymentModeServer && cfg.DeploymentMode != DeploymentModeDesktop {
+		return fmt.Errorf("deployment_mode must be %q or %q", DeploymentModeServer, DeploymentModeDesktop)
+	}
+	if cfg.AccessMode != AccessModeMultiUser && cfg.AccessMode != AccessModeSingleUser {
+		return fmt.Errorf("access_mode must be %q or %q", AccessModeMultiUser, AccessModeSingleUser)
+	}
+	if strings.TrimSpace(cfg.Desktop.ActiveBackend) == "" {
+		return fmt.Errorf("desktop.active_backend is required")
+	}
+
+	seenBackendIDs := map[string]struct{}{}
+	activeBackendFound := false
+	for _, backend := range cfg.Desktop.Backends {
+		if strings.TrimSpace(backend.ID) == "" {
+			return fmt.Errorf("desktop.backends[].id is required")
+		}
+		if _, exists := seenBackendIDs[backend.ID]; exists {
+			return fmt.Errorf("desktop backend %q is duplicated", backend.ID)
+		}
+		seenBackendIDs[backend.ID] = struct{}{}
+
+		if strings.TrimSpace(backend.Name) == "" {
+			return fmt.Errorf("desktop backend %q name is required", backend.ID)
+		}
+		if backend.Kind != DesktopBackendKindLocal && backend.Kind != DesktopBackendKindRemote {
+			return fmt.Errorf("desktop backend %q kind must be %q or %q", backend.ID, DesktopBackendKindLocal, DesktopBackendKindRemote)
+		}
+		if backend.Kind == DesktopBackendKindRemote && strings.TrimSpace(backend.URL) == "" {
+			return fmt.Errorf("desktop remote backend %q url is required", backend.ID)
+		}
+		if backend.Kind == DesktopBackendKindLocal && strings.TrimSpace(backend.URL) != "" {
+			return fmt.Errorf("desktop local backend %q must not set url", backend.ID)
+		}
+		if backend.AccessMode != "" && backend.AccessMode != AccessModeMultiUser && backend.AccessMode != AccessModeSingleUser {
+			return fmt.Errorf("desktop backend %q access_mode must be %q or %q", backend.ID, AccessModeMultiUser, AccessModeSingleUser)
+		}
+		if backend.ID == cfg.Desktop.ActiveBackend {
+			activeBackendFound = true
+		}
+	}
+	if !activeBackendFound {
+		return fmt.Errorf("desktop.active_backend %q must reference a configured backend", cfg.Desktop.ActiveBackend)
+	}
+
+	return nil
 }

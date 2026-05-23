@@ -1,6 +1,6 @@
 # Repository Context
 
-Updated: 2026-04-04
+Updated: 2026-05-23
 
 ## Source-of-truth order
 
@@ -30,6 +30,8 @@ What is implemented now:
 - Org/workspace/environment/connection resource model
 - Custom RBAC enforcer in `internal/access`
 - Personal spaces under `/api/v1/me`
+- Config loading through Viper with file/env/flag support
+- `DEPLOYMENT_MODE` and `ACCESS_MODE` separated for future desktop/Wails work
 - Live database sessions through `internal/connection`
 - Driver abstraction with PostgreSQL, MySQL, and SQLite target database drivers
 - Bun-based app database layer with PostgreSQL and SQLite support
@@ -38,7 +40,6 @@ What is implemented now:
 What is not implemented yet or is explicitly future work:
 - Distributed RBAC cache invalidation
 - Binding expiry enforcement
-- Effective-permissions introspection
 - Audit log for policy changes
 - Service accounts/API keys
 - Deny rules
@@ -51,11 +52,12 @@ What is not implemented yet or is explicitly future work:
 ### Backend entrypoint
 
 `cmd/api/main.go`
-- Loads env-based config
+- Thin binary entrypoint
+- Loads config through `internal/web`
 - Opens app database
 - Runs migrations automatically when `DB_AUTOMIGRATE=true`
 - Initializes SMTP mailer, AES key derivation, RBAC enforcer, and connection manager
-- Serves HTTP routes from `cmd/api/routes.go`
+- Serves HTTP routes built by `internal/web`
 
 ### Request model
 
@@ -69,8 +71,9 @@ Main flow:
 Important access rule:
 - Org membership is the first access gate
 - RBAC never grants access to an org resource unless the account is in `org_members`
-- By design, an org member may read the org member list and the org team list without needing an extra resource-specific binding
-- In desktop mode, the product model is a single local super-user; desktop mode intentionally bypasses normal org/workspace/resource access filtering
+- Org member and team list pages require `org:read`
+- Single-user mode seeds a local org and owner policies; it does not bypass org/workspace/resource access filtering
+- Personal-space routes are outside org RBAC but are strictly owner-filtered by `/me` middleware
 
 ### App database
 
@@ -109,22 +112,25 @@ ID strategy currently implemented:
   - current resource plus ancestor resources from `resource_hierarchy`
 
 Builtins:
-- Org builtin roles: `owner`, `admin`
-- Workspace builtin roles: `ws:admin`, `ws:member`
+- Org builtin roles: `Organization Owner`, `Organization Admin`, `Organization Member`
+- Workspace builtin roles: `Workspace Admin`, `Workspace Member`
 
 Important design constraints:
 - Builtin roles are immutable
 - Resource hierarchy rows must be written on create paths
 - Ancestry cache must be invalidated on delete paths
-- Direct bindings and role bindings are idempotent
+- Role bindings are idempotent
+- Direct permission bindings are not part of the current API model
 
 ### Personal spaces
 
 `/api/v1/me`
 - Already implemented, not just planned
 - No org context or permission middleware
+- `/api/v1/me/workspaces...` is gated by `PERSONAL_SPACES_ENABLED`
 - Ownership enforced by `spaceWsCtx`, `spaceEnvCtx`, `spaceConnCtx`
 - `owner_type="space"` causes `enforcer.Can(...)` to short-circuit to allow
+- Intended as optional user-owned personal workspace sandboxes, not as the desktop/single-user authorization model
 
 Schema support:
 - Personal workspaces have `org_id = NULL`, `owner_type = 'space'`
@@ -146,7 +152,7 @@ Schema support:
 
 ## Route surface
 
-High-level implemented groups in `cmd/api/routes.go`:
+High-level implemented groups in `internal/web/routes.go`:
 - `POST /api/setup`
 - `/api/v1/auth/*`
 - `/api/v1/instance/admins`
@@ -182,13 +188,15 @@ Completed recently:
 - Environments resource
 - Workspace-scoped roles and consolidated workspace policy APIs
 - Personal spaces under `/me`
+- Effective permissions API
+- Workspace direct/team membership model and `workspace_members` policy principal
+- Single-user setup seeding a local org through normal RBAC
 
 Near-term backlog from docs:
 - RBAC correctness fixes:
   - enforce `expires_at`
   - address stale cache behavior in multi-instance deployments
 - Visibility/debugging:
-  - effective permissions API
   - better authorization introspection
 - Behavior gaps:
   - enforce `connection.access_mode`

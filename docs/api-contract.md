@@ -2,6 +2,23 @@
 
 ## Bootstrap
 
+### `POST /api/setup`
+
+Creates the first account and instance admin. In `ACCESS_MODE=single_user`, setup also seeds a local organization:
+
+```json
+{
+  "account": {},
+  "access_token": "...",
+  "organization": {
+    "slug": "local",
+    "name": "Local"
+  }
+}
+```
+
+In `ACCESS_MODE=multi_user`, the response omits `organization`.
+
 ### `GET /api/setup/status`
 
 Response:
@@ -19,6 +36,7 @@ Response fields:
 - `account`
 - `organizations`
 - `is_instance_admin`
+- `personal_spaces_enabled`
 - `feature_flags`
 
 ## Error Semantics
@@ -166,9 +184,17 @@ Supported query parameters:
 
 ### Personal Spaces
 
+- personal-space routes are under `/api/v1/me`
+- `GET /api/v1/me` is an account/self route
+- `/api/v1/me/workspaces...` routes require authentication and the personal-spaces feature gate
+- personal-space resources are owner-filtered by `owner_type = "space"` and `owner_id = current_account.id`
+- personal-space routes do not use org RBAC and never expose org-owned resources
 - `GET /api/v1/me/workspaces` returns the same paginated workspace envelope and supports shared list query parameters plus `name`
 - `GET /api/v1/me/workspaces/{ws_id}/environments` returns the same paginated environment envelope and supports shared list query parameters plus `name`
 - `GET /api/v1/me/workspaces/{ws_id}/environments/{env_id}/connections` returns the same paginated connection envelope and supports shared list query parameters plus `driver` and `access_mode`
+- `GET /api/v1/me/workspaces/{ws_id}/connections` is accepted as a workspace-level compatibility alias and supports the same connection query parameters
+
+Single-user/local mode should use the seeded `local` organization and org routes for normal managed resources. Personal spaces remain optional user-owned sandboxes, not the single-user authorization model.
 
 ## Search / Filter / Sort / Pagination
 

@@ -1,6 +1,8 @@
 package web
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -75,19 +77,48 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var org *database.Organization
+	if app.config.AccessMode == AccessModeSingleUser {
+		seededOrg, err := app.seedSingleUserOrganization(r.Context(), account.ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		org = &seededOrg
+	}
+
 	accessToken, _, err := app.newAuthenticationToken(account.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	err = response.JSON(w, http.StatusCreated, map[string]any{
+	body := map[string]any{
 		"account":      account,
 		"access_token": accessToken,
-	})
+	}
+	if org != nil {
+		body["organization"] = org
+	}
+
+	err = response.JSON(w, http.StatusCreated, body)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func (app *application) seedSingleUserOrganization(ctx context.Context, accountID int64) (database.Organization, error) {
+	org, err := app.createOwnedOrganization(ctx, singleUserDefaultOrgSlug, singleUserDefaultOrgName, accountID)
+	if err == nil {
+		return org, nil
+	}
+	if !isUniqueViolation(err) {
+		return database.Organization{}, err
+	}
+
+	// The first-run path normally owns an empty database, but avoid making
+	// "local" a hard blocker if an operator pre-seeded data before setup.
+	return app.createOwnedOrganization(ctx, fmt.Sprintf("%s-%d", singleUserDefaultOrgSlug, accountID), singleUserDefaultOrgName, accountID)
 }
 
 // setupStatus reports whether the instance has already been bootstrapped.

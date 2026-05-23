@@ -44,7 +44,7 @@ SQLWarden ships as four distinct deployment targets from a single codebase:
 |---|---|---|---|
 | Community Server | Self-hosted, open source | Local username/password | Postgres / MySQL |
 | Enterprise Server | Self-hosted, license-gated features | SSO + local | Postgres / MySQL |
-| Desktop (Wails) | Native app, single-user, local-only | Auto (no login) | SQLite |
+| Desktop (Wails) | Native app, single-user local backend, optional remote backends | Local account/session | SQLite for local backend |
 | PWA | Web-deployed instance installed to desktop/mobile | Server-determined | Server-determined |
 
 Database credentials and query history never leave the customer's infrastructure. This is a core product principle and a key differentiator in regulated industries.
@@ -215,7 +215,7 @@ sqlwarden/
 │   │   ├── snowflake/
 │   │   ├── bigquery/
 │   │   └── mssql/
-│   ├── access/                       ← Policy interface + AllowAllPolicy
+│   ├── access/                       ← RBAC enforcer, permissions, role seeding
 │   ├── audit/                        ← Logger interface + noop/file impl
 │   ├── connhub/                      ← connector WebSocket hub
 │   ├── connection/                   ← connection manager and config store
@@ -335,9 +335,9 @@ The license payload structure:
 
 ```
 HTTP POST /api/connections/{id}/query
-  → Auth middleware (validates session / SSO token / desktop auto-auth)
+  → Auth middleware (validates session / SSO token)
   → query.Handler
-  → access.Evaluate()         [AllowAllPolicy (community/desktop) or RBACPolicy (enterprise)]
+  → internal/access enforcer  [org RBAC or personal-space owner path]
   → if denied:
       audit.Record(denied)
       → HTTP 403
@@ -571,7 +571,9 @@ type Decision struct {
 }
 ```
 
-Community and desktop editions ship with `AllowAllPolicy`. Enterprise registers `RBACPolicy` at startup. The query handler calls `access.Evaluate()` and receives a `Decision` — it never knows which implementation is running.
+Current implementation note: SQLWarden now uses a shared RBAC enforcer in `internal/access` for org-owned resources. Desktop/single-user mode should seed a local organization and owner policies, then use the same RBAC path as server mode. Personal-space resources under `/api/v1/me` use account ownership middleware instead of org RBAC.
+
+The older `AllowAllPolicy`/`RBACPolicy` split in this architecture guide should be read as historical product direction, not current implementation.
 
 ### 7.2 RBAC Data Model
 
@@ -760,7 +762,7 @@ interface Bootstrap {
 }
 ```
 
-Desktop always returns `edition: "desktop"` and `auth.method: "desktop"` — no login UI is shown.
+Desktop/local mode should not be modeled as an auth or authorization bypass. The local backend should use a real local account/session. In `ACCESS_MODE=single_user`, first-run setup seeds a local organization and grants the local account owner permissions through normal RBAC.
 
 ### 10.4 Feature Gating Patterns
 
@@ -773,7 +775,7 @@ Desktop always returns `edition: "desktop"` and `auth.method: "desktop"` — no 
 ### 10.5 Auth-Aware Routing
 
 - **`user === null` and `edition !== 'desktop'`:** Only `/login` and `/auth/callback` rendered.
-- **`edition === 'desktop'`:** Bootstrap always returns a non-null local user. No login route rendered.
+- **`deployment_mode === 'desktop'` with local backend:** Use the local backend's session/setup state. The local backend may streamline first-run setup, but it should still create a real account and seeded local organization.
 - **`auth.method === 'local'`:** Login page renders username/password form (backed by `internal/password` bcrypt).
 - **SSO method:** Login page redirects immediately to `auth.login_url`.
 
@@ -805,9 +807,9 @@ build-desktop:
 
 ### 11.1 Architecture Overview
 
-The desktop application is built with [Wails v2](https://wails.io), which compiles the React frontend and a Go backend into a single native binary for Windows, macOS, and Linux. The desktop app is **local-only** — it runs a Go HTTP server bound to `127.0.0.1` on a random available port. The React frontend talks to this local server exactly as it does in the web deployment. The only differences are in auth, storage, and server binding.
+The desktop application is intended to be built with [Wails v2](https://wails.io), which compiles the React frontend and a Go backend into a single native binary for Windows, macOS, and Linux. The desktop app can run a local backend bound to `127.0.0.1` on a random available port. The React frontend talks to this local server exactly as it does in the web deployment.
 
-The desktop app serves a single persona: **a developer who wants a zero-setup SQL IDE for their own database connections**, without running a server or needing any infrastructure.
+The local desktop backend serves a single persona: **a developer who wants a low-friction SQL IDE for their own database connections**, without running a separate server or infrastructure. Future desktop builds may also support multiple remote SQLWarden backends for enterprise prod/non-prod separation.
 
 ### 11.2 Entrypoint — `cmd/desktop/`
 
@@ -839,38 +841,24 @@ The React frontend listens for `server:ready` on mount and sets `apiBase` to `ht
 | Concern | Server Build | Desktop Build |
 |---|---|---|
 | Bind address | `0.0.0.0:PORT` | `127.0.0.1:{random port}` |
-| Auth implementation | `LocalAuth` (bcrypt, `internal/password`) | `DesktopAuth` (auto-authenticates every request) |
-| Access policy | `AllowAllPolicy` or `RBACPolicy` | `AllowAllPolicy` always |
+| Auth implementation | Local username/password today; SSO later | Real local account/session for local backend; backend-scoped auth for remote backends |
+| Access policy | `internal/access` RBAC for org resources; `/me` owner path for personal spaces | Same model; `ACCESS_MODE=single_user` seeds local org and owner policy |
 | Application storage | Postgres or MySQL | SQLite at OS user data path |
 | Audit log | `FileLogger` or enterprise tamper-evident | `FileLogger` → `~/.sqlwarden/audit.log` |
 | Rate limiting | Yes | No |
 | TLS | Required for production | Not used — loopback only |
 
-### 11.4 DesktopAuth — Zero-Friction Local Auth
+### 11.4 Local Account + Seeded RBAC
 
-`DesktopAuth` implements `auth.Authenticator`. It automatically authenticates every request as a local user with no HTTP challenge, session tokens, or cookies.
+Desktop/local single-user mode should use:
 
-```go
-// internal/auth/desktop.go
-//go:build desktop
+- `DEPLOYMENT_MODE=desktop` for runtime behavior such as app data paths, loopback binding, Wails lifecycle, and backend selection
+- `ACCESS_MODE=single_user` for first-run local bootstrap behavior
+- a real local account
+- a seeded local organization (`local`)
+- normal seeded organization owner policy for that account
 
-type DesktopAuth struct{ localUser *Identity }
-
-func NewDesktopAuth() *DesktopAuth {
-    return &DesktopAuth{localUser: &Identity{
-        UserID: "local",
-        Email:  "local@desktop",
-        Name:   "Local User",
-        Roles:  []string{"admin"},
-    }}
-}
-
-func (d *DesktopAuth) Authenticate(_ context.Context, _ *http.Request) (*Identity, error) {
-    return d.localUser, nil  // always succeeds
-}
-```
-
-All handlers, middleware, and the audit logger are unchanged — they receive a valid identity on every request regardless of how it was sourced.
+This avoids a privileged desktop-only code path. The same handlers, middleware, audit hooks, and RBAC checks stay active for org-owned resources.
 
 ### 11.5 SQLite Storage for Desktop
 
@@ -916,7 +904,7 @@ When `edition === 'desktop'`, the root route renders a desktop-specific landing 
 |---|---|---|---|---|
 | Community server | `make build` | Embedded via `embed.FS` | LocalAuth (bcrypt) | SQLite / PG / MySQL |
 | Enterprise server | `make build-enterprise` | Embedded via `embed.FS` | LocalAuth + SSO | PG / MySQL |
-| Desktop | `wails build` | Bundled by Wails | DesktopAuth | SQLite (OS user data path) |
+| Desktop | `wails build` | Bundled by Wails | Local session / backend-scoped auth | SQLite for local backend |
 | PWA | n/a (web deploy) | Served by server | Server-determined | Server-determined |
 
 ---
