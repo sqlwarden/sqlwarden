@@ -71,13 +71,32 @@ const defaultPreferences: AppShellPreferences = {
 }
 
 export function useAppShellPreferences() {
-  const { setTheme } = useTheme()
-  const [preferences, setPreferences] = useState<AppShellPreferences>(() => readPreferences())
+  const { theme, setTheme } = useTheme()
+  const [preferences, setPreferencesState] = useState<AppShellPreferences>(() => readPreferences(theme))
 
   useEffect(() => {
     applyPreferences(preferences)
-    setTheme(preferences.themeMode)
-  }, [preferences, setTheme])
+  }, [preferences])
+
+  useEffect(() => {
+    setPreferencesState((current) => (
+      current.themeMode === theme ? current : { ...current, themeMode: theme }
+    ))
+  }, [theme])
+
+  const setPreferences: Dispatch<SetStateAction<AppShellPreferences>> = (nextPreferences) => {
+    setPreferencesState((current) => {
+      const resolvedPreferences = typeof nextPreferences === 'function'
+        ? nextPreferences(current)
+        : nextPreferences
+
+      if (resolvedPreferences.themeMode !== current.themeMode) {
+        setTheme(resolvedPreferences.themeMode)
+      }
+
+      return resolvedPreferences
+    })
+  }
 
   return { preferences, setPreferences }
 }
@@ -422,9 +441,9 @@ function PreferenceToggle({
   )
 }
 
-function readPreferences(): AppShellPreferences {
+function readPreferences(themeMode: AppShellTheme): AppShellPreferences {
   return {
-    themeMode: readPreference(preferenceKeys.themeMode, ['dark', 'light', 'system'], defaultPreferences.themeMode),
+    themeMode,
     contentLayout: readPreference(preferenceKeys.contentLayout, ['centered', 'full-width'], defaultPreferences.contentLayout),
     navbarStyle: readPreference(preferenceKeys.navbarStyle, ['sticky', 'scroll'], defaultPreferences.navbarStyle),
     sidebarStyle: readPreference(preferenceKeys.sidebarStyle, ['sidebar', 'inset', 'floating'], defaultPreferences.sidebarStyle),

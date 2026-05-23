@@ -172,10 +172,10 @@ export function ThemeProvider({
       })
     }
 
-    window.addEventListener("keydown", handleKeyDown)
+    document.addEventListener("keydown", handleKeyDown, { capture: true })
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown)
+      document.removeEventListener("keydown", handleKeyDown, { capture: true })
     }
   }, [storageKey])
 

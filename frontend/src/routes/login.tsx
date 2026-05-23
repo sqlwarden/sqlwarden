@@ -40,7 +40,7 @@ function LoginPage() {
     onSuccess: async (payload) => {
       clearAuthScopedQueryCache(queryClient)
       setAccessToken(payload.access_token)
-      await navigate({ to: '/account', replace: true })
+      await navigate({ to: '/', replace: true })
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors) {
@@ -70,7 +70,7 @@ function LoginPage() {
   }
 
   if (hasToken && session.data) {
-    return <Navigate to="/account" replace />
+    return <Navigate to="/" replace />
   }
 
   function validate() {
