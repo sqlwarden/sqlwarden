@@ -23,3 +23,5 @@ postgres_data/
 *.db-journal
 !go.sum.db
 .worktrees/
+
+references/

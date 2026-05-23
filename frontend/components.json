@@ -1,6 +1,6 @@
 {
   "$schema": "https://ui.shadcn.com/schema.json",
-  "style": "base-sera",
+  "style": "base-mira",
   "rsc": false,
   "tsx": true,
   "tailwind": {
@@ -10,7 +10,7 @@
     "cssVariables": true,
     "prefix": ""
   },
-  "iconLibrary": "phosphor",
+  "iconLibrary": "hugeicons",
   "rtl": false,
   "aliases": {
     "components": "#/components",
@@ -19,7 +19,7 @@
     "lib": "#/lib",
     "hooks": "#/hooks"
   },
-  "menuColor": "default",
-  "menuAccent": "bold",
+  "menuColor": "default-translucent",
+  "menuAccent": "subtle",
   "registries": {}
 }
