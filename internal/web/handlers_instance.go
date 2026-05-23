@@ -109,14 +109,14 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var org *database.Organization
+	var org database.Organization
 	if app.config.AccessMode == AccessModeSingleUser {
 		seededOrg, err := app.seedSingleUserOrganization(r.Context(), account.ID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
 		}
-		org = &seededOrg
+		org = seededOrg
 	} else {
 		seededOrg, err := app.createOwnedOrganization(r.Context(), organizationSlug, input.OrganizationName, account.ID)
 		if err != nil {
@@ -128,7 +128,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 			app.serverError(w, r, err)
 			return
 		}
-		org = &seededOrg
+		org = seededOrg
 	}
 
 	accessToken, _, err := app.newAuthenticationToken(account.ID)
@@ -140,9 +140,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 	body := map[string]any{
 		"account":      account,
 		"access_token": accessToken,
-	}
-	if org != nil {
-		body["organization"] = org
+		"organization": org,
 	}
 
 	err = response.JSON(w, http.StatusCreated, body)

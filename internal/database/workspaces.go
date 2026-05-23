@@ -143,7 +143,7 @@ func (db *DB) PopulateWorkspaceCounts(ctx context.Context, workspaces []Workspac
 	if err := db.NewSelect().
 		TableExpr("environments").
 		ColumnExpr("workspace_id, COUNT(*) AS count").
-		Where("workspace_id IN (?)", bun.In(ids)).
+		Where("workspace_id IN (?)", bun.List(ids)).
 		GroupExpr("workspace_id").
 		Scan(ctx, &envCounts); err != nil {
 		return err
@@ -156,7 +156,7 @@ func (db *DB) PopulateWorkspaceCounts(ctx context.Context, workspaces []Workspac
 	if err := db.NewSelect().
 		TableExpr("connections").
 		ColumnExpr("workspace_id, COUNT(*) AS count").
-		Where("workspace_id IN (?)", bun.In(ids)).
+		Where("workspace_id IN (?)", bun.List(ids)).
 		GroupExpr("workspace_id").
 		Scan(ctx, &connCounts); err != nil {
 		return err
