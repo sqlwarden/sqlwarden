@@ -1,0 +1,402 @@
+package web
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strconv"
+	"testing"
+
+	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/assert"
+)
+
+func TestCreateAndListTeams(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "team-owner@example.com", "Team Owner", "securepass99")
+
+	// Create a team.
+	req := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", map[string]any{
+		"slug": "backend",
+		"name": "Backend Team",
+	})
+	req.Header.Set("Authorization", "Bearer "+tok)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+
+	// List teams.
+	req2 := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams", nil)
+	req2.Header.Set("Authorization", "Bearer "+tok)
+	res2 := send(t, req2, app.routes())
+	assert.Equal(t, res2.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	err := json.Unmarshal(res2.BodyBytes, &payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 25)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["slug"].(string), "backend")
+}
+
+func TestListTeams_SupportsPaginationSearchFilterAndSort(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "team-list-owner"), "Team Owner", "securepass99")
+
+	for _, team := range []map[string]any{
+		{"slug": "alpha", "name": "Alpha Team"},
+		{"slug": "zeta", "name": "Zeta Team"},
+	} {
+		res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", team, tok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusCreated)
+	}
+
+	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams?q=team&slug=zeta&sort=name&order=desc&page=1&page_size=1", tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items    []map[string]any `json:"items"`
+		Page     int              `json:"page"`
+		PageSize int              `json:"page_size"`
+		Total    int              `json:"total"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+	assert.Equal(t, payload.Page, 1)
+	assert.Equal(t, payload.PageSize, 1)
+	assert.Equal(t, payload.Total, 1)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0]["name"], "Zeta Team")
+	assert.Equal(t, payload.Items[0]["slug"], "zeta")
+}
+
+func TestGetAndDeleteTeam(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "team-crud@example.com", "Team CRUD", "securepass99")
+
+	// Create a team.
+	req := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", map[string]any{
+		"slug": "frontend",
+		"name": "Frontend Team",
+	})
+	req.Header.Set("Authorization", "Bearer "+tok)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+
+	// Get the team.
+	req2 := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams/frontend", nil)
+	req2.Header.Set("Authorization", "Bearer "+tok)
+	res2 := send(t, req2, app.routes())
+	assert.Equal(t, res2.StatusCode, http.StatusOK)
+	assert.Equal(t, res2.BodyFields["name"].(string), "Frontend Team")
+
+	// Delete the team.
+	req3 := newTestRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug+"/teams/frontend", nil)
+	req3.Header.Set("Authorization", "Bearer "+tok)
+	res3 := send(t, req3, app.routes())
+	assert.Equal(t, res3.StatusCode, http.StatusNoContent)
+
+	// Get returns 404 after deletion.
+	req4 := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams/frontend", nil)
+	req4.Header.Set("Authorization", "Bearer "+tok)
+	res4 := send(t, req4, app.routes())
+	assert.Equal(t, res4.StatusCode, http.StatusNotFound)
+}
+
+func TestUpdateTeam_RejectsOrgChange(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "team-update-owner"), "Team Update Owner", "securepass99")
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams",
+		map[string]any{"slug": "backend", "name": "Backend Team"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/teams/backend",
+		map[string]any{"name": "Backend Team", "org_id": 9999}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "org_id")
+}
+
+func TestReadTeamsRequiresOrgRead(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "team-read-owner"), "Team Owner", "Team Read Org")
+	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "team-read-member"), "Team Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+org.Slug+"/teams",
+		map[string]any{"slug": "private-team", "name": "Private Team"}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	var defaultMemberBinding struct {
+		ID int64
+	}
+	if err := app.db.NewSelect().
+		TableExpr("role_bindings").
+		ColumnExpr("id").
+		Where("org_id = ? AND subject_type = ? AND subject_id = ? AND resource_type = 'org' AND resource_id = ?",
+			org.ID, access.SubjectTypeOrgMembers, org.ID, org.ID).
+		Scan(context.Background(), &defaultMemberBinding); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.enforcer.UnbindRole(context.Background(), defaultMemberBinding.ID, org.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		"/api/v1/orgs/" + org.Slug + "/teams",
+		"/api/v1/orgs/" + org.Slug + "/teams/private-team",
+		"/api/v1/orgs/" + org.Slug + "/teams/private-team/members",
+	} {
+		res := send(t, newAuthRequest(t, http.MethodGet, path, nil, memberTok), app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusForbidden)
+	}
+}
+
+func TestTeamMemberManagement(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	ownerID, ownerTok, slug := registerAndLogin(t, app, "tm-owner@example.com", "TM Owner", "securepass99")
+
+	// Register a second user.
+	memberID, _, _ := registerAndLogin(t, app, "tm-member@example.com", "TM Member", "securepass99")
+
+	// Add second user to the org.
+	addOrgReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
+		"email": "tm-member@example.com",
+		"role":  access.BuiltinOrgMemberRole,
+	})
+	addOrgReq.Header.Set("Authorization", "Bearer "+ownerTok)
+	addOrgRes := send(t, addOrgReq, app.routes())
+	assert.Equal(t, addOrgRes.StatusCode, http.StatusNoContent)
+
+	// Create a team.
+	createReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", map[string]any{
+		"slug": "devs",
+		"name": "Developers",
+	})
+	createReq.Header.Set("Authorization", "Bearer "+ownerTok)
+	createRes := send(t, createReq, app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	memberIDInt, _ := strconv.ParseInt(memberID, 10, 64)
+
+	// Add member to team.
+	addReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams/devs/members", map[string]any{
+		"account_id": memberIDInt,
+	})
+	addReq.Header.Set("Authorization", "Bearer "+ownerTok)
+	addRes := send(t, addReq, app.routes())
+	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+
+	// List team members.
+	listReq := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams/devs/members", nil)
+	listReq.Header.Set("Authorization", "Bearer "+ownerTok)
+	listRes := send(t, listReq, app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var members struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	err := json.Unmarshal(listRes.BodyBytes, &members)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, members.Total, 1)
+	assert.Equal(t, len(members.Items), 1)
+	assert.Equal(t, fmt.Sprintf("%v", members.Items[0]["account_id"]), memberID)
+	assert.Equal(t, members.Items[0]["email"], "tm-member@example.com")
+	assert.Equal(t, members.Items[0]["name"], "TM Member")
+
+	// Remove member from team.
+	removeReq := newTestRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug+"/teams/devs/members/"+memberID, nil)
+	removeReq.Header.Set("Authorization", "Bearer "+ownerTok)
+	removeRes := send(t, removeReq, app.routes())
+	assert.Equal(t, removeRes.StatusCode, http.StatusNoContent)
+
+	// Verify the member is removed.
+	listReq2 := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams/devs/members", nil)
+	listReq2.Header.Set("Authorization", "Bearer "+ownerTok)
+	listRes2 := send(t, listReq2, app.routes())
+	assert.Equal(t, listRes2.StatusCode, http.StatusOK)
+
+	var members2 struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	err = json.Unmarshal(listRes2.BodyBytes, &members2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, members2.Total, 0)
+	assert.Equal(t, len(members2.Items), 0)
+
+	// Suppress unused variable warnings.
+	_ = ownerID
+}
+
+func TestAddTeamMemberRejectsNonOrgMember(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, ownerTok, slug := registerAndLogin(t, app, "tm-nonmember-owner@example.com", "TM Nonmember Owner", "securepass99")
+	memberID, _, _ := registerAndLogin(t, app, "tm-nonmember-target@example.com", "TM Nonmember Target", "securepass99")
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", map[string]any{
+		"slug": "ops",
+		"name": "Operations",
+	}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	memberIDInt, _ := strconv.ParseInt(memberID, 10, 64)
+	addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams/ops/members", map[string]any{
+		"account_id": memberIDInt,
+	}, ownerTok), app.routes())
+	assert.Equal(t, addRes.StatusCode, http.StatusNotFound)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams/ops/members", nil, ownerTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var members struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(listRes.BodyBytes, &members); err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, members.Total, 0)
+	assert.Equal(t, len(members.Items), 0)
+}
+
+func TestListTeamMembers_SupportsPaginationAndSort(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, ownerTok, slug := registerAndLogin(t, app, "tm-page-owner@example.com", "TM Page Owner", "securepass99")
+	memberAID, _, _ := registerAndLogin(t, app, "tm-page-a@example.com", "TM Page A", "securepass99")
+	memberBID, _, _ := registerAndLogin(t, app, "tm-page-b@example.com", "TM Page B", "securepass99")
+
+	for _, email := range []string{"tm-page-a@example.com", "tm-page-b@example.com"} {
+		addOrgRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
+			"email": email,
+			"role":  access.BuiltinOrgMemberRole,
+		}, ownerTok), app.routes())
+		assert.Equal(t, addOrgRes.StatusCode, http.StatusNoContent)
+	}
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", map[string]any{
+		"slug": "devs-page",
+		"name": "Developers Page",
+	}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	memberAInt, _ := strconv.ParseInt(memberAID, 10, 64)
+	memberBInt, _ := strconv.ParseInt(memberBID, 10, 64)
+	for _, id := range []int64{memberAInt, memberBInt} {
+		addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams/devs-page/members", map[string]any{
+			"account_id": id,
+		}, ownerTok), app.routes())
+		assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+	}
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams/devs-page/members?sort=account_id&order=desc&page=1&page_size=1", nil, ownerTok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+	assert.Equal(t, int(listRes.BodyFields["total"].(float64)), 2)
+
+	items := listRes.BodyFields["items"].([]any)
+	assert.Equal(t, len(items), 1)
+	assert.Equal(t, int64(items[0].(map[string]any)["account_id"].(float64)), memberBInt)
+}
+
+func TestCreateTeamValidation(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "team-val@example.com", "Team Val", "securepass99")
+
+	// Empty slug should fail.
+	req := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", map[string]any{
+		"slug": "",
+		"name": "Some Team",
+	})
+	req.Header.Set("Authorization", "Bearer "+tok)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+
+	// Invalid slug characters should fail.
+	req2 := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", map[string]any{
+		"slug": "INVALID SLUG!",
+		"name": "Some Team",
+	})
+	req2.Header.Set("Authorization", "Bearer "+tok)
+	res2 := send(t, req2, app.routes())
+	assert.Equal(t, res2.StatusCode, http.StatusUnprocessableEntity)
+}
+
+func TestTeamNotFoundBranches(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	ownerID, ownerTok, slug := registerAndLogin(t, app, "team-missing@example.com", "Team Missing", "securepass99")
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams/missing", nil, ownerTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusNotFound)
+
+	listMembersRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/teams/missing/members", nil, ownerTok), app.routes())
+	assert.Equal(t, listMembersRes.StatusCode, http.StatusNotFound)
+
+	addMemberRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams/missing/members", map[string]any{
+		"account_id": 1,
+	}, ownerTok), app.routes())
+	assert.Equal(t, addMemberRes.StatusCode, http.StatusNotFound)
+
+	removeMemberRes := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug+"/teams/missing/members/1", nil, ownerTok), app.routes())
+	assert.Equal(t, removeMemberRes.StatusCode, http.StatusNotFound)
+
+	deleteRes := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug+"/teams/missing", nil, ownerTok), app.routes())
+	assert.Equal(t, deleteRes.StatusCode, http.StatusNotFound)
+
+	_ = ownerID
+}
+
+func TestTeamMemberValidationAndInvalidID(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, ownerTok, slug := registerAndLogin(t, app, "team-validation@example.com", "Team Validation", "securepass99")
+
+	createReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", map[string]any{
+		"slug": "ops",
+		"name": "Operations",
+	})
+	createReq.Header.Set("Authorization", "Bearer "+ownerTok)
+	createRes := send(t, createReq, app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams/ops/members", map[string]any{}, ownerTok), app.routes())
+	assert.Equal(t, addRes.StatusCode, http.StatusUnprocessableEntity)
+
+	removeRes := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug+"/teams/ops/members/not-a-number", nil, ownerTok), app.routes())
+	assert.Equal(t, removeRes.StatusCode, http.StatusNotFound)
+}

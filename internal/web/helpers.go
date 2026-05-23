@@ -1,0 +1,151 @@
+package web
+
+import (
+	"fmt"
+	"net/http"
+	"net/url"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/pascaldekloe/jwt"
+	"github.com/sqlwarden/internal/validator"
+)
+
+func (app *application) newEmailData() map[string]any {
+	data := map[string]any{
+		"BaseURL": app.config.BaseURL,
+	}
+
+	return data
+}
+
+func (app *application) newAuthenticationToken(userID int64) (string, time.Time, error) {
+	now := time.Now()
+
+	var claims jwt.Claims
+	claims.Subject = strconv.FormatInt(userID, 10)
+
+	tokenTTL := app.config.JWT.AccessTokenTTL
+	if tokenTTL <= 0 {
+		tokenTTL = 24 * time.Hour
+	}
+	expiry := now.Add(tokenTTL)
+	claims.Issued = jwt.NewNumericTime(now)
+	claims.NotBefore = jwt.NewNumericTime(now)
+	claims.Expires = jwt.NewNumericTime(expiry)
+
+	claims.Issuer = app.config.BaseURL
+	claims.Audiences = []string{app.config.BaseURL}
+
+	jwt, err := claims.HMACSign(jwt.HS256, []byte(app.config.JWT.SecretKey))
+	return string(jwt), expiry, err
+}
+
+func (app *application) backgroundTask(r *http.Request, fn func() error) {
+	app.wg.Add(1)
+
+	go func() {
+		defer app.wg.Done()
+
+		defer func() {
+			pv := recover()
+			if pv != nil {
+				app.reportServerError(r, fmt.Errorf("%v", pv))
+			}
+		}()
+
+		err := fn()
+		if err != nil {
+			app.reportServerError(r, err)
+		}
+	}()
+}
+
+type listQuery struct {
+	Page     int
+	PageSize int
+	Sort     string
+	Order    string
+	Search   string
+}
+
+func readListQuery(values url.Values, allowedSorts map[string]string) (listQuery, map[string]string) {
+	q := listQuery{
+		Page:     1,
+		PageSize: 25,
+		Sort:     defaultListSort(allowedSorts),
+		Order:    "desc",
+		Search:   strings.TrimSpace(values.Get("q")),
+	}
+
+	errs := map[string]string{}
+
+	if raw := strings.TrimSpace(values.Get("page")); raw != "" {
+		page, err := strconv.Atoi(raw)
+		if err != nil || page < 1 {
+			errs["page"] = "Page must be a positive integer."
+		} else {
+			q.Page = page
+		}
+	}
+
+	if raw := strings.TrimSpace(values.Get("page_size")); raw != "" {
+		pageSize, err := strconv.Atoi(raw)
+		if err != nil || pageSize < 1 || pageSize > 100 {
+			errs["page_size"] = "Page size must be between 1 and 100."
+		} else {
+			q.PageSize = pageSize
+		}
+	}
+
+	if raw := strings.TrimSpace(values.Get("sort")); raw != "" {
+		if column, ok := allowedSorts[raw]; ok {
+			q.Sort = column
+		} else {
+			errs["sort"] = "Sort must be one of the supported sort fields."
+		}
+	}
+
+	if raw := strings.TrimSpace(values.Get("order")); raw != "" {
+		raw = strings.ToLower(raw)
+		if raw != "asc" && raw != "desc" {
+			errs["order"] = "Order must be asc or desc."
+		} else {
+			q.Order = raw
+		}
+	}
+
+	if len(errs) == 0 {
+		return q, nil
+	}
+	return q, errs
+}
+
+func defaultListSort(allowedSorts map[string]string) string {
+	if len(allowedSorts) == 0 {
+		return "created_at"
+	}
+	if column, ok := allowedSorts["created_at"]; ok {
+		return column
+	}
+	if column, ok := allowedSorts["name"]; ok {
+		return column
+	}
+
+	keys := make([]string, 0, len(allowedSorts))
+	for key := range allowedSorts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return allowedSorts[keys[0]]
+}
+
+func fieldErrors(errs map[string]string) validator.Validator {
+	v := validator.Validator{}
+	for field, message := range errs {
+		v.AddFieldError(field, message)
+	}
+	return v
+}
