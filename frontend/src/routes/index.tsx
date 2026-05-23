@@ -8,7 +8,6 @@ import {
   Logout03Icon,
   Settings02Icon,
   ShieldUserIcon,
-  User02Icon,
   UserGroupIcon,
   UserMultipleIcon,
 } from '@hugeicons/core-free-icons'
@@ -254,10 +253,6 @@ function LandingUserMenu({ session }: { session: SessionResponse }) {
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem render={<Link to="/account" />}>
-          <HugeiconsIcon icon={User02Icon} strokeWidth={2} />
-          Profile
-        </DropdownMenuItem>
         <DropdownMenuItem render={<Link to="/settings" />}>
           <HugeiconsIcon icon={Settings02Icon} strokeWidth={2} />
           Settings

@@ -281,10 +281,6 @@ function AppShellUserMenu({
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem render={<Link to="/account" />}>
-                <HugeiconsIcon icon={User02Icon} strokeWidth={2} />
-                Profile
-              </DropdownMenuItem>
               {extraItems.map((item) => (
                 <DropdownMenuItem
                   key={navItemKey(item)}

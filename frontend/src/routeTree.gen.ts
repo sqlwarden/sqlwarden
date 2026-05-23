@@ -13,13 +13,11 @@ import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdministrationRouteImport } from './routes/administration'
-import { Route as AccountRouteImport } from './routes/account'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as AdministrationIndexRouteImport } from './routes/administration.index'
 import { Route as SettingsUsersRouteImport } from './routes/settings.users'
-import { Route as SettingsProfileRouteImport } from './routes/settings.profile'
 import { Route as SettingsOrganizationsRouteImport } from './routes/settings.organizations'
 import { Route as SettingsMyOrganizationsRouteImport } from './routes/settings.my-organizations'
 import { Route as SettingsApiTokensRouteImport } from './routes/settings.api-tokens'
@@ -71,11 +69,6 @@ const AdministrationRoute = AdministrationRouteImport.update({
   path: '/administration',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AccountRoute = AccountRouteImport.update({
-  id: '/account',
-  path: '/account',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -99,11 +92,6 @@ const AdministrationIndexRoute = AdministrationIndexRouteImport.update({
 const SettingsUsersRoute = SettingsUsersRouteImport.update({
   id: '/users',
   path: '/users',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsProfileRoute = SettingsProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsOrganizationsRoute = SettingsOrganizationsRouteImport.update({
@@ -274,7 +262,6 @@ const OrgsOrg_slugWorkspacesWorkspace_idRolesRole_idRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/account': typeof AccountRoute
   '/administration': typeof AdministrationRouteWithChildren
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRouteWithChildren
@@ -288,7 +275,6 @@ export interface FileRoutesByFullPath {
   '/settings/api-tokens': typeof SettingsApiTokensRoute
   '/settings/my-organizations': typeof SettingsMyOrganizationsRoute
   '/settings/organizations': typeof SettingsOrganizationsRoute
-  '/settings/profile': typeof SettingsProfileRoute
   '/settings/users': typeof SettingsUsersRoute
   '/administration/': typeof AdministrationIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -317,7 +303,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/account': typeof AccountRoute
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/administration/administrators': typeof AdministrationAdministratorsRoute
@@ -328,7 +313,6 @@ export interface FileRoutesByTo {
   '/settings/api-tokens': typeof SettingsApiTokensRoute
   '/settings/my-organizations': typeof SettingsMyOrganizationsRoute
   '/settings/organizations': typeof SettingsOrganizationsRoute
-  '/settings/profile': typeof SettingsProfileRoute
   '/settings/users': typeof SettingsUsersRoute
   '/administration': typeof AdministrationIndexRoute
   '/settings': typeof SettingsIndexRoute
@@ -358,7 +342,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/account': typeof AccountRoute
   '/administration': typeof AdministrationRouteWithChildren
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRouteWithChildren
@@ -372,7 +355,6 @@ export interface FileRoutesById {
   '/settings/api-tokens': typeof SettingsApiTokensRoute
   '/settings/my-organizations': typeof SettingsMyOrganizationsRoute
   '/settings/organizations': typeof SettingsOrganizationsRoute
-  '/settings/profile': typeof SettingsProfileRoute
   '/settings/users': typeof SettingsUsersRoute
   '/administration/': typeof AdministrationIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -403,7 +385,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
-    | '/account'
     | '/administration'
     | '/login'
     | '/settings'
@@ -417,7 +398,6 @@ export interface FileRouteTypes {
     | '/settings/api-tokens'
     | '/settings/my-organizations'
     | '/settings/organizations'
-    | '/settings/profile'
     | '/settings/users'
     | '/administration/'
     | '/settings/'
@@ -446,7 +426,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
-    | '/account'
     | '/login'
     | '/setup'
     | '/administration/administrators'
@@ -457,7 +436,6 @@ export interface FileRouteTypes {
     | '/settings/api-tokens'
     | '/settings/my-organizations'
     | '/settings/organizations'
-    | '/settings/profile'
     | '/settings/users'
     | '/administration'
     | '/settings'
@@ -486,7 +464,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
-    | '/account'
     | '/administration'
     | '/login'
     | '/settings'
@@ -500,7 +477,6 @@ export interface FileRouteTypes {
     | '/settings/api-tokens'
     | '/settings/my-organizations'
     | '/settings/organizations'
-    | '/settings/profile'
     | '/settings/users'
     | '/administration/'
     | '/settings/'
@@ -530,7 +506,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
-  AccountRoute: typeof AccountRoute
   AdministrationRoute: typeof AdministrationRouteWithChildren
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRouteWithChildren
@@ -568,13 +543,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdministrationRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/account': {
-      id: '/account'
-      path: '/account'
-      fullPath: '/account'
-      preLoaderRoute: typeof AccountRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -608,13 +576,6 @@ declare module '@tanstack/react-router' {
       path: '/users'
       fullPath: '/settings/users'
       preLoaderRoute: typeof SettingsUsersRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/profile': {
-      id: '/settings/profile'
-      path: '/profile'
-      fullPath: '/settings/profile'
-      preLoaderRoute: typeof SettingsProfileRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/organizations': {
@@ -854,7 +815,6 @@ interface SettingsRouteChildren {
   SettingsApiTokensRoute: typeof SettingsApiTokensRoute
   SettingsMyOrganizationsRoute: typeof SettingsMyOrganizationsRoute
   SettingsOrganizationsRoute: typeof SettingsOrganizationsRoute
-  SettingsProfileRoute: typeof SettingsProfileRoute
   SettingsUsersRoute: typeof SettingsUsersRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
@@ -865,7 +825,6 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsApiTokensRoute: SettingsApiTokensRoute,
   SettingsMyOrganizationsRoute: SettingsMyOrganizationsRoute,
   SettingsOrganizationsRoute: SettingsOrganizationsRoute,
-  SettingsProfileRoute: SettingsProfileRoute,
   SettingsUsersRoute: SettingsUsersRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }
@@ -1010,7 +969,6 @@ const OrgsOrg_slugRouteWithChildren = OrgsOrg_slugRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
-  AccountRoute: AccountRoute,
   AdministrationRoute: AdministrationRouteWithChildren,
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRouteWithChildren,
