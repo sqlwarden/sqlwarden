@@ -4,7 +4,21 @@
 
 ### `POST /api/setup`
 
-Creates the first account and instance admin. In `ACCESS_MODE=single_user`, setup also seeds a local organization:
+Creates the first account and instance admin. In `ACCESS_MODE=multi_user`, the request must also include the first organization:
+
+```json
+{
+  "name": "Admin User",
+  "email": "admin@example.com",
+  "password": "securepass99",
+  "organization_name": "Acme Cloud",
+  "organization_slug": "acme-cloud"
+}
+```
+
+`organization_slug` is optional. If omitted, the API derives it from `organization_name`.
+
+In `ACCESS_MODE=single_user`, setup ignores organization request fields and seeds a local organization:
 
 ```json
 {
@@ -17,15 +31,14 @@ Creates the first account and instance admin. In `ACCESS_MODE=single_user`, setu
 }
 ```
 
-In `ACCESS_MODE=multi_user`, the response omits `organization`.
-
 ### `GET /api/setup/status`
 
 Response:
 
 ```json
 {
-  "configured": true
+  "configured": true,
+  "access_mode": "multi_user"
 }
 ```
 

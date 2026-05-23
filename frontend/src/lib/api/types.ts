@@ -191,11 +191,13 @@ export interface SessionResponse {
 
 export interface SetupStatusResponse {
   configured: boolean
+  access_mode: 'multi_user' | 'single_user'
 }
 
 export interface SetupResponse {
   account: Account
   access_token: string
+  organization?: Organization
 }
 
 export interface AccessTokenResponse {

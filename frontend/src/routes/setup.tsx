@@ -26,18 +26,17 @@ function SetupPage() {
     email: '',
     password: '',
     confirmPassword: '',
+    organizationName: '',
+    organizationSlug: '',
   })
+  const [slugTouched, setSlugTouched] = useState(false)
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({})
 
   const mutation = useMutation({
     mutationFn: async () =>
       api.post<SetupResponse>(
         '/api/setup',
-        {
-          name: values.name.trim(),
-          email: values.email.trim(),
-          password: values.password,
-        },
+        setupPayload(values, setupStatus.data?.access_mode),
         { skipAuth: true },
       ),
     onSuccess: async (payload) => {
@@ -73,11 +72,26 @@ function SetupPage() {
     return <Navigate to="/" replace />
   }
 
+  const requiresOrganization = setupStatus.data?.access_mode !== 'single_user'
+
   function updateField<K extends keyof typeof values>(field: K, value: (typeof values)[K]) {
-    setValues((current) => ({ ...current, [field]: value }))
+    setValues((current) => {
+      const next = { ...current, [field]: value }
+      if (field === 'organizationName' && !slugTouched) {
+        next.organizationSlug = slugify(value)
+      }
+      return next
+    })
     setLocalErrors((current) => {
       const next = { ...current }
       delete next[field]
+      if (field === 'organizationName') {
+        delete next.organization_name
+        if (!slugTouched) delete next.organization_slug
+      }
+      if (field === 'organizationSlug') {
+        delete next.organization_slug
+      }
       if (field === 'password' || field === 'confirmPassword') {
         delete next.password
         delete next.confirmPassword
@@ -91,6 +105,14 @@ function SetupPage() {
 
     if (!values.name.trim()) nextErrors.name = 'Name is required.'
     if (!values.email.trim()) nextErrors.email = 'Email is required.'
+    if (requiresOrganization) {
+      if (!values.organizationName.trim()) nextErrors.organization_name = 'Organization name is required.'
+      if (!values.organizationSlug.trim()) nextErrors.organization_slug = 'Organization slug is required.'
+      else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(values.organizationSlug.trim())) {
+        nextErrors.organization_slug =
+          'Organization slug may only contain lowercase letters, numbers, and hyphens.'
+      }
+    }
     if (!values.password) nextErrors.password = 'Password is required.'
     else if (values.password.length < 8) nextErrors.password = 'Password must be at least 8 characters.'
     if (!values.confirmPassword) nextErrors.confirmPassword = 'Please confirm the password.'
@@ -119,9 +141,7 @@ function SetupPage() {
           <Badge variant="outline">First-time setup</Badge>
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold tracking-tight">Create the instance admin</h1>
-            <p className="text-sm text-muted-foreground">
-              This account will administer the SQLWarden instance. Organization setup comes next.
-            </p>
+            <p className="text-sm text-muted-foreground">{setupDescription(requiresOrganization)}</p>
           </div>
         </div>
 
@@ -129,7 +149,9 @@ function SetupPage() {
           <CardHeader className="px-6 pt-6">
             <CardTitle>Instance Setup</CardTitle>
             <CardDescription>
-              Configure the primary administrative identity for this deployment.
+              {requiresOrganization
+                ? 'Configure the primary administrative identity and default organization.'
+                : 'Configure the primary administrative identity for this deployment.'}
             </CardDescription>
           </CardHeader>
 
@@ -154,6 +176,31 @@ function SetupPage() {
                 />
               </Field>
 
+              {requiresOrganization ? (
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Organization name" error={formErrors.organization_name}>
+                    <Input
+                      autoComplete="organization"
+                      placeholder="Acme Cloud"
+                      value={values.organizationName}
+                      onChange={(event) => updateField('organizationName', event.target.value)}
+                    />
+                  </Field>
+
+                  <Field label="Organization slug" error={formErrors.organization_slug}>
+                    <Input
+                      autoComplete="off"
+                      placeholder="acme-cloud"
+                      value={values.organizationSlug}
+                      onChange={(event) => {
+                        setSlugTouched(true)
+                        updateField('organizationSlug', slugify(event.target.value))
+                      }}
+                    />
+                  </Field>
+                </div>
+              ) : null}
+
               <div className="grid gap-5 sm:grid-cols-2">
                 <Field label="Password" error={formErrors.password}>
                   <Input
@@ -177,10 +224,16 @@ function SetupPage() {
               </div>
 
               <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-                This account gets full instance-level access. Organization creation can be skipped later.
+                {requiresOrganization
+                  ? 'This account gets instance admin access and becomes the owner of the first organization.'
+                  : 'This account gets instance admin access. A local organization will be created automatically.'}
               </div>
               <Button className="h-10 w-full" disabled={mutation.isPending} size="lg" type="submit">
-                {mutation.isPending ? 'Creating admin account…' : 'Continue to sign in'}
+                {mutation.isPending
+                  ? 'Creating setup…'
+                  : requiresOrganization
+                    ? 'Create admin and organization'
+                    : 'Create admin account'}
               </Button>
             </form>
           </CardContent>
@@ -192,6 +245,46 @@ function SetupPage() {
       </div>
     </main>
   )
+}
+
+function setupPayload(
+  values: {
+    name: string
+    email: string
+    password: string
+    organizationName: string
+    organizationSlug: string
+  },
+  accessMode: 'multi_user' | 'single_user' | undefined,
+) {
+  const payload: Record<string, string> = {
+    name: values.name.trim(),
+    email: values.email.trim(),
+    password: values.password,
+  }
+
+  if (accessMode !== 'single_user') {
+    payload.organization_name = values.organizationName.trim()
+    payload.organization_slug = values.organizationSlug.trim()
+  }
+
+  return payload
+}
+
+function setupDescription(requiresOrganization: boolean) {
+  if (requiresOrganization) {
+    return 'Create the first administrator and organization for this SQLWarden deployment.'
+  }
+  return 'Create the first administrator for this SQLWarden deployment.'
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
 }
 
 function Field({

@@ -14,11 +14,15 @@ import (
 // setupInstance calls POST /api/setup and returns the access token.
 func setupInstance(t *testing.T, app *application, email, name, password string) string {
 	t.Helper()
-	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
+	body := map[string]any{
 		"email":    email,
 		"name":     name,
 		"password": password,
-	}), app.routes())
+	}
+	if app.config.AccessMode != AccessModeSingleUser {
+		body["organization_name"] = "Default Organization"
+	}
+	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", body), app.routes())
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("setupInstance: got %d: %s", res.StatusCode, res.BodyBytes)
 	}
@@ -34,9 +38,10 @@ func TestSetupCreatesFirstInstanceAdmin(t *testing.T) {
 	app := newTestApp(t)
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
-		"email":    "admin@example.com",
-		"name":     "Admin",
-		"password": "securepass99",
+		"email":             "admin@example.com",
+		"name":              "Admin",
+		"password":          "securepass99",
+		"organization_name": "Acme Cloud",
 	}), app.routes())
 
 	assert.Equal(t, res.StatusCode, http.StatusCreated)
@@ -44,14 +49,25 @@ func TestSetupCreatesFirstInstanceAdmin(t *testing.T) {
 	assert.Equal(t, hasToken, true)
 	_, hasAccount := res.BodyFields["account"]
 	assert.Equal(t, hasAccount, true)
+	org, hasOrg := res.BodyFields["organization"].(map[string]any)
+	assert.Equal(t, hasOrg, true)
+	assert.Equal(t, org["slug"], "acme-cloud")
+	assert.Equal(t, org["name"], "Acme Cloud")
 }
 
-func TestSetupInMultiUserModeDoesNotSeedOrganization(t *testing.T) {
+func TestSetupInMultiUserModeSeedsFirstOrganizationAndOwnerPolicy(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	app.config.AccessMode = AccessModeMultiUser
 
-	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
+		"email":             "admin@example.com",
+		"name":              "Admin",
+		"password":          "securepass99",
+		"organization_name": "First Organization",
+		"organization_slug": "first-org",
+	}), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
 
 	account, found, err := app.db.GetAccountByEmail(t.Context(), "admin@example.com")
 	assert.Nil(t, err)
@@ -63,7 +79,64 @@ func TestSetupInMultiUserModeDoesNotSeedOrganization(t *testing.T) {
 		PageSize:  10,
 	})
 	assert.Nil(t, err)
-	assert.Equal(t, orgs.Total, 0)
+	assert.Equal(t, orgs.Total, 1)
+	assert.Equal(t, orgs.Items[0].Slug, "first-org")
+	assert.Equal(t, orgs.Items[0].Name, "First Organization")
+	assert.Equal(t, orgs.Items[0].Role, access.BuiltinOrgOwnerRole)
+}
+
+func TestSetupInMultiUserModeRequiresOrganization(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.config.AccessMode = AccessModeMultiUser
+
+	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
+		"email":    "admin@example.com",
+		"name":     "Admin",
+		"password": "securepass99",
+	}), app.routes())
+
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertBodyContainsJSONKeys(t, res.BodyBytes, "field_errors")
+}
+
+func TestSetupInMultiUserModeRejectsInvalidOrganizationSlug(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.config.AccessMode = AccessModeMultiUser
+
+	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
+		"email":             "admin@example.com",
+		"name":              "Admin",
+		"password":          "securepass99",
+		"organization_name": "First Organization",
+		"organization_slug": "First Org",
+	}), app.routes())
+
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+}
+
+func TestSetupInMultiUserModeRejectsDuplicateOrganizationSlug(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.config.AccessMode = AccessModeMultiUser
+
+	_, err := app.db.InsertOrg(t.Context(), "first-org", "Existing Organization")
+	assert.Nil(t, err)
+
+	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
+		"email":             "admin@example.com",
+		"name":              "Admin",
+		"password":          "securepass99",
+		"organization_name": "First Organization",
+		"organization_slug": "first-org",
+	}), app.routes())
+
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+
+	_, found, err := app.db.GetAccountByEmail(t.Context(), "admin@example.com")
+	assert.Nil(t, err)
+	assert.Equal(t, found, false)
 }
 
 func TestSetupInSingleUserModeSeedsLocalOrganizationAndOwnerPolicy(t *testing.T) {
@@ -135,6 +208,7 @@ func TestSetupStatus_ReturnsStableShape(t *testing.T) {
 	res := send(t, newTestRequest(t, http.MethodGet, "/api/setup/status", nil), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assertBodyContainsJSONKeys(t, res.BodyBytes, "configured")
+	assert.Equal(t, res.BodyFields["access_mode"].(string), string(AccessModeMultiUser))
 }
 
 func TestSetupBlockedAfterFirstAdmin(t *testing.T) {
@@ -146,9 +220,10 @@ func TestSetupBlockedAfterFirstAdmin(t *testing.T) {
 
 	// Second setup is rejected.
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
-		"email":    "admin2@example.com",
-		"name":     "Admin2",
-		"password": "securepass99",
+		"email":             "admin2@example.com",
+		"name":              "Admin2",
+		"password":          "securepass99",
+		"organization_name": "Another Organization",
 	}), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusConflict)
 }

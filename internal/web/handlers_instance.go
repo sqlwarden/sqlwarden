@@ -20,10 +20,12 @@ import (
 // makes it the first instance admin. Returns 409 if already configured.
 func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name     string              `json:"name"`
-		Email    string              `json:"email"`
-		Password string              `json:"password"`
-		V        validator.Validator `json:"-"`
+		Name             string              `json:"name"`
+		Email            string              `json:"email"`
+		Password         string              `json:"password"`
+		OrganizationName string              `json:"organization_name"`
+		OrganizationSlug string              `json:"organization_slug"`
+		V                validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -32,9 +34,26 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	input.Name = strings.TrimSpace(input.Name)
+	input.Email = strings.TrimSpace(input.Email)
+	input.OrganizationName = strings.TrimSpace(input.OrganizationName)
+	input.OrganizationSlug = strings.TrimSpace(input.OrganizationSlug)
+
 	input.V.CheckField(input.Name != "", "name", "Name is required.")
 	input.V.CheckField(input.Email != "", "email", "Email is required.")
 	input.V.CheckField(len(input.Password) >= 8, "password", "Password must be at least 8 characters.")
+
+	organizationSlug := input.OrganizationSlug
+	if app.config.AccessMode != AccessModeSingleUser {
+		input.V.CheckField(input.OrganizationName != "", "organization_name", "Organization name is required.")
+		if organizationSlug == "" {
+			organizationSlug = slugify(input.OrganizationName)
+		}
+		input.V.CheckField(organizationSlug != "", "organization_slug", "Organization slug is required.")
+		if organizationSlug != "" {
+			input.V.CheckField(isValidSlug(organizationSlug), "organization_slug", "Organization slug may only contain lowercase letters, numbers, and hyphens.")
+		}
+	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -48,6 +67,19 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 	if configured {
 		app.errorMessage(w, r, http.StatusConflict, "Instance is already configured.", nil)
 		return
+	}
+
+	if app.config.AccessMode != AccessModeSingleUser {
+		_, found, err := app.db.GetOrgBySlug(r.Context(), organizationSlug)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if found {
+			input.V.AddFieldError("organization_slug", "An organization with this slug already exists.")
+			app.failedValidation(w, r, input.V)
+			return
+		}
 	}
 
 	hashedPassword, err := password.Hash(input.Password)
@@ -81,6 +113,18 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 	if app.config.AccessMode == AccessModeSingleUser {
 		seededOrg, err := app.seedSingleUserOrganization(r.Context(), account.ID)
 		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		org = &seededOrg
+	} else {
+		seededOrg, err := app.createOwnedOrganization(r.Context(), organizationSlug, input.OrganizationName, account.ID)
+		if err != nil {
+			if isUniqueViolation(err) {
+				input.V.AddFieldError("organization_slug", "An organization with this slug already exists.")
+				app.failedValidation(w, r, input.V)
+				return
+			}
 			app.serverError(w, r, err)
 			return
 		}
@@ -130,7 +174,8 @@ func (app *application) setupStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = response.JSON(w, http.StatusOK, map[string]any{
-		"configured": configured,
+		"configured":  configured,
+		"access_mode": app.config.AccessMode,
 	})
 	if err != nil {
 		app.serverError(w, r, err)
