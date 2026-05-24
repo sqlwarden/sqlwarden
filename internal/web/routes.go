@@ -47,6 +47,8 @@ func (app *application) routes() http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(app.requireAccount)
 			r.Get("/account", app.getAccount)
+			r.Patch("/account", app.updateAccount)
+			r.Patch("/account/password", app.updateAccountPassword)
 			r.Get("/account/orgs", app.getAccountOrgs)
 			r.Get("/session", app.getSession)
 		})

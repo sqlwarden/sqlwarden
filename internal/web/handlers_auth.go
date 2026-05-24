@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sqlwarden/internal/database"
@@ -253,6 +254,91 @@ func (app *application) getAccount(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func (app *application) updateAccount(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Name string              `json:"name"`
+		V    validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	input.Name = strings.TrimSpace(input.Name)
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	account := contextGetAccount(r)
+	updatedAccount, err := app.db.UpdateAccountName(r.Context(), account.ID, input.Name)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = response.JSON(w, http.StatusOK, updatedAccount)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) updateAccountPassword(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		CurrentPassword string              `json:"current_password"`
+		NewPassword     string              `json:"new_password"`
+		V               validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	input.V.CheckField(input.CurrentPassword != "", "current_password", "Current password is required.")
+	input.V.CheckField(len(input.NewPassword) >= 8, "new_password", "New password must be at least 8 characters.")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	account := contextGetAccount(r)
+	if account.Password == nil {
+		input.V.AddFieldError("current_password", "Password changes are not available for this account.")
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	match, err := password.Matches(input.CurrentPassword, *account.Password)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !match {
+		input.V.AddFieldError("current_password", "Current password is incorrect.")
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	hashedPassword, err := password.Hash(input.NewPassword)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = app.db.UpdateAccountPassword(r.Context(), account.ID, hashedPassword)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) getAccountOrgs(w http.ResponseWriter, r *http.Request) {

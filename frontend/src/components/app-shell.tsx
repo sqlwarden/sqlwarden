@@ -4,9 +4,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
+  Building04Icon,
   Logout03Icon,
   PaintBoardIcon,
-  ShieldUserIcon,
+  Settings02Icon,
   User02Icon,
 } from '@hugeicons/core-free-icons'
 import type { SessionResponse } from '#/lib/api/types'
@@ -281,6 +282,16 @@ function AppShellUserMenu({
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
+              <DropdownMenuItem render={<Link to="/settings/account" />}>
+                <HugeiconsIcon icon={Settings02Icon} strokeWidth={2} />
+                Settings
+              </DropdownMenuItem>
+              {session.organizations.length >= 2 ? (
+                <DropdownMenuItem render={<Link to="/settings/my-organizations" />}>
+                  <HugeiconsIcon icon={Building04Icon} strokeWidth={2} />
+                  Switch Organization
+                </DropdownMenuItem>
+              ) : null}
               {extraItems.map((item) => (
                 <DropdownMenuItem
                   key={navItemKey(item)}
@@ -290,12 +301,6 @@ function AppShellUserMenu({
                   {item.label}
                 </DropdownMenuItem>
               ))}
-              {session.is_instance_admin ? (
-                <DropdownMenuItem render={<Link to="/settings/administrators" />}>
-                  <HugeiconsIcon icon={ShieldUserIcon} strokeWidth={2} />
-                  Administration
-                </DropdownMenuItem>
-              ) : null}
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem

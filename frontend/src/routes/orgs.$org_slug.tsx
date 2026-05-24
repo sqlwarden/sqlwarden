@@ -136,9 +136,6 @@ function OrganizationLayout() {
           session={session.data}
           preferences={preferences}
           setPreferences={setPreferences}
-          extraUserItems={[
-            { to: '/settings/my-organizations', label: 'Switch Organization', icon: Building04Icon },
-          ]}
         />
         <AppShellRail />
       </Sidebar>

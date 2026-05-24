@@ -120,6 +120,24 @@ func (db *DB) UpdateAccountPassword(ctx context.Context, id int64, hashedPasswor
 	return err
 }
 
+func (db *DB) UpdateAccountName(ctx context.Context, id int64, name string) (Account, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var account Account
+	err := db.NewUpdate().
+		Model(&account).
+		Set("name = ?", name).
+		Set("updated_at = ?", time.Now()).
+		Where("id = ?", id).
+		Returning("*").
+		Scan(ctx)
+	if err != nil {
+		return Account{}, err
+	}
+	return account, nil
+}
+
 func (db *DB) DeactivateAccount(ctx context.Context, id int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()

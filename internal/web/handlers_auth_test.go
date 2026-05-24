@@ -342,6 +342,92 @@ func TestGetAccount(t *testing.T) {
 	assert.Equal(t, resNoAuth.StatusCode, http.StatusUnauthorized)
 }
 
+func TestUpdateAccount(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	setupInstance(t, app, uniqueEmail(t, "account-update-admin"), "Admin", "securepass99")
+
+	registerTestUser(t, app, "update-account@example.com", "Old Name", "securepass99")
+	loginRes := loginTestUser(t, app, "update-account@example.com", "securepass99")
+	tok := extractAccessToken(t, loginRes)
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/account", map[string]any{
+		"name": "New Name",
+	}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["name"], "New Name")
+	assert.Equal(t, res.BodyFields["email"], "update-account@example.com")
+
+	account, found, err := app.db.GetAccountByEmail(t.Context(), "update-account@example.com")
+	assert.Nil(t, err)
+	assert.True(t, found)
+	assert.Equal(t, account.Name, "New Name")
+}
+
+func TestUpdateAccountValidation(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok := seedAccountWithToken(t, app, uniqueEmail(t, "account-update-validation"), "Validation User")
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/account", map[string]any{
+		"name": " ",
+	}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "name")
+}
+
+func TestUpdateAccountPassword(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	setupInstance(t, app, uniqueEmail(t, "account-password-admin"), "Admin", "securepass99")
+
+	registerTestUser(t, app, "password-account@example.com", "Password User", "oldpass99")
+	loginRes := loginTestUser(t, app, "password-account@example.com", "oldpass99")
+	tok := extractAccessToken(t, loginRes)
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/account/password", map[string]any{
+		"current_password": "oldpass99",
+		"new_password":     "newpass99",
+	}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	oldLogin := loginTestUser(t, app, "password-account@example.com", "oldpass99")
+	assert.Equal(t, oldLogin.StatusCode, http.StatusUnauthorized)
+
+	newLogin := loginTestUser(t, app, "password-account@example.com", "newpass99")
+	assert.Equal(t, newLogin.StatusCode, http.StatusOK)
+}
+
+func TestUpdateAccountPasswordRejectsIncorrectCurrentPassword(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	setupInstance(t, app, uniqueEmail(t, "account-password-wrong-admin"), "Admin", "securepass99")
+
+	registerTestUser(t, app, "password-wrong@example.com", "Password Wrong", "oldpass99")
+	loginRes := loginTestUser(t, app, "password-wrong@example.com", "oldpass99")
+	tok := extractAccessToken(t, loginRes)
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/account/password", map[string]any{
+		"current_password": "wrongpass99",
+		"new_password":     "newpass99",
+	}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "current_password")
+}
+
+func TestUpdateAccountPasswordRejectsSSOOnlyAccount(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok := seedAccountWithToken(t, app, uniqueEmail(t, "account-password-sso"), "SSO User")
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/account/password", map[string]any{
+		"current_password": "currentpass99",
+		"new_password":     "newpass99",
+	}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "current_password")
+}
+
 func TestGetAccountOrgs(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
