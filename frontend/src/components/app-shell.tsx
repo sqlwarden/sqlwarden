@@ -193,6 +193,12 @@ export function AppShellContent({
 }) {
   return (
     <main className="min-h-svh px-4 py-6 md:px-6">
+      <div className="mb-4 flex md:hidden">
+        <SidebarTrigger
+          className="cursor-pointer border border-border bg-background shadow-sm"
+          aria-label="Open navigation"
+        />
+      </div>
       {children}
     </main>
   )
