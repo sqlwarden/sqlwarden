@@ -27,7 +27,7 @@ import {
 } from '#/components/app-shell'
 import { useSession } from '#/hooks/use-session'
 import { useSetupStatus } from '#/hooks/use-setup-status'
-import { orgEffectivePermissionsQueryOptions, orgWorkspaceQueryOptions } from '#/lib/api/query'
+import { orgEffectivePermissionsQueryOptions, orgQueryOptions, orgWorkspaceQueryOptions } from '#/lib/api/query'
 import { getAccessToken } from '#/lib/auth/access-token'
 import { hasAnyPermission, permission, type Permission } from '#/lib/permissions'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
@@ -43,6 +43,10 @@ function OrganizationLayout() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const { org_slug: orgSlug } = Route.useParams()
   const workspaceId = workspaceIdFromPath(pathname, orgSlug)
+  const organization = useQuery({
+    ...orgQueryOptions(orgSlug),
+    enabled: hasToken,
+  })
   const workspace = useQuery({
     ...orgWorkspaceQueryOptions(orgSlug, workspaceId ?? ''),
     enabled: Boolean(workspaceId && hasToken),
@@ -109,7 +113,11 @@ function OrganizationLayout() {
       <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
         <AppShellHeader
           label="SQLWarden"
-          description={workspaceId ? `${orgSlug} / ${workspace.data?.name ?? `Workspace #${workspaceId}`}` : `@${orgSlug}`}
+          description={
+            workspaceId
+              ? `${organization.data?.name ?? orgSlug} / ${workspace.data?.name ?? `Workspace #${workspaceId}`}`
+              : organization.data?.name ?? orgSlug
+          }
           icon={Building04Icon}
         />
         <SidebarContent>
