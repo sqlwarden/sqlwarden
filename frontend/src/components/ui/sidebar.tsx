@@ -26,10 +26,13 @@ import { SidebarLeftIcon } from "@hugeicons/core-free-icons"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
-const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
+const SIDEBAR_WIDTH_STORAGE_KEY = "sqlwarden.sidebar.width"
+const SIDEBAR_MIN_WIDTH = 192
+const SIDEBAR_MAX_WIDTH = 384
+const SIDEBAR_DEFAULT_WIDTH = 240
 
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
@@ -39,6 +42,10 @@ type SidebarContextProps = {
   setOpenMobile: (open: boolean) => void
   isMobile: boolean
   toggleSidebar: () => void
+  sidebarWidth: number
+  setSidebarWidth: (width: number) => void
+  isResizing: boolean
+  setIsResizing: (resizing: boolean) => void
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
@@ -59,14 +66,24 @@ function SidebarProvider({
   className,
   style,
   children,
+  defaultWidth = SIDEBAR_DEFAULT_WIDTH,
   ...props
 }: React.ComponentProps<"div"> & {
   defaultOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  defaultWidth?: number
 }) {
   const isMobile = useIsMobile()
   const [openMobile, setOpenMobile] = React.useState(false)
+  const [isResizing, setIsResizing] = React.useState(false)
+  const [sidebarWidth, setSidebarWidthState] = React.useState(() => {
+    const persistedWidth = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)
+    const parsedWidth = Number(persistedWidth)
+    return Number.isFinite(parsedWidth)
+      ? clampSidebarWidth(parsedWidth)
+      : clampSidebarWidth(defaultWidth)
+  })
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -91,6 +108,12 @@ function SidebarProvider({
   const toggleSidebar = React.useCallback(() => {
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open)
   }, [isMobile, setOpen, setOpenMobile])
+
+  const setSidebarWidth = React.useCallback((width: number) => {
+    const nextWidth = clampSidebarWidth(width)
+    setSidebarWidthState(nextWidth)
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(nextWidth))
+  }, [])
 
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
@@ -121,19 +144,24 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
+      sidebarWidth,
+      setSidebarWidth,
+      isResizing,
+      setIsResizing,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar, sidebarWidth, setSidebarWidth, isResizing]
   )
 
   return (
     <SidebarContext.Provider value={contextValue}>
       <div
         data-slot="sidebar-wrapper"
+        data-resizing={isResizing}
         style={
           {
-            "--sidebar-width": SIDEBAR_WIDTH,
             "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
             ...style,
+            "--sidebar-width": `${sidebarWidth}px`,
           } as React.CSSProperties
         }
         className={cn(
@@ -217,7 +245,7 @@ function Sidebar({
       <div
         data-slot="sidebar-gap"
         className={cn(
-          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",
+          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear group-data-[resizing=true]/sidebar-wrapper:transition-none",
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
@@ -229,7 +257,7 @@ function Sidebar({
         data-slot="sidebar-container"
         data-side={side}
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
+          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear group-data-[resizing=true]/sidebar-wrapper:transition-none data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
             ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
@@ -276,17 +304,65 @@ function SidebarTrigger({
   )
 }
 
-function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
-  const { toggleSidebar } = useSidebar()
+function SidebarRail({ className, resizable = false, onClick, ...props }: React.ComponentProps<"button"> & { resizable?: boolean }) {
+  const { isMobile, sidebarWidth, setIsResizing, setSidebarWidth, state, toggleSidebar } = useSidebar()
+  const didResize = React.useRef(false)
+
+  function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>) {
+    if (!resizable || isMobile || state === "collapsed" || event.button !== 0) {
+      return
+    }
+
+    const startX = event.clientX
+    const startWidth = sidebarWidth
+    const side = event.currentTarget.closest("[data-side]")?.getAttribute("data-side")
+    const direction = side === "right" ? -1 : 1
+    didResize.current = false
+    setIsResizing(true)
+    const previousCursor = document.body.style.cursor
+    const previousUserSelect = document.body.style.userSelect
+    document.body.style.cursor = "ew-resize"
+    document.body.style.userSelect = "none"
+    event.currentTarget.setPointerCapture(event.pointerId)
+
+    function handlePointerMove(moveEvent: PointerEvent) {
+      const delta = (moveEvent.clientX - startX) * direction
+      if (Math.abs(delta) > 2) {
+        didResize.current = true
+      }
+      setSidebarWidth(startWidth + delta)
+    }
+
+    function handlePointerUp() {
+      setIsResizing(false)
+      document.body.style.cursor = previousCursor
+      document.body.style.userSelect = previousUserSelect
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", handlePointerUp)
+      window.removeEventListener("pointercancel", handlePointerUp)
+    }
+
+    window.addEventListener("pointermove", handlePointerMove)
+    window.addEventListener("pointerup", handlePointerUp)
+    window.addEventListener("pointercancel", handlePointerUp)
+  }
 
   return (
     <button
       data-sidebar="rail"
       data-slot="sidebar-rail"
-      aria-label="Toggle Sidebar"
+      aria-label={resizable ? "Resize or toggle sidebar" : "Toggle Sidebar"}
       tabIndex={-1}
-      onClick={toggleSidebar}
-      title="Toggle Sidebar"
+      onPointerDown={handlePointerDown}
+      onClick={(event) => {
+        onClick?.(event)
+        if (didResize.current) {
+          didResize.current = false
+          return
+        }
+        toggleSidebar()
+      }}
+      title={resizable ? "Drag to resize or click to toggle sidebar" : "Toggle Sidebar"}
       className={cn(
         "absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2",
         "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
@@ -299,6 +375,10 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
       {...props}
     />
   )
+}
+
+function clampSidebarWidth(width: number) {
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width))
 }
 
 function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {

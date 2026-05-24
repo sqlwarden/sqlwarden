@@ -105,8 +105,8 @@ function OrganizationLayout() {
   return (
     <SidebarProvider
       defaultOpen={initialOpen}
+      defaultWidth={240}
       style={{
-        '--sidebar-width': '15rem',
         '--sidebar-width-icon': '3rem',
       } as React.CSSProperties}
     >

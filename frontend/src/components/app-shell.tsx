@@ -182,7 +182,7 @@ export function AppShellSidebarFooter({
 }
 
 export function AppShellRail() {
-  return <SidebarRail />
+  return <SidebarRail resizable />
 }
 
 export function AppShellContent({
