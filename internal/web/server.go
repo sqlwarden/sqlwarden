@@ -37,9 +37,18 @@ func (app *application) ServeHTTP(ctx context.Context) error {
 		shutdownErrorChan <- srv.Shutdown(shutdownCtx)
 	}()
 
-	app.logger.Info("starting server", slog.Group("server", "addr", srv.Addr))
+	scheme := "http"
+	if app.config.TLS.Enabled {
+		scheme = "https"
+	}
+	app.logger.Info("starting server", slog.Group("server", "addr", srv.Addr, "scheme", scheme))
 
-	err := srv.ListenAndServe()
+	var err error
+	if app.config.TLS.Enabled {
+		err = srv.ListenAndServeTLS(app.config.TLS.CertFile, app.config.TLS.KeyFile)
+	} else {
+		err = srv.ListenAndServe()
+	}
 	if !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

@@ -63,6 +63,10 @@ access_mode: single_user
 personal_spaces_enabled: false
 jwt:
   access_token_ttl: 12h
+tls:
+  enabled: true
+  cert_file: /etc/sqlwarden/tls.crt
+  key_file: /etc/sqlwarden/tls.key
 db:
   driver: postgres
   dsn: cfg-dsn
@@ -117,6 +121,9 @@ desktop:
 	if cfg.JWT.AccessTokenTTL != 12*time.Hour {
 		t.Fatalf("jwt.accessTokenTTL = %s, want 12h", cfg.JWT.AccessTokenTTL)
 	}
+	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/etc/sqlwarden/tls.crt" || cfg.TLS.KeyFile != "/etc/sqlwarden/tls.key" {
+		t.Fatalf("unexpected tls config: %+v", cfg.TLS)
+	}
 	if cfg.DB.Driver != "postgres" || cfg.DB.DSN != "cfg-dsn" || cfg.DB.Automigrate {
 		t.Fatalf("unexpected db config: %+v", cfg.DB)
 	}
@@ -139,6 +146,9 @@ func TestLoadConfigEnvOverridesFile(t *testing.T) {
 	t.Setenv("HTTP_PORT", "8123")
 	t.Setenv("JWT_ACCESS_TOKEN_TTL", "6h")
 	t.Setenv("ACCESS_MODE", AccessModeSingleUser)
+	t.Setenv("TLS_ENABLED", "true")
+	t.Setenv("TLS_CERT_FILE", "/env/tls.crt")
+	t.Setenv("TLS_KEY_FILE", "/env/tls.key")
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -168,6 +178,9 @@ db:
 	if cfg.AccessMode != AccessModeSingleUser {
 		t.Fatalf("accessMode = %q, want %q", cfg.AccessMode, AccessModeSingleUser)
 	}
+	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/env/tls.crt" || cfg.TLS.KeyFile != "/env/tls.key" {
+		t.Fatalf("unexpected tls config: %+v", cfg.TLS)
+	}
 }
 
 func TestLoadConfigFlagsOverrideEnvAndFile(t *testing.T) {
@@ -193,6 +206,9 @@ db:
 		"--jwt-access-token-ttl", "2h",
 		"--deployment-mode", DeploymentModeDesktop,
 		"--access-mode", AccessModeSingleUser,
+		"--tls-enabled",
+		"--tls-cert-file", "/flag/tls.crt",
+		"--tls-key-file", "/flag/tls.key",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -216,6 +232,9 @@ db:
 	if cfg.AccessMode != AccessModeSingleUser {
 		t.Fatalf("accessMode = %q", cfg.AccessMode)
 	}
+	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/flag/tls.crt" || cfg.TLS.KeyFile != "/flag/tls.key" {
+		t.Fatalf("unexpected tls config: %+v", cfg.TLS)
+	}
 }
 
 func TestLoadConfigDeprecatedDesktopModeAlias(t *testing.T) {
@@ -229,6 +248,23 @@ func TestLoadConfigDeprecatedDesktopModeAlias(t *testing.T) {
 	}
 	if cfg.AccessMode != AccessModeSingleUser {
 		t.Fatalf("accessMode = %q, want %q", cfg.AccessMode, AccessModeSingleUser)
+	}
+}
+
+func TestLoadConfigRejectsEnabledTLSWithoutCertOrKey(t *testing.T) {
+	_, _, err := loadConfig([]string{"--tls-enabled"})
+	if err == nil {
+		t.Fatal("expected tls.enabled without cert/key to fail")
+	}
+
+	_, _, err = loadConfig([]string{"--tls-enabled", "--tls-cert-file", "/tmp/tls.crt"})
+	if err == nil {
+		t.Fatal("expected tls.enabled without key to fail")
+	}
+
+	_, _, err = loadConfig([]string{"--tls-enabled", "--tls-key-file", "/tmp/tls.key"})
+	if err == nil {
+		t.Fatal("expected tls.enabled without cert to fail")
 	}
 }
 

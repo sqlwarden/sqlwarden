@@ -23,6 +23,9 @@ const (
 	defaultEncryptionKey         = "dev-insecure-key-32byteslong!!"
 	defaultJWTSecretKey          = "fb57i5hiud5mzmykaquqsln5gcmolbac"
 	defaultJWTAccessTokenTTL     = 24 * time.Hour
+	defaultTLSEnabled            = false
+	defaultTLSCertFile           = ""
+	defaultTLSKeyFile            = ""
 	defaultNotificationsEmail    = ""
 	defaultSMTPHost              = "example.smtp.host"
 	defaultSMTPPort              = 25
@@ -71,6 +74,11 @@ type Config struct {
 		SecretKey      string
 		AccessTokenTTL time.Duration
 	}
+	TLS struct {
+		Enabled  bool
+		CertFile string
+		KeyFile  string
+	}
 	Notifications struct {
 		Email string
 	}
@@ -114,6 +122,9 @@ func DefaultConfig() Config {
 	cfg.Encryption.Key = defaultEncryptionKey
 	cfg.JWT.SecretKey = defaultJWTSecretKey
 	cfg.JWT.AccessTokenTTL = defaultJWTAccessTokenTTL
+	cfg.TLS.Enabled = defaultTLSEnabled
+	cfg.TLS.CertFile = defaultTLSCertFile
+	cfg.TLS.KeyFile = defaultTLSKeyFile
 	cfg.Notifications.Email = defaultNotificationsEmail
 	cfg.SMTP.Host = defaultSMTPHost
 	cfg.SMTP.Port = defaultSMTPPort
@@ -161,6 +172,9 @@ var configOptions = []configOption{
 	{key: "encryption.key", env: "ENCRYPTION_KEY", flagName: "encryption-key", defaultValue: defaultEncryptionKey, usage: "Application encryption key"},
 	{key: "jwt.secret_key", env: "JWT_SECRET_KEY", flagName: "jwt-secret-key", defaultValue: defaultJWTSecretKey, usage: "JWT signing secret"},
 	{key: "jwt.access_token_ttl", env: "JWT_ACCESS_TOKEN_TTL", flagName: "jwt-access-token-ttl", defaultValue: defaultJWTAccessTokenTTL, usage: "JWT access token lifetime (for example: 24h, 8h, 30m)"},
+	{key: "tls.enabled", env: "TLS_ENABLED", flagName: "tls-enabled", defaultValue: defaultTLSEnabled, usage: "Serve HTTPS using configured TLS certificate and key files"},
+	{key: "tls.cert_file", env: "TLS_CERT_FILE", flagName: "tls-cert-file", defaultValue: defaultTLSCertFile, usage: "Path to PEM encoded TLS certificate file"},
+	{key: "tls.key_file", env: "TLS_KEY_FILE", flagName: "tls-key-file", defaultValue: defaultTLSKeyFile, usage: "Path to PEM encoded TLS private key file"},
 	{key: "notifications.email", env: "NOTIFICATIONS_EMAIL", flagName: "notifications-email", defaultValue: defaultNotificationsEmail, usage: "Email address that receives error notifications"},
 	{key: "smtp.host", env: "SMTP_HOST", flagName: "smtp-host", defaultValue: defaultSMTPHost, usage: "SMTP server host"},
 	{key: "smtp.port", env: "SMTP_PORT", flagName: "smtp-port", defaultValue: defaultSMTPPort, usage: "SMTP server port"},
@@ -258,6 +272,9 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.Encryption.Key = v.GetString("encryption.key")
 	cfg.JWT.SecretKey = v.GetString("jwt.secret_key")
 	cfg.JWT.AccessTokenTTL = v.GetDuration("jwt.access_token_ttl")
+	cfg.TLS.Enabled = v.GetBool("tls.enabled")
+	cfg.TLS.CertFile = v.GetString("tls.cert_file")
+	cfg.TLS.KeyFile = v.GetString("tls.key_file")
 	cfg.Notifications.Email = v.GetString("notifications.email")
 	cfg.SMTP.Host = v.GetString("smtp.host")
 	cfg.SMTP.Port = v.GetInt("smtp.port")
@@ -287,6 +304,14 @@ func validateConfig(cfg Config) error {
 	}
 	if cfg.AccessMode != AccessModeMultiUser && cfg.AccessMode != AccessModeSingleUser {
 		return fmt.Errorf("access_mode must be %q or %q", AccessModeMultiUser, AccessModeSingleUser)
+	}
+	if cfg.TLS.Enabled {
+		if strings.TrimSpace(cfg.TLS.CertFile) == "" {
+			return fmt.Errorf("tls.cert_file is required when tls.enabled is true")
+		}
+		if strings.TrimSpace(cfg.TLS.KeyFile) == "" {
+			return fmt.Errorf("tls.key_file is required when tls.enabled is true")
+		}
 	}
 	if strings.TrimSpace(cfg.Desktop.ActiveBackend) == "" {
 		return fmt.Errorf("desktop.active_backend is required")
