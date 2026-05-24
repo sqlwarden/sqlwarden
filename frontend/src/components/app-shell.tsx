@@ -39,14 +39,10 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
 
 export type AppShellTheme = 'dark' | 'light' | 'system'
-export type AppShellContentLayout = 'centered' | 'full-width'
-export type AppShellNavbarStyle = 'sticky' | 'scroll'
 export type AppShellSidebarStyle = 'sidebar' | 'inset' | 'floating'
 
 export type AppShellPreferences = {
   themeMode: AppShellTheme
-  contentLayout: AppShellContentLayout
-  navbarStyle: AppShellNavbarStyle
   sidebarStyle: AppShellSidebarStyle
 }
 
@@ -59,15 +55,11 @@ export type AppShellNavItem = {
 
 const preferenceKeys = {
   themeMode: 'sqlwarden.preference.theme_mode',
-  contentLayout: 'sqlwarden.preference.content_layout',
-  navbarStyle: 'sqlwarden.preference.navbar_style',
   sidebarStyle: 'sqlwarden.preference.sidebar_style',
 } as const
 
 const defaultPreferences: AppShellPreferences = {
   themeMode: 'system',
-  contentLayout: 'centered',
-  navbarStyle: 'scroll',
   sidebarStyle: 'sidebar',
 }
 
@@ -191,14 +183,13 @@ export function AppShellRail() {
 }
 
 export function AppShellContent({
-  preferences,
   children,
 }: {
-  preferences: AppShellPreferences
+  preferences?: AppShellPreferences
   children: ReactNode
 }) {
   return (
-    <main className={preferences.contentLayout === 'centered' ? 'mx-auto min-h-svh w-full max-w-screen-2xl px-4 py-6 md:px-6' : 'min-h-svh px-4 py-6 md:px-6'}>
+    <main className="min-h-svh px-4 py-6 md:px-6">
       {children}
     </main>
   )
@@ -378,22 +369,6 @@ function AppShellPreferencesPopover({
             />
 
             <PreferenceToggle
-              label="Page Layout"
-              value={preferences.contentLayout}
-              options={['centered', 'full-width']}
-              labels={{ centered: 'Centered', 'full-width': 'Full Width' }}
-              onValueChange={(value) => updatePreference('contentLayout', value as AppShellContentLayout)}
-            />
-
-            <PreferenceToggle
-              label="Navbar Behavior"
-              value={preferences.navbarStyle}
-              options={['sticky', 'scroll']}
-              labels={{ sticky: 'Sticky', scroll: 'Scroll' }}
-              onValueChange={(value) => updatePreference('navbarStyle', value as AppShellNavbarStyle)}
-            />
-
-            <PreferenceToggle
               label="Sidebar Style"
               value={preferences.sidebarStyle}
               options={['inset', 'sidebar', 'floating']}
@@ -445,8 +420,6 @@ function PreferenceToggle({
 function readPreferences(themeMode: AppShellTheme): AppShellPreferences {
   return {
     themeMode,
-    contentLayout: readPreference(preferenceKeys.contentLayout, ['centered', 'full-width'], defaultPreferences.contentLayout),
-    navbarStyle: readPreference(preferenceKeys.navbarStyle, ['sticky', 'scroll'], defaultPreferences.navbarStyle),
     sidebarStyle: readPreference(preferenceKeys.sidebarStyle, ['sidebar', 'inset', 'floating'], defaultPreferences.sidebarStyle),
   }
 }
@@ -461,8 +434,8 @@ function applyPreferences(preferences: AppShellPreferences) {
   root.setAttribute('data-theme-mode', preferences.themeMode)
   root.removeAttribute('data-theme-preset')
   root.removeAttribute('data-font')
-  root.setAttribute('data-content-layout', preferences.contentLayout)
-  root.setAttribute('data-navbar-style', preferences.navbarStyle)
+  root.setAttribute('data-content-layout', 'full-width')
+  root.removeAttribute('data-navbar-style')
   root.setAttribute('data-sidebar-variant', preferences.sidebarStyle)
   root.setAttribute('data-sidebar-collapsible', 'icon')
 }
