@@ -1,19 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Navigate, createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/orgs/$org_slug/')({
-  component: OrganizationHomePage,
+  component: OrganizationIndexRedirectPage,
 })
 
-function OrganizationHomePage() {
-  return <PlaceholderPage title="Home" />
+function OrganizationIndexRedirectPage() {
+  const { org_slug: orgSlug } = Route.useParams()
+  return <Navigate to="/orgs/$org_slug/workspaces" params={{ org_slug: orgSlug }} replace />
 }
-
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-      <p className="text-sm text-muted-foreground">{title} works!</p>
-    </div>
-  )
-}
-

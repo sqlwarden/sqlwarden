@@ -268,17 +268,19 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
                 className="group flex flex-col border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:bg-muted/20 hover:shadow-sm"
               >
                 <div className="flex flex-1 flex-col gap-3 p-5">
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-center gap-3">
                     <div className={cn('flex size-10 shrink-0 items-center justify-center text-sm font-semibold', workspaceColor(workspace.name))}>
                       {getInitials(workspace.name, 'W')}
                     </div>
-                    <div className="min-w-0 flex-1 pt-0.5">
+                    <div className="min-w-0 flex-1">
                       <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
                         {workspace.name}
                       </p>
-                      <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                        {workspace.description || 'No description provided.'}
-                      </p>
+                      {workspace.description ? (
+                        <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                          {workspace.description}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 </div>
