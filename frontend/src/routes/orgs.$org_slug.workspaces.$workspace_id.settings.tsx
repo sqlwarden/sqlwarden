@@ -108,7 +108,7 @@ function WorkspaceSettingsPage() {
     }
 
     setFieldErrors({})
-    void updateWorkspace.mutateAsync().catch(() => {})
+    void updateWorkspace.mutateAsync().catch(() => { })
   }
 
   return (
@@ -177,7 +177,7 @@ function WorkspaceSettingsPage() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col gap-1">
               <div className="text-sm font-medium">Delete workspace</div>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-muted-foreground">
                 This action is permanent. Existing workspace resources will no longer be available.
               </p>
               {!canDelete ? (
@@ -212,7 +212,7 @@ function WorkspaceSettingsPage() {
                     variant="destructive"
                     disabled={!deleteMatches || deleteWorkspace.isPending}
                     onClick={() => {
-                      void deleteWorkspace.mutateAsync().catch(() => {})
+                      void deleteWorkspace.mutateAsync().catch(() => { })
                     }}
                   >
                     {deleteWorkspace.isPending ? 'Deleting...' : 'Delete workspace'}

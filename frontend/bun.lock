@@ -6,9 +6,12 @@
       "name": "sqlwarden",
       "dependencies": {
         "@base-ui/react": "^1.5.0",
+        "@fontsource-variable/epilogue": "^5.2.8",
         "@fontsource-variable/figtree": "^5.2.10",
         "@fontsource-variable/geist": "^5.2.8",
         "@fontsource-variable/inter": "^5.2.8",
+        "@fontsource-variable/miranda-sans": "^5.2.1",
+        "@fontsource-variable/momo-trust-sans": "^5.2.1",
         "@fontsource-variable/outfit": "^5.2.8",
         "@fontsource-variable/oxanium": "^5.2.8",
         "@fontsource-variable/public-sans": "^5.2.7",
@@ -204,11 +207,17 @@
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.11", "", {}, "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="],
 
+    "@fontsource-variable/epilogue": ["@fontsource-variable/epilogue@5.2.8", "", {}, "sha512-YfO0l0GxR1cs9YsSmc+jMhD9uClAXXslPRiO0y1snJOpX5Y4Mn6uTRXgHsugo51mI+cLzFOyxp0g3O0CsnBHtA=="],
+
     "@fontsource-variable/figtree": ["@fontsource-variable/figtree@5.2.10", "", {}, "sha512-a5Gumbpy3mdd+Yg31g6Qb7CmjYbrfyutJa3bWfP5q8A4GclIOwX7mI+ZuSHsJnw/mHvW6r9oh1AHJcJTIxK4JA=="],
 
     "@fontsource-variable/geist": ["@fontsource-variable/geist@5.2.8", "", {}, "sha512-cJ6m9e+8MQ5dCYJsLylfZrgBh6KkG4bOLckB35Tr9J/EqdkEM6QllH5PxqP1dhTvFup+HtMRPuz9xOjxXJggxw=="],
 
     "@fontsource-variable/inter": ["@fontsource-variable/inter@5.2.8", "", {}, "sha512-kOfP2D+ykbcX/P3IFnokOhVRNoTozo5/JxhAIVYLpea/UBmCQ/YWPBfWIDuBImXX/15KH+eKh4xpEUyS2sQQGQ=="],
+
+    "@fontsource-variable/miranda-sans": ["@fontsource-variable/miranda-sans@5.2.1", "", {}, "sha512-m9gjzkh41jGsx59zrxAu88W7YWq6Z31cEUOBOco+Ea3wcM63jOD37EE0yAZnqKBkDgddxI6RhkUTjBqRYc7rtg=="],
+
+    "@fontsource-variable/momo-trust-sans": ["@fontsource-variable/momo-trust-sans@5.2.1", "", {}, "sha512-gfJzn06p0B2FoqjNibhZuP7WdY43877hbVOY92n8lKusmmPDOEL1DXLaYDp1F+aXlpCdqsumNLAUV8C7VAfKOQ=="],
 
     "@fontsource-variable/outfit": ["@fontsource-variable/outfit@5.2.8", "", {}, "sha512-4oUDCZx/Tcz6HZP423w/niqEH31Gks5IsqHV2ZZz1qKHaVIZdj2f0/S1IK2n8jl6Xo0o3N+3RjNHlV9R73ozQA=="],
 
