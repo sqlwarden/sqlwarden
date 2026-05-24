@@ -21,12 +21,30 @@ func TestInstanceSettingsUpsert(t *testing.T) {
 				t.Fatal("expected no instance settings row initially")
 			}
 
-			settings, err := db.UpsertInstanceSettings(context.Background(), false)
+			settings, err := db.UpsertInstanceSettings(context.Background(), InstanceSettings{
+				InstanceName:          "Demo Instance",
+				InstanceDescription:   "A shared SQLWarden instance.",
+				SupportEmail:          "support@example.com",
+				PublicURL:             "https://sqlwarden.example.com",
+				PersonalSpacesEnabled: false,
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if settings.PersonalSpacesEnabled {
 				t.Fatal("expected personal spaces to be disabled")
+			}
+			if settings.InstanceName != "Demo Instance" {
+				t.Fatalf("expected instance name to persist, got %q", settings.InstanceName)
+			}
+			if settings.InstanceDescription != "A shared SQLWarden instance." {
+				t.Fatalf("expected instance description to persist, got %q", settings.InstanceDescription)
+			}
+			if settings.SupportEmail != "support@example.com" {
+				t.Fatalf("expected support email to persist, got %q", settings.SupportEmail)
+			}
+			if settings.PublicURL != "https://sqlwarden.example.com" {
+				t.Fatalf("expected public url to persist, got %q", settings.PublicURL)
 			}
 
 			settings, found, err = db.GetInstanceSettings(context.Background())
@@ -37,12 +55,21 @@ func TestInstanceSettingsUpsert(t *testing.T) {
 				t.Fatalf("expected persisted disabled settings, got %+v found=%v", settings, found)
 			}
 
-			settings, err = db.UpsertInstanceSettings(context.Background(), true)
+			settings, err = db.UpsertInstanceSettings(context.Background(), InstanceSettings{
+				InstanceName:          "Updated Instance",
+				InstanceDescription:   "",
+				SupportEmail:          "",
+				PublicURL:             "https://updated.example.com",
+				PersonalSpacesEnabled: true,
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !settings.PersonalSpacesEnabled {
 				t.Fatal("expected personal spaces to be enabled")
+			}
+			if settings.InstanceName != "Updated Instance" {
+				t.Fatalf("expected updated instance name, got %q", settings.InstanceName)
 			}
 		})
 	}

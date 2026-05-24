@@ -9,6 +9,10 @@ import (
 
 type InstanceSettings struct {
 	ID                    int64     `bun:",pk" json:"-"`
+	InstanceName          string    `json:"instance_name"`
+	InstanceDescription   string    `json:"instance_description"`
+	SupportEmail          string    `json:"support_email"`
+	PublicURL             string    `json:"public_url"`
 	PersonalSpacesEnabled bool      `bun:",notnull" json:"personal_spaces_enabled"`
 	CreatedAt             time.Time `bun:",notnull" json:"created_at"`
 	UpdatedAt             time.Time `bun:",notnull" json:"updated_at"`
@@ -29,20 +33,22 @@ func (db *DB) GetInstanceSettings(ctx context.Context) (InstanceSettings, bool, 
 	return settings, true, nil
 }
 
-func (db *DB) UpsertInstanceSettings(ctx context.Context, personalSpacesEnabled bool) (InstanceSettings, error) {
+func (db *DB) UpsertInstanceSettings(ctx context.Context, settings InstanceSettings) (InstanceSettings, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	settings := InstanceSettings{
-		ID:                    1,
-		PersonalSpacesEnabled: personalSpacesEnabled,
-		CreatedAt:             time.Now(),
-		UpdatedAt:             time.Now(),
-	}
+	settings.ID = 1
+	now := time.Now()
+	settings.CreatedAt = now
+	settings.UpdatedAt = now
 
 	_, err := db.NewInsert().
 		Model(&settings).
 		On("CONFLICT (id) DO UPDATE").
+		Set("instance_name = EXCLUDED.instance_name").
+		Set("instance_description = EXCLUDED.instance_description").
+		Set("support_email = EXCLUDED.support_email").
+		Set("public_url = EXCLUDED.public_url").
 		Set("personal_spaces_enabled = EXCLUDED.personal_spaces_enabled").
 		Set("updated_at = EXCLUDED.updated_at").
 		Exec(ctx)

@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -9,6 +9,7 @@ export const queryKeys = {
   instanceAccounts: (query?: ListQuery) => ['instance-accounts', query ?? {}] as const,
   instanceAdmins: (query?: ListQuery) => ['instance-admins', query ?? {}] as const,
   instanceOrganizations: (query?: ListQuery) => ['instance-organizations', query ?? {}] as const,
+  instanceSettings: () => ['instance-settings'] as const,
   orgEffectivePermissions: (slug: string, resourceType: ResourceType, resourceId?: string | number) =>
     ['org-effective-permissions', slug, resourceType, resourceId ?? null] as const,
   orgPermissions: (slug: string) => ['org-permissions', slug] as const,
@@ -98,6 +99,14 @@ export function instanceAdminsQueryOptions(query?: ListQuery) {
     queryKey: queryKeys.instanceAdmins(query),
     queryFn: () => api.get<Paginated<InstanceAdmin>>('/api/v1/instance/admins', { query }),
     placeholderData: keepPreviousData,
+  })
+}
+
+export function instanceSettingsQueryOptions() {
+  return queryOptions({
+    queryKey: queryKeys.instanceSettings(),
+    queryFn: () => api.get<InstanceSettings>('/api/v1/instance/settings'),
+    staleTime: 60_000,
   })
 }
 

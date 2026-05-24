@@ -333,15 +333,13 @@ func (app *application) createInstanceAccount(w http.ResponseWriter, r *http.Req
 }
 
 func (app *application) getInstanceSettings(w http.ResponseWriter, r *http.Request) {
-	enabled, err := app.personalSpacesEnabled(r.Context())
+	settings, err := app.instanceSettings(r.Context())
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	err = response.JSON(w, http.StatusOK, map[string]any{
-		"personal_spaces_enabled": enabled,
-	})
+	err = response.JSON(w, http.StatusOK, app.instanceSettingsResponse(settings))
 	if err != nil {
 		app.serverError(w, r, err)
 	}
@@ -349,6 +347,10 @@ func (app *application) getInstanceSettings(w http.ResponseWriter, r *http.Reque
 
 func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Request) {
 	var input struct {
+		InstanceName          *string             `json:"instance_name"`
+		InstanceDescription   *string             `json:"instance_description"`
+		SupportEmail          *string             `json:"support_email"`
+		PublicURL             *string             `json:"public_url"`
 		PersonalSpacesEnabled *bool               `json:"personal_spaces_enabled"`
 		V                     validator.Validator `json:"-"`
 	}
@@ -359,34 +361,71 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	input.V.CheckField(input.PersonalSpacesEnabled != nil, "personal_spaces_enabled", "Personal spaces setting is required.")
+	hasPatch := input.InstanceName != nil ||
+		input.InstanceDescription != nil ||
+		input.SupportEmail != nil ||
+		input.PublicURL != nil ||
+		input.PersonalSpacesEnabled != nil
+	input.V.Check(hasPatch, "At least one setting is required.")
+	if input.InstanceName != nil {
+		*input.InstanceName = strings.TrimSpace(*input.InstanceName)
+		input.V.CheckField(*input.InstanceName != "", "instance_name", "Instance name is required.")
+		input.V.CheckField(validator.MaxRunes(*input.InstanceName, 120), "instance_name", "Instance name must be 120 characters or fewer.")
+	}
+	if input.InstanceDescription != nil {
+		*input.InstanceDescription = strings.TrimSpace(*input.InstanceDescription)
+		input.V.CheckField(validator.MaxRunes(*input.InstanceDescription, 500), "instance_description", "Description must be 500 characters or fewer.")
+	}
+	if input.SupportEmail != nil {
+		*input.SupportEmail = strings.TrimSpace(*input.SupportEmail)
+		input.V.CheckField(*input.SupportEmail == "" || validator.IsEmail(*input.SupportEmail), "support_email", "Support email must be a valid email address.")
+	}
+	if input.PublicURL != nil {
+		*input.PublicURL = strings.TrimSpace(*input.PublicURL)
+		input.V.CheckField(*input.PublicURL == "" || validator.IsURL(*input.PublicURL), "public_url", "Public URL must be a valid URL.")
+	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
 	}
 
-	currentEnabled, err := app.personalSpacesEnabled(r.Context())
+	currentSettings, err := app.instanceSettings(r.Context())
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	settings, err := app.db.UpsertInstanceSettings(r.Context(), *input.PersonalSpacesEnabled)
+	nextSettings := currentSettings
+	if input.InstanceName != nil {
+		nextSettings.InstanceName = *input.InstanceName
+	}
+	if input.InstanceDescription != nil {
+		nextSettings.InstanceDescription = *input.InstanceDescription
+	}
+	if input.SupportEmail != nil {
+		nextSettings.SupportEmail = *input.SupportEmail
+	}
+	if input.PublicURL != nil {
+		nextSettings.PublicURL = *input.PublicURL
+	}
+	if input.PersonalSpacesEnabled != nil {
+		nextSettings.PersonalSpacesEnabled = *input.PersonalSpacesEnabled
+	}
+
+	settings, err := app.db.UpsertInstanceSettings(r.Context(), nextSettings)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	if currentEnabled && !settings.PersonalSpacesEnabled {
+	if currentSettings.PersonalSpacesEnabled && !settings.PersonalSpacesEnabled {
 		if err := app.dropPersonalSpaceSessions(r.Context()); err != nil {
 			app.serverError(w, r, err)
 			return
 		}
 	}
 
-	err = response.JSON(w, http.StatusOK, map[string]any{
-		"personal_spaces_enabled": settings.PersonalSpacesEnabled,
-	})
+	err = response.JSON(w, http.StatusOK, app.instanceSettingsResponse(settings))
 	if err != nil {
 		app.serverError(w, r, err)
 	}

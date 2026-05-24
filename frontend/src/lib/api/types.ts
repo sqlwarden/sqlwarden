@@ -175,7 +175,16 @@ export interface PolicyBinding {
 }
 
 export interface InstanceSettings {
+  instance_name: string
+  instance_description: string
+  support_email: string
+  public_url: string
   personal_spaces_enabled: boolean
+  deployment_mode: 'server' | 'desktop'
+  access_mode: 'multi_user' | 'single_user'
+  single_user_mode: boolean
+  personal_spaces_default: boolean
+  runtime_settings_readonly: boolean
 }
 
 export interface InstanceAdmin {

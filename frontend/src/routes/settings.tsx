@@ -34,6 +34,7 @@ const accountItems: AppShellNavItem[] = [
 ]
 
 const adminItems: AppShellNavItem[] = [
+  { to: '/settings/instance', label: 'Instance', icon: Settings02Icon },
   { to: '/settings/users', label: 'Users', icon: UserMultiple02Icon },
   { to: '/settings/administrators', label: 'Administrators', icon: ShieldUserIcon },
   { to: '/settings/organizations', label: 'Organizations', icon: Building04Icon },

@@ -653,7 +653,7 @@ func TestGetSessionIncludesPersistedPersonalSpaceFlag(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	_, token := seedAccountWithToken(t, app, uniqueEmail(t, "session-flag"), "Session Flag")
-	if _, err := app.db.UpsertInstanceSettings(context.Background(), false); err != nil {
+	if _, err := app.db.UpsertInstanceSettings(context.Background(), database.InstanceSettings{PersonalSpacesEnabled: false}); err != nil {
 		t.Fatal(err)
 	}
 

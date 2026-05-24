@@ -20,6 +20,7 @@ import { Route as AdministrationIndexRouteImport } from './routes/administration
 import { Route as SettingsUsersRouteImport } from './routes/settings.users'
 import { Route as SettingsOrganizationsRouteImport } from './routes/settings.organizations'
 import { Route as SettingsMyOrganizationsRouteImport } from './routes/settings.my-organizations'
+import { Route as SettingsInstanceRouteImport } from './routes/settings.instance'
 import { Route as SettingsApiTokensRouteImport } from './routes/settings.api-tokens'
 import { Route as SettingsAdministratorsRouteImport } from './routes/settings.administrators'
 import { Route as SettingsAccountRouteImport } from './routes/settings.account'
@@ -103,6 +104,11 @@ const SettingsOrganizationsRoute = SettingsOrganizationsRouteImport.update({
 const SettingsMyOrganizationsRoute = SettingsMyOrganizationsRouteImport.update({
   id: '/my-organizations',
   path: '/my-organizations',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsInstanceRoute = SettingsInstanceRouteImport.update({
+  id: '/instance',
+  path: '/instance',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsApiTokensRoute = SettingsApiTokensRouteImport.update({
@@ -280,6 +286,7 @@ export interface FileRoutesByFullPath {
   '/settings/account': typeof SettingsAccountRoute
   '/settings/administrators': typeof SettingsAdministratorsRoute
   '/settings/api-tokens': typeof SettingsApiTokensRoute
+  '/settings/instance': typeof SettingsInstanceRoute
   '/settings/my-organizations': typeof SettingsMyOrganizationsRoute
   '/settings/organizations': typeof SettingsOrganizationsRoute
   '/settings/users': typeof SettingsUsersRoute
@@ -319,6 +326,7 @@ export interface FileRoutesByTo {
   '/settings/account': typeof SettingsAccountRoute
   '/settings/administrators': typeof SettingsAdministratorsRoute
   '/settings/api-tokens': typeof SettingsApiTokensRoute
+  '/settings/instance': typeof SettingsInstanceRoute
   '/settings/my-organizations': typeof SettingsMyOrganizationsRoute
   '/settings/organizations': typeof SettingsOrganizationsRoute
   '/settings/users': typeof SettingsUsersRoute
@@ -362,6 +370,7 @@ export interface FileRoutesById {
   '/settings/account': typeof SettingsAccountRoute
   '/settings/administrators': typeof SettingsAdministratorsRoute
   '/settings/api-tokens': typeof SettingsApiTokensRoute
+  '/settings/instance': typeof SettingsInstanceRoute
   '/settings/my-organizations': typeof SettingsMyOrganizationsRoute
   '/settings/organizations': typeof SettingsOrganizationsRoute
   '/settings/users': typeof SettingsUsersRoute
@@ -406,6 +415,7 @@ export interface FileRouteTypes {
     | '/settings/account'
     | '/settings/administrators'
     | '/settings/api-tokens'
+    | '/settings/instance'
     | '/settings/my-organizations'
     | '/settings/organizations'
     | '/settings/users'
@@ -445,6 +455,7 @@ export interface FileRouteTypes {
     | '/settings/account'
     | '/settings/administrators'
     | '/settings/api-tokens'
+    | '/settings/instance'
     | '/settings/my-organizations'
     | '/settings/organizations'
     | '/settings/users'
@@ -487,6 +498,7 @@ export interface FileRouteTypes {
     | '/settings/account'
     | '/settings/administrators'
     | '/settings/api-tokens'
+    | '/settings/instance'
     | '/settings/my-organizations'
     | '/settings/organizations'
     | '/settings/users'
@@ -603,6 +615,13 @@ declare module '@tanstack/react-router' {
       path: '/my-organizations'
       fullPath: '/settings/my-organizations'
       preLoaderRoute: typeof SettingsMyOrganizationsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/instance': {
+      id: '/settings/instance'
+      path: '/instance'
+      fullPath: '/settings/instance'
+      preLoaderRoute: typeof SettingsInstanceRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/api-tokens': {
@@ -833,6 +852,7 @@ interface SettingsRouteChildren {
   SettingsAccountRoute: typeof SettingsAccountRoute
   SettingsAdministratorsRoute: typeof SettingsAdministratorsRoute
   SettingsApiTokensRoute: typeof SettingsApiTokensRoute
+  SettingsInstanceRoute: typeof SettingsInstanceRoute
   SettingsMyOrganizationsRoute: typeof SettingsMyOrganizationsRoute
   SettingsOrganizationsRoute: typeof SettingsOrganizationsRoute
   SettingsUsersRoute: typeof SettingsUsersRoute
@@ -843,6 +863,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAccountRoute: SettingsAccountRoute,
   SettingsAdministratorsRoute: SettingsAdministratorsRoute,
   SettingsApiTokensRoute: SettingsApiTokensRoute,
+  SettingsInstanceRoute: SettingsInstanceRoute,
   SettingsMyOrganizationsRoute: SettingsMyOrganizationsRoute,
   SettingsOrganizationsRoute: SettingsOrganizationsRoute,
   SettingsUsersRoute: SettingsUsersRoute,

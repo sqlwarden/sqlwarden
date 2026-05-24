@@ -4,17 +4,58 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+
+	"github.com/sqlwarden/internal/database"
 )
 
 func (app *application) personalSpacesEnabled(ctx context.Context) (bool, error) {
-	settings, found, err := app.db.GetInstanceSettings(ctx)
+	settings, err := app.instanceSettings(ctx)
 	if err != nil {
 		return false, err
 	}
-	if found {
-		return settings.PersonalSpacesEnabled, nil
+	return settings.PersonalSpacesEnabled, nil
+}
+
+func (app *application) instanceSettings(ctx context.Context) (database.InstanceSettings, error) {
+	settings, found, err := app.db.GetInstanceSettings(ctx)
+	if err != nil {
+		return database.InstanceSettings{}, err
 	}
-	return app.config.PersonalSpacesEnabled, nil
+	if !found {
+		return app.defaultInstanceSettings(), nil
+	}
+	if settings.InstanceName == "" {
+		settings.InstanceName = app.defaultInstanceSettings().InstanceName
+	}
+	if settings.PublicURL == "" {
+		settings.PublicURL = app.config.BaseURL
+	}
+	return settings, nil
+}
+
+func (app *application) defaultInstanceSettings() database.InstanceSettings {
+	return database.InstanceSettings{
+		InstanceName:          "SQLWarden",
+		PublicURL:             app.config.BaseURL,
+		SupportEmail:          app.config.Notifications.Email,
+		PersonalSpacesEnabled: app.config.PersonalSpacesEnabled,
+	}
+}
+
+func (app *application) instanceSettingsResponse(settings database.InstanceSettings) map[string]any {
+	return map[string]any{
+		"instance_name":             settings.InstanceName,
+		"instance_description":      settings.InstanceDescription,
+		"support_email":             settings.SupportEmail,
+		"public_url":                settings.PublicURL,
+		"personal_spaces_enabled":   settings.PersonalSpacesEnabled,
+		"deployment_mode":           app.config.DeploymentMode,
+		"access_mode":               app.config.AccessMode,
+		"single_user_mode":          app.config.AccessMode == AccessModeSingleUser,
+		"personal_spaces_default":   app.config.PersonalSpacesEnabled,
+		"settings_source":           "database",
+		"runtime_settings_readonly": true,
+	}
 }
 
 func (app *application) dropPersonalSpaceSessions(ctx context.Context) error {
