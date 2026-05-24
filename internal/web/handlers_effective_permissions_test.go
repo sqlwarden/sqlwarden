@@ -111,6 +111,18 @@ func TestEffectivePermissionsWorkspaceFiltersToWorkspaceApplicablePermissions(t 
 	permissions := effectivePermissions(t, app, memberTok, org.Slug, "workspace", ws.ID)
 
 	assertHasPermissions(t, permissions, "ws:read", "env:create", "conn:create", "policy:read")
+	assertMissingPermissions(t, permissions, "org:read", "ws:create", "ws:delete")
+}
+
+func TestEffectivePermissionsWorkspaceIncludesInheritedOrgDelete(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "eff-ws-delete-owner"), "Owner", "Effective Workspace Delete")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Workspace", "")
+
+	permissions := effectivePermissions(t, app, ownerTok, org.Slug, "workspace", ws.ID)
+
+	assertHasPermissions(t, permissions, "ws:read", "ws:write", "ws:delete", "env:create", "conn:create", "policy:modify")
 	assertMissingPermissions(t, permissions, "org:read", "ws:create")
 }
 

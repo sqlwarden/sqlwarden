@@ -58,7 +58,7 @@ func (e *Enforcer) EffectivePermissions(ctx context.Context,
 	ownerType, resourceType string, resourceID int64,
 ) ([]string, error) {
 	if ownerType == "space" {
-		permissions := append([]string(nil), ScopePermissions[resourceType]...)
+		permissions := append([]string(nil), ResourcePermissions[resourceType]...)
 		sort.Strings(permissions)
 		return permissions, nil
 	}
@@ -305,7 +305,7 @@ func (e *Enforcer) effectivePolicyPermissions(policy *OrgPolicy, accountID int64
 				if !ValidForScope(permission, roleScopeType) {
 					continue
 				}
-				if !ValidForScope(permission, targetResourceType) {
+				if !ValidForResource(permission, targetResourceType) {
 					continue
 				}
 				seen[permission] = true

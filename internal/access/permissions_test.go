@@ -22,6 +22,69 @@ func TestValidForScope(t *testing.T) {
 	if access.ValidForScope("org:delete", "connection") {
 		t.Fatal("expected org:delete invalid for connection scope")
 	}
+	if access.ValidForScope(access.PermWsDelete, "workspace") {
+		t.Fatal("expected ws:delete invalid for workspace role scope")
+	}
+}
+
+func TestValidForResource(t *testing.T) {
+	tests := []struct {
+		name         string
+		permission   string
+		resourceType string
+		want         bool
+	}{
+		{
+			name:         "workspace delete is applicable to workspace resources",
+			permission:   access.PermWsDelete,
+			resourceType: "workspace",
+			want:         true,
+		},
+		{
+			name:         "workspace create is not applicable to existing workspace resources",
+			permission:   access.PermWsCreate,
+			resourceType: "workspace",
+			want:         false,
+		},
+		{
+			name:         "environment create is applicable to workspace resources",
+			permission:   access.PermEnvCreate,
+			resourceType: "workspace",
+			want:         true,
+		},
+		{
+			name:         "environment create is not applicable to existing environment resources",
+			permission:   access.PermEnvCreate,
+			resourceType: "environment",
+			want:         false,
+		},
+		{
+			name:         "connection create is applicable to environment resources",
+			permission:   access.PermConnCreate,
+			resourceType: "environment",
+			want:         true,
+		},
+		{
+			name:         "connection create is not applicable to existing connection resources",
+			permission:   access.PermConnCreate,
+			resourceType: "connection",
+			want:         false,
+		},
+		{
+			name:         "organization read is not applicable to workspace resources",
+			permission:   access.PermOrgRead,
+			resourceType: "workspace",
+			want:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := access.ValidForResource(tt.permission, tt.resourceType); got != tt.want {
+				t.Fatalf("ValidForResource(%q, %q) = %v, want %v", tt.permission, tt.resourceType, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestOrgBuiltinRoles(t *testing.T) {

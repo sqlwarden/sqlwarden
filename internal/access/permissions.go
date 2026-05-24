@@ -85,7 +85,9 @@ var PermissionCatalog = []PermissionDefinition{
 	{Key: PermPolicyModify, Label: "Manage policies", Description: "Create, update, grant, revoke, and delete roles and policy bindings for the resource scope.", Group: "Policy"},
 }
 
-// ScopePermissions maps scope_type to permissions valid for roles of that scope.
+// ScopePermissions maps role scope_type to permissions that roles of that scope
+// may contain. This is role-authoring validation: it answers whether a role scoped
+// to org, workspace, environment, or connection is allowed to include a permission.
 var ScopePermissions = map[string][]string{
 	"org": {
 		PermOrgRead, PermOrgWrite, PermOrgDelete, PermOrgInvite,
@@ -98,6 +100,32 @@ var ScopePermissions = map[string][]string{
 	},
 	"workspace": {
 		PermWsRead, PermWsWrite,
+		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
+		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnDQL, PermConnDML, PermConnDDL,
+		PermPolicyRead, PermPolicyModify,
+	},
+	"environment": {
+		PermEnvRead, PermEnvWrite, PermEnvDelete, PermEnvDeploy,
+		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnDQL, PermConnDML, PermConnDDL,
+	},
+	"connection": {
+		PermConnRead, PermConnWrite, PermConnDelete, PermConnExecute,
+		PermConnDQL, PermConnDML, PermConnDDL,
+	},
+}
+
+// ResourcePermissions maps resource_type to permissions that are meaningful when
+// evaluating effective permissions for that resource context. This is capability
+// display: it answers whether an inherited permission should be exposed for the
+// target resource. It is deliberately separate from ScopePermissions because role
+// authoring scope and effective resource applicability are related but not always
+// identical.
+var ResourcePermissions = map[string][]string{
+	"org": ScopePermissions["org"],
+	"workspace": {
+		PermWsRead, PermWsWrite, PermWsDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
 		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
@@ -158,8 +186,10 @@ var WorkspaceBuiltinRoleDescriptions = map[string]string{
 	BuiltinWorkspaceMemberRole: "Baseline workspace member access with workspace visibility.",
 }
 
-var allPermissionSet map[string]bool
-var PermissionDefinitions map[string]PermissionDefinition
+var (
+	allPermissionSet      map[string]bool
+	PermissionDefinitions map[string]PermissionDefinition
+)
 
 func init() {
 	allPermissionSet = make(map[string]bool)
@@ -177,6 +207,17 @@ func ValidPermission(p string) bool { return allPermissionSet[p] }
 func ValidForScope(p, scopeType string) bool {
 	for _, sp := range ScopePermissions[scopeType] {
 		if sp == p {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidForResource returns true if permission p is meaningful for an effective
+// permissions response targeting resourceType.
+func ValidForResource(p, resourceType string) bool {
+	for _, rp := range ResourcePermissions[resourceType] {
+		if rp == p {
 			return true
 		}
 	}
