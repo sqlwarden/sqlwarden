@@ -9,7 +9,7 @@ import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
 import { orgEffectivePermissionsQueryOptions, orgPermissionsQueryOptions, orgWorkspaceRolesQueryOptions } from '#/lib/api/query'
 import type { PermissionDefinition, Role, RoleScope } from '#/lib/api/types'
-import { hasPermission, permission, permissionDefinitionMap, permissionDescription, permissionDisplayName, permissionGroupName, scopePermissions, type Permission } from '#/lib/permissions'
+import { hasPermission, permission, permissionDefinitionMap, permissionDescription, permissionDisplayName, type Permission } from '#/lib/permissions'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -92,6 +92,8 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId))
   const permissionsCatalog = useQuery(orgPermissionsQueryOptions(orgSlug))
   const permissionDefinitions = permissionDefinitionMap(permissionsCatalog.data?.permission_details)
+  const scopePermissionMap = permissionsCatalog.data?.scope_map
+  const scopePermissionDetails = permissionsCatalog.data?.scope_details[scopeType] ?? []
   const canReadRoles = hasPermission(effectivePermissions.data?.permissions, permission.policyRead)
   const canModifyRoles = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
   const roles = useQuery({
@@ -208,7 +210,7 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
   function setScope(nextScope: RoleScope) {
     setScopeType(nextScope)
     setSelectedPermissions((current) => {
-      const validPermissions = new Set(scopePermissions[nextScope])
+      const validPermissions = new Set(scopePermissionMap?.[nextScope] ?? [])
       return new Set(Array.from(current).filter((item) => validPermissions.has(item)))
     })
     setFieldErrors((current) => ({ ...current, scope_type: undefined, permissions: undefined }))
@@ -311,6 +313,7 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
                     key={scopeType}
                     scopeType={scopeType}
                     selectedPermissions={selectedPermissions}
+                    permissionDetails={scopePermissionDetails}
                     permissionDefinitions={permissionDefinitions}
                     disabled={createRole.isPending}
                     error={fieldErrors.permissions}
@@ -531,6 +534,7 @@ function RoleRow({
 function PermissionPicker({
   scopeType,
   selectedPermissions,
+  permissionDetails,
   permissionDefinitions,
   disabled,
   error,
@@ -538,15 +542,15 @@ function PermissionPicker({
 }: {
   scopeType: RoleScope
   selectedPermissions: Set<Permission>
+  permissionDetails: readonly PermissionDefinition[]
   permissionDefinitions: ReadonlyMap<string, PermissionDefinition>
   disabled: boolean
   error?: string
   onPermissionChecked: (value: Permission, checked: boolean) => void
 }) {
   const [search, setSearch] = useState('')
-  const allPermissions = scopePermissions[scopeType]
-  const totalPermissions = allPermissions.length
-  const groupedPermissions = groupPermissions(allPermissions, permissionDefinitions)
+  const totalPermissions = permissionDetails.length
+  const groupedPermissions = groupPermissionDetails(permissionDetails)
 
   const filteredGroups = search
     ? groupedPermissions
@@ -555,9 +559,9 @@ function PermissionPicker({
           permissions: group.permissions.filter((item) => {
             const q = search.toLowerCase()
             return (
-              permissionDisplayName(item, permissionDefinitions).toLowerCase().includes(q) ||
-              (permissionDescription(item, permissionDefinitions) ?? '').toLowerCase().includes(q) ||
-              item.toLowerCase().includes(q)
+              item.label.toLowerCase().includes(q) ||
+              item.description.toLowerCase().includes(q) ||
+              item.key.toLowerCase().includes(q)
             )
           }),
         }))
@@ -601,19 +605,19 @@ function PermissionPicker({
                 <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{group.name}</p>
                 <div className="flex flex-col gap-3">
                   {group.permissions.map((item) => {
-                    const id = `workspace-permission-${item.replace(/[^a-z0-9]+/g, '-')}`
-                    const description = permissionDescription(item, permissionDefinitions)
+                    const id = `workspace-permission-${item.key.replace(/[^a-z0-9]+/g, '-')}`
+                    const description = permissionDescription(item.key, permissionDefinitions)
                     return (
-                      <label key={item} htmlFor={id} className="flex cursor-pointer items-start gap-2.5">
+                      <label key={item.key} htmlFor={id} className="flex cursor-pointer items-start gap-2.5">
                         <Checkbox
                           id={id}
                           className="mt-0.5"
-                          checked={selectedPermissions.has(item)}
+                          checked={selectedPermissions.has(item.key)}
                           disabled={disabled}
-                          onCheckedChange={(checked) => onPermissionChecked(item, checked === true)}
+                          onCheckedChange={(checked) => onPermissionChecked(item.key, checked === true)}
                         />
                         <span className="flex flex-col gap-0.5">
-                          <span className="text-sm font-medium text-foreground">{permissionDisplayName(item, permissionDefinitions)}</span>
+                          <span className="text-sm font-medium text-foreground">{permissionDisplayName(item.key, permissionDefinitions)}</span>
                           {description ? <span className="text-xs text-muted-foreground">{description}</span> : null}
                         </span>
                       </label>
@@ -664,11 +668,10 @@ function RolesTableSkeleton({ canModifyRoles }: { canModifyRoles: boolean }) {
   )
 }
 
-function groupPermissions(permissions: readonly Permission[], definitions: ReadonlyMap<string, PermissionDefinition>) {
-  const groups = new Map<string, Permission[]>()
+function groupPermissionDetails(permissions: readonly PermissionDefinition[]) {
+  const groups = new Map<string, PermissionDefinition[]>()
   for (const item of permissions) {
-    const group = permissionGroupName(item, definitions)
-    groups.set(group, [...(groups.get(group) ?? []), item])
+    groups.set(item.group, [...(groups.get(item.group) ?? []), item])
   }
   return Array.from(groups.entries()).map(([name, items]) => ({ name, permissions: items }))
 }

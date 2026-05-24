@@ -258,6 +258,7 @@ When touching auth or RBAC:
 - Check routes, middleware, handlers, enforcer, migrations, and tests together
 - Prefer permission constants from `internal/access/permissions.go`
 - Preserve org membership checks in addition to permission checks
+- Keep the backend as the permission metadata source of truth. Frontend code may keep stable permission string constants for capability checks, but role-scope maps, resource-applicability maps, labels, and descriptions must come from the permissions catalog API.
 
 When creating resources:
 - Use DB helpers like `InsertWorkspace`, `InsertEnvironment`, and `InsertConnection`
@@ -268,7 +269,7 @@ When deleting resources:
 - Invalidate ancestry cache where needed
 
 When adding new permissioned resource types:
-- Extend permission constants and scope map
+- Extend permission constants, `ScopePermissions`, and `ResourcePermissions`
 - Define hierarchy population
 - update enforcer invalidation paths
 - add handler and DB coverage

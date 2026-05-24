@@ -337,6 +337,8 @@ func (app *application) listPermissions(w http.ResponseWriter, r *http.Request) 
 		"permission_details": access.AllPermissionDefinitions(),
 		"scope_map":          access.ScopePermissions,
 		"scope_details":      access.ScopePermissionDefinitionMap(),
+		"resource_map":       access.ResourcePermissions,
+		"resource_details":   access.ResourcePermissionDefinitionMap(),
 	})
 	if err != nil {
 		app.serverError(w, r, err)

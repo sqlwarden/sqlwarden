@@ -110,15 +110,21 @@ func TestListPermissions(t *testing.T) {
 	_, hasScopeMap := res.BodyFields["scope_map"]
 	_, hasPermissionDetails := res.BodyFields["permission_details"]
 	_, hasScopeDetails := res.BodyFields["scope_details"]
+	_, hasResourceMap := res.BodyFields["resource_map"]
+	_, hasResourceDetails := res.BodyFields["resource_details"]
 	assert.True(t, hasPerms)
 	assert.True(t, hasScopeMap)
 	assert.True(t, hasPermissionDetails)
 	assert.True(t, hasScopeDetails)
+	assert.True(t, hasResourceMap)
+	assert.True(t, hasResourceDetails)
 
 	perms := res.BodyFields["permissions"].([]any)
 	details := res.BodyFields["permission_details"].([]any)
 	scopeMap := res.BodyFields["scope_map"].(map[string]any)
 	scopeDetails := res.BodyFields["scope_details"].(map[string]any)
+	resourceMap := res.BodyFields["resource_map"].(map[string]any)
+	resourceDetails := res.BodyFields["resource_details"].(map[string]any)
 	permSet := map[string]bool{}
 	for _, perm := range perms {
 		permSet[perm.(string)] = true
@@ -148,6 +154,22 @@ func TestListPermissions(t *testing.T) {
 	assert.Equal(t, connPerms["conn:dml"], true)
 	assert.Equal(t, connPerms["conn:ddl"], true)
 	assert.Equal(t, connPerms["query:execute"], false)
+
+	workspaceScope := scopeMap["workspace"].([]any)
+	workspaceResource := resourceMap["workspace"].([]any)
+	workspaceResourceDetails := resourceDetails["workspace"].([]any)
+	assert.Equal(t, len(workspaceResourceDetails), len(workspaceResource))
+	workspaceScopePerms := map[string]bool{}
+	for _, perm := range workspaceScope {
+		workspaceScopePerms[perm.(string)] = true
+	}
+	workspaceResourcePerms := map[string]bool{}
+	for _, perm := range workspaceResource {
+		workspaceResourcePerms[perm.(string)] = true
+	}
+	assert.Equal(t, workspaceScopePerms["ws:delete"], false)
+	assert.Equal(t, workspaceResourcePerms["ws:delete"], true)
+	assert.Equal(t, workspaceResourcePerms["ws:create"], false)
 }
 
 func TestDeleteBuiltinRoleForbidden(t *testing.T) {

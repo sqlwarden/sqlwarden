@@ -257,3 +257,22 @@ func ScopePermissionDefinitionMap() map[string][]PermissionDefinition {
 	}
 	return result
 }
+
+func ResourcePermissionDefinitions(resourceType string) []PermissionDefinition {
+	permissions := ResourcePermissions[resourceType]
+	definitions := make([]PermissionDefinition, 0, len(permissions))
+	for _, permission := range permissions {
+		if definition, ok := PermissionDefinitions[permission]; ok {
+			definitions = append(definitions, definition)
+		}
+	}
+	return definitions
+}
+
+func ResourcePermissionDefinitionMap() map[string][]PermissionDefinition {
+	result := make(map[string][]PermissionDefinition, len(ResourcePermissions))
+	for resourceType := range ResourcePermissions {
+		result[resourceType] = ResourcePermissionDefinitions(resourceType)
+	}
+	return result
+}

@@ -59,6 +59,8 @@ export interface PermissionsCatalog {
   permission_details: PermissionDefinition[]
   scope_map: Record<RoleScope, string[]>
   scope_details: Record<RoleScope, PermissionDefinition[]>
+  resource_map: Record<ResourceType, string[]>
+  resource_details: Record<ResourceType, PermissionDefinition[]>
 }
 
 export interface EffectivePermissions {
