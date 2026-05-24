@@ -199,8 +199,8 @@ func (app *application) routes() http.Handler {
 						r.Route("/{env_id}", func(r chi.Router) {
 							r.Use(app.envCtx)
 							r.Get("/", app.getEnvironment)
-							r.With(app.requirePermission("env:write")).Patch("/", app.updateEnvironment)
-							r.With(app.requirePermission("env:delete")).Delete("/", app.deleteEnvironment)
+							r.With(app.requireEnvironmentPermission("env:write")).Patch("/", app.updateEnvironment)
+							r.With(app.requireEnvironmentPermission("env:delete")).Delete("/", app.deleteEnvironment)
 
 							r.Route("/connections", func(r chi.Router) {
 								r.With(app.requirePermission("conn:create")).Post("/test", app.testConnection)

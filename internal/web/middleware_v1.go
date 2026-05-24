@@ -328,6 +328,33 @@ func (app *application) requirePermission(permission string) func(http.Handler) 
 	}
 }
 
+func (app *application) requireEnvironmentPermission(permission string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			account := contextGetAccount(r)
+			org := contextGetOrg(r)
+			ws := contextGetWorkspace(r)
+			env := contextGetEnvironment(r)
+
+			if env.ID == 0 {
+				app.notFound(w, r)
+				return
+			}
+
+			allowed := app.enforcer.Can(r.Context(),
+				account.ID, org.ID,
+				ws.OwnerType, "environment", env.ID,
+				permission,
+			)
+			if !allowed {
+				app.notPermitted(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // requireInstanceAdmin rejects with 403 if the authenticated account is not an instance admin.
 func (app *application) requireInstanceAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

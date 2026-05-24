@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
@@ -194,4 +195,49 @@ func TestUpdateEnvironment_RejectsWorkspaceChange(t *testing.T) {
 		map[string]any{"name": "prod", "workspace_id": 9999}, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
 	assertValidationField(t, res, "workspace_id")
+}
+
+func TestEnvironmentMutationsRequireScopedPermissions(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	ownerTok, memberTok, orgSlug, wsID, memberID := setupPolicyTest(t, app, "env-mutation-perms")
+	org, workspaceID := policyScope(t, app, orgSlug, wsID)
+	baseURL := "/api/v1/orgs/" + orgSlug + "/workspaces/" + wsID + "/environments"
+
+	createDenied := send(t, newAuthRequest(t, http.MethodPost, baseURL,
+		map[string]any{"name": "qa"}, memberTok), app.routes())
+	assert.Equal(t, createDenied.StatusCode, http.StatusForbidden)
+
+	createRoleID := createRoleForTest(t, app, org.ID, &workspaceID, "workspace", "env:create")
+	grantCreate := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, createRoleID, "account", memberID, "workspace", 0)
+	assert.Equal(t, grantCreate.StatusCode, http.StatusNoContent)
+
+	createAllowed := send(t, newAuthRequest(t, http.MethodPost, baseURL,
+		map[string]any{"name": "qa"}, memberTok), app.routes())
+	assert.Equal(t, createAllowed.StatusCode, http.StatusCreated)
+	envID := int64(createAllowed.BodyFields["id"].(float64))
+	envURL := baseURL + "/" + strconv.FormatInt(envID, 10)
+
+	updateDenied := send(t, newAuthRequest(t, http.MethodPatch, envURL,
+		map[string]any{"name": "qa-renamed"}, memberTok), app.routes())
+	assert.Equal(t, updateDenied.StatusCode, http.StatusForbidden)
+
+	updateRoleID := createRoleForTest(t, app, org.ID, &workspaceID, "environment", "env:write")
+	grantUpdate := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, updateRoleID, "account", memberID, "environment", envID)
+	assert.Equal(t, grantUpdate.StatusCode, http.StatusNoContent)
+
+	updateAllowed := send(t, newAuthRequest(t, http.MethodPatch, envURL,
+		map[string]any{"name": "qa-renamed"}, memberTok), app.routes())
+	assert.Equal(t, updateAllowed.StatusCode, http.StatusNoContent)
+
+	deleteDenied := send(t, newAuthRequest(t, http.MethodDelete, envURL, nil, memberTok), app.routes())
+	assert.Equal(t, deleteDenied.StatusCode, http.StatusForbidden)
+
+	deleteRoleID := createRoleForTest(t, app, org.ID, &workspaceID, "environment", "env:delete")
+	grantDelete := grantWorkspacePolicyRole(t, app, ownerTok, orgSlug, wsID, deleteRoleID, "account", memberID, "environment", envID)
+	assert.Equal(t, grantDelete.StatusCode, http.StatusNoContent)
+
+	deleteAllowed := send(t, newAuthRequest(t, http.MethodDelete, envURL, nil, memberTok), app.routes())
+	assert.Equal(t, deleteAllowed.StatusCode, http.StatusNoContent)
 }
