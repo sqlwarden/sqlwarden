@@ -31,6 +31,7 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
@@ -51,6 +52,8 @@ export type AppShellNavItem = {
   label: string
   icon: typeof User02Icon
   params?: Record<string, string>
+  disabled?: boolean
+  badge?: string
 }
 
 const preferenceKeys = {
@@ -202,6 +205,22 @@ function AppShellNavMenuItem({
   item: AppShellNavItem
   isActive: boolean
 }) {
+  if (item.disabled) {
+    return (
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          disabled
+          tooltip={item.label}
+          className={item.badge ? 'pr-14' : undefined}
+        >
+          <HugeiconsIcon icon={item.icon} strokeWidth={2} />
+          <span>{item.label}</span>
+        </SidebarMenuButton>
+        {item.badge ? <SidebarMenuBadge>{item.badge}</SidebarMenuBadge> : null}
+      </SidebarMenuItem>
+    )
+  }
+
   return (
     <SidebarMenuItem>
       <div className="pointer-events-none absolute inset-y-0.5 left-0 w-0.5 bg-sidebar-primary opacity-0 transition-opacity peer-data-active/menu-button:opacity-100" />

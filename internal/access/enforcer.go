@@ -584,6 +584,11 @@ func (e *Enforcer) InvalidatePrincipals(orgID, accountID int64) {
 	e.cache.InvalidatePrincipals(orgID, accountID)
 }
 
+// InvalidateOrgPolicy invalidates the policy cache for an org.
+func (e *Enforcer) InvalidateOrgPolicy(orgID int64) {
+	e.cache.InvalidateOrgPolicy(orgID)
+}
+
 // InvalidateAncestry invalidates the ancestry cache for a resource.
 func (e *Enforcer) InvalidateAncestry(resourceType string, resourceID int64) {
 	e.cache.InvalidateAncestry(resourceType, resourceID)

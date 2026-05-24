@@ -49,6 +49,60 @@ func TestInsertAndGetOrg(t *testing.T) {
 	}
 }
 
+func TestUpdateAndDeleteOrg(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	org, err := db.InsertOrg(ctx, "org-settings", "Org Settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.UpdateOrg(ctx, org.ID, "Renamed Org"); err != nil {
+		t.Fatal(err)
+	}
+	updated, found, err := db.GetOrg(ctx, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || updated.Name != "Renamed Org" || updated.Slug != org.Slug {
+		t.Fatalf("unexpected updated org: found=%v org=%+v", found, updated)
+	}
+
+	ws, err := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Workspace", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.DeleteOrg(ctx, org.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, found, err = db.GetOrg(ctx, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatal("expected org to be deleted")
+	}
+
+	hierarchyCount, err := db.NewSelect().
+		TableExpr("resource_hierarchy").
+		Where("owner_type = ? AND owner_id = ?", "org", org.ID).
+		Count(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hierarchyCount != 0 {
+		t.Fatalf("expected org hierarchy rows to be deleted, got %d", hierarchyCount)
+	}
+
+	_, found, err = db.GetWorkspace(ctx, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatal("expected org workspace to be deleted")
+	}
+}
+
 func TestOrgMembership(t *testing.T) {
 	db := newTestDB(t)
 

@@ -150,6 +150,91 @@ func (db *DB) GetOrgBySlug(ctx context.Context, slug string) (Organization, bool
 	return org, true, nil
 }
 
+func (db *DB) UpdateOrg(ctx context.Context, id int64, name string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	_, err := db.NewUpdate().
+		Model((*Organization)(nil)).
+		Set("name = ?", name).
+		Set("updated_at = ?", time.Now()).
+		Where("id = ?", id).
+		Exec(ctx)
+	return err
+}
+
+func (db *DB) DeleteOrg(ctx context.Context, id int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if _, err := tx.NewDelete().TableExpr("resource_hierarchy").
+			Where("owner_type = ? AND owner_id = ?", "org", id).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		if _, err := tx.NewDelete().Model((*RoleBinding)(nil)).
+			Where("org_id = ?", id).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		if _, err := tx.NewDelete().Model((*Connection)(nil)).
+			Where("workspace_id IN (SELECT id FROM workspaces WHERE owner_type = ? AND owner_id = ?)", "org", id).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		if _, err := tx.NewDelete().Model((*Environment)(nil)).
+			Where("workspace_id IN (SELECT id FROM workspaces WHERE owner_type = ? AND owner_id = ?)", "org", id).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		if _, err := tx.NewDelete().Model((*Workspace)(nil)).
+			Where("owner_type = ? AND owner_id = ?", "org", id).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		if _, err := tx.NewDelete().Model((*TeamMember)(nil)).
+			Where("team_id IN (SELECT id FROM teams WHERE org_id = ?)", id).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		if _, err := tx.NewDelete().Model((*Team)(nil)).
+			Where("org_id = ?", id).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		if _, err := tx.NewDelete().Model((*OrgMember)(nil)).
+			Where("org_id = ?", id).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		if _, err := tx.NewDelete().Model((*OrgIDPConfig)(nil)).
+			Where("org_id = ?", id).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		if _, err := tx.NewDelete().Model((*Role)(nil)).
+			Where("org_id = ?", id).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		_, err := tx.NewDelete().Model((*Organization)(nil)).
+			Where("id = ?", id).
+			Exec(ctx)
+		return err
+	})
+}
+
 func (db *DB) AddOrgMember(ctx context.Context, orgID, accountID int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()

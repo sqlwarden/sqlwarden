@@ -402,7 +402,7 @@ func TestCreateOrgDuplicateSlug(t *testing.T) {
 	assert.Equal(t, res2.StatusCode, http.StatusUnprocessableEntity)
 }
 
-func TestUpdateOrganization_IsExplicitlyUnsupported(t *testing.T) {
+func TestUpdateOrganization(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
@@ -410,15 +410,80 @@ func TestUpdateOrganization_IsExplicitlyUnsupported(t *testing.T) {
 
 	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug,
 		map[string]any{"name": "Renamed Org"}, tok), app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusMethodNotAllowed)
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["name"], "Renamed Org")
+	assert.Equal(t, res.BodyFields["slug"], any(slug))
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+slug, nil, tok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	assert.Equal(t, getRes.BodyFields["name"], "Renamed Org")
 }
 
-func TestDeleteOrganization_IsExplicitlyUnsupported(t *testing.T) {
+func TestUpdateOrganizationRequiresOrgWrite(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, _, org := seedOrgOwner(t, app, uniqueEmail(t, "org-update-forbidden-owner"), "Org Owner", "Org Update Forbidden")
+	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "org-update-forbidden-member"), "Org Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+org.Slug,
+		map[string]any{"name": "Renamed Org"}, memberTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+}
+
+func TestDeleteOrganization(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
 	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "org-delete-owner"), "Org Owner", "securepass99")
 
 	res := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug, nil, tok), app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusMethodNotAllowed)
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+slug, nil, tok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusNotFound)
+}
+
+func TestDeleteOrganizationRequiresOrgDelete(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	_, _, org := seedOrgOwner(t, app, uniqueEmail(t, "org-delete-forbidden-owner"), "Org Owner", "Org Delete Forbidden")
+	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "org-delete-forbidden-member"), "Org Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+org.Slug, nil, memberTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+}
+
+func TestDeleteOrganizationIgnoresCrossOrgDeletePermission(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	account, accountTok := seedAccountWithToken(t, app, uniqueEmail(t, "org-delete-cross-account"), "Cross Delete")
+	_, ownerATok, orgA := seedOrgOwner(t, app, uniqueEmail(t, "org-delete-cross-owner-a"), "Org A Owner", "Delete Cross A")
+	_, ownerBTok, orgB := seedOrgOwner(t, app, uniqueEmail(t, "org-delete-cross-owner-b"), "Org B Owner", "Delete Cross B")
+
+	if err := app.db.AddOrgMember(context.Background(), orgA.ID, account.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.db.AddOrgMember(context.Background(), orgB.ID, account.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	deleteRoleB := createRoleForTest(t, app, orgB.ID, nil, "org", "org:delete")
+	res := grantOrgPolicyRole(t, app, ownerBTok, orgB.Slug, deleteRoleB, "account", account.ID)
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	deleteARes := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+orgA.Slug, nil, accountTok), app.routes())
+	assert.Equal(t, deleteARes.StatusCode, http.StatusForbidden)
+
+	getARes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+orgA.Slug, nil, ownerATok), app.routes())
+	assert.Equal(t, getARes.StatusCode, http.StatusOK)
+	assert.Equal(t, getARes.BodyFields["slug"], any(orgA.Slug))
 }

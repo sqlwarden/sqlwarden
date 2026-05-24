@@ -47,11 +47,60 @@ func (app *application) getOrg(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) updateOrg(w http.ResponseWriter, r *http.Request) {
-	app.methodNotAllowed(w, r)
+	org := contextGetOrg(r)
+
+	var input struct {
+		Name string              `json:"name"`
+		V    validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	input.Name = strings.TrimSpace(input.Name)
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
+
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	err = app.db.UpdateOrg(r.Context(), org.ID, input.Name)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	updated, found, err := app.db.GetOrg(r.Context(), org.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.notFound(w, r)
+		return
+	}
+
+	err = response.JSON(w, http.StatusOK, updated)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
 }
 
 func (app *application) deleteOrg(w http.ResponseWriter, r *http.Request) {
-	app.methodNotAllowed(w, r)
+	org := contextGetOrg(r)
+
+	err := app.db.DeleteOrg(r.Context(), org.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	app.enforcer.InvalidateOrgPolicy(org.ID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {

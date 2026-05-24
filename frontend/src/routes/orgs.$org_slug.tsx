@@ -82,6 +82,7 @@ function OrganizationLayout() {
   const workspaceAccessControlNavItems = workspaceId ? workspaceAccessControlItems(orgSlug, workspaceId, workspacePermissions) : []
   const workspaceSettingsNavItems = workspaceId ? workspaceSettingsItems(orgSlug, workspaceId, workspacePermissions) : []
   const orgAccessControlNavItems = !workspaceId ? accessControlItems(orgSlug, orgEffectivePermissions.data?.permissions) : []
+  const orgSettingsNavItems = !workspaceId ? settingsItems(orgSlug, orgEffectivePermissions.data?.permissions) : []
 
   if (
     workspaceId &&
@@ -128,7 +129,9 @@ function OrganizationLayout() {
               {orgAccessControlNavItems.length > 0 ? (
                 <AppShellNavSection label="Access Control" items={orgAccessControlNavItems} pathname={pathname} />
               ) : null}
-              <AppShellNavSection items={settingsItems(orgSlug)} pathname={pathname} />
+              {orgSettingsNavItems.length > 0 ? (
+                <AppShellNavSection label="Settings" items={orgSettingsNavItems} pathname={pathname} />
+              ) : null}
             </>
           )}
         </SidebarContent>
@@ -277,9 +280,13 @@ function accessControlItems(orgSlug: string, permissions: readonly string[] | un
   return items
 }
 
-function settingsItems(orgSlug: string): AppShellNavItem[] {
+function settingsItems(orgSlug: string, permissions: readonly string[] | undefined): AppShellNavItem[] {
+  if (!hasAnyPermission(permissions, [permission.orgRead, permission.orgWrite, permission.orgDelete])) {
+    return []
+  }
+
   return [
-    { to: '/orgs/$org_slug/settings', params: { org_slug: orgSlug }, label: 'Settings', icon: Settings02Icon },
+    { to: '/orgs/$org_slug/settings/general', params: { org_slug: orgSlug }, label: 'General', icon: Settings02Icon },
   ]
 }
 
