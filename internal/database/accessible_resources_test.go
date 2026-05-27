@@ -219,6 +219,37 @@ func TestListAccessibleWorkspaces_DirectWsPermBinding(t *testing.T) {
 	}
 }
 
+func TestListAccessibleWorkspaces_SharedFilePermissionDoesNotRevealChildren(t *testing.T) {
+	db := newTestDB(t)
+	e := newEnforcer(t, db)
+
+	org, _ := db.InsertOrg(context.Background(), "acc-ws-files", "Org")
+	ownerID := newAccount(t, db, "owner-ws-files@example.com")
+	_ = e.SeedOrg(context.Background(), org.ID, ownerID)
+	ws := seedWorkspace(t, db, e, org.ID, ownerID, "Files")
+
+	userID := newAccount(t, db, "user-ws-files@example.com")
+	if err := db.AddOrgMember(context.Background(), org.ID, userID); err != nil {
+		t.Fatal(err)
+	}
+	grantScopedRole(t, db, e, org.ID, &ws.ID, "shared-files-only", "workspace", []string{access.PermWsFileRead}, "account", userID, "workspace", ws.ID, ownerID)
+
+	workspaces, err := db.ListAccessibleWorkspaces(context.Background(), userID, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaces) != 1 || workspaces[0].ID != ws.ID {
+		t.Fatalf("expected shared file permission to discover workspace %d, got %v", ws.ID, wsIDs(workspaces))
+	}
+	envs, err := db.ListAccessibleEnvironments(context.Background(), userID, org.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 0 {
+		t.Fatalf("expected shared file permission not to reveal environments, got %v", envIDs(envs))
+	}
+}
+
 func TestListAccessibleWorkspaces_OrgPermBinding(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -26,6 +27,12 @@ const (
 	defaultTLSEnabled            = false
 	defaultTLSCertFile           = ""
 	defaultTLSKeyFile            = ""
+	defaultFilesEnabled          = true
+	defaultFilesStorageModel     = FilesStorageModelObjectStore
+	defaultFilesProvider         = FilesProviderFilesystem
+	defaultFilesRootDir          = "sqlwarden-files"
+	defaultFilesEncryption       = false
+	defaultFilesRevisionPolicy   = FilesRevisionPolicyVersioned
 	defaultNotificationsEmail    = ""
 	defaultSMTPHost              = "example.smtp.host"
 	defaultSMTPPort              = 25
@@ -50,6 +57,14 @@ const (
 const (
 	DesktopBackendKindLocal  = "local"
 	DesktopBackendKindRemote = "remote"
+)
+
+const (
+	FilesStorageModelWorkspaceDirectory = "workspace_directory"
+	FilesStorageModelObjectStore        = "object_store"
+	FilesProviderFilesystem             = "filesystem"
+	FilesRevisionPolicyDisabled         = "disabled"
+	FilesRevisionPolicyVersioned        = "versioned"
 )
 
 type Config struct {
@@ -78,6 +93,18 @@ type Config struct {
 		Enabled  bool
 		CertFile string
 		KeyFile  string
+	}
+	Files struct {
+		Enabled               bool
+		StorageModel          string
+		Provider              string
+		ApplicationEncryption bool
+		Filesystem            struct {
+			RootDir string
+		}
+		Revisions struct {
+			DefaultPolicy string
+		}
 	}
 	Notifications struct {
 		Email string
@@ -125,6 +152,12 @@ func DefaultConfig() Config {
 	cfg.TLS.Enabled = defaultTLSEnabled
 	cfg.TLS.CertFile = defaultTLSCertFile
 	cfg.TLS.KeyFile = defaultTLSKeyFile
+	cfg.Files.Enabled = defaultFilesEnabled
+	cfg.Files.StorageModel = defaultFilesStorageModel
+	cfg.Files.Provider = defaultFilesProvider
+	cfg.Files.Filesystem.RootDir = defaultFilesRootDir
+	cfg.Files.ApplicationEncryption = defaultFilesEncryption
+	cfg.Files.Revisions.DefaultPolicy = defaultFilesRevisionPolicy
 	cfg.Notifications.Email = defaultNotificationsEmail
 	cfg.SMTP.Host = defaultSMTPHost
 	cfg.SMTP.Port = defaultSMTPPort
@@ -175,6 +208,12 @@ var configOptions = []configOption{
 	{key: "tls.enabled", env: "TLS_ENABLED", flagName: "tls-enabled", defaultValue: defaultTLSEnabled, usage: "Serve HTTPS using configured TLS certificate and key files"},
 	{key: "tls.cert_file", env: "TLS_CERT_FILE", flagName: "tls-cert-file", defaultValue: defaultTLSCertFile, usage: "Path to PEM encoded TLS certificate file"},
 	{key: "tls.key_file", env: "TLS_KEY_FILE", flagName: "tls-key-file", defaultValue: defaultTLSKeyFile, usage: "Path to PEM encoded TLS private key file"},
+	{key: "files.enabled", env: "FILES_ENABLED", flagName: "files-enabled", defaultValue: defaultFilesEnabled, usage: "Enable workspace file storage"},
+	{key: "files.storage_model", env: "FILES_STORAGE_MODEL", flagName: "files-storage-model", defaultValue: defaultFilesStorageModel, usage: "Workspace file storage model (workspace_directory or object_store)"},
+	{key: "files.provider", env: "FILES_PROVIDER", flagName: "files-provider", defaultValue: defaultFilesProvider, usage: "Workspace file storage provider (filesystem)"},
+	{key: "files.filesystem.root_dir", env: "FILES_FILESYSTEM_ROOT_DIR", flagName: "files-filesystem-root-dir", defaultValue: defaultFilesRootDir, usage: "Filesystem root directory for workspace files"},
+	{key: "files.application_encryption", env: "FILES_APPLICATION_ENCRYPTION", flagName: "files-application-encryption", defaultValue: defaultFilesEncryption, usage: "Encrypt workspace file bytes before storing them"},
+	{key: "files.revisions.default_policy", env: "FILES_REVISIONS_DEFAULT_POLICY", flagName: "files-revisions-default-policy", defaultValue: defaultFilesRevisionPolicy, usage: "Default saved-file revision policy (disabled or versioned)"},
 	{key: "notifications.email", env: "NOTIFICATIONS_EMAIL", flagName: "notifications-email", defaultValue: defaultNotificationsEmail, usage: "Email address that receives error notifications"},
 	{key: "smtp.host", env: "SMTP_HOST", flagName: "smtp-host", defaultValue: defaultSMTPHost, usage: "SMTP server host"},
 	{key: "smtp.port", env: "SMTP_PORT", flagName: "smtp-port", defaultValue: defaultSMTPPort, usage: "SMTP server port"},
@@ -275,6 +314,12 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.TLS.Enabled = v.GetBool("tls.enabled")
 	cfg.TLS.CertFile = v.GetString("tls.cert_file")
 	cfg.TLS.KeyFile = v.GetString("tls.key_file")
+	cfg.Files.Enabled = v.GetBool("files.enabled")
+	cfg.Files.StorageModel = v.GetString("files.storage_model")
+	cfg.Files.Provider = v.GetString("files.provider")
+	cfg.Files.Filesystem.RootDir = v.GetString("files.filesystem.root_dir")
+	cfg.Files.ApplicationEncryption = v.GetBool("files.application_encryption")
+	cfg.Files.Revisions.DefaultPolicy = v.GetString("files.revisions.default_policy")
 	cfg.Notifications.Email = v.GetString("notifications.email")
 	cfg.SMTP.Host = v.GetString("smtp.host")
 	cfg.SMTP.Port = v.GetInt("smtp.port")
@@ -289,6 +334,16 @@ func loadConfig(args []string) (Config, bool, error) {
 	}
 	if len(cfg.Desktop.Backends) == 0 {
 		cfg.Desktop.Backends = defaultDesktopBackends()
+	}
+	if cfg.DeploymentMode == DeploymentModeDesktop {
+		_, storageModelSetInEnv := os.LookupEnv("FILES_STORAGE_MODEL")
+		_, revisionPolicySetInEnv := os.LookupEnv("FILES_REVISIONS_DEFAULT_POLICY")
+		if !v.InConfig("files.storage_model") && !flagSet.Changed("files-storage-model") && !storageModelSetInEnv {
+			cfg.Files.StorageModel = FilesStorageModelWorkspaceDirectory
+		}
+		if !v.InConfig("files.revisions.default_policy") && !flagSet.Changed("files-revisions-default-policy") && !revisionPolicySetInEnv {
+			cfg.Files.Revisions.DefaultPolicy = FilesRevisionPolicyDisabled
+		}
 	}
 
 	if err := validateConfig(cfg); err != nil {
@@ -311,6 +366,29 @@ func validateConfig(cfg Config) error {
 		}
 		if strings.TrimSpace(cfg.TLS.KeyFile) == "" {
 			return fmt.Errorf("tls.key_file is required when tls.enabled is true")
+		}
+	}
+	if cfg.Files.Enabled {
+		if cfg.Files.StorageModel != FilesStorageModelWorkspaceDirectory && cfg.Files.StorageModel != FilesStorageModelObjectStore {
+			return fmt.Errorf("files.storage_model must be %q or %q", FilesStorageModelWorkspaceDirectory, FilesStorageModelObjectStore)
+		}
+		if cfg.Files.Provider != FilesProviderFilesystem {
+			return fmt.Errorf("files.provider must be %q", FilesProviderFilesystem)
+		}
+		if strings.TrimSpace(cfg.Files.Filesystem.RootDir) == "" {
+			return fmt.Errorf("files.filesystem.root_dir is required when files.enabled is true")
+		}
+		if cfg.Files.StorageModel == FilesStorageModelWorkspaceDirectory && cfg.Files.ApplicationEncryption {
+			return fmt.Errorf("files.application_encryption is not supported with files.storage_model=%q", FilesStorageModelWorkspaceDirectory)
+		}
+		if cfg.Files.StorageModel == FilesStorageModelWorkspaceDirectory && cfg.Files.Revisions.DefaultPolicy == FilesRevisionPolicyVersioned {
+			return fmt.Errorf("files.revisions.default_policy=%q is not supported with files.storage_model=%q yet", FilesRevisionPolicyVersioned, FilesStorageModelWorkspaceDirectory)
+		}
+		if cfg.Files.ApplicationEncryption {
+			return fmt.Errorf("files.application_encryption is configured but encrypted file content is not implemented yet")
+		}
+		if cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyDisabled && cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyVersioned {
+			return fmt.Errorf("files.revisions.default_policy must be %q or %q", FilesRevisionPolicyDisabled, FilesRevisionPolicyVersioned)
 		}
 	}
 	if strings.TrimSpace(cfg.Desktop.ActiveBackend) == "" {

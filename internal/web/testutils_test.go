@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
 
@@ -55,10 +56,20 @@ func newTestApplication(t *testing.T) *application {
 	app.config.DeploymentMode = DeploymentModeServer
 	app.config.AccessMode = AccessModeMultiUser
 	app.config.PersonalSpacesEnabled = true
+	app.config.Files.Enabled = true
+	app.config.Files.StorageModel = FilesStorageModelObjectStore
+	app.config.Files.Provider = FilesProviderFilesystem
+	app.config.Files.Filesystem.RootDir = t.TempDir()
+	app.config.Files.Revisions.DefaultPolicy = FilesRevisionPolicyDisabled
 
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
 	app.mailer = smtp.NewMockMailer("test@example.com")
+	var err error
+	app.fileStore, err = filestore.NewFilesystem(app.config.Files.Filesystem.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	return app
 }

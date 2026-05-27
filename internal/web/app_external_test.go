@@ -13,6 +13,7 @@ func TestAppCanBeConstructedFromExternalPackage(t *testing.T) {
 	cfg.DB.Driver = "sqlite"
 	cfg.DB.DSN = t.TempDir() + "/sqlwarden.db"
 	cfg.DB.Automigrate = true
+	cfg.Files.Filesystem.RootDir = t.TempDir() + "/files"
 
 	app, err := web.New(cfg, slog.Default())
 	if err != nil {

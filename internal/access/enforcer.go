@@ -353,16 +353,8 @@ func (e *Enforcer) SeedOrg(ctx context.Context, orgID, ownerAccountID int64) err
 			return fmt.Errorf("seed role %s: %w", roleName, err)
 		}
 
-		for _, perm := range permissions {
-			m := map[string]interface{}{"role_id": roleID, "permission": perm}
-			_, err = e.db.NewInsert().
-				TableExpr("role_permissions").
-				Model(&m).
-				Ignore().
-				Exec(ctx)
-			if err != nil {
-				return fmt.Errorf("seed permission %s: %w", perm, err)
-			}
+		if err = e.insertRolePermissions(ctx, roleID, permissions, true); err != nil {
+			return fmt.Errorf("seed %s permissions: %w", roleName, err)
 		}
 
 		if roleName == BuiltinOrgOwnerRole {
@@ -392,16 +384,8 @@ func (e *Enforcer) SeedWorkspace(ctx context.Context, orgID, workspaceID, creato
 			return fmt.Errorf("seed workspace role %s: %w", roleName, err)
 		}
 
-		for _, perm := range permissions {
-			m := map[string]interface{}{"role_id": roleID, "permission": perm}
-			_, err = e.db.NewInsert().
-				TableExpr("role_permissions").
-				Model(&m).
-				Ignore().
-				Exec(ctx)
-			if err != nil {
-				return fmt.Errorf("seed workspace permission %s: %w", perm, err)
-			}
+		if err = e.insertRolePermissions(ctx, roleID, permissions, true); err != nil {
+			return fmt.Errorf("seed workspace %s permissions: %w", roleName, err)
 		}
 
 		if roleName == BuiltinWorkspaceAdminRole {
@@ -451,19 +435,34 @@ func (e *Enforcer) CreateRole(ctx context.Context, orgID int64, workspaceID *int
 		return 0, err
 	}
 
-	for _, perm := range permissions {
-		pm := map[string]interface{}{"role_id": roleID, "permission": perm}
-		_, err = e.db.NewInsert().
-			TableExpr("role_permissions").
-			Model(&pm).
-			Exec(ctx)
-		if err != nil {
-			return 0, fmt.Errorf("insert permission: %w", err)
-		}
+	if err = e.insertRolePermissions(ctx, roleID, permissions, false); err != nil {
+		return 0, fmt.Errorf("insert permissions: %w", err)
 	}
 
 	e.cache.InvalidateOrgPolicy(orgID)
 	return roleID, nil
+}
+
+type rolePermissionInsert struct {
+	bun.BaseModel `bun:"table:role_permissions"`
+	RoleID        int64  `bun:"role_id"`
+	Permission    string `bun:"permission"`
+}
+
+func (e *Enforcer) insertRolePermissions(ctx context.Context, roleID int64, permissions []string, ignoreConflicts bool) error {
+	if len(permissions) == 0 {
+		return nil
+	}
+	rows := make([]rolePermissionInsert, 0, len(permissions))
+	for _, permission := range permissions {
+		rows = append(rows, rolePermissionInsert{RoleID: roleID, Permission: permission})
+	}
+	query := e.db.NewInsert().Model(&rows)
+	if ignoreConflicts {
+		query = query.Ignore()
+	}
+	_, err := query.Exec(ctx)
+	return err
 }
 
 // DeleteRole deletes a custom role. Returns an error if the role is builtin.

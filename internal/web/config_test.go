@@ -47,6 +47,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.Desktop.ActiveBackend != "local" {
 		t.Fatalf("desktop.active_backend = %q, want local", cfg.Desktop.ActiveBackend)
 	}
+	if !cfg.Files.Enabled || cfg.Files.StorageModel != FilesStorageModelObjectStore || cfg.Files.Provider != FilesProviderFilesystem || cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyVersioned {
+		t.Fatalf("unexpected default file config: %+v", cfg.Files)
+	}
 	if len(cfg.Desktop.Backends) != 1 || cfg.Desktop.Backends[0].ID != "local" || cfg.Desktop.Backends[0].Kind != DesktopBackendKindLocal {
 		t.Fatalf("unexpected default desktop backends: %+v", cfg.Desktop.Backends)
 	}
@@ -248,6 +251,38 @@ func TestLoadConfigDeprecatedDesktopModeAlias(t *testing.T) {
 	}
 	if cfg.AccessMode != AccessModeSingleUser {
 		t.Fatalf("accessMode = %q, want %q", cfg.AccessMode, AccessModeSingleUser)
+	}
+}
+
+func TestLoadConfigDesktopDefaultsToVisibleUnversionedFiles(t *testing.T) {
+	cfg, _, err := loadConfig([]string{"--deployment-mode", DeploymentModeDesktop, "--access-mode", AccessModeSingleUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Files.StorageModel != FilesStorageModelWorkspaceDirectory || cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyDisabled || cfg.Files.ApplicationEncryption {
+		t.Fatalf("unexpected desktop file config: %+v", cfg.Files)
+	}
+}
+
+func TestLoadConfigRejectsUnsupportedFileConfiguration(t *testing.T) {
+	_, _, err := loadConfig([]string{"--files-storage-model", FilesStorageModelWorkspaceDirectory, "--files-application-encryption"})
+	if err == nil {
+		t.Fatal("expected visible directory encryption to fail")
+	}
+
+	_, _, err = loadConfig([]string{"--files-provider", "s3"})
+	if err == nil {
+		t.Fatal("expected unimplemented file provider to fail")
+	}
+
+	_, _, err = loadConfig([]string{"--files-revisions-default-policy", "sometimes"})
+	if err == nil {
+		t.Fatal("expected invalid revision policy to fail")
+	}
+
+	_, _, err = loadConfig([]string{"--files-storage-model", FilesStorageModelWorkspaceDirectory})
+	if err == nil {
+		t.Fatal("expected visible directory versioning to fail until visible history is implemented")
 	}
 }
 

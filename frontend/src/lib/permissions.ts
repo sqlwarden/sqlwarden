@@ -14,6 +14,10 @@ export const permission = {
   wsWrite: 'ws:write',
   wsCreate: 'ws:create',
   wsDelete: 'ws:delete',
+  wsFileRead: 'wsfile:read',
+  wsFileCreate: 'wsfile:create',
+  wsFileWrite: 'wsfile:write',
+  wsFileDelete: 'wsfile:delete',
 
   envRead: 'env:read',
   envWrite: 'env:write',
@@ -90,6 +94,8 @@ function permissionGroupFallback(prefix: string) {
       return 'Organization'
     case 'ws':
       return 'Workspace'
+    case 'wsfile':
+      return 'Workspace Files'
     case 'env':
       return 'Environment'
     case 'conn':

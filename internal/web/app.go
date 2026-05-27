@@ -12,6 +12,7 @@ import (
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/smtp"
 )
 
@@ -26,11 +27,16 @@ type application struct {
 	connManager *connection.Manager
 	encKey      []byte
 	enforcer    *access.Enforcer
+	fileStore   filestore.Store
+	fileLocks   sync.Map
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
 	}
 
 	db, err := database.New(cfg.DB.Driver, cfg.DB.DSN, logger, cfg.DB.LogQueries)
@@ -57,6 +63,15 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("enforcer init: %w", err)
 	}
 
+	var fileStore filestore.Store
+	if cfg.Files.Enabled {
+		fileStore, err = filestore.NewFilesystem(cfg.Files.Filesystem.RootDir)
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("file storage init: %w", err)
+		}
+	}
+
 	return &application{
 		config:      cfg,
 		db:          db,
@@ -65,6 +80,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		connManager: connection.New(30 * time.Minute),
 		encKey:      encrypt.DeriveKey(cfg.Encryption.Key),
 		enforcer:    enforcer,
+		fileStore:   fileStore,
 	}, nil
 }
 

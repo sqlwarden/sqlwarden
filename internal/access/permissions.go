@@ -19,6 +19,11 @@ const (
 	PermWsCreate = "ws:create"
 	PermWsDelete = "ws:delete"
 
+	PermWsFileRead   = "wsfile:read"
+	PermWsFileCreate = "wsfile:create"
+	PermWsFileWrite  = "wsfile:write"
+	PermWsFileDelete = "wsfile:delete"
+
 	PermEnvRead   = "env:read"
 	PermEnvWrite  = "env:write"
 	PermEnvCreate = "env:create"
@@ -65,6 +70,10 @@ var PermissionCatalog = []PermissionDefinition{
 	{Key: PermWsWrite, Label: "Manage workspaces", Description: "Update workspace details and workspace-level settings.", Group: "Workspace"},
 	{Key: PermWsCreate, Label: "Create workspaces", Description: "Create new workspaces in the organization.", Group: "Workspace"},
 	{Key: PermWsDelete, Label: "Delete workspaces", Description: "Delete workspaces and their owned resources.", Group: "Workspace"},
+	{Key: PermWsFileRead, Label: "View shared workspace files", Description: "List, open, and download shared files in a workspace.", Group: "Workspace Files"},
+	{Key: PermWsFileCreate, Label: "Create shared workspace files", Description: "Create shared files and folders in a workspace.", Group: "Workspace Files"},
+	{Key: PermWsFileWrite, Label: "Manage shared workspace files", Description: "Update, rename, and move shared files and folders in a workspace.", Group: "Workspace Files"},
+	{Key: PermWsFileDelete, Label: "Delete shared workspace files", Description: "Delete shared files and folders in a workspace.", Group: "Workspace Files"},
 
 	{Key: PermEnvRead, Label: "View environments", Description: "View environment details and discover accessible environment content.", Group: "Environment"},
 	{Key: PermEnvWrite, Label: "Manage environments", Description: "Update environment details and environment-level settings.", Group: "Environment"},
@@ -93,6 +102,7 @@ var ScopePermissions = map[string][]string{
 		PermOrgRead, PermOrgWrite, PermOrgDelete, PermOrgInvite,
 		PermOrgAssignRoles, PermOrgTransferOwnership,
 		PermWsRead, PermWsWrite, PermWsCreate, PermWsDelete,
+		PermWsFileRead, PermWsFileCreate, PermWsFileWrite, PermWsFileDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
 		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
@@ -100,6 +110,7 @@ var ScopePermissions = map[string][]string{
 	},
 	"workspace": {
 		PermWsRead, PermWsWrite,
+		PermWsFileRead, PermWsFileCreate, PermWsFileWrite, PermWsFileDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
 		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
@@ -126,6 +137,7 @@ var ResourcePermissions = map[string][]string{
 	"org": ScopePermissions["org"],
 	"workspace": {
 		PermWsRead, PermWsWrite, PermWsDelete,
+		PermWsFileRead, PermWsFileCreate, PermWsFileWrite, PermWsFileDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
 		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
@@ -150,6 +162,7 @@ var OrgBuiltinRoles = map[string][]string{
 	BuiltinOrgAdminRole: {
 		PermOrgRead, PermOrgWrite, PermOrgInvite, PermOrgAssignRoles,
 		PermWsCreate, PermWsDelete, PermWsRead, PermWsWrite,
+		PermWsFileRead, PermWsFileCreate, PermWsFileWrite, PermWsFileDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
 		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
@@ -171,6 +184,7 @@ var OrgBuiltinRoleDescriptions = map[string]string{
 var WorkspaceBuiltinRoles = map[string][]string{
 	BuiltinWorkspaceAdminRole: {
 		PermWsRead, PermWsWrite,
+		PermWsFileRead, PermWsFileCreate, PermWsFileWrite, PermWsFileDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
 		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
@@ -182,7 +196,7 @@ var WorkspaceBuiltinRoles = map[string][]string{
 }
 
 var WorkspaceBuiltinRoleDescriptions = map[string]string{
-	BuiltinWorkspaceAdminRole:  "Full workspace administration access, including workspace updates, environments, connections, queries, and workspace policies.",
+	BuiltinWorkspaceAdminRole:  "Full workspace administration access, including shared files, workspace updates, environments, connections, queries, and workspace policies.",
 	BuiltinWorkspaceMemberRole: "Baseline workspace member access with workspace visibility.",
 }
 

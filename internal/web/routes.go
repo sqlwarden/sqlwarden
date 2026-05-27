@@ -68,6 +68,16 @@ func (app *application) routes() http.Handler {
 					r.Patch("/", app.updateWorkspace)
 					r.Delete("/", app.deleteWorkspace)
 
+					r.Route("/files", func(r chi.Router) {
+						r.Get("/", app.listWorkspaceFiles)
+						r.Post("/", app.createWorkspaceFile)
+						r.Route("/{file_id}", func(r chi.Router) {
+							r.Get("/", app.getWorkspaceFile)
+							r.Get("/content", app.getWorkspaceFileContent)
+							r.Put("/content", app.updateWorkspaceFileContent)
+						})
+					})
+
 					r.Route("/environments", func(r chi.Router) {
 						r.Get("/", app.listMyEnvironments)
 						r.Post("/", app.createMyEnvironment)
@@ -166,6 +176,16 @@ func (app *application) routes() http.Handler {
 					r.With(app.requirePermission("ws:delete")).Delete("/", app.deleteWorkspace)
 
 					r.Get("/permissions", app.listWorkspacePermissions)
+
+					r.Route("/files", func(r chi.Router) {
+						r.Get("/", app.listWorkspaceFiles)
+						r.Post("/", app.createWorkspaceFile)
+						r.Route("/{file_id}", func(r chi.Router) {
+							r.Get("/", app.getWorkspaceFile)
+							r.Get("/content", app.getWorkspaceFileContent)
+							r.Put("/content", app.updateWorkspaceFileContent)
+						})
+					})
 
 					r.Route("/users", func(r chi.Router) {
 						r.With(app.requirePermission("policy:read")).Get("/", app.listWorkspaceMembers)
