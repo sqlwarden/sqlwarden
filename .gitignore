@@ -25,3 +25,6 @@ postgres_data/
 .worktrees/
 
 references/
+
+# CodeGraph index (local only)
+.codegraph/
