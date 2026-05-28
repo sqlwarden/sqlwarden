@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { DatabaseLightningIcon } from '@hugeicons/core-free-icons'
+import { updatePrivateWorkspaceFileContent } from '#/lib/api/files'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import {
   ResizableHandle,
@@ -23,6 +25,7 @@ import { IdeToolbar } from './IdeToolbar'
 import { IdeTabBar } from './IdeTabBar'
 import { SqlEditor } from './SqlEditor'
 import { ResultsArea } from './ResultsArea'
+import { useFileContent } from './useFileContent'
 
 // ─── Root ──────────────────────────────────────────────────────────────────────
 
@@ -273,8 +276,17 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   const tabs = useIde((s) => s.tabs)
   const openTab = useIde((s) => s.openTab)
   const updateTabContent = useIde((s) => s.updateTabContent)
+  const updateTabEtag = useIde((s) => s.updateTabEtag)
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
+
+  const { isLoading: isContentLoading, isError: isContentError } = useFileContent({
+    orgSlug,
+    workspaceId: workspace.id,
+    tab: activeTab,
+    updateTabContent,
+    updateTabEtag,
+  })
 
   useEffect(() => {
     const wsTabCount = tabs.filter((t) => t.workspaceId === workspace.id).length
@@ -283,18 +295,56 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
     }
   }, [workspace, tabs, openTab])
 
+  // ⌘S / Ctrl+S: save file tab in-place
+  useEffect(() => {
+    async function handleKeyDown(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 's') return
+      e.preventDefault()
+      if (!activeTab || activeTab.kind !== 'file' || !activeTab.etag || !activeTab.fileId) return
+      try {
+        const result = await updatePrivateWorkspaceFileContent(
+          orgSlug,
+          workspace.id,
+          activeTab.fileId,
+          activeTab.content,
+          activeTab.etag,
+        )
+        updateTabEtag(activeTab.id, result.etag)
+      } catch (err) {
+        const status = (err as { status?: number }).status
+        if (status === 412 || status === 409) {
+          toast.error('File changed externally. Reload before saving.')
+        } else {
+          toast.error('Failed to save file.')
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activeTab, orgSlug, workspace.id, updateTabEtag])
+
   return (
     <section className="flex h-full min-h-0 flex-col bg-background">
       <IdeToolbar orgSlug={orgSlug} workspace={workspace} />
-      <IdeTabBar workspace={workspace} />
+      <IdeTabBar orgSlug={orgSlug} workspace={workspace} />
       <div className="min-h-0 flex-1 bg-card">
         {activeTab ? (
-          <SqlEditor
-            key={activeTab.id}
-            value={activeTab.content}
-            onChange={(content) => updateTabContent(activeTab.id, content)}
-            className="h-full"
-          />
+          isContentLoading ? (
+            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+              Loading…
+            </div>
+          ) : isContentError ? (
+            <div className="flex h-full items-center justify-center text-xs text-destructive">
+              Failed to load file content.
+            </div>
+          ) : (
+            <SqlEditor
+              key={activeTab.id}
+              value={activeTab.content}
+              onChange={(content) => updateTabContent(activeTab.id, content)}
+              className="h-full"
+            />
+          )
         ) : (
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             Open a connection or file to start querying.
