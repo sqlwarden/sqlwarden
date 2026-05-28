@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFile, WorkspaceFileBrowserResult } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -39,7 +39,25 @@ export const queryKeys = {
     ['org-workspace-teams', slug, workspaceId, query ?? {}] as const,
   orgWorkspacePolicies: (slug: string, workspaceId: string | number, query?: ListQuery) =>
     ['org-workspace-policies', slug, workspaceId, query ?? {}] as const,
+  orgWorkspacePrivateFiles: (slug: string, workspaceId: string | number, parentId?: string | number | null) =>
+    ['org-workspace-private-files', slug, workspaceId, parentId ?? null] as const,
+  orgWorkspaceSharedFiles: (slug: string, workspaceId: string | number, parentId?: string | number | null) =>
+    ['org-workspace-shared-files', slug, workspaceId, parentId ?? null] as const,
+  orgWorkspacePrivateFileBrowser: (slug: string, workspaceId: string | number, fileId?: string | number | null) =>
+    ['org-workspace-private-file-browser', slug, workspaceId, fileId ?? null] as const,
+  orgWorkspaceSharedFileBrowser: (slug: string, workspaceId: string | number, fileId?: string | number | null) =>
+    ['org-workspace-shared-file-browser', slug, workspaceId, fileId ?? null] as const,
+  orgWorkspacePrivateRecentFiles: (slug: string, workspaceId: string | number, limit?: number) =>
+    ['org-workspace-private-recent-files', slug, workspaceId, limit ?? null] as const,
+  orgWorkspaceSharedRecentFiles: (slug: string, workspaceId: string | number, limit?: number) =>
+    ['org-workspace-shared-recent-files', slug, workspaceId, limit ?? null] as const,
   myWorkspaces: (query?: ListQuery) => ['my-workspaces', query ?? {}] as const,
+  myWorkspacePrivateFiles: (workspaceId: string | number, parentId?: string | number | null) =>
+    ['my-workspace-private-files', workspaceId, parentId ?? null] as const,
+  myWorkspacePrivateFileBrowser: (workspaceId: string | number, fileId?: string | number | null) =>
+    ['my-workspace-private-file-browser', workspaceId, fileId ?? null] as const,
+  myWorkspacePrivateRecentFiles: (workspaceId: string | number, limit?: number) =>
+    ['my-workspace-private-recent-files', workspaceId, limit ?? null] as const,
   orgEnvironments: (slug: string, workspaceId: string | number, query?: ListQuery) =>
     ['org-environments', slug, workspaceId, query ?? {}] as const,
   myEnvironments: (workspaceId: string | number, query?: ListQuery) =>
@@ -276,11 +294,101 @@ export function orgWorkspacePoliciesQueryOptions(slug: string, workspaceId: stri
   })
 }
 
+export function orgWorkspacePrivateFilesQueryOptions(slug: string, workspaceId: string | number, parentId?: string | number | null) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspacePrivateFiles(slug, workspaceId, parentId),
+    queryFn: () =>
+      api.get<WorkspaceFile[]>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/private`, {
+        query: { parent_id: parentId ?? undefined },
+      }),
+  })
+}
+
+export function orgWorkspaceSharedFilesQueryOptions(slug: string, workspaceId: string | number, parentId?: string | number | null) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspaceSharedFiles(slug, workspaceId, parentId),
+    queryFn: () =>
+      api.get<WorkspaceFile[]>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/shared`, {
+        query: { parent_id: parentId ?? undefined },
+      }),
+  })
+}
+
+export function orgWorkspacePrivateFileBrowserQueryOptions(slug: string, workspaceId: string | number, fileId?: string | number | null) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspacePrivateFileBrowser(slug, workspaceId, fileId),
+    queryFn: () =>
+      api.get<WorkspaceFileBrowserResult>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/private/browser`, {
+        query: { file_id: fileId ?? undefined },
+      }),
+  })
+}
+
+export function orgWorkspaceSharedFileBrowserQueryOptions(slug: string, workspaceId: string | number, fileId?: string | number | null) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspaceSharedFileBrowser(slug, workspaceId, fileId),
+    queryFn: () =>
+      api.get<WorkspaceFileBrowserResult>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/shared/browser`, {
+        query: { file_id: fileId ?? undefined },
+      }),
+  })
+}
+
+export function orgWorkspacePrivateRecentFilesQueryOptions(slug: string, workspaceId: string | number, limit?: number) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspacePrivateRecentFiles(slug, workspaceId, limit),
+    queryFn: () =>
+      api.get<WorkspaceFile[]>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/private/recent`, {
+        query: { limit },
+      }),
+  })
+}
+
+export function orgWorkspaceSharedRecentFilesQueryOptions(slug: string, workspaceId: string | number, limit?: number) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspaceSharedRecentFiles(slug, workspaceId, limit),
+    queryFn: () =>
+      api.get<WorkspaceFile[]>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/shared/recent`, {
+        query: { limit },
+      }),
+  })
+}
+
 export function myWorkspacesQueryOptions(query?: ListQuery) {
   return queryOptions({
     queryKey: queryKeys.myWorkspaces(query),
     queryFn: () => api.get<Paginated<Workspace>>('/api/v1/me/workspaces', { query }),
     placeholderData: keepPreviousData,
+  })
+}
+
+export function myWorkspacePrivateFilesQueryOptions(workspaceId: string | number, parentId?: string | number | null) {
+  return queryOptions({
+    queryKey: queryKeys.myWorkspacePrivateFiles(workspaceId, parentId),
+    queryFn: () =>
+      api.get<WorkspaceFile[]>(`/api/v1/me/workspaces/${workspaceId}/files/private`, {
+        query: { parent_id: parentId ?? undefined },
+      }),
+  })
+}
+
+export function myWorkspacePrivateFileBrowserQueryOptions(workspaceId: string | number, fileId?: string | number | null) {
+  return queryOptions({
+    queryKey: queryKeys.myWorkspacePrivateFileBrowser(workspaceId, fileId),
+    queryFn: () =>
+      api.get<WorkspaceFileBrowserResult>(`/api/v1/me/workspaces/${workspaceId}/files/private/browser`, {
+        query: { file_id: fileId ?? undefined },
+      }),
+  })
+}
+
+export function myWorkspacePrivateRecentFilesQueryOptions(workspaceId: string | number, limit?: number) {
+  return queryOptions({
+    queryKey: queryKeys.myWorkspacePrivateRecentFiles(workspaceId, limit),
+    queryFn: () =>
+      api.get<WorkspaceFile[]>(`/api/v1/me/workspaces/${workspaceId}/files/private/recent`, {
+        query: { limit },
+      }),
   })
 }
 

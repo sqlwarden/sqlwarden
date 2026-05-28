@@ -103,6 +103,28 @@ func TestWorkspaceFilesValidateTreeAndContentPolicy(t *testing.T) {
 			if len(backendIDs) != 2 || backendIDs[0] != "archive" || backendIDs[1] != "cold" {
 				t.Fatalf("storage backend IDs = %+v, want [archive cold]", backendIDs)
 			}
+			ancestors, err := db.WorkspaceFileAncestors(ctx, file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(ancestors) != 2 || ancestors[0].ID != folder.ID || ancestors[1].ID != file.ID {
+				t.Fatalf("ancestors = %+v, want folder then file", ancestors)
+			}
+			recent, err := db.ListRecentWorkspaceFiles(ctx, ws.ID, FileVisibilityPrivate, &ownerID, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(recent) != 1 || recent[0].ID != file.ID {
+				t.Fatalf("recent private files = %+v, want only query.sql", recent)
+			}
+			bobID := testUsers["bob"].id
+			bobRecent, err := db.ListRecentWorkspaceFiles(ctx, ws.ID, FileVisibilityPrivate, &bobID, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(bobRecent) != 0 {
+				t.Fatalf("recent files for another owner = %+v, want none", bobRecent)
+			}
 		})
 	}
 }

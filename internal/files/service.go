@@ -112,6 +112,21 @@ type ReadContentResult struct {
 	Reader io.ReadCloser
 }
 
+// PathSegment is one breadcrumb entry for a workspace file browser location.
+type PathSegment struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	ObjectType string `json:"object_type"`
+}
+
+// BrowserResult is the IDE-oriented snapshot for a file tree location. A nil
+// File means the browser is at the tree root.
+type BrowserResult struct {
+	File     *database.WorkspaceFile  `json:"file"`
+	Path     []PathSegment            `json:"path"`
+	Children []database.WorkspaceFile `json:"children"`
+}
+
 // Service owns workspace-file authorization, metadata mutations, storage-key
 // planning, and content IO orchestration.
 type Service struct {
@@ -152,7 +167,60 @@ func (s *Service) List(ctx context.Context, scope Scope, parentID *int64) ([]dat
 			return nil, err
 		}
 	}
-	return s.db.ListWorkspaceFiles(ctx, scope.Workspace.ID, scope.Visibility, ownerID, parentID)
+	files, err := s.db.ListWorkspaceFiles(ctx, scope.Workspace.ID, scope.Visibility, ownerID, parentID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.enrichFilesWithCurrentContent(ctx, files); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+// Browser returns the current node, breadcrumb path, and direct children for an
+// IDE file browser location. A nil fileID represents the file-tree root.
+func (s *Service) Browser(ctx context.Context, scope Scope, fileID *int64) (BrowserResult, error) {
+	if fileID == nil {
+		children, err := s.List(ctx, scope, nil)
+		if err != nil {
+			return BrowserResult{}, err
+		}
+		return BrowserResult{Path: []PathSegment{}, Children: children}, nil
+	}
+
+	file, err := s.Get(ctx, scope, *fileID)
+	if err != nil {
+		return BrowserResult{}, err
+	}
+	path, err := s.pathSegments(ctx, file)
+	if err != nil {
+		return BrowserResult{}, err
+	}
+	children := []database.WorkspaceFile{}
+	if file.ObjectType == database.FileObjectTypeFolder {
+		children, err = s.List(ctx, scope, &file.ID)
+		if err != nil {
+			return BrowserResult{}, err
+		}
+	}
+	return BrowserResult{File: &file, Path: path, Children: children}, nil
+}
+
+// Recent returns recently updated files from the authorized private or shared
+// file tree. It excludes folders because IDE recent entries must be openable.
+func (s *Service) Recent(ctx context.Context, scope Scope, limit int) ([]database.WorkspaceFile, error) {
+	ownerID, err := s.authorizeTree(ctx, scope, access.PermWsFileRead)
+	if err != nil {
+		return nil, err
+	}
+	files, err := s.db.ListRecentWorkspaceFiles(ctx, scope.Workspace.ID, scope.Visibility, ownerID, limit)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.enrichFilesWithCurrentContent(ctx, files); err != nil {
+		return nil, err
+	}
+	return files, nil
 }
 
 // Create inserts a file or folder in the requested private or shared file tree.
@@ -206,14 +274,8 @@ func (s *Service) Get(ctx context.Context, scope Scope, fileID int64) (database.
 	if err != nil {
 		return database.WorkspaceFile{}, err
 	}
-	content, found, err := s.db.CurrentWorkspaceFileContent(ctx, file)
-	if err != nil {
+	if err := s.enrichFileWithCurrentContent(ctx, &file); err != nil {
 		return database.WorkspaceFile{}, err
-	}
-	if found {
-		file.ContentHash = content.ContentHash
-		file.ContentVersion = content.Version
-		file.SizeBytes = content.SizeBytes
 	}
 	return file, nil
 }
@@ -289,6 +351,9 @@ func (s *Service) Update(ctx context.Context, scope Scope, fileID int64, input U
 		return database.WorkspaceFile{}, err
 	}
 	s.finishRelocations(ctx, planner, scope, file, relocations)
+	if err := s.enrichFileWithCurrentContent(ctx, &updated); err != nil {
+		return database.WorkspaceFile{}, err
+	}
 	return updated, nil
 }
 
@@ -496,6 +561,47 @@ func (s *Service) validateParent(ctx context.Context, scope Scope, parentID int6
 	if !found || parent.WorkspaceID != scope.Workspace.ID || parent.ObjectType != database.FileObjectTypeFolder ||
 		parent.Visibility != scope.Visibility || !sameNullableID(parent.OwnerAccountID, ownerID) {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// pathSegments converts the verified database parent chain into JSON-safe
+// breadcrumb entries for browser clients.
+func (s *Service) pathSegments(ctx context.Context, file database.WorkspaceFile) ([]PathSegment, error) {
+	ancestors, err := s.db.WorkspaceFileAncestors(ctx, file)
+	if err != nil {
+		return nil, err
+	}
+	path := make([]PathSegment, 0, len(ancestors))
+	for _, ancestor := range ancestors {
+		path = append(path, PathSegment{ID: ancestor.ID, Name: ancestor.Name, ObjectType: ancestor.ObjectType})
+	}
+	return path, nil
+}
+
+// enrichFilesWithCurrentContent adds current content metadata to file entries
+// without exposing storage keys or backend details.
+func (s *Service) enrichFilesWithCurrentContent(ctx context.Context, files []database.WorkspaceFile) error {
+	for i := range files {
+		if err := s.enrichFileWithCurrentContent(ctx, &files[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) enrichFileWithCurrentContent(ctx context.Context, file *database.WorkspaceFile) error {
+	if file.ObjectType != database.FileObjectTypeFile {
+		return nil
+	}
+	content, found, err := s.db.CurrentWorkspaceFileContent(ctx, *file)
+	if err != nil {
+		return err
+	}
+	if found {
+		file.ContentHash = content.ContentHash
+		file.ContentVersion = content.Version
+		file.SizeBytes = content.SizeBytes
 	}
 	return nil
 }

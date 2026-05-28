@@ -135,12 +135,34 @@ func (db *DB) ListWorkspaceFiles(ctx context.Context, workspaceID int64, visibil
 	return files, nil
 }
 
-// WorkspaceFilePath returns the visible path segments for a file/folder.
-func (db *DB) WorkspaceFilePath(ctx context.Context, file WorkspaceFile) ([]string, error) {
+// ListRecentWorkspaceFiles returns recently updated files from one authorized
+// workspace file tree. Folders are excluded because the IDE recent list opens
+// editable content, not containers.
+func (db *DB) ListRecentWorkspaceFiles(ctx context.Context, workspaceID int64, visibility string, ownerAccountID *int64, limit int) ([]WorkspaceFile, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	names := []string{file.Name}
+	query := db.NewSelect().Model((*WorkspaceFile)(nil)).
+		Where("workspace_id = ? AND visibility = ? AND object_type = ? AND deleted_at IS NULL", workspaceID, visibility, FileObjectTypeFile)
+	if ownerAccountID == nil {
+		query = query.Where("owner_account_id IS NULL")
+	} else {
+		query = query.Where("owner_account_id = ?", *ownerAccountID)
+	}
+	var files []WorkspaceFile
+	if err := query.OrderExpr("updated_at DESC, id DESC").Limit(limit).Scan(ctx, &files); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+// WorkspaceFileAncestors returns the parent chain plus the file itself, ordered
+// from root to leaf, while verifying every parent remains in the same tree.
+func (db *DB) WorkspaceFileAncestors(ctx context.Context, file WorkspaceFile) ([]WorkspaceFile, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	segments := []WorkspaceFile{file}
 	parentID := file.ParentID
 	for parentID != nil {
 		parent, found, err := db.GetWorkspaceFile(ctx, *parentID)
@@ -151,8 +173,21 @@ func (db *DB) WorkspaceFilePath(ctx context.Context, file WorkspaceFile) ([]stri
 			!sameNullableID(parent.OwnerAccountID, file.OwnerAccountID) || parent.ObjectType != FileObjectTypeFolder {
 			return nil, ErrInvalidWorkspaceFileParent
 		}
-		names = append([]string{parent.Name}, names...)
+		segments = append([]WorkspaceFile{parent}, segments...)
 		parentID = parent.ParentID
+	}
+	return segments, nil
+}
+
+// WorkspaceFilePath returns the visible path segments for a file/folder.
+func (db *DB) WorkspaceFilePath(ctx context.Context, file WorkspaceFile) ([]string, error) {
+	ancestors, err := db.WorkspaceFileAncestors(ctx, file)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(ancestors))
+	for _, ancestor := range ancestors {
+		names = append(names, ancestor.Name)
 	}
 	return names, nil
 }

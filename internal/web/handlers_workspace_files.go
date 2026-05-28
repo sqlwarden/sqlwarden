@@ -23,6 +23,54 @@ func (app *application) listSharedWorkspaceFiles(w http.ResponseWriter, r *http.
 	app.listWorkspaceFiles(w, r, database.FileVisibilityShared)
 }
 
+func (app *application) browsePrivateWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
+	app.browseWorkspaceFiles(w, r, database.FileVisibilityPrivate)
+}
+
+func (app *application) browseSharedWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
+	app.browseWorkspaceFiles(w, r, database.FileVisibilityShared)
+}
+
+// browseWorkspaceFiles returns the IDE browser snapshot for root, folder, or file.
+func (app *application) browseWorkspaceFiles(w http.ResponseWriter, r *http.Request, visibility string) {
+	fileID, ok := optionalPositiveID(w, r, "file_id")
+	if !ok {
+		return
+	}
+	result, err := app.workspaceFileService().Browser(r.Context(), app.workspaceFileScope(r, visibility), fileID)
+	if err != nil {
+		app.workspaceFileError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, result); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) listRecentPrivateWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
+	app.listRecentWorkspaceFiles(w, r, database.FileVisibilityPrivate)
+}
+
+func (app *application) listRecentSharedWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
+	app.listRecentWorkspaceFiles(w, r, database.FileVisibilityShared)
+}
+
+// listRecentWorkspaceFiles returns recently changed openable files for the route-selected tree.
+func (app *application) listRecentWorkspaceFiles(w http.ResponseWriter, r *http.Request, visibility string) {
+	limit, ok := optionalPositiveLimit(w, r, "limit", 20, 100)
+	if !ok {
+		return
+	}
+	files, err := app.workspaceFileService().Recent(r.Context(), app.workspaceFileScope(r, visibility), limit)
+	if err != nil {
+		app.workspaceFileError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, files); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 // listWorkspaceFiles lists direct children for the route-selected file tree.
 func (app *application) listWorkspaceFiles(w http.ResponseWriter, r *http.Request, visibility string) {
 	parentID, ok := optionalPositiveID(w, r, "parent_id")
@@ -319,6 +367,22 @@ func optionalPositiveID(w http.ResponseWriter, r *http.Request, name string) (*i
 		return nil, false
 	}
 	return &id, true
+}
+
+func optionalPositiveLimit(w http.ResponseWriter, r *http.Request, name string, defaultValue, maxValue int) (int, bool) {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return defaultValue, true
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit < 1 {
+		response.JSON(w, http.StatusUnprocessableEntity, fieldErrors(map[string]string{name: "Value must be a positive integer."}))
+		return 0, false
+	}
+	if limit > maxValue {
+		limit = maxValue
+	}
+	return limit, true
 }
 
 func quoteETag(hash string) string {

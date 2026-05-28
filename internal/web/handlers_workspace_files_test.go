@@ -15,6 +15,7 @@ import (
 
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/filestore"
 )
 
@@ -58,6 +59,15 @@ func decodeWorkspaceFile(t *testing.T, res testResponse) database.WorkspaceFile 
 		t.Fatal(err)
 	}
 	return file
+}
+
+func decodeWorkspaceFileBrowser(t *testing.T, res testResponse) files.BrowserResult {
+	t.Helper()
+	var result files.BrowserResult
+	if err := json.Unmarshal(res.BodyBytes, &result); err != nil {
+		t.Fatal(err)
+	}
+	return result
 }
 
 func addWorkspaceMemberForFiles(t *testing.T, app *application, org database.Organization, workspace database.Workspace, email string) (database.Account, string) {
@@ -127,6 +137,54 @@ func TestWorkspaceSharedFilesRequireSharedFilePermission(t *testing.T) {
 
 	allowed := send(t, newAuthRequest(t, http.MethodGet, orgSharedFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, adminTok), app.routes())
 	assert.Equal(t, allowed.StatusCode, http.StatusOK)
+}
+
+func TestWorkspaceFileBrowserAndRecentEndpoints(t *testing.T) {
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	filesURL := orgPrivateFilesURL(org.Slug, ws.ID)
+	folder := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "queries", "object_type": "folder",
+	}, tok), app.routes()))
+	file := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "scratch.sql", "parent_id": folder.ID, "media_type": "text/plain", "file_kind": "query",
+	}, tok), app.routes()))
+	write := send(t, newAuthContentRequest(t, http.MethodPut, filesURL+"/"+strconv.FormatInt(file.ID, 10)+"/content", "select 1", tok, ""), app.routes())
+	assert.Equal(t, write.StatusCode, http.StatusOK)
+
+	root := send(t, newAuthRequest(t, http.MethodGet, filesURL+"/browser", nil, tok), app.routes())
+	assert.Equal(t, root.StatusCode, http.StatusOK)
+	rootBrowser := decodeWorkspaceFileBrowser(t, root)
+	if rootBrowser.File != nil || len(rootBrowser.Path) != 0 || len(rootBrowser.Children) != 1 || rootBrowser.Children[0].ID != folder.ID {
+		t.Fatalf("root browser = %+v, want root folder child", rootBrowser)
+	}
+
+	folderRes := send(t, newAuthRequest(t, http.MethodGet, filesURL+"/browser?file_id="+strconv.FormatInt(folder.ID, 10), nil, tok), app.routes())
+	assert.Equal(t, folderRes.StatusCode, http.StatusOK)
+	folderBrowser := decodeWorkspaceFileBrowser(t, folderRes)
+	if folderBrowser.File == nil || folderBrowser.File.ID != folder.ID || len(folderBrowser.Path) != 1 || folderBrowser.Path[0].Name != "queries" {
+		t.Fatalf("folder browser = %+v", folderBrowser)
+	}
+	if len(folderBrowser.Children) != 1 || folderBrowser.Children[0].ID != file.ID || folderBrowser.Children[0].ContentHash == "" || folderBrowser.Children[0].ContentVersion != 1 {
+		t.Fatalf("folder children = %+v, want enriched file child", folderBrowser.Children)
+	}
+
+	fileRes := send(t, newAuthRequest(t, http.MethodGet, filesURL+"/browser?file_id="+strconv.FormatInt(file.ID, 10), nil, tok), app.routes())
+	assert.Equal(t, fileRes.StatusCode, http.StatusOK)
+	fileBrowser := decodeWorkspaceFileBrowser(t, fileRes)
+	if fileBrowser.File == nil || fileBrowser.File.ID != file.ID || len(fileBrowser.Path) != 2 || len(fileBrowser.Children) != 0 {
+		t.Fatalf("file browser = %+v", fileBrowser)
+	}
+
+	recentRes := send(t, newAuthRequest(t, http.MethodGet, filesURL+"/recent?limit=5", nil, tok), app.routes())
+	assert.Equal(t, recentRes.StatusCode, http.StatusOK)
+	var recent []database.WorkspaceFile
+	decodeJSONResponse(t, recentRes.BodyBytes, &recent)
+	if len(recent) != 1 || recent[0].ID != file.ID || recent[0].ContentHash == "" {
+		t.Fatalf("recent files = %+v, want enriched scratch.sql", recent)
+	}
+
+	invalid := send(t, newAuthRequest(t, http.MethodGet, filesURL+"/recent?limit=0", nil, tok), app.routes())
+	assert.Equal(t, invalid.StatusCode, http.StatusUnprocessableEntity)
 }
 
 func TestWorkspacePrivateFilesAllowTeamMembersAndRejectCrossWorkspaceRoute(t *testing.T) {

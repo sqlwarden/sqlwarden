@@ -89,6 +89,40 @@ export interface Connection {
   updated_at: string
 }
 
+export type WorkspaceFileObjectType = 'file' | 'folder'
+
+export interface WorkspaceFile {
+  id: number
+  workspace_id: number
+  parent_id?: number
+  visibility: 'private' | 'shared'
+  owner_account_id?: number
+  object_type: WorkspaceFileObjectType
+  name: string
+  media_type?: string
+  file_kind?: string
+  current_content_id?: number
+  created_by: number
+  updated_by: number
+  created_at: string
+  updated_at: string
+  content_hash?: string
+  content_version?: number
+  size_bytes?: number
+}
+
+export interface WorkspaceFilePathSegment {
+  id: number
+  name: string
+  object_type: WorkspaceFileObjectType
+}
+
+export interface WorkspaceFileBrowserResult {
+  file: WorkspaceFile | null
+  path: WorkspaceFilePathSegment[]
+  children: WorkspaceFile[]
+}
+
 export interface Team {
   id: number
   org_id: number

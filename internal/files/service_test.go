@@ -239,6 +239,100 @@ func TestCreateRejectsInvalidObjectsAndParents(t *testing.T) {
 	}
 }
 
+func TestBrowserReturnsRootBreadcrumbChildrenAndFileMetadata(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
+	scope := f.privateScope(f.member)
+
+	folder, err := f.service.Create(f.ctx, scope, CreateInput{Name: "queries", ObjectType: database.FileObjectTypeFolder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql", ParentID: &folder.ID, MediaType: "text/plain", FileKind: "query"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := f.service.Browser(f.ctx, scope, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root.File != nil || len(root.Path) != 0 || len(root.Children) != 1 || root.Children[0].ID != folder.ID {
+		t.Fatalf("root browser result = %+v, want root with folder child", root)
+	}
+
+	folderView, err := f.service.Browser(f.ctx, scope, &folder.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if folderView.File == nil || folderView.File.ID != folder.ID || len(folderView.Path) != 1 || folderView.Path[0].Name != "queries" {
+		t.Fatalf("folder browser path = %+v file=%+v", folderView.Path, folderView.File)
+	}
+	if len(folderView.Children) != 1 || folderView.Children[0].ID != file.ID || folderView.Children[0].ContentHash != content.ContentHash {
+		t.Fatalf("folder children = %+v, want enriched file child", folderView.Children)
+	}
+
+	fileView, err := f.service.Browser(f.ctx, scope, &file.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fileView.File == nil || fileView.File.ID != file.ID || fileView.File.ContentVersion != 1 || fileView.File.SizeBytes != int64(len("select 1")) {
+		t.Fatalf("file browser metadata = %+v", fileView.File)
+	}
+	if len(fileView.Path) != 2 || fileView.Path[0].Name != "queries" || fileView.Path[1].Name != "scratch.sql" {
+		t.Fatalf("file path = %+v, want queries/scratch.sql", fileView.Path)
+	}
+	if len(fileView.Children) != 0 {
+		t.Fatalf("file children = %+v, want none", fileView.Children)
+	}
+}
+
+func TestRecentReturnsOnlyAuthorizedOpenableFiles(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
+	scope := f.privateScope(f.member)
+
+	if _, err := f.service.Create(f.ctx, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder}); err != nil {
+		t.Fatal(err)
+	}
+	oldFile, err := f.service.Create(f.ctx, scope, CreateInput{Name: "old.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldContent, err := f.service.WriteContent(f.ctx, scope, oldFile.ID, "", strings.NewReader("select old"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newFile, err := f.service.Create(f.ctx, scope, CreateInput{Name: "new.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.WriteContent(f.ctx, scope, newFile.ID, "", strings.NewReader("select new")); err != nil {
+		t.Fatal(err)
+	}
+
+	recent, err := f.service.Recent(f.ctx, scope, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 2 || recent[0].ID != newFile.ID || recent[1].ID != oldFile.ID {
+		t.Fatalf("recent files = %+v, want new then old", recent)
+	}
+	if recent[1].ContentHash != oldContent.ContentHash || recent[1].ContentVersion != 1 {
+		t.Fatalf("recent file content metadata = %+v", recent[1])
+	}
+
+	otherRecent, err := f.service.Recent(f.ctx, f.privateScope(f.owner), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(otherRecent) != 0 {
+		t.Fatalf("recent files for another private owner = %+v, want none", otherRecent)
+	}
+}
+
 func TestObjectStoreVersionsTextFilesAndKeepsKeysStableOnRename(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyVersioned})
 	scope := f.privateScope(f.member)
