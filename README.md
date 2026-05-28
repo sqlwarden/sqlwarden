@@ -10,18 +10,29 @@ Authorization uses the shared RBAC enforcer in `internal/access` for org-owned r
 
 ## Getting started
 
-The application supports both PostgreSQL and SQLite databases. By default, it uses SQLite with a local `sqlwarden.db` file.
+The application supports both PostgreSQL and SQLite databases. By default, it uses SQLite at `~/.sqlwarden/sqlwarden.db`.
 
 ### Database Configuration
 
 You can configure the database using environment variables:
 
 - **`DB_DRIVER`**: Set to `postgres` or `sqlite` (default: `sqlite`)
-- **`DB_DSN`**: Database connection string (default: `sqlwarden.db` for SQLite)
+- **`DB_DSN`**: Database connection string (default: `~/.sqlwarden/sqlwarden.db` for SQLite)
 
 For **PostgreSQL**, the DSN format is: `user:pass@localhost:port/db?sslmode=disable` (without `postgres://` prefix)
 
-For **SQLite**, the DSN is simply the file path: `sqlwarden.db`
+For **SQLite**, the DSN is simply the file path: `~/.sqlwarden/sqlwarden.db`
+
+### File Storage Configuration
+
+Files are configured by storage mode and named storage backends:
+
+- **`FILES_STORAGE_MODE`**: `object` or `file` (default: `object`; desktop defaults to `file`)
+- **`FILES_ACTIVE_STORAGE_BACKEND`**: active backend ID for object-mode writes (default: `local`)
+- **`FILES_STORAGE_BACKENDS_LOCAL_TYPE`**: backend type for the default local backend (default: `filesystem`)
+- **`FILES_STORAGE_BACKENDS_LOCAL_ROOT_DIR`**: local file root (default: `~/.sqlwarden/files`)
+
+`storage_mode=object` stores bytes through the configured active backend using opaque application-managed keys. `storage_mode=file` stores bytes as normal visible files and folders on the local filesystem.
 
 Configuration is loaded through Viper-backed config in `internal/web/config.go`, with support for config files, environment variables, and CLI flags.
 
@@ -425,12 +436,12 @@ The `Makefile` in the project root contains commands to easily create and work w
 |     |     |
 | --- | --- |
 | `$ make migrations/new name=add_example_table` | Create new database migrations in both PostgreSQL and SQLite folders. |
-| `$ DB_DRIVER=sqlite DB_DSN=sqlwarden.db make migrations/up` | Apply all up migrations for SQLite. |
+| `$ DB_DRIVER=sqlite DB_DSN=~/.sqlwarden/sqlwarden.db make migrations/up` | Apply all up migrations for SQLite. |
 | `$ DB_DRIVER=postgres DB_DSN='user:pass@localhost/db' make migrations/up` | Apply all up migrations for PostgreSQL. |
-| `$ DB_DRIVER=sqlite DB_DSN=sqlwarden.db make migrations/down` | Apply all down migrations. |
-| `$ DB_DRIVER=sqlite DB_DSN=sqlwarden.db make migrations/goto version=N` | Migrate up or down to a specific migration (where N is the migration version number). |
-| `$ DB_DRIVER=sqlite DB_DSN=sqlwarden.db make migrations/force version=N` | Force the database to be specific version without running any migrations. |
-| `$ DB_DRIVER=sqlite DB_DSN=sqlwarden.db make migrations/version` | Display the currently in-use migration version. |
+| `$ DB_DRIVER=sqlite DB_DSN=~/.sqlwarden/sqlwarden.db make migrations/down` | Apply all down migrations. |
+| `$ DB_DRIVER=sqlite DB_DSN=~/.sqlwarden/sqlwarden.db make migrations/goto version=N` | Migrate up or down to a specific migration (where N is the migration version number). |
+| `$ DB_DRIVER=sqlite DB_DSN=~/.sqlwarden/sqlwarden.db make migrations/force version=N` | Force the database to be specific version without running any migrations. |
+| `$ DB_DRIVER=sqlite DB_DSN=~/.sqlwarden/sqlwarden.db make migrations/version` | Display the currently in-use migration version. |
 
 **Note**: Both `DB_DRIVER` and `DB_DSN` are required for migration commands.
 

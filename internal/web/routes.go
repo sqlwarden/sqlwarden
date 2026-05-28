@@ -68,13 +68,15 @@ func (app *application) routes() http.Handler {
 					r.Patch("/", app.updateWorkspace)
 					r.Delete("/", app.deleteWorkspace)
 
-					r.Route("/files", func(r chi.Router) {
-						r.Get("/", app.listWorkspaceFiles)
-						r.Post("/", app.createWorkspaceFile)
+					r.Route("/files/private", func(r chi.Router) {
+						r.Get("/", app.listPrivateWorkspaceFiles)
+						r.Post("/", app.createPrivateWorkspaceFile)
 						r.Route("/{file_id}", func(r chi.Router) {
-							r.Get("/", app.getWorkspaceFile)
-							r.Get("/content", app.getWorkspaceFileContent)
-							r.Put("/content", app.updateWorkspaceFileContent)
+							r.Get("/", app.getPrivateWorkspaceFile)
+							r.Patch("/", app.updatePrivateWorkspaceFile)
+							r.Delete("/", app.deletePrivateWorkspaceFile)
+							r.Get("/content", app.getPrivateWorkspaceFileContent)
+							r.Put("/content", app.updatePrivateWorkspaceFileContent)
 						})
 					})
 
@@ -177,13 +179,27 @@ func (app *application) routes() http.Handler {
 
 					r.Get("/permissions", app.listWorkspacePermissions)
 
-					r.Route("/files", func(r chi.Router) {
-						r.Get("/", app.listWorkspaceFiles)
-						r.Post("/", app.createWorkspaceFile)
+					r.Route("/files/private", func(r chi.Router) {
+						r.Get("/", app.listPrivateWorkspaceFiles)
+						r.Post("/", app.createPrivateWorkspaceFile)
 						r.Route("/{file_id}", func(r chi.Router) {
-							r.Get("/", app.getWorkspaceFile)
-							r.Get("/content", app.getWorkspaceFileContent)
-							r.Put("/content", app.updateWorkspaceFileContent)
+							r.Get("/", app.getPrivateWorkspaceFile)
+							r.Patch("/", app.updatePrivateWorkspaceFile)
+							r.Delete("/", app.deletePrivateWorkspaceFile)
+							r.Get("/content", app.getPrivateWorkspaceFileContent)
+							r.Put("/content", app.updatePrivateWorkspaceFileContent)
+						})
+					})
+
+					r.Route("/files/shared", func(r chi.Router) {
+						r.Get("/", app.listSharedWorkspaceFiles)
+						r.Post("/", app.createSharedWorkspaceFile)
+						r.Route("/{file_id}", func(r chi.Router) {
+							r.Get("/", app.getSharedWorkspaceFile)
+							r.Patch("/", app.updateSharedWorkspaceFile)
+							r.Delete("/", app.deleteSharedWorkspaceFile)
+							r.Get("/content", app.getSharedWorkspaceFileContent)
+							r.Put("/content", app.updateSharedWorkspaceFileContent)
 						})
 					})
 

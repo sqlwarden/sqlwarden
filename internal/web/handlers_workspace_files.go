@@ -1,41 +1,37 @@
 package web
 
 import (
+	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
-	"path"
 	"strconv"
-	"strings"
-	"sync"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
 )
 
-func (app *application) listWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
-	if !app.filesAvailable(w, r) {
-		return
-	}
-	visibility, ownerID, ok := app.requestedFileTree(w, r, access.PermWsFileRead)
-	if !ok {
-		return
-	}
+func (app *application) listPrivateWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
+	app.listWorkspaceFiles(w, r, database.FileVisibilityPrivate)
+}
+
+func (app *application) listSharedWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
+	app.listWorkspaceFiles(w, r, database.FileVisibilityShared)
+}
+
+// listWorkspaceFiles lists direct children for the route-selected file tree.
+func (app *application) listWorkspaceFiles(w http.ResponseWriter, r *http.Request, visibility string) {
 	parentID, ok := optionalPositiveID(w, r, "parent_id")
 	if !ok {
 		return
 	}
-	if parentID != nil && !app.validateFileParent(w, r, *parentID, visibility, ownerID) {
-		return
-	}
-	files, err := app.db.ListWorkspaceFiles(r.Context(), contextGetWorkspace(r).ID, visibility, ownerID, parentID)
+	files, err := app.workspaceFileService().List(r.Context(), app.workspaceFileScope(r, visibility), parentID)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.workspaceFileError(w, r, err)
 		return
 	}
 	if err := response.JSON(w, http.StatusOK, files); err != nil {
@@ -43,13 +39,18 @@ func (app *application) listWorkspaceFiles(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func (app *application) createWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-	if !app.filesAvailable(w, r) {
-		return
-	}
+func (app *application) createPrivateWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+	app.createWorkspaceFile(w, r, database.FileVisibilityPrivate)
+}
+
+func (app *application) createSharedWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+	app.createWorkspaceFile(w, r, database.FileVisibilityShared)
+}
+
+// createWorkspaceFile creates a file/folder in the route-selected file tree.
+func (app *application) createWorkspaceFile(w http.ResponseWriter, r *http.Request, visibility string) {
 	var input struct {
 		Name       string              `json:"name"`
-		Visibility string              `json:"visibility"`
 		ObjectType string              `json:"object_type"`
 		ParentID   *int64              `json:"parent_id"`
 		MediaType  string              `json:"media_type"`
@@ -60,46 +61,19 @@ func (app *application) createWorkspaceFile(w http.ResponseWriter, r *http.Reque
 		app.badRequest(w, r, err)
 		return
 	}
-	if input.ObjectType == "" {
-		input.ObjectType = database.FileObjectTypeFile
-	}
-	input.V.CheckField(validFileName(input.Name), "name", "Name must be a valid file or folder name.")
-	input.V.CheckField(input.ObjectType == database.FileObjectTypeFile || input.ObjectType == database.FileObjectTypeFolder, "object_type", "Object type must be file or folder.")
-	if input.ObjectType == database.FileObjectTypeFolder {
-		input.V.CheckField(input.MediaType == "", "media_type", "Folders cannot specify a media type.")
-		input.V.CheckField(input.FileKind == "", "file_kind", "Folders cannot specify a file kind.")
-	}
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	visibility, ownerID, ok := app.authorizeFileTree(w, r, input.Visibility, access.PermWsFileCreate)
-	if !ok {
-		return
-	}
-	if input.ParentID != nil && !app.validateFileParent(w, r, *input.ParentID, visibility, ownerID) {
-		return
-	}
-	account := contextGetAccount(r)
-	file := database.WorkspaceFile{
-		WorkspaceID:    contextGetWorkspace(r).ID,
-		ParentID:       input.ParentID,
-		Visibility:     visibility,
-		OwnerAccountID: ownerID,
-		ObjectType:     input.ObjectType,
-		Name:           strings.TrimSpace(input.Name),
-		MediaType:      strings.TrimSpace(input.MediaType),
-		FileKind:       strings.TrimSpace(input.FileKind),
-		CreatedBy:      account.ID,
-		UpdatedBy:      account.ID,
-	}
-	if err := app.db.InsertWorkspaceFile(r.Context(), &file); err != nil {
+	file, err := app.workspaceFileService().Create(r.Context(), app.workspaceFileScope(r, visibility), files.CreateInput{
+		Name:       input.Name,
+		ObjectType: input.ObjectType,
+		ParentID:   input.ParentID,
+		MediaType:  input.MediaType,
+		FileKind:   input.FileKind,
+	})
+	if err != nil {
 		if isUniqueViolation(err) {
 			app.failedDuplicateField(w, r, "name", "A file or folder with this name already exists here.")
 			return
 		}
-		app.serverError(w, r, err)
+		app.workspaceFileError(w, r, err)
 		return
 	}
 	if err := response.JSON(w, http.StatusCreated, file); err != nil {
@@ -107,126 +81,161 @@ func (app *application) createWorkspaceFile(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-func (app *application) getWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-	file, ok := app.authorizedWorkspaceFile(w, r, access.PermWsFileRead)
+func (app *application) getPrivateWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+	app.getWorkspaceFile(w, r, database.FileVisibilityPrivate)
+}
+
+func (app *application) getSharedWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+	app.getWorkspaceFile(w, r, database.FileVisibilityShared)
+}
+
+// getWorkspaceFile returns one file/folder's metadata from the selected tree.
+func (app *application) getWorkspaceFile(w http.ResponseWriter, r *http.Request, visibility string) {
+	fileID, ok := app.workspaceFileID(w, r)
 	if !ok {
 		return
 	}
-	content, found, err := app.db.CurrentWorkspaceFileContent(r.Context(), file)
+	file, err := app.workspaceFileService().Get(r.Context(), app.workspaceFileScope(r, visibility), fileID)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.workspaceFileError(w, r, err)
 		return
-	}
-	if found {
-		file.ContentHash = content.ContentHash
-		file.ContentVersion = content.Version
-		file.SizeBytes = content.SizeBytes
 	}
 	if err := response.JSON(w, http.StatusOK, file); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
-func (app *application) getWorkspaceFileContent(w http.ResponseWriter, r *http.Request) {
-	file, ok := app.authorizedWorkspaceFile(w, r, access.PermWsFileRead)
+func (app *application) updatePrivateWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+	app.updateWorkspaceFile(w, r, database.FileVisibilityPrivate)
+}
+
+func (app *application) updateSharedWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+	app.updateWorkspaceFile(w, r, database.FileVisibilityShared)
+}
+
+// updateWorkspaceFile renames and/or moves a file/folder in the selected tree.
+func (app *application) updateWorkspaceFile(w http.ResponseWriter, r *http.Request, visibility string) {
+	fileID, ok := app.workspaceFileID(w, r)
 	if !ok {
 		return
 	}
-	if file.ObjectType != database.FileObjectTypeFile {
-		app.notFound(w, r)
+	var input struct {
+		Name     *string         `json:"name"`
+		ParentID json.RawMessage `json:"parent_id"`
+	}
+	if err := request.DecodeJSON(w, r, &input); err != nil {
+		app.badRequest(w, r, err)
 		return
 	}
-	content, found, err := app.db.CurrentWorkspaceFileContent(r.Context(), file)
+	parsed := files.UpdateInput{Name: input.Name, ParentIDSet: input.ParentID != nil}
+	if input.ParentID != nil && string(input.ParentID) != "null" {
+		var parentID int64
+		if err := json.Unmarshal(input.ParentID, &parentID); err != nil || parentID < 1 {
+			app.failedValidation(w, r, fieldErrors(map[string]string{"parent_id": "Parent ID must be a positive integer or null."}))
+			return
+		}
+		parsed.ParentID = &parentID
+	}
+	file, err := app.workspaceFileService().Update(r.Context(), app.workspaceFileScope(r, visibility), fileID, parsed)
 	if err != nil {
+		if isUniqueViolation(err) {
+			app.failedDuplicateField(w, r, "name", "A file or folder with this name already exists here.")
+			return
+		}
+		app.workspaceFileError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, file); err != nil {
 		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) deletePrivateWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+	app.deleteWorkspaceFile(w, r, database.FileVisibilityPrivate)
+}
+
+func (app *application) deleteSharedWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+	app.deleteWorkspaceFile(w, r, database.FileVisibilityShared)
+}
+
+// deleteWorkspaceFile recursively tombstones a file/folder subtree.
+func (app *application) deleteWorkspaceFile(w http.ResponseWriter, r *http.Request, visibility string) {
+	fileID, ok := app.workspaceFileID(w, r)
+	if !ok {
 		return
 	}
-	if !found {
-		app.notFound(w, r)
+	if err := app.workspaceFileService().Delete(r.Context(), app.workspaceFileScope(r, visibility), fileID); err != nil {
+		app.workspaceFileError(w, r, err)
 		return
 	}
-	reader, object, err := app.fileStore.Get(r.Context(), content.StorageKey)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) getPrivateWorkspaceFileContent(w http.ResponseWriter, r *http.Request) {
+	app.getWorkspaceFileContent(w, r, database.FileVisibilityPrivate)
+}
+
+func (app *application) getSharedWorkspaceFileContent(w http.ResponseWriter, r *http.Request) {
+	app.getWorkspaceFileContent(w, r, database.FileVisibilityShared)
+}
+
+// getWorkspaceFileContent streams the current bytes for a file.
+func (app *application) getWorkspaceFileContent(w http.ResponseWriter, r *http.Request, visibility string) {
+	fileID, ok := app.workspaceFileID(w, r)
+	if !ok {
+		return
+	}
+	result, err := app.workspaceFileService().ReadContent(r.Context(), app.workspaceFileScope(r, visibility), fileID)
 	if err != nil {
-		app.serverError(w, r, err)
+		if errors.Is(err, files.ErrFolderContent) {
+			app.notFound(w, r)
+			return
+		}
+		app.workspaceFileError(w, r, err)
 		return
 	}
-	defer reader.Close()
-	w.Header().Set("ETag", quoteETag(object.ContentHash))
-	w.Header().Set("X-Content-Hash", object.ContentHash)
-	if file.MediaType != "" {
-		w.Header().Set("Content-Type", file.MediaType)
+	defer result.Reader.Close()
+	w.Header().Set("ETag", quoteETag(result.Object.ContentHash))
+	w.Header().Set("X-Content-Hash", result.Object.ContentHash)
+	if result.File.MediaType != "" {
+		w.Header().Set("Content-Type", result.File.MediaType)
 	} else {
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	w.WriteHeader(http.StatusOK)
-	if _, err := io.Copy(w, reader); err != nil {
+	if _, err := io.Copy(w, result.Reader); err != nil {
 		app.reportServerError(r, err)
 	}
 }
 
-func (app *application) updateWorkspaceFileContent(w http.ResponseWriter, r *http.Request) {
-	file, ok := app.authorizedWorkspaceFile(w, r, access.PermWsFileWrite)
+func (app *application) updatePrivateWorkspaceFileContent(w http.ResponseWriter, r *http.Request) {
+	app.updateWorkspaceFileContent(w, r, database.FileVisibilityPrivate)
+}
+
+func (app *application) updateSharedWorkspaceFileContent(w http.ResponseWriter, r *http.Request) {
+	app.updateWorkspaceFileContent(w, r, database.FileVisibilityShared)
+}
+
+// updateWorkspaceFileContent stores new bytes for a file.
+func (app *application) updateWorkspaceFileContent(w http.ResponseWriter, r *http.Request, visibility string) {
+	fileID, ok := app.workspaceFileID(w, r)
 	if !ok {
 		return
 	}
-	if file.ObjectType != database.FileObjectTypeFile {
-		app.failedValidation(w, r, fieldErrors(map[string]string{"file": "Folder content cannot be updated."}))
-		return
-	}
-	lock := app.workspaceFileLock(file.ID)
-	lock.Lock()
-	defer lock.Unlock()
-
-	current, found, err := app.db.CurrentWorkspaceFileContent(r.Context(), file)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if found {
-		reader, object, err := app.fileStore.Get(r.Context(), current.StorageKey)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		reader.Close()
-		expected := strings.Trim(strings.TrimSpace(r.Header.Get("If-Match")), "\"")
-		if expected == "" {
-			app.errorMessage(w, r, http.StatusPreconditionRequired, "If-Match is required when updating existing file content.", nil)
-			return
-		}
-		if expected != object.ContentHash {
-			app.errorMessage(w, r, http.StatusConflict, "The file has changed since it was opened. Reload it before saving.", nil)
-			return
-		}
-	}
-
-	storageKey, err := app.workspaceFileStorageKey(r, file, current, found)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	object, err := app.fileStore.Put(r.Context(), storageKey, http.MaxBytesReader(w, r.Body, 100<<20))
+	saved, err := app.workspaceFileService().WriteContent(
+		r.Context(),
+		app.workspaceFileScope(r, visibility),
+		fileID,
+		r.Header.Get("If-Match"),
+		http.MaxBytesReader(w, r.Body, 100<<20),
+	)
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
 			app.errorMessage(w, r, http.StatusRequestEntityTooLarge, "File content exceeds the maximum upload size.", nil)
 			return
 		}
-		app.serverError(w, r, err)
-		return
-	}
-	account := contextGetAccount(r)
-	externalModifiedAt := object.ModifiedTime
-	content := database.WorkspaceFileContent{
-		StorageKey:         object.Key,
-		ContentHash:        object.ContentHash,
-		SizeBytes:          object.SizeBytes,
-		ExternalModifiedAt: &externalModifiedAt,
-	}
-	versioned := app.workspaceFileUsesRevisions(file)
-	saved, err := app.db.SaveWorkspaceFileContent(r.Context(), file.ID, account.ID, content, versioned)
-	if err != nil {
-		app.serverError(w, r, err)
+		app.workspaceFileError(w, r, err)
 		return
 	}
 	w.Header().Set("ETag", quoteETag(saved.ContentHash))
@@ -235,151 +244,69 @@ func (app *application) updateWorkspaceFileContent(w http.ResponseWriter, r *htt
 	}
 }
 
-func (app *application) requestedFileTree(w http.ResponseWriter, r *http.Request, sharedPermission string) (string, *int64, bool) {
-	return app.authorizeFileTree(w, r, strings.TrimSpace(r.URL.Query().Get("visibility")), sharedPermission)
+// workspaceFileService builds the file domain service from current app state.
+func (app *application) workspaceFileService() *files.Service {
+	return files.New(app.db, app.fileStore, app.enforcer, files.Config{
+		StorageMode:    app.config.Files.StorageMode,
+		RevisionPolicy: app.config.Files.Revisions.DefaultPolicy,
+	}, &app.fileLocks)
 }
 
-func (app *application) authorizeFileTree(w http.ResponseWriter, r *http.Request, visibility, sharedPermission string) (string, *int64, bool) {
-	ws := contextGetWorkspace(r)
+// workspaceFileScope converts request context into domain scope.
+func (app *application) workspaceFileScope(r *http.Request, visibility string) files.Scope {
 	account := contextGetAccount(r)
-	if ws.OwnerType == "space" {
-		if visibility != "" && visibility != database.FileVisibilityPrivate {
-			app.failedValidation(w, r, fieldErrors(map[string]string{"visibility": "Personal workspace files must be private."}))
-			return "", nil, false
-		}
-		ownerID := account.ID
-		return database.FileVisibilityPrivate, &ownerID, true
-	}
-	if visibility == "" {
-		visibility = database.FileVisibilityPrivate
-	}
-	switch visibility {
-	case database.FileVisibilityPrivate:
-		member, err := app.db.IsEffectiveWorkspaceMember(r.Context(), contextGetOrg(r).ID, ws.ID, account.ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return "", nil, false
-		}
-		if !member {
-			app.notPermitted(w, r)
-			return "", nil, false
-		}
-		ownerID := account.ID
-		return visibility, &ownerID, true
-	case database.FileVisibilityShared:
-		if !app.enforcer.Can(r.Context(), account.ID, contextGetOrg(r).ID, ws.OwnerType, "workspace", ws.ID, sharedPermission) {
-			app.notPermitted(w, r)
-			return "", nil, false
-		}
-		return visibility, nil, true
-	default:
-		app.failedValidation(w, r, fieldErrors(map[string]string{"visibility": "Visibility must be private or shared."}))
-		return "", nil, false
+	org := contextGetOrg(r)
+	return files.Scope{
+		AccountID:  account.ID,
+		OrgID:      org.ID,
+		OrgSlug:    org.Slug,
+		Workspace:  contextGetWorkspace(r),
+		Visibility: visibility,
 	}
 }
 
-func (app *application) authorizedWorkspaceFile(w http.ResponseWriter, r *http.Request, sharedPermission string) (database.WorkspaceFile, bool) {
-	if !app.filesAvailable(w, r) {
-		return database.WorkspaceFile{}, false
-	}
+// workspaceFileID parses the path file ID.
+func (app *application) workspaceFileID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "file_id"), 10, 64)
 	if err != nil || id < 1 {
 		app.notFound(w, r)
-		return database.WorkspaceFile{}, false
+		return 0, false
 	}
-	file, found, err := app.db.GetWorkspaceFile(r.Context(), id)
-	if err != nil {
+	return id, true
+}
+
+// workspaceFileError maps domain errors to stable API responses.
+func (app *application) workspaceFileError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, files.ErrForbidden):
+		app.notPermitted(w, r)
+	case errors.Is(err, files.ErrNotFound):
+		app.notFound(w, r)
+	case errors.Is(err, files.ErrInvalidName):
+		app.failedValidation(w, r, fieldErrors(map[string]string{"name": "Name must be a valid file or folder name."}))
+	case errors.Is(err, files.ErrInvalidObjectType):
+		app.failedValidation(w, r, fieldErrors(map[string]string{"object_type": "Object type must be file or folder."}))
+	case errors.Is(err, files.ErrInvalidParent), errors.Is(err, database.ErrInvalidWorkspaceFileParent):
+		app.failedValidation(w, r, fieldErrors(map[string]string{"parent_id": "Parent folder is invalid."}))
+	case errors.Is(err, files.ErrMoveCycle), errors.Is(err, database.ErrWorkspaceFileMoveCycle):
+		app.failedValidation(w, r, fieldErrors(map[string]string{"parent_id": "A folder cannot be moved inside its descendant."}))
+	case errors.Is(err, files.ErrMissingUpdate):
+		app.failedValidation(w, r, fieldErrors(map[string]string{"file": "Name or parent ID must be provided."}))
+	case errors.Is(err, files.ErrFolderContent):
+		app.failedValidation(w, r, fieldErrors(map[string]string{"file": "Folder content cannot be updated."}))
+	case errors.Is(err, files.ErrPreconditionRequired):
+		app.errorMessage(w, r, http.StatusPreconditionRequired, "If-Match is required when updating existing file content.", nil)
+	case errors.Is(err, files.ErrStaleContent):
+		app.errorMessage(w, r, http.StatusConflict, "The file has changed since it was opened. Reload it before saving.", nil)
+	case errors.Is(err, files.ErrStorageDestinationExists):
+		app.errorMessage(w, r, http.StatusConflict, "A file already exists at the destination path on storage.", nil)
+	default:
 		app.serverError(w, r, err)
-		return database.WorkspaceFile{}, false
 	}
-	if !found || file.WorkspaceID != contextGetWorkspace(r).ID {
-		app.notFound(w, r)
-		return database.WorkspaceFile{}, false
-	}
-	ws := contextGetWorkspace(r)
-	account := contextGetAccount(r)
-	if file.Visibility == database.FileVisibilityPrivate && ws.OwnerType == "org" {
-		member, err := app.db.IsEffectiveWorkspaceMember(r.Context(), contextGetOrg(r).ID, ws.ID, account.ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return database.WorkspaceFile{}, false
-		}
-		if !member || file.OwnerAccountID == nil || *file.OwnerAccountID != account.ID {
-			app.notFound(w, r)
-			return database.WorkspaceFile{}, false
-		}
-		return file, true
-	}
-	visibility, ownerID, ok := app.authorizeFileTree(w, r, file.Visibility, sharedPermission)
-	if !ok || visibility != file.Visibility || (ownerID != nil && (file.OwnerAccountID == nil || *ownerID != *file.OwnerAccountID)) {
-		if ok {
-			app.notFound(w, r)
-		}
-		return database.WorkspaceFile{}, false
-	}
-	return file, true
-}
-
-func (app *application) validateFileParent(w http.ResponseWriter, r *http.Request, id int64, visibility string, ownerID *int64) bool {
-	parent, found, err := app.db.GetWorkspaceFile(r.Context(), id)
-	if err != nil {
-		app.serverError(w, r, err)
-		return false
-	}
-	if !found || parent.WorkspaceID != contextGetWorkspace(r).ID || parent.ObjectType != database.FileObjectTypeFolder ||
-		parent.Visibility != visibility || !matchingOwner(parent.OwnerAccountID, ownerID) {
-		app.notFound(w, r)
-		return false
-	}
-	return true
-}
-
-func (app *application) filesAvailable(w http.ResponseWriter, r *http.Request) bool {
-	if !app.config.Files.Enabled || app.fileStore == nil {
-		app.notFound(w, r)
-		return false
-	}
-	return true
-}
-
-func (app *application) workspaceFileStorageKey(r *http.Request, file database.WorkspaceFile, current database.WorkspaceFileContent, hasCurrent bool) (string, error) {
-	if app.config.Files.StorageModel == FilesStorageModelObjectStore {
-		suffix := "current"
-		if app.workspaceFileUsesRevisions(file) {
-			version := 1
-			if hasCurrent {
-				version = current.Version + 1
-			}
-			suffix = "versions/" + strconv.Itoa(version)
-		}
-		return path.Join("objects", strconv.FormatInt(file.WorkspaceID, 10), strconv.FormatInt(file.ID, 10), suffix), nil
-	}
-	names, err := app.db.WorkspaceFilePath(r.Context(), file)
-	if err != nil {
-		return "", err
-	}
-	ws := contextGetWorkspace(r)
-	var segments []string
-	if ws.OwnerType == "space" {
-		segments = []string{"personal", strconv.FormatInt(ws.OwnerID, 10), "workspaces", workspaceStorageSegment(ws)}
-	} else {
-		segments = []string{"organizations", contextGetOrg(r).Slug, "workspaces", workspaceStorageSegment(ws)}
-	}
-	if file.Visibility == database.FileVisibilityPrivate {
-		segments = append(segments, "my-files", strconv.FormatInt(*file.OwnerAccountID, 10))
-	} else {
-		segments = append(segments, "shared")
-	}
-	segments = append(segments, names...)
-	return path.Join(segments...), nil
-}
-
-func workspaceStorageSegment(ws database.Workspace) string {
-	return strconv.FormatInt(ws.ID, 10) + "-" + slugify(ws.Name)
 }
 
 func optionalPositiveID(w http.ResponseWriter, r *http.Request, name string) (*int64, bool) {
-	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	raw := r.URL.Query().Get(name)
 	if raw == "" {
 		return nil, true
 	}
@@ -391,41 +318,6 @@ func optionalPositiveID(w http.ResponseWriter, r *http.Request, name string) (*i
 	return &id, true
 }
 
-func validFileName(name string) bool {
-	name = strings.TrimSpace(name)
-	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, `/\`)
-}
-
-func matchingOwner(left, right *int64) bool {
-	if left == nil || right == nil {
-		return left == nil && right == nil
-	}
-	return *left == *right
-}
-
 func quoteETag(hash string) string {
-	return fmt.Sprintf("%q", hash)
-}
-
-func (app *application) workspaceFileUsesRevisions(file database.WorkspaceFile) bool {
-	if app.config.Files.StorageModel != FilesStorageModelObjectStore || app.config.Files.Revisions.DefaultPolicy != FilesRevisionPolicyVersioned {
-		return false
-	}
-	if strings.HasPrefix(strings.ToLower(file.MediaType), "text/") {
-		return true
-	}
-	switch strings.ToLower(file.FileKind) {
-	case "query", "text", "text_document":
-		return true
-	}
-	switch strings.ToLower(path.Ext(file.Name)) {
-	case ".sql", ".txt", ".md", ".json", ".yaml", ".yml", ".toml":
-		return true
-	}
-	return false
-}
-
-func (app *application) workspaceFileLock(fileID int64) *sync.Mutex {
-	lock, _ := app.fileLocks.LoadOrStore(fileID, &sync.Mutex{})
-	return lock.(*sync.Mutex)
+	return strconv.Quote(hash)
 }

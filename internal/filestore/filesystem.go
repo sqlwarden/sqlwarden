@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -26,6 +27,12 @@ type Store interface {
 	Put(context.Context, string, io.Reader) (StoredObject, error)
 	Get(context.Context, string) (io.ReadCloser, StoredObject, error)
 	Delete(context.Context, string) error
+}
+
+// EmptyDirectoryPruner is implemented by directory-backed stores whose visible
+// layout should not retain empty paths after tracked objects move or are removed.
+type EmptyDirectoryPruner interface {
+	PruneEmptyDirectories(context.Context, string) error
 }
 
 type Filesystem struct {
@@ -131,9 +138,35 @@ func (s *Filesystem) Get(_ context.Context, key string) (io.ReadCloser, StoredOb
 func (s *Filesystem) Delete(_ context.Context, key string) error {
 	path, err := s.pathForRead(key)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
 		return err
 	}
-	return os.Remove(path)
+	err = os.Remove(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+func (s *Filesystem) PruneEmptyDirectories(_ context.Context, key string) error {
+	dir, _, err := s.validPath(key)
+	if err != nil {
+		return err
+	}
+	for dir != s.root {
+		err = os.Remove(dir)
+		switch {
+		case err == nil, errors.Is(err, os.ErrNotExist):
+			dir = filepath.Dir(dir)
+		case errors.Is(err, syscall.ENOTEMPTY), errors.Is(err, syscall.EEXIST):
+			return nil
+		default:
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Filesystem) pathForRead(key string) (string, error) {

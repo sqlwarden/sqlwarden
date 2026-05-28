@@ -57,3 +57,43 @@ func TestFilesystemRejectsTraversalAndSymlinks(t *testing.T) {
 		t.Fatalf("symlink write error = %v, want ErrInvalidKey", err)
 	}
 }
+
+func TestFilesystemDeleteMissingObjectIsIdempotent(t *testing.T) {
+	store, err := NewFilesystem(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Delete(context.Background(), "objects/missing.txt"); err != nil {
+		t.Fatalf("delete missing object: %v", err)
+	}
+}
+
+func TestFilesystemPrunesOnlyEmptyDirectories(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewFilesystem(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Put(context.Background(), "workspace/old/query.sql", strings.NewReader("select 1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Delete(context.Background(), "workspace/old/query.sql"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PruneEmptyDirectories(context.Background(), "workspace/old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "workspace", "old")); !os.IsNotExist(err) {
+		t.Fatalf("empty directory should be pruned, stat err=%v", err)
+	}
+
+	if _, err := store.Put(context.Background(), "workspace/kept/external.txt", strings.NewReader("external")); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PruneEmptyDirectories(context.Background(), "workspace/kept"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "workspace", "kept")); err != nil {
+		t.Fatalf("non-empty directory should remain: %v", err)
+	}
+}

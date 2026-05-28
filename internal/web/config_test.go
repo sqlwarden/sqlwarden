@@ -32,6 +32,10 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.DB.Driver != defaultDBDriver {
 		t.Fatalf("db.driver = %q, want %q", cfg.DB.Driver, defaultDBDriver)
 	}
+	defaultDBDSN, err := expandHomePath(defaultDBDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if cfg.DB.DSN != defaultDBDSN {
 		t.Fatalf("db.dsn = %q, want %q", cfg.DB.DSN, defaultDBDSN)
 	}
@@ -47,8 +51,15 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.Desktop.ActiveBackend != "local" {
 		t.Fatalf("desktop.active_backend = %q, want local", cfg.Desktop.ActiveBackend)
 	}
-	if !cfg.Files.Enabled || cfg.Files.StorageModel != FilesStorageModelObjectStore || cfg.Files.Provider != FilesProviderFilesystem || cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyVersioned {
+	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "local" || cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyVersioned {
 		t.Fatalf("unexpected default file config: %+v", cfg.Files)
+	}
+	defaultFilesRoot, err := expandHomePath(defaultFilesRootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Files.StorageBackends["local"].Type != FilesStorageBackendFilesystem || cfg.Files.StorageBackends["local"].RootDir != defaultFilesRoot {
+		t.Fatalf("unexpected default storage backends: %+v", cfg.Files.StorageBackends)
 	}
 	if len(cfg.Desktop.Backends) != 1 || cfg.Desktop.Backends[0].ID != "local" || cfg.Desktop.Backends[0].Kind != DesktopBackendKindLocal {
 		t.Fatalf("unexpected default desktop backends: %+v", cfg.Desktop.Backends)
@@ -77,6 +88,16 @@ db:
 smtp:
   host: smtp.cfg.local
   port: 2525
+files:
+  storage_mode: object
+  active_storage_backend: alternate
+  storage_backends:
+    local:
+      type: filesystem
+      root_dir: /tmp/sqlwarden-local-files
+    alternate:
+      type: filesystem
+      root_dir: /tmp/sqlwarden-alternate-files
 desktop:
   app_dir: /tmp/sqlwarden-desktop
   active_backend: acme-prod
@@ -132,6 +153,12 @@ desktop:
 	}
 	if cfg.SMTP.Host != "smtp.cfg.local" || cfg.SMTP.Port != 2525 {
 		t.Fatalf("unexpected smtp config: %+v", cfg.SMTP)
+	}
+	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "alternate" {
+		t.Fatalf("unexpected file storage config: %+v", cfg.Files)
+	}
+	if cfg.Files.StorageBackends["alternate"].RootDir != "/tmp/sqlwarden-alternate-files" {
+		t.Fatalf("unexpected alternate storage backend: %+v", cfg.Files.StorageBackends["alternate"])
 	}
 	if cfg.Desktop.AppDir != "/tmp/sqlwarden-desktop" || cfg.Desktop.ActiveBackend != "acme-prod" || cfg.Desktop.AllowUserBackends {
 		t.Fatalf("unexpected desktop config: %+v", cfg.Desktop)
@@ -259,20 +286,15 @@ func TestLoadConfigDesktopDefaultsToVisibleUnversionedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Files.StorageModel != FilesStorageModelWorkspaceDirectory || cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyDisabled || cfg.Files.ApplicationEncryption {
+	if cfg.Files.StorageMode != FilesStorageModeFile || cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyDisabled {
 		t.Fatalf("unexpected desktop file config: %+v", cfg.Files)
 	}
 }
 
 func TestLoadConfigRejectsUnsupportedFileConfiguration(t *testing.T) {
-	_, _, err := loadConfig([]string{"--files-storage-model", FilesStorageModelWorkspaceDirectory, "--files-application-encryption"})
+	_, _, err := loadConfig([]string{"--files-storage-backends-local-type", FilesStorageBackendS3})
 	if err == nil {
-		t.Fatal("expected visible directory encryption to fail")
-	}
-
-	_, _, err = loadConfig([]string{"--files-provider", "s3"})
-	if err == nil {
-		t.Fatal("expected unimplemented file provider to fail")
+		t.Fatal("expected unimplemented file storage backend to fail")
 	}
 
 	_, _, err = loadConfig([]string{"--files-revisions-default-policy", "sometimes"})
@@ -280,9 +302,14 @@ func TestLoadConfigRejectsUnsupportedFileConfiguration(t *testing.T) {
 		t.Fatal("expected invalid revision policy to fail")
 	}
 
-	_, _, err = loadConfig([]string{"--files-storage-model", FilesStorageModelWorkspaceDirectory})
+	_, _, err = loadConfig([]string{"--files-storage-mode", FilesStorageModeFile})
 	if err == nil {
-		t.Fatal("expected visible directory versioning to fail until visible history is implemented")
+		t.Fatal("expected file-mode versioning to fail until visible history is implemented")
+	}
+
+	_, _, err = loadConfig([]string{"--files-active-storage-backend", "missing"})
+	if err == nil {
+		t.Fatal("expected missing active storage backend to fail")
 	}
 }
 

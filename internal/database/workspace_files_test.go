@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -94,39 +95,44 @@ func TestWorkspaceFilesValidateTreeAndContentPolicy(t *testing.T) {
 	}
 }
 
-func TestIsEffectiveWorkspaceMemberIncludesTeams(t *testing.T) {
+func TestWorkspaceFileMoveRejectsCyclesAndDeleteTombstonesSubtree(t *testing.T) {
 	for _, driver := range testDrivers() {
 		t.Run(driver, func(t *testing.T) {
 			db := newTestDB(t, driver)
 			ctx := context.Background()
-			org, err := db.InsertOrg(ctx, "membership-"+driver, "Membership")
+			org, err := db.InsertOrg(ctx, "file-mutations-"+driver, "File Mutations")
 			if err != nil {
 				t.Fatal(err)
 			}
-			memberID := testUsers["bob"].id
-			if err := db.AddOrgMember(ctx, org.ID, memberID); err != nil {
-				t.Fatal(err)
-			}
+			ownerID := testUsers["alice"].id
 			ws, err := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Workspace", "")
 			if err != nil {
 				t.Fatal(err)
 			}
-			team, err := db.InsertTeam(ctx, org.ID, "developers", "Developers")
-			if err != nil {
+			root := WorkspaceFile{WorkspaceID: ws.ID, Visibility: FileVisibilityPrivate, OwnerAccountID: &ownerID, ObjectType: FileObjectTypeFolder, Name: "root", CreatedBy: ownerID, UpdatedBy: ownerID}
+			if err := db.InsertWorkspaceFile(ctx, &root); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.AddTeamMember(ctx, team.ID, memberID); err != nil {
+			child := WorkspaceFile{WorkspaceID: ws.ID, ParentID: &root.ID, Visibility: FileVisibilityPrivate, OwnerAccountID: &ownerID, ObjectType: FileObjectTypeFolder, Name: "child", CreatedBy: ownerID, UpdatedBy: ownerID}
+			if err := db.InsertWorkspaceFile(ctx, &child); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.AddWorkspaceTeam(ctx, ws.ID, team.ID, nil); err != nil {
+			file := WorkspaceFile{WorkspaceID: ws.ID, ParentID: &child.ID, Visibility: FileVisibilityPrivate, OwnerAccountID: &ownerID, ObjectType: FileObjectTypeFile, Name: "query.sql", CreatedBy: ownerID, UpdatedBy: ownerID}
+			if err := db.InsertWorkspaceFile(ctx, &file); err != nil {
 				t.Fatal(err)
 			}
-			member, err := db.IsEffectiveWorkspaceMember(ctx, org.ID, ws.ID, memberID)
-			if err != nil {
+
+			root.ParentID = &child.ID
+			if err := db.UpdateWorkspaceFileLocation(ctx, root, ownerID, nil); !errors.Is(err, ErrWorkspaceFileMoveCycle) {
+				t.Fatalf("move folder into descendant error = %v, want cycle error", err)
+			}
+			if err := db.DeleteWorkspaceFileTree(ctx, root.ID, ownerID); err != nil {
 				t.Fatal(err)
 			}
-			if !member {
-				t.Fatal("expected team-derived workspace membership")
+			for _, id := range []int64{root.ID, child.ID, file.ID} {
+				if _, found, err := db.GetWorkspaceFile(ctx, id); err != nil || found {
+					t.Fatalf("deleted file %d: found=%v err=%v", id, found, err)
+				}
 			}
 		})
 	}

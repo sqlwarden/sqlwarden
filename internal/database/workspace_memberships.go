@@ -117,6 +117,30 @@ func (db *DB) RemoveWorkspaceTeam(ctx context.Context, workspaceID, teamID int64
 	return err
 }
 
+// IsEffectiveWorkspaceMember reports whether an account belongs to a workspace
+// either directly or through a workspace team, constrained to the same org.
+func (db *DB) IsEffectiveWorkspaceMember(ctx context.Context, orgID, workspaceID, accountID int64) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var exists bool
+	err := db.NewRaw(`
+SELECT EXISTS (
+    SELECT 1 FROM workspace_members wm
+    JOIN workspaces w ON w.id = wm.workspace_id AND w.owner_type = 'org' AND w.owner_id = ?
+    JOIN org_members om ON om.org_id = ? AND om.account_id = wm.account_id
+    WHERE wm.workspace_id = ? AND wm.account_id = ?
+    UNION
+    SELECT 1 FROM workspace_teams wt
+    JOIN workspaces w ON w.id = wt.workspace_id AND w.owner_type = 'org' AND w.owner_id = ?
+    JOIN teams t ON t.id = wt.team_id AND t.org_id = ?
+    JOIN team_members tm ON tm.team_id = t.id AND tm.account_id = ?
+    JOIN org_members om ON om.org_id = ? AND om.account_id = tm.account_id
+    WHERE wt.workspace_id = ?
+)`, orgID, orgID, workspaceID, accountID, orgID, orgID, accountID, orgID, workspaceID).Scan(ctx, &exists)
+	return exists, err
+}
+
 func (db *DB) ListWorkspaceMembersPage(ctx context.Context, params ListWorkspaceMembersParams) (response.Paginated[WorkspaceMemberListItem], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()

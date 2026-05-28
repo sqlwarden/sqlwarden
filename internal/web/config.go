@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -19,7 +20,7 @@ const (
 	defaultCookieSecretKey       = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
 	defaultDBLogQueries          = false
 	defaultDBDriver              = "sqlite"
-	defaultDBDSN                 = "sqlwarden.db"
+	defaultDBDSN                 = "~/.sqlwarden/sqlwarden.db"
 	defaultDBAutomigrate         = true
 	defaultEncryptionKey         = "dev-insecure-key-32byteslong!!"
 	defaultJWTSecretKey          = "fb57i5hiud5mzmykaquqsln5gcmolbac"
@@ -27,11 +28,9 @@ const (
 	defaultTLSEnabled            = false
 	defaultTLSCertFile           = ""
 	defaultTLSKeyFile            = ""
-	defaultFilesEnabled          = true
-	defaultFilesStorageModel     = FilesStorageModelObjectStore
-	defaultFilesProvider         = FilesProviderFilesystem
-	defaultFilesRootDir          = "sqlwarden-files"
-	defaultFilesEncryption       = false
+	defaultFilesStorageMode      = FilesStorageModeObject
+	defaultFilesActiveBackend    = "local"
+	defaultFilesRootDir          = "~/.sqlwarden/files"
 	defaultFilesRevisionPolicy   = FilesRevisionPolicyVersioned
 	defaultNotificationsEmail    = ""
 	defaultSMTPHost              = "example.smtp.host"
@@ -60,11 +59,12 @@ const (
 )
 
 const (
-	FilesStorageModelWorkspaceDirectory = "workspace_directory"
-	FilesStorageModelObjectStore        = "object_store"
-	FilesProviderFilesystem             = "filesystem"
-	FilesRevisionPolicyDisabled         = "disabled"
-	FilesRevisionPolicyVersioned        = "versioned"
+	FilesStorageModeFile          = "file"
+	FilesStorageModeObject        = "object"
+	FilesStorageBackendFilesystem = "filesystem"
+	FilesStorageBackendS3         = "s3"
+	FilesRevisionPolicyDisabled   = "disabled"
+	FilesRevisionPolicyVersioned  = "versioned"
 )
 
 type Config struct {
@@ -95,14 +95,10 @@ type Config struct {
 		KeyFile  string
 	}
 	Files struct {
-		Enabled               bool
-		StorageModel          string
-		Provider              string
-		ApplicationEncryption bool
-		Filesystem            struct {
-			RootDir string
-		}
-		Revisions struct {
+		StorageMode          string
+		ActiveStorageBackend string
+		StorageBackends      map[string]FileStorageBackend
+		Revisions            struct {
 			DefaultPolicy string
 		}
 	}
@@ -122,6 +118,11 @@ type Config struct {
 		AllowUserBackends bool
 		Backends          []DesktopBackend
 	}
+}
+
+type FileStorageBackend struct {
+	Type    string `mapstructure:"type"`
+	RootDir string `mapstructure:"root_dir"`
 }
 
 type DesktopBackend struct {
@@ -152,11 +153,9 @@ func DefaultConfig() Config {
 	cfg.TLS.Enabled = defaultTLSEnabled
 	cfg.TLS.CertFile = defaultTLSCertFile
 	cfg.TLS.KeyFile = defaultTLSKeyFile
-	cfg.Files.Enabled = defaultFilesEnabled
-	cfg.Files.StorageModel = defaultFilesStorageModel
-	cfg.Files.Provider = defaultFilesProvider
-	cfg.Files.Filesystem.RootDir = defaultFilesRootDir
-	cfg.Files.ApplicationEncryption = defaultFilesEncryption
+	cfg.Files.StorageMode = defaultFilesStorageMode
+	cfg.Files.ActiveStorageBackend = defaultFilesActiveBackend
+	cfg.Files.StorageBackends = defaultFileStorageBackends()
 	cfg.Files.Revisions.DefaultPolicy = defaultFilesRevisionPolicy
 	cfg.Notifications.Email = defaultNotificationsEmail
 	cfg.SMTP.Host = defaultSMTPHost
@@ -169,6 +168,15 @@ func DefaultConfig() Config {
 	cfg.Desktop.AllowUserBackends = defaultAllowUserBackends
 	cfg.Desktop.Backends = defaultDesktopBackends()
 	return cfg
+}
+
+func defaultFileStorageBackends() map[string]FileStorageBackend {
+	return map[string]FileStorageBackend{
+		defaultFilesActiveBackend: {
+			Type:    FilesStorageBackendFilesystem,
+			RootDir: defaultFilesRootDir,
+		},
+	}
 }
 
 func defaultDesktopBackends() []DesktopBackend {
@@ -208,11 +216,10 @@ var configOptions = []configOption{
 	{key: "tls.enabled", env: "TLS_ENABLED", flagName: "tls-enabled", defaultValue: defaultTLSEnabled, usage: "Serve HTTPS using configured TLS certificate and key files"},
 	{key: "tls.cert_file", env: "TLS_CERT_FILE", flagName: "tls-cert-file", defaultValue: defaultTLSCertFile, usage: "Path to PEM encoded TLS certificate file"},
 	{key: "tls.key_file", env: "TLS_KEY_FILE", flagName: "tls-key-file", defaultValue: defaultTLSKeyFile, usage: "Path to PEM encoded TLS private key file"},
-	{key: "files.enabled", env: "FILES_ENABLED", flagName: "files-enabled", defaultValue: defaultFilesEnabled, usage: "Enable workspace file storage"},
-	{key: "files.storage_model", env: "FILES_STORAGE_MODEL", flagName: "files-storage-model", defaultValue: defaultFilesStorageModel, usage: "Workspace file storage model (workspace_directory or object_store)"},
-	{key: "files.provider", env: "FILES_PROVIDER", flagName: "files-provider", defaultValue: defaultFilesProvider, usage: "Workspace file storage provider (filesystem)"},
-	{key: "files.filesystem.root_dir", env: "FILES_FILESYSTEM_ROOT_DIR", flagName: "files-filesystem-root-dir", defaultValue: defaultFilesRootDir, usage: "Filesystem root directory for workspace files"},
-	{key: "files.application_encryption", env: "FILES_APPLICATION_ENCRYPTION", flagName: "files-application-encryption", defaultValue: defaultFilesEncryption, usage: "Encrypt workspace file bytes before storing them"},
+	{key: "files.storage_mode", env: "FILES_STORAGE_MODE", flagName: "files-storage-mode", defaultValue: defaultFilesStorageMode, usage: "Workspace file storage mode (file or object)"},
+	{key: "files.active_storage_backend", env: "FILES_ACTIVE_STORAGE_BACKEND", flagName: "files-active-storage-backend", defaultValue: defaultFilesActiveBackend, usage: "Active storage backend ID for object-mode writes"},
+	{key: "files.storage_backends.local.type", env: "FILES_STORAGE_BACKENDS_LOCAL_TYPE", flagName: "files-storage-backends-local-type", defaultValue: FilesStorageBackendFilesystem, usage: "Type for the default local file storage backend"},
+	{key: "files.storage_backends.local.root_dir", env: "FILES_STORAGE_BACKENDS_LOCAL_ROOT_DIR", flagName: "files-storage-backends-local-root-dir", defaultValue: defaultFilesRootDir, usage: "Filesystem root directory for the default local file storage backend"},
 	{key: "files.revisions.default_policy", env: "FILES_REVISIONS_DEFAULT_POLICY", flagName: "files-revisions-default-policy", defaultValue: defaultFilesRevisionPolicy, usage: "Default saved-file revision policy (disabled or versioned)"},
 	{key: "notifications.email", env: "NOTIFICATIONS_EMAIL", flagName: "notifications-email", defaultValue: defaultNotificationsEmail, usage: "Email address that receives error notifications"},
 	{key: "smtp.host", env: "SMTP_HOST", flagName: "smtp-host", defaultValue: defaultSMTPHost, usage: "SMTP server host"},
@@ -269,6 +276,7 @@ func loadConfig(args []string) (Config, bool, error) {
 		}
 	}
 	v.SetDefault("desktop.backends", defaultDesktopBackends())
+	v.SetDefault("files.storage_backends", defaultFileStorageBackends())
 
 	if *configPath != "" {
 		v.SetConfigFile(*configPath)
@@ -314,11 +322,22 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.TLS.Enabled = v.GetBool("tls.enabled")
 	cfg.TLS.CertFile = v.GetString("tls.cert_file")
 	cfg.TLS.KeyFile = v.GetString("tls.key_file")
-	cfg.Files.Enabled = v.GetBool("files.enabled")
-	cfg.Files.StorageModel = v.GetString("files.storage_model")
-	cfg.Files.Provider = v.GetString("files.provider")
-	cfg.Files.Filesystem.RootDir = v.GetString("files.filesystem.root_dir")
-	cfg.Files.ApplicationEncryption = v.GetBool("files.application_encryption")
+	cfg.Files.StorageMode = v.GetString("files.storage_mode")
+	cfg.Files.ActiveStorageBackend = v.GetString("files.active_storage_backend")
+	cfg.Files.StorageBackends = defaultFileStorageBackends()
+	if err := v.UnmarshalKey("files.storage_backends", &cfg.Files.StorageBackends); err != nil {
+		return Config{}, false, fmt.Errorf("read file storage backends: %w", err)
+	}
+	localBackend := cfg.Files.StorageBackends[defaultFilesActiveBackend]
+	_, localTypeSetInEnv := os.LookupEnv("FILES_STORAGE_BACKENDS_LOCAL_TYPE")
+	_, localRootSetInEnv := os.LookupEnv("FILES_STORAGE_BACKENDS_LOCAL_ROOT_DIR")
+	if v.InConfig("files.storage_backends.local.type") || flagSet.Changed("files-storage-backends-local-type") || localTypeSetInEnv {
+		localBackend.Type = v.GetString("files.storage_backends.local.type")
+	}
+	if v.InConfig("files.storage_backends.local.root_dir") || flagSet.Changed("files-storage-backends-local-root-dir") || localRootSetInEnv {
+		localBackend.RootDir = v.GetString("files.storage_backends.local.root_dir")
+	}
+	cfg.Files.StorageBackends[defaultFilesActiveBackend] = localBackend
 	cfg.Files.Revisions.DefaultPolicy = v.GetString("files.revisions.default_policy")
 	cfg.Notifications.Email = v.GetString("notifications.email")
 	cfg.SMTP.Host = v.GetString("smtp.host")
@@ -335,17 +354,23 @@ func loadConfig(args []string) (Config, bool, error) {
 	if len(cfg.Desktop.Backends) == 0 {
 		cfg.Desktop.Backends = defaultDesktopBackends()
 	}
+	if len(cfg.Files.StorageBackends) == 0 {
+		cfg.Files.StorageBackends = defaultFileStorageBackends()
+	}
 	if cfg.DeploymentMode == DeploymentModeDesktop {
-		_, storageModelSetInEnv := os.LookupEnv("FILES_STORAGE_MODEL")
+		_, storageModeSetInEnv := os.LookupEnv("FILES_STORAGE_MODE")
 		_, revisionPolicySetInEnv := os.LookupEnv("FILES_REVISIONS_DEFAULT_POLICY")
-		if !v.InConfig("files.storage_model") && !flagSet.Changed("files-storage-model") && !storageModelSetInEnv {
-			cfg.Files.StorageModel = FilesStorageModelWorkspaceDirectory
+		if !v.InConfig("files.storage_mode") && !flagSet.Changed("files-storage-mode") && !storageModeSetInEnv {
+			cfg.Files.StorageMode = FilesStorageModeFile
 		}
 		if !v.InConfig("files.revisions.default_policy") && !flagSet.Changed("files-revisions-default-policy") && !revisionPolicySetInEnv {
 			cfg.Files.Revisions.DefaultPolicy = FilesRevisionPolicyDisabled
 		}
 	}
 
+	if err := normalizeConfigPaths(&cfg); err != nil {
+		return Config{}, false, err
+	}
 	if err := validateConfig(cfg); err != nil {
 		return Config{}, false, err
 	}
@@ -368,28 +393,17 @@ func validateConfig(cfg Config) error {
 			return fmt.Errorf("tls.key_file is required when tls.enabled is true")
 		}
 	}
-	if cfg.Files.Enabled {
-		if cfg.Files.StorageModel != FilesStorageModelWorkspaceDirectory && cfg.Files.StorageModel != FilesStorageModelObjectStore {
-			return fmt.Errorf("files.storage_model must be %q or %q", FilesStorageModelWorkspaceDirectory, FilesStorageModelObjectStore)
-		}
-		if cfg.Files.Provider != FilesProviderFilesystem {
-			return fmt.Errorf("files.provider must be %q", FilesProviderFilesystem)
-		}
-		if strings.TrimSpace(cfg.Files.Filesystem.RootDir) == "" {
-			return fmt.Errorf("files.filesystem.root_dir is required when files.enabled is true")
-		}
-		if cfg.Files.StorageModel == FilesStorageModelWorkspaceDirectory && cfg.Files.ApplicationEncryption {
-			return fmt.Errorf("files.application_encryption is not supported with files.storage_model=%q", FilesStorageModelWorkspaceDirectory)
-		}
-		if cfg.Files.StorageModel == FilesStorageModelWorkspaceDirectory && cfg.Files.Revisions.DefaultPolicy == FilesRevisionPolicyVersioned {
-			return fmt.Errorf("files.revisions.default_policy=%q is not supported with files.storage_model=%q yet", FilesRevisionPolicyVersioned, FilesStorageModelWorkspaceDirectory)
-		}
-		if cfg.Files.ApplicationEncryption {
-			return fmt.Errorf("files.application_encryption is configured but encrypted file content is not implemented yet")
-		}
-		if cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyDisabled && cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyVersioned {
-			return fmt.Errorf("files.revisions.default_policy must be %q or %q", FilesRevisionPolicyDisabled, FilesRevisionPolicyVersioned)
-		}
+	if cfg.Files.StorageMode != FilesStorageModeFile && cfg.Files.StorageMode != FilesStorageModeObject {
+		return fmt.Errorf("files.storage_mode must be %q or %q", FilesStorageModeFile, FilesStorageModeObject)
+	}
+	if cfg.Files.StorageMode == FilesStorageModeFile && cfg.Files.Revisions.DefaultPolicy == FilesRevisionPolicyVersioned {
+		return fmt.Errorf("files.revisions.default_policy=%q is not supported with files.storage_mode=%q yet", FilesRevisionPolicyVersioned, FilesStorageModeFile)
+	}
+	if cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyDisabled && cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyVersioned {
+		return fmt.Errorf("files.revisions.default_policy must be %q or %q", FilesRevisionPolicyDisabled, FilesRevisionPolicyVersioned)
+	}
+	if err := validateFileStorageBackends(cfg); err != nil {
+		return err
 	}
 	if strings.TrimSpace(cfg.Desktop.ActiveBackend) == "" {
 		return fmt.Errorf("desktop.active_backend is required")
@@ -430,4 +444,91 @@ func validateConfig(cfg Config) error {
 	}
 
 	return nil
+}
+
+func validateFileStorageBackends(cfg Config) error {
+	if cfg.Files.StorageMode == FilesStorageModeObject && strings.TrimSpace(cfg.Files.ActiveStorageBackend) == "" {
+		return fmt.Errorf("files.active_storage_backend is required when files.storage_mode=%q", FilesStorageModeObject)
+	}
+	if len(cfg.Files.StorageBackends) == 0 {
+		return fmt.Errorf("files.storage_backends must contain at least one backend")
+	}
+
+	for id, backend := range cfg.Files.StorageBackends {
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("files.storage_backends contains an empty backend ID")
+		}
+		if backend.Type != FilesStorageBackendFilesystem {
+			if backend.Type == FilesStorageBackendS3 {
+				return fmt.Errorf("files.storage_backends.%s.type=%q is not implemented yet", id, FilesStorageBackendS3)
+			}
+			return fmt.Errorf("files.storage_backends.%s.type must be %q", id, FilesStorageBackendFilesystem)
+		}
+		if strings.TrimSpace(backend.RootDir) == "" {
+			return fmt.Errorf("files.storage_backends.%s.root_dir is required", id)
+		}
+	}
+
+	if cfg.Files.StorageMode == FilesStorageModeObject {
+		if _, ok := cfg.Files.StorageBackends[cfg.Files.ActiveStorageBackend]; !ok {
+			return fmt.Errorf("files.active_storage_backend %q must reference a configured storage backend", cfg.Files.ActiveStorageBackend)
+		}
+		return nil
+	}
+
+	if _, ok := cfg.Files.StorageBackends[defaultFilesActiveBackend]; !ok {
+		return fmt.Errorf("files.storage_backends.%s is required when files.storage_mode=%q", defaultFilesActiveBackend, FilesStorageModeFile)
+	}
+	return nil
+}
+
+func normalizeConfigPaths(cfg *Config) error {
+	var err error
+	if cfg.DB.Driver == "sqlite" {
+		cfg.DB.DSN, err = expandHomePath(cfg.DB.DSN)
+		if err != nil {
+			return fmt.Errorf("expand db.dsn: %w", err)
+		}
+	}
+	for id, backend := range cfg.Files.StorageBackends {
+		if backend.Type != FilesStorageBackendFilesystem {
+			continue
+		}
+		backend.RootDir, err = expandHomePath(backend.RootDir)
+		if err != nil {
+			return fmt.Errorf("expand files.storage_backends.%s.root_dir: %w", id, err)
+		}
+		cfg.Files.StorageBackends[id] = backend
+	}
+	return nil
+}
+
+func expandHomePath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	if path == "~" {
+		return home, nil
+	}
+	return filepath.Join(home, path[2:]), nil
+}
+
+func (cfg Config) fileStorageRootDir() (string, error) {
+	backendID := cfg.Files.ActiveStorageBackend
+	if cfg.Files.StorageMode == FilesStorageModeFile || strings.TrimSpace(backendID) == "" {
+		backendID = defaultFilesActiveBackend
+	}
+	backend, ok := cfg.Files.StorageBackends[backendID]
+	if !ok {
+		return "", fmt.Errorf("file storage backend %q is not configured", backendID)
+	}
+	if backend.Type != FilesStorageBackendFilesystem {
+		return "", fmt.Errorf("file storage backend %q type %q is not implemented", backendID, backend.Type)
+	}
+	return backend.RootDir, nil
 }

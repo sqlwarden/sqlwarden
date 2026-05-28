@@ -18,12 +18,24 @@ import (
 	"github.com/sqlwarden/internal/filestore"
 )
 
-func orgFilesURL(orgSlug string, workspaceID int64) string {
-	return fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/files", orgSlug, workspaceID)
+func orgPrivateFilesURL(orgSlug string, workspaceID int64) string {
+	return fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/files/private", orgSlug, workspaceID)
 }
 
-func meFilesURL(workspaceID int64) string {
-	return fmt.Sprintf("/api/v1/me/workspaces/%d/files", workspaceID)
+func orgSharedFilesURL(orgSlug string, workspaceID int64) string {
+	return fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/files/shared", orgSlug, workspaceID)
+}
+
+func mePrivateFilesURL(workspaceID int64) string {
+	return fmt.Sprintf("/api/v1/me/workspaces/%d/files/private", workspaceID)
+}
+
+func meSharedFilesURL(workspaceID int64) string {
+	return fmt.Sprintf("/api/v1/me/workspaces/%d/files/shared", workspaceID)
+}
+
+func workspaceStorageSegment(ws database.Workspace) string {
+	return strconv.FormatInt(ws.ID, 10) + "-" + slugify(ws.Name)
 }
 
 func newAuthContentRequest(t *testing.T, method, url, content, token, etag string) *http.Request {
@@ -65,34 +77,37 @@ func TestWorkspacePrivateFilesAreOwnerOnlyAndRequireMembership(t *testing.T) {
 	member, memberTok := addWorkspaceMemberForFiles(t, app, org, ws, uniqueEmail(t, "private-member"))
 	_, otherTok := addWorkspaceMemberForFiles(t, app, org, ws, uniqueEmail(t, "private-other"))
 
-	create := send(t, newAuthRequest(t, http.MethodPost, orgFilesURL(org.Slug, ws.ID), map[string]any{
-		"name":       "query.sql",
-		"visibility": "private",
+	create := send(t, newAuthRequest(t, http.MethodPost, orgPrivateFilesURL(org.Slug, ws.ID), map[string]any{
+		"name": "query.sql",
 	}, memberTok), app.routes())
 	assert.Equal(t, create.StatusCode, http.StatusCreated)
 	file := decodeWorkspaceFile(t, create)
 	assert.Equal(t, *file.OwnerAccountID, member.ID)
 
-	put := send(t, newAuthContentRequest(t, http.MethodPut, orgFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10)+"/content", "select 1", memberTok, ""), app.routes())
+	put := send(t, newAuthContentRequest(t, http.MethodPut, orgPrivateFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10)+"/content", "select 1", memberTok, ""), app.routes())
 	assert.Equal(t, put.StatusCode, http.StatusOK)
 
-	ownList := send(t, newAuthRequest(t, http.MethodGet, orgFilesURL(org.Slug, ws.ID)+"?visibility=private", nil, memberTok), app.routes())
+	ownList := send(t, newAuthRequest(t, http.MethodGet, orgPrivateFilesURL(org.Slug, ws.ID), nil, memberTok), app.routes())
 	assert.Equal(t, ownList.StatusCode, http.StatusOK)
 	var ownFiles []database.WorkspaceFile
 	decodeJSONResponse(t, ownList.BodyBytes, &ownFiles)
 	assert.Equal(t, len(ownFiles), 1)
 
-	otherRead := send(t, newAuthRequest(t, http.MethodGet, orgFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, otherTok), app.routes())
+	otherRead := send(t, newAuthRequest(t, http.MethodGet, orgPrivateFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, otherTok), app.routes())
 	assert.Equal(t, otherRead.StatusCode, http.StatusNotFound)
-	adminRead := send(t, newAuthRequest(t, http.MethodGet, orgFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, ownerTok), app.routes())
+	otherPatch := send(t, newAuthRequest(t, http.MethodPatch, orgPrivateFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), map[string]any{"name": "stolen.sql"}, otherTok), app.routes())
+	assert.Equal(t, otherPatch.StatusCode, http.StatusNotFound)
+	otherDelete := send(t, newAuthRequest(t, http.MethodDelete, orgPrivateFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, otherTok), app.routes())
+	assert.Equal(t, otherDelete.StatusCode, http.StatusNotFound)
+	adminRead := send(t, newAuthRequest(t, http.MethodGet, orgPrivateFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, ownerTok), app.routes())
 	assert.Equal(t, adminRead.StatusCode, http.StatusNotFound)
 
 	if err := app.db.RemoveWorkspaceMember(context.Background(), ws.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
-	revoked := send(t, newAuthRequest(t, http.MethodGet, orgFilesURL(org.Slug, ws.ID)+"?visibility=private", nil, memberTok), app.routes())
+	revoked := send(t, newAuthRequest(t, http.MethodGet, orgPrivateFilesURL(org.Slug, ws.ID), nil, memberTok), app.routes())
 	assert.Equal(t, revoked.StatusCode, http.StatusForbidden)
-	revokedFile := send(t, newAuthRequest(t, http.MethodGet, orgFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, memberTok), app.routes())
+	revokedFile := send(t, newAuthRequest(t, http.MethodGet, orgPrivateFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, memberTok), app.routes())
 	assert.Equal(t, revokedFile.StatusCode, http.StatusNotFound)
 }
 
@@ -101,17 +116,16 @@ func TestWorkspaceSharedFilesRequireSharedFilePermission(t *testing.T) {
 	_, memberTok := addWorkspaceMemberForFiles(t, app, org, ws, uniqueEmail(t, "shared-member"))
 	adminTok := wsJoinAs(t, app, org.Slug, strconv.FormatInt(ws.ID, 10), "Workspace Admin", uniqueEmail(t, "shared-admin"), ownerTok)
 
-	create := send(t, newAuthRequest(t, http.MethodPost, orgFilesURL(org.Slug, ws.ID), map[string]any{
-		"name":       "team.sql",
-		"visibility": "shared",
+	create := send(t, newAuthRequest(t, http.MethodPost, orgSharedFilesURL(org.Slug, ws.ID), map[string]any{
+		"name": "team.sql",
 	}, ownerTok), app.routes())
 	assert.Equal(t, create.StatusCode, http.StatusCreated)
 	file := decodeWorkspaceFile(t, create)
 
-	denied := send(t, newAuthRequest(t, http.MethodGet, orgFilesURL(org.Slug, ws.ID)+"?visibility=shared", nil, memberTok), app.routes())
+	denied := send(t, newAuthRequest(t, http.MethodGet, orgSharedFilesURL(org.Slug, ws.ID), nil, memberTok), app.routes())
 	assert.Equal(t, denied.StatusCode, http.StatusForbidden)
 
-	allowed := send(t, newAuthRequest(t, http.MethodGet, orgFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, adminTok), app.routes())
+	allowed := send(t, newAuthRequest(t, http.MethodGet, orgSharedFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, adminTok), app.routes())
 	assert.Equal(t, allowed.StatusCode, http.StatusOK)
 }
 
@@ -144,13 +158,13 @@ func TestWorkspacePrivateFilesAllowTeamMembersAndRejectCrossWorkspaceRoute(t *te
 		t.Fatal(err)
 	}
 
-	create := send(t, newAuthRequest(t, http.MethodPost, orgFilesURL(org.Slug, wsA.ID), map[string]any{"name": "team-private.sql"}, memberTok), app.routes())
+	create := send(t, newAuthRequest(t, http.MethodPost, orgPrivateFilesURL(org.Slug, wsA.ID), map[string]any{"name": "team-private.sql"}, memberTok), app.routes())
 	assert.Equal(t, create.StatusCode, http.StatusCreated)
 	file := decodeWorkspaceFile(t, create)
 
-	crossWorkspace := send(t, newAuthRequest(t, http.MethodGet, orgFilesURL(org.Slug, wsB.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, ownerTok), app.routes())
+	crossWorkspace := send(t, newAuthRequest(t, http.MethodGet, orgPrivateFilesURL(org.Slug, wsB.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, ownerTok), app.routes())
 	assert.Equal(t, crossWorkspace.StatusCode, http.StatusNotFound)
-	crossOrg := send(t, newAuthRequest(t, http.MethodGet, orgFilesURL(otherOrg.Slug, wsOtherOrg.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, ownerTok), app.routes())
+	crossOrg := send(t, newAuthRequest(t, http.MethodGet, orgPrivateFilesURL(otherOrg.Slug, wsOtherOrg.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, ownerTok), app.routes())
 	assert.Equal(t, crossOrg.StatusCode, http.StatusNotFound)
 }
 
@@ -163,31 +177,35 @@ func TestPersonalWorkspaceFilesArePrivateAndFeatureGated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	shared := send(t, newAuthRequest(t, http.MethodPost, meFilesURL(ws.ID), map[string]any{
-		"name":       "bad.sql",
-		"visibility": "shared",
-	}, tok), app.routes())
-	assert.Equal(t, shared.StatusCode, http.StatusUnprocessableEntity)
+	shared := send(t, newAuthRequest(t, http.MethodPost, meSharedFilesURL(ws.ID), map[string]any{"name": "bad.sql"}, tok), app.routes())
+	assert.Equal(t, shared.StatusCode, http.StatusNotFound)
 
-	create := send(t, newAuthRequest(t, http.MethodPost, meFilesURL(ws.ID), map[string]any{"name": "mine.sql"}, tok), app.routes())
+	create := send(t, newAuthRequest(t, http.MethodPost, mePrivateFilesURL(ws.ID), map[string]any{"name": "mine.sql"}, tok), app.routes())
 	assert.Equal(t, create.StatusCode, http.StatusCreated)
 	file := decodeWorkspaceFile(t, create)
 	assert.Equal(t, file.Visibility, database.FileVisibilityPrivate)
 	assert.Equal(t, *file.OwnerAccountID, account.ID)
 
-	crossOwner := send(t, newAuthRequest(t, http.MethodGet, meFilesURL(ws.ID), nil, otherTok), app.routes())
+	rename := send(t, newAuthRequest(t, http.MethodPatch, mePrivateFilesURL(ws.ID)+"/"+strconv.FormatInt(file.ID, 10), map[string]any{"name": "renamed.sql"}, tok), app.routes())
+	assert.Equal(t, rename.StatusCode, http.StatusOK)
+	remove := send(t, newAuthRequest(t, http.MethodDelete, mePrivateFilesURL(ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, tok), app.routes())
+	assert.Equal(t, remove.StatusCode, http.StatusNoContent)
+	deleted := send(t, newAuthRequest(t, http.MethodGet, mePrivateFilesURL(ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, tok), app.routes())
+	assert.Equal(t, deleted.StatusCode, http.StatusNotFound)
+
+	crossOwner := send(t, newAuthRequest(t, http.MethodGet, mePrivateFilesURL(ws.ID), nil, otherTok), app.routes())
 	assert.Equal(t, crossOwner.StatusCode, http.StatusNotFound)
 
 	app.config.PersonalSpacesEnabled = false
-	gated := send(t, newAuthRequest(t, http.MethodGet, meFilesURL(ws.ID), nil, tok), app.routes())
+	gated := send(t, newAuthRequest(t, http.MethodGet, mePrivateFilesURL(ws.ID), nil, tok), app.routes())
 	assert.Equal(t, gated.StatusCode, http.StatusNotFound)
 }
 
 func TestWorkspaceFileContentRejectsStaleExternalWrite(t *testing.T) {
 	app, org, ws, tok := setupWorkspaceOwner(t)
-	create := send(t, newAuthRequest(t, http.MethodPost, orgFilesURL(org.Slug, ws.ID), map[string]any{"name": "conflict.sql"}, tok), app.routes())
+	create := send(t, newAuthRequest(t, http.MethodPost, orgPrivateFilesURL(org.Slug, ws.ID), map[string]any{"name": "conflict.sql"}, tok), app.routes())
 	file := decodeWorkspaceFile(t, create)
-	contentURL := orgFilesURL(org.Slug, ws.ID) + "/" + strconv.FormatInt(file.ID, 10) + "/content"
+	contentURL := orgPrivateFilesURL(org.Slug, ws.ID) + "/" + strconv.FormatInt(file.ID, 10) + "/content"
 
 	initial := send(t, newAuthContentRequest(t, http.MethodPut, contentURL, "select 1", tok, ""), app.routes())
 	assert.Equal(t, initial.StatusCode, http.StatusOK)
@@ -226,11 +244,11 @@ func TestWorkspaceDirectoryWritesVisibleFilePath(t *testing.T) {
 		t.Fatal(err)
 	}
 	app.fileStore = store
-	app.config.Files.StorageModel = FilesStorageModelWorkspaceDirectory
+	app.config.Files.StorageMode = FilesStorageModeFile
 
-	create := send(t, newAuthRequest(t, http.MethodPost, orgFilesURL(org.Slug, ws.ID), map[string]any{"name": "visible.sql"}, tok), app.routes())
+	create := send(t, newAuthRequest(t, http.MethodPost, orgPrivateFilesURL(org.Slug, ws.ID), map[string]any{"name": "visible.sql"}, tok), app.routes())
 	file := decodeWorkspaceFile(t, create)
-	contentURL := orgFilesURL(org.Slug, ws.ID) + "/" + strconv.FormatInt(file.ID, 10) + "/content"
+	contentURL := orgPrivateFilesURL(org.Slug, ws.ID) + "/" + strconv.FormatInt(file.ID, 10) + "/content"
 	write := send(t, newAuthContentRequest(t, http.MethodPut, contentURL, "select visible", tok, ""), app.routes())
 	assert.Equal(t, write.StatusCode, http.StatusOK)
 
@@ -249,10 +267,10 @@ func TestObjectStoreVersionsTextFilesButReplacesBinaryFilesByDefault(t *testing.
 	app.config.Files.Revisions.DefaultPolicy = FilesRevisionPolicyVersioned
 
 	saveTwice := func(name string) database.WorkspaceFileContent {
-		create := send(t, newAuthRequest(t, http.MethodPost, orgFilesURL(org.Slug, ws.ID), map[string]any{"name": name}, tok), app.routes())
+		create := send(t, newAuthRequest(t, http.MethodPost, orgPrivateFilesURL(org.Slug, ws.ID), map[string]any{"name": name}, tok), app.routes())
 		assert.Equal(t, create.StatusCode, http.StatusCreated)
 		file := decodeWorkspaceFile(t, create)
-		contentURL := orgFilesURL(org.Slug, ws.ID) + "/" + strconv.FormatInt(file.ID, 10) + "/content"
+		contentURL := orgPrivateFilesURL(org.Slug, ws.ID) + "/" + strconv.FormatInt(file.ID, 10) + "/content"
 		first := send(t, newAuthContentRequest(t, http.MethodPut, contentURL, "first", tok, ""), app.routes())
 		assert.Equal(t, first.StatusCode, http.StatusOK)
 		second := send(t, newAuthContentRequest(t, http.MethodPut, contentURL, "second", tok, first.Header.Get("ETag")), app.routes())
@@ -276,4 +294,141 @@ func TestObjectStoreVersionsTextFilesButReplacesBinaryFilesByDefault(t *testing.
 	if binaryContent.Version != 1 {
 		t.Fatalf("binary files should be replaced by default, got version %d", binaryContent.Version)
 	}
+}
+
+func TestWorkspaceFilesMoveTraverseAndDeleteSubtree(t *testing.T) {
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	filesURL := orgPrivateFilesURL(org.Slug, ws.ID)
+	folderA := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "first", "object_type": "folder",
+	}, tok), app.routes()))
+	folderB := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "second", "object_type": "folder",
+	}, tok), app.routes()))
+	file := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "before.sql", "parent_id": folderA.ID,
+	}, tok), app.routes()))
+	fileURL := filesURL + "/" + strconv.FormatInt(file.ID, 10)
+	write := send(t, newAuthContentRequest(t, http.MethodPut, fileURL+"/content", "select moved", tok, ""), app.routes())
+	assert.Equal(t, write.StatusCode, http.StatusOK)
+
+	move := send(t, newAuthRequest(t, http.MethodPatch, fileURL, map[string]any{
+		"name": "after.sql", "parent_id": folderB.ID,
+	}, tok), app.routes())
+	assert.Equal(t, move.StatusCode, http.StatusOK)
+	oldChildren := send(t, newAuthRequest(t, http.MethodGet, filesURL+"?parent_id="+strconv.FormatInt(folderA.ID, 10), nil, tok), app.routes())
+	var oldFiles []database.WorkspaceFile
+	decodeJSONResponse(t, oldChildren.BodyBytes, &oldFiles)
+	assert.Equal(t, len(oldFiles), 0)
+	newChildren := send(t, newAuthRequest(t, http.MethodGet, filesURL+"?parent_id="+strconv.FormatInt(folderB.ID, 10), nil, tok), app.routes())
+	var newFiles []database.WorkspaceFile
+	decodeJSONResponse(t, newChildren.BodyBytes, &newFiles)
+	assert.Equal(t, len(newFiles), 1)
+	assert.Equal(t, newFiles[0].Name, "after.sql")
+
+	toRoot := send(t, newAuthRequest(t, http.MethodPatch, fileURL, map[string]any{"parent_id": nil}, tok), app.routes())
+	assert.Equal(t, toRoot.StatusCode, http.StatusOK)
+	rootFiles := send(t, newAuthRequest(t, http.MethodGet, filesURL, nil, tok), app.routes())
+	var rootItems []database.WorkspaceFile
+	decodeJSONResponse(t, rootFiles.BodyBytes, &rootItems)
+	if len(rootItems) != 3 {
+		t.Fatalf("root after moving file to root = %+v", rootItems)
+	}
+	backToFolder := send(t, newAuthRequest(t, http.MethodPatch, fileURL, map[string]any{"parent_id": folderB.ID}, tok), app.routes())
+	assert.Equal(t, backToFolder.StatusCode, http.StatusOK)
+
+	remove := send(t, newAuthRequest(t, http.MethodDelete, filesURL+"/"+strconv.FormatInt(folderB.ID, 10), nil, tok), app.routes())
+	assert.Equal(t, remove.StatusCode, http.StatusNoContent)
+	childAfterDelete := send(t, newAuthRequest(t, http.MethodGet, fileURL, nil, tok), app.routes())
+	assert.Equal(t, childAfterDelete.StatusCode, http.StatusNotFound)
+}
+
+func TestSharedWorkspaceFileMutationsRequirePermissions(t *testing.T) {
+	app, org, ws, ownerTok := setupWorkspaceOwner(t)
+	_, memberTok := addWorkspaceMemberForFiles(t, app, org, ws, uniqueEmail(t, "shared-mutation-member"))
+	adminTok := wsJoinAs(t, app, org.Slug, strconv.FormatInt(ws.ID, 10), "Workspace Admin", uniqueEmail(t, "shared-mutation-admin"), ownerTok)
+	filesURL := orgSharedFilesURL(org.Slug, ws.ID)
+	file := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "shared.sql",
+	}, ownerTok), app.routes()))
+	fileURL := filesURL + "/" + strconv.FormatInt(file.ID, 10)
+
+	wrongTreeRead := send(t, newAuthRequest(t, http.MethodGet, orgPrivateFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, adminTok), app.routes())
+	assert.Equal(t, wrongTreeRead.StatusCode, http.StatusNotFound)
+
+	deniedPatch := send(t, newAuthRequest(t, http.MethodPatch, fileURL, map[string]any{"name": "denied.sql"}, memberTok), app.routes())
+	assert.Equal(t, deniedPatch.StatusCode, http.StatusForbidden)
+	deniedDelete := send(t, newAuthRequest(t, http.MethodDelete, fileURL, nil, memberTok), app.routes())
+	assert.Equal(t, deniedDelete.StatusCode, http.StatusForbidden)
+
+	rename := send(t, newAuthRequest(t, http.MethodPatch, fileURL, map[string]any{"name": "allowed.sql"}, adminTok), app.routes())
+	assert.Equal(t, rename.StatusCode, http.StatusOK)
+	remove := send(t, newAuthRequest(t, http.MethodDelete, fileURL, nil, adminTok), app.routes())
+	assert.Equal(t, remove.StatusCode, http.StatusNoContent)
+}
+
+func TestWorkspaceFolderCannotMoveIntoDescendant(t *testing.T) {
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	filesURL := orgPrivateFilesURL(org.Slug, ws.ID)
+	parent := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "parent", "object_type": "folder",
+	}, tok), app.routes()))
+	child := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "child", "object_type": "folder", "parent_id": parent.ID,
+	}, tok), app.routes()))
+	move := send(t, newAuthRequest(t, http.MethodPatch, filesURL+"/"+strconv.FormatInt(parent.ID, 10), map[string]any{
+		"parent_id": child.ID,
+	}, tok), app.routes())
+	assert.Equal(t, move.StatusCode, http.StatusUnprocessableEntity)
+}
+
+func TestWorkspaceFileRenameRejectsSiblingNameConflict(t *testing.T) {
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	filesURL := orgPrivateFilesURL(org.Slug, ws.ID)
+	send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{"name": "exists.sql"}, tok), app.routes())
+	file := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{"name": "rename.sql"}, tok), app.routes()))
+	conflict := send(t, newAuthRequest(t, http.MethodPatch, filesURL+"/"+strconv.FormatInt(file.ID, 10), map[string]any{"name": "exists.sql"}, tok), app.routes())
+	assert.Equal(t, conflict.StatusCode, http.StatusUnprocessableEntity)
+}
+
+func TestWorkspaceDirectoryMovesTrackedDescendantsAndRejectsExternalDestination(t *testing.T) {
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	root := t.TempDir()
+	store, err := filestore.NewFilesystem(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.fileStore = store
+	app.config.Files.StorageMode = FilesStorageModeFile
+	filesURL := orgPrivateFilesURL(org.Slug, ws.ID)
+	folder := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "queries", "object_type": "folder",
+	}, tok), app.routes()))
+	file := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "report.sql", "parent_id": folder.ID,
+	}, tok), app.routes()))
+	contentURL := filesURL + "/" + strconv.FormatInt(file.ID, 10) + "/content"
+	assert.Equal(t, send(t, newAuthContentRequest(t, http.MethodPut, contentURL, "select report", tok, ""), app.routes()).StatusCode, http.StatusOK)
+
+	folderURL := filesURL + "/" + strconv.FormatInt(folder.ID, 10)
+	assert.Equal(t, send(t, newAuthRequest(t, http.MethodPatch, folderURL, map[string]any{"name": "renamed"}, tok), app.routes()).StatusCode, http.StatusOK)
+	base := filepath.Join(root, "organizations", org.Slug, "workspaces", workspaceStorageSegment(ws), "my-files", strconv.FormatInt(file.CreatedBy, 10))
+	if _, err := os.Stat(filepath.Join(base, "queries", "report.sql")); !os.IsNotExist(err) {
+		t.Fatalf("old tracked path should be removed, got error %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(base, "queries")); !os.IsNotExist(err) {
+		t.Fatalf("old empty folder should be pruned, got error %v", err)
+	}
+	bytesOnDisk, err := os.ReadFile(filepath.Join(base, "renamed", "report.sql"))
+	if err != nil || string(bytesOnDisk) != "select report" {
+		t.Fatalf("relocated content = %q err=%v", bytesOnDisk, err)
+	}
+	if err := os.MkdirAll(filepath.Join(base, "external"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "external", "report.sql"), []byte("external"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	conflict := send(t, newAuthRequest(t, http.MethodPatch, folderURL, map[string]any{"name": "external"}, tok), app.routes())
+	assert.Equal(t, conflict.StatusCode, http.StatusConflict)
 }

@@ -56,17 +56,25 @@ func newTestApplication(t *testing.T) *application {
 	app.config.DeploymentMode = DeploymentModeServer
 	app.config.AccessMode = AccessModeMultiUser
 	app.config.PersonalSpacesEnabled = true
-	app.config.Files.Enabled = true
-	app.config.Files.StorageModel = FilesStorageModelObjectStore
-	app.config.Files.Provider = FilesProviderFilesystem
-	app.config.Files.Filesystem.RootDir = t.TempDir()
+	app.config.Files.StorageMode = FilesStorageModeObject
+	app.config.Files.ActiveStorageBackend = defaultFilesActiveBackend
+	app.config.Files.StorageBackends = map[string]FileStorageBackend{
+		defaultFilesActiveBackend: {
+			Type:    FilesStorageBackendFilesystem,
+			RootDir: t.TempDir(),
+		},
+	}
 	app.config.Files.Revisions.DefaultPolicy = FilesRevisionPolicyDisabled
 
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
 	app.mailer = smtp.NewMockMailer("test@example.com")
 	var err error
-	app.fileStore, err = filestore.NewFilesystem(app.config.Files.Filesystem.RootDir)
+	fileRoot, err := app.config.fileStorageRootDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.fileStore, err = filestore.NewFilesystem(fileRoot)
 	if err != nil {
 		t.Fatal(err)
 	}

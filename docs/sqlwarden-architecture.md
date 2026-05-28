@@ -89,7 +89,7 @@ sqlwarden/
 ├── docker-compose.yml
 ├── go.mod
 ├── go.sum
-├── sqlwarden.db                      ← SQLite database (desktop mode / local dev)
+├── ~/.sqlwarden/sqlwarden.db         ← default SQLite database
 ├── release-please-config.json
 │
 ├── dist/
@@ -238,7 +238,7 @@ sqlwarden/
 | UI components | shadcn/ui | `components.json` present |
 | Package manager | Bun | `bun.lock` present |
 | Build tool | Vite | `vite.config.ts` present |
-| Application database | SQLite | `sqlwarden.db` at repo root |
+| Application database | SQLite | `~/.sqlwarden/sqlwarden.db` by default |
 | ORM / query builder | uptrace/bun | App database (users, connections, audit log) |
 | Email | SMTP | `internal/smtp/` present |
 | Password hashing | bcrypt | `internal/password/hash.go` |
@@ -319,7 +319,7 @@ The license payload structure:
 | Desktop shell | Wails v2 |
 | Connector protocol | WebSocket over TLS (connector-initiated outbound) |
 | Database drivers | `database/sql` for PG/MySQL/MSSQL/SQLite; native SDKs for Snowflake/BigQuery |
-| Application storage (desktop / dev) | SQLite (`sqlwarden.db`) |
+| Application storage (desktop / dev) | SQLite (`~/.sqlwarden/sqlwarden.db`) |
 | Application storage (server production) | Postgres or MySQL |
 
 ### 3.2 Core Architectural Principles
@@ -355,7 +355,7 @@ HTTP POST /api/connections/{id}/query
 |---|---|---|
 | Community / Enterprise Server | Postgres or MySQL | Multi-user, persistent, production-grade |
 | Desktop (Wails) | SQLite at OS user data path | Single-user, zero-setup, no external dependency |
-| Local development | SQLite (`sqlwarden.db` at repo root) | Already bootstrapped — zero-config startup |
+| Local development | SQLite (`~/.sqlwarden/sqlwarden.db`) | Already bootstrapped — zero-config startup |
 
 ---
 
@@ -862,7 +862,7 @@ This avoids a privileged desktop-only code path. The same handlers, middleware, 
 
 ### 11.5 SQLite Storage for Desktop
 
-The desktop build uses SQLite for all of SQLWarden's own metadata. This is the same storage layer already used in local development (`sqlwarden.db` at the repo root). For the desktop build, the database file is placed in the OS-appropriate user data directory:
+The desktop build uses SQLite for all of SQLWarden's own metadata. This is the same storage layer already used in local development. The default local database path is `~/.sqlwarden/sqlwarden.db`; a future desktop shell may map this to an OS-specific application data directory:
 
 | OS | Path |
 |---|---|

@@ -5,6 +5,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,7 +38,13 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	if err := normalizeConfigPaths(&cfg); err != nil {
+		return nil, err
+	}
 	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
+	if err := ensureSQLiteParentDir(cfg); err != nil {
 		return nil, err
 	}
 
@@ -64,12 +73,15 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 
 	var fileStore filestore.Store
-	if cfg.Files.Enabled {
-		fileStore, err = filestore.NewFilesystem(cfg.Files.Filesystem.RootDir)
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("file storage init: %w", err)
-		}
+	fileRoot, err := cfg.fileStorageRootDir()
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	fileStore, err = filestore.NewFilesystem(fileRoot)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("file storage init: %w", err)
 	}
 
 	return &application{
@@ -99,5 +111,19 @@ func (app *application) Close() error {
 		app.db.Close()
 	}
 
+	return nil
+}
+
+func ensureSQLiteParentDir(cfg Config) error {
+	if cfg.DB.Driver != "sqlite" || cfg.DB.DSN == ":memory:" || strings.HasPrefix(cfg.DB.DSN, "file:") {
+		return nil
+	}
+	dir := filepath.Dir(cfg.DB.DSN)
+	if dir == "." || dir == "" {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("create sqlite database directory: %w", err)
+	}
 	return nil
 }

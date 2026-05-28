@@ -1,0 +1,410 @@
+package files
+
+import (
+	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/filestore"
+)
+
+type serviceFixture struct {
+	ctx      context.Context
+	db       *database.DB
+	store    *filestore.Filesystem
+	enforcer *fakeEnforcer
+	service  *Service
+	org      database.Organization
+	ws       database.Workspace
+	owner    database.Account
+	member   database.Account
+	other    database.Account
+}
+
+type fakeEnforcer struct {
+	allowed map[string]bool
+	calls   []string
+}
+
+func (e *fakeEnforcer) Can(_ context.Context, accountID, orgID int64, ownerType, resourceType string, resourceID int64, permission string) bool {
+	e.calls = append(e.calls, permission+"@"+ownerType+":"+resourceType+":"+strconv.FormatInt(resourceID, 10))
+	return e.allowed[permission]
+}
+
+func newServiceFixture(t *testing.T, config Config) serviceFixture {
+	t.Helper()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "sqlwarden-files-test.db")
+	db, err := database.New("sqlite", dbPath, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.MigrateUp(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := filestore.NewFilesystem(filepath.Join(t.TempDir(), "objects"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	suffix := strconv.FormatInt(time.Now().UnixNano(), 36)
+	owner := insertTestAccount(t, db, "files-owner-"+suffix+"@example.com", "Files Owner")
+	member := insertTestAccount(t, db, "files-member-"+suffix+"@example.com", "Files Member")
+	other := insertTestAccount(t, db, "files-other-"+suffix+"@example.com", "Files Other")
+	org, err := db.InsertOrg(ctx, "files-"+suffix, "Files Org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, account := range []database.Account{owner, member, other} {
+		if err := db.AddOrgMember(ctx, org.ID, account.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ws, err := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Main Workspace", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, account := range []database.Account{owner, member} {
+		if err := db.AddWorkspaceMember(ctx, ws.ID, account.ID, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	enforcer := &fakeEnforcer{allowed: map[string]bool{}}
+	service := New(db, store, enforcer, config, &sync.Map{})
+	return serviceFixture{ctx: ctx, db: db, store: store, enforcer: enforcer, service: service, org: org, ws: ws, owner: owner, member: member, other: other}
+}
+
+func insertTestAccount(t *testing.T, db *database.DB, email, name string) database.Account {
+	t.Helper()
+	account, err := db.InsertAccount(context.Background(), email, name, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return account
+}
+
+func (f serviceFixture) privateScope(account database.Account) Scope {
+	return Scope{
+		AccountID:  account.ID,
+		OrgID:      f.org.ID,
+		OrgSlug:    f.org.Slug,
+		Workspace:  f.ws,
+		Visibility: database.FileVisibilityPrivate,
+	}
+}
+
+func (f serviceFixture) sharedScope(account database.Account) Scope {
+	return Scope{
+		AccountID:  account.ID,
+		OrgID:      f.org.ID,
+		OrgSlug:    f.org.Slug,
+		Workspace:  f.ws,
+		Visibility: database.FileVisibilityShared,
+	}
+}
+
+func TestValidName(t *testing.T) {
+	for _, name := range []string{"query.sql", "query with spaces.sql", "data-01.csv"} {
+		if !ValidName(name) {
+			t.Fatalf("expected %q to be valid", name)
+		}
+	}
+	for _, name := range []string{"", "   ", ".", "..", "nested/path.sql", `nested\path.sql`} {
+		if ValidName(name) {
+			t.Fatalf("expected %q to be invalid", name)
+		}
+	}
+}
+
+func TestPrivateFilesAreOwnerOnlyAndRequireEffectiveWorkspaceMembership(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
+
+	file, err := f.service.Create(f.ctx, f.privateScope(f.member), CreateInput{Name: "scratch.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.OwnerAccountID == nil || *file.OwnerAccountID != f.member.ID {
+		t.Fatalf("private file owner = %v, want %d", file.OwnerAccountID, f.member.ID)
+	}
+
+	if _, err := f.service.Get(f.ctx, f.privateScope(f.owner), file.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("owner reading another private file error = %v, want %v", err, ErrNotFound)
+	}
+	if _, err := f.service.List(f.ctx, f.privateScope(f.other), nil); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("non-workspace member list error = %v, want %v", err, ErrForbidden)
+	}
+
+	teamMember := insertTestAccount(t, f.db, "team-member-"+strconv.FormatInt(time.Now().UnixNano(), 36)+"@example.com", "Team Member")
+	if err := f.db.AddOrgMember(f.ctx, f.org.ID, teamMember.ID); err != nil {
+		t.Fatal(err)
+	}
+	team, err := f.db.InsertTeam(f.ctx, f.org.ID, "team-members", "Team Members")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.AddTeamMember(f.ctx, team.ID, teamMember.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.AddWorkspaceTeam(f.ctx, f.ws.ID, team.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.Create(f.ctx, f.privateScope(teamMember), CreateInput{Name: "team-scratch.sql"}); err != nil {
+		t.Fatalf("team-derived workspace member create private file: %v", err)
+	}
+}
+
+func TestSharedFilesRequireSharedFilePermissions(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
+	scope := f.sharedScope(f.member)
+
+	if _, err := f.service.Create(f.ctx, scope, CreateInput{Name: "team.sql"}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("create without permission error = %v, want %v", err, ErrForbidden)
+	}
+
+	f.enforcer.allowed[access.PermWsFileCreate] = true
+	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "team.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.OwnerAccountID != nil {
+		t.Fatalf("shared file owner = %v, want nil", file.OwnerAccountID)
+	}
+	if _, err := f.service.Get(f.ctx, scope, file.ID); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("read without permission error = %v, want %v", err, ErrForbidden)
+	}
+
+	f.enforcer.allowed[access.PermWsFileRead] = true
+	if _, err := f.service.Get(f.ctx, scope, file.ID); err != nil {
+		t.Fatalf("read with permission: %v", err)
+	}
+}
+
+func TestCreateRejectsInvalidObjectsAndParents(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
+	scope := f.privateScope(f.member)
+
+	if _, err := f.service.Create(f.ctx, scope, CreateInput{Name: "bad/folder.sql"}); !errors.Is(err, ErrInvalidName) {
+		t.Fatalf("invalid name error = %v, want %v", err, ErrInvalidName)
+	}
+	if _, err := f.service.Create(f.ctx, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder, MediaType: "text/plain"}); !errors.Is(err, ErrInvalidObjectType) {
+		t.Fatalf("folder media error = %v, want %v", err, ErrInvalidObjectType)
+	}
+
+	parentFile, err := f.service.Create(f.ctx, scope, CreateInput{Name: "not-a-folder.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.Create(f.ctx, scope, CreateInput{Name: "child.sql", ParentID: &parentFile.ID}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("file parent error = %v, want %v", err, ErrNotFound)
+	}
+
+	sharedParent, err := f.service.Create(f.ctx, scope, CreateInput{Name: "private-folder", ObjectType: database.FileObjectTypeFolder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.enforcer.allowed[access.PermWsFileCreate] = true
+	if _, err := f.service.Create(f.ctx, f.sharedScope(f.member), CreateInput{Name: "wrong-tree.sql", ParentID: &sharedParent.ID}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("wrong visibility parent error = %v, want %v", err, ErrNotFound)
+	}
+}
+
+func TestObjectStoreVersionsTextFilesAndKeepsKeysStableOnRename(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyVersioned})
+	scope := f.privateScope(f.member)
+
+	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql", MediaType: "text/plain", FileKind: "query"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Version != 1 || !strings.HasSuffix(first.StorageKey, "/versions/1") {
+		t.Fatalf("first version/key = %d/%q, want version 1 under versions/1", first.Version, first.StorageKey)
+	}
+
+	renamed := "renamed.sql"
+	if _, err := f.service.Update(f.ctx, scope, file.ID, UpdateInput{Name: &renamed}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := f.service.WriteContent(f.ctx, scope, file.ID, first.ContentHash, strings.NewReader("select 2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Version != 2 || !strings.HasSuffix(second.StorageKey, "/versions/2") {
+		t.Fatalf("second version/key = %d/%q, want version 2 under versions/2", second.Version, second.StorageKey)
+	}
+	if !strings.Contains(second.StorageKey, "/"+strconv.FormatInt(file.ID, 10)+"/") || strings.Contains(second.StorageKey, "renamed.sql") {
+		t.Fatalf("object-store key %q should be opaque and file-id based", second.StorageKey)
+	}
+
+	result, err := f.service.ReadContent(f.ctx, scope, file.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Reader.Close()
+	body, err := io.ReadAll(result.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "select 2" {
+		t.Fatalf("content = %q, want select 2", string(body))
+	}
+}
+
+func TestWriteContentRequiresCurrentHashAndRejectsFolders(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
+	scope := f.privateScope(f.member)
+
+	folder, err := f.service.Create(f.ctx, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.WriteContent(f.ctx, scope, folder.ID, "", strings.NewReader("nope")); !errors.Is(err, ErrFolderContent) {
+		t.Fatalf("folder write error = %v, want %v", err, ErrFolderContent)
+	}
+
+	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 2")); !errors.Is(err, ErrPreconditionRequired) {
+		t.Fatalf("missing if-match error = %v, want %v", err, ErrPreconditionRequired)
+	}
+	if _, err := f.service.WriteContent(f.ctx, scope, file.ID, "wrong", strings.NewReader("select 2")); !errors.Is(err, ErrStaleContent) {
+		t.Fatalf("stale if-match error = %v, want %v", err, ErrStaleContent)
+	}
+	if _, err := f.service.WriteContent(f.ctx, scope, file.ID, first.ContentHash, strings.NewReader("select 2")); err != nil {
+		t.Fatalf("matching if-match write: %v", err)
+	}
+}
+
+func TestWorkspaceDirectoryRelocatesContentAndPrunesOldPath(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeFile, RevisionPolicy: RevisionPolicyDisabled})
+	scope := f.privateScope(f.member)
+
+	folder, err := f.service.Create(f.ctx, scope, CreateInput{Name: "reports", ObjectType: database.FileObjectTypeFolder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "daily.sql", ParentID: &folder.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select count(*)"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader, _, err := f.store.Get(f.ctx, first.StorageKey); err != nil {
+		t.Fatalf("stored visible file missing before rename: %v", err)
+	} else {
+		reader.Close()
+	}
+
+	renamedFolder := "renamed-reports"
+	if _, err := f.service.Update(f.ctx, scope, folder.ID, UpdateInput{Name: &renamedFolder}); err != nil {
+		t.Fatal(err)
+	}
+	currentFile, found, err := f.db.GetWorkspaceFile(f.ctx, file.ID)
+	if err != nil || !found {
+		t.Fatalf("get child after rename found=%v err=%v", found, err)
+	}
+	current, found, err := f.db.CurrentWorkspaceFileContent(f.ctx, currentFile)
+	if err != nil || !found {
+		t.Fatalf("current content after rename found=%v err=%v", found, err)
+	}
+	wantSuffix := "organizations/" + f.org.Slug + "/workspaces/" + workspaceStorageSegment(f.ws) + "/my-files/" + strconv.FormatInt(f.member.ID, 10) + "/renamed-reports/daily.sql"
+	if current.StorageKey != wantSuffix {
+		t.Fatalf("storage key = %q, want %q", current.StorageKey, wantSuffix)
+	}
+	if _, _, err := f.store.Get(f.ctx, first.StorageKey); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old key get error = %v, want %v", err, os.ErrNotExist)
+	}
+	if _, err := os.Stat(filepath.Join(f.store.Root(), filepath.FromSlash("organizations/"+f.org.Slug+"/workspaces/"+workspaceStorageSegment(f.ws)+"/my-files/"+strconv.FormatInt(f.member.ID, 10)+"/reports"))); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old directory stat error = %v, want %v", err, os.ErrNotExist)
+	}
+}
+
+func TestWorkspaceDirectoryRejectsMoveCyclesAndStorageCollisions(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeFile, RevisionPolicy: RevisionPolicyDisabled})
+	scope := f.privateScope(f.member)
+
+	parent, err := f.service.Create(f.ctx, scope, CreateInput{Name: "parent", ObjectType: database.FileObjectTypeFolder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := f.service.Create(f.ctx, scope, CreateInput{Name: "child", ParentID: &parent.ID, ObjectType: database.FileObjectTypeFolder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.Update(f.ctx, scope, parent.ID, UpdateInput{ParentID: &child.ID, ParentIDSet: true}); !errors.Is(err, ErrMoveCycle) {
+		t.Fatalf("move cycle error = %v, want %v", err, ErrMoveCycle)
+	}
+	if _, err := f.service.Update(f.ctx, scope, parent.ID, UpdateInput{}); !errors.Is(err, ErrMissingUpdate) {
+		t.Fatalf("missing update error = %v, want %v", err, ErrMissingUpdate)
+	}
+
+	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "collision.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newName := "collision-renamed.sql"
+	collisionKey := strings.TrimSuffix(content.StorageKey, "collision.sql") + newName
+	if _, err := f.store.Put(f.ctx, collisionKey, strings.NewReader("untracked")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.Update(f.ctx, scope, file.ID, UpdateInput{Name: &newName}); !errors.Is(err, ErrStorageDestinationExists) {
+		t.Fatalf("storage collision error = %v, want %v", err, ErrStorageDestinationExists)
+	}
+}
+
+func TestDeleteRemovesMetadataTreeAndStoredContent(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
+	scope := f.privateScope(f.member)
+
+	folder, err := f.service.Create(f.ctx, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "query.sql", ParentID: &folder.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.service.Delete(f.ctx, scope, folder.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.Get(f.ctx, scope, file.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("get deleted child error = %v, want %v", err, ErrNotFound)
+	}
+	if _, _, err := f.store.Get(f.ctx, content.StorageKey); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stored content get error = %v, want %v", err, os.ErrNotExist)
+	}
+}

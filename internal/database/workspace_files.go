@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -15,6 +14,11 @@ const (
 	FileVisibilityShared  = "shared"
 	FileObjectTypeFile    = "file"
 	FileObjectTypeFolder  = "folder"
+)
+
+var (
+	ErrInvalidWorkspaceFileParent = errors.New("invalid workspace file parent")
+	ErrWorkspaceFileMoveCycle     = errors.New("workspace file cannot be moved into itself or its descendant")
 )
 
 type WorkspaceFile struct {
@@ -54,6 +58,7 @@ type WorkspaceFileContent struct {
 	CreatedAt            time.Time  `bun:",notnull" json:"created_at"`
 }
 
+// InsertWorkspaceFile creates a file or folder after validating the parent tree.
 func (db *DB) InsertWorkspaceFile(ctx context.Context, file *WorkspaceFile) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -65,7 +70,7 @@ func (db *DB) InsertWorkspaceFile(ctx context.Context, file *WorkspaceFile) erro
 		}
 		if !found || parent.WorkspaceID != file.WorkspaceID || parent.Visibility != file.Visibility ||
 			!sameNullableID(parent.OwnerAccountID, file.OwnerAccountID) || parent.ObjectType != FileObjectTypeFolder {
-			return fmt.Errorf("invalid parent folder")
+			return ErrInvalidWorkspaceFileParent
 		}
 	}
 	now := time.Now()
@@ -75,6 +80,7 @@ func (db *DB) InsertWorkspaceFile(ctx context.Context, file *WorkspaceFile) erro
 	return err
 }
 
+// GetWorkspaceFile returns a non-deleted workspace file/folder by ID.
 func (db *DB) GetWorkspaceFile(ctx context.Context, id int64) (WorkspaceFile, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -87,6 +93,7 @@ func (db *DB) GetWorkspaceFile(ctx context.Context, id int64) (WorkspaceFile, bo
 	return file, err == nil, err
 }
 
+// ListWorkspaceFiles returns direct children for a workspace file tree.
 func (db *DB) ListWorkspaceFiles(ctx context.Context, workspaceID int64, visibility string, ownerAccountID *int64, parentID *int64) ([]WorkspaceFile, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -110,6 +117,7 @@ func (db *DB) ListWorkspaceFiles(ctx context.Context, workspaceID int64, visibil
 	return files, nil
 }
 
+// WorkspaceFilePath returns the visible path segments for a file/folder.
 func (db *DB) WorkspaceFilePath(ctx context.Context, file WorkspaceFile) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -123,7 +131,7 @@ func (db *DB) WorkspaceFilePath(ctx context.Context, file WorkspaceFile) ([]stri
 		}
 		if !found || parent.WorkspaceID != file.WorkspaceID || parent.Visibility != file.Visibility ||
 			!sameNullableID(parent.OwnerAccountID, file.OwnerAccountID) || parent.ObjectType != FileObjectTypeFolder {
-			return nil, fmt.Errorf("invalid parent folder")
+			return nil, ErrInvalidWorkspaceFileParent
 		}
 		names = append([]string{parent.Name}, names...)
 		parentID = parent.ParentID
@@ -131,6 +139,109 @@ func (db *DB) WorkspaceFilePath(ctx context.Context, file WorkspaceFile) ([]stri
 	return names, nil
 }
 
+// ListWorkspaceFileSubtree returns a file/folder and all non-deleted descendants.
+func (db *DB) ListWorkspaceFileSubtree(ctx context.Context, fileID int64) ([]WorkspaceFile, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var files []WorkspaceFile
+	err := db.NewRaw(`
+WITH RECURSIVE subtree AS (
+    SELECT *
+    FROM workspace_files
+    WHERE id = ? AND deleted_at IS NULL
+  UNION ALL
+    SELECT wf.*
+    FROM workspace_files wf
+    JOIN subtree parent ON wf.parent_id = parent.id
+    WHERE wf.deleted_at IS NULL
+)
+SELECT * FROM subtree`, fileID).Scan(ctx, &files)
+	return files, err
+}
+
+// ListWorkspaceFileSubtreeContents returns all content rows for a file subtree.
+func (db *DB) ListWorkspaceFileSubtreeContents(ctx context.Context, fileID int64) ([]WorkspaceFileContent, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var contents []WorkspaceFileContent
+	err := db.NewRaw(`
+WITH RECURSIVE subtree AS (
+    SELECT id
+    FROM workspace_files
+    WHERE id = ? AND deleted_at IS NULL
+  UNION ALL
+    SELECT wf.id
+    FROM workspace_files wf
+    JOIN subtree parent ON wf.parent_id = parent.id
+    WHERE wf.deleted_at IS NULL
+)
+SELECT content.*
+FROM workspace_file_contents content
+JOIN subtree file ON file.id = content.file_id`, fileID).Scan(ctx, &contents)
+	return contents, err
+}
+
+// UpdateWorkspaceFileLocation renames/moves a file and updates planned storage keys atomically.
+func (db *DB) UpdateWorkspaceFileLocation(ctx context.Context, file WorkspaceFile, actorID int64, storageKeys map[int64]string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := validateWorkspaceFileLocation(ctx, tx, file); err != nil {
+			return err
+		}
+		result, err := tx.NewUpdate().Model(&file).
+			Column("name", "parent_id").
+			Set("updated_by = ?, updated_at = ?", actorID, time.Now()).
+			Where("id = ? AND deleted_at IS NULL", file.ID).
+			Exec(ctx)
+		if err != nil {
+			return err
+		}
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rows == 0 {
+			return sql.ErrNoRows
+		}
+		for contentID, key := range storageKeys {
+			if _, err := tx.NewUpdate().TableExpr("workspace_file_contents").
+				Set("storage_key = ?", key).
+				Where("id = ?", contentID).
+				Exec(ctx); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// DeleteWorkspaceFileTree soft-deletes a file/folder and all non-deleted descendants.
+func (db *DB) DeleteWorkspaceFileTree(ctx context.Context, fileID, actorID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	_, err := db.NewRaw(`
+WITH RECURSIVE subtree AS (
+    SELECT id
+    FROM workspace_files
+    WHERE id = ? AND deleted_at IS NULL
+  UNION ALL
+    SELECT wf.id
+    FROM workspace_files wf
+    JOIN subtree parent ON wf.parent_id = parent.id
+    WHERE wf.deleted_at IS NULL
+)
+UPDATE workspace_files
+SET deleted_at = ?, updated_by = ?, updated_at = ?
+WHERE id IN (SELECT id FROM subtree)`, fileID, time.Now(), actorID, time.Now()).Exec(ctx)
+	return err
+}
+
+// GetWorkspaceFileContent returns one content metadata row by ID.
 func (db *DB) GetWorkspaceFileContent(ctx context.Context, contentID int64) (WorkspaceFileContent, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -143,6 +254,7 @@ func (db *DB) GetWorkspaceFileContent(ctx context.Context, contentID int64) (Wor
 	return content, err == nil, err
 }
 
+// CurrentWorkspaceFileContent returns the current content metadata for a file.
 func (db *DB) CurrentWorkspaceFileContent(ctx context.Context, file WorkspaceFile) (WorkspaceFileContent, bool, error) {
 	if file.CurrentContentID == nil {
 		return WorkspaceFileContent{}, false, nil
@@ -150,6 +262,7 @@ func (db *DB) CurrentWorkspaceFileContent(ctx context.Context, file WorkspaceFil
 	return db.GetWorkspaceFileContent(ctx, *file.CurrentContentID)
 }
 
+// SaveWorkspaceFileContent stores content metadata, either replacing current or appending a version.
 func (db *DB) SaveWorkspaceFileContent(ctx context.Context, fileID, actorID int64, content WorkspaceFileContent, versioned bool) (WorkspaceFileContent, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
@@ -210,31 +323,32 @@ func (db *DB) SaveWorkspaceFileContent(ctx context.Context, fileID, actorID int6
 	return content, err
 }
 
-func (db *DB) IsEffectiveWorkspaceMember(ctx context.Context, orgID, workspaceID, accountID int64) (bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
-	var exists bool
-	err := db.NewRaw(`
-SELECT EXISTS (
-    SELECT 1 FROM workspace_members wm
-    JOIN workspaces w ON w.id = wm.workspace_id AND w.owner_type = 'org' AND w.owner_id = ?
-    JOIN org_members om ON om.org_id = ? AND om.account_id = wm.account_id
-    WHERE wm.workspace_id = ? AND wm.account_id = ?
-    UNION
-    SELECT 1 FROM workspace_teams wt
-    JOIN workspaces w ON w.id = wt.workspace_id AND w.owner_type = 'org' AND w.owner_id = ?
-    JOIN teams t ON t.id = wt.team_id AND t.org_id = ?
-    JOIN team_members tm ON tm.team_id = t.id AND tm.account_id = ?
-    JOIN org_members om ON om.org_id = ? AND om.account_id = tm.account_id
-    WHERE wt.workspace_id = ?
-)`, orgID, orgID, workspaceID, accountID, orgID, orgID, accountID, orgID, workspaceID).Scan(ctx, &exists)
-	return exists, err
-}
-
 func sameNullableID(left, right *int64) bool {
 	if left == nil || right == nil {
 		return left == nil && right == nil
 	}
 	return *left == *right
+}
+
+func validateWorkspaceFileLocation(ctx context.Context, exec bun.IDB, file WorkspaceFile) error {
+	parentID := file.ParentID
+	for parentID != nil {
+		if *parentID == file.ID {
+			return ErrWorkspaceFileMoveCycle
+		}
+		var parent WorkspaceFile
+		err := exec.NewSelect().Model(&parent).Where("id = ? AND deleted_at IS NULL", *parentID).Scan(ctx)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrInvalidWorkspaceFileParent
+		}
+		if err != nil {
+			return err
+		}
+		if parent.WorkspaceID != file.WorkspaceID || parent.Visibility != file.Visibility ||
+			!sameNullableID(parent.OwnerAccountID, file.OwnerAccountID) || parent.ObjectType != FileObjectTypeFolder {
+			return ErrInvalidWorkspaceFileParent
+		}
+		parentID = parent.ParentID
+	}
+	return nil
 }
