@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createIdeStore, newScratchTab, newConnectionTab, newFileTab } from './useIdeStore'
+import { createIdeStore, newScratchTab, newConnectionTab, newFileTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
 
 vi.mock('idb-keyval', () => ({
   get: vi.fn(() => Promise.resolve(null)),
@@ -149,5 +149,32 @@ describe('useIdeStore', () => {
     store.getState().updateTabEtag(tab.id, 'def456')
     expect(store.getState().tabs[0].isDirty).toBe(false)
     expect(store.getState().tabs[0].etag).toBe('def456')
+  })
+
+  it('openConsole creates a numbered scratch tab with yState', () => {
+    const fakeYState = [1, 2, 3]
+    store.getState().openConsole(mockWorkspace, fakeYState)
+    const tabs = store.getState().tabs
+    expect(tabs).toHaveLength(1)
+    expect(tabs[0].id).toBe('scratch:1:1')
+    expect(tabs[0].title).toBe('Console 1')
+    expect(tabs[0].kind).toBe('scratch')
+    expect(tabs[0].content).toBe(DEFAULT_CONSOLE_CONTENT)
+    expect(tabs[0].yState).toEqual(fakeYState)
+  })
+
+  it('openConsole increments counter on each call', () => {
+    store.getState().openConsole(mockWorkspace, [1])
+    store.getState().openConsole(mockWorkspace, [2])
+    const tabs = store.getState().tabs
+    expect(tabs[0].id).toBe('scratch:1:1')
+    expect(tabs[1].id).toBe('scratch:1:2')
+    expect(tabs[1].title).toBe('Console 2')
+    expect(store.getState().nextConsoleNumber).toBe(2)
+  })
+
+  it('openConsole sets the new tab as active', () => {
+    store.getState().openConsole(mockWorkspace, [])
+    expect(store.getState().activeTabId).toBe('scratch:1:1')
   })
 })

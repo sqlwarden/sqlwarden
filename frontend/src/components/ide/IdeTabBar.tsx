@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import * as Y from 'yjs'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   Cancel01Icon,
@@ -16,7 +17,7 @@ import {
 import { Button } from '#/components/ui/button'
 import type { Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
-import { useIde, newScratchTab, type EditorTab, type TabKind } from './useIdeStore'
+import { useIde, DEFAULT_CONSOLE_CONTENT, type EditorTab, type TabKind } from './useIdeStore'
 
 type IdeTabBarProps = {
   orgSlug: string
@@ -35,14 +36,18 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
   const activeWorkspaceId = useIde((s) => s.activeWorkspaceId)
   const activeTabId = useIde((s) => s.activeTabId)
   const tabs = useIde((s) => s.tabs)
-  const openTab = useIde((s) => s.openTab)
+  const openConsole = useIde((s) => s.openConsole)
   const closeTab = useIde((s) => s.closeTab)
   const setActiveTab = useIde((s) => s.setActiveTab)
 
   const workspaceTabs = tabs.filter((t) => t.workspaceId === (activeWorkspaceId ?? workspace.id))
 
-  function handleNewScratch() {
-    openTab(newScratchTab(workspace))
+  function handleNewConsole() {
+    const tmpDoc = new Y.Doc()
+    tmpDoc.getText('content').insert(0, DEFAULT_CONSOLE_CONTENT)
+    const yState = Array.from(Y.encodeStateAsUpdate(tmpDoc))
+    tmpDoc.destroy()
+    openConsole(workspace, yState)
   }
 
   function handleCloseRequest(tab: EditorTab) {
@@ -69,7 +74,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
         ))}
         <button
           type="button"
-          onClick={handleNewScratch}
+          onClick={handleNewConsole}
           className="flex h-8 shrink-0 items-center px-3 text-xs text-muted-foreground transition-colors hover:text-foreground"
           aria-label="New SQL console"
         >

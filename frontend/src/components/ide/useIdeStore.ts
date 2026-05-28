@@ -19,6 +19,10 @@ export type EditorTab = {
   etag?: string
   isDirty?: boolean
   content: string
+  /** Canonical Y.js initial state (number[] so it survives JSON persist).
+   *  Set once at creation time by the opening window; applied by all windows
+   *  to guarantee identical Y.js histories and correct incremental sync. */
+  yState?: number[]
 }
 
 export type IdeState = {
@@ -28,6 +32,7 @@ export type IdeState = {
   sidebarCollapsed: boolean
   activeTabId?: string
   tabs: EditorTab[]
+  nextConsoleNumber: number
 }
 
 export type IdeActions = {
@@ -41,6 +46,9 @@ export type IdeActions = {
   setMaximizedPane: (pane: IdeState['maximizedPane']) => void
   setMaximizedSidebarPane: (pane: IdeState['maximizedSidebarPane']) => void
   setSidebarCollapsed: (collapsed: boolean) => void
+  /** Opens a new numbered console tab. Pass yState (encoded Y.Doc) so all windows
+   *  that receive this tab share the same canonical Y.js initial history. */
+  openConsole: (workspace: Workspace, yState: number[]) => void
 }
 
 // ─── Store factory ─────────────────────────────────────────────────────────────
@@ -67,6 +75,7 @@ export function createIdeStore(orgSlug: string) {
         sidebarCollapsed: false,
         activeTabId: undefined,
         tabs: [],
+        nextConsoleNumber: 0,
 
         setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
@@ -108,6 +117,25 @@ export function createIdeStore(orgSlug: string) {
         setMaximizedPane: (pane) => set({ maximizedPane: pane }),
         setMaximizedSidebarPane: (pane) => set({ maximizedSidebarPane: pane }),
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+
+        openConsole: (workspace, yState) =>
+          set((s) => {
+            const num = s.nextConsoleNumber + 1
+            const tab: EditorTab = {
+              id: `scratch:${workspace.id}:${num}`,
+              workspaceId: workspace.id,
+              title: `Console ${num}`,
+              kind: 'scratch',
+              content: DEFAULT_CONSOLE_CONTENT,
+              yState,
+            }
+            const exists = s.tabs.some((t) => t.id === tab.id)
+            return {
+              nextConsoleNumber: num,
+              activeTabId: tab.id,
+              tabs: exists ? s.tabs : [...s.tabs, tab],
+            }
+          }),
       }),
       {
         name: `sqlwarden.ide.${orgSlug}`,
@@ -131,6 +159,10 @@ export function useIde<T>(selector: (state: IdeState & IdeActions) => T): T {
 
 // ─── Tab factory functions ──────────────────────────────────────────────────────
 
+export const DEFAULT_CONSOLE_CONTENT = 'SELECT *\nFROM \nLIMIT 100;'
+
+/** @deprecated Use the openConsole store action instead, which gives consoles
+ *  stable numbered IDs and embeds a canonical Y.js initial state for cross-window sync. */
 export function newScratchTab(workspace: Workspace): EditorTab {
   const ts = Date.now()
   return {
@@ -138,7 +170,7 @@ export function newScratchTab(workspace: Workspace): EditorTab {
     workspaceId: workspace.id,
     title: `Console ${new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
     kind: 'scratch',
-    content: 'SELECT *\nFROM \nLIMIT 100;',
+    content: DEFAULT_CONSOLE_CONTENT,
   }
 }
 

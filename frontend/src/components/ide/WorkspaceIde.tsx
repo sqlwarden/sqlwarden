@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
+import * as Y from 'yjs'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -17,7 +18,8 @@ import {
   createIdeStore,
   IdeStoreContext,
   useIde,
-  newScratchTab,
+  DEFAULT_CONSOLE_CONTENT,
+  type EditorTab,
 } from './useIdeStore'
 import { DatabasePanel } from './DatabasePanel'
 import { FilesPanel } from './FilesPanel'
@@ -44,24 +46,61 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
   useEffect(() => {
     const channel = new BroadcastChannel(`sqlwarden:store:${orgSlug}`)
     const prevEtags = new Map<string, string>()
+    const prevTabIds = new Set<string>()
     let applyingRemote = false
 
+    // Seed prev state with whatever is already in the store on mount so we
+    // don't broadcast existing tabs/etags as "new" on the first subscription tick.
+    const initial = store.getState()
+    for (const tab of initial.tabs) {
+      prevTabIds.add(tab.id)
+      if (tab.etag !== undefined) prevEtags.set(tab.id, tab.etag)
+    }
+
     function handleRemote(event: MessageEvent) {
-      const msg = event.data as { type?: string; tabId?: string; etag?: string }
-      if (msg?.type !== 'etag-update' || !msg.tabId || !msg.etag) return
+      const msg = event.data as Record<string, unknown>
+      if (!msg?.type) return
       applyingRemote = true
-      store.getState().updateTabEtag(msg.tabId, msg.etag)
+      if (msg.type === 'etag-update' && typeof msg.tabId === 'string' && typeof msg.etag === 'string') {
+        store.getState().updateTabEtag(msg.tabId, msg.etag)
+      } else if (msg.type === 'tab-opened' && msg.tab) {
+        store.getState().openTab(msg.tab as EditorTab)
+      } else if (msg.type === 'tab-closed' && typeof msg.tabId === 'string') {
+        store.getState().closeTab(msg.tabId)
+      }
       applyingRemote = false
     }
 
     const unsub = store.subscribe((state) => {
-      if (applyingRemote) return
-      for (const tab of state.tabs) {
-        const prev = prevEtags.get(tab.id)
-        if (tab.etag !== undefined && tab.etag !== prev) {
-          prevEtags.set(tab.id, tab.etag)
-          channel.postMessage({ type: 'etag-update', tabId: tab.id, etag: tab.etag })
+      const currentTabIds = new Set(state.tabs.map((t) => t.id))
+
+      if (!applyingRemote) {
+        // Etag changes
+        for (const tab of state.tabs) {
+          const prev = prevEtags.get(tab.id)
+          if (tab.etag !== undefined && tab.etag !== prev) {
+            channel.postMessage({ type: 'etag-update', tabId: tab.id, etag: tab.etag })
+          }
         }
+        // Scratch tab opens — file tabs are per-window, consoles are shared
+        for (const tab of state.tabs) {
+          if (!prevTabIds.has(tab.id) && tab.kind === 'scratch') {
+            channel.postMessage({ type: 'tab-opened', tab })
+          }
+        }
+        // Scratch tab closes
+        for (const id of prevTabIds) {
+          if (!currentTabIds.has(id) && id.startsWith('scratch:')) {
+            channel.postMessage({ type: 'tab-closed', tabId: id })
+          }
+        }
+      }
+
+      // Always update prev state (even when applyingRemote) to stay current.
+      prevTabIds.clear()
+      currentTabIds.forEach((id) => prevTabIds.add(id))
+      for (const tab of state.tabs) {
+        if (tab.etag !== undefined) prevEtags.set(tab.id, tab.etag)
       }
     })
 
@@ -318,7 +357,7 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
 
   const activeTabId = useIde((s) => s.activeTabId)
   const tabs = useIde((s) => s.tabs)
-  const openTab = useIde((s) => s.openTab)
+  const openConsole = useIde((s) => s.openConsole)
   const updateTabContent = useIde((s) => s.updateTabContent)
   const updateTabEtag = useIde((s) => s.updateTabEtag)
 
@@ -328,18 +367,35 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
     [tabs, workspace.id],
   )
 
+  // Stable helper: creates the Y.js initial state and opens a new console.
+  const createConsole = useCallback(() => {
+    const tmpDoc = new Y.Doc()
+    tmpDoc.getText('content').insert(0, DEFAULT_CONSOLE_CONTENT)
+    const yState = Array.from(Y.encodeStateAsUpdate(tmpDoc))
+    tmpDoc.destroy()
+    openConsole(workspace, yState)
+  }, [workspace, openConsole])
+
   // ── Tab → Y.Doc lifecycle ──────────────────────────────────────────────────
-  // Create a doc for each new tab seeded from the persisted content snapshot.
-  // Destroy docs when tabs close.
   const trackedIdsRef = useRef(new Set<string>())
   useEffect(() => {
     const currentIds = new Set(wsTabs.map((t) => t.id))
     for (const tab of wsTabs) {
       if (!trackedIdsRef.current.has(tab.id)) {
-        // File tabs start empty — peer sync or useFileContent owns content.
-        // Scratch/connection tabs seed from the persisted IndexedDB snapshot.
-        const initialContent = tab.kind === 'file' ? undefined : tab.content
-        registry.getOrCreate(tab.id, initialContent)
+        // All tabs start with an empty Y.Doc.
+        // File tabs: useFileContent populates via server fetch.
+        // Scratch tabs with yState: applied below via 'server-load' (broadcasts to peers).
+        // Connection tabs / legacy scratch (no yState): seed from tab.content via 'init'.
+        const doc = registry.getOrCreate(
+          tab.id,
+          tab.yState ? undefined : tab.kind === 'file' ? undefined : tab.content,
+        )
+        if (tab.yState && doc.getText('content').length === 0) {
+          // Apply canonical initial state so all windows share identical Y.js history.
+          // 'server-load' origin broadcasts the full state so peers that joined
+          // before us can sync without making a second request.
+          Y.applyUpdate(doc, new Uint8Array(tab.yState), 'server-load')
+        }
       }
     }
     for (const id of trackedIdsRef.current) {
@@ -377,10 +433,10 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
     return () => cleanups.forEach((c) => c())
   }, [wsTabs, registry, updateTabContent])
 
-  // ── Ensure at least one scratch tab ────────────────────────────────────────
+  // ── Ensure at least one console tab ────────────────────────────────────────
   useEffect(() => {
-    if (wsTabs.length === 0) openTab(newScratchTab(workspace))
-  }, [workspace, wsTabs, openTab])
+    if (wsTabs.length === 0) createConsole()
+  }, [wsTabs, createConsole])
 
   // ── ⌘S / Ctrl+S: save file tab in-place ────────────────────────────────────
   useEffect(() => {
@@ -422,7 +478,11 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   })
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  const activeDoc = activeTab ? registry.get(activeTab.id) : undefined
+  // getOrCreate is idempotent — safe to call in render. This ensures the
+  // Y.Doc exists immediately after Zustand rehydrates from IndexedDB, so
+  // the editor mounts without waiting for the lifecycle useEffect to run.
+  // The lifecycle effect still handles yState, the observer, and cleanup.
+  const activeDoc = activeTab ? registry.getOrCreate(activeTab.id) : undefined
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-background">
@@ -439,17 +499,14 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
               Failed to load file content.
             </div>
           ) : (
-            <SqlEditor
-              key={activeTab.id}
-              doc={activeDoc}
-              className="h-full"
-            />
+            <SqlEditor key={activeTab.id} doc={activeDoc} className="h-full" />
           )
-        ) : (
+        ) : !activeTab ? (
+          // True empty state — no tabs open at all.
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             Open a connection or file to start querying.
           </div>
-        )}
+        ) : null}
       </div>
     </section>
   )
