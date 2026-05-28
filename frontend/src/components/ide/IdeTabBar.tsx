@@ -3,7 +3,7 @@ import {
   Cancel01Icon,
   DatabaseIcon,
   File01Icon,
-  Terminal01Icon,
+  TerminalIcon,
 } from '@hugeicons/core-free-icons'
 import type { Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
@@ -14,7 +14,7 @@ type IdeTabBarProps = {
 }
 
 const TAB_ICONS: Record<TabKind, typeof DatabaseIcon> = {
-  scratch: Terminal01Icon,
+  scratch: TerminalIcon,
   file: File01Icon,
   connection: DatabaseIcon,
 }
