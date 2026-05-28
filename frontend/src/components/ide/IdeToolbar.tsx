@@ -46,6 +46,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const connItems = connections.data?.items ?? []
   const activeConnection = connItems.find((c) => c.id === activeTab?.connectionId)
   const activeEnv = envItems.find((e) => e.id === activeConnection?.environment_id)
+  const hasConnections = connItems.length > 0
 
   function selectConnection(conn: Connection) {
     if (activeTabId) setTabConnection(activeTabId, conn.id)
@@ -56,9 +57,34 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     setMaximizedPane(maximizedPane === 'editor' ? null : 'editor')
   }
 
+  // Derive connection selector label + disabled state
+  const selectorDisabled = !activeTab || !hasConnections || connections.isLoading
+  const selectorLabel = (() => {
+    if (connections.isLoading) return 'Loading connections…'
+    if (!hasConnections) return 'No connections'
+    if (activeConnection) return null // rendered inline below
+    return 'Select connection…'
+  })()
+
   return (
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-2">
-      {/* Connection selector */}
+      {/* Run button — left */}
+      <Button
+        type="button"
+        size="sm"
+        disabled={!activeConnection}
+        onClick={() => {
+          // TODO: wire to query execution API
+        }}
+      >
+        <HugeiconsIcon icon={PlayIcon} size={13} strokeWidth={2} data-icon="inline-start" />
+        Run
+        <kbd className="ml-1 hidden font-mono text-[10px] opacity-60 sm:inline">⌘↵</kbd>
+      </Button>
+
+      <div className="flex-1" />
+
+      {/* Connection selector — right */}
       <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
         <PopoverTrigger
           render={
@@ -66,7 +92,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
               type="button"
               variant="outline"
               size="sm"
-              disabled={!activeTab}
+              disabled={selectorDisabled}
               className="h-7 min-w-0 max-w-64 gap-2 text-xs"
             />
           }
@@ -80,12 +106,17 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
               )}
             </>
           ) : (
-            <span className="text-muted-foreground">Select connection…</span>
+            <span className="text-muted-foreground">{selectorLabel}</span>
           )}
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 p-1">
-          {envItems.length === 0 ? (
-            <div className="px-2 py-3 text-xs text-muted-foreground">No connections available.</div>
+        <PopoverContent align="end" className="w-72 p-1">
+          {connections.isLoading ? (
+            <div className="px-2 py-3 text-xs text-muted-foreground">Loading connections…</div>
+          ) : !hasConnections ? (
+            <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">No connections</p>
+              <p className="mt-0.5">Add a connection to this workspace first.</p>
+            </div>
           ) : (
             envItems.map((env, idx) => {
               const envConns = connItems.filter((c) => c.environment_id === env.id)
@@ -111,7 +142,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
                       )}
                     >
                       <HugeiconsIcon icon={DatabaseIcon} size={13} strokeWidth={2} className="shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate">{conn.name}</span>
+                      <span className="min-w-0 flex-1 truncate font-mono">{conn.name}</span>
                     </button>
                   ))}
                 </div>
@@ -120,22 +151,6 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           )}
         </PopoverContent>
       </Popover>
-
-      <div className="flex-1" />
-
-      {/* Run button */}
-      <Button
-        type="button"
-        size="sm"
-        disabled={!activeConnection}
-        onClick={() => {
-          // TODO: wire to query execution API
-        }}
-      >
-        <HugeiconsIcon icon={PlayIcon} size={13} strokeWidth={2} data-icon="inline-start" />
-        Run
-        <kbd className="ml-1 hidden font-mono text-[10px] opacity-60 sm:inline">⌘↵</kbd>
-      </Button>
 
       {/* Maximize toggle */}
       <Button

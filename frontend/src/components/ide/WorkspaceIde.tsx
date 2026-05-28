@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { DatabaseLightningIcon, SidebarLeft01Icon } from '@hugeicons/core-free-icons'
-import { Button } from '#/components/ui/button'
+import { DatabaseLightningIcon } from '@hugeicons/core-free-icons'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import {
   ResizableHandle,
@@ -53,8 +52,6 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
 function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspaces: Workspace[] }) {
   const activeWorkspaceId = useIde((s) => s.activeWorkspaceId)
   const setActiveWorkspace = useIde((s) => s.setActiveWorkspace)
-  const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
-  const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
 
   useEffect(() => {
     if (!activeWorkspaceId && workspaces.length > 0) {
@@ -67,22 +64,10 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
 
   return (
     <div className="-mx-4 -my-6 flex h-svh min-h-0 flex-col overflow-hidden bg-background md:-mx-6">
-      {/* Top bar: logo icon + sidebar toggle + workspace tabs */}
+      {/* Top bar: logo + workspace tabs */}
       <div className="flex h-10 shrink-0 items-stretch border-b border-border">
-        <div className="flex shrink-0 items-center border-r border-border">
-          <div className="flex w-10 items-center justify-center">
-            <HugeiconsIcon icon={DatabaseLightningIcon} size={16} strokeWidth={2} className="text-primary" />
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Toggle sidebar"
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="mr-1"
-          >
-            <HugeiconsIcon icon={SidebarLeft01Icon} size={15} strokeWidth={2} className={cn('transition-opacity', sidebarCollapsed && 'opacity-40')} />
-          </Button>
+        <div className="flex w-10 shrink-0 items-center justify-center border-r border-border">
+          <HugeiconsIcon icon={DatabaseLightningIcon} size={16} strokeWidth={2} className="text-primary" />
         </div>
         <div className="flex min-w-0 flex-1 items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {workspaces.map((ws) => (
@@ -132,10 +117,11 @@ function WorkspaceTab({
 
 function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
   const sidebarRef = useRef<PanelImperativeHandle>(null)
+  const isDraggingRef = useRef(false)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
 
-  // Sync collapse/expand from store into the panel
+  // Sync store → panel (e.g. on initial mount with persisted state)
   useEffect(() => {
     if (sidebarCollapsed) {
       sidebarRef.current?.collapse()
@@ -159,7 +145,21 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
       >
         <IdeSidebar orgSlug={orgSlug} workspace={workspace} />
       </ResizablePanel>
-      <ResizableHandle withHandle />
+
+      {/* Handle doubles as a collapse/expand toggle on click */}
+      <ResizableHandle
+        withHandle
+        onMouseDown={() => { isDraggingRef.current = false }}
+        onMouseMove={() => { isDraggingRef.current = true }}
+        onClick={() => {
+          if (!isDraggingRef.current) {
+            setSidebarCollapsed(!sidebarCollapsed)
+          }
+          isDraggingRef.current = false
+        }}
+        className="w-1.5 cursor-col-resize transition-colors hover:bg-primary/15 active:bg-primary/20"
+      />
+
       <ResizablePanel defaultSize="78%" minSize="45%" className="overflow-hidden">
         <IdeEditorAndResults orgSlug={orgSlug} workspace={workspace} />
       </ResizablePanel>
@@ -289,7 +289,6 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
 
-  // Auto-open a scratch tab if this workspace has none
   useEffect(() => {
     const wsTabCount = tabs.filter((t) => t.workspaceId === workspace.id).length
     if (wsTabCount === 0) {
