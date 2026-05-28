@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -27,6 +27,7 @@ import {
   DEFAULT_CONSOLE_CONTENT,
   type EditorTab,
 } from './useIdeStore'
+import { SaveAsDialog } from './SaveAsDialog'
 import { DatabasePanel } from './DatabasePanel'
 import { FilesPanel } from './FilesPanel'
 import { IdeToolbar } from './IdeToolbar'
@@ -360,10 +361,12 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
 
 function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
   const registry = useYDocRegistry()
+  const [createFileOpen, setCreateFileOpen] = useState(false)
 
   const activeTabId = useIde((s) => s.activeTabId)
   const tabs = useIde((s) => s.tabs)
   const openConsole = useIde((s) => s.openConsole)
+  const openTab = useIde((s) => s.openTab)
   const updateTabContent = useIde((s) => s.updateTabContent)
   const updateTabEtag = useIde((s) => s.updateTabEtag)
 
@@ -488,6 +491,7 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   const activeDoc = activeTab ? registry.getOrCreate(activeTab.id) : undefined
 
   return (
+    <>
     <section className="flex h-full min-h-0 flex-col bg-background">
       <IdeToolbar orgSlug={orgSlug} workspace={workspace} />
       <IdeTabBar orgSlug={orgSlug} workspace={workspace} />
@@ -505,47 +509,111 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
             <SqlEditor key={activeTab.id} doc={activeDoc} className="h-full" />
           )
         ) : (
-          <EmptyEditorState onNewConsole={createConsole} />
+          <EmptyEditorState
+            onNewConsole={createConsole}
+            onNewFile={() => setCreateFileOpen(true)}
+          />
         )}
       </div>
     </section>
+
+    <SaveAsDialog
+      open={createFileOpen}
+      onOpenChange={(open) => { if (!open) setCreateFileOpen(false) }}
+      tab={{ id: 'new-empty', workspaceId: workspace.id, title: 'untitled', kind: 'scratch', content: '' }}
+      orgSlug={orgSlug}
+      workspaceId={workspace.id}
+      onSuccess={(file, etag) => {
+        openTab({
+          id: `file:${file.id}`,
+          workspaceId: workspace.id,
+          title: file.name,
+          kind: 'file',
+          subtitle: file.name,
+          fileId: file.id,
+          content: '',
+          etag,
+          isDirty: false,
+        })
+      }}
+    />
+    </>
   )
 }
 
 // ─── Empty state ───────────────────────────────────────────────────────────────
 
-function EmptyEditorState({ onNewConsole }: { onNewConsole: () => void }) {
+type EmptyEditorStateProps = {
+  onNewConsole: () => void
+  onNewFile: () => void
+}
+
+function EmptyEditorState({ onNewConsole, onNewFile }: EmptyEditorStateProps) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 p-8 text-center">
-      <div className="flex flex-col gap-1.5">
+    <div className="flex h-full flex-col items-center justify-center gap-8 p-8">
+      <div className="text-center">
         <p className="text-sm font-semibold text-foreground">No editors open</p>
-        <p className="max-w-xs text-xs text-muted-foreground">
-          Open a console to write SQL, or pick a file from the sidebar.
-        </p>
+        <p className="mt-1 text-xs text-muted-foreground">Start by opening a console or a file.</p>
       </div>
 
-      <Button size="sm" onClick={onNewConsole}>
-        <HugeiconsIcon icon={TerminalIcon} size={13} strokeWidth={2} data-icon="inline-start" />
-        New Console
-      </Button>
-
-      <div className="flex flex-col gap-3 text-xs text-muted-foreground">
-        <div className="flex items-start gap-2 text-left">
-          <HugeiconsIcon icon={FolderOpenIcon} size={13} strokeWidth={2} className="mt-px shrink-0" />
-          <span>
-            <span className="font-medium text-foreground">Files panel</span>
-            {' '}— click any file to open it in an editor tab
-          </span>
-        </div>
-        <div className="flex items-start gap-2 text-left">
-          <HugeiconsIcon icon={File01Icon} size={13} strokeWidth={2} className="mt-px shrink-0" />
-          <span>
-            <span className="font-medium text-foreground">New console</span>
-            {' '}— select a connection in the toolbar, then run queries
-          </span>
-        </div>
+      <div className="flex gap-3">
+        <EmptyStateCard
+          icon={TerminalIcon}
+          title="New Console"
+          description="Write and run SQL queries against a connection"
+          onClick={onNewConsole}
+        />
+        <EmptyStateCard
+          icon={File01Icon}
+          title="New File"
+          description="Create a reusable SQL script saved to this workspace"
+          onClick={onNewFile}
+        />
       </div>
+
+      <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <HugeiconsIcon icon={FolderOpenIcon} size={12} strokeWidth={2} className="shrink-0" />
+        To open an existing file, browse the
+        <span className="font-medium text-foreground">Files</span>
+        panel in the sidebar.
+      </p>
     </div>
+  )
+}
+
+function EmptyStateCard({
+  icon,
+  title,
+  description,
+  onClick,
+}: {
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>
+  title: string
+  description: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'group flex w-44 flex-col items-center gap-3 rounded-lg p-5 text-center',
+        'ring-1 ring-foreground/10 transition-all',
+        'hover:bg-accent hover:ring-foreground/20',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+      )}
+    >
+      <div className={cn(
+        'flex h-10 w-10 items-center justify-center rounded-md',
+        'bg-muted transition-colors group-hover:bg-background',
+      )}>
+        <HugeiconsIcon icon={icon} size={18} strokeWidth={1.5} className="text-muted-foreground group-hover:text-foreground transition-colors" />
+      </div>
+      <div className="flex flex-col gap-1">
+        <p className="text-xs font-medium text-foreground">{title}</p>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">{description}</p>
+      </div>
+    </button>
   )
 }
 
