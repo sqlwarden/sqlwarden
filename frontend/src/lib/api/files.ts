@@ -42,6 +42,17 @@ export async function getPrivateWorkspaceFileContent(
   return { text, etag: raw.replace(/^"|"$/g, '') }
 }
 
+export async function deletePrivateWorkspaceFile(
+  orgSlug: string,
+  workspaceId: number,
+  fileId: number,
+): Promise<void> {
+  return apiRequest<void>(
+    `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/files/private/${fileId}`,
+    { method: 'DELETE' },
+  )
+}
+
 export async function updatePrivateWorkspaceFileContent(
   orgSlug: string,
   workspaceId: number,

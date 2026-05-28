@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   ArrowDown01Icon,
@@ -18,6 +18,7 @@ import {
 import type { Workspace, WorkspaceFile } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, newFileTab } from './useIdeStore'
+import { deletePrivateWorkspaceFile } from '#/lib/api/files'
 import { SidebarPane } from './SidebarPane'
 import { FileContextMenu } from './FileContextMenu'
 import { CreateItemDialog } from './CreateItemDialog'
@@ -120,6 +121,8 @@ function FilesSection({
   onCreateFolder?: ((parentId: number | null) => void) | undefined
 }) {
   const openTab = useIde((s) => s.openTab)
+  const closeTab = useIde((s) => s.closeTab)
+  const queryClient = useQueryClient()
 
   const queryOptions =
     visibility === 'private'
@@ -127,6 +130,19 @@ function FilesSection({
       : orgWorkspaceSharedFileBrowserQueryOptions(orgSlug, workspace.id, null)
 
   const { data, isLoading, isError } = useQuery(queryOptions)
+
+  const deleteMutation = useMutation({
+    mutationFn: (nodeId: number) =>
+      deletePrivateWorkspaceFile(orgSlug, workspace.id, nodeId),
+    onSuccess: (_, nodeId) => {
+      // Invalidate all browser queries for this workspace so every open folder refreshes
+      queryClient.invalidateQueries({
+        queryKey: ['org-workspace-private-file-browser', orgSlug, workspace.id],
+      })
+      // Close the tab if this file was open
+      closeTab(`file:${nodeId}`)
+    },
+  })
 
   function handleOpenFile(file: WorkspaceFile) {
     openTab(newFileTab(file, workspace))
@@ -172,13 +188,16 @@ function FilesSection({
               onOpenFile={handleOpenFile}
               onCreateFile={onCreateFile}
               onCreateFolder={onCreateFolder}
+              onDelete={visibility === 'private' ? (id) => deleteMutation.mutate(id) : undefined}
             />
           ) : (
             <FileContextMenu
               key={file.id}
               kind="file"
               nodeId={file.id}
+              nodeName={file.name}
               onOpen={() => handleOpenFile(file)}
+              onDelete={visibility === 'private' ? () => deleteMutation.mutate(file.id) : undefined}
             >
               <FileTreeFile file={file} depth={0} onOpen={handleOpenFile} />
             </FileContextMenu>
@@ -198,6 +217,7 @@ function FileTreeFolder({
   onOpenFile,
   onCreateFile,
   onCreateFolder,
+  onDelete,
 }: {
   file: WorkspaceFile
   orgSlug: string
@@ -207,6 +227,7 @@ function FileTreeFolder({
   onOpenFile: (file: WorkspaceFile) => void
   onCreateFile?: ((parentId: number | null) => void) | undefined
   onCreateFolder?: ((parentId: number | null) => void) | undefined
+  onDelete?: ((nodeId: number) => void) | undefined
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -251,8 +272,10 @@ function FileTreeFolder({
         <FileContextMenu
           kind="folder"
           nodeId={file.id}
+          nodeName={file.name}
           onCreateFile={onCreateFile}
           onCreateFolder={onCreateFolder}
+          onDelete={onDelete ? () => onDelete(file.id) : undefined}
         >
           {folderRow}
         </FileContextMenu>
@@ -273,13 +296,16 @@ function FileTreeFolder({
               onOpenFile={onOpenFile}
               onCreateFile={onCreateFile}
               onCreateFolder={onCreateFolder}
+              onDelete={onDelete}
             />
           ) : (
             <FileContextMenu
               key={child.id}
               kind="file"
               nodeId={child.id}
+              nodeName={child.name}
               onOpen={() => onOpenFile(child)}
+              onDelete={onDelete ? () => onDelete(child.id) : undefined}
             >
               <FileTreeFile file={child} depth={depth + 1} onOpen={onOpenFile} />
             </FileContextMenu>
