@@ -23,6 +23,7 @@ import type { Connection, Workspace, WorkspaceFile } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, type EditorTab } from './useIdeStore'
 import { SaveAsDialog } from './SaveAsDialog'
+import { useYDocRegistry } from './useYDocRegistry'
 
 type IdeToolbarProps = {
   orgSlug: string
@@ -44,19 +45,24 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
 
+  const registry = useYDocRegistry()
   const activeTab = tabs.find((t) => t.id === activeTabId)
 
   const showSave = activeTab?.kind === 'scratch' || activeTab?.isDirty
 
   async function handleSave() {
     if (!activeTab) return
+    // Read from Y.Doc — more current than the 400 ms debounced snapshot.
+    const doc = registry.get(activeTab.id)
+    const content = doc ? doc.getText('content').toString() : activeTab.content
+
     if (activeTab.kind === 'file' && activeTab.etag && activeTab.fileId) {
       try {
         const result = await updatePrivateWorkspaceFileContent(
           orgSlug,
           workspace.id,
           activeTab.fileId,
-          activeTab.content,
+          content,
           activeTab.etag,
         )
         updateTabEtag(activeTab.id, result.etag)
@@ -69,7 +75,9 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         }
       }
     } else {
-      setSaveAsTab(activeTab)
+      // Seed saveAsTab with current Y.Doc content so SaveAsDialog doesn't
+      // need registry access.
+      setSaveAsTab({ ...activeTab, content })
     }
   }
 
