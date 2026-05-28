@@ -13,12 +13,21 @@ import {
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { ScrollArea } from '#/components/ui/scroll-area'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '#/components/ui/select'
 import { createPrivateWorkspaceFile, updatePrivateWorkspaceFileContent } from '#/lib/api/files'
 import { orgWorkspacePrivateFileBrowserQueryOptions } from '#/lib/api/query'
 import type { WorkspaceFile } from '#/lib/api/types'
 import { ApiError } from '#/lib/api/errors'
 import { cn } from '#/lib/utils'
 import type { EditorTab } from './useIdeStore'
+import { FILE_TYPES, DEFAULT_FILE_TYPE, buildFilename, type FileType } from './fileTypes'
 
 type SaveAsDialogProps = {
   open: boolean
@@ -37,7 +46,8 @@ export function SaveAsDialog({
   workspaceId,
   onSuccess,
 }: SaveAsDialogProps) {
-  const [name, setName] = useState('untitled.sql')
+  const [basename, setBasename] = useState('untitled')
+  const [fileType, setFileType] = useState<FileType>(DEFAULT_FILE_TYPE)
   const [selectedParentId, setSelectedParentId] = useState<number | null>(null)
   const [fieldError, setFieldError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -45,7 +55,8 @@ export function SaveAsDialog({
 
   useEffect(() => {
     if (open) {
-      setName('untitled.sql')
+      setBasename('untitled')
+      setFileType(DEFAULT_FILE_TYPE)
       setSelectedParentId(null)
       setFieldError(null)
       setTimeout(() => inputRef.current?.select(), 50)
@@ -59,14 +70,16 @@ export function SaveAsDialog({
     (f) => f.object_type === 'folder',
   )
 
+  const filename = buildFilename(basename, fileType)
+
   const save = useMutation({
     mutationFn: async () => {
       const file = await createPrivateWorkspaceFile(orgSlug, workspaceId, {
-        name: name.trim(),
+        name: filename,
         object_type: 'file',
         parent_id: selectedParentId,
-        media_type: 'text/plain',
-        file_kind: 'sql',
+        media_type: fileType.mediaType,
+        file_kind: fileType.kind,
       })
       const result = await updatePrivateWorkspaceFileContent(
         orgSlug,
@@ -94,7 +107,7 @@ export function SaveAsDialog({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return
+    if (!basename.trim()) return
     setFieldError(null)
     save.mutate()
   }
@@ -106,20 +119,53 @@ export function SaveAsDialog({
           <DialogTitle>Save As</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+
+          {/* Name + type row */}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="save-as-name">Name</Label>
-            <Input
-              id="save-as-name"
-              ref={inputRef}
-              value={name}
-              onChange={(e) => { setName(e.target.value); setFieldError(null) }}
-              placeholder="untitled.sql"
-              autoComplete="off"
-              aria-invalid={!!fieldError}
-            />
-            {fieldError && <p className="text-xs text-destructive">{fieldError}</p>}
+            <div className="flex gap-2">
+              <Input
+                id="save-as-name"
+                ref={inputRef}
+                value={basename}
+                onChange={(e) => { setBasename(e.target.value); setFieldError(null) }}
+                placeholder="untitled"
+                autoComplete="off"
+                aria-invalid={!!fieldError}
+                className="min-w-0 flex-1"
+              />
+              <Select
+                items={FILE_TYPES.map((t) => ({ label: `${t.label} (${t.extension})`, value: t.kind }))}
+                value={fileType.kind}
+                onValueChange={(kind) => {
+                  const t = FILE_TYPES.find((ft) => ft.kind === kind)
+                  if (t) setFileType(t)
+                }}
+              >
+                <SelectTrigger className="w-32 shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {FILE_TYPES.map((t) => (
+                      <SelectItem key={t.kind} value={t.kind}>
+                        {t.label} ({t.extension})
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+            {fieldError ? (
+              <p className="text-xs text-destructive">{fieldError}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Will save as <span className="font-mono text-foreground">{filename}</span>
+              </p>
+            )}
           </div>
 
+          {/* Location picker */}
           <div className="flex flex-col gap-1.5">
             <Label>Location</Label>
             <ScrollArea className="h-36 rounded-md border border-border">
@@ -149,7 +195,7 @@ export function SaveAsDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!name.trim() || save.isPending}>
+            <Button type="submit" disabled={!basename.trim() || save.isPending}>
               {save.isPending ? 'Saving…' : 'Save'}
             </Button>
           </DialogFooter>

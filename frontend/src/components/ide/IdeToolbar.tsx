@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   ArrowExpandIcon,
   ArrowShrinkIcon,
   DatabaseIcon,
+  FloppyDiskIcon,
   PlayIcon,
   ServerStack01Icon,
   SidebarLeft01Icon,
@@ -16,9 +18,11 @@ import {
   orgEnvironmentsQueryOptions,
   orgWorkspaceConnectionsQueryOptions,
 } from '#/lib/api/query'
-import type { Connection, Workspace } from '#/lib/api/types'
+import { updatePrivateWorkspaceFileContent } from '#/lib/api/files'
+import type { Connection, Workspace, WorkspaceFile } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
-import { useIde } from './useIdeStore'
+import { useIde, type EditorTab } from './useIdeStore'
+import { SaveAsDialog } from './SaveAsDialog'
 
 type IdeToolbarProps = {
   orgSlug: string
@@ -27,16 +31,64 @@ type IdeToolbarProps = {
 
 export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const [saveAsTab, setSaveAsTab] = useState<EditorTab | null>(null)
 
   const activeTabId = useIde((s) => s.activeTabId)
   const tabs = useIde((s) => s.tabs)
+  const openTab = useIde((s) => s.openTab)
+  const closeTab = useIde((s) => s.closeTab)
   const setTabConnection = useIde((s) => s.setTabConnection)
+  const updateTabEtag = useIde((s) => s.updateTabEtag)
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
+
+  const showSave = activeTab?.kind === 'scratch' || activeTab?.isDirty
+
+  async function handleSave() {
+    if (!activeTab) return
+    if (activeTab.kind === 'file' && activeTab.etag && activeTab.fileId) {
+      try {
+        const result = await updatePrivateWorkspaceFileContent(
+          orgSlug,
+          workspace.id,
+          activeTab.fileId,
+          activeTab.content,
+          activeTab.etag,
+        )
+        updateTabEtag(activeTab.id, result.etag)
+      } catch (err) {
+        const status = (err as { status?: number }).status
+        if (status === 412 || status === 409) {
+          toast.error('File changed externally. Reload before saving.')
+        } else {
+          toast.error('Failed to save file.')
+        }
+      }
+    } else {
+      setSaveAsTab(activeTab)
+    }
+  }
+
+  function handleSaveAsSuccess(tab: EditorTab, file: WorkspaceFile, etag: string) {
+    const newTab: EditorTab = {
+      id: `file:${file.id}`,
+      workspaceId: workspace.id,
+      title: file.name,
+      kind: 'file',
+      subtitle: file.name,
+      fileId: file.id,
+      content: tab.content,
+      etag,
+      isDirty: false,
+    }
+    openTab(newTab)
+    closeTab(tab.id)
+    setSaveAsTab(null)
+  }
 
   const environments = useQuery(
     orgEnvironmentsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
@@ -70,6 +122,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   })()
 
   return (
+    <>
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-2">
       {/* Sidebar toggle */}
       <Button
@@ -100,6 +153,21 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         Run
         <kbd className="ml-1 hidden font-mono text-[10px] opacity-60 sm:inline">⌘↵</kbd>
       </Button>
+
+      {/* Save button */}
+      {showSave && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-label="Save file"
+          onClick={handleSave}
+        >
+          <HugeiconsIcon icon={FloppyDiskIcon} size={13} strokeWidth={2} data-icon="inline-start" />
+          Save
+          <kbd className="ml-1 hidden font-mono text-[10px] opacity-60 sm:inline">⌘S</kbd>
+        </Button>
+      )}
 
       <div className="flex-1" />
 
@@ -186,5 +254,17 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         />
       </Button>
     </div>
+
+    {saveAsTab && (
+      <SaveAsDialog
+        open={true}
+        onOpenChange={(open) => { if (!open) setSaveAsTab(null) }}
+        tab={saveAsTab}
+        orgSlug={orgSlug}
+        workspaceId={workspace.id}
+        onSuccess={(file, etag) => handleSaveAsSuccess(saveAsTab, file, etag)}
+      />
+    )}
+    </>
   )
 }

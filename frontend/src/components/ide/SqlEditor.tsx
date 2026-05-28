@@ -1,10 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { EditorView, basicSetup } from 'codemirror'
-import { EditorState } from '@codemirror/state'
+import { Annotation, EditorState } from '@codemirror/state'
 import { sql } from '@codemirror/lang-sql'
 import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
 import { cn } from '#/lib/utils'
+
+// Marks transactions that originate from the value-sync effect, not from the user.
+const External = Annotation.define<boolean>()
 
 // ─── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -101,7 +104,7 @@ export function SqlEditor({ value, onChange, className }: SqlEditorProps) {
           syntaxHighlighting(sqlHighlightStyle),
           EditorView.lineWrapping,
           EditorView.updateListener.of((update) => {
-            if (update.docChanged) {
+            if (update.docChanged && !update.transactions.some((tr) => tr.annotation(External))) {
               onChangeRef.current(update.state.doc.toString())
             }
           }),
@@ -118,7 +121,8 @@ export function SqlEditor({ value, onChange, className }: SqlEditorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Sync external value changes (tab switching) without re-mounting
+  // Sync external value changes (tab switching) without re-mounting.
+  // Annotated as External so the updateListener does not treat it as a user edit.
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
@@ -126,6 +130,7 @@ export function SqlEditor({ value, onChange, className }: SqlEditorProps) {
     if (current === value) return
     view.dispatch({
       changes: { from: 0, to: current.length, insert: value },
+      annotations: External.of(true),
     })
   }, [value])
 

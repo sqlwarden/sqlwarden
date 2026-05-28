@@ -4,13 +4,19 @@ import {
   Cancel01Icon,
   DatabaseIcon,
   File01Icon,
-  FloppyDiskIcon,
   TerminalIcon,
 } from '@hugeicons/core-free-icons'
-import type { Workspace, WorkspaceFile } from '#/lib/api/types'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '#/components/ui/dialog'
+import { Button } from '#/components/ui/button'
+import type { Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, newScratchTab, type EditorTab, type TabKind } from './useIdeStore'
-import { SaveAsDialog } from './SaveAsDialog'
 
 type IdeTabBarProps = {
   orgSlug: string
@@ -23,8 +29,8 @@ const TAB_ICONS: Record<TabKind, typeof DatabaseIcon> = {
   connection: DatabaseIcon,
 }
 
-export function IdeTabBar({ orgSlug, workspace }: IdeTabBarProps) {
-  const [saveAsTab, setSaveAsTab] = useState<EditorTab | null>(null)
+export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
+  const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null)
 
   const activeWorkspaceId = useIde((s) => s.activeWorkspaceId)
   const activeTabId = useIde((s) => s.activeTabId)
@@ -39,22 +45,15 @@ export function IdeTabBar({ orgSlug, workspace }: IdeTabBarProps) {
     openTab(newScratchTab(workspace))
   }
 
-  function handleSaveAsSuccess(tab: EditorTab, file: WorkspaceFile, etag: string) {
-    const newTab: EditorTab = {
-      id: `file:${file.id}`,
-      workspaceId: workspace.id,
-      title: file.name,
-      kind: 'file',
-      subtitle: file.name,
-      fileId: file.id,
-      content: tab.content,
-      etag,
-      isDirty: false,
+  function handleCloseRequest(tab: EditorTab) {
+    if (tab.kind === 'file' && tab.isDirty) {
+      setPendingCloseTabId(tab.id)
+    } else {
+      closeTab(tab.id)
     }
-    openTab(newTab)
-    closeTab(tab.id)
-    setSaveAsTab(null)
   }
+
+  const pendingCloseTab = pendingCloseTabId ? tabs.find((t) => t.id === pendingCloseTabId) : null
 
   return (
     <>
@@ -65,8 +64,7 @@ export function IdeTabBar({ orgSlug, workspace }: IdeTabBarProps) {
             tab={tab}
             active={tab.id === activeTabId}
             onActivate={() => setActiveTab(tab.id)}
-            onClose={() => closeTab(tab.id)}
-            onSaveAs={() => setSaveAsTab(tab)}
+            onClose={() => handleCloseRequest(tab)}
           />
         ))}
         <button
@@ -79,15 +77,31 @@ export function IdeTabBar({ orgSlug, workspace }: IdeTabBarProps) {
         </button>
       </div>
 
-      {saveAsTab && (
-        <SaveAsDialog
-          open={true}
-          onOpenChange={(open) => { if (!open) setSaveAsTab(null) }}
-          tab={saveAsTab}
-          orgSlug={orgSlug}
-          workspaceId={workspace.id}
-          onSuccess={(file, etag) => handleSaveAsSuccess(saveAsTab, file, etag)}
-        />
+      {pendingCloseTab && (
+        <Dialog open={true} onOpenChange={(open) => { if (!open) setPendingCloseTabId(null) }}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Close without saving?</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Unsaved changes to <strong className="text-foreground">{pendingCloseTab.title}</strong> will be lost.
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPendingCloseTabId(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  closeTab(pendingCloseTabId!)
+                  setPendingCloseTabId(null)
+                }}
+              >
+                Close anyway
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </>
   )
@@ -98,16 +112,13 @@ function TabItem({
   active,
   onActivate,
   onClose,
-  onSaveAs,
 }: {
   tab: EditorTab
   active: boolean
   onActivate: () => void
   onClose: () => void
-  onSaveAs: () => void
 }) {
   const icon = TAB_ICONS[tab.kind]
-  const showSaveButton = tab.kind === 'scratch' || tab.isDirty
 
   return (
     <div
@@ -128,20 +139,6 @@ function TabItem({
         {tab.isDirty && <span className="mr-1 text-primary">●</span>}
         {tab.title}
       </span>
-      {showSaveButton && (
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onSaveAs() }}
-          aria-label={`Save ${tab.title}`}
-          className={cn(
-            'flex size-5 shrink-0 items-center justify-center rounded transition-colors',
-            'hover:bg-muted hover:text-foreground',
-            active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-          )}
-        >
-          <HugeiconsIcon icon={FloppyDiskIcon} size={11} strokeWidth={2} />
-        </button>
-      )}
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onClose() }}
