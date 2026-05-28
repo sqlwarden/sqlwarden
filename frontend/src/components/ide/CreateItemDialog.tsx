@@ -10,7 +10,7 @@ import {
 } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
-import { createPrivateWorkspaceFile } from '#/lib/api/files'
+import { createPrivateWorkspaceFile, updatePrivateWorkspaceFileContent } from '#/lib/api/files'
 import { orgWorkspacePrivateFileBrowserQueryOptions } from '#/lib/api/query'
 import type { WorkspaceFile } from '#/lib/api/types'
 import { ApiError } from '#/lib/api/errors'
@@ -48,13 +48,20 @@ export function CreateItemDialog({
   }, [open, kind])
 
   const create = useMutation({
-    mutationFn: () =>
-      createPrivateWorkspaceFile(orgSlug, workspaceId, {
+    mutationFn: async () => {
+      const file = await createPrivateWorkspaceFile(orgSlug, workspaceId, {
         name: name.trim(),
         object_type: kind,
         parent_id: parentId,
         ...(kind === 'file' ? { media_type: 'text/plain', file_kind: 'sql' } : {}),
-      }),
+      })
+      // Write empty content immediately so the file is readable on first open.
+      // Folders don't have content.
+      if (kind === 'file') {
+        await updatePrivateWorkspaceFileContent(orgSlug, workspaceId, file.id, '')
+      }
+      return file
+    },
     onSuccess: (file) => {
       queryClient.invalidateQueries({
         queryKey: orgWorkspacePrivateFileBrowserQueryOptions(orgSlug, workspaceId, parentId).queryKey,
