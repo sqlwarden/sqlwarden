@@ -35,6 +35,44 @@ type WorkspaceIdeProps = { orgSlug: string }
 export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
   const store = useMemo(() => createIdeStore(orgSlug), [orgSlug])
   const registry = useMemo(() => createYDocRegistry(), [orgSlug])
+
+  // ── Cross-window etag / dirty-state sync ─────────────────────────────────
+  // When any window saves a file (etag changes) or completes a server load
+  // (initial etag set), broadcast the new etag to all other windows on the
+  // same origin so their dirty indicator and save ETag stay in sync.
+  // The receiving window calls updateTabEtag directly — no re-broadcast.
+  useEffect(() => {
+    const channel = new BroadcastChannel(`sqlwarden:store:${orgSlug}`)
+    const prevEtags = new Map<string, string>()
+    let applyingRemote = false
+
+    function handleRemote(event: MessageEvent) {
+      const msg = event.data as { type?: string; tabId?: string; etag?: string }
+      if (msg?.type !== 'etag-update' || !msg.tabId || !msg.etag) return
+      applyingRemote = true
+      store.getState().updateTabEtag(msg.tabId, msg.etag)
+      applyingRemote = false
+    }
+
+    const unsub = store.subscribe((state) => {
+      if (applyingRemote) return
+      for (const tab of state.tabs) {
+        const prev = prevEtags.get(tab.id)
+        if (tab.etag !== undefined && tab.etag !== prev) {
+          prevEtags.set(tab.id, tab.etag)
+          channel.postMessage({ type: 'etag-update', tabId: tab.id, etag: tab.etag })
+        }
+      }
+    })
+
+    channel.addEventListener('message', handleRemote)
+    return () => {
+      unsub()
+      channel.removeEventListener('message', handleRemote)
+      channel.close()
+    }
+  }, [store, orgSlug])
+
   const workspaces = useQuery(
     orgWorkspacesQueryOptions(orgSlug, { page_size: 100, sort: 'name', order: 'asc' }),
   )
@@ -298,7 +336,10 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
     const currentIds = new Set(wsTabs.map((t) => t.id))
     for (const tab of wsTabs) {
       if (!trackedIdsRef.current.has(tab.id)) {
-        registry.getOrCreate(tab.id, tab.content)
+        // File tabs start empty — peer sync or useFileContent owns content.
+        // Scratch/connection tabs seed from the persisted IndexedDB snapshot.
+        const initialContent = tab.kind === 'file' ? undefined : tab.content
+        registry.getOrCreate(tab.id, initialContent)
       }
     }
     for (const id of trackedIdsRef.current) {

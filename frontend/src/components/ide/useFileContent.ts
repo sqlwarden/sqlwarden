@@ -32,17 +32,21 @@ export function useFileContent({
   useEffect(() => {
     if (!query.data || !tab?.id) return
 
-    // Ensure the doc exists (getOrCreate is idempotent).
     const doc = registry.getOrCreate(tab.id)
     const yText = doc.getText('content')
 
-    // Replace content atomically. Origin 'server-load' prevents the registry
-    // from broadcasting this to other windows and prevents the Y.Doc observer
-    // in EditorSection from marking the tab dirty.
-    doc.transact(() => {
-      yText.delete(0, yText.length)
-      yText.insert(0, query.data.text)
-    }, 'server-load')
+    // If the doc already has content, a peer window has already synced state
+    // via BroadcastChannel full-state. Skip the text insert to avoid merging
+    // two independently-created Y.js histories (which would double the content).
+    // Always update the etag so dirty tracking and saves work correctly.
+    if (yText.length === 0) {
+      // No peer state yet — we are the first window. Initialize from server.
+      // Origin 'server-load' causes the registry to broadcast our full state
+      // so any other window that opens this file later can sync from us.
+      doc.transact(() => {
+        yText.insert(0, query.data.text)
+      }, 'server-load')
+    }
 
     updateTabEtag(tab.id, query.data.etag)
   }, [query.data, tab?.id, registry, updateTabEtag])

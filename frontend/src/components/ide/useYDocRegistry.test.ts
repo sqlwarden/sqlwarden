@@ -35,7 +35,6 @@ class FakeBroadcastChannel {
   }
 }
 
-// Install fake before any tests run.
 ;(globalThis as unknown as Record<string, unknown>).BroadcastChannel = FakeBroadcastChannel
 
 beforeEach(() => channels.clear())
@@ -51,9 +50,9 @@ describe('createYDocRegistry', () => {
     expect(reg.getOrCreate('tab:1')).toBe(reg.getOrCreate('tab:1'))
   })
 
-  it('getOrCreate initialises content from initialContent', () => {
+  it('getOrCreate initialises content from initialContent (scratch/connection tabs)', () => {
     const reg = createYDocRegistry()
-    const doc = reg.getOrCreate('tab:1', 'SELECT 1;')
+    const doc = reg.getOrCreate('scratch:1:123', 'SELECT 1;')
     expect(doc.getText('content').toString()).toBe('SELECT 1;')
   })
 
@@ -78,7 +77,7 @@ describe('createYDocRegistry', () => {
     expect(() => createYDocRegistry().destroy('nope')).not.toThrow()
   })
 
-  it('user edits are broadcast to another window on the same tabId', () => {
+  it('user edits are broadcast as incremental updates', () => {
     const regA = createYDocRegistry()
     const regB = createYDocRegistry()
     const docA = regA.getOrCreate('file:99')
@@ -89,54 +88,89 @@ describe('createYDocRegistry', () => {
     expect(docB.getText('content').toString()).toBe('hello')
   })
 
-  it('server-load origin is NOT broadcast', () => {
+  it('init origin (scratch/connection seed) is NOT broadcast', () => {
+    const regB = createYDocRegistry()
+    regB.getOrCreate('scratch:1:999')
+
+    const regA = createYDocRegistry()
+    regA.getOrCreate('scratch:1:999', 'local seed')
+
+    // B's doc should be unaffected — init is not broadcast
+    expect(regB.get('scratch:1:999')!.getText('content').toString()).toBe('')
+  })
+
+  it('server-load origin broadcasts full state to empty peer docs', () => {
     const regA = createYDocRegistry()
     const regB = createYDocRegistry()
-    regB.getOrCreate('file:99')
-    const docA = regA.getOrCreate('file:99')
 
+    // B opens the file first (empty doc)
+    const docB = regB.getOrCreate('file:99')
+
+    // A loads from server
+    const docA = regA.getOrCreate('file:99')
     docA.transact(() => {
-      docA.getText('content').insert(0, 'server content')
+      docA.getText('content').insert(0, 'SELECT 1;')
     }, 'server-load')
 
-    expect(regB.get('file:99')!.getText('content').toString()).toBe('')
+    // B received A's full-state and applied it (doc was empty)
+    expect(docB.getText('content').toString()).toBe('SELECT 1;')
   })
 
-  it('init origin is NOT broadcast', () => {
-    // docB exists before docA is created with initialContent
-    const regB = createYDocRegistry()
-    regB.getOrCreate('file:99')
-
+  it('full-state is NOT applied when peer doc already has content', () => {
     const regA = createYDocRegistry()
-    regA.getOrCreate('file:99', 'initial') // uses 'init' origin internally
+    const regB = createYDocRegistry()
 
-    // docB should not have received the init insert
-    expect(regB.get('file:99')!.getText('content').toString()).toBe('')
+    // B independently initialised (e.g. also loaded from server)
+    const docB = regB.getOrCreate('file:99')
+    docB.transact(() => {
+      docB.getText('content').insert(0, 'SELECT 1;')
+    }, 'server-load')
+
+    // A also initialises — broadcasts full-state
+    const docA = regA.getOrCreate('file:99')
+    docA.transact(() => {
+      docA.getText('content').insert(0, 'SELECT 1;')
+    }, 'server-load')
+
+    // B must NOT apply A's state on top of its own (would double content)
+    expect(docB.getText('content').toString()).toBe('SELECT 1;')
   })
 
-  it('broadcast updates are NOT re-broadcast (no echo loops)', () => {
+  it('sync-request causes existing peer to share its state', () => {
+    const regA = createYDocRegistry()
+
+    // A already has content
+    const docA = regA.getOrCreate('file:99')
+    docA.transact(() => {
+      docA.getText('content').insert(0, 'FROM server')
+    }, 'server-load')
+
+    // B joins later — its sync-request triggers A to send full-state
+    const regB = createYDocRegistry()
+    const docB = regB.getOrCreate('file:99') // sends sync-request on creation
+
+    expect(docB.getText('content').toString()).toBe('FROM server')
+  })
+
+  it('incremental updates are NOT re-broadcast (no echo loops)', () => {
     const regA = createYDocRegistry()
     const regB = createYDocRegistry()
     const docA = regA.getOrCreate('file:99')
     regB.getOrCreate('file:99')
 
-    // Count outgoing posts from regB's channel after A sends
     let bOutgoing = 0
     const origPost = FakeBroadcastChannel.prototype.postMessage
     FakeBroadcastChannel.prototype.postMessage = function (data) {
-      // Only count posts from channels that belong to regB
       if (this.name === 'sqlwarden:tab:file:99') bOutgoing++
       origPost.call(this, data)
     }
 
-    docA.getText('content').insert(0, 'hi') // A → B
+    docA.getText('content').insert(0, 'hi') // A → B (1 outgoing from A)
 
     FakeBroadcastChannel.prototype.postMessage = origPost
 
-    // B received the update correctly
     expect(regB.get('file:99')!.getText('content').toString()).toBe('hi')
-    // B must not have re-broadcast (bOutgoing counts A's send too, but B's re-send would be +1)
-    // A sent 1 message; B should have sent 0. Total = 1 (from A).
+    // Only A sent (1 message). B must not re-broadcast (would be +1).
     expect(bOutgoing).toBe(1)
   })
 })
