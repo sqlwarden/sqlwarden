@@ -9,10 +9,11 @@ type SidebarPaneProps = {
   icon: ComponentType<{ className?: string }>
   maximized: boolean
   onMaximizedChange: (maximized: boolean) => void
+  actions?: React.ReactNode
   children: React.ReactNode
 }
 
-export function SidebarPane({ title, icon, maximized, onMaximizedChange, children }: SidebarPaneProps) {
+export function SidebarPane({ title, icon, maximized, onMaximizedChange, actions, children }: SidebarPaneProps) {
   return (
     <section className="flex h-full min-h-0 flex-col">
       <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-2">
@@ -22,15 +23,18 @@ export function SidebarPane({ title, icon, maximized, onMaximizedChange, childre
             {title}
           </span>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`Toggle ${title} maximize`}
-          onClick={() => onMaximizedChange(!maximized)}
-        >
-          <HugeiconsIcon icon={maximized ? ArrowShrinkIcon : ArrowExpandIcon} size={14} strokeWidth={2} />
-        </Button>
+        <div className="flex items-center gap-0.5">
+          {actions}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Toggle ${title} maximize`}
+            onClick={() => onMaximizedChange(!maximized)}
+          >
+            <HugeiconsIcon icon={maximized ? ArrowShrinkIcon : ArrowExpandIcon} size={14} strokeWidth={2} />
+          </Button>
+        </div>
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col py-1">{children}</div>
