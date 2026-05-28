@@ -9,6 +9,7 @@
 @import "@fontsource-variable/public-sans";
 @import "@fontsource-variable/miranda-sans";
 @import "@fontsource-variable/momo-trust-sans";
+@import "@fontsource/geist-mono";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -122,6 +123,7 @@
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
     --font-heading: var(--font-sans);
+    --font-mono: 'Geist Mono', ui-monospace, monospace;
 }
 
 @layer base {
