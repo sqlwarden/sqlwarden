@@ -110,4 +110,44 @@ describe('useIdeStore', () => {
     expect(tab.id).toBe('file:20')
     expect(tab.kind).toBe('file')
   })
+
+  it('newFileTab includes fileId and empty content', () => {
+    const tab = newFileTab(mockFile, mockWorkspace)
+    expect(tab.fileId).toBe(20)
+    expect(tab.content).toBe('')
+    expect(tab.etag).toBeUndefined()
+  })
+
+  it('updateTabEtag stores etag and sets isDirty false', () => {
+    const tab = newFileTab(mockFile, mockWorkspace)
+    store.getState().openTab(tab)
+    store.getState().updateTabEtag(tab.id, 'abc123')
+    expect(store.getState().tabs[0].etag).toBe('abc123')
+    expect(store.getState().tabs[0].isDirty).toBe(false)
+  })
+
+  it('updateTabContent marks file tab dirty after etag is set', () => {
+    const tab = newFileTab(mockFile, mockWorkspace)
+    store.getState().openTab(tab)
+    store.getState().updateTabEtag(tab.id, 'abc123')
+    store.getState().updateTabContent(tab.id, 'SELECT 2;')
+    expect(store.getState().tabs[0].isDirty).toBe(true)
+  })
+
+  it('updateTabContent does not mark scratch tab dirty', () => {
+    const tab = newScratchTab(mockWorkspace)
+    store.getState().openTab(tab)
+    store.getState().updateTabContent(tab.id, 'SELECT 2;')
+    expect(store.getState().tabs[0].isDirty).toBeUndefined()
+  })
+
+  it('updateTabEtag clears isDirty after content was edited', () => {
+    const tab = newFileTab(mockFile, mockWorkspace)
+    store.getState().openTab(tab)
+    store.getState().updateTabEtag(tab.id, 'abc123')
+    store.getState().updateTabContent(tab.id, 'SELECT 2;')
+    store.getState().updateTabEtag(tab.id, 'def456')
+    expect(store.getState().tabs[0].isDirty).toBe(false)
+    expect(store.getState().tabs[0].etag).toBe('def456')
+  })
 })

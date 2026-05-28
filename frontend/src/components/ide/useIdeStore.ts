@@ -15,6 +15,9 @@ export type EditorTab = {
   kind: TabKind
   subtitle?: string
   connectionId?: number
+  fileId?: number
+  etag?: string
+  isDirty?: boolean
   content: string
 }
 
@@ -33,6 +36,7 @@ export type IdeActions = {
   closeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
   updateTabContent: (tabId: string, content: string) => void
+  updateTabEtag: (tabId: string, etag: string) => void
   setTabConnection: (tabId: string, connectionId: number) => void
   setMaximizedPane: (pane: IdeState['maximizedPane']) => void
   setMaximizedSidebarPane: (pane: IdeState['maximizedSidebarPane']) => void
@@ -85,7 +89,18 @@ export function createIdeStore(orgSlug: string) {
         setActiveTab: (id) => set({ activeTabId: id }),
 
         updateTabContent: (tabId, content) =>
-          set((s) => ({ tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, content } : t)) })),
+          set((s) => ({
+            tabs: s.tabs.map((t) =>
+              t.id === tabId
+                ? { ...t, content, isDirty: t.etag !== undefined ? true : t.isDirty }
+                : t,
+            ),
+          })),
+
+        updateTabEtag: (tabId, etag) =>
+          set((s) => ({
+            tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, etag, isDirty: false } : t)),
+          })),
 
         setTabConnection: (tabId, connectionId) =>
           set((s) => ({ tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, connectionId } : t)) })),
@@ -146,6 +161,7 @@ export function newFileTab(file: WorkspaceFile, workspace: Workspace): EditorTab
     title: file.name,
     kind: 'file',
     subtitle: file.name,
-    content: `-- ${file.name}\n-- File content loading is not yet implemented.\n`,
+    fileId: file.id,
+    content: '',
   }
 }
