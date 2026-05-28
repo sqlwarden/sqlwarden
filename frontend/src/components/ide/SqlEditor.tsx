@@ -1,13 +1,12 @@
 import { useEffect, useRef } from 'react'
 import { EditorView, basicSetup } from 'codemirror'
-import { Annotation, EditorState } from '@codemirror/state'
+import { EditorState } from '@codemirror/state'
 import { sql } from '@codemirror/lang-sql'
 import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
+import { yCollab } from 'y-codemirror.next'
+import type * as Y from 'yjs'
 import { cn } from '#/lib/utils'
-
-// Marks transactions that originate from the value-sync effect, not from the user.
-const External = Annotation.define<boolean>()
 
 // ─── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -76,63 +75,37 @@ const sqlHighlightStyle = HighlightStyle.define([
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 type SqlEditorProps = {
-  value: string
-  onChange: (value: string) => void
+  /** The Y.Doc backing this editor. Must have a Y.Text at key 'content'. */
+  doc: Y.Doc
   className?: string
 }
 
-export function SqlEditor({ value, onChange, className }: SqlEditorProps) {
+export function SqlEditor({ doc, className }: SqlEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const viewRef = useRef<EditorView | null>(null)
-  const onChangeRef = useRef(onChange)
 
-  useEffect(() => {
-    onChangeRef.current = onChange
-  })
-
-  // Mount CodeMirror once
+  // Re-mount the editor whenever the active doc changes.
+  // key={activeTab.id} at the call site also ensures clean remount on tab switch.
   useEffect(() => {
     if (!containerRef.current) return
+    const yText = doc.getText('content')
 
     const view = new EditorView({
       state: EditorState.create({
-        doc: value,
+        doc: yText.toString(),
         extensions: [
           basicSetup,
           sql(),
           ideTheme,
           syntaxHighlighting(sqlHighlightStyle),
           EditorView.lineWrapping,
-          EditorView.updateListener.of((update) => {
-            if (update.docChanged && !update.transactions.some((tr) => tr.annotation(External))) {
-              onChangeRef.current(update.state.doc.toString())
-            }
-          }),
+          yCollab(yText), // handles all CodeMirror ↔ Y.js sync
         ],
       }),
       parent: containerRef.current,
     })
 
-    viewRef.current = view
-    return () => {
-      view.destroy()
-      viewRef.current = null
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Sync external value changes (tab switching) without re-mounting.
-  // Annotated as External so the updateListener does not treat it as a user edit.
-  useEffect(() => {
-    const view = viewRef.current
-    if (!view) return
-    const current = view.state.doc.toString()
-    if (current === value) return
-    view.dispatch({
-      changes: { from: 0, to: current.length, insert: value },
-      annotations: External.of(true),
-    })
-  }, [value])
+    return () => view.destroy()
+  }, [doc])
 
   return <div ref={containerRef} className={cn('h-full overflow-hidden', className)} />
 }

@@ -26,6 +26,7 @@ import { IdeTabBar } from './IdeTabBar'
 import { SqlEditor } from './SqlEditor'
 import { ResultsArea } from './ResultsArea'
 import { useFileContent } from './useFileContent'
+import { createYDocRegistry, YDocRegistryContext, useYDocRegistry } from './useYDocRegistry'
 
 // ─── Root ──────────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ type WorkspaceIdeProps = { orgSlug: string }
 
 export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
   const store = useMemo(() => createIdeStore(orgSlug), [orgSlug])
+  const registry = useMemo(() => createYDocRegistry(), [orgSlug])
   const workspaces = useQuery(
     orgWorkspacesQueryOptions(orgSlug, { page_size: 100, sort: 'name', order: 'asc' }),
   )
@@ -45,7 +47,9 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
 
   return (
     <IdeStoreContext.Provider value={store}>
-      <WorkspaceIdeInner orgSlug={orgSlug} workspaces={items} />
+      <YDocRegistryContext.Provider value={registry}>
+        <WorkspaceIdeInner orgSlug={orgSlug} workspaces={items} />
+      </YDocRegistryContext.Provider>
     </IdeStoreContext.Provider>
   )
 }
@@ -272,41 +276,86 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
 }
 
 function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
+  const registry = useYDocRegistry()
+
   const activeTabId = useIde((s) => s.activeTabId)
   const tabs = useIde((s) => s.tabs)
   const openTab = useIde((s) => s.openTab)
   const updateTabContent = useIde((s) => s.updateTabContent)
   const updateTabEtag = useIde((s) => s.updateTabEtag)
 
-  const activeTab = tabs.find((t) => t.id === activeTabId)
+  const activeTab = useMemo(() => tabs.find((t) => t.id === activeTabId), [tabs, activeTabId])
+  const wsTabs = useMemo(
+    () => tabs.filter((t) => t.workspaceId === workspace.id),
+    [tabs, workspace.id],
+  )
 
-  const { isLoading: isContentLoading, isError: isContentError } = useFileContent({
-    orgSlug,
-    workspaceId: workspace.id,
-    tab: activeTab,
-    updateTabContent,
-    updateTabEtag,
-  })
-
+  // ── Tab → Y.Doc lifecycle ──────────────────────────────────────────────────
+  // Create a doc for each new tab seeded from the persisted content snapshot.
+  // Destroy docs when tabs close.
+  const trackedIdsRef = useRef(new Set<string>())
   useEffect(() => {
-    const wsTabCount = tabs.filter((t) => t.workspaceId === workspace.id).length
-    if (wsTabCount === 0) {
-      openTab(newScratchTab(workspace))
+    const currentIds = new Set(wsTabs.map((t) => t.id))
+    for (const tab of wsTabs) {
+      if (!trackedIdsRef.current.has(tab.id)) {
+        registry.getOrCreate(tab.id, tab.content)
+      }
     }
-  }, [workspace, tabs, openTab])
+    for (const id of trackedIdsRef.current) {
+      if (!currentIds.has(id)) registry.destroy(id)
+    }
+    trackedIdsRef.current = currentIds
+  }, [wsTabs, registry])
 
-  // ⌘S / Ctrl+S: save file tab in-place
+  // ── Y.Doc → store: debounced snapshot for IndexedDB persistence + isDirty ─
+  // 'server-load' and 'init' are skipped — they are not user edits.
+  // User typing and 'broadcast' (cross-window sync) both update the snapshot
+  // and, via updateTabContent's existing isDirty logic, mark the tab dirty
+  // when an etag is set.
+  useEffect(() => {
+    const cleanups: Array<() => void> = []
+    const timers: Record<string, ReturnType<typeof setTimeout>> = {}
+
+    for (const tab of wsTabs) {
+      const doc = registry.get(tab.id)
+      if (!doc) continue
+      const observer = (_update: Uint8Array, origin: unknown) => {
+        if (origin === 'server-load' || origin === 'init') return
+        clearTimeout(timers[tab.id])
+        timers[tab.id] = setTimeout(() => {
+          updateTabContent(tab.id, doc.getText('content').toString())
+        }, 400)
+      }
+      doc.on('update', observer)
+      cleanups.push(() => {
+        doc.off('update', observer)
+        clearTimeout(timers[tab.id])
+      })
+    }
+
+    return () => cleanups.forEach((c) => c())
+  }, [wsTabs, registry, updateTabContent])
+
+  // ── Ensure at least one scratch tab ────────────────────────────────────────
+  useEffect(() => {
+    if (wsTabs.length === 0) openTab(newScratchTab(workspace))
+  }, [workspace, wsTabs, openTab])
+
+  // ── ⌘S / Ctrl+S: save file tab in-place ────────────────────────────────────
   useEffect(() => {
     async function handleKeyDown(e: KeyboardEvent) {
       if (!(e.metaKey || e.ctrlKey) || e.key !== 's') return
       e.preventDefault()
       if (!activeTab || activeTab.kind !== 'file' || !activeTab.etag || !activeTab.fileId) return
+      // Read from Y.Doc — more current than the 400 ms debounced snapshot.
+      const doc = registry.get(activeTab.id)
+      const content = doc ? doc.getText('content').toString() : activeTab.content
       try {
         const result = await updatePrivateWorkspaceFileContent(
           orgSlug,
           workspace.id,
           activeTab.fileId,
-          activeTab.content,
+          content,
           activeTab.etag,
         )
         updateTabEtag(activeTab.id, result.etag)
@@ -321,14 +370,25 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [activeTab, orgSlug, workspace.id, updateTabEtag])
+  }, [activeTab, orgSlug, workspace.id, updateTabEtag, registry])
+
+  // ── File content loading ───────────────────────────────────────────────────
+  const { isLoading: isContentLoading, isError: isContentError } = useFileContent({
+    orgSlug,
+    workspaceId: workspace.id,
+    tab: activeTab,
+    updateTabEtag,
+  })
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const activeDoc = activeTab ? registry.get(activeTab.id) : undefined
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-background">
       <IdeToolbar orgSlug={orgSlug} workspace={workspace} />
       <IdeTabBar orgSlug={orgSlug} workspace={workspace} />
       <div className="min-h-0 flex-1 bg-card">
-        {activeTab ? (
+        {activeTab && activeDoc ? (
           isContentLoading ? (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
               Loading…
@@ -340,8 +400,7 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
           ) : (
             <SqlEditor
               key={activeTab.id}
-              value={activeTab.content}
-              onChange={(content) => updateTabContent(activeTab.id, content)}
+              doc={activeDoc}
               className="h-full"
             />
           )
