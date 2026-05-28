@@ -3,7 +3,13 @@ import * as Y from 'yjs'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { DatabaseLightningIcon } from '@hugeicons/core-free-icons'
+import {
+  DatabaseLightningIcon,
+  File01Icon,
+  FolderOpenIcon,
+  TerminalIcon,
+} from '@hugeicons/core-free-icons'
+import { Button } from '#/components/ui/button'
 import { updatePrivateWorkspaceFileContent } from '#/lib/api/files'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import {
@@ -433,10 +439,7 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
     return () => cleanups.forEach((c) => c())
   }, [wsTabs, registry, updateTabContent])
 
-  // ── Ensure at least one console tab ────────────────────────────────────────
-  useEffect(() => {
-    if (wsTabs.length === 0) createConsole()
-  }, [wsTabs, createConsole])
+  // No "ensure one tab" guard — users can close all tabs to reach the empty state.
 
   // ── ⌘S / Ctrl+S: save file tab in-place ────────────────────────────────────
   useEffect(() => {
@@ -501,14 +504,48 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
           ) : (
             <SqlEditor key={activeTab.id} doc={activeDoc} className="h-full" />
           )
-        ) : !activeTab ? (
-          // True empty state — no tabs open at all.
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-            Open a connection or file to start querying.
-          </div>
-        ) : null}
+        ) : (
+          <EmptyEditorState onNewConsole={createConsole} />
+        )}
       </div>
     </section>
+  )
+}
+
+// ─── Empty state ───────────────────────────────────────────────────────────────
+
+function EmptyEditorState({ onNewConsole }: { onNewConsole: () => void }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-6 p-8 text-center">
+      <div className="flex flex-col gap-1.5">
+        <p className="text-sm font-semibold text-foreground">No editors open</p>
+        <p className="max-w-xs text-xs text-muted-foreground">
+          Open a console to write SQL, or pick a file from the sidebar.
+        </p>
+      </div>
+
+      <Button size="sm" onClick={onNewConsole}>
+        <HugeiconsIcon icon={TerminalIcon} size={13} strokeWidth={2} data-icon="inline-start" />
+        New Console
+      </Button>
+
+      <div className="flex flex-col gap-3 text-xs text-muted-foreground">
+        <div className="flex items-start gap-2 text-left">
+          <HugeiconsIcon icon={FolderOpenIcon} size={13} strokeWidth={2} className="mt-px shrink-0" />
+          <span>
+            <span className="font-medium text-foreground">Files panel</span>
+            {' '}— click any file to open it in an editor tab
+          </span>
+        </div>
+        <div className="flex items-start gap-2 text-left">
+          <HugeiconsIcon icon={File01Icon} size={13} strokeWidth={2} className="mt-px shrink-0" />
+          <span>
+            <span className="font-medium text-foreground">New console</span>
+            {' '}— select a connection in the toolbar, then run queries
+          </span>
+        </div>
+      </div>
+    </div>
   )
 }
 
