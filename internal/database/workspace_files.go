@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	FileVisibilityPrivate = "private"
-	FileVisibilityShared  = "shared"
-	FileObjectTypeFile    = "file"
-	FileObjectTypeFolder  = "folder"
+	FileVisibilityPrivate       = "private"
+	FileVisibilityShared        = "shared"
+	FileObjectTypeFile          = "file"
+	FileObjectTypeFolder        = "folder"
+	DefaultFileStorageBackendID = "local"
 )
 
 var (
@@ -48,6 +49,7 @@ type WorkspaceFileContent struct {
 	ID                   int64      `bun:",pk,autoincrement" json:"id"`
 	FileID               int64      `bun:",notnull" json:"file_id"`
 	Version              int        `bun:",notnull" json:"version"`
+	StorageBackendID     string     `bun:",notnull" json:"-"`
 	StorageKey           string     `bun:",notnull" json:"-"`
 	ContentHash          string     `bun:",notnull" json:"content_hash"`
 	SizeBytes            int64      `bun:",notnull" json:"size_bytes"`
@@ -56,6 +58,22 @@ type WorkspaceFileContent struct {
 	EncryptionKeyID      string     `bun:",nullzero" json:"-"`
 	CreatedBy            int64      `bun:",notnull" json:"created_by"`
 	CreatedAt            time.Time  `bun:",notnull" json:"created_at"`
+}
+
+// ListWorkspaceFileStorageBackendIDs returns backend IDs referenced by saved
+// file content. Startup uses this to fail fast when configuration no longer
+// contains a backend needed to read existing bytes.
+func (db *DB) ListWorkspaceFileStorageBackendIDs(ctx context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var ids []string
+	err := db.NewSelect().
+		TableExpr("workspace_file_contents").
+		ColumnExpr("DISTINCT storage_backend_id").
+		OrderExpr("storage_backend_id ASC").
+		Scan(ctx, &ids)
+	return ids, err
 }
 
 // InsertWorkspaceFile creates a file or folder after validating the parent tree.
@@ -267,6 +285,10 @@ func (db *DB) SaveWorkspaceFileContent(ctx context.Context, fileID, actorID int6
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	if content.StorageBackendID == "" {
+		content.StorageBackendID = DefaultFileStorageBackendID
+	}
+
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		var currentID *int64
 		var nextVersion int
@@ -290,7 +312,7 @@ func (db *DB) SaveWorkspaceFileContent(ctx context.Context, fileID, actorID int6
 				content.CreatedBy = actorID
 				content.CreatedAt = time.Now()
 				_, err := tx.NewUpdate().Model(&content).
-					Column("storage_key", "content_hash", "size_bytes", "external_modified_at", "application_encrypted", "encryption_key_id", "created_by", "created_at").
+					Column("storage_backend_id", "storage_key", "content_hash", "size_bytes", "external_modified_at", "application_encrypted", "encryption_key_id", "created_by", "created_at").
 					WherePK().
 					Exec(ctx)
 				if err != nil {

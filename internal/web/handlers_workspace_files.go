@@ -246,9 +246,10 @@ func (app *application) updateWorkspaceFileContent(w http.ResponseWriter, r *htt
 
 // workspaceFileService builds the file domain service from current app state.
 func (app *application) workspaceFileService() *files.Service {
-	return files.New(app.db, app.fileStore, app.enforcer, files.Config{
-		StorageMode:    app.config.Files.StorageMode,
-		RevisionPolicy: app.config.Files.Revisions.DefaultPolicy,
+	return files.NewWithStoreResolver(app.db, app.fileStores, app.enforcer, files.Config{
+		StorageMode:            app.config.Files.StorageMode,
+		ActiveStorageBackendID: app.config.Files.ActiveStorageBackend,
+		RevisionPolicy:         app.config.Files.Revisions.DefaultPolicy,
 	}, &app.fileLocks)
 }
 
@@ -282,6 +283,8 @@ func (app *application) workspaceFileError(w http.ResponseWriter, r *http.Reques
 		app.notPermitted(w, r)
 	case errors.Is(err, files.ErrNotFound):
 		app.notFound(w, r)
+	case errors.Is(err, files.ErrStorageBackendUnavailable):
+		app.errorMessage(w, r, http.StatusServiceUnavailable, "File storage backend is unavailable.", nil)
 	case errors.Is(err, files.ErrInvalidName):
 		app.failedValidation(w, r, fieldErrors(map[string]string{"name": "Name must be a valid file or folder name."}))
 	case errors.Is(err, files.ErrInvalidObjectType):

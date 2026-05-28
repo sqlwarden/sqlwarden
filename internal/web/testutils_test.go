@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
 
@@ -70,11 +69,7 @@ func newTestApplication(t *testing.T) *application {
 	app.db = newTestDB(t)
 	app.mailer = smtp.NewMockMailer("test@example.com")
 	var err error
-	fileRoot, err := app.config.fileStorageRootDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	app.fileStore, err = filestore.NewFilesystem(fileRoot)
+	app.fileStores, err = newFileStoreRegistry(app.config)
 	if err != nil {
 		t.Fatal(err)
 	}

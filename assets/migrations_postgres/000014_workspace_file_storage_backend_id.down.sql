@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_workspace_file_contents_storage_backend;
+ALTER TABLE workspace_file_contents DROP COLUMN storage_backend_id;

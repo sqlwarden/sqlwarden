@@ -225,7 +225,11 @@ func TestWorkspaceFileContentRejectsStaleExternalWrite(t *testing.T) {
 	if !strings.HasPrefix(content.StorageKey, "objects/") || strings.Contains(content.StorageKey, file.Name) {
 		t.Fatalf("object-store key must be opaque, got %q", content.StorageKey)
 	}
-	if _, err := app.fileStore.Put(context.Background(), content.StorageKey, strings.NewReader("external edit")); err != nil {
+	store, err := app.fileStores.Store(context.Background(), content.StorageBackendID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Put(context.Background(), content.StorageKey, strings.NewReader("external edit")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -243,7 +247,7 @@ func TestWorkspaceDirectoryWritesVisibleFilePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.fileStore = store
+	app.fileStores = &fileStoreRegistry{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
 	app.config.Files.StorageMode = FilesStorageModeFile
 
 	create := send(t, newAuthRequest(t, http.MethodPost, orgPrivateFilesURL(org.Slug, ws.ID), map[string]any{"name": "visible.sql"}, tok), app.routes())
@@ -398,7 +402,7 @@ func TestWorkspaceDirectoryMovesTrackedDescendantsAndRejectsExternalDestination(
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.fileStore = store
+	app.fileStores = &fileStoreRegistry{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
 	app.config.Files.StorageMode = FilesStorageModeFile
 	filesURL := orgPrivateFilesURL(org.Slug, ws.ID)
 	folder := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{

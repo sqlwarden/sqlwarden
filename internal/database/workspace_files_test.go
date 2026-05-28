@@ -68,28 +68,40 @@ func TestWorkspaceFilesValidateTreeAndContentPolicy(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if first.StorageBackendID != DefaultFileStorageBackendID {
+				t.Fatalf("default storage backend = %q, want %q", first.StorageBackendID, DefaultFileStorageBackendID)
+			}
 			second, err := db.SaveWorkspaceFileContent(ctx, file.ID, ownerID, WorkspaceFileContent{
-				StorageKey:  "current",
-				ContentHash: "second",
-				SizeBytes:   6,
+				StorageBackendID: "archive",
+				StorageKey:       "current",
+				ContentHash:      "second",
+				SizeBytes:        6,
 			}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if first.ID != second.ID || second.Version != 1 {
+			if first.ID != second.ID || second.Version != 1 || second.StorageBackendID != "archive" {
 				t.Fatalf("disabled revisions must replace current content: first=%+v second=%+v", first, second)
 			}
 
 			third, err := db.SaveWorkspaceFileContent(ctx, file.ID, ownerID, WorkspaceFileContent{
-				StorageKey:  "versions/2",
-				ContentHash: "third",
-				SizeBytes:   5,
+				StorageBackendID: "cold",
+				StorageKey:       "versions/2",
+				ContentHash:      "third",
+				SizeBytes:        5,
 			}, true)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if third.ID == second.ID || third.Version != 2 {
+			if third.ID == second.ID || third.Version != 2 || third.StorageBackendID != "cold" {
 				t.Fatalf("versioned content must create next revision: %+v", third)
+			}
+			backendIDs, err := db.ListWorkspaceFileStorageBackendIDs(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(backendIDs) != 2 || backendIDs[0] != "archive" || backendIDs[1] != "cold" {
+				t.Fatalf("storage backend IDs = %+v, want [archive cold]", backendIDs)
 			}
 		})
 	}

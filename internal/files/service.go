@@ -24,17 +24,18 @@ const (
 )
 
 var (
-	ErrForbidden                = errors.New("workspace file access forbidden")
-	ErrNotFound                 = errors.New("workspace file not found")
-	ErrInvalidName              = errors.New("workspace file name is invalid")
-	ErrInvalidObjectType        = errors.New("workspace file object type is invalid")
-	ErrInvalidParent            = errors.New("workspace file parent is invalid")
-	ErrMoveCycle                = errors.New("workspace file cannot be moved into itself or its descendant")
-	ErrMissingUpdate            = errors.New("workspace file update requires name or parent_id")
-	ErrFolderContent            = errors.New("folder content cannot be read or updated")
-	ErrPreconditionRequired     = errors.New("if-match is required when updating existing file content")
-	ErrStaleContent             = errors.New("workspace file content is stale")
-	ErrStorageDestinationExists = errors.New("workspace file destination exists")
+	ErrForbidden                 = errors.New("workspace file access forbidden")
+	ErrNotFound                  = errors.New("workspace file not found")
+	ErrStorageBackendUnavailable = errors.New("workspace file storage backend is unavailable")
+	ErrInvalidName               = errors.New("workspace file name is invalid")
+	ErrInvalidObjectType         = errors.New("workspace file object type is invalid")
+	ErrInvalidParent             = errors.New("workspace file parent is invalid")
+	ErrMoveCycle                 = errors.New("workspace file cannot be moved into itself or its descendant")
+	ErrMissingUpdate             = errors.New("workspace file update requires name or parent_id")
+	ErrFolderContent             = errors.New("folder content cannot be read or updated")
+	ErrPreconditionRequired      = errors.New("if-match is required when updating existing file content")
+	ErrStaleContent              = errors.New("workspace file content is stale")
+	ErrStorageDestinationExists  = errors.New("workspace file destination exists")
 )
 
 // Enforcer is the permission check used for shared workspace-file operations.
@@ -45,8 +46,37 @@ type Enforcer interface {
 // Config controls logical workspace-file storage behavior. The byte backend is
 // still selected by the injected filestore.Store.
 type Config struct {
-	StorageMode    string
-	RevisionPolicy string
+	StorageMode            string
+	ActiveStorageBackendID string
+	RevisionPolicy         string
+}
+
+// StoreResolver resolves configured storage backends by their stable backend ID.
+type StoreResolver interface {
+	ActiveBackendID() string
+	Store(ctx context.Context, backendID string) (filestore.Store, error)
+}
+
+type singleStoreResolver struct {
+	backendID string
+	store     filestore.Store
+}
+
+func (r singleStoreResolver) ActiveBackendID() string {
+	if r.backendID == "" {
+		return database.DefaultFileStorageBackendID
+	}
+	return r.backendID
+}
+
+func (r singleStoreResolver) Store(_ context.Context, backendID string) (filestore.Store, error) {
+	if backendID == "" {
+		backendID = r.ActiveBackendID()
+	}
+	if backendID != r.ActiveBackendID() || r.store == nil {
+		return nil, ErrStorageBackendUnavailable
+	}
+	return r.store, nil
 }
 
 // Scope identifies the actor, workspace, organization, and file tree for one
@@ -86,7 +116,7 @@ type ReadContentResult struct {
 // planning, and content IO orchestration.
 type Service struct {
 	db       *database.DB
-	store    filestore.Store
+	stores   StoreResolver
 	enforcer Enforcer
 	config   Config
 	locks    *sync.Map
@@ -96,10 +126,19 @@ type Service struct {
 // enforcer. locks may be shared across service instances for process-local
 // serialization.
 func New(db *database.DB, store filestore.Store, enforcer Enforcer, config Config, locks *sync.Map) *Service {
+	return NewWithStoreResolver(db, singleStoreResolver{backendID: config.ActiveStorageBackendID, store: store}, enforcer, config, locks)
+}
+
+// NewWithStoreResolver creates a workspace-file service that can read content
+// from any configured backend and write new content to the active backend.
+func NewWithStoreResolver(db *database.DB, stores StoreResolver, enforcer Enforcer, config Config, locks *sync.Map) *Service {
 	if locks == nil {
 		locks = &sync.Map{}
 	}
-	return &Service{db: db, store: store, enforcer: enforcer, config: config, locks: locks}
+	if config.ActiveStorageBackendID == "" {
+		config.ActiveStorageBackendID = database.DefaultFileStorageBackendID
+	}
+	return &Service{db: db, stores: stores, enforcer: enforcer, config: config, locks: locks}
 }
 
 // List returns direct children from the requested private or shared file tree.
@@ -268,11 +307,19 @@ func (s *Service) Delete(ctx context.Context, scope Scope, fileID int64) error {
 	if err != nil {
 		return err
 	}
+	contentStores := make(map[int64]filestore.Store, len(contents))
+	for _, content := range contents {
+		store, err := s.storeForContent(ctx, content)
+		if err != nil {
+			return err
+		}
+		contentStores[content.ID] = store
+	}
 	if err := s.db.DeleteWorkspaceFileTree(ctx, file.ID, scope.AccountID); err != nil {
 		return err
 	}
 	for _, content := range contents {
-		if err := s.store.Delete(ctx, content.StorageKey); err != nil {
+		if err := contentStores[content.ID].Delete(ctx, content.StorageKey); err != nil {
 			return err
 		}
 	}
@@ -296,7 +343,11 @@ func (s *Service) ReadContent(ctx context.Context, scope Scope, fileID int64) (R
 	if !found {
 		return ReadContentResult{}, ErrNotFound
 	}
-	reader, object, err := s.store.Get(ctx, content.StorageKey)
+	store, err := s.storeForContent(ctx, content)
+	if err != nil {
+		return ReadContentResult{}, err
+	}
+	reader, object, err := store.Get(ctx, content.StorageKey)
 	if err != nil {
 		return ReadContentResult{}, err
 	}
@@ -322,7 +373,11 @@ func (s *Service) WriteContent(ctx context.Context, scope Scope, fileID int64, e
 		return database.WorkspaceFileContent{}, err
 	}
 	if found {
-		reader, object, err := s.store.Get(ctx, current.StorageKey)
+		store, err := s.storeForContent(ctx, current)
+		if err != nil {
+			return database.WorkspaceFileContent{}, err
+		}
+		reader, object, err := store.Get(ctx, current.StorageKey)
 		if err != nil {
 			return database.WorkspaceFileContent{}, err
 		}
@@ -341,12 +396,18 @@ func (s *Service) WriteContent(ctx context.Context, scope Scope, fileID int64, e
 	if err != nil {
 		return database.WorkspaceFileContent{}, err
 	}
-	object, err := s.store.Put(ctx, storageKey, content)
+	activeBackendID := s.activeBackendID()
+	store, err := s.storeForBackend(ctx, activeBackendID)
+	if err != nil {
+		return database.WorkspaceFileContent{}, err
+	}
+	object, err := store.Put(ctx, storageKey, content)
 	if err != nil {
 		return database.WorkspaceFileContent{}, err
 	}
 	externalModifiedAt := object.ModifiedTime
 	saved, err := s.db.SaveWorkspaceFileContent(ctx, file.ID, scope.AccountID, database.WorkspaceFileContent{
+		StorageBackendID:   activeBackendID,
 		StorageKey:         object.Key,
 		ContentHash:        object.ContentHash,
 		SizeBytes:          object.SizeBytes,
@@ -444,6 +505,40 @@ func (s *Service) validateParent(ctx context.Context, scope Scope, parentID int6
 func (s *Service) workspaceLock(workspaceID int64) *sync.Mutex {
 	lock, _ := s.locks.LoadOrStore("workspace-files:"+strconv.FormatInt(workspaceID, 10), &sync.Mutex{})
 	return lock.(*sync.Mutex)
+}
+
+func (s *Service) activeBackendID() string {
+	if s.stores != nil {
+		if backendID := s.stores.ActiveBackendID(); backendID != "" {
+			return backendID
+		}
+	}
+	if s.config.ActiveStorageBackendID != "" {
+		return s.config.ActiveStorageBackendID
+	}
+	return database.DefaultFileStorageBackendID
+}
+
+func (s *Service) storeForContent(ctx context.Context, content database.WorkspaceFileContent) (filestore.Store, error) {
+	backendID := content.StorageBackendID
+	if backendID == "" {
+		backendID = database.DefaultFileStorageBackendID
+	}
+	return s.storeForBackend(ctx, backendID)
+}
+
+func (s *Service) storeForBackend(ctx context.Context, backendID string) (filestore.Store, error) {
+	if s.stores == nil {
+		return nil, ErrStorageBackendUnavailable
+	}
+	store, err := s.stores.Store(ctx, backendID)
+	if err != nil {
+		return nil, err
+	}
+	if store == nil {
+		return nil, ErrStorageBackendUnavailable
+	}
+	return store, nil
 }
 
 type storagePlanner interface {
@@ -551,8 +646,13 @@ func (p workspaceDirectoryPlanner) Relocations(ctx context.Context, svc *Service
 		if content.StorageKey != oldRoot && !strings.HasPrefix(content.StorageKey, oldRoot+"/") {
 			continue
 		}
+		backendID := content.StorageBackendID
+		if backendID == "" {
+			backendID = database.DefaultFileStorageBackendID
+		}
 		relocations = append(relocations, relocation{
 			contentID: content.ID,
+			backendID: backendID,
 			oldKey:    content.StorageKey,
 			newKey:    newRoot + strings.TrimPrefix(content.StorageKey, oldRoot),
 		})
@@ -562,7 +662,11 @@ func (p workspaceDirectoryPlanner) Relocations(ctx context.Context, svc *Service
 
 // Prune removes empty visible directories left behind after moves/deletes.
 func (p workspaceDirectoryPlanner) Prune(ctx context.Context, svc *Service, scope Scope, file database.WorkspaceFile) {
-	pruner, ok := svc.store.(filestore.EmptyDirectoryPruner)
+	store, err := svc.storeForBackend(ctx, svc.activeBackendID())
+	if err != nil {
+		return
+	}
+	pruner, ok := store.(filestore.EmptyDirectoryPruner)
 	if !ok {
 		return
 	}
@@ -584,6 +688,7 @@ func (p workspaceDirectoryPlanner) UsesRevisions(database.WorkspaceFile) bool {
 
 type relocation struct {
 	contentID int64
+	backendID string
 	oldKey    string
 	newKey    string
 	copied    bool
@@ -596,7 +701,12 @@ func (s *Service) stageRelocations(ctx context.Context, relocations []relocation
 		if relocations[i].oldKey == relocations[i].newKey {
 			continue
 		}
-		existing, _, err := s.store.Get(ctx, relocations[i].newKey)
+		store, err := s.storeForBackend(ctx, relocations[i].backendID)
+		if err != nil {
+			s.rollbackRelocations(ctx, relocations[:i])
+			return err
+		}
+		existing, _, err := store.Get(ctx, relocations[i].newKey)
 		if err == nil {
 			existing.Close()
 			s.rollbackRelocations(ctx, relocations[:i])
@@ -606,7 +716,7 @@ func (s *Service) stageRelocations(ctx context.Context, relocations []relocation
 			s.rollbackRelocations(ctx, relocations[:i])
 			return err
 		}
-		reader, _, err := s.store.Get(ctx, relocations[i].oldKey)
+		reader, _, err := store.Get(ctx, relocations[i].oldKey)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
@@ -614,7 +724,7 @@ func (s *Service) stageRelocations(ctx context.Context, relocations []relocation
 			s.rollbackRelocations(ctx, relocations[:i])
 			return err
 		}
-		_, err = s.store.Put(ctx, relocations[i].newKey, reader)
+		_, err = store.Put(ctx, relocations[i].newKey, reader)
 		reader.Close()
 		if err != nil {
 			s.rollbackRelocations(ctx, relocations[:i])
@@ -630,7 +740,9 @@ func (s *Service) stageRelocations(ctx context.Context, relocations []relocation
 func (s *Service) rollbackRelocations(ctx context.Context, relocations []relocation) {
 	for _, relocation := range relocations {
 		if relocation.copied {
-			_ = s.store.Delete(ctx, relocation.newKey)
+			if store, err := s.storeForBackend(ctx, relocation.backendID); err == nil {
+				_ = store.Delete(ctx, relocation.newKey)
+			}
 		}
 	}
 }
@@ -640,7 +752,9 @@ func (s *Service) rollbackRelocations(ctx context.Context, relocations []relocat
 func (s *Service) finishRelocations(ctx context.Context, planner storagePlanner, scope Scope, original database.WorkspaceFile, relocations []relocation) {
 	for _, relocation := range relocations {
 		if relocation.copied {
-			_ = s.store.Delete(ctx, relocation.oldKey)
+			if store, err := s.storeForBackend(ctx, relocation.backendID); err == nil {
+				_ = store.Delete(ctx, relocation.oldKey)
+			}
 		}
 	}
 	planner.Prune(ctx, s, scope, original)

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/smtp"
 )
@@ -30,8 +32,28 @@ type application struct {
 	connManager *connection.Manager
 	encKey      []byte
 	enforcer    *access.Enforcer
-	fileStore   filestore.Store
+	fileStores  *fileStoreRegistry
 	fileLocks   sync.Map
+}
+
+type fileStoreRegistry struct {
+	activeBackendID string
+	stores          map[string]filestore.Store
+}
+
+func (r *fileStoreRegistry) ActiveBackendID() string {
+	return r.activeBackendID
+}
+
+func (r *fileStoreRegistry) Store(_ context.Context, backendID string) (filestore.Store, error) {
+	if backendID == "" {
+		backendID = database.DefaultFileStorageBackendID
+	}
+	store, ok := r.stores[backendID]
+	if !ok {
+		return nil, files.ErrStorageBackendUnavailable
+	}
+	return store, nil
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
@@ -72,16 +94,14 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("enforcer init: %w", err)
 	}
 
-	var fileStore filestore.Store
-	fileRoot, err := cfg.fileStorageRootDir()
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-	fileStore, err = filestore.NewFilesystem(fileRoot)
+	fileStores, err := newFileStoreRegistry(cfg)
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("file storage init: %w", err)
+	}
+	if err := validateConfiguredFileStorageBackends(context.Background(), db, fileStores); err != nil {
+		db.Close()
+		return nil, err
 	}
 
 	return &application{
@@ -92,7 +112,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		connManager: connection.New(30 * time.Minute),
 		encKey:      encrypt.DeriveKey(cfg.Encryption.Key),
 		enforcer:    enforcer,
-		fileStore:   fileStore,
+		fileStores:  fileStores,
 	}, nil
 }
 
@@ -124,6 +144,45 @@ func ensureSQLiteParentDir(cfg Config) error {
 	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("create sqlite database directory: %w", err)
+	}
+	return nil
+}
+
+func newFileStoreRegistry(cfg Config) (*fileStoreRegistry, error) {
+	activeBackendID := cfg.Files.ActiveStorageBackend
+	if cfg.Files.StorageMode == FilesStorageModeFile || strings.TrimSpace(activeBackendID) == "" {
+		activeBackendID = database.DefaultFileStorageBackendID
+	}
+	registry := &fileStoreRegistry{
+		activeBackendID: activeBackendID,
+		stores:          make(map[string]filestore.Store, len(cfg.Files.StorageBackends)),
+	}
+	for id, backend := range cfg.Files.StorageBackends {
+		switch backend.Type {
+		case FilesStorageBackendFilesystem:
+			store, err := filestore.NewFilesystem(backend.RootDir)
+			if err != nil {
+				return nil, fmt.Errorf("backend %q: %w", id, err)
+			}
+			registry.stores[id] = store
+		default:
+			return nil, fmt.Errorf("backend %q type %q is not implemented", id, backend.Type)
+		}
+	}
+	return registry, nil
+}
+
+// validateConfiguredFileStorageBackends fails startup when saved file content
+// references a backend that is not configured for this process.
+func validateConfiguredFileStorageBackends(ctx context.Context, db *database.DB, stores *fileStoreRegistry) error {
+	referenced, err := db.ListWorkspaceFileStorageBackendIDs(ctx)
+	if err != nil {
+		return err
+	}
+	for _, backendID := range referenced {
+		if _, ok := stores.stores[backendID]; !ok {
+			return fmt.Errorf("file storage backend %q is referenced by saved file content but is not configured", backendID)
+		}
 	}
 	return nil
 }

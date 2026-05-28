@@ -36,6 +36,23 @@ type fakeEnforcer struct {
 	calls   []string
 }
 
+type mutableStoreResolver struct {
+	active string
+	stores map[string]filestore.Store
+}
+
+func (r *mutableStoreResolver) ActiveBackendID() string {
+	return r.active
+}
+
+func (r *mutableStoreResolver) Store(_ context.Context, backendID string) (filestore.Store, error) {
+	store, ok := r.stores[backendID]
+	if !ok {
+		return nil, ErrStorageBackendUnavailable
+	}
+	return store, nil
+}
+
 func (e *fakeEnforcer) Can(_ context.Context, accountID, orgID int64, ownerType, resourceType string, resourceID int64, permission string) bool {
 	e.calls = append(e.calls, permission+"@"+ownerType+":"+resourceType+":"+strconv.FormatInt(resourceID, 10))
 	return e.allowed[permission]
@@ -264,6 +281,110 @@ func TestObjectStoreVersionsTextFilesAndKeepsKeysStableOnRename(t *testing.T) {
 	}
 	if string(body) != "select 2" {
 		t.Fatalf("content = %q, want select 2", string(body))
+	}
+}
+
+func TestContentReadsUseSavedBackendAndWritesUseActiveBackend(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyVersioned})
+	archive, err := filestore.NewFilesystem(filepath.Join(t.TempDir(), "archive"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := &mutableStoreResolver{
+		active: "local",
+		stores: map[string]filestore.Store{
+			"local":   f.store,
+			"archive": archive,
+		},
+	}
+	f.service = NewWithStoreResolver(f.db, resolver, f.enforcer, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyVersioned}, &sync.Map{})
+	scope := f.privateScope(f.member)
+
+	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("local copy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.StorageBackendID != "local" {
+		t.Fatalf("first storage backend = %q, want local", first.StorageBackendID)
+	}
+
+	resolver.active = "archive"
+	readFirst, err := f.service.ReadContent(f.ctx, scope, file.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstBody, err := io.ReadAll(readFirst.Reader)
+	readFirst.Reader.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(firstBody) != "local copy" {
+		t.Fatalf("read after active backend switch = %q, want local copy", string(firstBody))
+	}
+
+	second, err := f.service.WriteContent(f.ctx, scope, file.ID, first.ContentHash, strings.NewReader("archive copy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.StorageBackendID != "archive" {
+		t.Fatalf("second storage backend = %q, want archive", second.StorageBackendID)
+	}
+	if _, _, err := f.store.Get(f.ctx, second.StorageKey); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("second content should not be in local store, err=%v", err)
+	}
+	if reader, _, err := archive.Get(f.ctx, second.StorageKey); err != nil {
+		t.Fatalf("second content missing from archive: %v", err)
+	} else {
+		reader.Close()
+	}
+}
+
+func TestReadContentFailsWhenSavedBackendIsUnavailable(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyDisabled})
+	resolver := &mutableStoreResolver{active: "local", stores: map[string]filestore.Store{"local": f.store}}
+	f.service = NewWithStoreResolver(f.db, resolver, f.enforcer, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyDisabled}, &sync.Map{})
+	scope := f.privateScope(f.member)
+
+	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("content"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(resolver.stores, content.StorageBackendID)
+
+	if _, err := f.service.ReadContent(f.ctx, scope, file.ID); !errors.Is(err, ErrStorageBackendUnavailable) {
+		t.Fatalf("read missing backend error = %v, want %v", err, ErrStorageBackendUnavailable)
+	}
+}
+
+func TestDeleteFailsBeforeTombstoneWhenSavedBackendIsUnavailable(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyDisabled})
+	resolver := &mutableStoreResolver{active: "local", stores: map[string]filestore.Store{"local": f.store}}
+	f.service = NewWithStoreResolver(f.db, resolver, f.enforcer, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyDisabled}, &sync.Map{})
+	scope := f.privateScope(f.member)
+
+	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("content"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(resolver.stores, content.StorageBackendID)
+
+	if err := f.service.Delete(f.ctx, scope, file.ID); !errors.Is(err, ErrStorageBackendUnavailable) {
+		t.Fatalf("delete missing backend error = %v, want %v", err, ErrStorageBackendUnavailable)
+	}
+	if _, found, err := f.db.GetWorkspaceFile(f.ctx, file.ID); err != nil || !found {
+		t.Fatalf("file should not be tombstoned when backend is missing: found=%v err=%v", found, err)
 	}
 }
 

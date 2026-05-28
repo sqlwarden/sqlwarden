@@ -517,18 +517,3 @@ func expandHomePath(path string) (string, error) {
 	}
 	return filepath.Join(home, path[2:]), nil
 }
-
-func (cfg Config) fileStorageRootDir() (string, error) {
-	backendID := cfg.Files.ActiveStorageBackend
-	if cfg.Files.StorageMode == FilesStorageModeFile || strings.TrimSpace(backendID) == "" {
-		backendID = defaultFilesActiveBackend
-	}
-	backend, ok := cfg.Files.StorageBackends[backendID]
-	if !ok {
-		return "", fmt.Errorf("file storage backend %q is not configured", backendID)
-	}
-	if backend.Type != FilesStorageBackendFilesystem {
-		return "", fmt.Errorf("file storage backend %q type %q is not implemented", backendID, backend.Type)
-	}
-	return backend.RootDir, nil
-}
