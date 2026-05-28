@@ -117,7 +117,6 @@ function WorkspaceTab({
 
 function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
   const sidebarRef = useRef<PanelImperativeHandle>(null)
-  const isDraggingRef = useRef(false)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
 
@@ -146,19 +145,7 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
         <IdeSidebar orgSlug={orgSlug} workspace={workspace} />
       </ResizablePanel>
 
-      {/* Handle doubles as a collapse/expand toggle on click */}
-      <ResizableHandle
-        withHandle
-        onMouseDown={() => { isDraggingRef.current = false }}
-        onMouseMove={() => { isDraggingRef.current = true }}
-        onClick={() => {
-          if (!isDraggingRef.current) {
-            setSidebarCollapsed(!sidebarCollapsed)
-          }
-          isDraggingRef.current = false
-        }}
-        className="w-1.5 cursor-col-resize transition-colors hover:bg-primary/15 active:bg-primary/20"
-      />
+      <ResizableHandle withHandle />
 
       <ResizablePanel defaultSize="78%" minSize="45%" className="overflow-hidden">
         <IdeEditorAndResults orgSlug={orgSlug} workspace={workspace} />

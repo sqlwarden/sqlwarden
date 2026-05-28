@@ -7,6 +7,7 @@ import {
   DatabaseIcon,
   PlayIcon,
   ServerStack01Icon,
+  SidebarLeft01Icon,
 } from '@hugeicons/core-free-icons'
 import { Button } from '#/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover'
@@ -32,6 +33,8 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const setTabConnection = useIde((s) => s.setTabConnection)
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
+  const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
+  const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
 
@@ -68,7 +71,23 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-2">
-      {/* Run button — left */}
+      {/* Sidebar toggle */}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Toggle sidebar"
+        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+      >
+        <HugeiconsIcon
+          icon={SidebarLeft01Icon}
+          size={15}
+          strokeWidth={2}
+          className={cn('transition-opacity', sidebarCollapsed && 'opacity-40')}
+        />
+      </Button>
+
+      {/* Run button */}
       <Button
         type="button"
         size="sm"

@@ -38,7 +38,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
 
   return (
     <SidebarPane
-      title="Database"
+      title={workspace.name}
       icon={DatabaseIcon}
       maximized={maximized}
       onMaximizedChange={onMaximizedChange}
