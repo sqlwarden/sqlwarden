@@ -118,11 +118,11 @@ function WorkspaceTab({
 function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
   return (
     <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-      <ResizablePanel defaultSize={22} minSize={14} maxSize={38} className="overflow-hidden">
+      <ResizablePanel defaultSize="22%" minSize="14%" maxSize="40%" className="overflow-hidden">
         <IdeSidebar orgSlug={orgSlug} workspace={workspace} />
       </ResizablePanel>
       <ResizableHandle withHandle />
-      <ResizablePanel defaultSize={78} minSize={45} className="overflow-hidden">
+      <ResizablePanel defaultSize="78%" minSize="45%" className="overflow-hidden">
         <IdeEditorAndResults orgSlug={orgSlug} workspace={workspace} />
       </ResizablePanel>
     </ResizablePanelGroup>
@@ -162,9 +162,10 @@ function IdeSidebar({ orgSlug, workspace }: { orgSlug: string; workspace: Worksp
       <ResizablePanelGroup orientation="vertical" className="min-h-0">
         <ResizablePanel
           panelRef={dbRef}
-          defaultSize={55}
-          minSize={15}
+          defaultSize="55%"
+          minSize="15%"
           collapsible
+          collapsedSize="0%"
           className="overflow-hidden"
         >
           <DatabasePanel
@@ -177,9 +178,10 @@ function IdeSidebar({ orgSlug, workspace }: { orgSlug: string; workspace: Worksp
         <ResizableHandle withHandle />
         <ResizablePanel
           panelRef={filesRef}
-          defaultSize={45}
-          minSize={15}
+          defaultSize="45%"
+          minSize="15%"
           collapsible
+          collapsedSize="0%"
           className="overflow-hidden"
         >
           <FilesPanel
@@ -218,9 +220,10 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
     <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
       <ResizablePanel
         panelRef={editorRef}
-        defaultSize={58}
-        minSize={15}
+        defaultSize="58%"
+        minSize="15%"
         collapsible
+        collapsedSize="0%"
         className="flex min-h-0 flex-col overflow-hidden"
       >
         <EditorSection orgSlug={orgSlug} workspace={workspace} />
@@ -228,9 +231,10 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
       <ResizableHandle withHandle />
       <ResizablePanel
         panelRef={resultsRef}
-        defaultSize={42}
-        minSize={12}
+        defaultSize="42%"
+        minSize="12%"
         collapsible
+        collapsedSize="0%"
         className="flex min-h-0 flex-col overflow-hidden"
       >
         <ResultsArea />
