@@ -22,6 +22,7 @@ export type IdeState = {
   activeWorkspaceId?: number
   maximizedPane: 'editor' | 'results' | null
   maximizedSidebarPane: 'database' | 'files' | null
+  sidebarCollapsed: boolean
   activeTabId?: string
   tabs: EditorTab[]
 }
@@ -35,6 +36,7 @@ export type IdeActions = {
   setTabConnection: (tabId: string, connectionId: number) => void
   setMaximizedPane: (pane: IdeState['maximizedPane']) => void
   setMaximizedSidebarPane: (pane: IdeState['maximizedSidebarPane']) => void
+  setSidebarCollapsed: (collapsed: boolean) => void
 }
 
 // ─── Store factory ─────────────────────────────────────────────────────────────
@@ -58,6 +60,7 @@ export function createIdeStore(orgSlug: string) {
         activeWorkspaceId: undefined,
         maximizedPane: null,
         maximizedSidebarPane: null,
+        sidebarCollapsed: false,
         activeTabId: undefined,
         tabs: [],
 
@@ -89,6 +92,7 @@ export function createIdeStore(orgSlug: string) {
 
         setMaximizedPane: (pane) => set({ maximizedPane: pane }),
         setMaximizedSidebarPane: (pane) => set({ maximizedSidebarPane: pane }),
+        setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
       }),
       {
         name: `sqlwarden.ide.${orgSlug}`,

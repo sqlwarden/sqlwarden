@@ -67,14 +67,14 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
               variant="outline"
               size="sm"
               disabled={!activeTab}
-              className="h-7 min-w-0 max-w-64 gap-2 font-mono text-xs"
+              className="h-7 min-w-0 max-w-64 gap-2 text-xs"
             />
           }
         >
           <HugeiconsIcon icon={DatabaseIcon} size={13} strokeWidth={2} className="shrink-0" />
           {activeConnection ? (
             <>
-              <span className="truncate">{activeConnection.name}</span>
+              <span className="truncate font-mono">{activeConnection.name}</span>
               {activeEnv && (
                 <span className="shrink-0 text-[10px] text-muted-foreground">· {activeEnv.name}</span>
               )}

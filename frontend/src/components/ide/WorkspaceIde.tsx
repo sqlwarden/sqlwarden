@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { DatabaseLightningIcon } from '@hugeicons/core-free-icons'
+import { DatabaseLightningIcon, SidebarLeft01Icon } from '@hugeicons/core-free-icons'
+import { Button } from '#/components/ui/button'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import {
   ResizableHandle,
@@ -52,6 +53,8 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
 function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspaces: Workspace[] }) {
   const activeWorkspaceId = useIde((s) => s.activeWorkspaceId)
   const setActiveWorkspace = useIde((s) => s.setActiveWorkspace)
+  const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
+  const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
 
   useEffect(() => {
     if (!activeWorkspaceId && workspaces.length > 0) {
@@ -64,10 +67,22 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
 
   return (
     <div className="-mx-4 -my-6 flex h-svh min-h-0 flex-col overflow-hidden bg-background md:-mx-6">
-      {/* Top bar: logo icon + workspace tabs */}
+      {/* Top bar: logo icon + sidebar toggle + workspace tabs */}
       <div className="flex h-10 shrink-0 items-stretch border-b border-border">
-        <div className="flex w-10 shrink-0 items-center justify-center border-r border-border">
-          <HugeiconsIcon icon={DatabaseLightningIcon} size={16} strokeWidth={2} className="text-primary" />
+        <div className="flex shrink-0 items-center border-r border-border">
+          <div className="flex w-10 items-center justify-center">
+            <HugeiconsIcon icon={DatabaseLightningIcon} size={16} strokeWidth={2} className="text-primary" />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Toggle sidebar"
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="mr-1"
+          >
+            <HugeiconsIcon icon={SidebarLeft01Icon} size={15} strokeWidth={2} className={cn('transition-opacity', sidebarCollapsed && 'opacity-40')} />
+          </Button>
         </div>
         <div className="flex min-w-0 flex-1 items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {workspaces.map((ws) => (
@@ -116,9 +131,32 @@ function WorkspaceTab({
 // ─── Surface ───────────────────────────────────────────────────────────────────
 
 function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
+  const sidebarRef = useRef<PanelImperativeHandle>(null)
+  const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
+  const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
+
+  // Sync collapse/expand from store into the panel
+  useEffect(() => {
+    if (sidebarCollapsed) {
+      sidebarRef.current?.collapse()
+    } else {
+      sidebarRef.current?.expand()
+    }
+  }, [sidebarCollapsed])
+
   return (
     <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-      <ResizablePanel defaultSize="22%" minSize="14%" maxSize="40%" className="overflow-hidden">
+      <ResizablePanel
+        panelRef={sidebarRef}
+        defaultSize="22%"
+        minSize="14%"
+        maxSize="40%"
+        collapsible
+        collapsedSize="0%"
+        className="overflow-hidden"
+        onCollapse={() => setSidebarCollapsed(true)}
+        onExpand={() => setSidebarCollapsed(false)}
+      >
         <IdeSidebar orgSlug={orgSlug} workspace={workspace} />
       </ResizablePanel>
       <ResizableHandle withHandle />
