@@ -5,6 +5,7 @@ import {
   ArrowDown01Icon,
   ArrowRight01Icon,
   DatabaseIcon,
+  FlowConnectionIcon,
   PlusSignIcon,
   ServerStack01Icon,
 } from '@hugeicons/core-free-icons'
@@ -21,6 +22,7 @@ import { cn } from '#/lib/utils'
 import { hasPermission, permission } from '#/lib/permissions'
 import { useIde, newConnectionTab } from './useIdeStore'
 import { SidebarPane } from './SidebarPane'
+import { ConnectionDialog } from './ConnectionDialog'
 import { Button } from '#/components/ui/button'
 import {
   Dialog,
@@ -52,6 +54,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   const queryClient = useQueryClient()
 
   const [addEnvOpen, setAddEnvOpen] = useState(false)
+  const [addConnOpen, setAddConnOpen] = useState(false)
   const [envName, setEnvName] = useState('')
   const [envDescription, setEnvDescription] = useState('')
   const [envNameError, setEnvNameError] = useState<string | undefined>(undefined)
@@ -60,6 +63,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
     orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspace.id),
   )
   const canCreateEnvironment = hasPermission(effectivePermissions.data?.permissions, permission.envCreate)
+  const canCreateConnection = hasPermission(effectivePermissions.data?.permissions, permission.connCreate)
 
   const environments = useQuery(
     orgEnvironmentsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
@@ -104,7 +108,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
     void createEnvironment.mutateAsync().catch(() => {})
   }
 
-  const actions = canCreateEnvironment ? (
+  const actions = (canCreateEnvironment || canCreateConnection) ? (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
@@ -119,10 +123,18 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
         <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="bottom" align="end" className="min-w-44">
-        <DropdownMenuItem onClick={() => setAddEnvOpen(true)}>
-          <HugeiconsIcon icon={ServerStack01Icon} size={14} strokeWidth={2} className="text-muted-foreground" />
-          New Environment
-        </DropdownMenuItem>
+        {canCreateEnvironment ? (
+          <DropdownMenuItem onClick={() => setAddEnvOpen(true)}>
+            <HugeiconsIcon icon={ServerStack01Icon} size={14} strokeWidth={2} className="text-muted-foreground" />
+            New Environment
+          </DropdownMenuItem>
+        ) : null}
+        {canCreateConnection ? (
+          <DropdownMenuItem onClick={() => setAddConnOpen(true)}>
+            <HugeiconsIcon icon={FlowConnectionIcon} size={14} strokeWidth={2} className="text-muted-foreground" />
+            New Connection
+          </DropdownMenuItem>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   ) : undefined
@@ -203,6 +215,14 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConnectionDialog
+        open={addConnOpen}
+        onOpenChange={setAddConnOpen}
+        orgSlug={orgSlug}
+        workspaceId={workspace.id}
+        environments={envItems}
+      />
     </>
   )
 }
