@@ -54,7 +54,7 @@ export type IdeActions = {
   setActiveTab: (tabId: string) => void
   updateTabContent: (tabId: string, content: string) => void
   updateTabEtag: (tabId: string, etag: string) => void
-  setTabConnection: (tabId: string, connectionId: number) => void
+  setTabConnection: (tabId: string, connectionId: number, driver?: string) => void
   setMaximizedPane: (pane: IdeState['maximizedPane']) => void
   setMaximizedSidebarPane: (pane: IdeState['maximizedSidebarPane']) => void
   setSidebarCollapsed: (collapsed: boolean) => void
@@ -129,10 +129,10 @@ export function createIdeStore(orgSlug: string) {
             tabs: s.tabs.map((t) =>
               t.id === tabId
                 ? {
-                    ...t,
-                    content,
-                    isDirty: t.etag !== undefined && content !== t.content ? true : t.isDirty,
-                  }
+                  ...t,
+                  content,
+                  isDirty: t.etag !== undefined && content !== t.content ? true : t.isDirty,
+                }
                 : t,
             ),
           })),
@@ -142,8 +142,8 @@ export function createIdeStore(orgSlug: string) {
             tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, etag, isDirty: false } : t)),
           })),
 
-        setTabConnection: (tabId, connectionId) =>
-          set((s) => ({ tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, connectionId } : t)) })),
+        setTabConnection: (tabId, connectionId, driver?) =>
+          set((s) => ({ tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, connectionId, ...(driver ? { driver } : {}) } : t)) })),
 
         setMaximizedPane: (pane) => set({ maximizedPane: pane }),
         setMaximizedSidebarPane: (pane) => set({ maximizedSidebarPane: pane }),
@@ -208,7 +208,7 @@ export function useIde<T>(selector: (state: IdeState & IdeActions) => T): T {
 
 // ─── Tab factory functions ──────────────────────────────────────────────────────
 
-export const DEFAULT_CONSOLE_CONTENT = 'SELECT *\nFROM \nLIMIT 100;'
+export const DEFAULT_CONSOLE_CONTENT = '';
 
 /** @deprecated Use the openConsole store action instead, which gives consoles
  *  stable numbered IDs and embeds a canonical Y.js initial state for cross-window sync. */

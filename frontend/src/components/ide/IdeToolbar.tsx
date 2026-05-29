@@ -3,17 +3,19 @@ import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
+  ArrowDown01Icon,
   ArrowExpandIcon,
   ArrowShrinkIcon,
+  CheckmarkCircle02Icon,
   DatabaseIcon,
   FloppyDiskIcon,
   Loading03Icon,
   PlayIcon,
+  Search01Icon,
   ServerStack01Icon,
 } from '@hugeicons/core-free-icons'
 import { Button } from '#/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover'
-import { Separator } from '#/components/ui/separator'
 import {
   orgEnvironmentsQueryOptions,
   orgWorkspaceConnectionsQueryOptions,
@@ -35,6 +37,7 @@ type IdeToolbarProps = {
 
 export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const [connSearch, setConnSearch] = useState('')
   const [saveAsTab, setSaveAsTab] = useState<EditorTab | null>(null)
   const [isRunning, setIsRunning] = useState(false)
 
@@ -115,8 +118,9 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const hasConnections = connItems.length > 0
 
   function selectConnection(conn: Connection) {
-    if (activeTabId) setTabConnection(activeTabId, conn.id)
+    if (activeTabId) setTabConnection(activeTabId, conn.id, conn.driver)
     setPopoverOpen(false)
+    setConnSearch('')
   }
 
   function toggleMaximize() {
@@ -241,73 +245,115 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       <div className="flex-1" />
 
       {/* Connection selector — right */}
-      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+      <Popover
+        open={popoverOpen}
+        onOpenChange={(open) => { setPopoverOpen(open); if (!open) setConnSearch('') }}
+      >
         <PopoverTrigger
           render={
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
               disabled={selectorDisabled}
-              className="h-7 min-w-0 max-w-64 gap-2 text-xs"
+              className="h-7 min-w-0 max-w-56 gap-1.5 rounded-md border border-border/60 px-2 text-xs font-normal hover:border-border"
             />
           }
         >
           {activeConnection ? (
-            <DriverBadge driver={activeConnection.driver} size="sm" className="shrink-0" />
-          ) : (
-            <HugeiconsIcon icon={DatabaseIcon} size={13} strokeWidth={2} className="shrink-0" />
-          )}
-          {activeConnection ? (
             <>
-              <span className="truncate font-mono">{activeConnection.name}</span>
-              {activeEnv && (
-                <span className="shrink-0 text-[10px] text-muted-foreground">· {activeEnv.name}</span>
+              <DriverBadge driver={activeConnection.driver} size="sm" className="shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{activeConnection.name}</span>
+              {sessions[activeConnection.id] && (
+                <span className="size-1.5 shrink-0 rounded-full bg-green-500" />
               )}
             </>
           ) : (
-            <span className="text-muted-foreground">{selectorLabel}</span>
+            <>
+              <HugeiconsIcon icon={DatabaseIcon} size={12} strokeWidth={2} className="shrink-0 text-muted-foreground" />
+              <span className="text-muted-foreground">{selectorLabel}</span>
+            </>
           )}
+          <HugeiconsIcon icon={ArrowDown01Icon} size={10} strokeWidth={2.5} className="ml-0.5 shrink-0 text-muted-foreground" />
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-72 p-1">
+
+        <PopoverContent align="end" className="w-72 p-0 overflow-hidden">
           {connections.isLoading ? (
-            <div className="px-2 py-3 text-xs text-muted-foreground">Loading connections…</div>
+            <div className="px-3 py-4 text-center text-xs text-muted-foreground">Loading connections…</div>
           ) : !hasConnections ? (
-            <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+            <div className="px-3 py-4 text-center text-xs text-muted-foreground">
               <p className="font-medium text-foreground">No connections</p>
               <p className="mt-0.5">Add a connection to this workspace first.</p>
             </div>
           ) : (
-            envItems.map((env, idx) => {
-              const envConns = connItems.filter((c) => c.environment_id === env.id)
-              if (!envConns.length) return null
-              return (
-                <div key={env.id}>
-                  {idx > 0 && <Separator className="my-1" />}
-                  <div className="flex items-center gap-1.5 px-2 py-1.5">
-                    <HugeiconsIcon icon={ServerStack01Icon} size={12} strokeWidth={2} className="text-muted-foreground" />
-                    <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                      {env.name}
-                    </span>
+            <>
+              {/* Search */}
+              <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+                <HugeiconsIcon icon={Search01Icon} size={12} strokeWidth={2} className="shrink-0 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search connections…"
+                  value={connSearch}
+                  onChange={(e) => setConnSearch(e.target.value)}
+                  className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                  autoFocus
+                />
+              </div>
+
+              {/* Connection list */}
+              <div className="max-h-72 overflow-y-auto py-1">
+                {envItems.map((env) => {
+                  const q = connSearch.toLowerCase()
+                  const envConns = connItems.filter(
+                    (c) => c.environment_id === env.id &&
+                      (!q || c.name.toLowerCase().includes(q) || env.name.toLowerCase().includes(q))
+                  )
+                  if (!envConns.length) return null
+                  return (
+                    <div key={env.id} className="mb-1 last:mb-0">
+                      <div className="flex items-center gap-1.5 px-3 pb-1 pt-2">
+                        <HugeiconsIcon icon={ServerStack01Icon} size={11} strokeWidth={2} className="shrink-0 text-muted-foreground/70" />
+                        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+                          {env.name}
+                        </span>
+                      </div>
+                      {envConns.map((conn) => {
+                        const isActive = activeTab?.connectionId === conn.id
+                        const isConnected = !!sessions[conn.id]
+                        return (
+                          <button
+                            key={conn.id}
+                            type="button"
+                            onClick={() => selectConnection(conn)}
+                            className={cn(
+                              'flex h-8 w-full items-center gap-2.5 px-3 text-xs transition-colors',
+                              'hover:bg-accent hover:text-accent-foreground',
+                              isActive && 'bg-accent/60 text-accent-foreground',
+                            )}
+                          >
+                            <DriverBadge driver={conn.driver} size="sm" className="shrink-0" />
+                            <span className="min-w-0 flex-1 truncate text-left">{conn.name}</span>
+                            {isConnected && (
+                              <span className="size-1.5 shrink-0 rounded-full bg-green-500" />
+                            )}
+                            {isActive && (
+                              <HugeiconsIcon icon={CheckmarkCircle02Icon} size={13} strokeWidth={2} className="shrink-0 text-primary" />
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
+                {connSearch && !envItems.some((env) =>
+                  connItems.some((c) => c.environment_id === env.id && c.name.toLowerCase().includes(connSearch.toLowerCase()))
+                ) && (
+                  <div className="px-3 py-3 text-center text-xs text-muted-foreground">
+                    No connections match "{connSearch}"
                   </div>
-                  {envConns.map((conn) => (
-                    <button
-                      key={conn.id}
-                      type="button"
-                      onClick={() => selectConnection(conn)}
-                      className={cn(
-                        'flex h-7 w-full items-center gap-2 px-2 text-xs',
-                        'transition-colors hover:bg-accent hover:text-accent-foreground',
-                        activeTab?.connectionId === conn.id && 'bg-accent text-accent-foreground',
-                      )}
-                    >
-                      <DriverBadge driver={conn.driver} size="sm" className="shrink-0" />
-                      <span className="min-w-0 flex-1 truncate font-mono">{conn.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )
-            })
+                )}
+              </div>
+            </>
           )}
         </PopoverContent>
       </Popover>

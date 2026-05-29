@@ -385,9 +385,12 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
   )
 }
 
+type CursorInfo = { line: number; col: number; sel: number }
+
 function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
   const registry = useYDocRegistry()
   const [createFileOpen, setCreateFileOpen] = useState(false)
+  const [cursorInfo, setCursorInfo] = useState<CursorInfo | null>(null)
 
   const activeTabId = useIde((s) => s.activeTabId)
   const tabs = useIde((s) => s.tabs)
@@ -468,6 +471,9 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
     return () => cleanups.forEach((c) => c())
   }, [wsTabs, registry, updateTabContent])
 
+  // Reset cursor info when the active tab changes.
+  useEffect(() => { setCursorInfo(null) }, [activeTabId])
+
   // No "ensure one tab" guard — users can close all tabs to reach the empty state.
 
   // ── ⌘S / Ctrl+S: save file tab in-place ────────────────────────────────────
@@ -532,7 +538,7 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
     <section className="flex h-full min-h-0 flex-col bg-background">
       <IdeToolbar orgSlug={orgSlug} workspace={workspace} />
       <IdeTabBar orgSlug={orgSlug} workspace={workspace} />
-      <div className="min-h-0 flex-1 bg-card">
+      <div className="min-h-0 flex-1 border-t border-border bg-card">
         {activeTab && activeDoc ? (
           isContentLoading ? (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
@@ -543,7 +549,13 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
               Failed to load file content.
             </div>
           ) : (
-            <SqlEditor key={activeTab.id} tabId={activeTab.id} doc={activeDoc} className="h-full" />
+            <SqlEditor
+              key={activeTab.id}
+              tabId={activeTab.id}
+              doc={activeDoc}
+              className="h-full"
+              onCursorChange={(line, col, sel) => setCursorInfo({ line, col, sel })}
+            />
           )
         ) : (
           <EmptyEditorState
@@ -552,6 +564,7 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
           />
         )}
       </div>
+      <EditorStatusBar cursorInfo={cursorInfo} hasActiveTab={!!activeTab} />
     </section>
 
     <SaveAsDialog
@@ -575,6 +588,25 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
       }}
     />
     </>
+  )
+}
+
+// ─── Editor status bar ─────────────────────────────────────────────────────────
+
+function EditorStatusBar({ cursorInfo, hasActiveTab }: { cursorInfo: CursorInfo | null; hasActiveTab: boolean }) {
+  return (
+    <div className="flex h-5 shrink-0 items-center border-t border-border bg-muted/30 px-3 text-[10px] text-muted-foreground">
+      {hasActiveTab && cursorInfo && (
+        <>
+          <span className="tabular-nums">Ln {cursorInfo.line}, Col {cursorInfo.col}</span>
+          {cursorInfo.sel > 0 && (
+            <span className="ml-2 tabular-nums">({cursorInfo.sel} selected)</span>
+          )}
+        </>
+      )}
+      <div className="flex-1" />
+      {hasActiveTab && <span>SQL</span>}
+    </div>
   )
 }
 

@@ -140,7 +140,7 @@ function TabItem({
           : 'bg-background text-muted-foreground hover:bg-card/50 hover:text-foreground',
       )}
     >
-      {tab.kind === 'connection' && tab.driver ? (
+      {(tab.kind === 'connection' || tab.kind === 'scratch') && tab.driver ? (
         <DriverBadge driver={tab.driver} size="sm" className="shrink-0 opacity-70" />
       ) : (
         <HugeiconsIcon icon={icon} size={13} strokeWidth={2} className="shrink-0 opacity-60" />

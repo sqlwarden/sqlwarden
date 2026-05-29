@@ -69,7 +69,7 @@ export function ResultsArea() {
       </div>
 
       <TabsContent value="results" className="min-h-0 flex-1 overflow-hidden m-0 p-0">
-        <ResultsContent result={result} />
+        <ResultsContent key={activeTabId} result={result} />
       </TabsContent>
       <TabsContent value="history" className="min-h-0 flex-1 overflow-hidden m-0 p-0">
         <StubPane message="Query history coming soon." />

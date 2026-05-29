@@ -80,11 +80,14 @@ type SqlEditorProps = {
   /** The Y.Doc backing this editor. Must have a Y.Text at key 'content'. */
   doc: Y.Doc
   className?: string
+  onCursorChange?: (line: number, col: number, selSize: number) => void
 }
 
-export function SqlEditor({ tabId, doc, className }: SqlEditorProps) {
+export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRegistry = useEditorViewRegistry()
+  const onCursorChangeRef = useRef(onCursorChange)
+  onCursorChangeRef.current = onCursorChange
 
   // Re-mount the editor whenever the active doc changes.
   // key={activeTab.id} at the call site also ensures clean remount on tab switch.
@@ -102,6 +105,14 @@ export function SqlEditor({ tabId, doc, className }: SqlEditorProps) {
           syntaxHighlighting(sqlHighlightStyle),
           EditorView.lineWrapping,
           yCollab(yText, null), // handles all CodeMirror ↔ Y.js sync
+          EditorView.updateListener.of((update) => {
+            if (!update.selectionSet && !update.docChanged) return
+            const cb = onCursorChangeRef.current
+            if (!cb) return
+            const head = update.state.selection.main.head
+            const line = update.state.doc.lineAt(head)
+            cb(line.number, head - line.from + 1, update.state.selection.main.to - update.state.selection.main.from)
+          }),
         ],
       }),
       parent: containerRef.current,
