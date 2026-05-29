@@ -36,6 +36,7 @@ import { SqlEditor } from './SqlEditor'
 import { ResultsArea } from './ResultsArea'
 import { useFileContent } from './useFileContent'
 import { createYDocRegistry, YDocRegistryContext, useYDocRegistry } from './useYDocRegistry'
+import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 
 // ─── Root ──────────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ type WorkspaceIdeProps = { orgSlug: string }
 export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
   const store = useMemo(() => createIdeStore(orgSlug), [orgSlug])
   const registry = useMemo(() => createYDocRegistry(), [orgSlug])
+  const viewRegistry = useMemo(() => createEditorViewRegistry(), [])
 
   // ── Cross-window etag / dirty-state sync ─────────────────────────────────
   // When any window saves a file (etag changes) or completes a server load
@@ -136,7 +138,9 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
   return (
     <IdeStoreContext.Provider value={store}>
       <YDocRegistryContext.Provider value={registry}>
-        <WorkspaceIdeInner orgSlug={orgSlug} workspaces={items} />
+        <EditorViewRegistryContext.Provider value={viewRegistry}>
+          <WorkspaceIdeInner orgSlug={orgSlug} workspaces={items} />
+        </EditorViewRegistryContext.Provider>
       </YDocRegistryContext.Provider>
     </IdeStoreContext.Provider>
   )
@@ -529,7 +533,7 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
               Failed to load file content.
             </div>
           ) : (
-            <SqlEditor key={activeTab.id} doc={activeDoc} className="h-full" />
+            <SqlEditor key={activeTab.id} tabId={activeTab.id} doc={activeDoc} className="h-full" />
           )
         ) : (
           <EmptyEditorState

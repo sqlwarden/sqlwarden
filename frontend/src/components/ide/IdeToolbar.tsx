@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -7,6 +7,7 @@ import {
   ArrowShrinkIcon,
   DatabaseIcon,
   FloppyDiskIcon,
+  Loading03Icon,
   PlayIcon,
   ServerStack01Icon,
 } from '@hugeicons/core-free-icons'
@@ -17,13 +18,15 @@ import {
   orgEnvironmentsQueryOptions,
   orgWorkspaceConnectionsQueryOptions,
 } from '#/lib/api/query'
+import { api } from '#/lib/api/client'
 import { updatePrivateWorkspaceFileContent } from '#/lib/api/files'
-import type { Connection, Workspace, WorkspaceFile } from '#/lib/api/types'
+import type { Connection, ResultSet, Workspace, WorkspaceFile } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, type EditorTab } from './useIdeStore'
 import { DriverBadge } from './DriverBadge'
 import { SaveAsDialog } from './SaveAsDialog'
 import { useYDocRegistry } from './useYDocRegistry'
+import { useEditorViewRegistry } from './useEditorViewRegistry'
 
 type IdeToolbarProps = {
   orgSlug: string
@@ -33,6 +36,7 @@ type IdeToolbarProps = {
 export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [saveAsTab, setSaveAsTab] = useState<EditorTab | null>(null)
+  const [isRunning, setIsRunning] = useState(false)
 
   const activeTabId = useIde((s) => s.activeTabId)
   const tabs = useIde((s) => s.tabs)
@@ -42,15 +46,18 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const updateTabEtag = useIde((s) => s.updateTabEtag)
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
+  const sessions = useIde((s) => s.sessions)
+  const setSession = useIde((s) => s.setSession)
+  const setQueryResult = useIde((s) => s.setQueryResult)
 
   const registry = useYDocRegistry()
+  const viewRegistry = useEditorViewRegistry()
   const activeTab = tabs.find((t) => t.id === activeTabId)
 
   const showSave = activeTab?.kind === 'scratch' || activeTab?.isDirty
 
   async function handleSave() {
     if (!activeTab) return
-    // Read from Y.Doc — more current than the 400 ms debounced snapshot.
     const doc = registry.get(activeTab.id)
     const content = doc ? doc.getText('content').toString() : activeTab.content
 
@@ -73,8 +80,6 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         }
       }
     } else {
-      // Seed saveAsTab with current Y.Doc content so SaveAsDialog doesn't
-      // need registry access.
       setSaveAsTab({ ...activeTab, content })
     }
   }
@@ -118,12 +123,81 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     setMaximizedPane(maximizedPane === 'editor' ? null : 'editor')
   }
 
-  // Derive connection selector label + disabled state
+  const handleRun = useCallback(async () => {
+    if (!activeTab || !activeConnection || isRunning) return
+
+    const view = viewRegistry.get(activeTab.id)
+    let sql: string
+    if (view) {
+      const sel = view.state.selection.main
+      sql = (sel.from !== sel.to
+        ? view.state.sliceDoc(sel.from, sel.to)
+        : view.state.doc.toString()
+      ).trim()
+    } else {
+      const doc = registry.get(activeTab.id)
+      sql = (doc ? doc.getText('content').toString() : activeTab.content).trim()
+    }
+    if (!sql) return
+
+    // Ensure results pane is visible.
+    if (maximizedPane === 'editor') setMaximizedPane(null)
+
+    setIsRunning(true)
+    setQueryResult(activeTab.id, { status: 'running' })
+
+    const startMs = Date.now()
+
+    try {
+      // Auto-connect if no live session.
+      let sessionId = sessions[activeConnection.id]
+      if (!sessionId) {
+        const connectData = await api.post<{ session_id: string; reused: boolean }>(
+          `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/connect`,
+        )
+        sessionId = connectData.session_id
+        setSession(activeConnection.id, sessionId)
+      }
+
+      const result = await api.post<ResultSet>(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/query`,
+        { sql },
+        { headers: { 'X-Warden-Session': sessionId } },
+      )
+
+      setQueryResult(activeTab.id, {
+        status: 'ok',
+        data: result,
+        durationMs: Date.now() - startMs,
+        sql,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Query failed'
+      setQueryResult(activeTab.id, { status: 'error', message, sql })
+    } finally {
+      setIsRunning(false)
+    }
+  }, [activeTab, activeConnection, isRunning, maximizedPane, sessions, orgSlug, workspace.id,
+      registry, viewRegistry, setMaximizedPane, setQueryResult, setSession])
+
+  // Global ⌘Enter / Ctrl+Enter shortcut.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        void handleRun()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [handleRun])
+
+  const runDisabled = !activeTab || !activeConnection || isRunning
   const selectorDisabled = !activeTab || !hasConnections || connections.isLoading
   const selectorLabel = (() => {
     if (connections.isLoading) return 'Loading connections…'
     if (!hasConnections) return 'No connections'
-    if (activeConnection) return null // rendered inline below
+    if (activeConnection) return null
     return 'Select connection…'
   })()
 
@@ -134,14 +208,18 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       <Button
         type="button"
         size="sm"
-        disabled={!activeConnection}
-        onClick={() => {
-          // TODO: wire to query execution API
-        }}
+        disabled={runDisabled}
+        onClick={() => void handleRun()}
       >
-        <HugeiconsIcon icon={PlayIcon} size={13} strokeWidth={2} data-icon="inline-start" />
-        Run
-        <kbd className="ml-1 hidden font-mono text-[10px] opacity-60 sm:inline">⌘↵</kbd>
+        <HugeiconsIcon
+          icon={isRunning ? Loading03Icon : PlayIcon}
+          size={13}
+          strokeWidth={2}
+          data-icon="inline-start"
+          className={isRunning ? 'animate-spin' : undefined}
+        />
+        {isRunning ? 'Running…' : 'Run'}
+        {!isRunning && <kbd className="ml-1 hidden font-mono text-[10px] opacity-60 sm:inline">⌘↵</kbd>}
       </Button>
 
       {/* Save button */}

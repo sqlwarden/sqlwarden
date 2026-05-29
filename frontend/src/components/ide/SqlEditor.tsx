@@ -7,6 +7,7 @@ import { tags } from '@lezer/highlight'
 import { yCollab } from 'y-codemirror.next'
 import type * as Y from 'yjs'
 import { cn } from '#/lib/utils'
+import { useEditorViewRegistry } from './useEditorViewRegistry'
 
 // ─── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -75,13 +76,15 @@ const sqlHighlightStyle = HighlightStyle.define([
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 type SqlEditorProps = {
+  tabId: string
   /** The Y.Doc backing this editor. Must have a Y.Text at key 'content'. */
   doc: Y.Doc
   className?: string
 }
 
-export function SqlEditor({ doc, className }: SqlEditorProps) {
+export function SqlEditor({ tabId, doc, className }: SqlEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const viewRegistry = useEditorViewRegistry()
 
   // Re-mount the editor whenever the active doc changes.
   // key={activeTab.id} at the call site also ensures clean remount on tab switch.
@@ -98,14 +101,18 @@ export function SqlEditor({ doc, className }: SqlEditorProps) {
           ideTheme,
           syntaxHighlighting(sqlHighlightStyle),
           EditorView.lineWrapping,
-          yCollab(yText), // handles all CodeMirror ↔ Y.js sync
+          yCollab(yText, null), // handles all CodeMirror ↔ Y.js sync
         ],
       }),
       parent: containerRef.current,
     })
 
-    return () => view.destroy()
-  }, [doc])
+    viewRegistry.register(tabId, view)
+    return () => {
+      viewRegistry.unregister(tabId)
+      view.destroy()
+    }
+  }, [doc, tabId, viewRegistry])
 
   return <div ref={containerRef} className={cn('h-full overflow-hidden', className)} />
 }
