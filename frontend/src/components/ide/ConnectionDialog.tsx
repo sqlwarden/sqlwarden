@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Cancel01Icon, Tick02Icon } from '@hugeicons/core-free-icons'
+import { driverBrands } from './connection-drivers/index'
 import { toast } from 'sonner'
-import { cn } from '#/lib/utils'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
 import type { Environment } from '#/lib/api/types'
@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
-import { drivers, driverMap, driverBrands, defaultFieldValues } from './connection-drivers/index'
+import { drivers, driverMap, defaultFieldValues } from './connection-drivers/index'
 import { DriverBadge } from './DriverBadge'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -197,36 +197,35 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
           <div className="flex flex-col gap-4 overflow-y-auto max-h-[min(560px,calc(100svh-14rem))] pb-1">
 
             {/* Driver selector */}
-            <div className="grid grid-cols-2 gap-2">
-              {drivers.map((d) => {
-                const brand = driverBrands[d.id]
-                const selected = driverId === d.id
-                return (
-                  <button
-                    key={d.id}
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => handleDriverChange(d.id)}
-                    className={cn(
-                      'flex items-center gap-3 rounded-lg border p-3 text-left transition-all',
-                      selected
-                        ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                        : 'border-border hover:border-primary/40 hover:bg-accent/50',
-                      isPending && 'pointer-events-none opacity-50',
-                    )}
-                  >
-                    <DriverBadge driver={d.id} size="md" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-semibold text-foreground">{d.label}</div>
-                      <div className="text-[10px] text-muted-foreground">{brand?.description}</div>
+            <FormField label="Database">
+              <Select
+                value={driverId}
+                onValueChange={(v) => { if (v) handleDriverChange(v) }}
+                disabled={isPending}
+              >
+                <SelectTrigger>
+                  <SelectValue>
+                    <div className="flex items-center gap-2">
+                      <DriverBadge driver={driverId} size="sm" />
+                      <span>{currentDriver.label}</span>
                     </div>
-                    {selected ? (
-                      <HugeiconsIcon icon={Tick02Icon} size={14} strokeWidth={2.5} className="shrink-0 text-primary" />
-                    ) : null}
-                  </button>
-                )
-              })}
-            </div>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {drivers.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      <div className="flex items-center gap-2.5 py-0.5">
+                        <DriverBadge driver={d.id} size="sm" />
+                        <div>
+                          <div className="text-xs font-medium">{d.label}</div>
+                          <div className="text-[10px] text-muted-foreground">{driverBrands[d.id]?.description}</div>
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FormField>
 
             {/* Basic info */}
             <SectionDivider label="Details" />
