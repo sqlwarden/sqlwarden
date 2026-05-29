@@ -105,8 +105,8 @@ export interface ResultValue {
 export type ResultRow = ResultValue[]
 
 export interface ResultSet {
-  columns: ResultColumn[]
-  rows: ResultRow[]
+  columns: ResultColumn[] | null
+  rows: ResultRow[] | null
 }
 
 export interface Connection {

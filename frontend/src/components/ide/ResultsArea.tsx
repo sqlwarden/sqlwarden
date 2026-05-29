@@ -35,9 +35,9 @@ export function ResultsArea() {
           >
             <HugeiconsIcon icon={TableIcon} size={13} strokeWidth={2} />
             Results
-            {result.status === 'ok' && result.data.rows.length > 0 && (
+            {result.status === 'ok' && (result.data.rows?.length ?? 0) > 0 && (
               <span className="ml-0.5 rounded bg-primary/10 px-1 text-[10px] font-medium text-primary tabular-nums">
-                {result.data.rows.length}
+                {result.data.rows?.length}
               </span>
             )}
           </TabsTrigger>
@@ -127,8 +127,11 @@ function ErrorState({ message }: { message: string }) {
 }
 
 function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> }) {
-  const { data, durationMs } = result
-  const hasColumns = data.columns.length > 0
+  const { durationMs } = result
+  const columns = result.data.columns ?? []
+  const rows = result.data.rows ?? []
+  const data = { columns, rows }
+  const hasColumns = columns.length > 0
 
   if (!hasColumns) {
     return (
