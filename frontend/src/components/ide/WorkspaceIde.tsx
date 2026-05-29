@@ -511,11 +511,22 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   })
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  // getOrCreate is idempotent — safe to call in render. This ensures the
-  // Y.Doc exists immediately after Zustand rehydrates from IndexedDB, so
-  // the editor mounts without waiting for the lifecycle useEffect to run.
-  // The lifecycle effect still handles yState, the observer, and cleanup.
-  const activeDoc = activeTab ? registry.getOrCreate(activeTab.id) : undefined
+  // Populate the Y.Doc synchronously in render so SqlEditor always mounts with
+  // content. React runs child effects (SqlEditor's) before parent effects
+  // (EditorSection's), so waiting for the lifecycle useEffect is too late —
+  // EditorView.create() captures yText.toString() at mount time.
+  let activeDoc: Y.Doc | undefined
+  if (activeTab) {
+    const initialContent = !activeTab.yState && activeTab.kind !== 'file'
+      ? activeTab.content
+      : undefined
+    activeDoc = registry.getOrCreate(activeTab.id, initialContent)
+    // For yState tabs, apply the canonical initial Y.js state if the doc is
+    // still empty (first load). Use 'init' origin so it is not broadcast.
+    if (activeTab.yState && activeDoc.getText('content').length === 0) {
+      Y.applyUpdate(activeDoc, new Uint8Array(activeTab.yState), 'init')
+    }
+  }
 
   return (
     <>

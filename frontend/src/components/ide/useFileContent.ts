@@ -19,7 +19,10 @@ export function useFileContent({
 }: UseFileContentOptions) {
   const registry = useYDocRegistry()
   const fileId = tab?.kind === 'file' ? tab.fileId : undefined
-  const needsLoad = fileId != null && !tab?.etag
+  // Always fetch file content when a file tab is open. The etag gates conflict
+  // detection on saves, not content loading — if the page is refreshed after a
+  // save the etag exists but the Y.Doc is empty and needs to be repopulated.
+  const needsLoad = fileId != null
 
   const query = useQuery({
     queryKey: ['file-content', orgSlug, workspaceId, fileId],
