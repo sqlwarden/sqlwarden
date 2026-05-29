@@ -15,6 +15,7 @@ export type EditorTab = {
   kind: TabKind
   subtitle?: string
   connectionId?: number
+  driver?: string
   fileId?: number
   etag?: string
   isDirty?: boolean
@@ -48,8 +49,9 @@ export type IdeActions = {
   setMaximizedSidebarPane: (pane: IdeState['maximizedSidebarPane']) => void
   setSidebarCollapsed: (collapsed: boolean) => void
   /** Opens a new numbered console tab. Pass yState (encoded Y.Doc) so all windows
-   *  that receive this tab share the same canonical Y.js initial history. */
-  openConsole: (workspace: Workspace, yState: number[]) => void
+   *  that receive this tab share the same canonical Y.js initial history.
+   *  Pass connectionId to pre-select a connection on the new tab. */
+  openConsole: (workspace: Workspace, yState: number[], connectionId?: number) => void
 }
 
 // ─── Store factory ─────────────────────────────────────────────────────────────
@@ -129,7 +131,7 @@ export function createIdeStore(orgSlug: string) {
         setMaximizedSidebarPane: (pane) => set({ maximizedSidebarPane: pane }),
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
 
-        openConsole: (workspace, yState) =>
+        openConsole: (workspace, yState, connectionId) =>
           set((s) => {
             const num = s.nextConsoleNumber + 1
             const tab: EditorTab = {
@@ -139,6 +141,7 @@ export function createIdeStore(orgSlug: string) {
               kind: 'scratch',
               content: DEFAULT_CONSOLE_CONTENT,
               yState,
+              ...(connectionId !== undefined ? { connectionId } : {}),
             }
             const exists = s.tabs.some((t) => t.id === tab.id)
             return {
@@ -193,6 +196,7 @@ export function newConnectionTab(connection: Connection, workspace: Workspace): 
     kind: 'connection',
     subtitle: connection.driver,
     connectionId: connection.id,
+    driver: connection.driver,
     content: `-- ${connection.name}\nSELECT 1;`,
   }
 }

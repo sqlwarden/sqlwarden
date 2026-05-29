@@ -1,13 +1,16 @@
 import { useState } from 'react'
+import * as Y from 'yjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   ArrowDown01Icon,
   ArrowRight01Icon,
+  Cancel01Icon,
   DatabaseIcon,
   FlowConnectionIcon,
   PlusSignIcon,
   ServerStack01Icon,
+  TerminalIcon,
 } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 import {
@@ -20,7 +23,7 @@ import { isApiError } from '#/lib/api/errors'
 import type { Connection, Environment, Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { hasPermission, permission } from '#/lib/permissions'
-import { useIde, newConnectionTab } from './useIdeStore'
+import { useIde, newConnectionTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
 import { SidebarPane } from './SidebarPane'
 import { ConnectionDialog } from './ConnectionDialog'
 import { DriverBadge } from './DriverBadge'
@@ -52,6 +55,9 @@ type DatabasePanelProps = {
 
 export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange }: DatabasePanelProps) {
   const openTab = useIde((s) => s.openTab)
+  const closeTab = useIde((s) => s.closeTab)
+  const openConsole = useIde((s) => s.openConsole)
+  const tabs = useIde((s) => s.tabs)
   const queryClient = useQueryClient()
 
   const [addEnvOpen, setAddEnvOpen] = useState(false)
@@ -75,6 +81,26 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
 
   const envItems = environments.data?.items ?? []
   const connItems = connections.data?.items ?? []
+
+  const connectedIds = new Set(
+    tabs.filter((t) => t.kind === 'connection' && t.connectionId !== undefined).map((t) => t.connectionId!),
+  )
+
+  function handleOpenConnection(conn: Connection) {
+    openTab(newConnectionTab(conn, workspace))
+  }
+
+  function handleOpenConsole(conn: Connection) {
+    const tmpDoc = new Y.Doc()
+    tmpDoc.getText('content').insert(0, DEFAULT_CONSOLE_CONTENT)
+    const yState = Array.from(Y.encodeStateAsUpdate(tmpDoc))
+    tmpDoc.destroy()
+    openConsole(workspace, yState, conn.id)
+  }
+
+  function handleDisconnect(conn: Connection) {
+    closeTab(`connection:${conn.id}`)
+  }
 
   const createEnvironment = useMutation({
     mutationFn: async () =>
@@ -161,7 +187,10 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
               key={env.id}
               environment={env}
               connections={connItems.filter((c) => c.environment_id === env.id)}
-              onOpenTab={(conn) => openTab(newConnectionTab(conn, workspace))}
+              connectedIds={connectedIds}
+              onOpen={handleOpenConnection}
+              onOpenConsole={handleOpenConsole}
+              onDisconnect={handleDisconnect}
             />
           ))
         )}
@@ -231,11 +260,17 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
 function EnvironmentRow({
   environment,
   connections,
-  onOpenTab,
+  connectedIds,
+  onOpen,
+  onOpenConsole,
+  onDisconnect,
 }: {
   environment: Environment
   connections: Connection[]
-  onOpenTab: (conn: Connection) => void
+  connectedIds: Set<number>
+  onOpen: (conn: Connection) => void
+  onOpenConsole: (conn: Connection) => void
+  onDisconnect: (conn: Connection) => void
 }) {
   const [expanded, setExpanded] = useState(true)
 
@@ -267,7 +302,14 @@ function EnvironmentRow({
             <div className="px-3 py-1.5 text-xs text-muted-foreground">No connections.</div>
           ) : (
             connections.map((conn) => (
-              <ConnectionRow key={conn.id} connection={conn} onOpenTab={onOpenTab} />
+              <ConnectionRow
+                key={conn.id}
+                connection={conn}
+                isConnected={connectedIds.has(conn.id)}
+                onOpen={() => onOpen(conn)}
+                onOpenConsole={() => onOpenConsole(conn)}
+                onDisconnect={() => onDisconnect(conn)}
+              />
             ))
           )}
         </div>
@@ -278,23 +320,85 @@ function EnvironmentRow({
 
 function ConnectionRow({
   connection,
-  onOpenTab,
+  isConnected,
+  onOpen,
+  onOpenConsole,
+  onDisconnect,
 }: {
   connection: Connection
-  onOpenTab: (conn: Connection) => void
+  isConnected: boolean
+  onOpen: () => void
+  onOpenConsole: () => void
+  onDisconnect: () => void
 }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [pos, setPos] = useState({ x: 0, y: 0 })
+
+  function handleContextMenu(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    setPos({ x: e.clientX, y: e.clientY })
+    setMenuOpen(true)
+  }
+
   return (
-    <button
-      type="button"
-      onClick={() => onOpenTab(connection)}
-      className={cn(
-        'flex h-7 w-full items-center gap-2 px-3 text-left text-xs',
-        'transition-colors hover:bg-accent hover:text-accent-foreground',
-      )}
-    >
-      <DriverBadge driver={connection.driver} size="sm" />
-      <span className="min-w-0 flex-1 truncate">{connection.name}</span>
-    </button>
+    <>
+      <div
+        onContextMenu={handleContextMenu}
+        className={menuOpen ? 'bg-accent text-accent-foreground' : ''}
+      >
+        <button
+          type="button"
+          onClick={onOpen}
+          className={cn(
+            'flex h-7 w-full items-center gap-2 px-3 text-left text-xs',
+            'transition-colors hover:bg-accent hover:text-accent-foreground',
+          )}
+        >
+          <DriverBadge driver={connection.driver} size="sm" />
+          <span className="min-w-0 flex-1 truncate">{connection.name}</span>
+          {isConnected && (
+            <div className="size-1.5 shrink-0 rounded-full bg-green-500" />
+          )}
+        </button>
+
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger
+            render={
+              <span
+                style={{
+                  position: 'fixed',
+                  left: pos.x,
+                  top: pos.y,
+                  width: 0,
+                  height: 0,
+                  pointerEvents: 'none',
+                }}
+              />
+            }
+          />
+          <DropdownMenuContent align="start" side="bottom" sideOffset={2} className="w-48">
+            <DropdownMenuItem onClick={() => { setMenuOpen(false); onOpen() }}>
+              <HugeiconsIcon icon={FlowConnectionIcon} size={13} strokeWidth={2} />
+              Open
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setMenuOpen(false); onOpenConsole() }}>
+              <HugeiconsIcon icon={TerminalIcon} size={13} strokeWidth={2} />
+              Open Console
+            </DropdownMenuItem>
+            {isConnected && (
+              <DropdownMenuItem
+                data-variant="destructive"
+                onClick={() => { setMenuOpen(false); onDisconnect() }}
+              >
+                <HugeiconsIcon icon={Cancel01Icon} size={13} strokeWidth={2} />
+                Disconnect
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </>
   )
 }
 

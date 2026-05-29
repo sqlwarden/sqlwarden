@@ -18,6 +18,7 @@ import { Button } from '#/components/ui/button'
 import type { Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, DEFAULT_CONSOLE_CONTENT, type EditorTab, type TabKind } from './useIdeStore'
+import { DriverBadge } from './DriverBadge'
 
 type IdeTabBarProps = {
   orgSlug: string
@@ -139,7 +140,11 @@ function TabItem({
           : 'bg-background text-muted-foreground hover:bg-card/50 hover:text-foreground',
       )}
     >
-      <HugeiconsIcon icon={icon} size={13} strokeWidth={2} className="shrink-0 opacity-60" />
+      {tab.kind === 'connection' && tab.driver ? (
+        <DriverBadge driver={tab.driver} size="sm" className="shrink-0 opacity-70" />
+      ) : (
+        <HugeiconsIcon icon={icon} size={13} strokeWidth={2} className="shrink-0 opacity-60" />
+      )}
       <span className="min-w-0 flex-1 truncate text-xs">
         {tab.isDirty && <span className="mr-1 text-primary">●</span>}
         {tab.title}

@@ -211,7 +211,7 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
                     </div>
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="min-w-[220px]">
                   {drivers.map((d) => (
                     <SelectItem key={d.id} value={d.id}>
                       <div className="flex items-center gap-2.5 py-0.5">
@@ -257,7 +257,7 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
                   <SelectTrigger aria-invalid={errors.environmentId ? true : undefined}>
                     <SelectValue>{selectedEnvName}</SelectValue>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="min-w-[180px]">
                     {environments.map((env) => (
                       <SelectItem key={env.id} value={String(env.id)}>
                         {env.name}
@@ -391,7 +391,7 @@ function PostgresForm({ fields, errors, disabled, onChange }: DriverFormProps) {
           <SelectTrigger>
             <SelectValue>{sslLabel}</SelectValue>
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="min-w-[120px]">
             <SelectItem value="disable">Disable</SelectItem>
             <SelectItem value="prefer">Prefer</SelectItem>
             <SelectItem value="require">Require</SelectItem>

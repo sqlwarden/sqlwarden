@@ -21,6 +21,7 @@ import { updatePrivateWorkspaceFileContent } from '#/lib/api/files'
 import type { Connection, Workspace, WorkspaceFile } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, type EditorTab } from './useIdeStore'
+import { DriverBadge } from './DriverBadge'
 import { SaveAsDialog } from './SaveAsDialog'
 import { useYDocRegistry } from './useYDocRegistry'
 
@@ -173,7 +174,11 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
             />
           }
         >
-          <HugeiconsIcon icon={DatabaseIcon} size={13} strokeWidth={2} className="shrink-0" />
+          {activeConnection ? (
+            <DriverBadge driver={activeConnection.driver} size="sm" className="shrink-0" />
+          ) : (
+            <HugeiconsIcon icon={DatabaseIcon} size={13} strokeWidth={2} className="shrink-0" />
+          )}
           {activeConnection ? (
             <>
               <span className="truncate font-mono">{activeConnection.name}</span>
@@ -217,7 +222,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
                         activeTab?.connectionId === conn.id && 'bg-accent text-accent-foreground',
                       )}
                     >
-                      <HugeiconsIcon icon={DatabaseIcon} size={13} strokeWidth={2} className="shrink-0 text-muted-foreground" />
+                      <DriverBadge driver={conn.driver} size="sm" className="shrink-0" />
                       <span className="min-w-0 flex-1 truncate font-mono">{conn.name}</span>
                     </button>
                   ))}
