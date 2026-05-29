@@ -58,7 +58,7 @@ export function FileContextMenu({
 
   return (
     <>
-      <div onContextMenu={handleContextMenu} className="contents">
+      <div onContextMenu={handleContextMenu} className={menuOpen ? 'bg-accent text-accent-foreground' : ''}>
         {children}
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger

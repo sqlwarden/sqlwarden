@@ -1,20 +1,44 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   ArrowDown01Icon,
   ArrowRight01Icon,
   DatabaseIcon,
+  PlusSignIcon,
   ServerStack01Icon,
 } from '@hugeicons/core-free-icons'
+import { toast } from 'sonner'
 import {
+  orgEffectivePermissionsQueryOptions,
   orgEnvironmentsQueryOptions,
   orgWorkspaceConnectionsQueryOptions,
 } from '#/lib/api/query'
+import { api } from '#/lib/api/client'
+import { isApiError } from '#/lib/api/errors'
 import type { Connection, Environment, Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
+import { hasPermission, permission } from '#/lib/permissions'
 import { useIde, newConnectionTab } from './useIdeStore'
 import { SidebarPane } from './SidebarPane'
+import { Button } from '#/components/ui/button'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '#/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '#/components/ui/dropdown-menu'
+import { Input } from '#/components/ui/input'
+import { Label } from '#/components/ui/label'
+import { Textarea } from '#/components/ui/textarea'
 
 type DatabasePanelProps = {
   orgSlug: string
@@ -25,6 +49,17 @@ type DatabasePanelProps = {
 
 export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange }: DatabasePanelProps) {
   const openTab = useIde((s) => s.openTab)
+  const queryClient = useQueryClient()
+
+  const [addEnvOpen, setAddEnvOpen] = useState(false)
+  const [envName, setEnvName] = useState('')
+  const [envDescription, setEnvDescription] = useState('')
+  const [envNameError, setEnvNameError] = useState<string | undefined>(undefined)
+
+  const effectivePermissions = useQuery(
+    orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspace.id),
+  )
+  const canCreateEnvironment = hasPermission(effectivePermissions.data?.permissions, permission.envCreate)
 
   const environments = useQuery(
     orgEnvironmentsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
@@ -36,30 +71,139 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   const envItems = environments.data?.items ?? []
   const connItems = connections.data?.items ?? []
 
-  return (
-    <SidebarPane
-      title="Explorer"
-      icon={DatabaseIcon}
-      maximized={maximized}
-      onMaximizedChange={onMaximizedChange}
-    >
-      {environments.isLoading || connections.isLoading ? (
-        <SidebarMessage>Loading...</SidebarMessage>
-      ) : environments.isError || connections.isError ? (
-        <SidebarMessage>Failed to load database tree.</SidebarMessage>
-      ) : envItems.length === 0 ? (
-        <SidebarMessage>No environments available.</SidebarMessage>
-      ) : (
-        envItems.map((env) => (
-          <EnvironmentRow
-            key={env.id}
-            environment={env}
-            connections={connItems.filter((c) => c.environment_id === env.id)}
-            onOpenTab={(conn) => openTab(newConnectionTab(conn, workspace))}
+  const createEnvironment = useMutation({
+    mutationFn: async () =>
+      api.post<Environment>(`/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/environments`, {
+        name: envName.trim(),
+        description: envDescription.trim(),
+      }),
+    onSuccess: async () => {
+      setAddEnvOpen(false)
+      setEnvName('')
+      setEnvDescription('')
+      setEnvNameError(undefined)
+      toast.success('Environment created')
+      await queryClient.invalidateQueries({ queryKey: ['org-environments', orgSlug] })
+    },
+    onError: (error) => {
+      if (isApiError(error) && error.fieldErrors) {
+        setEnvNameError(error.fieldErrors.name)
+        if (error.fieldErrors.name) return
+      }
+      toast.error(error instanceof Error ? error.message : 'Failed to create environment')
+    },
+  })
+
+  function handleAddEnvSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!envName.trim()) {
+      setEnvNameError('Name is required.')
+      return
+    }
+    setEnvNameError(undefined)
+    void createEnvironment.mutateAsync().catch(() => {})
+  }
+
+  const actions = canCreateEnvironment ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Add to Explorer"
           />
-        ))
-      )}
-    </SidebarPane>
+        }
+      >
+        <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="bottom" align="end" className="min-w-44">
+        <DropdownMenuItem onClick={() => setAddEnvOpen(true)}>
+          <HugeiconsIcon icon={ServerStack01Icon} size={14} strokeWidth={2} className="text-muted-foreground" />
+          New Environment
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : undefined
+
+  return (
+    <>
+      <SidebarPane
+        title="Explorer"
+        icon={DatabaseIcon}
+        maximized={maximized}
+        onMaximizedChange={onMaximizedChange}
+        actions={actions}
+      >
+        {environments.isLoading || connections.isLoading ? (
+          <SidebarMessage>Loading...</SidebarMessage>
+        ) : environments.isError || connections.isError ? (
+          <SidebarMessage>Failed to load database tree.</SidebarMessage>
+        ) : envItems.length === 0 ? (
+          <SidebarMessage>No environments available.</SidebarMessage>
+        ) : (
+          envItems.map((env) => (
+            <EnvironmentRow
+              key={env.id}
+              environment={env}
+              connections={connItems.filter((c) => c.environment_id === env.id)}
+              onOpenTab={(conn) => openTab(newConnectionTab(conn, workspace))}
+            />
+          ))
+        )}
+      </SidebarPane>
+
+      <Dialog
+        open={addEnvOpen}
+        onOpenChange={(open) => {
+          setAddEnvOpen(open)
+          if (!open) {
+            setEnvName('')
+            setEnvDescription('')
+            setEnvNameError(undefined)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New Environment</DialogTitle>
+          </DialogHeader>
+          <form className="mt-6 flex flex-col gap-4" onSubmit={handleAddEnvSubmit}>
+            <div className="flex flex-col gap-2">
+              <Label>Name</Label>
+              <Input
+                value={envName}
+                disabled={createEnvironment.isPending}
+                aria-invalid={envNameError ? true : undefined}
+                onChange={(e) => {
+                  setEnvName(e.target.value)
+                  setEnvNameError(undefined)
+                }}
+              />
+              {envNameError ? <p className="text-xs text-destructive">{envNameError}</p> : null}
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Description</Label>
+              <Textarea
+                value={envDescription}
+                disabled={createEnvironment.isPending}
+                placeholder="Optional environment description"
+                onChange={(e) => setEnvDescription(e.target.value)}
+              />
+            </div>
+            <DialogFooter>
+              <DialogClose render={<Button type="button" variant="ghost" disabled={createEnvironment.isPending} />}>
+                Cancel
+              </DialogClose>
+              <Button type="submit" disabled={createEnvironment.isPending}>
+                {createEnvironment.isPending ? 'Creating...' : 'Create'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
