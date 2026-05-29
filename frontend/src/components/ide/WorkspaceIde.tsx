@@ -56,14 +56,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
     const prevEtags = new Map<string, string>()
     const prevTabIds = new Set<string>()
     let applyingRemote = false
-
-    // Seed prev state with whatever is already in the store on mount so we
-    // don't broadcast existing tabs/etags as "new" on the first subscription tick.
-    const initial = store.getState()
-    for (const tab of initial.tabs) {
-      prevTabIds.add(tab.id)
-      if (tab.etag !== undefined) prevEtags.set(tab.id, tab.etag)
-    }
+    let seeded = false
 
     function handleRemote(event: MessageEvent) {
       const msg = event.data as Record<string, unknown>
@@ -72,7 +65,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
       if (msg.type === 'etag-update' && typeof msg.tabId === 'string' && typeof msg.etag === 'string') {
         store.getState().updateTabEtag(msg.tabId, msg.etag)
       } else if (msg.type === 'tab-opened' && msg.tab) {
-        store.getState().openTab(msg.tab as EditorTab)
+        store.getState().ensureTab(msg.tab as EditorTab)
       } else if (msg.type === 'tab-closed' && typeof msg.tabId === 'string') {
         store.getState().closeTab(msg.tabId)
       }
@@ -81,6 +74,17 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
 
     const unsub = store.subscribe((state) => {
       const currentTabIds = new Set(state.tabs.map((t) => t.id))
+
+      // First callback is the post-hydration snapshot. Seed prev state without
+      // broadcasting so we don't mistake restored tabs for newly opened ones.
+      if (!seeded) {
+        seeded = true
+        currentTabIds.forEach((id) => prevTabIds.add(id))
+        for (const tab of state.tabs) {
+          if (tab.etag !== undefined) prevEtags.set(tab.id, tab.etag)
+        }
+        return
+      }
 
       if (!applyingRemote) {
         // Etag changes

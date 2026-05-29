@@ -38,6 +38,7 @@ export type IdeState = {
 export type IdeActions = {
   setActiveWorkspace: (workspaceId: number) => void
   openTab: (tab: EditorTab) => void
+  ensureTab: (tab: EditorTab) => void
   closeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
   updateTabContent: (tabId: string, content: string) => void
@@ -85,6 +86,12 @@ export function createIdeStore(orgSlug: string) {
             return { activeTabId: tab.id, tabs: existing ? s.tabs : [...s.tabs, tab] }
           }),
 
+        ensureTab: (tab) =>
+          set((s) => {
+            if (s.tabs.some((t) => t.id === tab.id)) return s
+            return { tabs: [...s.tabs, tab] }
+          }),
+
         closeTab: (tabId) =>
           set((s) => {
             const nextTabs = s.tabs.filter((t) => t.id !== tabId)
@@ -101,7 +108,11 @@ export function createIdeStore(orgSlug: string) {
           set((s) => ({
             tabs: s.tabs.map((t) =>
               t.id === tabId
-                ? { ...t, content, isDirty: t.etag !== undefined ? true : t.isDirty }
+                ? {
+                    ...t,
+                    content,
+                    isDirty: t.etag !== undefined && content !== t.content ? true : t.isDirty,
+                  }
                 : t,
             ),
           })),
