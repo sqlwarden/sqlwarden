@@ -428,6 +428,7 @@ function ConnectionRow({
 
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger
+            nativeButton={false}
             render={
               <span
                 style={{

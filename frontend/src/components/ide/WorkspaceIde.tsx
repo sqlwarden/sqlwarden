@@ -257,8 +257,7 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
         collapsible
         collapsedSize="0%"
         className="overflow-hidden"
-        onCollapse={() => setSidebarCollapsed(true)}
-        onExpand={() => setSidebarCollapsed(false)}
+        onResize={(size) => setSidebarCollapsed(size.asPercentage === 0)}
       >
         <IdeSidebar orgSlug={orgSlug} workspace={workspace} />
       </ResizablePanel>

@@ -62,6 +62,7 @@ export function FileContextMenu({
         {children}
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger
+            nativeButton={false}
             render={
               <span
                 style={{
