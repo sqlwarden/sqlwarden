@@ -146,8 +146,6 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     setIsRunning(true)
     setQueryResult(activeTab.id, { status: 'running' })
 
-    const startMs = Date.now()
-
     try {
       // Auto-connect if no live session.
       let sessionId = sessions[activeConnection.id]
@@ -168,7 +166,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       setQueryResult(activeTab.id, {
         status: 'ok',
         data: result,
-        durationMs: Date.now() - startMs,
+        durationMs: result.duration_ms,
         sql,
       })
     } catch (err) {

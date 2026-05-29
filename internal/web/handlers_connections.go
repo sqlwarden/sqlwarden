@@ -16,6 +16,7 @@ import (
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
+	"github.com/sqlwarden/pkg/result"
 )
 
 type queryClass string
@@ -627,6 +628,10 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	)
 	queryKind := classifySQL(input.SQL)
 
+	var rs *result.ResultSet
+	var execErr error
+	start := time.Now()
+
 	switch queryKind {
 	case queryClassDQL:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
@@ -637,16 +642,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, err := session.Query(r.Context(), input.SQL)
-		if err != nil {
-			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
-			return
-		}
-
-		err = response.JSON(w, http.StatusOK, rs)
-		if err != nil {
-			app.serverError(w, r, err)
-		}
+		rs, execErr = session.Query(r.Context(), input.SQL)
 	case queryClassDML:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
@@ -656,16 +652,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, err := session.Execute(r.Context(), input.SQL)
-		if err != nil {
-			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
-			return
-		}
-
-		err = response.JSON(w, http.StatusOK, rs)
-		if err != nil {
-			app.serverError(w, r, err)
-		}
+		rs, execErr = session.Execute(r.Context(), input.SQL)
 	case queryClassDDL:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
@@ -675,28 +662,24 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, err := session.Execute(r.Context(), input.SQL)
-		if err != nil {
-			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
-			return
-		}
-		err = response.JSON(w, http.StatusOK, rs)
-		if err != nil {
-			app.serverError(w, r, err)
-		}
+		rs, execErr = session.Execute(r.Context(), input.SQL)
 	default:
 		if !hasBroadExecute {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, err := session.Execute(r.Context(), input.SQL)
-		if err != nil {
-			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
-			return
-		}
-		err = response.JSON(w, http.StatusOK, rs)
-		if err != nil {
-			app.serverError(w, r, err)
-		}
+		rs, execErr = session.Execute(r.Context(), input.SQL)
+	}
+
+	if execErr != nil {
+		app.errorMessage(w, r, http.StatusUnprocessableEntity, execErr.Error(), nil)
+		return
+	}
+
+	rs.DurationMs = time.Since(start).Milliseconds()
+
+	err = response.JSON(w, http.StatusOK, rs)
+	if err != nil {
+		app.serverError(w, r, err)
 	}
 }

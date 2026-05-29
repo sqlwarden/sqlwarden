@@ -7,8 +7,9 @@ import (
 
 // ResultSet holds a normalized query result with typed columns and rows.
 type ResultSet struct {
-	Columns []Column `json:"columns"`
-	Rows    []Row    `json:"rows"`
+	Columns    []Column `json:"columns"`
+	Rows       []Row    `json:"rows"`
+	DurationMs int64    `json:"duration_ms"`
 }
 
 // Column describes a single column in a ResultSet.

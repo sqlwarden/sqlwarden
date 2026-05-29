@@ -107,6 +107,7 @@ export type ResultRow = ResultValue[]
 export interface ResultSet {
   columns: ResultColumn[] | null
   rows: ResultRow[] | null
+  duration_ms: number
 }
 
 export interface Connection {
