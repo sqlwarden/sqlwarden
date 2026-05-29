@@ -54,7 +54,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const viewRegistry = useEditorViewRegistry()
   const activeTab = tabs.find((t) => t.id === activeTabId)
 
-  const showSave = activeTab?.kind === 'scratch' || activeTab?.isDirty
+  const showSave = activeTab?.kind !== 'file' || activeTab?.isDirty
 
   async function handleSave() {
     if (!activeTab) return
@@ -179,15 +179,18 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       registry, viewRegistry, setMaximizedPane, setQueryResult, setSession])
 
   // Global ⌘Enter / Ctrl+Enter shortcut.
+  // capture:true fires before CodeMirror's contentDOM listener; stopPropagation
+  // prevents the event from reaching CodeMirror at all, so it cannot insert a newline.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault()
+        e.stopPropagation()
         void handleRun()
       }
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
   }, [handleRun])
 
   const runDisabled = !activeTab || !activeConnection || isRunning
