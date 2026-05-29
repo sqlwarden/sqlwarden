@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { EditorView, basicSetup } from 'codemirror'
+import { EditorView, keymap, basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
 import { sql } from '@codemirror/lang-sql'
 import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
@@ -101,6 +101,10 @@ export function SqlEditor({ tabId, doc, className }: SqlEditorProps) {
           ideTheme,
           syntaxHighlighting(sqlHighlightStyle),
           EditorView.lineWrapping,
+          // Consume Mod-Enter so CodeMirror calls preventDefault before the
+          // browser inserts a newline. The window listener in IdeToolbar still
+          // receives the (now-non-defaulted) event and runs the query.
+          keymap.of([{ key: 'Mod-Enter', run: () => true }]),
           yCollab(yText, null), // handles all CodeMirror ↔ Y.js sync
         ],
       }),
