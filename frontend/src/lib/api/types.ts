@@ -78,6 +78,37 @@ export interface Environment {
   updated_at: string
 }
 
+// ─── Query result types ─────────────────────────────────────────────────────
+
+export type ColumnType = 'text' | 'integer' | 'decimal' | 'boolean' | 'datetime' | 'json' | 'uuid' | 'bytes'
+
+export interface ResultColumn {
+  name: string
+  type: ColumnType
+  raw_type: string
+  nullable: boolean
+}
+
+export type ValueType = 'null' | 'text' | 'integer' | 'float' | 'decimal' | 'bool' | 'time' | 'bytes'
+
+export interface ResultValue {
+  type: ValueType
+  text?: string
+  integer?: number
+  float?: number
+  decimal?: string
+  bool?: boolean
+  time?: string
+  bytes?: number[]
+}
+
+export type ResultRow = ResultValue[]
+
+export interface ResultSet {
+  columns: ResultColumn[]
+  rows: ResultRow[]
+}
+
 export interface Connection {
   id: number
   workspace_id: number

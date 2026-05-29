@@ -2,9 +2,15 @@ import { createContext, useContext } from 'react'
 import { createStore, useStore } from 'zustand'
 import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware'
 import { get, set, del } from 'idb-keyval'
-import type { Connection, Workspace, WorkspaceFile } from '#/lib/api/types'
+import type { Connection, ResultSet, Workspace, WorkspaceFile } from '#/lib/api/types'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
+
+export type QueryResult =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | { status: 'ok'; data: ResultSet; durationMs: number; sql: string }
+  | { status: 'error'; message: string; sql: string }
 
 export type TabKind = 'scratch' | 'file' | 'connection'
 
@@ -36,6 +42,8 @@ export type IdeState = {
   nextConsoleNumber: number
   /** Live session IDs keyed by connectionId. A session entry means the backend has an open pool connection for this account. */
   sessions: Record<number, string>
+  /** Last query result per tab ID. Not persisted to IndexedDB. */
+  results: Record<string, QueryResult>
 }
 
 export type IdeActions = {
@@ -54,6 +62,7 @@ export type IdeActions = {
   clearSession: (connectionId: number) => void
   /** Replace the entire sessions map with authoritative data from the backend. */
   syncSessions: (backendSessions: Record<number, string>) => void
+  setQueryResult: (tabId: string, result: QueryResult) => void
   /** Opens a new numbered console tab. Pass yState (encoded Y.Doc) so all windows
    *  that receive this tab share the same canonical Y.js initial history.
    *  Pass connectionId to pre-select a connection on the new tab. */
@@ -86,6 +95,7 @@ export function createIdeStore(orgSlug: string) {
         tabs: [],
         nextConsoleNumber: 0,
         sessions: {},
+        results: {},
 
         setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
@@ -108,7 +118,8 @@ export function createIdeStore(orgSlug: string) {
               s.activeTabId === tabId
                 ? nextTabs.find((t) => t.workspaceId === s.activeWorkspaceId)?.id
                 : s.activeTabId
-            return { tabs: nextTabs, activeTabId: nextActive }
+            const { [tabId]: _r, ...nextResults } = s.results
+            return { tabs: nextTabs, activeTabId: nextActive, results: nextResults }
           }),
 
         setActiveTab: (id) => set({ activeTabId: id }),
@@ -149,6 +160,9 @@ export function createIdeStore(orgSlug: string) {
 
         syncSessions: (backendSessions) => set({ sessions: backendSessions }),
 
+        setQueryResult: (tabId, result) =>
+          set((s) => ({ results: { ...s.results, [tabId]: result } })),
+
         openConsole: (workspace, yState, connectionId) =>
           set((s) => {
             const num = s.nextConsoleNumber + 1
@@ -172,6 +186,9 @@ export function createIdeStore(orgSlug: string) {
       {
         name: `sqlwarden.ide.${orgSlug}`,
         storage: createJSONStorage(() => makeStorage(orgSlug)),
+        // Exclude ephemeral query results from IndexedDB — they can be large
+        // and are meaningless after a page reload anyway.
+        partialize: ({ results: _r, ...state }) => state,
       },
     ),
   )
