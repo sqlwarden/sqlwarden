@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 	"strconv"
@@ -490,6 +491,89 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func (app *application) listActiveSessions(w http.ResponseWriter, r *http.Request) {
+	account := contextGetAccount(r)
+	ws := contextGetWorkspace(r)
+
+	accountID := strconv.FormatInt(account.ID, 10)
+	accountSessions := app.connManager.AllForAccount(accountID)
+
+	type sessionInfo struct {
+		ConnectionID int64  `json:"connection_id"`
+		SessionID    string `json:"session_id"`
+	}
+	result := make([]sessionInfo, 0)
+
+	if len(accountSessions) > 0 {
+		// Build a set of connection IDs that belong to this workspace so we
+		// don't leak sessions from other workspaces.
+		page, err := app.db.ListConnectionsPage(r.Context(), database.ListConnectionsParams{
+			WorkspaceID: ws.ID,
+			PageSize:    10000,
+		})
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		wsConnIDs := make(map[string]bool, len(page.Items))
+		for _, conn := range page.Items {
+			wsConnIDs[strconv.FormatInt(conn.ID, 10)] = true
+		}
+
+		for _, ref := range accountSessions {
+			if !wsConnIDs[ref.ConnectionID] {
+				continue
+			}
+			connIDInt, parseErr := strconv.ParseInt(ref.ConnectionID, 10, 64)
+			if parseErr != nil {
+				continue
+			}
+			result = append(result, sessionInfo{
+				ConnectionID: connIDInt,
+				SessionID:    ref.SessionID,
+			})
+		}
+	}
+
+	err := response.JSON(w, http.StatusOK, map[string]any{"sessions": result})
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) disconnectFromDatabase(w http.ResponseWriter, r *http.Request) {
+	account := contextGetAccount(r)
+	conn := contextGetConnection(r)
+
+	sessionID := r.Header.Get("X-Warden-Session")
+	if sessionID == "" {
+		app.badRequest(w, r, errors.New("X-Warden-Session header is required"))
+		return
+	}
+
+	session, ok := app.connManager.Get(sessionID)
+	if !ok {
+		// Session already gone (expired or never existed) — idempotent.
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	accountID := strconv.FormatInt(account.ID, 10)
+	if session.AccountID != accountID {
+		app.notPermitted(w, r)
+		return
+	}
+
+	connID := strconv.FormatInt(conn.ID, 10)
+	if session.ConnectionID != connID {
+		app.badRequest(w, r, errors.New("session does not belong to this connection"))
+		return
+	}
+
+	app.connManager.Remove(sessionID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {

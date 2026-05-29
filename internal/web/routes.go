@@ -67,6 +67,7 @@ func (app *application) routes() http.Handler {
 					r.Get("/", app.getWorkspace)
 					r.Patch("/", app.updateWorkspace)
 					r.Delete("/", app.deleteWorkspace)
+					r.Get("/sessions", app.listActiveSessions)
 
 					r.Route("/files/private", func(r chi.Router) {
 						r.Get("/", app.listPrivateWorkspaceFiles)
@@ -101,6 +102,7 @@ func (app *application) routes() http.Handler {
 									r.Patch("/", app.updateConnection)
 									r.Delete("/", app.deleteConnection)
 									r.Post("/connect", app.connectToDatabase)
+									r.Delete("/session", app.disconnectFromDatabase)
 									r.Post("/query", app.executeQuery)
 								})
 							})
@@ -117,6 +119,7 @@ func (app *application) routes() http.Handler {
 							r.Patch("/", app.updateConnection)
 							r.Delete("/", app.deleteConnection)
 							r.Post("/connect", app.connectToDatabase)
+							r.Delete("/session", app.disconnectFromDatabase)
 							r.Post("/query", app.executeQuery)
 						})
 					})
@@ -178,6 +181,7 @@ func (app *application) routes() http.Handler {
 					r.Get("/", app.getWorkspace)
 					r.With(app.requirePermission("ws:write")).Patch("/", app.updateWorkspace)
 					r.With(app.requirePermission("ws:delete")).Delete("/", app.deleteWorkspace)
+					r.Get("/sessions", app.listActiveSessions)
 
 					r.Get("/permissions", app.listWorkspacePermissions)
 
@@ -254,6 +258,7 @@ func (app *application) routes() http.Handler {
 									r.With(app.requirePermission("conn:write")).Patch("/", app.updateConnection)
 									r.With(app.requirePermission("conn:delete")).Delete("/", app.deleteConnection)
 									r.Post("/connect", app.connectToDatabase)
+									r.Delete("/session", app.disconnectFromDatabase)
 									r.Post("/query", app.executeQuery)
 								})
 							})
@@ -270,6 +275,7 @@ func (app *application) routes() http.Handler {
 							r.With(app.requirePermission("conn:write")).Patch("/", app.updateConnection)
 							r.With(app.requirePermission("conn:delete")).Delete("/", app.deleteConnection)
 							r.Post("/connect", app.connectToDatabase)
+							r.Delete("/session", app.disconnectFromDatabase)
 							r.Post("/query", app.executeQuery)
 						})
 					})

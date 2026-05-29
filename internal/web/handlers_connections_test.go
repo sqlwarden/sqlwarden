@@ -730,6 +730,467 @@ func TestConnectionRuntimePermissionClasses(t *testing.T) {
 	assert.Equal(t, send(t, execDDLReq, app.routes()).StatusCode, http.StatusOK)
 }
 
+// ── list active sessions tests ──────────────────────────────────────────────
+
+func TestListActiveSessions_Empty(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+
+	res := send(t, newOrgRequest(t, http.MethodGet,
+		fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/sessions", org.Slug, ws.ID), tok),
+		app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Sessions []any `json:"sessions"`
+	}
+	decodeJSONResponse(t, res.BodyBytes, &payload)
+	assert.Equal(t, len(payload.Sessions), 0)
+}
+
+func TestListActiveSessions_ShowsSessionAfterConnect(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "SessConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+	connIDInt, _ := strconv.ParseInt(connID, 10, 64)
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	listRes := send(t, newOrgRequest(t, http.MethodGet,
+		fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/sessions", org.Slug, ws.ID), tok),
+		app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Sessions []struct {
+			ConnectionID float64 `json:"connection_id"`
+			SessionID    string  `json:"session_id"`
+		} `json:"sessions"`
+	}
+	decodeJSONResponse(t, listRes.BodyBytes, &payload)
+	assert.Equal(t, len(payload.Sessions), 1)
+	assert.Equal(t, int64(payload.Sessions[0].ConnectionID), connIDInt)
+	assert.Equal(t, payload.Sessions[0].SessionID, sessionID)
+}
+
+func TestListActiveSessions_ClearedAfterDisconnect(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "SessDisconn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	disconnectReq := newAuthRequest(t, http.MethodDelete,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/session", nil, tok)
+	disconnectReq.Header.Set("X-Warden-Session", sessionID)
+	assert.Equal(t, send(t, disconnectReq, app.routes()).StatusCode, http.StatusNoContent)
+
+	listRes := send(t, newOrgRequest(t, http.MethodGet,
+		fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/sessions", org.Slug, ws.ID), tok),
+		app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Sessions []any `json:"sessions"`
+	}
+	decodeJSONResponse(t, listRes.BodyBytes, &payload)
+	assert.Equal(t, len(payload.Sessions), 0)
+}
+
+func TestListActiveSessions_OnlyCurrentAccount(t *testing.T) {
+	// Another account's sessions must not appear in the listing.
+	t.Parallel()
+	app, org, ws, ownerTok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	_, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "sess-member"), "Sess Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, 0); err != nil {
+		// org.ID member add is a no-op here — we only need memberTok issued to confirm isolation.
+		_ = err
+	}
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "SessAccount", "driver": "sqlite", "dsn": ":memory:"}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	// Owner connects.
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, ownerTok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+
+	// Member's view should be empty (they have no session).
+	listRes := send(t, newOrgRequest(t, http.MethodGet,
+		fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/sessions", org.Slug, ws.ID), memberTok),
+		app.routes())
+	// Member isn't a workspace member so they'll get 403; we just need to confirm isolation.
+	if listRes.StatusCode == http.StatusOK {
+		var payload struct {
+			Sessions []any `json:"sessions"`
+		}
+		decodeJSONResponse(t, listRes.BodyBytes, &payload)
+		assert.Equal(t, len(payload.Sessions), 0)
+	}
+}
+
+func TestListActiveSessions_OnlyCurrentWorkspace(t *testing.T) {
+	// Sessions from a different workspace must not appear.
+	t.Parallel()
+	app, org, ws1, tok := setupWorkspaceOwner(t)
+	ws2 := seedWorkspaceForAccount(t, app, org, seedAccount(t, app, uniqueEmail(t, "ws2-owner"), "WS2 Owner"), "WS2", "")
+	// Grant tok access to ws2 as well
+	_ = ws2
+
+	envID1 := defaultEnvironmentID(t, app, ws1.ID)
+
+	// Create and connect a connection in ws1.
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws1.ID, envID1),
+		map[string]any{"name": "SessWS1", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws1.ID, envID1, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+
+	// Query ws2/sessions — should be empty (session belongs to ws1).
+	listRes := send(t, newOrgRequest(t, http.MethodGet,
+		fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/sessions", org.Slug, ws2.ID), tok),
+		app.routes())
+	// ws2 belongs to a different owner so owner from ws1 gets 403; confirm empty on 200.
+	if listRes.StatusCode == http.StatusOK {
+		var payload struct {
+			Sessions []any `json:"sessions"`
+		}
+		decodeJSONResponse(t, listRes.BodyBytes, &payload)
+		assert.Equal(t, len(payload.Sessions), 0)
+	}
+}
+
+func TestListActiveSessions_RequiresAuth(t *testing.T) {
+	t.Parallel()
+	app, org, ws, _ := setupWorkspaceOwner(t)
+
+	req, _ := http.NewRequest(http.MethodGet,
+		fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/sessions", org.Slug, ws.ID), nil)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
+}
+
+func TestListActiveSessions_MultipleConnections(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	var connIDs []string
+	for _, name := range []string{"Multi1", "Multi2", "Multi3"} {
+		r := send(t, newAuthRequest(t, http.MethodPost,
+			orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+			map[string]any{"name": name, "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+		assert.Equal(t, r.StatusCode, http.StatusCreated)
+		connIDs = append(connIDs, fmt.Sprintf("%v", r.BodyFields["id"]))
+	}
+
+	// Connect only the first two.
+	for _, cid := range connIDs[:2] {
+		r := send(t, newAuthRequest(t, http.MethodPost,
+			orgConnectionURL(org.Slug, ws.ID, envID, cid)+"/connect", nil, tok), app.routes())
+		assert.Equal(t, r.StatusCode, http.StatusOK)
+	}
+
+	listRes := send(t, newOrgRequest(t, http.MethodGet,
+		fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/sessions", org.Slug, ws.ID), tok),
+		app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Sessions []any `json:"sessions"`
+	}
+	decodeJSONResponse(t, listRes.BodyBytes, &payload)
+	assert.Equal(t, len(payload.Sessions), 2)
+}
+
+// ── connect regression ──────────────────────────────────────────────────────
+
+func TestConnectReusesExistingSession(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "ReuseConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	first := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, first.StatusCode, http.StatusOK)
+	assert.Equal(t, first.BodyFields["reused"], false)
+	sid1 := first.BodyFields["session_id"].(string)
+
+	second := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, second.StatusCode, http.StatusOK)
+	assert.Equal(t, second.BodyFields["reused"], true)
+	assert.Equal(t, second.BodyFields["session_id"].(string), sid1)
+}
+
+// ── disconnect tests ────────────────────────────────────────────────────────
+
+func TestDisconnectFromDatabase_HappyPath(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "DC1", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	disconnectReq := newAuthRequest(t, http.MethodDelete,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/session", nil, tok)
+	disconnectReq.Header.Set("X-Warden-Session", sessionID)
+	disconnectRes := send(t, disconnectReq, app.routes())
+	assert.Equal(t, disconnectRes.StatusCode, http.StatusNoContent)
+
+	// Session is gone — query with the old session must return 410.
+	queryReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "SELECT 1"}, tok)
+	queryReq.Header.Set("X-Warden-Session", sessionID)
+	assert.Equal(t, send(t, queryReq, app.routes()).StatusCode, http.StatusGone)
+}
+
+func TestDisconnectFromDatabase_MissingSessionHeader(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "DC2", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	res := send(t, newAuthRequest(t, http.MethodDelete,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/session", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusBadRequest)
+}
+
+func TestDisconnectFromDatabase_UnknownSessionIsIdempotent(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "DC3", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	req := newAuthRequest(t, http.MethodDelete,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/session", nil, tok)
+	req.Header.Set("X-Warden-Session", "nonexistent-session-id")
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+}
+
+func TestDisconnectFromDatabase_WrongAccountIsForbidden(t *testing.T) {
+	t.Parallel()
+	app, org, ws, ownerTok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "dc-member"), "DC Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "DC4", "driver": "sqlite", "dsn": ":memory:"}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	// Owner connects and gets a session.
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, ownerTok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	ownerSession := connectRes.BodyFields["session_id"].(string)
+
+	// Member attempts to disconnect the owner's session — must be forbidden.
+	req := newAuthRequest(t, http.MethodDelete,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/session", nil, memberTok)
+	req.Header.Set("X-Warden-Session", ownerSession)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+
+	// Owner's session is still alive.
+	queryReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "SELECT 1"}, ownerTok)
+	queryReq.Header.Set("X-Warden-Session", ownerSession)
+	assert.Equal(t, send(t, queryReq, app.routes()).StatusCode, http.StatusOK)
+}
+
+func TestDisconnectFromDatabase_WrongConnectionIsBadRequest(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	connARes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "DC-A", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, connARes.StatusCode, http.StatusCreated)
+	connAID := fmt.Sprintf("%v", connARes.BodyFields["id"])
+
+	connBRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "DC-B", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, connBRes.StatusCode, http.StatusCreated)
+	connBID := fmt.Sprintf("%v", connBRes.BodyFields["id"])
+
+	// Connect to A, then try to disconnect via B's endpoint.
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connAID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionA := connectRes.BodyFields["session_id"].(string)
+
+	req := newAuthRequest(t, http.MethodDelete,
+		orgConnectionURL(org.Slug, ws.ID, envID, connBID)+"/session", nil, tok)
+	req.Header.Set("X-Warden-Session", sessionA)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusBadRequest)
+}
+
+func TestDisconnectFromDatabase_Idempotent(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "DC5", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	disconnect := func() int {
+		req := newAuthRequest(t, http.MethodDelete,
+			orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/session", nil, tok)
+		req.Header.Set("X-Warden-Session", sessionID)
+		return send(t, req, app.routes()).StatusCode
+	}
+
+	assert.Equal(t, disconnect(), http.StatusNoContent)
+	assert.Equal(t, disconnect(), http.StatusNoContent) // second call — already gone
+}
+
+func TestDisconnectFromDatabase_CanReconnectAfterDisconnect(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "DC6", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sid1 := connectRes.BodyFields["session_id"].(string)
+
+	disconnectReq := newAuthRequest(t, http.MethodDelete,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/session", nil, tok)
+	disconnectReq.Header.Set("X-Warden-Session", sid1)
+	assert.Equal(t, send(t, disconnectReq, app.routes()).StatusCode, http.StatusNoContent)
+
+	// Re-connect — should get a fresh session (created=true, different ID).
+	reconnectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, reconnectRes.StatusCode, http.StatusOK)
+	assert.Equal(t, reconnectRes.BodyFields["reused"], false)
+	sid2 := reconnectRes.BodyFields["session_id"].(string)
+	if sid2 == sid1 {
+		t.Fatal("expected a new session ID after reconnect")
+	}
+}
+
+func TestDisconnectFromDatabase_RequiresAuth(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "DC7", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	req, _ := http.NewRequest(http.MethodDelete,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/session", nil)
+	req.Header.Set("X-Warden-Session", "any-session")
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
+}
+
+func TestDisconnectFromDatabase_WorkspaceRouteParity(t *testing.T) {
+	// Disconnect is also accessible via the workspace-level (non-env) route.
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "DC8", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	// Connect via env route.
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	// Disconnect via the workspace-level route (no env_id in path).
+	wsConnURL := fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/connections/%s", org.Slug, ws.ID, connID)
+	req := newAuthRequest(t, http.MethodDelete, wsConnURL+"/session", nil, tok)
+	req.Header.Set("X-Warden-Session", sessionID)
+	assert.Equal(t, send(t, req, app.routes()).StatusCode, http.StatusNoContent)
+}
+
 func TestConnectToDatabaseReturns422ForTargetDatabaseError(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

@@ -34,6 +34,8 @@ export type IdeState = {
   activeTabId?: string
   tabs: EditorTab[]
   nextConsoleNumber: number
+  /** Live session IDs keyed by connectionId. A session entry means the backend has an open pool connection for this account. */
+  sessions: Record<number, string>
 }
 
 export type IdeActions = {
@@ -48,6 +50,10 @@ export type IdeActions = {
   setMaximizedPane: (pane: IdeState['maximizedPane']) => void
   setMaximizedSidebarPane: (pane: IdeState['maximizedSidebarPane']) => void
   setSidebarCollapsed: (collapsed: boolean) => void
+  setSession: (connectionId: number, sessionId: string) => void
+  clearSession: (connectionId: number) => void
+  /** Replace the entire sessions map with authoritative data from the backend. */
+  syncSessions: (backendSessions: Record<number, string>) => void
   /** Opens a new numbered console tab. Pass yState (encoded Y.Doc) so all windows
    *  that receive this tab share the same canonical Y.js initial history.
    *  Pass connectionId to pre-select a connection on the new tab. */
@@ -79,6 +85,7 @@ export function createIdeStore(orgSlug: string) {
         activeTabId: undefined,
         tabs: [],
         nextConsoleNumber: 0,
+        sessions: {},
 
         setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
@@ -130,6 +137,17 @@ export function createIdeStore(orgSlug: string) {
         setMaximizedPane: (pane) => set({ maximizedPane: pane }),
         setMaximizedSidebarPane: (pane) => set({ maximizedSidebarPane: pane }),
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+
+        setSession: (connectionId, sessionId) =>
+          set((s) => ({ sessions: { ...s.sessions, [connectionId]: sessionId } })),
+
+        clearSession: (connectionId) =>
+          set((s) => {
+            const { [connectionId]: _removed, ...rest } = s.sessions
+            return { sessions: rest }
+          }),
+
+        syncSessions: (backendSessions) => set({ sessions: backendSessions }),
 
         openConsole: (workspace, yState, connectionId) =>
           set((s) => {

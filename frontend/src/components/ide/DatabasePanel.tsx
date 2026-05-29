@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import * as Y from 'yjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -55,9 +55,11 @@ type DatabasePanelProps = {
 
 export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange }: DatabasePanelProps) {
   const openTab = useIde((s) => s.openTab)
-  const closeTab = useIde((s) => s.closeTab)
   const openConsole = useIde((s) => s.openConsole)
-  const tabs = useIde((s) => s.tabs)
+  const sessions = useIde((s) => s.sessions)
+  const setSession = useIde((s) => s.setSession)
+  const clearSession = useIde((s) => s.clearSession)
+  const syncSessions = useIde((s) => s.syncSessions)
   const queryClient = useQueryClient()
 
   const [addEnvOpen, setAddEnvOpen] = useState(false)
@@ -79,12 +81,62 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
     orgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
   )
 
+  // Authoritative session list from the backend — reconciles persisted frontend
+  // state with what the server actually has alive (handles restarts, TTL expiry, etc).
+  const backendSessionsQuery = useQuery({
+    queryKey: ['org-workspace-sessions', orgSlug, workspace.id],
+    queryFn: () =>
+      api.get<{ sessions: { connection_id: number; session_id: string }[] }>(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/sessions`,
+      ),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  })
+
+  useEffect(() => {
+    if (!backendSessionsQuery.data) return
+    const map: Record<number, string> = {}
+    for (const s of backendSessionsQuery.data.sessions) {
+      map[s.connection_id] = s.session_id
+    }
+    syncSessions(map)
+  }, [backendSessionsQuery.data, syncSessions])
+
   const envItems = environments.data?.items ?? []
   const connItems = connections.data?.items ?? []
 
-  const connectedIds = new Set(
-    tabs.filter((t) => t.kind === 'connection' && t.connectionId !== undefined).map((t) => t.connectionId!),
-  )
+  const connectedIds = new Set(Object.keys(sessions).map(Number))
+
+  const sessionsQueryKey = ['org-workspace-sessions', orgSlug, workspace.id]
+
+  const connectMutation = useMutation({
+    mutationFn: (conn: Connection) =>
+      api.post<{ session_id: string; reused: boolean }>(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${conn.id}/connect`,
+      ),
+    onSuccess: (data, conn) => {
+      setSession(conn.id, data.session_id)
+      void queryClient.invalidateQueries({ queryKey: sessionsQueryKey })
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to connect')
+    },
+  })
+
+  const disconnectMutation = useMutation({
+    mutationFn: ({ conn, sessionId }: { conn: Connection; sessionId: string }) =>
+      api.delete(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${conn.id}/session`,
+        { headers: { 'X-Warden-Session': sessionId } },
+      ),
+    onSuccess: (_, { conn }) => {
+      clearSession(conn.id)
+      void queryClient.invalidateQueries({ queryKey: sessionsQueryKey })
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to disconnect')
+    },
+  })
 
   function handleOpenConnection(conn: Connection) {
     openTab(newConnectionTab(conn, workspace))
@@ -98,8 +150,14 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
     openConsole(workspace, yState, conn.id)
   }
 
+  function handleConnect(conn: Connection) {
+    void connectMutation.mutateAsync(conn).catch(() => {})
+  }
+
   function handleDisconnect(conn: Connection) {
-    closeTab(`connection:${conn.id}`)
+    const sessionId = sessions[conn.id]
+    if (!sessionId) return
+    void disconnectMutation.mutateAsync({ conn, sessionId }).catch(() => {})
   }
 
   const createEnvironment = useMutation({
@@ -190,6 +248,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
               connectedIds={connectedIds}
               onOpen={handleOpenConnection}
               onOpenConsole={handleOpenConsole}
+              onConnect={handleConnect}
               onDisconnect={handleDisconnect}
             />
           ))
@@ -263,6 +322,7 @@ function EnvironmentRow({
   connectedIds,
   onOpen,
   onOpenConsole,
+  onConnect,
   onDisconnect,
 }: {
   environment: Environment
@@ -270,6 +330,7 @@ function EnvironmentRow({
   connectedIds: Set<number>
   onOpen: (conn: Connection) => void
   onOpenConsole: (conn: Connection) => void
+  onConnect: (conn: Connection) => void
   onDisconnect: (conn: Connection) => void
 }) {
   const [expanded, setExpanded] = useState(true)
@@ -308,6 +369,7 @@ function EnvironmentRow({
                 isConnected={connectedIds.has(conn.id)}
                 onOpen={() => onOpen(conn)}
                 onOpenConsole={() => onOpenConsole(conn)}
+                onConnect={() => onConnect(conn)}
                 onDisconnect={() => onDisconnect(conn)}
               />
             ))
@@ -323,12 +385,14 @@ function ConnectionRow({
   isConnected,
   onOpen,
   onOpenConsole,
+  onConnect,
   onDisconnect,
 }: {
   connection: Connection
   isConnected: boolean
   onOpen: () => void
   onOpenConsole: () => void
+  onConnect: () => void
   onDisconnect: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -386,13 +450,18 @@ function ConnectionRow({
               <HugeiconsIcon icon={TerminalIcon} size={13} strokeWidth={2} />
               Open Console
             </DropdownMenuItem>
-            {isConnected && (
+            {isConnected ? (
               <DropdownMenuItem
                 data-variant="destructive"
                 onClick={() => { setMenuOpen(false); onDisconnect() }}
               >
                 <HugeiconsIcon icon={Cancel01Icon} size={13} strokeWidth={2} />
                 Disconnect
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem onClick={() => { setMenuOpen(false); onConnect() }}>
+                <HugeiconsIcon icon={FlowConnectionIcon} size={13} strokeWidth={2} />
+                Connect
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>

@@ -106,6 +106,29 @@ func (m *Manager) GetOrCreate(accountID, connID string, open func() (driver.Driv
 	return sess, true, nil
 }
 
+// SessionRef is a lightweight summary of an active session returned by AllForAccount.
+type SessionRef struct {
+	SessionID    string
+	ConnectionID string
+}
+
+// AllForAccount returns a SessionRef for every active session owned by accountID.
+// It does not update lastUsed; use Get to both fetch and refresh a session.
+func (m *Manager) AllForAccount(accountID string) []SessionRef {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var refs []SessionRef
+	for _, sess := range m.byID {
+		if sess.AccountID == accountID {
+			refs = append(refs, SessionRef{
+				SessionID:    sess.ID,
+				ConnectionID: sess.ConnectionID,
+			})
+		}
+	}
+	return refs
+}
+
 // Get fetches a session by its ID. Returns (session, true) if found, (nil, false) otherwise.
 func (m *Manager) Get(sessionID string) (*Session, bool) {
 	m.mu.Lock()
