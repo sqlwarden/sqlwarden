@@ -16,6 +16,7 @@
         "@fontsource-variable/outfit": "^5.2.8",
         "@fontsource-variable/oxanium": "^5.2.8",
         "@fontsource-variable/public-sans": "^5.2.7",
+        "@fontsource-variable/roboto-mono": "^5.2.9",
         "@fontsource/geist-mono": "^5.2.8",
         "@hugeicons/core-free-icons": "^4.1.4",
         "@hugeicons/react": "^1.1.6",
@@ -248,6 +249,8 @@
     "@fontsource-variable/oxanium": ["@fontsource-variable/oxanium@5.2.8", "", {}, "sha512-W3HWxRLXVB6yox3dgm1DIGOp98pz8KglwiM6/2BsMopvZrg98mXI9citFWz2pUX0FOOLwf8fmHxX+KrIn+6BoA=="],
 
     "@fontsource-variable/public-sans": ["@fontsource-variable/public-sans@5.2.7", "", {}, "sha512-4mvade2J3slKkvwRkS+p8T3szet/0vhWoSnuUJTVU81Uo2pRpSZY/Y8bSLRqpSwzIPxjVmRJ53oq6JKP/l/PSg=="],
+
+    "@fontsource-variable/roboto-mono": ["@fontsource-variable/roboto-mono@5.2.9", "", {}, "sha512-OzFO2AXlSGcXl/NcXS3CGjImb6rczCByPJ1C+Dzp9kkYOrUPyrGTuAtqPcmA/d+nZGX5oyOWKXLk5BrwVLYqkw=="],
 
     "@fontsource/geist-mono": ["@fontsource/geist-mono@5.2.8", "", {}, "sha512-YqZUb3X42GjRaHkibUNyE8K4Rk9A6I9Ez81YpJYiuJN4ggmTW2ixoQpa9EWCPfXZtIsCQJTyrDoV9OJOZO/UcA=="],
 

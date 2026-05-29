@@ -6,6 +6,7 @@ import {
   Briefcase01Icon,
   Building04Icon,
   DatabaseIcon,
+  DatabaseLightningIcon,
   FlowConnectionIcon,
   Home04Icon,
   PolicyIcon,
@@ -118,7 +119,7 @@ function OrganizationLayout() {
               ? `${organization.data?.name ?? orgSlug} / ${workspace.data?.name ?? `Workspace #${workspaceId}`}`
               : organization.data?.name ?? orgSlug
           }
-          icon={Building04Icon}
+          icon={DatabaseLightningIcon}
         />
         <SidebarContent>
           {workspaceId ? (

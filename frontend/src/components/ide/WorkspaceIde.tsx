@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
-  DatabaseLightningIcon,
   File01Icon,
   FolderOpenIcon,
   SidebarLeft01Icon,
@@ -160,11 +159,8 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
 
   return (
     <div className="-mx-4 -my-6 flex h-svh min-h-0 flex-col overflow-hidden bg-background md:-mx-6">
-      {/* Top bar: logo + explorer toggle + workspace tabs */}
+      {/* Top bar: explorer toggle + workspace tabs */}
       <div className="flex h-10 shrink-0 items-stretch border-b border-border">
-        <div className="flex w-10 shrink-0 items-center justify-center border-r border-border">
-          <HugeiconsIcon icon={DatabaseLightningIcon} size={16} strokeWidth={2} className="text-primary" />
-        </div>
         <ExplorerToggle />
         <div className="flex min-w-0 flex-1 items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {workspaces.map((ws) => (

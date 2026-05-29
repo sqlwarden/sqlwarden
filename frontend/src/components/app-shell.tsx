@@ -108,30 +108,31 @@ export function AppShellHeader({
 }) {
   return (
     <SidebarHeader className="border-b border-sidebar-border">
-      <div className="flex items-center gap-2">
-        <SidebarMenu className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip={label}
-              className={description ? 'h-auto items-center py-2 hover:bg-transparent' : 'hover:bg-transparent'}
-            >
-              <div className="flex size-6 shrink-0 items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-3.5">
-                <HugeiconsIcon icon={icon} strokeWidth={2.5} />
-              </div>
-              <span className="grid min-w-0 flex-1 gap-0.5 text-left">
-                <span className="truncate font-semibold tracking-tight">{label}</span>
-                {description ? (
-                  <span className="truncate text-[11px] font-normal leading-none text-sidebar-foreground/50">{description}</span>
-                ) : null}
-              </span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <SidebarTrigger
-          className="shrink-0 cursor-pointer"
-          aria-label="Toggle sidebar"
-        />
+      {/* Collapsed: show logo icon centred */}
+      <div className="hidden items-center justify-center py-1 group-data-[collapsible=icon]:flex">
+        <div className="flex size-8 shrink-0 items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-4">
+          <HugeiconsIcon icon={icon} strokeWidth={2.5} />
+        </div>
       </div>
+      {/* Expanded: show full label + description */}
+      <SidebarMenu className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            tooltip={label}
+            className={description ? 'h-auto items-center py-2 hover:bg-transparent' : 'hover:bg-transparent'}
+          >
+            <div className="flex size-6 shrink-0 items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-3.5">
+              <HugeiconsIcon icon={icon} strokeWidth={2.5} />
+            </div>
+            <span className="grid min-w-0 flex-1 gap-0.5 text-left">
+              <span className="truncate font-semibold tracking-tight">{label}</span>
+              {description ? (
+                <span className="truncate text-[11px] font-normal leading-none text-sidebar-foreground/50">{description}</span>
+              ) : null}
+            </span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
     </SidebarHeader>
   )
 }
@@ -177,6 +178,9 @@ export function AppShellSidebarFooter({
     <SidebarFooter className="border-t border-sidebar-border">
       <AppShellPreferencesPopover preferences={preferences} setPreferences={setPreferences} />
       <AppShellUserMenu session={session} extraItems={extraUserItems} />
+      <div className="flex justify-center px-2 pb-1">
+        <SidebarTrigger className="w-full cursor-pointer group-data-[collapsible=icon]:w-auto" aria-label="Toggle sidebar" />
+      </div>
     </SidebarFooter>
   )
 }
