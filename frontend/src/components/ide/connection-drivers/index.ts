@@ -1,6 +1,11 @@
 import { postgresDriver } from './postgres'
 import { mysqlDriver } from './mysql'
 
+export const driverBrands: Record<string, { color: string; abbr: string; description: string }> = {
+  postgres: { color: '#336791', abbr: 'PG', description: 'Open-source relational database' },
+  mysql: { color: '#E97B00', abbr: 'MY', description: 'MySQL / MariaDB database' },
+}
+
 export type FieldDef = {
   key: string
   label: string

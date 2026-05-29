@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Cancel01Icon, Tick02Icon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
+import { cn } from '#/lib/utils'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
 import type { Environment } from '#/lib/api/types'
@@ -24,8 +25,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
-import { drivers, driverMap, defaultFieldValues } from './connection-drivers/index'
-import type { FieldDef } from './connection-drivers/index'
+import { drivers, driverMap, driverBrands, defaultFieldValues } from './connection-drivers/index'
+import { DriverBadge } from './DriverBadge'
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
 
 type TestState =
   | { status: 'idle' }
@@ -39,6 +42,15 @@ type FormErrors = {
   fields: Record<string, string>
   _form?: string
 }
+
+type DriverFormProps = {
+  fields: Record<string, string>
+  errors: Record<string, string>
+  disabled: boolean
+  onChange: (key: string, value: string) => void
+}
+
+// ─── Main component ─────────────────────────────────────────────────────────────
 
 type Props = {
   open: boolean
@@ -80,17 +92,6 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
       return { ...prev, fields: rest }
     })
     setTestState({ status: 'idle' })
-  }
-
-  function handleNameChange(value: string) {
-    setName(value)
-    setErrors((prev) => ({ ...prev, name: undefined }))
-    setTestState({ status: 'idle' })
-  }
-
-  function handleEnvironmentChange(value: string) {
-    setEnvironmentId(value)
-    setErrors((prev) => ({ ...prev, environmentId: undefined }))
   }
 
   function resetForm() {
@@ -183,88 +184,129 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
     .every((f) => fields[f.key]?.trim())
 
   const isPending = createMutation.isPending
+  const selectedEnvName = environments.find((e) => String(e.id) === environmentId)?.name ?? ''
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New Connection</DialogTitle>
         </DialogHeader>
-        <form className="mt-6 flex flex-col gap-4" onSubmit={handleSubmit}>
-          <div className="flex flex-col gap-2">
-            <Label>Database</Label>
-            <Select value={driverId} onValueChange={(v) => { if (v) handleDriverChange(v) }} disabled={isPending}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {drivers.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
 
-          <div className="flex flex-col gap-2">
-            <Label>Name</Label>
-            <Input
-              value={name}
-              disabled={isPending}
-              placeholder="My Database"
-              aria-invalid={errors.name ? true : undefined}
-              onChange={(e) => handleNameChange(e.target.value)}
-            />
-            {errors.name ? <p className="text-xs text-destructive">{errors.name}</p> : null}
-          </div>
+        <form onSubmit={handleSubmit} className="flex flex-col">
+          <div className="flex flex-col gap-4 overflow-y-auto max-h-[min(560px,calc(100svh-14rem))] pb-1">
 
-          {environments.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              <Label>Environment</Label>
-              <Select value={environmentId} onValueChange={(v) => { if (v) handleEnvironmentChange(v) }} disabled={isPending}>
-                <SelectTrigger aria-invalid={errors.environmentId ? true : undefined}>
-                  <SelectValue placeholder="Select environment" />
-                </SelectTrigger>
-                <SelectContent>
-                  {environments.map((env) => (
-                    <SelectItem key={env.id} value={String(env.id)}>
-                      {env.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.environmentId ? <p className="text-xs text-destructive">{errors.environmentId}</p> : null}
+            {/* Driver selector */}
+            <div className="grid grid-cols-2 gap-2">
+              {drivers.map((d) => {
+                const brand = driverBrands[d.id]
+                const selected = driverId === d.id
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => handleDriverChange(d.id)}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg border p-3 text-left transition-all',
+                      selected
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                        : 'border-border hover:border-primary/40 hover:bg-accent/50',
+                      isPending && 'pointer-events-none opacity-50',
+                    )}
+                  >
+                    <DriverBadge driver={d.id} size="md" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-semibold text-foreground">{d.label}</div>
+                      <div className="text-[10px] text-muted-foreground">{brand?.description}</div>
+                    </div>
+                    {selected ? (
+                      <HugeiconsIcon icon={Tick02Icon} size={14} strokeWidth={2.5} className="shrink-0 text-primary" />
+                    ) : null}
+                  </button>
+                )
+              })}
             </div>
-          ) : null}
 
-          {currentDriver.fields.map((field) => (
-            <ConnectionField
-              key={`${driverId}-${field.key}`}
-              field={field}
-              value={fields[field.key] ?? ''}
-              error={errors.fields[field.key]}
-              disabled={isPending}
-              onChange={(value) => handleFieldChange(field.key, value)}
-            />
-          ))}
+            {/* Basic info */}
+            <SectionDivider label="Details" />
 
-          {errors._form ? <p className="text-xs text-destructive">{errors._form}</p> : null}
+            <FormField label="Name" error={errors.name}>
+              <Input
+                value={name}
+                disabled={isPending}
+                placeholder={`My ${currentDriver.label}`}
+                aria-invalid={errors.name ? true : undefined}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  setErrors((prev) => ({ ...prev, name: undefined }))
+                }}
+              />
+            </FormField>
 
-          <div className="flex items-center gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!requiredFieldsFilled || testMutation.isPending || isPending}
-              onClick={() => void testMutation.mutateAsync().catch(() => {})}
-            >
-              {testMutation.isPending ? 'Testing…' : 'Test Connection'}
-            </Button>
-            <TestStatusIndicator state={testState} />
+            {environments.length > 0 ? (
+              <FormField label="Environment" error={errors.environmentId}>
+                <Select
+                  value={environmentId}
+                  onValueChange={(v) => {
+                    if (!v) return
+                    setEnvironmentId(v)
+                    setErrors((prev) => ({ ...prev, environmentId: undefined }))
+                  }}
+                  disabled={isPending}
+                >
+                  <SelectTrigger aria-invalid={errors.environmentId ? true : undefined}>
+                    <SelectValue>{selectedEnvName}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {environments.map((env) => (
+                      <SelectItem key={env.id} value={String(env.id)}>
+                        {env.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
+            ) : null}
+
+            {/* Per-driver connection form */}
+            <SectionDivider label="Connection" />
+
+            {driverId === 'postgres' ? (
+              <PostgresForm
+                fields={fields}
+                errors={errors.fields}
+                disabled={isPending}
+                onChange={handleFieldChange}
+              />
+            ) : (
+              <MysqlForm
+                fields={fields}
+                errors={errors.fields}
+                disabled={isPending}
+                onChange={handleFieldChange}
+              />
+            )}
+
+            {errors._form ? <p className="text-xs text-destructive">{errors._form}</p> : null}
+
+            {/* Test connection */}
+            <div className="flex items-center gap-3 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!requiredFieldsFilled || testMutation.isPending || isPending}
+                onClick={() => void testMutation.mutateAsync().catch(() => {})}
+              >
+                {testMutation.isPending ? 'Testing…' : 'Test Connection'}
+              </Button>
+              <TestStatusIndicator state={testState} />
+            </div>
+
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="mt-4 border-t border-border/60 pt-4">
             <DialogClose render={<Button type="button" variant="ghost" disabled={isPending} />}>
               Cancel
             </DialogClose>
@@ -278,49 +320,172 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
   )
 }
 
-function ConnectionField({
-  field,
-  value,
-  error,
-  disabled,
-  onChange,
-}: {
-  field: FieldDef
-  value: string
-  error?: string
-  disabled: boolean
-  onChange: (value: string) => void
-}) {
+// ─── Per-driver form components ─────────────────────────────────────────────────
+
+function PostgresForm({ fields, errors, disabled, onChange }: DriverFormProps) {
+  const ssl = fields.sslmode || 'prefer'
+  const sslLabel = { disable: 'Disable', prefer: 'Prefer', require: 'Require' }[ssl] ?? ssl
+
   return (
-    <div className="flex flex-col gap-2">
-      <Label>{field.label}</Label>
-      {field.type === 'select' ? (
-        <Select value={value || (field.default ?? '')} onValueChange={(v) => { if (v) onChange(v) }} disabled={disabled}>
-          <SelectTrigger aria-invalid={error ? true : undefined}>
-            <SelectValue />
+    <>
+      <div className="grid grid-cols-[1fr_6.5rem] gap-3">
+        <FormField label="Host" error={errors.host}>
+          <Input
+            value={fields.host ?? ''}
+            placeholder="localhost"
+            disabled={disabled}
+            aria-invalid={errors.host ? true : undefined}
+            onChange={(e) => onChange('host', e.target.value)}
+          />
+        </FormField>
+        <FormField label="Port" error={errors.port}>
+          <Input
+            type="number"
+            value={fields.port ?? '5432'}
+            disabled={disabled}
+            aria-invalid={errors.port ? true : undefined}
+            onChange={(e) => onChange('port', e.target.value)}
+          />
+        </FormField>
+      </div>
+
+      <FormField label="Database" error={errors.database}>
+        <Input
+          value={fields.database ?? ''}
+          placeholder="mydb"
+          disabled={disabled}
+          aria-invalid={errors.database ? true : undefined}
+          onChange={(e) => onChange('database', e.target.value)}
+        />
+      </FormField>
+
+      <SectionDivider label="Credentials" />
+
+      <div className="grid grid-cols-2 gap-3">
+        <FormField label="Username" error={errors.username}>
+          <Input
+            value={fields.username ?? ''}
+            placeholder="postgres"
+            disabled={disabled}
+            aria-invalid={errors.username ? true : undefined}
+            onChange={(e) => onChange('username', e.target.value)}
+          />
+        </FormField>
+        <FormField label="Password">
+          <Input
+            type="password"
+            value={fields.password ?? ''}
+            disabled={disabled}
+            onChange={(e) => onChange('password', e.target.value)}
+          />
+        </FormField>
+      </div>
+
+      <SectionDivider label="Security" />
+
+      <FormField label="SSL Mode">
+        <Select
+          value={ssl}
+          onValueChange={(v) => { if (v) onChange('sslmode', v) }}
+          disabled={disabled}
+        >
+          <SelectTrigger>
+            <SelectValue>{sslLabel}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {(field.options ?? []).map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
+            <SelectItem value="disable">Disable</SelectItem>
+            <SelectItem value="prefer">Prefer</SelectItem>
+            <SelectItem value="require">Require</SelectItem>
           </SelectContent>
         </Select>
-      ) : (
+      </FormField>
+    </>
+  )
+}
+
+function MysqlForm({ fields, errors, disabled, onChange }: DriverFormProps) {
+  return (
+    <>
+      <div className="grid grid-cols-[1fr_6.5rem] gap-3">
+        <FormField label="Host" error={errors.host}>
+          <Input
+            value={fields.host ?? ''}
+            placeholder="localhost"
+            disabled={disabled}
+            aria-invalid={errors.host ? true : undefined}
+            onChange={(e) => onChange('host', e.target.value)}
+          />
+        </FormField>
+        <FormField label="Port" error={errors.port}>
+          <Input
+            type="number"
+            value={fields.port ?? '3306'}
+            disabled={disabled}
+            aria-invalid={errors.port ? true : undefined}
+            onChange={(e) => onChange('port', e.target.value)}
+          />
+        </FormField>
+      </div>
+
+      <FormField label="Database" error={errors.database}>
         <Input
-          type={field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : 'text'}
-          value={value}
+          value={fields.database ?? ''}
+          placeholder="mydb"
           disabled={disabled}
-          placeholder={field.placeholder}
-          aria-invalid={error ? true : undefined}
-          onChange={(e) => onChange(e.target.value)}
+          aria-invalid={errors.database ? true : undefined}
+          onChange={(e) => onChange('database', e.target.value)}
         />
-      )}
+      </FormField>
+
+      <SectionDivider label="Credentials" />
+
+      <div className="grid grid-cols-2 gap-3">
+        <FormField label="Username" error={errors.username}>
+          <Input
+            value={fields.username ?? ''}
+            placeholder="root"
+            disabled={disabled}
+            aria-invalid={errors.username ? true : undefined}
+            onChange={(e) => onChange('username', e.target.value)}
+          />
+        </FormField>
+        <FormField label="Password">
+          <Input
+            type="password"
+            value={fields.password ?? ''}
+            disabled={disabled}
+            onChange={(e) => onChange('password', e.target.value)}
+          />
+        </FormField>
+      </div>
+    </>
+  )
+}
+
+// ─── Shared form helpers ────────────────────────────────────────────────────────
+
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+        {label}
+      </span>
+      <div className="h-px flex-1 bg-border" />
+    </div>
+  )
+}
+
+function FormField({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label>{label}</Label>
+      {children}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   )
 }
+
+// ─── Test status indicator ───────────────────────────────────────────────────────
 
 function TestStatusIndicator({ state }: { state: TestState }) {
   if (state.status === 'idle') return null

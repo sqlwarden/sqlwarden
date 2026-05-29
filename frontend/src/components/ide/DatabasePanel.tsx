@@ -23,6 +23,7 @@ import { hasPermission, permission } from '#/lib/permissions'
 import { useIde, newConnectionTab } from './useIdeStore'
 import { SidebarPane } from './SidebarPane'
 import { ConnectionDialog } from './ConnectionDialog'
+import { DriverBadge } from './DriverBadge'
 import { Button } from '#/components/ui/button'
 import {
   Dialog,
@@ -291,7 +292,7 @@ function ConnectionRow({
         'transition-colors hover:bg-accent hover:text-accent-foreground',
       )}
     >
-      <HugeiconsIcon icon={DatabaseIcon} size={13} strokeWidth={2} className="shrink-0 text-muted-foreground" />
+      <DriverBadge driver={connection.driver} size="sm" />
       <span className="min-w-0 flex-1 truncate">{connection.name}</span>
     </button>
   )
