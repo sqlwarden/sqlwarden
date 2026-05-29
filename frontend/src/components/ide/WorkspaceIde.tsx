@@ -7,6 +7,7 @@ import {
   DatabaseLightningIcon,
   File01Icon,
   FolderOpenIcon,
+  SidebarLeft01Icon,
   TerminalIcon,
 } from '@hugeicons/core-free-icons'
 import { Button } from '#/components/ui/button'
@@ -155,11 +156,12 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
 
   return (
     <div className="-mx-4 -my-6 flex h-svh min-h-0 flex-col overflow-hidden bg-background md:-mx-6">
-      {/* Top bar: logo + workspace tabs */}
+      {/* Top bar: logo + explorer toggle + workspace tabs */}
       <div className="flex h-10 shrink-0 items-stretch border-b border-border">
         <div className="flex w-10 shrink-0 items-center justify-center border-r border-border">
           <HugeiconsIcon icon={DatabaseLightningIcon} size={16} strokeWidth={2} className="text-primary" />
         </div>
+        <ExplorerToggle />
         <div className="flex min-w-0 flex-1 items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {workspaces.map((ws) => (
             <WorkspaceTab
@@ -175,6 +177,27 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
       {activeWorkspace && (
         <WorkspaceIdeSurface orgSlug={orgSlug} workspace={activeWorkspace} />
       )}
+    </div>
+  )
+}
+
+function ExplorerToggle() {
+  const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
+  const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
+  return (
+    <div className="flex shrink-0 items-stretch border-r border-border">
+      <button
+        type="button"
+        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+        aria-label="Toggle Explorer"
+        className={cn(
+          'flex items-center gap-1.5 px-3 text-xs font-medium transition-colors hover:text-foreground',
+          sidebarCollapsed ? 'text-muted-foreground' : 'text-foreground',
+        )}
+      >
+        <HugeiconsIcon icon={SidebarLeft01Icon} size={13} strokeWidth={2} />
+        Explorer
+      </button>
     </div>
   )
 }
