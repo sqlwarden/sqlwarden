@@ -293,57 +293,53 @@ func (app *application) spaceConnCtx(next http.Handler) http.Handler {
 	})
 }
 
-// requirePermission checks that the authenticated account holds the given permission.
-// When a workspace is in context it checks at workspace scope; otherwise at org scope.
-func (app *application) requirePermission(permission string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			account := contextGetAccount(r)
-			org := contextGetOrg(r)
-			ws := contextGetWorkspace(r)
+func (app *application) requireOrgPermission(permission string) func(http.Handler) http.Handler {
+	return app.requireResourcePermission(permission, func(r *http.Request) (string, string, int64, bool) {
+		org := contextGetOrg(r)
+		return "org", "org", org.ID, org.ID != 0
+	})
+}
 
-			var ownerType, resourceType string
-			var resourceID int64
-			if ws.ID != 0 {
-				ownerType = ws.OwnerType
-				resourceType = "workspace"
-				resourceID = ws.ID
-			} else {
-				ownerType = "org"
-				resourceType = "org"
-				resourceID = org.ID
-			}
-
-			allowed := app.enforcer.Can(r.Context(),
-				account.ID, org.ID,
-				ownerType, resourceType, resourceID,
-				permission,
-			)
-			if !allowed {
-				app.notPermitted(w, r)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
+func (app *application) requireWorkspacePermission(permission string) func(http.Handler) http.Handler {
+	return app.requireResourcePermission(permission, func(r *http.Request) (string, string, int64, bool) {
+		ws := contextGetWorkspace(r)
+		return ws.OwnerType, "workspace", ws.ID, ws.ID != 0
+	})
 }
 
 func (app *application) requireEnvironmentPermission(permission string) func(http.Handler) http.Handler {
+	return app.requireResourcePermission(permission, func(r *http.Request) (string, string, int64, bool) {
+		ws := contextGetWorkspace(r)
+		env := contextGetEnvironment(r)
+		return ws.OwnerType, "environment", env.ID, ws.ID != 0 && env.ID != 0
+	})
+}
+
+func (app *application) requireConnectionPermission(permission string) func(http.Handler) http.Handler {
+	return app.requireResourcePermission(permission, func(r *http.Request) (string, string, int64, bool) {
+		ws := contextGetWorkspace(r)
+		conn := contextGetConnection(r)
+		return ws.OwnerType, "connection", conn.ID, ws.ID != 0 && conn.ID != 0
+	})
+}
+
+func (app *application) requireResourcePermission(permission string, resource func(*http.Request) (string, string, int64, bool)) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			account := contextGetAccount(r)
-			org := contextGetOrg(r)
-			ws := contextGetWorkspace(r)
-			env := contextGetEnvironment(r)
-
-			if env.ID == 0 {
+			ownerType, resourceType, resourceID, ok := resource(r)
+			if !ok {
 				app.notFound(w, r)
 				return
 			}
-
+			account := contextGetAccount(r)
+			org := contextGetOrg(r)
+			if org.ID == 0 {
+				app.notFound(w, r)
+				return
+			}
 			allowed := app.enforcer.Can(r.Context(),
 				account.ID, org.ID,
-				ws.OwnerType, "environment", env.ID,
+				ownerType, resourceType, resourceID,
 				permission,
 			)
 			if !allowed {

@@ -401,6 +401,149 @@ func TestConnCtxBranches(t *testing.T) {
 	}
 }
 
+func TestRequireConcreteResourcePermissions(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+	ctx := context.Background()
+
+	account, err := app.db.InsertAccount(ctx, "resource-perms@example.com", "Resource Perms", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := app.db.InsertOrg(ctx, "resource-perms-org", "Resource Perms Org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.db.AddOrgMember(ctx, org.ID, account.ID); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := app.db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Resource Workspace", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := app.db.InsertEnvironment(ctx, ws.ID, "production", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := app.db.InsertConnection(ctx, ws.ID, &env.ID, "primary", "sqlite", "dsn", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	orgRoleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgWrite)
+	workspaceRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "workspace", access.PermWsWrite)
+	envRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "environment", access.PermEnvWrite)
+	connRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "connection", access.PermConnWrite)
+
+	for _, binding := range []struct {
+		roleID       int64
+		resourceType string
+		resourceID   int64
+	}{
+		{orgRoleID, "org", org.ID},
+		{workspaceRoleID, "workspace", ws.ID},
+		{envRoleID, "environment", env.ID},
+		{connRoleID, "connection", conn.ID},
+	} {
+		if err := app.enforcer.BindRole(ctx, org.ID, binding.roleID, access.SubjectTypeAccount, account.ID, binding.resourceType, binding.resourceID, account.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name       string
+		middleware func(http.Handler) http.Handler
+		request    func() *http.Request
+	}{
+		{
+			name:       "org",
+			middleware: app.requireOrgPermission(access.PermOrgWrite),
+			request: func() *http.Request {
+				req := httptest.NewRequest(http.MethodPatch, "/api/v1/orgs/resource-perms-org", nil)
+				req = contextSetAccount(req, account)
+				return contextSetOrg(req, org)
+			},
+		},
+		{
+			name:       "workspace",
+			middleware: app.requireWorkspacePermission(access.PermWsWrite),
+			request: func() *http.Request {
+				req := httptest.NewRequest(http.MethodPatch, "/api/v1/orgs/resource-perms-org/workspaces/1", nil)
+				req = contextSetAccount(req, account)
+				req = contextSetOrg(req, org)
+				return contextSetWorkspace(req, ws)
+			},
+		},
+		{
+			name:       "environment",
+			middleware: app.requireEnvironmentPermission(access.PermEnvWrite),
+			request: func() *http.Request {
+				req := httptest.NewRequest(http.MethodPatch, "/api/v1/orgs/resource-perms-org/workspaces/1/environments/1", nil)
+				req = contextSetAccount(req, account)
+				req = contextSetOrg(req, org)
+				req = contextSetWorkspace(req, ws)
+				return contextSetEnvironment(req, env)
+			},
+		},
+		{
+			name:       "connection",
+			middleware: app.requireConnectionPermission(access.PermConnWrite),
+			request: func() *http.Request {
+				req := httptest.NewRequest(http.MethodPatch, "/api/v1/orgs/resource-perms-org/workspaces/1/environments/1/connections/1", nil)
+				req = contextSetAccount(req, account)
+				req = contextSetOrg(req, org)
+				req = contextSetWorkspace(req, ws)
+				req = contextSetEnvironment(req, env)
+				return contextSetConnection(req, conn)
+			},
+		},
+	}
+
+	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	for _, tt := range tests {
+		rec := httptest.NewRecorder()
+		tt.middleware(finalHandler).ServeHTTP(rec, tt.request())
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: expected 200, got %d", tt.name, rec.Code)
+		}
+	}
+}
+
+func TestRequireConcreteResourcePermissionMissingContext(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+	account, err := app.db.InsertAccount(context.Background(), "missing-context@example.com", "Missing Context", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := app.db.InsertOrg(context.Background(), "missing-context-org", "Missing Context Org")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name       string
+		middleware func(http.Handler) http.Handler
+		request    *http.Request
+	}{
+		{name: "org", middleware: app.requireOrgPermission(access.PermOrgRead), request: contextSetAccount(httptest.NewRequest(http.MethodGet, "/", nil), account)},
+		{name: "workspace", middleware: app.requireWorkspacePermission(access.PermWsRead), request: contextSetOrg(contextSetAccount(httptest.NewRequest(http.MethodGet, "/", nil), account), org)},
+		{name: "environment", middleware: app.requireEnvironmentPermission(access.PermEnvRead), request: contextSetOrg(contextSetAccount(httptest.NewRequest(http.MethodGet, "/", nil), account), org)},
+		{name: "connection", middleware: app.requireConnectionPermission(access.PermConnRead), request: contextSetOrg(contextSetAccount(httptest.NewRequest(http.MethodGet, "/", nil), account), org)},
+	}
+
+	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	for _, tt := range tests {
+		rec := httptest.NewRecorder()
+		tt.middleware(finalHandler).ServeHTTP(rec, tt.request)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s: expected 404, got %d", tt.name, rec.Code)
+		}
+	}
+}
+
 func TestSpaceEnvCtxBranches(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
 

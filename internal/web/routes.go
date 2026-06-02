@@ -131,43 +131,43 @@ func (app *application) routes() http.Handler {
 			r.Use(app.requireAccount, app.orgCtx)
 
 			r.Get("/", app.getOrg)
-			r.With(app.requirePermission("org:write")).Patch("/", app.updateOrg)
-			r.With(app.requirePermission("org:delete")).Delete("/", app.deleteOrg)
+			r.With(app.requireOrgPermission("org:write")).Patch("/", app.updateOrg)
+			r.With(app.requireOrgPermission("org:delete")).Delete("/", app.deleteOrg)
 
 			r.Route("/members", func(r chi.Router) {
-				r.With(app.requirePermission("org:read")).Get("/", app.listOrgMembers)
-				r.With(app.requirePermission("org:invite")).Get("/candidates", app.listOrgMemberCandidates)
-				r.With(app.requirePermission("org:invite")).Post("/", app.addOrgMember)
-				r.With(app.requirePermission("org:read")).Get("/{account_id}", app.getOrgMember)
-				r.With(app.requirePermission("org:read")).Get("/{account_id}/teams", app.listOrgMemberTeams)
+				r.With(app.requireOrgPermission("org:read")).Get("/", app.listOrgMembers)
+				r.With(app.requireOrgPermission("org:invite")).Get("/candidates", app.listOrgMemberCandidates)
+				r.With(app.requireOrgPermission("org:invite")).Post("/", app.addOrgMember)
+				r.With(app.requireOrgPermission("org:read")).Get("/{account_id}", app.getOrgMember)
+				r.With(app.requireOrgPermission("org:read")).Get("/{account_id}/teams", app.listOrgMemberTeams)
 				r.With(app.requireOrgRole(access.BuiltinOrgOwnerRole)).Patch("/{account_id}", app.updateOrgMemberRole)
-				r.With(app.requirePermission("org:write")).Delete("/{account_id}", app.removeOrgMember)
+				r.With(app.requireOrgPermission("org:write")).Delete("/{account_id}", app.removeOrgMember)
 			})
 
 			r.Route("/teams", func(r chi.Router) {
-				r.With(app.requirePermission("org:read")).Get("/", app.listTeams)
-				r.With(app.requirePermission("org:write")).Post("/", app.createTeam)
+				r.With(app.requireOrgPermission("org:read")).Get("/", app.listTeams)
+				r.With(app.requireOrgPermission("org:write")).Post("/", app.createTeam)
 				r.Route("/{team_slug}", func(r chi.Router) {
-					r.With(app.requirePermission("org:read")).Get("/", app.getTeam)
-					r.With(app.requirePermission("org:write")).Patch("/", app.updateTeam)
-					r.With(app.requirePermission("org:write")).Delete("/", app.deleteTeam)
-					r.With(app.requirePermission("org:read")).Get("/members", app.listTeamMembers)
-					r.With(app.requirePermission("org:write")).Post("/members", app.addTeamMember)
-					r.With(app.requirePermission("org:write")).Delete("/members/{account_id}", app.removeTeamMember)
+					r.With(app.requireOrgPermission("org:read")).Get("/", app.getTeam)
+					r.With(app.requireOrgPermission("org:write")).Patch("/", app.updateTeam)
+					r.With(app.requireOrgPermission("org:write")).Delete("/", app.deleteTeam)
+					r.With(app.requireOrgPermission("org:read")).Get("/members", app.listTeamMembers)
+					r.With(app.requireOrgPermission("org:write")).Post("/members", app.addTeamMember)
+					r.With(app.requireOrgPermission("org:write")).Delete("/members/{account_id}", app.removeTeamMember)
 				})
 			})
 
 			r.Route("/roles", func(r chi.Router) {
-				r.With(app.requirePermission("policy:read")).Get("/", app.listRoles)
-				r.With(app.requirePermission("policy:modify")).Post("/", app.createRole)
-				r.With(app.requirePermission("policy:read")).Get("/{role_id}", app.getRole)
-				r.With(app.requirePermission("policy:modify")).Delete("/{role_id}", app.deleteRole)
+				r.With(app.requireOrgPermission("policy:read")).Get("/", app.listRoles)
+				r.With(app.requireOrgPermission("policy:modify")).Post("/", app.createRole)
+				r.With(app.requireOrgPermission("policy:read")).Get("/{role_id}", app.getRole)
+				r.With(app.requireOrgPermission("policy:modify")).Delete("/{role_id}", app.deleteRole)
 			})
 
 			r.Route("/policies", func(r chi.Router) {
-				r.With(app.requirePermission("policy:read")).Get("/", app.listOrgPolicies)
-				r.With(app.requirePermission("policy:modify")).Post("/", app.grantOrgPolicy)
-				r.With(app.requirePermission("policy:modify")).Delete("/{binding_id}", app.revokeOrgPolicy)
+				r.With(app.requireOrgPermission("policy:read")).Get("/", app.listOrgPolicies)
+				r.With(app.requireOrgPermission("policy:modify")).Post("/", app.grantOrgPolicy)
+				r.With(app.requireOrgPermission("policy:modify")).Delete("/{binding_id}", app.revokeOrgPolicy)
 			})
 
 			r.Get("/permissions", app.listPermissions)
@@ -175,12 +175,12 @@ func (app *application) routes() http.Handler {
 
 			r.Route("/workspaces", func(r chi.Router) {
 				r.Get("/", app.listWorkspaces)
-				r.With(app.requirePermission("ws:create")).Post("/", app.createWorkspace)
+				r.With(app.requireOrgPermission("ws:create")).Post("/", app.createWorkspace)
 				r.Route("/{ws_id}", func(r chi.Router) {
 					r.Use(app.wsCtx)
 					r.Get("/", app.getWorkspace)
-					r.With(app.requirePermission("ws:write")).Patch("/", app.updateWorkspace)
-					r.With(app.requirePermission("ws:delete")).Delete("/", app.deleteWorkspace)
+					r.With(app.requireWorkspacePermission("ws:write")).Patch("/", app.updateWorkspace)
+					r.With(app.requireWorkspacePermission("ws:delete")).Delete("/", app.deleteWorkspace)
 					r.Get("/sessions", app.listActiveSessions)
 
 					r.Get("/permissions", app.listWorkspacePermissions)
@@ -214,34 +214,34 @@ func (app *application) routes() http.Handler {
 					})
 
 					r.Route("/users", func(r chi.Router) {
-						r.With(app.requirePermission("policy:read")).Get("/", app.listWorkspaceMembers)
-						r.With(app.requirePermission("policy:read")).Get("/effective", app.listWorkspaceEffectiveMembers)
-						r.With(app.requirePermission("policy:modify")).Post("/", app.addWorkspaceMember)
-						r.With(app.requirePermission("policy:modify")).Delete("/{account_id}", app.removeWorkspaceMember)
+						r.With(app.requireWorkspacePermission("policy:read")).Get("/", app.listWorkspaceMembers)
+						r.With(app.requireWorkspacePermission("policy:read")).Get("/effective", app.listWorkspaceEffectiveMembers)
+						r.With(app.requireWorkspacePermission("policy:modify")).Post("/", app.addWorkspaceMember)
+						r.With(app.requireWorkspacePermission("policy:modify")).Delete("/{account_id}", app.removeWorkspaceMember)
 					})
 
 					r.Route("/teams", func(r chi.Router) {
-						r.With(app.requirePermission("policy:read")).Get("/", app.listWorkspaceTeams)
-						r.With(app.requirePermission("policy:modify")).Post("/", app.addWorkspaceTeam)
-						r.With(app.requirePermission("policy:modify")).Delete("/{team_id}", app.removeWorkspaceTeam)
+						r.With(app.requireWorkspacePermission("policy:read")).Get("/", app.listWorkspaceTeams)
+						r.With(app.requireWorkspacePermission("policy:modify")).Post("/", app.addWorkspaceTeam)
+						r.With(app.requireWorkspacePermission("policy:modify")).Delete("/{team_id}", app.removeWorkspaceTeam)
 					})
 
 					r.Route("/roles", func(r chi.Router) {
-						r.With(app.requirePermission("policy:read")).Get("/", app.listWorkspaceRoles)
-						r.With(app.requirePermission("policy:modify")).Post("/", app.createWorkspaceRole)
-						r.With(app.requirePermission("policy:read")).Get("/{role_id}", app.getWorkspaceRole)
-						r.With(app.requirePermission("policy:modify")).Delete("/{role_id}", app.deleteWorkspaceRole)
+						r.With(app.requireWorkspacePermission("policy:read")).Get("/", app.listWorkspaceRoles)
+						r.With(app.requireWorkspacePermission("policy:modify")).Post("/", app.createWorkspaceRole)
+						r.With(app.requireWorkspacePermission("policy:read")).Get("/{role_id}", app.getWorkspaceRole)
+						r.With(app.requireWorkspacePermission("policy:modify")).Delete("/{role_id}", app.deleteWorkspaceRole)
 					})
 
 					r.Route("/policies", func(r chi.Router) {
-						r.With(app.requirePermission("policy:read")).Get("/", app.listWorkspacePolicies)
-						r.With(app.requirePermission("policy:modify")).Post("/", app.grantWorkspacePolicy)
-						r.With(app.requirePermission("policy:modify")).Delete("/{binding_id}", app.revokeWorkspacePolicy)
+						r.With(app.requireWorkspacePermission("policy:read")).Get("/", app.listWorkspacePolicies)
+						r.With(app.requireWorkspacePermission("policy:modify")).Post("/", app.grantWorkspacePolicy)
+						r.With(app.requireWorkspacePermission("policy:modify")).Delete("/{binding_id}", app.revokeWorkspacePolicy)
 					})
 
 					r.Route("/environments", func(r chi.Router) {
 						r.Get("/", app.listEnvironments)
-						r.With(app.requirePermission("env:create")).Post("/", app.createEnvironment)
+						r.With(app.requireWorkspacePermission("env:create")).Post("/", app.createEnvironment)
 						r.Route("/{env_id}", func(r chi.Router) {
 							r.Use(app.envCtx)
 							r.Get("/", app.getEnvironment)
@@ -249,14 +249,14 @@ func (app *application) routes() http.Handler {
 							r.With(app.requireEnvironmentPermission("env:delete")).Delete("/", app.deleteEnvironment)
 
 							r.Route("/connections", func(r chi.Router) {
-								r.With(app.requirePermission("conn:create")).Post("/test", app.testConnection)
+								r.With(app.requireEnvironmentPermission("conn:create")).Post("/test", app.testConnection)
 								r.Get("/", app.listConnections)
-								r.With(app.requirePermission("conn:create")).Post("/", app.createConnection)
+								r.With(app.requireEnvironmentPermission("conn:create")).Post("/", app.createConnection)
 								r.Route("/{conn_id}", func(r chi.Router) {
 									r.Use(app.connCtx)
 									r.Get("/", app.getConnection)
-									r.With(app.requirePermission("conn:write")).Patch("/", app.updateConnection)
-									r.With(app.requirePermission("conn:delete")).Delete("/", app.deleteConnection)
+									r.With(app.requireConnectionPermission("conn:write")).Patch("/", app.updateConnection)
+									r.With(app.requireConnectionPermission("conn:delete")).Delete("/", app.deleteConnection)
 									r.Post("/connect", app.connectToDatabase)
 									r.Delete("/session", app.disconnectFromDatabase)
 									r.Post("/query", app.executeQuery)
@@ -266,14 +266,14 @@ func (app *application) routes() http.Handler {
 					})
 
 					r.Route("/connections", func(r chi.Router) {
-						r.With(app.requirePermission("conn:create")).Post("/test", app.testConnection)
+						r.With(app.requireWorkspacePermission("conn:create")).Post("/test", app.testConnection)
 						r.Get("/", app.listConnections)
-						r.With(app.requirePermission("conn:create")).Post("/", app.createConnection)
+						r.With(app.requireWorkspacePermission("conn:create")).Post("/", app.createConnection)
 						r.Route("/{conn_id}", func(r chi.Router) {
 							r.Use(app.connCtx)
 							r.Get("/", app.getConnection)
-							r.With(app.requirePermission("conn:write")).Patch("/", app.updateConnection)
-							r.With(app.requirePermission("conn:delete")).Delete("/", app.deleteConnection)
+							r.With(app.requireConnectionPermission("conn:write")).Patch("/", app.updateConnection)
+							r.With(app.requireConnectionPermission("conn:delete")).Delete("/", app.deleteConnection)
 							r.Post("/connect", app.connectToDatabase)
 							r.Delete("/session", app.disconnectFromDatabase)
 							r.Post("/query", app.executeQuery)
