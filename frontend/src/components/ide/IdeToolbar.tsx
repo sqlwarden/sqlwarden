@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -6,6 +6,7 @@ import {
   ArrowDown01Icon,
   ArrowExpandIcon,
   ArrowShrinkIcon,
+  Cancel01Icon,
   CheckmarkCircle02Icon,
   DatabaseIcon,
   FloppyDiskIcon,
@@ -52,7 +53,9 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const setSession = useIde((s) => s.setSession)
   const setQueryResult = useIde((s) => s.setQueryResult)
   const setTabRunning = useIde((s) => s.setTabRunning)
+  const setTabController = useIde((s) => s.setTabController)
   const runningTabs = useIde((s) => s.runningTabs)
+  const abortControllers = useIde((s) => s.abortControllers)
 
   const registry = useYDocRegistry()
   const viewRegistry = useEditorViewRegistry()
@@ -129,6 +132,11 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     setMaximizedPane(maximizedPane === 'editor' ? null : 'editor')
   }
 
+  function handleCancel() {
+    if (!activeTabId) return
+    abortControllers[activeTabId]?.abort()
+  }
+
   const handleRun = useCallback(async () => {
     if (!activeTab || !activeConnection || isRunning) return
 
@@ -149,6 +157,11 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     // Ensure results pane is visible.
     if (maximizedPane === 'editor') setMaximizedPane(null)
 
+    // Abort any stale controller for this tab (safety net).
+    abortControllers[activeTab.id]?.abort()
+
+    const controller = new AbortController()
+    setTabController(activeTab.id, controller)
     setTabRunning(activeTab.id, true)
     setQueryResult(activeTab.id, { status: 'running' })
 
@@ -158,6 +171,8 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       if (!sessionId) {
         const connectData = await api.post<{ session_id: string; reused: boolean }>(
           `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/connect`,
+          undefined,
+          { signal: controller.signal },
         )
         sessionId = connectData.session_id
         setSession(activeConnection.id, sessionId)
@@ -166,7 +181,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       const result = await api.post<ResultSet>(
         `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/query`,
         { sql },
-        { headers: { 'X-Warden-Session': sessionId } },
+        { headers: { 'X-Warden-Session': sessionId }, signal: controller.signal },
       )
 
       setQueryResult(activeTab.id, {
@@ -176,13 +191,19 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         sql,
       })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Query failed'
-      setQueryResult(activeTab.id, { status: 'error', message, sql })
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setQueryResult(activeTab.id, { status: 'cancelled', sql })
+      } else {
+        const message = err instanceof Error ? err.message : 'Query failed'
+        setQueryResult(activeTab.id, { status: 'error', message, sql })
+      }
     } finally {
+      setTabController(activeTab.id, null)
       setTabRunning(activeTab.id, false)
     }
   }, [activeTab, activeConnection, isRunning, maximizedPane, sessions, orgSlug, workspace.id,
-      registry, viewRegistry, setMaximizedPane, setQueryResult, setSession, setTabRunning])
+      registry, viewRegistry, abortControllers, setMaximizedPane, setQueryResult, setSession,
+      setTabController, setTabRunning])
 
   // Global ⌘Enter / Ctrl+Enter shortcut.
   // capture:true fires before CodeMirror's contentDOM listener; stopPropagation
@@ -211,7 +232,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   return (
     <>
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-2">
-      {/* Run button */}
+      {/* Run button — always shown; disabled while running */}
       <Button
         type="button"
         size="sm"
@@ -228,6 +249,19 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         {isRunning ? 'Running…' : 'Run'}
         {!isRunning && <kbd className="ml-1 hidden font-mono text-[10px] opacity-60 sm:inline">⌘↵</kbd>}
       </Button>
+
+      {/* Cancel button — appears only while a query is in flight */}
+      {isRunning && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={handleCancel}
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={13} strokeWidth={2} data-icon="inline-start" />
+          Cancel
+        </Button>
+      )}
 
       {/* Save button */}
       {showSave && (

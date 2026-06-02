@@ -89,11 +89,24 @@ function ResultsContent({ result }: { result: QueryResult }) {
       return <EmptyState />
     case 'running':
       return <RunningState />
+    case 'cancelled':
+      return <CancelledState />
     case 'error':
       return <ErrorState message={result.message} />
     case 'ok':
       return <OkState result={result} />
   }
+}
+
+function CancelledState() {
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-card">
+      <div className="flex min-h-0 flex-1 items-start gap-2.5 overflow-auto p-4">
+        <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} className="mt-0.5 shrink-0 text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">Query cancelled.</span>
+      </div>
+    </div>
+  )
 }
 
 function EmptyState() {

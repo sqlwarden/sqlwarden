@@ -672,6 +672,11 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if execErr != nil {
+		if errors.Is(execErr, context.Canceled) || errors.Is(execErr, context.DeadlineExceeded) || r.Context().Err() != nil {
+			app.connManager.Remove(sessionID)
+			app.errorMessage(w, r, statusClientClosedRequest, "Query was cancelled.", nil)
+			return
+		}
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, execErr.Error(), nil)
 		return
 	}

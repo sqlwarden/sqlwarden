@@ -13,6 +13,8 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 )
 
+const statusClientClosedRequest = 499
+
 func (app *application) reportServerError(r *http.Request, err error) {
 	var (
 		message = err.Error()

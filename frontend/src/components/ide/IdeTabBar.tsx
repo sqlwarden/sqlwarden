@@ -97,7 +97,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
             </DialogHeader>
             <p className="text-sm text-muted-foreground">
               {pendingCloseRunning
-                ? <>A query is still running in <strong className="text-foreground">{pendingCloseTab.title}</strong>. Closing will not cancel it on the server.</>
+                ? <>A query is still running in <strong className="text-foreground">{pendingCloseTab.title}</strong>. Closing will cancel the request.</>
                 : <>Unsaved changes to <strong className="text-foreground">{pendingCloseTab.title}</strong> will be lost.</>
               }
             </p>

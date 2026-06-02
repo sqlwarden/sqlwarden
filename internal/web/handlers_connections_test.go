@@ -5,10 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/driver"
+	"github.com/sqlwarden/pkg/result"
 )
 
 func TestTestConnectionUnknownDriver(t *testing.T) {
@@ -988,6 +993,79 @@ func TestDisconnectFromDatabase_HappyPath(t *testing.T) {
 	assert.Equal(t, send(t, queryReq, app.routes()).StatusCode, http.StatusGone)
 }
 
+func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "query-cancel-owner"), "Query Cancel Owner", "Query Cancel Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Query Cancel WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	connA := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Cancelled Conn", "open")
+	connB := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Unrelated Conn", "open")
+
+	blockingDriver := newBlockingQueryDriver()
+	cancelledSession, _, err := app.connManager.GetOrCreate(
+		strconv.FormatInt(owner.ID, 10),
+		strconv.FormatInt(connA.ID, 10),
+		func() (driver.Driver, error) { return blockingDriver, nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	unrelatedSession, _, err := app.connManager.GetOrCreate(
+		strconv.FormatInt(owner.ID, 10),
+		strconv.FormatInt(connB.ID, 10),
+		func() (driver.Driver, error) { return newIdleQueryDriver(), nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(connA.ID, 10))+"/query",
+		map[string]any{"sql": "SELECT pg_sleep(60)"}, tok)
+	req.Header.Set("X-Warden-Session", cancelledSession.ID)
+	ctx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		app.routes().ServeHTTP(rr, req)
+	}()
+
+	select {
+	case <-blockingDriver.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for fake query to start")
+	}
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for cancelled query response")
+	}
+
+	assert.Equal(t, rr.Code, statusClientClosedRequest)
+
+	var payload map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, payload["error"], "Query was cancelled.")
+
+	if _, ok := app.connManager.Get(cancelledSession.ID); ok {
+		t.Fatal("expected cancelled session to be removed")
+	}
+	if _, ok := app.connManager.Get(unrelatedSession.ID); !ok {
+		t.Fatal("expected unrelated session to remain active")
+	}
+}
+
 func TestDisconnectFromDatabase_MissingSessionHeader(t *testing.T) {
 	t.Parallel()
 	app, org, ws, tok := setupWorkspaceOwner(t)
@@ -1218,4 +1296,53 @@ func TestConnectToDatabaseReturns422ForTargetDatabaseError(t *testing.T) {
 	connectRes := send(t, newAuthRequest(t, http.MethodPost,
 		orgConnectionURL(slug, wsIDInt, envID, connID)+"/connect", nil, tok), app.routes())
 	assert.Equal(t, connectRes.StatusCode, http.StatusUnprocessableEntity)
+}
+
+type blockingQueryDriver struct {
+	started   chan struct{}
+	startOnce sync.Once
+}
+
+func newBlockingQueryDriver() *blockingQueryDriver {
+	return &blockingQueryDriver{started: make(chan struct{})}
+}
+
+func (d *blockingQueryDriver) Connect(context.Context, driver.ConnectionConfig) error { return nil }
+func (d *blockingQueryDriver) Ping(context.Context) error                             { return nil }
+func (d *blockingQueryDriver) Close() error                                           { return nil }
+func (d *blockingQueryDriver) Dialect() driver.Dialect                                { return driver.DialectSQLite }
+func (d *blockingQueryDriver) Tables(context.Context, string, string) ([]driver.TableMeta, error) {
+	return nil, nil
+}
+func (d *blockingQueryDriver) Columns(context.Context, string, string, string) ([]driver.ColumnMeta, error) {
+	return nil, nil
+}
+func (d *blockingQueryDriver) Query(ctx context.Context, _ string, _ ...any) (*result.ResultSet, error) {
+	d.startOnce.Do(func() { close(d.started) })
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+func (d *blockingQueryDriver) Execute(ctx context.Context, sql string, args ...any) (*result.ResultSet, error) {
+	return d.Query(ctx, sql, args...)
+}
+
+type idleQueryDriver struct{}
+
+func newIdleQueryDriver() *idleQueryDriver { return &idleQueryDriver{} }
+
+func (d *idleQueryDriver) Connect(context.Context, driver.ConnectionConfig) error { return nil }
+func (d *idleQueryDriver) Ping(context.Context) error                             { return nil }
+func (d *idleQueryDriver) Close() error                                           { return nil }
+func (d *idleQueryDriver) Dialect() driver.Dialect                                { return driver.DialectSQLite }
+func (d *idleQueryDriver) Tables(context.Context, string, string) ([]driver.TableMeta, error) {
+	return nil, nil
+}
+func (d *idleQueryDriver) Columns(context.Context, string, string, string) ([]driver.ColumnMeta, error) {
+	return nil, nil
+}
+func (d *idleQueryDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
+	return &result.ResultSet{}, nil
+}
+func (d *idleQueryDriver) Execute(context.Context, string, ...any) (*result.ResultSet, error) {
+	return &result.ResultSet{}, nil
 }

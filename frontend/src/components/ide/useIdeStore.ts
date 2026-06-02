@@ -11,6 +11,7 @@ export type QueryResult =
   | { status: 'running' }
   | { status: 'ok'; data: ResultSet; durationMs: number; sql: string }
   | { status: 'error'; message: string; sql: string }
+  | { status: 'cancelled'; sql: string }
 
 export type TabKind = 'scratch' | 'file' | 'connection'
 
@@ -45,6 +46,8 @@ export type IdeState = {
   results: Record<string, QueryResult>
   /** Tabs with an in-flight query. Not persisted to IndexedDB. */
   runningTabs: Record<string, boolean>
+  /** AbortControllers for in-flight fetch requests, keyed by tabId. Not persisted. */
+  abortControllers: Record<string, AbortController>
 }
 
 export type IdeActions = {
@@ -65,6 +68,7 @@ export type IdeActions = {
   syncSessions: (backendSessions: Record<number, string>) => void
   setQueryResult: (tabId: string, result: QueryResult) => void
   setTabRunning: (tabId: string, running: boolean) => void
+  setTabController: (tabId: string, controller: AbortController | null) => void
   /** Opens a new numbered console tab. Pass yState (encoded Y.Doc) so all windows
    *  that receive this tab share the same canonical Y.js initial history.
    *  Pass connectionId to pre-select a connection on the new tab. */
@@ -98,6 +102,7 @@ export function createIdeStore(orgSlug: string, accountId: number) {
         sessions: {},
         results: {},
         runningTabs: {},
+        abortControllers: {},
 
         setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
@@ -115,6 +120,7 @@ export function createIdeStore(orgSlug: string, accountId: number) {
 
         closeTab: (tabId) =>
           set((s) => {
+            s.abortControllers[tabId]?.abort()
             const nextTabs = s.tabs.filter((t) => t.id !== tabId)
             const nextActive =
               s.activeTabId === tabId
@@ -122,7 +128,8 @@ export function createIdeStore(orgSlug: string, accountId: number) {
                 : s.activeTabId
             const { [tabId]: _r, ...nextResults } = s.results
             const { [tabId]: _rt, ...nextRunning } = s.runningTabs
-            return { tabs: nextTabs, activeTabId: nextActive, results: nextResults, runningTabs: nextRunning }
+            const { [tabId]: _ac, ...nextControllers } = s.abortControllers
+            return { tabs: nextTabs, activeTabId: nextActive, results: nextResults, runningTabs: nextRunning, abortControllers: nextControllers }
           }),
 
         setActiveTab: (id) => set({ activeTabId: id }),
@@ -169,6 +176,15 @@ export function createIdeStore(orgSlug: string, accountId: number) {
         setTabRunning: (tabId, running) =>
           set((s) => ({ runningTabs: { ...s.runningTabs, [tabId]: running } })),
 
+        setTabController: (tabId, controller) =>
+          set((s) => {
+            if (controller === null) {
+              const { [tabId]: _ac, ...rest } = s.abortControllers
+              return { abortControllers: rest }
+            }
+            return { abortControllers: { ...s.abortControllers, [tabId]: controller } }
+          }),
+
         openConsole: (workspace, yState, connectionId) =>
           set((s) => {
             const wsConsoleTabs = s.tabs.filter(
@@ -200,7 +216,7 @@ export function createIdeStore(orgSlug: string, accountId: number) {
         storage: createJSONStorage(() => makeStorage(orgSlug, accountId)),
         // Exclude ephemeral query results from IndexedDB — they can be large
         // and are meaningless after a page reload anyway.
-        partialize: ({ results: _r, runningTabs: _rt, ...state }) => state,
+        partialize: ({ results: _r, runningTabs: _rt, abortControllers: _ac, ...state }) => state,
       },
     ),
   )
@@ -212,9 +228,46 @@ export type IdeStore = ReturnType<typeof createIdeStore>
 
 export const IdeStoreContext = createContext<IdeStore | null>(null)
 
+// No-op fallback used when useIde is called without a provider. This happens
+// during React's dev-mode error-recovery replay render, which invokes render
+// functions against the committed tree (where the provider may not exist yet)
+// to generate an accurate stack trace. Using a fallback means the replay
+// renders harmlessly with empty state instead of crashing, allowing the real
+// error boundary to show a useful UI.
+const _noop = () => {}
+const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
+  activeWorkspaceId: undefined,
+  maximizedPane: null,
+  maximizedSidebarPane: null,
+  sidebarCollapsed: false,
+  activeTabId: undefined,
+  tabs: [],
+  sessions: {},
+  results: {},
+  runningTabs: {},
+  abortControllers: {},
+  setActiveWorkspace: _noop,
+  openTab: _noop,
+  ensureTab: _noop,
+  closeTab: _noop,
+  setActiveTab: _noop,
+  updateTabContent: _noop,
+  updateTabEtag: _noop,
+  setTabConnection: _noop,
+  setMaximizedPane: _noop,
+  setMaximizedSidebarPane: _noop,
+  setSidebarCollapsed: _noop,
+  setSession: _noop,
+  clearSession: _noop,
+  syncSessions: _noop,
+  setQueryResult: _noop,
+  setTabRunning: _noop,
+  setTabController: _noop,
+  openConsole: _noop,
+}))
+
 export function useIde<T>(selector: (state: IdeState & IdeActions) => T): T {
-  const store = useContext(IdeStoreContext)
-  if (!store) throw new Error('useIde must be used within WorkspaceIde')
+  const store = useContext(IdeStoreContext) ?? _contextFallback
   return useStore(store, selector)
 }
 

@@ -46,8 +46,9 @@ type WorkspaceIdeProps = { orgSlug: string }
 export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
   // Parent route guards that session is loaded before rendering this component,
   // so session.data is always available here (cache hit, no network request).
+  // Fall back to 0 defensively so hooks are never called with undefined deps.
   const { data: session } = useSession()
-  const accountId = session!.account.id
+  const accountId = session?.account?.id ?? 0
 
   const store = useMemo(() => createIdeStore(orgSlug, accountId), [orgSlug, accountId])
   const registry = useMemo(() => createYDocRegistry(accountId), [orgSlug, accountId])
@@ -131,21 +132,35 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
     }
   }, [store, orgSlug, accountId])
 
+  // Abort all in-flight queries when the IDE unmounts (e.g. navigation away).
+  useEffect(() => {
+    return () => {
+      const { abortControllers } = store.getState()
+      Object.values(abortControllers).forEach((c) => c.abort())
+    }
+  }, [store])
+
   const workspaces = useQuery(
     orgWorkspacesQueryOptions(orgSlug, { page_size: 100, sort: 'name', order: 'asc' }),
   )
 
-  if (workspaces.isLoading) return <IdeFrame>Loading workspaces…</IdeFrame>
-  if (workspaces.isError) return <IdeFrame>Unable to load workspaces.</IdeFrame>
-
   const items = workspaces.data?.items ?? []
-  if (items.length === 0) return <IdeFrame>No accessible workspaces.</IdeFrame>
 
+  // Always render providers so useIde never runs without context, even when
+  // the workspaces query is still loading or the component suspends mid-render.
   return (
     <IdeStoreContext.Provider value={store}>
       <YDocRegistryContext.Provider value={registry}>
         <EditorViewRegistryContext.Provider value={viewRegistry}>
-          <WorkspaceIdeInner orgSlug={orgSlug} workspaces={items} />
+          {workspaces.isLoading ? (
+            <IdeFrame>Loading workspaces…</IdeFrame>
+          ) : workspaces.isError ? (
+            <IdeFrame>Unable to load workspaces.</IdeFrame>
+          ) : items.length === 0 ? (
+            <IdeFrame>No accessible workspaces.</IdeFrame>
+          ) : (
+            <WorkspaceIdeInner orgSlug={orgSlug} workspaces={items} />
+          )}
         </EditorViewRegistryContext.Provider>
       </YDocRegistryContext.Provider>
     </IdeStoreContext.Provider>
