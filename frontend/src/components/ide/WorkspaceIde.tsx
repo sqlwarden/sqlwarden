@@ -19,6 +19,7 @@ import {
 } from '#/components/ui/resizable'
 import { orgWorkspacesQueryOptions } from '#/lib/api/query'
 import type { Workspace } from '#/lib/api/types'
+import { useSession } from '#/hooks/use-session'
 import { cn } from '#/lib/utils'
 import {
   createIdeStore,
@@ -43,7 +44,12 @@ import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditor
 type WorkspaceIdeProps = { orgSlug: string }
 
 export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
-  const store = useMemo(() => createIdeStore(orgSlug), [orgSlug])
+  // Parent route guards that session is loaded before rendering this component,
+  // so session.data is always available here (cache hit, no network request).
+  const { data: session } = useSession()
+  const accountId = session!.account.id
+
+  const store = useMemo(() => createIdeStore(orgSlug, accountId), [orgSlug, accountId])
   const registry = useMemo(() => createYDocRegistry(), [orgSlug])
   const viewRegistry = useMemo(() => createEditorViewRegistry(), [])
 

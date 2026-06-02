@@ -71,8 +71,8 @@ export type IdeActions = {
 
 // ─── Store factory ─────────────────────────────────────────────────────────────
 
-function makeStorage(orgSlug: string): StateStorage {
-  const key = `sqlwarden.ide.${orgSlug}`
+function makeStorage(orgSlug: string, accountId: number): StateStorage {
+  const key = `sqlwarden.ide.${orgSlug}.${accountId}`
   return {
     getItem: async () => {
       const val = await get<string>(key)
@@ -83,7 +83,7 @@ function makeStorage(orgSlug: string): StateStorage {
   }
 }
 
-export function createIdeStore(orgSlug: string) {
+export function createIdeStore(orgSlug: string, accountId: number) {
   return createStore<IdeState & IdeActions>()(
     persist(
       (set) => ({
@@ -184,8 +184,8 @@ export function createIdeStore(orgSlug: string) {
           }),
       }),
       {
-        name: `sqlwarden.ide.${orgSlug}`,
-        storage: createJSONStorage(() => makeStorage(orgSlug)),
+        name: `sqlwarden.ide.${orgSlug}.${accountId}`,
+        storage: createJSONStorage(() => makeStorage(orgSlug, accountId)),
         // Exclude ephemeral query results from IndexedDB — they can be large
         // and are meaningless after a page reload anyway.
         partialize: ({ results: _r, ...state }) => state,

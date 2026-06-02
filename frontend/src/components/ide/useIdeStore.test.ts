@@ -44,7 +44,7 @@ describe('useIdeStore', () => {
   let store: ReturnType<typeof createIdeStore>
 
   beforeEach(() => {
-    store = createIdeStore('test-org')
+    store = createIdeStore('test-org', 1)
   })
 
   it('starts with empty tabs', () => {
