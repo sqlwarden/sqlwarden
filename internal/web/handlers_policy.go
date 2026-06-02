@@ -184,11 +184,29 @@ func (app *application) deleteRole(w http.ResponseWriter, r *http.Request) {
 			app.notFound(w, r)
 			return
 		}
+		if errors.Is(err, access.ErrRoleInUse) {
+			app.roleInUse(w, r, err)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) roleInUse(w http.ResponseWriter, r *http.Request, err error) {
+	var roleInUse access.RoleInUseError
+	bindingCount := 0
+	if errors.As(err, &roleInUse) {
+		bindingCount = roleInUse.BindingCount
+	}
+	if jsonErr := response.JSON(w, http.StatusConflict, map[string]any{
+		"error":         "Role is still used by policy bindings. Remove those policy bindings before deleting the role.",
+		"binding_count": bindingCount,
+	}); jsonErr != nil {
+		app.serverError(w, r, jsonErr)
+	}
 }
 
 func (app *application) listOrgPolicies(w http.ResponseWriter, r *http.Request) {

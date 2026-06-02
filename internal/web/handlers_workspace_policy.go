@@ -190,6 +190,10 @@ func (app *application) deleteWorkspaceRole(w http.ResponseWriter, r *http.Reque
 			app.notFound(w, r)
 			return
 		}
+		if errors.Is(err, access.ErrRoleInUse) {
+			app.roleInUse(w, r, err)
+			return
+		}
 		app.serverError(w, r, err)
 		return
 	}

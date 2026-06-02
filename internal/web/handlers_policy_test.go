@@ -221,6 +221,29 @@ func TestDeleteRoleNotFoundReturns404(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }
 
+func TestDeleteRoleWithBindingsReturnsConflict(t *testing.T) {
+	app := newTestApp(t)
+	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "role-in-use-owner"), "Role In Use Owner", "Role In Use")
+	member := seedAccount(t, app, uniqueEmail(t, "role-in-use-member"), "Role In Use Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgRead)
+	assert.Equal(t, grantOrgPolicyRole(t, app, tok, org.Slug, roleID, access.SubjectTypeAccount, member.ID).StatusCode, http.StatusNoContent)
+
+	res := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+org.Slug+"/roles/"+strconv.FormatInt(roleID, 10), nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusConflict)
+	assert.Equal(t, res.BodyFields["binding_count"].(float64), float64(1))
+
+	// The binding remains; role deletion must not silently revoke policies.
+	var bindingCount int
+	if err := app.db.NewSelect().TableExpr("role_bindings").ColumnExpr("COUNT(*)").Where("role_id = ?", roleID).Scan(context.Background(), &bindingCount); err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, bindingCount, 1)
+}
+
 func TestListRoles_SupportsPaginationSearchAndBuiltinFilter(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

@@ -524,6 +524,30 @@ func TestDeleteBuiltinWorkspaceRoleForbidden(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusForbidden)
 }
 
+func TestDeleteWorkspaceRoleWithBindingsReturnsConflict(t *testing.T) {
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "ws-role-in-use-owner"), "Workspace Role In Use Owner", "Workspace Role In Use")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Policy Workspace", "")
+	member := seedAccount(t, app, uniqueEmail(t, "ws-role-in-use-member"), "Workspace Role In Use Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	roleID := createRoleForTest(t, app, org.ID, &ws.ID, "workspace", access.PermWsWrite)
+	wsID := strconv.FormatInt(ws.ID, 10)
+	assert.Equal(t, grantWorkspacePolicyRole(t, app, tok, org.Slug, wsID, roleID, access.SubjectTypeAccount, member.ID, "workspace", 0).StatusCode, http.StatusNoContent)
+
+	res := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+org.Slug+"/workspaces/"+wsID+"/roles/"+strconv.FormatInt(roleID, 10), nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusConflict)
+	assert.Equal(t, res.BodyFields["binding_count"].(float64), float64(1))
+
+	var bindingCount int
+	if err := app.db.NewSelect().TableExpr("role_bindings").ColumnExpr("COUNT(*)").Where("role_id = ?", roleID).Scan(context.Background(), &bindingCount); err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, bindingCount, 1)
+}
+
 func TestDeleteWorkspaceRoleByWsMemberForbidden(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

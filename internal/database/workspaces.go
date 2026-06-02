@@ -329,25 +329,29 @@ func (db *DB) DeleteWorkspace(ctx context.Context, id int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := db.NewDelete().Model((*Workspace)(nil)).Where("id = ?", id).Exec(ctx)
-	if err != nil {
+	// Role bindings are policy assignments, so clean up bindings that target
+	// this workspace or its children before workspace-scoped roles cascade.
+	if _, err := db.NewDelete().TableExpr("role_bindings").
+		Where(`(resource_type = 'workspace' AND resource_id = ?)
+		    OR (resource_type = 'environment' AND resource_id IN (SELECT id FROM environments WHERE workspace_id = ?))
+		    OR (resource_type = 'connection' AND resource_id IN (SELECT id FROM connections WHERE workspace_id = ?))
+		    OR role_id IN (SELECT id FROM roles WHERE workspace_id = ?)`, id, id, id, id).
+		Exec(ctx); err != nil {
 		return err
 	}
 
 	// Clean up hierarchy rows for this workspace and all its children.
 	// resource_hierarchy has no FK constraints so we must do this manually.
-	//
-	// Covers:
-	//   (workspace, id)        → its own hierarchy row
-	//   (environment, *)       → rows whose parent is this workspace
-	//   (connection, *)        → rows whose parent is an environment in this workspace
-	_, err = db.NewDelete().TableExpr("resource_hierarchy").
+	if _, err := db.NewDelete().TableExpr("resource_hierarchy").
 		Where(`(child_type = 'workspace' AND child_id = ?)
 		    OR (parent_type = 'workspace' AND parent_id = ?)
 		    OR (child_type = 'connection' AND parent_type = 'environment'
-		        AND child_id IN (SELECT id FROM connections WHERE workspace_id = ?))`,
-			id, id, id).
-		Exec(ctx)
+		        AND child_id IN (SELECT id FROM connections WHERE workspace_id = ?))`, id, id, id).
+		Exec(ctx); err != nil {
+		return err
+	}
+
+	_, err := db.NewDelete().Model((*Workspace)(nil)).Where("id = ?", id).Exec(ctx)
 	return err
 }
 

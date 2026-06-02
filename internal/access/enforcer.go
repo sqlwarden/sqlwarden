@@ -465,7 +465,8 @@ func (e *Enforcer) insertRolePermissions(ctx context.Context, roleID int64, perm
 	return err
 }
 
-// DeleteRole deletes a custom role. Returns an error if the role is builtin.
+// DeleteRole deletes an unbound custom role. Policy bindings must be explicitly
+// revoked first so deleting a role cannot silently revoke access assignments.
 func (e *Enforcer) DeleteRole(ctx context.Context, roleID, orgID int64) error {
 	var isBuiltin bool
 	err := e.db.NewSelect().
@@ -481,6 +482,19 @@ func (e *Enforcer) DeleteRole(ctx context.Context, roleID, orgID int64) error {
 	}
 	if isBuiltin {
 		return ErrBuiltinRole
+	}
+
+	var bindingCount int
+	err = e.db.NewSelect().
+		TableExpr("role_bindings").
+		ColumnExpr("COUNT(*)").
+		Where("role_id = ? AND org_id = ?", roleID, orgID).
+		Scan(ctx, &bindingCount)
+	if err != nil {
+		return err
+	}
+	if bindingCount > 0 {
+		return RoleInUseError{BindingCount: bindingCount}
 	}
 
 	_, err = e.db.NewDelete().TableExpr("roles").Where("id = ?", roleID).Exec(ctx)

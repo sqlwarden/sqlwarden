@@ -2,6 +2,7 @@ package access_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/sqlwarden/internal/access"
@@ -524,9 +525,9 @@ func TestCreateRoleWithOrgPermForWorkspaceScopeFails(t *testing.T) {
 	}
 }
 
-// TestDeleteCustomRoleRevokesAccess verifies that deleting a custom role cascades to
-// remove its bindings, revoking access.
-func TestDeleteCustomRoleRevokesAccess(t *testing.T) {
+// TestDeleteCustomRoleRequiresNoBindings verifies that custom roles cannot be
+// deleted while policy bindings still reference them.
+func TestDeleteCustomRoleRequiresNoBindings(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	orgID, ownerID := seedOrg(t, db, e, "del-custom")
 	ctx := context.Background()
@@ -550,12 +551,29 @@ func TestDeleteCustomRoleRevokesAccess(t *testing.T) {
 		t.Fatal("precondition: member should have ws:write before role deletion")
 	}
 
-	if err = e.DeleteRole(ctx, roleID, orgID); err != nil {
-		t.Fatal(err)
+	if err = e.DeleteRole(ctx, roleID, orgID); !errors.Is(err, access.ErrRoleInUse) {
+		t.Fatalf("delete role with binding error = %v, want ErrRoleInUse", err)
+	}
+	if _, err = db.NewDelete().TableExpr("roles").Where("id = ?", roleID).Exec(ctx); err == nil {
+		t.Fatal("expected database to reject deleting a role referenced by bindings")
 	}
 
-	if e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, access.PermWsWrite) {
-		t.Error("member should NOT have ws:write after the role is deleted (binding cascaded away)")
+	if !e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, access.PermWsWrite) {
+		t.Fatal("role binding should remain after blocked role deletion")
+	}
+
+	var bindingID int64
+	if err := db.NewSelect().TableExpr("role_bindings").ColumnExpr("id").Where("role_id = ?", roleID).Scan(ctx, &bindingID); err != nil {
+		t.Fatal(err)
+	}
+	if bindingID == 0 {
+		t.Fatal("expected binding for role")
+	}
+	if err = e.UnbindRole(ctx, bindingID, orgID); err != nil {
+		t.Fatal(err)
+	}
+	if err = e.DeleteRole(ctx, roleID, orgID); err != nil {
+		t.Fatalf("delete role after unbinding: %v", err)
 	}
 }
 
