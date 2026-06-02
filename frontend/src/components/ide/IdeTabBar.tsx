@@ -5,6 +5,7 @@ import {
   Cancel01Icon,
   DatabaseIcon,
   File01Icon,
+  Loading03Icon,
   TerminalIcon,
 } from '@hugeicons/core-free-icons'
 import {
@@ -37,6 +38,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
   const activeWorkspaceId = useIde((s) => s.activeWorkspaceId)
   const activeTabId = useIde((s) => s.activeTabId)
   const tabs = useIde((s) => s.tabs)
+  const runningTabs = useIde((s) => s.runningTabs)
   const openConsole = useIde((s) => s.openConsole)
   const closeTab = useIde((s) => s.closeTab)
   const setActiveTab = useIde((s) => s.setActiveTab)
@@ -52,7 +54,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
   }
 
   function handleCloseRequest(tab: EditorTab) {
-    if (tab.kind === 'file' && tab.isDirty) {
+    if (runningTabs[tab.id] || (tab.kind === 'file' && tab.isDirty)) {
       setPendingCloseTabId(tab.id)
     } else {
       closeTab(tab.id)
@@ -60,6 +62,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
   }
 
   const pendingCloseTab = pendingCloseTabId ? tabs.find((t) => t.id === pendingCloseTabId) : null
+  const pendingCloseRunning = pendingCloseTab ? !!runningTabs[pendingCloseTab.id] : false
 
   return (
     <>
@@ -69,6 +72,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
             key={tab.id}
             tab={tab}
             active={tab.id === activeTabId}
+            isRunning={!!runningTabs[tab.id]}
             onActivate={() => setActiveTab(tab.id)}
             onClose={() => handleCloseRequest(tab)}
           />
@@ -87,10 +91,15 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
         <Dialog open={true} onOpenChange={(open) => { if (!open) setPendingCloseTabId(null) }}>
           <DialogContent className="sm:max-w-sm">
             <DialogHeader>
-              <DialogTitle>Close without saving?</DialogTitle>
+              <DialogTitle>
+                {pendingCloseRunning ? 'Query still running' : 'Close without saving?'}
+              </DialogTitle>
             </DialogHeader>
             <p className="text-sm text-muted-foreground">
-              Unsaved changes to <strong className="text-foreground">{pendingCloseTab.title}</strong> will be lost.
+              {pendingCloseRunning
+                ? <>A query is still running in <strong className="text-foreground">{pendingCloseTab.title}</strong>. Closing will not cancel it on the server.</>
+                : <>Unsaved changes to <strong className="text-foreground">{pendingCloseTab.title}</strong> will be lost.</>
+              }
             </p>
             <DialogFooter>
               <Button variant="outline" onClick={() => setPendingCloseTabId(null)}>
@@ -116,11 +125,13 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
 function TabItem({
   tab,
   active,
+  isRunning,
   onActivate,
   onClose,
 }: {
   tab: EditorTab
   active: boolean
+  isRunning: boolean
   onActivate: () => void
   onClose: () => void
 }) {
@@ -140,7 +151,9 @@ function TabItem({
           : 'bg-background text-muted-foreground hover:bg-card/50 hover:text-foreground',
       )}
     >
-      {(tab.kind === 'connection' || tab.kind === 'scratch') && tab.driver ? (
+      {isRunning ? (
+        <HugeiconsIcon icon={Loading03Icon} size={13} strokeWidth={2} className="shrink-0 animate-spin text-primary" />
+      ) : (tab.kind === 'connection' || tab.kind === 'scratch') && tab.driver ? (
         <DriverBadge driver={tab.driver} size="sm" className="shrink-0 opacity-70" />
       ) : (
         <HugeiconsIcon icon={icon} size={13} strokeWidth={2} className="shrink-0 opacity-60" />

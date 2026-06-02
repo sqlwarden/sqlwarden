@@ -43,6 +43,8 @@ export type IdeState = {
   sessions: Record<number, string>
   /** Last query result per tab ID. Not persisted to IndexedDB. */
   results: Record<string, QueryResult>
+  /** Tabs with an in-flight query. Not persisted to IndexedDB. */
+  runningTabs: Record<string, boolean>
 }
 
 export type IdeActions = {
@@ -62,6 +64,7 @@ export type IdeActions = {
   /** Replace the entire sessions map with authoritative data from the backend. */
   syncSessions: (backendSessions: Record<number, string>) => void
   setQueryResult: (tabId: string, result: QueryResult) => void
+  setTabRunning: (tabId: string, running: boolean) => void
   /** Opens a new numbered console tab. Pass yState (encoded Y.Doc) so all windows
    *  that receive this tab share the same canonical Y.js initial history.
    *  Pass connectionId to pre-select a connection on the new tab. */
@@ -94,6 +97,7 @@ export function createIdeStore(orgSlug: string, accountId: number) {
         tabs: [],
         sessions: {},
         results: {},
+        runningTabs: {},
 
         setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
@@ -117,7 +121,8 @@ export function createIdeStore(orgSlug: string, accountId: number) {
                 ? nextTabs.find((t) => t.workspaceId === s.activeWorkspaceId)?.id
                 : s.activeTabId
             const { [tabId]: _r, ...nextResults } = s.results
-            return { tabs: nextTabs, activeTabId: nextActive, results: nextResults }
+            const { [tabId]: _rt, ...nextRunning } = s.runningTabs
+            return { tabs: nextTabs, activeTabId: nextActive, results: nextResults, runningTabs: nextRunning }
           }),
 
         setActiveTab: (id) => set({ activeTabId: id }),
@@ -161,6 +166,9 @@ export function createIdeStore(orgSlug: string, accountId: number) {
         setQueryResult: (tabId, result) =>
           set((s) => ({ results: { ...s.results, [tabId]: result } })),
 
+        setTabRunning: (tabId, running) =>
+          set((s) => ({ runningTabs: { ...s.runningTabs, [tabId]: running } })),
+
         openConsole: (workspace, yState, connectionId) =>
           set((s) => {
             const wsConsoleTabs = s.tabs.filter(
@@ -192,7 +200,7 @@ export function createIdeStore(orgSlug: string, accountId: number) {
         storage: createJSONStorage(() => makeStorage(orgSlug, accountId)),
         // Exclude ephemeral query results from IndexedDB — they can be large
         // and are meaningless after a page reload anyway.
-        partialize: ({ results: _r, ...state }) => state,
+        partialize: ({ results: _r, runningTabs: _rt, ...state }) => state,
       },
     ),
   )

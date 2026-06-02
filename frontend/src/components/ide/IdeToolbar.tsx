@@ -39,7 +39,6 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [connSearch, setConnSearch] = useState('')
   const [saveAsTab, setSaveAsTab] = useState<EditorTab | null>(null)
-  const [isRunning, setIsRunning] = useState(false)
 
   const activeTabId = useIde((s) => s.activeTabId)
   const tabs = useIde((s) => s.tabs)
@@ -52,10 +51,13 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const sessions = useIde((s) => s.sessions)
   const setSession = useIde((s) => s.setSession)
   const setQueryResult = useIde((s) => s.setQueryResult)
+  const setTabRunning = useIde((s) => s.setTabRunning)
+  const runningTabs = useIde((s) => s.runningTabs)
 
   const registry = useYDocRegistry()
   const viewRegistry = useEditorViewRegistry()
   const activeTab = tabs.find((t) => t.id === activeTabId)
+  const isRunning = !!(activeTabId && runningTabs[activeTabId])
 
   const showSave = activeTab?.kind !== 'file' || activeTab?.isDirty
 
@@ -147,7 +149,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     // Ensure results pane is visible.
     if (maximizedPane === 'editor') setMaximizedPane(null)
 
-    setIsRunning(true)
+    setTabRunning(activeTab.id, true)
     setQueryResult(activeTab.id, { status: 'running' })
 
     try {
@@ -177,10 +179,10 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       const message = err instanceof Error ? err.message : 'Query failed'
       setQueryResult(activeTab.id, { status: 'error', message, sql })
     } finally {
-      setIsRunning(false)
+      setTabRunning(activeTab.id, false)
     }
   }, [activeTab, activeConnection, isRunning, maximizedPane, sessions, orgSlug, workspace.id,
-      registry, viewRegistry, setMaximizedPane, setQueryResult, setSession])
+      registry, viewRegistry, setMaximizedPane, setQueryResult, setSession, setTabRunning])
 
   // Global ⌘Enter / Ctrl+Enter shortcut.
   // capture:true fires before CodeMirror's contentDOM listener; stopPropagation
