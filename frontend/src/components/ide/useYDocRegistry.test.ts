@@ -41,45 +41,45 @@ beforeEach(() => channels.clear())
 
 describe('createYDocRegistry', () => {
   it('getOrCreate returns a Y.Doc', () => {
-    const reg = createYDocRegistry()
+    const reg = createYDocRegistry(1)
     expect(reg.getOrCreate('tab:1')).toBeInstanceOf(Y.Doc)
   })
 
   it('getOrCreate is idempotent — returns the same doc', () => {
-    const reg = createYDocRegistry()
+    const reg = createYDocRegistry(1)
     expect(reg.getOrCreate('tab:1')).toBe(reg.getOrCreate('tab:1'))
   })
 
   it('getOrCreate initialises content from initialContent (scratch/connection tabs)', () => {
-    const reg = createYDocRegistry()
+    const reg = createYDocRegistry(1)
     const doc = reg.getOrCreate('scratch:1:123', 'SELECT 1;')
     expect(doc.getText('content').toString()).toBe('SELECT 1;')
   })
 
   it('get returns undefined before creation', () => {
-    expect(createYDocRegistry().get('nope')).toBeUndefined()
+    expect(createYDocRegistry(1).get('nope')).toBeUndefined()
   })
 
   it('get returns the doc after creation', () => {
-    const reg = createYDocRegistry()
+    const reg = createYDocRegistry(1)
     reg.getOrCreate('tab:1')
     expect(reg.get('tab:1')).toBeInstanceOf(Y.Doc)
   })
 
   it('destroy removes the doc', () => {
-    const reg = createYDocRegistry()
+    const reg = createYDocRegistry(1)
     reg.getOrCreate('tab:1')
     reg.destroy('tab:1')
     expect(reg.get('tab:1')).toBeUndefined()
   })
 
   it('destroy is a no-op for unknown tabId', () => {
-    expect(() => createYDocRegistry().destroy('nope')).not.toThrow()
+    expect(() => createYDocRegistry(1).destroy('nope')).not.toThrow()
   })
 
   it('user edits are broadcast as incremental updates', () => {
-    const regA = createYDocRegistry()
-    const regB = createYDocRegistry()
+    const regA = createYDocRegistry(1)
+    const regB = createYDocRegistry(1)
     const docA = regA.getOrCreate('file:99')
     const docB = regB.getOrCreate('file:99')
 
@@ -89,10 +89,10 @@ describe('createYDocRegistry', () => {
   })
 
   it('init origin (scratch/connection seed) is NOT broadcast', () => {
-    const regB = createYDocRegistry()
+    const regB = createYDocRegistry(1)
     regB.getOrCreate('scratch:1:999')
 
-    const regA = createYDocRegistry()
+    const regA = createYDocRegistry(1)
     regA.getOrCreate('scratch:1:999', 'local seed')
 
     // B's doc should be unaffected — init is not broadcast
@@ -100,8 +100,8 @@ describe('createYDocRegistry', () => {
   })
 
   it('server-load origin broadcasts full state to empty peer docs', () => {
-    const regA = createYDocRegistry()
-    const regB = createYDocRegistry()
+    const regA = createYDocRegistry(1)
+    const regB = createYDocRegistry(1)
 
     // B opens the file first (empty doc)
     const docB = regB.getOrCreate('file:99')
@@ -117,8 +117,8 @@ describe('createYDocRegistry', () => {
   })
 
   it('full-state is NOT applied when peer doc already has content', () => {
-    const regA = createYDocRegistry()
-    const regB = createYDocRegistry()
+    const regA = createYDocRegistry(1)
+    const regB = createYDocRegistry(1)
 
     // B independently initialised (e.g. also loaded from server)
     const docB = regB.getOrCreate('file:99')
@@ -137,7 +137,7 @@ describe('createYDocRegistry', () => {
   })
 
   it('sync-request causes existing peer to share its state', () => {
-    const regA = createYDocRegistry()
+    const regA = createYDocRegistry(1)
 
     // A already has content
     const docA = regA.getOrCreate('file:99')
@@ -146,15 +146,15 @@ describe('createYDocRegistry', () => {
     }, 'server-load')
 
     // B joins later — its sync-request triggers A to send full-state
-    const regB = createYDocRegistry()
+    const regB = createYDocRegistry(1)
     const docB = regB.getOrCreate('file:99') // sends sync-request on creation
 
     expect(docB.getText('content').toString()).toBe('FROM server')
   })
 
   it('incremental updates are NOT re-broadcast (no echo loops)', () => {
-    const regA = createYDocRegistry()
-    const regB = createYDocRegistry()
+    const regA = createYDocRegistry(1)
+    const regB = createYDocRegistry(1)
     const docA = regA.getOrCreate('file:99')
     regB.getOrCreate('file:99')
 

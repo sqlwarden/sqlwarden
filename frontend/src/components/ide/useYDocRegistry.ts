@@ -36,12 +36,12 @@ type ChannelMsg   = SyncRequest | FullState | UpdateMsg
 
 // ─── Factory ───────────────────────────────────────────────────────────────────
 
-export function createYDocRegistry(): YDocRegistry {
+export function createYDocRegistry(accountId: number): YDocRegistry {
   const entries = new Map<string, { doc: Y.Doc; cleanup: () => void }>()
 
   function createEntry(tabId: string, initialContent?: string): Y.Doc {
     const doc = new Y.Doc()
-    const channel = new BroadcastChannel(`sqlwarden:tab:${tabId}`)
+    const channel = new BroadcastChannel(`sqlwarden:tab:${accountId}:${tabId}`)
 
     // ── Outgoing: handle Y.Doc updates ────────────────────────────────────────
     const handleUpdate = (update: Uint8Array, origin: unknown) => {

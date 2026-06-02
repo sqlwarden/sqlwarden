@@ -50,7 +50,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
   const accountId = session!.account.id
 
   const store = useMemo(() => createIdeStore(orgSlug, accountId), [orgSlug, accountId])
-  const registry = useMemo(() => createYDocRegistry(), [orgSlug])
+  const registry = useMemo(() => createYDocRegistry(accountId), [orgSlug, accountId])
   const viewRegistry = useMemo(() => createEditorViewRegistry(), [])
 
   // ── Cross-window etag / dirty-state sync ─────────────────────────────────
@@ -59,7 +59,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
   // same origin so their dirty indicator and save ETag stay in sync.
   // The receiving window calls updateTabEtag directly — no re-broadcast.
   useEffect(() => {
-    const channel = new BroadcastChannel(`sqlwarden:store:${orgSlug}`)
+    const channel = new BroadcastChannel(`sqlwarden:store:${orgSlug}:${accountId}`)
     const prevEtags = new Map<string, string>()
     const prevTabIds = new Set<string>()
     let applyingRemote = false
@@ -129,7 +129,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
       channel.removeEventListener('message', handleRemote)
       channel.close()
     }
-  }, [store, orgSlug])
+  }, [store, orgSlug, accountId])
 
   const workspaces = useQuery(
     orgWorkspacesQueryOptions(orgSlug, { page_size: 100, sort: 'name', order: 'asc' }),
