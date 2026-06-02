@@ -170,7 +170,16 @@ describe('useIdeStore', () => {
     expect(tabs[0].id).toBe('scratch:1:1')
     expect(tabs[1].id).toBe('scratch:1:2')
     expect(tabs[1].title).toBe('Console 2')
-    expect(store.getState().nextConsoleNumber).toBe(2)
+  })
+
+  it('openConsole numbers from highest+1 after closing tabs', () => {
+    store.getState().openConsole(mockWorkspace, [1])
+    store.getState().openConsole(mockWorkspace, [2])
+    store.getState().closeTab('scratch:1:1')
+    store.getState().closeTab('scratch:1:2')
+    store.getState().openConsole(mockWorkspace, [3])
+    expect(store.getState().tabs[0].id).toBe('scratch:1:1')
+    expect(store.getState().tabs[0].title).toBe('Console 1')
   })
 
   it('openConsole sets the new tab as active', () => {

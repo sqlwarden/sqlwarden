@@ -39,7 +39,6 @@ export type IdeState = {
   sidebarCollapsed: boolean
   activeTabId?: string
   tabs: EditorTab[]
-  nextConsoleNumber: number
   /** Live session IDs keyed by connectionId. A session entry means the backend has an open pool connection for this account. */
   sessions: Record<number, string>
   /** Last query result per tab ID. Not persisted to IndexedDB. */
@@ -93,7 +92,6 @@ export function createIdeStore(orgSlug: string, accountId: number) {
         sidebarCollapsed: false,
         activeTabId: undefined,
         tabs: [],
-        nextConsoleNumber: 0,
         sessions: {},
         results: {},
 
@@ -165,7 +163,14 @@ export function createIdeStore(orgSlug: string, accountId: number) {
 
         openConsole: (workspace, yState, connectionId) =>
           set((s) => {
-            const num = s.nextConsoleNumber + 1
+            const wsConsoleTabs = s.tabs.filter(
+              (t) => t.workspaceId === workspace.id && t.kind === 'scratch',
+            )
+            const maxNum = wsConsoleTabs.reduce((max, t) => {
+              const m = t.id.match(/^scratch:\d+:(\d+)$/)
+              return m ? Math.max(max, parseInt(m[1], 10)) : max
+            }, 0)
+            const num = maxNum + 1
             const tab: EditorTab = {
               id: `scratch:${workspace.id}:${num}`,
               workspaceId: workspace.id,
@@ -177,7 +182,6 @@ export function createIdeStore(orgSlug: string, accountId: number) {
             }
             const exists = s.tabs.some((t) => t.id === tab.id)
             return {
-              nextConsoleNumber: num,
               activeTabId: tab.id,
               tabs: exists ? s.tabs : [...s.tabs, tab],
             }
