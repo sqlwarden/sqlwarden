@@ -63,6 +63,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
     const channel = new BroadcastChannel(`sqlwarden:store:${orgSlug}:${accountId}`)
     const prevEtags = new Map<string, string>()
     const prevTabIds = new Set<string>()
+    let prevSessions: Record<number, string> = {}
     let applyingRemote = false
     let seeded = false
 
@@ -76,6 +77,10 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
         store.getState().ensureTab(msg.tab as EditorTab)
       } else if (msg.type === 'tab-closed' && typeof msg.tabId === 'string') {
         store.getState().closeTab(msg.tabId)
+      } else if (msg.type === 'session-set' && typeof msg.connectionId === 'number' && typeof msg.sessionId === 'string') {
+        store.getState().setSession(msg.connectionId, msg.sessionId)
+      } else if (msg.type === 'session-cleared' && typeof msg.connectionId === 'number') {
+        store.getState().clearSession(msg.connectionId)
       }
       applyingRemote = false
     }
@@ -91,6 +96,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
         for (const tab of state.tabs) {
           if (tab.etag !== undefined) prevEtags.set(tab.id, tab.etag)
         }
+        prevSessions = { ...state.sessions }
         return
       }
 
@@ -114,6 +120,19 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
             channel.postMessage({ type: 'tab-closed', tabId: id })
           }
         }
+        // Session changes — drives the green connected dot across windows
+        for (const [connIdStr, sessionId] of Object.entries(state.sessions)) {
+          const connId = Number(connIdStr)
+          if (prevSessions[connId] !== sessionId) {
+            channel.postMessage({ type: 'session-set', connectionId: connId, sessionId })
+          }
+        }
+        for (const connIdStr of Object.keys(prevSessions)) {
+          const connId = Number(connIdStr)
+          if (!(connId in state.sessions)) {
+            channel.postMessage({ type: 'session-cleared', connectionId: connId })
+          }
+        }
       }
 
       // Always update prev state (even when applyingRemote) to stay current.
@@ -122,6 +141,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
       for (const tab of state.tabs) {
         if (tab.etag !== undefined) prevEtags.set(tab.id, tab.etag)
       }
+      prevSessions = { ...state.sessions }
     })
 
     channel.addEventListener('message', handleRemote)

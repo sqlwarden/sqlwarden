@@ -247,7 +247,6 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           className={isRunning ? 'animate-spin' : undefined}
         />
         {isRunning ? 'Running…' : 'Run'}
-        {!isRunning && <kbd className="ml-1 hidden font-mono text-[10px] opacity-60 sm:inline">⌘↵</kbd>}
       </Button>
 
       {/* Cancel button — appears only while a query is in flight */}
@@ -274,7 +273,6 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         >
           <HugeiconsIcon icon={FloppyDiskIcon} size={13} strokeWidth={2} data-icon="inline-start" />
           Save
-          <kbd className="ml-1 hidden font-mono text-[10px] opacity-60 sm:inline">⌘S</kbd>
         </Button>
       )}
 
