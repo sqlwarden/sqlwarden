@@ -58,9 +58,11 @@ type Props = {
   orgSlug: string
   workspaceId: number
   environments: Environment[]
+  /** When set, the environment is pre-selected and the dropdown is locked. */
+  lockedEnvironmentId?: number
 }
 
-export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, environments }: Props) {
+export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, environments, lockedEnvironmentId }: Props) {
   const queryClient = useQueryClient()
 
   const [driverId, setDriverId] = useState(drivers[0].id)
@@ -71,10 +73,13 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
   const [testState, setTestState] = useState<TestState>({ status: 'idle' })
 
   useEffect(() => {
-    if (open && environments.length > 0 && !environmentId) {
+    if (!open) return
+    if (lockedEnvironmentId) {
+      setEnvironmentId(String(lockedEnvironmentId))
+    } else if (environments.length > 0 && !environmentId) {
       setEnvironmentId(String(environments[0].id))
     }
-  }, [open, environments, environmentId])
+  }, [open, environments, environmentId, lockedEnvironmentId])
 
   function handleDriverChange(newDriverId: string) {
     const def = driverMap.get(newDriverId)
@@ -97,7 +102,11 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
   function resetForm() {
     setDriverId(drivers[0].id)
     setName('')
-    setEnvironmentId(environments.length > 0 ? String(environments[0].id) : '')
+    setEnvironmentId(
+      lockedEnvironmentId
+        ? String(lockedEnvironmentId)
+        : environments.length > 0 ? String(environments[0].id) : '',
+    )
     setFields(defaultFieldValues(drivers[0]))
     setErrors({ fields: {} })
     setTestState({ status: 'idle' })
@@ -252,7 +261,7 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
                     setEnvironmentId(v)
                     setErrors((prev) => ({ ...prev, environmentId: undefined }))
                   }}
-                  disabled={isPending}
+                  disabled={isPending || !!lockedEnvironmentId}
                 >
                   <SelectTrigger aria-invalid={errors.environmentId ? true : undefined}>
                     <SelectValue>{selectedEnvName}</SelectValue>

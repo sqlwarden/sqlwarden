@@ -63,7 +63,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   const queryClient = useQueryClient()
 
   const [addEnvOpen, setAddEnvOpen] = useState(false)
-  const [addConnOpen, setAddConnOpen] = useState(false)
+  const [addConnEnvironmentId, setAddConnEnvironmentId] = useState<number | null>(null)
   const [envName, setEnvName] = useState('')
   const [envDescription, setEnvDescription] = useState('')
   const [envNameError, setEnvNameError] = useState<string | undefined>(undefined)
@@ -72,7 +72,6 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
     orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspace.id),
   )
   const canCreateEnvironment = hasPermission(effectivePermissions.data?.permissions, permission.envCreate)
-  const canCreateConnection = hasPermission(effectivePermissions.data?.permissions, permission.connCreate)
 
   const environments = useQuery(
     orgEnvironmentsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
@@ -193,35 +192,16 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
     void createEnvironment.mutateAsync().catch(() => {})
   }
 
-  const actions = (canCreateEnvironment || canCreateConnection) ? (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Add to Explorer"
-          />
-        }
-      >
-        <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent side="bottom" align="end" className="min-w-44">
-        {canCreateEnvironment ? (
-          <DropdownMenuItem onClick={() => setAddEnvOpen(true)}>
-            <HugeiconsIcon icon={ServerStack01Icon} size={14} strokeWidth={2} className="text-muted-foreground" />
-            New Environment
-          </DropdownMenuItem>
-        ) : null}
-        {canCreateConnection ? (
-          <DropdownMenuItem onClick={() => setAddConnOpen(true)}>
-            <HugeiconsIcon icon={FlowConnectionIcon} size={14} strokeWidth={2} className="text-muted-foreground" />
-            New Connection
-          </DropdownMenuItem>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
+  const actions = canCreateEnvironment ? (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      aria-label="New Environment"
+      onClick={() => setAddEnvOpen(true)}
+    >
+      <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
+    </Button>
   ) : undefined
 
   return (
@@ -246,10 +226,12 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
               environment={env}
               connections={connItems.filter((c) => c.environment_id === env.id)}
               connectedIds={connectedIds}
+              orgSlug={orgSlug}
               onOpen={handleOpenConnection}
               onOpenConsole={handleOpenConsole}
               onConnect={handleConnect}
               onDisconnect={handleDisconnect}
+              onAddConnection={() => setAddConnEnvironmentId(env.id)}
             />
           ))
         )}
@@ -306,11 +288,12 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
       </Dialog>
 
       <ConnectionDialog
-        open={addConnOpen}
-        onOpenChange={setAddConnOpen}
+        open={addConnEnvironmentId !== null}
+        onOpenChange={(open) => { if (!open) setAddConnEnvironmentId(null) }}
         orgSlug={orgSlug}
         workspaceId={workspace.id}
         environments={envItems}
+        lockedEnvironmentId={addConnEnvironmentId ?? undefined}
       />
     </>
   )
@@ -320,45 +303,66 @@ function EnvironmentRow({
   environment,
   connections,
   connectedIds,
+  orgSlug,
   onOpen,
   onOpenConsole,
   onConnect,
   onDisconnect,
+  onAddConnection,
 }: {
   environment: Environment
   connections: Connection[]
   connectedIds: Set<number>
+  orgSlug: string
   onOpen: (conn: Connection) => void
   onOpenConsole: (conn: Connection) => void
   onConnect: (conn: Connection) => void
   onDisconnect: (conn: Connection) => void
+  onAddConnection: () => void
 }) {
   const [expanded, setExpanded] = useState(true)
 
+  const envPermissions = useQuery(
+    orgEffectivePermissionsQueryOptions(orgSlug, 'environment', environment.id),
+  )
+  const canCreateConnection = hasPermission(envPermissions.data?.permissions, permission.connCreate)
+
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex h-7 w-full items-center gap-1.5 px-2 text-left text-xs transition-colors hover:bg-accent hover:text-accent-foreground"
-      >
-        <HugeiconsIcon
-          icon={expanded ? ArrowDown01Icon : ArrowRight01Icon}
-          size={11}
-          strokeWidth={2}
-          className="shrink-0 text-muted-foreground"
-        />
-        <HugeiconsIcon
-          icon={ServerStack01Icon}
-          size={14}
-          strokeWidth={2}
-          className="shrink-0 text-muted-foreground"
-        />
-        <span className="min-w-0 flex-1 truncate font-medium">{environment.name}</span>
-      </button>
+      <div className="group flex h-7 w-full items-center text-xs transition-colors hover:bg-accent hover:text-accent-foreground">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 text-left"
+        >
+          <HugeiconsIcon
+            icon={expanded ? ArrowDown01Icon : ArrowRight01Icon}
+            size={11}
+            strokeWidth={2}
+            className="shrink-0 text-muted-foreground"
+          />
+          <HugeiconsIcon
+            icon={ServerStack01Icon}
+            size={14}
+            strokeWidth={2}
+            className="shrink-0 text-muted-foreground"
+          />
+          <span className="min-w-0 flex-1 truncate font-medium">{environment.name}</span>
+        </button>
+        {canCreateConnection && (
+          <button
+            type="button"
+            onClick={onAddConnection}
+            aria-label={`New connection in ${environment.name}`}
+            className="mr-1 flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+          >
+            <HugeiconsIcon icon={PlusSignIcon} size={11} strokeWidth={2} />
+          </button>
+        )}
+      </div>
 
       {expanded && (
-        <div className="border-l border-border ml-[18px]">
+        <div className="ml-[18px] border-l border-border">
           {connections.length === 0 ? (
             <div className="px-3 py-1.5 text-xs text-muted-foreground">No connections.</div>
           ) : (
