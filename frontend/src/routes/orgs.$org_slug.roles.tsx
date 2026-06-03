@@ -158,6 +158,15 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
       await queryClient.invalidateQueries({ queryKey: ['org-roles', orgSlug] })
     },
     onError: (error) => {
+      if (isApiError(error) && error.status === 409) {
+        const count = (error.details as { binding_count?: number } | undefined)?.binding_count
+        toast.error(
+          count != null
+            ? `Cannot delete: role has ${count} active policy binding${count !== 1 ? 's' : ''}. Remove them first.`
+            : 'Cannot delete: role has active policy bindings. Remove them first.',
+        )
+        return
+      }
       toast.error(error instanceof Error ? error.message : 'Failed to delete role')
     },
   })
@@ -459,7 +468,7 @@ function RoleRow({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete role?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This permanently deletes {roleDisplayName(role)}. Any policies using this role will no longer grant its permissions.
+                    This permanently deletes <strong>{roleDisplayName(role)}</strong>. Deletion will fail if any policy bindings still reference this role — remove those bindings first.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
