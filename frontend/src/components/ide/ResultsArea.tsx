@@ -377,35 +377,39 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
-      {selection && panelValue && panelCol ? (
-        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-          <ResizablePanel
-            panelRef={tablePanelRef}
-            defaultSize="75%"
-            minSize="15%"
-            collapsible
-            collapsedSize="0%"
-            className="min-h-0 overflow-auto"
-            onResize={(size) => setTableCollapsed(size.asPercentage === 0)}
-          >
-            {tableEl}
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize="25%" minSize="15%" className="flex flex-col border-l border-border">
-            <CellDetailPanel
-              value={panelValue}
-              col={panelCol}
-              tableCollapsed={tableCollapsed}
-              onMaximize={() => tableCollapsed ? tablePanelRef.current?.expand() : tablePanelRef.current?.collapse()}
-              onClose={closePanel}
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-auto">
+      {/*
+       * Always render the table inside ResizablePanelGroup so the table's
+       * scroll container is a stable DOM element. Switching between a plain
+       * <div> and a ResizablePanel on first cell click was resetting the
+       * scroll position to the top because the new container starts at 0.
+       */}
+      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+        <ResizablePanel
+          panelRef={tablePanelRef}
+          defaultSize="75%"
+          minSize="15%"
+          collapsible
+          collapsedSize="0%"
+          className="min-h-0 overflow-auto"
+          onResize={(size) => setTableCollapsed(size.asPercentage === 0)}
+        >
           {tableEl}
-        </div>
-      )}
+        </ResizablePanel>
+        {selection && panelValue && panelCol && (
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize="25%" minSize="15%" className="flex flex-col border-l border-border">
+              <CellDetailPanel
+                value={panelValue}
+                col={panelCol}
+                tableCollapsed={tableCollapsed}
+                onMaximize={() => tableCollapsed ? tablePanelRef.current?.expand() : tablePanelRef.current?.collapse()}
+                onClose={closePanel}
+              />
+            </ResizablePanel>
+          </>
+        )}
+      </ResizablePanelGroup>
 
       <div className="flex shrink-0 items-center border-t border-border bg-muted/40 px-3 py-1 text-[10px] text-muted-foreground">
         <span className="tabular-nums">

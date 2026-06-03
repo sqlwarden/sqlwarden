@@ -41,7 +41,6 @@ export function useFileContent({
     // If the doc already has content, a peer window has already synced state
     // via BroadcastChannel full-state. Skip the text insert to avoid merging
     // two independently-created Y.js histories (which would double the content).
-    // Always update the etag so dirty tracking and saves work correctly.
     if (yText.length === 0) {
       // No peer state yet — we are the first window. Initialize from server.
       // Origin 'server-load' causes the registry to broadcast our full state
@@ -51,8 +50,13 @@ export function useFileContent({
       }, 'server-load')
     }
 
-    updateTabEtag(tab.id, query.data.etag)
-  }, [query.data, tab?.id, registry, updateTabEtag])
+    // Only set the etag when the tab doesn't have one yet (initial load or
+    // after the tab was re-opened). Re-applying it on every tab switch would
+    // call updateTabEtag → isDirty: false, clearing the unsaved indicator.
+    if (tab.etag === undefined) {
+      updateTabEtag(tab.id, query.data.etag)
+    }
+  }, [query.data, tab?.id, tab?.etag, registry, updateTabEtag])
 
   return {
     isLoading: needsLoad && query.isLoading,
