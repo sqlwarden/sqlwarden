@@ -51,7 +51,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.Desktop.ActiveBackend != "local" {
 		t.Fatalf("desktop.active_backend = %q, want local", cfg.Desktop.ActiveBackend)
 	}
-	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "local" || cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyVersioned {
+	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "local" || cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyVersioned || cfg.Files.Revisions.KeepLatest != defaultFilesRevisionKeepLatest {
 		t.Fatalf("unexpected default file config: %+v", cfg.Files)
 	}
 	defaultFilesRoot, err := expandHomePath(defaultFilesRootDir)
@@ -91,6 +91,8 @@ smtp:
 files:
   storage_mode: object
   active_storage_backend: alternate
+  revisions:
+    keep_latest: 7
   storage_backends:
     local:
       type: filesystem
@@ -156,6 +158,9 @@ desktop:
 	}
 	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "alternate" {
 		t.Fatalf("unexpected file storage config: %+v", cfg.Files)
+	}
+	if cfg.Files.Revisions.KeepLatest != 7 {
+		t.Fatalf("files.revisions.keep_latest = %d, want 7", cfg.Files.Revisions.KeepLatest)
 	}
 	if cfg.Files.StorageBackends["alternate"].RootDir != "/tmp/sqlwarden-alternate-files" {
 		t.Fatalf("unexpected alternate storage backend: %+v", cfg.Files.StorageBackends["alternate"])
@@ -239,6 +244,7 @@ db:
 		"--tls-enabled",
 		"--tls-cert-file", "/flag/tls.crt",
 		"--tls-key-file", "/flag/tls.key",
+		"--files-revisions-keep-latest", "3",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -264,6 +270,9 @@ db:
 	}
 	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/flag/tls.crt" || cfg.TLS.KeyFile != "/flag/tls.key" {
 		t.Fatalf("unexpected tls config: %+v", cfg.TLS)
+	}
+	if cfg.Files.Revisions.KeepLatest != 3 {
+		t.Fatalf("files.revisions.keep_latest = %d, want 3", cfg.Files.Revisions.KeepLatest)
 	}
 }
 
@@ -305,6 +314,11 @@ func TestLoadConfigRejectsUnsupportedFileConfiguration(t *testing.T) {
 	_, _, err = loadConfig([]string{"--files-storage-mode", FilesStorageModeFile})
 	if err == nil {
 		t.Fatal("expected file-mode versioning to fail until visible history is implemented")
+	}
+
+	_, _, err = loadConfig([]string{"--files-revisions-keep-latest", "-1"})
+	if err == nil {
+		t.Fatal("expected negative revision retention to fail")
 	}
 
 	_, _, err = loadConfig([]string{"--files-active-storage-backend", "missing"})

@@ -334,7 +334,7 @@ func TestRecentReturnsOnlyAuthorizedOpenableFiles(t *testing.T) {
 }
 
 func TestObjectStoreVersionsTextFilesAndKeepsKeysStableOnRename(t *testing.T) {
-	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyVersioned})
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyVersioned, RevisionKeepLatest: 10})
 	scope := f.privateScope(f.member)
 
 	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql", MediaType: "text/plain", FileKind: "query"})
@@ -378,8 +378,126 @@ func TestObjectStoreVersionsTextFilesAndKeepsKeysStableOnRename(t *testing.T) {
 	}
 }
 
+func TestObjectStoreRevisionRetentionPrunesOldMetadataAndObjects(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyVersioned, RevisionKeepLatest: 2})
+	scope := f.privateScope(f.member)
+
+	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql", MediaType: "text/plain", FileKind: "query"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var versions []database.WorkspaceFileContent
+	expectedHash := ""
+	for i := 1; i <= 5; i++ {
+		content, err := f.service.WriteContent(f.ctx, scope, file.ID, expectedHash, strings.NewReader("select "+strconv.Itoa(i)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		versions = append(versions, content)
+		expectedHash = content.ContentHash
+	}
+
+	contents, err := f.db.ListWorkspaceFileSubtreeContents(f.ctx, file.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contents) != 5 {
+		t.Fatalf("content rows before reaper = %d, want all 5 still present", len(contents))
+	}
+	queued, err := f.db.ListWorkspaceFileContentDeletionBatch(f.ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queued) != 2 {
+		t.Fatalf("queued deletions = %d, want 2", len(queued))
+	}
+
+	processed, err := f.service.ReapContentDeletionsOnce(f.ctx, 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed != 2 {
+		t.Fatalf("processed deletions = %d, want 2", processed)
+	}
+
+	contents, err = f.db.ListWorkspaceFileSubtreeContents(f.ctx, file.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contents) != 3 {
+		t.Fatalf("retained content rows after reaper = %d, want current plus 2 older", len(contents))
+	}
+	retained := map[int64]bool{}
+	for _, content := range contents {
+		retained[content.ID] = true
+	}
+	for _, version := range []database.WorkspaceFileContent{versions[2], versions[3], versions[4]} {
+		if !retained[version.ID] {
+			t.Fatalf("expected version %d to be retained; retained=%+v", version.Version, contents)
+		}
+		if reader, _, err := f.store.Get(f.ctx, version.StorageKey); err != nil {
+			t.Fatalf("retained version %d object missing: %v", version.Version, err)
+		} else {
+			reader.Close()
+		}
+	}
+	for _, version := range []database.WorkspaceFileContent{versions[0], versions[1]} {
+		if retained[version.ID] {
+			t.Fatalf("expected version %d metadata to be pruned", version.Version)
+		}
+		if _, _, err := f.store.Get(f.ctx, version.StorageKey); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("pruned version %d get err = %v, want %v", version.Version, err, os.ErrNotExist)
+		}
+	}
+}
+
+func TestObjectStoreRevisionRetentionKeepLatestZeroKeepsOnlyCurrent(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyVersioned, RevisionKeepLatest: 0})
+	scope := f.privateScope(f.member)
+
+	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql", MediaType: "text/plain", FileKind: "query"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := f.service.WriteContent(f.ctx, scope, file.ID, first.ContentHash, strings.NewReader("select 2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	contents, err := f.db.ListWorkspaceFileSubtreeContents(f.ctx, file.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contents) != 2 {
+		t.Fatalf("content rows before reaper = %+v, want both versions", contents)
+	}
+	processed, err := f.service.ReapContentDeletionsOnce(f.ctx, 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed != 1 {
+		t.Fatalf("processed deletions = %d, want 1", processed)
+	}
+	contents, err = f.db.ListWorkspaceFileSubtreeContents(f.ctx, file.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contents) != 1 || contents[0].ID != second.ID {
+		t.Fatalf("retained content rows after reaper = %+v, want only current", contents)
+	}
+	if _, _, err := f.store.Get(f.ctx, first.StorageKey); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old object get err = %v, want %v", err, os.ErrNotExist)
+	}
+}
+
 func TestContentReadsUseSavedBackendAndWritesUseActiveBackend(t *testing.T) {
-	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyVersioned})
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyVersioned, RevisionKeepLatest: 10})
 	archive, err := filestore.NewFilesystem(filepath.Join(t.TempDir(), "archive"))
 	if err != nil {
 		t.Fatal(err)
@@ -391,7 +509,7 @@ func TestContentReadsUseSavedBackendAndWritesUseActiveBackend(t *testing.T) {
 			"archive": archive,
 		},
 	}
-	f.service = NewWithStoreResolver(f.db, resolver, f.enforcer, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyVersioned}, &sync.Map{})
+	f.service = NewWithStoreResolver(f.db, resolver, f.enforcer, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyVersioned, RevisionKeepLatest: 10}, &sync.Map{})
 	scope := f.privateScope(f.member)
 
 	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql"})

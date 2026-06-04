@@ -24,16 +24,17 @@ import (
 type App = application
 
 type application struct {
-	config      Config
-	db          *database.DB
-	logger      *slog.Logger
-	mailer      *smtp.Mailer
-	wg          sync.WaitGroup
-	connManager *connection.Manager
-	encKey      []byte
-	enforcer    *access.Enforcer
-	fileStores  *fileStoreRegistry
-	fileLocks   sync.Map
+	config           Config
+	db               *database.DB
+	logger           *slog.Logger
+	mailer           *smtp.Mailer
+	wg               sync.WaitGroup
+	connManager      *connection.Manager
+	encKey           []byte
+	enforcer         *access.Enforcer
+	fileStores       *fileStoreRegistry
+	fileLocks        sync.Map
+	fileReaperCancel context.CancelFunc
 }
 
 type fileStoreRegistry struct {
@@ -104,7 +105,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
-	return &application{
+	app := &application{
 		config:      cfg,
 		db:          db,
 		logger:      logger,
@@ -113,7 +114,9 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		encKey:      encrypt.DeriveKey(cfg.Encryption.Key),
 		enforcer:    enforcer,
 		fileStores:  fileStores,
-	}, nil
+	}
+	app.startFileContentDeletionReaper()
+	return app, nil
 }
 
 func (app *application) Handler() http.Handler {
@@ -121,6 +124,9 @@ func (app *application) Handler() http.Handler {
 }
 
 func (app *application) Close() error {
+	if app.fileReaperCancel != nil {
+		app.fileReaperCancel()
+	}
 	app.wg.Wait()
 
 	if app.connManager != nil {
@@ -132,6 +138,17 @@ func (app *application) Close() error {
 	}
 
 	return nil
+}
+
+func (app *application) startFileContentDeletionReaper() {
+	ctx, cancel := context.WithCancel(context.Background())
+	app.fileReaperCancel = cancel
+	service := app.workspaceFileService()
+	app.wg.Add(1)
+	go func() {
+		defer app.wg.Done()
+		service.RunContentDeletionReaper(ctx, time.Minute, 100, time.Minute)
+	}()
 }
 
 func ensureSQLiteParentDir(cfg Config) error {

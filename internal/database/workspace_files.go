@@ -60,6 +60,19 @@ type WorkspaceFileContent struct {
 	CreatedAt            time.Time  `bun:",notnull" json:"created_at"`
 }
 
+type WorkspaceFileContentDeletion struct {
+	bun.BaseModel    `bun:"table:workspace_file_content_deletions"`
+	ID               int64     `bun:",pk,autoincrement"`
+	ContentID        int64     `bun:",notnull"`
+	StorageBackendID string    `bun:",notnull"`
+	StorageKey       string    `bun:",notnull"`
+	Attempts         int       `bun:",notnull"`
+	NextAttemptAt    time.Time `bun:",notnull"`
+	LastError        string    `bun:",nullzero"`
+	CreatedAt        time.Time `bun:",notnull"`
+	UpdatedAt        time.Time `bun:",notnull"`
+}
+
 // ListWorkspaceFileStorageBackendIDs returns backend IDs referenced by saved
 // file content. Startup uses this to fail fast when configuration no longer
 // contains a backend needed to read existing bytes.
@@ -313,6 +326,134 @@ func (db *DB) CurrentWorkspaceFileContent(ctx context.Context, file WorkspaceFil
 		return WorkspaceFileContent{}, false, nil
 	}
 	return db.GetWorkspaceFileContent(ctx, *file.CurrentContentID)
+}
+
+// ListWorkspaceFileContentRetentionCandidates returns older content rows that
+// can be pruned while preserving the current row and the newest keepLatest old
+// revisions for the file.
+func (db *DB) ListWorkspaceFileContentRetentionCandidates(ctx context.Context, fileID int64, keepLatest int) ([]WorkspaceFileContent, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	if keepLatest < 0 {
+		keepLatest = 0
+	}
+
+	var currentID *int64
+	err := db.NewSelect().TableExpr("workspace_files").
+		ColumnExpr("current_content_id").
+		Where("id = ? AND object_type = ? AND deleted_at IS NULL", fileID, FileObjectTypeFile).
+		Scan(ctx, &currentID)
+	if errors.Is(err, sql.ErrNoRows) || currentID == nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var contents []WorkspaceFileContent
+	err = db.NewSelect().Model(&contents).
+		Where("file_id = ? AND id <> ?", fileID, *currentID).
+		OrderExpr("version DESC, id DESC").
+		Scan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(contents) <= keepLatest {
+		return nil, nil
+	}
+	return contents[keepLatest:], nil
+}
+
+// EnqueueWorkspaceFileContentDeletions records stale content rows for
+// asynchronous byte deletion. Existing queue rows are left untouched.
+func (db *DB) EnqueueWorkspaceFileContentDeletions(ctx context.Context, contents []WorkspaceFileContent) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	if len(contents) == 0 {
+		return nil
+	}
+	now := time.Now()
+	deletions := make([]WorkspaceFileContentDeletion, 0, len(contents))
+	for _, content := range contents {
+		deletions = append(deletions, WorkspaceFileContentDeletion{
+			ContentID:        content.ID,
+			StorageBackendID: content.StorageBackendID,
+			StorageKey:       content.StorageKey,
+			NextAttemptAt:    now,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		})
+	}
+	_, err := db.NewInsert().Model(&deletions).On("CONFLICT (content_id) DO NOTHING").Exec(ctx)
+	return err
+}
+
+// ListWorkspaceFileContentDeletionBatch returns due deletion queue rows.
+func (db *DB) ListWorkspaceFileContentDeletionBatch(ctx context.Context, limit int) ([]WorkspaceFileContentDeletion, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	if limit <= 0 {
+		return nil, nil
+	}
+	var deletions []WorkspaceFileContentDeletion
+	err := db.NewSelect().Model(&deletions).
+		Where("next_attempt_at <= ?", time.Now()).
+		OrderExpr("next_attempt_at ASC, id ASC").
+		Limit(limit).
+		Scan(ctx)
+	return deletions, err
+}
+
+// DeleteWorkspaceFileContentDeletion removes one completed queue row.
+func (db *DB) DeleteWorkspaceFileContentDeletion(ctx context.Context, deletionID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	_, err := db.NewDelete().Model((*WorkspaceFileContentDeletion)(nil)).Where("id = ?", deletionID).Exec(ctx)
+	return err
+}
+
+// MarkWorkspaceFileContentDeletionFailed records a failed cleanup attempt and
+// schedules a later retry.
+func (db *DB) MarkWorkspaceFileContentDeletionFailed(ctx context.Context, deletionID int64, message string, retryAfter time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	if retryAfter <= 0 {
+		retryAfter = time.Minute
+	}
+	_, err := db.NewUpdate().Model((*WorkspaceFileContentDeletion)(nil)).
+		Set("attempts = attempts + 1").
+		Set("last_error = ?", message).
+		Set("next_attempt_at = ?", time.Now().Add(retryAfter)).
+		Set("updated_at = ?", time.Now()).
+		Where("id = ?", deletionID).
+		Exec(ctx)
+	return err
+}
+
+// DeleteWorkspaceFileContentIfNotCurrent deletes one content metadata row only
+// when it is not the current content row for its file.
+func (db *DB) DeleteWorkspaceFileContentIfNotCurrent(ctx context.Context, contentID int64) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	result, err := db.NewRaw(`
+DELETE FROM workspace_file_contents
+WHERE id = ?
+  AND NOT EXISTS (
+    SELECT 1
+    FROM workspace_files
+    WHERE current_content_id = ?
+  )`, contentID, contentID).Exec(ctx)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows > 0, err
 }
 
 // SaveWorkspaceFileContent stores content metadata, either replacing current or appending a version.

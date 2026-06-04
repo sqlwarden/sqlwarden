@@ -12,35 +12,36 @@ import (
 )
 
 const (
-	defaultBaseURL               = "http://localhost:6020"
-	defaultHTTPPort              = 6020
-	defaultDeploymentMode        = DeploymentModeServer
-	defaultAccessMode            = AccessModeMultiUser
-	defaultPersonalSpacesEnabled = true
-	defaultCookieSecretKey       = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
-	defaultDBLogQueries          = false
-	defaultDBDriver              = "sqlite"
-	defaultDBDSN                 = "~/.sqlwarden/sqlwarden.db"
-	defaultDBAutomigrate         = true
-	defaultEncryptionKey         = "dev-insecure-key-32byteslong!!"
-	defaultJWTSecretKey          = "fb57i5hiud5mzmykaquqsln5gcmolbac"
-	defaultJWTAccessTokenTTL     = 24 * time.Hour
-	defaultTLSEnabled            = false
-	defaultTLSCertFile           = ""
-	defaultTLSKeyFile            = ""
-	defaultFilesStorageMode      = FilesStorageModeObject
-	defaultFilesActiveBackend    = "local"
-	defaultFilesRootDir          = "~/.sqlwarden/files"
-	defaultFilesRevisionPolicy   = FilesRevisionPolicyVersioned
-	defaultNotificationsEmail    = ""
-	defaultSMTPHost              = "example.smtp.host"
-	defaultSMTPPort              = 25
-	defaultSMTPUsername          = "example_username"
-	defaultSMTPPassword          = "pa55word"
-	defaultSMTPFrom              = "Example Name <no_reply@example.org>"
-	defaultDesktopAppDir         = ""
-	defaultDesktopActiveBackend  = "local"
-	defaultAllowUserBackends     = true
+	defaultBaseURL                 = "http://localhost:6020"
+	defaultHTTPPort                = 6020
+	defaultDeploymentMode          = DeploymentModeServer
+	defaultAccessMode              = AccessModeMultiUser
+	defaultPersonalSpacesEnabled   = true
+	defaultCookieSecretKey         = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
+	defaultDBLogQueries            = false
+	defaultDBDriver                = "sqlite"
+	defaultDBDSN                   = "~/.sqlwarden/sqlwarden.db"
+	defaultDBAutomigrate           = true
+	defaultEncryptionKey           = "dev-insecure-key-32byteslong!!"
+	defaultJWTSecretKey            = "fb57i5hiud5mzmykaquqsln5gcmolbac"
+	defaultJWTAccessTokenTTL       = 24 * time.Hour
+	defaultTLSEnabled              = false
+	defaultTLSCertFile             = ""
+	defaultTLSKeyFile              = ""
+	defaultFilesStorageMode        = FilesStorageModeObject
+	defaultFilesActiveBackend      = "local"
+	defaultFilesRootDir            = "~/.sqlwarden/files"
+	defaultFilesRevisionPolicy     = FilesRevisionPolicyVersioned
+	defaultFilesRevisionKeepLatest = 50
+	defaultNotificationsEmail      = ""
+	defaultSMTPHost                = "example.smtp.host"
+	defaultSMTPPort                = 25
+	defaultSMTPUsername            = "example_username"
+	defaultSMTPPassword            = "pa55word"
+	defaultSMTPFrom                = "Example Name <no_reply@example.org>"
+	defaultDesktopAppDir           = ""
+	defaultDesktopActiveBackend    = "local"
+	defaultAllowUserBackends       = true
 )
 
 const (
@@ -100,6 +101,7 @@ type Config struct {
 		StorageBackends      map[string]FileStorageBackend
 		Revisions            struct {
 			DefaultPolicy string
+			KeepLatest    int
 		}
 	}
 	Notifications struct {
@@ -157,6 +159,7 @@ func DefaultConfig() Config {
 	cfg.Files.ActiveStorageBackend = defaultFilesActiveBackend
 	cfg.Files.StorageBackends = defaultFileStorageBackends()
 	cfg.Files.Revisions.DefaultPolicy = defaultFilesRevisionPolicy
+	cfg.Files.Revisions.KeepLatest = defaultFilesRevisionKeepLatest
 	cfg.Notifications.Email = defaultNotificationsEmail
 	cfg.SMTP.Host = defaultSMTPHost
 	cfg.SMTP.Port = defaultSMTPPort
@@ -221,6 +224,7 @@ var configOptions = []configOption{
 	{key: "files.storage_backends.local.type", env: "FILES_STORAGE_BACKENDS_LOCAL_TYPE", flagName: "files-storage-backends-local-type", defaultValue: FilesStorageBackendFilesystem, usage: "Type for the default local file storage backend"},
 	{key: "files.storage_backends.local.root_dir", env: "FILES_STORAGE_BACKENDS_LOCAL_ROOT_DIR", flagName: "files-storage-backends-local-root-dir", defaultValue: defaultFilesRootDir, usage: "Filesystem root directory for the default local file storage backend"},
 	{key: "files.revisions.default_policy", env: "FILES_REVISIONS_DEFAULT_POLICY", flagName: "files-revisions-default-policy", defaultValue: defaultFilesRevisionPolicy, usage: "Default saved-file revision policy (disabled or versioned)"},
+	{key: "files.revisions.keep_latest", env: "FILES_REVISIONS_KEEP_LATEST", flagName: "files-revisions-keep-latest", defaultValue: defaultFilesRevisionKeepLatest, usage: "Number of older saved-file revisions to retain per file"},
 	{key: "notifications.email", env: "NOTIFICATIONS_EMAIL", flagName: "notifications-email", defaultValue: defaultNotificationsEmail, usage: "Email address that receives error notifications"},
 	{key: "smtp.host", env: "SMTP_HOST", flagName: "smtp-host", defaultValue: defaultSMTPHost, usage: "SMTP server host"},
 	{key: "smtp.port", env: "SMTP_PORT", flagName: "smtp-port", defaultValue: defaultSMTPPort, usage: "SMTP server port"},
@@ -339,6 +343,7 @@ func loadConfig(args []string) (Config, bool, error) {
 	}
 	cfg.Files.StorageBackends[defaultFilesActiveBackend] = localBackend
 	cfg.Files.Revisions.DefaultPolicy = v.GetString("files.revisions.default_policy")
+	cfg.Files.Revisions.KeepLatest = v.GetInt("files.revisions.keep_latest")
 	cfg.Notifications.Email = v.GetString("notifications.email")
 	cfg.SMTP.Host = v.GetString("smtp.host")
 	cfg.SMTP.Port = v.GetInt("smtp.port")
@@ -401,6 +406,9 @@ func validateConfig(cfg Config) error {
 	}
 	if cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyDisabled && cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyVersioned {
 		return fmt.Errorf("files.revisions.default_policy must be %q or %q", FilesRevisionPolicyDisabled, FilesRevisionPolicyVersioned)
+	}
+	if cfg.Files.Revisions.KeepLatest < 0 {
+		return fmt.Errorf("files.revisions.keep_latest must be greater than or equal to 0")
 	}
 	if err := validateFileStorageBackends(cfg); err != nil {
 		return err

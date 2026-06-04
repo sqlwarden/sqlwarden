@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
@@ -49,6 +50,7 @@ type Config struct {
 	StorageMode            string
 	ActiveStorageBackendID string
 	RevisionPolicy         string
+	RevisionKeepLatest     int
 }
 
 // StoreResolver resolves configured storage backends by their stable backend ID.
@@ -481,7 +483,68 @@ func (s *Service) WriteContent(ctx context.Context, scope Scope, fileID int64, e
 	if err != nil {
 		return database.WorkspaceFileContent{}, err
 	}
+	if planner.UsesRevisions(file) {
+		s.enqueueFileContentRevisionCleanup(ctx, file)
+	}
 	return saved, nil
+}
+
+// enqueueFileContentRevisionCleanup records stale non-current revisions for the
+// background reaper. Enqueue is best-effort so cleanup never fails a write.
+func (s *Service) enqueueFileContentRevisionCleanup(ctx context.Context, file database.WorkspaceFile) {
+	candidates, err := s.db.ListWorkspaceFileContentRetentionCandidates(ctx, file.ID, s.config.RevisionKeepLatest)
+	if err != nil {
+		return
+	}
+	_ = s.db.EnqueueWorkspaceFileContentDeletions(ctx, candidates)
+}
+
+// ReapContentDeletionsOnce processes one bounded batch of queued revision
+// deletions. It deletes bytes before metadata, and failed work is retried later.
+func (s *Service) ReapContentDeletionsOnce(ctx context.Context, batchSize int, retryAfter time.Duration) (int, error) {
+	deletions, err := s.db.ListWorkspaceFileContentDeletionBatch(ctx, batchSize)
+	if err != nil {
+		return 0, err
+	}
+	processed := 0
+	for _, deletion := range deletions {
+		store, err := s.storeForBackend(ctx, deletion.StorageBackendID)
+		if err != nil {
+			_ = s.db.MarkWorkspaceFileContentDeletionFailed(ctx, deletion.ID, err.Error(), retryAfter)
+			continue
+		}
+		if err = store.Delete(ctx, deletion.StorageKey); err != nil && !errors.Is(err, os.ErrNotExist) {
+			_ = s.db.MarkWorkspaceFileContentDeletionFailed(ctx, deletion.ID, err.Error(), retryAfter)
+			continue
+		}
+		if _, err = s.db.DeleteWorkspaceFileContentIfNotCurrent(ctx, deletion.ContentID); err != nil {
+			_ = s.db.MarkWorkspaceFileContentDeletionFailed(ctx, deletion.ID, err.Error(), retryAfter)
+			continue
+		}
+		if err = s.db.DeleteWorkspaceFileContentDeletion(ctx, deletion.ID); err != nil {
+			return processed, err
+		}
+		processed++
+	}
+	return processed, nil
+}
+
+// RunContentDeletionReaper routinely processes queued stale revision deletions
+// until ctx is cancelled.
+func (s *Service) RunContentDeletionReaper(ctx context.Context, interval time.Duration, batchSize int, retryAfter time.Duration) {
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		_, _ = s.ReapContentDeletionsOnce(ctx, batchSize, retryAfter)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 // ValidName reports whether a file/folder name is safe as one path segment.

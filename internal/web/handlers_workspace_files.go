@@ -298,6 +298,7 @@ func (app *application) workspaceFileService() *files.Service {
 		StorageMode:            app.config.Files.StorageMode,
 		ActiveStorageBackendID: app.config.Files.ActiveStorageBackend,
 		RevisionPolicy:         app.config.Files.Revisions.DefaultPolicy,
+		RevisionKeepLatest:     app.config.Files.Revisions.KeepLatest,
 	}, &app.fileLocks)
 }
 

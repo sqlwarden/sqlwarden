@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestWorkspaceFilesValidateTreeAndContentPolicy(t *testing.T) {
@@ -124,6 +125,174 @@ func TestWorkspaceFilesValidateTreeAndContentPolicy(t *testing.T) {
 			}
 			if len(bobRecent) != 0 {
 				t.Fatalf("recent files for another owner = %+v, want none", bobRecent)
+			}
+		})
+	}
+}
+
+func TestWorkspaceFileContentRetentionCandidates(t *testing.T) {
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+			org, err := db.InsertOrg(ctx, "retention-"+driver, "Retention")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ownerID := testUsers["alice"].id
+			ws, err := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Workspace", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			file := WorkspaceFile{
+				WorkspaceID:    ws.ID,
+				Visibility:     FileVisibilityPrivate,
+				OwnerAccountID: &ownerID,
+				ObjectType:     FileObjectTypeFile,
+				Name:           "query.sql",
+				CreatedBy:      ownerID,
+				UpdatedBy:      ownerID,
+			}
+			if err := db.InsertWorkspaceFile(ctx, &file); err != nil {
+				t.Fatal(err)
+			}
+			other := WorkspaceFile{
+				WorkspaceID:    ws.ID,
+				Visibility:     FileVisibilityPrivate,
+				OwnerAccountID: &ownerID,
+				ObjectType:     FileObjectTypeFile,
+				Name:           "other.sql",
+				CreatedBy:      ownerID,
+				UpdatedBy:      ownerID,
+			}
+			if err := db.InsertWorkspaceFile(ctx, &other); err != nil {
+				t.Fatal(err)
+			}
+
+			var versions []WorkspaceFileContent
+			for i := 1; i <= 5; i++ {
+				content, err := db.SaveWorkspaceFileContent(ctx, file.ID, ownerID, WorkspaceFileContent{
+					StorageKey:  "versions/" + string(rune('0'+i)),
+					ContentHash: "hash-" + string(rune('0'+i)),
+					SizeBytes:   int64(i),
+				}, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				versions = append(versions, content)
+			}
+			if _, err := db.SaveWorkspaceFileContent(ctx, other.ID, ownerID, WorkspaceFileContent{
+				StorageKey:  "versions/1",
+				ContentHash: "other",
+				SizeBytes:   1,
+			}, true); err != nil {
+				t.Fatal(err)
+			}
+
+			candidates, err := db.ListWorkspaceFileContentRetentionCandidates(ctx, file.ID, 2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(candidates) != 2 || candidates[0].ID != versions[1].ID || candidates[1].ID != versions[0].ID {
+				t.Fatalf("candidates = %+v, want versions 2 then 1", candidates)
+			}
+
+			deleted, err := db.DeleteWorkspaceFileContentIfNotCurrent(ctx, versions[4].ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if deleted {
+				t.Fatal("expected current content delete to be ignored")
+			}
+			if _, found, err := db.GetWorkspaceFileContent(ctx, versions[4].ID); err != nil || !found {
+				t.Fatalf("current content deleted or unavailable: found=%v err=%v", found, err)
+			}
+			deleted, err = db.DeleteWorkspaceFileContentIfNotCurrent(ctx, versions[0].ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !deleted {
+				t.Fatal("expected old content to be deleted")
+			}
+			if _, found, err := db.GetWorkspaceFileContent(ctx, versions[0].ID); err != nil || found {
+				t.Fatalf("old content found=%v err=%v, want deleted", found, err)
+			}
+		})
+	}
+}
+
+func TestWorkspaceFileContentDeletionQueue(t *testing.T) {
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+			org, err := db.InsertOrg(ctx, "deletion-queue-"+driver, "Deletion Queue")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ownerID := testUsers["alice"].id
+			ws, err := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Workspace", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			file := WorkspaceFile{
+				WorkspaceID:    ws.ID,
+				Visibility:     FileVisibilityPrivate,
+				OwnerAccountID: &ownerID,
+				ObjectType:     FileObjectTypeFile,
+				Name:           "query.sql",
+				CreatedBy:      ownerID,
+				UpdatedBy:      ownerID,
+			}
+			if err := db.InsertWorkspaceFile(ctx, &file); err != nil {
+				t.Fatal(err)
+			}
+			first, err := db.SaveWorkspaceFileContent(ctx, file.ID, ownerID, WorkspaceFileContent{
+				StorageKey:  "versions/1",
+				ContentHash: "first",
+				SizeBytes:   1,
+			}, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := db.SaveWorkspaceFileContent(ctx, file.ID, ownerID, WorkspaceFileContent{
+				StorageKey:  "versions/2",
+				ContentHash: "second",
+				SizeBytes:   1,
+			}, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if err := db.EnqueueWorkspaceFileContentDeletions(ctx, []WorkspaceFileContent{first, first, second}); err != nil {
+				t.Fatal(err)
+			}
+			batch, err := db.ListWorkspaceFileContentDeletionBatch(ctx, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(batch) != 2 {
+				t.Fatalf("deletion batch length = %d, want 2", len(batch))
+			}
+			if err := db.MarkWorkspaceFileContentDeletionFailed(ctx, batch[0].ID, "failed", time.Minute); err != nil {
+				t.Fatal(err)
+			}
+			ready, err := db.ListWorkspaceFileContentDeletionBatch(ctx, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(ready) != 1 {
+				t.Fatalf("ready deletion batch length = %d, want 1 after retry delay", len(ready))
+			}
+			if err := db.DeleteWorkspaceFileContentDeletion(ctx, ready[0].ID); err != nil {
+				t.Fatal(err)
+			}
+			ready, err = db.ListWorkspaceFileContentDeletionBatch(ctx, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(ready) != 0 {
+				t.Fatalf("ready deletion batch length = %d, want 0", len(ready))
 			}
 		})
 	}
