@@ -11,7 +11,7 @@ import { useIde, type QueryResult } from './useIdeStore'
 export function ResultsArea() {
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
-  const activeTabId = useIde((s) => s.activeTabId)
+  const activeTabId = useIde((s) => s.activeWorkspaceId ? s.activeTabIds[s.activeWorkspaceId] : undefined)
   const results = useIde((s) => s.results)
 
   const result: QueryResult = activeTabId ? (results[activeTabId] ?? { status: 'idle' }) : { status: 'idle' }

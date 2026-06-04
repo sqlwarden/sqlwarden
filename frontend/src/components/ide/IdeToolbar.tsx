@@ -28,7 +28,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const [connSearch, setConnSearch] = useState('')
   const [saveAsTab, setSaveAsTab] = useState<EditorTab | null>(null)
 
-  const activeTabId = useIde((s) => s.activeTabId)
+  const activeTabId = useIde((s) => s.activeTabIds[workspace.id])
   const tabs = useIde((s) => s.tabs)
   const openTab = useIde((s) => s.openTab)
   const closeTab = useIde((s) => s.closeTab)

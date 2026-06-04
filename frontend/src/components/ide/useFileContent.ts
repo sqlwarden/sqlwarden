@@ -35,6 +35,11 @@ export function useFileContent({
   useEffect(() => {
     if (!query.data || !tab?.id) return
 
+    // The tab has local unsaved changes backed by a Y.js snapshot that was
+    // already applied to the Y.Doc during lifecycle init. Applying server
+    // content here would overwrite those unsaved edits — skip it.
+    if (tab.isDirty && tab.ySnapshot) return
+
     const doc = registry.getOrCreate(tab.id)
     const yText = doc.getText('content')
 
@@ -56,7 +61,7 @@ export function useFileContent({
     if (tab.etag === undefined) {
       updateTabEtag(tab.id, query.data.etag)
     }
-  }, [query.data, tab?.id, tab?.etag, registry, updateTabEtag])
+  }, [query.data, tab?.id, tab?.etag, tab?.isDirty, tab?.ySnapshot, registry, updateTabEtag])
 
   return {
     isLoading: needsLoad && query.isLoading,

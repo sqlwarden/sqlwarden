@@ -426,17 +426,16 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   const [createFileOpen, setCreateFileOpen] = useState(false)
   const [cursorInfo, setCursorInfo] = useState<CursorInfo | null>(null)
 
-  const activeTabId = useIde((s) => s.activeTabId)
+  const activeTabId = useIde((s) => s.activeTabIds[workspace.id])
   const tabs = useIde((s) => s.tabs)
   const openConsole = useIde((s) => s.openConsole)
   const openTab = useIde((s) => s.openTab)
   const updateTabContent = useIde((s) => s.updateTabContent)
   const updateTabEtag = useIde((s) => s.updateTabEtag)
 
-  const activeTab = useMemo(() => tabs.find((t) => t.id === activeTabId), [tabs, activeTabId])
-  const wsTabs = useMemo(
-    () => tabs.filter((t) => t.workspaceId === workspace.id),
-    [tabs, workspace.id],
+  const activeTab = useMemo(
+    () => tabs.find((t) => t.id === activeTabId && t.workspaceId === workspace.id),
+    [tabs, activeTabId, workspace.id],
   )
 
   // Stable helper: creates the Y.js initial state and opens a new console.
@@ -449,24 +448,30 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   }, [workspace, openConsole])
 
   // ── Tab → Y.Doc lifecycle ──────────────────────────────────────────────────
+  // Use ALL tabs (not just wsTabs) so switching workspaces never destroys
+  // Y.Docs for tabs in other workspaces. Docs are only torn down when a tab
+  // is explicitly closed (removed from `tabs`).
   const trackedIdsRef = useRef(new Set<string>())
   useEffect(() => {
-    const currentIds = new Set(wsTabs.map((t) => t.id))
-    for (const tab of wsTabs) {
+    const currentIds = new Set(tabs.map((t) => t.id))
+    for (const tab of tabs) {
       if (!trackedIdsRef.current.has(tab.id)) {
-        // All tabs start with an empty Y.Doc.
-        // File tabs: useFileContent populates via server fetch.
-        // Scratch tabs with yState: applied below via 'server-load' (broadcasts to peers).
-        // Connection tabs / legacy scratch (no yState): seed from tab.content via 'init'.
+        // Init priority: ySnapshot > yState > plain-text content
+        // ySnapshot: current Y.js state persisted on each debounced write — used
+        //   on page reload so console edits and dirty file edits survive refresh.
+        // yState: creation-time state — for cross-window sync bootstrapping.
+        // content: plain text fallback for connection tabs and legacy scratch tabs.
+        const initState = tab.ySnapshot ?? tab.yState
         const doc = registry.getOrCreate(
           tab.id,
-          tab.yState ? undefined : tab.kind === 'file' ? undefined : tab.content,
+          initState ? undefined : tab.kind === 'file' ? undefined : tab.content,
         )
-        if (tab.yState && doc.getText('content').length === 0) {
-          // Apply canonical initial state so all windows share identical Y.js history.
-          // 'server-load' origin broadcasts the full state so peers that joined
-          // before us can sync without making a second request.
-          Y.applyUpdate(doc, new Uint8Array(tab.yState), 'server-load')
+        if (initState && doc.getText('content').length === 0) {
+          // ySnapshot → 'init': restoring local state, no broadcast needed.
+          // yState only → 'server-load': first open in another window; broadcast
+          //   so peers don't need to re-fetch the creation-time state.
+          const origin = tab.ySnapshot ? 'init' : 'server-load'
+          Y.applyUpdate(doc, new Uint8Array(initState), origin)
         }
       }
     }
@@ -474,25 +479,29 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
       if (!currentIds.has(id)) registry.destroy(id)
     }
     trackedIdsRef.current = currentIds
-  }, [wsTabs, registry])
+  }, [tabs, registry])
 
   // ── Y.Doc → store: debounced snapshot for IndexedDB persistence + isDirty ─
   // 'server-load' and 'init' are skipped — they are not user edits.
   // User typing and 'broadcast' (cross-window sync) both update the snapshot
   // and, via updateTabContent's existing isDirty logic, mark the tab dirty
   // when an etag is set.
+  // Use ALL tabs so switching workspaces doesn't cancel pending debounce timers
+  // for tabs in other workspaces, which would lose uncommitted edits.
   useEffect(() => {
     const cleanups: Array<() => void> = []
     const timers: Record<string, ReturnType<typeof setTimeout>> = {}
 
-    for (const tab of wsTabs) {
+    for (const tab of tabs) {
       const doc = registry.get(tab.id)
       if (!doc) continue
       const observer = (_update: Uint8Array, origin: unknown) => {
         if (origin === 'server-load' || origin === 'init') return
         clearTimeout(timers[tab.id])
         timers[tab.id] = setTimeout(() => {
-          updateTabContent(tab.id, doc.getText('content').toString())
+          const content = doc.getText('content').toString()
+          const snapshot = Array.from(Y.encodeStateAsUpdate(doc))
+          updateTabContent(tab.id, content, snapshot)
         }, 400)
       }
       doc.on('update', observer)
@@ -503,7 +512,7 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
     }
 
     return () => cleanups.forEach((c) => c())
-  }, [wsTabs, registry, updateTabContent])
+  }, [tabs, registry, updateTabContent])
 
   // Reset cursor info when the active tab changes.
   useEffect(() => { setCursorInfo(null) }, [activeTabId])
@@ -556,14 +565,13 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   // EditorView.create() captures yText.toString() at mount time.
   let activeDoc: Y.Doc | undefined
   if (activeTab) {
-    const initialContent = !activeTab.yState && activeTab.kind !== 'file'
+    const initState = activeTab.ySnapshot ?? activeTab.yState
+    const initialContent = !initState && activeTab.kind !== 'file'
       ? activeTab.content
       : undefined
     activeDoc = registry.getOrCreate(activeTab.id, initialContent)
-    // For yState tabs, apply the canonical initial Y.js state if the doc is
-    // still empty (first load). Use 'init' origin so it is not broadcast.
-    if (activeTab.yState && activeDoc.getText('content').length === 0) {
-      Y.applyUpdate(activeDoc, new Uint8Array(activeTab.yState), 'init')
+    if (initState && activeDoc.getText('content').length === 0) {
+      Y.applyUpdate(activeDoc, new Uint8Array(initState), 'init')
     }
   }
 

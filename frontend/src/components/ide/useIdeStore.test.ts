@@ -49,14 +49,14 @@ describe('useIdeStore', () => {
 
   it('starts with empty tabs', () => {
     expect(store.getState().tabs).toEqual([])
-    expect(store.getState().activeTabId).toBeUndefined()
+    expect(store.getState().activeTabIds).toEqual({})
   })
 
-  it('openTab adds a tab and sets it active', () => {
+  it('openTab adds a tab and sets it active for its workspace', () => {
     const tab = newScratchTab(mockWorkspace)
     store.getState().openTab(tab)
     expect(store.getState().tabs).toHaveLength(1)
-    expect(store.getState().activeTabId).toBe(tab.id)
+    expect(store.getState().activeTabIds[mockWorkspace.id]).toBe(tab.id)
   })
 
   it('openTab does not duplicate an existing tab id', () => {
@@ -66,12 +66,12 @@ describe('useIdeStore', () => {
     expect(store.getState().tabs).toHaveLength(1)
   })
 
-  it('closeTab removes the tab and clears activeTabId when it was active', () => {
+  it('closeTab removes the tab and clears activeTabId for its workspace', () => {
     const tab = newScratchTab(mockWorkspace)
     store.getState().openTab(tab)
     store.getState().closeTab(tab.id)
     expect(store.getState().tabs).toHaveLength(0)
-    expect(store.getState().activeTabId).toBeUndefined()
+    expect(store.getState().activeTabIds[mockWorkspace.id]).toBeUndefined()
   })
 
   it('closeTab focuses another tab in same workspace when closed tab was active', () => {
@@ -81,7 +81,20 @@ describe('useIdeStore', () => {
     store.getState().openTab(tab1)
     store.getState().openTab(tab2)
     store.getState().closeTab(tab2.id)
-    expect(store.getState().activeTabId).toBe(tab1.id)
+    expect(store.getState().activeTabIds[mockWorkspace.id]).toBe(tab1.id)
+  })
+
+  it('tabs from different workspaces do not share active tab state', () => {
+    const ws2 = { ...mockWorkspace, id: 2, name: 'Analytics' }
+    const tab1 = newScratchTab(mockWorkspace)
+    const tab2 = newScratchTab(ws2)
+    store.getState().openTab(tab1)
+    store.getState().openTab(tab2)
+    expect(store.getState().activeTabIds[mockWorkspace.id]).toBe(tab1.id)
+    expect(store.getState().activeTabIds[ws2.id]).toBe(tab2.id)
+    // switching active workspace doesn't change either workspace's active tab
+    store.getState().setActiveWorkspace(mockWorkspace.id)
+    expect(store.getState().activeTabIds[ws2.id]).toBe(tab2.id)
   })
 
   it('updateTabContent updates only the target tab', () => {
@@ -89,6 +102,77 @@ describe('useIdeStore', () => {
     store.getState().openTab(tab)
     store.getState().updateTabContent(tab.id, 'SELECT 1;')
     expect(store.getState().tabs[0].content).toBe('SELECT 1;')
+  })
+
+  // ── Regression: ySnapshot persistence (reload survival) ────────────────────
+  // Before the fix, updateTabContent only stored the text; on page reload the
+  // Y.Doc was re-initialised from the stale yState (creation-time empty state)
+  // and all console edits were silently discarded.
+
+  it('updateTabContent persists ySnapshot when provided', () => {
+    const tab = newScratchTab(mockWorkspace)
+    store.getState().openTab(tab)
+    const snapshot = [1, 2, 3, 4]
+    store.getState().updateTabContent(tab.id, 'SELECT 1;', snapshot)
+    expect(store.getState().tabs[0].ySnapshot).toEqual(snapshot)
+    expect(store.getState().tabs[0].content).toBe('SELECT 1;')
+  })
+
+  it('updateTabContent without ySnapshot does not clear an existing snapshot', () => {
+    const tab = newScratchTab(mockWorkspace)
+    store.getState().openTab(tab)
+    store.getState().updateTabContent(tab.id, 'SELECT 1;', [1, 2, 3])
+    store.getState().updateTabContent(tab.id, 'SELECT 2;')
+    // snapshot from first write must survive the second write
+    expect(store.getState().tabs[0].ySnapshot).toEqual([1, 2, 3])
+    expect(store.getState().tabs[0].content).toBe('SELECT 2;')
+  })
+
+  it('updateTabContent with ySnapshot marks file tab dirty', () => {
+    const tab = newFileTab(mockFile, mockWorkspace)
+    store.getState().openTab(tab)
+    store.getState().updateTabEtag(tab.id, 'etag-1')
+    store.getState().updateTabContent(tab.id, 'SELECT 99;', [5, 6, 7])
+    expect(store.getState().tabs[0].isDirty).toBe(true)
+    expect(store.getState().tabs[0].ySnapshot).toEqual([5, 6, 7])
+  })
+
+  // ── Regression: per-workspace active tab isolation ─────────────────────────
+  // Before the fix, a single activeTabId was shared across all workspaces.
+  // Switching to workspace 2 left workspace 1's tab rendered in the editor.
+
+  it('setActiveTab is a no-op for an unknown tabId', () => {
+    const tab = newScratchTab(mockWorkspace)
+    store.getState().openTab(tab)
+    const before = store.getState().activeTabIds
+    store.getState().setActiveTab('nonexistent:id')
+    expect(store.getState().activeTabIds).toEqual(before)
+  })
+
+  it('setActiveTab updates only the owning workspace entry', () => {
+    const ws2 = { ...mockWorkspace, id: 2, name: 'Analytics' }
+    const tab1 = newScratchTab(mockWorkspace)
+    const tab2a = newScratchTab(ws2)
+    const tab2b = newFileTab(mockFile, ws2)
+    store.getState().openTab(tab1)
+    store.getState().openTab(tab2a)
+    store.getState().openTab(tab2b)
+    store.getState().setActiveTab(tab2b.id)
+    // ws2 switched to tab2b
+    expect(store.getState().activeTabIds[ws2.id]).toBe(tab2b.id)
+    // ws1 is unaffected
+    expect(store.getState().activeTabIds[mockWorkspace.id]).toBe(tab1.id)
+  })
+
+  it('closeTab on the active tab of workspace 2 does not change workspace 1 active tab', () => {
+    const ws2 = { ...mockWorkspace, id: 2, name: 'Analytics' }
+    const tab1 = newScratchTab(mockWorkspace)
+    const tab2 = newScratchTab(ws2)
+    store.getState().openTab(tab1)
+    store.getState().openTab(tab2)
+    store.getState().closeTab(tab2.id)
+    expect(store.getState().activeTabIds[mockWorkspace.id]).toBe(tab1.id)
+    expect(store.getState().activeTabIds[ws2.id]).toBeUndefined()
   })
 
   it('setTabConnection persists connectionId on the tab', () => {
@@ -182,8 +266,8 @@ describe('useIdeStore', () => {
     expect(store.getState().tabs[0].title).toBe('Console 1')
   })
 
-  it('openConsole sets the new tab as active', () => {
+  it('openConsole sets the new tab as active for its workspace', () => {
     store.getState().openConsole(mockWorkspace, [])
-    expect(store.getState().activeTabId).toBe('scratch:1:1')
+    expect(store.getState().activeTabIds[mockWorkspace.id]).toBe('scratch:1:1')
   })
 })

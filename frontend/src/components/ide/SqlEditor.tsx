@@ -7,7 +7,7 @@ import type * as Y from 'yjs'
 import { cn } from '#/lib/utils'
 import { useTheme } from '#/components/theme-provider'
 import { useEditorTheme } from '#/lib/editor-themes/context'
-import { loadEditorTheme } from '#/lib/editor-themes'
+import { loadEditorTheme, getCachedTheme } from '#/lib/editor-themes'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 
 // ─── Base structural theme ──────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorPr
           basicSetup,
           sql(),
           baseEditorTheme,
-          themeCompartment.current.of([]),
+          themeCompartment.current.of(getCachedTheme(activeThemeName) ?? []),
           EditorView.lineWrapping,
           yCollab(yText, null), // handles all CodeMirror ↔ Y.js sync
           EditorView.updateListener.of((update) => {

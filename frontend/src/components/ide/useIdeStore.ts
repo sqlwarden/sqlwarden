@@ -31,6 +31,10 @@ export type EditorTab = {
    *  Set once at creation time by the opening window; applied by all windows
    *  to guarantee identical Y.js histories and correct incremental sync. */
   yState?: number[]
+  /** Current Y.js state snapshot, updated alongside tab.content on each
+   *  debounced write. On page reload this is used to restore the Y.Doc so
+   *  unsaved console edits and dirty file edits survive a browser refresh. */
+  ySnapshot?: number[]
 }
 
 export type IdeState = {
@@ -38,7 +42,9 @@ export type IdeState = {
   maximizedPane: 'editor' | 'results' | null
   maximizedSidebarPane: 'database' | 'files' | null
   sidebarCollapsed: boolean
-  activeTabId?: string
+  /** Active tab ID per workspace. Keyed by workspaceId so each workspace
+   *  remembers its own active tab independently. */
+  activeTabIds: Record<number, string>
   tabs: EditorTab[]
   /** Live session IDs keyed by connectionId. A session entry means the backend has an open pool connection for this account. */
   sessions: Record<number, string>
@@ -56,7 +62,7 @@ export type IdeActions = {
   ensureTab: (tab: EditorTab) => void
   closeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
-  updateTabContent: (tabId: string, content: string) => void
+  updateTabContent: (tabId: string, content: string, ySnapshot?: number[]) => void
   updateTabEtag: (tabId: string, etag: string) => void
   setTabConnection: (tabId: string, connectionId: number, driver?: string) => void
   setMaximizedPane: (pane: IdeState['maximizedPane']) => void
@@ -97,7 +103,7 @@ export function createIdeStore(orgSlug: string, accountId: number) {
         maximizedPane: null,
         maximizedSidebarPane: null,
         sidebarCollapsed: false,
-        activeTabId: undefined,
+        activeTabIds: {},
         tabs: [],
         sessions: {},
         results: {},
@@ -109,7 +115,10 @@ export function createIdeStore(orgSlug: string, accountId: number) {
         openTab: (tab) =>
           set((s) => {
             const existing = s.tabs.find((t) => t.id === tab.id)
-            return { activeTabId: tab.id, tabs: existing ? s.tabs : [...s.tabs, tab] }
+            return {
+              activeTabIds: { ...s.activeTabIds, [tab.workspaceId]: tab.id },
+              tabs: existing ? s.tabs : [...s.tabs, tab],
+            }
           }),
 
         ensureTab: (tab) =>
@@ -121,26 +130,46 @@ export function createIdeStore(orgSlug: string, accountId: number) {
         closeTab: (tabId) =>
           set((s) => {
             s.abortControllers[tabId]?.abort()
+            const closedTab = s.tabs.find((t) => t.id === tabId)
             const nextTabs = s.tabs.filter((t) => t.id !== tabId)
-            const nextActive =
-              s.activeTabId === tabId
-                ? nextTabs.find((t) => t.workspaceId === s.activeWorkspaceId)?.id
-                : s.activeTabId
+
+            const nextActiveTabIds = { ...s.activeTabIds }
+            if (closedTab && nextActiveTabIds[closedTab.workspaceId] === tabId) {
+              const next = nextTabs.find((t) => t.workspaceId === closedTab.workspaceId)
+              if (next) {
+                nextActiveTabIds[closedTab.workspaceId] = next.id
+              } else {
+                delete nextActiveTabIds[closedTab.workspaceId]
+              }
+            }
+
             const { [tabId]: _r, ...nextResults } = s.results
             const { [tabId]: _rt, ...nextRunning } = s.runningTabs
             const { [tabId]: _ac, ...nextControllers } = s.abortControllers
-            return { tabs: nextTabs, activeTabId: nextActive, results: nextResults, runningTabs: nextRunning, abortControllers: nextControllers }
+            return {
+              tabs: nextTabs,
+              activeTabIds: nextActiveTabIds,
+              results: nextResults,
+              runningTabs: nextRunning,
+              abortControllers: nextControllers,
+            }
           }),
 
-        setActiveTab: (id) => set({ activeTabId: id }),
+        setActiveTab: (tabId) =>
+          set((s) => {
+            const tab = s.tabs.find((t) => t.id === tabId)
+            if (!tab) return s
+            return { activeTabIds: { ...s.activeTabIds, [tab.workspaceId]: tabId } }
+          }),
 
-        updateTabContent: (tabId, content) =>
+        updateTabContent: (tabId, content, ySnapshot?) =>
           set((s) => ({
             tabs: s.tabs.map((t) =>
               t.id === tabId
                 ? {
                   ...t,
                   content,
+                  ...(ySnapshot !== undefined ? { ySnapshot } : {}),
                   isDirty: t.etag !== undefined && content !== t.content ? true : t.isDirty,
                 }
                 : t,
@@ -206,7 +235,7 @@ export function createIdeStore(orgSlug: string, accountId: number) {
             }
             const exists = s.tabs.some((t) => t.id === tab.id)
             return {
-              activeTabId: tab.id,
+              activeTabIds: { ...s.activeTabIds, [workspace.id]: tab.id },
               tabs: exists ? s.tabs : [...s.tabs, tab],
             }
           }),
@@ -240,7 +269,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   maximizedPane: null,
   maximizedSidebarPane: null,
   sidebarCollapsed: false,
-  activeTabId: undefined,
+  activeTabIds: {},
   tabs: [],
   sessions: {},
   results: {},

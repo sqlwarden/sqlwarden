@@ -29,7 +29,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null)
 
   const activeWorkspaceId = useIde((s) => s.activeWorkspaceId)
-  const activeTabId = useIde((s) => s.activeTabId)
+  const activeTabId = useIde((s) => s.activeTabIds[s.activeWorkspaceId ?? workspace.id])
   const tabs = useIde((s) => s.tabs)
   const runningTabs = useIde((s) => s.runningTabs)
   const openConsole = useIde((s) => s.openConsole)
