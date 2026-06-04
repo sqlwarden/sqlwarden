@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { Cancel01Icon, Tick02Icon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { driverBrands } from './connection-drivers/index'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
@@ -503,14 +502,14 @@ function TestStatusIndicator({ state }: { state: TestState }) {
   if (state.status === 'ok') {
     return (
       <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-        <HugeiconsIcon icon={Tick02Icon} size={13} strokeWidth={2.5} />
+        <Icon name="tick-02" size={13} />
         {state.latencyMs}ms
       </span>
     )
   }
   return (
     <span className="flex items-center gap-1 text-xs text-destructive">
-      <HugeiconsIcon icon={Cancel01Icon} size={13} strokeWidth={2.5} />
+      <Icon name="cancel-01" size={13} />
       {state.message}
     </span>
   )

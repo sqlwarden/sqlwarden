@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { PlusSignIcon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { createFileRoute } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
@@ -141,7 +140,7 @@ function SettingsOrganizationsPage() {
             }}
           >
             <DialogTrigger render={<Button />}>
-              <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
+              <Icon name="plus-sign" size={20} data-icon="inline-start" />
               Create
             </DialogTrigger>
             <DialogContent>

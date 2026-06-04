@@ -2,14 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  File01Icon,
-  FolderOpenIcon,
-  SidebarLeft01Icon,
-  TerminalIcon,
-} from '@hugeicons/core-free-icons'
-import { Button } from '#/components/ui/button'
+import { Icon } from '#/lib/icons'
 import { updatePrivateWorkspaceFileContent } from '#/lib/api/files'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import {
@@ -240,7 +233,7 @@ function ExplorerToggle() {
           sidebarCollapsed ? 'text-muted-foreground' : 'text-foreground',
         )}
       >
-        <HugeiconsIcon icon={SidebarLeft01Icon} size={13} strokeWidth={2} />
+        <Icon name="sidebar-left-01" size={13} />
         Explorer
       </button>
     </div>
@@ -668,13 +661,13 @@ function EmptyEditorState({ onNewConsole, onNewFile }: EmptyEditorStateProps) {
 
       <div className="flex gap-3">
         <EmptyStateCard
-          icon={TerminalIcon}
+          icon="terminal"
           title="New Console"
           description="Write and run SQL queries against a connection"
           onClick={onNewConsole}
         />
         <EmptyStateCard
-          icon={File01Icon}
+          icon="file-01"
           title="New File"
           description="Create a reusable SQL script saved to this workspace"
           onClick={onNewFile}
@@ -682,7 +675,7 @@ function EmptyEditorState({ onNewConsole, onNewFile }: EmptyEditorStateProps) {
       </div>
 
       <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <HugeiconsIcon icon={FolderOpenIcon} size={12} strokeWidth={2} className="shrink-0" />
+        <Icon name="folder-open" size={12} className="shrink-0" />
         To open an existing file, browse the
         <span className="font-medium text-foreground">Files</span>
         panel in the sidebar.
@@ -697,7 +690,7 @@ function EmptyStateCard({
   description,
   onClick,
 }: {
-  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>
+  icon: import('#/lib/icons').AppIcon
   title: string
   description: string
   onClick: () => void
@@ -717,7 +710,7 @@ function EmptyStateCard({
         'flex h-10 w-10 items-center justify-center rounded-md',
         'bg-muted transition-colors group-hover:bg-background',
       )}>
-        <HugeiconsIcon icon={icon} size={18} strokeWidth={1.5} className="text-muted-foreground group-hover:text-foreground transition-colors" />
+        <Icon name={icon} size={18} className="text-muted-foreground group-hover:text-foreground transition-colors" />
       </div>
       <div className="flex flex-col gap-1">
         <p className="text-xs font-medium text-foreground">{title}</p>

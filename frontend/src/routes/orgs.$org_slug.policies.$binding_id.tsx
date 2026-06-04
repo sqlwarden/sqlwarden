@@ -1,8 +1,7 @@
 import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { UserGroupIcon, UserMultiple02Icon, UserShield01Icon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
 import {
@@ -315,13 +314,13 @@ function SubjectIconLarge({ binding }: { binding: { subject_type: string; subjec
   if (binding.subject_type === 'team') {
     return (
       <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-blue-500/10 text-blue-600">
-        <HugeiconsIcon icon={UserGroupIcon} strokeWidth={2} className="size-6" />
+        <Icon name="user-group" size={20} className="size-6" />
       </div>
     )
   }
   return (
     <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600">
-      <HugeiconsIcon icon={UserMultiple02Icon} strokeWidth={2} className="size-6" />
+      <Icon name="user-multiple-02" size={20} className="size-6" />
     </div>
   )
 }
@@ -424,7 +423,7 @@ function PermissionGroupsSkeleton() {
 function ContextMessage({ message }: { message: string }) {
   return (
     <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
-      <HugeiconsIcon icon={UserShield01Icon} strokeWidth={2} className="size-10 text-muted-foreground" />
+      <Icon name="user-shield-01" size={20} className="size-10 text-muted-foreground" />
       <p className="font-medium text-foreground">{message}</p>
     </div>
   )

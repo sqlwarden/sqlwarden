@@ -1,17 +1,7 @@
 import { useState, useEffect } from 'react'
 import * as Y from 'yjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  ArrowDown01Icon,
-  ArrowRight01Icon,
-  Cancel01Icon,
-  DatabaseIcon,
-  FlowConnectionIcon,
-  PlusSignIcon,
-  ServerStack01Icon,
-  TerminalIcon,
-} from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import {
   orgEffectivePermissionsQueryOptions,
@@ -200,7 +190,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
       aria-label="New Environment"
       onClick={() => setAddEnvOpen(true)}
     >
-      <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
+      <Icon name="plus-sign" size={14} />
     </Button>
   ) : undefined
 
@@ -208,7 +198,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
     <>
       <SidebarPane
         title="Explorer"
-        icon={DatabaseIcon}
+        icon="database"
         maximized={maximized}
         onMaximizedChange={onMaximizedChange}
         actions={actions}
@@ -335,16 +325,14 @@ function EnvironmentRow({
           onClick={() => setExpanded((v) => !v)}
           className="flex min-w-0 flex-1 items-center gap-1.5 px-2 text-left"
         >
-          <HugeiconsIcon
-            icon={expanded ? ArrowDown01Icon : ArrowRight01Icon}
+          <Icon
+            name={expanded ? 'arrow-down-01' : 'arrow-right-01'}
             size={11}
-            strokeWidth={2}
             className="shrink-0 text-muted-foreground"
           />
-          <HugeiconsIcon
-            icon={ServerStack01Icon}
+          <Icon
+            name="server-stack-01"
             size={14}
-            strokeWidth={2}
             className="shrink-0 text-muted-foreground"
           />
           <span className="min-w-0 flex-1 truncate font-medium">{environment.name}</span>
@@ -356,7 +344,7 @@ function EnvironmentRow({
             aria-label={`New connection in ${environment.name}`}
             className="mr-1 flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
           >
-            <HugeiconsIcon icon={PlusSignIcon} size={11} strokeWidth={2} />
+            <Icon name="plus-sign" size={11} />
           </button>
         )}
       </div>
@@ -448,11 +436,11 @@ function ConnectionRow({
           />
           <DropdownMenuContent align="start" side="bottom" sideOffset={2} className="w-48">
             <DropdownMenuItem onClick={() => { setMenuOpen(false); onOpen() }}>
-              <HugeiconsIcon icon={FlowConnectionIcon} size={13} strokeWidth={2} />
+              <Icon name="flow-connection" size={13} />
               Open
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => { setMenuOpen(false); onOpenConsole() }}>
-              <HugeiconsIcon icon={TerminalIcon} size={13} strokeWidth={2} />
+              <Icon name="terminal" size={13} />
               Open Console
             </DropdownMenuItem>
             {isConnected ? (
@@ -460,12 +448,12 @@ function ConnectionRow({
                 data-variant="destructive"
                 onClick={() => { setMenuOpen(false); onDisconnect() }}
               >
-                <HugeiconsIcon icon={Cancel01Icon} size={13} strokeWidth={2} />
+                <Icon name="cancel-01" size={13} />
                 Disconnect
               </DropdownMenuItem>
             ) : (
               <DropdownMenuItem onClick={() => { setMenuOpen(false); onConnect() }}>
-                <HugeiconsIcon icon={FlowConnectionIcon} size={13} strokeWidth={2} />
+                <Icon name="flow-connection" size={13} />
                 Connect
               </DropdownMenuItem>
             )}

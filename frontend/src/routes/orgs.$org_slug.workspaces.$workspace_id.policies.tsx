@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { Cancel01Icon, PlusSignIcon, Search01Icon, UserGroupIcon, UserMultiple02Icon, UserShield01Icon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
@@ -308,7 +307,7 @@ function WorkspacePoliciesPage() {
               }}
             >
               <DialogTrigger render={<Button />}>
-                <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
+                <Icon name="plus-sign" size={20} data-icon="inline-start" />
                 Assign role
               </DialogTrigger>
               <DialogContent className="sm:max-w-md">
@@ -525,14 +524,14 @@ function WorkspacePoliciesPage() {
             </TableHeader>
             <TableBody>
               {effectivePermissions.isLoading || policies.isLoading ? <PoliciesTableSkeleton canModify={canModifyPolicies} /> : null}
-              {policies.isError ? <TableEmptyState colSpan={colSpan} icon={UserShield01Icon} message="Failed to load policies." /> : null}
+              {policies.isError ? <TableEmptyState colSpan={colSpan} icon="user-shield-01" message="Failed to load policies." /> : null}
               {!effectivePermissions.isLoading && !canReadPolicies ? (
-                <TableEmptyState colSpan={colSpan} icon={UserShield01Icon} message="You do not have permission to view workspace policies." />
+                <TableEmptyState colSpan={colSpan} icon="user-shield-01" message="You do not have permission to view workspace policies." />
               ) : null}
               {!effectivePermissions.isLoading && canReadPolicies && !policies.isLoading && !policies.isError && items.length === 0 ? (
                 <TableEmptyState
                   colSpan={colSpan}
-                  icon={UserShield01Icon}
+                  icon="user-shield-01"
                   message={query.q ? 'No policies matched your search.' : 'No policy bindings found.'}
                 />
               ) : null}
@@ -644,7 +643,7 @@ function ComboboxField({
         </PopoverTrigger>
         <PopoverContent className="w-(--anchor-width) p-0" align="start" sideOffset={4}>
           <div className="flex items-center gap-2 border-b border-border px-2">
-            <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="size-3.5 shrink-0 text-muted-foreground" />
+            <Icon name="search-01" size={20} className="size-3.5 shrink-0 text-muted-foreground" />
             <input
               ref={inputRef}
               type="text"
@@ -662,7 +661,7 @@ function ComboboxField({
                 }}
                 className="shrink-0 text-muted-foreground hover:text-foreground"
               >
-                <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-3" />
+                <Icon name="cancel-01" size={20} className="size-3" />
               </button>
             ) : null}
           </div>
@@ -776,13 +775,13 @@ function SubjectIcon({ binding }: { binding: PolicyBinding }) {
   if (binding.subject_type === 'team') {
     return (
       <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-        <HugeiconsIcon icon={UserGroupIcon} strokeWidth={2} className="size-4" />
+        <Icon name="user-group" size={20} className="size-4" />
       </div>
     )
   }
   return (
     <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-      <HugeiconsIcon icon={UserMultiple02Icon} strokeWidth={2} className="size-4" />
+      <Icon name="user-multiple-02" size={20} className="size-4" />
     </div>
   )
 }

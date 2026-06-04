@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { PlusSignIcon, UserGroupIcon, UserMultipleIcon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useDebouncedQueryText } from '#/hooks/use-debounced-query-text'
 import { useListPageState } from '#/hooks/use-list-page-state'
@@ -185,12 +184,12 @@ function OrganizationTeamContextPage() {
       <Card>
         {team.isError ? (
           <CardContent>
-            <ContextMessage icon={UserGroupIcon} message="Failed to load team." />
+            <ContextMessage icon="user-group" message="Failed to load team." />
           </CardContent>
         ) : null}
         {!effectivePermissions.isLoading && !canReadTeam ? (
           <CardContent>
-            <ContextMessage icon={UserGroupIcon} message="You do not have permission to view this team." />
+            <ContextMessage icon="user-group" message="You do not have permission to view this team." />
           </CardContent>
         ) : null}
         {effectivePermissions.isLoading || team.isLoading ? (
@@ -226,7 +225,7 @@ function OrganizationTeamContextPage() {
               }}
             >
               <DialogTrigger render={<Button />}>
-                <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
+                <Icon name="plus-sign" size={20} data-icon="inline-start" />
                 Add User
               </DialogTrigger>
               <DialogContent>
@@ -246,9 +245,9 @@ function OrganizationTeamContextPage() {
                     <Table>
                       <TableBody>
                         {orgMembers.isLoading ? <OrgMembersPickerSkeleton /> : null}
-                        {orgMembers.isError ? <MessageRow colSpan={2} icon={UserMultipleIcon} message="Failed to load users." /> : null}
+                        {orgMembers.isError ? <MessageRow colSpan={2} icon="user-multiple" message="Failed to load users." /> : null}
                         {!orgMembers.isLoading && !orgMembers.isError && (orgMembers.data?.items ?? []).length === 0 ? (
-                          <MessageRow colSpan={2} icon={UserMultipleIcon} message="No users found." />
+                          <MessageRow colSpan={2} icon="user-multiple" message="No users found." />
                         ) : null}
                         {!orgMembers.isLoading && !orgMembers.isError
                           ? (orgMembers.data?.items ?? []).map((member) => (
@@ -293,12 +292,12 @@ function OrganizationTeamContextPage() {
             </TableHeader>
             <TableBody>
               {effectivePermissions.isLoading || members.isLoading ? <MembersTableSkeleton /> : null}
-              {members.isError ? <MessageRow colSpan={canManageMembers ? 3 : 2} icon={UserMultipleIcon} message="Failed to load members." /> : null}
+              {members.isError ? <MessageRow colSpan={canManageMembers ? 3 : 2} icon="user-multiple" message="Failed to load members." /> : null}
               {!effectivePermissions.isLoading && !canReadTeam ? (
-                <MessageRow colSpan={canManageMembers ? 3 : 2} icon={UserMultipleIcon} message="You do not have permission to view team members." />
+                <MessageRow colSpan={canManageMembers ? 3 : 2} icon="user-multiple" message="You do not have permission to view team members." />
               ) : null}
               {!effectivePermissions.isLoading && canReadTeam && !members.isLoading && !members.isError && memberItems.length === 0 ? (
-                <MessageRow colSpan={canManageMembers ? 3 : 2} icon={UserMultipleIcon} message="This team does not have any members." />
+                <MessageRow colSpan={canManageMembers ? 3 : 2} icon="user-multiple" message="This team does not have any members." />
               ) : null}
               {!effectivePermissions.isLoading && canReadTeam && !members.isLoading && !members.isError
                 ? memberItems.map((member) => (
@@ -476,16 +475,16 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
   )
 }
 
-function ContextMessage({ icon, message }: { icon: Parameters<typeof HugeiconsIcon>[0]['icon']; message: string }) {
+function ContextMessage({ icon, message }: { icon: import('#/lib/icons').AppIcon; message: string }) {
   return (
     <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
-      <HugeiconsIcon icon={icon} strokeWidth={2} className="size-10 text-muted-foreground" />
+      <Icon name={icon} size={20} className="size-10 text-muted-foreground" />
       <p className="font-medium text-foreground">{message}</p>
     </div>
   )
 }
 
-function MessageRow({ colSpan, icon, message }: { colSpan: number; icon: Parameters<typeof HugeiconsIcon>[0]['icon']; message: string }) {
+function MessageRow({ colSpan, icon, message }: { colSpan: number; icon: import('#/lib/icons').AppIcon; message: string }) {
   return (
     <TableRow>
       <TableCell colSpan={colSpan}>

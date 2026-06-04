@@ -1,8 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { PlusSignIcon, UserGroupIcon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
@@ -176,7 +175,7 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
               }}
             >
               <DialogTrigger render={<Button />}>
-                <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
+                <Icon name="plus-sign" size={20} data-icon="inline-start" />
                 Create
               </DialogTrigger>
               <DialogContent>
@@ -250,12 +249,12 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
             </TableHeader>
             <TableBody>
               {effectivePermissions.isLoading || teams.isLoading ? <TeamsTableSkeleton /> : null}
-              {teams.isError ? <TableEmptyState colSpan={2} icon={UserGroupIcon} message="Failed to load teams." /> : null}
+              {teams.isError ? <TableEmptyState colSpan={2} icon="user-group" message="Failed to load teams." /> : null}
               {!effectivePermissions.isLoading && !canReadTeams ? (
-                <TableEmptyState colSpan={2} icon={UserGroupIcon} message="You do not have permission to view teams." />
+                <TableEmptyState colSpan={2} icon="user-group" message="You do not have permission to view teams." />
               ) : null}
               {!effectivePermissions.isLoading && canReadTeams && !teams.isLoading && !teams.isError && items.length === 0 ? (
-                <TableEmptyState colSpan={2} icon={UserGroupIcon} message={query.q ? 'No teams matched your search.' : 'No teams found.'} />
+                <TableEmptyState colSpan={2} icon="user-group" message={query.q ? 'No teams matched your search.' : 'No teams found.'} />
               ) : null}
               {!effectivePermissions.isLoading && canReadTeams && !teams.isLoading && !teams.isError
                 ? items.map((team) => <TeamRow key={team.id} team={team} />)

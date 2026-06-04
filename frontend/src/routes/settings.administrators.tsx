@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { Delete02Icon, PlusSignIcon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { createFileRoute } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
@@ -123,7 +122,7 @@ function SettingsAdministratorsPage() {
             }}
           >
             <DialogTrigger render={<Button />}>
-              <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
+              <Icon name="plus-sign" size={20} data-icon="inline-start" />
               Add
             </DialogTrigger>
             <DialogContent>
@@ -227,7 +226,7 @@ function SettingsAdministratorsPage() {
                         void removeAdministrator.mutateAsync(administrator.account_id).catch(() => {})
                       }}
                     >
-                      <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} data-icon="inline-start" />
+                      <Icon name="delete-02" size={20} data-icon="inline-start" />
                       Remove
                     </Button>
                   </TableCell>

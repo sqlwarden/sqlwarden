@@ -1,13 +1,6 @@
 import { useState } from 'react'
 import * as Y from 'yjs'
-import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  Cancel01Icon,
-  DatabaseIcon,
-  File01Icon,
-  Loading03Icon,
-  TerminalIcon,
-} from '@hugeicons/core-free-icons'
+import { Icon, type AppIcon } from '#/lib/icons'
 import {
   Dialog,
   DialogContent,
@@ -26,10 +19,10 @@ type IdeTabBarProps = {
   workspace: Workspace
 }
 
-const TAB_ICONS: Record<TabKind, typeof DatabaseIcon> = {
-  scratch: TerminalIcon,
-  file: File01Icon,
-  connection: DatabaseIcon,
+const TAB_ICONS: Record<TabKind, AppIcon> = {
+  scratch: 'terminal',
+  file: 'file-01',
+  connection: 'database',
 }
 
 export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
@@ -152,11 +145,11 @@ function TabItem({
       )}
     >
       {isRunning ? (
-        <HugeiconsIcon icon={Loading03Icon} size={13} strokeWidth={2} className="shrink-0 animate-spin text-primary" />
+        <Icon name="loading-03" size={13} className="shrink-0 animate-spin text-primary" />
       ) : (tab.kind === 'connection' || tab.kind === 'scratch') && tab.driver ? (
         <DriverBadge driver={tab.driver} size="sm" className="shrink-0 opacity-70" />
       ) : (
-        <HugeiconsIcon icon={icon} size={13} strokeWidth={2} className="shrink-0 opacity-60" />
+        <Icon name={icon} size={13} className="shrink-0 opacity-60" />
       )}
       <span className="min-w-0 flex-1 truncate text-xs">
         {tab.isDirty && <span className="mr-1 text-primary">●</span>}
@@ -172,7 +165,7 @@ function TabItem({
           active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
         )}
       >
-        <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2} />
+        <Icon name="cancel-01" size={11} />
       </button>
     </div>
   )

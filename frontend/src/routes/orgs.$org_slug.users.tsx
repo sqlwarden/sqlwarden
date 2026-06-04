@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { PlusSignIcon, UserMultipleIcon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
@@ -158,7 +157,7 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
               }}
             >
               <DialogTrigger render={<Button />}>
-                <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
+                <Icon name="plus-sign" size={20} data-icon="inline-start" />
                 Add User
               </DialogTrigger>
               <DialogContent>
@@ -242,12 +241,12 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
             </TableHeader>
             <TableBody>
               {effectivePermissions.isLoading || members.isLoading ? <UsersTableSkeleton /> : null}
-              {members.isError ? <TableEmptyState colSpan={3} icon={UserMultipleIcon} message="Failed to load users." /> : null}
+              {members.isError ? <TableEmptyState colSpan={3} icon="user-multiple" message="Failed to load users." /> : null}
               {!effectivePermissions.isLoading && !canReadUsers ? (
-                <TableEmptyState colSpan={3} icon={UserMultipleIcon} message="You do not have permission to view users." />
+                <TableEmptyState colSpan={3} icon="user-multiple" message="You do not have permission to view users." />
               ) : null}
               {!effectivePermissions.isLoading && canReadUsers && !members.isLoading && !members.isError && items.length === 0 ? (
-                <TableEmptyState colSpan={3} icon={UserMultipleIcon} message={query.q ? 'No users matched your search.' : 'No users found.'} />
+                <TableEmptyState colSpan={3} icon="user-multiple" message={query.q ? 'No users matched your search.' : 'No users found.'} />
               ) : null}
               {!effectivePermissions.isLoading && canReadUsers && !members.isLoading && !members.isError
                 ? items.map((member) => <UserRow key={member.account_id} member={member} />)

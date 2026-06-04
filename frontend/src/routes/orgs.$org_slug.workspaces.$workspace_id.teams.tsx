@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { PlusSignIcon, UserGroupIcon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useDebouncedQueryText } from '#/hooks/use-debounced-query-text'
 import { useListPageState } from '#/hooks/use-list-page-state'
@@ -149,7 +148,7 @@ function WorkspaceTeamsPage() {
               }}
             >
               <DialogTrigger render={<Button />}>
-                <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
+                <Icon name="plus-sign" size={20} data-icon="inline-start" />
                 Add Team
               </DialogTrigger>
               <DialogContent>
@@ -168,9 +167,9 @@ function WorkspaceTeamsPage() {
                     <Table>
                       <TableBody>
                         {orgTeams.isLoading ? <TeamPickerSkeleton /> : null}
-                        {orgTeams.isError ? <MessageRow colSpan={2} icon={UserGroupIcon} message="Failed to load teams." /> : null}
+                        {orgTeams.isError ? <MessageRow colSpan={2} icon="user-group" message="Failed to load teams." /> : null}
                         {!orgTeams.isLoading && !orgTeams.isError && (orgTeams.data?.items ?? []).length === 0 ? (
-                          <MessageRow colSpan={2} icon={UserGroupIcon} message="No teams found." />
+                          <MessageRow colSpan={2} icon="user-group" message="No teams found." />
                         ) : null}
                         {!orgTeams.isLoading && !orgTeams.isError
                           ? (orgTeams.data?.items ?? []).map((team) => (
@@ -226,14 +225,14 @@ function WorkspaceTeamsPage() {
             </TableHeader>
             <TableBody>
               {effectivePermissions.isLoading || teams.isLoading ? <TeamsTableSkeleton canModifyTeams={canModifyTeams} /> : null}
-              {teams.isError ? <TableEmptyState colSpan={tableColumnCount} icon={UserGroupIcon} message="Failed to load teams." /> : null}
+              {teams.isError ? <TableEmptyState colSpan={tableColumnCount} icon="user-group" message="Failed to load teams." /> : null}
               {!effectivePermissions.isLoading && !canReadTeams ? (
-                <TableEmptyState colSpan={tableColumnCount} icon={UserGroupIcon} message="You do not have permission to view workspace teams." />
+                <TableEmptyState colSpan={tableColumnCount} icon="user-group" message="You do not have permission to view workspace teams." />
               ) : null}
               {!effectivePermissions.isLoading && canReadTeams && !teams.isLoading && !teams.isError && items.length === 0 ? (
                 <TableEmptyState
                   colSpan={tableColumnCount}
-                  icon={UserGroupIcon}
+                  icon="user-group"
                   message={query.q ? 'No teams matched your search.' : 'No workspace teams found.'}
                 />
               ) : null}
@@ -444,12 +443,12 @@ function TeamsTableSkeleton({ canModifyTeams }: { canModifyTeams: boolean }) {
   )
 }
 
-function MessageRow({ colSpan, icon, message }: { colSpan: number; icon: Parameters<typeof HugeiconsIcon>[0]['icon']; message: string }) {
+function MessageRow({ colSpan, icon, message }: { colSpan: number; icon: import('#/lib/icons').AppIcon; message: string }) {
   return (
     <TableRow>
       <TableCell colSpan={colSpan}>
         <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
-          <HugeiconsIcon icon={icon} strokeWidth={2} className="size-10 text-muted-foreground" />
+          <Icon name={icon} size={20} className="size-10 text-muted-foreground" />
           <p className="font-medium text-foreground">{message}</p>
         </div>
       </TableCell>

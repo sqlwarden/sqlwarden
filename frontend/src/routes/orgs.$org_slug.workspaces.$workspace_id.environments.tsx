@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { DatabaseIcon, Delete02Icon, PencilEdit02Icon, PlusSignIcon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
@@ -215,7 +214,7 @@ function WorkspaceEnvironmentsPage() {
               }}
             >
               <DialogTrigger render={<Button />}>
-                <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
+                <Icon name="plus-sign" size={20} data-icon="inline-start" />
                 Create
               </DialogTrigger>
               <DialogContent>
@@ -267,11 +266,11 @@ function WorkspaceEnvironmentsPage() {
             </TableHeader>
             <TableBody>
               {environments.isLoading ? <EnvironmentTableSkeleton canManageEnvironment={canManageEnvironment} /> : null}
-              {environments.isError ? <TableEmptyState colSpan={tableColumnCount} icon={DatabaseIcon} message="Failed to load environments." /> : null}
+              {environments.isError ? <TableEmptyState colSpan={tableColumnCount} icon="database" message="Failed to load environments." /> : null}
               {!environments.isLoading && !environments.isError && items.length === 0 ? (
                 <TableEmptyState
                   colSpan={tableColumnCount}
-                  icon={DatabaseIcon}
+                  icon="database"
                   message={query.q ? 'No environments matched your search.' : 'No environments found.'}
                 />
               ) : null}
@@ -407,7 +406,7 @@ function EnvironmentRow({
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground">
-            <HugeiconsIcon icon={DatabaseIcon} strokeWidth={2} className="size-4" />
+            <Icon name="database" size={20} className="size-4" />
           </div>
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{environment.name}</div>
@@ -424,14 +423,14 @@ function EnvironmentRow({
           <div className="flex justify-end gap-2">
             {canEditEnvironment ? (
               <Button type="button" variant="ghost" size="sm" onClick={() => onEdit(environment)}>
-                <HugeiconsIcon icon={PencilEdit02Icon} strokeWidth={2} data-icon="inline-start" />
+                <Icon name="pencil-edit-02" size={20} data-icon="inline-start" />
                 Edit
               </Button>
             ) : null}
             {canDeleteEnvironment ? (
               <AlertDialog>
                 <AlertDialogTrigger render={<Button type="button" variant="destructive" size="sm" disabled={isDeleting} />}>
-                  <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} data-icon="inline-start" />
+                  <Icon name="delete-02" size={20} data-icon="inline-start" />
                   Delete
                 </AlertDialogTrigger>
                 <AlertDialogContent>

@@ -1,14 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  ArrowDown01Icon,
-  ArrowRight01Icon,
-  File01Icon,
-  FolderAddIcon,
-  FolderIcon,
-  FolderOpenIcon,
-} from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import { Separator } from '#/components/ui/separator'
 import {
@@ -48,7 +40,7 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
         aria-label="New file"
         onClick={() => openCreateDialog('file', null)}
       >
-        <HugeiconsIcon icon={File01Icon} size={13} strokeWidth={2} />
+        <Icon name="file-01" size={13} />
       </Button>
       <Button
         type="button"
@@ -57,7 +49,7 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
         aria-label="New folder"
         onClick={() => openCreateDialog('folder', null)}
       >
-        <HugeiconsIcon icon={FolderAddIcon} size={13} strokeWidth={2} />
+        <Icon name="folder-add" size={13} />
       </Button>
     </>
   )
@@ -66,7 +58,7 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
     <>
       <SidebarPane
         title="Files"
-        icon={FolderOpenIcon}
+        icon="folder-open"
         maximized={maximized}
         onMaximizedChange={onMaximizedChange}
         actions={headerActions}
@@ -250,16 +242,14 @@ function FileTreeFolder({
         'transition-colors hover:bg-accent hover:text-accent-foreground',
       )}
     >
-      <HugeiconsIcon
-        icon={expanded ? ArrowDown01Icon : ArrowRight01Icon}
+      <Icon
+        name={expanded ? 'arrow-down-01' : 'arrow-right-01'}
         size={11}
-        strokeWidth={2}
         className="shrink-0 text-muted-foreground"
       />
-      <HugeiconsIcon
-        icon={expanded ? FolderOpenIcon : FolderIcon}
+      <Icon
+        name={expanded ? 'folder-open' : 'folder'}
         size={14}
-        strokeWidth={2}
         className="shrink-0 text-muted-foreground"
       />
       <span className="min-w-0 flex-1 truncate">{file.name}</span>
@@ -334,7 +324,7 @@ function FileTreeFile({
         'transition-colors hover:bg-accent hover:text-accent-foreground',
       )}
     >
-      <HugeiconsIcon icon={File01Icon} size={13} strokeWidth={2} className="shrink-0 text-muted-foreground" />
+      <Icon name="file-01" size={13} className="shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate">{file.name}</span>
     </button>
   )

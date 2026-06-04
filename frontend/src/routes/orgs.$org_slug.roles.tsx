@@ -1,8 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { Cancel01Icon, PlusSignIcon, Search01Icon, UserShield01Icon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
@@ -234,7 +233,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
               }}
             >
               <DialogTrigger render={<Button />}>
-                <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
+                <Icon name="plus-sign" size={20} data-icon="inline-start" />
                 Create
               </DialogTrigger>
               <DialogContent className="sm:max-w-2xl">
@@ -332,12 +331,12 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
             </TableHeader>
             <TableBody>
               {effectivePermissions.isLoading || roles.isLoading ? <RolesTableSkeleton canDeleteRole={canDeleteRole} /> : null}
-              {roles.isError ? <TableEmptyState colSpan={canDeleteRole ? 5 : 4} icon={UserShield01Icon} message="Failed to load roles." /> : null}
+              {roles.isError ? <TableEmptyState colSpan={canDeleteRole ? 5 : 4} icon="user-shield-01" message="Failed to load roles." /> : null}
               {!effectivePermissions.isLoading && !canReadRoles ? (
-                <TableEmptyState colSpan={canDeleteRole ? 5 : 4} icon={UserShield01Icon} message="You do not have permission to view roles." />
+                <TableEmptyState colSpan={canDeleteRole ? 5 : 4} icon="user-shield-01" message="You do not have permission to view roles." />
               ) : null}
               {!effectivePermissions.isLoading && canReadRoles && !roles.isLoading && !roles.isError && items.length === 0 ? (
-                <TableEmptyState colSpan={canDeleteRole ? 5 : 4} icon={UserShield01Icon} message={query.q ? 'No roles matched your search.' : 'No roles found.'} />
+                <TableEmptyState colSpan={canDeleteRole ? 5 : 4} icon="user-shield-01" message={query.q ? 'No roles matched your search.' : 'No roles found.'} />
               ) : null}
               {!effectivePermissions.isLoading && canReadRoles && !roles.isLoading && !roles.isError
                 ? items.map((role) => (
@@ -543,7 +542,7 @@ function PermissionPicker({
       </div>
       <div className="rounded-md border border-border">
         <div className="flex items-center gap-2 border-b border-border px-3">
-          <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="size-4 shrink-0 text-muted-foreground" />
+          <Icon name="search-01" size={20} className="size-4 shrink-0 text-muted-foreground" />
           <input
             type="text"
             placeholder="Filter permissions…"
@@ -553,7 +552,7 @@ function PermissionPicker({
           />
           {search ? (
             <button type="button" onClick={() => setSearch('')} className="shrink-0 text-muted-foreground hover:text-foreground">
-              <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-3.5" />
+              <Icon name="cancel-01" size={20} className="size-3.5" />
             </button>
           ) : null}
         </div>

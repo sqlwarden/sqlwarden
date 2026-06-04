@@ -1,16 +1,7 @@
 import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  Briefcase01Icon,
-  Building04Icon,
-  Logout03Icon,
-  Settings02Icon,
-  ShieldUserIcon,
-  UserGroupIcon,
-  UserMultipleIcon,
-} from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { useSession } from '#/hooks/use-session'
@@ -118,7 +109,7 @@ function LandingPage() {
         <Card>
           <CardContent>
             <EmptyState
-              icon={Building04Icon}
+              icon="building-04"
               message="No work areas found."
               description="You are not a member of any organizations yet."
             />
@@ -163,11 +154,11 @@ function OrganizationChoiceCard({ organization }: { organization: AccountOrganiz
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
           <div className="flex min-w-0 items-center gap-1.5 [&_svg]:size-3.5">
-            <HugeiconsIcon icon={UserMultipleIcon} strokeWidth={2} />
+            <Icon name="user-multiple" size={20} />
             <span className="truncate">{formatCount(memberCount, 'member')}</span>
           </div>
           <div className="flex min-w-0 items-center gap-1.5 [&_svg]:size-3.5">
-            <HugeiconsIcon icon={UserGroupIcon} strokeWidth={2} />
+            <Icon name="user-group" size={20} />
             <span className="truncate">{formatCount(teamCount, 'team')}</span>
           </div>
         </div>
@@ -182,7 +173,7 @@ function PersonalSpaceCard() {
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex min-w-0 items-start gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted">
-            <HugeiconsIcon icon={Briefcase01Icon} strokeWidth={2} />
+            <Icon name="briefcase-01" size={20} />
           </div>
           <div className="min-w-0 flex-1">
             <CardTitle className="truncate text-base">Personal Workspace</CardTitle>
@@ -207,7 +198,7 @@ function AdministrationChoiceCard() {
         <div className="flex flex-1 flex-col gap-3 p-5">
           <div className="flex min-w-0 items-start gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center bg-muted text-muted-foreground">
-              <HugeiconsIcon icon={ShieldUserIcon} strokeWidth={2} />
+              <Icon name="shield-user" size={20} />
             </div>
             <div className="min-w-0 flex-1 pt-0.5">
               <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
@@ -254,7 +245,7 @@ function LandingUserMenu({ session }: { session: SessionResponse }) {
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link to="/settings" />}>
-          <HugeiconsIcon icon={Settings02Icon} strokeWidth={2} />
+          <Icon name="settings-02" size={20} />
           Settings
         </DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -265,7 +256,7 @@ function LandingUserMenu({ session }: { session: SessionResponse }) {
             void logout.mutateAsync()
           }}
         >
-          <HugeiconsIcon icon={Logout03Icon} strokeWidth={2} />
+          <Icon name="logout-03" size={20} />
           {logout.isPending ? 'Signing out...' : 'Sign out'}
         </DropdownMenuItem>
       </DropdownMenuContent>

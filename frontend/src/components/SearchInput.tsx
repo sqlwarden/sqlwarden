@@ -1,5 +1,4 @@
-import { Cancel01Icon, Search01Icon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
+import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { Input } from '#/components/ui/input'
 
@@ -14,7 +13,7 @@ type SearchInputProps = {
 export function SearchInput({ value, onValueChange, onClear, placeholder, className = 'max-w-md' }: SearchInputProps) {
   return (
     <div className={cn('relative', className)}>
-      <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Icon name="search-01" size={20} className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         value={value}
         onChange={(event) => onValueChange(event.target.value)}
@@ -28,7 +27,7 @@ export function SearchInput({ value, onValueChange, onClear, placeholder, classN
           className="absolute end-3 top-1/2 inline-flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
           onClick={onClear}
         >
-          <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
+          <Icon name="cancel-01" size={20} className="size-4" />
         </button>
       ) : null}
     </div>

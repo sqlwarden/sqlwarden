@@ -5,6 +5,7 @@ import { Toaster } from 'sonner'
 import { GlobalLoadingBar } from '#/components/GlobalLoadingBar'
 import { ThemeProvider } from '#/components/theme-provider'
 import { TooltipProvider } from '#/components/ui/tooltip'
+import { IconPackProvider } from '#/lib/icons'
 import '../styles.css'
 
 export const Route = createRootRoute({
@@ -14,6 +15,7 @@ export const Route = createRootRoute({
 function RootComponent() {
   return (
     <ThemeProvider defaultTheme="system" storageKey="theme">
+      <IconPackProvider>
       <TooltipProvider>
         <GlobalLoadingBar />
         <div className="flex min-h-screen flex-col">
@@ -32,6 +34,7 @@ function RootComponent() {
           },
         ]}
       />
+      </IconPackProvider>
     </ThemeProvider>
   )
 }

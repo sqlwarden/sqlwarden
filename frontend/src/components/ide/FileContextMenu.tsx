@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { Delete01Icon, File01Icon, FolderAddIcon, FolderOpenIcon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,13 +81,13 @@ export function FileContextMenu({
                 <DropdownMenuItem
                   onClick={() => { setMenuOpen(false); onCreateFile?.(parentId) }}
                 >
-                  <HugeiconsIcon icon={File01Icon} size={13} strokeWidth={2} />
+                  <Icon name="file-01" size={13} />
                   New File
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => { setMenuOpen(false); onCreateFolder?.(parentId) }}
                 >
-                  <HugeiconsIcon icon={FolderAddIcon} size={13} strokeWidth={2} />
+                  <Icon name="folder-add" size={13} />
                   New Folder
                 </DropdownMenuItem>
               </>
@@ -97,7 +96,7 @@ export function FileContextMenu({
               <DropdownMenuItem
                 onClick={() => { setMenuOpen(false); onOpen?.() }}
               >
-                <HugeiconsIcon icon={FolderOpenIcon} size={13} strokeWidth={2} />
+                <Icon name="folder-open" size={13} />
                 Open
               </DropdownMenuItem>
             )}
@@ -106,7 +105,7 @@ export function FileContextMenu({
                 data-variant="destructive"
                 onClick={() => { setMenuOpen(false); setConfirmOpen(true) }}
               >
-                <HugeiconsIcon icon={Delete01Icon} size={13} strokeWidth={2} />
+                <Icon name="delete-01" size={13} />
                 Delete
               </DropdownMenuItem>
             )}

@@ -2,14 +2,8 @@ import { useEffect, useState } from 'react'
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  Building04Icon,
-  Logout03Icon,
-  PaintBoardIcon,
-  Settings02Icon,
-  User02Icon,
-} from '@hugeicons/core-free-icons'
+import { Icon, useIconPack, type AppIcon } from '#/lib/icons'
+import type { IconPackName } from '#/lib/icons'
 import type { SessionResponse } from '#/lib/api/types'
 import { api } from '#/lib/api/client'
 import { clearAccessToken } from '#/lib/auth/access-token'
@@ -50,7 +44,7 @@ export type AppShellPreferences = {
 export type AppShellNavItem = {
   to: string
   label: string
-  icon: typeof User02Icon
+  icon: AppIcon
   params?: Record<string, string>
   disabled?: boolean
   badge?: string
@@ -103,7 +97,7 @@ export function AppShellHeader({
   description,
 }: {
   label: string
-  icon: typeof User02Icon
+  icon: AppIcon
   description?: string
 }) {
   return (
@@ -111,7 +105,7 @@ export function AppShellHeader({
       {/* Collapsed: show logo icon centred */}
       <div className="hidden items-center justify-center py-1 group-data-[collapsible=icon]:flex">
         <div className="flex size-8 shrink-0 items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-4">
-          <HugeiconsIcon icon={icon} strokeWidth={2.5} />
+          <Icon name={icon} size={16} />
         </div>
       </div>
       {/* Expanded: show full label + description */}
@@ -122,7 +116,7 @@ export function AppShellHeader({
             className={description ? 'h-auto items-center py-2 hover:bg-transparent' : 'hover:bg-transparent'}
           >
             <div className="flex size-6 shrink-0 items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-3.5">
-              <HugeiconsIcon icon={icon} strokeWidth={2.5} />
+              <Icon name={icon} size={14} />
             </div>
             <span className="grid min-w-0 flex-1 gap-0.5 text-left">
               <span className="truncate font-semibold tracking-tight">{label}</span>
@@ -223,7 +217,7 @@ function AppShellNavMenuItem({
           tooltip={item.label}
           className={item.badge ? 'pr-14' : undefined}
         >
-          <HugeiconsIcon icon={item.icon} strokeWidth={2} />
+          <Icon name={item.icon} size={20} />
           <span>{item.label}</span>
         </SidebarMenuButton>
         {item.badge ? <SidebarMenuBadge>{item.badge}</SidebarMenuBadge> : null}
@@ -239,7 +233,7 @@ function AppShellNavMenuItem({
         isActive={isActive}
         tooltip={item.label}
       >
-        <HugeiconsIcon icon={item.icon} strokeWidth={2} />
+        <Icon name={item.icon} size={20} />
         <span>{item.label}</span>
       </SidebarMenuButton>
     </SidebarMenuItem>
@@ -303,12 +297,12 @@ function AppShellUserMenu({
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem render={<Link to="/settings/account" />}>
-                <HugeiconsIcon icon={Settings02Icon} strokeWidth={2} />
+                <Icon name="settings-02" size={20} />
                 Settings
               </DropdownMenuItem>
               {session.organizations.length >= 2 ? (
                 <DropdownMenuItem render={<Link to="/settings/my-organizations" />}>
-                  <HugeiconsIcon icon={Building04Icon} strokeWidth={2} />
+                  <Icon name="building-04" size={20} />
                   Switch Organization
                 </DropdownMenuItem>
               ) : null}
@@ -317,7 +311,7 @@ function AppShellUserMenu({
                   key={navItemKey(item)}
                   render={<Link to={item.to as never} params={item.params as never} />}
                 >
-                  <HugeiconsIcon icon={item.icon} strokeWidth={2} />
+                  <Icon name={item.icon} size={20} />
                   {item.label}
                 </DropdownMenuItem>
               ))}
@@ -330,7 +324,7 @@ function AppShellUserMenu({
                 void logout.mutateAsync()
               }}
             >
-              <HugeiconsIcon icon={Logout03Icon} strokeWidth={2} />
+              <Icon name="logout-03" size={20} />
               {logout.isPending ? 'Signing out...' : 'Sign out'}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -347,6 +341,8 @@ function AppShellPreferencesPopover({
   preferences: AppShellPreferences
   setPreferences: Dispatch<SetStateAction<AppShellPreferences>>
 }) {
+  const { packName, setPackName } = useIconPack()
+
   function updatePreference<Key extends keyof AppShellPreferences>(key: Key, value: AppShellPreferences[Key]) {
     window.localStorage.setItem(preferenceKeys[key], value)
     setPreferences((current) => ({
@@ -361,6 +357,7 @@ function AppShellPreferencesPopover({
       window.localStorage.setItem(storageKey, defaultPreferences[typedKey])
     })
     setPreferences(defaultPreferences)
+    setPackName('hugeicons')
   }
 
   return (
@@ -374,7 +371,7 @@ function AppShellPreferencesPopover({
           />
         }
       >
-        <HugeiconsIcon icon={PaintBoardIcon} strokeWidth={2} />
+        <Icon name="paint-board" size={20} />
         <span className="group-data-[collapsible=icon]:hidden">UI Preferences</span>
       </PopoverTrigger>
       <PopoverContent side="right" align="end" className="w-80">
@@ -403,6 +400,14 @@ function AppShellPreferencesPopover({
               options={['inset', 'sidebar', 'floating']}
               labels={{ inset: 'Inset', sidebar: 'Sidebar', floating: 'Floating' }}
               onValueChange={(value) => updatePreference('sidebarStyle', value as AppShellSidebarStyle)}
+            />
+
+            <PreferenceToggle
+              label="Icon Pack"
+              value={packName}
+              options={['hugeicons', 'lucide', 'remix']}
+              labels={{ hugeicons: 'HugeIcons', lucide: 'Lucide', remix: 'Remix' }}
+              onValueChange={(value) => setPackName(value as IconPackName)}
             />
           </div>
         </div>

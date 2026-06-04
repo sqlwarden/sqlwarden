@@ -13,8 +13,7 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "#/components/ui/sidebar"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { LayoutBottomIcon, AudioWave01Icon, CommandIcon, ComputerTerminalIcon, RoboticIcon, BookOpen02Icon, Settings05Icon, CropIcon, PieChartIcon, MapsIcon } from "@hugeicons/core-free-icons"
+import { Icon } from "#/lib/icons"
 
 // This is sample data.
 const data = {
@@ -27,21 +26,21 @@ const data = {
     {
       name: "Acme Inc",
       logo: (
-        <HugeiconsIcon icon={LayoutBottomIcon} strokeWidth={2} />
+        <Icon name="layout-bottom" size={20} />
       ),
       plan: "Enterprise",
     },
     {
       name: "Acme Corp.",
       logo: (
-        <HugeiconsIcon icon={AudioWave01Icon} strokeWidth={2} />
+        <Icon name="audio-wave-01" size={20} />
       ),
       plan: "Startup",
     },
     {
       name: "Evil Corp.",
       logo: (
-        <HugeiconsIcon icon={CommandIcon} strokeWidth={2} />
+        <Icon name="command" size={20} />
       ),
       plan: "Free",
     },
@@ -51,7 +50,7 @@ const data = {
       title: "Playground",
       url: "#",
       icon: (
-        <HugeiconsIcon icon={ComputerTerminalIcon} strokeWidth={2} />
+        <Icon name="computer-terminal" size={20} />
       ),
       isActive: true,
       items: [
@@ -73,7 +72,7 @@ const data = {
       title: "Models",
       url: "#",
       icon: (
-        <HugeiconsIcon icon={RoboticIcon} strokeWidth={2} />
+        <Icon name="robotic" size={20} />
       ),
       items: [
         {
@@ -94,7 +93,7 @@ const data = {
       title: "Documentation",
       url: "#",
       icon: (
-        <HugeiconsIcon icon={BookOpen02Icon} strokeWidth={2} />
+        <Icon name="book-open-02" size={20} />
       ),
       items: [
         {
@@ -119,7 +118,7 @@ const data = {
       title: "Settings",
       url: "#",
       icon: (
-        <HugeiconsIcon icon={Settings05Icon} strokeWidth={2} />
+        <Icon name="settings-05" size={20} />
       ),
       items: [
         {
@@ -146,21 +145,21 @@ const data = {
       name: "Design Engineering",
       url: "#",
       icon: (
-        <HugeiconsIcon icon={CropIcon} strokeWidth={2} />
+        <Icon name="crop" size={20} />
       ),
     },
     {
       name: "Sales & Marketing",
       url: "#",
       icon: (
-        <HugeiconsIcon icon={PieChartIcon} strokeWidth={2} />
+        <Icon name="pie-chart" size={20} />
       ),
     },
     {
       name: "Travel",
       url: "#",
       icon: (
-        <HugeiconsIcon icon={MapsIcon} strokeWidth={2} />
+        <Icon name="maps" size={20} />
       ),
     },
   ],

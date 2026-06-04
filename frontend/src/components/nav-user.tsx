@@ -18,8 +18,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "#/components/ui/sidebar"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { CheckmarkBadgeIcon, CreditCardIcon, LogoutIcon, NotificationIcon, SparklesIcon, UnfoldMoreIcon } from "@hugeicons/core-free-icons"
+import { Icon } from "#/lib/icons"
 
 export function NavUser({
   user,
@@ -48,7 +47,7 @@ export function NavUser({
               <span className="truncate font-medium">{user.name}</span>
               <span className="truncate text-xs">{user.email}</span>
             </div>
-            <HugeiconsIcon icon={UnfoldMoreIcon} strokeWidth={2} className="ms-auto size-4" />
+            <Icon name="unfold-more" size={20} className="ms-auto size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent
             className="min-w-56 rounded-lg"
@@ -73,28 +72,28 @@ export function NavUser({
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem>
-                <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} />
+                <Icon name="sparkles" size={20} />
                 Upgrade to Pro
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem>
-                <HugeiconsIcon icon={CheckmarkBadgeIcon} strokeWidth={2} />
+                <Icon name="checkmark-badge" size={20} />
                 Account
               </DropdownMenuItem>
               <DropdownMenuItem>
-                <HugeiconsIcon icon={CreditCardIcon} strokeWidth={2} />
+                <Icon name="credit-card" size={20} />
                 Billing
               </DropdownMenuItem>
               <DropdownMenuItem>
-                <HugeiconsIcon icon={NotificationIcon} strokeWidth={2} />
+                <Icon name="notification" size={20} />
                 Notifications
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem>
-              <HugeiconsIcon icon={LogoutIcon} strokeWidth={2} />
+              <Icon name="logout" size={20} />
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>

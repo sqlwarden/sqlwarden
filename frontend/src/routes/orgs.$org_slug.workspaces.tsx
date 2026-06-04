@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { Briefcase01Icon, DatabaseIcon, FlowConnectionIcon, PlusSignIcon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
@@ -155,7 +154,7 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
               }}
             >
               <DialogTrigger render={<Button />}>
-                <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} data-icon="inline-start" />
+                <Icon name="plus-sign" size={20} data-icon="inline-start" />
                 Create
               </DialogTrigger>
               <DialogContent>
@@ -240,7 +239,7 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
       {workspaces.isError ? (
         <Card>
           <CardContent>
-            <EmptyState icon={Briefcase01Icon} message="Failed to load workspaces" description="Refresh the page and try again." />
+            <EmptyState icon="briefcase-01" message="Failed to load workspaces" description="Refresh the page and try again." />
           </CardContent>
         </Card>
       ) : null}
@@ -249,7 +248,7 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
         <Card>
           <CardContent>
             <EmptyState
-              icon={Briefcase01Icon}
+              icon="briefcase-01"
               message={query.q ? 'No workspaces matched your search.' : 'No workspaces found'}
               description={query.q ? 'Try a different workspace name.' : 'This organization does not have any visible workspaces yet.'}
             />
@@ -286,11 +285,11 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
                 </div>
                 <div className="flex items-center gap-5 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
                   <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
-                    <HugeiconsIcon icon={DatabaseIcon} strokeWidth={2} />
+                    <Icon name="database" size={20} />
                     <span>{workspace.environment_count} {workspace.environment_count === 1 ? 'environment' : 'environments'}</span>
                   </div>
                   <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
-                    <HugeiconsIcon icon={FlowConnectionIcon} strokeWidth={2} />
+                    <Icon name="flow-connection" size={20} />
                     <span>{workspace.connection_count} {workspace.connection_count === 1 ? 'connection' : 'connections'}</span>
                   </div>
                 </div>

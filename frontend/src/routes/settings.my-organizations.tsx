@@ -1,8 +1,7 @@
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { Building04Icon, UserGroupIcon, UserMultipleIcon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { accountOrganizationsQueryOptions } from '#/lib/api/query'
@@ -94,7 +93,7 @@ function SettingsMyOrganizationsPage() {
       {organizations.isError ? (
         <Card>
           <CardContent>
-            <EmptyState icon={Building04Icon} message="Failed to load organizations" description="Refresh the page and try again." />
+            <EmptyState icon="building-04" message="Failed to load organizations" description="Refresh the page and try again." />
           </CardContent>
         </Card>
       ) : null}
@@ -103,7 +102,7 @@ function SettingsMyOrganizationsPage() {
         <Card>
           <CardContent>
             <EmptyState
-              icon={Building04Icon}
+              icon="building-04"
               message={query.q ? 'No organizations matched your search.' : 'No organizations found'}
               description={query.q ? 'Try a different name or slug.' : 'You do not belong to any organizations yet.'}
             />
@@ -141,11 +140,11 @@ function SettingsMyOrganizationsPage() {
                 </div>
                 <div className="flex items-center gap-5 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
                   <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
-                    <HugeiconsIcon icon={UserMultipleIcon} strokeWidth={2} />
+                    <Icon name="user-multiple" size={20} />
                     <span>{organization.member_count} {organization.member_count === 1 ? 'member' : 'members'}</span>
                   </div>
                   <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
-                    <HugeiconsIcon icon={UserGroupIcon} strokeWidth={2} />
+                    <Icon name="user-group" size={20} />
                     <span>{organization.team_count} {organization.team_count === 1 ? 'team' : 'teams'}</span>
                   </div>
                 </div>

@@ -1,5 +1,4 @@
-import { ArrowDown01Icon, ArrowUp01Icon, ArrowUpDownIcon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
+import { Icon } from '#/lib/icons'
 import type { SortOrder } from '#/lib/api/types'
 
 type TableColumnHeaderProps = {
@@ -29,10 +28,10 @@ export function TableColumnHeader({ label, sort, currentSort, currentOrder, onSo
 
 function SortIcon({ sort, currentSort, currentOrder }: Required<Pick<TableColumnHeaderProps, 'sort'>> & Pick<TableColumnHeaderProps, 'currentSort' | 'currentOrder'>) {
   if (currentSort !== sort) {
-    return <HugeiconsIcon icon={ArrowUpDownIcon} strokeWidth={2} className="size-4" />
+    return <Icon name="arrow-up-down" size={20} className="size-4" />
   }
 
   return currentOrder === 'asc'
-    ? <HugeiconsIcon icon={ArrowUp01Icon} strokeWidth={2} className="size-4" />
-    : <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={2} className="size-4" />
+    ? <Icon name="arrow-up-01" size={20} className="size-4" />
+    : <Icon name="arrow-down-01" size={20} className="size-4" />
 }

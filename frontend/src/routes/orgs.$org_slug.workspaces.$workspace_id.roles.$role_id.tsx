@@ -1,8 +1,7 @@
 import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { UserShield01Icon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
 import { orgEffectivePermissionsQueryOptions, orgPermissionsQueryOptions, orgWorkspaceRoleQueryOptions } from '#/lib/api/query'
@@ -307,7 +306,7 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
 function ContextMessage({ message }: { message: string }) {
   return (
     <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
-      <HugeiconsIcon icon={UserShield01Icon} strokeWidth={2} className="size-10 text-muted-foreground" />
+      <Icon name="user-shield-01" size={20} className="size-10 text-muted-foreground" />
       <p className="font-medium text-foreground">{message}</p>
     </div>
   )

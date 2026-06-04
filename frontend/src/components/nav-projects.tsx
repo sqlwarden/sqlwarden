@@ -16,8 +16,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "#/components/ui/sidebar"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowUpRight01Icon, Delete02Icon, FolderIcon, MoreHorizontalCircle01Icon } from "@hugeicons/core-free-icons"
+import { Icon } from "#/lib/icons"
 
 export function NavProjects({
   projects,
@@ -48,7 +47,7 @@ export function NavProjects({
                   />
                 }
               >
-                <HugeiconsIcon icon={MoreHorizontalCircle01Icon} strokeWidth={2} />
+                <Icon name="more-horizontal-circle-01" size={20} />
                 <span className="sr-only">More</span>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -57,16 +56,16 @@ export function NavProjects({
                 align={isMobile ? "end" : "start"}
               >
                 <DropdownMenuItem>
-                  <HugeiconsIcon icon={FolderIcon} strokeWidth={2} className="text-muted-foreground" />
+                  <Icon name="folder" size={20} className="text-muted-foreground" />
                   <span>View Project</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem>
-                  <HugeiconsIcon icon={ArrowUpRight01Icon} strokeWidth={2} className="text-muted-foreground" />
+                  <Icon name="arrow-up-right-01" size={20} className="text-muted-foreground" />
                   <span>Share Project</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem>
-                  <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} className="text-muted-foreground" />
+                  <Icon name="delete-02" size={20} className="text-muted-foreground" />
                   <span>Delete Project</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -75,7 +74,7 @@ export function NavProjects({
         ))}
         <SidebarMenuItem>
           <SidebarMenuButton className="text-sidebar-foreground/70">
-            <HugeiconsIcon icon={MoreHorizontalCircle01Icon} strokeWidth={2} className="text-sidebar-foreground/70" />
+            <Icon name="more-horizontal-circle-01" size={20} className="text-sidebar-foreground/70" />
             <span>More</span>
           </SidebarMenuButton>
         </SidebarMenuItem>

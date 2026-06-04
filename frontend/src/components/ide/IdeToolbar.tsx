@@ -1,20 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  ArrowDown01Icon,
-  ArrowExpandIcon,
-  ArrowShrinkIcon,
-  Cancel01Icon,
-  CheckmarkCircle02Icon,
-  DatabaseIcon,
-  FloppyDiskIcon,
-  Loading03Icon,
-  PlayIcon,
-  Search01Icon,
-  ServerStack01Icon,
-} from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover'
 import {
@@ -242,10 +229,9 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         disabled={runDisabled}
         onClick={() => void handleRun()}
       >
-        <HugeiconsIcon
-          icon={isRunning ? Loading03Icon : PlayIcon}
+        <Icon
+          name={isRunning ? 'loading-03' : 'play'}
           size={13}
-          strokeWidth={2}
           data-icon="inline-start"
           className={isRunning ? 'animate-spin' : undefined}
         />
@@ -260,7 +246,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           variant="outline"
           onClick={handleCancel}
         >
-          <HugeiconsIcon icon={Cancel01Icon} size={13} strokeWidth={2} data-icon="inline-start" />
+          <Icon name="cancel-01" size={13} data-icon="inline-start" />
           Cancel
         </Button>
       )}
@@ -274,7 +260,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           aria-label="Save file"
           onClick={handleSave}
         >
-          <HugeiconsIcon icon={FloppyDiskIcon} size={13} strokeWidth={2} data-icon="inline-start" />
+          <Icon name="floppy-disk" size={13} data-icon="inline-start" />
           Save
         </Button>
       )}
@@ -307,11 +293,11 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
             </>
           ) : (
             <>
-              <HugeiconsIcon icon={DatabaseIcon} size={12} strokeWidth={2} className="shrink-0 text-muted-foreground" />
+              <Icon name="database" size={12} className="shrink-0 text-muted-foreground" />
               <span className="text-muted-foreground">{selectorLabel}</span>
             </>
           )}
-          <HugeiconsIcon icon={ArrowDown01Icon} size={10} strokeWidth={2.5} className="ml-0.5 shrink-0 text-muted-foreground" />
+          <Icon name="arrow-down-01" size={10} className="ml-0.5 shrink-0 text-muted-foreground" />
         </PopoverTrigger>
 
         <PopoverContent align="end" className="w-72 p-0 overflow-hidden">
@@ -326,7 +312,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
             <>
               {/* Search */}
               <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-                <HugeiconsIcon icon={Search01Icon} size={12} strokeWidth={2} className="shrink-0 text-muted-foreground" />
+                <Icon name="search-01" size={12} className="shrink-0 text-muted-foreground" />
                 <input
                   type="text"
                   placeholder="Search connections…"
@@ -349,7 +335,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
                   return (
                     <div key={env.id} className="mb-1 last:mb-0">
                       <div className="flex items-center gap-1.5 px-3 pb-1 pt-2">
-                        <HugeiconsIcon icon={ServerStack01Icon} size={11} strokeWidth={2} className="shrink-0 text-muted-foreground/70" />
+                        <Icon name="server-stack-01" size={11} className="shrink-0 text-muted-foreground/70" />
                         <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
                           {env.name}
                         </span>
@@ -374,7 +360,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
                               <span className="size-1.5 shrink-0 rounded-full bg-green-500" />
                             )}
                             {isActive && (
-                              <HugeiconsIcon icon={CheckmarkCircle02Icon} size={13} strokeWidth={2} className="shrink-0 text-primary" />
+                              <Icon name="checkmark-circle-02" size={13} className="shrink-0 text-primary" />
                             )}
                           </button>
                         )
@@ -403,10 +389,9 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         aria-label="Toggle editor maximize"
         onClick={toggleMaximize}
       >
-        <HugeiconsIcon
-          icon={maximizedPane === 'editor' ? ArrowShrinkIcon : ArrowExpandIcon}
+        <Icon
+          name={maximizedPane === 'editor' ? 'minimize' : 'maximize'}
           size={14}
-          strokeWidth={2}
         />
       </Button>
     </div>

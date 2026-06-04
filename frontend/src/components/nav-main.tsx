@@ -13,8 +13,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "#/components/ui/sidebar"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons"
+import { Icon } from "#/lib/icons"
 
 export function NavMain({
   items,
@@ -46,7 +45,7 @@ export function NavMain({
             >
               {item.icon}
               <span>{item.title}</span>
-              <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={2} className="ms-auto transition-transform duration-200 group-data-open/collapsible:rotate-90" />
+              <Icon name="arrow-right-01" size={20} className="ms-auto transition-transform duration-200 group-data-open/collapsible:rotate-90" />
             </CollapsibleTrigger>
             <CollapsibleContent>
               <SidebarMenuSub>

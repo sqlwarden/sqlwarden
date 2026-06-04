@@ -1,16 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
-import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  ArrowExpandIcon,
-  ArrowShrinkIcon,
-  Cancel01Icon,
-  CheckmarkCircle02Icon,
-  Copy01Icon,
-  Loading03Icon,
-  Tick02Icon,
-  TableIcon,
-} from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/components/ui/resizable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
@@ -38,7 +28,7 @@ export function ResultsArea() {
             value="results"
             className="h-full rounded-none px-3 text-xs gap-1.5"
           >
-            <HugeiconsIcon icon={TableIcon} size={13} strokeWidth={2} />
+            <Icon name="table" size={13} />
             Results
             {result.status === 'ok' && (result.data.rows?.length ?? 0) > 0 && (
               <span className="ml-0.5 rounded bg-primary/10 px-1 text-[10px] font-medium text-primary tabular-nums">
@@ -60,10 +50,9 @@ export function ResultsArea() {
           aria-label="Toggle results maximize"
           onClick={toggleMaximize}
         >
-          <HugeiconsIcon
-            icon={maximizedPane === 'results' ? ArrowShrinkIcon : ArrowExpandIcon}
+          <Icon
+            name={maximizedPane === 'results' ? 'minimize' : 'maximize'}
             size={14}
-            strokeWidth={2}
           />
         </Button>
       </div>
@@ -102,7 +91,7 @@ function CancelledState() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
       <div className="flex min-h-0 flex-1 items-start gap-2.5 overflow-auto p-4">
-        <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} className="mt-0.5 shrink-0 text-muted-foreground" />
+        <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
         <span className="text-xs text-muted-foreground">Query cancelled.</span>
       </div>
     </div>
@@ -126,7 +115,7 @@ function RunningState() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
       <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-xs text-muted-foreground">
-        <HugeiconsIcon icon={Loading03Icon} size={14} strokeWidth={2} className="animate-spin" />
+        <Icon name="loading-03" size={14} className="animate-spin" />
         Running…
       </div>
     </div>
@@ -137,7 +126,7 @@ function ErrorState({ message }: { message: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
       <div className="flex min-h-0 flex-1 items-start gap-2.5 overflow-auto p-4">
-        <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} className="mt-0.5 shrink-0 text-destructive" />
+        <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-destructive" />
         <pre className="whitespace-pre-wrap break-all font-mono text-xs text-destructive">{message}</pre>
       </div>
     </div>
@@ -314,7 +303,7 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
     return (
       <div className="flex h-full min-h-0 flex-col bg-card">
         <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-xs text-muted-foreground">
-          <HugeiconsIcon icon={CheckmarkCircle02Icon} size={14} strokeWidth={2} className="text-green-500" />
+          <Icon name="checkmark-circle-02" size={14} className="text-green-500" />
           <span>Query executed · {durationMs}ms</span>
         </div>
       </div>
@@ -536,7 +525,7 @@ function CellDetailPanel({ value, col, tableCollapsed, onMaximize, onClose }: {
             className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label="Copy value"
           >
-            <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} size={13} strokeWidth={2} />
+            <Icon name={copied ? 'tick-02' : 'copy-01'} size={13} />
           </button>
         </div>
         <button
@@ -545,7 +534,7 @@ function CellDetailPanel({ value, col, tableCollapsed, onMaximize, onClose }: {
           className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label={tableCollapsed ? 'Restore' : 'Maximize'}
         >
-          <HugeiconsIcon icon={tableCollapsed ? ArrowShrinkIcon : ArrowExpandIcon} size={13} strokeWidth={2} />
+          <Icon name={tableCollapsed ? 'minimize' : 'maximize'} size={13} />
         </button>
         <button
           type="button"
@@ -553,7 +542,7 @@ function CellDetailPanel({ value, col, tableCollapsed, onMaximize, onClose }: {
           className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label="Close"
         >
-          <HugeiconsIcon icon={Cancel01Icon} size={13} strokeWidth={2} />
+          <Icon name="cancel-01" size={13} />
         </button>
       </div>
 

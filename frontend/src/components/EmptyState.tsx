@@ -1,9 +1,8 @@
-import type { IconSvgElement } from '@hugeicons/react'
-import { HugeiconsIcon } from '@hugeicons/react'
+import { Icon, type AppIcon } from '#/lib/icons'
 import { TableCell, TableRow } from '#/components/ui/table'
 
 type EmptyStateProps = {
-  icon?: IconSvgElement
+  icon?: AppIcon
   message: string
   description?: string
 }
@@ -11,7 +10,7 @@ type EmptyStateProps = {
 export function EmptyState({ description, icon, message }: EmptyStateProps) {
   return (
     <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
-      {icon ? <HugeiconsIcon icon={icon} strokeWidth={2} className="size-10 text-muted-foreground" /> : null}
+      {icon ? <Icon name={icon} size={40} className="text-muted-foreground" /> : null}
       <div className="flex flex-col gap-1">
         <p className="font-medium text-foreground">{message}</p>
         {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}

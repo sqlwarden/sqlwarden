@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { FolderIcon, FolderOpenIcon } from '@hugeicons/core-free-icons'
+import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import {
   Dialog,
@@ -172,7 +171,7 @@ export function SaveAsDialog({
               <div className="flex flex-col p-1">
                 <LocationRow
                   label="My Files (root)"
-                  icon={FolderOpenIcon}
+                  icon="folder-open"
                   selected={selectedParentId === null}
                   onSelect={() => setSelectedParentId(null)}
                   indent={0}
@@ -181,7 +180,7 @@ export function SaveAsDialog({
                   <LocationRow
                     key={folder.id}
                     label={folder.name}
-                    icon={FolderIcon}
+                    icon="folder"
                     selected={selectedParentId === folder.id}
                     onSelect={() => setSelectedParentId(folder.id)}
                     indent={1}
@@ -213,7 +212,7 @@ function LocationRow({
   indent,
 }: {
   label: string
-  icon: typeof FolderIcon
+  icon: import('#/lib/icons').AppIcon
   selected: boolean
   onSelect: () => void
   indent: number
@@ -230,7 +229,7 @@ function LocationRow({
           : 'hover:bg-accent/50 hover:text-accent-foreground',
       )}
     >
-      <HugeiconsIcon icon={icon} size={13} strokeWidth={2} className="shrink-0 text-muted-foreground" />
+      <Icon name={icon} size={13} className="shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {selected && <span className="shrink-0 text-[10px] text-muted-foreground">✓</span>}
     </button>

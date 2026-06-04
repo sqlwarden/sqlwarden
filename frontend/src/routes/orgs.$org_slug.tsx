@@ -2,22 +2,6 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Navigate, Outlet, createFileRoute, useRouterState } from '@tanstack/react-router'
 import {
-  ArrowLeft01Icon,
-  Briefcase01Icon,
-  Building04Icon,
-  DatabaseIcon,
-  DatabaseLightningIcon,
-  FlowConnectionIcon,
-  Home04Icon,
-  PolicyIcon,
-  Settings02Icon,
-  UserGroupIcon,
-  UserLock02Icon,
-  UserMultipleIcon,
-  UserShield01Icon,
-  TerminalIcon,
-} from '@hugeicons/core-free-icons'
-import {
   AppShellContent,
   AppShellHeader,
   AppShellNavSection,
@@ -119,7 +103,7 @@ function OrganizationLayout() {
               ? `${organization.data?.name ?? orgSlug} / ${workspace.data?.name ?? `Workspace #${workspaceId}`}`
               : organization.data?.name ?? orgSlug
           }
-          icon={DatabaseLightningIcon}
+          icon="database-lightning"
         />
         <SidebarContent>
           {workspaceId ? (
@@ -199,15 +183,15 @@ const workspaceSettingsPagePermissions = [
 
 function workspacePrimaryItems(orgSlug: string, workspaceId: string, permissions: readonly string[] | undefined): AppShellNavItem[] {
   const items: AppShellNavItem[] = [
-    { to: '/orgs/$org_slug/workspaces', params: { org_slug: orgSlug }, label: 'All Workspaces', icon: ArrowLeft01Icon },
-    { to: '/orgs/$org_slug/workspaces/$workspace_id', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Overview', icon: Home04Icon },
+    { to: '/orgs/$org_slug/workspaces', params: { org_slug: orgSlug }, label: 'All Workspaces', icon: 'arrow-left-01' },
+    { to: '/orgs/$org_slug/workspaces/$workspace_id', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Overview', icon: 'home-04' },
   ]
 
   if (hasAnyPermission(permissions, workspaceEnvironmentPagePermissions)) {
-    items.push({ to: '/orgs/$org_slug/workspaces/$workspace_id/environments', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Environments', icon: DatabaseIcon })
+    items.push({ to: '/orgs/$org_slug/workspaces/$workspace_id/environments', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Environments', icon: 'database' })
   }
   if (hasAnyPermission(permissions, workspaceConnectionPagePermissions)) {
-    items.push({ to: '/orgs/$org_slug/workspaces/$workspace_id/connections', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Connections', icon: FlowConnectionIcon })
+    items.push({ to: '/orgs/$org_slug/workspaces/$workspace_id/connections', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Connections', icon: 'flow-connection' })
   }
 
   return items
@@ -219,10 +203,10 @@ function workspaceAccessControlItems(orgSlug: string, workspaceId: string, permi
   }
 
   return [
-    { to: '/orgs/$org_slug/workspaces/$workspace_id/users', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Users', icon: UserMultipleIcon },
-    { to: '/orgs/$org_slug/workspaces/$workspace_id/teams', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Teams', icon: UserGroupIcon },
-    { to: '/orgs/$org_slug/workspaces/$workspace_id/roles', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Roles', icon: UserShield01Icon },
-    { to: '/orgs/$org_slug/workspaces/$workspace_id/policies', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Policies', icon: PolicyIcon },
+    { to: '/orgs/$org_slug/workspaces/$workspace_id/users', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Users', icon: 'user-multiple' },
+    { to: '/orgs/$org_slug/workspaces/$workspace_id/teams', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Teams', icon: 'user-group' },
+    { to: '/orgs/$org_slug/workspaces/$workspace_id/roles', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Roles', icon: 'user-shield-01' },
+    { to: '/orgs/$org_slug/workspaces/$workspace_id/policies', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Policies', icon: 'policy' },
   ]
 }
 
@@ -231,7 +215,7 @@ function workspaceSettingsItems(orgSlug: string, workspaceId: string, permission
     return []
   }
 
-  return [{ to: '/orgs/$org_slug/workspaces/$workspace_id/settings', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Settings', icon: Settings02Icon }]
+  return [{ to: '/orgs/$org_slug/workspaces/$workspace_id/settings', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Settings', icon: 'settings-02' }]
 }
 
 function isWorkspacePathAllowed(pathname: string, orgSlug: string, workspaceId: string, permissions: readonly string[]) {
@@ -264,8 +248,8 @@ function isPathInSection(pathname: string, basePath: string, section: string) {
 
 function organizationItems(orgSlug: string): AppShellNavItem[] {
   return [
-    { to: '/orgs/$org_slug/workspaces', params: { org_slug: orgSlug }, label: 'Workspaces', icon: Briefcase01Icon },
-    { to: '/orgs/$org_slug/ide', params: { org_slug: orgSlug }, label: 'IDE', icon: TerminalIcon },
+    { to: '/orgs/$org_slug/workspaces', params: { org_slug: orgSlug }, label: 'Workspaces', icon: 'briefcase-01' },
+    { to: '/orgs/$org_slug/ide', params: { org_slug: orgSlug }, label: 'IDE', icon: 'terminal' },
   ]
 }
 
@@ -274,15 +258,15 @@ function accessControlItems(orgSlug: string, permissions: readonly string[] | un
 
   if (hasAnyPermission(permissions, [permission.orgRead])) {
     items.push(
-      { to: '/orgs/$org_slug/users', params: { org_slug: orgSlug }, label: 'Users', icon: UserMultipleIcon },
-      { to: '/orgs/$org_slug/teams', params: { org_slug: orgSlug }, label: 'Teams', icon: UserGroupIcon },
+      { to: '/orgs/$org_slug/users', params: { org_slug: orgSlug }, label: 'Users', icon: 'user-multiple' },
+      { to: '/orgs/$org_slug/teams', params: { org_slug: orgSlug }, label: 'Teams', icon: 'user-group' },
     )
   }
 
   if (hasAnyPermission(permissions, [permission.policyRead])) {
     items.push(
-      { to: '/orgs/$org_slug/roles', params: { org_slug: orgSlug }, label: 'Roles', icon: UserShield01Icon },
-      { to: '/orgs/$org_slug/policies', params: { org_slug: orgSlug }, label: 'Policies', icon: UserLock02Icon },
+      { to: '/orgs/$org_slug/roles', params: { org_slug: orgSlug }, label: 'Roles', icon: 'user-shield-01' },
+      { to: '/orgs/$org_slug/policies', params: { org_slug: orgSlug }, label: 'Policies', icon: 'user-lock-02' },
     )
   }
 
@@ -295,7 +279,7 @@ function settingsItems(orgSlug: string, permissions: readonly string[] | undefin
   }
 
   return [
-    { to: '/orgs/$org_slug/settings/general', params: { org_slug: orgSlug }, label: 'General', icon: Settings02Icon },
+    { to: '/orgs/$org_slug/settings/general', params: { org_slug: orgSlug }, label: 'General', icon: 'settings-02' },
   ]
 }
 
