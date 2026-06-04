@@ -47,7 +47,8 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
   }
 
   function handleCloseRequest(tab: EditorTab) {
-    if (runningTabs[tab.id] || (tab.kind === 'file' && tab.isDirty)) {
+    const hasConsoleContent = tab.kind === 'scratch' && tab.content.trim() !== ''
+    if (runningTabs[tab.id] || (tab.kind === 'file' && tab.isDirty) || hasConsoleContent) {
       setPendingCloseTabId(tab.id)
     } else {
       closeTab(tab.id)
@@ -56,6 +57,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
 
   const pendingCloseTab = pendingCloseTabId ? tabs.find((t) => t.id === pendingCloseTabId) : null
   const pendingCloseRunning = pendingCloseTab ? !!runningTabs[pendingCloseTab.id] : false
+  const pendingCloseIsConsole = !pendingCloseRunning && pendingCloseTab?.kind === 'scratch'
 
   return (
     <>
@@ -85,14 +87,19 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
           <DialogContent className="sm:max-w-sm">
             <DialogHeader>
               <DialogTitle>
-                {pendingCloseRunning ? 'Query still running' : 'Close without saving?'}
+                {pendingCloseRunning
+                  ? 'Query still running'
+                  : pendingCloseIsConsole
+                  ? 'Close console?'
+                  : 'Close without saving?'}
               </DialogTitle>
             </DialogHeader>
             <p className="text-sm text-muted-foreground">
               {pendingCloseRunning
                 ? <>A query is still running in <strong className="text-foreground">{pendingCloseTab.title}</strong>. Closing will cancel the request.</>
-                : <>Unsaved changes to <strong className="text-foreground">{pendingCloseTab.title}</strong> will be lost.</>
-              }
+                : pendingCloseIsConsole
+                ? <>Content of <strong className="text-foreground">{pendingCloseTab.title}</strong> is not saved and will be permanently lost.</>
+                : <>Unsaved changes to <strong className="text-foreground">{pendingCloseTab.title}</strong> will be lost.</>}
             </p>
             <DialogFooter>
               <Button variant="outline" onClick={() => setPendingCloseTabId(null)}>

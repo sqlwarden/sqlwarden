@@ -235,6 +235,26 @@ describe('useIdeStore', () => {
     expect(store.getState().tabs[0].etag).toBe('def456')
   })
 
+  // ── Console close-warning predicate ───────────────────────────────────────
+  // IdeTabBar shows a confirmation dialog before closing a scratch tab that
+  // has content. These tests verify the store state the predicate reads from.
+
+  it('scratch tab starts with empty DEFAULT_CONSOLE_CONTENT so no warning is shown for new consoles', () => {
+    store.getState().openConsole(mockWorkspace, [])
+    // IdeTabBar condition: tab.kind === 'scratch' && tab.content.trim() !== ''
+    // A freshly opened console must NOT trigger the warning.
+    expect(DEFAULT_CONSOLE_CONTENT.trim()).toBe('')
+    expect(store.getState().tabs[0].content.trim()).toBe('')
+  })
+
+  it('scratch tab has non-empty content after user edits, triggering the close warning', () => {
+    store.getState().openConsole(mockWorkspace, [])
+    const tab = store.getState().tabs[0]
+    store.getState().updateTabContent(tab.id, 'SELECT 1;')
+    // IdeTabBar condition: tab.content.trim() !== '' → show confirmation dialog
+    expect(store.getState().tabs[0].content.trim()).not.toBe('')
+  })
+
   it('openConsole creates a numbered scratch tab with yState', () => {
     const fakeYState = [1, 2, 3]
     store.getState().openConsole(mockWorkspace, fakeYState)
