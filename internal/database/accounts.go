@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/response"
+	"github.com/uptrace/bun"
 )
 
 type Account struct {
@@ -142,13 +143,33 @@ func (db *DB) DeactivateAccount(ctx context.Context, id int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := db.NewUpdate().
-		Model((*Account)(nil)).
-		Set("is_active = ?", false).
-		Set("updated_at = ?", time.Now()).
-		Where("id = ?", id).
-		Exec(ctx)
-	return err
+	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		now := time.Now()
+		_, err := tx.NewUpdate().
+			Model((*Account)(nil)).
+			Set("is_active = ?", false).
+			Set("updated_at = ?", now).
+			Where("id = ?", id).
+			Exec(ctx)
+		if err != nil {
+			return err
+		}
+		_, err = tx.NewUpdate().
+			Model((*AuthSession)(nil)).
+			Set("revoked_at = ?", now).
+			Set("revocation_reason = ?", "account_deactivated").
+			Where("account_id = ? AND revoked_at IS NULL", id).
+			Exec(ctx)
+		if err != nil {
+			return err
+		}
+		_, err = tx.NewUpdate().
+			Model((*RefreshToken)(nil)).
+			Set("revoked_at = ?", now).
+			Where("account_id = ? AND revoked_at IS NULL", id).
+			Exec(ctx)
+		return err
+	})
 }
 
 func normalizeAccountListParams(params ListAccountsParams) ListAccountsParams {

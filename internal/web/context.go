@@ -11,6 +11,7 @@ type contextKey string
 
 const (
 	authenticatedAccountKey contextKey = "authenticatedAccount"
+	authSessionKey          contextKey = "authSession"
 	orgKey                  contextKey = "org"
 	workspaceKey            contextKey = "workspace"
 	environmentKey          contextKey = "environment"
@@ -26,6 +27,17 @@ func contextSetAccount(r *http.Request, account database.Account) *http.Request 
 func contextGetAccount(r *http.Request) database.Account {
 	account, _ := r.Context().Value(authenticatedAccountKey).(database.Account)
 	return account
+}
+
+// Auth session context helpers.
+func contextSetAuthSession(r *http.Request, session database.AuthSession) *http.Request {
+	ctx := context.WithValue(r.Context(), authSessionKey, session)
+	return r.WithContext(ctx)
+}
+
+func contextGetAuthSession(r *http.Request) database.AuthSession {
+	session, _ := r.Context().Value(authSessionKey).(database.AuthSession)
+	return session
 }
 
 // Org context helpers.

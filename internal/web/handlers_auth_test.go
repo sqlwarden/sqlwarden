@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -144,6 +145,16 @@ func TestLoginSuccess(t *testing.T) {
 	if cookie.Value == "" {
 		t.Fatal("expected non-empty refresh_token cookie")
 	}
+
+	claims, err := token.Verify(tok, app.config.JWT.SecretKey)
+	assert.Nil(t, err)
+	if claims.AuthSessionID == "" {
+		t.Fatal("expected auth_session_id claim")
+	}
+	rt, found, err := app.db.GetRefreshTokenByHash(context.Background(), token.Hash(cookie.Value))
+	assert.Nil(t, err)
+	assert.True(t, found)
+	assert.Equal(t, rt.AuthSessionID, claims.AuthSessionID)
 }
 
 func TestLoginWrongPassword(t *testing.T) {
@@ -207,6 +218,12 @@ func TestRefreshValid(t *testing.T) {
 	if tok == "" {
 		t.Fatal("expected non-empty access_token after refresh")
 	}
+
+	loginClaims, err := token.Verify(extractAccessToken(t, loginRes), app.config.JWT.SecretKey)
+	assert.Nil(t, err)
+	refreshClaims, err := token.Verify(tok, app.config.JWT.SecretKey)
+	assert.Nil(t, err)
+	assert.Equal(t, refreshClaims.AuthSessionID, loginClaims.AuthSessionID)
 }
 
 func TestRefreshAfterLogout(t *testing.T) {
@@ -318,6 +335,93 @@ func TestLogout(t *testing.T) {
 			assert.Equal(t, c.MaxAge, -1)
 		}
 	}
+
+	claims, err := token.Verify(extractAccessToken(t, loginRes), app.config.JWT.SecretKey)
+	assert.Nil(t, err)
+	session, found, err := app.db.GetAuthSession(context.Background(), claims.AuthSessionID, mustParseInt64(t, claims.AccountID))
+	assert.Nil(t, err)
+	assert.True(t, found)
+	assert.True(t, session.RevokedAt != nil)
+}
+
+func TestRevokedAuthSessionRejectsExistingAccessToken(t *testing.T) {
+	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	registerTestUser(t, app, "revoked-token@example.com", "Revoked Token", "securepass99")
+	loginRes := loginTestUser(t, app, "revoked-token@example.com", "securepass99")
+	tok := extractAccessToken(t, loginRes)
+	claims, err := token.Verify(tok, app.config.JWT.SecretKey)
+	assert.Nil(t, err)
+	accountID := mustParseInt64(t, claims.AccountID)
+
+	err = app.db.RevokeAuthSession(context.Background(), claims.AuthSessionID, &accountID, "test")
+	assert.Nil(t, err)
+
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/account", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
+}
+
+func TestAccountSessionsListAndRevoke(t *testing.T) {
+	app := newTestApp(t)
+	setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	registerTestUser(t, app, "account-sessions@example.com", "Account Sessions", "securepass99")
+	loginRes := loginTestUser(t, app, "account-sessions@example.com", "securepass99")
+	tok := extractAccessToken(t, loginRes)
+	claims, err := token.Verify(tok, app.config.JWT.SecretKey)
+	assert.Nil(t, err)
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/account/sessions", nil, tok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items []database.AuthSession `json:"items"`
+	}
+	decodeJSONResponse(t, listRes.BodyBytes, &payload)
+	assert.Equal(t, len(payload.Items), 1)
+	assert.Equal(t, payload.Items[0].ID, claims.AuthSessionID)
+
+	revokeRes := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/account/sessions/"+claims.AuthSessionID, nil, tok), app.routes())
+	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
+
+	blocked := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/account", nil, tok), app.routes())
+	assert.Equal(t, blocked.StatusCode, http.StatusUnauthorized)
+}
+
+func TestOrgAccessSessionRevocationBlocksOnlyThatOrg(t *testing.T) {
+	app := newTestApp(t)
+	tok := setupInstance(t, app, "org-session-owner@example.com", "Org Session Owner", "securepass99")
+
+	orgARes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{"name": "Org Session A"}, tok), app.routes())
+	assert.Equal(t, orgARes.StatusCode, http.StatusCreated)
+	orgASlug := orgARes.BodyFields["slug"].(string)
+
+	orgBRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{"name": "Org Session B"}, tok), app.routes())
+	assert.Equal(t, orgBRes.StatusCode, http.StatusCreated)
+	orgBSlug := orgBRes.BodyFields["slug"].(string)
+
+	orgAGet := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+orgASlug, nil, tok), app.routes())
+	assert.Equal(t, orgAGet.StatusCode, http.StatusOK)
+	orgBGet := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+orgBSlug, nil, tok), app.routes())
+	assert.Equal(t, orgBGet.StatusCode, http.StatusOK)
+
+	claims, err := token.Verify(tok, app.config.JWT.SecretKey)
+	assert.Nil(t, err)
+	accountID := mustParseInt64(t, claims.AccountID)
+	orgAID := mustParseInt64(t, fmt.Sprintf("%v", orgARes.BodyFields["id"]))
+
+	orgAccess, found, err := app.db.GetOrgAccessSession(context.Background(), claims.AuthSessionID, orgAID, accountID)
+	assert.Nil(t, err)
+	assert.True(t, found)
+	err = app.db.RevokeOrgAccessSession(context.Background(), orgAccess.ID, orgAID, &accountID, "test")
+	assert.Nil(t, err)
+
+	blocked := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+orgASlug, nil, tok), app.routes())
+	assert.Equal(t, blocked.StatusCode, http.StatusForbidden)
+
+	stillAllowed := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+orgBSlug, nil, tok), app.routes())
+	assert.Equal(t, stillAllowed.StatusCode, http.StatusOK)
 }
 
 func TestGetAccount(t *testing.T) {

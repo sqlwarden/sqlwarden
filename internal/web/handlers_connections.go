@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/internal/encrypt"
@@ -467,7 +469,10 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 	connID := strconv.FormatInt(conn.ID, 10)
 	accountID := strconv.FormatInt(account.ID, 10)
 
-	session, created, err := app.connManager.GetOrCreate(accountID, connID, func() (driver.Driver, error) {
+	session, created, err := app.connManager.GetOrCreateWithMetadata(accountID, connID, connection.SessionMetadata{
+		OrgID:       strconv.FormatInt(org.ID, 10),
+		WorkspaceID: strconv.FormatInt(ws.ID, 10),
+	}, func() (driver.Driver, error) {
 		d, err := driver.New(conn.Driver)
 		if err != nil {
 			return nil, err
@@ -496,46 +501,41 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 
 func (app *application) listActiveSessions(w http.ResponseWriter, r *http.Request) {
 	account := contextGetAccount(r)
+	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 
 	accountID := strconv.FormatInt(account.ID, 10)
-	accountSessions := app.connManager.AllForAccount(accountID)
+	workspaceID := strconv.FormatInt(ws.ID, 10)
 
 	type sessionInfo struct {
 		ConnectionID int64  `json:"connection_id"`
+		AccountID    int64  `json:"account_id"`
 		SessionID    string `json:"session_id"`
 	}
 	result := make([]sessionInfo, 0)
 
-	if len(accountSessions) > 0 {
-		// Build a set of connection IDs that belong to this workspace so we
-		// don't leak sessions from other workspaces.
-		page, err := app.db.ListConnectionsPage(r.Context(), database.ListConnectionsParams{
-			WorkspaceID: ws.ID,
-			PageSize:    10000,
-		})
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		wsConnIDs := make(map[string]bool, len(page.Items))
-		for _, conn := range page.Items {
-			wsConnIDs[strconv.FormatInt(conn.ID, 10)] = true
-		}
+	refs := app.connManager.AllForAccount(accountID)
+	if org.ID != 0 && app.enforcer.Can(r.Context(), account.ID, org.ID, ws.OwnerType, "workspace", ws.ID, access.PermPolicyRead) {
+		refs = app.connManager.AllForWorkspace(workspaceID)
+	}
 
-		for _, ref := range accountSessions {
-			if !wsConnIDs[ref.ConnectionID] {
-				continue
-			}
-			connIDInt, parseErr := strconv.ParseInt(ref.ConnectionID, 10, 64)
-			if parseErr != nil {
-				continue
-			}
-			result = append(result, sessionInfo{
-				ConnectionID: connIDInt,
-				SessionID:    ref.SessionID,
-			})
+	for _, ref := range refs {
+		if ref.WorkspaceID != "" && ref.WorkspaceID != workspaceID {
+			continue
 		}
+		connIDInt, parseErr := strconv.ParseInt(ref.ConnectionID, 10, 64)
+		if parseErr != nil {
+			continue
+		}
+		accountIDInt, parseErr := strconv.ParseInt(ref.AccountID, 10, 64)
+		if parseErr != nil {
+			continue
+		}
+		result = append(result, sessionInfo{
+			ConnectionID: connIDInt,
+			AccountID:    accountIDInt,
+			SessionID:    ref.SessionID,
+		})
 	}
 
 	err := response.JSON(w, http.StatusOK, map[string]any{"sessions": result})
@@ -571,6 +571,40 @@ func (app *application) disconnectFromDatabase(w http.ResponseWriter, r *http.Re
 	if session.ConnectionID != connID {
 		app.badRequest(w, r, errors.New("session does not belong to this connection"))
 		return
+	}
+
+	app.connManager.Remove(sessionID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r *http.Request) {
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
+	sessionID := strings.TrimSpace(chi.URLParam(r, "session_id"))
+	if sessionID == "" {
+		app.notFound(w, r)
+		return
+	}
+
+	session, ok := app.connManager.Get(sessionID)
+	if !ok {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	workspaceID := strconv.FormatInt(ws.ID, 10)
+	if session.WorkspaceID != workspaceID {
+		app.notFound(w, r)
+		return
+	}
+
+	accountID := strconv.FormatInt(account.ID, 10)
+	if session.AccountID != accountID {
+		if org.ID == 0 || !app.enforcer.Can(r.Context(), account.ID, org.ID, ws.OwnerType, "workspace", ws.ID, access.PermPolicyModify) {
+			app.notPermitted(w, r)
+			return
+		}
 	}
 
 	app.connManager.Remove(sessionID)

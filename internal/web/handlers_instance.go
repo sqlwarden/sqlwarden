@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
+	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/internal/validator"
 )
 
@@ -131,7 +133,13 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		org = seededOrg
 	}
 
-	accessToken, _, err := app.newAuthenticationToken(account.ID)
+	sessionExpiresAt := time.Now().Add(7 * 24 * time.Hour)
+	authSession, err := app.db.InsertAuthSession(r.Context(), account.ID, sessionExpiresAt, r.Header.Get("User-Agent"), r.RemoteAddr)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	accessToken, _, err := token.IssueWithSessionTTL(strconv.FormatInt(account.ID, 10), authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

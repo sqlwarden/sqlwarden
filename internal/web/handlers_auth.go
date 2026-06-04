@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/request"
@@ -125,7 +126,14 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	accountIDStr := strconv.FormatInt(account.ID, 10)
-	accessToken, _, err := token.IssueWithTTL(accountIDStr, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
+	sessionExpiresAt := time.Now().Add(7 * 24 * time.Hour)
+	authSession, err := app.db.InsertAuthSession(r.Context(), account.ID, sessionExpiresAt, r.Header.Get("User-Agent"), r.RemoteAddr)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	accessToken, _, err := token.IssueWithSessionTTL(accountIDStr, authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -135,9 +143,10 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 	tokenHash := token.Hash(family)
 	_, err = app.db.InsertRefreshToken(r.Context(),
 		account.ID,
+		authSession.ID,
 		tokenHash,
 		family,
-		time.Now().Add(7*24*time.Hour),
+		sessionExpiresAt,
 		r.Header.Get("User-Agent"),
 		r.RemoteAddr,
 	)
@@ -180,6 +189,10 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 		app.invalidAuthenticationToken(w, r)
 		return
 	}
+	if rt.AuthSessionID == "" {
+		app.invalidAuthenticationToken(w, r)
+		return
+	}
 
 	_ = app.db.RevokeRefreshToken(r.Context(), rt.ID)
 
@@ -192,9 +205,23 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 		app.invalidAuthenticationToken(w, r)
 		return
 	}
+	if !account.IsActive {
+		app.invalidAuthenticationToken(w, r)
+		return
+	}
+
+	authSession, found, err := app.db.GetAuthSession(r.Context(), rt.AuthSessionID, account.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found || authSession.RevokedAt != nil || time.Now().After(authSession.ExpiresAt) {
+		app.invalidAuthenticationToken(w, r)
+		return
+	}
 
 	accountIDStr := strconv.FormatInt(account.ID, 10)
-	accessToken, _, err := token.IssueWithTTL(accountIDStr, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
+	accessToken, _, err := token.IssueWithSessionTTL(accountIDStr, authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -203,6 +230,7 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 	family := database.NewID()
 	_, err = app.db.InsertRefreshToken(r.Context(),
 		rt.AccountID,
+		authSession.ID,
 		token.Hash(family),
 		rt.Family,
 		time.Now().Add(7*24*time.Hour),
@@ -235,6 +263,9 @@ func (app *application) logoutAccount(w http.ResponseWriter, r *http.Request) {
 		rt, found, err := app.db.GetRefreshTokenByHash(r.Context(), token.Hash(cookie.Value))
 		if err == nil && found {
 			_ = app.db.RevokeRefreshToken(r.Context(), rt.ID)
+			if rt.AuthSessionID != "" {
+				_ = app.db.RevokeAuthSession(r.Context(), rt.AuthSessionID, &rt.AccountID, "logout")
+			}
 		}
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -245,6 +276,205 @@ func (app *application) logoutAccount(w http.ResponseWriter, r *http.Request) {
 		Path:     "/api/v1/auth",
 		MaxAge:   -1,
 	})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) listAccountSessions(w http.ResponseWriter, r *http.Request) {
+	account := contextGetAccount(r)
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"created_at": "created_at",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	sessions, err := app.db.ListAuthSessionsPage(r.Context(), database.ListAuthSessionsParams{
+		AccountID: account.ID,
+		Page:      q.Page,
+		PageSize:  q.PageSize,
+	})
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	err = response.JSON(w, http.StatusOK, sessions)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) revokeAccountSession(w http.ResponseWriter, r *http.Request) {
+	account := contextGetAccount(r)
+	sessionID := strings.TrimSpace(chi.URLParam(r, "session_id"))
+	if sessionID == "" {
+		app.notFound(w, r)
+		return
+	}
+
+	session, found, err := app.db.GetAuthSession(r.Context(), sessionID, account.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.notFound(w, r)
+		return
+	}
+	if err = app.db.RevokeAuthSession(r.Context(), session.ID, &account.ID, "user_revoked"); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) revokeAccountSessions(w http.ResponseWriter, r *http.Request) {
+	account := contextGetAccount(r)
+	if err := app.db.RevokeAuthSessionsForAccount(r.Context(), account.ID, &account.ID, "user_revoked_all"); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) listInstanceAccountSessions(w http.ResponseWriter, r *http.Request) {
+	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
+	}
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"created_at": "created_at",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	if _, found, err := app.db.GetAccount(r.Context(), accountID); err != nil {
+		app.serverError(w, r, err)
+		return
+	} else if !found {
+		app.notFound(w, r)
+		return
+	}
+
+	sessions, err := app.db.ListAuthSessionsPage(r.Context(), database.ListAuthSessionsParams{
+		AccountID: accountID,
+		Page:      q.Page,
+		PageSize:  q.PageSize,
+	})
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	err = response.JSON(w, http.StatusOK, sessions)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) revokeInstanceAccountSession(w http.ResponseWriter, r *http.Request) {
+	admin := contextGetAccount(r)
+	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
+	}
+	sessionID := strings.TrimSpace(chi.URLParam(r, "session_id"))
+	session, found, err := app.db.GetAuthSession(r.Context(), sessionID, accountID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.notFound(w, r)
+		return
+	}
+	if err = app.db.RevokeAuthSession(r.Context(), session.ID, &admin.ID, "instance_admin_revoked"); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) revokeInstanceAccountSessions(w http.ResponseWriter, r *http.Request) {
+	admin := contextGetAccount(r)
+	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
+	}
+	if _, found, err := app.db.GetAccount(r.Context(), accountID); err != nil {
+		app.serverError(w, r, err)
+		return
+	} else if !found {
+		app.notFound(w, r)
+		return
+	}
+	if err = app.db.RevokeAuthSessionsForAccount(r.Context(), accountID, &admin.ID, "instance_admin_revoked_all"); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) listOrgMemberAccessSessions(w http.ResponseWriter, r *http.Request) {
+	org := contextGetOrg(r)
+	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
+	}
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"created_at": "created_at",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+
+	if member, err := app.db.IsOrgMember(r.Context(), org.ID, accountID); err != nil {
+		app.serverError(w, r, err)
+		return
+	} else if !member {
+		app.notFound(w, r)
+		return
+	}
+
+	sessions, err := app.db.ListOrgAccessSessionsPage(r.Context(), org.ID, accountID, q.Page, q.PageSize)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	err = response.JSON(w, http.StatusOK, sessions)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) revokeOrgMemberAccessSession(w http.ResponseWriter, r *http.Request) {
+	admin := contextGetAccount(r)
+	org := contextGetOrg(r)
+	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
+	}
+	sessionID := strings.TrimSpace(chi.URLParam(r, "session_id"))
+	session, found, err := app.db.GetOrgAccessSessionByID(r.Context(), sessionID, org.ID, accountID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.notFound(w, r)
+		return
+	}
+	if err = app.db.RevokeOrgAccessSession(r.Context(), session.ID, org.ID, &admin.ID, "org_admin_revoked"); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

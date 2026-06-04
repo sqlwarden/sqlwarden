@@ -55,6 +55,7 @@ func newTestApplication(t *testing.T) *application {
 	app.config.DeploymentMode = DeploymentModeServer
 	app.config.AccessMode = AccessModeMultiUser
 	app.config.PersonalSpacesEnabled = true
+	app.config.Sessions.RevocationEnabled = true
 	app.config.Files.StorageMode = FilesStorageModeObject
 	app.config.Files.ActiveStorageBackend = defaultFilesActiveBackend
 	app.config.Files.StorageBackends = map[string]FileStorageBackend{
@@ -91,7 +92,11 @@ func seedAccountWithToken(t *testing.T, app *application, email, name string) (d
 	t.Helper()
 
 	account := seedAccount(t, app, email, name)
-	tok, _, err := token.Issue(strconv.FormatInt(account.ID, 10), account.Email, account.Name, app.config.JWT.SecretKey)
+	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := token.IssueWithSessionTTL(strconv.FormatInt(account.ID, 10), authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
 	if err != nil {
 		t.Fatal(err)
 	}

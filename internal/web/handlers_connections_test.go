@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/driver"
+	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -933,6 +935,100 @@ func TestListActiveSessions_MultipleConnections(t *testing.T) {
 	}
 	decodeJSONResponse(t, listRes.BodyBytes, &payload)
 	assert.Equal(t, len(payload.Sessions), 2)
+}
+
+func TestRevokeWorkspaceDatabaseSession_OwnerCanRevokeOwnSession(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Revoke Own Session", "open")
+
+	claims, err := token.Verify(tok, app.config.JWT.SecretKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, _, err := app.connManager.GetOrCreateWithMetadata(
+		claims.AccountID,
+		strconv.FormatInt(conn.ID, 10),
+		connection.SessionMetadata{
+			OrgID:       strconv.FormatInt(org.ID, 10),
+			WorkspaceID: strconv.FormatInt(ws.ID, 10),
+		},
+		func() (driver.Driver, error) { return newIdleQueryDriver(), nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	revokeRes := send(t, newOrgRequest(t, http.MethodDelete,
+		fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/sessions/%s", org.Slug, ws.ID, session.ID), tok),
+		app.routes())
+	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
+
+	_, found := app.connManager.Get(session.ID)
+	assert.False(t, found)
+}
+
+func TestRevokeWorkspaceDatabaseSession_AdminCanRevokeWorkspaceSession(t *testing.T) {
+	t.Parallel()
+	app, org, ws, ownerTok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Revoke Other Session", "open")
+	member := seedAccount(t, app, uniqueEmail(t, "db-session-member"), "DB Session Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	session, _, err := app.connManager.GetOrCreateWithMetadata(
+		strconv.FormatInt(member.ID, 10),
+		strconv.FormatInt(conn.ID, 10),
+		connection.SessionMetadata{
+			OrgID:       strconv.FormatInt(org.ID, 10),
+			WorkspaceID: strconv.FormatInt(ws.ID, 10),
+		},
+		func() (driver.Driver, error) { return newIdleQueryDriver(), nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	revokeRes := send(t, newOrgRequest(t, http.MethodDelete,
+		fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/sessions/%s", org.Slug, ws.ID, session.ID), ownerTok),
+		app.routes())
+	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
+
+	_, found := app.connManager.Get(session.ID)
+	assert.False(t, found)
+}
+
+func TestRevokeWorkspaceDatabaseSession_CrossWorkspaceHidden(t *testing.T) {
+	t.Parallel()
+	app, org, wsA, ownerTok := setupWorkspaceOwner(t)
+	owner, _, _ := seedOrgOwner(t, app, uniqueEmail(t, "db-session-other-owner"), "Other Owner", "Other Org")
+	wsB := seedWorkspaceForAccount(t, app, org, owner, "Other Workspace", "")
+	envID := defaultEnvironmentID(t, app, wsB.ID)
+	conn := seedConnection(t, app, wsB.ID, &envID, org.ID, "sqlite", "Cross WS Session", "open")
+
+	session, _, err := app.connManager.GetOrCreateWithMetadata(
+		strconv.FormatInt(owner.ID, 10),
+		strconv.FormatInt(conn.ID, 10),
+		connection.SessionMetadata{
+			OrgID:       strconv.FormatInt(org.ID, 10),
+			WorkspaceID: strconv.FormatInt(wsB.ID, 10),
+		},
+		func() (driver.Driver, error) { return newIdleQueryDriver(), nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	revokeRes := send(t, newOrgRequest(t, http.MethodDelete,
+		fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/sessions/%s", org.Slug, wsA.ID, session.ID), ownerTok),
+		app.routes())
+	assert.Equal(t, revokeRes.StatusCode, http.StatusNotFound)
+
+	_, found := app.connManager.Get(session.ID)
+	assert.True(t, found)
 }
 
 // ── connect regression ──────────────────────────────────────────────────────

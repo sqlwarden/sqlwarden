@@ -61,6 +61,11 @@ func New(driver, dsn string, logger *slog.Logger, logQueries bool) (*DB, error) 
 			sqldb.Close()
 			return nil, err
 		}
+		_, err = db.ExecContext(ctx, "PRAGMA busy_timeout = 5000")
+		if err != nil {
+			sqldb.Close()
+			return nil, err
+		}
 
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s", driver)
@@ -71,8 +76,13 @@ func New(driver, dsn string, logger *slog.Logger, logQueries bool) (*DB, error) 
 	}
 	db.AddQueryHook(&slowQueryDetectorHook{threshold: 100, logger: logger})
 
-	sqldb.SetMaxOpenConns(25)
-	sqldb.SetMaxIdleConns(25)
+	if driver == "sqlite" {
+		sqldb.SetMaxOpenConns(1)
+		sqldb.SetMaxIdleConns(1)
+	} else {
+		sqldb.SetMaxOpenConns(25)
+		sqldb.SetMaxIdleConns(25)
+	}
 	sqldb.SetConnMaxIdleTime(5 * time.Minute)
 	sqldb.SetConnMaxLifetime(2 * time.Hour)
 

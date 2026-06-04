@@ -368,6 +368,12 @@ func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) 
 		app.serverError(w, r, err)
 		return
 	}
+	admin := contextGetAccount(r)
+	if err = app.db.RevokeOrgAccessSessionsForMember(r.Context(), org.ID, accountID, &admin.ID, "org_membership_removed"); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	app.connManager.RemoveForOrgAccount(strconv.FormatInt(org.ID, 10), strconv.FormatInt(accountID, 10))
 
 	app.enforcer.InvalidatePrincipals(org.ID, accountID)
 	w.WriteHeader(http.StatusNoContent)

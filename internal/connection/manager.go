@@ -30,9 +30,16 @@ type Session struct {
 	ID           string // ULID
 	AccountID    string
 	ConnectionID string
+	OrgID        string
+	WorkspaceID  string
 	Driver       driver.Driver // open connection
 	mu           sync.Mutex    // serializes Query/Execute on this session
 	lastUsed     time.Time
+}
+
+type SessionMetadata struct {
+	OrgID       string
+	WorkspaceID string
 }
 
 // Query executes a query on the session, serialized via the session mutex.
@@ -78,12 +85,24 @@ func New(idleTimeout time.Duration) *Manager {
 // GetOrCreate returns the existing session for (accountID, connID) or creates one using open().
 // Returns: (session, created, error) where created=true means a new session was opened.
 func (m *Manager) GetOrCreate(accountID, connID string, open func() (driver.Driver, error)) (*Session, bool, error) {
+	return m.GetOrCreateWithMetadata(accountID, connID, SessionMetadata{}, open)
+}
+
+// GetOrCreateWithMetadata returns an existing session or creates one with
+// resource metadata used for workspace-scoped admin visibility and revocation.
+func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata SessionMetadata, open func() (driver.Driver, error)) (*Session, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	key := fmt.Sprintf("%s:%s", accountID, connID)
 	if sess, ok := m.byKey[key]; ok {
 		sess.lastUsed = time.Now()
+		if metadata.OrgID != "" {
+			sess.OrgID = metadata.OrgID
+		}
+		if metadata.WorkspaceID != "" {
+			sess.WorkspaceID = metadata.WorkspaceID
+		}
 		return sess, false, nil
 	}
 
@@ -96,6 +115,8 @@ func (m *Manager) GetOrCreate(accountID, connID string, open func() (driver.Driv
 		ID:           newULID(),
 		AccountID:    accountID,
 		ConnectionID: connID,
+		OrgID:        metadata.OrgID,
+		WorkspaceID:  metadata.WorkspaceID,
 		Driver:       d,
 		lastUsed:     time.Now(),
 	}
@@ -109,7 +130,11 @@ func (m *Manager) GetOrCreate(accountID, connID string, open func() (driver.Driv
 // SessionRef is a lightweight summary of an active session returned by AllForAccount.
 type SessionRef struct {
 	SessionID    string
+	AccountID    string
 	ConnectionID string
+	OrgID        string
+	WorkspaceID  string
+	LastUsedAt   time.Time
 }
 
 // AllForAccount returns a SessionRef for every active session owned by accountID.
@@ -122,7 +147,31 @@ func (m *Manager) AllForAccount(accountID string) []SessionRef {
 		if sess.AccountID == accountID {
 			refs = append(refs, SessionRef{
 				SessionID:    sess.ID,
+				AccountID:    sess.AccountID,
 				ConnectionID: sess.ConnectionID,
+				OrgID:        sess.OrgID,
+				WorkspaceID:  sess.WorkspaceID,
+				LastUsedAt:   sess.lastUsed,
+			})
+		}
+	}
+	return refs
+}
+
+// AllForWorkspace returns active sessions known to belong to workspaceID.
+func (m *Manager) AllForWorkspace(workspaceID string) []SessionRef {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var refs []SessionRef
+	for _, sess := range m.byID {
+		if sess.WorkspaceID == workspaceID {
+			refs = append(refs, SessionRef{
+				SessionID:    sess.ID,
+				AccountID:    sess.AccountID,
+				ConnectionID: sess.ConnectionID,
+				OrgID:        sess.OrgID,
+				WorkspaceID:  sess.WorkspaceID,
+				LastUsedAt:   sess.lastUsed,
 			})
 		}
 	}
@@ -181,6 +230,65 @@ func (m *Manager) RemoveForConnection(connID string) int {
 	removed := 0
 	for id, sess := range m.byID {
 		if sess.ConnectionID != connID {
+			continue
+		}
+		sess.Driver.Close()
+		key := sess.AccountID + ":" + sess.ConnectionID
+		delete(m.byKey, key)
+		delete(m.byID, id)
+		removed++
+	}
+	return removed
+}
+
+// RemoveForAccount closes and removes all live sessions owned by accountID.
+func (m *Manager) RemoveForAccount(accountID string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	removed := 0
+	for id, sess := range m.byID {
+		if sess.AccountID != accountID {
+			continue
+		}
+		sess.Driver.Close()
+		key := sess.AccountID + ":" + sess.ConnectionID
+		delete(m.byKey, key)
+		delete(m.byID, id)
+		removed++
+	}
+	return removed
+}
+
+// RemoveForWorkspaceAccount closes and removes all live sessions for an account
+// inside one workspace.
+func (m *Manager) RemoveForWorkspaceAccount(workspaceID, accountID string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	removed := 0
+	for id, sess := range m.byID {
+		if sess.WorkspaceID != workspaceID || sess.AccountID != accountID {
+			continue
+		}
+		sess.Driver.Close()
+		key := sess.AccountID + ":" + sess.ConnectionID
+		delete(m.byKey, key)
+		delete(m.byID, id)
+		removed++
+	}
+	return removed
+}
+
+// RemoveForOrgAccount closes and removes all live sessions for an account in
+// an organization.
+func (m *Manager) RemoveForOrgAccount(orgID, accountID string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	removed := 0
+	for id, sess := range m.byID {
+		if sess.OrgID != orgID || sess.AccountID != accountID {
 			continue
 		}
 		sess.Driver.Close()

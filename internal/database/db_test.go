@@ -67,7 +67,11 @@ func TestNew(t *testing.T) {
 			err = db.Ping()
 			assert.Nil(t, err)
 
-			assert.Equal(t, 25, db.DB.DB.Stats().MaxOpenConnections)
+			expectedMaxOpen := 25
+			if tc.driver == "sqlite" {
+				expectedMaxOpen = 1
+			}
+			assert.Equal(t, expectedMaxOpen, db.DB.DB.Stats().MaxOpenConnections)
 		})
 
 		t.Run("Fails with invalid DSN", func(t *testing.T) {

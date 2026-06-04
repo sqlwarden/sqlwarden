@@ -1,5 +1,6 @@
 import { ApiError } from '#/lib/api/errors'
 import { getAccessToken, clearAccessToken } from '#/lib/auth/access-token'
+import { notifyAuthInvalidated } from '#/lib/auth/invalidation'
 import type { ListQuery } from '#/lib/api/types'
 
 export interface ApiClientOptions extends Omit<RequestInit, 'body'> {
@@ -90,8 +91,9 @@ export async function apiRequest<T>(path: string, options: ApiClientOptions = {}
 
   const payload = await parseJson(response)
   if (!response.ok) {
-    if (response.status === 401) {
+    if (response.status === 401 && !options.skipAuth) {
       clearAccessToken()
+      notifyAuthInvalidated()
     }
 
     const fieldErrors = typeof payload === 'object' && payload !== null && 'field_errors' in payload

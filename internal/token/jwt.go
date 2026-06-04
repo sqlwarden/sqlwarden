@@ -11,9 +11,10 @@ const DefaultAccessTokenTTL = 24 * time.Hour
 
 // Claims holds the parsed fields from an access token.
 type Claims struct {
-	AccountID string
-	Email     string
-	Name      string
+	AccountID     string
+	AuthSessionID string
+	Email         string
+	Name          string
 }
 
 // Issue signs an HS256 access token with the default lifetime.
@@ -25,6 +26,12 @@ func Issue(accountID, email, name, secretKey string) (string, time.Time, error) 
 // IssueWithTTL signs an HS256 access token with a caller-provided lifetime.
 // Returns: (tokenString, expiresAt, error)
 func IssueWithTTL(accountID, email, name, secretKey string, ttl time.Duration) (string, time.Time, error) {
+	return IssueWithSessionTTL(accountID, "", email, name, secretKey, ttl)
+}
+
+// IssueWithSessionTTL signs an HS256 access token bound to an auth session.
+// Returns: (tokenString, expiresAt, error)
+func IssueWithSessionTTL(accountID, authSessionID, email, name, secretKey string, ttl time.Duration) (string, time.Time, error) {
 	if ttl <= 0 {
 		ttl = DefaultAccessTokenTTL
 	}
@@ -36,8 +43,9 @@ func IssueWithTTL(accountID, email, name, secretKey string, ttl time.Duration) (
 			Expires: jwt.NewNumericTime(expiresAt),
 		},
 		Set: map[string]any{
-			"email": email,
-			"name":  name,
+			"auth_session_id": authSessionID,
+			"email":           email,
+			"name":            name,
 		},
 	}
 
@@ -63,10 +71,12 @@ func Verify(tokenStr, secretKey string) (Claims, error) {
 
 	email, _ := claims.Set["email"].(string)
 	name, _ := claims.Set["name"].(string)
+	authSessionID, _ := claims.Set["auth_session_id"].(string)
 
 	return Claims{
-		AccountID: claims.Subject,
-		Email:     email,
-		Name:      name,
+		AccountID:     claims.Subject,
+		AuthSessionID: authSessionID,
+		Email:         email,
+		Name:          name,
 	}, nil
 }

@@ -293,6 +293,14 @@ func (app *application) removeTeamMember(w http.ResponseWriter, r *http.Request)
 		app.serverError(w, r, err)
 		return
 	}
+	workspaceIDs, err := app.db.ListWorkspaceIDsForTeam(context.Background(), team.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	for _, workspaceID := range workspaceIDs {
+		app.connManager.RemoveForWorkspaceAccount(strconv.FormatInt(workspaceID, 10), strconv.FormatInt(accountID, 10))
+	}
 
 	app.enforcer.InvalidatePrincipals(org.ID, accountID)
 	w.WriteHeader(http.StatusNoContent)

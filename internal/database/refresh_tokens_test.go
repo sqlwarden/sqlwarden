@@ -20,9 +20,11 @@ func TestInsertAndGetRefreshToken(t *testing.T) {
 			assert.Nil(t, err)
 
 			expires := time.Now().Add(24 * time.Hour)
-			token, err := db.InsertRefreshToken(context.Background(), account.ID, "hash123", "family-abc", expires, "Mozilla/5.0", "192.168.1.1")
+			authSession := insertRefreshTokenAuthSession(t, db, account.ID, expires)
+			token, err := db.InsertRefreshToken(context.Background(), account.ID, authSession.ID, "hash123", "family-abc", expires, "Mozilla/5.0", "192.168.1.1")
 			assert.Nil(t, err)
 			assert.Equal(t, token.AccountID, account.ID)
+			assert.Equal(t, token.AuthSessionID, authSession.ID)
 			assert.Equal(t, token.TokenHash, "hash123")
 			assert.Equal(t, token.Family, "family-abc")
 			assert.True(t, token.RevokedAt == nil)
@@ -66,11 +68,12 @@ func TestRevokeFamilyTokens(t *testing.T) {
 			assert.Nil(t, err)
 
 			expires := time.Now().Add(24 * time.Hour)
-			_, err = db.InsertRefreshToken(context.Background(), account.ID, "hash-a", "family-x", expires, "", "")
+			authSession := insertRefreshTokenAuthSession(t, db, account.ID, expires)
+			_, err = db.InsertRefreshToken(context.Background(), account.ID, authSession.ID, "hash-a", "family-x", expires, "", "")
 			assert.Nil(t, err)
-			_, err = db.InsertRefreshToken(context.Background(), account.ID, "hash-b", "family-x", expires, "", "")
+			_, err = db.InsertRefreshToken(context.Background(), account.ID, authSession.ID, "hash-b", "family-x", expires, "", "")
 			assert.Nil(t, err)
-			_, err = db.InsertRefreshToken(context.Background(), account.ID, "hash-c", "family-y", expires, "", "")
+			_, err = db.InsertRefreshToken(context.Background(), account.ID, authSession.ID, "hash-c", "family-y", expires, "", "")
 			assert.Nil(t, err)
 
 			err = db.RevokeFamilyTokens(context.Background(), "family-x")
@@ -105,10 +108,11 @@ func TestDeleteExpiredRefreshTokens(t *testing.T) {
 
 			pastExpiry := time.Now().Add(-1 * time.Hour)
 			futureExpiry := time.Now().Add(24 * time.Hour)
+			authSession := insertRefreshTokenAuthSession(t, db, account.ID, futureExpiry)
 
-			_, err = db.InsertRefreshToken(context.Background(), account.ID, "expired-hash", "fam-e", pastExpiry, "", "")
+			_, err = db.InsertRefreshToken(context.Background(), account.ID, authSession.ID, "expired-hash", "fam-e", pastExpiry, "", "")
 			assert.Nil(t, err)
-			_, err = db.InsertRefreshToken(context.Background(), account.ID, "valid-hash", "fam-v", futureExpiry, "", "")
+			_, err = db.InsertRefreshToken(context.Background(), account.ID, authSession.ID, "valid-hash", "fam-v", futureExpiry, "", "")
 			assert.Nil(t, err)
 
 			err = db.DeleteExpiredRefreshTokens(context.Background())
@@ -123,4 +127,11 @@ func TestDeleteExpiredRefreshTokens(t *testing.T) {
 			assert.True(t, found)
 		})
 	}
+}
+
+func insertRefreshTokenAuthSession(t *testing.T, db *DB, accountID int64, expiresAt time.Time) AuthSession {
+	t.Helper()
+	session, err := db.InsertAuthSession(context.Background(), accountID, expiresAt, "test-agent", "127.0.0.1")
+	assert.Nil(t, err)
+	return session
 }

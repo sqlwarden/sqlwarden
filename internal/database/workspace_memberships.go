@@ -117,6 +117,22 @@ func (db *DB) RemoveWorkspaceTeam(ctx context.Context, workspaceID, teamID int64
 	return err
 }
 
+func (db *DB) ListWorkspaceIDsForTeam(ctx context.Context, teamID int64) ([]int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var workspaceIDs []int64
+	err := db.NewSelect().
+		TableExpr("workspace_teams").
+		Column("workspace_id").
+		Where("team_id = ?", teamID).
+		Scan(ctx, &workspaceIDs)
+	if err != nil {
+		return nil, err
+	}
+	return workspaceIDs, nil
+}
+
 // IsEffectiveWorkspaceMember reports whether an account belongs to a workspace
 // either directly or through a workspace team, constrained to the same org.
 func (db *DB) IsEffectiveWorkspaceMember(ctx context.Context, orgID, workspaceID, accountID int64) (bool, error) {

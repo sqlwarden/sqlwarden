@@ -41,6 +41,9 @@ func (app *application) routes() http.Handler {
 			r.Patch("/settings", app.updateInstanceSettings)
 			r.Post("/admins", app.addInstanceAdmin)
 			r.Post("/accounts", app.createInstanceAccount)
+			r.Get("/accounts/{account_id}/sessions", app.listInstanceAccountSessions)
+			r.Delete("/accounts/{account_id}/sessions", app.revokeInstanceAccountSessions)
+			r.Delete("/accounts/{account_id}/sessions/{session_id}", app.revokeInstanceAccountSession)
 			r.Delete("/admins/{account_id}", app.removeInstanceAdmin)
 		})
 
@@ -50,6 +53,9 @@ func (app *application) routes() http.Handler {
 			r.Patch("/account", app.updateAccount)
 			r.Patch("/account/password", app.updateAccountPassword)
 			r.Get("/account/orgs", app.getAccountOrgs)
+			r.Get("/account/sessions", app.listAccountSessions)
+			r.Delete("/account/sessions", app.revokeAccountSessions)
+			r.Delete("/account/sessions/{session_id}", app.revokeAccountSession)
 			r.Get("/session", app.getSession)
 		})
 
@@ -68,6 +74,7 @@ func (app *application) routes() http.Handler {
 					r.Patch("/", app.updateWorkspace)
 					r.Delete("/", app.deleteWorkspace)
 					r.Get("/sessions", app.listActiveSessions)
+					r.Delete("/sessions/{session_id}", app.revokeWorkspaceDatabaseSession)
 
 					r.Route("/files/private", func(r chi.Router) {
 						r.Get("/", app.listPrivateWorkspaceFiles)
@@ -140,6 +147,8 @@ func (app *application) routes() http.Handler {
 				r.With(app.requireOrgPermission("org:invite")).Post("/", app.addOrgMember)
 				r.With(app.requireOrgPermission("org:read")).Get("/{account_id}", app.getOrgMember)
 				r.With(app.requireOrgPermission("org:read")).Get("/{account_id}/teams", app.listOrgMemberTeams)
+				r.With(app.requireOrgPermission("org:write")).Get("/{account_id}/sessions", app.listOrgMemberAccessSessions)
+				r.With(app.requireOrgPermission("org:write")).Delete("/{account_id}/sessions/{session_id}", app.revokeOrgMemberAccessSession)
 				r.With(app.requireOrgRole(access.BuiltinOrgOwnerRole)).Patch("/{account_id}", app.updateOrgMemberRole)
 				r.With(app.requireOrgPermission("org:write")).Delete("/{account_id}", app.removeOrgMember)
 			})
@@ -182,6 +191,7 @@ func (app *application) routes() http.Handler {
 					r.With(app.requireWorkspacePermission("ws:write")).Patch("/", app.updateWorkspace)
 					r.With(app.requireWorkspacePermission("ws:delete")).Delete("/", app.deleteWorkspace)
 					r.Get("/sessions", app.listActiveSessions)
+					r.Delete("/sessions/{session_id}", app.revokeWorkspaceDatabaseSession)
 
 					r.Get("/permissions", app.listWorkspacePermissions)
 

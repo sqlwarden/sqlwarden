@@ -8,30 +8,32 @@ import (
 )
 
 type RefreshToken struct {
-	ID        string     `bun:",pk"             json:"-"`
-	AccountID int64      `bun:",notnull"        json:"-"`
-	TokenHash string     `bun:",notnull,unique" json:"-"`
-	Family    string     `bun:",notnull"        json:"-"`
-	ExpiresAt time.Time  `bun:",notnull"        json:"-"`
-	RevokedAt *time.Time `bun:",nullzero"       json:"-"`
-	CreatedAt time.Time  `bun:",notnull"        json:"-"`
-	UserAgent string     `bun:",nullzero"       json:"-"`
-	IPAddress string     `bun:",nullzero"       json:"-"`
+	ID            string     `bun:",pk"             json:"-"`
+	AccountID     int64      `bun:",notnull"        json:"-"`
+	AuthSessionID string     `bun:",nullzero"       json:"-"`
+	TokenHash     string     `bun:",notnull,unique" json:"-"`
+	Family        string     `bun:",notnull"        json:"-"`
+	ExpiresAt     time.Time  `bun:",notnull"        json:"-"`
+	RevokedAt     *time.Time `bun:",nullzero"       json:"-"`
+	CreatedAt     time.Time  `bun:",notnull"        json:"-"`
+	UserAgent     string     `bun:",nullzero"       json:"-"`
+	IPAddress     string     `bun:",nullzero"       json:"-"`
 }
 
-func (db *DB) InsertRefreshToken(ctx context.Context, accountID int64, tokenHash, family string, expiresAt time.Time, ua, ip string) (RefreshToken, error) {
+func (db *DB) InsertRefreshToken(ctx context.Context, accountID int64, authSessionID, tokenHash, family string, expiresAt time.Time, ua, ip string) (RefreshToken, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	token := RefreshToken{
-		ID:        newID(),
-		AccountID: accountID,
-		TokenHash: tokenHash,
-		Family:    family,
-		ExpiresAt: expiresAt,
-		CreatedAt: time.Now(),
-		UserAgent: ua,
-		IPAddress: ip,
+		ID:            newID(),
+		AccountID:     accountID,
+		AuthSessionID: authSessionID,
+		TokenHash:     tokenHash,
+		Family:        family,
+		ExpiresAt:     expiresAt,
+		CreatedAt:     time.Now(),
+		UserAgent:     ua,
+		IPAddress:     ip,
 	}
 
 	_, err := db.NewInsert().

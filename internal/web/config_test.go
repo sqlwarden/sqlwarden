@@ -48,6 +48,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.JWT.AccessTokenTTL != defaultJWTAccessTokenTTL {
 		t.Fatalf("jwt.accessTokenTTL = %s, want %s", cfg.JWT.AccessTokenTTL, defaultJWTAccessTokenTTL)
 	}
+	if !cfg.Sessions.RevocationEnabled {
+		t.Fatal("expected session revocation to default to enabled")
+	}
 	if cfg.Desktop.ActiveBackend != "local" {
 		t.Fatalf("desktop.active_backend = %q, want local", cfg.Desktop.ActiveBackend)
 	}
@@ -77,6 +80,8 @@ access_mode: single_user
 personal_spaces_enabled: false
 jwt:
   access_token_ttl: 12h
+sessions:
+  revocation_enabled: false
 tls:
   enabled: true
   cert_file: /etc/sqlwarden/tls.crt
@@ -146,6 +151,9 @@ desktop:
 	}
 	if cfg.JWT.AccessTokenTTL != 12*time.Hour {
 		t.Fatalf("jwt.accessTokenTTL = %s, want 12h", cfg.JWT.AccessTokenTTL)
+	}
+	if cfg.Sessions.RevocationEnabled {
+		t.Fatal("expected session revocation disabled from file")
 	}
 	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/etc/sqlwarden/tls.crt" || cfg.TLS.KeyFile != "/etc/sqlwarden/tls.key" {
 		t.Fatalf("unexpected tls config: %+v", cfg.TLS)
@@ -239,6 +247,7 @@ db:
 		"--db-driver", "sqlite",
 		"--base-url", "https://flags.example.com",
 		"--jwt-access-token-ttl", "2h",
+		"--sessions-revocation-enabled=false",
 		"--deployment-mode", DeploymentModeDesktop,
 		"--access-mode", AccessModeSingleUser,
 		"--tls-enabled",
@@ -261,6 +270,9 @@ db:
 	}
 	if cfg.JWT.AccessTokenTTL != 2*time.Hour {
 		t.Fatalf("jwt.accessTokenTTL = %s, want 2h", cfg.JWT.AccessTokenTTL)
+	}
+	if cfg.Sessions.RevocationEnabled {
+		t.Fatal("expected session revocation disabled from flag")
 	}
 	if cfg.DeploymentMode != DeploymentModeDesktop {
 		t.Fatalf("deploymentMode = %q", cfg.DeploymentMode)

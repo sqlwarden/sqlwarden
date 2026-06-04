@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
@@ -35,7 +36,11 @@ func testWithParams(r *http.Request, params map[string]string) *http.Request {
 // issueTestToken creates a valid JWT for the given account using the test app's secret.
 func issueTestToken(t *testing.T, app *application, accountID int64, email, name string) string {
 	t.Helper()
-	tok, _, err := token.Issue(strconv.FormatInt(accountID, 10), email, name, app.config.JWT.SecretKey)
+	authSession, err := app.db.InsertAuthSession(context.Background(), accountID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := token.IssueWithSessionTTL(strconv.FormatInt(accountID, 10), authSession.ID, email, name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,6 +102,133 @@ func TestAuthenticateV1_InvalidToken(t *testing.T) {
 	}
 }
 
+func TestAuthenticateV1_RejectsTokenWithoutAuthSession(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+
+	account, err := app.db.InsertAccount(context.Background(), "missing-session@example.com", "Missing Session", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := token.Issue(strconv.FormatInt(account.ID, 10), account.Email, account.Name, app.config.JWT.SecretKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/test", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+
+	rec := httptest.NewRecorder()
+	app.authenticateV1(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestAuthenticateV1_AllowsTokenWithoutAuthSessionWhenRevocationDisabled(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+	app.config.Sessions.RevocationEnabled = false
+
+	account, err := app.db.InsertAccount(context.Background(), "revocation-disabled@example.com", "Revocation Disabled", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := token.Issue(strconv.FormatInt(account.ID, 10), account.Email, account.Name, app.config.JWT.SecretKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var gotID int64
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/test", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+
+	rec := httptest.NewRecorder()
+	app.authenticateV1(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotID = contextGetAccount(r).ID
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if gotID != account.ID {
+		t.Fatalf("expected account ID %d, got %d", account.ID, gotID)
+	}
+}
+
+func TestAuthenticateV1_RejectsRevokedAuthSession(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+
+	account, err := app.db.InsertAccount(context.Background(), "revoked-session@example.com", "Revoked Session", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok := issueTestToken(t, app, account.ID, account.Email, account.Name)
+	claims, err := token.Verify(tok, app.config.JWT.SecretKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = app.db.RevokeAuthSession(context.Background(), claims.AuthSessionID, &account.ID, "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/test", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+
+	rec := httptest.NewRecorder()
+	app.authenticateV1(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestOrgCtx_DoesNotCreateOrgAccessSessionWhenRevocationDisabled(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+	app.config.Sessions.RevocationEnabled = false
+
+	account, err := app.db.InsertAccount(context.Background(), "orgctx-no-session@example.com", "Org Ctx No Session", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := app.db.InsertOrg(context.Background(), "orgctx-no-session", "Org Ctx No Session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = app.db.AddOrgMember(context.Background(), org.ID, account.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/orgctx-no-session", nil)
+	req = contextSetAccount(req, account)
+	req = testWithParams(req, map[string]string{"org_slug": org.Slug})
+
+	rec := httptest.NewRecorder()
+	app.orgCtx(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var count int
+	err = app.db.NewSelect().
+		TableExpr("org_access_sessions").
+		ColumnExpr("COUNT(*)").
+		Where("org_id = ? AND account_id = ?", org.ID, account.ID).
+		Scan(context.Background(), &count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no org access session rows, got %d", count)
+	}
+}
+
 func TestRequireAccount_NoAccount(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
 
@@ -153,6 +285,11 @@ func TestOrgCtx_NonMember(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug, nil)
+	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = contextSetAuthSession(req, authSession)
 	req = contextSetAccount(req, account)
 	req = testWithParams(req, map[string]string{"org_slug": org.Slug})
 
@@ -195,6 +332,11 @@ func TestOrgCtx_Member(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug, nil)
+	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = contextSetAuthSession(req, authSession)
 	req = contextSetAccount(req, account)
 	req = testWithParams(req, map[string]string{"org_slug": org.Slug})
 

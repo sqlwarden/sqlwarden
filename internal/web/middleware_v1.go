@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
@@ -31,6 +32,10 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 			app.invalidAuthenticationToken(w, r)
 			return
 		}
+		if app.config.Sessions.RevocationEnabled && claims.AuthSessionID == "" {
+			app.invalidAuthenticationToken(w, r)
+			return
+		}
 
 		accountID, err := strconv.ParseInt(claims.AccountID, 10, 64)
 		if err != nil {
@@ -46,6 +51,23 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 		if !found || !account.IsActive {
 			app.invalidAuthenticationToken(w, r)
 			return
+		}
+
+		if app.config.Sessions.RevocationEnabled {
+			authSession, found, err := app.db.GetAuthSession(r.Context(), claims.AuthSessionID, account.ID)
+			if err != nil {
+				app.serverError(w, r, err)
+				return
+			}
+			if !found || authSession.RevokedAt != nil || time.Now().After(authSession.ExpiresAt) {
+				app.invalidAuthenticationToken(w, r)
+				return
+			}
+			if err = app.db.TouchAuthSession(r.Context(), authSession.ID); err != nil {
+				app.serverError(w, r, err)
+				return
+			}
+			r = contextSetAuthSession(r, authSession)
 		}
 
 		r = contextSetAccount(r, account)
@@ -89,6 +111,28 @@ func (app *application) orgCtx(next http.Handler) http.Handler {
 		if !isMember {
 			app.notPermitted(w, r)
 			return
+		}
+
+		if app.config.Sessions.RevocationEnabled {
+			authSession := contextGetAuthSession(r)
+			if authSession.ID == "" {
+				app.invalidAuthenticationToken(w, r)
+				return
+			}
+			err = app.db.EnsureOrgAccessSession(r.Context(), authSession.ID, org.ID, account.ID, authSession.ExpiresAt)
+			if err != nil {
+				app.serverError(w, r, err)
+				return
+			}
+			orgAccessSession, found, err := app.db.GetOrgAccessSession(r.Context(), authSession.ID, org.ID, account.ID)
+			if err != nil {
+				app.serverError(w, r, err)
+				return
+			}
+			if !found || orgAccessSession.RevokedAt != nil || time.Now().After(orgAccessSession.ExpiresAt) {
+				app.notPermitted(w, r)
+				return
+			}
 		}
 
 		r = contextSetOrg(r, org)
