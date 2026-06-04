@@ -6,6 +6,7 @@ import { GlobalLoadingBar } from '#/components/GlobalLoadingBar'
 import { ThemeProvider } from '#/components/theme-provider'
 import { TooltipProvider } from '#/components/ui/tooltip'
 import { IconPackProvider } from '#/lib/icons'
+import { EditorThemeProvider } from '#/lib/editor-themes/context'
 import '../styles.css'
 
 export const Route = createRootRoute({
@@ -16,6 +17,7 @@ function RootComponent() {
   return (
     <ThemeProvider defaultTheme="system" storageKey="theme">
       <IconPackProvider>
+      <EditorThemeProvider>
       <TooltipProvider>
         <GlobalLoadingBar />
         <div className="flex min-h-screen flex-col">
@@ -34,6 +36,7 @@ function RootComponent() {
           },
         ]}
       />
+      </EditorThemeProvider>
       </IconPackProvider>
     </ThemeProvider>
   )

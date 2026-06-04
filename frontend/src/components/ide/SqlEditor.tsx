@@ -1,77 +1,32 @@
 import { useEffect, useRef } from 'react'
 import { EditorView, basicSetup } from 'codemirror'
-import { EditorState } from '@codemirror/state'
+import { EditorState, Compartment } from '@codemirror/state'
 import { sql } from '@codemirror/lang-sql'
-import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
-import { tags } from '@lezer/highlight'
 import { yCollab } from 'y-codemirror.next'
 import type * as Y from 'yjs'
 import { cn } from '#/lib/utils'
+import { useTheme } from '#/components/theme-provider'
+import { useEditorTheme } from '#/lib/editor-themes/context'
+import { loadEditorTheme } from '#/lib/editor-themes'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 
-// ─── Theme ─────────────────────────────────────────────────────────────────────
+// ─── Base structural theme ──────────────────────────────────────────────────────
+// Layout and font styles that must always be present regardless of which
+// color theme is loaded in the Compartment. The @uiw themes do not set these.
 
-const ideTheme = EditorView.theme(
-  {
-    '&': { height: '100%', backgroundColor: 'transparent' },
-    '.cm-scroller': {
-      fontFamily: 'var(--font-mono, ui-monospace, monospace)',
-      fontSize: '13px',
-      lineHeight: '1.65',
-      overflow: 'auto',
-    },
-    '.cm-content': { caretColor: 'var(--color-foreground)', padding: '8px 0' },
-    '.cm-gutters': {
-      backgroundColor: 'transparent',
-      border: 'none',
-      borderRight: '1px solid color-mix(in oklch, var(--color-border) 80%, transparent)',
-      color: 'var(--color-muted-foreground)',
-      paddingRight: '8px',
-      userSelect: 'none',
-    },
-    '.cm-lineNumbers .cm-gutterElement': { minWidth: '3.5ch', textAlign: 'right' },
-    '.cm-activeLine': {
-      backgroundColor: 'color-mix(in oklch, var(--color-muted) 40%, transparent)',
-    },
-    '.cm-activeLineGutter': {
-      backgroundColor: 'transparent',
-      color: 'var(--color-foreground)',
-    },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--color-foreground)' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-      backgroundColor: 'color-mix(in oklch, var(--color-primary) 22%, transparent)',
-    },
-    '.cm-matchingBracket': {
-      backgroundColor: 'color-mix(in oklch, var(--color-primary) 15%, transparent)',
-      outline: 'none',
-    },
-    '.cm-tooltip': {
-      backgroundColor: 'var(--color-popover)',
-      border: '1px solid var(--color-border)',
-      borderRadius: '0',
-      boxShadow: '0 4px 12px rgb(0 0 0 / 0.15)',
-    },
-    '.cm-tooltip-autocomplete > ul > li[aria-selected]': {
-      backgroundColor: 'var(--color-accent)',
-      color: 'var(--color-accent-foreground)',
-    },
-    '.cm-foldGutter': { display: 'none' },
+const baseEditorTheme = EditorView.theme({
+  '&': { height: '100%' },
+  '.cm-scroller': {
+    fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+    fontSize: '13px',
+    lineHeight: '1.65',
+    overflow: 'auto',
   },
-  { dark: true },
-)
-
-// ─── Syntax highlighting ────────────────────────────────────────────────────────
-
-const sqlHighlightStyle = HighlightStyle.define([
-  { tag: tags.keyword, color: 'var(--color-primary)', fontWeight: '600' },
-  { tag: [tags.string, tags.special(tags.string)], color: 'var(--color-chart-1)' },
-  { tag: [tags.number, tags.bool], color: 'var(--color-chart-2)' },
-  { tag: tags.comment, color: 'var(--color-muted-foreground)', fontStyle: 'italic' },
-  { tag: [tags.operator, tags.punctuation], color: 'var(--color-foreground)' },
-  { tag: tags.null, color: 'var(--color-muted-foreground)', fontStyle: 'italic' },
-  { tag: tags.variableName, color: 'var(--color-foreground)' },
-  { tag: tags.typeName, color: 'var(--color-chart-3)' },
-])
+  '.cm-content': { padding: '8px 0' },
+  '.cm-lineNumbers .cm-gutterElement': { minWidth: '3.5ch', textAlign: 'right' },
+  '.cm-foldGutter': { display: 'none' },
+  '.cm-tooltip': { borderRadius: '0' },
+})
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
@@ -89,6 +44,13 @@ export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorPr
   const onCursorChangeRef = useRef(onCursorChange)
   onCursorChangeRef.current = onCursorChange
 
+  const { resolvedTheme } = useTheme()
+  const { editorThemeDark, editorThemeLight } = useEditorTheme()
+  const activeThemeName = resolvedTheme === 'dark' ? editorThemeDark : editorThemeLight
+
+  const themeCompartment = useRef(new Compartment())
+  const viewRef = useRef<EditorView | null>(null)
+
   // Re-mount the editor whenever the active doc changes.
   // key={activeTab.id} at the call site also ensures clean remount on tab switch.
   useEffect(() => {
@@ -101,8 +63,8 @@ export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorPr
         extensions: [
           basicSetup,
           sql(),
-          ideTheme,
-          syntaxHighlighting(sqlHighlightStyle),
+          baseEditorTheme,
+          themeCompartment.current.of([]),
           EditorView.lineWrapping,
           yCollab(yText, null), // handles all CodeMirror ↔ Y.js sync
           EditorView.updateListener.of((update) => {
@@ -118,12 +80,29 @@ export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorPr
       parent: containerRef.current,
     })
 
+    viewRef.current = view
     viewRegistry.register(tabId, view)
+
     return () => {
+      viewRef.current = null
       viewRegistry.unregister(tabId)
       view.destroy()
     }
   }, [doc, tabId, viewRegistry])
+
+  // Hot-swap the theme without remounting the editor.
+  useEffect(() => {
+    let cancelled = false
+    loadEditorTheme(activeThemeName).then((ext) => {
+      if (cancelled || !viewRef.current) return
+      viewRef.current.dispatch({
+        effects: themeCompartment.current.reconfigure(ext),
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [activeThemeName])
 
   return <div ref={containerRef} className={cn('h-full overflow-hidden', className)} />
 }

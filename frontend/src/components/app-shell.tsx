@@ -32,6 +32,17 @@ import {
   SidebarTrigger,
 } from '#/components/ui/sidebar'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '#/components/ui/select'
+import { useEditorTheme } from '#/lib/editor-themes/context'
+import { EDITOR_THEME_LABELS, VALID_EDITOR_THEMES } from '#/lib/editor-themes'
+import type { EditorThemeName } from '#/lib/editor-themes'
 
 export type AppShellTheme = 'dark' | 'light' | 'system'
 export type AppShellSidebarStyle = 'sidebar' | 'inset' | 'floating'
@@ -342,6 +353,7 @@ function AppShellPreferencesPopover({
   setPreferences: Dispatch<SetStateAction<AppShellPreferences>>
 }) {
   const { packName, setPackName } = useIconPack()
+  const { editorThemeDark, editorThemeLight, setEditorThemeDark, setEditorThemeLight } = useEditorTheme()
 
   function updatePreference<Key extends keyof AppShellPreferences>(key: Key, value: AppShellPreferences[Key]) {
     window.localStorage.setItem(preferenceKeys[key], value)
@@ -358,6 +370,8 @@ function AppShellPreferencesPopover({
     })
     setPreferences(defaultPreferences)
     setPackName('hugeicons')
+    setEditorThemeDark('vscode-dark')
+    setEditorThemeLight('vscode-light')
   }
 
   return (
@@ -387,6 +401,7 @@ function AppShellPreferencesPopover({
           </div>
 
           <div className="flex flex-col gap-3 **:data-[slot=toggle-group]:w-full **:data-[slot=toggle-group-item]:flex-1 **:data-[slot=toggle-group-item]:text-xs">
+            <div className="text-xs font-medium text-muted-foreground">App</div>
             <PreferenceToggle
               label="Theme Mode"
               value={preferences.themeMode}
@@ -408,6 +423,20 @@ function AppShellPreferencesPopover({
               options={['hugeicons', 'lucide', 'remix']}
               labels={{ hugeicons: 'HugeIcons', lucide: 'Lucide', remix: 'Remix' }}
               onValueChange={(value) => setPackName(value as IconPackName)}
+            />
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className="text-xs font-medium text-muted-foreground">Editor</div>
+            <EditorThemeSelect
+              label="Dark Theme"
+              value={editorThemeDark}
+              onValueChange={setEditorThemeDark}
+            />
+            <EditorThemeSelect
+              label="Light Theme"
+              value={editorThemeLight}
+              onValueChange={setEditorThemeLight}
             />
           </div>
         </div>
@@ -447,6 +476,45 @@ function PreferenceToggle({
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
+    </div>
+  )
+}
+
+function EditorThemeSelect({
+  label,
+  value,
+  onValueChange,
+}: {
+  label: string
+  value: EditorThemeName
+  onValueChange: (value: EditorThemeName) => void
+}) {
+  const items = VALID_EDITOR_THEMES.map((name) => ({
+    label: EDITOR_THEME_LABELS[name],
+    value: name,
+  }))
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="text-xs font-medium">{label}</div>
+      <Select
+        items={items}
+        value={value}
+        onValueChange={(v) => v && onValueChange(v as EditorThemeName)}
+      >
+        <SelectTrigger size="sm" className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {VALID_EDITOR_THEMES.map((name) => (
+              <SelectItem key={name} value={name}>
+                {EDITOR_THEME_LABELS[name]}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
     </div>
   )
 }
