@@ -144,10 +144,13 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     let sql: string
     if (view) {
       const sel = view.state.selection.main
-      sql = (sel.from !== sel.to
-        ? view.state.sliceDoc(sel.from, sel.to)
-        : view.state.doc.toString()
-      ).trim()
+      if (sel.from !== sel.to) {
+        // Explicit selection — run exactly that text.
+        sql = view.state.sliceDoc(sel.from, sel.to).trim()
+      } else {
+        // No selection — run the statement the cursor is inside.
+        sql = sqlStatementAtCursor(view.state.doc.toString(), sel.head)
+      }
     } else {
       const doc = registry.get(activeTab.id)
       sql = (doc ? doc.getText('content').toString() : activeTab.content).trim()
@@ -420,4 +423,75 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     )}
     </>
   )
+}
+
+// ─── SQL statement extraction ──────────────────────────────────────────────────
+
+/**
+ * Returns the SQL statement that contains `cursor` (a character offset).
+ * Scans for semicolons that are not inside string literals or comments.
+ * Falls back to the full trimmed text when no semicolons are present.
+ *
+ * Statement spans are [inclusive_start, exclusive_end]. When the cursor
+ * sits in whitespace between statements, the preceding statement wins.
+ */
+function sqlStatementAtCursor(text: string, cursor: number): string {
+  type LexState = 'normal' | 'sq' | 'dq' | 'lc' | 'bc'
+  let state: LexState = 'normal'
+  const semis: number[] = []
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    const n = text[i + 1] ?? ''
+    switch (state) {
+      case 'normal':
+        if (c === "'") { state = 'sq' }
+        else if (c === '"') { state = 'dq' }
+        else if (c === '-' && n === '-') { state = 'lc'; i++ }
+        else if (c === '/' && n === '*') { state = 'bc'; i++ }
+        else if (c === ';') { semis.push(i) }
+        break
+      case 'sq':
+        if (c === "'" && n === "'") { i++ } // escaped ''
+        else if (c === "'") { state = 'normal' }
+        break
+      case 'dq':
+        if (c === '"' && n === '"') { i++ } // escaped ""
+        else if (c === '"') { state = 'normal' }
+        break
+      case 'lc':
+        if (c === '\n') { state = 'normal' }
+        break
+      case 'bc':
+        if (c === '*' && n === '/') { state = 'normal'; i++ }
+        break
+    }
+  }
+
+  if (semis.length === 0) return text.trim()
+
+  // Build [start, exclusive_end] spans from semicolon positions.
+  const spans: Array<[number, number]> = []
+  let start = 0
+  for (const semi of semis) {
+    spans.push([start, semi + 1]) // include the semicolon in the span
+    start = semi + 1
+  }
+  // Trailing content after the last semicolon (statement without terminator).
+  if (text.slice(start).trim()) {
+    spans.push([start, text.length])
+  }
+
+  // Find the span that contains the cursor.
+  for (const [s, e] of spans) {
+    if (cursor >= s && cursor < e) return text.slice(s, e).trim()
+  }
+
+  // Cursor is in trailing whitespace — return the last span that started at or
+  // before the cursor (i.e. the statement immediately preceding it).
+  let best = spans[0]
+  for (const span of spans) {
+    if (span[0] <= cursor) best = span
+  }
+  return text.slice(best[0], best[1]).trim()
 }
