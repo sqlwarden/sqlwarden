@@ -435,7 +435,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
  * Statement spans are [inclusive_start, exclusive_end]. When the cursor
  * sits in whitespace between statements, the preceding statement wins.
  */
-function sqlStatementAtCursor(text: string, cursor: number): string {
+export function sqlStatementAtCursor(text: string, cursor: number): string {
   type LexState = 'normal' | 'sq' | 'dq' | 'lc' | 'bc'
   let state: LexState = 'normal'
   const semis: number[] = []
@@ -471,11 +471,16 @@ function sqlStatementAtCursor(text: string, cursor: number): string {
   if (semis.length === 0) return text.trim()
 
   // Build [start, exclusive_end] spans from semicolon positions.
+  // Each next span starts at the first non-whitespace char after the semicolon
+  // so that the gap between statements belongs to no span — the cursor-in-gap
+  // case then correctly falls back to the preceding statement.
   const spans: Array<[number, number]> = []
   let start = 0
   for (const semi of semis) {
     spans.push([start, semi + 1]) // include the semicolon in the span
-    start = semi + 1
+    let nextStart = semi + 1
+    while (nextStart < text.length && /\s/.test(text[nextStart])) nextStart++
+    start = nextStart
   }
   // Trailing content after the last semicolon (statement without terminator).
   if (text.slice(start).trim()) {
