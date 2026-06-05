@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -93,6 +94,33 @@ func TestInstanceAdminsLifecycle(t *testing.T) {
 			}
 			if isAdmin {
 				t.Fatal("expected account to be removed from instance admins")
+			}
+		})
+	}
+}
+
+func TestRemoveInstanceAdminRejectsLastAdmin(t *testing.T) {
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+
+			admin := testUsers["alice"]
+			if err := db.InsertInstanceAdmin(ctx, admin.id); err != nil {
+				t.Fatal(err)
+			}
+
+			err := db.RemoveInstanceAdmin(ctx, admin.id)
+			if !errors.Is(err, ErrLastInstanceAdmin) {
+				t.Fatalf("expected ErrLastInstanceAdmin, got %v", err)
+			}
+
+			isAdmin, err := db.IsInstanceAdmin(ctx, admin.id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !isAdmin {
+				t.Fatal("expected last admin to remain")
 			}
 		})
 	}

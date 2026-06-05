@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/internal/validator"
+	"github.com/uptrace/bun"
 )
 
 // setup handles POST /api/setup.
@@ -45,6 +47,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 	input.V.CheckField(input.Email != "", "email", "Email is required.")
 	input.V.CheckField(len(input.Password) >= 8, "password", "Password must be at least 8 characters.")
 
+	organizationName := input.OrganizationName
 	organizationSlug := input.OrganizationSlug
 	if app.config.AccessMode != AccessModeSingleUser {
 		input.V.CheckField(input.OrganizationName != "", "organization_name", "Organization name is required.")
@@ -82,6 +85,17 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 			app.failedValidation(w, r, input.V)
 			return
 		}
+	} else {
+		organizationName = singleUserDefaultOrgName
+		organizationSlug = singleUserDefaultOrgSlug
+		_, found, err := app.db.GetOrgBySlug(r.Context(), organizationSlug)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if found {
+			organizationSlug = singleUserDefaultOrgSlug + "-" + strings.ToLower(database.NewID())
+		}
 	}
 
 	hashedPassword, err := password.Hash(input.Password)
@@ -90,10 +104,10 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account, err := app.db.InsertAccount(r.Context(), input.Email, input.Name, &hashedPassword)
+	account, org, authSession, err := app.createFirstRunSetup(r.Context(), input.Email, input.Name, &hashedPassword, organizationSlug, organizationName, r.Header.Get("User-Agent"), r.RemoteAddr)
 	if err != nil {
 		if isUniqueViolation(err) {
-			input.V.AddFieldError("email", "An account with this email already exists.")
+			input.V.AddFieldError("email", "An account or organization with these details already exists.")
 			app.failedValidation(w, r, input.V)
 			return
 		}
@@ -101,44 +115,6 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = app.db.InsertInstanceAdmin(r.Context(), account.ID)
-	if err != nil {
-		if isUniqueViolation(err) {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		app.serverError(w, r, err)
-		return
-	}
-
-	var org database.Organization
-	if app.config.AccessMode == AccessModeSingleUser {
-		seededOrg, err := app.seedSingleUserOrganization(r.Context(), account.ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		org = seededOrg
-	} else {
-		seededOrg, err := app.createOwnedOrganization(r.Context(), organizationSlug, input.OrganizationName, account.ID)
-		if err != nil {
-			if isUniqueViolation(err) {
-				input.V.AddFieldError("organization_slug", "An organization with this slug already exists.")
-				app.failedValidation(w, r, input.V)
-				return
-			}
-			app.serverError(w, r, err)
-			return
-		}
-		org = seededOrg
-	}
-
-	sessionExpiresAt := time.Now().Add(7 * 24 * time.Hour)
-	authSession, err := app.db.InsertAuthSession(r.Context(), account.ID, sessionExpiresAt, r.Header.Get("User-Agent"), r.RemoteAddr)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
 	accessToken, _, err := token.IssueWithSessionTTL(strconv.FormatInt(account.ID, 10), authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -155,6 +131,37 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func (app *application) createFirstRunSetup(ctx context.Context, email, name string, hashedPassword *string, organizationSlug, organizationName, userAgent, remoteAddr string) (database.Account, database.Organization, database.AuthSession, error) {
+	var account database.Account
+	var org database.Organization
+	var authSession database.AuthSession
+
+	err := app.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var err error
+		account, err = app.db.InsertAccountWithExecutor(ctx, tx, email, name, hashedPassword)
+		if err != nil {
+			return err
+		}
+		if err = app.db.InsertInstanceAdminWithExecutor(ctx, tx, account.ID); err != nil {
+			return err
+		}
+
+		org, err = app.createOwnedOrganizationWithExecutor(ctx, tx, organizationSlug, organizationName, account.ID)
+		if err != nil {
+			return err
+		}
+
+		authSession, err = app.db.InsertAuthSessionWithExecutor(ctx, tx, account.ID, time.Now().Add(7*24*time.Hour), userAgent, remoteAddr)
+		return err
+	})
+	if err != nil {
+		return database.Account{}, database.Organization{}, database.AuthSession{}, err
+	}
+
+	app.enforcer.InvalidateOrgPolicy(org.ID)
+	return account, org, authSession, nil
 }
 
 func (app *application) seedSingleUserOrganization(ctx context.Context, accountID int64) (database.Organization, error) {
@@ -488,19 +495,13 @@ func (app *application) removeInstanceAdmin(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	n, err := app.db.CountInstanceAdmins(r.Context())
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if n <= 1 {
+	err = app.db.RemoveInstanceAdmin(r.Context(), accountID)
+	if errors.Is(err, database.ErrLastInstanceAdmin) {
 		v := validator.Validator{}
 		v.AddError("Cannot remove the last instance admin.")
 		app.failedValidation(w, r, v)
 		return
 	}
-
-	err = app.db.RemoveInstanceAdmin(r.Context(), accountID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

@@ -35,7 +35,16 @@ func (db *DB) InsertEnvironment(ctx context.Context, workspaceID int64, name, de
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	return db.insertEnvironmentWithExecutor(ctx, db.DB, workspaceID, name, description)
+	var env Environment
+	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var err error
+		env, err = db.insertEnvironmentWithExecutor(ctx, tx, workspaceID, name, description)
+		return err
+	})
+	if err != nil {
+		return Environment{}, err
+	}
+	return env, nil
 }
 
 func (db *DB) insertEnvironmentWithExecutor(ctx context.Context, exec bun.IDB, workspaceID int64, name, description string) (Environment, error) {
@@ -75,8 +84,12 @@ func (db *DB) DefaultEnvironmentID(ctx context.Context, workspaceID int64) (int6
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	return db.defaultEnvironmentIDWithExecutor(ctx, db.DB, workspaceID)
+}
+
+func (db *DB) defaultEnvironmentIDWithExecutor(ctx context.Context, exec bun.IDB, workspaceID int64) (int64, error) {
 	var env Environment
-	err := db.NewSelect().
+	err := exec.NewSelect().
 		Model(&env).
 		Where("workspace_id = ? AND name = 'Default'", workspaceID).
 		Scan(ctx)
@@ -258,31 +271,28 @@ func (db *DB) DeleteEnvironment(ctx context.Context, id int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	connCount, err := db.NewSelect().
-		TableExpr("connections").
-		Where("environment_id = ?", id).
-		Count(ctx)
-	if err != nil {
-		return err
-	}
-	if connCount > 0 {
-		return ErrEnvironmentHasConnections
-	}
+	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		connCount, err := tx.NewSelect().
+			TableExpr("connections").
+			Where("environment_id = ?", id).
+			Count(ctx)
+		if err != nil {
+			return err
+		}
+		if connCount > 0 {
+			return ErrEnvironmentHasConnections
+		}
 
-	_, err = db.NewDelete().Model((*Environment)(nil)).Where("id = ?", id).Exec(ctx)
-	if err != nil {
-		return err
-	}
+		if _, err = tx.NewDelete().Model((*Environment)(nil)).Where("id = ?", id).Exec(ctx); err != nil {
+			return err
+		}
 
-	// Remove the environment's own hierarchy row.
-	_, err = db.NewDelete().TableExpr("resource_hierarchy").
-		Where("child_type = 'environment' AND child_id = ?", id).
-		Exec(ctx)
-	if err != nil {
+		// Remove the environment's own hierarchy row.
+		_, err = tx.NewDelete().TableExpr("resource_hierarchy").
+			Where("child_type = 'environment' AND child_id = ?", id).
+			Exec(ctx)
 		return err
-	}
-
-	return nil
+	})
 }
 
 func normalizeEnvironmentListParams(params ListEnvironmentsParams) ListEnvironmentsParams {

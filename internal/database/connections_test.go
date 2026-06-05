@@ -2,7 +2,10 @@ package database
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"github.com/uptrace/bun"
 )
 
 func TestConnectionCRUD(t *testing.T) {
@@ -145,5 +148,79 @@ func TestListConnections_SupportsSearchFilterSortAndPagination(t *testing.T) {
 	}
 	if result.Items[0].Name != "Primary DB" {
 		t.Fatalf("expected Primary DB, got %s", result.Items[0].Name)
+	}
+}
+
+func TestInsertConnectionWithExecutor_RollsBackConnectionAndHierarchy(t *testing.T) {
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			ctx := context.Background()
+			db := newTestDB(t, driver)
+			org, err := db.InsertOrg(ctx, "conn-rollback-"+driver, "Connection Rollback "+driver)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ws, err := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Main", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			sentinel := errors.New("abort connection insert")
+			var conn Connection
+			err = db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+				var err error
+				conn, err = db.InsertConnectionWithExecutor(ctx, tx, ws.ID, nil, "Rolled Back", "postgres", "dsn", "open")
+				if err != nil {
+					return err
+				}
+				return sentinel
+			})
+			if !errors.Is(err, sentinel) {
+				t.Fatalf("expected sentinel rollback error, got %v", err)
+			}
+
+			if got := countTableRows(t, db, "connections", "workspace_id = ?", ws.ID); got != 0 {
+				t.Fatalf("expected connection insert to roll back, got %d rows", got)
+			}
+			if conn.ID != 0 {
+				if got := countTableRows(t, db, "resource_hierarchy", "child_type = 'connection' AND child_id = ?", conn.ID); got != 0 {
+					t.Fatalf("expected connection hierarchy to roll back, got %d rows", got)
+				}
+			}
+		})
+	}
+}
+
+func TestDeleteConnection_RemovesHierarchyAtomically(t *testing.T) {
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			ctx := context.Background()
+			db := newTestDB(t, driver)
+			org, err := db.InsertOrg(ctx, "conn-delete-tx-"+driver, "Connection Delete "+driver)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ws, err := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Main", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn, err := db.InsertConnection(ctx, ws.ID, nil, "Primary", "postgres", "dsn", "open")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := countTableRows(t, db, "resource_hierarchy", "child_type = 'connection' AND child_id = ?", conn.ID); got != 1 {
+				t.Fatalf("expected connection hierarchy before delete, got %d", got)
+			}
+
+			if err = db.DeleteConnection(ctx, conn.ID); err != nil {
+				t.Fatal(err)
+			}
+			if got := countTableRows(t, db, "connections", "id = ?", conn.ID); got != 0 {
+				t.Fatalf("expected connection to be deleted, got %d rows", got)
+			}
+			if got := countTableRows(t, db, "resource_hierarchy", "child_type = 'connection' AND child_id = ?", conn.ID); got != 0 {
+				t.Fatalf("expected connection hierarchy to be deleted, got %d rows", got)
+			}
+		})
 	}
 }

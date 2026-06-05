@@ -127,29 +127,22 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 
 	accountIDStr := strconv.FormatInt(account.ID, 10)
 	sessionExpiresAt := time.Now().Add(7 * 24 * time.Hour)
-	authSession, err := app.db.InsertAuthSession(r.Context(), account.ID, sessionExpiresAt, r.Header.Get("User-Agent"), r.RemoteAddr)
+	family := database.NewID()
+	authSession, _, err := app.db.CreateAuthSessionWithRefreshToken(
+		r.Context(),
+		account.ID,
+		sessionExpiresAt,
+		r.Header.Get("User-Agent"),
+		r.RemoteAddr,
+		token.Hash(family),
+		family,
+	)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
 	accessToken, _, err := token.IssueWithSessionTTL(accountIDStr, authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	family := database.NewID()
-	tokenHash := token.Hash(family)
-	_, err = app.db.InsertRefreshToken(r.Context(),
-		account.ID,
-		authSession.ID,
-		tokenHash,
-		family,
-		sessionExpiresAt,
-		r.Header.Get("User-Agent"),
-		r.RemoteAddr,
-	)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -194,8 +187,6 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = app.db.RevokeRefreshToken(r.Context(), rt.ID)
-
 	account, found, err := app.db.GetAccount(r.Context(), rt.AccountID)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -228,7 +219,8 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	family := database.NewID()
-	_, err = app.db.InsertRefreshToken(r.Context(),
+	_, err = app.db.RotateRefreshToken(r.Context(),
+		rt.ID,
 		rt.AccountID,
 		authSession.ID,
 		token.Hash(family),

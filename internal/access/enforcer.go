@@ -347,55 +347,83 @@ func matchesPrincipal(subjectType string, subjectID, accountID int64, principals
 // SeedOrg creates the owner and admin builtin roles for a new org and binds ownerAccountID to
 // the owner role. Call this once when creating a new organization.
 func (e *Enforcer) SeedOrg(ctx context.Context, orgID, ownerAccountID int64) error {
-	for roleName, permissions := range OrgBuiltinRoles {
-		roleID, err := e.insertRole(ctx, orgID, nil, roleName, OrgBuiltinRoleDescriptions[roleName], "org", true)
-		if err != nil {
-			return fmt.Errorf("seed role %s: %w", roleName, err)
-		}
-
-		if err = e.insertRolePermissions(ctx, roleID, permissions, true); err != nil {
-			return fmt.Errorf("seed %s permissions: %w", roleName, err)
-		}
-
-		if roleName == BuiltinOrgOwnerRole {
-			err = e.bindRoleByID(ctx, orgID, roleID, SubjectTypeAccount, ownerAccountID, "org", orgID, ownerAccountID)
-			if err != nil {
-				return fmt.Errorf("bind owner role: %w", err)
-			}
-		}
-		if roleName == BuiltinOrgMemberRole {
-			err = e.bindRoleByID(ctx, orgID, roleID, SubjectTypeOrgMembers, orgID, "org", orgID, ownerAccountID)
-			if err != nil {
-				return fmt.Errorf("bind org member role: %w", err)
-			}
-		}
+	err := e.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		return e.SeedOrgWithExecutor(ctx, tx, orgID, ownerAccountID)
+	})
+	if err != nil {
+		return err
 	}
 
 	e.cache.InvalidateOrgPolicy(orgID)
 	return nil
 }
 
+// SeedOrgWithExecutor seeds organization builtin authorization data using exec.
+// Callers that pass a transaction are responsible for cache invalidation after commit.
+func (e *Enforcer) SeedOrgWithExecutor(ctx context.Context, exec bun.IDB, orgID, ownerAccountID int64) error {
+	for roleName, permissions := range OrgBuiltinRoles {
+		roleID, err := e.insertRoleWithExecutor(ctx, exec, orgID, nil, roleName, OrgBuiltinRoleDescriptions[roleName], "org", true)
+		if err != nil {
+			return fmt.Errorf("seed role %s: %w", roleName, err)
+		}
+
+		if err = e.insertRolePermissionsWithExecutor(ctx, exec, roleID, permissions, true); err != nil {
+			return fmt.Errorf("seed %s permissions: %w", roleName, err)
+		}
+
+		if roleName == BuiltinOrgOwnerRole {
+			err = e.bindRoleByIDWithExecutor(ctx, exec, orgID, roleID, SubjectTypeAccount, ownerAccountID, "org", orgID, ownerAccountID)
+			if err != nil {
+				return fmt.Errorf("bind owner role: %w", err)
+			}
+		}
+		if roleName == BuiltinOrgMemberRole {
+			err = e.bindRoleByIDWithExecutor(ctx, exec, orgID, roleID, SubjectTypeOrgMembers, orgID, "org", orgID, ownerAccountID)
+			if err != nil {
+				return fmt.Errorf("bind org member role: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // SeedWorkspace creates the workspace builtin roles for a new workspace and binds
 // creatorAccountID to BuiltinWorkspaceAdminRole. Call this once when creating a new workspace.
 func (e *Enforcer) SeedWorkspace(ctx context.Context, orgID, workspaceID, creatorAccountID int64) error {
+	err := e.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		return e.SeedWorkspaceWithExecutor(ctx, tx, orgID, workspaceID, creatorAccountID)
+	})
+	if err != nil {
+		return err
+	}
+
+	e.cache.InvalidateOrgPolicy(orgID)
+	e.cache.InvalidatePrincipals(orgID, creatorAccountID)
+	return nil
+}
+
+// SeedWorkspaceWithExecutor seeds workspace builtin authorization data using exec.
+// Callers that pass a transaction are responsible for cache invalidation after commit.
+func (e *Enforcer) SeedWorkspaceWithExecutor(ctx context.Context, exec bun.IDB, orgID, workspaceID, creatorAccountID int64) error {
 	for roleName, permissions := range WorkspaceBuiltinRoles {
-		roleID, err := e.insertRole(ctx, orgID, &workspaceID, roleName, WorkspaceBuiltinRoleDescriptions[roleName], "workspace", true)
+		roleID, err := e.insertRoleWithExecutor(ctx, exec, orgID, &workspaceID, roleName, WorkspaceBuiltinRoleDescriptions[roleName], "workspace", true)
 		if err != nil {
 			return fmt.Errorf("seed workspace role %s: %w", roleName, err)
 		}
 
-		if err = e.insertRolePermissions(ctx, roleID, permissions, true); err != nil {
+		if err = e.insertRolePermissionsWithExecutor(ctx, exec, roleID, permissions, true); err != nil {
 			return fmt.Errorf("seed workspace %s permissions: %w", roleName, err)
 		}
 
 		if roleName == BuiltinWorkspaceAdminRole {
-			err = e.bindRoleByID(ctx, orgID, roleID, SubjectTypeAccount, creatorAccountID, "workspace", workspaceID, creatorAccountID)
+			err = e.bindRoleByIDWithExecutor(ctx, exec, orgID, roleID, SubjectTypeAccount, creatorAccountID, "workspace", workspaceID, creatorAccountID)
 			if err != nil {
 				return fmt.Errorf("bind %s role: %w", BuiltinWorkspaceAdminRole, err)
 			}
 		}
 		if roleName == BuiltinWorkspaceMemberRole {
-			err = e.bindRoleByID(ctx, orgID, roleID, SubjectTypeWorkspaceMembers, workspaceID, "workspace", workspaceID, creatorAccountID)
+			err = e.bindRoleByIDWithExecutor(ctx, exec, orgID, roleID, SubjectTypeWorkspaceMembers, workspaceID, "workspace", workspaceID, creatorAccountID)
 			if err != nil {
 				return fmt.Errorf("bind workspace member role: %w", err)
 			}
@@ -407,7 +435,7 @@ func (e *Enforcer) SeedWorkspace(ctx context.Context, orgID, workspaceID, creato
 		"account_id":   creatorAccountID,
 		"created_by":   creatorAccountID,
 	}
-	_, err := e.db.NewInsert().
+	_, err := exec.NewInsert().
 		TableExpr("workspace_members").
 		Model(&wm).
 		Ignore().
@@ -416,8 +444,6 @@ func (e *Enforcer) SeedWorkspace(ctx context.Context, orgID, workspaceID, creato
 		return fmt.Errorf("bind creator workspace membership: %w", err)
 	}
 
-	e.cache.InvalidateOrgPolicy(orgID)
-	e.cache.InvalidatePrincipals(orgID, creatorAccountID)
 	return nil
 }
 
@@ -430,13 +456,20 @@ func (e *Enforcer) CreateRole(ctx context.Context, orgID int64, workspaceID *int
 		}
 	}
 
-	roleID, err := e.insertRole(ctx, orgID, workspaceID, name, description, scopeType, false)
+	var roleID int64
+	err := e.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var err error
+		roleID, err = e.insertRoleWithExecutor(ctx, tx, orgID, workspaceID, name, description, scopeType, false)
+		if err != nil {
+			return err
+		}
+		if err = e.insertRolePermissionsWithExecutor(ctx, tx, roleID, permissions, false); err != nil {
+			return fmt.Errorf("insert permissions: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
 		return 0, err
-	}
-
-	if err = e.insertRolePermissions(ctx, roleID, permissions, false); err != nil {
-		return 0, fmt.Errorf("insert permissions: %w", err)
 	}
 
 	e.cache.InvalidateOrgPolicy(orgID)
@@ -450,6 +483,10 @@ type rolePermissionInsert struct {
 }
 
 func (e *Enforcer) insertRolePermissions(ctx context.Context, roleID int64, permissions []string, ignoreConflicts bool) error {
+	return e.insertRolePermissionsWithExecutor(ctx, e.db, roleID, permissions, ignoreConflicts)
+}
+
+func (e *Enforcer) insertRolePermissionsWithExecutor(ctx context.Context, exec bun.IDB, roleID int64, permissions []string, ignoreConflicts bool) error {
 	if len(permissions) == 0 {
 		return nil
 	}
@@ -457,7 +494,7 @@ func (e *Enforcer) insertRolePermissions(ctx context.Context, roleID int64, perm
 	for _, permission := range permissions {
 		rows = append(rows, rolePermissionInsert{RoleID: roleID, Permission: permission})
 	}
-	query := e.db.NewInsert().Model(&rows)
+	query := exec.NewInsert().Model(&rows)
 	if ignoreConflicts {
 		query = query.Ignore()
 	}
@@ -468,36 +505,39 @@ func (e *Enforcer) insertRolePermissions(ctx context.Context, roleID int64, perm
 // DeleteRole deletes an unbound custom role. Policy bindings must be explicitly
 // revoked first so deleting a role cannot silently revoke access assignments.
 func (e *Enforcer) DeleteRole(ctx context.Context, roleID, orgID int64) error {
-	var isBuiltin bool
-	err := e.db.NewSelect().
-		TableExpr("roles").
-		ColumnExpr("is_builtin").
-		Where("id = ? AND org_id = ?", roleID, orgID).
-		Scan(ctx, &isBuiltin)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrRoleNotFound
+	err := e.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var isBuiltin bool
+		err := tx.NewSelect().
+			TableExpr("roles").
+			ColumnExpr("is_builtin").
+			Where("id = ? AND org_id = ?", roleID, orgID).
+			Scan(ctx, &isBuiltin)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrRoleNotFound
+			}
+			return err
 		}
-		return err
-	}
-	if isBuiltin {
-		return ErrBuiltinRole
-	}
+		if isBuiltin {
+			return ErrBuiltinRole
+		}
 
-	var bindingCount int
-	err = e.db.NewSelect().
-		TableExpr("role_bindings").
-		ColumnExpr("COUNT(*)").
-		Where("role_id = ? AND org_id = ?", roleID, orgID).
-		Scan(ctx, &bindingCount)
-	if err != nil {
-		return err
-	}
-	if bindingCount > 0 {
-		return RoleInUseError{BindingCount: bindingCount}
-	}
+		var bindingCount int
+		err = tx.NewSelect().
+			TableExpr("role_bindings").
+			ColumnExpr("COUNT(*)").
+			Where("role_id = ? AND org_id = ?", roleID, orgID).
+			Scan(ctx, &bindingCount)
+		if err != nil {
+			return err
+		}
+		if bindingCount > 0 {
+			return RoleInUseError{BindingCount: bindingCount}
+		}
 
-	_, err = e.db.NewDelete().TableExpr("roles").Where("id = ?", roleID).Exec(ctx)
+		_, err = tx.NewDelete().TableExpr("roles").Where("id = ?", roleID).Exec(ctx)
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -529,6 +569,10 @@ func (e *Enforcer) UnbindRole(ctx context.Context, bindingID, orgID int64) error
 // insertRole inserts a role row and returns its ID. workspaceID=nil creates an org-level role;
 // non-nil creates a workspace-scoped role. Idempotent: returns existing ID on conflict.
 func (e *Enforcer) insertRole(ctx context.Context, orgID int64, workspaceID *int64, name, description, scopeType string, isBuiltin bool) (int64, error) {
+	return e.insertRoleWithExecutor(ctx, e.db, orgID, workspaceID, name, description, scopeType, isBuiltin)
+}
+
+func (e *Enforcer) insertRoleWithExecutor(ctx context.Context, exec bun.IDB, orgID int64, workspaceID *int64, name, description, scopeType string, isBuiltin bool) (int64, error) {
 	rm := map[string]interface{}{
 		"org_id":       orgID,
 		"workspace_id": workspaceID,
@@ -538,7 +582,7 @@ func (e *Enforcer) insertRole(ctx context.Context, orgID int64, workspaceID *int
 		"is_builtin":   isBuiltin,
 	}
 	var id int64
-	err := e.db.NewInsert().
+	err := exec.NewInsert().
 		TableExpr("roles").
 		Model(&rm).
 		On("CONFLICT DO NOTHING").
@@ -549,7 +593,7 @@ func (e *Enforcer) insertRole(ctx context.Context, orgID int64, workspaceID *int
 	}
 	// id=0 means the row already existed (conflict, nothing inserted). Look it up.
 	if id == 0 {
-		q := e.db.NewSelect().TableExpr("roles").ColumnExpr("id").
+		q := exec.NewSelect().TableExpr("roles").ColumnExpr("id").
 			Where("org_id = ? AND name = ?", orgID, name)
 		if workspaceID == nil {
 			q = q.Where("workspace_id IS NULL")
@@ -560,7 +604,7 @@ func (e *Enforcer) insertRole(ctx context.Context, orgID int64, workspaceID *int
 			return 0, err
 		}
 		if isBuiltin && description != "" {
-			_, err = e.db.NewUpdate().
+			_, err = exec.NewUpdate().
 				TableExpr("roles").
 				Set("description = ?", description).
 				Where("id = ?", id).
@@ -575,6 +619,10 @@ func (e *Enforcer) insertRole(ctx context.Context, orgID int64, workspaceID *int
 
 // bindRoleByID inserts a role_bindings row.
 func (e *Enforcer) bindRoleByID(ctx context.Context, orgID, roleID int64, subjectType string, subjectID int64, resourceType string, resourceID int64, grantedBy int64) error {
+	return e.bindRoleByIDWithExecutor(ctx, e.db, orgID, roleID, subjectType, subjectID, resourceType, resourceID, grantedBy)
+}
+
+func (e *Enforcer) bindRoleByIDWithExecutor(ctx context.Context, exec bun.IDB, orgID, roleID int64, subjectType string, subjectID int64, resourceType string, resourceID int64, grantedBy int64) error {
 	rbm := map[string]interface{}{
 		"org_id":        orgID,
 		"role_id":       roleID,
@@ -584,7 +632,7 @@ func (e *Enforcer) bindRoleByID(ctx context.Context, orgID, roleID int64, subjec
 		"resource_id":   resourceID,
 		"created_by":    grantedBy,
 	}
-	_, err := e.db.NewInsert().
+	_, err := exec.NewInsert().
 		TableExpr("role_bindings").
 		Model(&rbm).
 		Ignore().

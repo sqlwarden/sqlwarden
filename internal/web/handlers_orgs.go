@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
@@ -12,6 +13,7 @@ import (
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
+	"github.com/uptrace/bun"
 )
 
 const (
@@ -20,21 +22,31 @@ const (
 )
 
 func (app *application) createOwnedOrganization(ctx context.Context, slug, name string, ownerAccountID int64) (database.Organization, error) {
-	org, err := app.db.InsertOrg(ctx, slug, name)
+	var org database.Organization
+	err := app.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var err error
+		org, err = app.createOwnedOrganizationWithExecutor(ctx, tx, slug, name, ownerAccountID)
+		return err
+	})
 	if err != nil {
 		return database.Organization{}, err
 	}
 
-	err = app.db.AddOrgMember(ctx, org.ID, ownerAccountID)
+	app.enforcer.InvalidateOrgPolicy(org.ID)
+	return org, nil
+}
+
+func (app *application) createOwnedOrganizationWithExecutor(ctx context.Context, tx bun.Tx, slug, name string, ownerAccountID int64) (database.Organization, error) {
+	org, err := app.db.InsertOrgWithExecutor(ctx, tx, slug, name)
 	if err != nil {
 		return database.Organization{}, err
 	}
-
-	err = app.enforcer.SeedOrg(ctx, org.ID, ownerAccountID)
-	if err != nil {
+	if err = app.db.AddOrgMemberWithExecutor(ctx, tx, org.ID, ownerAccountID); err != nil {
 		return database.Organization{}, err
 	}
-
+	if err = app.enforcer.SeedOrgWithExecutor(ctx, tx, org.ID, ownerAccountID); err != nil {
+		return database.Organization{}, err
+	}
 	return org, nil
 }
 
@@ -363,13 +375,9 @@ func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	err = app.db.RemoveOrgMember(r.Context(), org.ID, accountID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
 	admin := contextGetAccount(r)
-	if err = app.db.RevokeOrgAccessSessionsForMember(r.Context(), org.ID, accountID, &admin.ID, "org_membership_removed"); err != nil {
+	err = app.db.RemoveOrgMemberAccess(r.Context(), org.ID, accountID, &admin.ID, "org_membership_removed")
+	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
@@ -453,14 +461,8 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	err = app.db.DeleteAccountRoleBindings(r.Context(), org.ID, accountID, "org", org.ID, builtinRoleIDs)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
 	grantor := contextGetAccount(r)
-	err = app.enforcer.BindRole(r.Context(), org.ID, roleID, "account", accountID, "org", org.ID, grantor.ID)
+	err = app.replaceOrgMemberBuiltinRole(r.Context(), org.ID, accountID, roleID, builtinRoleIDs, grantor.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -468,6 +470,38 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 
 	app.enforcer.InvalidatePrincipals(org.ID, accountID)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) replaceOrgMemberBuiltinRole(ctx context.Context, orgID, accountID, roleID int64, replacedRoleIDs []int64, grantorID int64) error {
+	err := app.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if len(replacedRoleIDs) > 0 {
+			if _, err := tx.NewDelete().
+				Model((*database.RoleBinding)(nil)).
+				Where("org_id = ? AND subject_type = ? AND subject_id = ? AND resource_type = ? AND resource_id = ? AND role_id IN (?)",
+					orgID, "account", accountID, "org", orgID, bun.List(replacedRoleIDs)).
+				Exec(ctx); err != nil {
+				return err
+			}
+		}
+		binding := database.RoleBinding{
+			OrgID:        orgID,
+			RoleID:       roleID,
+			SubjectType:  "account",
+			SubjectID:    accountID,
+			ResourceType: "org",
+			ResourceID:   orgID,
+			CreatedBy:    &grantorID,
+			CreatedAt:    time.Now(),
+		}
+		_, err := tx.NewInsert().Model(&binding).Ignore().Exec(ctx)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+
+	app.enforcer.InvalidateOrgPolicy(orgID)
+	return nil
 }
 
 // isLastOrgOwner returns true if accountID is the only owner of the org.

@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/sqlwarden/internal/response"
@@ -15,6 +16,8 @@ type InstanceAdmin struct {
 	CreatedAt time.Time `bun:",notnull"         json:"created_at"`
 	Account   *Account  `bun:"rel:belongs-to,join:account_id=id" json:"account,omitempty"`
 }
+
+var ErrLastInstanceAdmin = errors.New("cannot remove the last instance admin")
 
 type ListInstanceAdminsParams struct {
 	Search   string
@@ -38,8 +41,13 @@ func (db *DB) InsertInstanceAdmin(ctx context.Context, accountID int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	return db.InsertInstanceAdminWithExecutor(ctx, db.DB, accountID)
+}
+
+// InsertInstanceAdminWithExecutor inserts an instance admin using exec for transaction composition.
+func (db *DB) InsertInstanceAdminWithExecutor(ctx context.Context, exec bun.IDB, accountID int64) error {
 	admin := &InstanceAdmin{AccountID: accountID, CreatedAt: time.Now()}
-	_, err := db.NewInsert().Model(admin).
+	_, err := exec.NewInsert().Model(admin).
 		On("CONFLICT DO NOTHING").
 		Exec(ctx)
 	return err
@@ -49,10 +57,20 @@ func (db *DB) RemoveInstanceAdmin(ctx context.Context, accountID int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := db.NewDelete().Model((*InstanceAdmin)(nil)).
-		Where("account_id = ?", accountID).
-		Exec(ctx)
-	return err
+	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		count, err := tx.NewSelect().Model((*InstanceAdmin)(nil)).Count(ctx)
+		if err != nil {
+			return err
+		}
+		if count <= 1 {
+			return ErrLastInstanceAdmin
+		}
+
+		_, err = tx.NewDelete().Model((*InstanceAdmin)(nil)).
+			Where("account_id = ?", accountID).
+			Exec(ctx)
+		return err
+	})
 }
 
 func (db *DB) ListInstanceAdminsPage(ctx context.Context, params ListInstanceAdminsParams) (response.Paginated[InstanceAdmin], error) {

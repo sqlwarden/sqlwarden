@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/uptrace/bun"
@@ -138,6 +139,16 @@ func TestOrgMembership(t *testing.T) {
 		t.Fatalf("expected 1 org, got %v", orgs)
 	}
 
+	role := insertTestRole(t, db, org.ID, nil, "member-direct-role", "org", false, access.PermOrgRead)
+	insertTestRoleBinding(t, db, org.ID, role.ID, "account", acc.ID, "org", org.ID)
+	authSession, err := db.InsertAuthSession(context.Background(), acc.ID, time.Now().Add(24*time.Hour), "agent", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.EnsureOrgAccessSession(context.Background(), authSession.ID, org.ID, acc.ID, authSession.ExpiresAt); err != nil {
+		t.Fatal(err)
+	}
+
 	err = db.RemoveOrgMember(context.Background(), org.ID, acc.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -149,6 +160,16 @@ func TestOrgMembership(t *testing.T) {
 	}
 	if ok {
 		t.Fatal("expected account to no longer be a member")
+	}
+	if got := countTableRows(t, db, "role_bindings", "org_id = ? AND subject_type = ? AND subject_id = ?", org.ID, "account", acc.ID); got != 0 {
+		t.Fatalf("expected direct account role bindings to be deleted, got %d", got)
+	}
+	session, found, err := db.GetOrgAccessSession(context.Background(), authSession.ID, org.ID, acc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || session.RevokedAt == nil {
+		t.Fatal("expected org access session to be revoked")
 	}
 }
 

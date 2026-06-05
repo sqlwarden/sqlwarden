@@ -777,7 +777,7 @@ func (p workspaceDirectoryPlanner) ContentKey(ctx context.Context, svc *Service,
 	if err != nil {
 		return "", err
 	}
-	segments := []string{}
+	var segments []string
 	if scope.Workspace.OwnerType == "space" {
 		segments = []string{"personal", strconv.FormatInt(scope.Workspace.OwnerID, 10), "workspaces", workspaceStorageSegment(scope.Workspace)}
 	} else {

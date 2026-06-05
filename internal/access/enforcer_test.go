@@ -419,6 +419,29 @@ func TestCreateRoleValidScope(t *testing.T) {
 	}
 }
 
+func TestCreateRoleRollsBackRoleWhenPermissionInsertFails(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, _ := seedOrg(t, db, e, "role-rollback")
+
+	_, err := e.CreateRole(context.Background(), orgID, nil, "duplicate-permission-role", "", "workspace", []string{access.PermWsRead, access.PermWsRead})
+	if err == nil {
+		t.Fatal("expected duplicate permission insert failure")
+	}
+
+	var count int
+	err = db.NewSelect().
+		TableExpr("roles").
+		ColumnExpr("COUNT(*)").
+		Where("org_id = ? AND name = ?", orgID, "duplicate-permission-role").
+		Scan(context.Background(), &count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected role insert to roll back, got %d roles", count)
+	}
+}
+
 // TestCreateRoleInvalidPermissionForScope verifies CreateRole rejects out-of-scope permissions.
 func TestCreateRoleInvalidPermissionForScope(t *testing.T) {
 	e, db := newTestEnforcer(t)

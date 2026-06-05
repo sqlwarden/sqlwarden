@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/response"
+	"github.com/uptrace/bun"
 )
 
 type Connection struct {
@@ -39,10 +40,25 @@ func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID *in
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	var conn Connection
+	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var err error
+		conn, err = db.InsertConnectionWithExecutor(ctx, tx, workspaceID, envID, name, driver, dsnEncrypted, accessMode)
+		return err
+	})
+	if err != nil {
+		return Connection{}, err
+	}
+	return conn, nil
+}
+
+// InsertConnectionWithExecutor inserts a connection and its hierarchy row using
+// exec so callers can compose connection creation in a larger transaction.
+func (db *DB) InsertConnectionWithExecutor(ctx context.Context, exec bun.IDB, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string) (Connection, error) {
 	resolvedEnvID := int64(0)
 	if envID == nil {
 		var err error
-		resolvedEnvID, err = db.DefaultEnvironmentID(ctx, workspaceID)
+		resolvedEnvID, err = db.defaultEnvironmentIDWithExecutor(ctx, exec, workspaceID)
 		if err != nil {
 			return Connection{}, err
 		}
@@ -60,12 +76,12 @@ func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID *in
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
-	_, err := db.NewInsert().Model(&conn).Returning("id").Exec(ctx)
+	_, err := exec.NewInsert().Model(&conn).Returning("id").Exec(ctx)
 	if err != nil {
 		return Connection{}, err
 	}
 
-	hierarchyOwnerType, hierarchyOwnerID, err := db.workspaceHierarchyOwner(ctx, workspaceID)
+	hierarchyOwnerType, hierarchyOwnerID, err := db.workspaceHierarchyOwnerWithExecutor(ctx, exec, workspaceID)
 	if err != nil {
 		return Connection{}, err
 	}
@@ -78,7 +94,7 @@ func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID *in
 		"owner_type":  hierarchyOwnerType,
 		"owner_id":    hierarchyOwnerID,
 	}
-	_, err = db.NewInsert().TableExpr("resource_hierarchy").Model(&envRow).Ignore().Exec(ctx)
+	_, err = exec.NewInsert().TableExpr("resource_hierarchy").Model(&envRow).Ignore().Exec(ctx)
 	if err != nil {
 		return Connection{}, err
 	}
@@ -292,15 +308,16 @@ func (db *DB) DeleteConnection(ctx context.Context, id int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := db.NewDelete().Model((*Connection)(nil)).Where("id = ?", id).Exec(ctx)
-	if err != nil {
-		return err
-	}
+	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if _, err := tx.NewDelete().Model((*Connection)(nil)).Where("id = ?", id).Exec(ctx); err != nil {
+			return err
+		}
 
-	_, err = db.NewDelete().TableExpr("resource_hierarchy").
-		Where("child_type = 'connection' AND child_id = ?", id).
-		Exec(ctx)
-	return err
+		_, err := tx.NewDelete().TableExpr("resource_hierarchy").
+			Where("child_type = 'connection' AND child_id = ?", id).
+			Exec(ctx)
+		return err
+	})
 }
 
 func normalizeConnectionListParams(params ListConnectionsParams) ListConnectionsParams {

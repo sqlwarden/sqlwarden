@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/database"
 )
 
 func TestCreateAndListWorkspaces(t *testing.T) {
@@ -121,6 +122,45 @@ func TestListAndGetWorkspaces_AllowsWorkspacePolicyOnlyAccess(t *testing.T) {
 	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+org.Slug+"/workspaces/"+wsID, nil, memberTok), app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
 	assert.Equal(t, int64(getRes.BodyFields["id"].(float64)), ws.ID)
+}
+
+func TestCreateOwnedWorkspace_RollsBackWorkspaceAndSeedOnFailure(t *testing.T) {
+	t.Parallel()
+
+	app := newTestApp(t)
+	owner, _, org := seedOrgOwner(t, app, uniqueEmail(t, "workspace-rollback-owner"), "Workspace Rollback Owner", "Workspace Rollback Org")
+	_ = owner
+
+	_, err := app.createOwnedWorkspace(context.Background(), org.ID, 99999999, "Rollback Workspace", "")
+	if err == nil {
+		t.Fatal("expected workspace seed failure")
+	}
+
+	workspaces, err := app.db.ListWorkspacesPage(context.Background(), database.ListWorkspacesParams{
+		OwnerType: "org",
+		OwnerID:   org.ID,
+		Name:      "Rollback Workspace",
+		Page:      1,
+		PageSize:  10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workspaces.Total != 0 {
+		t.Fatalf("expected workspace insert to roll back, got total %d", workspaces.Total)
+	}
+
+	var roleCount int
+	if err := app.db.NewSelect().
+		TableExpr("roles").
+		ColumnExpr("COUNT(*)").
+		Where("org_id = ? AND workspace_id IS NOT NULL", org.ID).
+		Scan(context.Background(), &roleCount); err != nil {
+		t.Fatal(err)
+	}
+	if roleCount != 0 {
+		t.Fatalf("expected workspace roles to roll back, got %d", roleCount)
+	}
 }
 
 func TestGetAndDeleteWorkspace(t *testing.T) {

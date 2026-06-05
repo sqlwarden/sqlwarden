@@ -95,6 +95,69 @@ func TestRevokeFamilyTokens(t *testing.T) {
 	}
 }
 
+func TestCreateAuthSessionWithRefreshTokenRollsBackSessionWhenTokenInsertFails(t *testing.T) {
+	for _, driver := range []string{"postgres", "sqlite"} {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			pw := "hashed"
+			account, err := db.InsertAccount(context.Background(), "session-rollback-"+driver+"@example.com", "Session Rollback", &pw)
+			assert.Nil(t, err)
+
+			expires := time.Now().Add(24 * time.Hour)
+			existingSession := insertRefreshTokenAuthSession(t, db, account.ID, expires)
+			_, err = db.InsertRefreshToken(context.Background(), account.ID, existingSession.ID, "duplicate-session-token-hash", "family-a", expires, "", "")
+			assert.Nil(t, err)
+
+			_, _, err = db.CreateAuthSessionWithRefreshToken(context.Background(), account.ID, expires, "agent", "127.0.0.1", "duplicate-session-token-hash", "family-b")
+			if err == nil {
+				t.Fatal("expected duplicate refresh token hash failure")
+			}
+
+			if got := countTableRows(t, db, "auth_sessions", "account_id = ?", account.ID); got != 1 {
+				t.Fatalf("expected new auth session to roll back, got %d sessions", got)
+			}
+			if got := countTableRows(t, db, "refresh_tokens", "account_id = ?", account.ID); got != 1 {
+				t.Fatalf("expected refresh token insert to roll back, got %d tokens", got)
+			}
+		})
+	}
+}
+
+func TestRotateRefreshTokenRollsBackRevocationWhenReplacementInsertFails(t *testing.T) {
+	for _, driver := range []string{"postgres", "sqlite"} {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+
+			pw := "hashed"
+			account, err := db.InsertAccount(context.Background(), "rotate-rollback-"+driver+"@example.com", "Rotate Rollback", &pw)
+			assert.Nil(t, err)
+
+			expires := time.Now().Add(24 * time.Hour)
+			authSession := insertRefreshTokenAuthSession(t, db, account.ID, expires)
+			oldToken, err := db.InsertRefreshToken(context.Background(), account.ID, authSession.ID, "old-rotate-hash", "family-a", expires, "", "")
+			assert.Nil(t, err)
+			_, err = db.InsertRefreshToken(context.Background(), account.ID, authSession.ID, "duplicate-rotate-hash", "family-b", expires, "", "")
+			assert.Nil(t, err)
+
+			_, err = db.RotateRefreshToken(context.Background(), oldToken.ID, account.ID, authSession.ID, "duplicate-rotate-hash", oldToken.Family, expires, "", "")
+			if err == nil {
+				t.Fatal("expected duplicate replacement token hash failure")
+			}
+
+			unchanged, found, err := db.GetRefreshTokenByHash(context.Background(), "old-rotate-hash")
+			assert.Nil(t, err)
+			assert.True(t, found)
+			if unchanged.RevokedAt != nil {
+				t.Fatal("expected old token revocation to roll back")
+			}
+			if got := countTableRows(t, db, "refresh_tokens", "account_id = ?", account.ID); got != 2 {
+				t.Fatalf("expected replacement insert to roll back, got %d tokens", got)
+			}
+		})
+	}
+}
+
 func TestDeleteExpiredRefreshTokens(t *testing.T) {
 	drivers := []string{"postgres", "sqlite"}
 

@@ -139,6 +139,34 @@ func TestSetupInMultiUserModeRejectsDuplicateOrganizationSlug(t *testing.T) {
 	assert.Equal(t, found, false)
 }
 
+func TestCreateFirstRunSetup_RollsBackAccountAdminAndSessionOnOrgFailure(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.config.AccessMode = AccessModeMultiUser
+
+	_, err := app.db.InsertOrg(t.Context(), "first-org", "Existing Organization")
+	assert.Nil(t, err)
+
+	hashedPassword := testUsers["alice"].hashedPassword
+	_, _, _, err = app.createFirstRunSetup(t.Context(), "rollback-admin@example.com", "Rollback Admin", &hashedPassword, "first-org", "First Organization", "agent", "127.0.0.1")
+	if err == nil {
+		t.Fatal("expected duplicate organization failure")
+	}
+
+	_, found, err := app.db.GetAccountByEmail(t.Context(), "rollback-admin@example.com")
+	assert.Nil(t, err)
+	assert.False(t, found)
+
+	adminCount, err := app.db.CountInstanceAdmins(t.Context())
+	assert.Nil(t, err)
+	assert.Equal(t, adminCount, 0)
+
+	var sessionCount int
+	err = app.db.NewSelect().TableExpr("auth_sessions").ColumnExpr("COUNT(*)").Scan(t.Context(), &sessionCount)
+	assert.Nil(t, err)
+	assert.Equal(t, sessionCount, 0)
+}
+
 func TestSetupInSingleUserModeSeedsLocalOrganizationAndOwnerPolicy(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

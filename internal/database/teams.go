@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/response"
+	"github.com/uptrace/bun"
 )
 
 type Team struct {
@@ -121,8 +122,17 @@ func (db *DB) DeleteTeam(ctx context.Context, id, orgID int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := db.NewDelete().Model((*Team)(nil)).Where("id = ? AND org_id = ?", id, orgID).Exec(ctx)
-	return err
+	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if _, err := tx.NewDelete().
+			Model((*RoleBinding)(nil)).
+			Where("org_id = ? AND subject_type = ? AND subject_id = ?", orgID, "team", id).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		_, err := tx.NewDelete().Model((*Team)(nil)).Where("id = ? AND org_id = ?", id, orgID).Exec(ctx)
+		return err
+	})
 }
 
 func (db *DB) UpdateTeam(ctx context.Context, id, orgID int64, name string) error {

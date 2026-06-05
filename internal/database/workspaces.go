@@ -42,38 +42,50 @@ func (db *DB) InsertWorkspace(ctx context.Context, orgID *int64, ownerType strin
 
 	var ws Workspace
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		ws = Workspace{
-			OrgID:       orgID,
-			OwnerType:   ownerType,
-			OwnerID:     ownerID,
-			Name:        name,
-			Description: description,
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
-		}
-		_, err := tx.NewInsert().Model(&ws).Returning("id").Exec(ctx)
-		if err != nil {
-			return err
-		}
-
-		if ownerType == "org" {
-			hm := map[string]interface{}{
-				"child_type":  "workspace",
-				"child_id":    ws.ID,
-				"parent_type": "org",
-				"parent_id":   ownerID,
-				"owner_type":  "org",
-				"owner_id":    ownerID,
-			}
-			_, err = tx.NewInsert().TableExpr("resource_hierarchy").Model(&hm).Ignore().Exec(ctx)
-			if err != nil {
-				return err
-			}
-		}
-
-		_, err = db.insertEnvironmentWithExecutor(ctx, tx, ws.ID, "Default", "")
+		var err error
+		ws, err = db.InsertWorkspaceWithExecutor(ctx, tx, orgID, ownerType, ownerID, name, description)
 		return err
 	})
+	if err != nil {
+		return Workspace{}, err
+	}
+
+	return ws, nil
+}
+
+// InsertWorkspaceWithExecutor inserts a workspace, its hierarchy row, and its
+// default environment using exec for transaction composition.
+func (db *DB) InsertWorkspaceWithExecutor(ctx context.Context, exec bun.IDB, orgID *int64, ownerType string, ownerID int64, name, description string) (Workspace, error) {
+	ws := Workspace{
+		OrgID:       orgID,
+		OwnerType:   ownerType,
+		OwnerID:     ownerID,
+		Name:        name,
+		Description: description,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	_, err := exec.NewInsert().Model(&ws).Returning("id").Exec(ctx)
+	if err != nil {
+		return Workspace{}, err
+	}
+
+	if ownerType == "org" {
+		hm := map[string]interface{}{
+			"child_type":  "workspace",
+			"child_id":    ws.ID,
+			"parent_type": "org",
+			"parent_id":   ownerID,
+			"owner_type":  "org",
+			"owner_id":    ownerID,
+		}
+		_, err = exec.NewInsert().TableExpr("resource_hierarchy").Model(&hm).Ignore().Exec(ctx)
+		if err != nil {
+			return Workspace{}, err
+		}
+	}
+
+	_, err = db.insertEnvironmentWithExecutor(ctx, exec, ws.ID, "Default", "")
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -329,30 +341,41 @@ func (db *DB) DeleteWorkspace(ctx context.Context, id int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	// Role bindings are policy assignments, so clean up bindings that target
-	// this workspace or its children before workspace-scoped roles cascade.
-	if _, err := db.NewDelete().TableExpr("role_bindings").
-		Where(`(resource_type = 'workspace' AND resource_id = ?)
-		    OR (resource_type = 'environment' AND resource_id IN (SELECT id FROM environments WHERE workspace_id = ?))
-		    OR (resource_type = 'connection' AND resource_id IN (SELECT id FROM connections WHERE workspace_id = ?))
-		    OR role_id IN (SELECT id FROM roles WHERE workspace_id = ?)`, id, id, id, id).
-		Exec(ctx); err != nil {
-		return err
-	}
+	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		// Role bindings are policy assignments, so clean up bindings that target
+		// this workspace or its children before workspace-scoped roles cascade.
+		if _, err := tx.NewDelete().TableExpr("role_bindings").
+			Where(`(resource_type = 'workspace' AND resource_id = ?)
+			    OR (resource_type = 'environment' AND resource_id IN (SELECT id FROM environments WHERE workspace_id = ?))
+			    OR (resource_type = 'connection' AND resource_id IN (SELECT id FROM connections WHERE workspace_id = ?))
+			    OR role_id IN (SELECT id FROM roles WHERE workspace_id = ?)`, id, id, id, id).
+			Exec(ctx); err != nil {
+			return err
+		}
 
-	// Clean up hierarchy rows for this workspace and all its children.
-	// resource_hierarchy has no FK constraints so we must do this manually.
-	if _, err := db.NewDelete().TableExpr("resource_hierarchy").
-		Where(`(child_type = 'workspace' AND child_id = ?)
-		    OR (parent_type = 'workspace' AND parent_id = ?)
-		    OR (child_type = 'connection' AND parent_type = 'environment'
-		        AND child_id IN (SELECT id FROM connections WHERE workspace_id = ?))`, id, id, id).
-		Exec(ctx); err != nil {
-		return err
-	}
+		// Clean up hierarchy rows for this workspace and all its children.
+		// resource_hierarchy has no FK constraints so we must do this manually.
+		if _, err := tx.NewDelete().TableExpr("resource_hierarchy").
+			Where(`(child_type = 'workspace' AND child_id = ?)
+			    OR (parent_type = 'workspace' AND parent_id = ?)
+			    OR (child_type = 'connection' AND parent_type = 'environment'
+			        AND child_id IN (SELECT id FROM connections WHERE workspace_id = ?))`, id, id, id).
+			Exec(ctx); err != nil {
+			return err
+		}
 
-	_, err := db.NewDelete().Model((*Workspace)(nil)).Where("id = ?", id).Exec(ctx)
-	return err
+		// connections.environment_id is ON DELETE RESTRICT, so remove
+		// connections before deleting the workspace and its environments.
+		if _, err := tx.NewDelete().
+			Model((*Connection)(nil)).
+			Where("workspace_id = ?", id).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		_, err := tx.NewDelete().Model((*Workspace)(nil)).Where("id = ?", id).Exec(ctx)
+		return err
+	})
 }
 
 func normalizeWorkspaceListParams(params ListWorkspacesParams) ListWorkspacesParams {

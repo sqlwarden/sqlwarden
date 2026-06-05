@@ -35,6 +35,11 @@ func (db *DB) InsertAccount(ctx context.Context, email, name string, password *s
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	return db.InsertAccountWithExecutor(ctx, db.DB, email, name, password)
+}
+
+// InsertAccountWithExecutor inserts an account using exec for transaction composition.
+func (db *DB) InsertAccountWithExecutor(ctx context.Context, exec bun.IDB, email, name string, password *string) (Account, error) {
 	account := Account{
 		Email:     email,
 		Name:      name,
@@ -44,7 +49,7 @@ func (db *DB) InsertAccount(ctx context.Context, email, name string, password *s
 		UpdatedAt: time.Now(),
 	}
 
-	_, err := db.NewInsert().Model(&account).Returning("id").Exec(ctx)
+	_, err := exec.NewInsert().Model(&account).Returning("id").Exec(ctx)
 	if err != nil {
 		return Account{}, err
 	}

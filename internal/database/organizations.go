@@ -107,13 +107,19 @@ func (db *DB) InsertOrg(ctx context.Context, slug, name string) (Organization, e
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	return db.InsertOrgWithExecutor(ctx, db.DB, slug, name)
+}
+
+// InsertOrgWithExecutor inserts an organization using exec so callers can compose
+// organization bootstrap in a larger transaction.
+func (db *DB) InsertOrgWithExecutor(ctx context.Context, exec bun.IDB, slug, name string) (Organization, error) {
 	org := Organization{
 		Slug:      slug,
 		Name:      name,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-	_, err := db.NewInsert().Model(&org).Returning("id").Exec(ctx)
+	_, err := exec.NewInsert().Model(&org).Returning("id").Exec(ctx)
 	if err != nil {
 		return Organization{}, err
 	}
@@ -239,8 +245,13 @@ func (db *DB) AddOrgMember(ctx context.Context, orgID, accountID int64) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	return db.AddOrgMemberWithExecutor(ctx, db.DB, orgID, accountID)
+}
+
+// AddOrgMemberWithExecutor adds an org member using exec for transaction composition.
+func (db *DB) AddOrgMemberWithExecutor(ctx context.Context, exec bun.IDB, orgID, accountID int64) error {
 	member := OrgMember{OrgID: orgID, AccountID: accountID, JoinedAt: time.Now()}
-	_, err := db.NewInsert().Model(&member).On("CONFLICT DO NOTHING").Exec(ctx)
+	_, err := exec.NewInsert().Model(&member).On("CONFLICT DO NOTHING").Exec(ctx)
 	return err
 }
 
@@ -248,6 +259,12 @@ func (db *DB) RemoveOrgMember(ctx context.Context, orgID, accountID int64) error
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	return db.RemoveOrgMemberAccess(ctx, orgID, accountID, nil, "")
+}
+
+// RemoveOrgMemberAccess removes an account from an organization and atomically
+// clears derived memberships, direct account policy bindings, and org sessions.
+func (db *DB) RemoveOrgMemberAccess(ctx context.Context, orgID, accountID int64, revokedBy *int64, reason string) error {
 	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		if _, err := tx.NewDelete().Model((*WorkspaceMember)(nil)).
 			Where("account_id = ?", accountID).
@@ -263,8 +280,24 @@ func (db *DB) RemoveOrgMember(ctx context.Context, orgID, accountID int64) error
 			return err
 		}
 
-		_, err := tx.NewDelete().Model((*OrgMember)(nil)).
-			Where("org_id = ? AND account_id = ?", orgID, accountID).Exec(ctx)
+		if _, err := tx.NewDelete().Model((*RoleBinding)(nil)).
+			Where("org_id = ? AND subject_type = ? AND subject_id = ?", orgID, "account", accountID).
+			Exec(ctx); err != nil {
+			return err
+		}
+
+		if _, err := tx.NewDelete().Model((*OrgMember)(nil)).
+			Where("org_id = ? AND account_id = ?", orgID, accountID).Exec(ctx); err != nil {
+			return err
+		}
+
+		_, err := tx.NewUpdate().
+			Model((*OrgAccessSession)(nil)).
+			Set("revoked_at = ?", time.Now()).
+			Set("revoked_by_account_id = ?", revokedBy).
+			Set("revocation_reason = ?", reason).
+			Where("org_id = ? AND account_id = ? AND revoked_at IS NULL", orgID, accountID).
+			Exec(ctx)
 		return err
 	})
 }

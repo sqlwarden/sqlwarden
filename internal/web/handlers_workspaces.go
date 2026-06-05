@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
+	"github.com/uptrace/bun"
 )
 
 func (app *application) listWorkspaces(w http.ResponseWriter, r *http.Request) {
@@ -111,18 +113,12 @@ func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) 
 
 	org := contextGetOrg(r)
 	account := contextGetAccount(r)
-	ws, err := app.db.InsertWorkspace(r.Context(), &org.ID, "org", org.ID, input.Name, input.Description)
+	ws, err := app.createOwnedWorkspace(r.Context(), org.ID, account.ID, input.Name, input.Description)
 	if err != nil {
 		if isUniqueViolation(err) {
 			app.failedDuplicateField(w, r, "name", "A workspace with this name already exists in this organization.")
 			return
 		}
-		app.serverError(w, r, err)
-		return
-	}
-
-	err = app.enforcer.SeedWorkspace(r.Context(), org.ID, ws.ID, account.ID)
-	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
@@ -138,6 +134,25 @@ func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func (app *application) createOwnedWorkspace(ctx context.Context, orgID, creatorAccountID int64, name, description string) (database.Workspace, error) {
+	var ws database.Workspace
+	err := app.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var err error
+		ws, err = app.db.InsertWorkspaceWithExecutor(ctx, tx, &orgID, "org", orgID, name, description)
+		if err != nil {
+			return err
+		}
+		return app.enforcer.SeedWorkspaceWithExecutor(ctx, tx, orgID, ws.ID, creatorAccountID)
+	})
+	if err != nil {
+		return database.Workspace{}, err
+	}
+
+	app.enforcer.InvalidateOrgPolicy(orgID)
+	app.enforcer.InvalidatePrincipals(orgID, creatorAccountID)
+	return ws, nil
 }
 
 func (app *application) getWorkspace(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,8 @@ package database
 import (
 	"context"
 	"testing"
+
+	"github.com/sqlwarden/internal/access"
 )
 
 func TestTeamCRUD(t *testing.T) {
@@ -159,6 +161,8 @@ func TestGetAccountTeamsAndDeleteTeam(t *testing.T) {
 			if err := db.AddTeamMember(ctx, teamB.ID, testUsers["alice"].id); err != nil {
 				t.Fatal(err)
 			}
+			role := insertTestRole(t, db, org.ID, nil, "team-bound-role-"+driver, "org", false, access.PermOrgRead)
+			insertTestRoleBinding(t, db, org.ID, role.ID, "team", teamA.ID, "org", org.ID)
 
 			teams, err := db.GetAccountTeams(ctx, org.ID, testUsers["alice"].id)
 			if err != nil {
@@ -178,6 +182,9 @@ func TestGetAccountTeamsAndDeleteTeam(t *testing.T) {
 			}
 			if found {
 				t.Fatal("expected deleted team lookup to miss")
+			}
+			if got := countTableRows(t, db, "role_bindings", "org_id = ? AND subject_type = ? AND subject_id = ?", org.ID, "team", teamA.ID); got != 0 {
+				t.Fatalf("expected team role bindings to be deleted, got %d", got)
 			}
 
 			teams, err = db.GetAccountTeams(ctx, org.ID, testUsers["alice"].id)

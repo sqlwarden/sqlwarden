@@ -48,6 +48,11 @@ func (db *DB) InsertAuthSession(ctx context.Context, accountID int64, expiresAt 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
+	return db.InsertAuthSessionWithExecutor(ctx, db.DB, accountID, expiresAt, userAgent, ipAddress)
+}
+
+// InsertAuthSessionWithExecutor inserts an auth session using exec for transaction composition.
+func (db *DB) InsertAuthSessionWithExecutor(ctx context.Context, exec bun.IDB, accountID int64, expiresAt time.Time, userAgent, ipAddress string) (AuthSession, error) {
 	now := time.Now()
 	session := AuthSession{
 		ID:         newID(),
@@ -58,7 +63,7 @@ func (db *DB) InsertAuthSession(ctx context.Context, accountID int64, expiresAt 
 		LastSeenAt: now,
 		ExpiresAt:  expiresAt,
 	}
-	_, err := db.NewInsert().Model(&session).Exec(ctx)
+	_, err := exec.NewInsert().Model(&session).Exec(ctx)
 	if err != nil {
 		return AuthSession{}, err
 	}

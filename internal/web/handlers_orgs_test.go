@@ -10,6 +10,7 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/database"
 )
 
 // registerAndLogin seeds an instance-admin account, creates an org, and returns the account ID, access token, and org slug.
@@ -40,6 +41,76 @@ func TestGetOrg(t *testing.T) {
 	req2.Header.Set("Authorization", "Bearer "+tok)
 	res2 := send(t, req2, app.routes())
 	assert.Equal(t, res2.StatusCode, http.StatusNotFound)
+}
+
+func TestCreateOwnedOrganization_RollsBackWhenOwnerMembershipFails(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, err := app.createOwnedOrganization(context.Background(), "rollback-org", "Rollback Org", 99999999)
+	if err == nil {
+		t.Fatal("expected owner membership failure")
+	}
+
+	_, found, err := app.db.GetOrgBySlug(context.Background(), "rollback-org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatal("expected organization insert to roll back")
+	}
+
+	var roles []database.Role
+	if err := app.db.NewSelect().Model(&roles).Where("name IN (?)", []string{access.BuiltinOrgOwnerRole, access.BuiltinOrgAdminRole, access.BuiltinOrgMemberRole}).Scan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(roles) != 0 {
+		t.Fatalf("expected seeded roles to roll back, got %d", len(roles))
+	}
+}
+
+func TestReplaceOrgMemberBuiltinRoleRollsBackWhenNewBindingFails(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, _, org := seedOrgOwner(t, app, uniqueEmail(t, "role-replace-owner"), "Role Replace Owner", "Role Replace Org")
+	member := seedAccount(t, app, uniqueEmail(t, "role-replace-member"), "Role Replace Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	roles, err := app.db.ListOrgRoles(context.Background(), org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var adminRoleID int64
+	var replacedRoleIDs []int64
+	for _, role := range roles {
+		if role.IsBuiltin && (role.Name == access.BuiltinOrgOwnerRole || role.Name == access.BuiltinOrgAdminRole) {
+			replacedRoleIDs = append(replacedRoleIDs, role.ID)
+		}
+		if role.Name == access.BuiltinOrgAdminRole && role.IsBuiltin {
+			adminRoleID = role.ID
+		}
+	}
+	if adminRoleID == 0 {
+		t.Fatal("expected builtin admin role")
+	}
+	if err := app.enforcer.BindRole(context.Background(), org.ID, adminRoleID, "account", member.ID, "org", org.ID, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	err = app.replaceOrgMemberBuiltinRole(context.Background(), org.ID, member.ID, 99999999, replacedRoleIDs, owner.ID)
+	if err == nil {
+		t.Fatal("expected invalid role binding failure")
+	}
+
+	hasAdmin, err := app.db.AccountHasRoleBinding(context.Background(), org.ID, adminRoleID, member.ID, "org", org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasAdmin {
+		t.Fatal("expected previous admin binding to remain after rollback")
+	}
 }
 
 func TestListOrgMembers(t *testing.T) {
