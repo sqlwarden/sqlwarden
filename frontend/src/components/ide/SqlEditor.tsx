@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState, Compartment } from '@codemirror/state'
+import type { Extension } from '@codemirror/state'
 import { sql } from '@codemirror/lang-sql'
 import { yCollab } from 'y-codemirror.next'
 import type * as Y from 'yjs'
@@ -8,25 +9,24 @@ import { cn } from '#/lib/utils'
 import { useTheme } from '#/components/theme-provider'
 import { useEditorTheme } from '#/lib/editor-themes/context'
 import { loadEditorTheme, getCachedTheme } from '#/lib/editor-themes'
+import { useEditorFont, loadEditorFont } from '#/lib/editor-font/context'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 
-// ─── Base structural theme ──────────────────────────────────────────────────────
-// Layout and font styles that must always be present regardless of which
-// color theme is loaded in the Compartment. The @uiw themes do not set these.
-
-const baseEditorTheme = EditorView.theme({
-  '&': { height: '100%' },
-  '.cm-scroller': {
-    fontFamily: 'var(--font-mono, ui-monospace, monospace)',
-    fontSize: '13px',
-    lineHeight: '1.65',
-    overflow: 'auto',
-  },
-  '.cm-content': { padding: '8px 0' },
-  '.cm-lineNumbers .cm-gutterElement': { minWidth: '3.5ch', textAlign: 'right' },
-  '.cm-foldGutter': { display: 'none' },
-  '.cm-tooltip': { borderRadius: '0' },
-})
+function makeBaseTheme(fontFamily: string, fontSize: number): Extension {
+  return EditorView.theme({
+    '&': { height: '100%' },
+    '.cm-scroller': {
+      fontFamily,
+      fontSize: `${fontSize}px`,
+      lineHeight: '1.65',
+      overflow: 'auto',
+    },
+    '.cm-content': { padding: '8px 0' },
+    '.cm-lineNumbers .cm-gutterElement': { minWidth: '3.5ch', textAlign: 'right' },
+    '.cm-foldGutter': { display: 'none' },
+    '.cm-tooltip': { borderRadius: '0' },
+  })
+}
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
@@ -47,8 +47,10 @@ export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorPr
   const { resolvedTheme } = useTheme()
   const { editorThemeDark, editorThemeLight } = useEditorTheme()
   const activeThemeName = resolvedTheme === 'dark' ? editorThemeDark : editorThemeLight
+  const { editorFont, editorFontSize } = useEditorFont()
 
   const themeCompartment = useRef(new Compartment())
+  const fontCompartment  = useRef(new Compartment())
   const viewRef = useRef<EditorView | null>(null)
 
   // Re-mount the editor whenever the active doc changes.
@@ -63,7 +65,7 @@ export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorPr
         extensions: [
           basicSetup,
           sql(),
-          baseEditorTheme,
+          fontCompartment.current.of(makeBaseTheme(editorFont.fontFamily, editorFontSize)),
           themeCompartment.current.of(getCachedTheme(activeThemeName) ?? []),
           EditorView.lineWrapping,
           yCollab(yText, null), // handles all CodeMirror ↔ Y.js sync
@@ -103,6 +105,19 @@ export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorPr
       cancelled = true
     }
   }, [activeThemeName])
+
+  // Hot-swap font / font-size without remounting.
+  // Load font CSS first (no-op for system fonts and already-loaded web fonts).
+  useEffect(() => {
+    let cancelled = false
+    loadEditorFont(editorFont).then(() => {
+      if (cancelled || !viewRef.current) return
+      viewRef.current.dispatch({
+        effects: fontCompartment.current.reconfigure(makeBaseTheme(editorFont.fontFamily, editorFontSize)),
+      })
+    })
+    return () => { cancelled = true }
+  }, [editorFont, editorFontSize])
 
   return <div ref={containerRef} className={cn('h-full overflow-hidden', className)} />
 }

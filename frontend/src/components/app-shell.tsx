@@ -43,6 +43,10 @@ import {
 import { useEditorTheme } from '#/lib/editor-themes/context'
 import { EDITOR_THEME_LABELS, VALID_EDITOR_THEMES } from '#/lib/editor-themes'
 import type { EditorThemeName } from '#/lib/editor-themes'
+import { useEditorFont } from '#/lib/editor-font/context'
+import { EDITOR_FONTS, EDITOR_FONT_SIZES, DEFAULT_EDITOR_FONT, DEFAULT_EDITOR_FONT_SIZE } from '#/lib/editor-font/context'
+import type { EditorFont, EditorFontSize } from '#/lib/editor-font/context'
+import { Slider } from '#/components/ui/slider'
 
 export type AppShellTheme = 'dark' | 'light' | 'system'
 export type AppShellSidebarStyle = 'sidebar' | 'inset' | 'floating'
@@ -354,6 +358,7 @@ function AppShellPreferencesPopover({
 }) {
   const { packName, setPackName } = useIconPack()
   const { editorThemeDark, editorThemeLight, setEditorThemeDark, setEditorThemeLight } = useEditorTheme()
+  const { editorFont, editorFontSize, setEditorFont, setEditorFontSize } = useEditorFont()
 
   function updatePreference<Key extends keyof AppShellPreferences>(key: Key, value: AppShellPreferences[Key]) {
     window.localStorage.setItem(preferenceKeys[key], value)
@@ -372,6 +377,8 @@ function AppShellPreferencesPopover({
     setPackName('hugeicons')
     setEditorThemeDark('vscode-dark')
     setEditorThemeLight('vscode-light')
+    setEditorFont(DEFAULT_EDITOR_FONT)
+    setEditorFontSize(DEFAULT_EDITOR_FONT_SIZE)
   }
 
   return (
@@ -388,7 +395,7 @@ function AppShellPreferencesPopover({
         <Icon name="paint-board" size={20} />
         <span className="group-data-[collapsible=icon]:hidden">UI Preferences</span>
       </PopoverTrigger>
-      <PopoverContent side="right" align="end" className="w-80">
+      <PopoverContent side="right" align="end" className="w-80 max-h-[calc(100dvh-1rem)]">
         <div className="flex flex-col gap-5">
           <div className="flex items-start justify-between gap-4">
             <div className="flex flex-col gap-1.5">
@@ -437,6 +444,14 @@ function AppShellPreferencesPopover({
               label="Light Theme"
               value={editorThemeLight}
               onValueChange={setEditorThemeLight}
+            />
+            <EditorFontSelect
+              value={editorFont}
+              onValueChange={setEditorFont}
+            />
+            <EditorFontSizeSlider
+              value={editorFontSize}
+              onValueChange={setEditorFontSize}
             />
           </div>
         </div>
@@ -515,6 +530,74 @@ function EditorThemeSelect({
           </SelectGroup>
         </SelectContent>
       </Select>
+    </div>
+  )
+}
+
+function EditorFontSelect({
+  value,
+  onValueChange,
+}: {
+  value: EditorFont
+  onValueChange: (font: EditorFont) => void
+}) {
+  const items = EDITOR_FONTS.map((f) => ({ label: f.label, value: f.fontFamily }))
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="text-xs font-medium">Font</div>
+      <Select
+        items={items}
+        value={value.fontFamily}
+        onValueChange={(v) => {
+          if (!v) return
+          const found = EDITOR_FONTS.find((f) => f.fontFamily === v)
+          if (found) onValueChange(found)
+        }}
+      >
+        <SelectTrigger size="sm" className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {EDITOR_FONTS.map((f) => (
+              <SelectItem key={f.fontFamily} value={f.fontFamily}>
+                {f.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
+function EditorFontSizeSlider({
+  value,
+  onValueChange,
+}: {
+  value: EditorFontSize
+  onValueChange: (size: EditorFontSize) => void
+}) {
+  const min = EDITOR_FONT_SIZES[0]
+  const max = EDITOR_FONT_SIZES[EDITOR_FONT_SIZES.length - 1]
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-medium">Font Size</div>
+        <div className="text-xs tabular-nums text-muted-foreground">{value}px</div>
+      </div>
+      <Slider
+        value={[value]}
+        min={min}
+        max={max}
+        step={1}
+        onValueChange={(val) => {
+          const v = Array.isArray(val) ? val[0] : val
+          if (typeof v === 'number') onValueChange(v as EditorFontSize)
+        }}
+      />
     </div>
   )
 }

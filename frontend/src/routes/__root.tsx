@@ -9,6 +9,7 @@ import { ThemeProvider } from '#/components/theme-provider'
 import { TooltipProvider } from '#/components/ui/tooltip'
 import { IconPackProvider } from '#/lib/icons'
 import { EditorThemeProvider } from '#/lib/editor-themes/context'
+import { EditorFontProvider } from '#/lib/editor-font/context'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { AUTH_INVALIDATED_EVENT } from '#/lib/auth/invalidation'
 import '../styles.css'
@@ -35,6 +36,7 @@ function RootComponent() {
     <ThemeProvider defaultTheme="system" storageKey="theme">
       <IconPackProvider>
       <EditorThemeProvider>
+      <EditorFontProvider>
       <TooltipProvider>
         <GlobalLoadingBar />
         <div className="flex min-h-screen flex-col">
@@ -43,6 +45,7 @@ function RootComponent() {
           </div>
         </div>
       </TooltipProvider>
+      </EditorFontProvider>
       <Toaster closeButton position="top-center" theme="system" />
       <TanStackDevtools
         config={{ position: 'bottom-right' }}
