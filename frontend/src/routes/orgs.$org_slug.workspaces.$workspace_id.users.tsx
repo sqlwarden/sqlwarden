@@ -30,7 +30,10 @@ import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Checkbox } from '#/components/ui/checkbox'
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
-import { InitialsAvatar } from '#/components/InitialsAvatar'
+import { getInitials } from '#/components/InitialsAvatar'
+import { SectionTabNav } from '#/components/SectionTabNav'
+import { entityColor } from '#/lib/entity-colors'
+import { cn } from '#/lib/utils'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
@@ -137,20 +140,24 @@ function WorkspaceUsersPage() {
   })
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
-            <p className="text-sm text-muted-foreground">
-              {!activeMembers.isLoading && total > 0
-                ? `${total} user${total !== 1 ? 's' : ''} in this workspace`
-                : includeInheritedUsers
-                  ? 'Direct and inherited members of this workspace.'
-                  : 'Users explicitly added to this workspace.'}
-            </p>
-          </div>
+    <div className="flex flex-col">
+      <SectionTabNav
+        tabs={[
+          { label: 'Users', to: '/orgs/$org_slug/workspaces/$workspace_id/users', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: true },
+          { label: 'Teams', to: '/orgs/$org_slug/workspaces/$workspace_id/teams', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: false },
+        ]}
+      />
 
+      <div className="flex flex-col gap-6 pt-6">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {!activeMembers.isLoading && total > 0
+              ? `${total} user${total !== 1 ? 's' : ''} in this workspace`
+              : includeInheritedUsers
+                ? 'Direct and inherited members of this workspace.'
+                : 'Users explicitly added to this workspace.'}
+          </p>
           {canModifyUsers ? (
             <Dialog
               open={isAddingUser}
@@ -302,6 +309,7 @@ function WorkspaceUsersPage() {
           onPageSizeChange={setPageSize}
         />
       ) : null}
+      </div>
     </div>
   )
 }
@@ -321,7 +329,9 @@ function UserPickerRow({
     <TableRow>
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <InitialsAvatar value={member.name || member.email} />
+          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(member.name || member.email))}>
+            {getInitials(member.name || member.email, '?')}
+          </div>
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{member.name || member.email}</div>
             <div className="truncate text-sm text-muted-foreground">{member.email}</div>
@@ -390,7 +400,9 @@ function WorkspaceUserRow({
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <InitialsAvatar value={member.name || member.email} />
+          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(member.name || member.email))}>
+            {getInitials(member.name || member.email, '?')}
+          </div>
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{member.name || member.email}</div>
             <div className="truncate text-sm text-muted-foreground">{member.email}</div>
@@ -443,7 +455,7 @@ function MembershipSourceBadges({ sources }: { sources: WorkspaceMembershipSourc
 
   return (
     <div className="flex flex-wrap gap-1.5">
-      {hasDirectSource ? <Badge variant="secondary">Direct</Badge> : null}
+      {hasDirectSource ? <Badge variant="outline">Direct</Badge> : null}
       {teamSources.map((source) => (
         <Badge key={`${source.team_id ?? source.team_slug}-${source.team_name ?? 'team'}`} variant="outline">
           {source.team_name || source.team_slug || 'Team'}
@@ -460,7 +472,7 @@ function UserPickerSkeleton() {
         <TableRow key={index}>
           <TableCell>
             <div className="flex items-center gap-3">
-              <Skeleton className="size-8 rounded-full" />
+              <Skeleton className="size-8 rounded-md" />
               <div className="flex flex-col gap-2">
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="h-3 w-48" />
@@ -483,7 +495,7 @@ function UsersTableSkeleton({ canModifyUsers, includeSource }: { canModifyUsers:
         <TableRow key={index}>
           <TableCell>
             <div className="flex items-center gap-3">
-              <Skeleton className="size-8 rounded-full" />
+              <Skeleton className="size-8 rounded-md" />
               <div className="flex flex-col gap-2">
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="h-3 w-48" />

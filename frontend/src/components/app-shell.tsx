@@ -63,6 +63,7 @@ export type AppShellNavItem = {
   params?: Record<string, string>
   disabled?: boolean
   badge?: string
+  activePathPrefixes?: string[]
 }
 
 const preferenceKeys = {
@@ -637,11 +638,21 @@ function navItemKey(item: AppShellNavItem) {
 }
 
 function isNavItemActive(pathname: string, item: AppShellNavItem) {
-  const path = item.params
-    ? Object.entries(item.params).reduce((nextPath, [key, value]) => nextPath.replace(`$${key}`, value), item.to)
-    : item.to
+  const normalizedPathname = trimTrailingSlash(pathname)
+  const resolvedTo = resolvePath(item.to, item.params ?? {})
 
-  return trimTrailingSlash(pathname) === trimTrailingSlash(path)
+  if (normalizedPathname === trimTrailingSlash(resolvedTo)) return true
+
+  return (
+    item.activePathPrefixes?.some((prefix) => {
+      const normalizedPrefix = trimTrailingSlash(prefix)
+      return normalizedPathname === normalizedPrefix || normalizedPathname.startsWith(`${normalizedPrefix}/`)
+    }) ?? false
+  )
+}
+
+function resolvePath(to: string, params: Record<string, string>) {
+  return Object.entries(params).reduce((path, [key, value]) => path.replace(`$${key}`, value), to)
 }
 
 function trimTrailingSlash(path: string) {

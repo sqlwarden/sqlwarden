@@ -203,10 +203,26 @@ function workspaceAccessControlItems(orgSlug: string, workspaceId: string, permi
   }
 
   return [
-    { to: '/orgs/$org_slug/workspaces/$workspace_id/users', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Users', icon: 'user-multiple' },
-    { to: '/orgs/$org_slug/workspaces/$workspace_id/teams', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Teams', icon: 'user-group' },
-    { to: '/orgs/$org_slug/workspaces/$workspace_id/roles', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Roles', icon: 'user-shield-01' },
-    { to: '/orgs/$org_slug/workspaces/$workspace_id/policies', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Policies', icon: 'policy' },
+    {
+      to: '/orgs/$org_slug/workspaces/$workspace_id/users',
+      params: { org_slug: orgSlug, workspace_id: workspaceId },
+      label: 'Members',
+      icon: 'user-multiple',
+      activePathPrefixes: [
+        `/orgs/${orgSlug}/workspaces/${workspaceId}/users`,
+        `/orgs/${orgSlug}/workspaces/${workspaceId}/teams`,
+      ],
+    },
+    {
+      to: '/orgs/$org_slug/workspaces/$workspace_id/policies',
+      params: { org_slug: orgSlug, workspace_id: workspaceId },
+      label: 'Policies',
+      icon: 'user-shield-01',
+      activePathPrefixes: [
+        `/orgs/${orgSlug}/workspaces/${workspaceId}/policies`,
+        `/orgs/${orgSlug}/workspaces/${workspaceId}/roles`,
+      ],
+    },
   ]
 }
 
@@ -257,17 +273,23 @@ function accessControlItems(orgSlug: string, permissions: readonly string[] | un
   const items: AppShellNavItem[] = []
 
   if (hasAnyPermission(permissions, [permission.orgRead])) {
-    items.push(
-      { to: '/orgs/$org_slug/users', params: { org_slug: orgSlug }, label: 'Users', icon: 'user-multiple' },
-      { to: '/orgs/$org_slug/teams', params: { org_slug: orgSlug }, label: 'Teams', icon: 'user-group' },
-    )
+    items.push({
+      to: '/orgs/$org_slug/users',
+      params: { org_slug: orgSlug },
+      label: 'Members',
+      icon: 'user-multiple',
+      activePathPrefixes: [`/orgs/${orgSlug}/users`, `/orgs/${orgSlug}/teams`],
+    })
   }
 
   if (hasAnyPermission(permissions, [permission.policyRead])) {
-    items.push(
-      { to: '/orgs/$org_slug/roles', params: { org_slug: orgSlug }, label: 'Roles', icon: 'user-shield-01' },
-      { to: '/orgs/$org_slug/policies', params: { org_slug: orgSlug }, label: 'Policies', icon: 'user-lock-02' },
-    )
+    items.push({
+      to: '/orgs/$org_slug/policies',
+      params: { org_slug: orgSlug },
+      label: 'Policies',
+      icon: 'user-shield-01',
+      activePathPrefixes: [`/orgs/${orgSlug}/policies`, `/orgs/${orgSlug}/roles`],
+    })
   }
 
   return items

@@ -9,11 +9,12 @@ import { isApiError } from '#/lib/api/errors'
 import { orgEffectivePermissionsQueryOptions, orgTeamsQueryOptions } from '#/lib/api/query'
 import type { Team } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
+import { entityColor } from '#/lib/entity-colors'
+import { SectionTabNav } from '#/components/SectionTabNav'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
-import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
@@ -21,6 +22,7 @@ import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import { cn } from '#/lib/utils'
 
 export const Route = createFileRoute('/orgs/$org_slug/teams')({
   component: OrganizationTeamsRoute,
@@ -61,10 +63,7 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
   })
 
   useEffect(() => {
-    if (slugTouched) {
-      return
-    }
-
+    if (slugTouched) return
     setTeamSlug(slugify(teamName))
   }, [teamName, slugTouched])
 
@@ -83,18 +82,12 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
   const pageCount = total > 0 ? Math.ceil(total / pageSize) : 1
 
   useEffect(() => {
-    if (!canReadTeams || !teams.error) {
-      return
-    }
-
+    if (!canReadTeams || !teams.error) return
     toast.error(teams.error instanceof Error ? teams.error.message : 'Failed to load teams')
   }, [canReadTeams, teams.error])
 
   useEffect(() => {
-    if (!effectivePermissions.error) {
-      return
-    }
-
+    if (!effectivePermissions.error) return
     toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load team permissions')
   }, [effectivePermissions.error])
 
@@ -116,11 +109,8 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
           name: error.fieldErrors?.name,
           slug: error.fieldErrors?.slug,
         })
-        if (error.fieldErrors?.name || error.fieldErrors?.slug) {
-          return
-        }
+        if (error.fieldErrors?.name || error.fieldErrors?.slug) return
       }
-
       toast.error(error instanceof Error ? error.message : 'Failed to create team')
     },
   })
@@ -134,148 +124,146 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
 
   function submitCreateTeam(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-
     const errors: { name?: string; slug?: string } = {}
-    if (!teamName.trim()) {
-      errors.name = 'Name is required.'
-    }
-    if (!teamSlug.trim()) {
-      errors.slug = 'Slug is required.'
-    }
+    if (!teamName.trim()) errors.name = 'Name is required.'
+    if (!teamSlug.trim()) errors.slug = 'Slug is required.'
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)
       return
     }
-
     setFieldErrors({})
     void createTeam.mutateAsync().catch(() => {})
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">Teams</h1>
+    <div className="flex flex-col">
+      <SectionTabNav
+        tabs={[
+          { label: 'Users', to: '/orgs/$org_slug/users', params: { org_slug: orgSlug }, isActive: false },
+          { label: 'Teams', to: '/orgs/$org_slug/teams', params: { org_slug: orgSlug }, isActive: true },
+        ]}
+      />
+
+      <div className="flex flex-col gap-6 pt-6">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted-foreground">
               {!teams.isLoading && total > 0
                 ? `${total} team${total !== 1 ? 's' : ''} in this organization`
                 : 'Groups used for organization access control.'}
             </p>
+
+            {canCreateTeam ? (
+              <Dialog
+                open={isCreating}
+                onOpenChange={(open) => {
+                  setIsCreating(open)
+                  if (!open) resetCreateTeam()
+                }}
+              >
+                <DialogTrigger render={<Button />}>
+                  <Icon name="plus-sign" size={20} data-icon="inline-start" />
+                  Create
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create team</DialogTitle>
+                  </DialogHeader>
+                  <form className="mt-6 flex flex-col gap-4" onSubmit={submitCreateTeam}>
+                    <div className="flex flex-col gap-2">
+                      <Input
+                        value={teamName}
+                        onChange={(event) => {
+                          setTeamName(event.target.value)
+                          setFieldErrors((current) => ({ ...current, name: undefined }))
+                        }}
+                        placeholder="Team name"
+                        aria-invalid={fieldErrors.name ? true : undefined}
+                        disabled={createTeam.isPending}
+                      />
+                      {fieldErrors.name ? <p className="text-sm text-destructive">{fieldErrors.name}</p> : null}
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <Input
+                        value={teamSlug}
+                        onChange={(event) => {
+                          setSlugTouched(true)
+                          setTeamSlug(slugify(event.target.value))
+                          setFieldErrors((current) => ({ ...current, slug: undefined }))
+                        }}
+                        placeholder="team-slug"
+                        aria-invalid={fieldErrors.slug ? true : undefined}
+                        disabled={createTeam.isPending}
+                      />
+                      {fieldErrors.slug ? <p className="text-sm text-destructive">{fieldErrors.slug}</p> : null}
+                    </div>
+
+                    <DialogFooter>
+                      <DialogClose render={<Button type="button" variant="ghost" disabled={createTeam.isPending} />}>
+                        Cancel
+                      </DialogClose>
+                      <Button type="submit" disabled={createTeam.isPending}>
+                        {createTeam.isPending ? 'Creating...' : 'Create'}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            ) : null}
           </div>
 
-          {canCreateTeam ? (
-            <Dialog
-              open={isCreating}
-              onOpenChange={(open) => {
-                setIsCreating(open)
-                if (!open) {
-                  resetCreateTeam()
-                }
-              }}
-            >
-              <DialogTrigger render={<Button />}>
-                <Icon name="plus-sign" size={20} data-icon="inline-start" />
-                Create
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create team</DialogTitle>
-                </DialogHeader>
-                <form className="mt-6 flex flex-col gap-4" onSubmit={submitCreateTeam}>
-                  <div className="flex flex-col gap-2">
-                    <Input
-                      value={teamName}
-                      onChange={(event) => {
-                        setTeamName(event.target.value)
-                        setFieldErrors((current) => ({ ...current, name: undefined }))
-                      }}
-                      placeholder="Team name"
-                      aria-invalid={fieldErrors.name ? true : undefined}
-                      disabled={createTeam.isPending}
-                    />
-                    {fieldErrors.name ? <p className="text-sm text-destructive">{fieldErrors.name}</p> : null}
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <Input
-                      value={teamSlug}
-                      onChange={(event) => {
-                        setSlugTouched(true)
-                        setTeamSlug(slugify(event.target.value))
-                        setFieldErrors((current) => ({ ...current, slug: undefined }))
-                      }}
-                      placeholder="team-slug"
-                      aria-invalid={fieldErrors.slug ? true : undefined}
-                      disabled={createTeam.isPending}
-                    />
-                    {fieldErrors.slug ? <p className="text-sm text-destructive">{fieldErrors.slug}</p> : null}
-                  </div>
-
-                  <DialogFooter>
-                    <DialogClose render={<Button type="button" variant="ghost" disabled={createTeam.isPending} />}>
-                      Cancel
-                    </DialogClose>
-                    <Button type="submit" disabled={createTeam.isPending}>
-                      {createTeam.isPending ? 'Creating...' : 'Create'}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          ) : null}
+          <SearchInput
+            value={searchText}
+            onValueChange={setSearchText}
+            onClear={clearSearch}
+            placeholder="Search teams"
+          />
         </div>
 
-        <SearchInput
-          value={searchText}
-          onValueChange={setSearchText}
-          onClear={clearSearch}
-          placeholder="Search teams"
-        />
+        <Card>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <TableColumnHeader label="Team" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  </TableHead>
+                  <TableHead>
+                    <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {effectivePermissions.isLoading || teams.isLoading ? <TeamsTableSkeleton /> : null}
+                {teams.isError ? <TableEmptyState colSpan={2} icon="user-group" message="Failed to load teams." /> : null}
+                {!effectivePermissions.isLoading && !canReadTeams ? (
+                  <TableEmptyState colSpan={2} icon="user-group" message="You do not have permission to view teams." />
+                ) : null}
+                {!effectivePermissions.isLoading && canReadTeams && !teams.isLoading && !teams.isError && items.length === 0 ? (
+                  <TableEmptyState colSpan={2} icon="user-group" message={query.q ? 'No teams matched your search.' : 'No teams found.'} />
+                ) : null}
+                {!effectivePermissions.isLoading && canReadTeams && !teams.isLoading && !teams.isError
+                  ? items.map((team) => <TeamRow key={team.id} team={team} />)
+                  : null}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        {canReadTeams && !teams.isLoading && !teams.isError && items.length > 0 ? (
+          <PaginationFooter
+            itemLabel="teams"
+            page={page}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            total={total}
+            isFetching={teams.isFetching}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
       </div>
-
-      <Card>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <TableColumnHeader label="Team" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                </TableHead>
-                <TableHead>
-                  <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {effectivePermissions.isLoading || teams.isLoading ? <TeamsTableSkeleton /> : null}
-              {teams.isError ? <TableEmptyState colSpan={2} icon="user-group" message="Failed to load teams." /> : null}
-              {!effectivePermissions.isLoading && !canReadTeams ? (
-                <TableEmptyState colSpan={2} icon="user-group" message="You do not have permission to view teams." />
-              ) : null}
-              {!effectivePermissions.isLoading && canReadTeams && !teams.isLoading && !teams.isError && items.length === 0 ? (
-                <TableEmptyState colSpan={2} icon="user-group" message={query.q ? 'No teams matched your search.' : 'No teams found.'} />
-              ) : null}
-              {!effectivePermissions.isLoading && canReadTeams && !teams.isLoading && !teams.isError
-                ? items.map((team) => <TeamRow key={team.id} team={team} />)
-                : null}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {canReadTeams && !teams.isLoading && !teams.isError && items.length > 0 ? (
-        <PaginationFooter
-          itemLabel="teams"
-          page={page}
-          pageCount={pageCount}
-          pageSize={pageSize}
-          total={total}
-          isFetching={teams.isFetching}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
-        />
-      ) : null}
     </div>
   )
 }
@@ -316,10 +304,12 @@ function TeamRow({ team }: { team: Team }) {
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <InitialsAvatar value={team.name} />
+          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', entityColor(team.name))}>
+            <Icon name="user-group" size={20} className="size-4" />
+          </div>
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{team.name}</div>
-            <div className="truncate text-muted-foreground">@{team.slug}</div>
+            <div className="truncate text-sm text-muted-foreground">@{team.slug}</div>
           </div>
         </div>
       </TableCell>
@@ -335,7 +325,7 @@ function TeamsTableSkeleton() {
         <TableRow key={index}>
           <TableCell>
             <div className="flex items-center gap-3">
-              <Skeleton className="size-8 rounded-full" />
+              <Skeleton className="size-8 rounded-md" />
               <div className="flex flex-col gap-2">
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="h-3 w-24" />
@@ -353,9 +343,7 @@ function TeamsTableSkeleton() {
 
 function formatDate(value: string) {
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return 'Unknown'
-  }
+  if (Number.isNaN(date.getTime())) return 'Unknown'
   return dateFormatter.format(date)
 }
 

@@ -53,6 +53,8 @@ import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { getInitials } from '#/components/InitialsAvatar'
 import { cn } from '#/lib/utils'
+import { entityColor, GROUP_COLOR } from '#/lib/entity-colors'
+import { SectionTabNav } from '#/components/SectionTabNav'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/policies')({
   component: WorkspacePoliciesPage,
@@ -286,17 +288,22 @@ function WorkspacePoliciesPage() {
   }))
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col">
+      <SectionTabNav
+        tabs={[
+          { label: 'Policies', to: '/orgs/$org_slug/workspaces/$workspace_id/policies', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: true },
+          { label: 'Roles', to: '/orgs/$org_slug/workspaces/$workspace_id/roles', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: false },
+        ]}
+      />
+
+      <div className="flex flex-col gap-6 pt-6">
       <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">Policies</h1>
-            <p className="text-sm text-muted-foreground">
-              {!policies.isLoading && total > 0
-                ? `${total} policy binding${total !== 1 ? 's' : ''} in this workspace`
-                : 'Assign workspace roles to users, teams, and membership groups.'}
-            </p>
-          </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {!policies.isLoading && total > 0
+              ? `${total} policy binding${total !== 1 ? 's' : ''} in this workspace`
+              : 'Assign workspace roles to users, teams, and membership groups.'}
+          </p>
 
           {canModifyPolicies ? (
             <Dialog
@@ -507,10 +514,10 @@ function WorkspacePoliciesPage() {
                   <TableColumnHeader label="Subject" sort="subject_name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Role" />
+                  <TableColumnHeader label="Resource" sort="resource_name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Resource" sort="resource_name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  <TableColumnHeader label="Role" />
                 </TableHead>
                 <TableHead>
                   <TableColumnHeader label="Assigned" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
@@ -563,6 +570,7 @@ function WorkspacePoliciesPage() {
           onPageSizeChange={setPageSize}
         />
       ) : null}
+      </div>
     </div>
   )
 }
@@ -727,13 +735,15 @@ function PolicyRow({
         </div>
       </TableCell>
       <TableCell>
-        <Badge variant="secondary">{binding.role_name || 'Role'}</Badge>
-      </TableCell>
-      <TableCell>
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate font-medium text-foreground">{binding.resource_name || resourceLabelFor(binding.resource_type)}</span>
           <span className="text-xs text-muted-foreground">{resourceLabelFor(binding.resource_type)}</span>
         </div>
+      </TableCell>
+      <TableCell>
+        <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', entityColor(binding.role_name ?? ''))}>
+          {binding.role_name || '—'}
+        </span>
       </TableCell>
       <TableCell className="text-muted-foreground">{formatDate(binding.created_at)}</TableCell>
       {canModify ? (
@@ -767,20 +777,20 @@ function PolicyRow({
 function SubjectIcon({ binding }: { binding: PolicyBinding }) {
   if (binding.subject_type === 'account') {
     return (
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+      <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(binding.subject_name))}>
         {getInitials(binding.subject_name, '?')}
       </div>
     )
   }
   if (binding.subject_type === 'team') {
     return (
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+      <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', entityColor(binding.subject_name))}>
         <Icon name="user-group" size={20} className="size-4" />
       </div>
     )
   }
   return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+    <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', GROUP_COLOR)}>
       <Icon name="user-multiple-02" size={20} className="size-4" />
     </div>
   )
@@ -793,9 +803,9 @@ function SubjectTypeBadge({ subjectType }: { subjectType: PolicyBinding['subject
     case 'team':
       return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">Team</Badge>
     case 'org_members':
-      return <Badge variant="secondary" className="h-4 px-1.5 py-0 text-[10px]">All org users</Badge>
+      return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">All org users</Badge>
     case 'workspace_members':
-      return <Badge variant="secondary" className="h-4 px-1.5 py-0 text-[10px]">All workspace users</Badge>
+      return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">All workspace users</Badge>
   }
 }
 
@@ -814,13 +824,13 @@ function PoliciesTableSkeleton({ canModify }: { canModify: boolean }) {
             </div>
           </TableCell>
           <TableCell>
-            <Skeleton className="h-5 w-24 rounded-md" />
-          </TableCell>
-          <TableCell>
             <div className="flex flex-col gap-2">
               <Skeleton className="h-4 w-32" />
               <Skeleton className="h-3 w-20" />
             </div>
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-5 w-24 rounded-md" />
           </TableCell>
           <TableCell>
             <Skeleton className="h-4 w-24" />

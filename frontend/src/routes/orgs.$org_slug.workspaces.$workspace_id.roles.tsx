@@ -46,6 +46,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#
 import { Textarea } from '#/components/ui/textarea'
 import { ScrollArea } from '#/components/ui/scroll-area'
 import { cn } from '#/lib/utils'
+import { entityColor } from '#/lib/entity-colors'
+import { SectionTabNav } from '#/components/SectionTabNav'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/roles')({
   component: WorkspaceRolesRoute,
@@ -225,17 +227,22 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col">
+      <SectionTabNav
+        tabs={[
+          { label: 'Policies', to: '/orgs/$org_slug/workspaces/$workspace_id/policies', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: false },
+          { label: 'Roles', to: '/orgs/$org_slug/workspaces/$workspace_id/roles', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: true },
+        ]}
+      />
+
+      <div className="flex flex-col gap-6 pt-6">
       <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">Workspace Roles</h1>
-            <p className="text-sm text-muted-foreground">
-              {!roles.isLoading && total > 0
-                ? `${total} workspace role${total !== 1 ? 's' : ''}`
-                : 'Workspace-scoped permission sets available for policies.'}
-            </p>
-          </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {!roles.isLoading && total > 0
+              ? `${total} workspace role${total !== 1 ? 's' : ''}`
+              : 'Workspace-scoped permission sets available for policies.'}
+          </p>
 
           {canModifyRoles ? (
             <Dialog
@@ -359,10 +366,10 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
                   <TableColumnHeader label="Role" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Type" />
+                  <TableColumnHeader label="Scope" />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Scope" />
+                  <TableColumnHeader label="Type" />
                 </TableHead>
                 <TableHead>
                   <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
@@ -411,6 +418,7 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
           onPageSizeChange={setPageSize}
         />
       ) : null}
+      </div>
     </div>
   )
 }
@@ -461,7 +469,7 @@ function RoleRow({
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', roleColor(role.name))}>
+          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(role.name))}>
             {roleDisplayName(role).slice(0, 2).toUpperCase()}
           </div>
           <div className="min-w-0">
@@ -471,10 +479,10 @@ function RoleRow({
         </div>
       </TableCell>
       <TableCell>
-        <Badge variant={role.is_builtin ? 'secondary' : 'outline'}>{role.is_builtin ? 'System' : 'Custom'}</Badge>
+        <Badge variant="outline">{scopeLabel(role.scope_type)}</Badge>
       </TableCell>
       <TableCell>
-        <Badge variant="outline">{scopeLabel(role.scope_type)}</Badge>
+        <Badge variant={role.is_builtin ? 'secondary' : 'outline'}>{role.is_builtin ? 'System' : 'Custom'}</Badge>
       </TableCell>
       <TableCell className="text-muted-foreground">{formatDate(role.created_at)}</TableCell>
       {canModifyRoles ? (
@@ -657,10 +665,10 @@ function RolesTableSkeleton({ canModifyRoles }: { canModifyRoles: boolean }) {
             </div>
           </TableCell>
           <TableCell>
-            <Skeleton className="h-5 w-16" />
+            <Skeleton className="h-5 w-20 rounded-full" />
           </TableCell>
           <TableCell>
-            <Skeleton className="h-5 w-20" />
+            <Skeleton className="h-5 w-16 rounded-full" />
           </TableCell>
           <TableCell>
             <Skeleton className="h-4 w-24" />
@@ -717,17 +725,3 @@ function trimTrailingSlash(path: string) {
   return path === '/' ? path : path.replace(/\/$/, '')
 }
 
-const ROLE_COLORS = [
-  'bg-violet-500/10 text-violet-600',
-  'bg-blue-500/10 text-blue-600',
-  'bg-emerald-500/10 text-emerald-600',
-  'bg-orange-500/10 text-orange-600',
-  'bg-rose-500/10 text-rose-600',
-  'bg-amber-500/10 text-amber-600',
-  'bg-cyan-500/10 text-cyan-600',
-]
-
-function roleColor(name: string): string {
-  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-  return ROLE_COLORS[hash % ROLE_COLORS.length]
-}

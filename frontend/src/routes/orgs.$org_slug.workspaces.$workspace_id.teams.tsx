@@ -28,7 +28,9 @@ import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
-import { InitialsAvatar } from '#/components/InitialsAvatar'
+import { SectionTabNav } from '#/components/SectionTabNav'
+import { entityColor } from '#/lib/entity-colors'
+import { cn } from '#/lib/utils'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
@@ -127,17 +129,22 @@ function WorkspaceTeamsPage() {
   })
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col">
+      <SectionTabNav
+        tabs={[
+          { label: 'Users', to: '/orgs/$org_slug/workspaces/$workspace_id/users', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: false },
+          { label: 'Teams', to: '/orgs/$org_slug/workspaces/$workspace_id/teams', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: true },
+        ]}
+      />
+
+      <div className="flex flex-col gap-6 pt-6">
       <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">Teams</h1>
-            <p className="text-sm text-muted-foreground">
-              {!teams.isLoading && total > 0
-                ? `${total} team${total !== 1 ? 's' : ''} in this workspace`
-                : 'Teams explicitly added to this workspace.'}
-            </p>
-          </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {!teams.isLoading && total > 0
+              ? `${total} team${total !== 1 ? 's' : ''} in this workspace`
+              : 'Teams explicitly added to this workspace.'}
+          </p>
 
           {canModifyTeams ? (
             <Dialog
@@ -265,6 +272,7 @@ function WorkspaceTeamsPage() {
           onPageSizeChange={setPageSize}
         />
       ) : null}
+      </div>
     </div>
   )
 }
@@ -284,7 +292,9 @@ function TeamPickerRow({
     <TableRow>
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <InitialsAvatar value={team.name} fallback="T" />
+          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', entityColor(team.name))}>
+            <Icon name="user-group" size={20} className="size-4" />
+          </div>
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{team.name}</div>
             <div className="truncate text-sm text-muted-foreground">@{team.slug}</div>
@@ -351,7 +361,9 @@ function WorkspaceTeamRow({
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <InitialsAvatar value={team.name} fallback="T" />
+          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', entityColor(team.name))}>
+            <Icon name="user-group" size={20} className="size-4" />
+          </div>
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{team.name}</div>
             <div className="truncate text-sm text-muted-foreground">@{team.slug}</div>
@@ -359,7 +371,7 @@ function WorkspaceTeamRow({
         </div>
       </TableCell>
       <TableCell>
-        <Badge variant="secondary">{team.member_count}</Badge>
+        <Badge variant="outline">{team.member_count}</Badge>
       </TableCell>
       <TableCell className="text-muted-foreground">{formatDate(team.created_at)}</TableCell>
       {canModifyTeams ? (
@@ -396,7 +408,7 @@ function TeamPickerSkeleton() {
         <TableRow key={index}>
           <TableCell>
             <div className="flex items-center gap-3">
-              <Skeleton className="size-8 rounded-full" />
+              <Skeleton className="size-8 rounded-md" />
               <div className="flex flex-col gap-2">
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="h-3 w-24" />
@@ -419,7 +431,7 @@ function TeamsTableSkeleton({ canModifyTeams }: { canModifyTeams: boolean }) {
         <TableRow key={index}>
           <TableCell>
             <div className="flex items-center gap-3">
-              <Skeleton className="size-8 rounded-full" />
+              <Skeleton className="size-8 rounded-md" />
               <div className="flex flex-col gap-2">
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="h-3 w-24" />
@@ -427,7 +439,7 @@ function TeamsTableSkeleton({ canModifyTeams }: { canModifyTeams: boolean }) {
             </div>
           </TableCell>
           <TableCell>
-            <Skeleton className="h-5 w-8 rounded-full" />
+            <Skeleton className="h-5 w-12 rounded-full" />
           </TableCell>
           <TableCell>
             <Skeleton className="h-4 w-24" />

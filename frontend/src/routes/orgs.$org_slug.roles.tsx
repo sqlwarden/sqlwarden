@@ -9,6 +9,8 @@ import { isApiError } from '#/lib/api/errors'
 import { orgEffectivePermissionsQueryOptions, orgPermissionsQueryOptions, orgRolesQueryOptions } from '#/lib/api/query'
 import type { PermissionDefinition, Role, RoleScope } from '#/lib/api/types'
 import { hasPermission, permission, permissionDefinitionMap, permissionDescription, permissionDisplayName, type Permission } from '#/lib/permissions'
+import { entityColor } from '#/lib/entity-colors'
+import { SectionTabNav } from '#/components/SectionTabNav'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -210,17 +212,22 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col">
+      <SectionTabNav
+        tabs={[
+          { label: 'Policies', to: '/orgs/$org_slug/policies', params: { org_slug: orgSlug }, isActive: false },
+          { label: 'Roles', to: '/orgs/$org_slug/roles', params: { org_slug: orgSlug }, isActive: true },
+        ]}
+      />
+
+      <div className="flex flex-col gap-6 pt-6">
       <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">Roles</h1>
-            <p className="text-sm text-muted-foreground">
-              {!roles.isLoading && total > 0
-                ? `${total} organization role${total !== 1 ? 's' : ''}`
-                : 'Organization-scoped permission sets available for policies.'}
-            </p>
-          </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {!roles.isLoading && total > 0
+              ? `${total} organization role${total !== 1 ? 's' : ''}`
+              : 'Organization-scoped permission sets available for policies.'}
+          </p>
 
           {canCreateRole ? (
             <Dialog
@@ -366,6 +373,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
           onPageSizeChange={setPageSize}
         />
       ) : null}
+      </div>
     </div>
   )
 }
@@ -416,7 +424,7 @@ function RoleRow({
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', roleColor(role.name))}>
+          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(role.name))}>
             {roleDisplayName(role).slice(0, 2).toUpperCase()}
           </div>
           <div className="min-w-0">
@@ -610,10 +618,10 @@ function RolesTableSkeleton({ canDeleteRole }: { canDeleteRole: boolean }) {
             </div>
           </TableCell>
           <TableCell>
-            <Skeleton className="h-5 w-20" />
+            <Skeleton className="h-5 w-20 rounded-full" />
           </TableCell>
           <TableCell>
-            <Skeleton className="h-5 w-16" />
+            <Skeleton className="h-5 w-16 rounded-full" />
           </TableCell>
           <TableCell>
             <Skeleton className="h-4 w-24" />
@@ -666,17 +674,3 @@ function trimTrailingSlash(path: string) {
   return path === '/' ? path : path.replace(/\/$/, '')
 }
 
-const ROLE_COLORS = [
-  'bg-violet-500/10 text-violet-600',
-  'bg-blue-500/10 text-blue-600',
-  'bg-emerald-500/10 text-emerald-600',
-  'bg-orange-500/10 text-orange-600',
-  'bg-rose-500/10 text-rose-600',
-  'bg-amber-500/10 text-amber-600',
-  'bg-cyan-500/10 text-cyan-600',
-]
-
-function roleColor(name: string): string {
-  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-  return ROLE_COLORS[hash % ROLE_COLORS.length]
-}

@@ -59,6 +59,8 @@ import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { cn } from '#/lib/utils'
 import { getInitials } from '#/components/InitialsAvatar'
+import { entityColor, GROUP_COLOR } from '#/lib/entity-colors'
+import { SectionTabNav } from '#/components/SectionTabNav'
 
 export const Route = createFileRoute('/orgs/$org_slug/policies')({
   component: OrganizationPoliciesRoute,
@@ -249,17 +251,22 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
   }))
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col">
+      <SectionTabNav
+        tabs={[
+          { label: 'Policies', to: '/orgs/$org_slug/policies', params: { org_slug: orgSlug }, isActive: true },
+          { label: 'Roles', to: '/orgs/$org_slug/roles', params: { org_slug: orgSlug }, isActive: false },
+        ]}
+      />
+
+      <div className="flex flex-col gap-6 pt-6">
       <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">Policies</h1>
-            <p className="text-sm text-muted-foreground">
-              {!policies.isLoading && total > 0
-                ? `${total} policy binding${total !== 1 ? 's' : ''}`
-                : 'Assign organization roles to users, teams, or all members.'}
-            </p>
-          </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {!policies.isLoading && total > 0
+              ? `${total} policy binding${total !== 1 ? 's' : ''}`
+              : 'Assign organization roles to users, teams, or all members.'}
+          </p>
 
           {canModifyPolicies ? (
             <Dialog
@@ -473,6 +480,7 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
           onPageSizeChange={setPageSize}
         />
       ) : null}
+      </div>
     </div>
   )
 }
@@ -671,13 +679,13 @@ function PolicyRow({
             onClick={(e) => e.stopPropagation()}
             className={cn(
               'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium transition-opacity hover:opacity-80',
-              roleColor(binding.role_name ?? ''),
+              entityColor(binding.role_name ?? ''),
             )}
           >
             {binding.role_name ? roleDisplayName(binding.role_name) : '—'}
           </Link>
         ) : (
-          <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', roleColor(binding.role_name ?? ''))}>
+          <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', entityColor(binding.role_name ?? ''))}>
             {binding.role_name ? roleDisplayName(binding.role_name) : '—'}
           </span>
         )}
@@ -725,25 +733,23 @@ function PolicyRow({
   )
 }
 
-// All subject icons are square (rounded-md) for consistency
 function SubjectIcon({ binding }: { binding: PolicyBinding }) {
   if (binding.subject_type === 'account') {
-    const initials = getInitials(binding.subject_name, '?')
     return (
-      <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', subjectColor(binding.subject_name))}>
-        {initials}
+      <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(binding.subject_name))}>
+        {getInitials(binding.subject_name, '?')}
       </div>
     )
   }
   if (binding.subject_type === 'team') {
     return (
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-blue-500/10 text-blue-600">
+      <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', entityColor(binding.subject_name))}>
         <Icon name="user-group" size={20} className="size-4" />
       </div>
     )
   }
   return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600">
+    <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', GROUP_COLOR)}>
       <Icon name="user-multiple-02" size={20} className="size-4" />
     </div>
   )
@@ -756,7 +762,7 @@ function SubjectTypeBadge({ subjectType }: { subjectType: PolicyBinding['subject
     case 'team':
       return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">Team</Badge>
     case 'org_members':
-      return <Badge variant="secondary" className="h-4 px-1.5 py-0 text-[10px]">All users</Badge>
+      return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">All users</Badge>
   }
 }
 
@@ -812,34 +818,4 @@ function trimTrailingSlash(path: string) {
   return path === '/' ? path : path.replace(/\/$/, '')
 }
 
-const SUBJECT_COLORS = [
-  'bg-violet-500/10 text-violet-600',
-  'bg-blue-500/10 text-blue-600',
-  'bg-emerald-500/10 text-emerald-600',
-  'bg-orange-500/10 text-orange-600',
-  'bg-rose-500/10 text-rose-600',
-  'bg-amber-500/10 text-amber-600',
-  'bg-cyan-500/10 text-cyan-600',
-]
-
-function subjectColor(name: string): string {
-  if (!name) return SUBJECT_COLORS[0]
-  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-  return SUBJECT_COLORS[hash % SUBJECT_COLORS.length]
-}
-
-export const ROLE_COLORS = [
-  'bg-violet-500/10 text-violet-600',
-  'bg-blue-500/10 text-blue-600',
-  'bg-emerald-500/10 text-emerald-600',
-  'bg-orange-500/10 text-orange-600',
-  'bg-rose-500/10 text-rose-600',
-  'bg-amber-500/10 text-amber-600',
-  'bg-cyan-500/10 text-cyan-600',
-]
-
-export function roleColor(name: string): string {
-  if (!name) return ROLE_COLORS[0]
-  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-  return ROLE_COLORS[hash % ROLE_COLORS.length]
-}
+export { entityColor as roleColor, entityColor as subjectColor }
