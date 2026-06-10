@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -229,8 +228,8 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 	input.V.CheckField(input.Driver != "", "driver", "Driver is required.")
 	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
 	if input.Driver != "" {
-		if _, err := driver.New(input.Driver); err != nil {
-			input.V.CheckField(false, "driver", "Driver must be a supported driver.")
+		if err := app.validateTargetConnection(input.Driver, input.DSN); err != nil {
+			input.V.CheckField(false, "driver", targetConnectionFieldError(err))
 		}
 	}
 	if input.AccessMode == "" {

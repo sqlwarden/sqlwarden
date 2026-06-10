@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"testing"
@@ -97,6 +98,30 @@ func TestTestConnectionValidationAndSuccess(t *testing.T) {
 		map[string]any{"driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
 	assert.Equal(t, successRes.StatusCode, http.StatusOK)
 	assert.Equal(t, successRes.BodyFields["ok"], true)
+}
+
+func TestTestConnectionRejectsSQLiteFileTargetInServerMode(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-test-sqlite-file@example.com", "Conn Test SQLite File", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn Test SQLite File WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID)+"/test",
+		map[string]any{
+			"driver": "sqlite",
+			"dsn":    filepath.Join(t.TempDir(), "host.db"),
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "driver")
 }
 
 func TestTestConnectionRequiresConnCreate(t *testing.T) {
@@ -191,6 +216,68 @@ func TestCreateConnectionUnknownDriverReturns422(t *testing.T) {
 		map[string]any{"name": "Bad Driver", "driver": "oracle", "dsn": "ignored"}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusUnprocessableEntity)
 	assertValidationField(t, createRes, "driver")
+}
+
+func TestCreateConnectionRejectsSQLiteFileTargetInServerMode(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-create-sqlite-file@example.com", "Conn Create SQLite File", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn SQLite File WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "Host SQLite",
+			"driver": "sqlite",
+			"dsn":    filepath.Join(t.TempDir(), "host.db"),
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, createRes, "driver")
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		orgEnvConnectionsURL(slug, wsIDInt, envID), nil, tok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+	var payload struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	decodeJSONResponse(t, listRes.BodyBytes, &payload)
+	assert.Equal(t, payload.Total, 0)
+	assert.Equal(t, len(payload.Items), 0)
+}
+
+func TestCreateConnectionAllowsSQLiteFileTargetWhenLocalSourceAllowed(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.config.Drivers.SQLite.AllowedSources = []string{SQLiteDriverSourceLocal}
+
+	_, tok, slug := registerAndLogin(t, app, "conn-create-desktop-sqlite-file@example.com", "Conn Create Desktop SQLite File", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Desktop SQLite File WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "Local SQLite",
+			"driver": "sqlite",
+			"dsn":    filepath.Join(t.TempDir(), "local.db"),
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	assert.Equal(t, createRes.BodyFields["driver"], "sqlite")
 }
 
 func TestListConnections(t *testing.T) {
@@ -317,6 +404,41 @@ func TestUpdateConnection(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("%v", getRes.BodyFields["environment_id"]), envID)
 }
 
+func TestUpdateConnectionRejectsSQLiteFileTargetInServerMode(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-update-sqlite-file@example.com", "Conn Update SQLite File", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn Update SQLite File WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "Primary",
+			"driver": "sqlite",
+			"dsn":    ":memory:",
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		orgConnectionURL(slug, wsIDInt, envID, connID),
+		map[string]any{
+			"name":        "Primary",
+			"dsn":         filepath.Join(t.TempDir(), "host.db"),
+			"access_mode": "open",
+		}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, updateRes, "driver")
+}
+
 func TestUpdateConnectionRejectsImmutableFields(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -385,7 +507,7 @@ func TestUpdateConnectionBlocksDSNChangeWhileSessionActive(t *testing.T) {
 		orgConnectionURL(slug, wsIDInt, envID, connID),
 		map[string]any{
 			"name":        "Primary Rotated",
-			"dsn":         "file:new.db?mode=memory&cache=shared",
+			"dsn":         "file::memory:?cache=shared",
 			"access_mode": "open",
 		}, tok), app.routes())
 	assert.Equal(t, updateRes.StatusCode, http.StatusConflict)
@@ -420,7 +542,7 @@ func TestUpdateConnectionForceDropsActiveSessionsOnDSNChange(t *testing.T) {
 		orgConnectionURL(slug, wsIDInt, envID, connID),
 		map[string]any{
 			"name":        "Primary Rotated",
-			"dsn":         "file:new.db?mode=memory&cache=shared",
+			"dsn":         "file::memory:?cache=shared",
 			"access_mode": "open",
 			"force":       true,
 		}, tok), app.routes())
@@ -1392,6 +1514,36 @@ func TestConnectToDatabaseReturns422ForTargetDatabaseError(t *testing.T) {
 	connectRes := send(t, newAuthRequest(t, http.MethodPost,
 		orgConnectionURL(slug, wsIDInt, envID, connID)+"/connect", nil, tok), app.routes())
 	assert.Equal(t, connectRes.StatusCode, http.StatusUnprocessableEntity)
+}
+
+func TestConnectToDatabaseRejectsPersistedSQLiteFileTargetInServerMode(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-connect-sqlite-file@example.com", "Conn Connect SQLite File", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn Persisted SQLite File WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	encryptedDSN, err := app.keyring.Encrypt(filepath.Join(t.TempDir(), "host.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := app.db.InsertConnection(context.Background(), wsIDInt, &envID, "Seeded Host SQLite", "sqlite", encryptedDSN, "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.enforcer.InvalidateAncestry("connection", conn.ID)
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, strconv.FormatInt(conn.ID, 10))+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusUnprocessableEntity)
+	assert.Equal(t, connectRes.BodyFields["error"], "SQLite file connections are disabled for this instance.")
 }
 
 type blockingQueryDriver struct {

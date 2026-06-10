@@ -67,6 +67,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if len(cfg.Desktop.Backends) != 1 || cfg.Desktop.Backends[0].ID != "local" || cfg.Desktop.Backends[0].Kind != DesktopBackendKindLocal {
 		t.Fatalf("unexpected default desktop backends: %+v", cfg.Desktop.Backends)
 	}
+	if len(cfg.Drivers.SQLite.AllowedSources) != 0 {
+		t.Fatalf("drivers.sqlite.allowed_sources = %v, want empty", cfg.Drivers.SQLite.AllowedSources)
+	}
 }
 
 func TestLoadConfigDefaultsHaveNoPreviousEncryptionKeys(t *testing.T) {
@@ -341,6 +344,30 @@ func TestLoadConfigDesktopDefaultsToVisibleUnversionedFiles(t *testing.T) {
 	}
 }
 
+func TestLoadConfigDesktopSingleUserDefaultsSQLiteTargetsToLocal(t *testing.T) {
+	cfg, _, err := loadConfig([]string{"--deployment-mode", DeploymentModeDesktop, "--access-mode", AccessModeSingleUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Drivers.SQLite.AllowedSources) != 1 || cfg.Drivers.SQLite.AllowedSources[0] != SQLiteDriverSourceLocal {
+		t.Fatalf("drivers.sqlite.allowed_sources = %v, want [%s]", cfg.Drivers.SQLite.AllowedSources, SQLiteDriverSourceLocal)
+	}
+}
+
+func TestLoadConfigExplicitSQLiteTargetSourcesOverrideDesktopDefault(t *testing.T) {
+	cfg, _, err := loadConfig([]string{
+		"--deployment-mode", DeploymentModeDesktop,
+		"--access-mode", AccessModeSingleUser,
+		"--drivers-sqlite-allowed-sources", "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Drivers.SQLite.AllowedSources) != 0 {
+		t.Fatalf("drivers.sqlite.allowed_sources = %v, want empty", cfg.Drivers.SQLite.AllowedSources)
+	}
+}
+
 func TestLoadConfigRejectsUnsupportedFileConfiguration(t *testing.T) {
 	_, _, err := loadConfig([]string{"--files-storage-backends-local-type", FilesStorageBackendS3})
 	if err == nil {
@@ -365,6 +392,18 @@ func TestLoadConfigRejectsUnsupportedFileConfiguration(t *testing.T) {
 	_, _, err = loadConfig([]string{"--files-active-storage-backend", "missing"})
 	if err == nil {
 		t.Fatal("expected missing active storage backend to fail")
+	}
+}
+
+func TestLoadConfigRejectsUnsupportedSQLiteTargetConfiguration(t *testing.T) {
+	_, _, err := loadConfig([]string{"--drivers-sqlite-allowed-sources", "workspace_file"})
+	if err == nil {
+		t.Fatal("expected unimplemented sqlite target source to fail")
+	}
+
+	_, _, err = loadConfig([]string{"--drivers-sqlite-allowed-sources", "local,local"})
+	if err == nil {
+		t.Fatal("expected duplicate sqlite target source to fail")
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -576,6 +577,28 @@ func TestMyWorkspaceConnectionValidationAndEnvironmentChecks(t *testing.T) {
 		"dsn":    ":memory:",
 	}, tok), app.routes())
 	assert.Equal(t, crossEnvCreate.StatusCode, http.StatusNotFound)
+}
+
+func TestMyWorkspaceConnectionRejectsSQLiteFileTargetInServerMode(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok := setupMeTest(t, app, "meconn-sqlite-file@example.com")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
+		map[string]any{"name": "Personal SQLite File WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := strconv.FormatInt(defaultEnvironmentID(t, app, wsIDInt), 10)
+
+	res := send(t, newAuthRequest(t, http.MethodPost, meEnvConnectionsURL(wsID, envID),
+		map[string]any{
+			"name":   "Host SQLite",
+			"driver": "sqlite",
+			"dsn":    filepath.Join(t.TempDir(), "host.db"),
+		}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "driver")
 }
 
 func TestOrgConnectionNotAccessibleViaMeRoutes(t *testing.T) {

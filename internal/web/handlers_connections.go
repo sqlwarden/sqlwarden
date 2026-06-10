@@ -216,8 +216,8 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 	input.V.CheckField(input.Driver != "", "driver", "Driver is required.")
 	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
 	if input.Driver != "" {
-		if _, err := driver.New(input.Driver); err != nil {
-			input.V.CheckField(false, "driver", "Driver must be a supported driver.")
+		if err := app.validateTargetConnection(input.Driver, input.DSN); err != nil {
+			input.V.CheckField(false, "driver", targetConnectionFieldError(err))
 		}
 	}
 	if input.AccessMode == "" {
@@ -325,13 +325,20 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	conn := contextGetConnection(r)
+	if err := app.validateTargetConnection(conn.Driver, input.DSN); err != nil {
+		v := validator.Validator{}
+		v.AddFieldError("driver", targetConnectionFieldError(err))
+		app.failedValidation(w, r, v)
+		return
+	}
+
 	dsnEncrypted, err := app.keyring.Encrypt(input.DSN)
 	if err != nil {
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 		return
 	}
 
-	conn := contextGetConnection(r)
 	currentDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -384,6 +391,12 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
+		return
+	}
+	if err := app.validateTargetConnection(input.Driver, input.DSN); err != nil {
+		v := validator.Validator{}
+		v.AddFieldError("driver", targetConnectionFieldError(err))
+		app.failedValidation(w, r, v)
 		return
 	}
 
@@ -462,6 +475,10 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 	plainDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
 	if err != nil {
 		app.serverError(w, r, err)
+		return
+	}
+	if err := app.validateTargetConnection(conn.Driver, plainDSN); err != nil {
+		app.errorMessage(w, r, http.StatusUnprocessableEntity, targetConnectionFieldError(err), nil)
 		return
 	}
 
