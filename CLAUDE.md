@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Rules
+
+- **Always use codegraph (`codegraph_*` tools) before grep, find, or Read when exploring this codebase.** Codegraph first for any symbol lookup, call graph, or impact analysis; grep/Read only for literal text or when a specific file path is already known.
+- **Never commit unless the user explicitly says to.** Complete the work, then wait for the instruction to commit.
+
 ## Commands
 
 ```bash
