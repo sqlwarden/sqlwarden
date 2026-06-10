@@ -1270,11 +1270,11 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 
 	assert.Equal(t, rr.Code, statusClientClosedRequest)
 
-	var payload map[string]string
+	var payload map[string]any
 	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, payload["error"], "Query was cancelled.")
+	assert.Equal(t, payload["error"].(map[string]any)["message"], "Query was cancelled.")
 
 	if _, ok := app.connManager.Get(cancelledSession.ID); ok {
 		t.Fatal("expected cancelled session to be removed")
@@ -1543,7 +1543,7 @@ func TestConnectToDatabaseRejectsPersistedSQLiteFileTargetInServerMode(t *testin
 	connectRes := send(t, newAuthRequest(t, http.MethodPost,
 		orgConnectionURL(slug, wsIDInt, envID, strconv.FormatInt(conn.ID, 10))+"/connect", nil, tok), app.routes())
 	assert.Equal(t, connectRes.StatusCode, http.StatusUnprocessableEntity)
-	assert.Equal(t, connectRes.BodyFields["error"], "SQLite file connections are disabled for this instance.")
+	assertAPIError(t, connectRes, apiErrorValidationFailed, "SQLite file connections are disabled for this instance.")
 }
 
 type blockingQueryDriver struct {

@@ -365,13 +365,50 @@ func assertBodyContainsJSONKeys(t *testing.T, body []byte, keys ...string) {
 func assertValidationField(t *testing.T, res testResponse, field string) {
 	t.Helper()
 
-	errorsValue, ok := res.BodyFields["field_errors"].(map[string]any)
+	errorValue, ok := res.BodyFields["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error envelope in response, got %#v", res.BodyFields)
+	}
+	errorsValue, ok := errorValue["field_errors"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected field_errors in response, got %#v", res.BodyFields)
 	}
 	if _, ok := errorsValue[field]; !ok {
 		t.Fatalf("expected validation field %q in %#v", field, errorsValue)
 	}
+}
+
+func assertAPIError(t *testing.T, res testResponse, code, message string) {
+	t.Helper()
+
+	errorValue, ok := res.BodyFields["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error envelope in response, got %#v", res.BodyFields)
+	}
+	if code != "" {
+		if got := errorValue["code"]; got != code {
+			t.Fatalf("error.code = %#v, want %q", got, code)
+		}
+	}
+	if message != "" {
+		if got := errorValue["message"]; got != message {
+			t.Fatalf("error.message = %#v, want %q", got, message)
+		}
+	}
+}
+
+func apiErrorDetails(t *testing.T, res testResponse) map[string]any {
+	t.Helper()
+
+	errorValue, ok := res.BodyFields["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error envelope in response, got %#v", res.BodyFields)
+	}
+	details, ok := errorValue["details"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error details in response, got %#v", errorValue)
+	}
+	return details
 }
 
 func setupWorkspaceOwner(t *testing.T) (*application, database.Organization, database.Workspace, string) {

@@ -539,7 +539,7 @@ func TestDeleteWorkspaceRoleWithBindingsReturnsConflict(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodDelete,
 		"/api/v1/orgs/"+org.Slug+"/workspaces/"+wsID+"/roles/"+strconv.FormatInt(roleID, 10), nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusConflict)
-	assert.Equal(t, res.BodyFields["binding_count"].(float64), float64(1))
+	assert.Equal(t, apiErrorDetails(t, res)["binding_count"].(float64), float64(1))
 
 	var bindingCount int
 	if err := app.db.NewSelect().TableExpr("role_bindings").ColumnExpr("COUNT(*)").Where("role_id = ?", roleID).Scan(context.Background(), &bindingCount); err != nil {

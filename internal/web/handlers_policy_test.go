@@ -235,7 +235,7 @@ func TestDeleteRoleWithBindingsReturnsConflict(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodDelete,
 		"/api/v1/orgs/"+org.Slug+"/roles/"+strconv.FormatInt(roleID, 10), nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusConflict)
-	assert.Equal(t, res.BodyFields["binding_count"].(float64), float64(1))
+	assert.Equal(t, apiErrorDetails(t, res)["binding_count"].(float64), float64(1))
 
 	// The binding remains; role deletion must not silently revoke policies.
 	var bindingCount int

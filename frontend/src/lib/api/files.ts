@@ -1,4 +1,4 @@
-import { apiRequest } from '#/lib/api/client'
+import { apiRequest, parseAPIErrorPayload } from '#/lib/api/client'
 import { getAccessToken } from '#/lib/auth/access-token'
 import type { WorkspaceFile } from '#/lib/api/types'
 
@@ -73,10 +73,7 @@ export async function updatePrivateWorkspaceFileContent(
 
   if (!response.ok) {
     const payload = await response.json().catch(() => null)
-    const message =
-      (typeof payload === 'object' && payload !== null && 'error' in payload
-        ? String(payload.error)
-        : undefined) ?? response.statusText ?? 'Failed to save file'
+    const { message } = parseAPIErrorPayload(payload, response.statusText || 'Failed to save file')
     const err = new Error(message) as Error & { status: number }
     err.status = response.status
     throw err

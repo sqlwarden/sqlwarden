@@ -97,7 +97,7 @@ func TestSetupInMultiUserModeRequiresOrganization(t *testing.T) {
 	}), app.routes())
 
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
-	assertBodyContainsJSONKeys(t, res.BodyBytes, "field_errors")
+	assertValidationField(t, res, "organization_name")
 }
 
 func TestSetupInMultiUserModeRejectsInvalidOrganizationSlug(t *testing.T) {

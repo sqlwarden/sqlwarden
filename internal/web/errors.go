@@ -15,6 +15,19 @@ import (
 
 const statusClientClosedRequest = 499
 
+const (
+	apiErrorBadRequest                 = "bad_request"
+	apiErrorAuthenticationRequired     = "authentication_required"
+	apiErrorInvalidAuthenticationToken = "invalid_authentication_token"
+	apiErrorNotPermitted               = "not_permitted"
+	apiErrorNotFound                   = "not_found"
+	apiErrorMethodNotAllowed           = "method_not_allowed"
+	apiErrorValidationFailed           = "validation_failed"
+	apiErrorConflict                   = "conflict"
+	apiErrorResourceInUse              = "resource_in_use"
+	apiErrorInternalServer             = "internal_server_error"
+)
+
 func (app *application) reportServerError(r *http.Request, err error) {
 	var (
 		message = err.Error()
@@ -42,7 +55,13 @@ func (app *application) reportServerError(r *http.Request, err error) {
 }
 
 func (app *application) errorMessage(w http.ResponseWriter, r *http.Request, status int, message string, headers http.Header) {
-	err := response.JSONWithHeaders(w, status, map[string]string{"error": message}, headers)
+	app.apiError(w, r, status, defaultAPIErrorCode(status), message, response.APIError{}, headers)
+}
+
+func (app *application) apiError(w http.ResponseWriter, r *http.Request, status int, code, message string, apiErr response.APIError, headers http.Header) {
+	apiErr.Code = code
+	apiErr.Message = message
+	err := response.JSONWithHeaders(w, status, response.APIErrorEnvelope{Error: apiErr}, headers)
 	if err != nil {
 		app.reportServerError(r, err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -71,10 +90,10 @@ func (app *application) badRequest(w http.ResponseWriter, r *http.Request, err e
 }
 
 func (app *application) failedValidation(w http.ResponseWriter, r *http.Request, v validator.Validator) {
-	err := response.JSON(w, http.StatusUnprocessableEntity, v)
-	if err != nil {
-		app.serverError(w, r, err)
-	}
+	app.apiError(w, r, http.StatusUnprocessableEntity, apiErrorValidationFailed, firstValidationMessage(v), response.APIError{
+		FieldErrors: v.FieldErrors,
+		Errors:      v.Errors,
+	}, nil)
 }
 
 func (app *application) failedDuplicateField(w http.ResponseWriter, r *http.Request, field, message string) {
@@ -87,12 +106,12 @@ func (app *application) invalidAuthenticationToken(w http.ResponseWriter, r *htt
 	headers := make(http.Header)
 	headers.Set("WWW-Authenticate", "Bearer")
 
-	app.errorMessage(w, r, http.StatusUnauthorized, "Invalid authentication token.", headers)
+	app.apiError(w, r, http.StatusUnauthorized, apiErrorInvalidAuthenticationToken, "Invalid authentication token.", response.APIError{}, headers)
 }
 
 func (app *application) notPermitted(w http.ResponseWriter, r *http.Request) {
 	message := "You do not have permission to perform this action."
-	app.errorMessage(w, r, http.StatusForbidden, message, nil)
+	app.apiError(w, r, http.StatusForbidden, apiErrorNotPermitted, message, response.APIError{}, nil)
 }
 
 // isUniqueViolation returns true if err is a unique-constraint violation from
@@ -125,5 +144,42 @@ func (app *application) authenticationRequired(w http.ResponseWriter, r *http.Re
 	headers := make(http.Header)
 	headers.Set("WWW-Authenticate", "Bearer")
 
-	app.errorMessage(w, r, http.StatusUnauthorized, "You must be authenticated to access this resource.", headers)
+	app.apiError(w, r, http.StatusUnauthorized, apiErrorAuthenticationRequired, "You must be authenticated to access this resource.", response.APIError{}, headers)
+}
+
+func firstValidationMessage(v validator.Validator) string {
+	for _, message := range v.FieldErrors {
+		if strings.TrimSpace(message) != "" {
+			return message
+		}
+	}
+	for _, message := range v.Errors {
+		if strings.TrimSpace(message) != "" {
+			return message
+		}
+	}
+	return "Request validation failed."
+}
+
+func defaultAPIErrorCode(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return apiErrorBadRequest
+	case http.StatusUnauthorized:
+		return apiErrorAuthenticationRequired
+	case http.StatusForbidden:
+		return apiErrorNotPermitted
+	case http.StatusNotFound:
+		return apiErrorNotFound
+	case http.StatusMethodNotAllowed:
+		return apiErrorMethodNotAllowed
+	case http.StatusUnprocessableEntity:
+		return apiErrorValidationFailed
+	case http.StatusConflict:
+		return apiErrorConflict
+	case http.StatusInternalServerError:
+		return apiErrorInternalServer
+	default:
+		return fmt.Sprintf("http_%d", status)
+	}
 }

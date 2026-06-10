@@ -50,13 +50,25 @@ async function parseJson(response: Response) {
   return response.json()
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function fieldErrorsFrom(value: unknown) {
+  if (!isRecord(value) || !isRecord(value.field_errors)) {
+    return undefined
+  }
+  return value.field_errors as Record<string, string>
+}
+
 function firstValidationMessage(payload: unknown) {
   if (typeof payload !== 'object' || payload === null) {
     return undefined
   }
 
-  if ('field_errors' in payload && typeof payload.field_errors === 'object' && payload.field_errors !== null) {
-    const [message] = Object.values(payload.field_errors as Record<string, unknown>)
+  const fieldErrors = fieldErrorsFrom(payload)
+  if (fieldErrors) {
+    const [message] = Object.values(fieldErrors)
     if (typeof message === 'string' && message.trim() !== '') {
       return message
     }
@@ -70,6 +82,39 @@ function firstValidationMessage(payload: unknown) {
   }
 
   return undefined
+}
+
+export function parseAPIErrorPayload(payload: unknown, fallback: string) {
+  const legacyFieldErrors = fieldErrorsFrom(payload)
+
+  if (isRecord(payload) && isRecord(payload.error)) {
+    const error = payload.error
+    const fieldErrors = fieldErrorsFrom(error)
+    const message =
+      firstValidationMessage(error) ??
+      (typeof error.message === 'string' && error.message.trim() !== '' ? error.message : undefined) ??
+      fallback
+
+    return {
+      code: typeof error.code === 'string' ? error.code : undefined,
+      details: 'details' in error ? error.details : payload,
+      fieldErrors,
+      message,
+    }
+  }
+
+  const message =
+    ((isRecord(payload) && typeof payload.error === 'string' ? payload.error : undefined) ??
+      firstValidationMessage(payload) ??
+      fallback) ||
+    'Request failed'
+
+  return {
+    code: undefined,
+    details: payload,
+    fieldErrors: legacyFieldErrors,
+    message,
+  }
 }
 
 export async function apiRequest<T>(path: string, options: ApiClientOptions = {}): Promise<T> {
@@ -96,20 +141,12 @@ export async function apiRequest<T>(path: string, options: ApiClientOptions = {}
       notifyAuthInvalidated()
     }
 
-    const fieldErrors = typeof payload === 'object' && payload !== null && 'field_errors' in payload
-      ? (payload.field_errors as Record<string, string>)
-      : undefined
-    const message =
-      ((typeof payload === 'object' && payload !== null && 'error' in payload && typeof payload.error === 'string'
-        ? payload.error
-        : undefined) ??
-        firstValidationMessage(payload) ??
-        response.statusText) ||
-      'Request failed'
+    const parsedError = parseAPIErrorPayload(payload, response.statusText || 'Request failed')
 
-    throw new ApiError(message, response.status, {
-      details: payload,
-      fieldErrors,
+    throw new ApiError(parsedError.message, response.status, {
+      code: parsedError.code,
+      details: parsedError.details,
+      fieldErrors: parsedError.fieldErrors,
     })
   }
 

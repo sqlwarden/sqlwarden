@@ -33,7 +33,7 @@ func (app *application) browseSharedWorkspaceFiles(w http.ResponseWriter, r *htt
 
 // browseWorkspaceFiles returns the IDE browser snapshot for root, folder, or file.
 func (app *application) browseWorkspaceFiles(w http.ResponseWriter, r *http.Request, visibility string) {
-	fileID, ok := optionalPositiveID(w, r, "file_id")
+	fileID, ok := app.optionalPositiveID(w, r, "file_id")
 	if !ok {
 		return
 	}
@@ -57,7 +57,7 @@ func (app *application) listRecentSharedWorkspaceFiles(w http.ResponseWriter, r 
 
 // listRecentWorkspaceFiles returns recently changed openable files for the route-selected tree.
 func (app *application) listRecentWorkspaceFiles(w http.ResponseWriter, r *http.Request, visibility string) {
-	limit, ok := optionalPositiveLimit(w, r, "limit", 20, 100)
+	limit, ok := app.optionalPositiveLimit(w, r, "limit", 20, 100)
 	if !ok {
 		return
 	}
@@ -73,7 +73,7 @@ func (app *application) listRecentWorkspaceFiles(w http.ResponseWriter, r *http.
 
 // listWorkspaceFiles lists direct children for the route-selected file tree.
 func (app *application) listWorkspaceFiles(w http.ResponseWriter, r *http.Request, visibility string) {
-	parentID, ok := optionalPositiveID(w, r, "parent_id")
+	parentID, ok := app.optionalPositiveID(w, r, "parent_id")
 	if !ok {
 		return
 	}
@@ -357,27 +357,27 @@ func (app *application) workspaceFileError(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func optionalPositiveID(w http.ResponseWriter, r *http.Request, name string) (*int64, bool) {
+func (app *application) optionalPositiveID(w http.ResponseWriter, r *http.Request, name string) (*int64, bool) {
 	raw := r.URL.Query().Get(name)
 	if raw == "" {
 		return nil, true
 	}
 	id, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || id < 1 {
-		response.JSON(w, http.StatusUnprocessableEntity, fieldErrors(map[string]string{name: "Value must be a positive integer."}))
+		app.failedValidation(w, r, fieldErrors(map[string]string{name: "Value must be a positive integer."}))
 		return nil, false
 	}
 	return &id, true
 }
 
-func optionalPositiveLimit(w http.ResponseWriter, r *http.Request, name string, defaultValue, maxValue int) (int, bool) {
+func (app *application) optionalPositiveLimit(w http.ResponseWriter, r *http.Request, name string, defaultValue, maxValue int) (int, bool) {
 	raw := r.URL.Query().Get(name)
 	if raw == "" {
 		return defaultValue, true
 	}
 	limit, err := strconv.Atoi(raw)
 	if err != nil || limit < 1 {
-		response.JSON(w, http.StatusUnprocessableEntity, fieldErrors(map[string]string{name: "Value must be a positive integer."}))
+		app.failedValidation(w, r, fieldErrors(map[string]string{name: "Value must be a positive integer."}))
 		return 0, false
 	}
 	if limit > maxValue {

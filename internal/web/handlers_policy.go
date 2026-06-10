@@ -201,12 +201,9 @@ func (app *application) roleInUse(w http.ResponseWriter, r *http.Request, err er
 	if errors.As(err, &roleInUse) {
 		bindingCount = roleInUse.BindingCount
 	}
-	if jsonErr := response.JSON(w, http.StatusConflict, map[string]any{
-		"error":         "Role is still used by policy bindings. Remove those policy bindings before deleting the role.",
-		"binding_count": bindingCount,
-	}); jsonErr != nil {
-		app.serverError(w, r, jsonErr)
-	}
+	app.apiError(w, r, http.StatusConflict, apiErrorResourceInUse, "Role is still used by policy bindings. Remove those policy bindings before deleting the role.", response.APIError{
+		Details: map[string]any{"binding_count": bindingCount},
+	}, nil)
 }
 
 func (app *application) listOrgPolicies(w http.ResponseWriter, r *http.Request) {
