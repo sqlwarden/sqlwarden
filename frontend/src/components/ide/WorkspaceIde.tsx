@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Icon } from '#/lib/icons'
 import { updatePrivateWorkspaceFileContent } from '#/lib/api/files'
@@ -423,6 +423,7 @@ type CursorInfo = { line: number; col: number; sel: number }
 
 function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
   const registry = useYDocRegistry()
+  const queryClient = useQueryClient()
   const [createFileOpen, setCreateFileOpen] = useState(false)
   const [cursorInfo, setCursorInfo] = useState<CursorInfo | null>(null)
 
@@ -480,6 +481,19 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
     }
     trackedIdsRef.current = currentIds
   }, [tabs, registry])
+
+  // ── File tab close → remove query cache so reopen always fetches fresh ────
+  const prevTabsRef = useRef<EditorTab[]>(tabs)
+  useEffect(() => {
+    const prevTabs = prevTabsRef.current
+    const currIds = new Set(tabs.map((t) => t.id))
+    for (const tab of prevTabs) {
+      if (!currIds.has(tab.id) && tab.kind === 'file' && tab.fileId != null) {
+        queryClient.removeQueries({ queryKey: ['file-content', orgSlug, workspace.id, tab.fileId] })
+      }
+    }
+    prevTabsRef.current = tabs
+  }, [tabs, queryClient, orgSlug, workspace.id])
 
   // ── Y.Doc → store: debounced snapshot for IndexedDB persistence + isDirty ─
   // 'server-load' and 'init' are skipped — they are not user edits.

@@ -29,7 +29,7 @@ export function useFileContent({
     queryFn: () => getPrivateWorkspaceFileContent(orgSlug, workspaceId, fileId!),
     enabled: needsLoad,
     staleTime: Infinity,
-    gcTime: 0,
+    gcTime: 5 * 60 * 1000,
   })
 
   useEffect(() => {
