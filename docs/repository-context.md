@@ -112,7 +112,7 @@ ID strategy currently implemented:
   - current resource plus ancestor resources from `resource_hierarchy`
 
 Builtins:
-- Org builtin roles: `Organization Owner`, `Organization Admin`, `Organization Member`
+- Org builtin roles: `Owner`, `Administrator`, `Baseline Access`
 - Workspace builtin roles: `Workspace Admin`, `Workspace Member`
 
 Important design constraints:

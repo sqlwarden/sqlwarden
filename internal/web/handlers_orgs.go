@@ -178,7 +178,7 @@ func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
 	})
 	role := strings.TrimSpace(r.URL.Query().Get("role"))
 	if role != "" && role != access.BuiltinOrgOwnerRole && role != access.BuiltinOrgAdminRole && role != access.BuiltinOrgMemberRole {
-		errs["role"] = "Role must be Organization Owner, Organization Admin, or Organization Member."
+		errs["role"] = "Role must be Owner, Administrator, or Baseline Access."
 	}
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
@@ -400,7 +400,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 	}
 
 	input.V.CheckField(input.Role != "", "role", "Role is required.")
-	input.V.CheckField(input.Role == access.BuiltinOrgOwnerRole || input.Role == access.BuiltinOrgAdminRole, "role", "Role must be Organization Owner or Organization Admin.")
+	input.V.CheckField(input.Role == access.BuiltinOrgOwnerRole || input.Role == access.BuiltinOrgAdminRole, "role", "Role must be Owner or Administrator.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return

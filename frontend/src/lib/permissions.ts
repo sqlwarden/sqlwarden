@@ -42,9 +42,9 @@ export type Permission = string
 export type PermissionScope = 'org' | 'workspace' | 'environment' | 'connection'
 
 export const builtinRole = {
-  organizationOwner: 'Organization Owner',
-  organizationAdmin: 'Organization Admin',
-  organizationMember: 'Organization Member',
+  organizationOwner: 'Owner',
+  organizationAdmin: 'Administrator',
+  organizationMember: 'Baseline Access',
   workspaceAdmin: 'Workspace Admin',
   workspaceMember: 'Workspace Member',
 } as const

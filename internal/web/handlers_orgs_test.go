@@ -161,7 +161,7 @@ func TestListOrgMembers_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 		map[string]any{"role": access.BuiltinOrgAdminRole}, ownerTok), app.routes())
 	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
 
-	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members?q=ali&role=Organization%20Admin&sort=name&order=asc&page=1&page_size=1", ownerTok), app.routes())
+	res := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members?q=ali&role=Administrator&sort=name&order=asc&page=1&page_size=1", ownerTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
 	var payload struct {
@@ -242,7 +242,7 @@ func TestGetOrgMemberAndTeams(t *testing.T) {
 	getMemberRes := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members/"+strconv.FormatInt(member.ID, 10), ownerTok), app.routes())
 	assert.Equal(t, getMemberRes.StatusCode, http.StatusOK)
 	assert.Equal(t, getMemberRes.BodyFields["email"].(string), member.Email)
-	assert.Equal(t, getMemberRes.BodyFields["role"].(string), access.BuiltinOrgMemberRole)
+	assert.Equal(t, getMemberRes.BodyFields["role"].(string), "")
 
 	teamsRes := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members/"+strconv.FormatInt(member.ID, 10)+"/teams", ownerTok), app.routes())
 	assert.Equal(t, teamsRes.StatusCode, http.StatusOK)

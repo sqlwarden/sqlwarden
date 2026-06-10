@@ -44,9 +44,9 @@ const (
 )
 
 const (
-	BuiltinOrgOwnerRole        = "Organization Owner"
-	BuiltinOrgAdminRole        = "Organization Admin"
-	BuiltinOrgMemberRole       = "Organization Member"
+	BuiltinOrgOwnerRole        = "Owner"
+	BuiltinOrgAdminRole        = "Administrator"
+	BuiltinOrgMemberRole       = "Baseline Access"
 	BuiltinWorkspaceAdminRole  = "Workspace Admin"
 	BuiltinWorkspaceMemberRole = "Workspace Member"
 )
@@ -176,7 +176,7 @@ var OrgBuiltinRoles = map[string][]string{
 var OrgBuiltinRoleDescriptions = map[string]string{
 	BuiltinOrgOwnerRole:  "Full organization owner access, including all organization, workspace, environment, connection, and policy permissions.",
 	BuiltinOrgAdminRole:  "Administrative organization access for day-to-day management without ownership transfer or organization deletion.",
-	BuiltinOrgMemberRole: "Baseline organization membership with read access to organization-level information.",
+	BuiltinOrgMemberRole: "Baseline organization access with read access to organization-level information.",
 }
 
 // WorkspaceBuiltinRoles are seeded per workspace by SeedWorkspace.

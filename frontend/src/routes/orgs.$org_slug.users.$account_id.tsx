@@ -176,7 +176,7 @@ function OrganizationUserContextPage() {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
-              {member.data ? (
+              {member.data?.role ? (
                 <Badge variant={roleBadgeVariant(member.data.role)}>{roleLabel(member.data.role)}</Badge>
               ) : null}
             </div>
@@ -506,7 +506,7 @@ function roleBadgeVariant(role: string): 'default' | 'secondary' | 'outline' {
 }
 
 function roleLabel(role: string) {
-  return role || builtinRole.organizationMember
+  return role
 }
 
 function formatDate(value: string) {
