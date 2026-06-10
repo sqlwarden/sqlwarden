@@ -143,6 +143,10 @@ export interface WorkspaceFile {
   size_bytes?: number
 }
 
+export interface WorkspaceFilesResponse {
+  files: WorkspaceFile[]
+}
+
 export interface WorkspaceFilePathSegment {
   id: number
   name: string

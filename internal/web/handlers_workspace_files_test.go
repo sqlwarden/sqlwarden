@@ -70,6 +70,15 @@ func decodeWorkspaceFileBrowser(t *testing.T, res testResponse) files.BrowserRes
 	return result
 }
 
+func decodeWorkspaceFilesResponse(t *testing.T, res testResponse) []database.WorkspaceFile {
+	t.Helper()
+	var result workspaceFilesResponse
+	if err := json.Unmarshal(res.BodyBytes, &result); err != nil {
+		t.Fatal(err)
+	}
+	return result.Files
+}
+
 func addWorkspaceMemberForFiles(t *testing.T, app *application, org database.Organization, workspace database.Workspace, email string) (database.Account, string) {
 	t.Helper()
 	member, tok := seedAccountWithToken(t, app, email, email)
@@ -99,8 +108,7 @@ func TestWorkspacePrivateFilesAreOwnerOnlyAndRequireMembership(t *testing.T) {
 
 	ownList := send(t, newAuthRequest(t, http.MethodGet, orgPrivateFilesURL(org.Slug, ws.ID), nil, memberTok), app.routes())
 	assert.Equal(t, ownList.StatusCode, http.StatusOK)
-	var ownFiles []database.WorkspaceFile
-	decodeJSONResponse(t, ownList.BodyBytes, &ownFiles)
+	ownFiles := decodeWorkspaceFilesResponse(t, ownList)
 	assert.Equal(t, len(ownFiles), 1)
 
 	otherRead := send(t, newAuthRequest(t, http.MethodGet, orgPrivateFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, otherTok), app.routes())
@@ -177,8 +185,7 @@ func TestWorkspaceFileBrowserAndRecentEndpoints(t *testing.T) {
 
 	recentRes := send(t, newAuthRequest(t, http.MethodGet, filesURL+"/recent?limit=5", nil, tok), app.routes())
 	assert.Equal(t, recentRes.StatusCode, http.StatusOK)
-	var recent []database.WorkspaceFile
-	decodeJSONResponse(t, recentRes.BodyBytes, &recent)
+	recent := decodeWorkspaceFilesResponse(t, recentRes)
 	if len(recent) != 1 || recent[0].ID != file.ID || recent[0].ContentHash == "" {
 		t.Fatalf("recent files = %+v, want enriched scratch.sql", recent)
 	}
@@ -379,20 +386,17 @@ func TestWorkspaceFilesMoveTraverseAndDeleteSubtree(t *testing.T) {
 	}, tok), app.routes())
 	assert.Equal(t, move.StatusCode, http.StatusOK)
 	oldChildren := send(t, newAuthRequest(t, http.MethodGet, filesURL+"?parent_id="+strconv.FormatInt(folderA.ID, 10), nil, tok), app.routes())
-	var oldFiles []database.WorkspaceFile
-	decodeJSONResponse(t, oldChildren.BodyBytes, &oldFiles)
+	oldFiles := decodeWorkspaceFilesResponse(t, oldChildren)
 	assert.Equal(t, len(oldFiles), 0)
 	newChildren := send(t, newAuthRequest(t, http.MethodGet, filesURL+"?parent_id="+strconv.FormatInt(folderB.ID, 10), nil, tok), app.routes())
-	var newFiles []database.WorkspaceFile
-	decodeJSONResponse(t, newChildren.BodyBytes, &newFiles)
+	newFiles := decodeWorkspaceFilesResponse(t, newChildren)
 	assert.Equal(t, len(newFiles), 1)
 	assert.Equal(t, newFiles[0].Name, "after.sql")
 
 	toRoot := send(t, newAuthRequest(t, http.MethodPatch, fileURL, map[string]any{"parent_id": nil}, tok), app.routes())
 	assert.Equal(t, toRoot.StatusCode, http.StatusOK)
 	rootFiles := send(t, newAuthRequest(t, http.MethodGet, filesURL, nil, tok), app.routes())
-	var rootItems []database.WorkspaceFile
-	decodeJSONResponse(t, rootFiles.BodyBytes, &rootItems)
+	rootItems := decodeWorkspaceFilesResponse(t, rootFiles)
 	if len(rootItems) != 3 {
 		t.Fatalf("root after moving file to root = %+v", rootItems)
 	}

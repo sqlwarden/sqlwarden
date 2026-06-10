@@ -15,6 +15,10 @@ import (
 	"github.com/sqlwarden/internal/validator"
 )
 
+type workspaceFilesResponse struct {
+	Files []database.WorkspaceFile `json:"files"`
+}
+
 func (app *application) listPrivateWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
 	app.listWorkspaceFiles(w, r, database.FileVisibilityPrivate)
 }
@@ -66,7 +70,7 @@ func (app *application) listRecentWorkspaceFiles(w http.ResponseWriter, r *http.
 		app.workspaceFileError(w, r, err)
 		return
 	}
-	if err := response.JSON(w, http.StatusOK, files); err != nil {
+	if err := response.JSON(w, http.StatusOK, workspaceFilesResponse{Files: files}); err != nil {
 		app.serverError(w, r, err)
 	}
 }
@@ -82,7 +86,7 @@ func (app *application) listWorkspaceFiles(w http.ResponseWriter, r *http.Reques
 		app.workspaceFileError(w, r, err)
 		return
 	}
-	if err := response.JSON(w, http.StatusOK, files); err != nil {
+	if err := response.JSON(w, http.StatusOK, workspaceFilesResponse{Files: files}); err != nil {
 		app.serverError(w, r, err)
 	}
 }

@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFile, WorkspaceFileBrowserResult } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFile, WorkspaceFilesResponse, WorkspaceFileBrowserResult } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -298,9 +298,9 @@ export function orgWorkspacePrivateFilesQueryOptions(slug: string, workspaceId: 
   return queryOptions({
     queryKey: queryKeys.orgWorkspacePrivateFiles(slug, workspaceId, parentId),
     queryFn: () =>
-      api.get<WorkspaceFile[]>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/private`, {
+      api.get<WorkspaceFilesResponse>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/private`, {
         query: { parent_id: parentId ?? undefined },
-      }),
+      }).then((res) => res.files),
   })
 }
 
@@ -308,9 +308,9 @@ export function orgWorkspaceSharedFilesQueryOptions(slug: string, workspaceId: s
   return queryOptions({
     queryKey: queryKeys.orgWorkspaceSharedFiles(slug, workspaceId, parentId),
     queryFn: () =>
-      api.get<WorkspaceFile[]>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/shared`, {
+      api.get<WorkspaceFilesResponse>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/shared`, {
         query: { parent_id: parentId ?? undefined },
-      }),
+      }).then((res) => res.files),
   })
 }
 
@@ -338,9 +338,9 @@ export function orgWorkspacePrivateRecentFilesQueryOptions(slug: string, workspa
   return queryOptions({
     queryKey: queryKeys.orgWorkspacePrivateRecentFiles(slug, workspaceId, limit),
     queryFn: () =>
-      api.get<WorkspaceFile[]>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/private/recent`, {
+      api.get<WorkspaceFilesResponse>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/private/recent`, {
         query: { limit },
-      }),
+      }).then((res) => res.files),
   })
 }
 
@@ -348,9 +348,9 @@ export function orgWorkspaceSharedRecentFilesQueryOptions(slug: string, workspac
   return queryOptions({
     queryKey: queryKeys.orgWorkspaceSharedRecentFiles(slug, workspaceId, limit),
     queryFn: () =>
-      api.get<WorkspaceFile[]>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/shared/recent`, {
+      api.get<WorkspaceFilesResponse>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/shared/recent`, {
         query: { limit },
-      }),
+      }).then((res) => res.files),
   })
 }
 
@@ -366,9 +366,9 @@ export function myWorkspacePrivateFilesQueryOptions(workspaceId: string | number
   return queryOptions({
     queryKey: queryKeys.myWorkspacePrivateFiles(workspaceId, parentId),
     queryFn: () =>
-      api.get<WorkspaceFile[]>(`/api/v1/me/workspaces/${workspaceId}/files/private`, {
+      api.get<WorkspaceFilesResponse>(`/api/v1/me/workspaces/${workspaceId}/files/private`, {
         query: { parent_id: parentId ?? undefined },
-      }),
+      }).then((res) => res.files),
   })
 }
 
@@ -386,9 +386,9 @@ export function myWorkspacePrivateRecentFilesQueryOptions(workspaceId: string | 
   return queryOptions({
     queryKey: queryKeys.myWorkspacePrivateRecentFiles(workspaceId, limit),
     queryFn: () =>
-      api.get<WorkspaceFile[]>(`/api/v1/me/workspaces/${workspaceId}/files/private/recent`, {
+      api.get<WorkspaceFilesResponse>(`/api/v1/me/workspaces/${workspaceId}/files/private/recent`, {
         query: { limit },
-      }),
+      }).then((res) => res.files),
   })
 }
 
