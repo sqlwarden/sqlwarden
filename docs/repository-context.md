@@ -1,6 +1,6 @@
 # Repository Context
 
-Updated: 2026-05-23
+Updated: 2026-06-10
 
 ## Source-of-truth order
 
@@ -9,13 +9,14 @@ When project docs disagree, use this order:
 1. Code, migrations, and tests
 2. `CLAUDE.md`
 3. `docs/superpowers/architecture/rbac-and-authorization.md`
-4. `docs/superpowers/specs/*.md` and `docs/superpowers/plans/*.md`
+4. Active `docs/superpowers/plans/*.md`
 5. `docs/sqlwarden-architecture.md`
 6. `README.md`
 
 Notes:
 - `README.md` is not current enough to drive implementation decisions.
 - `docs/sqlwarden-architecture.md` mixes current architecture with planned/open-core future structure and should be read as product direction, not exact repository state.
+- `docs/superpowers/specs/` is currently empty; implemented specs have been archived under `docs/archive/superpowers/specs/`.
 
 ## Current product shape
 
@@ -25,6 +26,7 @@ What is implemented now:
 - One backend binary in `cmd/api`
 - REST API under `/api/v1`
 - JWT auth with refresh token rotation
+- Database-backed auth sessions and org access sessions with revocation support
 - First-run bootstrap via `POST /api/setup`
 - Instance-admin layer above orgs
 - Org/workspace/environment/connection resource model
@@ -33,6 +35,9 @@ What is implemented now:
 - Config loading through Viper with file/env/flag support
 - `DEPLOYMENT_MODE` and `ACCESS_MODE` separated for future desktop/Wails work
 - Live database sessions through `internal/connection`
+- Workspace file metadata/content APIs for private and shared workspace files
+- Foreground query cancellation through request cancellation and per-tab AbortController support
+- Frontend IDE with CodeMirror, Zustand, IndexedDB, Y.js, BroadcastChannel, workspace files, and editor theme preferences
 - Driver abstraction with PostgreSQL, MySQL, and SQLite target database drivers
 - Bun-based app database layer with PostgreSQL and SQLite support
 - Embedded frontend build served by the Go binary
@@ -46,6 +51,8 @@ What is not implemented yet or is explicitly future work:
 - Enterprise/community code split described in the architecture guide
 - Desktop/Wails target
 - SSO and broader enterprise features
+- Background query runs and admin query-run observability
+- Full shared-file editing UX, file uploads, revisions, and S3-compatible storage
 
 ## Architecture map
 
@@ -66,7 +73,7 @@ Main flow:
 - `requireAccount` enforces auth where needed
 - `orgCtx` enforces org membership before any org resource access
 - Resource context middleware resolves workspace/environment/connection ownership
-- Permission checks are handled by `requirePermission(...)`
+- Permission checks are handled by concrete middleware variants: `requireOrgPermission`, `requireWorkspacePermission`, `requireEnvironmentPermission`, and `requireConnectionPermission`
 
 Important access rule:
 - Org membership is the first access gate
@@ -91,9 +98,12 @@ Key tables in current schema:
 - `workspaces`
 - `environments`
 - `connections`
+- `workspace_members`, `workspace_teams`
+- `workspace_files`, `workspace_file_contents`, `workspace_file_content_deletions`
 - `roles`, `role_permissions`
-- `role_bindings`, `permission_bindings`
+- `role_bindings`
 - `resource_hierarchy`
+- `auth_sessions`, `org_access_sessions`
 - `refresh_tokens`
 
 ID strategy currently implemented:
@@ -157,6 +167,7 @@ High-level implemented groups in `internal/web/routes.go`:
 - `/api/v1/auth/*`
 - `/api/v1/instance/admins`
 - `/api/v1/account`
+- `/api/v1/account/sessions`
 - `/api/v1/account/orgs`
 - `/api/v1/me/...`
 - `/api/v1/orgs/{org_slug}/...`
@@ -168,8 +179,11 @@ Within org routes:
 - workspaces
 - workspace-level roles
 - workspace policies
+- workspace users and teams
+- workspace private/shared files
 - environments
 - connections
+- active workspace database sessions
 - connect/query endpoints
 
 Current list-contract rule:
@@ -191,6 +205,11 @@ Completed recently:
 - Effective permissions API
 - Workspace direct/team membership model and `workspace_members` policy principal
 - Single-user setup seeding a local org through normal RBAC
+- Database-backed auth/session revocation
+- Workspace file storage foundation and IDE file browser baseline
+- Foreground query cancellation
+- Editor theme selection for CodeMirror
+- Transactional write-path cleanup for hierarchy, seed, auth, role, and cleanup flows
 
 Near-term backlog from docs:
 - RBAC correctness fixes:
@@ -201,11 +220,16 @@ Near-term backlog from docs:
 - Behavior gaps:
   - enforce `connection.access_mode`
   - add policy audit trail
+- Product features:
+  - org-scoped invitations
+  - background query runs
+  - query-run admin observability
+  - SSO/SCIM
+  - desktop target
 
 Longer-range product direction:
 - enterprise/open-core split
 - SSO
-- desktop target
 - broader audit/compliance surface
 
 ## Known mismatches and cautions
@@ -219,7 +243,7 @@ Longer-range product direction:
 ## Testing reality
 
 Test coverage is substantial in the backend:
-- `cmd/api/*_test.go` covers handlers, middleware, setup flow, auth, RBAC behavior, personal spaces, and integration flows
+- `internal/web/*_test.go` covers handlers, middleware, setup flow, auth, RBAC behavior, personal spaces, workspace files, sessions, and integration flows
 - `internal/access/*_test.go` covers inheritance, team bindings, cache invalidation, workspace-scoped roles, and policy behavior
 - `internal/database/*_test.go` covers CRUD plus accessible-resource filtering queries
 

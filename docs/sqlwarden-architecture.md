@@ -1,7 +1,7 @@
 # SQLWarden — Architecture & Implementation Guide
 
 **Self-Hosted Database Access Platform**
-Version 1.1 | March 2026 | Confidential
+Version 1.2 | June 2026 | Confidential
 
 ---
 
@@ -26,7 +26,7 @@ Version 1.1 | March 2026 | Confidential
 
 ## 1. Product Overview
 
-SQLWarden is a self-hosted database access platform serving three distinct audiences simultaneously from a single deployment. It is architected as an open core product — the core SQL IDE, proxy layer, and basic audit functionality are Apache 2.0 open source, while enterprise features (SSO, tamper-evident audit logging, RBAC) are proprietary and license-gated.
+SQLWarden is a self-hosted database access platform serving three distinct audiences simultaneously from a single deployment. It is architected as an open core product: the SQL IDE, local authentication, workspace/resource model, core RBAC engine, and database access APIs live in the core codebase, while future enterprise features such as SSO/SCIM, tamper-evident audit logging, SIEM forwarding, and advanced compliance packaging may be license-gated.
 
 ### The Three-Audience Value Proposition
 
@@ -42,8 +42,8 @@ SQLWarden ships as four distinct deployment targets from a single codebase:
 
 | Target | Description | Auth | Storage |
 |---|---|---|---|
-| Community Server | Self-hosted, open source | Local username/password | Postgres / MySQL |
-| Enterprise Server | Self-hosted, license-gated features | SSO + local | Postgres / MySQL |
+| Community Server | Self-hosted, open source | Local username/password | SQLite by default; PostgreSQL supported |
+| Enterprise Server | Self-hosted, license-gated features | SSO + local | Server-configured SQLWarden metadata database |
 | Desktop (Wails) | Native app, single-user local backend, optional remote backends | Local account/session | SQLite for local backend |
 | PWA | Web-deployed instance installed to desktop/mobile | Server-determined | Server-determined |
 
@@ -57,7 +57,7 @@ Database credentials and query history never leave the customer's infrastructure
 
 ### 2.1 License Strategy
 
-SQLWarden uses the Apache 2.0 license for all core functionality. Enterprise features residing in the `enterprise/` directory are governed by a separate proprietary license that permits source viewing for security auditing but restricts production use without a paid license key.
+SQLWarden uses the Apache 2.0 license for all core functionality. The current repository does not include an `enterprise/` tree. If SQLWarden later adopts a proprietary enterprise package, that package should contain only add-on features such as SSO/SCIM providers, tamper-evident audit logging, SIEM forwarding, and license enforcement; the core RBAC engine stays in core.
 
 | Feature | Community (Apache 2.0) | Enterprise (Proprietary) |
 |---|---|---|
@@ -70,120 +70,69 @@ SQLWarden uses the Apache 2.0 license for all core functionality. Enterprise fea
 | SSO — SAML 2.0, OIDC, LDAP | | ✓ |
 | Tamper-evident audit log | | ✓ |
 | SIEM forwarding | | ✓ |
-| RBAC engine | | ✓ |
+| Core RBAC engine | ✓ | ✓ |
+| SSO/SCIM-managed identity and provisioning | | ✓ |
 | Air-gapped deployment support | | ✓ |
 | BAA signing (HIPAA) | | ✓ |
 | SOC 2 documentation package | | ✓ |
 
 ### 2.2 Current Codebase Structure
 
-The project has been bootstrapped with the following structure. This is the canonical reference for ongoing development.
+The current repository is a Go API plus embedded React SPA. `cmd/api` is intentionally thin; HTTP application code lives under `internal/web` so future entrypoints such as Wails desktop can reuse it.
 
 ```
 sqlwarden/
-├── CHANGELOG.md
-├── CONTRIBUTING.md
 ├── README.md
 ├── Makefile
 ├── Dockerfile
 ├── docker-compose.yml
 ├── go.mod
 ├── go.sum
-├── ~/.sqlwarden/sqlwarden.db         ← default SQLite database
-├── release-please-config.json
+├── assets/
+│   ├── migrations_postgres/          ← embedded PostgreSQL migrations
+│   ├── migrations_sqlite/            ← embedded SQLite migrations
+│   └── static/                       ← embedded frontend build output
 │
-├── dist/
-│   └── sqlwarden                     ← compiled binary output
-│
-├── cmd/
-│   └── api/                          ← community server entrypoint
-│       ├── main.go                   ← application entry point
-│       ├── server.go                 ← HTTP server setup and lifecycle
-│       ├── routes.go                 ← route registration
-│       ├── handlers.go               ← request handlers
-│       ├── middleware.go             ← HTTP middleware chain
-│       ├── context.go                ← request context helpers
-│       ├── errors.go                 ← error types and HTTP error responses
-│       ├── helpers.go                ← shared handler utilities
-│       └── *_test.go                 ← handler/middleware/route/server tests
+├── cmd/api/
+│   └── main.go                       ← server entrypoint
 │
 ├── frontend/                         ← React application (shared across all targets)
 │   ├── package.json
 │   ├── bun.lock
 │   ├── vite.config.ts
-│   ├── tsconfig.json
-│   ├── index.html
 │   ├── components.json               ← shadcn/ui component registry
-│   ├── public/
-│   │   ├── manifest.json             ← PWA manifest (already present)
-│   │   ├── favicon.ico
-│   │   ├── logo192.png               ← PWA icon (already present)
-│   │   └── logo512.png               ← PWA icon (already present)
 │   └── src/
 │       ├── main.tsx
-│       ├── router.tsx                ← TanStack Router setup
 │       ├── routeTree.gen.ts          ← auto-generated route tree (do not edit)
 │       ├── styles.css
 │       ├── routes/
-│       │   ├── __root.tsx            ← root layout with providers
-│       │   ├── index.tsx             ← landing / dashboard route
-│       │   └── about.tsx
+│       │   ├── __root.tsx            ← provider root
+│       │   ├── index.tsx             ← landing / organization selection
+│       │   ├── settings.*            ← account and instance settings
+│       │   └── orgs.$org_slug.*      ← org, workspace, IDE, access-control routes
 │       ├── components/
-│       │   ├── Header.tsx
-│       │   ├── Footer.tsx
-│       │   ├── theme-provider.tsx    ← dark/light mode context
-│       │   ├── ThemeToggle.tsx
-│       │   └── ui/                  ← shadcn/ui primitives
-│       │       ├── badge.tsx
-│       │       ├── button.tsx
-│       │       ├── card.tsx
-│       │       ├── dropdown-menu.tsx
-│       │       └── separator.tsx
-│       └── lib/
-│           └── utils.ts              ← shared utilities (cn, etc.)
+│       │   ├── app-shell.tsx         ← reusable sidebar shell
+│       │   ├── ide/                  ← SQL IDE layout/editor/files/results
+│       │   ├── ui/                   ← shadcn/base-ui primitives
+│       │   └── theme-provider.tsx
+│       └── lib/                      ← API client, permissions, icons, editor themes
 │
 └── internal/                         ← core Go packages (Apache 2.0)
-    ├── assert/
-    │   └── assert.go                 ← test assertion helpers
-    ├── cookies/
-    │   ├── cookies.go                ← cookie read/write helpers
-    │   └── cookies_test.go
-    ├── database/
-    │   ├── db.go                     ← database connection setup (SQLite now; PG/MySQL planned)
-    │   ├── db_test.go
-    │   ├── hooks.go                  ← database lifecycle hooks
-    │   ├── hooks_test.go
-    │   ├── sqlc.yaml                 ← present in repo (unused — uptrace/bun used instead)
-    │   ├── users.go                  ← user queries (uptrace/bun)
-    │   └── users_test.go
-    ├── env/
-    │   ├── env.go                    ← environment variable parsing
-    │   └── env_test.go
-    ├── funcs/
-    │   ├── funcs.go                  ← general purpose utilities
-    │   └── funcs_test.go
-    ├── password/
-    │   ├── common.go                 ← password constants/types
-    │   ├── hash.go                   ← bcrypt hashing
-    │   └── hash_test.go
-    ├── request/
-    │   ├── json.go                   ← JSON request decoding helpers
-    │   └── json_test.go
-    ├── response/
-    │   ├── json.go                   ← JSON response helpers
-    │   ├── metrics.go                ← response metrics/timing
-    │   └── metrics_test.go
-    ├── smtp/
-    │   ├── mailer.go                 ← email sending (password reset, invites)
-    │   └── mailer_test.go
-    ├── validator/
-    │   ├── validator.go              ← input validation
-    │   ├── helpers.go
-    │   ├── helpers_test.go
-    │   └── validator_test.go
-    └── version/
-        ├── version.go                ← build version injection
-        └── version_test.go
+    ├── access/                       ← RBAC enforcer, permissions, role seeding
+    ├── connection/                   ← live DB session manager
+    ├── database/                     ← Bun models and query helpers
+    ├── driver/                       ← target database driver abstraction
+    ├── encrypt/                      ← AES-GCM helpers
+    ├── files/                        ← workspace file service
+    ├── filestore/                    ← filesystem-backed content store
+    ├── password/                     ← bcrypt hashing
+    ├── request/                      ← request decoding helpers
+    ├── response/                     ← JSON/pagination helpers
+    ├── smtp/                         ← SMTP mailer
+    ├── token/                        ← JWT and refresh-token helpers
+    ├── validator/                    ← input validation
+    ├── version/                      ← build version injection
+    └── web/                          ← HTTP app, config, routes, middleware, handlers
 ```
 
 ### 2.3 Planned Directory Additions
@@ -201,24 +150,12 @@ sqlwarden/
 │   ├── LICENSE
 │   ├── sso/                          ← SAML, OIDC, LDAP implementations
 │   ├── audit/                        ← tamper-evident logger, SIEM forwarder
-│   ├── rbac/                         ← RBAC policy engine
 │   ├── license/                      ← key validation, feature bitmask
 │   └── wire.go                       ← registers enterprise impls at startup
 │
 ├── internal/
-│   ├── driver/                       ← Driver interface + per-DB implementations
-│   │   ├── driver.go
-│   │   ├── registry.go
-│   │   ├── postgres/
-│   │   ├── mysql/
-│   │   ├── sqlite/                   ← target DB driver (separate from internal/database)
-│   │   ├── snowflake/
-│   │   ├── bigquery/
-│   │   └── mssql/
-│   ├── access/                       ← RBAC enforcer, permissions, role seeding
 │   ├── audit/                        ← Logger interface + noop/file impl
 │   ├── connhub/                      ← connector WebSocket hub
-│   ├── connection/                   ← connection manager and config store
 │   ├── query/                        ← query handler and router
 │   └── session/                      ← transaction session store
 │
@@ -239,14 +176,15 @@ sqlwarden/
 | Package manager | Bun | `bun.lock` present |
 | Build tool | Vite | `vite.config.ts` present |
 | Application database | SQLite | `~/.sqlwarden/sqlwarden.db` by default |
-| ORM / query builder | uptrace/bun | App database (users, connections, audit log) |
+| ORM / query builder | uptrace/bun | App database (accounts, orgs, RBAC, connections, workspace files, auth sessions) |
+| Configuration | spf13/viper | Config file, env vars, and CLI flags |
 | Email | SMTP | `internal/smtp/` present |
 | Password hashing | bcrypt | `internal/password/hash.go` |
 | Release management | Release Please | `release-please-config.json` present |
 
 ### 2.5 Build Tag Enforcement
 
-Go build tags enforce the open core boundary at compile time. Community binaries cannot include enterprise code even though it lives in the same repository. The enterprise binary is produced only through the CI pipeline with the `-tags enterprise` flag and the license public key injected via ldflags.
+Future Go build tags can enforce the open-core boundary at compile time if/when enterprise packages are added. Community binaries must not include enterprise code. The enterprise binary should be produced only through the CI pipeline with the `-tags enterprise` flag and the license public key injected via ldflags.
 
 ```bash
 # Community server
@@ -309,43 +247,40 @@ The license payload structure:
 | Component | Choice |
 |---|---|
 | Backend language | Go |
+| HTTP router | Chi |
 | Frontend | React + TypeScript |
 | Frontend router | TanStack Router |
-| UI component library | shadcn/ui |
+| UI component library | shadcn/ui + Base UI primitives |
 | Frontend build tool | Vite |
 | Package manager | Bun |
-| ORM / query builder | uptrace/bun | App database queries (users, connections, audit log) |
-| Frontend embedding | Go `embed.FS` (server targets) |
-| Desktop shell | Wails v2 |
-| Connector protocol | WebSocket over TLS (connector-initiated outbound) |
-| Database drivers | `database/sql` for PG/MySQL/MSSQL/SQLite; native SDKs for Snowflake/BigQuery |
-| Application storage (desktop / dev) | SQLite (`~/.sqlwarden/sqlwarden.db`) |
-| Application storage (server production) | Postgres or MySQL |
+| ORM / query builder | uptrace/bun for SQLWarden metadata |
+| Configuration | spf13/viper with config file, env, and flags |
+| Frontend embedding | Go `embed.FS` |
+| Desktop shell | Wails v2 planned |
+| Target database drivers | PostgreSQL, MySQL, SQLite currently implemented |
+| Application storage | SQLite by default; PostgreSQL support exists; MySQL app DB support remains product direction |
+| Workspace file storage | Filesystem-backed store under `~/.sqlwarden/files` by default |
 
 ### 3.2 Core Architectural Principles
 
-1. **Single frontend codebase** — `frontend/` is shared across all deployment targets: community server, enterprise server, Wails desktop, and PWA. Build-time environment variables (`VITE_BUILD_TARGET`) control which pages and bridges are included.
-2. **Interface-driven design** — all pluggable components (auth, audit, access policy, database drivers, storage) are Go interfaces. Core calls interfaces only; implementations are registered at startup.
-3. **One-way dependency** — `enterprise/` imports core interfaces. Core never imports `enterprise/`. This enforces the open source boundary structurally, not just by convention.
-4. **Uniform API surface** — API routes are identical regardless of which database is behind a connection. Connection ID in the URL carries all routing context.
-5. **Audit-first** — every query, allowed or denied, is recorded before the response is sent.
-6. **Storage abstraction** — the `internal/database` package selects the correct backend (SQLite for desktop/dev, Postgres/MySQL for production) based on configuration. uptrace/bun provides the ORM layer across all backends.
+1. **Single frontend codebase** — `frontend/` is shared across server and future desktop targets.
+2. **Reusable web application package** — `cmd/api` is a thin entrypoint; `internal/web` owns config, app wiring, routes, middleware, and handlers so future entrypoints can reuse the same HTTP application.
+3. **RBAC by default** — org-owned resources use the same role-binding and resource-hierarchy model in server, local, and future desktop modes. Single-user mode seeds a local org instead of bypassing authorization.
+4. **Ownership-separated personal spaces** — `/me` routes use account-owned workspace middleware and are intentionally outside org RBAC.
+5. **Uniform target driver surface** — query handlers talk to `internal/driver`; concrete target databases normalize results into `pkg/result`.
+6. **Storage abstraction** — app metadata is stored through `internal/database`; workspace file content is stored through `internal/files` and `internal/filestore`.
 
 ### 3.3 Request Flow
 
 ```
-HTTP POST /api/connections/{id}/query
-  → Auth middleware (validates session / SSO token)
-  → query.Handler
-  → internal/access enforcer  [org RBAC or personal-space owner path]
-  → if denied:
-      audit.Record(denied)
-      → HTTP 403
-  → query.Router.Execute()
-      → connection.Manager.Get(id) → ConnectionConfig
-      → if ModeDirect:    driver.Query()
-      → if ModeConnector: connhub.Dispatch() → WebSocket → connector → DB
-  → audit.Record(success, rows_returned, duration)
+HTTP POST /api/v1/orgs/{slug}/workspaces/{ws_id}/connections/{conn_id}/query
+  → authenticateV1
+  → requireAccount
+  → orgCtx / wsCtx / connCtx
+  → query permission classification
+  → internal/access enforcer
+  → internal/connection session manager
+  → internal/driver Query or Execute
   → HTTP 200 with normalized ResultSet
 ```
 
@@ -353,7 +288,7 @@ HTTP POST /api/connections/{id}/query
 
 | Target | Application Storage | Why |
 |---|---|---|
-| Community / Enterprise Server | Postgres or MySQL | Multi-user, persistent, production-grade |
+| Community / Enterprise Server | SQLite by default; PostgreSQL supported | Self-hosted, persistent deployment |
 | Desktop (Wails) | SQLite at OS user data path | Single-user, zero-setup, no external dependency |
 | Local development | SQLite (`~/.sqlwarden/sqlwarden.db`) | Already bootstrapped — zero-config startup |
 
@@ -556,35 +491,34 @@ A background reaper goroutine per pod rolls back and closes sessions idle beyond
 
 ## 7. Access Control & RBAC
 
-### 7.1 Interface-Based Policy
+### 7.1 Implemented RBAC Model
 
-```go
-// internal/access/policy.go — Apache 2.0, always compiled in
-type Policy interface {
-    Evaluate(ctx context.Context, req Request) Decision
-}
+SQLWarden uses a custom RBAC enforcer in `internal/access` for org-owned resources. Authorization is based on:
 
-type Decision struct {
-    Allowed  bool
-    Reason   string  // shown to user on deny; always logged
-    RowLimit int     // 0 = no policy-level limit
-}
-```
+- organization membership in `org_members`
+- account, team, `org_members`, and `workspace_members` principals
+- role definitions in `roles` and `role_permissions`
+- role bindings in `role_bindings`
+- resource ancestry in `resource_hierarchy`
 
-Current implementation note: SQLWarden now uses a shared RBAC enforcer in `internal/access` for org-owned resources. Desktop/single-user mode should seed a local organization and owner policies, then use the same RBAC path as server mode. Personal-space resources under `/api/v1/me` use account ownership middleware instead of org RBAC.
-
-The older `AllowAllPolicy`/`RBACPolicy` split in this architecture guide should be read as historical product direction, not current implementation.
+Desktop/single-user mode should seed a local organization and owner policy, then use the same RBAC path as server mode. Personal-space resources under `/api/v1/me` use account ownership middleware instead of org RBAC.
 
 ### 7.2 RBAC Data Model
 
 | Concept | Definition |
 |---|---|
-| Role | Named set of Rules |
-| Rule | Scoped to connection ID (`"*"` = all); defines `AllowedStatements`, `AllowedTables`, `RowLimit`, optional `TimeWindow` |
-| RoleBinding | Maps `UserID` or `GroupID` to a `RoleID` — groups sourced from SSO identity claims |
-| Evaluation | Union semantics — allowed if ANY bound role permits the action |
-| Default stance | Deny — user with no role binding is denied |
-| RowLimit resolution | Most permissive limit across matching roles wins (`0` = unlimited) |
+| Account | Global identity stored in `accounts` |
+| Organization | Tenant boundary for roles, teams, bindings, and org-owned resources |
+| Team | Org-scoped group principal stored in `teams` / `team_members` |
+| Workspace membership | Direct or team-based workspace participation used by the `workspace_members` principal |
+| Role | Named set of permission strings with a `scope_type` |
+| Role binding | Grants a role to a subject on a resource |
+| Evaluation | Additive union semantics; allowed if any matching binding grants the requested permission |
+| Default stance | Deny unless an applicable role binding grants permission |
+
+Core org builtin roles are `Owner`, `Administrator`, and `Baseline Access`. Workspace builtin roles are `Workspace Admin` and `Workspace Member`.
+
+Permission namespaces currently include `org:*`, `ws:*`, `wsfile:*`, `env:*`, `conn:*`, and `policy:*`.
 
 ### 7.3 Read-Only Connections — Per-Database Support Matrix
 
@@ -681,105 +615,64 @@ Every query produces an entry regardless of success or denial:
 
 ### 10.1 Current State
 
-The `frontend/` directory is already bootstrapped with:
+The `frontend/` directory now contains the application shell, settings pages, organization/workspace management surfaces, and SQL IDE:
 
-- **TanStack Router** — file-based routing with auto-generated `routeTree.gen.ts`
-- **shadcn/ui** — component primitives (`button`, `card`, `badge`, `dropdown-menu`, `separator`)
+- **TanStack Router** — file-based routing with auto-generated `routeTree.gen.ts`.
+- **TanStack Query** — API/server-state caching and invalidation.
+- **shadcn/ui + Base UI** — component primitives and accessible composition.
 - **Vite** — build tooling
 - **Bun** — package manager and script runner
-- **PWA assets** — `manifest.json`, `logo192.png`, `logo512.png` already in `public/`
-- **Theme system** — `theme-provider.tsx` + `ThemeToggle.tsx` for dark/light mode
+- **Theme system** — `theme-provider.tsx`, app-shell preferences, and editor-theme preferences.
+- **IDE state** — Zustand, IndexedDB, Y.js, and BroadcastChannel.
+- **Code editor** — CodeMirror 6 with lazy-loaded editor themes.
 
-### 10.2 Planned Frontend Structure
+### 10.2 Current Frontend Structure
 
 ```
 src/
 ├── main.tsx
-├── router.tsx
 ├── routeTree.gen.ts            ← auto-generated, do not edit
 ├── styles.css
 ├── routes/
-│   ├── __root.tsx              ← providers: Bootstrap, AppMode, Theme
-│   ├── index.tsx               ← redirects to /editor when logged in
+│   ├── __root.tsx              ← providers: theme, editor themes, query client, router outlet
+│   ├── index.tsx               ← landing / organization chooser
 │   ├── login.tsx
-│   ├── auth/
-│   │   └── callback.tsx        ← SSO callback handler
-│   ├── editor/
-│   │   └── index.tsx           ← main SQL editor page
-│   ├── connections/
-│   │   └── index.tsx
-│   ├── audit/
-│   │   └── index.tsx           ← UpgradeGated in community
-│   ├── access/
-│   │   └── index.tsx           ← UpgradeGated in community
-│   └── settings/
-│       └── index.tsx
+│   ├── setup.tsx
+│   ├── settings.*              ← account, users, orgs, instance settings
+│   └── orgs.$org_slug.*        ← org shell, workspaces, users, teams, roles, policies, IDE
 ├── components/
-│   ├── Header.tsx
-│   ├── Footer.tsx
-│   ├── ThemeToggle.tsx
+│   ├── app-shell.tsx
+│   ├── app-sidebar.tsx
+│   ├── nav-user.tsx
+│   ├── ide/                    ← workspace IDE, panels, editor, tabs, files, results
 │   ├── theme-provider.tsx
-│   ├── UpgradeGate.tsx         ← feature gate wrapper component
-│   └── ui/                    ← shadcn/ui primitives
-├── context/
-│   ├── BootstrapContext.tsx    ← runtime config from /api/bootstrap
-│   └── AppModeContext.tsx      ← 'server' | 'desktop'
-├── api/
-│   └── client.ts              ← all API calls — reads apiBase from context
-├── hooks/
-│   ├── useFeature.ts
-│   └── useBootstrap.ts
+│   └── ui/                     ← shadcn/base-ui primitives
 ├── lib/
-│   └── utils.ts               ← existing (cn helper)
-└── desktop/
-    ├── bridge.ts              ← Wails IPC calls — excluded from server/PWA build
-    └── bridge.web.ts          ← no-op shim for server/PWA build
+│   ├── api/                    ← API client, query options, file helpers
+│   ├── editor-themes/          ← CodeMirror theme loading/preferences
+│   ├── icons/
+│   ├── permissions.ts
+│   └── utils.ts
 ```
 
-### 10.3 Bootstrap & Feature Flag Pattern
+### 10.3 Frontend Capability Gating
 
-On load, React calls `GET /api/bootstrap` before rendering anything:
+The frontend asks the backend for permission metadata and effective permissions:
 
-```typescript
-interface Bootstrap {
-  user: { id: string; email: string; name: string; roles: string[] } | null
-  features: {
-    sso: boolean
-    audit_log: boolean
-    audit_log_query: boolean
-    rbac: boolean
-    siem_forwarding: boolean
-    connector_agent: boolean
-  }
-  auth: {
-    method: 'local' | 'saml' | 'oidc' | 'ldap' | 'desktop'
-    login_url: string
-    provider_name: string
-  }
-  edition: 'community' | 'enterprise' | 'desktop'
-  api_version: string
-  version: string
-}
-```
+- `GET /api/v1/orgs/{slug}/permissions`
+- `GET /api/v1/orgs/{slug}/permissions/effective?resource_type=...&resource_id=...`
 
-Desktop/local mode should not be modeled as an auth or authorization bypass. The local backend should use a real local account/session. In `ACCESS_MODE=single_user`, first-run setup seeds a local organization and grants the local account owner permissions through normal RBAC.
+The backend remains the source of truth for role scope maps, resource applicability maps, permission labels, and descriptions. The frontend keeps stable permission string constants only for simple capability checks.
 
-### 10.4 Feature Gating Patterns
+### 10.4 Auth-Aware Routing
 
-| Pattern | When to Use | Example |
-|---|---|---|
-| **Hidden entirely** | Feature has no community equivalent | Audit log nav item hidden when `audit_log = false` |
-| **`UpgradeGate` component** | Feature page exists but is locked | Audit page renders upgrade prompt with link to pricing |
-| **Inline callout** | Settings section with locked options | SSO settings shows "Upgrade to Enterprise" callout |
+- If setup is incomplete, `/` redirects to `/setup`.
+- If no session exists, protected routes redirect to `/login`.
+- After login, `/` shows an organization/personal-space chooser unless the user has exactly one organization and no personal space choice is needed.
+- Organization routes use the app shell/sidebar; `/orgs/{slug}/ide` uses the IDE layout.
+- Desktop/local mode should not be modeled as an auth or authorization bypass. In `ACCESS_MODE=single_user`, first-run setup seeds a local organization and grants the local account owner permissions through normal RBAC.
 
-### 10.5 Auth-Aware Routing
-
-- **`user === null` and `edition !== 'desktop'`:** Only `/login` and `/auth/callback` rendered.
-- **`deployment_mode === 'desktop'` with local backend:** Use the local backend's session/setup state. The local backend may streamline first-run setup, but it should still create a real account and seeded local organization.
-- **`auth.method === 'local'`:** Login page renders username/password form (backed by `internal/password` bcrypt).
-- **SSO method:** Login page redirects immediately to `auth.login_url`.
-
-### 10.6 Build Pipeline
+### 10.5 Build Pipeline
 
 ```makefile
 frontend-dev:
@@ -811,7 +704,7 @@ The desktop application is intended to be built with [Wails v2](https://wails.io
 
 The local desktop backend serves a single persona: **a developer who wants a low-friction SQL IDE for their own database connections**, without running a separate server or infrastructure. Future desktop builds may also support multiple remote SQLWarden backends for enterprise prod/non-prod separation.
 
-### 11.2 Entrypoint — `cmd/desktop/`
+### 11.2 Planned Entrypoint — `cmd/desktop/`
 
 ```go
 // cmd/desktop/main.go
@@ -843,7 +736,7 @@ The React frontend listens for `server:ready` on mount and sets `apiBase` to `ht
 | Bind address | `0.0.0.0:PORT` | `127.0.0.1:{random port}` |
 | Auth implementation | Local username/password today; SSO later | Real local account/session for local backend; backend-scoped auth for remote backends |
 | Access policy | `internal/access` RBAC for org resources; `/me` owner path for personal spaces | Same model; `ACCESS_MODE=single_user` seeds local org and owner policy |
-| Application storage | Postgres or MySQL | SQLite at OS user data path |
+| Application storage | SQLite by default; PostgreSQL supported | SQLite at OS user data path |
 | Audit log | `FileLogger` or enterprise tamper-evident | `FileLogger` → `~/.sqlwarden/audit.log` |
 | Rate limiting | Yes | No |
 | TLS | Required for production | Not used — loopback only |
@@ -870,7 +763,7 @@ The desktop build uses SQLite for all of SQLWarden's own metadata. This is the s
 | Windows | `%APPDATA%\SQLWarden\sqlwarden.db` |
 | Linux | `~/.local/share/sqlwarden/sqlwarden.db` |
 
-The `internal/database` package resolves this path at startup based on build target. In the server build, the same package connects to Postgres or MySQL — uptrace/bun handles the ORM layer consistently across all backends.
+The `internal/database` package resolves this path at startup based on build target. In the server build, the same package connects to SQLite or PostgreSQL — uptrace/bun handles the ORM layer consistently across supported metadata backends.
 
 ### 11.6 Wails IPC Bridge — `desktop/bridge.ts`
 
@@ -1013,7 +906,7 @@ A CLA is required from all contributors before any pull request is merged. Witho
 
 ### 15.2 License Boundary Communication
 
-The repository README must clearly document the dual-license structure. The `enterprise/` directory must contain:
+If/when a proprietary enterprise package is added, the repository README must clearly document the dual-license structure. The `enterprise/` directory must contain:
 
 - Its own `LICENSE` file with the proprietary terms
 - A `README.md` explaining which features require a paid license and how to purchase
