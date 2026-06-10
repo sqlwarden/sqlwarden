@@ -7,7 +7,6 @@ export const permission = {
   orgWrite: 'org:write',
   orgDelete: 'org:delete',
   orgInvite: 'org:invite',
-  orgAssignRoles: 'org:assign_roles',
   orgTransferOwnership: 'org:transfer_ownership',
 
   wsRead: 'ws:read',
@@ -63,12 +62,29 @@ export const runnableConnectionPermissions = [
   permission.connDdl,
 ] as const satisfies readonly Permission[]
 
+export const protectedOrgPolicyPermissions = [
+  permission.orgDelete,
+  permission.orgTransferOwnership,
+] as const satisfies readonly Permission[]
+
 export function hasPermission(permissions: readonly string[] | undefined, required: Permission) {
   return permissions?.includes(required) === true
 }
 
 export function hasAnyPermission(permissions: readonly string[] | undefined, required: readonly Permission[]) {
   return required.some((item) => permissions?.includes(item) === true)
+}
+
+export function protectedOrgPolicyMessage(rolePermissions: readonly string[] | undefined, effectivePermissions: readonly string[] | undefined) {
+  const missingProtectedPermission = protectedOrgPolicyPermissions.some(
+    (item) => rolePermissions?.includes(item) === true && effectivePermissions?.includes(item) !== true,
+  )
+
+  if (!missingProtectedPermission) {
+    return undefined
+  }
+
+  return 'Only users who already have organization deletion or ownership transfer permission can manage policies that grant those permissions.'
 }
 
 export function permissionDefinitionMap(definitions: readonly PermissionDefinition[] | undefined) {

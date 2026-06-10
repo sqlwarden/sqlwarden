@@ -11,7 +11,6 @@ const (
 	PermOrgWrite             = "org:write"
 	PermOrgDelete            = "org:delete"
 	PermOrgInvite            = "org:invite"
-	PermOrgAssignRoles       = "org:assign_roles"
 	PermOrgTransferOwnership = "org:transfer_ownership"
 
 	PermWsRead   = "ws:read"
@@ -63,7 +62,6 @@ var PermissionCatalog = []PermissionDefinition{
 	{Key: PermOrgWrite, Label: "Manage organization", Description: "Update organization settings and manage organization-level membership structures.", Group: "Organization"},
 	{Key: PermOrgDelete, Label: "Delete organization", Description: "Delete the organization and its owned resources.", Group: "Organization"},
 	{Key: PermOrgInvite, Label: "Invite members", Description: "Add existing accounts to the organization and invite new members.", Group: "Organization"},
-	{Key: PermOrgAssignRoles, Label: "Assign organization roles", Description: "Change organization member roles and role assignments.", Group: "Organization"},
 	{Key: PermOrgTransferOwnership, Label: "Transfer ownership", Description: "Transfer organization ownership to another account.", Group: "Organization"},
 
 	{Key: PermWsRead, Label: "View workspaces", Description: "View workspace details and discover accessible workspace content.", Group: "Workspace"},
@@ -100,7 +98,7 @@ var PermissionCatalog = []PermissionDefinition{
 var ScopePermissions = map[string][]string{
 	"org": {
 		PermOrgRead, PermOrgWrite, PermOrgDelete, PermOrgInvite,
-		PermOrgAssignRoles, PermOrgTransferOwnership,
+		PermOrgTransferOwnership,
 		PermWsRead, PermWsWrite, PermWsCreate, PermWsDelete,
 		PermWsFileRead, PermWsFileCreate, PermWsFileWrite, PermWsFileDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
@@ -160,7 +158,7 @@ var ResourcePermissions = map[string][]string{
 var OrgBuiltinRoles = map[string][]string{
 	BuiltinOrgOwnerRole: ScopePermissions["org"],
 	BuiltinOrgAdminRole: {
-		PermOrgRead, PermOrgWrite, PermOrgInvite, PermOrgAssignRoles,
+		PermOrgRead, PermOrgWrite, PermOrgInvite,
 		PermWsCreate, PermWsDelete, PermWsRead, PermWsWrite,
 		PermWsFileRead, PermWsFileCreate, PermWsFileWrite, PermWsFileDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,

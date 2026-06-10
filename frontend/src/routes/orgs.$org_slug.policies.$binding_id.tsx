@@ -4,6 +4,7 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
+import { isApiError } from '#/lib/api/errors'
 import {
   orgEffectivePermissionsQueryOptions,
   orgPermissionsQueryOptions,
@@ -19,6 +20,7 @@ import {
   permissionDescription,
   permissionDisplayName,
   permissionGroupName,
+  protectedOrgPolicyMessage,
   type Permission,
 } from '#/lib/permissions'
 import {
@@ -114,6 +116,11 @@ function PolicyContextPage() {
       void navigate({ to: '/orgs/$org_slug/policies', params: { org_slug: orgSlug } })
     },
     onError: (error) => {
+      const protectedMessage = protectedOrgPolicyMessage(role.data?.permissions, effectivePermissions.data?.permissions)
+      if (isApiError(error) && error.status === 403 && protectedMessage) {
+        toast.error(protectedMessage)
+        return
+      }
       toast.error(error instanceof Error ? error.message : 'Failed to revoke policy binding')
     },
   })

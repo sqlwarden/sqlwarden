@@ -14,7 +14,7 @@ import {
   orgPoliciesQueryOptions,
 } from '#/lib/api/query'
 import type { OrgMember, PolicyBinding, Role, Team } from '#/lib/api/types'
-import { hasPermission, permission } from '#/lib/permissions'
+import { hasPermission, permission, protectedOrgPolicyMessage } from '#/lib/permissions'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -101,6 +101,7 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
   const [subjectLabel, setSubjectLabel] = useState('')
   const [roleId, setRoleId] = useState('')
   const [roleLabel, setRoleLabel] = useState('')
+  const [rolePermissions, setRolePermissions] = useState<string[]>([])
   const [fieldErrors, setFieldErrors] = useState<{ subject?: string; role?: string }>({})
 
   // Debounced search queries for combobox pickers
@@ -176,6 +177,12 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
       await queryClient.invalidateQueries({ queryKey: ['org-policies', orgSlug] })
     },
     onError: (error) => {
+      const protectedMessage = protectedOrgPolicyMessage(rolePermissions, effectivePermissions.data?.permissions)
+      if (isApiError(error) && error.status === 403 && protectedMessage) {
+        setFieldErrors((current) => ({ ...current, role: protectedMessage }))
+        toast.error(protectedMessage)
+        return
+      }
       if (isApiError(error)) {
         setFieldErrors({
           subject: error.fieldErrors?.subject_id ?? error.fieldErrors?.subject_type,
@@ -207,6 +214,7 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
     setSubjectLabel('')
     setRoleId('')
     setRoleLabel('')
+    setRolePermissions([])
     setMemberQ('')
     setTeamQ('')
     setRoleQ('')
@@ -222,8 +230,15 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
     if (!roleId) {
       errors.role = 'Select a role.'
     }
+    const protectedMessage = protectedOrgPolicyMessage(rolePermissions, effectivePermissions.data?.permissions)
+    if (protectedMessage) {
+      errors.role = protectedMessage
+    }
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)
+      if (protectedMessage) {
+        toast.error(protectedMessage)
+      }
       return
     }
     setFieldErrors({})
@@ -248,6 +263,7 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
     value: String(r.id),
     label: roleDisplayName(r.name),
     sublabel: r.description,
+    permissions: r.permissions ?? [],
   }))
 
   return (
@@ -377,9 +393,10 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
                     isLoading={roles.isLoading}
                     error={fieldErrors.role}
                     disabled={createPolicy.isPending}
-                    onChange={(value, label) => {
+                    onChange={(value, label, item) => {
                       setRoleId(value)
                       setRoleLabel(label)
+                      setRolePermissions(item.permissions ?? [])
                       setFieldErrors((c) => ({ ...c, role: undefined }))
                     }}
                     onSearchChange={setRoleQ}
@@ -487,7 +504,7 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
 
 // ─── Combobox field ────────────────────────────────────────────────────────────
 
-type PickerItem = { value: string; label: string; sublabel?: string }
+type PickerItem = { value: string; label: string; sublabel?: string; permissions?: string[] }
 
 function ComboboxField({
   label,
@@ -511,7 +528,7 @@ function ComboboxField({
   isLoading: boolean
   error?: string
   disabled: boolean
-  onChange: (value: string, label: string) => void
+  onChange: (value: string, label: string, item: PickerItem) => void
   onSearchChange: (q: string) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -526,7 +543,7 @@ function ComboboxField({
   }
 
   function handleSelect(item: PickerItem) {
-    onChange(item.value, item.label)
+    onChange(item.value, item.label, item)
     setOpen(false)
     setSearch('')
     onSearchChange('')

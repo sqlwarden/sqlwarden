@@ -10,6 +10,7 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/database"
 )
 
 func TestRoleLifecycle(t *testing.T) {
@@ -542,6 +543,101 @@ func TestRevokeOrgPolicy(t *testing.T) {
 	assert.Equal(t, int(listRes.BodyFields["total"].(float64)), 0)
 }
 
+func TestGrantOrgPolicy_AdminCannotBindOwnerOrProtectedOrgRoles(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, _, admin, adminTok, org := seedOrgAdministratorForPolicyTest(t, app)
+
+	ownerRoleID := orgBuiltinRoleID(t, app, org.ID, access.BuiltinOrgOwnerRole)
+	deleteRoleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgDelete)
+	transferRoleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgTransferOwnership)
+	ordinaryRoleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgWrite, access.PermPolicyRead)
+
+	for _, tc := range []struct {
+		name   string
+		roleID int64
+	}{
+		{name: "builtin owner", roleID: ownerRoleID},
+		{name: "custom delete", roleID: deleteRoleID},
+		{name: "custom transfer ownership", roleID: transferRoleID},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := grantOrgPolicyRole(t, app, adminTok, org.Slug, tc.roleID, access.SubjectTypeAccount, admin.ID)
+			assert.Equal(t, res.StatusCode, http.StatusForbidden)
+		})
+	}
+
+	ordinaryRes := grantOrgPolicyRole(t, app, adminTok, org.Slug, ordinaryRoleID, access.SubjectTypeAccount, admin.ID)
+	assert.Equal(t, ordinaryRes.StatusCode, http.StatusNoContent)
+
+	assert.Equal(t, app.enforcer.Can(context.Background(), admin.ID, org.ID, "org", "org", org.ID, access.PermOrgDelete), false)
+	assert.Equal(t, app.enforcer.Can(context.Background(), admin.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), false)
+}
+
+func TestGrantOrgPolicy_OwnerCanBindProtectedOrgRoles(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-owner-protected"), "Owner Protected", "Owner Protected Org")
+	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-owner-protected-member"), "Protected Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	ownerRoleID := orgBuiltinRoleID(t, app, org.ID, access.BuiltinOrgOwnerRole)
+	res := grantOrgPolicyRole(t, app, ownerTok, org.Slug, ownerRoleID, access.SubjectTypeAccount, member.ID)
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+	assert.Equal(t, app.enforcer.Can(context.Background(), member.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), true)
+	assert.Equal(t, app.enforcer.Can(context.Background(), owner.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), true)
+}
+
+func TestRevokeOrgPolicy_AdminCannotRevokeOwnerPolicy(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, admin, adminTok, org := seedOrgAdministratorForPolicyTest(t, app)
+	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-revoke-owner-member"), "Second Owner")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	ownerRoleID := orgBuiltinRoleID(t, app, org.ID, access.BuiltinOrgOwnerRole)
+	grantRes := grantOrgPolicyRole(t, app, ownerTok, org.Slug, ownerRoleID, access.SubjectTypeAccount, member.ID)
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+
+	protectedRoleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgDelete)
+	protectedGrantRes := grantOrgPolicyRole(t, app, ownerTok, org.Slug, protectedRoleID, access.SubjectTypeAccount, member.ID)
+	assert.Equal(t, protectedGrantRes.StatusCode, http.StatusNoContent)
+
+	ordinaryRoleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgWrite)
+	ordinaryGrantRes := grantOrgPolicyRole(t, app, ownerTok, org.Slug, ordinaryRoleID, access.SubjectTypeAccount, member.ID)
+	assert.Equal(t, ordinaryGrantRes.StatusCode, http.StatusNoContent)
+
+	bindingID := orgPolicyBindingID(t, app, adminTok, org.Slug, member.ID, access.BuiltinOrgOwnerRole)
+	revokeRes := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+org.Slug+"/policies/"+bindingID, nil, adminTok), app.routes())
+	assert.Equal(t, revokeRes.StatusCode, http.StatusForbidden)
+
+	protectedBindingID := orgPolicyBindingIDByRoleID(t, app, adminTok, org.Slug, member.ID, protectedRoleID)
+	protectedRevokeRes := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+org.Slug+"/policies/"+protectedBindingID, nil, adminTok), app.routes())
+	assert.Equal(t, protectedRevokeRes.StatusCode, http.StatusForbidden)
+
+	ordinaryBindingID := orgPolicyBindingIDByRoleID(t, app, adminTok, org.Slug, member.ID, ordinaryRoleID)
+	ordinaryRevokeRes := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+org.Slug+"/policies/"+ordinaryBindingID, nil, adminTok), app.routes())
+	assert.Equal(t, ordinaryRevokeRes.StatusCode, http.StatusNoContent)
+
+	assert.Equal(t, app.enforcer.Can(context.Background(), member.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), true)
+	assert.Equal(t, app.enforcer.Can(context.Background(), admin.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), false)
+
+	ownerBindingID := orgPolicyBindingID(t, app, ownerTok, org.Slug, owner.ID, access.BuiltinOrgOwnerRole)
+	ownerRevokeRes := send(t, newAuthRequest(t, http.MethodDelete,
+		"/api/v1/orgs/"+org.Slug+"/policies/"+ownerBindingID, nil, ownerTok), app.routes())
+	assert.Equal(t, ownerRevokeRes.StatusCode, http.StatusNoContent)
+}
+
 func TestRevokeOnlyOrgOwnerPolicyForbidden(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -635,4 +731,51 @@ func orgPolicyBindingID(t *testing.T, app *application, token, orgSlug string, a
 	}
 	t.Fatalf("expected policy binding for role %q", roleName)
 	return ""
+}
+
+func orgPolicyBindingIDByRoleID(t *testing.T, app *application, token, orgSlug string, accountID, roleID int64) string {
+	t.Helper()
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+orgSlug+"/policies?subject_type=account&subject_id="+fmt.Sprint(accountID), nil, token), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+	items := listRes.BodyFields["items"].([]any)
+	for _, raw := range items {
+		item := raw.(map[string]any)
+		if item["role_id"].(float64) == float64(roleID) {
+			return fmt.Sprintf("%v", item["binding_id"])
+		}
+	}
+	t.Fatalf("expected policy binding for role ID %d", roleID)
+	return ""
+}
+
+func seedOrgAdministratorForPolicyTest(t *testing.T, app *application) (database.Account, string, database.Account, string, database.Organization) {
+	t.Helper()
+
+	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-admin-owner"), "Admin Owner", "Admin Org")
+	admin, adminTok := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-admin"), "Org Admin")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, admin.ID); err != nil {
+		t.Fatal(err)
+	}
+	adminRoleID := orgBuiltinRoleID(t, app, org.ID, access.BuiltinOrgAdminRole)
+	res := grantOrgPolicyRole(t, app, ownerTok, org.Slug, adminRoleID, access.SubjectTypeAccount, admin.ID)
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+	return owner, ownerTok, admin, adminTok, org
+}
+
+func orgBuiltinRoleID(t *testing.T, app *application, orgID int64, name string) int64 {
+	t.Helper()
+
+	roles, err := app.db.ListOrgRoles(context.Background(), orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range roles {
+		if role.Name == name && role.IsBuiltin {
+			return role.ID
+		}
+	}
+	t.Fatalf("expected builtin org role %q", name)
+	return 0
 }

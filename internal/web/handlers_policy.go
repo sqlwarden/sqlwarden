@@ -305,6 +305,10 @@ func (app *application) grantOrgPolicy(w http.ResponseWriter, r *http.Request) {
 		app.failedValidation(w, r, v)
 		return
 	}
+	if !app.canManageProtectedOrgPolicy(r, org.ID, grantor.ID, role) {
+		app.protectedOrgPolicyNotPermitted(w, r)
+		return
+	}
 	if err := app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, "org", org.ID, grantor.ID); err != nil {
 		app.serverError(w, r, err)
 		return
@@ -322,6 +326,7 @@ func (app *application) revokeOrgPolicy(w http.ResponseWriter, r *http.Request) 
 	}
 
 	org := contextGetOrg(r)
+	grantor := contextGetAccount(r)
 
 	rb, found, err := app.db.GetRoleBinding(r.Context(), bindingID, org.ID)
 	if err != nil {
@@ -332,7 +337,20 @@ func (app *application) revokeOrgPolicy(w http.ResponseWriter, r *http.Request) 
 		app.notFound(w, r)
 		return
 	}
-	if isLastOwnerPolicy, checkErr := app.isLastOrgOwnerPolicy(r, org.ID, rb); checkErr != nil {
+	role, found, err := app.db.GetRole(r.Context(), rb.RoleID, org.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.notFound(w, r)
+		return
+	}
+	if !app.canManageProtectedOrgPolicy(r, org.ID, grantor.ID, role) {
+		app.protectedOrgPolicyNotPermitted(w, r)
+		return
+	}
+	if isLastOwnerPolicy, checkErr := app.isLastOrgOwnerPolicy(r, org.ID, rb, role); checkErr != nil {
 		app.serverError(w, r, checkErr)
 		return
 	} else if isLastOwnerPolicy {
@@ -363,15 +381,46 @@ func (app *application) listPermissions(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (app *application) isLastOrgOwnerPolicy(r *http.Request, orgID int64, binding database.RoleBinding) (bool, error) {
+func (app *application) canManageProtectedOrgPolicy(r *http.Request, orgID, grantorID int64, role database.Role) bool {
+	for _, permission := range protectedOrgPolicyPermissions(role) {
+		if !app.enforcer.Can(r.Context(), grantorID, orgID, "org", "org", orgID, permission) {
+			return false
+		}
+	}
+	return true
+}
+
+func (app *application) protectedOrgPolicyNotPermitted(w http.ResponseWriter, r *http.Request) {
+	app.errorMessage(w, r, http.StatusForbidden, "Only users who already have organization deletion or ownership transfer permission can manage policies that grant those permissions.", nil)
+}
+
+func protectedOrgPolicyPermissions(role database.Role) []string {
+	protected := make([]string, 0, 2)
+	seen := map[string]bool{}
+	add := func(permission string) {
+		if !seen[permission] {
+			protected = append(protected, permission)
+			seen[permission] = true
+		}
+	}
+	for _, permission := range role.Permissions {
+		switch permission {
+		case access.PermOrgDelete, access.PermOrgTransferOwnership:
+			add(permission)
+		}
+	}
+	if role.IsBuiltin && role.Name == access.BuiltinOrgOwnerRole && role.ScopeType == "org" && role.WorkspaceID == nil {
+		add(access.PermOrgDelete)
+		add(access.PermOrgTransferOwnership)
+	}
+	return protected
+}
+
+func (app *application) isLastOrgOwnerPolicy(r *http.Request, orgID int64, binding database.RoleBinding, role database.Role) (bool, error) {
 	if binding.ResourceType != "org" || binding.ResourceID != orgID {
 		return false, nil
 	}
 
-	role, found, err := app.db.GetRole(r.Context(), binding.RoleID, orgID)
-	if err != nil || !found {
-		return false, err
-	}
 	if !role.IsBuiltin || role.Name != access.BuiltinOrgOwnerRole || role.ScopeType != "org" || role.WorkspaceID != nil {
 		return false, nil
 	}
