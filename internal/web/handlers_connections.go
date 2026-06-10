@@ -14,7 +14,6 @@ import (
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/driver"
-	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -234,7 +233,7 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	dsnEncrypted, err := encrypt.Encrypt(app.encKey, input.DSN)
+	dsnEncrypted, err := app.keyring.Encrypt(input.DSN)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -326,14 +325,14 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	dsnEncrypted, err := encrypt.Encrypt(app.encKey, input.DSN)
+	dsnEncrypted, err := app.keyring.Encrypt(input.DSN)
 	if err != nil {
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 		return
 	}
 
 	conn := contextGetConnection(r)
-	currentDSN, err := encrypt.Decrypt(app.encKey, conn.DSNEncrypted)
+	currentDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -460,7 +459,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	plainDSN, err := encrypt.Decrypt(app.encKey, conn.DSNEncrypted)
+	plainDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

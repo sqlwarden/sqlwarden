@@ -30,7 +30,7 @@ type application struct {
 	mailer           *smtp.Mailer
 	wg               sync.WaitGroup
 	connManager      *connection.Manager
-	encKey           []byte
+	keyring          *encrypt.Keyring
 	enforcer         *access.Enforcer
 	fileStores       *fileStoreRegistry
 	fileLocks        sync.Map
@@ -105,13 +105,19 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
+	keyring, err := encrypt.NewKeyring(cfg.Encryption.Key, cfg.Encryption.PreviousKeys...)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("encryption keyring init: %w", err)
+	}
+
 	app := &application{
 		config:      cfg,
 		db:          db,
 		logger:      logger,
 		mailer:      mailer,
 		connManager: connection.New(30 * time.Minute),
-		encKey:      encrypt.DeriveKey(cfg.Encryption.Key),
+		keyring:     keyring,
 		enforcer:    enforcer,
 		fileStores:  fileStores,
 	}

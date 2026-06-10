@@ -45,6 +45,7 @@ func (app *application) routes() http.Handler {
 			r.Delete("/accounts/{account_id}/sessions", app.revokeInstanceAccountSessions)
 			r.Delete("/accounts/{account_id}/sessions/{session_id}", app.revokeInstanceAccountSession)
 			r.Delete("/admins/{account_id}", app.removeInstanceAdmin)
+			r.Post("/encryption/rotate", app.rotateEncryptionKeysHandler)
 		})
 
 		r.Group(func(r chi.Router) {

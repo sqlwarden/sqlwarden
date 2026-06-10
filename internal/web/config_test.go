@@ -69,6 +69,35 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadConfigDefaultsHaveNoPreviousEncryptionKeys(t *testing.T) {
+	cfg, _, err := loadConfig(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Encryption.PreviousKeys) != 0 {
+		t.Fatalf("expected no previous keys by default, got %v", cfg.Encryption.PreviousKeys)
+	}
+}
+
+func TestLoadConfigParsesPreviousEncryptionKeys(t *testing.T) {
+	t.Setenv("ENCRYPTION_PREVIOUS_KEYS", " old-key-one , old-key-two ,, ")
+
+	cfg, _, err := loadConfig(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"old-key-one", "old-key-two"}
+	if len(cfg.Encryption.PreviousKeys) != len(want) {
+		t.Fatalf("previous keys = %v, want %v", cfg.Encryption.PreviousKeys, want)
+	}
+	for i, key := range want {
+		if cfg.Encryption.PreviousKeys[i] != key {
+			t.Errorf("previous key %d = %q, want %q", i, cfg.Encryption.PreviousKeys[i], key)
+		}
+	}
+}
+
 func TestLoadConfigFromExplicitFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

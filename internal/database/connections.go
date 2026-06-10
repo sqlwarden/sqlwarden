@@ -133,6 +133,32 @@ func (db *DB) UpdateConnection(ctx context.Context, id int64, name, dsnEncrypted
 	return err
 }
 
+// ListAllConnections returns every connection across all workspaces. It is used
+// by encryption-key rotation to re-encrypt stored DSNs and must not be exposed
+// through tenant-scoped handlers.
+func (db *DB) ListAllConnections(ctx context.Context) ([]Connection, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var conns []Connection
+	err := db.NewSelect().Model(&conns).OrderExpr("id ASC").Scan(ctx)
+	return conns, err
+}
+
+// UpdateConnectionDSN replaces only the encrypted DSN for a connection. It is
+// used by encryption-key rotation and deliberately leaves all other fields,
+// including updated_at, untouched so rotation is invisible to consumers.
+func (db *DB) UpdateConnectionDSN(ctx context.Context, id int64, dsnEncrypted string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	_, err := db.NewUpdate().Model((*Connection)(nil)).
+		Set("dsn_encrypted = ?", dsnEncrypted).
+		Where("id = ?", id).
+		Exec(ctx)
+	return err
+}
+
 func (db *DB) ListConnectionsPage(ctx context.Context, params ListConnectionsParams) (response.Paginated[Connection], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()

@@ -13,7 +13,6 @@ import (
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/token"
 )
 
@@ -25,7 +24,6 @@ func newTestApp(t *testing.T) *application {
 		t.Fatal(err)
 	}
 	app.enforcer = enforcer
-	app.encKey = encrypt.DeriveKey("test-encryption-key-32bytes!!!!!")
 	app.connManager = connection.New(30 * time.Minute)
 	t.Cleanup(func() { app.connManager.Close() })
 	return app

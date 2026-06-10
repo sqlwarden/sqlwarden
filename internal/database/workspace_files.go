@@ -320,6 +320,36 @@ func (db *DB) GetWorkspaceFileContent(ctx context.Context, contentID int64) (Wor
 	return content, err == nil, err
 }
 
+// ListApplicationEncryptedFileContents returns every content row whose bytes
+// were sealed by the application encryption key. It is used by encryption-key
+// rotation to re-encrypt at-rest file content and must not be tenant-scoped.
+func (db *DB) ListApplicationEncryptedFileContents(ctx context.Context) ([]WorkspaceFileContent, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var contents []WorkspaceFileContent
+	err := db.NewSelect().Model(&contents).
+		Where("application_encrypted = ?", true).
+		OrderExpr("id ASC").
+		Scan(ctx)
+	return contents, err
+}
+
+// UpdateWorkspaceFileContentEncryption records a re-encrypted content row after
+// rotation: the bytes were rewritten in place, so the content hash and the key
+// id that sealed them change while the storage key stays the same.
+func (db *DB) UpdateWorkspaceFileContentEncryption(ctx context.Context, id int64, contentHash, encryptionKeyID string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	_, err := db.NewUpdate().Model((*WorkspaceFileContent)(nil)).
+		Set("content_hash = ?", contentHash).
+		Set("encryption_key_id = ?", encryptionKeyID).
+		Where("id = ?", id).
+		Exec(ctx)
+	return err
+}
+
 // CurrentWorkspaceFileContent returns the current content metadata for a file.
 func (db *DB) CurrentWorkspaceFileContent(ctx context.Context, file WorkspaceFile) (WorkspaceFileContent, bool, error) {
 	if file.CurrentContentID == nil {

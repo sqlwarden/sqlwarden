@@ -86,6 +86,9 @@ type Config struct {
 	}
 	Encryption struct {
 		Key string
+		// PreviousKeys are retired encryption keys kept only so existing
+		// ciphertext stays decryptable until it is rotated to the current key.
+		PreviousKeys []string
 	}
 	JWT struct {
 		SecretKey      string
@@ -219,6 +222,7 @@ var configOptions = []configOption{
 	{key: "db.dsn", env: "DB_DSN", flagName: "db-dsn", defaultValue: defaultDBDSN, usage: "Database DSN"},
 	{key: "db.automigrate", env: "DB_AUTOMIGRATE", flagName: "db-automigrate", defaultValue: defaultDBAutomigrate, usage: "Run database migrations at startup"},
 	{key: "encryption.key", env: "ENCRYPTION_KEY", flagName: "encryption-key", defaultValue: defaultEncryptionKey, usage: "Application encryption key"},
+	{key: "encryption.previous_keys", env: "ENCRYPTION_PREVIOUS_KEYS", flagName: "encryption-previous-keys", defaultValue: "", usage: "Comma-separated retired encryption keys retained for decryption during rotation"},
 	{key: "jwt.secret_key", env: "JWT_SECRET_KEY", flagName: "jwt-secret-key", defaultValue: defaultJWTSecretKey, usage: "JWT signing secret"},
 	{key: "jwt.access_token_ttl", env: "JWT_ACCESS_TOKEN_TTL", flagName: "jwt-access-token-ttl", defaultValue: defaultJWTAccessTokenTTL, usage: "JWT access token lifetime (for example: 24h, 8h, 30m)"},
 	{key: "sessions.revocation_enabled", env: "SESSIONS_REVOCATION_ENABLED", flagName: "sessions-revocation-enabled", defaultValue: defaultSessionRevocation, usage: "Enable database-backed session revocation checks"},
@@ -327,6 +331,7 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.DB.DSN = v.GetString("db.dsn")
 	cfg.DB.Automigrate = v.GetBool("db.automigrate")
 	cfg.Encryption.Key = v.GetString("encryption.key")
+	cfg.Encryption.PreviousKeys = splitEncryptionKeys(v.GetString("encryption.previous_keys"))
 	cfg.JWT.SecretKey = v.GetString("jwt.secret_key")
 	cfg.JWT.AccessTokenTTL = v.GetDuration("jwt.access_token_ttl")
 	cfg.Sessions.RevocationEnabled = v.GetBool("sessions.revocation_enabled")
@@ -516,6 +521,21 @@ func normalizeConfigPaths(cfg *Config) error {
 		cfg.Files.StorageBackends[id] = backend
 	}
 	return nil
+}
+
+// splitEncryptionKeys parses a comma-separated list of retired encryption keys,
+// trimming whitespace and dropping empty entries.
+func splitEncryptionKeys(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var keys []string
+	for _, part := range strings.Split(raw, ",") {
+		if key := strings.TrimSpace(part); key != "" {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
 
 func expandHomePath(path string) (string, error) {

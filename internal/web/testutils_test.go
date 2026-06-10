@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
 
@@ -69,7 +70,11 @@ func newTestApplication(t *testing.T) *application {
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
 	app.mailer = smtp.NewMockMailer("test@example.com")
-	var err error
+	keyring, err := encrypt.NewKeyring("test-encryption-key-32bytes!!!!!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.keyring = keyring
 	app.fileStores, err = newFileStoreRegistry(app.config)
 	if err != nil {
 		t.Fatal(err)
