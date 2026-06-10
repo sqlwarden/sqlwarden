@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { UseQueryOptions } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import { Separator } from '#/components/ui/separator'
@@ -7,7 +8,7 @@ import {
   orgWorkspacePrivateFileBrowserQueryOptions,
   orgWorkspaceSharedFileBrowserQueryOptions,
 } from '#/lib/api/query'
-import type { Workspace, WorkspaceFile } from '#/lib/api/types'
+import type { Workspace, WorkspaceFile, WorkspaceFileBrowserResult } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, newFileTab } from './useIdeStore'
 import { deletePrivateWorkspaceFile } from '#/lib/api/files'
@@ -121,7 +122,9 @@ function FilesSection({
       ? orgWorkspacePrivateFileBrowserQueryOptions(orgSlug, workspace.id, null)
       : orgWorkspaceSharedFileBrowserQueryOptions(orgSlug, workspace.id, null)
 
-  const { data, isLoading, isError } = useQuery(queryOptions)
+  const { data, isLoading, isError } = useQuery(
+    queryOptions as UseQueryOptions<WorkspaceFileBrowserResult>,
+  )
 
   const deleteMutation = useMutation({
     mutationFn: (nodeId: number) =>
@@ -228,7 +231,10 @@ function FileTreeFolder({
       ? orgWorkspacePrivateFileBrowserQueryOptions(orgSlug, workspaceId, file.id)
       : orgWorkspaceSharedFileBrowserQueryOptions(orgSlug, workspaceId, file.id)
 
-  const { data } = useQuery({ ...queryOptions, enabled: expanded })
+  const { data } = useQuery({
+    ...queryOptions,
+    enabled: expanded,
+  } as UseQueryOptions<WorkspaceFileBrowserResult>)
 
   const children = data?.children ?? []
 

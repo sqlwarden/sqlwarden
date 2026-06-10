@@ -106,7 +106,6 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const envItems = environments.data?.items ?? []
   const connItems = connections.data?.items ?? []
   const activeConnection = connItems.find((c) => c.id === activeTab?.connectionId)
-  const activeEnv = envItems.find((e) => e.id === activeConnection?.environment_id)
   const hasConnections = connItems.length > 0
 
   function selectConnection(conn: Connection) {

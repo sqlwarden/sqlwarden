@@ -11,7 +11,7 @@ import type { AccountOrganization, Organization, SessionResponse } from '#/lib/a
 import { clearAccessToken, getAccessToken } from '#/lib/auth/access-token'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { Badge } from '#/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
+import { Card, CardContent, CardDescription, CardTitle } from '#/components/ui/card'
 import {
   DropdownMenu,
   DropdownMenuContent,
