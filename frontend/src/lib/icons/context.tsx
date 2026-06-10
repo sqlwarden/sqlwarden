@@ -24,7 +24,7 @@ const STORAGE_KEY = 'sqlwarden.preference.icon_pack'
 const packLoaders: Record<IconPackName, () => Promise<IconMap>> = {
   hugeicons: async () => {
     const [{ default: data }, { default: map }] = await Promise.all([
-      import('@iconify-json/hugeicons/icons.json'),
+      import('./packs/hugeicons.subset.json'),
       import('./packs/hugeicons'),
     ])
     addCollection(data as Parameters<typeof addCollection>[0])
@@ -32,7 +32,7 @@ const packLoaders: Record<IconPackName, () => Promise<IconMap>> = {
   },
   lucide: async () => {
     const [{ default: data }, { default: map }] = await Promise.all([
-      import('@iconify-json/lucide/icons.json'),
+      import('./packs/lucide.subset.json'),
       import('./packs/lucide'),
     ])
     addCollection(data as Parameters<typeof addCollection>[0])
@@ -40,7 +40,7 @@ const packLoaders: Record<IconPackName, () => Promise<IconMap>> = {
   },
   remix: async () => {
     const [{ default: data }, { default: map }] = await Promise.all([
-      import('@iconify-json/ri/icons.json'),
+      import('./packs/remix.subset.json'),
       import('./packs/remix'),
     ])
     addCollection(data as Parameters<typeof addCollection>[0])

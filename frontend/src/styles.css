@@ -2,13 +2,6 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
-@import "@fontsource-variable/geist";
-@import "@fontsource-variable/outfit";
-@import "@fontsource-variable/figtree";
-@import "@fontsource-variable/oxanium";
-@import "@fontsource-variable/public-sans";
-@import "@fontsource-variable/miranda-sans";
-@import "@fontsource-variable/momo-trust-sans";
 @import "@fontsource-variable/roboto-mono";
 
 @custom-variant dark (&:is(.dark *));

@@ -1,8 +1,6 @@
-import { useEffect } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Outlet, createRootRoute, useRouter } from '@tanstack/react-router'
-import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
-import { TanStackDevtools } from '@tanstack/react-devtools'
 import { Toaster } from 'sonner'
 import { GlobalLoadingBar } from '#/components/GlobalLoadingBar'
 import { ThemeProvider } from '#/components/theme-provider'
@@ -13,6 +11,12 @@ import { EditorFontProvider } from '#/lib/editor-font/context'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { AUTH_INVALIDATED_EVENT } from '#/lib/auth/invalidation'
 import '../styles.css'
+
+// Dev-only. The import.meta.env.DEV guard lets Rollup drop the devtools
+// (and their dependencies) from production bundles entirely.
+const Devtools = import.meta.env.DEV
+  ? lazy(() => import('#/components/devtools'))
+  : () => null
 
 export const Route = createRootRoute({
   component: RootComponent,
@@ -47,15 +51,9 @@ function RootComponent() {
       </TooltipProvider>
       </EditorFontProvider>
       <Toaster closeButton position="top-center" theme="system" />
-      <TanStackDevtools
-        config={{ position: 'bottom-right' }}
-        plugins={[
-          {
-            name: 'TanStack Router',
-            render: <TanStackRouterDevtoolsPanel />,
-          },
-        ]}
-      />
+      <Suspense fallback={null}>
+        <Devtools />
+      </Suspense>
       </EditorThemeProvider>
       </IconPackProvider>
     </ThemeProvider>
