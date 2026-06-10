@@ -9,6 +9,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/sqlwarden/internal/driver"
+	build "github.com/sqlwarden/internal/driver/internal/build"
+	"github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/pkg/result"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -107,61 +109,132 @@ func (d *mysqlDriver) Execute(ctx context.Context, query string, args ...any) (*
 	return scanRows(rows)
 }
 
-func (d *mysqlDriver) Tables(ctx context.Context, database, schema string) ([]driver.TableMeta, error) {
-	query := `
-		SELECT table_name, table_schema FROM information_schema.tables
-		WHERE table_schema = DATABASE()
-		ORDER BY table_schema, table_name`
-
-	rows, err := d.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("mysql: tables: %w", err)
-	}
-	defer rows.Close()
-
-	var tables []driver.TableMeta
-	for rows.Next() {
-		var t driver.TableMeta
-		if err := rows.Scan(&t.Name, &t.Schema); err != nil {
-			return nil, fmt.Errorf("mysql: tables scan: %w", err)
-		}
-		if schema != "" && t.Schema != schema {
-			continue
-		}
-		tables = append(tables, t)
-	}
-	return tables, rows.Err()
-}
-
-func (d *mysqlDriver) Columns(ctx context.Context, database, schema, table string) ([]driver.ColumnMeta, error) {
-	query := `
-		SELECT column_name, data_type, is_nullable
-		FROM information_schema.columns
-		WHERE table_schema = DATABASE()
-		  AND table_name = ?
-		ORDER BY ordinal_position`
-
-	rows, err := d.db.QueryContext(ctx, query, table)
-	if err != nil {
-		return nil, fmt.Errorf("mysql: columns: %w", err)
-	}
-	defer rows.Close()
-
-	var cols []driver.ColumnMeta
-	for rows.Next() {
-		var c driver.ColumnMeta
-		var isNullable string
-		if err := rows.Scan(&c.Name, &c.Type, &isNullable); err != nil {
-			return nil, fmt.Errorf("mysql: columns scan: %w", err)
-		}
-		c.Nullable = isNullable == "YES"
-		cols = append(cols, c)
-	}
-	return cols, rows.Err()
-}
-
 func (d *mysqlDriver) Dialect() driver.Dialect {
 	return driver.DialectMySQL
+}
+
+func (d *mysqlDriver) Introspect(ctx context.Context, opts schema.IntrospectOptions) (*schema.Schema, error) {
+	b := build.New()
+	ns := currentDatabase(ctx, d.db)
+
+	const colQ = `
+SELECT t.table_name, t.table_type, c.column_name, c.column_type,
+       c.is_nullable, c.column_default, c.ordinal_position
+FROM information_schema.tables t
+JOIN information_schema.columns c
+  ON c.table_schema = t.table_schema AND c.table_name = t.table_name
+WHERE t.table_schema = DATABASE()
+ORDER BY t.table_name, c.ordinal_position`
+
+	rows, err := d.db.QueryContext(ctx, colQ)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: introspect columns: %w", err)
+	}
+	for rows.Next() {
+		var tbl, tblType, col, ctype, nullable string
+		var def sql.NullString
+		var ord int
+		if err := rows.Scan(&tbl, &tblType, &col, &ctype, &nullable, &def, &ord); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("mysql: introspect scan: %w", err)
+		}
+		c := schema.Column{Name: col, DataType: ctype, Nullable: nullable == "YES", Ordinal: ord}
+		if def.Valid {
+			v := def.String
+			c.Default = &v
+		}
+		b.AddColumn(ns, tbl, tblType == "VIEW", c)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("mysql: introspect rows: %w", err)
+	}
+	rows.Close()
+
+	const pkQ = `
+SELECT kcu.table_name, kcu.column_name
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu
+  ON kcu.constraint_name = tc.constraint_name
+ AND kcu.table_schema = tc.table_schema
+ AND kcu.table_name = tc.table_name
+WHERE tc.table_schema = DATABASE() AND tc.constraint_type = 'PRIMARY KEY'
+ORDER BY kcu.table_name, kcu.ordinal_position`
+
+	pkRows, err := d.db.QueryContext(ctx, pkQ)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: introspect pk: %w", err)
+	}
+	for pkRows.Next() {
+		var tbl, col string
+		if err := pkRows.Scan(&tbl, &col); err != nil {
+			pkRows.Close()
+			return nil, fmt.Errorf("mysql: introspect pk scan: %w", err)
+		}
+		b.AddPrimaryKeyColumn(ns, tbl, col)
+	}
+	if err := pkRows.Err(); err != nil {
+		pkRows.Close()
+		return nil, fmt.Errorf("mysql: introspect pk rows: %w", err)
+	}
+	pkRows.Close()
+
+	const fkQ = `
+SELECT kcu.table_name, kcu.constraint_name, kcu.column_name,
+       kcu.referenced_table_name, kcu.referenced_column_name
+FROM information_schema.key_column_usage kcu
+WHERE kcu.table_schema = DATABASE() AND kcu.referenced_table_name IS NOT NULL
+ORDER BY kcu.table_name, kcu.constraint_name, kcu.ordinal_position`
+
+	fkRows, err := d.db.QueryContext(ctx, fkQ)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: introspect fk: %w", err)
+	}
+	for fkRows.Next() {
+		var tbl, name, col, refTbl, refCol string
+		if err := fkRows.Scan(&tbl, &name, &col, &refTbl, &refCol); err != nil {
+			fkRows.Close()
+			return nil, fmt.Errorf("mysql: introspect fk scan: %w", err)
+		}
+		b.AddForeignKeyColumn(ns, tbl, name, col, refTbl, refCol)
+	}
+	if err := fkRows.Err(); err != nil {
+		fkRows.Close()
+		return nil, fmt.Errorf("mysql: introspect fk rows: %w", err)
+	}
+	fkRows.Close()
+
+	const idxQ = `
+SELECT table_name, index_name, non_unique
+FROM information_schema.statistics
+WHERE table_schema = DATABASE()
+GROUP BY table_name, index_name, non_unique
+ORDER BY table_name, index_name`
+
+	idxRows, err := d.db.QueryContext(ctx, idxQ)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: introspect indexes: %w", err)
+	}
+	defer idxRows.Close()
+	for idxRows.Next() {
+		var tbl, name string
+		var nonUnique int
+		if err := idxRows.Scan(&tbl, &name, &nonUnique); err != nil {
+			return nil, fmt.Errorf("mysql: introspect index scan: %w", err)
+		}
+		b.AddIndex(ns, tbl, schema.Index{Name: name, Unique: nonUnique == 0})
+	}
+	if err := idxRows.Err(); err != nil {
+		return nil, fmt.Errorf("mysql: introspect index rows: %w", err)
+	}
+
+	return b.Build(ns), nil
+}
+
+func currentDatabase(ctx context.Context, db *sql.DB) string {
+	var name sql.NullString
+	_ = db.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&name)
+	return name.String
 }
 
 func scanRows(rows *sql.Rows) (*result.ResultSet, error) {

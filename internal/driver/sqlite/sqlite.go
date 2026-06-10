@@ -4,10 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"time"
 	"unicode/utf8"
 
 	"github.com/sqlwarden/internal/driver"
+	build "github.com/sqlwarden/internal/driver/internal/build"
+	"github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/pkg/result"
 
 	_ "modernc.org/sqlite"
@@ -65,57 +68,126 @@ func (d *sqliteDriver) Execute(ctx context.Context, query string, args ...any) (
 	return scanRows(rows)
 }
 
-func (d *sqliteDriver) Tables(ctx context.Context, database, schema string) ([]driver.TableMeta, error) {
-	query := `SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`
-
-	rows, err := d.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("sqlite: tables: %w", err)
-	}
-	defer rows.Close()
-
-	var tables []driver.TableMeta
-	for rows.Next() {
-		var t driver.TableMeta
-		if err := rows.Scan(&t.Name); err != nil {
-			return nil, fmt.Errorf("sqlite: tables scan: %w", err)
-		}
-		tables = append(tables, t)
-	}
-	return tables, rows.Err()
-}
-
-func (d *sqliteDriver) Columns(ctx context.Context, database, schema, table string) ([]driver.ColumnMeta, error) {
-	// PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
-	query := fmt.Sprintf("PRAGMA table_info(%q)", table)
-
-	rows, err := d.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("sqlite: columns: %w", err)
-	}
-	defer rows.Close()
-
-	var cols []driver.ColumnMeta
-	for rows.Next() {
-		var cid int
-		var name, colType string
-		var notnull int
-		var dfltValue sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &colType, &notnull, &dfltValue, &pk); err != nil {
-			return nil, fmt.Errorf("sqlite: columns scan: %w", err)
-		}
-		cols = append(cols, driver.ColumnMeta{
-			Name:     name,
-			Type:     colType,
-			Nullable: notnull == 0,
-		})
-	}
-	return cols, rows.Err()
-}
-
 func (d *sqliteDriver) Dialect() driver.Dialect {
 	return driver.DialectSQLite
+}
+
+func (d *sqliteDriver) Introspect(ctx context.Context, opts schema.IntrospectOptions) (*schema.Schema, error) {
+	const ns = "main"
+	b := build.New()
+
+	type obj struct {
+		name   string
+		isView bool
+	}
+	var objects []obj
+
+	rows, err := d.db.QueryContext(ctx,
+		`SELECT name, type FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: introspect objects: %w", err)
+	}
+	for rows.Next() {
+		var name, typ string
+		if err := rows.Scan(&name, &typ); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("sqlite: introspect objects scan: %w", err)
+		}
+		objects = append(objects, obj{name: name, isView: typ == "view"})
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("sqlite: introspect objects rows: %w", err)
+	}
+	rows.Close()
+
+	for _, o := range objects {
+		// Columns + primary key. PRAGMA table_info: cid, name, type, notnull, dflt_value, pk.
+		cinfo, err := d.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%q)", o.name))
+		if err != nil {
+			return nil, fmt.Errorf("sqlite: introspect columns %s: %w", o.name, err)
+		}
+		type pkCol struct {
+			name string
+			pos  int
+		}
+		var pks []pkCol
+		for cinfo.Next() {
+			var cid, notnull, pk int
+			var name, ctype string
+			var dflt sql.NullString
+			if err := cinfo.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+				cinfo.Close()
+				return nil, fmt.Errorf("sqlite: introspect column scan %s: %w", o.name, err)
+			}
+			c := schema.Column{Name: name, DataType: ctype, Nullable: notnull == 0, Ordinal: cid + 1}
+			if dflt.Valid {
+				v := dflt.String
+				c.Default = &v
+			}
+			b.AddColumn(ns, o.name, o.isView, c)
+			if pk > 0 {
+				pks = append(pks, pkCol{name: name, pos: pk})
+			}
+		}
+		if err := cinfo.Err(); err != nil {
+			cinfo.Close()
+			return nil, fmt.Errorf("sqlite: introspect column rows %s: %w", o.name, err)
+		}
+		cinfo.Close()
+
+		sort.Slice(pks, func(i, j int) bool { return pks[i].pos < pks[j].pos })
+		for _, p := range pks {
+			b.AddPrimaryKeyColumn(ns, o.name, p.name)
+		}
+
+		if o.isView {
+			continue
+		}
+
+		// Foreign keys. PRAGMA foreign_key_list: id, seq, table, from, to, on_update, on_delete, match.
+		fkInfo, err := d.db.QueryContext(ctx, fmt.Sprintf("PRAGMA foreign_key_list(%q)", o.name))
+		if err != nil {
+			return nil, fmt.Errorf("sqlite: introspect fk %s: %w", o.name, err)
+		}
+		for fkInfo.Next() {
+			var id, seq int
+			var refTbl, from, to, onUpdate, onDelete, match string
+			if err := fkInfo.Scan(&id, &seq, &refTbl, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+				fkInfo.Close()
+				return nil, fmt.Errorf("sqlite: introspect fk scan %s: %w", o.name, err)
+			}
+			fkName := fmt.Sprintf("%s_fk_%d", o.name, id)
+			b.AddForeignKeyColumn(ns, o.name, fkName, from, refTbl, to)
+		}
+		if err := fkInfo.Err(); err != nil {
+			fkInfo.Close()
+			return nil, fmt.Errorf("sqlite: introspect fk rows %s: %w", o.name, err)
+		}
+		fkInfo.Close()
+
+		// Indexes. PRAGMA index_list: seq, name, unique, origin, partial.
+		idxInfo, err := d.db.QueryContext(ctx, fmt.Sprintf("PRAGMA index_list(%q)", o.name))
+		if err != nil {
+			return nil, fmt.Errorf("sqlite: introspect index %s: %w", o.name, err)
+		}
+		for idxInfo.Next() {
+			var seq, unique, partial int
+			var name, origin string
+			if err := idxInfo.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
+				idxInfo.Close()
+				return nil, fmt.Errorf("sqlite: introspect index scan %s: %w", o.name, err)
+			}
+			b.AddIndex(ns, o.name, schema.Index{Name: name, Unique: unique == 1})
+		}
+		if err := idxInfo.Err(); err != nil {
+			idxInfo.Close()
+			return nil, fmt.Errorf("sqlite: introspect index rows %s: %w", o.name, err)
+		}
+		idxInfo.Close()
+	}
+
+	return b.Build(""), nil
 }
 
 func scanRows(rows *sql.Rows) (*result.ResultSet, error) {

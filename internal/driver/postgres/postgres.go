@@ -4,10 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/sqlwarden/internal/driver"
+	build "github.com/sqlwarden/internal/driver/internal/build"
+	"github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/pkg/result"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -60,62 +63,142 @@ func (d *postgresDriver) Execute(ctx context.Context, query string, args ...any)
 	return scanRows(rows)
 }
 
-func (d *postgresDriver) Tables(ctx context.Context, database, schema string) ([]driver.TableMeta, error) {
-	query := `
-		SELECT table_name, table_schema FROM information_schema.tables
-		WHERE table_catalog = current_database()
-		  AND table_schema NOT IN ('pg_catalog', 'information_schema')
-		ORDER BY table_schema, table_name`
-
-	rows, err := d.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("postgres: tables: %w", err)
-	}
-	defer rows.Close()
-
-	var tables []driver.TableMeta
-	for rows.Next() {
-		var t driver.TableMeta
-		if err := rows.Scan(&t.Name, &t.Schema); err != nil {
-			return nil, fmt.Errorf("postgres: tables scan: %w", err)
-		}
-		if schema != "" && t.Schema != schema {
-			continue
-		}
-		tables = append(tables, t)
-	}
-	return tables, rows.Err()
-}
-
-func (d *postgresDriver) Columns(ctx context.Context, database, schema, table string) ([]driver.ColumnMeta, error) {
-	query := `
-		SELECT column_name, data_type, is_nullable
-		FROM information_schema.columns
-		WHERE table_catalog = current_database()
-		  AND table_schema = $1 AND table_name = $2
-		ORDER BY ordinal_position`
-
-	rows, err := d.db.QueryContext(ctx, query, schema, table)
-	if err != nil {
-		return nil, fmt.Errorf("postgres: columns: %w", err)
-	}
-	defer rows.Close()
-
-	var cols []driver.ColumnMeta
-	for rows.Next() {
-		var c driver.ColumnMeta
-		var isNullable string
-		if err := rows.Scan(&c.Name, &c.Type, &isNullable); err != nil {
-			return nil, fmt.Errorf("postgres: columns scan: %w", err)
-		}
-		c.Nullable = isNullable == "YES"
-		cols = append(cols, c)
-	}
-	return cols, rows.Err()
-}
-
 func (d *postgresDriver) Dialect() driver.Dialect {
 	return driver.DialectPostgres
+}
+
+func (d *postgresDriver) Introspect(ctx context.Context, opts schema.IntrospectOptions) (*schema.Schema, error) {
+	const q = `
+WITH cols AS (
+	SELECT table_schema, table_name, column_name, data_type, is_nullable,
+	       column_default, ordinal_position
+	FROM information_schema.columns
+	WHERE table_catalog = current_database()
+	  AND table_schema NOT IN ('pg_catalog', 'information_schema')
+)
+SELECT t.table_schema, t.table_name, t.table_type,
+       c.column_name, c.data_type, c.is_nullable, c.column_default, c.ordinal_position
+FROM information_schema.tables t
+JOIN cols c ON c.table_schema = t.table_schema AND c.table_name = t.table_name
+WHERE t.table_catalog = current_database()
+  AND t.table_schema NOT IN ('pg_catalog', 'information_schema')
+ORDER BY t.table_schema, t.table_name, c.ordinal_position`
+
+	rows, err := d.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: introspect columns: %w", err)
+	}
+	b := build.New()
+	for rows.Next() {
+		var ns, tbl, tblType, col, dtype, nullable string
+		var def sql.NullString
+		var ord int
+		if err := rows.Scan(&ns, &tbl, &tblType, &col, &dtype, &nullable, &def, &ord); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("postgres: introspect scan: %w", err)
+		}
+		isView := tblType == "VIEW"
+		c := schema.Column{Name: col, DataType: dtype, Nullable: nullable == "YES", Ordinal: ord}
+		if def.Valid {
+			v := def.String
+			c.Default = &v
+		}
+		b.AddColumn(ns, tbl, isView, c)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("postgres: introspect rows: %w", err)
+	}
+	rows.Close()
+
+	if err := d.loadPostgresConstraints(ctx, b); err != nil {
+		return nil, err
+	}
+	if err := d.loadPostgresIndexes(ctx, b); err != nil {
+		return nil, err
+	}
+
+	return b.Build(opts.Database), nil
+}
+
+func (d *postgresDriver) loadPostgresConstraints(ctx context.Context, b *build.Builder) error {
+	const pkQ = `
+SELECT tc.table_schema, tc.table_name, kcu.column_name
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu
+  ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
+WHERE tc.constraint_type = 'PRIMARY KEY'
+  AND tc.table_schema NOT IN ('pg_catalog', 'information_schema')
+ORDER BY tc.table_schema, tc.table_name, kcu.ordinal_position`
+
+	rows, err := d.db.QueryContext(ctx, pkQ)
+	if err != nil {
+		return fmt.Errorf("postgres: introspect pk: %w", err)
+	}
+	for rows.Next() {
+		var ns, tbl, col string
+		if err := rows.Scan(&ns, &tbl, &col); err != nil {
+			rows.Close()
+			return fmt.Errorf("postgres: introspect pk scan: %w", err)
+		}
+		b.AddPrimaryKeyColumn(ns, tbl, col)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("postgres: introspect pk rows: %w", err)
+	}
+	rows.Close()
+
+	const fkQ = `
+SELECT tc.table_schema, tc.table_name, tc.constraint_name,
+       kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu
+  ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
+JOIN information_schema.constraint_column_usage ccu
+  ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+WHERE tc.constraint_type = 'FOREIGN KEY'
+  AND tc.table_schema NOT IN ('pg_catalog', 'information_schema')
+ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_position`
+
+	frows, err := d.db.QueryContext(ctx, fkQ)
+	if err != nil {
+		return fmt.Errorf("postgres: introspect fk: %w", err)
+	}
+	defer frows.Close()
+	for frows.Next() {
+		var ns, tbl, name, col, refTbl, refCol string
+		if err := frows.Scan(&ns, &tbl, &name, &col, &refTbl, &refCol); err != nil {
+			return fmt.Errorf("postgres: introspect fk scan: %w", err)
+		}
+		b.AddForeignKeyColumn(ns, tbl, name, col, refTbl, refCol)
+	}
+	return frows.Err()
+}
+
+func (d *postgresDriver) loadPostgresIndexes(ctx context.Context, b *build.Builder) error {
+	const q = `
+SELECT schemaname, tablename, indexname, indexdef
+FROM pg_indexes
+WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY schemaname, tablename, indexname`
+
+	rows, err := d.db.QueryContext(ctx, q)
+	if err != nil {
+		return fmt.Errorf("postgres: introspect indexes: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ns, tbl, name, def string
+		if err := rows.Scan(&ns, &tbl, &name, &def); err != nil {
+			return fmt.Errorf("postgres: introspect index scan: %w", err)
+		}
+		// indexdef is authoritative for uniqueness; column extraction beyond the
+		// relational core is deferred (Attributes carries the raw def).
+		unique := strings.Contains(def, "CREATE UNIQUE INDEX")
+		b.AddIndex(ns, tbl, schema.Index{Name: name, Unique: unique, Attributes: map[string]any{"definition": def}})
+	}
+	return rows.Err()
 }
 
 func scanRows(rows *sql.Rows) (*result.ResultSet, error) {

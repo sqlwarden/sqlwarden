@@ -13,8 +13,6 @@ type Driver interface {
 	Close() error
 	Query(ctx context.Context, sql string, args ...any) (*result.ResultSet, error)
 	Execute(ctx context.Context, sql string, args ...any) (*result.ResultSet, error)
-	Tables(ctx context.Context, database, schema string) ([]TableMeta, error)
-	Columns(ctx context.Context, database, schema, table string) ([]ColumnMeta, error)
 	Dialect() Dialect
 }
 
@@ -32,16 +30,3 @@ const (
 	DialectMySQL    Dialect = "mysql"
 	DialectSQLite   Dialect = "sqlite"
 )
-
-// TableMeta describes a table in the target database.
-type TableMeta struct {
-	Name   string
-	Schema string
-}
-
-// ColumnMeta describes a column in the target database.
-type ColumnMeta struct {
-	Name     string
-	Type     string
-	Nullable bool
-}

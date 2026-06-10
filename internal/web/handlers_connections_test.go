@@ -1559,12 +1559,6 @@ func (d *blockingQueryDriver) Connect(context.Context, driver.ConnectionConfig) 
 func (d *blockingQueryDriver) Ping(context.Context) error                             { return nil }
 func (d *blockingQueryDriver) Close() error                                           { return nil }
 func (d *blockingQueryDriver) Dialect() driver.Dialect                                { return driver.DialectSQLite }
-func (d *blockingQueryDriver) Tables(context.Context, string, string) ([]driver.TableMeta, error) {
-	return nil, nil
-}
-func (d *blockingQueryDriver) Columns(context.Context, string, string, string) ([]driver.ColumnMeta, error) {
-	return nil, nil
-}
 func (d *blockingQueryDriver) Query(ctx context.Context, _ string, _ ...any) (*result.ResultSet, error) {
 	d.startOnce.Do(func() { close(d.started) })
 	<-ctx.Done()
@@ -1582,12 +1576,6 @@ func (d *idleQueryDriver) Connect(context.Context, driver.ConnectionConfig) erro
 func (d *idleQueryDriver) Ping(context.Context) error                             { return nil }
 func (d *idleQueryDriver) Close() error                                           { return nil }
 func (d *idleQueryDriver) Dialect() driver.Dialect                                { return driver.DialectSQLite }
-func (d *idleQueryDriver) Tables(context.Context, string, string) ([]driver.TableMeta, error) {
-	return nil, nil
-}
-func (d *idleQueryDriver) Columns(context.Context, string, string, string) ([]driver.ColumnMeta, error) {
-	return nil, nil
-}
 func (d *idleQueryDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }

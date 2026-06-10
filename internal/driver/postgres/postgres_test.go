@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/driver"
+	"github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/pkg/result"
 
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -231,152 +232,6 @@ func TestExecute_DML(t *testing.T) {
 	}
 }
 
-func TestTables(t *testing.T) {
-	d := newConnectedDriver(t)
-	ctx := context.Background()
-
-	_, err := d.Execute(ctx, "CREATE TABLE IF NOT EXISTS tables_test_a (id INTEGER)")
-	if err != nil {
-		t.Fatalf("create table a: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS tables_test_a")
-	})
-
-	_, err = d.Execute(ctx, "CREATE TABLE IF NOT EXISTS tables_test_b (id INTEGER)")
-	if err != nil {
-		t.Fatalf("create table b: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS tables_test_b")
-	})
-
-	// List all tables (no schema filter)
-	tables, err := d.Tables(ctx, "", "")
-	if err != nil {
-		t.Fatalf("Tables: %v", err)
-	}
-
-	findTable := func(name string) bool {
-		for _, tb := range tables {
-			if tb.Name == name {
-				return true
-			}
-		}
-		return false
-	}
-
-	if !findTable("tables_test_a") {
-		t.Errorf("tables_test_a not found in Tables() result")
-	}
-	if !findTable("tables_test_b") {
-		t.Errorf("tables_test_b not found in Tables() result")
-	}
-
-	// Filter by schema = "public" — should still find our tables
-	publicTables, err := d.Tables(ctx, "", "public")
-	if err != nil {
-		t.Fatalf("Tables with schema filter: %v", err)
-	}
-	findPublicTable := func(name string) bool {
-		for _, tb := range publicTables {
-			if tb.Name == name {
-				return true
-			}
-		}
-		return false
-	}
-	if !findPublicTable("tables_test_a") {
-		t.Errorf("tables_test_a not found when filtering by public schema")
-	}
-	if !findPublicTable("tables_test_b") {
-		t.Errorf("tables_test_b not found when filtering by public schema")
-	}
-
-	// Filter by non-existent schema — should return empty
-	noneTables, err := d.Tables(ctx, "", "nonexistent_schema_xyz")
-	if err != nil {
-		t.Fatalf("Tables with nonexistent schema: %v", err)
-	}
-	if len(noneTables) != 0 {
-		t.Errorf("expected 0 tables for nonexistent schema, got %d", len(noneTables))
-	}
-
-	// Verify each returned table has a non-empty schema
-	for _, tb := range tables {
-		if tb.Schema == "" {
-			t.Errorf("table %q has empty schema", tb.Name)
-		}
-	}
-}
-
-func TestColumns(t *testing.T) {
-	d := newConnectedDriver(t)
-	ctx := context.Background()
-
-	_, err := d.Execute(ctx, `
-		CREATE TABLE IF NOT EXISTS columns_test (
-			id       INTEGER NOT NULL,
-			name     TEXT,
-			price    NUMERIC(10,2),
-			active   BOOLEAN NOT NULL
-		)
-	`)
-	if err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS columns_test")
-	})
-
-	cols, err := d.Columns(ctx, "", "public", "columns_test")
-	if err != nil {
-		t.Fatalf("Columns: %v", err)
-	}
-	if len(cols) != 4 {
-		t.Fatalf("expected 4 columns, got %d", len(cols))
-	}
-
-	colMap := make(map[string]driver.ColumnMeta)
-	for _, c := range cols {
-		colMap[c.Name] = c
-	}
-
-	// id — INTEGER NOT NULL
-	idCol, ok := colMap["id"]
-	if !ok {
-		t.Fatal("column 'id' not found")
-	}
-	if idCol.Nullable {
-		t.Errorf("column 'id' should not be nullable")
-	}
-
-	// name — TEXT (nullable)
-	nameCol, ok := colMap["name"]
-	if !ok {
-		t.Fatal("column 'name' not found")
-	}
-	if !nameCol.Nullable {
-		t.Errorf("column 'name' should be nullable")
-	}
-
-	// active — BOOLEAN NOT NULL
-	activeCol, ok := colMap["active"]
-	if !ok {
-		t.Fatal("column 'active' not found")
-	}
-	if activeCol.Nullable {
-		t.Errorf("column 'active' should not be nullable")
-	}
-
-	// Verify types are non-empty
-	for _, c := range cols {
-		if c.Type == "" {
-			t.Errorf("column %q has empty type", c.Name)
-		}
-	}
-}
-
 func TestToValue(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -479,5 +334,70 @@ func TestDialect(t *testing.T) {
 	d := &postgresDriver{}
 	if d.Dialect() != driver.DialectPostgres {
 		t.Errorf("expected dialect %q, got %q", driver.DialectPostgres, d.Dialect())
+	}
+}
+
+func mustExec(t *testing.T, d driver.Driver, sql string) {
+	t.Helper()
+	if _, err := d.Execute(context.Background(), sql); err != nil {
+		t.Fatalf("exec %q: %v", sql, err)
+	}
+}
+
+func introTable(t *testing.T, s *schema.Schema, ns, name string) schema.Table {
+	t.Helper()
+	for _, n := range s.Namespaces {
+		if n.Name != ns {
+			continue
+		}
+		for _, tbl := range n.Tables {
+			if tbl.Name == name {
+				return tbl
+			}
+		}
+	}
+	t.Fatalf("table %s.%s not found in %+v", ns, name, s)
+	return schema.Table{}
+}
+
+func introHasIndex(tbl schema.Table, name string) bool {
+	for _, ix := range tbl.Indexes {
+		if ix.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func TestPostgresIntrospect(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+
+	t.Cleanup(func() {
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_users")
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_orgs")
+	})
+	mustExec(t, d, `CREATE TABLE intro_orgs (id bigint PRIMARY KEY)`)
+	mustExec(t, d, `CREATE TABLE intro_users (
+		id bigint PRIMARY KEY,
+		org_id bigint NOT NULL REFERENCES intro_orgs(id),
+		email text NOT NULL
+	)`)
+	mustExec(t, d, `CREATE INDEX intro_users_email_idx ON intro_users(email)`)
+
+	s, err := d.Introspect(ctx, schema.IntrospectOptions{})
+	if err != nil {
+		t.Fatalf("introspect: %v", err)
+	}
+
+	users := introTable(t, s, "public", "intro_users")
+	if len(users.PrimaryKey) != 1 || users.PrimaryKey[0] != "id" {
+		t.Fatalf("expected PK [id], got %v", users.PrimaryKey)
+	}
+	if len(users.ForeignKeys) != 1 || users.ForeignKeys[0].ReferencedTable != "intro_orgs" {
+		t.Fatalf("expected FK to intro_orgs, got %+v", users.ForeignKeys)
+	}
+	if !introHasIndex(users, "intro_users_email_idx") {
+		t.Fatalf("expected intro_users_email_idx index, got %+v", users.Indexes)
 	}
 }

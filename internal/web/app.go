@@ -18,7 +18,13 @@ import (
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/filestore"
+	"github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/smtp"
+)
+
+const (
+	schemaCacheTTL      = 10 * time.Minute
+	schemaCacheCapacity = 256
 )
 
 type App = application
@@ -30,6 +36,7 @@ type application struct {
 	mailer           *smtp.Mailer
 	wg               sync.WaitGroup
 	connManager      *connection.Manager
+	schemaService    *schema.Service
 	keyring          *encrypt.Keyring
 	enforcer         *access.Enforcer
 	fileStores       *fileStoreRegistry
@@ -112,14 +119,15 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 
 	app := &application{
-		config:      cfg,
-		db:          db,
-		logger:      logger,
-		mailer:      mailer,
-		connManager: connection.New(30 * time.Minute),
-		keyring:     keyring,
-		enforcer:    enforcer,
-		fileStores:  fileStores,
+		config:        cfg,
+		db:            db,
+		logger:        logger,
+		mailer:        mailer,
+		connManager:   connection.New(30 * time.Minute),
+		schemaService: schema.NewService(schema.NewMemCache(schemaCacheCapacity), schemaCacheTTL),
+		keyring:       keyring,
+		enforcer:      enforcer,
+		fileStores:    fileStores,
 	}
 	app.startFileContentDeletionReaper()
 	return app, nil

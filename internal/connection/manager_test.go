@@ -44,12 +44,6 @@ func (d *mockDriver) Execute(ctx context.Context, sql string, args ...any) (*res
 	d.mu.Unlock()
 	return &result.ResultSet{}, nil
 }
-func (d *mockDriver) Tables(ctx context.Context, database, schema string) ([]driver.TableMeta, error) {
-	return nil, nil
-}
-func (d *mockDriver) Columns(ctx context.Context, database, schema, table string) ([]driver.ColumnMeta, error) {
-	return nil, nil
-}
 func (d *mockDriver) Dialect() driver.Dialect { return driver.DialectSQLite }
 
 // TestReuse verifies that calling GetOrCreate twice for the same account+conn returns the same session.

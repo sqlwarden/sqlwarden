@@ -19,10 +19,6 @@ func (m *mockDriver) Query(_ context.Context, _ string, _ ...any) (*result.Resul
 func (m *mockDriver) Execute(_ context.Context, _ string, _ ...any) (*result.ResultSet, error) {
 	return nil, nil
 }
-func (m *mockDriver) Tables(_ context.Context, _, _ string) ([]TableMeta, error) { return nil, nil }
-func (m *mockDriver) Columns(_ context.Context, _, _, _ string) ([]ColumnMeta, error) {
-	return nil, nil
-}
 func (m *mockDriver) Dialect() Dialect { return DialectPostgres }
 
 // resetRegistry clears the registry map directly (same package).
