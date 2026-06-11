@@ -10,7 +10,10 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '#/components/ui/resizable'
-import { orgWorkspacesQueryOptions } from '#/lib/api/query'
+import { Link } from '@tanstack/react-router'
+import { orgWorkspacesQueryOptions, orgEffectivePermissionsQueryOptions } from '#/lib/api/query'
+import { hasAnyPermission, permission } from '#/lib/permissions'
+import { IdeTopBarControls } from './IdeTopBarControls'
 import type { Workspace } from '#/lib/api/types'
 import { useSession } from '#/hooks/use-session'
 import { cn } from '#/lib/utils'
@@ -185,6 +188,13 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
 function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspaces: Workspace[] }) {
   const activeWorkspaceId = useIde((s) => s.activeWorkspaceId)
   const setActiveWorkspace = useIde((s) => s.setActiveWorkspace)
+  const { data: session } = useSession()
+
+  const orgPermissions = useQuery({
+    ...orgEffectivePermissionsQueryOptions(orgSlug, 'org'),
+    enabled: Boolean(session),
+  })
+  const canAccessOrgSettings = hasAnyPermission(orgPermissions.data?.permissions, [permission.orgRead])
 
   useEffect(() => {
     if (!activeWorkspaceId && workspaces.length > 0) {
@@ -196,9 +206,10 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
     workspaces.find((w) => w.id === activeWorkspaceId) ?? workspaces[0]
 
   return (
-    <div className="-mx-4 -my-6 flex h-svh min-h-0 flex-col overflow-hidden bg-background md:-mx-6">
-      {/* Top bar: explorer toggle + workspace tabs */}
+    <div className="flex h-dvh min-h-0 w-dvw max-w-dvw flex-col overflow-hidden bg-background">
+      {/* Top bar: brand + explorer toggle + workspace tabs + user controls */}
       <div className="flex h-10 shrink-0 items-stretch border-b border-border">
+        <IdeBrand />
         <ExplorerToggle />
         <div className="flex min-w-0 flex-1 items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {workspaces.map((ws) => (
@@ -210,12 +221,32 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
             />
           ))}
         </div>
+        {session ? (
+          <IdeTopBarControls
+            orgSlug={orgSlug}
+            session={session}
+            canAccessOrgSettings={canAccessOrgSettings}
+          />
+        ) : null}
       </div>
 
       {activeWorkspace && (
         <WorkspaceIdeSurface orgSlug={orgSlug} workspace={activeWorkspace} />
       )}
     </div>
+  )
+}
+
+function IdeBrand() {
+  return (
+    <Link
+      to="/"
+      className="flex shrink-0 items-center gap-1.5 border-r border-border px-3 text-xs font-semibold tracking-tight text-foreground"
+      aria-label="SQLWarden home"
+    >
+      <Icon name="database-lightning" size={15} />
+      <span className="hidden sm:inline">SQLWarden</span>
+    </Link>
   )
 }
 
@@ -282,7 +313,7 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
   }, [sidebarCollapsed])
 
   return (
-    <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+    <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 overflow-hidden">
       <ResizablePanel
         panelRef={sidebarRef}
         defaultSize="22%"
@@ -393,7 +424,7 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
   }, [maximizedPane])
 
   return (
-    <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
+    <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1 overflow-hidden">
       <ResizablePanel
         panelRef={editorRef}
         defaultSize="58%"
@@ -746,7 +777,7 @@ function EmptyStateCard({
 
 function IdeFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="-mx-4 -my-6 flex h-svh items-center justify-center bg-background text-sm text-muted-foreground md:-mx-6">
+    <div className="flex h-dvh w-dvw items-center justify-center overflow-hidden bg-background text-sm text-muted-foreground">
       {children}
     </div>
   )

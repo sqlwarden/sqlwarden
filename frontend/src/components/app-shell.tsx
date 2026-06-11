@@ -47,6 +47,7 @@ import { useEditorFont } from '#/lib/editor-font/context'
 import { EDITOR_FONTS, EDITOR_FONT_SIZES, DEFAULT_EDITOR_FONT, DEFAULT_EDITOR_FONT_SIZE } from '#/lib/editor-font/context'
 import type { EditorFont, EditorFontSize } from '#/lib/editor-font/context'
 import { Slider } from '#/components/ui/slider'
+import { cn } from '#/lib/utils'
 
 export type AppShellTheme = 'dark' | 'light' | 'system'
 export type AppShellSidebarStyle = 'sidebar' | 'inset' | 'floating'
@@ -350,12 +351,20 @@ function AppShellUserMenu({
   )
 }
 
-function AppShellPreferencesPopover({
+export function AppShellPreferencesPopover({
   preferences,
   setPreferences,
+  buttonLabel = 'UI Preferences',
+  buttonClassName,
+  contentSide = 'right',
+  contentAlign = 'end',
 }: {
   preferences: AppShellPreferences
   setPreferences: Dispatch<SetStateAction<AppShellPreferences>>
+  buttonLabel?: string
+  buttonClassName?: string
+  contentSide?: 'top' | 'right' | 'bottom' | 'left' | 'inline-start' | 'inline-end'
+  contentAlign?: 'start' | 'center' | 'end'
 }) {
   const { packName, setPackName } = useIconPack()
   const { editorThemeDark, editorThemeLight, setEditorThemeDark, setEditorThemeLight } = useEditorTheme()
@@ -389,14 +398,17 @@ function AppShellPreferencesPopover({
           <Button
             type="button"
             variant="ghost"
-            className="w-full justify-start gap-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+            className={cn(
+              'w-full justify-start gap-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0',
+              buttonClassName,
+            )}
           />
         }
       >
         <Icon name="paint-board" size={20} />
-        <span className="group-data-[collapsible=icon]:hidden">UI Preferences</span>
+        <span className="group-data-[collapsible=icon]:hidden">{buttonLabel}</span>
       </PopoverTrigger>
-      <PopoverContent side="right" align="end" className="w-80 max-h-[calc(100dvh-1rem)]">
+      <PopoverContent side={contentSide} align={contentAlign} className="w-80 max-h-[calc(100dvh-1rem)]">
         <div className="flex flex-col gap-5">
           <div className="flex items-start justify-between gap-4">
             <div className="flex flex-col gap-1.5">

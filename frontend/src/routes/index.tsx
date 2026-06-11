@@ -6,7 +6,9 @@ import { toast } from 'sonner'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { useSession } from '#/hooks/use-session'
 import { api } from '#/lib/api/client'
-import { accountOrganizationsQueryOptions } from '#/lib/api/query'
+import { accountOrganizationsQueryOptions, orgEffectivePermissionsQueryOptions } from '#/lib/api/query'
+import { hasAnyPermission, permission } from '#/lib/permissions'
+import { Button } from '#/components/ui/button'
 import type { AccountOrganization, Organization, SessionResponse } from '#/lib/api/types'
 import { clearAccessToken, getAccessToken } from '#/lib/auth/access-token'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
@@ -125,34 +127,34 @@ function OrganizationChoiceCard({ organization }: { organization: AccountOrganiz
   const teamCount = 'team_count' in organization ? organization.team_count : undefined
   const role = 'role' in organization ? organization.role : undefined
 
+  const orgPermissions = useQuery({
+    ...orgEffectivePermissionsQueryOptions(organization.slug, 'org'),
+    enabled: true,
+  })
+  const canAccessSettings = hasAnyPermission(orgPermissions.data?.permissions, [permission.orgRead])
+
   return (
-    <Link
-      to="/orgs/$org_slug/workspaces"
-      params={{ org_slug: organization.slug }}
-      className="group block h-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <div className="flex h-full flex-col border border-border bg-card text-card-foreground transition-all group-hover:border-foreground/20 group-hover:bg-muted/20 group-hover:shadow-sm">
-        <div className="flex flex-1 flex-col gap-3 p-5">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className={cn('flex size-10 shrink-0 items-center justify-center text-sm font-semibold', organizationColor(organization.name))}>
-              {getInitials(organization.name, 'O')}
+    <div className="flex h-full flex-col border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:shadow-sm">
+      <div className="flex flex-1 flex-col gap-3 p-5">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className={cn('flex size-10 shrink-0 items-center justify-center text-sm font-semibold', organizationColor(organization.name))}>
+            {getInitials(organization.name, 'O')}
+          </div>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="min-w-0 flex-1 truncate font-semibold leading-tight tracking-tight">
+                {organization.name}
+              </p>
+              {role ? (
+                <Badge variant="outline" className="h-4 max-w-24 shrink-0 truncate px-1.5 py-0 text-[10px] capitalize">
+                  {role}
+                </Badge>
+              ) : null}
             </div>
-            <div className="min-w-0 flex-1 pt-0.5">
-              <div className="flex min-w-0 items-center gap-2">
-                <p className="min-w-0 flex-1 truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
-                  {organization.name}
-                </p>
-                {role ? (
-                  <Badge variant="outline" className="h-4 max-w-24 shrink-0 truncate px-1.5 py-0 text-[10px] capitalize">
-                    {role}
-                  </Badge>
-                ) : null}
-              </div>
-              <p className="mt-1.5 truncate text-xs text-muted-foreground">@{organization.slug}</p>
-            </div>
+            <p className="mt-1.5 truncate text-xs text-muted-foreground">@{organization.slug}</p>
           </div>
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
           <div className="flex min-w-0 items-center gap-1.5 [&_svg]:size-3.5">
             <Icon name="user-multiple" size={20} />
             <span className="truncate">{formatCount(memberCount, 'member')}</span>
@@ -163,7 +165,19 @@ function OrganizationChoiceCard({ organization }: { organization: AccountOrganiz
           </div>
         </div>
       </div>
-    </Link>
+      <div className="flex items-center gap-2 border-t border-border/60 px-5 py-3">
+        {canAccessSettings ? (
+          <Button variant="outline" size="sm" render={<Link to="/orgs/$org_slug" params={{ org_slug: organization.slug }} />}>
+            <Icon name="settings-02" size={20} />
+            Settings
+          </Button>
+        ) : null}
+        <Button size="sm" render={<Link to="/ide/$org_slug" params={{ org_slug: organization.slug }} />}>
+          <Icon name="database-lightning" size={20} />
+          IDE
+        </Button>
+      </div>
+    </div>
   )
 }
 

@@ -265,7 +265,6 @@ function isPathInSection(pathname: string, basePath: string, section: string) {
 function organizationItems(orgSlug: string): AppShellNavItem[] {
   return [
     { to: '/orgs/$org_slug/workspaces', params: { org_slug: orgSlug }, label: 'Workspaces', icon: 'briefcase-01' },
-    { to: '/orgs/$org_slug/ide', params: { org_slug: orgSlug }, label: 'IDE', icon: 'terminal' },
   ]
 }
 

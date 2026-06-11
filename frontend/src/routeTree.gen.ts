@@ -25,6 +25,7 @@ import { Route as SettingsApiTokensRouteImport } from './routes/settings.api-tok
 import { Route as SettingsAdministratorsRouteImport } from './routes/settings.administrators'
 import { Route as SettingsAccountRouteImport } from './routes/settings.account'
 import { Route as OrgsOrg_slugRouteImport } from './routes/orgs.$org_slug'
+import { Route as IdeOrg_slugRouteImport } from './routes/ide.$org_slug'
 import { Route as AdministrationSettingsRouteImport } from './routes/administration.settings'
 import { Route as AdministrationOverviewRouteImport } from './routes/administration.overview'
 import { Route as AdministrationAdministratorsRouteImport } from './routes/administration.administrators'
@@ -35,7 +36,6 @@ import { Route as OrgsOrg_slugTeamsRouteImport } from './routes/orgs.$org_slug.t
 import { Route as OrgsOrg_slugSettingsRouteImport } from './routes/orgs.$org_slug.settings'
 import { Route as OrgsOrg_slugRolesRouteImport } from './routes/orgs.$org_slug.roles'
 import { Route as OrgsOrg_slugPoliciesRouteImport } from './routes/orgs.$org_slug.policies'
-import { Route as OrgsOrg_slugIdeRouteImport } from './routes/orgs.$org_slug.ide'
 import { Route as OrgsOrg_slugWorkspacesWorkspace_idRouteImport } from './routes/orgs.$org_slug.workspaces.$workspace_id'
 import { Route as OrgsOrg_slugUsersAccount_idRouteImport } from './routes/orgs.$org_slug.users.$account_id'
 import { Route as OrgsOrg_slugTeamsTeam_slugRouteImport } from './routes/orgs.$org_slug.teams.$team_slug'
@@ -131,6 +131,11 @@ const OrgsOrg_slugRoute = OrgsOrg_slugRouteImport.update({
   path: '/orgs/$org_slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IdeOrg_slugRoute = IdeOrg_slugRouteImport.update({
+  id: '/ide/$org_slug',
+  path: '/ide/$org_slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdministrationSettingsRoute = AdministrationSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -180,11 +185,6 @@ const OrgsOrg_slugRolesRoute = OrgsOrg_slugRolesRouteImport.update({
 const OrgsOrg_slugPoliciesRoute = OrgsOrg_slugPoliciesRouteImport.update({
   id: '/policies',
   path: '/policies',
-  getParentRoute: () => OrgsOrg_slugRoute,
-} as any)
-const OrgsOrg_slugIdeRoute = OrgsOrg_slugIdeRouteImport.update({
-  id: '/ide',
-  path: '/ide',
   getParentRoute: () => OrgsOrg_slugRoute,
 } as any)
 const OrgsOrg_slugWorkspacesWorkspace_idRoute =
@@ -282,6 +282,7 @@ export interface FileRoutesByFullPath {
   '/administration/administrators': typeof AdministrationAdministratorsRoute
   '/administration/overview': typeof AdministrationOverviewRoute
   '/administration/settings': typeof AdministrationSettingsRoute
+  '/ide/$org_slug': typeof IdeOrg_slugRoute
   '/orgs/$org_slug': typeof OrgsOrg_slugRouteWithChildren
   '/settings/account': typeof SettingsAccountRoute
   '/settings/administrators': typeof SettingsAdministratorsRoute
@@ -292,7 +293,6 @@ export interface FileRoutesByFullPath {
   '/settings/users': typeof SettingsUsersRoute
   '/administration/': typeof AdministrationIndexRoute
   '/settings/': typeof SettingsIndexRoute
-  '/orgs/$org_slug/ide': typeof OrgsOrg_slugIdeRoute
   '/orgs/$org_slug/policies': typeof OrgsOrg_slugPoliciesRouteWithChildren
   '/orgs/$org_slug/roles': typeof OrgsOrg_slugRolesRouteWithChildren
   '/orgs/$org_slug/settings': typeof OrgsOrg_slugSettingsRouteWithChildren
@@ -323,6 +323,7 @@ export interface FileRoutesByTo {
   '/administration/administrators': typeof AdministrationAdministratorsRoute
   '/administration/overview': typeof AdministrationOverviewRoute
   '/administration/settings': typeof AdministrationSettingsRoute
+  '/ide/$org_slug': typeof IdeOrg_slugRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/administrators': typeof SettingsAdministratorsRoute
   '/settings/api-tokens': typeof SettingsApiTokensRoute
@@ -332,7 +333,6 @@ export interface FileRoutesByTo {
   '/settings/users': typeof SettingsUsersRoute
   '/administration': typeof AdministrationIndexRoute
   '/settings': typeof SettingsIndexRoute
-  '/orgs/$org_slug/ide': typeof OrgsOrg_slugIdeRoute
   '/orgs/$org_slug/policies': typeof OrgsOrg_slugPoliciesRouteWithChildren
   '/orgs/$org_slug/roles': typeof OrgsOrg_slugRolesRouteWithChildren
   '/orgs/$org_slug/settings': typeof OrgsOrg_slugSettingsRouteWithChildren
@@ -366,6 +366,7 @@ export interface FileRoutesById {
   '/administration/administrators': typeof AdministrationAdministratorsRoute
   '/administration/overview': typeof AdministrationOverviewRoute
   '/administration/settings': typeof AdministrationSettingsRoute
+  '/ide/$org_slug': typeof IdeOrg_slugRoute
   '/orgs/$org_slug': typeof OrgsOrg_slugRouteWithChildren
   '/settings/account': typeof SettingsAccountRoute
   '/settings/administrators': typeof SettingsAdministratorsRoute
@@ -376,7 +377,6 @@ export interface FileRoutesById {
   '/settings/users': typeof SettingsUsersRoute
   '/administration/': typeof AdministrationIndexRoute
   '/settings/': typeof SettingsIndexRoute
-  '/orgs/$org_slug/ide': typeof OrgsOrg_slugIdeRoute
   '/orgs/$org_slug/policies': typeof OrgsOrg_slugPoliciesRouteWithChildren
   '/orgs/$org_slug/roles': typeof OrgsOrg_slugRolesRouteWithChildren
   '/orgs/$org_slug/settings': typeof OrgsOrg_slugSettingsRouteWithChildren
@@ -411,6 +411,7 @@ export interface FileRouteTypes {
     | '/administration/administrators'
     | '/administration/overview'
     | '/administration/settings'
+    | '/ide/$org_slug'
     | '/orgs/$org_slug'
     | '/settings/account'
     | '/settings/administrators'
@@ -421,7 +422,6 @@ export interface FileRouteTypes {
     | '/settings/users'
     | '/administration/'
     | '/settings/'
-    | '/orgs/$org_slug/ide'
     | '/orgs/$org_slug/policies'
     | '/orgs/$org_slug/roles'
     | '/orgs/$org_slug/settings'
@@ -452,6 +452,7 @@ export interface FileRouteTypes {
     | '/administration/administrators'
     | '/administration/overview'
     | '/administration/settings'
+    | '/ide/$org_slug'
     | '/settings/account'
     | '/settings/administrators'
     | '/settings/api-tokens'
@@ -461,7 +462,6 @@ export interface FileRouteTypes {
     | '/settings/users'
     | '/administration'
     | '/settings'
-    | '/orgs/$org_slug/ide'
     | '/orgs/$org_slug/policies'
     | '/orgs/$org_slug/roles'
     | '/orgs/$org_slug/settings'
@@ -494,6 +494,7 @@ export interface FileRouteTypes {
     | '/administration/administrators'
     | '/administration/overview'
     | '/administration/settings'
+    | '/ide/$org_slug'
     | '/orgs/$org_slug'
     | '/settings/account'
     | '/settings/administrators'
@@ -504,7 +505,6 @@ export interface FileRouteTypes {
     | '/settings/users'
     | '/administration/'
     | '/settings/'
-    | '/orgs/$org_slug/ide'
     | '/orgs/$org_slug/policies'
     | '/orgs/$org_slug/roles'
     | '/orgs/$org_slug/settings'
@@ -535,6 +535,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   SetupRoute: typeof SetupRoute
+  IdeOrg_slugRoute: typeof IdeOrg_slugRoute
   OrgsOrg_slugRoute: typeof OrgsOrg_slugRouteWithChildren
 }
 
@@ -652,6 +653,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrgsOrg_slugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ide/$org_slug': {
+      id: '/ide/$org_slug'
+      path: '/ide/$org_slug'
+      fullPath: '/ide/$org_slug'
+      preLoaderRoute: typeof IdeOrg_slugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/administration/settings': {
       id: '/administration/settings'
       path: '/settings'
@@ -720,13 +728,6 @@ declare module '@tanstack/react-router' {
       path: '/policies'
       fullPath: '/orgs/$org_slug/policies'
       preLoaderRoute: typeof OrgsOrg_slugPoliciesRouteImport
-      parentRoute: typeof OrgsOrg_slugRoute
-    }
-    '/orgs/$org_slug/ide': {
-      id: '/orgs/$org_slug/ide'
-      path: '/ide'
-      fullPath: '/orgs/$org_slug/ide'
-      preLoaderRoute: typeof OrgsOrg_slugIdeRouteImport
       parentRoute: typeof OrgsOrg_slugRoute
     }
     '/orgs/$org_slug/workspaces/$workspace_id': {
@@ -993,7 +994,6 @@ const OrgsOrg_slugWorkspacesRouteWithChildren =
   )
 
 interface OrgsOrg_slugRouteChildren {
-  OrgsOrg_slugIdeRoute: typeof OrgsOrg_slugIdeRoute
   OrgsOrg_slugPoliciesRoute: typeof OrgsOrg_slugPoliciesRouteWithChildren
   OrgsOrg_slugRolesRoute: typeof OrgsOrg_slugRolesRouteWithChildren
   OrgsOrg_slugSettingsRoute: typeof OrgsOrg_slugSettingsRouteWithChildren
@@ -1004,7 +1004,6 @@ interface OrgsOrg_slugRouteChildren {
 }
 
 const OrgsOrg_slugRouteChildren: OrgsOrg_slugRouteChildren = {
-  OrgsOrg_slugIdeRoute: OrgsOrg_slugIdeRoute,
   OrgsOrg_slugPoliciesRoute: OrgsOrg_slugPoliciesRouteWithChildren,
   OrgsOrg_slugRolesRoute: OrgsOrg_slugRolesRouteWithChildren,
   OrgsOrg_slugSettingsRoute: OrgsOrg_slugSettingsRouteWithChildren,
@@ -1025,6 +1024,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRouteWithChildren,
   SetupRoute: SetupRoute,
+  IdeOrg_slugRoute: IdeOrg_slugRoute,
   OrgsOrg_slugRoute: OrgsOrg_slugRouteWithChildren,
 }
 export const routeTree = rootRouteImport
