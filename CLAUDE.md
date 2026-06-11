@@ -1,152 +1,194 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file gives AI coding agents working guidance for this repository. For architecture details, read `docs/sqlwarden-architecture.md`.
 
-## Rules
+## Hard Rules
 
-- **Always use codegraph (`codegraph_*` tools) before grep, find, or Read when exploring this codebase.** Codegraph first for any symbol lookup, call graph, or impact analysis; grep/Read only for literal text or when a specific file path is already known.
-- **Never commit unless the user explicitly says to.** Complete the work, then wait for the instruction to commit.
+- Use CodeGraph (`codegraph_*`) before grep/read for structural code questions: symbol lookup, call graph, impact, architecture, or flow tracing.
+- Use grep/read only for literal text search, docs, or files already identified.
+- Never commit unless the user explicitly asks.
+- Do not revert user changes unless explicitly requested.
+- Keep `frontend/src/routeTree.gen.ts` generated; do not hand-edit it.
+- Use Conventional Commits when committing.
 
-## Commands
+## Current Architecture Summary
+
+SQLWarden is a Go API plus embedded React SPA.
+
+- `cmd/api` is a thin server entrypoint.
+- `internal/web` owns config loading, app wiring, routes, middleware, handlers, and static frontend serving.
+- `internal/database` stores SQLWarden metadata through Bun against SQLite/PostgreSQL.
+- `internal/access` is the custom RBAC enforcer and permissions catalog.
+- `internal/connection` manages live target database sessions.
+- `internal/driver` contains target database drivers for PostgreSQL, MySQL, and SQLite.
+- `internal/files` and `internal/filestore` implement workspace file metadata/content storage.
+- `frontend/` is the React app using TanStack Router, TanStack Query, Tailwind CSS, shadcn/ui, Base UI, CodeMirror, Zustand, IndexedDB, Y.js, and BroadcastChannel.
+
+Future Wails desktop work should reuse `internal/web`; do not put reusable web logic in `cmd/api`.
+
+## Source Of Truth
+
+Use this order when information conflicts:
+
+1. Code, migrations, and tests.
+2. `docs/sqlwarden-architecture.md`.
+3. `CLAUDE.md`.
+4. README and older archived docs.
+
+`docs/superpowers/**` may exist locally for reference, but it is not the committed architecture source of truth.
+
+## Common Commands
 
 ```bash
-# Run all tests (with race detection)
 make test
-
-# Run a single Go test
-go test ./cmd/api/ -run TestHandlerName -v
-go test ./internal/database/ -run TestFunctionName -v
-
-# Run tests with coverage
 make test/cover
-
-# Format code and tidy modules
-make tidy
-
-# Full audit (fmt, vet, staticcheck, govulncheck, test)
 make audit
-
-# Build the binary (also builds frontend)
+make tidy
 make build
-
-# Run the application
 make run
-
-# Live reload development
 make run/live
-
-# Database migrations
-make migrations/new name=migration_name   # creates paired up/down files for both postgres and sqlite
-make migrations/up                         # apply all pending
-make migrations/down                       # rollback one
-make migrations/goto version=5             # migrate to specific version
-
-# Frontend development
-make frontend/dev      # dev server on :3000 with API proxy
-make frontend/build    # production build
-make frontend/install  # install bun dependencies
+make frontend/install
+make frontend/build
+make frontend/dev
 ```
 
-## Architecture
+Focused commands:
 
-SQLWarden is a database access control platform. The Go backend serves a compiled React SPA and exposes a REST API at `/api/v1`.
+```bash
+go test ./internal/web -run TestName -v
+go test ./internal/access -run TestName -v
+go test ./internal/database -run TestName -v
+cd frontend && bun run test
+cd frontend && bun run build
+```
 
-### Application Struct Pattern
+Migration commands:
 
-All HTTP handlers are methods on `*application` in `cmd/api/`. The struct is initialized in `main.go` with all dependencies injected:
-- `db` — Bun ORM database handle
-- `mailer` — SMTP email sender
-- `encrypter` — AES-GCM encryption for connection credentials
-- `enforcer` — Casbin RBAC access enforcer
-- Configuration fields (keys, base URL, etc.)
+```bash
+make migrations/new name=migration_name
+make migrations/up
+make migrations/down
+make migrations/goto version=5
+```
 
-### Request Lifecycle
+## Configuration
 
-1. Chi router matches route → middleware chain executes
-2. Middleware resolves context values: authenticated account → organization (from URL slug) → workspace (from URL ID)
-3. `requireOrgRole` or `requirePermission` enforces authorization
-4. Handler reads request with `internal/request`, writes response with `internal/response`
-5. Errors route through centralized helpers in `errors.go` (serverError, notFound, badRequest, failedValidation, notPermitted)
+Configuration uses spf13/viper through `internal/web`.
 
-### Access Control
+- Supports config file, environment variables, and CLI flags.
+- Default SQLite app DB path is `~/.sqlwarden/sqlwarden.db`.
+- Default file storage path is `~/.sqlwarden/files`.
+- `deployment_mode` is runtime packaging/context.
+- `access_mode` is account/authorization behavior.
+- Single-user mode seeds a local org and normal RBAC policies; it is not an authz bypass.
 
-Custom RBAC enforcer in `internal/access/` (replaced Casbin). Two binding types stored in the DB:
-- **Role bindings** (`role_bindings`): assign a role to a subject (account or team) at a resource
-- **Permission bindings** (`permission_bindings`): grant a single permission directly to a subject at a resource
+## Backend Conventions
 
-Permission checks traverse the resource ancestry chain (connection → workspace → org) so org-level bindings cover all descendant resources. See `docs/superpowers/architecture/rbac-and-authorization.md` for the full model.
+- Keep `cmd/api` thin.
+- Put reusable HTTP behavior in `internal/web`.
+- Prefer concrete resource permission middleware:
+  - `requireOrgPermission`
+  - `requireWorkspacePermission`
+  - `requireEnvironmentPermission`
+  - `requireConnectionPermission`
+- Use `internal/request` for JSON decoding and `internal/response` for JSON responses.
+- Errors must use the standard envelope:
 
-### Database Layer
+```json
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "Name is required.",
+    "field_errors": {
+      "name": "Name is required."
+    }
+  }
+}
+```
 
-`internal/database/` contains one file per entity, each exporting a set of functions (not a repository struct). Functions accept a `*bun.DB` and return domain types.
+- UI-facing paginated lists use `{ "items": [], "page": 1, "page_size": 25, "total": 0 }`.
+- Non-paginated list responses should still avoid top-level arrays.
+- Keep API JSON lower snake_case.
 
-Supported drivers: PostgreSQL (pgx), SQLite (modernc), MySQL — selected via `DB_DRIVER` env var. Migration files are maintained separately for postgres (`assets/migrations_postgres/`) and sqlite (`assets/migrations_sqlite/`).
+## RBAC Invariants
 
-IDs use ULIDs (`github.com/oklog/ulid/v2`) — sortable, globally unique.
+- Org membership is the first access gate for org-owned resources.
+- RBAC cannot grant org access to accounts outside `org_members`.
+- Personal-space routes under `/api/v1/me` are owner-scoped and outside org RBAC.
+- Builtin roles are immutable.
+- Role bindings are idempotent.
+- Role scope validation must happen before custom role creation.
+- Permission catalog API is the backend source of truth for permission labels, descriptions, role scope maps, and resource applicability.
+- Org owner-level policy grants such as `org:delete` and `org:transfer_ownership` require the actor to already hold the privileged permission.
+- Discovery queries must defensively ignore invalid role/resource scope combinations.
 
-### Testing
+## Resource Invariants
 
-Tests use real databases via `testcontainers-go` (no mocks for the database layer). The test suite uses a singleton container per database type and bounded connection pools to avoid exhaustion.
+- Use helpers such as `InsertWorkspace`, `InsertEnvironment`, and `InsertConnection`; do not raw-insert resources that need hierarchy rows.
+- Resource creation must populate `resource_hierarchy`.
+- Delete paths must invalidate ancestry cache when relevant.
+- Workspace creation must seed workspace builtin roles/policies.
+- Environment and connection policy bindings must verify the target resource belongs to the requested workspace.
+- Membership removals should revoke affected live DB sessions where implemented.
 
-- Handler tests live in `cmd/api/*_test.go`, using a test application instance
-- Database tests live in `internal/database/*_test.go`, using testcontainers
-- `testmain_test.go` and `testutils_test.go` in `cmd/api/` set up shared test infrastructure
+## Auth And Session Notes
 
-When running database tests locally, Docker must be available for testcontainers.
+- `POST /api/setup` is self-sealing.
+- Multi-user setup creates the first account, instance admin, and first organization.
+- Single-user setup seeds a local organization and normal owner policy.
+- Auth sessions and org access sessions are database-backed when session revocation is enabled.
+- Refresh tokens are stored in DB and rotated.
 
-### Multi-Tenant Model
+## Frontend Conventions
 
-`orgs` → `workspaces` → `environments` / `connections`. Accounts belong to an org, have org-level roles, and can be granted fine-grained permissions at any resource level. URL structure: `/api/v1/orgs/{org_slug}/workspaces/{ws_id}/connections/{conn_id}`.
+- Use shadcn/ui and Base UI primitives.
+- Use Tailwind and CSS variables from `frontend/src/styles.css`; avoid ad-hoc color tokens.
+- Centralize API calls/query options in `frontend/src/lib/api`.
+- Let API helper/query functions unwrap response envelopes so UI components remain simple.
+- Use backend permission catalog data for permission labels/descriptions/scope maps.
+- Use Sonner for user-visible mutation/error toasts where needed.
+- Avoid adding future-plan/development artifact text into the UI.
 
-### Cookies and Auth
+## IDE Notes
 
-- JWT tokens for API auth (`internal/token/`)
-- Signed cookies via HMAC-256 and encrypted cookies via AES-GCM (`internal/cookies/`)
-- Refresh tokens stored in DB, used to issue new JWT access tokens
-- **Auth and SSO are in initial phases** — interfaces and flows are subject to significant change
+Current IDE uses:
 
-### Frontend
+- CodeMirror 6 for editing.
+- Zustand for IDE state.
+- IndexedDB for local persistence.
+- Y.js and BroadcastChannel for same-browser cross-window sync.
+- Backend workspace file APIs for saved files.
+- Request cancellation for foreground query cancellation.
 
-React 19 + TypeScript SPA in `frontend/`. Built with Vite, routed with TanStack Router (file-based routes in `src/routes/`), styled with Tailwind CSS 4 + shadcn/ui components. Built assets are embedded into the Go binary and served as a SPA fallback.
+Saved files should be treated differently from console scratch state. Browser-local IDE state is acceptable for temporary console/tab layout behavior unless a backend persistence feature is explicitly requested.
 
-## Conventions
+## Testing Expectations
 
-- **Commit messages**: Conventional Commits required (`feat:`, `fix:`, `chore:`, etc.) — enforced in CI. Use lean single-line messages only — no body, no `Co-Authored-By` trailer
-- **Version injection**: `internal/version` package receives `Version`, `Revision`, `BuildDate` via ldflags at build time
-- **Migrations**: Always create paired up/down files; separate files for postgres vs sqlite when SQL differs
-- **Environment config**: All config via env vars, parsed in `main.go` using `internal/env` helpers with defaults
-- **Terminology**: Use "account" everywhere — never "user" — in routes, handler names, JSON fields, and variables
+Add or update tests with every behavior change.
 
-## Invariants
+Backend:
 
-These are load-bearing constraints. Violating them silently breaks authorization or data integrity.
+- Handler/middleware/API tests: `internal/web/*_test.go`.
+- RBAC tests: `internal/access/*_test.go`.
+- DB behavior tests: `internal/database/*_test.go`.
+- File service/storage tests: `internal/files/*_test.go`, `internal/filestore/*_test.go`.
 
-### Setup and registration
-- `POST /api/setup` must be called before `POST /api/v1/auth/register` is usable. `registerAccount` checks `HasAnyInstanceAdmin` and returns 403 if setup is not done.
-- `POST /api/setup` is self-sealing: it returns 409 after the first successful call. Never call it conditionally in application startup code.
+Frontend:
 
-### Org membership is the access gate
-- `orgCtx` middleware verifies `org_members` before setting org on context. An account that is not in `org_members` cannot reach any org resource, regardless of any policy bindings.
-- When creating an org, always call `db.AddOrgMember` AND `enforcer.SeedOrg` in the same handler. If either is skipped the org will be inaccessible or have no roles.
+- Add Vitest coverage for complex state, parsing, and utility behavior.
+- Run `cd frontend && bun run test` after frontend logic changes.
+- Run `cd frontend && bun run build` when API types, routes, or build-sensitive code changes.
 
-### Resource hierarchy must be populated at creation time
-- `InsertWorkspace`, `InsertEnvironment`, and `InsertConnection` write `resource_hierarchy` rows automatically. Do not bypass these methods with raw inserts or the ancestry chain will be broken and permission inheritance will silently fail.
-- `DeleteWorkspace`, `DeleteEnvironment`, `DeleteConnection` cascade-delete hierarchy rows via FK. Always call `enforcer.InvalidateAncestry(resourceType, resourceID)` after deleting a resource so the cache does not serve stale ancestry.
+Operational note: database tests may require Docker/testcontainers.
 
-### Workspace seeding
-- When creating a workspace, always call `enforcer.SeedWorkspace(ctx, orgID, wsID, creatorAccountID)` immediately after `InsertWorkspace`. This creates the `ws:admin` and `ws:member` builtin roles and binds the creator to `ws:admin`. Without it the workspace has no roles and nobody can administer it.
+## Go Upgrade Checklist
 
-### Builtin roles are immutable
-- `enforcer.DeleteRole` rejects roles with `is_builtin=true`. Never set `is_builtin=true` on custom roles. Never attempt to delete builtins.
+When changing Go version:
 
-### Policy binding idempotency
-- `GrantPermissions` uses `INSERT ON CONFLICT DO NOTHING`. Granting the same permission twice is safe and returns no error. Do not add a pre-check before granting.
-- `BindRole` uses the same pattern. Role bindings are also idempotent.
-
-### Cross-resource forgery prevention
-- Before creating a policy binding for an environment or connection resource, validate it belongs to the target workspace. `grantWorkspacePolicy` does this inline. Any future endpoint that creates bindings must do the same validation.
-
-### Permission scope rules
-- `org:*` permissions are only valid at org scope. They cannot be granted on a workspace or connection resource — `ValidForScope` enforces this in `CreateRole` and must be called before any custom role creation.
-- `policy:modify` at org scope covers all workspaces in that org (inheritance). Do not grant it at workspace scope unless you intend workspace-only policy control.
+- Update `go.mod`.
+- Update GitHub Actions `actions/setup-go` pins.
+- Update Docker builder image tag.
+- Run `go mod tidy`.
+- Run `make audit`.
+- Run a local Docker build if release images are affected.
 

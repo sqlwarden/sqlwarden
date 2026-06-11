@@ -26,5 +26,9 @@ postgres_data/
 
 references/
 
+# Local AI planning/reference docs. Keep out of committed repo context.
+docs/superpowers/
+docs/archive/superpowers/
+
 # CodeGraph index (local only)
 .codegraph/
