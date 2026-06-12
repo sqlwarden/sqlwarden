@@ -49,6 +49,11 @@ tidy:
 	go mod tidy -v
 	go fmt ./...
 
+## hooks/install: install repository-managed git hooks
+.PHONY: hooks/install
+hooks/install:
+	./scripts/install-git-hooks.sh
+
 ## frontend/install: install frontend dependencies
 .PHONY: frontend/install
 frontend/install:
@@ -215,4 +220,3 @@ migrations/version:
 	else \
 		go run -tags 'sqlite' github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path=./assets/migrations_sqlite -database="sqlite://${DB_DSN}" version; \
 	fi
-
