@@ -11,12 +11,14 @@ permissions:
 
 jobs:
   validate-commits:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Check commit messages
         uses: wagoid/commitlint-github-action@v6
