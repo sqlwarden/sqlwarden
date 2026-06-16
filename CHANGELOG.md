@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/sqlwarden/sqlwarden/compare/v0.6.1...v0.6.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* **release:** run frontend GoReleaser hooks through shell ([48df494](https://github.com/sqlwarden/sqlwarden/commit/48df49406e50a483e7e2df8bcab3630ca30a3fc3))
+
 ## [0.6.1](https://github.com/sqlwarden/sqlwarden/compare/v0.6.0...v0.6.1) (2026-06-16)
 
 
