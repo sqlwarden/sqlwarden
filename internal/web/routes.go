@@ -19,10 +19,12 @@ func (app *application) routes() http.Handler {
 	mux.Use(app.logAccess)
 	mux.Use(app.recoverPanic)
 
-	mux.Post("/api/setup", app.setup)
-	mux.Get("/api/setup/status", app.setupStatus)
+	mux.With(app.noStoreCache).Post("/api/setup", app.setup)
+	mux.With(app.noStoreCache).Get("/api/setup/status", app.setupStatus)
 
 	mux.Route("/api/v1", func(r chi.Router) {
+		// API responses must never be HTTP-cached by the browser; see noStoreCache.
+		r.Use(app.noStoreCache)
 		r.Use(app.authenticateV1)
 
 		r.Post("/auth/register", app.registerAccount)
