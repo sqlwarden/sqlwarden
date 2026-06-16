@@ -32,8 +32,9 @@ jobs:
           filters: |
             go:
               - '**/*.go'
-              - 'assets/**'
-              - '!assets/static/**'
+              - 'assets/emails/**'
+              - 'assets/migrations_postgres/**'
+              - 'assets/migrations_sqlite/**'
               - 'go.mod'
               - 'go.sum'
               - 'Makefile'
