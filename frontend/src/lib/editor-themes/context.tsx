@@ -21,15 +21,15 @@ type EditorThemeContextValue = {
 }
 
 const EditorThemeContext = createContext<EditorThemeContextValue>({
-  editorThemeDark:    'vscode-dark',
-  editorThemeLight:   'vscode-light',
+  editorThemeDark:    'sqlwarden-dark',
+  editorThemeLight:   'sqlwarden-light',
   setEditorThemeDark:  () => {},
   setEditorThemeLight: () => {},
 })
 
 export function EditorThemeProvider({ children }: { children: ReactNode }) {
-  const [dark,  setDarkState]  = useState<EditorThemeName>(() => readPref(DARK_KEY,  'vscode-dark'))
-  const [light, setLightState] = useState<EditorThemeName>(() => readPref(LIGHT_KEY, 'vscode-light'))
+  const [dark,  setDarkState]  = useState<EditorThemeName>(() => readPref(DARK_KEY,  'sqlwarden-dark'))
+  const [light, setLightState] = useState<EditorThemeName>(() => readPref(LIGHT_KEY, 'sqlwarden-light'))
 
   function setEditorThemeDark(name: EditorThemeName) {
     localStorage.setItem(DARK_KEY, name)

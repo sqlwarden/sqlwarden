@@ -40,8 +40,11 @@ async function _loadFresh(name: EditorThemeName): Promise<Extension> {
   switch (name) {
     case 'sqlwarden-dark':  return (await import('./themes/sqlwarden-dark')).default
     case 'sqlwarden-light': return (await import('./themes/sqlwarden-light')).default
-    case 'vscode-dark':     return (await import('@uiw/codemirror-theme-vscode')).vscodeDark
-    case 'vscode-light':    return (await import('@uiw/codemirror-theme-vscode')).vscodeLight
+    // Drop the VS Code themes' baked-in fontFamily so the user's editor font
+    // setting applies, the same as every other theme. createTheme only emits a
+    // font rule when settings.fontFamily is truthy.
+    case 'vscode-dark':     return (await import('@uiw/codemirror-theme-vscode')).vscodeDarkInit({ settings: { fontFamily: '' } })
+    case 'vscode-light':    return (await import('@uiw/codemirror-theme-vscode')).vscodeLightInit({ settings: { fontFamily: '' } })
     case 'github-dark':     return (await import('@uiw/codemirror-theme-github')).githubDark
     case 'github-light':    return (await import('@uiw/codemirror-theme-github')).githubLight
     case 'dracula':         return (await import('@uiw/codemirror-theme-dracula')).dracula
