@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -24,13 +25,32 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Detect Go changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'assets/**'
+              - '!assets/static/**'
+              - 'go.mod'
+              - 'go.sum'
+              - 'Makefile'
+
+      - name: No Go test changes
+        if: steps.changes.outputs.go != 'true'
+        run: echo "No Go/backend changes detected; skipping Go tests."
+
       - name: Set up Go
+        if: steps.changes.outputs.go == 'true'
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Run Go tests
+        if: steps.changes.outputs.go == 'true'
         run: go test -race -buildvcs ./...
 
   go-quality:
@@ -43,22 +63,44 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Detect Go quality changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'assets/migrations_postgres/**'
+              - 'assets/migrations_sqlite/**'
+              - 'Makefile'
+
+      - name: No Go quality changes
+        if: steps.changes.outputs.go != 'true'
+        run: echo "No Go/module changes detected; skipping Go quality checks."
+
       - name: Set up Go
+        if: steps.changes.outputs.go == 'true'
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Check module files
+        if: steps.changes.outputs.go == 'true'
         run: go mod tidy -diff
 
       - name: Verify modules
+        if: steps.changes.outputs.go == 'true'
         run: go mod verify
 
       - name: Check formatting
+        if: steps.changes.outputs.go == 'true'
         run: test -z "$(gofmt -l .)"
 
       - name: Run go vet
+        if: steps.changes.outputs.go == 'true'
         run: go vet ./...
 
   frontend:
@@ -71,20 +113,36 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Detect frontend changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+
+      - name: No frontend changes
+        if: steps.changes.outputs.frontend != 'true'
+        run: echo "No frontend changes detected; skipping frontend tests and build."
+
       - name: Set up Bun
+        if: steps.changes.outputs.frontend == 'true'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.10
 
       - name: Install frontend dependencies
+        if: steps.changes.outputs.frontend == 'true'
         working-directory: frontend
         run: bun install --frozen-lockfile
 
       - name: Run frontend tests
+        if: steps.changes.outputs.frontend == 'true'
         working-directory: frontend
         run: bun run test
 
       - name: Build frontend
+        if: steps.changes.outputs.frontend == 'true'
         working-directory: frontend
         run: bun run build
 
@@ -98,10 +156,33 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Detect Docker build changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            docker:
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'cmd/**'
+              - 'internal/**'
+              - 'pkg/**'
+              - 'assets/**'
+              - 'frontend/**'
+              - 'go.mod'
+              - 'go.sum'
+              - 'Makefile'
+
+      - name: No Docker build changes
+        if: steps.changes.outputs.docker != 'true'
+        run: echo "No Docker build input changes detected; skipping Docker build."
+
       - name: Set up Docker Buildx
+        if: steps.changes.outputs.docker == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build image
+        if: steps.changes.outputs.docker == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
