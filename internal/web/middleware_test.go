@@ -40,6 +40,21 @@ func TestRecoverPanic(t *testing.T) {
 	})
 }
 
+func TestNoStoreCache(t *testing.T) {
+	t.Run("Sets Cache-Control no-store so the browser does not cache API responses", func(t *testing.T) {
+		app := newTestApplication(t)
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusGone)
+		})
+
+		req := newTestRequest(t, http.MethodGet, "/test", nil)
+
+		res := send(t, req, app.noStoreCache(next))
+		assert.Equal(t, res.StatusCode, http.StatusGone)
+		assert.Equal(t, res.Header.Get("Cache-Control"), "no-store")
+	})
+}
+
 func TestLogAccess(t *testing.T) {
 	t.Run("Logs the request and response details", func(t *testing.T) {
 		var buf bytes.Buffer
