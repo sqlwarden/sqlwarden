@@ -123,6 +123,11 @@ function FilesSection({
 }) {
   const openTab = useIde((s) => s.openTab)
   const closeTab = useIde((s) => s.closeTab)
+  // Hint the file open in the active tab.
+  const activeFileId = useIde((s) => {
+    const tab = s.tabs.find((t) => t.id === s.activeTabIds[workspace.id])
+    return tab?.kind === 'file' ? tab.fileId : undefined
+  })
   const queryClient = useQueryClient()
 
   const queryOptions =
@@ -171,6 +176,7 @@ function FilesSection({
               workspaceId={workspace.id}
               visibility={visibility}
               depth={0}
+              activeFileId={activeFileId}
               onOpenFile={handleOpenFile}
               onCreateFile={onCreateFile}
               onCreateFolder={onCreateFolder}
@@ -185,7 +191,7 @@ function FilesSection({
               onOpen={() => handleOpenFile(file)}
               onDelete={visibility === 'private' ? () => deleteMutation.mutate(file.id) : undefined}
             >
-              <FileTreeFile file={file} depth={0} onOpen={handleOpenFile} />
+              <FileTreeFile file={file} depth={0} active={file.id === activeFileId} onOpen={handleOpenFile} />
             </FileContextMenu>
           ),
         )
@@ -211,6 +217,7 @@ function FileTreeFolder({
   workspaceId,
   visibility,
   depth,
+  activeFileId,
   onOpenFile,
   onCreateFile,
   onCreateFolder,
@@ -221,6 +228,7 @@ function FileTreeFolder({
   workspaceId: number
   visibility: 'private' | 'shared'
   depth: number
+  activeFileId?: number | undefined
   onOpenFile: (file: WorkspaceFile) => void
   onCreateFile?: ((parentId: number | null) => void) | undefined
   onCreateFolder?: ((parentId: number | null) => void) | undefined
@@ -291,6 +299,7 @@ function FileTreeFolder({
               workspaceId={workspaceId}
               visibility={visibility}
               depth={depth + 1}
+              activeFileId={activeFileId}
               onOpenFile={onOpenFile}
               onCreateFile={onCreateFile}
               onCreateFolder={onCreateFolder}
@@ -305,7 +314,7 @@ function FileTreeFolder({
               onOpen={() => onOpenFile(child)}
               onDelete={onDelete ? () => onDelete(child.id) : undefined}
             >
-              <FileTreeFile file={child} depth={depth + 1} onOpen={onOpenFile} />
+              <FileTreeFile file={child} depth={depth + 1} active={child.id === activeFileId} onOpen={onOpenFile} />
             </FileContextMenu>
           ),
         )}
@@ -316,10 +325,12 @@ function FileTreeFolder({
 function FileTreeFile({
   file,
   depth,
+  active,
   onOpen,
 }: {
   file: WorkspaceFile
   depth: number
+  active?: boolean
   onOpen: (file: WorkspaceFile) => void
 }) {
   return (
@@ -328,8 +339,10 @@ function FileTreeFile({
       onClick={() => onOpen(file)}
       style={{ paddingLeft: `${8 + depth * 12 + 15}px` }}
       className={cn(
-        'flex h-7 w-full items-center gap-2 pr-2 text-left text-xs',
-        'transition-colors hover:bg-accent hover:text-accent-foreground',
+        'flex h-7 w-full items-center gap-2 pr-2 text-left text-xs transition-colors',
+        active
+          ? 'bg-primary/10 text-foreground hover:bg-primary/15'
+          : 'hover:bg-accent hover:text-accent-foreground',
       )}
     >
       <Icon name="file-01" size={13} className="shrink-0 text-muted-foreground" />
