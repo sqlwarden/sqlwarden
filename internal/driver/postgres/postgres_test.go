@@ -400,4 +400,17 @@ func TestPostgresIntrospect(t *testing.T) {
 	if !introHasIndex(users, "intro_users_email_idx") {
 		t.Fatalf("expected intro_users_email_idx index, got %+v", users.Indexes)
 	}
+
+	// Column data types use the raw pg_catalog type (udt_name), not the verbose
+	// information_schema names ("bigint" / "character varying").
+	colTypes := map[string]string{}
+	for _, c := range users.Columns {
+		colTypes[c.Name] = c.DataType
+	}
+	if colTypes["id"] != "int8" {
+		t.Fatalf("expected id raw type int8, got %q", colTypes["id"])
+	}
+	if colTypes["email"] != "text" {
+		t.Fatalf("expected email raw type text, got %q", colTypes["email"])
+	}
 }

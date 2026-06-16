@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFilesResponse, WorkspaceFileBrowserResult } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFilesResponse, WorkspaceFileBrowserResult, ConnectionSchemaResponse } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -458,4 +458,38 @@ export function myConnectionsQueryOptions(workspaceId: string | number, environm
       }),
     placeholderData: keepPreviousData,
   })
+}
+
+export function connectionSchemaQueryKey(slug: string, workspaceId: string | number, connectionId: string | number) {
+  return ['connection-schema', slug, String(workspaceId), String(connectionId)] as const
+}
+
+export function orgConnectionSchemaQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string,
+) {
+  return queryOptions({
+    queryKey: connectionSchemaQueryKey(slug, workspaceId, connectionId),
+    queryFn: () =>
+      api.get<ConnectionSchemaResponse>(
+        `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/schema`,
+        { headers: { 'X-Warden-Session': sessionId } },
+      ),
+    staleTime: 60_000,
+  })
+}
+
+export function refreshConnectionSchema(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string,
+) {
+  return api.post<ConnectionSchemaResponse>(
+    `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/schema/refresh`,
+    undefined,
+    { headers: { 'X-Warden-Session': sessionId } },
+  )
 }
