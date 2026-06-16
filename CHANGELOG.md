@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/sqlwarden/sqlwarden/compare/v0.6.0...v0.6.1) (2026-06-16)
+
+
+### Bug Fixes
+
+* **release:** bundle frontend assets in GoReleaser binaries ([665a5fc](https://github.com/sqlwarden/sqlwarden/commit/665a5fc00d274695691801a20a423ecd43d81808))
+
 ## [0.6.0](https://github.com/sqlwarden/sqlwarden/compare/v0.5.0...v0.6.0) (2026-06-12)
 
 
