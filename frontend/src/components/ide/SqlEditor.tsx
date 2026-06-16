@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { EditorView } from '@codemirror/view'
 import { EditorState, Compartment } from '@codemirror/state'
 import type { Extension } from '@codemirror/state'
@@ -11,6 +12,8 @@ import { useEditorTheme } from '#/lib/editor-themes/context'
 import { loadEditorTheme, getCachedTheme } from '#/lib/editor-themes'
 import { useEditorFont, loadEditorFont } from '#/lib/editor-font/context'
 import { sqlwardenBasicSetup } from './codemirrorSetup'
+import { findPanelHost, type FindPanelHost } from './findPanelBridge'
+import { FindPanel } from './FindPanel'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 
 function makeBaseTheme(fontFamily: string, fontSize: number): Extension {
@@ -53,6 +56,7 @@ export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorPr
   const themeCompartment = useRef(new Compartment())
   const fontCompartment  = useRef(new Compartment())
   const viewRef = useRef<EditorView | null>(null)
+  const [findHost, setFindHost] = useState<FindPanelHost | null>(null)
 
   // Re-mount the editor whenever the active doc changes.
   // key={activeTab.id} at the call site also ensures clean remount on tab switch.
@@ -68,6 +72,7 @@ export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorPr
           sql(),
           fontCompartment.current.of(makeBaseTheme(editorFont.fontFamily, editorFontSize)),
           themeCompartment.current.of(getCachedTheme(activeThemeName) ?? []),
+          findPanelHost.of(setFindHost),
           EditorView.lineWrapping,
           yCollab(yText, null), // handles all CodeMirror ↔ Y.js sync
           EditorView.updateListener.of((update) => {
@@ -120,5 +125,10 @@ export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorPr
     return () => { cancelled = true }
   }, [editorFont, editorFontSize])
 
-  return <div ref={containerRef} className={cn('h-full overflow-hidden', className)} />
+  return (
+    <>
+      <div ref={containerRef} className={cn('h-full overflow-hidden', className)} />
+      {findHost && createPortal(<FindPanel view={findHost.view} />, findHost.dom)}
+    </>
+  )
 }
