@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { EditorView, basicSetup } from 'codemirror'
+import { EditorView } from '@codemirror/view'
 import { EditorState, Compartment } from '@codemirror/state'
 import type { Extension } from '@codemirror/state'
 import { sql } from '@codemirror/lang-sql'
@@ -10,6 +10,7 @@ import { useTheme } from '#/components/theme-provider'
 import { useEditorTheme } from '#/lib/editor-themes/context'
 import { loadEditorTheme, getCachedTheme } from '#/lib/editor-themes'
 import { useEditorFont, loadEditorFont } from '#/lib/editor-font/context'
+import { sqlwardenBasicSetup } from './codemirrorSetup'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 
 function makeBaseTheme(fontFamily: string, fontSize: number): Extension {
@@ -63,7 +64,7 @@ export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorPr
       state: EditorState.create({
         doc: yText.toString(),
         extensions: [
-          basicSetup,
+          sqlwardenBasicSetup,
           sql(),
           fontCompartment.current.of(makeBaseTheme(editorFont.fontFamily, editorFontSize)),
           themeCompartment.current.of(getCachedTheme(activeThemeName) ?? []),

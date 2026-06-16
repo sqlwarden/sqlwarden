@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { EditorView } from 'codemirror'
+import type { EditorView } from '@codemirror/view'
 
 export type EditorViewRegistry = {
   register: (tabId: string, view: EditorView) => void
