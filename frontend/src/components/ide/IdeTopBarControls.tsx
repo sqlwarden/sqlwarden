@@ -44,8 +44,8 @@ export function IdeTopBarControls({
       <AppShellPreferencesPopover
         preferences={preferences}
         setPreferences={setPreferences}
-        buttonLabel="Appearance"
-        buttonClassName="h-7 w-auto px-2 text-xs"
+        buttonLabel=""
+        buttonClassName="size-7 justify-center px-0"
         contentSide="bottom"
         contentAlign="end"
       />

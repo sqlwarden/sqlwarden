@@ -291,3 +291,16 @@ describe('useIdeStore', () => {
     expect(store.getState().activeTabIds[mockWorkspace.id]).toBe('scratch:1:1')
   })
 })
+
+describe('activity state', () => {
+  it('defaults activeActivityId to "files"', () => {
+    const store = createIdeStore('test-org', 1)
+    expect(store.getState().activeActivityId).toBe('files')
+  })
+
+  it('setActiveActivity switches the active activity', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().setActiveActivity('connections')
+    expect(store.getState().activeActivityId).toBe('connections')
+  })
+})

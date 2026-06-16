@@ -14,6 +14,8 @@ import { Link } from '@tanstack/react-router'
 import { orgWorkspacesQueryOptions, orgEffectivePermissionsQueryOptions } from '#/lib/api/query'
 import { hasAnyPermission, permission } from '#/lib/permissions'
 import { IdeTopBarControls } from './IdeTopBarControls'
+import { IdeActivityBar } from './IdeActivityBar'
+import { visibleActivities } from './ideActivities'
 import type { Workspace } from '#/lib/api/types'
 import { useSession } from '#/hooks/use-session'
 import { cn } from '#/lib/utils'
@@ -25,8 +27,6 @@ import {
   type EditorTab,
 } from './useIdeStore'
 import { SaveAsDialog } from './SaveAsDialog'
-import { DatabasePanel } from './DatabasePanel'
-import { FilesPanel } from './FilesPanel'
 import { IdeToolbar } from './IdeToolbar'
 import { IdeTabBar } from './IdeTabBar'
 import { SqlEditor } from './SqlEditor'
@@ -210,7 +210,6 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
       {/* Top bar: brand + explorer toggle + workspace tabs + user controls */}
       <div className="flex h-10 shrink-0 items-stretch border-b border-border">
         <IdeBrand />
-        <ExplorerToggle />
         <div className="flex min-w-0 flex-1 items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {workspaces.map((ws) => (
             <WorkspaceTab
@@ -250,27 +249,6 @@ function IdeBrand() {
   )
 }
 
-function ExplorerToggle() {
-  const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
-  const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
-  return (
-    <div className="flex shrink-0 items-stretch border-r border-border">
-      <button
-        type="button"
-        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-        aria-label="Toggle Explorer"
-        className={cn(
-          'flex items-center gap-1.5 px-3 text-xs font-medium transition-colors hover:text-foreground',
-          sidebarCollapsed ? 'text-muted-foreground' : 'text-foreground',
-        )}
-      >
-        <Icon name="sidebar-left-01" size={13} />
-        Explorer
-      </button>
-    </div>
-  )
-}
-
 function WorkspaceTab({
   workspace,
   active,
@@ -302,8 +280,12 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
   const sidebarRef = useRef<PanelImperativeHandle>(null)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
+  const activeActivityId = useIde((s) => s.activeActivityId)
 
-  // Sync store → panel (e.g. on initial mount with persisted state)
+  const activities = visibleActivities()
+  const activeActivity = activities.find((a) => a.id === activeActivityId) ?? activities[0]
+
+  // Sync store → panel (e.g. on initial mount with persisted state).
   useEffect(() => {
     if (sidebarCollapsed) {
       sidebarRef.current?.collapse()
@@ -312,93 +294,61 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
     }
   }, [sidebarCollapsed])
 
+  // Page-mode activity replaces the whole main region (reserved; no v1 activity uses it).
+  if (activeActivity && activeActivity.mode === 'page') {
+    const PageSurface = activeActivity.component
+    return (
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <IdeActivityBar />
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <PageSurface orgSlug={orgSlug} workspace={workspace} />
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 overflow-hidden">
-      <ResizablePanel
-        panelRef={sidebarRef}
-        defaultSize="22%"
-        minSize="14%"
-        maxSize="40%"
-        collapsible
-        collapsedSize="0%"
-        className="overflow-hidden"
-        onResize={(size) => setSidebarCollapsed(size.asPercentage === 0)}
-      >
-        <IdeSidebar orgSlug={orgSlug} workspace={workspace} />
-      </ResizablePanel>
+    <div className="flex min-h-0 flex-1 overflow-hidden">
+      <IdeActivityBar />
+      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 overflow-hidden">
+        <ResizablePanel
+          panelRef={sidebarRef}
+          defaultSize="22%"
+          minSize="14%"
+          maxSize="40%"
+          collapsible
+          collapsedSize="0%"
+          className="overflow-hidden"
+          onResize={(size) => setSidebarCollapsed(size.asPercentage === 0)}
+        >
+          <IdeSidebar orgSlug={orgSlug} workspace={workspace} />
+        </ResizablePanel>
 
-      <ResizableHandle withHandle />
+        <ResizableHandle withHandle />
 
-      <ResizablePanel defaultSize="78%" minSize="45%" className="overflow-hidden">
-        <IdeEditorAndResults orgSlug={orgSlug} workspace={workspace} />
-      </ResizablePanel>
-    </ResizablePanelGroup>
+        <ResizablePanel defaultSize="78%" minSize="45%" className="overflow-hidden">
+          <IdeEditorAndResults orgSlug={orgSlug} workspace={workspace} />
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    </div>
   )
 }
 
 // ─── Sidebar ───────────────────────────────────────────────────────────────────
 
 function IdeSidebar({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
-  const dbRef = useRef<PanelImperativeHandle>(null)
-  const filesRef = useRef<PanelImperativeHandle>(null)
-  const maximizedSidebarPane = useIde((s) => s.maximizedSidebarPane)
-  const setMaximizedSidebarPane = useIde((s) => s.setMaximizedSidebarPane)
+  const activeActivityId = useIde((s) => s.activeActivityId)
+  const activities = visibleActivities()
+  const active =
+    activities.find((a) => a.id === activeActivityId && a.mode === 'sidebar') ??
+    activities.find((a) => a.mode === 'sidebar')
 
-  function handleDbMaximize(maximized: boolean) {
-    if (maximized) {
-      filesRef.current?.collapse()
-      setMaximizedSidebarPane('database')
-    } else {
-      filesRef.current?.expand()
-      setMaximizedSidebarPane(null)
-    }
-  }
-
-  function handleFilesMaximize(maximized: boolean) {
-    if (maximized) {
-      dbRef.current?.collapse()
-      setMaximizedSidebarPane('files')
-    } else {
-      dbRef.current?.expand()
-      setMaximizedSidebarPane(null)
-    }
-  }
+  if (!active) return null
+  const Panel = active.component
 
   return (
     <aside className="flex h-full min-h-0 flex-col border-r border-border bg-sidebar">
-      <ResizablePanelGroup orientation="vertical" className="min-h-0">
-        <ResizablePanel
-          panelRef={dbRef}
-          defaultSize="55%"
-          minSize="15%"
-          collapsible
-          collapsedSize="0%"
-          className="overflow-hidden"
-        >
-          <DatabasePanel
-            orgSlug={orgSlug}
-            workspace={workspace}
-            maximized={maximizedSidebarPane === 'database'}
-            onMaximizedChange={handleDbMaximize}
-          />
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel
-          panelRef={filesRef}
-          defaultSize="45%"
-          minSize="15%"
-          collapsible
-          collapsedSize="0%"
-          className="overflow-hidden"
-        >
-          <FilesPanel
-            orgSlug={orgSlug}
-            workspace={workspace}
-            maximized={maximizedSidebarPane === 'files'}
-            onMaximizedChange={handleFilesMaximize}
-          />
-        </ResizablePanel>
-      </ResizablePanelGroup>
+      <Panel orgSlug={orgSlug} workspace={workspace} />
     </aside>
   )
 }
