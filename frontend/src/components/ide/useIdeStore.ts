@@ -63,6 +63,8 @@ export type IdeActions = {
   ensureTab: (tab: EditorTab) => void
   closeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
+  /** Reorder tabs by drag: place draggedTabId before/after targetTabId. */
+  moveTab: (draggedTabId: string, targetTabId: string, position: 'before' | 'after') => void
   updateTabContent: (tabId: string, content: string, ySnapshot?: number[]) => void
   updateTabEtag: (tabId: string, etag: string) => void
   setTabConnection: (tabId: string, connectionId: number, driver?: string) => void
@@ -161,6 +163,21 @@ export function createIdeStore(orgSlug: string, accountId: number) {
             const tab = s.tabs.find((t) => t.id === tabId)
             if (!tab) return s
             return { activeTabIds: { ...s.activeTabIds, [tab.workspaceId]: tabId } }
+          }),
+
+        moveTab: (draggedTabId, targetTabId, position) =>
+          set((s) => {
+            if (draggedTabId === targetTabId) return {}
+            const dragged = s.tabs.find((t) => t.id === draggedTabId)
+            if (!dragged) return {}
+            const without = s.tabs.filter((t) => t.id !== draggedTabId)
+            let idx = without.findIndex((t) => t.id === targetTabId)
+            if (idx === -1) return {}
+            if (position === 'after') idx += 1
+            const next = [...without.slice(0, idx), dragged, ...without.slice(idx)]
+            // No-op if order is unchanged — avoids re-render churn during dragover.
+            if (next.every((t, i) => t.id === s.tabs[i]?.id)) return {}
+            return { tabs: next }
           }),
 
         updateTabContent: (tabId, content, ySnapshot?) =>
@@ -281,6 +298,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   ensureTab: _noop,
   closeTab: _noop,
   setActiveTab: _noop,
+  moveTab: _noop,
   updateTabContent: _noop,
   updateTabEtag: _noop,
   setTabConnection: _noop,
