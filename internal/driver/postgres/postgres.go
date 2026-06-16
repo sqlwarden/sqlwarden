@@ -70,14 +70,17 @@ func (d *postgresDriver) Dialect() driver.Dialect {
 func (d *postgresDriver) Introspect(ctx context.Context, opts schema.IntrospectOptions) (*schema.Schema, error) {
 	const q = `
 WITH cols AS (
-	SELECT table_schema, table_name, column_name, data_type, is_nullable,
+	-- udt_name is the raw pg_catalog type (varchar, timestamptz, int8, bool, …);
+	-- information_schema.data_type returns verbose SQL-standard names instead
+	-- (e.g. "character varying", "timestamp without time zone").
+	SELECT table_schema, table_name, column_name, udt_name, is_nullable,
 	       column_default, ordinal_position
 	FROM information_schema.columns
 	WHERE table_catalog = current_database()
 	  AND table_schema NOT IN ('pg_catalog', 'information_schema')
 )
 SELECT t.table_schema, t.table_name, t.table_type,
-       c.column_name, c.data_type, c.is_nullable, c.column_default, c.ordinal_position
+       c.column_name, c.udt_name, c.is_nullable, c.column_default, c.ordinal_position
 FROM information_schema.tables t
 JOIN cols c ON c.table_schema = t.table_schema AND c.table_name = t.table_name
 WHERE t.table_catalog = current_database()

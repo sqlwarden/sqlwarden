@@ -294,3 +294,54 @@ export interface ListQuery {
   q?: string
   [key: string]: string | number | boolean | undefined
 }
+
+export interface DbColumn {
+  name: string
+  data_type: string
+  nullable: boolean
+  default?: string
+  ordinal: number
+}
+
+export interface DbForeignKey {
+  name: string
+  columns: string[]
+  referenced_table: string
+  referenced_columns: string[]
+}
+
+export interface DbIndex {
+  name: string
+  columns: string[]
+  unique: boolean
+}
+
+export interface DbTable {
+  name: string
+  columns: DbColumn[] | null
+  primary_key?: string[]
+  foreign_keys?: DbForeignKey[]
+  indexes?: DbIndex[]
+}
+
+export interface DbView {
+  name: string
+  columns: DbColumn[] | null
+}
+
+export interface DbNamespace {
+  name: string
+  tables: DbTable[] | null
+  views: DbView[] | null
+}
+
+export interface DbSchema {
+  connection: string
+  database: string
+  generated_at: string
+  namespaces: DbNamespace[] | null
+}
+
+export interface ConnectionSchemaResponse {
+  schema: DbSchema
+}

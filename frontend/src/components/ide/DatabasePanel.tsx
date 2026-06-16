@@ -7,6 +7,8 @@ import {
   orgEffectivePermissionsQueryOptions,
   orgEnvironmentsQueryOptions,
   orgWorkspaceConnectionsQueryOptions,
+  refreshConnectionSchema,
+  connectionSchemaQueryKey,
 } from '#/lib/api/query'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
@@ -15,6 +17,8 @@ import { cn } from '#/lib/utils'
 import { hasPermission, permission } from '#/lib/permissions'
 import { useIde, newConnectionTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
 import { SidebarPane } from './SidebarPane'
+import { SchemaTree } from './SchemaTree'
+import { ScrollArea } from '#/components/ui/scroll-area'
 import { ConnectionDialog } from './ConnectionDialog'
 import { DriverBadge } from './DriverBadge'
 import { Button } from '#/components/ui/button'
@@ -52,6 +56,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   const syncSessions = useIde((s) => s.syncSessions)
   const queryClient = useQueryClient()
 
+  const [filter, setFilter] = useState('')
   const [addEnvOpen, setAddEnvOpen] = useState(false)
   const [addConnEnvironmentId, setAddConnEnvironmentId] = useState<number | null>(null)
   const [envName, setEnvName] = useState('')
@@ -202,29 +207,43 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
         maximized={maximized}
         onMaximizedChange={onMaximizedChange}
         actions={actions}
+        scroll={false}
       >
-        {environments.isLoading || connections.isLoading ? (
-          <SidebarMessage>Loading...</SidebarMessage>
-        ) : environments.isError || connections.isError ? (
-          <SidebarMessage>Failed to load database tree.</SidebarMessage>
-        ) : envItems.length === 0 ? (
-          <SidebarMessage>No environments available.</SidebarMessage>
-        ) : (
-          envItems.map((env) => (
-            <EnvironmentRow
-              key={env.id}
-              environment={env}
-              connections={connItems.filter((c) => c.environment_id === env.id)}
-              connectedIds={connectedIds}
-              orgSlug={orgSlug}
-              onOpen={handleOpenConnection}
-              onOpenConsole={handleOpenConsole}
-              onConnect={handleConnect}
-              onDisconnect={handleDisconnect}
-              onAddConnection={() => setAddConnEnvironmentId(env.id)}
-            />
-          ))
-        )}
+        <div className="border-b border-border p-1.5">
+          <Input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter schema…"
+            className="h-7 text-xs"
+          />
+        </div>
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="flex flex-col py-1">
+            {environments.isLoading || connections.isLoading ? (
+              <SidebarMessage>Loading...</SidebarMessage>
+            ) : environments.isError || connections.isError ? (
+              <SidebarMessage>Failed to load database tree.</SidebarMessage>
+            ) : envItems.length === 0 ? (
+              <SidebarMessage>No environments available.</SidebarMessage>
+            ) : (
+              envItems.map((env) => (
+                <EnvironmentRow
+                  key={env.id}
+                  environment={env}
+                  connections={connItems.filter((c) => c.environment_id === env.id)}
+                  connectedIds={connectedIds}
+                  orgSlug={orgSlug}
+                  filter={filter}
+                  onOpen={handleOpenConnection}
+                  onOpenConsole={handleOpenConsole}
+                  onConnect={handleConnect}
+                  onDisconnect={handleDisconnect}
+                  onAddConnection={() => setAddConnEnvironmentId(env.id)}
+                />
+              ))
+            )}
+          </div>
+        </ScrollArea>
       </SidebarPane>
 
       <Dialog
@@ -294,6 +313,7 @@ function EnvironmentRow({
   connections,
   connectedIds,
   orgSlug,
+  filter,
   onOpen,
   onOpenConsole,
   onConnect,
@@ -304,6 +324,7 @@ function EnvironmentRow({
   connections: Connection[]
   connectedIds: Set<number>
   orgSlug: string
+  filter: string
   onOpen: (conn: Connection) => void
   onOpenConsole: (conn: Connection) => void
   onConnect: (conn: Connection) => void
@@ -359,6 +380,8 @@ function EnvironmentRow({
                 key={conn.id}
                 connection={conn}
                 isConnected={connectedIds.has(conn.id)}
+                orgSlug={orgSlug}
+                filter={filter}
                 onOpen={() => onOpen(conn)}
                 onOpenConsole={() => onOpenConsole(conn)}
                 onConnect={() => onConnect(conn)}
@@ -375,6 +398,8 @@ function EnvironmentRow({
 function ConnectionRow({
   connection,
   isConnected,
+  orgSlug,
+  filter,
   onOpen,
   onOpenConsole,
   onConnect,
@@ -382,13 +407,25 @@ function ConnectionRow({
 }: {
   connection: Connection
   isConnected: boolean
+  orgSlug: string
+  filter: string
   onOpen: () => void
   onOpenConsole: () => void
   onConnect: () => void
   onDisconnect: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const [pos, setPos] = useState({ x: 0, y: 0 })
+  const sessionId = useIde((s) => s.sessions[connection.id])
+  const queryClient = useQueryClient()
+  const refresh = useMutation({
+    mutationFn: () => refreshConnectionSchema(orgSlug, connection.workspace_id, connection.id, sessionId ?? ''),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: connectionSchemaQueryKey(orgSlug, connection.workspace_id, connection.id),
+      }),
+  })
 
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault()
@@ -398,25 +435,51 @@ function ConnectionRow({
   }
 
   return (
-    <>
+    <div>
       <div
         onContextMenu={handleContextMenu}
-        className={menuOpen ? 'bg-accent text-accent-foreground' : ''}
+        className={cn('flex items-center', menuOpen && 'bg-accent text-accent-foreground')}
       >
+        {isConnected ? (
+          <button
+            type="button"
+            aria-label={expanded ? 'Collapse schema' : 'Expand schema'}
+            onClick={() => setExpanded((v) => !v)}
+            className="flex h-7 w-5 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
+          >
+            <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
+          </button>
+        ) : (
+          <span className="w-5 shrink-0" />
+        )}
+
         <button
           type="button"
           onClick={onOpen}
           className={cn(
-            'flex h-7 w-full items-center gap-2 px-3 text-left text-xs',
+            'flex h-7 min-w-0 flex-1 items-center gap-2 pr-1 text-left text-xs',
             'transition-colors hover:bg-accent hover:text-accent-foreground',
           )}
         >
           <DriverBadge driver={connection.driver} size="sm" />
           <span className="min-w-0 flex-1 truncate">{connection.name}</span>
-          {isConnected && (
-            <div className="size-1.5 shrink-0 rounded-full bg-green-500" />
-          )}
         </button>
+
+        {isConnected && (
+          <button
+            type="button"
+            aria-label="Refresh schema"
+            disabled={refresh.isPending}
+            onClick={(e) => {
+              e.stopPropagation()
+              refresh.mutate()
+            }}
+            className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          >
+            <Icon name="refresh" size={11} className={refresh.isPending ? 'animate-spin' : undefined} />
+          </button>
+        )}
+        {isConnected && <div className="mr-1.5 size-1.5 shrink-0 rounded-full bg-green-500" />}
 
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger
@@ -460,7 +523,18 @@ function ConnectionRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-    </>
+
+      {isConnected && expanded && (
+        <div className="ml-[18px] border-l border-border">
+          <SchemaTree
+            orgSlug={orgSlug}
+            workspaceId={connection.workspace_id}
+            connectionId={connection.id}
+            filter={filter}
+          />
+        </div>
+      )}
+    </div>
   )
 }
 
