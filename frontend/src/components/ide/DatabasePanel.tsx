@@ -371,9 +371,9 @@ function EnvironmentRow({
       </div>
 
       {expanded && (
-        <div className="ml-[18px] border-l border-border">
+        <div>
           {connections.length === 0 ? (
-            <div className="px-3 py-1.5 text-xs text-muted-foreground">No connections.</div>
+            <div className="py-1.5 pl-[18px] pr-2 text-xs text-muted-foreground">No connections.</div>
           ) : (
             connections.map((conn) => (
               <ConnectionRow
@@ -418,6 +418,11 @@ function ConnectionRow({
   const [expanded, setExpanded] = useState(false)
   const [pos, setPos] = useState({ x: 0, y: 0 })
   const sessionId = useIde((s) => s.sessions[connection.id])
+  // Hint the connection used by the active tab (file's linked connection, console, or connection tab).
+  const isActive = useIde((s) => {
+    const tab = s.tabs.find((t) => t.id === s.activeTabIds[connection.workspace_id])
+    return tab?.connectionId === connection.id
+  })
   const queryClient = useQueryClient()
   const refresh = useMutation({
     mutationFn: () => refreshConnectionSchema(orgSlug, connection.workspace_id, connection.id, sessionId ?? ''),
@@ -438,7 +443,13 @@ function ConnectionRow({
     <div>
       <div
         onContextMenu={handleContextMenu}
-        className={cn('flex items-center', menuOpen && 'bg-accent text-accent-foreground')}
+        className={cn(
+          'flex items-center pl-[18px] transition-colors',
+          isActive
+            ? 'bg-primary/10 hover:bg-primary/15'
+            : 'hover:bg-accent hover:text-accent-foreground',
+          menuOpen && 'bg-accent text-accent-foreground',
+        )}
       >
         {isConnected ? (
           <button
@@ -456,10 +467,7 @@ function ConnectionRow({
         <button
           type="button"
           onClick={onOpen}
-          className={cn(
-            'flex h-7 min-w-0 flex-1 items-center gap-2 pr-1 text-left text-xs',
-            'transition-colors hover:bg-accent hover:text-accent-foreground',
-          )}
+          className="flex h-7 min-w-0 flex-1 items-center gap-2 pr-1 text-left text-xs"
         >
           <DriverBadge driver={connection.driver} size="sm" />
           <span className="min-w-0 flex-1 truncate">{connection.name}</span>
@@ -525,7 +533,7 @@ function ConnectionRow({
       </div>
 
       {isConnected && expanded && (
-        <div className="ml-[18px] border-l border-border">
+        <div className="ml-[36px] border-l border-border">
           <SchemaTree
             orgSlug={orgSlug}
             workspaceId={connection.workspace_id}
