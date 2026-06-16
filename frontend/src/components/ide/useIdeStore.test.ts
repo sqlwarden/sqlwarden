@@ -290,6 +290,46 @@ describe('useIdeStore', () => {
     store.getState().openConsole(mockWorkspace, [])
     expect(store.getState().activeTabIds[mockWorkspace.id]).toBe('scratch:1:1')
   })
+
+  describe('moveTab', () => {
+    function addTabs(ids: string[]) {
+      for (const id of ids) {
+        store.getState().openTab({ id, workspaceId: mockWorkspace.id, title: id, kind: 'scratch', content: '' })
+      }
+    }
+    const order = () => store.getState().tabs.map((t) => t.id)
+
+    it('moves a tab before a target', () => {
+      addTabs(['a', 'b', 'c', 'd'])
+      store.getState().moveTab('a', 'c', 'before')
+      expect(order()).toEqual(['b', 'a', 'c', 'd'])
+    })
+
+    it('moves a tab after a target, supporting move-to-end', () => {
+      addTabs(['a', 'b', 'c', 'd'])
+      store.getState().moveTab('a', 'd', 'after')
+      expect(order()).toEqual(['b', 'c', 'd', 'a'])
+    })
+
+    it('moves a later tab before an earlier one', () => {
+      addTabs(['a', 'b', 'c', 'd'])
+      store.getState().moveTab('d', 'a', 'before')
+      expect(order()).toEqual(['d', 'a', 'b', 'c'])
+    })
+
+    it('is a no-op when dragged equals target', () => {
+      addTabs(['a', 'b', 'c'])
+      store.getState().moveTab('b', 'b', 'before')
+      expect(order()).toEqual(['a', 'b', 'c'])
+    })
+
+    it('does not replace the tabs array when the order is unchanged', () => {
+      addTabs(['a', 'b', 'c'])
+      const before = store.getState().tabs
+      store.getState().moveTab('a', 'b', 'before') // a is already before b
+      expect(store.getState().tabs).toBe(before)
+    })
+  })
 })
 
 describe('activity state', () => {
