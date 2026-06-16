@@ -40,7 +40,8 @@ export type EditorTab = {
 export type IdeState = {
   activeWorkspaceId?: number
   maximizedPane: 'editor' | 'results' | null
-  maximizedSidebarPane: 'database' | 'files' | null
+  /** Active sidebar/page activity id (see ideActivities). */
+  activeActivityId: string
   sidebarCollapsed: boolean
   /** Active tab ID per workspace. Keyed by workspaceId so each workspace
    *  remembers its own active tab independently. */
@@ -66,7 +67,7 @@ export type IdeActions = {
   updateTabEtag: (tabId: string, etag: string) => void
   setTabConnection: (tabId: string, connectionId: number, driver?: string) => void
   setMaximizedPane: (pane: IdeState['maximizedPane']) => void
-  setMaximizedSidebarPane: (pane: IdeState['maximizedSidebarPane']) => void
+  setActiveActivity: (activityId: string) => void
   setSidebarCollapsed: (collapsed: boolean) => void
   setSession: (connectionId: number, sessionId: string) => void
   clearSession: (connectionId: number) => void
@@ -101,7 +102,7 @@ export function createIdeStore(orgSlug: string, accountId: number) {
       (set) => ({
         activeWorkspaceId: undefined,
         maximizedPane: null,
-        maximizedSidebarPane: null,
+        activeActivityId: 'files',
         sidebarCollapsed: false,
         activeTabIds: {},
         tabs: [],
@@ -185,7 +186,7 @@ export function createIdeStore(orgSlug: string, accountId: number) {
           set((s) => ({ tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, connectionId, ...(driver ? { driver } : {}) } : t)) })),
 
         setMaximizedPane: (pane) => set({ maximizedPane: pane }),
-        setMaximizedSidebarPane: (pane) => set({ maximizedSidebarPane: pane }),
+        setActiveActivity: (activityId) => set({ activeActivityId: activityId }),
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
 
         setSession: (connectionId, sessionId) =>
@@ -267,7 +268,7 @@ const _noop = () => {}
 const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   activeWorkspaceId: undefined,
   maximizedPane: null,
-  maximizedSidebarPane: null,
+  activeActivityId: 'files',
   sidebarCollapsed: false,
   activeTabIds: {},
   tabs: [],
@@ -284,7 +285,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   updateTabEtag: _noop,
   setTabConnection: _noop,
   setMaximizedPane: _noop,
-  setMaximizedSidebarPane: _noop,
+  setActiveActivity: _noop,
   setSidebarCollapsed: _noop,
   setSession: _noop,
   clearSession: _noop,

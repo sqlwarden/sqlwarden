@@ -398,6 +398,7 @@ export function AppShellPreferencesPopover({
           <Button
             type="button"
             variant="ghost"
+            aria-label={buttonLabel || 'Appearance'}
             className={cn(
               'w-full justify-start gap-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0',
               buttonClassName,
@@ -406,7 +407,9 @@ export function AppShellPreferencesPopover({
         }
       >
         <Icon name="paint-board" size={20} />
-        <span className="group-data-[collapsible=icon]:hidden">{buttonLabel}</span>
+        {buttonLabel ? (
+          <span className="group-data-[collapsible=icon]:hidden">{buttonLabel}</span>
+        ) : null}
       </PopoverTrigger>
       <PopoverContent side={contentSide} align={contentAlign} className="w-80 max-h-[calc(100dvh-1rem)]">
         <div className="flex flex-col gap-5">

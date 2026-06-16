@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UseQueryOptions } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
-import { Separator } from '#/components/ui/separator'
+import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '#/components/ui/resizable'
+import { ScrollArea } from '#/components/ui/scroll-area'
 import {
   orgWorkspacePrivateFileBrowserQueryOptions,
   orgWorkspaceSharedFileBrowserQueryOptions,
@@ -19,8 +20,8 @@ import { CreateItemDialog } from './CreateItemDialog'
 type FilesPanelProps = {
   orgSlug: string
   workspace: Workspace
-  maximized: boolean
-  onMaximizedChange: (maximized: boolean) => void
+  maximized?: boolean
+  onMaximizedChange?: (maximized: boolean) => void
 }
 
 type DialogState = { kind: 'file' | 'folder'; parentId: number | null } | null
@@ -63,24 +64,31 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
         maximized={maximized}
         onMaximizedChange={onMaximizedChange}
         actions={headerActions}
+        scroll={false}
       >
-        <FilesSection
-          orgSlug={orgSlug}
-          workspace={workspace}
-          visibility="private"
-          title="My Files"
-          onCreateFile={(parentId) => openCreateDialog('file', parentId)}
-          onCreateFolder={(parentId) => openCreateDialog('folder', parentId)}
-        />
-        <Separator className="my-1" />
-        <FilesSection
-          orgSlug={orgSlug}
-          workspace={workspace}
-          visibility="shared"
-          title="Shared Files"
-          onCreateFile={undefined}
-          onCreateFolder={undefined}
-        />
+        <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
+          <ResizablePanel defaultSize="60%" minSize="15%" className="overflow-hidden">
+            <FilesSection
+              orgSlug={orgSlug}
+              workspace={workspace}
+              visibility="private"
+              title="My Files"
+              onCreateFile={(parentId) => openCreateDialog('file', parentId)}
+              onCreateFolder={(parentId) => openCreateDialog('folder', parentId)}
+            />
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel defaultSize="40%" minSize="15%" className="overflow-hidden">
+            <FilesSection
+              orgSlug={orgSlug}
+              workspace={workspace}
+              visibility="shared"
+              title="Shared Files"
+              onCreateFile={undefined}
+              onCreateFolder={undefined}
+            />
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </SidebarPane>
 
       {dialogState && (
@@ -145,25 +153,8 @@ function FilesSection({
 
   const children = data?.children ?? []
 
-  const sectionLabel = (
-    <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground select-none">
-      {title}
-    </div>
-  )
-
-  return (
-    <div className="flex flex-col">
-      {visibility === 'private' && onCreateFile ? (
-        <FileContextMenu
-          kind="root"
-          onCreateFile={onCreateFile}
-          onCreateFolder={onCreateFolder}
-        >
-          {sectionLabel}
-        </FileContextMenu>
-      ) : (
-        sectionLabel
-      )}
+  const body = (
+    <div className="flex flex-col py-1">
       {isLoading ? (
         <div className="px-3 py-2 text-xs text-muted-foreground">Loading...</div>
       ) : isError ? (
@@ -199,6 +190,17 @@ function FilesSection({
           ),
         )
       )}
+    </div>
+  )
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {visibility === 'shared' ? (
+        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground select-none">
+          {title}
+        </div>
+      ) : null}
+      <ScrollArea className="min-h-0 flex-1">{body}</ScrollArea>
     </div>
   )
 }
@@ -249,7 +251,7 @@ function FileTreeFolder({
       )}
     >
       <Icon
-        name={expanded ? 'arrow-down-01' : 'arrow-right-01'}
+        name={expanded ? 'chevron-down' : 'chevron-right'}
         size={11}
         className="shrink-0 text-muted-foreground"
       />

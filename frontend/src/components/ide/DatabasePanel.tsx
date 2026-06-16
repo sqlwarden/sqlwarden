@@ -39,8 +39,8 @@ import { Textarea } from '#/components/ui/textarea'
 type DatabasePanelProps = {
   orgSlug: string
   workspace: Workspace
-  maximized: boolean
-  onMaximizedChange: (maximized: boolean) => void
+  maximized?: boolean
+  onMaximizedChange?: (maximized: boolean) => void
 }
 
 export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange }: DatabasePanelProps) {
@@ -198,7 +198,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
     <>
       <SidebarPane
         title="Explorer"
-        icon="database"
+        icon="server-stack-01"
         maximized={maximized}
         onMaximizedChange={onMaximizedChange}
         actions={actions}
@@ -326,12 +326,12 @@ function EnvironmentRow({
           className="flex min-w-0 flex-1 items-center gap-1.5 px-2 text-left"
         >
           <Icon
-            name={expanded ? 'arrow-down-01' : 'arrow-right-01'}
+            name={expanded ? 'chevron-down' : 'chevron-right'}
             size={11}
             className="shrink-0 text-muted-foreground"
           />
           <Icon
-            name="server-stack-01"
+            name="box"
             size={14}
             className="shrink-0 text-muted-foreground"
           />
