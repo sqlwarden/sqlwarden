@@ -298,10 +298,14 @@ func (app *application) updateWorkspaceFileContent(w http.ResponseWriter, r *htt
 
 // workspaceFileService builds the file domain service from current app state.
 func (app *application) workspaceFileService() *files.Service {
+	revisionPolicy := files.RevisionPolicyDisabled
+	if app.config.Files.Revisions.Enabled {
+		revisionPolicy = files.RevisionPolicyVersioned
+	}
 	return files.NewWithStoreResolver(app.db, app.fileStores, app.enforcer, files.Config{
 		StorageMode:            app.config.Files.StorageMode,
 		ActiveStorageBackendID: app.config.Files.ActiveStorageBackend,
-		RevisionPolicy:         app.config.Files.Revisions.DefaultPolicy,
+		RevisionPolicy:         revisionPolicy,
 		RevisionKeepLatest:     app.config.Files.Revisions.KeepLatest,
 	}, &app.fileLocks)
 }

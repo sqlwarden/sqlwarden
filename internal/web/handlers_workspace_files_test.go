@@ -333,7 +333,7 @@ func TestWorkspaceDirectoryWritesVisibleFilePath(t *testing.T) {
 
 func TestObjectStoreVersionsTextFilesButReplacesBinaryFilesByDefault(t *testing.T) {
 	app, org, ws, tok := setupWorkspaceOwner(t)
-	app.config.Files.Revisions.DefaultPolicy = FilesRevisionPolicyVersioned
+	app.config.Files.Revisions.Enabled = true
 
 	saveTwice := func(name string) database.WorkspaceFileContent {
 		create := send(t, newAuthRequest(t, http.MethodPost, orgPrivateFilesURL(org.Slug, ws.ID), map[string]any{"name": name}, tok), app.routes())

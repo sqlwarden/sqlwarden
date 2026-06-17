@@ -17,16 +17,17 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 FROM alpine:3.19
 
 RUN apk --no-cache add ca-certificates tzdata && \
-    addgroup -g 1000 appuser && \
-    adduser -D -u 1000 -G appuser appuser
+    addgroup -g 1000 sqlwarden && \
+    adduser -D -u 1000 -G sqlwarden -h /var/lib/sqlwarden sqlwarden && \
+    mkdir -p /var/lib/sqlwarden
 
 WORKDIR /app
 
 COPY --from=builder /build/sqlwarden .
 
-RUN chown -R appuser:appuser /app
+RUN chown -R sqlwarden:sqlwarden /app /var/lib/sqlwarden
 
-USER appuser
+USER sqlwarden
 
 EXPOSE 6020
 
