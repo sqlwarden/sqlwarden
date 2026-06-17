@@ -65,7 +65,7 @@ func newTestApplication(t *testing.T) *application {
 			RootDir: t.TempDir(),
 		},
 	}
-	app.config.Files.Revisions.DefaultPolicy = FilesRevisionPolicyDisabled
+	app.config.Files.Revisions.Enabled = false
 
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)

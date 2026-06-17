@@ -34,6 +34,7 @@ services:
       DB_DRIVER: postgres
       DB_DSN: ${POSTGRES_USER:-sqlwarden}:${POSTGRES_PASSWORD:-sqlwarden_password}@postgres:5432/${POSTGRES_DB:-sqlwarden}?sslmode=disable
       DB_AUTOMIGRATE: "true"
+      FILES_ROOT_DIR: ${FILES_ROOT_DIR:-/var/lib/sqlwarden/files}
       COOKIE_SECRET_KEY: ${COOKIE_SECRET_KEY:-cpcgzjcote6h5hakeglpbzixhbuog2zc}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-fb57i5hiud5mzmykaquqsln5gcmolbac}
       JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:-24h}
@@ -45,11 +46,14 @@ services:
       SMTP_FROM: ${SMTP_FROM:-SQLWarden <no_reply@example.org>}
     ports:
       - "6020:6020"
+    volumes:
+      - sqlwarden_data:/var/lib/sqlwarden
     networks:
       - sqlwarden-network
 
 volumes:
   postgres_data:
+  sqlwarden_data:
 
 networks:
   sqlwarden-network:

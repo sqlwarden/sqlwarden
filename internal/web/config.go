@@ -32,7 +32,7 @@ const (
 	defaultFilesStorageMode        = FilesStorageModeObject
 	defaultFilesActiveBackend      = "local"
 	defaultFilesRootDir            = "~/.sqlwarden/files"
-	defaultFilesRevisionPolicy     = FilesRevisionPolicyVersioned
+	defaultFilesRevisionsEnabled   = true
 	defaultFilesRevisionKeepLatest = 50
 	defaultNotificationsEmail      = ""
 	defaultSMTPHost                = "example.smtp.host"
@@ -71,8 +71,6 @@ const (
 	FilesStorageModeObject        = "object"
 	FilesStorageBackendFilesystem = "filesystem"
 	FilesStorageBackendS3         = "s3"
-	FilesRevisionPolicyDisabled   = "disabled"
-	FilesRevisionPolicyVersioned  = "versioned"
 )
 
 type Config struct {
@@ -118,8 +116,8 @@ type Config struct {
 		ActiveStorageBackend string
 		StorageBackends      map[string]FileStorageBackend
 		Revisions            struct {
-			DefaultPolicy string
-			KeepLatest    int
+			Enabled    bool
+			KeepLatest int
 		}
 	}
 	Notifications struct {
@@ -178,7 +176,7 @@ func DefaultConfig() Config {
 	cfg.Files.StorageMode = defaultFilesStorageMode
 	cfg.Files.ActiveStorageBackend = defaultFilesActiveBackend
 	cfg.Files.StorageBackends = defaultFileStorageBackends()
-	cfg.Files.Revisions.DefaultPolicy = defaultFilesRevisionPolicy
+	cfg.Files.Revisions.Enabled = defaultFilesRevisionsEnabled
 	cfg.Files.Revisions.KeepLatest = defaultFilesRevisionKeepLatest
 	cfg.Notifications.Email = defaultNotificationsEmail
 	cfg.SMTP.Host = defaultSMTPHost
@@ -224,9 +222,6 @@ type configOption struct {
 var configOptions = []configOption{
 	{key: "base_url", env: "BASE_URL", flagName: "base-url", defaultValue: defaultBaseURL, usage: "Application base URL used in generated links and JWT claims"},
 	{key: "http_port", env: "HTTP_PORT", flagName: "http-port", defaultValue: defaultHTTPPort, usage: "HTTP server port"},
-	{key: "deployment_mode", env: "DEPLOYMENT_MODE", flagName: "deployment-mode", defaultValue: defaultDeploymentMode, usage: "Deployment mode (server or desktop)"},
-	{key: "access_mode", env: "ACCESS_MODE", flagName: "access-mode", defaultValue: defaultAccessMode, usage: "Access model (multi_user or single_user)"},
-	{key: "desktop_mode", env: "DESKTOP_MODE", flagName: "desktop-mode", defaultValue: false, usage: "Deprecated alias for deployment-mode=desktop and access-mode=single_user"},
 	{key: "personal_spaces_enabled", env: "PERSONAL_SPACES_ENABLED", flagName: "personal-spaces-enabled", defaultValue: defaultPersonalSpacesEnabled, usage: "Enable personal spaces by default"},
 	{key: "cookie.secret_key", env: "COOKIE_SECRET_KEY", flagName: "cookie-secret-key", defaultValue: defaultCookieSecretKey, usage: "Cookie signing secret"},
 	{key: "db.log_queries", env: "DB_LOG_QUERIES", flagName: "db-log-queries", defaultValue: defaultDBLogQueries, usage: "Enable database query logging"},
@@ -242,11 +237,8 @@ var configOptions = []configOption{
 	{key: "tls.cert_file", env: "TLS_CERT_FILE", flagName: "tls-cert-file", defaultValue: defaultTLSCertFile, usage: "Path to PEM encoded TLS certificate file"},
 	{key: "tls.key_file", env: "TLS_KEY_FILE", flagName: "tls-key-file", defaultValue: defaultTLSKeyFile, usage: "Path to PEM encoded TLS private key file"},
 	{key: "drivers.sqlite.allowed_sources", env: "DRIVERS_SQLITE_ALLOWED_SOURCES", flagName: "drivers-sqlite-allowed-sources", defaultValue: defaultSQLiteDriverSources, usage: "Comma-separated SQLite target sources to allow (currently: local)"},
-	{key: "files.storage_mode", env: "FILES_STORAGE_MODE", flagName: "files-storage-mode", defaultValue: defaultFilesStorageMode, usage: "Workspace file storage mode (file or object)"},
-	{key: "files.active_storage_backend", env: "FILES_ACTIVE_STORAGE_BACKEND", flagName: "files-active-storage-backend", defaultValue: defaultFilesActiveBackend, usage: "Active storage backend ID for object-mode writes"},
-	{key: "files.storage_backends.local.type", env: "FILES_STORAGE_BACKENDS_LOCAL_TYPE", flagName: "files-storage-backends-local-type", defaultValue: FilesStorageBackendFilesystem, usage: "Type for the default local file storage backend"},
-	{key: "files.storage_backends.local.root_dir", env: "FILES_STORAGE_BACKENDS_LOCAL_ROOT_DIR", flagName: "files-storage-backends-local-root-dir", defaultValue: defaultFilesRootDir, usage: "Filesystem root directory for the default local file storage backend"},
-	{key: "files.revisions.default_policy", env: "FILES_REVISIONS_DEFAULT_POLICY", flagName: "files-revisions-default-policy", defaultValue: defaultFilesRevisionPolicy, usage: "Default saved-file revision policy (disabled or versioned)"},
+	{key: "files.root_dir", env: "FILES_ROOT_DIR", flagName: "files-root-dir", defaultValue: defaultFilesRootDir, usage: "Filesystem root directory for stored workspace files"},
+	{key: "files.revisions.enabled", env: "FILES_REVISIONS_ENABLED", flagName: "files-revisions-enabled", defaultValue: defaultFilesRevisionsEnabled, usage: "Enable saved-file revisions"},
 	{key: "files.revisions.keep_latest", env: "FILES_REVISIONS_KEEP_LATEST", flagName: "files-revisions-keep-latest", defaultValue: defaultFilesRevisionKeepLatest, usage: "Number of older saved-file revisions to retain per file"},
 	{key: "notifications.email", env: "NOTIFICATIONS_EMAIL", flagName: "notifications-email", defaultValue: defaultNotificationsEmail, usage: "Email address that receives error notifications"},
 	{key: "smtp.host", env: "SMTP_HOST", flagName: "smtp-host", defaultValue: defaultSMTPHost, usage: "SMTP server host"},
@@ -254,9 +246,6 @@ var configOptions = []configOption{
 	{key: "smtp.username", env: "SMTP_USERNAME", flagName: "smtp-username", defaultValue: defaultSMTPUsername, usage: "SMTP username"},
 	{key: "smtp.password", env: "SMTP_PASSWORD", flagName: "smtp-password", defaultValue: defaultSMTPPassword, usage: "SMTP password"},
 	{key: "smtp.from", env: "SMTP_FROM", flagName: "smtp-from", defaultValue: defaultSMTPFrom, usage: "Default SMTP sender"},
-	{key: "desktop.app_dir", env: "DESKTOP_APP_DIR", flagName: "desktop-app-dir", defaultValue: defaultDesktopAppDir, usage: "Desktop application data directory"},
-	{key: "desktop.active_backend", env: "DESKTOP_ACTIVE_BACKEND", flagName: "desktop-active-backend", defaultValue: defaultDesktopActiveBackend, usage: "Active desktop backend ID"},
-	{key: "desktop.allow_user_backends", env: "DESKTOP_ALLOW_USER_BACKENDS", flagName: "desktop-allow-user-backends", defaultValue: defaultAllowUserBackends, usage: "Allow desktop users to add backends"},
 }
 
 func LoadConfig(args []string) (Config, bool, error) {
@@ -304,9 +293,6 @@ func loadConfig(args []string) (Config, bool, error) {
 			return Config{}, false, fmt.Errorf("bind flag %s: %w", opt.flagName, err)
 		}
 	}
-	v.SetDefault("desktop.backends", defaultDesktopBackends())
-	v.SetDefault("files.storage_backends", defaultFileStorageBackends())
-
 	if *configPath != "" {
 		v.SetConfigFile(*configPath)
 		if err := v.ReadInConfig(); err != nil {
@@ -333,12 +319,6 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg := DefaultConfig()
 	cfg.BaseURL = v.GetString("base_url")
 	cfg.HTTPPort = v.GetInt("http_port")
-	cfg.DeploymentMode = v.GetString("deployment_mode")
-	cfg.AccessMode = v.GetString("access_mode")
-	if v.GetBool("desktop_mode") {
-		cfg.DeploymentMode = DeploymentModeDesktop
-		cfg.AccessMode = AccessModeSingleUser
-	}
 	cfg.PersonalSpacesEnabled = v.GetBool("personal_spaces_enabled")
 	cfg.Cookie.SecretKey = v.GetString("cookie.secret_key")
 	cfg.DB.LogQueries = v.GetBool("db.log_queries")
@@ -354,29 +334,11 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.TLS.CertFile = v.GetString("tls.cert_file")
 	cfg.TLS.KeyFile = v.GetString("tls.key_file")
 	cfg.Drivers.SQLite.AllowedSources = splitConfigStringList(v.GetStringSlice("drivers.sqlite.allowed_sources"))
-	if cfg.DeploymentMode == DeploymentModeDesktop && cfg.AccessMode == AccessModeSingleUser {
-		_, sourcesSetInEnv := os.LookupEnv("DRIVERS_SQLITE_ALLOWED_SOURCES")
-		if !v.InConfig("drivers.sqlite.allowed_sources") && !flagSet.Changed("drivers-sqlite-allowed-sources") && !sourcesSetInEnv {
-			cfg.Drivers.SQLite.AllowedSources = []string{SQLiteDriverSourceLocal}
-		}
-	}
-	cfg.Files.StorageMode = v.GetString("files.storage_mode")
-	cfg.Files.ActiveStorageBackend = v.GetString("files.active_storage_backend")
 	cfg.Files.StorageBackends = defaultFileStorageBackends()
-	if err := v.UnmarshalKey("files.storage_backends", &cfg.Files.StorageBackends); err != nil {
-		return Config{}, false, fmt.Errorf("read file storage backends: %w", err)
-	}
 	localBackend := cfg.Files.StorageBackends[defaultFilesActiveBackend]
-	_, localTypeSetInEnv := os.LookupEnv("FILES_STORAGE_BACKENDS_LOCAL_TYPE")
-	_, localRootSetInEnv := os.LookupEnv("FILES_STORAGE_BACKENDS_LOCAL_ROOT_DIR")
-	if v.InConfig("files.storage_backends.local.type") || flagSet.Changed("files-storage-backends-local-type") || localTypeSetInEnv {
-		localBackend.Type = v.GetString("files.storage_backends.local.type")
-	}
-	if v.InConfig("files.storage_backends.local.root_dir") || flagSet.Changed("files-storage-backends-local-root-dir") || localRootSetInEnv {
-		localBackend.RootDir = v.GetString("files.storage_backends.local.root_dir")
-	}
+	localBackend.RootDir = v.GetString("files.root_dir")
 	cfg.Files.StorageBackends[defaultFilesActiveBackend] = localBackend
-	cfg.Files.Revisions.DefaultPolicy = v.GetString("files.revisions.default_policy")
+	cfg.Files.Revisions.Enabled = v.GetBool("files.revisions.enabled")
 	cfg.Files.Revisions.KeepLatest = v.GetInt("files.revisions.keep_latest")
 	cfg.Notifications.Email = v.GetString("notifications.email")
 	cfg.SMTP.Host = v.GetString("smtp.host")
@@ -384,27 +346,8 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.SMTP.Username = v.GetString("smtp.username")
 	cfg.SMTP.Password = v.GetString("smtp.password")
 	cfg.SMTP.From = v.GetString("smtp.from")
-	cfg.Desktop.AppDir = v.GetString("desktop.app_dir")
-	cfg.Desktop.ActiveBackend = v.GetString("desktop.active_backend")
-	cfg.Desktop.AllowUserBackends = v.GetBool("desktop.allow_user_backends")
-	if err := v.UnmarshalKey("desktop.backends", &cfg.Desktop.Backends); err != nil {
-		return Config{}, false, fmt.Errorf("read desktop backends: %w", err)
-	}
-	if len(cfg.Desktop.Backends) == 0 {
-		cfg.Desktop.Backends = defaultDesktopBackends()
-	}
 	if len(cfg.Files.StorageBackends) == 0 {
 		cfg.Files.StorageBackends = defaultFileStorageBackends()
-	}
-	if cfg.DeploymentMode == DeploymentModeDesktop {
-		_, storageModeSetInEnv := os.LookupEnv("FILES_STORAGE_MODE")
-		_, revisionPolicySetInEnv := os.LookupEnv("FILES_REVISIONS_DEFAULT_POLICY")
-		if !v.InConfig("files.storage_mode") && !flagSet.Changed("files-storage-mode") && !storageModeSetInEnv {
-			cfg.Files.StorageMode = FilesStorageModeFile
-		}
-		if !v.InConfig("files.revisions.default_policy") && !flagSet.Changed("files-revisions-default-policy") && !revisionPolicySetInEnv {
-			cfg.Files.Revisions.DefaultPolicy = FilesRevisionPolicyDisabled
-		}
 	}
 
 	if err := normalizeConfigPaths(&cfg); err != nil {
@@ -445,11 +388,8 @@ func validateConfig(cfg Config) error {
 	if cfg.Files.StorageMode != FilesStorageModeFile && cfg.Files.StorageMode != FilesStorageModeObject {
 		return fmt.Errorf("files.storage_mode must be %q or %q", FilesStorageModeFile, FilesStorageModeObject)
 	}
-	if cfg.Files.StorageMode == FilesStorageModeFile && cfg.Files.Revisions.DefaultPolicy == FilesRevisionPolicyVersioned {
-		return fmt.Errorf("files.revisions.default_policy=%q is not supported with files.storage_mode=%q yet", FilesRevisionPolicyVersioned, FilesStorageModeFile)
-	}
-	if cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyDisabled && cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyVersioned {
-		return fmt.Errorf("files.revisions.default_policy must be %q or %q", FilesRevisionPolicyDisabled, FilesRevisionPolicyVersioned)
+	if cfg.Files.StorageMode == FilesStorageModeFile && cfg.Files.Revisions.Enabled {
+		return fmt.Errorf("files.revisions.enabled=true is not supported with files.storage_mode=%q yet", FilesStorageModeFile)
 	}
 	if cfg.Files.Revisions.KeepLatest < 0 {
 		return fmt.Errorf("files.revisions.keep_latest must be greater than or equal to 0")

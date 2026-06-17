@@ -54,7 +54,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.Desktop.ActiveBackend != "local" {
 		t.Fatalf("desktop.active_backend = %q, want local", cfg.Desktop.ActiveBackend)
 	}
-	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "local" || cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyVersioned || cfg.Files.Revisions.KeepLatest != defaultFilesRevisionKeepLatest {
+	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "local" || !cfg.Files.Revisions.Enabled || cfg.Files.Revisions.KeepLatest != defaultFilesRevisionKeepLatest {
 		t.Fatalf("unexpected default file config: %+v", cfg.Files)
 	}
 	defaultFilesRoot, err := expandHomePath(defaultFilesRootDir)
@@ -107,8 +107,6 @@ func TestLoadConfigFromExplicitFile(t *testing.T) {
 	content := []byte(`
 base_url: https://cfg.example.com
 http_port: 7000
-deployment_mode: desktop
-access_mode: single_user
 personal_spaces_enabled: false
 jwt:
   access_token_ttl: 12h
@@ -126,33 +124,10 @@ smtp:
   host: smtp.cfg.local
   port: 2525
 files:
-  storage_mode: object
-  active_storage_backend: alternate
+  root_dir: /tmp/sqlwarden-files
   revisions:
+    enabled: false
     keep_latest: 7
-  storage_backends:
-    local:
-      type: filesystem
-      root_dir: /tmp/sqlwarden-local-files
-    alternate:
-      type: filesystem
-      root_dir: /tmp/sqlwarden-alternate-files
-desktop:
-  app_dir: /tmp/sqlwarden-desktop
-  active_backend: acme-prod
-  allow_user_backends: false
-  backends:
-    - id: local
-      name: Local
-      kind: local
-      access_mode: single_user
-    - id: acme-prod
-      name: Acme Production
-      kind: remote
-      url: https://sqlwarden-prod.acme.test
-      environment: prod
-      access_mode: multi_user
-      locked: true
 `)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
@@ -172,12 +147,6 @@ desktop:
 	if cfg.HTTPPort != 7000 {
 		t.Fatalf("httpPort = %d", cfg.HTTPPort)
 	}
-	if cfg.DeploymentMode != DeploymentModeDesktop {
-		t.Fatalf("deploymentMode = %q", cfg.DeploymentMode)
-	}
-	if cfg.AccessMode != AccessModeSingleUser {
-		t.Fatalf("accessMode = %q", cfg.AccessMode)
-	}
 	if cfg.PersonalSpacesEnabled {
 		t.Fatal("expected personal spaces disabled from file")
 	}
@@ -196,23 +165,17 @@ desktop:
 	if cfg.SMTP.Host != "smtp.cfg.local" || cfg.SMTP.Port != 2525 {
 		t.Fatalf("unexpected smtp config: %+v", cfg.SMTP)
 	}
-	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "alternate" {
+	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "local" {
 		t.Fatalf("unexpected file storage config: %+v", cfg.Files)
+	}
+	if cfg.Files.Revisions.Enabled {
+		t.Fatal("expected file revisions disabled from file")
 	}
 	if cfg.Files.Revisions.KeepLatest != 7 {
 		t.Fatalf("files.revisions.keep_latest = %d, want 7", cfg.Files.Revisions.KeepLatest)
 	}
-	if cfg.Files.StorageBackends["alternate"].RootDir != "/tmp/sqlwarden-alternate-files" {
-		t.Fatalf("unexpected alternate storage backend: %+v", cfg.Files.StorageBackends["alternate"])
-	}
-	if cfg.Desktop.AppDir != "/tmp/sqlwarden-desktop" || cfg.Desktop.ActiveBackend != "acme-prod" || cfg.Desktop.AllowUserBackends {
-		t.Fatalf("unexpected desktop config: %+v", cfg.Desktop)
-	}
-	if len(cfg.Desktop.Backends) != 2 {
-		t.Fatalf("desktop.backends length = %d, want 2", len(cfg.Desktop.Backends))
-	}
-	if cfg.Desktop.Backends[1].ID != "acme-prod" || cfg.Desktop.Backends[1].Kind != DesktopBackendKindRemote || cfg.Desktop.Backends[1].URL == "" || !cfg.Desktop.Backends[1].Locked {
-		t.Fatalf("unexpected remote backend: %+v", cfg.Desktop.Backends[1])
+	if cfg.Files.StorageBackends["local"].RootDir != "/tmp/sqlwarden-files" {
+		t.Fatalf("unexpected local storage backend: %+v", cfg.Files.StorageBackends["local"])
 	}
 }
 
@@ -220,7 +183,8 @@ func TestLoadConfigEnvOverridesFile(t *testing.T) {
 	t.Setenv("DB_DRIVER", "sqlite")
 	t.Setenv("HTTP_PORT", "8123")
 	t.Setenv("JWT_ACCESS_TOKEN_TTL", "6h")
-	t.Setenv("ACCESS_MODE", AccessModeSingleUser)
+	t.Setenv("FILES_ROOT_DIR", "/env/sqlwarden-files")
+	t.Setenv("FILES_REVISIONS_ENABLED", "false")
 	t.Setenv("TLS_ENABLED", "true")
 	t.Setenv("TLS_CERT_FILE", "/env/tls.crt")
 	t.Setenv("TLS_KEY_FILE", "/env/tls.key")
@@ -250,8 +214,11 @@ db:
 	if cfg.JWT.AccessTokenTTL != 6*time.Hour {
 		t.Fatalf("jwt.accessTokenTTL = %s, want 6h", cfg.JWT.AccessTokenTTL)
 	}
-	if cfg.AccessMode != AccessModeSingleUser {
-		t.Fatalf("accessMode = %q, want %q", cfg.AccessMode, AccessModeSingleUser)
+	if cfg.Files.Revisions.Enabled {
+		t.Fatal("expected file revisions disabled from env")
+	}
+	if cfg.Files.StorageBackends["local"].RootDir != "/env/sqlwarden-files" {
+		t.Fatalf("files.root_dir = %q, want /env/sqlwarden-files", cfg.Files.StorageBackends["local"].RootDir)
 	}
 	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/env/tls.crt" || cfg.TLS.KeyFile != "/env/tls.key" {
 		t.Fatalf("unexpected tls config: %+v", cfg.TLS)
@@ -280,11 +247,11 @@ db:
 		"--base-url", "https://flags.example.com",
 		"--jwt-access-token-ttl", "2h",
 		"--sessions-revocation-enabled=false",
-		"--deployment-mode", DeploymentModeDesktop,
-		"--access-mode", AccessModeSingleUser,
 		"--tls-enabled",
 		"--tls-cert-file", "/flag/tls.crt",
 		"--tls-key-file", "/flag/tls.key",
+		"--files-root-dir", "/flag/sqlwarden-files",
+		"--files-revisions-enabled=false",
 		"--files-revisions-keep-latest", "3",
 	})
 	if err != nil {
@@ -306,92 +273,46 @@ db:
 	if cfg.Sessions.RevocationEnabled {
 		t.Fatal("expected session revocation disabled from flag")
 	}
-	if cfg.DeploymentMode != DeploymentModeDesktop {
-		t.Fatalf("deploymentMode = %q", cfg.DeploymentMode)
-	}
-	if cfg.AccessMode != AccessModeSingleUser {
-		t.Fatalf("accessMode = %q", cfg.AccessMode)
-	}
 	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/flag/tls.crt" || cfg.TLS.KeyFile != "/flag/tls.key" {
 		t.Fatalf("unexpected tls config: %+v", cfg.TLS)
+	}
+	if cfg.Files.Revisions.Enabled {
+		t.Fatal("expected file revisions disabled from flag")
+	}
+	if cfg.Files.StorageBackends["local"].RootDir != "/flag/sqlwarden-files" {
+		t.Fatalf("files.root_dir = %q, want /flag/sqlwarden-files", cfg.Files.StorageBackends["local"].RootDir)
 	}
 	if cfg.Files.Revisions.KeepLatest != 3 {
 		t.Fatalf("files.revisions.keep_latest = %d, want 3", cfg.Files.Revisions.KeepLatest)
 	}
 }
 
-func TestLoadConfigDeprecatedDesktopModeAlias(t *testing.T) {
-	cfg, _, err := loadConfig([]string{"--desktop-mode"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if cfg.DeploymentMode != DeploymentModeDesktop {
-		t.Fatalf("deploymentMode = %q, want %q", cfg.DeploymentMode, DeploymentModeDesktop)
-	}
-	if cfg.AccessMode != AccessModeSingleUser {
-		t.Fatalf("accessMode = %q, want %q", cfg.AccessMode, AccessModeSingleUser)
-	}
-}
-
-func TestLoadConfigDesktopDefaultsToVisibleUnversionedFiles(t *testing.T) {
-	cfg, _, err := loadConfig([]string{"--deployment-mode", DeploymentModeDesktop, "--access-mode", AccessModeSingleUser})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Files.StorageMode != FilesStorageModeFile || cfg.Files.Revisions.DefaultPolicy != FilesRevisionPolicyDisabled {
-		t.Fatalf("unexpected desktop file config: %+v", cfg.Files)
-	}
-}
-
-func TestLoadConfigDesktopSingleUserDefaultsSQLiteTargetsToLocal(t *testing.T) {
-	cfg, _, err := loadConfig([]string{"--deployment-mode", DeploymentModeDesktop, "--access-mode", AccessModeSingleUser})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg.Drivers.SQLite.AllowedSources) != 1 || cfg.Drivers.SQLite.AllowedSources[0] != SQLiteDriverSourceLocal {
-		t.Fatalf("drivers.sqlite.allowed_sources = %v, want [%s]", cfg.Drivers.SQLite.AllowedSources, SQLiteDriverSourceLocal)
-	}
-}
-
-func TestLoadConfigExplicitSQLiteTargetSourcesOverrideDesktopDefault(t *testing.T) {
-	cfg, _, err := loadConfig([]string{
-		"--deployment-mode", DeploymentModeDesktop,
-		"--access-mode", AccessModeSingleUser,
-		"--drivers-sqlite-allowed-sources", "",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg.Drivers.SQLite.AllowedSources) != 0 {
-		t.Fatalf("drivers.sqlite.allowed_sources = %v, want empty", cfg.Drivers.SQLite.AllowedSources)
+func TestLoadConfigRejectsInternalRuntimeFlags(t *testing.T) {
+	for _, args := range [][]string{
+		{"--deployment-mode", DeploymentModeDesktop},
+		{"--access-mode", AccessModeSingleUser},
+		{"--desktop-mode"},
+		{"--desktop-active-backend", "local"},
+		{"--files-storage-mode", FilesStorageModeFile},
+		{"--files-active-storage-backend", "local"},
+		{"--files-storage-backends-local-type", FilesStorageBackendFilesystem},
+		{"--files-storage-backends-local-root-dir", "/tmp/sqlwarden-files"},
+	} {
+		if _, _, err := loadConfig(args); err == nil {
+			t.Fatalf("expected internal runtime flag %v to fail", args)
+		}
 	}
 }
 
 func TestLoadConfigRejectsUnsupportedFileConfiguration(t *testing.T) {
-	_, _, err := loadConfig([]string{"--files-storage-backends-local-type", FilesStorageBackendS3})
+	_, _, err := loadConfig([]string{"--files-revisions-enabled=definitely"})
 	if err == nil {
-		t.Fatal("expected unimplemented file storage backend to fail")
-	}
-
-	_, _, err = loadConfig([]string{"--files-revisions-default-policy", "sometimes"})
-	if err == nil {
-		t.Fatal("expected invalid revision policy to fail")
-	}
-
-	_, _, err = loadConfig([]string{"--files-storage-mode", FilesStorageModeFile})
-	if err == nil {
-		t.Fatal("expected file-mode versioning to fail until visible history is implemented")
+		t.Fatal("expected invalid revision boolean to fail")
 	}
 
 	_, _, err = loadConfig([]string{"--files-revisions-keep-latest", "-1"})
 	if err == nil {
 		t.Fatal("expected negative revision retention to fail")
-	}
-
-	_, _, err = loadConfig([]string{"--files-active-storage-backend", "missing"})
-	if err == nil {
-		t.Fatal("expected missing active storage backend to fail")
 	}
 }
 
@@ -421,27 +342,6 @@ func TestLoadConfigRejectsEnabledTLSWithoutCertOrKey(t *testing.T) {
 	_, _, err = loadConfig([]string{"--tls-enabled", "--tls-key-file", "/tmp/tls.key"})
 	if err == nil {
 		t.Fatal("expected tls.enabled without cert to fail")
-	}
-}
-
-func TestLoadConfigRejectsInvalidDesktopBackend(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := []byte(`
-desktop:
-  active_backend: prod
-  backends:
-    - id: prod
-      name: Prod
-      kind: remote
-`)
-	if err := os.WriteFile(path, content, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	_, _, err := loadConfig([]string{"--config", path})
-	if err == nil {
-		t.Fatal("expected invalid remote backend without URL to fail")
 	}
 }
 
