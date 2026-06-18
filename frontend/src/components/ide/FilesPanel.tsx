@@ -11,7 +11,7 @@ import {
 } from '#/lib/api/query'
 import type { Workspace, WorkspaceFile, WorkspaceFileBrowserResult } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
-import { useIde, newFileTab } from './useIdeStore'
+import { useIde, activeTabId as selectActiveTabId, newFileTab } from './useIdeStore'
 import { deletePrivateWorkspaceFile } from '#/lib/api/files'
 import { SidebarPane } from './SidebarPane'
 import { FileContextMenu } from './FileContextMenu'
@@ -125,7 +125,8 @@ function FilesSection({
   const closeTab = useIde((s) => s.closeTab)
   // Hint the file open in the active tab.
   const activeFileId = useIde((s) => {
-    const tab = s.tabs.find((t) => t.id === s.activeTabIds[workspace.id])
+    const id = selectActiveTabId(s, workspace.id)
+    const tab = s.tabs.find((t) => t.id === id)
     return tab?.kind === 'file' ? tab.fileId : undefined
   })
   const queryClient = useQueryClient()

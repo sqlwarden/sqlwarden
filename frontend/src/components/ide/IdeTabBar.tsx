@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import * as Y from 'yjs'
 import { Icon, type AppIcon } from '#/lib/icons'
 import {
@@ -9,14 +9,24 @@ import {
   DialogTitle,
 } from '#/components/ui/dialog'
 import { Button } from '#/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '#/components/ui/dropdown-menu'
 import type { Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, DEFAULT_CONSOLE_CONTENT, type EditorTab, type TabKind } from './useIdeStore'
+import { allGroups, type GroupNode, type SplitDirection } from './ideLayout'
 import { DriverBadge } from './DriverBadge'
 
 type IdeTabBarProps = {
   orgSlug: string
   workspace: Workspace
+  group: GroupNode
+  focused: boolean
+  onFocus: () => void
 }
 
 const TAB_ICONS: Record<TabKind, AppIcon> = {
@@ -25,21 +35,24 @@ const TAB_ICONS: Record<TabKind, AppIcon> = {
   connection: 'database',
 }
 
-export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
+export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocus }: IdeTabBarProps) {
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null)
 
-  const activeWorkspaceId = useIde((s) => s.activeWorkspaceId)
-  const activeTabId = useIde((s) => s.activeTabIds[s.activeWorkspaceId ?? workspace.id])
   const tabs = useIde((s) => s.tabs)
   const runningTabs = useIde((s) => s.runningTabs)
   const openConsole = useIde((s) => s.openConsole)
-  const closeTab = useIde((s) => s.closeTab)
+  const closeTabInstance = useIde((s) => s.closeTabInstance)
   const setActiveTab = useIde((s) => s.setActiveTab)
   const moveTab = useIde((s) => s.moveTab)
+  const splitActiveTab = useIde((s) => s.splitActiveTab)
+  const draggingTab = useIde((s) => s.draggingTab)
+  const setDraggingTab = useIde((s) => s.setDraggingTab)
+  const layout = useIde((s) => s.layout[workspace.id])
 
-  const [draggedId, setDraggedId] = useState<string | null>(null)
-
-  const workspaceTabs = tabs.filter((t) => t.workspaceId === (activeWorkspaceId ?? workspace.id))
+  const activeTabId = group.activeTabId
+  const groupTabs = group.tabIds
+    .map((id) => tabs.find((t) => t.id === id))
+    .filter((t): t is EditorTab => Boolean(t))
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
@@ -73,7 +86,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
       el.querySelector(`[data-tab-id="${activeTabId}"]`)?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
     }
     updateScrollButtons()
-  }, [activeTabId, workspaceTabs.length, updateScrollButtons])
+  }, [activeTabId, groupTabs.length, updateScrollButtons])
 
   function scrollTabs(direction: -1 | 1) {
     const el = scrollRef.current
@@ -82,6 +95,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
   }
 
   function handleNewConsole() {
+    onFocus() // open the new console into this group
     const tmpDoc = new Y.Doc()
     tmpDoc.getText('content').insert(0, DEFAULT_CONSOLE_CONTENT)
     const yState = Array.from(Y.encodeStateAsUpdate(tmpDoc))
@@ -90,12 +104,24 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
   }
 
   function handleCloseRequest(tab: EditorTab) {
+    // Closing one pane only loses content when it's the tab's last instance.
+    const instances = layout ? allGroups(layout).filter((g) => g.tabIds.includes(tab.id)).length : 1
     const hasConsoleContent = tab.kind === 'scratch' && tab.content.trim() !== ''
-    if (runningTabs[tab.id] || (tab.kind === 'file' && tab.isDirty) || hasConsoleContent) {
+    if (instances <= 1 && (runningTabs[tab.id] || (tab.kind === 'file' && tab.isDirty) || hasConsoleContent)) {
       setPendingCloseTabId(tab.id)
     } else {
-      closeTab(tab.id)
+      closeTabInstance(group.id, tab.id)
     }
+  }
+
+  // Dropping anywhere in this group's tab bar (empty area included) moves the
+  // dragged tab into this group at the end — a forgiving, full-width drop zone.
+  function handleBarDragOver(e: DragEvent<HTMLDivElement>) {
+    if (!draggingTab || e.target !== e.currentTarget) return
+    e.preventDefault()
+    const last = groupTabs[groupTabs.length - 1]
+    if (!last || (draggingTab.fromGroupId === group.id && draggingTab.tabId === last.id)) return
+    moveTab(draggingTab.fromGroupId, draggingTab.tabId, group.id, last.id, 'after')
   }
 
   const pendingCloseTab = pendingCloseTabId ? tabs.find((t) => t.id === pendingCloseTabId) : null
@@ -104,26 +130,33 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
 
   return (
     <>
-      <div className="flex h-9 shrink-0 items-end bg-background">
+      <div
+        className={cn('flex h-9 shrink-0 items-end bg-background', draggingTab && 'bg-accent/30')}
+        onDragOver={handleBarDragOver}
+      >
         {canScrollLeft && <ScrollChevron direction="left" onClick={() => scrollTabs(-1)} />}
         <div
           ref={scrollRef}
+          onDragOver={handleBarDragOver}
           className="flex min-w-0 items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
-          {workspaceTabs.map((tab) => (
+          {groupTabs.map((tab) => (
             <TabItem
               key={tab.id}
               tab={tab}
               active={tab.id === activeTabId}
+              focused={focused}
               isRunning={!!runningTabs[tab.id]}
-              dragging={draggedId === tab.id}
-              onActivate={() => setActiveTab(tab.id)}
+              onActivate={() => setActiveTab(group.id, tab.id)}
               onClose={() => handleCloseRequest(tab)}
-              onDragStart={() => setDraggedId(tab.id)}
+              onSplit={(direction) => splitActiveTab(workspace.id, group.id, tab.id, direction)}
+              onDragStart={() => { setActiveTab(group.id, tab.id); setDraggingTab({ tabId: tab.id, fromGroupId: group.id }) }}
               onDragOverReorder={(position) => {
-                if (draggedId && draggedId !== tab.id) moveTab(draggedId, tab.id, position)
+                if (draggingTab && !(draggingTab.tabId === tab.id && draggingTab.fromGroupId === group.id)) {
+                  moveTab(draggingTab.fromGroupId, draggingTab.tabId, group.id, tab.id, position)
+                }
               }}
-              onDragEnd={() => setDraggedId(null)}
+              onDragEnd={() => setDraggingTab(null)}
             />
           ))}
         </div>
@@ -164,7 +197,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace }: IdeTabBarProps) {
               <Button
                 variant="destructive"
                 onClick={() => {
-                  closeTab(pendingCloseTabId!)
+                  closeTabInstance(group.id, pendingCloseTabId!)
                   setPendingCloseTabId(null)
                 }}
               >
@@ -197,25 +230,29 @@ function ScrollChevron({ direction, onClick }: { direction: 'left' | 'right'; on
 function TabItem({
   tab,
   active,
+  focused,
   isRunning,
-  dragging,
   onActivate,
   onClose,
+  onSplit,
   onDragStart,
   onDragOverReorder,
   onDragEnd,
 }: {
   tab: EditorTab
   active: boolean
+  focused: boolean
   isRunning: boolean
-  dragging: boolean
   onActivate: () => void
   onClose: () => void
+  onSplit: (direction: SplitDirection) => void
   onDragStart: () => void
   onDragOverReorder: (position: 'before' | 'after') => void
   onDragEnd: () => void
 }) {
   const icon = TAB_ICONS[tab.kind]
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
 
   return (
     <div
@@ -225,6 +262,11 @@ function TabItem({
       tabIndex={0}
       draggable
       onClick={onActivate}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        setMenuPos({ x: e.clientX, y: e.clientY })
+        setMenuOpen(true)
+      }}
       onKeyDown={(e) => e.key === 'Enter' && onActivate()}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = 'move'
@@ -240,9 +282,11 @@ function TabItem({
       onDragEnd={onDragEnd}
       className={cn(
         'group relative flex h-9 max-w-52 shrink-0 cursor-pointer select-none items-center gap-1 border-r border-border pl-2.5 pr-1',
-        dragging && 'opacity-50',
         active
-          ? 'bg-card text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-primary'
+          ? cn(
+              'bg-card text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px]',
+              focused ? 'after:bg-primary' : 'after:bg-border',
+            )
           : 'bg-background text-muted-foreground hover:bg-card/50 hover:text-foreground',
       )}
     >
@@ -269,6 +313,31 @@ function TabItem({
       >
         <Icon name="cancel-01" size={11} />
       </button>
+
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger
+          nativeButton={false}
+          render={
+            <span
+              style={{ position: 'fixed', left: menuPos.x, top: menuPos.y, width: 0, height: 0, pointerEvents: 'none' }}
+            />
+          }
+        />
+        <DropdownMenuContent align="start" side="bottom" sideOffset={2} className="w-44">
+          <DropdownMenuItem onClick={() => { setMenuOpen(false); onSplit('right') }}>
+            <Icon name="layout-bottom" size={13} className="rotate-90" />
+            Split
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => { setMenuOpen(false); onSplit('down') }}>
+            <Icon name="layout-bottom" size={13} />
+            Split Down
+          </DropdownMenuItem>
+          <DropdownMenuItem data-variant="destructive" onClick={() => { setMenuOpen(false); onClose() }}>
+            <Icon name="cancel-01" size={13} />
+            Close
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
