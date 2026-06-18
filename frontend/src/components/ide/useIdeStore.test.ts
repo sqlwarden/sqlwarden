@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createIdeStore, newScratchTab, newConnectionTab, newFileTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
+import { createIdeStore, activeTabId, newScratchTab, newConnectionTab, newFileTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
 
 vi.mock('idb-keyval', () => ({
   get: vi.fn(() => Promise.resolve(null)),
@@ -47,16 +47,21 @@ describe('useIdeStore', () => {
     store = createIdeStore('test-org', 1)
   })
 
+  // The focused group's active tab id for a workspace (replaces the old activeTabIds map).
+  const active = (ws: number) => activeTabId(store.getState(), ws)
+  // The focused group id for a workspace (single-group in most tests).
+  const groupId = (ws: number) => store.getState().activeGroupId[ws]
+
   it('starts with empty tabs', () => {
     expect(store.getState().tabs).toEqual([])
-    expect(store.getState().activeTabIds).toEqual({})
+    expect(store.getState().layout).toEqual({})
   })
 
   it('openTab adds a tab and sets it active for its workspace', () => {
     const tab = newScratchTab(mockWorkspace)
     store.getState().openTab(tab)
     expect(store.getState().tabs).toHaveLength(1)
-    expect(store.getState().activeTabIds[mockWorkspace.id]).toBe(tab.id)
+    expect(active(mockWorkspace.id)).toBe(tab.id)
   })
 
   it('openTab does not duplicate an existing tab id', () => {
@@ -71,7 +76,7 @@ describe('useIdeStore', () => {
     store.getState().openTab(tab)
     store.getState().closeTab(tab.id)
     expect(store.getState().tabs).toHaveLength(0)
-    expect(store.getState().activeTabIds[mockWorkspace.id]).toBeUndefined()
+    expect(active(mockWorkspace.id)).toBeUndefined()
   })
 
   it('closeTab focuses another tab in same workspace when closed tab was active', () => {
@@ -81,7 +86,7 @@ describe('useIdeStore', () => {
     store.getState().openTab(tab1)
     store.getState().openTab(tab2)
     store.getState().closeTab(tab2.id)
-    expect(store.getState().activeTabIds[mockWorkspace.id]).toBe(tab1.id)
+    expect(active(mockWorkspace.id)).toBe(tab1.id)
   })
 
   it('tabs from different workspaces do not share active tab state', () => {
@@ -90,11 +95,11 @@ describe('useIdeStore', () => {
     const tab2 = newScratchTab(ws2)
     store.getState().openTab(tab1)
     store.getState().openTab(tab2)
-    expect(store.getState().activeTabIds[mockWorkspace.id]).toBe(tab1.id)
-    expect(store.getState().activeTabIds[ws2.id]).toBe(tab2.id)
+    expect(active(mockWorkspace.id)).toBe(tab1.id)
+    expect(active(ws2.id)).toBe(tab2.id)
     // switching active workspace doesn't change either workspace's active tab
     store.getState().setActiveWorkspace(mockWorkspace.id)
-    expect(store.getState().activeTabIds[ws2.id]).toBe(tab2.id)
+    expect(active(ws2.id)).toBe(tab2.id)
   })
 
   it('updateTabContent updates only the target tab', () => {
@@ -144,9 +149,9 @@ describe('useIdeStore', () => {
   it('setActiveTab is a no-op for an unknown tabId', () => {
     const tab = newScratchTab(mockWorkspace)
     store.getState().openTab(tab)
-    const before = store.getState().activeTabIds
-    store.getState().setActiveTab('nonexistent:id')
-    expect(store.getState().activeTabIds).toEqual(before)
+    const before = active(mockWorkspace.id)
+    store.getState().setActiveTab(groupId(mockWorkspace.id), 'nonexistent:id')
+    expect(active(mockWorkspace.id)).toBe(before)
   })
 
   it('setActiveTab updates only the owning workspace entry', () => {
@@ -157,11 +162,11 @@ describe('useIdeStore', () => {
     store.getState().openTab(tab1)
     store.getState().openTab(tab2a)
     store.getState().openTab(tab2b)
-    store.getState().setActiveTab(tab2b.id)
+    store.getState().setActiveTab(groupId(ws2.id), tab2b.id)
     // ws2 switched to tab2b
-    expect(store.getState().activeTabIds[ws2.id]).toBe(tab2b.id)
+    expect(active(ws2.id)).toBe(tab2b.id)
     // ws1 is unaffected
-    expect(store.getState().activeTabIds[mockWorkspace.id]).toBe(tab1.id)
+    expect(active(mockWorkspace.id)).toBe(tab1.id)
   })
 
   it('closeTab on the active tab of workspace 2 does not change workspace 1 active tab', () => {
@@ -171,8 +176,8 @@ describe('useIdeStore', () => {
     store.getState().openTab(tab1)
     store.getState().openTab(tab2)
     store.getState().closeTab(tab2.id)
-    expect(store.getState().activeTabIds[mockWorkspace.id]).toBe(tab1.id)
-    expect(store.getState().activeTabIds[ws2.id]).toBeUndefined()
+    expect(active(mockWorkspace.id)).toBe(tab1.id)
+    expect(active(ws2.id)).toBeUndefined()
   })
 
   it('setTabConnection persists connectionId on the tab', () => {
@@ -288,7 +293,7 @@ describe('useIdeStore', () => {
 
   it('openConsole sets the new tab as active for its workspace', () => {
     store.getState().openConsole(mockWorkspace, [])
-    expect(store.getState().activeTabIds[mockWorkspace.id]).toBe('scratch:1:1')
+    expect(active(mockWorkspace.id)).toBe('scratch:1:1')
   })
 
   describe('moveTab', () => {
@@ -297,37 +302,84 @@ describe('useIdeStore', () => {
         store.getState().openTab({ id, workspaceId: mockWorkspace.id, title: id, kind: 'scratch', content: '' })
       }
     }
-    const order = () => store.getState().tabs.map((t) => t.id)
+    const order = () => {
+      const node = store.getState().layout[mockWorkspace.id]
+      return node && node.type === 'group' ? node.tabIds : []
+    }
+
+    const g = () => groupId(mockWorkspace.id)
 
     it('moves a tab before a target', () => {
       addTabs(['a', 'b', 'c', 'd'])
-      store.getState().moveTab('a', 'c', 'before')
+      store.getState().moveTab(g(), 'a', g(), 'c', 'before')
       expect(order()).toEqual(['b', 'a', 'c', 'd'])
     })
 
     it('moves a tab after a target, supporting move-to-end', () => {
       addTabs(['a', 'b', 'c', 'd'])
-      store.getState().moveTab('a', 'd', 'after')
+      store.getState().moveTab(g(), 'a', g(), 'd', 'after')
       expect(order()).toEqual(['b', 'c', 'd', 'a'])
     })
 
     it('moves a later tab before an earlier one', () => {
       addTabs(['a', 'b', 'c', 'd'])
-      store.getState().moveTab('d', 'a', 'before')
+      store.getState().moveTab(g(), 'd', g(), 'a', 'before')
       expect(order()).toEqual(['d', 'a', 'b', 'c'])
     })
 
     it('is a no-op when dragged equals target', () => {
       addTabs(['a', 'b', 'c'])
-      store.getState().moveTab('b', 'b', 'before')
+      store.getState().moveTab(g(), 'b', g(), 'b', 'before')
       expect(order()).toEqual(['a', 'b', 'c'])
     })
 
-    it('does not replace the tabs array when the order is unchanged', () => {
+    it('does not churn the layout on repeated identical moves', () => {
       addTabs(['a', 'b', 'c'])
-      const before = store.getState().tabs
-      store.getState().moveTab('a', 'b', 'before') // a is already before b
-      expect(store.getState().tabs).toBe(before)
+      store.getState().moveTab(g(), 'a', g(), 'b', 'before') // a now active, order [a,b,c]
+      const afterFirst = store.getState().layout[mockWorkspace.id]
+      store.getState().moveTab(g(), 'a', g(), 'b', 'before') // identical → no-op (avoids dragover churn)
+      expect(store.getState().layout[mockWorkspace.id]).toBe(afterFirst)
+    })
+  })
+
+  describe('layout actions', () => {
+    const t = (id: string) => ({ id, workspaceId: mockWorkspace.id, title: id, kind: 'scratch' as const, content: '' })
+    const root = () => store.getState().layout[mockWorkspace.id]
+
+    it('splitActiveTab duplicates the active tab into a new adjacent group', () => {
+      store.getState().openTab(t('a'))
+      store.getState().openTab(t('b'))
+      store.getState().splitActiveTab(mockWorkspace.id, groupId(mockWorkspace.id), 'b', 'right')
+      const node = root()
+      expect(node.type).toBe('split')
+      if (node.type === 'split') {
+        // source keeps b; new group also has b (same tab, synced doc)
+        expect(node.children.map((c) => (c.type === 'group' ? c.tabIds : []))).toEqual([['a', 'b'], ['b']])
+      }
+    })
+
+    it('closeTabInstance closes one pane but keeps the tab while another pane shows it', () => {
+      store.getState().openTab(t('a'))
+      store.getState().splitActiveTab(mockWorkspace.id, groupId(mockWorkspace.id), 'a', 'right') // a now in two groups
+      const newGroupId = store.getState().activeGroupId[mockWorkspace.id]
+      store.getState().closeTabInstance(newGroupId, 'a')
+      expect(store.getState().tabs.some((tab) => tab.id === 'a')).toBe(true) // still open in the other pane
+      expect(root().type).toBe('group')
+    })
+
+    it('closeTabInstance fully closes the tab on its last instance', () => {
+      store.getState().openTab(t('a'))
+      const gid = store.getState().activeGroupId[mockWorkspace.id]
+      store.getState().closeTabInstance(gid, 'a')
+      expect(store.getState().tabs.some((tab) => tab.id === 'a')).toBe(false)
+    })
+
+    it('closeTab fully closes a tab across all panes', () => {
+      store.getState().openTab(t('a'))
+      store.getState().splitActiveTab(mockWorkspace.id, groupId(mockWorkspace.id), 'a', 'right') // a in two groups
+      store.getState().closeTab('a')
+      expect(store.getState().tabs.some((tab) => tab.id === 'a')).toBe(false)
+      expect(root().type).toBe('group') // collapsed back to one group
     })
   })
 })

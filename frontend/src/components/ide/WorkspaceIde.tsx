@@ -23,15 +23,14 @@ import {
   createIdeStore,
   IdeStoreContext,
   useIde,
+  activeTabId as selectActiveTabId,
   DEFAULT_CONSOLE_CONTENT,
   type EditorTab,
 } from './useIdeStore'
 import { SaveAsDialog } from './SaveAsDialog'
 import { IdeToolbar } from './IdeToolbar'
-import { IdeTabBar } from './IdeTabBar'
-import { SqlEditor } from './SqlEditor'
+import { EditorLayout } from './EditorLayout'
 import { ResultsArea } from './ResultsArea'
-import { useFileContent } from './useFileContent'
 import { createYDocRegistry, YDocRegistryContext, useYDocRegistry } from './useYDocRegistry'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 
@@ -49,6 +48,14 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
   const store = useMemo(() => createIdeStore(orgSlug, accountId), [orgSlug, accountId])
   const registry = useMemo(() => createYDocRegistry(accountId), [orgSlug, accountId])
   const viewRegistry = useMemo(() => createEditorViewRegistry(), [])
+
+  // Release the primary lock when this IDE window unmounts so another window can
+  // take over persistence.
+  useEffect(() => {
+    return () => {
+      ;(store as unknown as { __cleanupElection?: () => void }).__cleanupElection?.()
+    }
+  }, [store])
 
   // ── Cross-window etag / dirty-state sync ─────────────────────────────────
   // When any window saves a file (etag changes) or completes a server load
@@ -408,7 +415,10 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   const [createFileOpen, setCreateFileOpen] = useState(false)
   const [cursorInfo, setCursorInfo] = useState<CursorInfo | null>(null)
 
-  const activeTabId = useIde((s) => s.activeTabIds[workspace.id])
+  const activeTabId = useIde((s) => selectActiveTabId(s, workspace.id))
+  const layout = useIde((s) => s.layout[workspace.id])
+  const draggingTab = useIde((s) => s.draggingTab)
+  const splitTabToEdge = useIde((s) => s.splitTabToEdge)
   const tabs = useIde((s) => s.tabs)
   const openConsole = useIde((s) => s.openConsole)
   const openTab = useIde((s) => s.openTab)
@@ -545,60 +555,37 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [activeTab, orgSlug, workspace.id, updateTabEtag, registry])
 
-  // ── File content loading ───────────────────────────────────────────────────
-  const { isLoading: isContentLoading, isError: isContentError } = useFileContent({
-    orgSlug,
-    workspaceId: workspace.id,
-    tab: activeTab,
-    updateTabEtag,
-  })
-
   // ── Render ─────────────────────────────────────────────────────────────────
-  // Populate the Y.Doc synchronously in render so SqlEditor always mounts with
-  // content. React runs child effects (SqlEditor's) before parent effects
-  // (EditorSection's), so waiting for the lifecycle useEffect is too late —
-  // EditorView.create() captures yText.toString() at mount time.
-  let activeDoc: Y.Doc | undefined
-  if (activeTab) {
-    const initState = activeTab.ySnapshot ?? activeTab.yState
-    const initialContent = !initState && activeTab.kind !== 'file'
-      ? activeTab.content
-      : undefined
-    activeDoc = registry.getOrCreate(activeTab.id, initialContent)
-    if (initState && activeDoc.getText('content').length === 0) {
-      Y.applyUpdate(activeDoc, new Uint8Array(initState), 'init')
-    }
-  }
+  // Each EditorGroup populates its own Y.Doc synchronously and loads its own file
+  // content; EditorSection keeps the workspace-wide Y.Doc lifecycle effects above.
+  const hasAnyTab = tabs.some((t) => t.workspaceId === workspace.id)
 
   return (
     <>
     <section className="flex h-full min-h-0 flex-col bg-background">
       <IdeToolbar orgSlug={orgSlug} workspace={workspace} />
-      <IdeTabBar orgSlug={orgSlug} workspace={workspace} />
-      <div className="min-h-0 flex-1 border-t border-border bg-card">
-        {activeTab && activeDoc ? (
-          isContentLoading ? (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              Loading…
-            </div>
-          ) : isContentError ? (
-            <div className="flex h-full items-center justify-center text-xs text-destructive">
-              Failed to load file content.
-            </div>
-          ) : (
-            <SqlEditor
-              key={activeTab.id}
-              tabId={activeTab.id}
-              doc={activeDoc}
-              className="h-full"
-              onCursorChange={(line, col, sel) => setCursorInfo({ line, col, sel })}
-            />
-          )
-        ) : (
-          <EmptyEditorState
-            onNewConsole={createConsole}
-            onNewFile={() => setCreateFileOpen(true)}
+      <div className="relative min-h-0 flex-1">
+        {hasAnyTab && layout ? (
+          <EditorLayout
+            orgSlug={orgSlug}
+            workspace={workspace}
+            node={layout}
+            onCursorChange={(line, col, sel) => setCursorInfo({ line, col, sel })}
           />
+        ) : (
+          <div className="h-full border-t border-border bg-card">
+            <EmptyEditorState
+              onNewConsole={createConsole}
+              onNewFile={() => setCreateFileOpen(true)}
+            />
+          </div>
+        )}
+        {/* Drag a tab to the left/right edge to open it in a new split. */}
+        {draggingTab && hasAnyTab && (
+          <>
+            <EdgeDropZone side="left" onDropTab={() => splitTabToEdge(workspace.id, draggingTab.tabId, 'left')} />
+            <EdgeDropZone side="right" onDropTab={() => splitTabToEdge(workspace.id, draggingTab.tabId, 'right')} />
+          </>
         )}
       </div>
       <EditorStatusBar cursorInfo={cursorInfo} hasActiveTab={!!activeTab} />
@@ -644,6 +631,30 @@ function EditorStatusBar({ cursorInfo, hasActiveTab }: { cursorInfo: CursorInfo 
       <div className="flex-1" />
       {hasActiveTab && <span>SQL</span>}
     </div>
+  )
+}
+
+// ─── Edge drop zone (drag a tab here to split) ──────────────────────────────────
+
+function EdgeDropZone({ side, onDropTab }: { side: 'left' | 'right'; onDropTab: () => void }) {
+  const [over, setOver] = useState(false)
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOver(true) }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => { e.preventDefault(); setOver(false); onDropTab() }}
+      // A directional fade (solid at the edge, fading into the editor) signals
+      // "drop here to split" without implying the new pane will be this width.
+      // Starts below the tab-bar row (h-9) so tabs stay draggable.
+      style={{
+        background: `linear-gradient(${side === 'left' ? 'to right' : 'to left'}, color-mix(in oklab, var(--primary) 32%, transparent), transparent)`,
+      }}
+      className={cn(
+        'absolute bottom-0 top-9 z-20 w-[16%] transition-opacity duration-150',
+        side === 'left' ? 'left-0' : 'right-0',
+        over ? 'opacity-100' : 'opacity-0',
+      )}
+    />
   )
 }
 

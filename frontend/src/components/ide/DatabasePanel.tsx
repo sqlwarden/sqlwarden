@@ -15,7 +15,7 @@ import { isApiError } from '#/lib/api/errors'
 import type { Connection, Environment, Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { hasPermission, permission } from '#/lib/permissions'
-import { useIde, newConnectionTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
+import { useIde, activeTabId as selectActiveTabId, newConnectionTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
 import { SidebarPane } from './SidebarPane'
 import { SchemaTree } from './SchemaTree'
 import { ScrollArea } from '#/components/ui/scroll-area'
@@ -420,8 +420,8 @@ function ConnectionRow({
   const sessionId = useIde((s) => s.sessions[connection.id])
   // Hint the connection used by the active tab (file's linked connection, console, or connection tab).
   const isActive = useIde((s) => {
-    const tab = s.tabs.find((t) => t.id === s.activeTabIds[connection.workspace_id])
-    return tab?.connectionId === connection.id
+    const id = selectActiveTabId(s, connection.workspace_id)
+    return s.tabs.find((t) => t.id === id)?.connectionId === connection.id
   })
   const queryClient = useQueryClient()
   const refresh = useMutation({

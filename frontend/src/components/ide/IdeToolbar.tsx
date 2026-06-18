@@ -12,7 +12,7 @@ import { api } from '#/lib/api/client'
 import { updatePrivateWorkspaceFileContent } from '#/lib/api/files'
 import type { Connection, ResultSet, Workspace, WorkspaceFile } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
-import { useIde, type EditorTab } from './useIdeStore'
+import { useIde, activeTabId as selectActiveTabId, type EditorTab } from './useIdeStore'
 import { DriverBadge } from './DriverBadge'
 import { SaveAsDialog } from './SaveAsDialog'
 import { useYDocRegistry } from './useYDocRegistry'
@@ -28,7 +28,8 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const [connSearch, setConnSearch] = useState('')
   const [saveAsTab, setSaveAsTab] = useState<EditorTab | null>(null)
 
-  const activeTabId = useIde((s) => s.activeTabIds[workspace.id])
+  const activeTabId = useIde((s) => selectActiveTabId(s, workspace.id))
+  const activeGroupId = useIde((s) => s.activeGroupId[workspace.id])
   const tabs = useIde((s) => s.tabs)
   const openTab = useIde((s) => s.openTab)
   const closeTab = useIde((s) => s.closeTab)
@@ -126,7 +127,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const handleRun = useCallback(async () => {
     if (!activeTab || !activeConnection || isRunning) return
 
-    const view = viewRegistry.get(activeTab.id)
+    const view = viewRegistry.get(activeGroupId ? `${activeGroupId}:${activeTab.id}` : activeTab.id)
     let sql: string
     if (view) {
       const sel = view.state.selection.main
@@ -190,7 +191,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       setTabController(activeTab.id, null)
       setTabRunning(activeTab.id, false)
     }
-  }, [activeTab, activeConnection, isRunning, maximizedPane, sessions, orgSlug, workspace.id,
+  }, [activeTab, activeGroupId, activeConnection, isRunning, maximizedPane, sessions, orgSlug, workspace.id,
       registry, viewRegistry, abortControllers, setMaximizedPane, setQueryResult, setSession,
       setTabController, setTabRunning])
 

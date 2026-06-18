@@ -6,12 +6,12 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/componen
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { cn } from '#/lib/utils'
 import type { ResultColumn, ResultValue } from '#/lib/api/types'
-import { useIde, type QueryResult } from './useIdeStore'
+import { useIde, activeTabId as selectActiveTabId, type QueryResult } from './useIdeStore'
 
 export function ResultsArea() {
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
-  const activeTabId = useIde((s) => s.activeWorkspaceId ? s.activeTabIds[s.activeWorkspaceId] : undefined)
+  const activeTabId = useIde((s) => (s.activeWorkspaceId ? selectActiveTabId(s, s.activeWorkspaceId) : undefined))
   const results = useIde((s) => s.results)
 
   const result: QueryResult = activeTabId ? (results[activeTabId] ?? { status: 'idle' }) : { status: 'idle' }

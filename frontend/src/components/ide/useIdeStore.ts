@@ -1,8 +1,25 @@
 import { createContext, useContext } from 'react'
 import { createStore, useStore } from 'zustand'
-import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware'
-import { get, set, del } from 'idb-keyval'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { Connection, ResultSet, Workspace, WorkspaceFile } from '#/lib/api/types'
+import { makeRoleGatedStorage, electPrimary, type WindowRole } from './windowRole'
+import {
+  createGroup,
+  addTab,
+  removeTab,
+  removeTabFromGroup,
+  setActive,
+  setActiveInGroup,
+  moveTabBetweenGroups,
+  splitGroup,
+  splitToEdge,
+  findGroup,
+  firstGroup,
+  allGroups,
+  migrateToLayout,
+  type LayoutNode,
+  type SplitDirection,
+} from './ideLayout'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,9 +60,14 @@ export type IdeState = {
   /** Active sidebar/page activity id (see ideActivities). */
   activeActivityId: string
   sidebarCollapsed: boolean
-  /** Active tab ID per workspace. Keyed by workspaceId so each workspace
-   *  remembers its own active tab independently. */
-  activeTabIds: Record<number, string>
+  /** Per-workspace editor layout tree (split groups + their tab lists). */
+  layout: Record<number, LayoutNode>
+  /** Focused group id per workspace — drives which group Run/Save/results target. */
+  activeGroupId: Record<number, string>
+  /** Tab + source group currently being dragged (transient; drives edge-split drop zones). */
+  draggingTab: { tabId: string; fromGroupId: string } | null
+  /** `${groupId}:${tabId}` of an editor that should grab keyboard focus once mounted (after a split). */
+  focusEditorRequest: string | null
   tabs: EditorTab[]
   /** Live session IDs keyed by connectionId. A session entry means the backend has an open pool connection for this account. */
   sessions: Record<number, string>
@@ -62,9 +84,30 @@ export type IdeActions = {
   openTab: (tab: EditorTab) => void
   ensureTab: (tab: EditorTab) => void
   closeTab: (tabId: string) => void
-  setActiveTab: (tabId: string) => void
-  /** Reorder tabs by drag: place draggedTabId before/after targetTabId. */
-  moveTab: (draggedTabId: string, targetTabId: string, position: 'before' | 'after') => void
+  /** Close one pane's instance of a tab; releases the tab only when no group still holds it. */
+  closeTabInstance: (groupId: string, tabId: string) => void
+  /** Activate a tab within a specific group and focus that group. */
+  setActiveTab: (groupId: string, tabId: string) => void
+  /** Move a tab instance from one group to another (or reorder within a group) by drag. */
+  moveTab: (
+    fromGroupId: string,
+    draggedTabId: string,
+    toGroupId: string,
+    targetTabId: string,
+    position: 'before' | 'after',
+  ) => void
+  /** Focus a group (drives Run/Save/results target). */
+  focusGroup: (workspaceId: number, groupId: string) => void
+  /** Duplicate a group's tab into a new group beside it in the given direction. */
+  splitActiveTab: (workspaceId: number, groupId: string, tabId: string, direction: SplitDirection) => void
+  /** Duplicate a tab into a new group at the left/right editor edge (edge drop). */
+  splitTabToEdge: (workspaceId: number, tabId: string, side: 'left' | 'right') => void
+  /** Persist a split node's child sizes after a resize. */
+  setSplitSizes: (workspaceId: number, splitId: string, sizes: number[]) => void
+  /** Track the tab + source group being dragged (transient drag UI state). */
+  setDraggingTab: (drag: { tabId: string; fromGroupId: string } | null) => void
+  /** Request (or clear) keyboard focus for a specific editor pane. */
+  setFocusEditorRequest: (key: string | null) => void
   updateTabContent: (tabId: string, content: string, ySnapshot?: number[]) => void
   updateTabEtag: (tabId: string, etag: string) => void
   setTabConnection: (tabId: string, connectionId: number, driver?: string) => void
@@ -84,29 +127,52 @@ export type IdeActions = {
   openConsole: (workspace: Workspace, yState: number[], connectionId?: number) => void
 }
 
-// ─── Store factory ─────────────────────────────────────────────────────────────
+// ─── Layout selectors ───────────────────────────────────────────────────────────
 
-function makeStorage(orgSlug: string, accountId: number): StateStorage {
-  const key = `sqlwarden.ide.${orgSlug}.${accountId}`
-  return {
-    getItem: async () => {
-      const val = await get<string>(key)
-      return val ?? null
-    },
-    setItem: async (_name, value) => set(key, value),
-    removeItem: async () => del(key),
+let _groupSeq = 0
+const newGroupId = () => `grp-${Date.now().toString(36)}-${(_groupSeq++).toString(36)}`
+
+/** Returns a workspace's layout + focused group id, creating an empty group if none exists. */
+function ensureWorkspaceLayout(s: IdeState, workspaceId: number): { layout: LayoutNode; groupId: string } {
+  const existing = s.layout[workspaceId]
+  if (existing) {
+    const focusedId = s.activeGroupId[workspaceId]
+    const group = (focusedId ? findGroup(existing, focusedId) : undefined) ?? firstGroup(existing)
+    return { layout: existing, groupId: group.id }
   }
+  const group = createGroup(newGroupId(), [])
+  return { layout: group, groupId: group.id }
 }
 
-export function createIdeStore(orgSlug: string, accountId: number) {
-  return createStore<IdeState & IdeActions>()(
+/** The focused group's active tab id for a workspace (replaces the old activeTabIds[ws]). */
+export function activeTabId(s: IdeState, workspaceId: number): string | undefined {
+  const layout = s.layout[workspaceId]
+  if (!layout) return undefined
+  const focusedId = s.activeGroupId[workspaceId]
+  const group = (focusedId ? findGroup(layout, focusedId) : undefined) ?? firstGroup(layout)
+  return group?.activeTabId
+}
+
+// ─── Store factory ─────────────────────────────────────────────────────────────
+
+export function createIdeStore(orgSlug: string, accountId: number, role: WindowRole = 'managed') {
+  const storageKey = `sqlwarden.ide.${orgSlug}.${accountId}`
+  // Ephemeral windows never persist; managed windows persist only while they hold
+  // the primary lock (one window at a time).
+  let isPrimary = false
+  const canPersist = () => role === 'managed' && isPrimary
+
+  const store = createStore<IdeState & IdeActions>()(
     persist(
       (set) => ({
         activeWorkspaceId: undefined,
         maximizedPane: null,
         activeActivityId: 'files',
         sidebarCollapsed: false,
-        activeTabIds: {},
+        layout: {},
+        activeGroupId: {},
+        draggingTab: null,
+        focusEditorRequest: null,
         tabs: [],
         sessions: {},
         results: {},
@@ -117,17 +183,25 @@ export function createIdeStore(orgSlug: string, accountId: number) {
 
         openTab: (tab) =>
           set((s) => {
-            const existing = s.tabs.find((t) => t.id === tab.id)
+            const exists = s.tabs.some((t) => t.id === tab.id)
+            const { layout, groupId } = ensureWorkspaceLayout(s, tab.workspaceId)
+            const nextLayout = setActive(addTab(layout, groupId, tab.id), tab.id)
             return {
-              activeTabIds: { ...s.activeTabIds, [tab.workspaceId]: tab.id },
-              tabs: existing ? s.tabs : [...s.tabs, tab],
+              tabs: exists ? s.tabs : [...s.tabs, tab],
+              layout: { ...s.layout, [tab.workspaceId]: nextLayout },
+              activeGroupId: { ...s.activeGroupId, [tab.workspaceId]: groupId },
             }
           }),
 
         ensureTab: (tab) =>
           set((s) => {
-            if (s.tabs.some((t) => t.id === tab.id)) return s
-            return { tabs: [...s.tabs, tab] }
+            if (s.tabs.some((t) => t.id === tab.id)) return {}
+            const { layout, groupId } = ensureWorkspaceLayout(s, tab.workspaceId)
+            return {
+              tabs: [...s.tabs, tab],
+              layout: { ...s.layout, [tab.workspaceId]: addTab(layout, groupId, tab.id) },
+              activeGroupId: { ...s.activeGroupId, [tab.workspaceId]: s.activeGroupId[tab.workspaceId] ?? groupId },
+            }
           }),
 
         closeTab: (tabId) =>
@@ -135,50 +209,135 @@ export function createIdeStore(orgSlug: string, accountId: number) {
             s.abortControllers[tabId]?.abort()
             const closedTab = s.tabs.find((t) => t.id === tabId)
             const nextTabs = s.tabs.filter((t) => t.id !== tabId)
+            const { [tabId]: _r, ...nextResults } = s.results
+            const { [tabId]: _rt, ...nextRunning } = s.runningTabs
+            const { [tabId]: _ac, ...nextControllers } = s.abortControllers
 
-            const nextActiveTabIds = { ...s.activeTabIds }
-            if (closedTab && nextActiveTabIds[closedTab.workspaceId] === tabId) {
-              const next = nextTabs.find((t) => t.workspaceId === closedTab.workspaceId)
-              if (next) {
-                nextActiveTabIds[closedTab.workspaceId] = next.id
-              } else {
-                delete nextActiveTabIds[closedTab.workspaceId]
-              }
+            const patch = {
+              tabs: nextTabs,
+              results: nextResults,
+              runningTabs: nextRunning,
+              abortControllers: nextControllers,
             }
+            if (!closedTab) return patch
 
+            const ws = closedTab.workspaceId
+            const layout = s.layout[ws]
+            if (!layout) return patch
+            const nextLayout = removeTab(layout, tabId)
+            const focused = s.activeGroupId[ws]
+            const stillThere = focused && findGroup(nextLayout, focused)
+            return {
+              ...patch,
+              layout: { ...s.layout, [ws]: nextLayout },
+              activeGroupId: { ...s.activeGroupId, [ws]: stillThere ? focused : firstGroup(nextLayout).id },
+            }
+          }),
+
+        closeTabInstance: (groupId, tabId) =>
+          set((s) => {
+            const tab = s.tabs.find((t) => t.id === tabId)
+            if (!tab) return {}
+            const ws = tab.workspaceId
+            const layout = s.layout[ws]
+            if (!layout) return {}
+            const nextLayout = removeTabFromGroup(layout, groupId, tabId)
+            const focused = s.activeGroupId[ws]
+            const focusStillThere = focused && findGroup(nextLayout, focused)
+            const base = {
+              layout: { ...s.layout, [ws]: nextLayout },
+              activeGroupId: { ...s.activeGroupId, [ws]: focusStillThere ? focused : firstGroup(nextLayout).id },
+            }
+            // Keep the tab and its Y.Doc alive while another pane still shows it.
+            if (allGroups(nextLayout).some((g) => g.tabIds.includes(tabId))) return base
+            s.abortControllers[tabId]?.abort()
             const { [tabId]: _r, ...nextResults } = s.results
             const { [tabId]: _rt, ...nextRunning } = s.runningTabs
             const { [tabId]: _ac, ...nextControllers } = s.abortControllers
             return {
-              tabs: nextTabs,
-              activeTabIds: nextActiveTabIds,
+              ...base,
+              tabs: s.tabs.filter((t) => t.id !== tabId),
               results: nextResults,
               runningTabs: nextRunning,
               abortControllers: nextControllers,
             }
           }),
 
-        setActiveTab: (tabId) =>
+        setActiveTab: (groupId, tabId) =>
           set((s) => {
             const tab = s.tabs.find((t) => t.id === tabId)
-            if (!tab) return s
-            return { activeTabIds: { ...s.activeTabIds, [tab.workspaceId]: tabId } }
+            if (!tab) return {}
+            const ws = tab.workspaceId
+            const layout = s.layout[ws]
+            if (!layout || !findGroup(layout, groupId)) return {}
+            return {
+              layout: { ...s.layout, [ws]: setActiveInGroup(layout, groupId, tabId) },
+              activeGroupId: { ...s.activeGroupId, [ws]: groupId },
+            }
           }),
 
-        moveTab: (draggedTabId, targetTabId, position) =>
+        moveTab: (fromGroupId, draggedTabId, toGroupId, targetTabId, position) =>
           set((s) => {
-            if (draggedTabId === targetTabId) return {}
-            const dragged = s.tabs.find((t) => t.id === draggedTabId)
-            if (!dragged) return {}
-            const without = s.tabs.filter((t) => t.id !== draggedTabId)
-            let idx = without.findIndex((t) => t.id === targetTabId)
-            if (idx === -1) return {}
-            if (position === 'after') idx += 1
-            const next = [...without.slice(0, idx), dragged, ...without.slice(idx)]
-            // No-op if order is unchanged — avoids re-render churn during dragover.
-            if (next.every((t, i) => t.id === s.tabs[i]?.id)) return {}
-            return { tabs: next }
+            const tab = s.tabs.find((t) => t.id === draggedTabId)
+            if (!tab) return {}
+            const ws = tab.workspaceId
+            const layout = s.layout[ws]
+            if (!layout) return {}
+            const next = moveTabBetweenGroups(layout, fromGroupId, draggedTabId, toGroupId, targetTabId, position)
+            if (next === layout) return {}
+            // The dragged tab is now active in the target group; focus it if it survived.
+            const focusId = findGroup(next, toGroupId) ? toGroupId : firstGroup(next).id
+            return {
+              layout: { ...s.layout, [ws]: next },
+              activeGroupId: { ...s.activeGroupId, [ws]: focusId },
+            }
           }),
+
+        focusGroup: (workspaceId, groupId) =>
+          set((s) => ({ activeGroupId: { ...s.activeGroupId, [workspaceId]: groupId } })),
+
+        splitActiveTab: (workspaceId, groupId, tabId, direction) =>
+          set((s) => {
+            const layout = s.layout[workspaceId]
+            if (!layout) return {}
+            const { node, newGroupId: gid } = splitGroup(layout, groupId, tabId, direction, newGroupId())
+            if (node === layout) return {}
+            // Focus the newly created pane (the tab now lives in both groups) and
+            // give its editor keyboard focus once it mounts.
+            return {
+              layout: { ...s.layout, [workspaceId]: node },
+              activeGroupId: { ...s.activeGroupId, [workspaceId]: gid },
+              focusEditorRequest: `${gid}:${tabId}`,
+            }
+          }),
+
+        splitTabToEdge: (workspaceId, tabId, side) =>
+          set((s) => {
+            const layout = s.layout[workspaceId]
+            if (!layout) return {}
+            const { node, newGroupId: gid } = splitToEdge(layout, tabId, side, newGroupId())
+            if (node === layout) return {}
+            return {
+              layout: { ...s.layout, [workspaceId]: node },
+              activeGroupId: { ...s.activeGroupId, [workspaceId]: gid },
+              focusEditorRequest: `${gid}:${tabId}`,
+            }
+          }),
+
+        setSplitSizes: (workspaceId, splitId, sizes) =>
+          set((s) => {
+            const layout = s.layout[workspaceId]
+            if (!layout) return {}
+            const apply = (n: LayoutNode): LayoutNode =>
+              n.type === 'group'
+                ? n
+                : { ...n, sizes: n.id === splitId ? sizes : n.sizes, children: n.children.map(apply) }
+            return { layout: { ...s.layout, [workspaceId]: apply(layout) } }
+          }),
+
+        setDraggingTab: (drag) => set({ draggingTab: drag }),
+
+        setFocusEditorRequest: (key) => set({ focusEditorRequest: key }),
 
         updateTabContent: (tabId, content, ySnapshot?) =>
           set((s) => ({
@@ -252,21 +411,58 @@ export function createIdeStore(orgSlug: string, accountId: number) {
               ...(connectionId !== undefined ? { connectionId } : {}),
             }
             const exists = s.tabs.some((t) => t.id === tab.id)
+            const { layout, groupId } = ensureWorkspaceLayout(s, workspace.id)
             return {
-              activeTabIds: { ...s.activeTabIds, [workspace.id]: tab.id },
               tabs: exists ? s.tabs : [...s.tabs, tab],
+              layout: { ...s.layout, [workspace.id]: setActive(addTab(layout, groupId, tab.id), tab.id) },
+              activeGroupId: { ...s.activeGroupId, [workspace.id]: groupId },
             }
           }),
       }),
       {
-        name: `sqlwarden.ide.${orgSlug}.${accountId}`,
-        storage: createJSONStorage(() => makeStorage(orgSlug, accountId)),
+        name: storageKey,
+        version: 1,
+        // Migrate v0 state (flat `activeTabIds`) to the v1 layout tree: one group
+        // per workspace built from its tabs + the old active tab. Zero data loss.
+        migrate: (persisted, version) => {
+          const state = persisted as (IdeState & { activeTabIds?: Record<number, string> }) | undefined
+          if (!state) return persisted as IdeState
+          if (version >= 1 && state.layout) return state as IdeState
+          const byWs: Record<number, string[]> = {}
+          for (const tab of state.tabs ?? []) (byWs[tab.workspaceId] ??= []).push(tab.id)
+          const layout: Record<number, LayoutNode> = {}
+          const activeGroupId: Record<number, string> = {}
+          for (const [wsStr, ids] of Object.entries(byWs)) {
+            const ws = Number(wsStr)
+            const gid = `grp-mig-${ws}`
+            layout[ws] = migrateToLayout(gid, ids, state.activeTabIds?.[ws])
+            activeGroupId[ws] = gid
+          }
+          const { activeTabIds: _drop, ...rest } = state
+          return { ...rest, layout, activeGroupId } as IdeState
+        },
+        storage: createJSONStorage(() =>
+          role === 'ephemeral'
+            ? { getItem: async () => null, setItem: async () => {}, removeItem: async () => {} }
+            : makeRoleGatedStorage(storageKey, canPersist),
+        ),
         // Exclude ephemeral query results from IndexedDB — they can be large
         // and are meaningless after a page reload anyway.
-        partialize: ({ results: _r, runningTabs: _rt, abortControllers: _ac, ...state }) => state,
+        partialize: ({ results: _r, runningTabs: _rt, abortControllers: _ac, draggingTab: _dt, focusEditorRequest: _fe, ...state }) => state,
       },
     ),
   )
+
+  // Compete for the primary lock; the holder is the only window that persists.
+  const cleanupElection =
+    role === 'ephemeral'
+      ? () => {}
+      : electPrimary(`sqlwarden-ide-primary:${orgSlug}:${accountId}`, () => {
+          isPrimary = true
+        })
+  ;(store as unknown as { __cleanupElection?: () => void }).__cleanupElection = cleanupElection
+
+  return store
 }
 
 // ─── React context + hook ──────────────────────────────────────────────────────
@@ -287,7 +483,10 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   maximizedPane: null,
   activeActivityId: 'files',
   sidebarCollapsed: false,
-  activeTabIds: {},
+  layout: {},
+  activeGroupId: {},
+  draggingTab: null,
+  focusEditorRequest: null,
   tabs: [],
   sessions: {},
   results: {},
@@ -297,8 +496,15 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   openTab: _noop,
   ensureTab: _noop,
   closeTab: _noop,
+  closeTabInstance: _noop,
   setActiveTab: _noop,
   moveTab: _noop,
+  focusGroup: _noop,
+  splitActiveTab: _noop,
+  splitTabToEdge: _noop,
+  setSplitSizes: _noop,
+  setDraggingTab: _noop,
+  setFocusEditorRequest: _noop,
   updateTabContent: _noop,
   updateTabEtag: _noop,
   setTabConnection: _noop,

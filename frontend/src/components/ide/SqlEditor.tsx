@@ -15,6 +15,7 @@ import { sqlwardenBasicSetup } from './codemirrorSetup'
 import { findPanelHost, type FindPanelHost } from './findPanelBridge'
 import { FindPanel } from './FindPanel'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
+import { useIde } from './useIdeStore'
 
 function makeBaseTheme(fontFamily: string, fontSize: number): Extension {
   return EditorView.theme({
@@ -36,13 +37,16 @@ function makeBaseTheme(fontFamily: string, fontSize: number): Extension {
 
 type SqlEditorProps = {
   tabId: string
+  /** Owning group id — distinguishes two panes showing the same tab in the view registry. */
+  groupId?: string
   /** The Y.Doc backing this editor. Must have a Y.Text at key 'content'. */
   doc: Y.Doc
   className?: string
   onCursorChange?: (line: number, col: number, selSize: number) => void
 }
 
-export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorProps) {
+export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: SqlEditorProps) {
+  const viewKey = groupId ? `${groupId}:${tabId}` : tabId
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRegistry = useEditorViewRegistry()
   const onCursorChangeRef = useRef(onCursorChange)
@@ -89,14 +93,24 @@ export function SqlEditor({ tabId, doc, className, onCursorChange }: SqlEditorPr
     })
 
     viewRef.current = view
-    viewRegistry.register(tabId, view)
+    viewRegistry.register(viewKey, view)
 
     return () => {
       viewRef.current = null
-      viewRegistry.unregister(tabId)
+      viewRegistry.unregister(viewKey)
       view.destroy()
     }
-  }, [doc, tabId, viewRegistry])
+  }, [doc, viewKey, viewRegistry])
+
+  // Grab keyboard focus when this pane is the target of a split, so the new
+  // split is ready to type in. requestAnimationFrame waits for layout.
+  const focusEditorRequest = useIde((s) => s.focusEditorRequest)
+  const setFocusEditorRequest = useIde((s) => s.setFocusEditorRequest)
+  useEffect(() => {
+    if (focusEditorRequest !== viewKey) return
+    requestAnimationFrame(() => viewRef.current?.focus())
+    setFocusEditorRequest(null)
+  }, [focusEditorRequest, viewKey, setFocusEditorRequest])
 
   // Hot-swap the theme without remounting the editor.
   useEffect(() => {
