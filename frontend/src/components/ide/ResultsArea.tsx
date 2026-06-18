@@ -187,12 +187,28 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
   const tablePanelRef = useRef<PanelImperativeHandle>(null)
   const tableContainerRef = useRef<HTMLDivElement>(null)
   const isDraggingRef = useRef(false)
+  const scrollElRef = useRef<HTMLElement | null>(null)
+  const pointerRef = useRef<{ x: number; y: number } | null>(null)
+  const autoScrollRafRef = useRef<number | null>(null)
 
-  // Stop drag on mouseup anywhere in the window.
+  // Track the pointer while drag-selecting, and stop drag + auto-scroll on mouseup.
   useEffect(() => {
-    function onMouseUp() { isDraggingRef.current = false }
+    function onMouseMove(ev: MouseEvent) {
+      if (isDraggingRef.current) pointerRef.current = { x: ev.clientX, y: ev.clientY }
+    }
+    function onMouseUp() {
+      isDraggingRef.current = false
+      if (autoScrollRafRef.current != null) {
+        cancelAnimationFrame(autoScrollRafRef.current)
+        autoScrollRafRef.current = null
+      }
+    }
+    window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', onMouseUp)
-    return () => window.removeEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
   }, [])
 
   // Focus anchor cell after keyboard navigation (skip during mouse drag).
@@ -235,9 +251,60 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
     }
   }
 
+  function findScrollParent(node: HTMLElement | null): HTMLElement | null {
+    let el = node?.parentElement ?? null
+    while (el) {
+      const style = getComputedStyle(el)
+      if (/(auto|scroll)/.test(style.overflowY + style.overflowX)) return el
+      el = el.parentElement
+    }
+    return null
+  }
+
+  // While drag-selecting, scroll the grid when the pointer nears an edge, and
+  // extend the selection to whatever cell ends up under the cursor.
+  function autoScrollStep() {
+    const el = scrollElRef.current
+    const p = pointerRef.current
+    if (!isDraggingRef.current || !el || !p) {
+      autoScrollRafRef.current = null
+      return
+    }
+    const rect = el.getBoundingClientRect()
+    const EDGE = 56
+    const ramp = (d: number) => Math.min(14, Math.max(0, d) * 0.25)
+    let dx = 0
+    let dy = 0
+    if (p.x < rect.left + EDGE) dx = -ramp(rect.left + EDGE - p.x)
+    else if (p.x > rect.right - EDGE) dx = ramp(p.x - (rect.right - EDGE))
+    if (p.y < rect.top + EDGE) dy = -ramp(rect.top + EDGE - p.y)
+    else if (p.y > rect.bottom - EDGE) dy = ramp(p.y - (rect.bottom - EDGE))
+    if (dx || dy) {
+      el.scrollBy(dx, dy)
+      const cell = (document.elementFromPoint(p.x, p.y) as HTMLElement | null)?.closest<HTMLElement>('[data-cell]')
+      const data = cell?.dataset.cell
+      if (data) {
+        const [r, c] = data.split('-').map(Number)
+        setSelection((prev) =>
+          prev && (prev.active.rowIdx !== r || prev.active.colIdx !== c)
+            ? { ...prev, active: { rowIdx: r, colIdx: c } }
+            : prev,
+        )
+      }
+    }
+    autoScrollRafRef.current = requestAnimationFrame(autoScrollStep)
+  }
+
+  function startAutoScroll(e: React.MouseEvent) {
+    pointerRef.current = { x: e.clientX, y: e.clientY }
+    scrollElRef.current = findScrollParent(tableContainerRef.current)
+    if (autoScrollRafRef.current == null) autoScrollRafRef.current = requestAnimationFrame(autoScrollStep)
+  }
+
   function handleCellMouseDown(ri: number, ci: number, e: React.MouseEvent) {
     e.preventDefault() // suppress browser text-selection drag (also suppresses auto-focus)
     isDraggingRef.current = true
+    startAutoScroll(e)
     setRowSelectionMode(false)
     setSelection({ anchor: { rowIdx: ri, colIdx: ci }, active: { rowIdx: ri, colIdx: ci } })
     setTableCollapsed(false)
