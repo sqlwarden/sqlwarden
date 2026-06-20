@@ -8,7 +8,7 @@ import type { DbNamespace, DbTable, DbView } from '#/lib/api/types'
 import { useIde } from './useIdeStore'
 import { filterSchema } from './schemaFilter'
 
-const indent = (depth: number) => 8 + depth * 12
+const indent = (depth: number) => 6 + depth * 11
 
 export function SchemaTree({
   orgSlug,
@@ -55,7 +55,7 @@ export function SchemaTree({
   }
 
   return (
-    <div>
+    <div className="min-w-max">
       {namespaces.map((ns) => (
         <SchemaNamespaceNode key={ns.name} namespace={ns} forceOpen={filtering} />
       ))}
@@ -153,10 +153,10 @@ function LeafRow({
   badge?: string
 }) {
   return (
-    <div className="flex h-6 items-center gap-1.5 pr-2 text-[11px]" style={{ paddingLeft: indent(depth) }}>
+    <div className="flex h-5 w-full items-center gap-1.5 pr-3 text-[11px]" style={{ paddingLeft: indent(depth) }}>
       <Icon name={icon} size={12} className="shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 select-text truncate">{label}</span>
-      <span className="shrink-0 text-muted-foreground">{meta}</span>
+      <span className="flex-1 select-text whitespace-nowrap">{label}</span>
+      <span className="shrink-0 pl-3 text-muted-foreground">{meta}</span>
       {badge ? <KeyBadge>{badge}</KeyBadge> : null}
     </div>
   )
@@ -197,11 +197,11 @@ function TreeRow({
         }
       }}
       style={{ paddingLeft: indent(depth) }}
-      className="flex h-7 w-full cursor-pointer items-center gap-1.5 pr-2 text-left text-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+      className="flex h-6 w-full cursor-pointer items-center gap-1.5 pr-3 text-left text-xs transition-colors hover:bg-accent hover:text-accent-foreground"
     >
       <Icon name={chevron ? 'chevron-down' : 'chevron-right'} size={11} className="shrink-0 text-muted-foreground" />
       <Icon name={typeIcon} size={13} className="shrink-0 text-muted-foreground" />
-      <span className={cn('min-w-0 flex-1 select-text truncate', bold && 'font-medium')}>{label}</span>
+      <span className={cn('flex-1 select-text whitespace-nowrap', bold && 'font-medium')}>{label}</span>
     </div>
   )
 }
