@@ -421,6 +421,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 
 	d, err := driver.New(input.Driver)
 	if err != nil {
+		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", time.Since(start).Milliseconds()), slog.String("stage", "driver_init"), slog.String("error_category", connectionTestErrorCategory(err)))
 		err = response.JSON(w, http.StatusUnprocessableEntity, map[string]any{
 			"ok":    false,
 			"error": err.Error(),
@@ -434,6 +435,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 	err = d.Connect(ctx, driver.ConnectionConfig{DSN: input.DSN, Driver: input.Driver})
 	if err != nil {
 		latency := time.Since(start).Milliseconds()
+		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "connect"), slog.String("error_category", connectionTestErrorCategory(err)))
 		err = response.JSON(w, http.StatusOK, map[string]any{
 			"ok":         false,
 			"latency_ms": latency,
@@ -449,6 +451,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 	err = d.Ping(ctx)
 	latency := time.Since(start).Milliseconds()
 	if err != nil {
+		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "ping"), slog.String("error_category", connectionTestErrorCategory(err)))
 		err = response.JSON(w, http.StatusOK, map[string]any{
 			"ok":         false,
 			"latency_ms": latency,
@@ -460,6 +463,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	app.logInfo(r, "connection test completed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.Bool("ok", true))
 	err = response.JSON(w, http.StatusOK, map[string]any{
 		"ok":         true,
 		"latency_ms": latency,
@@ -527,6 +531,21 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 	})
 	if err != nil {
 		app.serverError(w, r, err)
+	}
+}
+
+func connectionTestErrorCategory(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	case errors.Is(err, errSQLiteTargetDisabled):
+		return "policy_denied"
+	case strings.Contains(err.Error(), "unknown driver"):
+		return "unsupported_driver"
+	default:
+		return "target_unreachable"
 	}
 }
 
