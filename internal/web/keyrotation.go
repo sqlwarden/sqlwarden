@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -44,12 +45,19 @@ func (app *application) rotateEncryptionKeysHandler(w http.ResponseWriter, r *ht
 func (app *application) RotateEncryptionKeys(ctx context.Context) (EncryptionRotationReport, error) {
 	var report EncryptionRotationReport
 
+	app.logger.InfoContext(ctx, "encryption key rotation started")
 	if err := app.rotateConnectionDSNs(ctx, &report); err != nil {
 		return report, err
 	}
 	if err := app.rotateFileContents(ctx, &report); err != nil {
 		return report, err
 	}
+	app.logger.InfoContext(ctx, "encryption key rotation complete",
+		slog.Int("connections_scanned", report.ConnectionsScanned),
+		slog.Int("connections_rotated", report.ConnectionsRotated),
+		slog.Int("file_contents_scanned", report.FileContentsScanned),
+		slog.Int("file_contents_rotated", report.FileContentsRotated),
+	)
 	return report, nil
 }
 
@@ -77,6 +85,10 @@ func (app *application) rotateConnectionDSNs(ctx context.Context, report *Encryp
 		}
 		report.ConnectionsRotated++
 	}
+	app.logger.InfoContext(ctx, "connection dsn rotation pass complete",
+		slog.Int("connections_scanned", report.ConnectionsScanned),
+		slog.Int("connections_rotated", report.ConnectionsRotated),
+	)
 	return nil
 }
 
@@ -125,5 +137,9 @@ func (app *application) rotateFileContents(ctx context.Context, report *Encrypti
 		}
 		report.FileContentsRotated++
 	}
+	app.logger.InfoContext(ctx, "file content encryption rotation pass complete",
+		slog.Int("file_contents_scanned", report.FileContentsScanned),
+		slog.Int("file_contents_rotated", report.FileContentsRotated),
+	)
 	return nil
 }

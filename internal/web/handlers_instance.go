@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -127,6 +128,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		"organization": org,
 	}
 
+	app.logInfo(r, "instance setup completed", slog.Int64("account_id", account.ID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.String("access_mode", app.config.AccessMode))
 	err = response.JSON(w, http.StatusCreated, body)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -341,6 +343,7 @@ func (app *application) createInstanceAccount(w http.ResponseWriter, r *http.Req
 		app.serverError(w, r, err)
 		return
 	}
+	app.logInfo(r, "instance account created", slog.Int64("account_id", account.ID))
 	err = response.JSON(w, http.StatusCreated, account)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -440,6 +443,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		}
 	}
 
+	app.logInfo(r, "instance settings updated", slog.Bool("personal_spaces_enabled", settings.PersonalSpacesEnabled))
 	err = response.JSON(w, http.StatusOK, app.instanceSettingsResponse(settings))
 	if err != nil {
 		app.serverError(w, r, err)
@@ -482,6 +486,7 @@ func (app *application) addInstanceAdmin(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	app.logInfo(r, "instance admin added", slog.Int64("target_account_id", account.ID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -507,5 +512,6 @@ func (app *application) removeInstanceAdmin(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	app.logInfo(r, "instance admin removed", slog.Int64("target_account_id", accountID))
 	w.WriteHeader(http.StatusNoContent)
 }

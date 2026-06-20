@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -85,6 +86,7 @@ func (app *application) updateOrg(w http.ResponseWriter, r *http.Request) {
 		app.serverError(w, r, err)
 		return
 	}
+	app.logInfo(r, "organization updated", slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
 
 	updated, found, err := app.db.GetOrg(r.Context(), org.ID)
 	if err != nil {
@@ -112,6 +114,7 @@ func (app *application) deleteOrg(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.enforcer.InvalidateOrgPolicy(org.ID)
+	app.logInfo(r, "organization deleted", slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -163,6 +166,7 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	app.logInfo(r, "organization created", slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.Int64("owner_account_id", account.ID))
 	err = response.JSON(w, http.StatusCreated, org)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -282,6 +286,7 @@ func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
 
 	// No role binding is created here. The new member has no workspace access by default;
 	// a workspace admin must explicitly grant access to each workspace.
+	app.logInfo(r, "organization member added", slog.Int64("target_account_id", account.ID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -369,6 +374,7 @@ func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) 
 		app.serverError(w, r, checkErr)
 		return
 	} else if isLastOwner {
+		app.logWarn(r, "last organization owner removal blocked", slog.Int64("target_account_id", accountID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
 		v := validator.Validator{}
 		v.AddError("Cannot remove the last owner of an organization.")
 		app.failedValidation(w, r, v)
@@ -384,6 +390,7 @@ func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) 
 	app.connManager.RemoveForOrgAccount(strconv.FormatInt(org.ID, 10), strconv.FormatInt(accountID, 10))
 
 	app.enforcer.InvalidatePrincipals(org.ID, accountID)
+	app.logInfo(r, "organization member removed", slog.Int64("target_account_id", accountID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -420,6 +427,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 			app.serverError(w, r, checkErr)
 			return
 		} else if isLastOwner {
+			app.logWarn(r, "last organization owner demotion blocked", slog.Int64("target_account_id", accountID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.String("requested_role", input.Role))
 			v := validator.Validator{}
 			v.AddError("Cannot demote the last owner of an organization.")
 			app.failedValidation(w, r, v)
@@ -469,6 +477,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 	}
 
 	app.enforcer.InvalidatePrincipals(org.ID, accountID)
+	app.logInfo(r, "organization member builtin role updated", slog.Int64("target_account_id", accountID), slog.Int64("role_id", roleID), slog.String("role", input.Role))
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -16,10 +16,14 @@ const (
 	workspaceKey            contextKey = "workspace"
 	environmentKey          contextKey = "environment"
 	connectionKey           contextKey = "connection"
+	requestLogContextKey    contextKey = "requestLogContext"
 )
 
 // Account context helpers.
 func contextSetAccount(r *http.Request, account database.Account) *http.Request {
+	if meta := contextGetRequestLogContext(r); meta != nil {
+		meta.AccountID = account.ID
+	}
 	ctx := context.WithValue(r.Context(), authenticatedAccountKey, account)
 	return r.WithContext(ctx)
 }
@@ -31,6 +35,9 @@ func contextGetAccount(r *http.Request) database.Account {
 
 // Auth session context helpers.
 func contextSetAuthSession(r *http.Request, session database.AuthSession) *http.Request {
+	if meta := contextGetRequestLogContext(r); meta != nil {
+		meta.AuthSessionID = session.ID
+	}
 	ctx := context.WithValue(r.Context(), authSessionKey, session)
 	return r.WithContext(ctx)
 }
@@ -42,6 +49,10 @@ func contextGetAuthSession(r *http.Request) database.AuthSession {
 
 // Org context helpers.
 func contextSetOrg(r *http.Request, org database.Organization) *http.Request {
+	if meta := contextGetRequestLogContext(r); meta != nil {
+		meta.OrgID = org.ID
+		meta.OrgSlug = org.Slug
+	}
 	ctx := context.WithValue(r.Context(), orgKey, org)
 	return r.WithContext(ctx)
 }
@@ -53,6 +64,9 @@ func contextGetOrg(r *http.Request) database.Organization {
 
 // Workspace context helpers.
 func contextSetWorkspace(r *http.Request, ws database.Workspace) *http.Request {
+	if meta := contextGetRequestLogContext(r); meta != nil {
+		meta.WorkspaceID = ws.ID
+	}
 	ctx := context.WithValue(r.Context(), workspaceKey, ws)
 	return r.WithContext(ctx)
 }
@@ -64,6 +78,9 @@ func contextGetWorkspace(r *http.Request) database.Workspace {
 
 // Environment context helpers.
 func contextSetEnvironment(r *http.Request, env database.Environment) *http.Request {
+	if meta := contextGetRequestLogContext(r); meta != nil {
+		meta.EnvironmentID = env.ID
+	}
 	ctx := context.WithValue(r.Context(), environmentKey, env)
 	return r.WithContext(ctx)
 }
@@ -75,6 +92,9 @@ func contextGetEnvironment(r *http.Request) database.Environment {
 
 // Connection context helpers.
 func contextSetConnection(r *http.Request, conn database.Connection) *http.Request {
+	if meta := contextGetRequestLogContext(r); meta != nil {
+		meta.ConnectionID = conn.ID
+	}
 	ctx := context.WithValue(r.Context(), connectionKey, conn)
 	return r.WithContext(ctx)
 }
@@ -82,4 +102,15 @@ func contextSetConnection(r *http.Request, conn database.Connection) *http.Reque
 func contextGetConnection(r *http.Request) database.Connection {
 	conn, _ := r.Context().Value(connectionKey).(database.Connection)
 	return conn
+}
+
+// Request log context helpers.
+func contextSetRequestLogContext(r *http.Request, meta *requestLogContext) *http.Request {
+	ctx := context.WithValue(r.Context(), requestLogContextKey, meta)
+	return r.WithContext(ctx)
+}
+
+func contextGetRequestLogContext(r *http.Request) *requestLogContext {
+	meta, _ := r.Context().Value(requestLogContextKey).(*requestLogContext)
+	return meta
 }

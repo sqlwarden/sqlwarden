@@ -29,6 +29,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.AccessMode != AccessModeMultiUser {
 		t.Fatalf("accessMode = %q, want %q", cfg.AccessMode, AccessModeMultiUser)
 	}
+	if cfg.Log.Level != LogLevelInfo || cfg.Log.Format != LogFormatJSON {
+		t.Fatalf("unexpected log config: %+v", cfg.Log)
+	}
 	if cfg.DB.Driver != defaultDBDriver {
 		t.Fatalf("db.driver = %q, want %q", cfg.DB.Driver, defaultDBDriver)
 	}
@@ -112,6 +115,9 @@ jwt:
   access_token_ttl: 12h
 sessions:
   revocation_enabled: false
+log:
+  level: warn
+  format: text
 tls:
   enabled: true
   cert_file: /etc/sqlwarden/tls.crt
@@ -156,6 +162,9 @@ files:
 	if cfg.Sessions.RevocationEnabled {
 		t.Fatal("expected session revocation disabled from file")
 	}
+	if cfg.Log.Level != LogLevelWarn || cfg.Log.Format != LogFormatText {
+		t.Fatalf("unexpected log config: %+v", cfg.Log)
+	}
 	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/etc/sqlwarden/tls.crt" || cfg.TLS.KeyFile != "/etc/sqlwarden/tls.key" {
 		t.Fatalf("unexpected tls config: %+v", cfg.TLS)
 	}
@@ -185,6 +194,8 @@ func TestLoadConfigEnvOverridesFile(t *testing.T) {
 	t.Setenv("JWT_ACCESS_TOKEN_TTL", "6h")
 	t.Setenv("FILES_ROOT_DIR", "/env/sqlwarden-files")
 	t.Setenv("FILES_REVISIONS_ENABLED", "false")
+	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("LOG_FORMAT", "text")
 	t.Setenv("TLS_ENABLED", "true")
 	t.Setenv("TLS_CERT_FILE", "/env/tls.crt")
 	t.Setenv("TLS_KEY_FILE", "/env/tls.key")
@@ -217,6 +228,9 @@ db:
 	if cfg.Files.Revisions.Enabled {
 		t.Fatal("expected file revisions disabled from env")
 	}
+	if cfg.Log.Level != LogLevelDebug || cfg.Log.Format != LogFormatText {
+		t.Fatalf("unexpected log config: %+v", cfg.Log)
+	}
 	if cfg.Files.StorageBackends["local"].RootDir != "/env/sqlwarden-files" {
 		t.Fatalf("files.root_dir = %q, want /env/sqlwarden-files", cfg.Files.StorageBackends["local"].RootDir)
 	}
@@ -245,6 +259,8 @@ db:
 		"--http-port", "9200",
 		"--db-driver", "sqlite",
 		"--base-url", "https://flags.example.com",
+		"--log-level", "error",
+		"--log-format", "json",
 		"--jwt-access-token-ttl", "2h",
 		"--sessions-revocation-enabled=false",
 		"--tls-enabled",
@@ -266,6 +282,9 @@ db:
 	}
 	if cfg.BaseURL != "https://flags.example.com" {
 		t.Fatalf("baseURL = %q", cfg.BaseURL)
+	}
+	if cfg.Log.Level != LogLevelError || cfg.Log.Format != LogFormatJSON {
+		t.Fatalf("unexpected log config: %+v", cfg.Log)
 	}
 	if cfg.JWT.AccessTokenTTL != 2*time.Hour {
 		t.Fatalf("jwt.accessTokenTTL = %s, want 2h", cfg.JWT.AccessTokenTTL)
@@ -313,6 +332,18 @@ func TestLoadConfigRejectsUnsupportedFileConfiguration(t *testing.T) {
 	_, _, err = loadConfig([]string{"--files-revisions-keep-latest", "-1"})
 	if err == nil {
 		t.Fatal("expected negative revision retention to fail")
+	}
+}
+
+func TestLoadConfigRejectsUnsupportedLogConfiguration(t *testing.T) {
+	_, _, err := loadConfig([]string{"--log-level", "verbose"})
+	if err == nil {
+		t.Fatal("expected unsupported log level to fail")
+	}
+
+	_, _, err = loadConfig([]string{"--log-format", "xml"})
+	if err == nil {
+		t.Fatal("expected unsupported log format to fail")
 	}
 }
 

@@ -1,14 +1,34 @@
 package web
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
+	"github.com/sqlwarden/internal/observability"
 	"github.com/sqlwarden/internal/response"
-
-	"github.com/tomasen/realip"
 )
+
+const maxRequestIDLength = 128
+
+func (app *application) requestLoggingContext(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := normalizeRequestID(r.Header.Get(requestIDHeader))
+		if requestID == "" {
+			requestID = newRequestID()
+		}
+
+		w.Header().Set(requestIDHeader, requestID)
+		meta := &requestLogContext{RequestID: requestID}
+		r = contextSetRequestLogContext(r, meta)
+		r = r.WithContext(observability.WithRequestID(r.Context(), requestID))
+
+		next.ServeHTTP(w, r)
+	})
+}
 
 func (app *application) recoverPanic(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,19 +57,36 @@ func (app *application) noStoreCache(next http.Handler) http.Handler {
 func (app *application) logAccess(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mw := response.NewMetricsResponseWriter(w)
+		startedAt := time.Now()
 		next.ServeHTTP(mw, r)
 
-		var (
-			ip     = realip.FromRequest(r)
-			method = r.Method
-			url    = r.URL.String()
-			proto  = r.Proto
-		)
-
-		userAttrs := slog.Group("user", "ip", ip)
-		requestAttrs := slog.Group("request", "method", method, "url", url, "proto", proto)
-		responseAttrs := slog.Group("response", "status", mw.StatusCode, "size", mw.BytesCount)
-
-		app.logger.Info("access", userAttrs, requestAttrs, responseAttrs)
+		duration := time.Since(startedAt)
+		app.logger.LogAttrs(r.Context(), accessLogLevel(mw.StatusCode), "http request", accessLogAttrs(r, mw, duration)...)
 	})
+}
+
+func normalizeRequestID(requestID string) string {
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" || len(requestID) > maxRequestIDLength {
+		return ""
+	}
+	for _, r := range requestID {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '-', r == '_', r == '.', r == ':', r == '/', r == '=':
+		default:
+			return ""
+		}
+	}
+	return requestID
+}
+
+func newRequestID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
 }

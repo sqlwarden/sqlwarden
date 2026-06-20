@@ -1,6 +1,7 @@
 package web
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,6 +34,7 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 			return
 		}
 		if app.config.Sessions.RevocationEnabled && claims.AuthSessionID == "" {
+			app.logWarn(r, "authentication token missing session binding")
 			app.invalidAuthenticationToken(w, r)
 			return
 		}
@@ -60,6 +62,13 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 				return
 			}
 			if !found || authSession.RevokedAt != nil || time.Now().After(authSession.ExpiresAt) {
+				reason := "auth_session_not_found"
+				if found && authSession.RevokedAt != nil {
+					reason = "auth_session_revoked"
+				} else if found && time.Now().After(authSession.ExpiresAt) {
+					reason = "auth_session_expired"
+				}
+				app.logWarn(r, "authentication session rejected", slog.Int64("account_id", account.ID), slog.String("auth_session_id", claims.AuthSessionID), slog.String("reason", reason))
 				app.invalidAuthenticationToken(w, r)
 				return
 			}
@@ -130,6 +139,13 @@ func (app *application) orgCtx(next http.Handler) http.Handler {
 				return
 			}
 			if !found || orgAccessSession.RevokedAt != nil || time.Now().After(orgAccessSession.ExpiresAt) {
+				reason := "org_access_session_not_found"
+				if found && orgAccessSession.RevokedAt != nil {
+					reason = "org_access_session_revoked"
+				} else if found && time.Now().After(orgAccessSession.ExpiresAt) {
+					reason = "org_access_session_expired"
+				}
+				app.logWarn(r, "organization access session rejected", slog.Int64("account_id", account.ID), slog.Int64("org_id", org.ID), slog.String("auth_session_id", authSession.ID), slog.String("reason", reason))
 				app.notPermitted(w, r)
 				return
 			}

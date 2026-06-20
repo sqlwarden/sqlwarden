@@ -74,7 +74,7 @@ func New(driver, dsn string, logger *slog.Logger, logQueries bool) (*DB, error) 
 	if logQueries {
 		db.AddQueryHook(&debugQueryLoggerHook{logger: logger})
 	}
-	db.AddQueryHook(&slowQueryDetectorHook{threshold: 100, logger: logger})
+	db.AddQueryHook(&slowQueryDetectorHook{threshold: 100, includeQuery: logQueries, logger: logger})
 
 	if driver == "sqlite" {
 		sqldb.SetMaxOpenConns(1)

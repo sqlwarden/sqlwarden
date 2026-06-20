@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -130,6 +131,7 @@ func (app *application) createWorkspace(w http.ResponseWriter, r *http.Request) 
 	}
 	ws = workspaces[0]
 
+	app.logInfo(r, "workspace created", slog.Int64("org_id", org.ID), slog.Int64("workspace_id", ws.ID), slog.Int64("owner_account_id", account.ID))
 	err = response.JSON(w, http.StatusCreated, ws)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -215,6 +217,7 @@ func (app *application) updateWorkspace(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	app.logInfo(r, "workspace updated", slog.Int64("workspace_id", ws.ID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -227,5 +230,6 @@ func (app *application) deleteWorkspace(w http.ResponseWriter, r *http.Request) 
 	}
 
 	app.enforcer.InvalidateAncestry("workspace", ws.ID)
+	app.logInfo(r, "workspace deleted", slog.Int64("workspace_id", ws.ID))
 	w.WriteHeader(http.StatusNoContent)
 }

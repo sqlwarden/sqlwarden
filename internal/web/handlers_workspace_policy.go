@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -126,6 +127,7 @@ func (app *application) createWorkspaceRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	app.logInfo(r, "workspace role created", slog.Int64("workspace_id", ws.ID), slog.Int64("role_id", role.ID), slog.String("scope_type", role.ScopeType), slog.Int("permission_count", len(input.Permissions)))
 	err = response.JSON(w, http.StatusCreated, role)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -198,6 +200,7 @@ func (app *application) deleteWorkspaceRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	app.logInfo(r, "workspace role deleted", slog.Int64("workspace_id", ws.ID), slog.Int64("role_id", roleID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -390,6 +393,7 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	app.logInfo(r, "workspace policy granted", slog.Int64("workspace_id", ws.ID), slog.Int64("role_id", input.RoleID), slog.String("subject_type", input.SubjectType), slog.Int64("subject_id", input.SubjectID), slog.String("resource_type", input.ResourceType), slog.Int64("resource_id", resourceID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -441,6 +445,7 @@ func (app *application) revokeWorkspacePolicy(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	app.logInfo(r, "workspace policy revoked", slog.Int64("workspace_id", ws.ID), slog.Int64("binding_id", bindingID), slog.Int64("role_id", rb.RoleID), slog.String("subject_type", rb.SubjectType), slog.Int64("subject_id", rb.SubjectID), slog.String("resource_type", rb.ResourceType), slog.Int64("resource_id", rb.ResourceID))
 	w.WriteHeader(http.StatusNoContent)
 }
 

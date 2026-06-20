@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -120,6 +121,7 @@ func (app *application) createEnvironment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	app.logInfo(r, "environment created", slog.Int64("workspace_id", ws.ID), slog.Int64("environment_id", env.ID))
 	err = response.JSON(w, http.StatusCreated, env)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -180,6 +182,7 @@ func (app *application) updateEnvironment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	app.logInfo(r, "environment updated", slog.Int64("environment_id", env.ID), slog.Int64("workspace_id", env.WorkspaceID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -208,5 +211,6 @@ func (app *application) deleteEnvironment(w http.ResponseWriter, r *http.Request
 	for _, cid := range connIDs {
 		app.enforcer.InvalidateAncestry("connection", cid)
 	}
+	app.logInfo(r, "environment deleted", slog.Int64("environment_id", env.ID), slog.Int64("workspace_id", env.WorkspaceID), slog.Int("affected_connections", len(connIDs)))
 	w.WriteHeader(http.StatusNoContent)
 }

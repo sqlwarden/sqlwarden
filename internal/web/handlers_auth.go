@@ -1,6 +1,7 @@
 package web
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -77,6 +78,7 @@ func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	app.logInfo(r, "account registered", slog.Int64("account_id", account.ID))
 	err = response.JSON(w, http.StatusCreated, account)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -148,6 +150,7 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	app.logInfo(r, "account logged in", slog.Int64("account_id", account.ID), slog.String("auth_session_id", authSession.ID))
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refresh_token",
 		Value:    family,
@@ -234,6 +237,7 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	app.logInfo(r, "access token refreshed", slog.Int64("account_id", account.ID), slog.String("auth_session_id", authSession.ID))
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refresh_token",
 		Value:    family,
@@ -257,6 +261,7 @@ func (app *application) logoutAccount(w http.ResponseWriter, r *http.Request) {
 			_ = app.db.RevokeRefreshToken(r.Context(), rt.ID)
 			if rt.AuthSessionID != "" {
 				_ = app.db.RevokeAuthSession(r.Context(), rt.AuthSessionID, &rt.AccountID, "logout")
+				app.logInfo(r, "account logged out", slog.Int64("account_id", rt.AccountID), slog.String("auth_session_id", rt.AuthSessionID))
 			}
 		}
 	}
@@ -317,6 +322,7 @@ func (app *application) revokeAccountSession(w http.ResponseWriter, r *http.Requ
 		app.serverError(w, r, err)
 		return
 	}
+	app.logInfo(r, "auth session revoked", slog.Int64("target_account_id", account.ID), slog.String("auth_session_id", session.ID), slog.String("reason", "user_revoked"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -326,6 +332,7 @@ func (app *application) revokeAccountSessions(w http.ResponseWriter, r *http.Req
 		app.serverError(w, r, err)
 		return
 	}
+	app.logInfo(r, "auth sessions revoked", slog.Int64("target_account_id", account.ID), slog.String("reason", "user_revoked_all"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -387,6 +394,7 @@ func (app *application) revokeInstanceAccountSession(w http.ResponseWriter, r *h
 		app.serverError(w, r, err)
 		return
 	}
+	app.logInfo(r, "auth session revoked", slog.Int64("target_account_id", accountID), slog.String("auth_session_id", session.ID), slog.String("reason", "instance_admin_revoked"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -408,6 +416,7 @@ func (app *application) revokeInstanceAccountSessions(w http.ResponseWriter, r *
 		app.serverError(w, r, err)
 		return
 	}
+	app.logInfo(r, "auth sessions revoked", slog.Int64("target_account_id", accountID), slog.String("reason", "instance_admin_revoked_all"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -467,6 +476,7 @@ func (app *application) revokeOrgMemberAccessSession(w http.ResponseWriter, r *h
 		app.serverError(w, r, err)
 		return
 	}
+	app.logInfo(r, "org access session revoked", slog.Int64("target_account_id", accountID), slog.String("org_access_session_id", session.ID), slog.String("reason", "org_admin_revoked"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -504,6 +514,7 @@ func (app *application) updateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	app.logInfo(r, "account updated", slog.Int64("account_id", account.ID))
 	err = response.JSON(w, http.StatusOK, updatedAccount)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -560,6 +571,7 @@ func (app *application) updateAccountPassword(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	app.logInfo(r, "account password changed", slog.Int64("account_id", account.ID))
 	w.WriteHeader(http.StatusNoContent)
 }
 

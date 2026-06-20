@@ -40,6 +40,10 @@ base_url: http://localhost:6020
 http_port: 6020
 personal_spaces_enabled: true
 
+log:
+  level: info
+  format: json
+
 db:
   driver: sqlite
   dsn: ~/.sqlwarden/sqlwarden.db
@@ -90,6 +94,19 @@ The default image runs as the `sqlwarden` user. The volume path above persists t
 | `http_port` | `HTTP_PORT` | `--http-port` | `6020` | HTTP server port. |
 | `personal_spaces_enabled` | `PERSONAL_SPACES_ENABLED` | `--personal-spaces-enabled` | `true` | Enables account-owned personal spaces under `/api/v1/me`. |
 
+## Logging
+
+| Config key | Environment | CLI flag | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `log.level` | `LOG_LEVEL` | `--log-level` | `info` | Server log level. Supported values: `debug`, `info`, `warn`, `error`. |
+| `log.format` | `LOG_FORMAT` | `--log-format` | `json` | Server log format. Supported values: `json`, `text`. |
+
+JSON logs are the default for production and log aggregation systems. Text logs are intended for local development.
+
+Every HTTP response includes `X-Request-ID`. If the request provides a valid bounded `X-Request-ID`, SQLWarden preserves it; otherwise it generates one. Access logs include request ID, route, path, response status, duration, remote IP, user agent, and resolved account/resource identifiers when available.
+
+Server logs do not include request bodies, authorization headers, DSNs, SQL text, or raw query strings by default.
+
 ## Database
 
 | Config key | Environment | CLI flag | Default | Notes |
@@ -97,7 +114,7 @@ The default image runs as the `sqlwarden` user. The volume path above persists t
 | `db.driver` | `DB_DRIVER` | `--db-driver` | `sqlite` | Application database driver. Supported values: `sqlite`, `postgres`. |
 | `db.dsn` | `DB_DSN` | `--db-dsn` | `~/.sqlwarden/sqlwarden.db` | SQLite path or PostgreSQL DSN. `~` is expanded for SQLite. |
 | `db.automigrate` | `DB_AUTOMIGRATE` | `--db-automigrate` | `true` | Runs embedded migrations at startup. |
-| `db.log_queries` | `DB_LOG_QUERIES` | `--db-log-queries` | `false` | Logs application database queries. Useful for development. |
+| `db.log_queries` | `DB_LOG_QUERIES` | `--db-log-queries` | `false` | Logs application database SQL text. Use only for short-lived debugging. |
 
 PostgreSQL DSNs are passed without a `postgres://` prefix in the existing compose setup:
 
@@ -195,7 +212,8 @@ Email is optional today. Configure it when error notification delivery is needed
 - Replace `COOKIE_SECRET_KEY`, `JWT_SECRET_KEY`, and `ENCRYPTION_KEY`.
 - Decide whether to use SQLite or PostgreSQL for the application database.
 - Persist `~/.sqlwarden` or explicitly configure database and file storage paths.
-- Disable `DB_LOG_QUERIES` unless actively debugging.
+- Keep `LOG_FORMAT=json` for production log collection.
+- Disable `DB_LOG_QUERIES` unless actively debugging because it can log SQL text.
 - Decide whether `PERSONAL_SPACES_ENABLED` should be enabled.
 - Leave `DRIVERS_SQLITE_ALLOWED_SOURCES` empty unless local SQLite target access is intentional.
 - Use HTTPS through a reverse proxy or SQLWarden built-in TLS.
