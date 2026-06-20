@@ -4,7 +4,6 @@ import type { UseQueryOptions } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '#/components/ui/resizable'
-import { ScrollArea } from '#/components/ui/scroll-area'
 import {
   orgWorkspacePrivateFileBrowserQueryOptions,
   orgWorkspaceSharedFileBrowserQueryOptions,
@@ -160,7 +159,7 @@ function FilesSection({
   const children = data?.children ?? []
 
   const body = (
-    <div className="flex flex-col py-1">
+    <div className="flex min-w-max flex-col py-1">
       {isLoading ? (
         <div className="px-3 py-2 text-xs text-muted-foreground">Loading...</div>
       ) : isError ? (
@@ -207,7 +206,7 @@ function FilesSection({
           {title}
         </div>
       ) : null}
-      <ScrollArea className="min-h-0 flex-1">{body}</ScrollArea>
+      <div className="min-h-0 flex-1 overflow-auto [scrollbar-width:thin]">{body}</div>
     </div>
   )
 }
@@ -253,9 +252,9 @@ function FileTreeFolder({
     <button
       type="button"
       onClick={() => setExpanded((v) => !v)}
-      style={{ paddingLeft: `${8 + depth * 12}px` }}
+      style={{ paddingLeft: `${6 + depth * 11}px` }}
       className={cn(
-        'flex h-7 w-full items-center gap-1.5 pr-2 text-left text-xs',
+        'flex h-6 w-full items-center gap-1.5 pr-3 text-left text-xs',
         'transition-colors hover:bg-accent hover:text-accent-foreground',
       )}
     >
@@ -266,10 +265,10 @@ function FileTreeFolder({
       />
       <Icon
         name={expanded ? 'folder-open' : 'folder'}
-        size={14}
+        size={13}
         className="shrink-0 text-muted-foreground"
       />
-      <span className="min-w-0 flex-1 truncate">{file.name}</span>
+      <span className="flex-1 whitespace-nowrap">{file.name}</span>
     </button>
   )
 
@@ -338,16 +337,16 @@ function FileTreeFile({
     <button
       type="button"
       onClick={() => onOpen(file)}
-      style={{ paddingLeft: `${8 + depth * 12 + 15}px` }}
+      style={{ paddingLeft: `${6 + depth * 11 + 14}px` }}
       className={cn(
-        'flex h-7 w-full items-center gap-2 pr-2 text-left text-xs transition-colors',
+        'flex h-6 w-full items-center gap-2 pr-3 text-left text-xs transition-colors',
         active
           ? 'bg-primary/10 text-foreground hover:bg-primary/15'
           : 'hover:bg-accent hover:text-accent-foreground',
       )}
     >
       <Icon name="file-01" size={13} className="shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate">{file.name}</span>
+      <span className="flex-1 whitespace-nowrap">{file.name}</span>
     </button>
   )
 }
