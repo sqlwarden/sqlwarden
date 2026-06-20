@@ -1,11 +1,14 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -358,8 +361,14 @@ func TestRevokedAuthSessionRejectsExistingAccessToken(t *testing.T) {
 	err = app.db.RevokeAuthSession(context.Background(), claims.AuthSessionID, &accountID, "test")
 	assert.Nil(t, err)
 
+	var logs bytes.Buffer
+	app.logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/account", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
+	assert.True(t, strings.Contains(logs.String(), "authentication session rejected"))
+	assert.True(t, strings.Contains(logs.String(), "auth_session_revoked"))
+	assert.True(t, strings.Contains(logs.String(), claims.AuthSessionID))
+	assert.False(t, strings.Contains(logs.String(), tok))
 }
 
 func TestAccountSessionsListAndRevoke(t *testing.T) {

@@ -182,6 +182,13 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 		if found && rt.RevokedAt == nil {
 			_ = app.db.RevokeFamilyTokens(r.Context(), rt.Family)
 		}
+		if found {
+			reason := "refresh_token_revoked"
+			if rt.RevokedAt == nil && time.Now().After(rt.ExpiresAt) {
+				reason = "refresh_token_expired"
+			}
+			app.logWarn(r, "refresh token rejected", slog.Int64("account_id", rt.AccountID), slog.String("auth_session_id", rt.AuthSessionID), slog.String("reason", reason))
+		}
 		app.invalidAuthenticationToken(w, r)
 		return
 	}
@@ -210,6 +217,13 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !found || authSession.RevokedAt != nil || time.Now().After(authSession.ExpiresAt) {
+		reason := "auth_session_not_found"
+		if found && authSession.RevokedAt != nil {
+			reason = "auth_session_revoked"
+		} else if found && time.Now().After(authSession.ExpiresAt) {
+			reason = "auth_session_expired"
+		}
+		app.logWarn(r, "refresh auth session rejected", slog.Int64("account_id", account.ID), slog.String("auth_session_id", rt.AuthSessionID), slog.String("reason", reason))
 		app.invalidAuthenticationToken(w, r)
 		return
 	}

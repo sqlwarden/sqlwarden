@@ -1,13 +1,16 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -68,10 +71,16 @@ func TestTestConnectionUnreachable(t *testing.T) {
 		"driver": "postgres",
 		"dsn":    "host=localhost port=19999 user=test dbname=test sslmode=disable connect_timeout=1",
 	})
+	var logs bytes.Buffer
+	app.logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	req.Header.Set("Authorization", "Bearer "+tok)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["ok"], false)
+	assert.True(t, strings.Contains(logs.String(), "connection test failed"))
+	assert.True(t, strings.Contains(logs.String(), "target_unreachable"))
+	assert.False(t, strings.Contains(logs.String(), "19999"))
+	assert.False(t, strings.Contains(logs.String(), "dbname=test"))
 }
 
 func TestTestConnectionValidationAndSuccess(t *testing.T) {
@@ -98,6 +107,32 @@ func TestTestConnectionValidationAndSuccess(t *testing.T) {
 		map[string]any{"driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
 	assert.Equal(t, successRes.StatusCode, http.StatusOK)
 	assert.Equal(t, successRes.BodyFields["ok"], true)
+}
+
+func TestTestConnectionSuccessLogsOutcome(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-test-success-log@example.com", "Conn Test Success Log", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn Test Success Log WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	var logs bytes.Buffer
+	app.logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	successRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID)+"/test",
+		map[string]any{"driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, successRes.StatusCode, http.StatusOK)
+	assert.Equal(t, successRes.BodyFields["ok"], true)
+	assert.True(t, strings.Contains(logs.String(), "connection test completed"))
+	assert.True(t, strings.Contains(logs.String(), `"driver":"sqlite"`))
+	assert.False(t, strings.Contains(logs.String(), ":memory:"))
 }
 
 func TestTestConnectionRejectsSQLiteFileTargetInServerMode(t *testing.T) {
