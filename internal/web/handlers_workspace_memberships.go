@@ -1,6 +1,7 @@
 package web
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -106,6 +107,7 @@ func (app *application) addWorkspaceMember(w http.ResponseWriter, r *http.Reques
 	}
 
 	app.enforcer.InvalidatePrincipals(org.ID, input.AccountID)
+	app.logInfo(r, "workspace member added", slog.Int64("workspace_id", ws.ID), slog.Int64("target_account_id", input.AccountID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -125,6 +127,7 @@ func (app *application) removeWorkspaceMember(w http.ResponseWriter, r *http.Req
 	app.connManager.RemoveForWorkspaceAccount(strconv.FormatInt(ws.ID, 10), strconv.FormatInt(accountID, 10))
 
 	app.enforcer.InvalidatePrincipals(org.ID, accountID)
+	app.logInfo(r, "workspace member removed", slog.Int64("workspace_id", ws.ID), slog.Int64("target_account_id", accountID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -201,6 +204,7 @@ func (app *application) addWorkspaceTeam(w http.ResponseWriter, r *http.Request)
 		app.connManager.RemoveForWorkspaceAccount(strconv.FormatInt(ws.ID, 10), strconv.FormatInt(accountID, 10))
 		app.enforcer.InvalidatePrincipals(org.ID, accountID)
 	}
+	app.logInfo(r, "workspace team added", slog.Int64("workspace_id", ws.ID), slog.Int64("team_id", input.TeamID), slog.Int("affected_accounts", len(accountIDs)))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -226,5 +230,6 @@ func (app *application) removeWorkspaceTeam(w http.ResponseWriter, r *http.Reque
 		app.connManager.RemoveForWorkspaceAccount(strconv.FormatInt(ws.ID, 10), strconv.FormatInt(accountID, 10))
 		app.enforcer.InvalidatePrincipals(org.ID, accountID)
 	}
+	app.logInfo(r, "workspace team removed", slog.Int64("workspace_id", ws.ID), slog.Int64("team_id", teamID), slog.Int("affected_accounts", len(accountIDs)))
 	w.WriteHeader(http.StatusNoContent)
 }

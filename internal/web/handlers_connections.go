@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -217,6 +218,9 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
 	if input.Driver != "" {
 		if err := app.validateTargetConnection(input.Driver, input.DSN); err != nil {
+			if errors.Is(err, errSQLiteTargetDisabled) {
+				app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "create_connection"), slog.String("driver", input.Driver))
+			}
 			input.V.CheckField(false, "driver", targetConnectionFieldError(err))
 		}
 	}
@@ -266,6 +270,7 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	app.logInfo(r, "connection created", slog.Int64("workspace_id", ws.ID), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver), slog.String("access_mode", conn.AccessMode))
 	err = response.JSON(w, http.StatusCreated, conn)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -327,6 +332,9 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 
 	conn := contextGetConnection(r)
 	if err := app.validateTargetConnection(conn.Driver, input.DSN); err != nil {
+		if errors.Is(err, errSQLiteTargetDisabled) {
+			app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "update_connection"), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver))
+		}
 		v := validator.Validator{}
 		v.AddFieldError("driver", targetConnectionFieldError(err))
 		app.failedValidation(w, r, v)
@@ -353,6 +361,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		}
 		if input.Force && activeSessions > 0 {
 			app.connManager.RemoveForConnection(strconv.FormatInt(conn.ID, 10))
+			app.logInfo(r, "connection sessions dropped for dsn rotation", slog.Int64("connection_id", conn.ID), slog.Int("dropped_sessions", activeSessions))
 		}
 	}
 	err = app.db.UpdateConnection(r.Context(), conn.ID, input.Name, dsnEncrypted, input.AccessMode)
@@ -360,6 +369,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		app.serverError(w, r, err)
 		return
 	}
+	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.String("access_mode", input.AccessMode))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -371,6 +381,7 @@ func (app *application) deleteConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	app.enforcer.InvalidateAncestry("connection", conn.ID)
+	app.logInfo(r, "connection deleted", slog.Int64("connection_id", conn.ID), slog.Int64("workspace_id", conn.WorkspaceID), slog.String("driver", conn.Driver))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -394,6 +405,9 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := app.validateTargetConnection(input.Driver, input.DSN); err != nil {
+		if errors.Is(err, errSQLiteTargetDisabled) {
+			app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "test_connection"), slog.String("driver", input.Driver))
+		}
 		v := validator.Validator{}
 		v.AddFieldError("driver", targetConnectionFieldError(err))
 		app.failedValidation(w, r, v)
@@ -506,6 +520,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	app.logInfo(r, "database session opened", slog.Int64("connection_id", conn.ID), slog.String("session_id", session.ID), slog.Bool("reused", !created))
 	err = response.JSON(w, http.StatusOK, map[string]any{
 		"session_id": session.ID,
 		"reused":     !created,
@@ -590,6 +605,7 @@ func (app *application) disconnectFromDatabase(w http.ResponseWriter, r *http.Re
 	}
 
 	app.connManager.Remove(sessionID)
+	app.logInfo(r, "database session disconnected", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -624,6 +640,7 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 	}
 
 	app.connManager.Remove(sessionID)
+	app.logInfo(r, "database session revoked", slog.Int64("workspace_id", ws.ID), slog.String("session_id", sessionID), slog.String("session_account_id", session.AccountID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -724,6 +741,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	if execErr != nil {
 		if errors.Is(execErr, context.Canceled) || errors.Is(execErr, context.DeadlineExceeded) || r.Context().Err() != nil {
 			app.connManager.Remove(sessionID)
+			app.logInfo(r, "query cancelled", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID), slog.String("query_class", string(queryKind)), slog.Int64("duration_ms", time.Since(start).Milliseconds()))
 			app.errorMessage(w, r, statusClientClosedRequest, "Query was cancelled.", nil)
 			return
 		}

@@ -32,24 +32,31 @@ func (app *application) reportServerError(r *http.Request, err error) {
 	var (
 		message = err.Error()
 		method  = r.Method
-		url     = r.URL.String()
+		path    = requestPath(r)
 		trace   = string(debug.Stack())
 	)
 
-	requestAttrs := slog.Group("request", "method", method, "url", url)
-	app.logger.Error(message, requestAttrs, "trace", trace)
+	app.logger.ErrorContext(r.Context(), message,
+		slog.Group("request", attrsToAny(requestAttrs(r))...),
+		slog.Group("resource", attrsToAny(resourceAttrs(r))...),
+		"trace", trace,
+	)
 
 	if app.config.Notifications.Email != "" {
 		data := app.newEmailData()
 		data["Message"] = message
 		data["RequestMethod"] = method
-		data["RequestURL"] = url
+		data["RequestURL"] = path
 		data["Trace"] = trace
 
 		err := app.mailer.Send(app.config.Notifications.Email, data, "error-notification.tmpl")
 		if err != nil {
 			trace = string(debug.Stack())
-			app.logger.Error(err.Error(), requestAttrs, "trace", trace)
+			app.logger.ErrorContext(r.Context(), err.Error(),
+				slog.Group("request", attrsToAny(requestAttrs(r))...),
+				slog.Group("resource", attrsToAny(resourceAttrs(r))...),
+				"trace", trace,
+			)
 		}
 	}
 }

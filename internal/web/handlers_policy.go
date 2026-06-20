@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -134,6 +135,7 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	app.logInfo(r, "organization role created", slog.Int64("role_id", role.ID), slog.String("scope_type", role.ScopeType), slog.Int("permission_count", len(input.Permissions)))
 	err = response.JSON(w, http.StatusCreated, role)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -192,6 +194,7 @@ func (app *application) deleteRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	app.logInfo(r, "organization role deleted", slog.Int64("role_id", roleID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -303,6 +306,7 @@ func (app *application) grantOrgPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !app.canManageProtectedOrgPolicy(r, org.ID, grantor.ID, role) {
+		app.logWarn(r, "protected organization policy grant blocked", slog.Int64("role_id", role.ID), slog.String("role_name", role.Name), slog.String("subject_type", input.SubjectType), slog.Int64("subject_id", input.SubjectID))
 		app.protectedOrgPolicyNotPermitted(w, r)
 		return
 	}
@@ -311,6 +315,7 @@ func (app *application) grantOrgPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	app.logInfo(r, "organization policy granted", slog.Int64("role_id", input.RoleID), slog.String("subject_type", input.SubjectType), slog.Int64("subject_id", input.SubjectID), slog.String("resource_type", "org"), slog.Int64("resource_id", org.ID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -344,6 +349,7 @@ func (app *application) revokeOrgPolicy(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !app.canManageProtectedOrgPolicy(r, org.ID, grantor.ID, role) {
+		app.logWarn(r, "protected organization policy revoke blocked", slog.Int64("binding_id", bindingID), slog.Int64("role_id", role.ID), slog.String("role_name", role.Name), slog.String("subject_type", rb.SubjectType), slog.Int64("subject_id", rb.SubjectID))
 		app.protectedOrgPolicyNotPermitted(w, r)
 		return
 	}
@@ -351,6 +357,7 @@ func (app *application) revokeOrgPolicy(w http.ResponseWriter, r *http.Request) 
 		app.serverError(w, r, checkErr)
 		return
 	} else if isLastOwnerPolicy {
+		app.logWarn(r, "last organization owner policy revoke blocked", slog.Int64("binding_id", bindingID), slog.Int64("role_id", role.ID), slog.String("subject_type", rb.SubjectType), slog.Int64("subject_id", rb.SubjectID))
 		v := validator.Validator{}
 		v.AddError("Cannot revoke the last owner policy of an organization.")
 		app.failedValidation(w, r, v)
@@ -361,6 +368,7 @@ func (app *application) revokeOrgPolicy(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	app.logInfo(r, "organization policy revoked", slog.Int64("binding_id", bindingID), slog.Int64("role_id", rb.RoleID), slog.String("subject_type", rb.SubjectType), slog.Int64("subject_id", rb.SubjectID), slog.String("resource_type", rb.ResourceType), slog.Int64("resource_id", rb.ResourceID))
 	w.WriteHeader(http.StatusNoContent)
 }
 

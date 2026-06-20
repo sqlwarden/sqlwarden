@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -128,6 +129,7 @@ func (app *application) createWorkspaceFile(w http.ResponseWriter, r *http.Reque
 		app.workspaceFileError(w, r, err)
 		return
 	}
+	app.logInfo(r, "workspace file created", slog.Int64("workspace_id", file.WorkspaceID), slog.Int64("file_id", file.ID), slog.String("visibility", file.Visibility), slog.String("object_type", file.ObjectType))
 	if err := response.JSON(w, http.StatusCreated, file); err != nil {
 		app.serverError(w, r, err)
 	}
@@ -197,6 +199,7 @@ func (app *application) updateWorkspaceFile(w http.ResponseWriter, r *http.Reque
 		app.workspaceFileError(w, r, err)
 		return
 	}
+	app.logInfo(r, "workspace file updated", slog.Int64("workspace_id", file.WorkspaceID), slog.Int64("file_id", file.ID), slog.String("visibility", file.Visibility), slog.String("object_type", file.ObjectType))
 	if err := response.JSON(w, http.StatusOK, file); err != nil {
 		app.serverError(w, r, err)
 	}
@@ -220,6 +223,7 @@ func (app *application) deleteWorkspaceFile(w http.ResponseWriter, r *http.Reque
 		app.workspaceFileError(w, r, err)
 		return
 	}
+	app.logInfo(r, "workspace file deleted", slog.Int64("file_id", fileID), slog.String("visibility", visibility))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -291,6 +295,7 @@ func (app *application) updateWorkspaceFileContent(w http.ResponseWriter, r *htt
 		return
 	}
 	w.Header().Set("ETag", quoteETag(saved.ContentHash))
+	app.logInfo(r, "workspace file content updated", slog.Int64("file_content_id", saved.ID), slog.Int64("file_id", saved.FileID), slog.Int64("size_bytes", saved.SizeBytes), slog.String("storage_backend_id", saved.StorageBackendID))
 	if err := response.JSON(w, http.StatusOK, saved); err != nil {
 		app.serverError(w, r, err)
 	}
@@ -341,6 +346,7 @@ func (app *application) workspaceFileError(w http.ResponseWriter, r *http.Reques
 	case errors.Is(err, files.ErrNotFound):
 		app.notFound(w, r)
 	case errors.Is(err, files.ErrStorageBackendUnavailable):
+		app.logWarn(r, "workspace file storage unavailable")
 		app.errorMessage(w, r, http.StatusServiceUnavailable, "File storage backend is unavailable.", nil)
 	case errors.Is(err, files.ErrInvalidName):
 		app.failedValidation(w, r, fieldErrors(map[string]string{"name": "Name must be a valid file or folder name."}))
@@ -357,8 +363,10 @@ func (app *application) workspaceFileError(w http.ResponseWriter, r *http.Reques
 	case errors.Is(err, files.ErrPreconditionRequired):
 		app.errorMessage(w, r, http.StatusPreconditionRequired, "If-Match is required when updating existing file content.", nil)
 	case errors.Is(err, files.ErrStaleContent):
+		app.logWarn(r, "workspace file stale content update blocked")
 		app.errorMessage(w, r, http.StatusConflict, "The file has changed since it was opened. Reload it before saving.", nil)
 	case errors.Is(err, files.ErrStorageDestinationExists):
+		app.logWarn(r, "workspace file storage destination conflict")
 		app.errorMessage(w, r, http.StatusConflict, "A file already exists at the destination path on storage.", nil)
 	default:
 		app.serverError(w, r, err)

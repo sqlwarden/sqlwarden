@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -79,6 +80,7 @@ func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	app.logInfo(r, "team created", slog.Int64("org_id", org.ID), slog.Int64("team_id", team.ID), slog.String("team_slug", team.Slug))
 	err = response.JSON(w, http.StatusCreated, team)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -142,6 +144,7 @@ func (app *application) updateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	app.logInfo(r, "team updated", slog.Int64("org_id", org.ID), slog.Int64("team_id", team.ID), slog.String("team_slug", team.Slug))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -162,6 +165,7 @@ func (app *application) deleteTeam(w http.ResponseWriter, r *http.Request) {
 		app.serverError(w, r, err)
 		return
 	}
+	app.logInfo(r, "team deleted", slog.Int64("org_id", org.ID), slog.Int64("team_id", team.ID), slog.String("team_slug", team.Slug))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -265,6 +269,7 @@ func (app *application) addTeamMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.enforcer.InvalidatePrincipals(org.ID, input.AccountID)
+	app.logInfo(r, "team member added", slog.Int64("org_id", org.ID), slog.Int64("team_id", team.ID), slog.Int64("target_account_id", input.AccountID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -303,5 +308,6 @@ func (app *application) removeTeamMember(w http.ResponseWriter, r *http.Request)
 	}
 
 	app.enforcer.InvalidatePrincipals(org.ID, accountID)
+	app.logInfo(r, "team member removed", slog.Int64("org_id", org.ID), slog.Int64("team_id", team.ID), slog.Int64("target_account_id", accountID), slog.Int("affected_workspaces", len(workspaceIDs)))
 	w.WriteHeader(http.StatusNoContent)
 }

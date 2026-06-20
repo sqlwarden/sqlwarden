@@ -112,7 +112,7 @@ func TestBackgroundTask(t *testing.T) {
 		assert.True(t, strings.Contains(buf.String(), "level=ERROR"))
 		assert.True(t, strings.Contains(buf.String(), `msg="this is a test error"`))
 		assert.True(t, strings.Contains(buf.String(), "request.method=GET"))
-		assert.True(t, strings.Contains(buf.String(), "request.url=/test"))
+		assert.True(t, strings.Contains(buf.String(), "request.path=/test"))
 	})
 
 	t.Run("Panic in background task", func(t *testing.T) {
@@ -137,7 +137,7 @@ func TestBackgroundTask(t *testing.T) {
 		assert.True(t, strings.Contains(buf.String(), "level=ERROR"))
 		assert.True(t, strings.Contains(buf.String(), `msg="this is a test error"`))
 		assert.True(t, strings.Contains(buf.String(), "request.method=GET"))
-		assert.True(t, strings.Contains(buf.String(), "request.url=/test"))
+		assert.True(t, strings.Contains(buf.String(), "request.path=/test"))
 	})
 }
 

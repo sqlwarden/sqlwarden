@@ -78,16 +78,43 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
+	logger.Info("application configuration loaded",
+		slog.Group("config",
+			"log_level", cfg.Log.Level,
+			"log_format", cfg.Log.Format,
+			"base_url_configured", strings.TrimSpace(cfg.BaseURL) != "",
+			"personal_spaces_enabled", cfg.PersonalSpacesEnabled,
+			"sessions_revocation_enabled", cfg.Sessions.RevocationEnabled,
+			"tls_enabled", cfg.TLS.Enabled,
+		),
+		slog.Group("database",
+			"driver", cfg.DB.Driver,
+			"automigrate", cfg.DB.Automigrate,
+			"log_queries", cfg.DB.LogQueries,
+		),
+		slog.Group("files",
+			"storage_mode", cfg.Files.StorageMode,
+			"active_backend", cfg.Files.ActiveStorageBackend,
+			"revisions_enabled", cfg.Files.Revisions.Enabled,
+		),
+		slog.Group("drivers",
+			"sqlite_allowed_sources", cfg.Drivers.SQLite.AllowedSources,
+		),
+	)
+
+	logger.Info("initializing database", slog.Group("database", "driver", cfg.DB.Driver, "automigrate", cfg.DB.Automigrate))
 	db, err := database.New(cfg.DB.Driver, cfg.DB.DSN, logger, cfg.DB.LogQueries)
 	if err != nil {
 		return nil, err
 	}
 
 	if cfg.DB.Automigrate {
+		logger.Info("running database migrations")
 		if err := db.MigrateUp(); err != nil {
 			db.Close()
 			return nil, err
 		}
+		logger.Info("database migrations complete")
 	}
 
 	mailer, err := smtp.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.Username, cfg.SMTP.Password, cfg.SMTP.From)
@@ -111,6 +138,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		db.Close()
 		return nil, err
 	}
+	logger.Info("file storage initialized", slog.Group("files", "storage_mode", cfg.Files.StorageMode, "active_backend", fileStores.ActiveBackendID()))
 
 	keyring, err := encrypt.NewKeyring(cfg.Encryption.Key, cfg.Encryption.PreviousKeys...)
 	if err != nil {
@@ -138,19 +166,27 @@ func (app *application) Handler() http.Handler {
 }
 
 func (app *application) Close() error {
+	startedAt := time.Now()
+	app.logger.Info("stopping application")
 	if app.fileReaperCancel != nil {
 		app.fileReaperCancel()
 	}
 	app.wg.Wait()
+	app.logger.Info("background workers stopped", "duration_ms", time.Since(startedAt).Milliseconds())
 
 	if app.connManager != nil {
+		connCloseStartedAt := time.Now()
 		app.connManager.Close()
+		app.logger.Info("database connection sessions closed", "duration_ms", time.Since(connCloseStartedAt).Milliseconds())
 	}
 
 	if app.db != nil {
+		dbCloseStartedAt := time.Now()
 		app.db.Close()
+		app.logger.Info("application database closed", "duration_ms", time.Since(dbCloseStartedAt).Milliseconds())
 	}
 
+	app.logger.Info("application stopped", "duration_ms", time.Since(startedAt).Milliseconds())
 	return nil
 }
 
@@ -161,7 +197,24 @@ func (app *application) startFileContentDeletionReaper() {
 	app.wg.Add(1)
 	go func() {
 		defer app.wg.Done()
-		service.RunContentDeletionReaper(ctx, time.Minute, 100, time.Minute)
+		app.logger.Info("file content deletion reaper started")
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			processed, err := service.ReapContentDeletionsOnce(ctx, 100, time.Minute)
+			if err != nil {
+				app.logger.ErrorContext(ctx, "file content deletion reaper failed", "error", err)
+			}
+			if processed > 0 {
+				app.logger.InfoContext(ctx, "file content deletion reaper processed batch", "processed", processed)
+			}
+			select {
+			case <-ctx.Done():
+				app.logger.Info("file content deletion reaper stopped")
+				return
+			case <-ticker.C:
+			}
+		}
 	}()
 }
 

@@ -25,7 +25,7 @@ func TestReportServerError(t *testing.T) {
 		assert.True(t, strings.Contains(buf.String(), "level=ERROR"))
 		assert.True(t, strings.Contains(buf.String(), `msg="this is a test error"`))
 		assert.True(t, strings.Contains(buf.String(), "request.method=GET"))
-		assert.True(t, strings.Contains(buf.String(), "request.url=/test"))
+		assert.True(t, strings.Contains(buf.String(), "request.path=/test"))
 	})
 
 	t.Run("Does not send notification email when disabled", func(t *testing.T) {
@@ -76,7 +76,7 @@ func TestServerError(t *testing.T) {
 		assert.True(t, strings.Contains(buf.String(), "level=ERROR"))
 		assert.True(t, strings.Contains(buf.String(), `msg="this is a test error"`))
 		assert.True(t, strings.Contains(buf.String(), "request.method=GET"))
-		assert.True(t, strings.Contains(buf.String(), "request.url=/test"))
+		assert.True(t, strings.Contains(buf.String(), "request.path=/test"))
 	})
 
 	t.Run("Does not send notification email when disabled", func(t *testing.T) {

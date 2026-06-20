@@ -70,10 +70,10 @@ func TestLogAccess(t *testing.T) {
 
 		res := send(t, req, app.logAccess(next))
 		assert.Equal(t, res.StatusCode, http.StatusTeapot)
-		assert.True(t, strings.Contains(buf.String(), "level=INFO"))
-		assert.True(t, strings.Contains(buf.String(), "msg=access"))
+		assert.True(t, strings.Contains(buf.String(), "level=WARN"))
+		assert.True(t, strings.Contains(buf.String(), `msg="http request"`))
 		assert.True(t, strings.Contains(buf.String(), "request.method=GET"))
-		assert.True(t, strings.Contains(buf.String(), "request.url=/test"))
+		assert.True(t, strings.Contains(buf.String(), "request.path=/test"))
 		assert.True(t, strings.Contains(buf.String(), "response.status=418"))
 		assert.True(t, strings.Contains(buf.String(), "response.size=32"))
 	})

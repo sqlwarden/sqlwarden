@@ -9,25 +9,26 @@ import (
 	"runtime/debug"
 	"syscall"
 
-	"github.com/lmittmann/tint"
 	"github.com/sqlwarden/internal/version"
 	"github.com/sqlwarden/internal/web"
 )
 
 func main() {
-	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelDebug}))
-
-	err := run(logger, os.Args[1:])
+	err := run(os.Args[1:])
 	if err != nil {
 		trace := string(debug.Stack())
-		logger.Error(err.Error(), "trace", trace)
+		bootstrapLogger().Error(err.Error(), "trace", trace)
 		os.Exit(1)
 	}
 }
 
-func run(logger *slog.Logger, args []string) error {
+func bootstrapLogger() *slog.Logger {
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+}
+
+func run(args []string) error {
 	if len(args) > 0 && args[0] == "rotate-keys" {
-		return runRotateKeys(logger, args[1:])
+		return runRotateKeys(args[1:])
 	}
 
 	cfg, showVersion, err := web.LoadConfig(args)
@@ -38,6 +39,11 @@ func run(logger *slog.Logger, args []string) error {
 	if showVersion {
 		fmt.Printf("version: %s\n", version.Get())
 		return nil
+	}
+
+	logger, err := web.NewLogger(cfg, os.Stdout)
+	if err != nil {
+		return err
 	}
 
 	app, err := web.New(cfg, logger)
@@ -60,8 +66,13 @@ func run(logger *slog.Logger, args []string) error {
 // the deployment's config and database already holds the keys, so no
 // application-level authorization is applied. It is the CLI equivalent of the
 // instance-admin HTTP rotate endpoint.
-func runRotateKeys(logger *slog.Logger, args []string) error {
+func runRotateKeys(args []string) error {
 	cfg, _, err := web.LoadConfig(args)
+	if err != nil {
+		return err
+	}
+
+	logger, err := web.NewLogger(cfg, os.Stdout)
 	if err != nil {
 		return err
 	}

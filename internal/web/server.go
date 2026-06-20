@@ -31,10 +31,18 @@ func (app *application) ServeHTTP(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 
+		startedAt := time.Now()
+		app.logger.Info("server shutdown started", slog.Group("server", "addr", srv.Addr), "timeout_ms", defaultShutdownPeriod.Milliseconds())
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), defaultShutdownPeriod)
 		defer cancel()
 
-		shutdownErrorChan <- srv.Shutdown(shutdownCtx)
+		err := srv.Shutdown(shutdownCtx)
+		if err != nil {
+			app.logger.Warn("server shutdown failed", slog.Group("server", "addr", srv.Addr), "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
+		} else {
+			app.logger.Info("server shutdown completed", slog.Group("server", "addr", srv.Addr), "duration_ms", time.Since(startedAt).Milliseconds())
+		}
+		shutdownErrorChan <- err
 	}()
 
 	scheme := "http"

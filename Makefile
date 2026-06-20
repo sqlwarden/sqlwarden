@@ -94,7 +94,7 @@ build/release:
 ## run: run the cmd/api application
 .PHONY: run
 run: build
-	DB_LOG_QUERIES=true ./dist/sqlwarden
+	DB_LOG_QUERIES=true LOG_FORMAT=text ./dist/sqlwarden
 
 ## run/live: run the application with reloading on file changes
 .PHONY: run/live

@@ -17,6 +17,8 @@ const (
 	defaultDeploymentMode          = DeploymentModeServer
 	defaultAccessMode              = AccessModeMultiUser
 	defaultPersonalSpacesEnabled   = true
+	defaultLogLevel                = LogLevelInfo
+	defaultLogFormat               = LogFormatJSON
 	defaultCookieSecretKey         = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
 	defaultDBLogQueries            = false
 	defaultDBDriver                = "sqlite"
@@ -67,6 +69,18 @@ const (
 )
 
 const (
+	LogLevelDebug = "debug"
+	LogLevelInfo  = "info"
+	LogLevelWarn  = "warn"
+	LogLevelError = "error"
+)
+
+const (
+	LogFormatJSON = "json"
+	LogFormatText = "text"
+)
+
+const (
 	FilesStorageModeFile          = "file"
 	FilesStorageModeObject        = "object"
 	FilesStorageBackendFilesystem = "filesystem"
@@ -79,7 +93,11 @@ type Config struct {
 	DeploymentMode        string
 	AccessMode            string
 	PersonalSpacesEnabled bool
-	Cookie                struct {
+	Log                   struct {
+		Level  string
+		Format string
+	}
+	Cookie struct {
 		SecretKey string
 	}
 	DB struct {
@@ -160,6 +178,8 @@ func DefaultConfig() Config {
 	cfg.DeploymentMode = defaultDeploymentMode
 	cfg.AccessMode = defaultAccessMode
 	cfg.PersonalSpacesEnabled = defaultPersonalSpacesEnabled
+	cfg.Log.Level = defaultLogLevel
+	cfg.Log.Format = defaultLogFormat
 	cfg.Cookie.SecretKey = defaultCookieSecretKey
 	cfg.DB.LogQueries = defaultDBLogQueries
 	cfg.DB.Driver = defaultDBDriver
@@ -223,6 +243,8 @@ var configOptions = []configOption{
 	{key: "base_url", env: "BASE_URL", flagName: "base-url", defaultValue: defaultBaseURL, usage: "Application base URL used in generated links and JWT claims"},
 	{key: "http_port", env: "HTTP_PORT", flagName: "http-port", defaultValue: defaultHTTPPort, usage: "HTTP server port"},
 	{key: "personal_spaces_enabled", env: "PERSONAL_SPACES_ENABLED", flagName: "personal-spaces-enabled", defaultValue: defaultPersonalSpacesEnabled, usage: "Enable personal spaces by default"},
+	{key: "log.level", env: "LOG_LEVEL", flagName: "log-level", defaultValue: defaultLogLevel, usage: "Log level (debug, info, warn, error)"},
+	{key: "log.format", env: "LOG_FORMAT", flagName: "log-format", defaultValue: defaultLogFormat, usage: "Log format (json or text)"},
 	{key: "cookie.secret_key", env: "COOKIE_SECRET_KEY", flagName: "cookie-secret-key", defaultValue: defaultCookieSecretKey, usage: "Cookie signing secret"},
 	{key: "db.log_queries", env: "DB_LOG_QUERIES", flagName: "db-log-queries", defaultValue: defaultDBLogQueries, usage: "Enable database query logging"},
 	{key: "db.driver", env: "DB_DRIVER", flagName: "db-driver", defaultValue: defaultDBDriver, usage: "Database driver (sqlite or postgres)"},
@@ -320,6 +342,8 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.BaseURL = v.GetString("base_url")
 	cfg.HTTPPort = v.GetInt("http_port")
 	cfg.PersonalSpacesEnabled = v.GetBool("personal_spaces_enabled")
+	cfg.Log.Level = strings.ToLower(strings.TrimSpace(v.GetString("log.level")))
+	cfg.Log.Format = strings.ToLower(strings.TrimSpace(v.GetString("log.format")))
 	cfg.Cookie.SecretKey = v.GetString("cookie.secret_key")
 	cfg.DB.LogQueries = v.GetBool("db.log_queries")
 	cfg.DB.Driver = v.GetString("db.driver")
@@ -366,6 +390,12 @@ func validateConfig(cfg Config) error {
 	}
 	if cfg.AccessMode != AccessModeMultiUser && cfg.AccessMode != AccessModeSingleUser {
 		return fmt.Errorf("access_mode must be %q or %q", AccessModeMultiUser, AccessModeSingleUser)
+	}
+	if !isSupportedLogLevel(cfg.Log.Level) {
+		return fmt.Errorf("log.level must be %q, %q, %q, or %q", LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError)
+	}
+	if !isSupportedLogFormat(cfg.Log.Format) {
+		return fmt.Errorf("log.format must be %q or %q", LogFormatJSON, LogFormatText)
 	}
 	if cfg.TLS.Enabled {
 		if strings.TrimSpace(cfg.TLS.CertFile) == "" {
@@ -436,6 +466,24 @@ func validateConfig(cfg Config) error {
 	}
 
 	return nil
+}
+
+func isSupportedLogLevel(level string) bool {
+	switch level {
+	case LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSupportedLogFormat(format string) bool {
+	switch format {
+	case LogFormatJSON, LogFormatText:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateFileStorageBackends(cfg Config) error {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/observability"
 	"github.com/uptrace/bun"
 )
 
@@ -34,7 +35,31 @@ func TestSlowQueryDetectorHook(t *testing.T) {
 
 		output := buf.String()
 		assert.True(t, strings.Contains(output, "slow query detected"))
+		assert.False(t, strings.Contains(output, "SELECT * FROM users"))
+	})
+
+	t.Run("Includes request ID and query when explicitly enabled", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+		hook := &slowQueryDetectorHook{
+			threshold:    50,
+			includeQuery: true,
+			logger:       logger,
+		}
+
+		event := &bun.QueryEvent{
+			StartTime: time.Now().Add(-100 * time.Millisecond),
+			Query:     "SELECT * FROM users WHERE id = 1",
+		}
+
+		ctx := observability.WithRequestID(context.Background(), "req-slow-1")
+		hook.AfterQuery(ctx, event)
+
+		output := buf.String()
+		assert.True(t, strings.Contains(output, "slow query detected"))
 		assert.True(t, strings.Contains(output, "SELECT * FROM users"))
+		assert.True(t, strings.Contains(output, "req-slow-1"))
 	})
 
 	t.Run("Does not log fast queries below threshold", func(t *testing.T) {
@@ -94,6 +119,27 @@ func TestDebugQueryLoggerHook(t *testing.T) {
 		assert.True(t, strings.Contains(output, "executed query"))
 		assert.True(t, strings.Contains(output, "INSERT INTO users"))
 		assert.True(t, strings.Contains(output, "rows_affected"))
+	})
+
+	t.Run("Includes request ID when present", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+		hook := &debugQueryLoggerHook{
+			logger: logger,
+		}
+
+		event := &bun.QueryEvent{
+			StartTime: time.Now().Add(-5 * time.Millisecond),
+			Query:     "SELECT 1",
+			Result:    &testResult{rowsAffected: 1},
+		}
+
+		hook.AfterQuery(observability.WithRequestID(context.Background(), "req-debug-1"), event)
+
+		output := buf.String()
+		assert.True(t, strings.Contains(output, "executed query"))
+		assert.True(t, strings.Contains(output, "req-debug-1"))
 	})
 
 	t.Run("Logs queries with errors", func(t *testing.T) {
