@@ -17,17 +17,9 @@ import (
 	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
+	"github.com/sqlwarden/internal/sqlquery"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/sqlwarden/pkg/result"
-)
-
-type queryClass string
-
-const (
-	queryClassUnknown queryClass = "unknown"
-	queryClassDQL     queryClass = "dql"
-	queryClassDML     queryClass = "dml"
-	queryClassDDL     queryClass = "ddl"
 )
 
 func (app *application) validateConnectionEnvironment(r *http.Request, workspaceID int64, envID *int64) (*int64, bool, error) {
@@ -173,20 +165,6 @@ func compareConnection(left, right database.Connection, sortBy string) int {
 	return 0
 }
 
-func classifySQL(sql string) queryClass {
-	normalized := strings.ToUpper(strings.TrimSpace(sql))
-	switch {
-	case strings.Contains(normalized, "CREATE "), strings.Contains(normalized, "ALTER "), strings.Contains(normalized, "DROP "), strings.Contains(normalized, "TRUNCATE "), strings.Contains(normalized, "RENAME "):
-		return queryClassDDL
-	case strings.Contains(normalized, "INSERT "), strings.Contains(normalized, "UPDATE "), strings.Contains(normalized, "DELETE "), strings.Contains(normalized, "MERGE "), strings.Contains(normalized, "UPSERT "):
-		return queryClassDML
-	case strings.Contains(normalized, "SELECT "), strings.Contains(normalized, "SHOW "), strings.Contains(normalized, "DESCRIBE "), strings.Contains(normalized, "EXPLAIN "), strings.HasPrefix(normalized, "WITH "):
-		return queryClassDQL
-	default:
-		return queryClassUnknown
-	}
-}
-
 func (app *application) hasAnyConnectionRuntimePermission(r *http.Request, orgID int64, ownerType string, connectionID int64, permissions ...string) bool {
 	for _, permission := range permissions {
 		if app.hasConnectionPermission(r, orgID, ownerType, connectionID, permission) {
@@ -199,6 +177,15 @@ func (app *application) hasAnyConnectionRuntimePermission(r *http.Request, orgID
 func (app *application) hasConnectionPermission(r *http.Request, orgID int64, ownerType string, connectionID int64, permission string) bool {
 	account := contextGetAccount(r)
 	return app.enforcer.Can(r.Context(), account.ID, orgID, ownerType, "connection", connectionID, permission)
+}
+
+func (app *application) classifyConnectionSQL(r *http.Request, conn database.Connection, sql string) (sqlquery.ClassifyResult, error) {
+	return sqlquery.Classify(r.Context(), sqlquery.ClassifyRequest{
+		RequestMetadata: sqlquery.RequestMetadata{
+			Dialect: driver.Dialect(driver.NormalizeName(conn.Driver)),
+		},
+		SQL: sql,
+	})
 }
 
 func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
@@ -721,14 +708,18 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hasBroadExecute := app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnExecute)
-	queryKind := classifySQL(input.SQL)
+	classification, err := app.classifyConnectionSQL(r, conn, input.SQL)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
 
 	var rs *result.ResultSet
 	var execErr error
 	start := time.Now()
 
-	switch queryKind {
-	case queryClassDQL:
+	switch classification.Kind {
+	case sqlquery.KindDQL:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
 			ws.OwnerType, "connection", conn.ID,
@@ -738,7 +729,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		rs, execErr = session.Query(r.Context(), input.SQL)
-	case queryClassDML:
+	case sqlquery.KindDML:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
 			ws.OwnerType, "connection", conn.ID,
@@ -748,7 +739,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		rs, execErr = session.Execute(r.Context(), input.SQL)
-	case queryClassDDL:
+	case sqlquery.KindDDL:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
 			ws.OwnerType, "connection", conn.ID,
