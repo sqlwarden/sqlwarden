@@ -28,7 +28,7 @@ func Register(name string, factory func() Driver) {
 // Returns an error if the driver is not registered.
 // Normalizes aliases: "postgresql" → "postgres", "sqlite3" → "sqlite", "mariadb" → "mysql".
 func New(name string) (Driver, error) {
-	name = normalizeAlias(name)
+	name = NormalizeName(name)
 	mu.RLock()
 	factory, ok := registry[name]
 	mu.RUnlock()
@@ -38,7 +38,9 @@ func New(name string) (Driver, error) {
 	return factory(), nil
 }
 
-func normalizeAlias(name string) string {
+// NormalizeName returns the canonical driver registry name for a user-facing
+// driver name or known alias.
+func NormalizeName(name string) string {
 	switch name {
 	case "postgresql":
 		return "postgres"

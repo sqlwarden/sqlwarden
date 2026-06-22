@@ -17,6 +17,7 @@ import (
 	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
+	"github.com/sqlwarden/internal/sqlquery"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -499,7 +500,11 @@ func (app *application) resolveQueryRuntimeSession(w http.ResponseWriter, r *htt
 	account := contextGetAccount(r)
 	conn := contextGetConnection(r)
 
-	requiredPermission, allowed := app.requiredConnectionRuntimePermission(r, sql)
+	requiredPermission, allowed, err := app.requiredConnectionRuntimePermission(r, sql)
+	if err != nil {
+		app.serverError(w, r, err)
+		return nil, "", false
+	}
 	if !allowed {
 		app.notPermitted(w, r)
 		return nil, "", false
@@ -522,29 +527,34 @@ func (app *application) resolveQueryRuntimeSession(w http.ResponseWriter, r *htt
 	return session, requiredPermission, true
 }
 
-func (app *application) requiredConnectionRuntimePermission(r *http.Request, sql string) (string, bool) {
+func (app *application) requiredConnectionRuntimePermission(r *http.Request, sql string) (string, bool, error) {
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 	conn := contextGetConnection(r)
 
 	if app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnExecute) {
-		return access.PermConnExecute, true
+		return access.PermConnExecute, true, nil
 	}
 
-	switch classifySQL(sql) {
-	case queryClassDQL:
+	classification, err := app.classifyConnectionSQL(r, conn, sql)
+	if err != nil {
+		return "", false, err
+	}
+
+	switch classification.Kind {
+	case sqlquery.KindDQL:
 		if app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnDQL) {
-			return access.PermConnDQL, true
+			return access.PermConnDQL, true, nil
 		}
-	case queryClassDML:
+	case sqlquery.KindDML:
 		if app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnDML) {
-			return access.PermConnDML, true
+			return access.PermConnDML, true, nil
 		}
-	case queryClassDDL:
+	case sqlquery.KindDDL:
 		if app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnDDL) {
-			return access.PermConnDDL, true
+			return access.PermConnDDL, true, nil
 		}
 	}
 
-	return "", false
+	return "", false, nil
 }
