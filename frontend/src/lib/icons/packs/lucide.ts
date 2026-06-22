@@ -75,6 +75,15 @@ const icons: Record<AppIcon, string> = {
   'user-multiple-02': 'lucide:users',
   'user-multiple': 'lucide:users',
   'user-shield-01': 'lucide:user-check',
+  'type-number': 'lucide:hash',
+  'type-string': 'lucide:case-sensitive',
+  'type-boolean': 'lucide:toggle-left',
+  'type-timestamp': 'lucide:clock',
+  'type-date': 'lucide:calendar',
+  'type-time': 'lucide:timer',
+  'type-uuid': 'lucide:fingerprint',
+  'type-json': 'lucide:braces',
+  'type-binary': 'lucide:binary',
 }
 
 export default icons

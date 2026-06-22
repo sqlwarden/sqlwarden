@@ -75,6 +75,15 @@ const icons: Record<AppIcon, string> = {
   'user-multiple-02': 'hugeicons:user-multiple-02',
   'user-multiple': 'hugeicons:user-multiple',
   'user-shield-01': 'hugeicons:user-shield-01',
+  'type-number': 'hugeicons:hashtag',
+  'type-string': 'hugeicons:text-font',
+  'type-boolean': 'hugeicons:toggle-on',
+  'type-timestamp': 'hugeicons:clock-01',
+  'type-date': 'hugeicons:calendar-01',
+  'type-time': 'hugeicons:timer-01',
+  'type-uuid': 'hugeicons:fingerprint-scan',
+  'type-json': 'hugeicons:code',
+  'type-binary': 'hugeicons:binary-code',
 }
 
 export default icons
