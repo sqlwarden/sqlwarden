@@ -4,11 +4,24 @@ import { Icon, type AppIcon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { isApiError } from '#/lib/api/errors'
 import { orgConnectionSchemaQueryOptions } from '#/lib/api/query'
-import type { DbNamespace, DbTable, DbView } from '#/lib/api/types'
+import type { DbNamespace, DbObjectGroup, DbObject } from '#/lib/api/types'
 import { useIde } from './useIdeStore'
 import { filterSchema } from './schemaFilter'
 
 const indent = (depth: number) => 6 + depth * 11
+
+// Icon per object-group kind. Unknown kinds (future drivers/Phase C) fall back
+// to a generic icon so they still render natively without a code change here.
+const KIND_ICON: Record<string, AppIcon> = {
+  table: 'table',
+  view: 'eye',
+  materialized_view: 'table',
+  function: 'play',
+  procedure: 'terminal',
+  sequence: 'sort',
+  trigger: 'flow-connection',
+}
+const kindIcon = (kind: string): AppIcon => KIND_ICON[kind] ?? 'box'
 
 export function SchemaTree({
   orgSlug,
@@ -51,7 +64,7 @@ export function SchemaTree({
   const namespaces = filterSchema(raw, filter).namespaces ?? []
 
   if (namespaces.length === 0) {
-    return <SchemaMessage>{filtering ? 'No matches.' : 'No tables or views.'}</SchemaMessage>
+    return <SchemaMessage>{filtering ? 'No matches.' : 'No objects.'}</SchemaMessage>
   }
 
   return (
@@ -74,50 +87,68 @@ function SchemaMessage({ children }: { children: React.ReactNode }) {
 function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: DbNamespace; forceOpen: boolean }) {
   const [open, setOpen] = useState(true)
   const expanded = forceOpen || open
-  const tables = namespace.tables ?? []
-  const views = namespace.views ?? []
+  const groups = (namespace.object_groups ?? []).filter((g) => (g.objects ?? []).length > 0)
 
   return (
     <div>
       <TreeRow depth={0} typeIcon="database" chevron={expanded} bold label={namespace.name} onClick={() => setOpen((v) => !v)} />
-      {expanded && (
-        <>
-          {tables.map((t) => (
-            <SchemaObjectNode key={`t:${t.name}`} object={t} kind="table" typeIcon="table" depth={1} forceOpen={forceOpen} />
-          ))}
-          {views.map((v) => (
-            <SchemaObjectNode key={`v:${v.name}`} object={v} kind="view" typeIcon="eye" depth={1} forceOpen={forceOpen} />
-          ))}
-        </>
-      )}
+      {expanded && groups.map((g) => <SchemaGroupNode key={g.kind} group={g} forceOpen={forceOpen} />)}
+    </div>
+  )
+}
+
+function SchemaGroupNode({ group, forceOpen }: { group: DbObjectGroup; forceOpen: boolean }) {
+  const [open, setOpen] = useState(true)
+  const expanded = forceOpen || open
+  const objects = group.objects ?? []
+  const icon = kindIcon(group.kind)
+
+  return (
+    <div>
+      <TreeRow
+        depth={1}
+        typeIcon={expanded ? 'folder-open' : 'folder'}
+        chevron={expanded}
+        label={`${group.label} (${objects.length})`}
+        onClick={() => setOpen((v) => !v)}
+      />
+      {expanded &&
+        objects.map((o) => (
+          <SchemaObjectNode key={o.name} object={o} typeIcon={icon} depth={2} forceOpen={forceOpen} />
+        ))}
     </div>
   )
 }
 
 function SchemaObjectNode({
   object,
-  kind,
   typeIcon,
   depth,
   forceOpen,
 }: {
-  object: DbTable | DbView
-  kind: 'table' | 'view'
+  object: DbObject
   typeIcon: AppIcon
   depth: number
   forceOpen: boolean
 }) {
   const [open, setOpen] = useState(false)
-  const expanded = forceOpen || open
   const columns = object.columns ?? []
-  const table = kind === 'table' ? (object as DbTable) : null
-  const pk = new Set(table?.primary_key ?? [])
-  const fk = new Set((table?.foreign_keys ?? []).flatMap((f) => f.columns))
-  const indexes = table?.indexes ?? []
+  const indexes = object.indexes ?? []
+  const hasChildren = columns.length > 0 || indexes.length > 0
+  const expanded = hasChildren && (forceOpen || open)
+  const pk = new Set(object.primary_key ?? [])
+  const fk = new Set((object.foreign_keys ?? []).flatMap((f) => f.columns))
 
   return (
     <div>
-      <TreeRow depth={depth} typeIcon={typeIcon} chevron={expanded} label={object.name} onClick={() => setOpen((v) => !v)} />
+      <TreeRow
+        depth={depth}
+        typeIcon={typeIcon}
+        chevron={expanded}
+        leaf={!hasChildren}
+        label={object.name}
+        onClick={() => hasChildren && setOpen((v) => !v)}
+      />
       {expanded && (
         <>
           {columns.map((c) => (
@@ -168,6 +199,7 @@ function TreeRow({
   chevron,
   label,
   bold,
+  leaf,
   onClick,
 }: {
   depth: number
@@ -175,6 +207,7 @@ function TreeRow({
   chevron: boolean
   label: string
   bold?: boolean
+  leaf?: boolean
   onClick: () => void
 }) {
   // A plain click toggles; a drag that leaves text selected does not (so the
@@ -199,7 +232,11 @@ function TreeRow({
       style={{ paddingLeft: indent(depth) }}
       className="flex h-6 w-full cursor-pointer items-center gap-1.5 pr-3 text-left text-xs transition-colors hover:bg-accent hover:text-accent-foreground"
     >
-      <Icon name={chevron ? 'chevron-down' : 'chevron-right'} size={11} className="shrink-0 text-muted-foreground" />
+      {leaf ? (
+        <span className="w-[11px] shrink-0" />
+      ) : (
+        <Icon name={chevron ? 'chevron-down' : 'chevron-right'} size={11} className="shrink-0 text-muted-foreground" />
+      )}
       <Icon name={typeIcon} size={13} className="shrink-0 text-muted-foreground" />
       <span className={cn('flex-1 select-text whitespace-nowrap', bold && 'font-medium')}>{label}</span>
     </div>

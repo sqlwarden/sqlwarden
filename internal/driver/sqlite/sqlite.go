@@ -187,6 +187,28 @@ func (d *sqliteDriver) Introspect(ctx context.Context, opts schema.IntrospectOpt
 		idxInfo.Close()
 	}
 
+	// Triggers.
+	b.DeclareGroup("trigger", "Triggers")
+	trows, err := d.db.QueryContext(ctx,
+		`SELECT name, tbl_name FROM sqlite_master WHERE type = 'trigger' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: introspect triggers: %w", err)
+	}
+	for trows.Next() {
+		var name, tbl string
+		if err := trows.Scan(&name, &tbl); err != nil {
+			trows.Close()
+			return nil, fmt.Errorf("sqlite: introspect triggers scan: %w", err)
+		}
+		b.AddObject(ns, "trigger", name)
+		b.SetObjectAttribute(ns, "trigger", name, "table", tbl)
+	}
+	if err := trows.Err(); err != nil {
+		trows.Close()
+		return nil, fmt.Errorf("sqlite: introspect triggers rows: %w", err)
+	}
+	trows.Close()
+
 	return b.Build(""), nil
 }
 

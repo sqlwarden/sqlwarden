@@ -18,24 +18,29 @@ func mustExec(t *testing.T, d driver.Driver, sql string) {
 	}
 }
 
-func introTable(t *testing.T, s *schema.Schema, ns, name string) schema.Table {
+func introObject(t *testing.T, s *schema.Schema, ns, kind, name string) schema.Object {
 	t.Helper()
 	for _, n := range s.Namespaces {
 		if n.Name != ns {
 			continue
 		}
-		for _, tbl := range n.Tables {
-			if tbl.Name == name {
-				return tbl
+		for _, g := range n.ObjectGroups {
+			if g.Kind != kind {
+				continue
+			}
+			for _, o := range g.Objects {
+				if o.Name == name {
+					return o
+				}
 			}
 		}
 	}
-	t.Fatalf("table %s.%s not found in %+v", ns, name, s)
-	return schema.Table{}
+	t.Fatalf("%s %s.%s not found in %+v", kind, ns, name, s)
+	return schema.Object{}
 }
 
-func introHasIndex(tbl schema.Table, name string) bool {
-	for _, ix := range tbl.Indexes {
+func introHasIndex(o schema.Object, name string) bool {
+	for _, ix := range o.Indexes {
 		if ix.Name == name {
 			return true
 		}
@@ -64,7 +69,7 @@ func TestSQLiteIntrospect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("introspect: %v", err)
 	}
-	users := introTable(t, s, "main", "intro_users")
+	users := introObject(t, s, "main", "table", "intro_users")
 	if len(users.PrimaryKey) != 1 || users.PrimaryKey[0] != "id" {
 		t.Fatalf("expected PK [id], got %v", users.PrimaryKey)
 	}
@@ -93,11 +98,16 @@ func TestSQLiteIntrospectView(t *testing.T) {
 		t.Fatalf("introspect: %v", err)
 	}
 
-	var view *schema.View
+	var view *schema.Object
 	for i := range s.Namespaces {
-		for j := range s.Namespaces[i].Views {
-			if s.Namespaces[i].Views[j].Name == "intro_active_accounts" {
-				view = &s.Namespaces[i].Views[j]
+		for _, g := range s.Namespaces[i].ObjectGroups {
+			if g.Kind != "view" {
+				continue
+			}
+			for j := range g.Objects {
+				if g.Objects[j].Name == "intro_active_accounts" {
+					view = &g.Objects[j]
+				}
 			}
 		}
 	}
@@ -110,11 +120,38 @@ func TestSQLiteIntrospectView(t *testing.T) {
 
 	// A view must not also appear among the tables.
 	for _, ns := range s.Namespaces {
-		for _, tbl := range ns.Tables {
-			if tbl.Name == "intro_active_accounts" {
-				t.Fatal("view should not be listed as a table")
+		for _, g := range ns.ObjectGroups {
+			if g.Kind != "table" {
+				continue
+			}
+			for _, o := range g.Objects {
+				if o.Name == "intro_active_accounts" {
+					t.Fatal("view should not be listed as a table")
+				}
 			}
 		}
+	}
+}
+
+func TestSQLiteIntrospectTrigger(t *testing.T) {
+	d := &sqliteDriver{}
+	ctx := context.Background()
+	dsn := filepath.Join(t.TempDir(), "introspect_trigger.db")
+	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: dsn, Driver: "sqlite"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = d.Close() })
+
+	mustExec(t, d, `CREATE TABLE intro_log (id INTEGER PRIMARY KEY, n INTEGER)`)
+	mustExec(t, d, `CREATE TRIGGER intro_bump AFTER INSERT ON intro_log BEGIN UPDATE intro_log SET n = n + 1; END`)
+
+	s, err := d.Introspect(ctx, schema.IntrospectOptions{})
+	if err != nil {
+		t.Fatalf("introspect: %v", err)
+	}
+	trg := introObject(t, s, "main", "trigger", "intro_bump")
+	if trg.Attributes["table"] != "intro_log" {
+		t.Fatalf("expected trigger on intro_log, got attributes %+v", trg.Attributes)
 	}
 }
 

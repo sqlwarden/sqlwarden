@@ -344,23 +344,28 @@ func mustExec(t *testing.T, d driver.Driver, sql string) {
 	}
 }
 
-func introTable(t *testing.T, s *schema.Schema, ns, name string) schema.Table {
+func introTable(t *testing.T, s *schema.Schema, ns, name string) schema.Object {
 	t.Helper()
 	for _, n := range s.Namespaces {
 		if n.Name != ns {
 			continue
 		}
-		for _, tbl := range n.Tables {
-			if tbl.Name == name {
-				return tbl
+		for _, g := range n.ObjectGroups {
+			if g.Kind != "table" {
+				continue
+			}
+			for _, o := range g.Objects {
+				if o.Name == name {
+					return o
+				}
 			}
 		}
 	}
 	t.Fatalf("table %s.%s not found in %+v", ns, name, s)
-	return schema.Table{}
+	return schema.Object{}
 }
 
-func introHasIndex(tbl schema.Table, name string) bool {
+func introHasIndex(tbl schema.Object, name string) bool {
 	for _, ix := range tbl.Indexes {
 		if ix.Name == name {
 			return true
@@ -412,5 +417,59 @@ func TestPostgresIntrospect(t *testing.T) {
 	}
 	if colTypes["email"] != "text" {
 		t.Fatalf("expected email raw type text, got %q", colTypes["email"])
+	}
+}
+
+func introObj(t *testing.T, s *schema.Schema, ns, kind, name string) schema.Object {
+	t.Helper()
+	for _, n := range s.Namespaces {
+		if n.Name != ns {
+			continue
+		}
+		for _, g := range n.ObjectGroups {
+			if g.Kind != kind {
+				continue
+			}
+			for _, o := range g.Objects {
+				if o.Name == name {
+					return o
+				}
+			}
+		}
+	}
+	t.Fatalf("%s %s.%s not found in %+v", kind, ns, name, s)
+	return schema.Object{}
+}
+
+func TestPostgresIntrospectExtraObjects(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+
+	t.Cleanup(func() {
+		_, _ = d.Execute(ctx, "DROP MATERIALIZED VIEW IF EXISTS intro_mv")
+		_, _ = d.Execute(ctx, "DROP SEQUENCE IF EXISTS intro_seq")
+		_, _ = d.Execute(ctx, "DROP FUNCTION IF EXISTS intro_fn(integer)")
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_mv_src")
+	})
+	mustExec(t, d, `CREATE TABLE intro_mv_src (id bigint, label text)`)
+	mustExec(t, d, `CREATE MATERIALIZED VIEW intro_mv AS SELECT id, label FROM intro_mv_src`)
+	mustExec(t, d, `CREATE SEQUENCE intro_seq`)
+	mustExec(t, d, `CREATE FUNCTION intro_fn(x integer) RETURNS integer LANGUAGE sql AS 'SELECT x + 1'`)
+
+	s, err := d.Introspect(ctx, schema.IntrospectOptions{})
+	if err != nil {
+		t.Fatalf("introspect: %v", err)
+	}
+
+	mv := introObj(t, s, "public", "materialized_view", "intro_mv")
+	if len(mv.Columns) != 2 {
+		t.Fatalf("expected 2 columns on matview, got %d (%+v)", len(mv.Columns), mv.Columns)
+	}
+	if introObj(t, s, "public", "sequence", "intro_seq").Name != "intro_seq" {
+		t.Fatal("sequence intro_seq not found")
+	}
+	fn := introObj(t, s, "public", "function", "intro_fn")
+	if fn.Attributes["returns"] == nil {
+		t.Fatalf("expected function return attribute, got %+v", fn.Attributes)
 	}
 }

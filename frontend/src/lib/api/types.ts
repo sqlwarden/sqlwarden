@@ -316,23 +316,23 @@ export interface DbIndex {
   unique: boolean
 }
 
-export interface DbTable {
+export interface DbObject {
   name: string
-  columns: DbColumn[] | null
+  columns?: DbColumn[] | null
   primary_key?: string[]
   foreign_keys?: DbForeignKey[]
   indexes?: DbIndex[]
 }
 
-export interface DbView {
-  name: string
-  columns: DbColumn[] | null
+export interface DbObjectGroup {
+  kind: string
+  label: string
+  objects: DbObject[] | null
 }
 
 export interface DbNamespace {
   name: string
-  tables: DbTable[] | null
-  views: DbView[] | null
+  object_groups: DbObjectGroup[] | null
 }
 
 export interface DbSchema {

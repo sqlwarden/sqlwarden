@@ -1,11 +1,11 @@
-import type { DbSchema, DbNamespace, DbTable, DbView } from '#/lib/api/types'
+import type { DbSchema, DbNamespace, DbObjectGroup, DbObject } from '#/lib/api/types'
 
 /**
  * Prunes a schema to objects matching a case-insensitive substring query.
  * Empty/whitespace query returns the original schema unchanged (same reference).
- * A table/view is kept whole when its NAME matches; otherwise it is kept with
- * only its matching columns; otherwise dropped. Namespaces with no surviving
- * tables or views are dropped.
+ * An object is kept whole when its NAME matches; otherwise it is kept with only
+ * its matching columns; otherwise dropped. Groups with no surviving objects, and
+ * namespaces with no surviving groups, are dropped.
  */
 export function filterSchema(schema: DbSchema, query: string): DbSchema {
   const q = query.trim().toLowerCase()
@@ -13,29 +13,27 @@ export function filterSchema(schema: DbSchema, query: string): DbSchema {
 
   const namespaces = (schema.namespaces ?? [])
     .map((ns) => filterNamespace(ns, q))
-    .filter((ns) => (ns.tables ?? []).length > 0 || (ns.views ?? []).length > 0)
+    .filter((ns) => (ns.object_groups ?? []).length > 0)
 
   return { ...schema, namespaces }
 }
 
 function filterNamespace(ns: DbNamespace, q: string): DbNamespace {
-  const tables = (ns.tables ?? [])
-    .map((t) => filterTable(t, q))
-    .filter((t): t is DbTable => t !== null)
-  const views = (ns.views ?? [])
-    .map((v) => filterView(v, q))
-    .filter((v): v is DbView => v !== null)
-  return { ...ns, tables, views }
+  const object_groups = (ns.object_groups ?? [])
+    .map((g) => filterGroup(g, q))
+    .filter((g) => (g.objects ?? []).length > 0)
+  return { ...ns, object_groups }
 }
 
-function filterTable(t: DbTable, q: string): DbTable | null {
-  if (t.name.toLowerCase().includes(q)) return t
-  const columns = (t.columns ?? []).filter((c) => c.name.toLowerCase().includes(q))
-  return columns.length > 0 ? { ...t, columns } : null
+function filterGroup(g: DbObjectGroup, q: string): DbObjectGroup {
+  const objects = (g.objects ?? [])
+    .map((o) => filterObject(o, q))
+    .filter((o): o is DbObject => o !== null)
+  return { ...g, objects }
 }
 
-function filterView(v: DbView, q: string): DbView | null {
-  if (v.name.toLowerCase().includes(q)) return v
-  const columns = (v.columns ?? []).filter((c) => c.name.toLowerCase().includes(q))
-  return columns.length > 0 ? { ...v, columns } : null
+function filterObject(o: DbObject, q: string): DbObject | null {
+  if (o.name.toLowerCase().includes(q)) return o
+  const columns = (o.columns ?? []).filter((c) => c.name.toLowerCase().includes(q))
+  return columns.length > 0 ? { ...o, columns } : null
 }

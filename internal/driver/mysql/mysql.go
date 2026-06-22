@@ -228,7 +228,71 @@ ORDER BY table_name, index_name`
 		return nil, fmt.Errorf("mysql: introspect index rows: %w", err)
 	}
 
+	if err := d.loadMySQLExtraObjects(ctx, b, ns); err != nil {
+		return nil, err
+	}
+
 	return b.Build(ns), nil
+}
+
+// loadMySQLExtraObjects introspects functions, stored procedures, and triggers.
+func (d *mysqlDriver) loadMySQLExtraObjects(ctx context.Context, b *build.Builder, ns string) error {
+	b.DeclareGroup("function", "Functions")
+	b.DeclareGroup("procedure", "Procedures")
+	b.DeclareGroup("trigger", "Triggers")
+
+	const rtnQ = `
+SELECT routine_name, routine_type, data_type
+FROM information_schema.routines
+WHERE routine_schema = DATABASE()
+ORDER BY routine_type, routine_name`
+	rows, err := d.db.QueryContext(ctx, rtnQ)
+	if err != nil {
+		return fmt.Errorf("mysql: introspect routines: %w", err)
+	}
+	for rows.Next() {
+		var name, rtype string
+		var dtype sql.NullString
+		if err := rows.Scan(&name, &rtype, &dtype); err != nil {
+			rows.Close()
+			return fmt.Errorf("mysql: introspect routines scan: %w", err)
+		}
+		kind := "procedure"
+		if rtype == "FUNCTION" {
+			kind = "function"
+		}
+		b.AddObject(ns, kind, name)
+		if dtype.Valid && dtype.String != "" {
+			b.SetObjectAttribute(ns, kind, name, "returns", dtype.String)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("mysql: introspect routines rows: %w", err)
+	}
+	rows.Close()
+
+	const trgQ = `
+SELECT trigger_name, action_timing, event_manipulation, event_object_table
+FROM information_schema.triggers
+WHERE trigger_schema = DATABASE()
+ORDER BY trigger_name`
+	trows, err := d.db.QueryContext(ctx, trgQ)
+	if err != nil {
+		return fmt.Errorf("mysql: introspect triggers: %w", err)
+	}
+	defer trows.Close()
+	for trows.Next() {
+		var name, timing, event, tbl string
+		if err := trows.Scan(&name, &timing, &event, &tbl); err != nil {
+			return fmt.Errorf("mysql: introspect triggers scan: %w", err)
+		}
+		b.AddObject(ns, "trigger", name)
+		b.SetObjectAttribute(ns, "trigger", name, "timing", timing)
+		b.SetObjectAttribute(ns, "trigger", name, "event", event)
+		b.SetObjectAttribute(ns, "trigger", name, "table", tbl)
+	}
+	return trows.Err()
 }
 
 func currentDatabase(ctx context.Context, db *sql.DB) string {

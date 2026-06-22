@@ -120,8 +120,95 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position`
 	if err := d.loadPostgresIndexes(ctx, b); err != nil {
 		return nil, err
 	}
+	if err := d.loadPostgresExtraObjects(ctx, b); err != nil {
+		return nil, err
+	}
 
 	return b.Build(opts.Database), nil
+}
+
+// loadPostgresExtraObjects introspects materialized views (with columns),
+// functions, and sequences, declaring their groups so they render natively.
+func (d *postgresDriver) loadPostgresExtraObjects(ctx context.Context, b *build.Builder) error {
+	b.DeclareGroup("materialized_view", "Materialized Views")
+	b.DeclareGroup("function", "Functions")
+	b.DeclareGroup("sequence", "Sequences")
+
+	const mvQ = `
+SELECT n.nspname, c.relname, a.attname, format_type(a.atttypid, a.atttypmod), a.attnum
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+WHERE c.relkind = 'm'
+  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY n.nspname, c.relname, a.attnum`
+	mvRows, err := d.db.QueryContext(ctx, mvQ)
+	if err != nil {
+		return fmt.Errorf("postgres: introspect matviews: %w", err)
+	}
+	for mvRows.Next() {
+		var ns, mv, col, dtype string
+		var attnum int
+		if err := mvRows.Scan(&ns, &mv, &col, &dtype, &attnum); err != nil {
+			mvRows.Close()
+			return fmt.Errorf("postgres: introspect matviews scan: %w", err)
+		}
+		b.AddObjectColumn(ns, "materialized_view", mv, schema.Column{Name: col, DataType: dtype, Ordinal: attnum})
+	}
+	if err := mvRows.Err(); err != nil {
+		mvRows.Close()
+		return fmt.Errorf("postgres: introspect matviews rows: %w", err)
+	}
+	mvRows.Close()
+
+	const fnQ = `
+SELECT n.nspname, p.proname, pg_get_function_arguments(p.oid), pg_get_function_result(p.oid)
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY n.nspname, p.proname`
+	fnRows, err := d.db.QueryContext(ctx, fnQ)
+	if err != nil {
+		return fmt.Errorf("postgres: introspect functions: %w", err)
+	}
+	for fnRows.Next() {
+		var ns, name, args string
+		var ret sql.NullString
+		if err := fnRows.Scan(&ns, &name, &args, &ret); err != nil {
+			fnRows.Close()
+			return fmt.Errorf("postgres: introspect functions scan: %w", err)
+		}
+		b.AddObject(ns, "function", name)
+		b.SetObjectAttribute(ns, "function", name, "arguments", args)
+		if ret.Valid {
+			b.SetObjectAttribute(ns, "function", name, "returns", ret.String)
+		}
+	}
+	if err := fnRows.Err(); err != nil {
+		fnRows.Close()
+		return fmt.Errorf("postgres: introspect functions rows: %w", err)
+	}
+	fnRows.Close()
+
+	const seqQ = `
+SELECT sequence_schema, sequence_name, data_type
+FROM information_schema.sequences
+WHERE sequence_schema NOT IN ('pg_catalog', 'information_schema')
+ORDER BY sequence_schema, sequence_name`
+	seqRows, err := d.db.QueryContext(ctx, seqQ)
+	if err != nil {
+		return fmt.Errorf("postgres: introspect sequences: %w", err)
+	}
+	defer seqRows.Close()
+	for seqRows.Next() {
+		var ns, name, dtype string
+		if err := seqRows.Scan(&ns, &name, &dtype); err != nil {
+			return fmt.Errorf("postgres: introspect sequences scan: %w", err)
+		}
+		b.AddObject(ns, "sequence", name)
+		b.SetObjectAttribute(ns, "sequence", name, "data_type", dtype)
+	}
+	return seqRows.Err()
 }
 
 func (d *postgresDriver) loadPostgresConstraints(ctx context.Context, b *build.Builder) error {
