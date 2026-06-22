@@ -39,6 +39,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
   const sessions = useIde((s) => s.sessions)
   const setSession = useIde((s) => s.setSession)
+  const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const setQueryResult = useIde((s) => s.setQueryResult)
   const setTabRunning = useIde((s) => s.setTabRunning)
   const setTabController = useIde((s) => s.setTabController)
@@ -159,13 +160,20 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       // Auto-connect if no live session.
       let sessionId = sessions[activeConnection.id]
       if (!sessionId) {
-        const connectData = await api.post<{ session_id: string; reused: boolean }>(
-          `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/connect`,
-          undefined,
-          { signal: controller.signal },
-        )
-        sessionId = connectData.session_id
-        setSession(activeConnection.id, sessionId)
+        setConnectionStatus(activeConnection.id, 'connecting')
+        try {
+          const connectData = await api.post<{ session_id: string; reused: boolean }>(
+            `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/connect`,
+            undefined,
+            { signal: controller.signal },
+          )
+          sessionId = connectData.session_id
+          setSession(activeConnection.id, sessionId)
+        } finally {
+          // Clears 'connecting'; on success the new session drives 'connected',
+          // on failure it returns to idle (the query error surfaces in results).
+          setConnectionStatus(activeConnection.id, null)
+        }
       }
 
       const result = await api.post<ResultSet>(
@@ -192,7 +200,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       setTabRunning(activeTab.id, false)
     }
   }, [activeTab, activeGroupId, activeConnection, isRunning, maximizedPane, sessions, orgSlug, workspace.id,
-      registry, viewRegistry, abortControllers, setMaximizedPane, setQueryResult, setSession,
+      registry, viewRegistry, abortControllers, setMaximizedPane, setQueryResult, setSession, setConnectionStatus,
       setTabController, setTabRunning])
 
   // Global ⌘Enter / Ctrl+Enter shortcut.
