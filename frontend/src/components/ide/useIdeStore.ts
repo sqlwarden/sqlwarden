@@ -66,6 +66,8 @@ export type IdeState = {
   activeGroupId: Record<number, string>
   /** Tab + source group currently being dragged (transient; drives edge-split drop zones). */
   draggingTab: { tabId: string; fromGroupId: string } | null
+  /** Transient per-connection connect status (not persisted): 'connecting' or an error. */
+  connectionStatus: Record<number, 'connecting' | { error: string }>
   /** `${groupId}:${tabId}` of an editor that should grab keyboard focus once mounted (after a split). */
   focusEditorRequest: string | null
   tabs: EditorTab[]
@@ -106,6 +108,8 @@ export type IdeActions = {
   setSplitSizes: (workspaceId: number, splitId: string, sizes: number[]) => void
   /** Track the tab + source group being dragged (transient drag UI state). */
   setDraggingTab: (drag: { tabId: string; fromGroupId: string } | null) => void
+  /** Set (or clear, with null) a connection's transient connect status. */
+  setConnectionStatus: (connectionId: number, status: 'connecting' | { error: string } | null) => void
   /** Request (or clear) keyboard focus for a specific editor pane. */
   setFocusEditorRequest: (key: string | null) => void
   updateTabContent: (tabId: string, content: string, ySnapshot?: number[]) => void
@@ -153,6 +157,31 @@ export function activeTabId(s: IdeState, workspaceId: number): string | undefine
   return group?.activeTabId
 }
 
+export type ConnectionState =
+  | { kind: 'connected' }
+  | { kind: 'connecting' }
+  | { kind: 'error'; message: string }
+  | { kind: 'idle' }
+
+/** Resolves a connection's display state from its (stable) inputs. Kept separate
+ *  from a store selector so callers can select primitive/stable values and avoid
+ *  re-render loops from returning a fresh object on every render. */
+export function resolveConnectionState(
+  hasSession: boolean,
+  status: 'connecting' | { error: string } | undefined,
+): ConnectionState {
+  if (hasSession) return { kind: 'connected' }
+  if (status === 'connecting') return { kind: 'connecting' }
+  if (status && typeof status === 'object') return { kind: 'error', message: status.error }
+  return { kind: 'idle' }
+}
+
+/** Resolves a connection's display state. A live session means connected,
+ *  regardless of any prior error; otherwise the transient status decides. */
+export function connectionState(s: IdeState, connectionId: number): ConnectionState {
+  return resolveConnectionState(Boolean(s.sessions[connectionId]), s.connectionStatus[connectionId])
+}
+
 // ─── Store factory ─────────────────────────────────────────────────────────────
 
 export function createIdeStore(orgSlug: string, accountId: number, role: WindowRole = 'managed') {
@@ -173,6 +202,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         activeGroupId: {},
         draggingTab: null,
         focusEditorRequest: null,
+        connectionStatus: {},
         tabs: [],
         sessions: {},
         results: {},
@@ -337,6 +367,15 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
 
         setDraggingTab: (drag) => set({ draggingTab: drag }),
 
+        setConnectionStatus: (connectionId, status) =>
+          set((s) => {
+            if (status === null) {
+              const { [connectionId]: _drop, ...rest } = s.connectionStatus
+              return { connectionStatus: rest }
+            }
+            return { connectionStatus: { ...s.connectionStatus, [connectionId]: status } }
+          }),
+
         setFocusEditorRequest: (key) => set({ focusEditorRequest: key }),
 
         updateTabContent: (tabId, content, ySnapshot?) =>
@@ -448,7 +487,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         ),
         // Exclude ephemeral query results from IndexedDB — they can be large
         // and are meaningless after a page reload anyway.
-        partialize: ({ results: _r, runningTabs: _rt, abortControllers: _ac, draggingTab: _dt, focusEditorRequest: _fe, ...state }) => state,
+        partialize: ({ results: _r, runningTabs: _rt, abortControllers: _ac, draggingTab: _dt, focusEditorRequest: _fe, connectionStatus: _cs, ...state }) => state,
       },
     ),
   )
@@ -487,6 +526,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   activeGroupId: {},
   draggingTab: null,
   focusEditorRequest: null,
+  connectionStatus: {},
   tabs: [],
   sessions: {},
   results: {},
@@ -505,6 +545,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   setSplitSizes: _noop,
   setDraggingTab: _noop,
   setFocusEditorRequest: _noop,
+  setConnectionStatus: _noop,
   updateTabContent: _noop,
   updateTabEtag: _noop,
   setTabConnection: _noop,
