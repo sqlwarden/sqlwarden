@@ -54,6 +54,12 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   const clearSession = useIde((s) => s.clearSession)
   const syncSessions = useIde((s) => s.syncSessions)
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
+  const collapseAllNodes = useIde((s) => s.collapseAllNodes)
+  const setNodeExpanded = useIde((s) => s.setNodeExpanded)
+  const activeConnId = useIde((s) => {
+    const id = selectActiveTabId(s, workspace.id)
+    return s.tabs.find((t) => t.id === id)?.connectionId
+  })
   const queryClient = useQueryClient()
 
   const [filter, setFilter] = useState('')
@@ -194,17 +200,52 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
     void createEnvironment.mutateAsync().catch(() => {})
   }
 
-  const actions = canCreateEnvironment ? (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      aria-label="New Environment"
-      onClick={() => setAddEnvOpen(true)}
-    >
-      <Icon name="plus-sign" size={14} />
-    </Button>
-  ) : undefined
+  function handleRevealActive() {
+    if (activeConnId === undefined) return
+    const conn = connItems.find((c) => c.id === activeConnId)
+    if (conn) setNodeExpanded(`env:${conn.environment_id}`, true)
+    setNodeExpanded(`conn:${activeConnId}`, true)
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-conn-id="${activeConnId}"]`)?.scrollIntoView({ block: 'nearest' })
+    })
+  }
+
+  const actions = (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Reveal active connection"
+        title="Reveal active connection"
+        disabled={activeConnId === undefined}
+        onClick={handleRevealActive}
+      >
+        <Icon name="target" size={14} />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Collapse all"
+        title="Collapse all"
+        onClick={() => collapseAllNodes()}
+      >
+        <Icon name="arrow-shrink" size={14} />
+      </Button>
+      {canCreateEnvironment && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="New Environment"
+          onClick={() => setAddEnvOpen(true)}
+        >
+          <Icon name="plus-sign" size={14} />
+        </Button>
+      )}
+    </>
+  )
 
   return (
     <>
@@ -338,7 +379,10 @@ function EnvironmentRow({
   onDisconnect: (conn: Connection) => void
   onAddConnection: () => void
 }) {
-  const [expanded, setExpanded] = useState(connections.length > 0)
+  const nodeKey = `env:${environment.id}`
+  const stored = useIde((s) => s.expandedNodes[nodeKey])
+  const setNodeExpanded = useIde((s) => s.setNodeExpanded)
+  const expanded = stored ?? connections.length > 0
 
   const envPermissions = useQuery(
     orgEffectivePermissionsQueryOptions(orgSlug, 'environment', environment.id),
@@ -350,7 +394,7 @@ function EnvironmentRow({
       <div className="group flex h-6 w-full items-center text-xs transition-colors hover:bg-accent hover:text-accent-foreground">
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => setNodeExpanded(nodeKey, !expanded)}
           className="flex min-w-0 flex-1 items-center gap-1.5 px-2 text-left"
         >
           <Icon
@@ -422,8 +466,11 @@ function ConnectionRow({
   onDisconnect: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const [expanded, setExpanded] = useState(false)
   const [pos, setPos] = useState({ x: 0, y: 0 })
+  const nodeKey = `conn:${connection.id}`
+  const storedExpanded = useIde((s) => s.expandedNodes[nodeKey])
+  const setNodeExpanded = useIde((s) => s.setNodeExpanded)
+  const expanded = storedExpanded ?? false
   const sessionId = useIde((s) => s.sessions[connection.id])
   const connStatus = useIde((s) => s.connectionStatus[connection.id])
   const connState = resolveConnectionState(Boolean(sessionId), connStatus)
@@ -449,7 +496,7 @@ function ConnectionRow({
   }
 
   return (
-    <div>
+    <div data-conn-id={connection.id}>
       <div
         onContextMenu={handleContextMenu}
         className={cn(
@@ -464,7 +511,7 @@ function ConnectionRow({
           <button
             type="button"
             aria-label={expanded ? 'Collapse schema' : 'Expand schema'}
-            onClick={() => setExpanded((v) => !v)}
+            onClick={() => setNodeExpanded(nodeKey, !expanded)}
             className="flex h-6 w-5 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
           >
             <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
