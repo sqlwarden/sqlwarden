@@ -167,7 +167,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
       (set) => ({
         activeWorkspaceId: undefined,
         maximizedPane: null,
-        activeActivityId: 'files',
+        activeActivityId: 'connections',
         sidebarCollapsed: false,
         layout: {},
         activeGroupId: {},
@@ -481,7 +481,7 @@ const _noop = () => {}
 const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   activeWorkspaceId: undefined,
   maximizedPane: null,
-  activeActivityId: 'files',
+  activeActivityId: 'connections',
   sidebarCollapsed: false,
   layout: {},
   activeGroupId: {},

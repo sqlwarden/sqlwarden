@@ -68,7 +68,7 @@ export function SchemaTree({
   }
 
   return (
-    <div className="min-w-max">
+    <div>
       {namespaces.map((ns) => (
         <SchemaNamespaceNode key={ns.name} namespace={ns} forceOpen={filtering} />
       ))}
@@ -85,7 +85,7 @@ function SchemaMessage({ children }: { children: React.ReactNode }) {
 }
 
 function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: DbNamespace; forceOpen: boolean }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const expanded = forceOpen || open
   const groups = (namespace.object_groups ?? []).filter((g) => (g.objects ?? []).length > 0)
 
@@ -98,7 +98,7 @@ function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: DbNamespace;
 }
 
 function SchemaGroupNode({ group, forceOpen }: { group: DbObjectGroup; forceOpen: boolean }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const expanded = forceOpen || open
   const objects = group.objects ?? []
   const icon = kindIcon(group.kind)
@@ -186,7 +186,7 @@ function LeafRow({
   return (
     <div className="flex h-5 w-full items-center gap-1.5 pr-3 text-[11px]" style={{ paddingLeft: indent(depth) }}>
       <Icon name={icon} size={12} className="shrink-0 text-muted-foreground" />
-      <span className="flex-1 select-text whitespace-nowrap">{label}</span>
+      <span className="min-w-0 flex-1 select-text truncate" title={label}>{label}</span>
       <span className="shrink-0 pl-3 text-muted-foreground">{meta}</span>
       {badge ? <KeyBadge>{badge}</KeyBadge> : null}
     </div>
@@ -238,7 +238,7 @@ function TreeRow({
         <Icon name={chevron ? 'chevron-down' : 'chevron-right'} size={11} className="shrink-0 text-muted-foreground" />
       )}
       <Icon name={typeIcon} size={13} className="shrink-0 text-muted-foreground" />
-      <span className={cn('flex-1 select-text whitespace-nowrap', bold && 'font-medium')}>{label}</span>
+      <span className={cn('min-w-0 flex-1 select-text truncate', bold && 'font-medium')} title={label}>{label}</span>
     </div>
   )
 }

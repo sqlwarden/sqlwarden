@@ -216,8 +216,8 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
             className="h-7 text-xs"
           />
         </div>
-        <div className="min-h-0 flex-1 overflow-auto [scrollbar-width:thin]">
-          <div className="flex min-w-max flex-col py-1">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
+          <div className="flex flex-col py-1">
             {environments.isLoading || connections.isLoading ? (
               <SidebarMessage>Loading...</SidebarMessage>
             ) : environments.isError || connections.isError ? (
@@ -343,7 +343,7 @@ function EnvironmentRow({
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex flex-1 items-center gap-1.5 px-2 text-left"
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 text-left"
         >
           <Icon
             name={expanded ? 'chevron-down' : 'chevron-right'}
@@ -355,7 +355,7 @@ function EnvironmentRow({
             size={13}
             className="shrink-0 text-muted-foreground"
           />
-          <span className="flex-1 whitespace-nowrap font-medium">{environment.name}</span>
+          <span className="min-w-0 flex-1 truncate font-medium" title={environment.name}>{environment.name}</span>
         </button>
         {canCreateConnection && (
           <button
@@ -466,10 +466,15 @@ function ConnectionRow({
         <button
           type="button"
           onClick={onOpen}
-          className="flex h-6 flex-1 items-center gap-2 pr-2 text-left text-xs"
+          className="flex h-6 min-w-0 items-center gap-2 text-left text-xs"
         >
-          <DriverBadge driver={connection.driver} size="sm" />
-          <span className="flex-1 whitespace-nowrap">{connection.name}</span>
+          <span className="relative shrink-0">
+            <DriverBadge driver={connection.driver} size="sm" />
+            {isConnected && (
+              <span className="absolute -bottom-0.5 -right-0.5 size-1.5 rounded-full bg-green-500 ring-1 ring-sidebar" />
+            )}
+          </span>
+          <span className="truncate" title={connection.name}>{connection.name}</span>
         </button>
 
         {isConnected && (
@@ -481,12 +486,12 @@ function ConnectionRow({
               e.stopPropagation()
               refresh.mutate()
             }}
-            className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+            className="ml-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
           >
             <Icon name="refresh" size={11} className={refresh.isPending ? 'animate-spin' : undefined} />
           </button>
         )}
-        {isConnected && <div className="mr-1.5 size-1.5 shrink-0 rounded-full bg-green-500" />}
+        <div className="h-6 flex-1" />
 
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger
