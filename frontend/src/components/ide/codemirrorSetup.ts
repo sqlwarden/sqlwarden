@@ -24,6 +24,7 @@ import {
   rectangularSelection,
 } from '@codemirror/view'
 import { createFindPanel } from './findPanel'
+import { IDENTIFIER_DND_MIME } from './sqlDialect'
 
 // The find panel supplies its own design-system chrome, so strip CodeMirror's
 // default panel border/background and theme the in-document match highlights
@@ -38,6 +39,20 @@ const sqlwardenSearchTheme = EditorView.theme({
   },
   '.cm-searchMatch-selected': {
     backgroundColor: 'color-mix(in oklab, var(--ring) 55%, transparent)',
+  },
+})
+
+// Inserts a dragged schema identifier at the drop position. Returns false for any
+// other drop (e.g. CodeMirror's own text drags) so default handling stays intact.
+const schemaDropHandler = EditorView.domEventHandlers({
+  drop(event, view) {
+    const text = event.dataTransfer?.getData(IDENTIFIER_DND_MIME)
+    if (!text) return false
+    event.preventDefault()
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.selection.main.head
+    view.dispatch({ changes: { from: pos, insert: text }, selection: { anchor: pos + text.length } })
+    view.focus()
+    return true
   },
 })
 
@@ -61,6 +76,7 @@ export const sqlwardenBasicSetup: Extension = [
   highlightSelectionMatches(),
   search({ top: true, createPanel: createFindPanel }),
   sqlwardenSearchTheme,
+  schemaDropHandler,
   keymap.of([
     ...closeBracketsKeymap,
     ...defaultKeymap,

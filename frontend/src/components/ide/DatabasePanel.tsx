@@ -542,6 +542,7 @@ function ConnectionRow({
             orgSlug={orgSlug}
             workspaceId={connection.workspace_id}
             connectionId={connection.id}
+            driver={connection.driver}
             filter={filter}
           />
         </div>
