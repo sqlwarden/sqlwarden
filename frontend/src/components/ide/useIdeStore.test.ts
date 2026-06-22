@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createIdeStore, activeTabId, newScratchTab, newConnectionTab, newFileTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
+import { createIdeStore, activeTabId, connectionState, newScratchTab, newConnectionTab, newFileTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
+import type { IdeState } from './useIdeStore'
 
 vi.mock('idb-keyval', () => ({
   get: vi.fn(() => Promise.resolve(null)),
@@ -381,6 +382,26 @@ describe('useIdeStore', () => {
       expect(store.getState().tabs.some((tab) => tab.id === 'a')).toBe(false)
       expect(root().type).toBe('group') // collapsed back to one group
     })
+  })
+})
+
+describe('connectionState', () => {
+  const base = (over: Partial<IdeState>): IdeState =>
+    ({ sessions: {}, connectionStatus: {}, ...over } as unknown as IdeState)
+
+  it('reports connected when a live session exists (even over a prior error)', () => {
+    expect(connectionState(base({ sessions: { 5: 'sid' }, connectionStatus: { 5: { error: 'x' } } }), 5))
+      .toEqual({ kind: 'connected' })
+  })
+  it('reports connecting', () => {
+    expect(connectionState(base({ connectionStatus: { 5: 'connecting' } }), 5)).toEqual({ kind: 'connecting' })
+  })
+  it('reports error with its message', () => {
+    expect(connectionState(base({ connectionStatus: { 5: { error: 'auth failed' } } }), 5))
+      .toEqual({ kind: 'error', message: 'auth failed' })
+  })
+  it('reports idle when nothing is known', () => {
+    expect(connectionState(base({}), 5)).toEqual({ kind: 'idle' })
   })
 })
 
