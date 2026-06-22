@@ -8,6 +8,18 @@ type AST interface {
 	sqlqueryAST()
 }
 
+type opaqueAST struct {
+	value any
+}
+
+func (opaqueAST) sqlqueryAST() {}
+
+// NewOpaqueAST wraps a parser-specific AST value without exposing that parser's
+// concrete node types outside its provider package.
+func NewOpaqueAST(value any) AST {
+	return opaqueAST{value: value}
+}
+
 // Parser produces complete or partial parse results for SQL text.
 type Parser interface {
 	Parse(ctx context.Context, req ParseRequest) (ParseResult, error)
