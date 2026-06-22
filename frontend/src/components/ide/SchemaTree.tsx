@@ -7,6 +7,7 @@ import { orgConnectionSchemaQueryOptions } from '#/lib/api/query'
 import type { DbNamespace, DbObjectGroup, DbObject } from '#/lib/api/types'
 import { useIde } from './useIdeStore'
 import { filterSchema } from './schemaFilter'
+import { columnTypeIcon } from './columnTypeIcon'
 
 const indent = (depth: number) => 6 + depth * 11
 
@@ -155,7 +156,7 @@ function SchemaObjectNode({
             <LeafRow
               key={c.name}
               depth={depth + 1}
-              icon="column"
+              icon={columnTypeIcon(c.data_type)}
               label={c.name}
               meta={`${c.data_type}${c.nullable ? ' · null' : ''}`}
               badge={pk.has(c.name) ? 'PK' : fk.has(c.name) ? 'FK' : undefined}

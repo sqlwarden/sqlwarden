@@ -75,6 +75,15 @@ const icons: Record<AppIcon, string> = {
   'user-multiple-02':        'ri:team-line',
   'user-multiple':           'ri:group-2-line',
   'user-shield-01':          'ri:shield-user-line',
+  'type-number':             'ri:hashtag',
+  'type-string':             'ri:text',
+  'type-boolean':            'ri:toggle-line',
+  'type-timestamp':          'ri:time-line',
+  'type-date':               'ri:calendar-line',
+  'type-time':               'ri:timer-line',
+  'type-uuid':               'ri:fingerprint-line',
+  'type-json':               'ri:braces-line',
+  'type-binary':             'ri:file-code-line',
 }
 
 export default icons
