@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createIdeStore, activeTabId, connectionState, newScratchTab, newConnectionTab, newFileTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
+import { createIdeStore, activeTabId, connectionState, isNodeExpanded, newScratchTab, newConnectionTab, newFileTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
 import type { IdeState } from './useIdeStore'
 
 vi.mock('idb-keyval', () => ({
@@ -402,6 +402,28 @@ describe('connectionState', () => {
   })
   it('reports idle when nothing is known', () => {
     expect(connectionState(base({}), 5)).toEqual({ kind: 'idle' })
+  })
+})
+
+describe('isNodeExpanded', () => {
+  it('returns the stored value when present', () => {
+    expect(isNodeExpanded({ 'conn:1': true }, 'conn:1', false)).toBe(true)
+    expect(isNodeExpanded({ 'conn:1': false }, 'conn:1', true)).toBe(false)
+  })
+  it('returns the fallback when absent', () => {
+    expect(isNodeExpanded({}, 'conn:1', true)).toBe(true)
+    expect(isNodeExpanded({}, 'conn:1', false)).toBe(false)
+  })
+})
+
+describe('expansion actions', () => {
+  it('setNodeExpanded sets a key and collapseAllNodes clears the map', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().setNodeExpanded('conn:1', true)
+    store.getState().setNodeExpanded('env:2', true)
+    expect(store.getState().expandedNodes).toEqual({ 'conn:1': true, 'env:2': true })
+    store.getState().collapseAllNodes()
+    expect(store.getState().expandedNodes).toEqual({})
   })
 })
 
