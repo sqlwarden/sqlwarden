@@ -68,6 +68,8 @@ export type IdeState = {
   draggingTab: { tabId: string; fromGroupId: string } | null
   /** Transient per-connection connect status (not persisted): 'connecting' or an error. */
   connectionStatus: Record<number, 'connecting' | { error: string }>
+  /** Persisted expansion of explorer nodes, keyed `env:<id>` / `conn:<id>` / `folder:<id>`. */
+  expandedNodes: Record<string, boolean>
   /** `${groupId}:${tabId}` of an editor that should grab keyboard focus once mounted (after a split). */
   focusEditorRequest: string | null
   tabs: EditorTab[]
@@ -110,6 +112,10 @@ export type IdeActions = {
   setDraggingTab: (drag: { tabId: string; fromGroupId: string } | null) => void
   /** Set (or clear, with null) a connection's transient connect status. */
   setConnectionStatus: (connectionId: number, status: 'connecting' | { error: string } | null) => void
+  /** Persist a node's expanded state. */
+  setNodeExpanded: (key: string, expanded: boolean) => void
+  /** Collapse every remembered explorer node. */
+  collapseAllNodes: () => void
   /** Request (or clear) keyboard focus for a specific editor pane. */
   setFocusEditorRequest: (key: string | null) => void
   updateTabContent: (tabId: string, content: string, ySnapshot?: number[]) => void
@@ -163,6 +169,11 @@ export type ConnectionState =
   | { kind: 'error'; message: string }
   | { kind: 'idle' }
 
+/** A node's expanded state: the stored value, or `fallback` when there's no record. */
+export function isNodeExpanded(nodes: Record<string, boolean>, key: string, fallback: boolean): boolean {
+  return nodes[key] ?? fallback
+}
+
 /** Resolves a connection's display state from its (stable) inputs. Kept separate
  *  from a store selector so callers can select primitive/stable values and avoid
  *  re-render loops from returning a fresh object on every render. */
@@ -203,6 +214,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         draggingTab: null,
         focusEditorRequest: null,
         connectionStatus: {},
+        expandedNodes: {},
         tabs: [],
         sessions: {},
         results: {},
@@ -376,6 +388,11 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             return { connectionStatus: { ...s.connectionStatus, [connectionId]: status } }
           }),
 
+        setNodeExpanded: (key, expanded) =>
+          set((s) => ({ expandedNodes: { ...s.expandedNodes, [key]: expanded } })),
+
+        collapseAllNodes: () => set({ expandedNodes: {} }),
+
         setFocusEditorRequest: (key) => set({ focusEditorRequest: key }),
 
         updateTabContent: (tabId, content, ySnapshot?) =>
@@ -527,6 +544,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   draggingTab: null,
   focusEditorRequest: null,
   connectionStatus: {},
+  expandedNodes: {},
   tabs: [],
   sessions: {},
   results: {},
@@ -546,6 +564,8 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   setDraggingTab: _noop,
   setFocusEditorRequest: _noop,
   setConnectionStatus: _noop,
+  setNodeExpanded: _noop,
+  collapseAllNodes: _noop,
   updateTabContent: _noop,
   updateTabEtag: _noop,
   setTabConnection: _noop,
