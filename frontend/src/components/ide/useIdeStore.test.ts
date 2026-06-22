@@ -385,9 +385,9 @@ describe('useIdeStore', () => {
 })
 
 describe('activity state', () => {
-  it('defaults activeActivityId to "files"', () => {
+  it('defaults activeActivityId to "connections"', () => {
     const store = createIdeStore('test-org', 1)
-    expect(store.getState().activeActivityId).toBe('files')
+    expect(store.getState().activeActivityId).toBe('connections')
   })
 
   it('setActiveActivity switches the active activity', () => {

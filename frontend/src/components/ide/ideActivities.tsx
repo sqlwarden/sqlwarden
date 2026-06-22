@@ -26,8 +26,8 @@ export type IdeActivity = {
 }
 
 export const IDE_ACTIVITIES: IdeActivity[] = [
+  { id: 'connections', label: 'Explorer', icon: 'database', mode: 'sidebar', component: DatabasePanel },
   { id: 'files', label: 'Files', icon: 'file-01', mode: 'sidebar', component: FilesPanel },
-  { id: 'connections', label: 'Connections', icon: 'database', mode: 'sidebar', component: DatabasePanel },
 ]
 
 /** Activities visible to the current user (honours `requires`). */

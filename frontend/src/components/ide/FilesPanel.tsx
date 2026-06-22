@@ -159,7 +159,7 @@ function FilesSection({
   const children = data?.children ?? []
 
   const body = (
-    <div className="flex min-w-max flex-col py-1">
+    <div className="flex flex-col py-1">
       {isLoading ? (
         <div className="px-3 py-2 text-xs text-muted-foreground">Loading...</div>
       ) : isError ? (
@@ -206,7 +206,7 @@ function FilesSection({
           {title}
         </div>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-auto [scrollbar-width:thin]">{body}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">{body}</div>
     </div>
   )
 }
@@ -254,7 +254,7 @@ function FileTreeFolder({
       onClick={() => setExpanded((v) => !v)}
       style={{ paddingLeft: `${6 + depth * 11}px` }}
       className={cn(
-        'flex h-6 w-full items-center gap-1.5 pr-3 text-left text-xs',
+        'flex h-6 w-full min-w-0 items-center gap-1.5 pr-3 text-left text-xs',
         'transition-colors hover:bg-accent hover:text-accent-foreground',
       )}
     >
@@ -268,7 +268,7 @@ function FileTreeFolder({
         size={13}
         className="shrink-0 text-muted-foreground"
       />
-      <span className="flex-1 whitespace-nowrap">{file.name}</span>
+      <span className="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span>
     </button>
   )
 
@@ -339,14 +339,14 @@ function FileTreeFile({
       onClick={() => onOpen(file)}
       style={{ paddingLeft: `${6 + depth * 11 + 14}px` }}
       className={cn(
-        'flex h-6 w-full items-center gap-2 pr-3 text-left text-xs transition-colors',
+        'flex h-6 w-full min-w-0 items-center gap-2 pr-3 text-left text-xs transition-colors',
         active
           ? 'bg-primary/10 text-foreground hover:bg-primary/15'
           : 'hover:bg-accent hover:text-accent-foreground',
       )}
     >
       <Icon name="file-01" size={13} className="shrink-0 text-muted-foreground" />
-      <span className="flex-1 whitespace-nowrap">{file.name}</span>
+      <span className="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span>
     </button>
   )
 }
