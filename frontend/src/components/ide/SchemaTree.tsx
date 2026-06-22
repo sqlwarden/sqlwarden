@@ -187,8 +187,9 @@ function LeafRow({
   return (
     <div className="flex h-5 w-full items-center gap-1.5 pr-3 text-[11px]" style={{ paddingLeft: indent(depth) }}>
       <Icon name={icon} size={12} className="shrink-0 text-muted-foreground" />
+      {/* Name is primary — it keeps its space; the type yields and truncates first. */}
       <span className="min-w-0 flex-1 select-text truncate" title={label}>{label}</span>
-      <span className="shrink-0 pl-3 text-muted-foreground">{meta}</span>
+      <span className="min-w-0 max-w-[55%] shrink truncate pl-3 text-right text-muted-foreground" title={meta}>{meta}</span>
       {badge ? <KeyBadge>{badge}</KeyBadge> : null}
     </div>
   )
