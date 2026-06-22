@@ -330,7 +330,7 @@ function EnvironmentRow({
   onDisconnect: (conn: Connection) => void
   onAddConnection: () => void
 }) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(connections.length > 0)
 
   const envPermissions = useQuery(
     orgEffectivePermissionsQueryOptions(orgSlug, 'environment', environment.id),
