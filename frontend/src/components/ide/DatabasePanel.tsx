@@ -15,7 +15,7 @@ import { isApiError } from '#/lib/api/errors'
 import type { Connection, Environment, Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { hasPermission, permission } from '#/lib/permissions'
-import { useIde, activeTabId as selectActiveTabId, newConnectionTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
+import { useIde, activeTabId as selectActiveTabId, resolveConnectionState, type ConnectionState, newConnectionTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
 import { SidebarPane } from './SidebarPane'
 import { SchemaTree } from './SchemaTree'
 import { ConnectionDialog } from './ConnectionDialog'
@@ -53,6 +53,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   const setSession = useIde((s) => s.setSession)
   const clearSession = useIde((s) => s.clearSession)
   const syncSessions = useIde((s) => s.syncSessions)
+  const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const queryClient = useQueryClient()
 
   const [filter, setFilter] = useState('')
@@ -107,12 +108,18 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
       api.post<{ session_id: string; reused: boolean }>(
         `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${conn.id}/connect`,
       ),
+    onMutate: (conn) => {
+      setConnectionStatus(conn.id, 'connecting')
+    },
     onSuccess: (data, conn) => {
+      setConnectionStatus(conn.id, null)
       setSession(conn.id, data.session_id)
       void queryClient.invalidateQueries({ queryKey: sessionsQueryKey })
     },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to connect')
+    onError: (error, conn) => {
+      const message = error instanceof Error ? error.message : 'Failed to connect'
+      setConnectionStatus(conn.id, { error: message })
+      toast.error(message)
     },
   })
 
@@ -124,6 +131,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
       ),
     onSuccess: (_, { conn }) => {
       clearSession(conn.id)
+      setConnectionStatus(conn.id, null)
       void queryClient.invalidateQueries({ queryKey: sessionsQueryKey })
     },
     onError: (error) => {
@@ -417,6 +425,8 @@ function ConnectionRow({
   const [expanded, setExpanded] = useState(false)
   const [pos, setPos] = useState({ x: 0, y: 0 })
   const sessionId = useIde((s) => s.sessions[connection.id])
+  const connStatus = useIde((s) => s.connectionStatus[connection.id])
+  const connState = resolveConnectionState(Boolean(sessionId), connStatus)
   // Hint the connection used by the active tab (file's linked connection, console, or connection tab).
   const isActive = useIde((s) => {
     const id = selectActiveTabId(s, connection.workspace_id)
@@ -470,9 +480,7 @@ function ConnectionRow({
         >
           <span className="relative shrink-0">
             <DriverBadge driver={connection.driver} size="sm" />
-            {isConnected && (
-              <span className="absolute -bottom-0.5 -right-0.5 size-1.5 rounded-full bg-green-500 ring-1 ring-sidebar" />
-            )}
+            <ConnectionStatusDot state={connState} />
           </span>
           <span className="truncate" title={connection.name}>{connection.name}</span>
         </button>
@@ -548,6 +556,26 @@ function ConnectionRow({
         </div>
       )}
     </div>
+  )
+}
+
+function ConnectionStatusDot({ state }: { state: ConnectionState }) {
+  if (state.kind === 'idle') return null
+  if (state.kind === 'connecting') {
+    return (
+      <Icon
+        name="loading-03"
+        size={11}
+        className="absolute -bottom-1 -right-1 animate-spin text-amber-500"
+      />
+    )
+  }
+  const color = state.kind === 'connected' ? 'bg-green-500' : 'bg-red-500'
+  return (
+    <span
+      title={state.kind === 'error' ? state.message : undefined}
+      className={cn('absolute -bottom-0.5 -right-0.5 size-1.5 rounded-full ring-1 ring-sidebar', color)}
+    />
   )
 }
 
