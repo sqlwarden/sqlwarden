@@ -165,6 +165,16 @@ func compareConnection(left, right database.Connection, sortBy string) int {
 	return 0
 }
 
+func queryLogAttrs(account database.Account, org database.Organization, ws database.Workspace, conn database.Connection, classification sqlquery.ClassifyResult) []any {
+	return []any{
+		slog.Group("account", "id", account.ID),
+		slog.Group("org", "id", org.ID, "slug", org.Slug),
+		slog.Group("workspace", "id", ws.ID, "owner_type", ws.OwnerType),
+		slog.Group("connection", "id", conn.ID, "driver", conn.Driver),
+		slog.Group("query", "kind", classification.Kind, "classifier", classification.Source, "diagnostics", len(classification.Diagnostics)),
+	}
+}
+
 func (app *application) hasAnyConnectionRuntimePermission(r *http.Request, orgID int64, ownerType string, connectionID int64, permissions ...string) bool {
 	for _, permission := range permissions {
 		if app.hasConnectionPermission(r, orgID, ownerType, connectionID, permission) {
@@ -713,6 +723,12 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		app.serverError(w, r, err)
 		return
 	}
+	logAttrs := queryLogAttrs(account, org, ws, conn, classification)
+	if classification.Kind == sqlquery.KindUnknown {
+		app.logger.Warn("query classification unknown", logAttrs...)
+	} else {
+		app.logger.Debug("query classified", logAttrs...)
+	}
 
 	var rs *result.ResultSet
 	var execErr error
@@ -725,6 +741,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			ws.OwnerType, "connection", conn.ID,
 			access.PermConnDQL,
 		) {
+			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnDQL)...)
 			app.notPermitted(w, r)
 			return
 		}
@@ -735,6 +752,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			ws.OwnerType, "connection", conn.ID,
 			access.PermConnDML,
 		) {
+			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnDML)...)
 			app.notPermitted(w, r)
 			return
 		}
@@ -745,12 +763,14 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			ws.OwnerType, "connection", conn.ID,
 			access.PermConnDDL,
 		) {
+			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnDDL)...)
 			app.notPermitted(w, r)
 			return
 		}
 		rs, execErr = session.Execute(r.Context(), input.SQL)
 	default:
 		if !hasBroadExecute {
+			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnExecute)...)
 			app.notPermitted(w, r)
 			return
 		}
@@ -760,15 +780,20 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	if execErr != nil {
 		if errors.Is(execErr, context.Canceled) || errors.Is(execErr, context.DeadlineExceeded) || r.Context().Err() != nil {
 			app.connManager.Remove(sessionID)
-			app.logInfo(r, "query cancelled", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID), slog.String("query_class", string(queryKind)), slog.Int64("duration_ms", time.Since(start).Milliseconds()))
+			app.logger.Warn("query cancelled", append(logAttrs, "duration_ms", time.Since(start).Milliseconds())...)
 			app.errorMessage(w, r, statusClientClosedRequest, "Query was cancelled.", nil)
 			return
 		}
+		app.logger.Warn("query execution failed", append(logAttrs, "duration_ms", time.Since(start).Milliseconds(), "error", execErr.Error())...)
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, execErr.Error(), nil)
 		return
 	}
 
 	rs.DurationMs = time.Since(start).Milliseconds()
+	app.logger.Info("query executed", append(logAttrs,
+		"duration_ms", rs.DurationMs,
+		slog.Group("result", "rows", len(rs.Rows), "columns", len(rs.Columns)),
+	)...)
 
 	err = response.JSON(w, http.StatusOK, rs)
 	if err != nil {
