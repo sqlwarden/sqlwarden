@@ -28,8 +28,10 @@ func (schemaFakeDriver) Execute(context.Context, string, ...any) (*result.Result
 func (schemaFakeDriver) Dialect() driver.Dialect { return driver.DialectSQLite }
 func (schemaFakeDriver) Introspect(context.Context, schema.IntrospectOptions) (*schema.Schema, error) {
 	return &schema.Schema{Namespaces: []schema.Namespace{{
-		Name:   "main",
-		Tables: []schema.Table{{Name: "users", Columns: []schema.Column{{Name: "id", DataType: "INTEGER", Ordinal: 1}}}},
+		Name: "main",
+		ObjectGroups: []schema.ObjectGroup{{Kind: "table", Label: "Tables", Objects: []schema.Object{
+			{Name: "users", Columns: []schema.Column{{Name: "id", DataType: "INTEGER", Ordinal: 1}}},
+		}}},
 	}}}, nil
 }
 

@@ -396,23 +396,28 @@ func mustExec(t *testing.T, d driver.Driver, sql string) {
 	}
 }
 
-func introTable(t *testing.T, s *schema.Schema, ns, name string) schema.Table {
+func introTable(t *testing.T, s *schema.Schema, ns, name string) schema.Object {
 	t.Helper()
 	for _, n := range s.Namespaces {
 		if n.Name != ns {
 			continue
 		}
-		for _, tbl := range n.Tables {
-			if tbl.Name == name {
-				return tbl
+		for _, g := range n.ObjectGroups {
+			if g.Kind != "table" {
+				continue
+			}
+			for _, o := range g.Objects {
+				if o.Name == name {
+					return o
+				}
 			}
 		}
 	}
 	t.Fatalf("table %s.%s not found in %+v", ns, name, s)
-	return schema.Table{}
+	return schema.Object{}
 }
 
-func introHasIndex(tbl schema.Table, name string) bool {
+func introHasIndex(tbl schema.Object, name string) bool {
 	for _, ix := range tbl.Indexes {
 		if ix.Name == name {
 			return true
@@ -451,5 +456,54 @@ func TestMySQLIntrospect(t *testing.T) {
 	}
 	if !introHasIndex(users, "intro_users_email_idx") {
 		t.Fatalf("expected intro_users_email_idx index, got %+v", users.Indexes)
+	}
+}
+
+func introObj(t *testing.T, s *schema.Schema, kind, name string) schema.Object {
+	t.Helper()
+	for _, n := range s.Namespaces {
+		for _, g := range n.ObjectGroups {
+			if g.Kind != kind {
+				continue
+			}
+			for _, o := range g.Objects {
+				if o.Name == name {
+					return o
+				}
+			}
+		}
+	}
+	t.Fatalf("%s %s not found in %+v", kind, name, s)
+	return schema.Object{}
+}
+
+func TestMySQLIntrospectExtraObjects(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+
+	t.Cleanup(func() {
+		_, _ = d.Execute(ctx, "DROP TRIGGER IF EXISTS intro_trg")
+		_, _ = d.Execute(ctx, "DROP PROCEDURE IF EXISTS intro_proc")
+		_, _ = d.Execute(ctx, "DROP FUNCTION IF EXISTS intro_fn")
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_trg_tbl")
+	})
+	mustExec(t, d, `CREATE TABLE intro_trg_tbl (id BIGINT PRIMARY KEY, n BIGINT)`)
+	mustExec(t, d, `CREATE FUNCTION intro_fn(x INT) RETURNS INT DETERMINISTIC RETURN x + 1`)
+	mustExec(t, d, `CREATE PROCEDURE intro_proc() BEGIN SELECT 1; END`)
+	mustExec(t, d, `CREATE TRIGGER intro_trg BEFORE INSERT ON intro_trg_tbl FOR EACH ROW SET NEW.n = 0`)
+
+	s, err := d.Introspect(ctx, schema.IntrospectOptions{})
+	if err != nil {
+		t.Fatalf("introspect: %v", err)
+	}
+	if introObj(t, s, "function", "intro_fn").Name != "intro_fn" {
+		t.Fatal("function intro_fn not found")
+	}
+	if introObj(t, s, "procedure", "intro_proc").Name != "intro_proc" {
+		t.Fatal("procedure intro_proc not found")
+	}
+	trg := introObj(t, s, "trigger", "intro_trg")
+	if trg.Attributes["table"] != "intro_trg_tbl" {
+		t.Fatalf("expected trigger on intro_trg_tbl, got %+v", trg.Attributes)
 	}
 }
