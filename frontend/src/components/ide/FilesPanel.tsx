@@ -27,6 +27,7 @@ type DialogState = { kind: 'file' | 'folder'; parentId: number | null } | null
 
 export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }: FilesPanelProps) {
   const [dialogState, setDialogState] = useState<DialogState>(null)
+  const collapseAllNodes = useIde((s) => s.collapseAllNodes)
 
   function openCreateDialog(kind: 'file' | 'folder', parentId: number | null) {
     setDialogState({ kind, parentId })
@@ -34,6 +35,16 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
 
   const headerActions = (
     <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Collapse all"
+        title="Collapse all"
+        onClick={() => collapseAllNodes()}
+      >
+        <Icon name="arrow-shrink" size={13} />
+      </Button>
       <Button
         type="button"
         variant="ghost"
@@ -234,7 +245,10 @@ function FileTreeFolder({
   onCreateFolder?: ((parentId: number | null) => void) | undefined
   onDelete?: ((nodeId: number) => void) | undefined
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const nodeKey = `folder:${file.id}`
+  const stored = useIde((s) => s.expandedNodes[nodeKey])
+  const setNodeExpanded = useIde((s) => s.setNodeExpanded)
+  const expanded = stored ?? false
 
   const queryOptions =
     visibility === 'private'
@@ -251,7 +265,7 @@ function FileTreeFolder({
   const folderRow = (
     <button
       type="button"
-      onClick={() => setExpanded((v) => !v)}
+      onClick={() => setNodeExpanded(nodeKey, !expanded)}
       style={{ paddingLeft: `${6 + depth * 11}px` }}
       className={cn(
         'flex h-6 w-full min-w-0 items-center gap-1.5 pr-3 text-left text-xs',
