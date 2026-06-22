@@ -84,6 +84,7 @@ const icons: Record<AppIcon, string> = {
   'type-uuid':               'ri:fingerprint-line',
   'type-json':               'ri:braces-line',
   'type-binary':             'ri:file-code-line',
+  'target':                  'ri:focus-3-line',
 }
 
 export default icons

@@ -65,6 +65,7 @@ export type AppIcon =
   | 'subject'
   | 'table'
   | 'terminal'
+  | 'target'
   | 'tick-02'
   | 'type-number'
   | 'type-string'

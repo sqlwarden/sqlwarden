@@ -84,6 +84,7 @@ const icons: Record<AppIcon, string> = {
   'type-uuid': 'lucide:fingerprint',
   'type-json': 'lucide:braces',
   'type-binary': 'lucide:binary',
+  'target': 'lucide:crosshair',
 }
 
 export default icons

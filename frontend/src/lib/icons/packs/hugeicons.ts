@@ -84,6 +84,7 @@ const icons: Record<AppIcon, string> = {
   'type-uuid': 'hugeicons:fingerprint-scan',
   'type-json': 'hugeicons:code',
   'type-binary': 'hugeicons:binary-code',
+  'target': 'hugeicons:target-01',
 }
 
 export default icons
