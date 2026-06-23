@@ -11,7 +11,7 @@ import { columnTypeIcon } from './columnTypeIcon'
 import { dialectFor, IDENTIFIER_DND_MIME, type SqlDialect } from './sqlDialect'
 import { useInsertIntoEditor } from './useInsertIntoEditor'
 
-const indent = (depth: number) => 6 + depth * 11
+const indent = (depth: number) => 4 + depth * 10
 
 const SchemaInsertContext = createContext<{ dialect: SqlDialect; insert: (t: string) => void } | null>(null)
 
@@ -112,12 +112,18 @@ export function SchemaTree({
     return <SchemaMessage>{filtering ? 'No matches.' : 'No objects.'}</SchemaMessage>
   }
 
+  const single = namespaces.length === 1 ? namespaces[0] : null
+
   return (
     <SchemaInsertContext.Provider value={{ dialect, insert }}>
       <div>
-        {namespaces.map((ns) => (
-          <SchemaNamespaceNode key={ns.name} namespace={ns} forceOpen={filtering} />
-        ))}
+        {single
+          ? (single.object_groups ?? [])
+              .filter((g) => (g.objects ?? []).length > 0)
+              .map((g) => (
+                <SchemaGroupNode key={g.kind} group={g} namespace={single.name} baseDepth={0} forceOpen={filtering} />
+              ))
+          : namespaces.map((ns) => <SchemaNamespaceNode key={ns.name} namespace={ns} forceOpen={filtering} />)}
       </div>
     </SchemaInsertContext.Provider>
   )
@@ -139,12 +145,12 @@ function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: DbNamespace;
   return (
     <div>
       <TreeRow depth={0} typeIcon="database" chevron={expanded} bold label={namespace.name} onClick={() => setOpen((v) => !v)} />
-      {expanded && groups.map((g) => <SchemaGroupNode key={g.kind} group={g} namespace={namespace.name} forceOpen={forceOpen} />)}
+      {expanded && groups.map((g) => <SchemaGroupNode key={g.kind} group={g} namespace={namespace.name} baseDepth={1} forceOpen={forceOpen} />)}
     </div>
   )
 }
 
-function SchemaGroupNode({ group, namespace, forceOpen }: { group: DbObjectGroup; namespace: string; forceOpen: boolean }) {
+function SchemaGroupNode({ group, namespace, baseDepth, forceOpen }: { group: DbObjectGroup; namespace: string; baseDepth: number; forceOpen: boolean }) {
   const [open, setOpen] = useState(false)
   const expanded = forceOpen || open
   const objects = group.objects ?? []
@@ -153,7 +159,7 @@ function SchemaGroupNode({ group, namespace, forceOpen }: { group: DbObjectGroup
   return (
     <div>
       <TreeRow
-        depth={1}
+        depth={baseDepth}
         typeIcon={expanded ? 'folder-open' : 'folder'}
         chevron={expanded}
         label={`${group.label} (${objects.length})`}
@@ -161,7 +167,7 @@ function SchemaGroupNode({ group, namespace, forceOpen }: { group: DbObjectGroup
       />
       {expanded &&
         objects.map((o) => (
-          <SchemaObjectNode key={o.name} object={o} namespace={namespace} typeIcon={icon} depth={2} forceOpen={forceOpen} />
+          <SchemaObjectNode key={o.name} object={o} namespace={namespace} typeIcon={icon} depth={baseDepth + 1} forceOpen={forceOpen} />
         ))}
     </div>
   )
