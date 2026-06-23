@@ -103,6 +103,10 @@ func TestResultSetJSONRoundTrip(t *testing.T) {
 				{Type: ValueTypeTime, Time: now},
 			},
 		},
+		DurationMs:    12,
+		Truncated:     true,
+		RowsReturned:  2,
+		BytesReturned: 24,
 	}
 
 	data, err := json.Marshal(original)
@@ -127,6 +131,9 @@ func TestResultSetJSONRoundTrip(t *testing.T) {
 
 	if len(decoded.Rows) != len(original.Rows) {
 		t.Fatalf("rows count: got %d, want %d", len(decoded.Rows), len(original.Rows))
+	}
+	if decoded.DurationMs != original.DurationMs || !decoded.Truncated || decoded.RowsReturned != original.RowsReturned || decoded.BytesReturned != original.BytesReturned {
+		t.Fatalf("metadata mismatch: got %+v, want %+v", decoded, original)
 	}
 	for ri, row := range original.Rows {
 		for ci, val := range row {

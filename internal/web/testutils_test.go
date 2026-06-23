@@ -57,6 +57,8 @@ func newTestApplication(t *testing.T) *application {
 	app.config.AccessMode = AccessModeMultiUser
 	app.config.PersonalSpacesEnabled = true
 	app.config.Sessions.RevocationEnabled = true
+	app.config.Query.MaxResultRows = defaultQueryMaxResultRows
+	app.config.Query.MaxResultBytes = defaultQueryMaxResultBytes
 	app.config.Files.StorageMode = FilesStorageModeObject
 	app.config.Files.ActiveStorageBackend = defaultFilesActiveBackend
 	app.config.Files.StorageBackends = map[string]FileStorageBackend{

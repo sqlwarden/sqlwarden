@@ -64,6 +64,10 @@ files:
   revisions:
     enabled: true
     keep_latest: 50
+
+query:
+  max_result_rows: 10000
+  max_result_bytes: 26214400
 ```
 
 ## Docker Example
@@ -150,6 +154,15 @@ Session revocation is enabled by default so administrators can invalidate sessio
 ```sh
 SESSIONS_REVOCATION_ENABLED=false
 ```
+
+## Interactive Queries
+
+| Config key | Environment | CLI flag | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `query.max_result_rows` | `QUERY_MAX_RESULT_ROWS` | `--query-max-result-rows` | `10000` | Maximum rows returned by an interactive query result. |
+| `query.max_result_bytes` | `QUERY_MAX_RESULT_BYTES` | `--query-max-result-bytes` | `26214400` | Approximate maximum row payload bytes returned by an interactive query result. |
+
+These limits apply to interactive IDE query responses. Future export workflows should use dedicated streaming/export limits instead of relying on interactive query caps.
 
 ## TLS
 

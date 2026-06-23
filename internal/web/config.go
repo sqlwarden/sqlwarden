@@ -28,6 +28,8 @@ const (
 	defaultJWTSecretKey            = "fb57i5hiud5mzmykaquqsln5gcmolbac"
 	defaultJWTAccessTokenTTL       = 24 * time.Hour
 	defaultSessionRevocation       = true
+	defaultQueryMaxResultRows      = 10000
+	defaultQueryMaxResultBytes     = 25 * 1024 * 1024
 	defaultTLSEnabled              = false
 	defaultTLSCertFile             = ""
 	defaultTLSKeyFile              = ""
@@ -119,6 +121,10 @@ type Config struct {
 	Sessions struct {
 		RevocationEnabled bool
 	}
+	Query struct {
+		MaxResultRows  int
+		MaxResultBytes int
+	}
 	TLS struct {
 		Enabled  bool
 		CertFile string
@@ -189,6 +195,8 @@ func DefaultConfig() Config {
 	cfg.JWT.SecretKey = defaultJWTSecretKey
 	cfg.JWT.AccessTokenTTL = defaultJWTAccessTokenTTL
 	cfg.Sessions.RevocationEnabled = defaultSessionRevocation
+	cfg.Query.MaxResultRows = defaultQueryMaxResultRows
+	cfg.Query.MaxResultBytes = defaultQueryMaxResultBytes
 	cfg.TLS.Enabled = defaultTLSEnabled
 	cfg.TLS.CertFile = defaultTLSCertFile
 	cfg.TLS.KeyFile = defaultTLSKeyFile
@@ -255,6 +263,8 @@ var configOptions = []configOption{
 	{key: "jwt.secret_key", env: "JWT_SECRET_KEY", flagName: "jwt-secret-key", defaultValue: defaultJWTSecretKey, usage: "JWT signing secret"},
 	{key: "jwt.access_token_ttl", env: "JWT_ACCESS_TOKEN_TTL", flagName: "jwt-access-token-ttl", defaultValue: defaultJWTAccessTokenTTL, usage: "JWT access token lifetime (for example: 24h, 8h, 30m)"},
 	{key: "sessions.revocation_enabled", env: "SESSIONS_REVOCATION_ENABLED", flagName: "sessions-revocation-enabled", defaultValue: defaultSessionRevocation, usage: "Enable database-backed session revocation checks"},
+	{key: "query.max_result_rows", env: "QUERY_MAX_RESULT_ROWS", flagName: "query-max-result-rows", defaultValue: defaultQueryMaxResultRows, usage: "Maximum rows returned by an interactive query result"},
+	{key: "query.max_result_bytes", env: "QUERY_MAX_RESULT_BYTES", flagName: "query-max-result-bytes", defaultValue: defaultQueryMaxResultBytes, usage: "Approximate maximum bytes returned by an interactive query result"},
 	{key: "tls.enabled", env: "TLS_ENABLED", flagName: "tls-enabled", defaultValue: defaultTLSEnabled, usage: "Serve HTTPS using configured TLS certificate and key files"},
 	{key: "tls.cert_file", env: "TLS_CERT_FILE", flagName: "tls-cert-file", defaultValue: defaultTLSCertFile, usage: "Path to PEM encoded TLS certificate file"},
 	{key: "tls.key_file", env: "TLS_KEY_FILE", flagName: "tls-key-file", defaultValue: defaultTLSKeyFile, usage: "Path to PEM encoded TLS private key file"},
@@ -354,6 +364,8 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.JWT.SecretKey = v.GetString("jwt.secret_key")
 	cfg.JWT.AccessTokenTTL = v.GetDuration("jwt.access_token_ttl")
 	cfg.Sessions.RevocationEnabled = v.GetBool("sessions.revocation_enabled")
+	cfg.Query.MaxResultRows = v.GetInt("query.max_result_rows")
+	cfg.Query.MaxResultBytes = v.GetInt("query.max_result_bytes")
 	cfg.TLS.Enabled = v.GetBool("tls.enabled")
 	cfg.TLS.CertFile = v.GetString("tls.cert_file")
 	cfg.TLS.KeyFile = v.GetString("tls.key_file")
@@ -396,6 +408,12 @@ func validateConfig(cfg Config) error {
 	}
 	if !isSupportedLogFormat(cfg.Log.Format) {
 		return fmt.Errorf("log.format must be %q or %q", LogFormatJSON, LogFormatText)
+	}
+	if cfg.Query.MaxResultRows <= 0 {
+		return fmt.Errorf("query.max_result_rows must be greater than 0")
+	}
+	if cfg.Query.MaxResultBytes <= 0 {
+		return fmt.Errorf("query.max_result_bytes must be greater than 0")
 	}
 	if cfg.TLS.Enabled {
 		if strings.TrimSpace(cfg.TLS.CertFile) == "" {

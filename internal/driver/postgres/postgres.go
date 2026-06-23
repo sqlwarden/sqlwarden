@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"time"
-	"unicode/utf8"
 
 	"github.com/sqlwarden/internal/driver"
 	build "github.com/sqlwarden/internal/driver/internal/build"
@@ -21,7 +19,8 @@ func init() {
 }
 
 type postgresDriver struct {
-	db *sql.DB
+	db          *sql.DB
+	scanOptions driver.ScanOptions
 }
 
 func (d *postgresDriver) Connect(ctx context.Context, cfg driver.ConnectionConfig) error {
@@ -34,6 +33,7 @@ func (d *postgresDriver) Connect(ctx context.Context, cfg driver.ConnectionConfi
 		return fmt.Errorf("postgres: ping: %w", err)
 	}
 	d.db = db
+	d.scanOptions = driver.ScanOptions{MaxRows: cfg.MaxResultRows, MaxBytes: cfg.MaxResultBytes}
 	return nil
 }
 
@@ -50,8 +50,7 @@ func (d *postgresDriver) Query(ctx context.Context, query string, args ...any) (
 	if err != nil {
 		return nil, fmt.Errorf("postgres: query: %w", err)
 	}
-	defer rows.Close()
-	return scanRows(rows)
+	return driver.ScanRows(rows, d.scanOptions)
 }
 
 func (d *postgresDriver) Execute(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
@@ -59,8 +58,7 @@ func (d *postgresDriver) Execute(ctx context.Context, query string, args ...any)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: execute: %w", err)
 	}
-	defer rows.Close()
-	return scanRows(rows)
+	return driver.ScanRows(rows, d.scanOptions)
 }
 
 func (d *postgresDriver) Dialect() driver.Dialect {
@@ -467,66 +465,4 @@ ORDER BY sequence_schema, sequence_name`
 		})
 	}
 	return out, rows.Err()
-}
-
-func scanRows(rows *sql.Rows) (*result.ResultSet, error) {
-	colTypes, err := rows.ColumnTypes()
-	if err != nil {
-		return nil, fmt.Errorf("column types: %w", err)
-	}
-
-	rs := &result.ResultSet{}
-	for _, ct := range colTypes {
-		nullable, _ := ct.Nullable()
-		rs.Columns = append(rs.Columns, result.Column{
-			Name:     ct.Name(),
-			Type:     result.NormalizeColumnType(ct.DatabaseTypeName()),
-			RawType:  ct.DatabaseTypeName(),
-			Nullable: nullable,
-		})
-	}
-
-	for rows.Next() {
-		receivers := make([]any, len(colTypes))
-		ptrs := make([]any, len(colTypes))
-		for i := range receivers {
-			ptrs[i] = &receivers[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
-			return nil, fmt.Errorf("scan row: %w", err)
-		}
-
-		row := make(result.Row, len(colTypes))
-		for i, val := range receivers {
-			row[i] = toValue(val)
-		}
-		rs.Rows = append(rs.Rows, row)
-	}
-	return rs, rows.Err()
-}
-
-func toValue(v any) result.Value {
-	if v == nil {
-		return result.Value{Type: result.ValueTypeNull}
-	}
-	switch val := v.(type) {
-	case int64:
-		return result.Value{Type: result.ValueTypeInteger, Integer: val}
-	case float64:
-		return result.Value{Type: result.ValueTypeFloat, Float: val}
-	case bool:
-		return result.Value{Type: result.ValueTypeBool, Bool: val}
-	case time.Time:
-		utc := val.UTC()
-		return result.Value{Type: result.ValueTypeTime, Time: &utc}
-	case []byte:
-		if utf8.Valid(val) {
-			return result.Value{Type: result.ValueTypeText, Text: string(val)}
-		}
-		return result.Value{Type: result.ValueTypeBytes, Bytes: val}
-	case string:
-		return result.Value{Type: result.ValueTypeText, Text: val}
-	default:
-		return result.Value{Type: result.ValueTypeText, Text: fmt.Sprintf("%v", val)}
-	}
 }
