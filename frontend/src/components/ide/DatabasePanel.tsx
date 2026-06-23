@@ -16,6 +16,7 @@ import type { Connection, Environment, Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { hasPermission, permission } from '#/lib/permissions'
 import { useIde, activeTabId as selectActiveTabId, resolveConnectionState, type ConnectionState, newConnectionTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
+import { useConnectionLayout } from './useConnectionLayout'
 import { SidebarPane } from './SidebarPane'
 import { SchemaTree } from './SchemaTree'
 import { ConnectionDialog } from './ConnectionDialog'
@@ -63,6 +64,8 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   const queryClient = useQueryClient()
 
   const [filter, setFilter] = useState('')
+  const { connectionLayout: connLayout } = useConnectionLayout()
+  const [envFilter, setEnvFilter] = useState<number | 'all'>('all')
   const [addEnvOpen, setAddEnvOpen] = useState(false)
   const [addConnEnvironmentId, setAddConnEnvironmentId] = useState<number | null>(null)
   const [envName, setEnvName] = useState('')
@@ -104,6 +107,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
 
   const envItems = environments.data?.items ?? []
   const connItems = connections.data?.items ?? []
+  const envNameById = (id: number) => envItems.find((e) => e.id === id)?.name ?? ''
 
   const connectedIds = new Set(Object.keys(sessions).map(Number))
 
@@ -265,6 +269,28 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
             className="h-7 text-xs"
           />
         </div>
+        {connLayout === 'flat' && envItems.length > 0 && (
+          <div className="border-b border-border px-1.5 py-1">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button type="button" variant="outline" size="sm" className="h-6 w-full justify-between text-xs font-normal">
+                    <span className="truncate">{envFilter === 'all' ? 'All environments' : envNameById(envFilter)}</span>
+                    <Icon name="chevron-down" size={12} className="shrink-0 text-muted-foreground" />
+                  </Button>
+                }
+              />
+              <DropdownMenuContent align="start" className="min-w-44">
+                <DropdownMenuItem onClick={() => setEnvFilter('all')}>All environments</DropdownMenuItem>
+                {envItems.map((env) => (
+                  <DropdownMenuItem key={env.id} onClick={() => setEnvFilter(env.id)}>
+                    {env.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
           <div className="flex flex-col py-1">
             {environments.isLoading || connections.isLoading ? (
@@ -273,7 +299,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
               <SidebarMessage>Failed to load database tree.</SidebarMessage>
             ) : envItems.length === 0 ? (
               <SidebarMessage>No environments available.</SidebarMessage>
-            ) : (
+            ) : connLayout === 'grouped' ? (
               envItems.map((env) => (
                 <EnvironmentRow
                   key={env.id}
@@ -289,6 +315,26 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
                   onAddConnection={() => setAddConnEnvironmentId(env.id)}
                 />
               ))
+            ) : (
+              (() => {
+                const list = connItems.filter((c) => envFilter === 'all' || c.environment_id === envFilter)
+                if (list.length === 0) return <SidebarMessage>No connections.</SidebarMessage>
+                return list.map((conn) => (
+                  <ConnectionRow
+                    key={conn.id}
+                    connection={conn}
+                    isConnected={connectedIds.has(conn.id)}
+                    connIndent={0}
+                    envLabel={envFilter === 'all' ? envNameById(conn.environment_id) : undefined}
+                    orgSlug={orgSlug}
+                    filter={filter}
+                    onOpen={() => handleOpenConnection(conn)}
+                    onOpenConsole={() => handleOpenConsole(conn)}
+                    onConnect={() => handleConnect(conn)}
+                    onDisconnect={() => handleDisconnect(conn)}
+                  />
+                ))
+              })()
             )}
           </div>
         </div>
@@ -431,6 +477,7 @@ function EnvironmentRow({
                 key={conn.id}
                 connection={conn}
                 isConnected={connectedIds.has(conn.id)}
+                connIndent={18}
                 orgSlug={orgSlug}
                 filter={filter}
                 onOpen={() => onOpen(conn)}
@@ -449,6 +496,8 @@ function EnvironmentRow({
 function ConnectionRow({
   connection,
   isConnected,
+  connIndent,
+  envLabel,
   orgSlug,
   filter,
   onOpen,
@@ -458,6 +507,8 @@ function ConnectionRow({
 }: {
   connection: Connection
   isConnected: boolean
+  connIndent: number
+  envLabel?: string
   orgSlug: string
   filter: string
   onOpen: () => void
@@ -499,8 +550,9 @@ function ConnectionRow({
     <div data-conn-id={connection.id}>
       <div
         onContextMenu={handleContextMenu}
+        style={{ paddingLeft: connIndent }}
         className={cn(
-          'flex items-center pl-[18px] transition-colors',
+          'flex items-center transition-colors',
           isActive
             ? 'bg-primary/10 hover:bg-primary/15'
             : 'hover:bg-accent hover:text-accent-foreground',
@@ -546,7 +598,13 @@ function ConnectionRow({
             <Icon name="refresh" size={11} className={refresh.isPending ? 'animate-spin' : undefined} />
           </button>
         )}
-        <div className="h-6 flex-1" />
+        <div className="flex h-6 min-w-0 flex-1 items-center justify-end">
+          {envLabel && (
+            <span className="min-w-0 truncate pr-1 text-[10px] text-muted-foreground" title={envLabel}>
+              {envLabel}
+            </span>
+          )}
+        </div>
 
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger
@@ -592,7 +650,7 @@ function ConnectionRow({
       </div>
 
       {isConnected && expanded && (
-        <div className="ml-[36px] border-l border-border">
+        <div style={{ marginLeft: connIndent + 12 }} className="border-l border-border">
           <SchemaTree
             orgSlug={orgSlug}
             workspaceId={connection.workspace_id}
