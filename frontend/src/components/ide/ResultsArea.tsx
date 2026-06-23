@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { cn } from '#/lib/utils'
 import type { ResultColumn, ResultValue } from '#/lib/api/types'
 import { useIde, activeTabId as selectActiveTabId, type QueryResult } from './useIdeStore'
-import { useContextMenu, type ContextMenuItem } from '#/components/ui/context-menu'
+import { useContextMenuOpener } from '#/components/ui/context-menu'
 import { copyWithToast, rowToTsv, rowToJson, valuesToLines } from './contextMenus/clipboard'
 import { buildCellMenu, buildRowMenu, buildColumnHeaderMenu } from './contextMenus/resultMenu'
 
@@ -306,39 +306,42 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
     if (autoScrollRafRef.current == null) autoScrollRafRef.current = requestAnimationFrame(autoScrollStep)
   }
 
-  // One context menu for the whole grid: cells/rows/headers only record what was
-  // clicked, then open the single shared menu. Avoids mounting a menu controller
-  // per cell, which makes large result sets unusably slow to render.
-  const [menuTarget, setMenuTarget] = useState<{ kind: 'cell' | 'row' | 'column'; rowIdx: number; colIdx: number } | null>(null)
+  // One context menu for the whole grid: cells/rows/headers build their items
+  // on right-click and hand them to the shared provider menu. Avoids mounting a
+  // menu controller per cell, which makes large result sets slow to render.
+  const openContextMenu = useContextMenuOpener()
 
-  const gridMenuItems = ((): ContextMenuItem[] => {
-    if (!menuTarget) return []
-    if (menuTarget.kind === 'cell') {
-      const v = rows[menuTarget.rowIdx]?.[menuTarget.colIdx]
-      const { display, isNull } = v ? formatValue(v) : { display: '', isNull: true }
-      return buildCellMenu({
+  function openCellMenu(rowIdx: number, colIdx: number, e: React.MouseEvent) {
+    const v = rows[rowIdx]?.[colIdx]
+    const { display, isNull } = v ? formatValue(v) : { display: '', isNull: true }
+    openContextMenu(
+      buildCellMenu({
         onCopyValue: () => copyWithToast(isNull ? 'NULL' : display),
-        onCopyColumnName: () => copyWithToast(columns[menuTarget.colIdx]?.name ?? ''),
-      })
-    }
-    if (menuTarget.kind === 'row') {
-      const row = rows[menuTarget.rowIdx] ?? []
-      return buildRowMenu({
+        onCopyColumnName: () => copyWithToast(columns[colIdx]?.name ?? ''),
+      }),
+      e,
+    )
+  }
+
+  function openRowMenu(rowIdx: number, e: React.MouseEvent) {
+    const row = rows[rowIdx] ?? []
+    openContextMenu(
+      buildRowMenu({
         onCopyRow: () => copyWithToast(rowToTsv(row.map(cellText))),
         onCopyRowJson: () => copyWithToast(rowToJson(columnNames, row.map(cellText))),
-      })
-    }
-    return buildColumnHeaderMenu({
-      onCopyName: () => copyWithToast(columns[menuTarget.colIdx]?.name ?? ''),
-      onCopyAllValues: () => copyWithToast(valuesToLines(rows.map((r) => cellText(r[menuTarget.colIdx])))),
-    })
-  })()
+      }),
+      e,
+    )
+  }
 
-  const gridMenu = useContextMenu(gridMenuItems)
-
-  function openMenu(target: { kind: 'cell' | 'row' | 'column'; rowIdx: number; colIdx: number }, e: React.MouseEvent) {
-    setMenuTarget(target)
-    gridMenu.onContextMenu(e)
+  function openColumnMenu(colIdx: number, e: React.MouseEvent) {
+    openContextMenu(
+      buildColumnHeaderMenu({
+        onCopyName: () => copyWithToast(columns[colIdx]?.name ?? ''),
+        onCopyAllValues: () => copyWithToast(valuesToLines(rows.map((r) => cellText(r[colIdx])))),
+      }),
+      e,
+    )
   }
 
   function handleCellMouseDown(ri: number, ci: number, e: React.MouseEvent) {
@@ -431,7 +434,7 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
                 col={col}
                 width={colWidths[i]}
                 onResizeStart={(e) => startResize(e, i)}
-                onContextMenu={(e) => openMenu({ kind: 'column', rowIdx: 0, colIdx: i }, e)}
+                onContextMenu={(e) => openColumnMenu(i, e)}
               />
             ))}
           </tr>
@@ -443,7 +446,7 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
                 label={ri + 1}
                 selected={rowSelectionMode && isRowInRange(ri, selection)}
                 onMouseDown={(e) => handleRowHeaderMouseDown(ri, e)}
-                onContextMenu={(e) => openMenu({ kind: 'row', rowIdx: ri, colIdx: 0 }, e)}
+                onContextMenu={(e) => openRowMenu(ri, e)}
               />
               {row.map((val, ci) => (
                 <DataCell
@@ -456,7 +459,7 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
                   isInRange={cellInRange(ri, ci, selection)}
                   onMouseDown={(e) => handleCellMouseDown(ri, ci, e)}
                   onMouseEnter={() => handleCellDragEnter(ri, ci)}
-                  onContextMenu={(e) => openMenu({ kind: 'cell', rowIdx: ri, colIdx: ci }, e)}
+                  onContextMenu={(e) => openCellMenu(ri, ci, e)}
                 />
               ))}
             </tr>
@@ -519,7 +522,6 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
         <span className="mx-1.5 opacity-40">·</span>
         <span className="tabular-nums">{durationMs}ms</span>
       </div>
-      {gridMenu.menu}
     </div>
   )
 }
