@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
@@ -140,6 +141,7 @@ function ErrorState({ message }: { message: string }) {
 const ROW_NUM_COL_WIDTH = 48
 const DEFAULT_COL_WIDTH = 150
 const MIN_COL_WIDTH = 60
+const ROW_HEIGHT = 29
 
 type CellCoord = { rowIdx: number; colIdx: number }
 type CellSelection = { anchor: CellCoord; active: CellCoord }
@@ -192,6 +194,7 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
   const [tableCollapsed, setTableCollapsed] = useState(false)
   const tablePanelRef = useRef<PanelImperativeHandle>(null)
   const tableContainerRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const isDraggingRef = useRef(false)
   const scrollElRef = useRef<HTMLElement | null>(null)
   const pointerRef = useRef<{ x: number; y: number } | null>(null)
@@ -220,9 +223,15 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
   // Focus anchor cell after keyboard navigation (skip during mouse drag).
   useEffect(() => {
     if (!selection || isDraggingRef.current) return
-    tableContainerRef.current
-      ?.querySelector<HTMLElement>(`[data-cell="${selection.anchor.rowIdx}-${selection.anchor.colIdx}"]`)
-      ?.focus({ preventScroll: false })
+    const { rowIdx, colIdx } = selection.anchor
+    rowVirtualizer.scrollToIndex(rowIdx)
+    requestAnimationFrame(() => {
+      tableContainerRef.current
+        ?.querySelector<HTMLElement>(`[data-cell="${rowIdx}-${colIdx}"]`)
+        ?.focus({ preventScroll: true })
+    })
+    // rowVirtualizer is a stable instance; intentionally not a dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection])
 
   function handleTableKeyDown(e: React.KeyboardEvent) {
@@ -248,16 +257,6 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
     if (target.rowIdx !== selection.anchor.rowIdx || target.colIdx !== selection.anchor.colIdx) {
       setSelection({ anchor: target, active: target })
     }
-  }
-
-  function findScrollParent(node: HTMLElement | null): HTMLElement | null {
-    let el = node?.parentElement ?? null
-    while (el) {
-      const style = getComputedStyle(el)
-      if (/(auto|scroll)/.test(style.overflowY + style.overflowX)) return el
-      el = el.parentElement
-    }
-    return null
   }
 
   // While drag-selecting, scroll the grid when the pointer nears an edge, and
@@ -296,7 +295,7 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
 
   function startAutoScroll(e: React.MouseEvent) {
     pointerRef.current = { x: e.clientX, y: e.clientY }
-    scrollElRef.current = findScrollParent(tableContainerRef.current)
+    scrollElRef.current = scrollRef.current
     if (autoScrollRafRef.current == null) autoScrollRafRef.current = requestAnimationFrame(autoScrollStep)
   }
 
@@ -304,6 +303,14 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
   // on right-click and hand them to the shared provider menu. Avoids mounting a
   // menu controller per cell, which makes large result sets slow to render.
   const openContextMenu = useContextMenuOpener()
+
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 12,
+  })
+  const virtualRows = rowVirtualizer.getVirtualItems()
 
   function openCellMenu(rowIdx: number, colIdx: number, e: React.MouseEvent) {
     const v = rows[rowIdx]?.[colIdx]
@@ -434,30 +441,34 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, ri) => (
-            <tr key={ri} role="row" className="group">
-              <RowHeaderCell
-                label={ri + 1}
-                selected={rowSelectionMode && isRowInRange(ri, selection)}
-                onMouseDown={(e) => handleRowHeaderMouseDown(ri, e)}
-                onContextMenu={(e) => openRowMenu(ri, e)}
-              />
-              {row.map((val, ci) => (
-                <DataCell
-                  key={ci}
-                  value={val}
-                  col={columns[ci]}
-                  rowIdx={ri}
-                  colIdx={ci}
-                  isAnchor={selection?.anchor.rowIdx === ri && selection?.anchor.colIdx === ci}
-                  isInRange={cellInRange(ri, ci, selection)}
-                  onMouseDown={(e) => handleCellMouseDown(ri, ci, e)}
-                  onMouseEnter={() => handleCellDragEnter(ri, ci)}
-                  onContextMenu={(e) => openCellMenu(ri, ci, e)}
-                />
-              ))}
+          {virtualRows.length > 0 && (
+            <tr aria-hidden style={{ height: virtualRows[0].start }}>
+              <td colSpan={columns.length + 1} className="p-0" />
             </tr>
+          )}
+          {virtualRows.map((vr) => (
+            <DataRow
+              key={vr.index}
+              row={rows[vr.index]}
+              columns={columns}
+              rowIdx={vr.index}
+              selection={selection}
+              rowSelectionMode={rowSelectionMode}
+              onRowHeaderMouseDown={(e) => handleRowHeaderMouseDown(vr.index, e)}
+              onRowHeaderContextMenu={(e) => openRowMenu(vr.index, e)}
+              onCellMouseDown={(ci, e) => handleCellMouseDown(vr.index, ci, e)}
+              onCellMouseEnter={(ci) => handleCellDragEnter(vr.index, ci)}
+              onCellContextMenu={(ci, e) => openCellMenu(vr.index, ci, e)}
+            />
           ))}
+          {virtualRows.length > 0 && (
+            <tr
+              aria-hidden
+              style={{ height: rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end }}
+            >
+              <td colSpan={columns.length + 1} className="p-0" />
+            </tr>
+          )}
           {rows.length === 0 && (
             <tr role="row">
               <td
@@ -488,10 +499,12 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
           minSize="15%"
           collapsible
           collapsedSize="0%"
-          className="min-h-0 overflow-auto"
+          className="min-h-0 overflow-hidden"
           onResize={(size) => setTableCollapsed(size.asPercentage === 0)}
         >
-          {tableEl}
+          <div ref={scrollRef} className="h-full overflow-auto">
+            {tableEl}
+          </div>
         </ResizablePanel>
         {selection && panelValue && panelCol && (
           <>
@@ -551,6 +564,47 @@ function RowHeaderCell({ label, selected, onMouseDown, onContextMenu }: {
     >
       {label}
     </td>
+  )
+}
+
+function DataRow({
+  row, columns, rowIdx, selection, rowSelectionMode,
+  onRowHeaderMouseDown, onRowHeaderContextMenu, onCellMouseDown, onCellMouseEnter, onCellContextMenu,
+}: {
+  row: ResultValue[]
+  columns: ResultColumn[]
+  rowIdx: number
+  selection: CellSelection | null
+  rowSelectionMode: boolean
+  onRowHeaderMouseDown: (e: React.MouseEvent) => void
+  onRowHeaderContextMenu: (e: React.MouseEvent) => void
+  onCellMouseDown: (ci: number, e: React.MouseEvent) => void
+  onCellMouseEnter: (ci: number) => void
+  onCellContextMenu: (ci: number, e: React.MouseEvent) => void
+}) {
+  return (
+    <tr role="row" className="group" style={{ height: ROW_HEIGHT }}>
+      <RowHeaderCell
+        label={rowIdx + 1}
+        selected={rowSelectionMode && isRowInRange(rowIdx, selection)}
+        onMouseDown={onRowHeaderMouseDown}
+        onContextMenu={onRowHeaderContextMenu}
+      />
+      {row.map((val, ci) => (
+        <DataCell
+          key={ci}
+          value={val}
+          col={columns[ci]}
+          rowIdx={rowIdx}
+          colIdx={ci}
+          isAnchor={selection?.anchor.rowIdx === rowIdx && selection?.anchor.colIdx === ci}
+          isInRange={cellInRange(rowIdx, ci, selection)}
+          onMouseDown={(e) => onCellMouseDown(ci, e)}
+          onMouseEnter={() => onCellMouseEnter(ci)}
+          onContextMenu={(e) => onCellContextMenu(ci, e)}
+        />
+      ))}
+    </tr>
   )
 }
 
