@@ -23,8 +23,6 @@ export function buildConnectionMenu(ctx: ConnectionMenuCtx): ContextMenuItem[] {
     { kind: 'action', id: 'copy-name', label: 'Copy name', icon: 'copy-01', onSelect: ctx.onCopyName },
     { kind: 'separator' },
     { kind: 'action', id: 'edit-connection', label: 'Edit connection', icon: 'pencil-edit-02', soon: true },
-    { kind: 'action', id: 'copy-connection-string', label: 'Copy connection string', icon: 'copy-01', soon: true },
-    { kind: 'action', id: 'disconnect-others', label: 'Disconnect all others', soon: true },
     { kind: 'separator' },
     { kind: 'action', id: 'delete-connection', label: 'Delete connection', icon: 'delete-01', soon: true },
   ]

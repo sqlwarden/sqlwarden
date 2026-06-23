@@ -13,6 +13,7 @@ import {
   moveTabBetweenGroups,
   splitGroup,
   splitToEdge,
+  placeTabAtEdge,
   findGroup,
   firstGroup,
   allGroups,
@@ -86,6 +87,7 @@ export type IdeState = {
 export type IdeActions = {
   setActiveWorkspace: (workspaceId: number) => void
   openTab: (tab: EditorTab) => void
+  openTabToSide: (tab: EditorTab) => void
   ensureTab: (tab: EditorTab) => void
   closeTab: (tabId: string) => void
   /** Close one pane's instance of a tab; releases the tab only when no group still holds it. */
@@ -232,6 +234,28 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
               tabs: exists ? s.tabs : [...s.tabs, tab],
               layout: { ...s.layout, [tab.workspaceId]: nextLayout },
               activeGroupId: { ...s.activeGroupId, [tab.workspaceId]: groupId },
+            }
+          }),
+
+        openTabToSide: (tab) =>
+          set((s) => {
+            const exists = s.tabs.some((t) => t.id === tab.id)
+            const { layout, groupId } = ensureWorkspaceLayout(s, tab.workspaceId)
+            const nextTabs = exists ? s.tabs : [...s.tabs, tab]
+            // A fresh/empty workspace has nothing to sit beside — open in place.
+            if (!allGroups(layout).some((g) => g.tabIds.length > 0)) {
+              return {
+                tabs: nextTabs,
+                layout: { ...s.layout, [tab.workspaceId]: setActive(addTab(layout, groupId, tab.id), tab.id) },
+                activeGroupId: { ...s.activeGroupId, [tab.workspaceId]: groupId },
+              }
+            }
+            const { node, newGroupId: gid } = placeTabAtEdge(layout, tab.id, 'right', newGroupId())
+            return {
+              tabs: nextTabs,
+              layout: { ...s.layout, [tab.workspaceId]: node },
+              activeGroupId: { ...s.activeGroupId, [tab.workspaceId]: gid },
+              focusEditorRequest: `${gid}:${tab.id}`,
             }
           }),
 
@@ -552,6 +576,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   abortControllers: {},
   setActiveWorkspace: _noop,
   openTab: _noop,
+  openTabToSide: _noop,
   ensureTab: _noop,
   closeTab: _noop,
   closeTabInstance: _noop,

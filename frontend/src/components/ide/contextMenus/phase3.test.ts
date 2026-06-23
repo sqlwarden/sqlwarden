@@ -64,10 +64,10 @@ describe('buildColumnHeaderMenu', () => {
 })
 
 describe('buildWorkspaceMenu', () => {
-  const items = buildWorkspaceMenu({ onNewConsole: noop, onCopyName: noop })
-  it('has live new-console + copy-name, soon settings', () => {
-    expect(action(items, 'new-console')?.soon).toBeFalsy()
-    expect(action(items, 'copy-workspace-name')?.soon).toBeFalsy()
-    expect(action(items, 'workspace-settings')?.soon).toBe(true)
+  const items = buildWorkspaceMenu({ onOpenSettings: noop, onManageMembers: noop, onManageAccess: noop })
+  it('has live settings, members, and access actions', () => {
+    expect(action(items, 'workspace-settings')?.soon).toBeFalsy()
+    expect(action(items, 'manage-members')?.soon).toBeFalsy()
+    expect(action(items, 'manage-access')?.soon).toBeFalsy()
   })
 })

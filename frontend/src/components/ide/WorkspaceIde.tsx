@@ -10,7 +10,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '#/components/ui/resizable'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { orgWorkspacesQueryOptions, orgEffectivePermissionsQueryOptions } from '#/lib/api/query'
 import { hasAnyPermission, permission } from '#/lib/permissions'
 import { IdeTopBarControls } from './IdeTopBarControls'
@@ -20,7 +20,6 @@ import type { Workspace } from '#/lib/api/types'
 import { useSession } from '#/hooks/use-session'
 import { cn } from '#/lib/utils'
 import { ContextMenu, ContextMenuProvider } from '#/components/ui/context-menu'
-import { copyWithToast } from './contextMenus/clipboard'
 import { buildWorkspaceMenu } from './contextMenus/workspaceMenu'
 import {
   createIdeStore,
@@ -225,6 +224,7 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
           {workspaces.map((ws) => (
             <WorkspaceTab
               key={ws.id}
+              orgSlug={orgSlug}
               workspace={ws}
               active={ws.id === activeWorkspace?.id}
               onActivate={() => setActiveWorkspace(ws.id)}
@@ -262,29 +262,34 @@ function IdeBrand() {
 }
 
 function WorkspaceTab({
+  orgSlug,
   workspace,
   active,
   onActivate,
 }: {
+  orgSlug: string
   workspace: Workspace
   active: boolean
   onActivate: () => void
 }) {
-  const openConsole = useIde((s) => s.openConsole)
-  const setActiveWorkspace = useIde((s) => s.setActiveWorkspace)
-
-  function handleNewConsole() {
-    setActiveWorkspace(workspace.id)
-    const tmpDoc = new Y.Doc()
-    tmpDoc.getText('content').insert(0, DEFAULT_CONSOLE_CONTENT)
-    const yState = Array.from(Y.encodeStateAsUpdate(tmpDoc))
-    tmpDoc.destroy()
-    openConsole(workspace, yState)
-  }
+  const navigate = useNavigate()
 
   const menuItems = buildWorkspaceMenu({
-    onNewConsole: handleNewConsole,
-    onCopyName: () => copyWithToast(workspace.name),
+    onOpenSettings: () =>
+      navigate({
+        to: '/orgs/$org_slug/workspaces/$workspace_id/settings',
+        params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
+      }),
+    onManageMembers: () =>
+      navigate({
+        to: '/orgs/$org_slug/workspaces/$workspace_id/users',
+        params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
+      }),
+    onManageAccess: () =>
+      navigate({
+        to: '/orgs/$org_slug/workspaces/$workspace_id/policies',
+        params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
+      }),
   })
 
   return (

@@ -3,21 +3,22 @@ import type { ContextMenuItem } from '#/components/ui/context-menu'
 export type FileMenuCtx = {
   name: string
   onOpen: () => void
+  onOpenToSide: () => void
   onCopyName: () => void
+  onSaveAs: () => void
   onDelete?: () => void
 }
 
 export function buildFileMenu(ctx: FileMenuCtx): ContextMenuItem[] {
   const items: ContextMenuItem[] = [
     { kind: 'action', id: 'open', label: 'Open', icon: 'folder-open', onSelect: ctx.onOpen },
-    { kind: 'action', id: 'open-to-side', label: 'Open to the side', soon: true },
+    { kind: 'action', id: 'open-to-side', label: 'Open to the side', icon: 'column', onSelect: ctx.onOpenToSide },
     { kind: 'separator' },
     { kind: 'action', id: 'copy-name', label: 'Copy name', icon: 'copy-01', onSelect: ctx.onCopyName },
-    { kind: 'action', id: 'copy-path', label: 'Copy path', icon: 'copy-01', soon: true },
     { kind: 'separator' },
     { kind: 'action', id: 'rename', label: 'Rename', icon: 'pencil-edit-02', soon: true },
-    { kind: 'action', id: 'duplicate', label: 'Duplicate', soon: true },
-    { kind: 'action', id: 'download', label: 'Download', soon: true },
+    { kind: 'action', id: 'duplicate', label: 'Duplicate', icon: 'copy-01', soon: true },
+    { kind: 'action', id: 'save-as', label: 'Save As…', icon: 'download-01', onSelect: ctx.onSaveAs },
   ]
   if (ctx.onDelete) {
     items.push(

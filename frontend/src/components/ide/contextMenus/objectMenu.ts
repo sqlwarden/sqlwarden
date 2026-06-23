@@ -13,11 +13,6 @@ export function buildObjectMenu(ctx: ObjectMenuCtx): ContextMenuItem[] {
     { kind: 'action', id: 'copy-qualified-name', label: 'Copy qualified name', icon: 'copy-01', onSelect: ctx.onCopyQualifiedName },
     { kind: 'action', id: 'copy-column-list', label: 'Copy column list', icon: 'copy-01', onSelect: ctx.onCopyColumnList },
     { kind: 'separator' },
-    { kind: 'action', id: 'generate-insert-update', label: 'Generate INSERT / UPDATE…', soon: true },
-    { kind: 'action', id: 'view-ddl', label: 'View DDL', soon: true },
-    { kind: 'separator' },
-    { kind: 'action', id: 'rename', label: 'Rename', icon: 'pencil-edit-02', soon: true },
-    { kind: 'action', id: 'truncate', label: 'Truncate', soon: true },
     { kind: 'action', id: 'drop', label: 'Drop', icon: 'delete-01', soon: true },
   ]
   if (ctx.isView) {

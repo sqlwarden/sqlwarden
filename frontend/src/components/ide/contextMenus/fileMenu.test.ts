@@ -9,12 +9,19 @@ function action(items: ContextMenuItem[], id: string): ContextMenuActionItem | u
 }
 
 describe('buildFileMenu', () => {
-  const base = { name: 'query.sql', onOpen: noop, onCopyName: noop }
-  it('has live open + copy-name and soon copy-path', () => {
+  const base = { name: 'query.sql', onOpen: noop, onOpenToSide: noop, onCopyName: noop, onSaveAs: noop }
+  it('has live open + copy-name and no copy-path', () => {
     const items = buildFileMenu(base)
     expect(action(items, 'open')?.soon).toBeFalsy()
     expect(action(items, 'copy-name')?.soon).toBeFalsy()
-    expect(action(items, 'copy-path')?.soon).toBe(true)
+    expect(action(items, 'copy-path')).toBeUndefined()
+  })
+  it('has live open-to-side and save-as actions', () => {
+    const items = buildFileMenu(base)
+    expect(action(items, 'open-to-side')?.soon).toBeFalsy()
+    expect(typeof action(items, 'open-to-side')?.onSelect).toBe('function')
+    expect(action(items, 'save-as')?.soon).toBeFalsy()
+    expect(typeof action(items, 'save-as')?.onSelect).toBe('function')
   })
   it('includes a confirming destructive delete when onDelete is provided', () => {
     const items = buildFileMenu({ ...base, onDelete: noop })
