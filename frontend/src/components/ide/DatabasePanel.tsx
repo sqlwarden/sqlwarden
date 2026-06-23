@@ -17,6 +17,10 @@ import { cn } from '#/lib/utils'
 import { hasPermission, permission } from '#/lib/permissions'
 import { useIde, activeTabId as selectActiveTabId, resolveConnectionState, type ConnectionState, newConnectionTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
 import { useConnectionLayout } from './useConnectionLayout'
+import { ContextMenu } from '#/components/ui/context-menu'
+import { copyWithToast } from './contextMenus/clipboard'
+import { buildConnectionMenu } from './contextMenus/connectionMenu'
+import { buildEnvironmentMenu } from './contextMenus/environmentMenu'
 import { SidebarPane } from './SidebarPane'
 import { SchemaTree } from './SchemaTree'
 import { ConnectionDialog } from './ConnectionDialog'
@@ -396,35 +400,37 @@ function EnvironmentRow({
 
   return (
     <div>
-      <div className="group flex h-6 w-full items-center text-xs transition-colors hover:bg-accent hover:text-accent-foreground">
-        <button
-          type="button"
-          onClick={() => setNodeExpanded(nodeKey, !expanded)}
-          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 text-left"
-        >
-          <Icon
-            name={expanded ? 'chevron-down' : 'chevron-right'}
-            size={11}
-            className="shrink-0 text-muted-foreground"
-          />
-          <Icon
-            name="box"
-            size={13}
-            className="shrink-0 text-muted-foreground"
-          />
-          <span className="min-w-0 flex-1 truncate font-medium" title={environment.name}>{environment.name}</span>
-        </button>
-        {canCreateConnection && (
+      <ContextMenu items={buildEnvironmentMenu({ onCopyName: () => copyWithToast(environment.name) })}>
+        <div className="group flex h-6 w-full items-center text-xs transition-colors hover:bg-accent hover:text-accent-foreground">
           <button
             type="button"
-            onClick={onAddConnection}
-            aria-label={`New connection in ${environment.name}`}
-            className="mr-1 flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+            onClick={() => setNodeExpanded(nodeKey, !expanded)}
+            className="flex min-w-0 flex-1 items-center gap-1.5 px-2 text-left"
           >
-            <Icon name="plus-sign" size={11} />
+            <Icon
+              name={expanded ? 'chevron-down' : 'chevron-right'}
+              size={11}
+              className="shrink-0 text-muted-foreground"
+            />
+            <Icon
+              name="box"
+              size={13}
+              className="shrink-0 text-muted-foreground"
+            />
+            <span className="min-w-0 flex-1 truncate font-medium" title={environment.name}>{environment.name}</span>
           </button>
-        )}
-      </div>
+          {canCreateConnection && (
+            <button
+              type="button"
+              onClick={onAddConnection}
+              aria-label={`New connection in ${environment.name}`}
+              className="mr-1 flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+            >
+              <Icon name="plus-sign" size={11} />
+            </button>
+          )}
+        </div>
+      </ContextMenu>
 
       {expanded && (
         <div>
@@ -475,8 +481,6 @@ function ConnectionRow({
   onConnect: () => void
   onDisconnect: () => void
 }) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [pos, setPos] = useState({ x: 0, y: 0 })
   const nodeKey = `conn:${connection.id}`
   const storedExpanded = useIde((s) => s.expandedNodes[nodeKey])
   const setNodeExpanded = useIde((s) => s.setNodeExpanded)
@@ -498,26 +502,28 @@ function ConnectionRow({
       }),
   })
 
-  function handleContextMenu(e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    setPos({ x: e.clientX, y: e.clientY })
-    setMenuOpen(true)
-  }
+  const menuItems = buildConnectionMenu({
+    isConnected,
+    onOpen,
+    onOpenConsole,
+    onConnect,
+    onDisconnect,
+    onRefreshSchema: () => refresh.mutate(),
+    onCopyName: () => copyWithToast(connection.name),
+  })
 
   return (
     <div>
-      <div
-        onContextMenu={handleContextMenu}
-        style={{ paddingLeft: connIndent }}
-        className={cn(
-          'flex items-center transition-colors',
-          isActive
-            ? 'bg-primary/10 hover:bg-primary/15'
-            : 'hover:bg-accent hover:text-accent-foreground',
-          menuOpen && 'bg-accent text-accent-foreground',
-        )}
-      >
+      <ContextMenu items={menuItems}>
+        <div
+          style={{ paddingLeft: connIndent }}
+          className={cn(
+            'flex items-center transition-colors',
+            isActive
+              ? 'bg-primary/10 hover:bg-primary/15'
+              : 'hover:bg-accent hover:text-accent-foreground',
+          )}
+        >
         {isConnected ? (
           <button
             type="button"
@@ -564,49 +570,8 @@ function ConnectionRow({
             </span>
           )}
         </div>
-
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-          <DropdownMenuTrigger
-            nativeButton={false}
-            render={
-              <span
-                style={{
-                  position: 'fixed',
-                  left: pos.x,
-                  top: pos.y,
-                  width: 0,
-                  height: 0,
-                  pointerEvents: 'none',
-                }}
-              />
-            }
-          />
-          <DropdownMenuContent align="start" side="bottom" sideOffset={2} className="w-48">
-            <DropdownMenuItem onClick={() => { setMenuOpen(false); onOpen() }}>
-              <Icon name="flow-connection" size={13} />
-              Open
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => { setMenuOpen(false); onOpenConsole() }}>
-              <Icon name="terminal" size={13} />
-              Open Console
-            </DropdownMenuItem>
-            {isConnected ? (
-              <DropdownMenuItem
-                data-variant="destructive"
-                onClick={() => { setMenuOpen(false); onDisconnect() }}
-              >
-                <Icon name="cancel-01" size={13} />
-                Disconnect
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem onClick={() => { setMenuOpen(false); onConnect() }}>
-                <Icon name="flow-connection" size={13} />
-                Connect
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+        </div>
+      </ContextMenu>
 
       {isConnected && expanded && (
         <div style={{ marginLeft: connIndent + 12 }} className="border-l border-border">

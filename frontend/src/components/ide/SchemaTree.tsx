@@ -10,10 +10,15 @@ import { filterSchema } from './schemaFilter'
 import { columnTypeIcon } from './columnTypeIcon'
 import { dialectFor, IDENTIFIER_DND_MIME, type SqlDialect } from './sqlDialect'
 import { useInsertIntoEditor } from './useInsertIntoEditor'
+import { ContextMenu } from '#/components/ui/context-menu'
+import { copyWithToast, columnList, qualifiedColumn } from './contextMenus/clipboard'
+import { buildNamespaceMenu, buildObjectGroupMenu } from './contextMenus/schemaMenu'
+import { buildObjectMenu } from './contextMenus/objectMenu'
+import { buildColumnMenu, buildIndexMenu } from './contextMenus/columnMenu'
 
 const indent = (depth: number) => 4 + depth * 10
 
-const SchemaInsertContext = createContext<{ dialect: SqlDialect; insert: (t: string) => void } | null>(null)
+const SchemaInsertContext = createContext<{ dialect: SqlDialect; insert: (t: string) => void; refresh: () => void } | null>(null)
 
 type InsertableProps = {
   draggable: boolean
@@ -49,6 +54,15 @@ function useObjectInsert(namespace: string, name: string): InsertableProps | und
 function useColumnInsert(name: string): InsertableProps | undefined {
   const ctx = useContext(SchemaInsertContext)
   return dragPropsFor(ctx, ctx ? ctx.dialect.formatColumn(name) : undefined)
+}
+
+/** Dialect + refresh for context menus; safe defaults when outside the provider. */
+function useSchemaMenuCtx() {
+  const ctx = useContext(SchemaInsertContext)
+  return {
+    dialect: ctx?.dialect ?? null,
+    refresh: ctx?.refresh ?? (() => {}),
+  }
 }
 
 // Icon per object-group kind. Unknown kinds (future drivers/Phase C) fall back
@@ -115,7 +129,7 @@ export function SchemaTree({
   const single = namespaces.length === 1 ? namespaces[0] : null
 
   return (
-    <SchemaInsertContext.Provider value={{ dialect, insert }}>
+    <SchemaInsertContext.Provider value={{ dialect, insert, refresh: () => { void schemaQuery.refetch() } }}>
       <div>
         {single
           ? (single.object_groups ?? [])
@@ -143,10 +157,17 @@ function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: DbNamespace;
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
   const groups = (namespace.object_groups ?? []).filter((g) => (g.objects ?? []).length > 0)
+  const { refresh } = useSchemaMenuCtx()
+  const menuItems = buildNamespaceMenu({
+    onCopyName: () => copyWithToast(namespace.name),
+    onRefresh: refresh,
+  })
 
   return (
     <div>
-      <TreeRow depth={0} typeIcon="database" chevron={expanded} bold label={namespace.name} onClick={() => setOpen(!expanded)} />
+      <ContextMenu items={menuItems}>
+        <TreeRow depth={0} typeIcon="database" chevron={expanded} bold label={namespace.name} onClick={() => setOpen(!expanded)} />
+      </ContextMenu>
       {expanded && groups.map((g) => <SchemaGroupNode key={g.kind} group={g} namespace={namespace.name} baseDepth={1} forceOpen={forceOpen} />)}
     </div>
   )
@@ -157,19 +178,25 @@ function SchemaGroupNode({ group, namespace, baseDepth, forceOpen }: { group: Db
   const expanded = open ?? forceOpen
   const objects = group.objects ?? []
   const icon = kindIcon(group.kind)
+  const { refresh } = useSchemaMenuCtx()
+  const newLabel = `New ${group.label.replace(/s$/, '')}…`
+  const menuItems = buildObjectGroupMenu({ newLabel, onRefresh: refresh })
+  const isView = group.kind === 'view' || group.kind === 'materialized_view'
 
   return (
     <div>
-      <TreeRow
-        depth={baseDepth}
-        typeIcon={expanded ? 'folder-open' : 'folder'}
-        chevron={expanded}
-        label={`${group.label} (${objects.length})`}
-        onClick={() => setOpen(!expanded)}
-      />
+      <ContextMenu items={menuItems}>
+        <TreeRow
+          depth={baseDepth}
+          typeIcon={expanded ? 'folder-open' : 'folder'}
+          chevron={expanded}
+          label={`${group.label} (${objects.length})`}
+          onClick={() => setOpen(!expanded)}
+        />
+      </ContextMenu>
       {expanded &&
         objects.map((o) => (
-          <SchemaObjectNode key={o.name} object={o} namespace={namespace} typeIcon={icon} depth={baseDepth + 1} forceOpen={forceOpen} />
+          <SchemaObjectNode key={o.name} object={o} namespace={namespace} typeIcon={icon} depth={baseDepth + 1} forceOpen={forceOpen} isView={isView} />
         ))}
     </div>
   )
@@ -181,12 +208,14 @@ function SchemaObjectNode({
   typeIcon,
   depth,
   forceOpen,
+  isView,
 }: {
   object: DbObject
   namespace: string
   typeIcon: AppIcon
   depth: number
   forceOpen: boolean
+  isView: boolean
 }) {
   const [open, setOpen] = useState<boolean | null>(null)
   const columns = object.columns ?? []
@@ -196,33 +225,55 @@ function SchemaObjectNode({
   const pk = new Set(object.primary_key ?? [])
   const fk = new Set((object.foreign_keys ?? []).flatMap((f) => f.columns))
   const insertable = useObjectInsert(namespace, object.name)
+  const { dialect } = useSchemaMenuCtx()
+  const objectMenu = buildObjectMenu({
+    isView,
+    onCopyName: () => copyWithToast(object.name),
+    onCopyQualifiedName: () => copyWithToast(dialect ? dialect.formatObject(namespace, object.name) : object.name),
+    onCopyColumnList: () => copyWithToast(columnList(columns.map((c) => (dialect ? dialect.formatColumn(c.name) : c.name)))),
+  })
 
   return (
     <div>
-      <TreeRow
-        depth={depth}
-        typeIcon={typeIcon}
-        chevron={expanded}
-        leaf={!hasChildren}
-        label={object.name}
-        insertable={insertable}
-        onClick={() => hasChildren && setOpen(!expanded)}
-      />
+      <ContextMenu items={objectMenu}>
+        <TreeRow
+          depth={depth}
+          typeIcon={typeIcon}
+          chevron={expanded}
+          leaf={!hasChildren}
+          label={object.name}
+          insertable={insertable}
+          onClick={() => hasChildren && setOpen(!expanded)}
+        />
+      </ContextMenu>
       {expanded && (
         <>
           {columns.map((c) => (
-            <LeafRow
+            <ContextMenu
               key={c.name}
-              depth={depth + 1}
-              icon={columnTypeIcon(c.data_type)}
-              label={c.name}
-              meta={`${c.data_type}${c.nullable ? ' · null' : ''}`}
-              badge={pk.has(c.name) ? 'PK' : fk.has(c.name) ? 'FK' : undefined}
-              insertName={c.name}
-            />
+              items={buildColumnMenu({
+                onCopyName: () => copyWithToast(dialect ? dialect.formatColumn(c.name) : c.name),
+                onCopyQualifiedName: () => copyWithToast(dialect ? qualifiedColumn(dialect, object.name, c.name) : `${object.name}.${c.name}`),
+                onCopyType: () => copyWithToast(c.data_type),
+              })}
+            >
+              <LeafRow
+                depth={depth + 1}
+                icon={columnTypeIcon(c.data_type)}
+                label={c.name}
+                meta={`${c.data_type}${c.nullable ? ' · null' : ''}`}
+                badge={pk.has(c.name) ? 'PK' : fk.has(c.name) ? 'FK' : undefined}
+                insertName={c.name}
+              />
+            </ContextMenu>
           ))}
           {indexes.map((ix) => (
-            <LeafRow key={`ix:${ix.name}`} depth={depth + 1} icon="key-01" label={ix.name} meta={ix.unique ? 'unique' : 'index'} />
+            <ContextMenu
+              key={`ix:${ix.name}`}
+              items={buildIndexMenu({ onCopyName: () => copyWithToast(ix.name) })}
+            >
+              <LeafRow depth={depth + 1} icon="key-01" label={ix.name} meta={ix.unique ? 'unique' : 'index'} />
+            </ContextMenu>
           ))}
         </>
       )}
