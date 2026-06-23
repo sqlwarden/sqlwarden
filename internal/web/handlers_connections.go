@@ -188,13 +188,17 @@ func classifySQL(sql string) queryClass {
 }
 
 func (app *application) hasAnyConnectionRuntimePermission(r *http.Request, orgID int64, ownerType string, connectionID int64, permissions ...string) bool {
-	account := contextGetAccount(r)
 	for _, permission := range permissions {
-		if app.enforcer.Can(r.Context(), account.ID, orgID, ownerType, "connection", connectionID, permission) {
+		if app.hasConnectionPermission(r, orgID, ownerType, connectionID, permission) {
 			return true
 		}
 	}
 	return false
+}
+
+func (app *application) hasConnectionPermission(r *http.Request, orgID int64, ownerType string, connectionID int64, permission string) bool {
+	account := contextGetAccount(r)
+	return app.enforcer.Can(r.Context(), account.ID, orgID, ownerType, "connection", connectionID, permission)
 }
 
 func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
@@ -716,11 +720,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hasBroadExecute := app.enforcer.Can(r.Context(),
-		account.ID, org.ID,
-		ws.OwnerType, "connection", conn.ID,
-		access.PermConnExecute,
-	)
+	hasBroadExecute := app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnExecute)
 	queryKind := classifySQL(input.SQL)
 
 	var rs *result.ResultSet
