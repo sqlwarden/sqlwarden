@@ -326,3 +326,117 @@ func TestSessionQueryAndExecuteUpdateLastUsed(t *testing.T) {
 		t.Fatal("expected lastUsed to be updated by query/execute")
 	}
 }
+
+func TestStartQueryCursorRequiresSupportingDriver(t *testing.T) {
+	sess := &Session{Driver: &mockDriver{}}
+	_, err := sess.StartQueryCursor(context.Background(), "SELECT 1")
+	if err != ErrQueryCursorsUnsupported {
+		t.Fatalf("StartQueryCursor err = %v, want ErrQueryCursorsUnsupported", err)
+	}
+}
+
+func TestSessionTracksMultipleQueryCursors(t *testing.T) {
+	md := &mockCursorDriver{}
+	sess := &Session{Driver: md}
+
+	first, err := sess.StartQueryCursor(context.Background(), "SELECT 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := sess.StartQueryCursor(context.Background(), "SELECT 2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == second.ID {
+		t.Fatal("expected distinct cursor IDs")
+	}
+	if len(sess.cursors) != 2 {
+		t.Fatalf("tracked cursors = %d, want 2", len(sess.cursors))
+	}
+
+	if _, _, err = first.Fetch(context.Background(), driver.ScanOptions{MaxRows: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = second.Fetch(context.Background(), driver.ScanOptions{MaxRows: 1}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCloseCursorRemovesAndClosesCursor(t *testing.T) {
+	md := &mockCursorDriver{}
+	sess := &Session{Driver: md}
+
+	handle, err := sess.StartQueryCursor(context.Background(), "SELECT 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = sess.CloseCursor(handle.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(sess.cursors) != 0 {
+		t.Fatalf("tracked cursors = %d, want 0", len(sess.cursors))
+	}
+	if !md.cursors[0].closed {
+		t.Fatal("expected cursor to be closed")
+	}
+}
+
+func TestRemoveClosesActiveCursorsBeforeDriver(t *testing.T) {
+	m := New(5 * time.Minute)
+	defer m.Close()
+
+	md := &mockCursorDriver{}
+	sess, _, err := m.GetOrCreate("alice", "conn1", func() (driver.Driver, error) {
+		return md, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = sess.StartQueryCursor(context.Background(), "SELECT 1"); err != nil {
+		t.Fatal(err)
+	}
+
+	m.Remove(sess.ID)
+
+	if !md.cursors[0].closed {
+		t.Fatal("expected active cursor to be closed")
+	}
+	if !md.closed {
+		t.Fatal("expected driver to be closed")
+	}
+}
+
+type mockCursorDriver struct {
+	mockDriver
+	cursors []*mockQueryCursor
+}
+
+func (d *mockCursorDriver) StartQuery(context.Context, driver.QueryRequest) (driver.QueryCursor, error) {
+	cursor := &mockQueryCursor{}
+	d.cursors = append(d.cursors, cursor)
+	return cursor, nil
+}
+
+type mockQueryCursor struct {
+	closed  bool
+	fetches int
+}
+
+func (c *mockQueryCursor) Columns() []result.Column {
+	return []result.Column{{Name: "id", Type: result.ColumnTypeInteger, RawType: "integer"}}
+}
+
+func (c *mockQueryCursor) Fetch(context.Context, driver.ScanOptions) (*result.ResultSet, driver.QueryCursorState, error) {
+	c.fetches++
+	return &result.ResultSet{
+		Columns:       c.Columns(),
+		Rows:          []result.Row{{{Type: result.ValueTypeInteger, Integer: int64(c.fetches)}}},
+		RowsReturned:  1,
+		BytesReturned: 8,
+	}, driver.QueryCursorState{RowsReturned: 1, BytesReturned: 8}, nil
+}
+
+func (c *mockQueryCursor) Close() error {
+	c.closed = true
+	return nil
+}

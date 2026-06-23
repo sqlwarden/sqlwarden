@@ -107,6 +107,18 @@ func (d *mysqlDriver) Execute(ctx context.Context, query string, args ...any) (*
 	return driver.ScanRows(rows, d.scanOptions)
 }
 
+func (d *mysqlDriver) StartQuery(ctx context.Context, req driver.QueryRequest) (driver.QueryCursor, error) {
+	rows, err := d.db.QueryContext(ctx, req.SQL, req.Args...)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: start query: %w", err)
+	}
+	cursor, err := driver.NewSQLRowsCursor(rows)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: start query cursor: %w", err)
+	}
+	return cursor, nil
+}
+
 func (d *mysqlDriver) Dialect() driver.Dialect {
 	return driver.DialectMySQL
 }

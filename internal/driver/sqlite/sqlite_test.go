@@ -57,6 +57,7 @@ func TestSQLiteDriver(t *testing.T) {
 func TestIntrospectCatalogAndObjects(t *testing.T) {
 	d := &sqliteDriver{}
 	ctx := context.Background()
+
 	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -136,6 +137,45 @@ func TestIntrospectCatalogAndObjects(t *testing.T) {
 	}
 	if objects[0].Relational != nil || len(objects[0].Descriptors) == 0 {
 		t.Fatalf("expected trigger descriptors, got %+v", objects[0])
+	}
+}
+
+func TestSQLiteStartQueryCursor(t *testing.T) {
+	d := &sqliteDriver{}
+	ctx := context.Background()
+
+	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer d.Close()
+
+	if _, err := d.Execute(ctx, `CREATE TABLE cursor_users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`); err != nil {
+		t.Fatalf("create cursor_users: %v", err)
+	}
+	if _, err := d.Execute(ctx, `INSERT INTO cursor_users (id, name) VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Cara')`); err != nil {
+		t.Fatalf("insert cursor_users: %v", err)
+	}
+
+	cursor, err := d.StartQuery(ctx, driver.QueryRequest{SQL: `SELECT id, name FROM cursor_users ORDER BY id`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cursor.Close()
+
+	first, state, err := cursor.Fetch(ctx, driver.ScanOptions{MaxRows: 2, MaxBytes: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Exhausted || first.RowsReturned != 2 {
+		t.Fatalf("first fetch state=%+v result=%+v, want 2 non-exhausted rows", state, first)
+	}
+
+	second, state, err := cursor.Fetch(ctx, driver.ScanOptions{MaxRows: 2, MaxBytes: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.Exhausted || second.RowsReturned != 1 {
+		t.Fatalf("second fetch state=%+v result=%+v, want 1 exhausted row", state, second)
 	}
 }
 

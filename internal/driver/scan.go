@@ -1,8 +1,11 @@
 package driver
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -13,6 +16,8 @@ const (
 	TruncationReasonMaxRows  = "max_result_rows"
 	TruncationReasonMaxBytes = "max_result_bytes"
 )
+
+var ErrCursorClosed = errors.New("query cursor is closed")
 
 type ScanOptions struct {
 	MaxRows  int
@@ -29,16 +34,7 @@ func ScanRows(rows *sql.Rows, opts ScanOptions) (*result.ResultSet, error) {
 		return nil, fmt.Errorf("column types: %w", err)
 	}
 
-	rs := &result.ResultSet{}
-	for _, ct := range colTypes {
-		nullable, _ := ct.Nullable()
-		rs.Columns = append(rs.Columns, result.Column{
-			Name:     ct.Name(),
-			Type:     result.NormalizeColumnType(ct.DatabaseTypeName()),
-			RawType:  ct.DatabaseTypeName(),
-			Nullable: nullable,
-		})
-	}
+	rs := &result.ResultSet{Columns: columnsFromTypes(colTypes)}
 
 	for rows.Next() {
 		if opts.MaxRows > 0 && len(rs.Rows) >= opts.MaxRows {
@@ -95,6 +91,120 @@ func scanRow(rows *sql.Rows, columnCount int) (result.Row, int64, error) {
 		rowBytes += valueSize(cell)
 	}
 	return row, rowBytes, nil
+}
+
+type SQLRowsCursor struct {
+	rows    *sql.Rows
+	columns []result.Column
+	mu      sync.Mutex
+	closed  bool
+}
+
+// NewSQLRowsCursor adapts database/sql rows into the QueryCursor interface.
+// The caller transfers ownership of rows; the cursor closes them when exhausted
+// or when Close is called.
+func NewSQLRowsCursor(rows *sql.Rows) (*SQLRowsCursor, error) {
+	colTypes, err := rows.ColumnTypes()
+	if err != nil {
+		_ = rows.Close()
+		return nil, fmt.Errorf("column types: %w", err)
+	}
+	return &SQLRowsCursor{
+		rows:    rows,
+		columns: columnsFromTypes(colTypes),
+	}, nil
+}
+
+func (c *SQLRowsCursor) Columns() []result.Column {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]result.Column(nil), c.columns...)
+}
+
+func (c *SQLRowsCursor) Fetch(ctx context.Context, opts ScanOptions) (*result.ResultSet, QueryCursorState, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return nil, QueryCursorState{Exhausted: true}, ErrCursorClosed
+	}
+	if err := ctx.Err(); err != nil {
+		_ = c.closeLocked()
+		return nil, QueryCursorState{Exhausted: true}, err
+	}
+
+	rs := &result.ResultSet{Columns: append([]result.Column(nil), c.columns...)}
+	for opts.MaxRows <= 0 || len(rs.Rows) < opts.MaxRows {
+		if !c.rows.Next() {
+			if err := c.rows.Err(); err != nil {
+				_ = c.closeLocked()
+				return nil, QueryCursorState{Exhausted: true}, err
+			}
+			if err := c.closeLocked(); err != nil {
+				return nil, QueryCursorState{Exhausted: true}, err
+			}
+			return cursorPageResult(rs, true), cursorState(rs, true), nil
+		}
+		row, rowBytes, err := scanRow(c.rows, len(c.columns))
+		if err != nil {
+			_ = c.closeLocked()
+			return nil, QueryCursorState{Exhausted: true}, err
+		}
+		if opts.MaxBytes > 0 && rs.BytesReturned+rowBytes > opts.MaxBytes {
+			rs.Truncated = true
+			rs.TruncationReason = TruncationReasonMaxBytes
+			return cursorPageResult(rs, false), cursorState(rs, false), nil
+		}
+
+		rs.Rows = append(rs.Rows, row)
+		rs.BytesReturned += rowBytes
+		rs.RowsReturned = len(rs.Rows)
+	}
+	return cursorPageResult(rs, false), cursorState(rs, false), nil
+}
+
+func (c *SQLRowsCursor) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closeLocked()
+}
+
+func (c *SQLRowsCursor) closeLocked() error {
+	if c.closed {
+		return nil
+	}
+	c.closed = true
+	return c.rows.Close()
+}
+
+func cursorPageResult(rs *result.ResultSet, exhausted bool) *result.ResultSet {
+	rs.RowsReturned = len(rs.Rows)
+	if !exhausted && rs.TruncationReason == TruncationReasonMaxBytes {
+		rs.Truncated = true
+	}
+	return rs
+}
+
+func cursorState(rs *result.ResultSet, exhausted bool) QueryCursorState {
+	return QueryCursorState{
+		Exhausted:     exhausted,
+		RowsReturned:  len(rs.Rows),
+		BytesReturned: rs.BytesReturned,
+	}
+}
+
+func columnsFromTypes(colTypes []*sql.ColumnType) []result.Column {
+	columns := make([]result.Column, 0, len(colTypes))
+	for _, ct := range colTypes {
+		nullable, _ := ct.Nullable()
+		columns = append(columns, result.Column{
+			Name:     ct.Name(),
+			Type:     result.NormalizeColumnType(ct.DatabaseTypeName()),
+			RawType:  ct.DatabaseTypeName(),
+			Nullable: nullable,
+		})
+	}
+	return columns
 }
 
 // NormalizeValue converts a raw database driver value into SQLWarden's

@@ -2,6 +2,7 @@ package connection
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -11,6 +12,8 @@ import (
 	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/pkg/result"
 )
+
+var ErrQueryCursorsUnsupported = errors.New("driver does not support query cursors")
 
 // entropySource is a package-level entropy source for ULID generation.
 var (
@@ -34,7 +37,14 @@ type Session struct {
 	WorkspaceID  string
 	Driver       driver.Driver // open connection
 	mu           sync.Mutex    // serializes Query/Execute on this session
+	cursors      map[string]*QueryCursorHandle
 	lastUsed     time.Time
+}
+
+type QueryCursorHandle struct {
+	ID     string
+	Cursor driver.QueryCursor
+	mu     sync.Mutex
 }
 
 type SessionMetadata struct {
@@ -56,6 +66,75 @@ func (s *Session) Execute(ctx context.Context, sql string, args ...any) (*result
 	defer s.mu.Unlock()
 	s.lastUsed = time.Now()
 	return s.Driver.Execute(ctx, sql, args...)
+}
+
+func (s *Session) StartQueryCursor(ctx context.Context, sql string, args ...any) (*QueryCursorHandle, error) {
+	cursorDriver, ok := s.Driver.(driver.QuerySessionDriver)
+	if !ok {
+		return nil, ErrQueryCursorsUnsupported
+	}
+
+	cursor, err := cursorDriver.StartQuery(ctx, driver.QueryRequest{SQL: sql, Args: args})
+	if err != nil {
+		return nil, err
+	}
+
+	handle := &QueryCursorHandle{ID: newULID(), Cursor: cursor}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cursors == nil {
+		s.cursors = make(map[string]*QueryCursorHandle)
+	}
+	s.cursors[handle.ID] = handle
+	s.lastUsed = time.Now()
+
+	return handle, nil
+}
+
+func (s *Session) CloseCursor(cursorID string) error {
+	s.mu.Lock()
+	handle, ok := s.cursors[cursorID]
+	if ok {
+		delete(s.cursors, cursorID)
+	}
+	s.lastUsed = time.Now()
+	s.mu.Unlock()
+
+	if !ok {
+		return nil
+	}
+	return handle.Close()
+}
+
+func (s *Session) CloseAllCursors() {
+	s.mu.Lock()
+	handles := make([]*QueryCursorHandle, 0, len(s.cursors))
+	for id, handle := range s.cursors {
+		handles = append(handles, handle)
+		delete(s.cursors, id)
+	}
+	s.mu.Unlock()
+
+	for _, handle := range handles {
+		_ = handle.Close()
+	}
+}
+
+func (h *QueryCursorHandle) Columns() []result.Column {
+	return h.Cursor.Columns()
+}
+
+func (h *QueryCursorHandle) Fetch(ctx context.Context, opts driver.ScanOptions) (*result.ResultSet, driver.QueryCursorState, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.Cursor.Fetch(ctx, opts)
+}
+
+func (h *QueryCursorHandle) Close() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.Cursor.Close()
 }
 
 // Manager maintains in-memory live sessions with TTL reaping.
@@ -201,7 +280,7 @@ func (m *Manager) Remove(sessionID string) {
 		return
 	}
 
-	sess.Driver.Close()
+	sess.close()
 	key := sess.AccountID + ":" + sess.ConnectionID
 	delete(m.byKey, key)
 	delete(m.byID, sessionID)
@@ -232,7 +311,7 @@ func (m *Manager) RemoveForConnection(connID string) int {
 		if sess.ConnectionID != connID {
 			continue
 		}
-		sess.Driver.Close()
+		sess.close()
 		key := sess.AccountID + ":" + sess.ConnectionID
 		delete(m.byKey, key)
 		delete(m.byID, id)
@@ -251,7 +330,7 @@ func (m *Manager) RemoveForAccount(accountID string) int {
 		if sess.AccountID != accountID {
 			continue
 		}
-		sess.Driver.Close()
+		sess.close()
 		key := sess.AccountID + ":" + sess.ConnectionID
 		delete(m.byKey, key)
 		delete(m.byID, id)
@@ -271,7 +350,7 @@ func (m *Manager) RemoveForWorkspaceAccount(workspaceID, accountID string) int {
 		if sess.WorkspaceID != workspaceID || sess.AccountID != accountID {
 			continue
 		}
-		sess.Driver.Close()
+		sess.close()
 		key := sess.AccountID + ":" + sess.ConnectionID
 		delete(m.byKey, key)
 		delete(m.byID, id)
@@ -291,7 +370,7 @@ func (m *Manager) RemoveForOrgAccount(orgID, accountID string) int {
 		if sess.OrgID != orgID || sess.AccountID != accountID {
 			continue
 		}
-		sess.Driver.Close()
+		sess.close()
 		key := sess.AccountID + ":" + sess.ConnectionID
 		delete(m.byKey, key)
 		delete(m.byID, id)
@@ -311,7 +390,7 @@ func (m *Manager) Close() {
 	defer m.mu.Unlock()
 
 	for id, sess := range m.byID {
-		sess.Driver.Close()
+		sess.close()
 		key := sess.AccountID + ":" + sess.ConnectionID
 		delete(m.byKey, key)
 		delete(m.byID, id)
@@ -338,10 +417,15 @@ func (m *Manager) reapIdle() {
 	now := time.Now()
 	for id, sess := range m.byID {
 		if now.Sub(sess.lastUsed) > m.idleTimeout {
-			sess.Driver.Close()
+			sess.close()
 			key := sess.AccountID + ":" + sess.ConnectionID
 			delete(m.byKey, key)
 			delete(m.byID, id)
 		}
 	}
+}
+
+func (s *Session) close() {
+	s.CloseAllCursors()
+	_ = s.Driver.Close()
 }
