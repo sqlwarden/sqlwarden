@@ -138,21 +138,23 @@ function SchemaMessage({ children }: { children: React.ReactNode }) {
 }
 
 function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: DbNamespace; forceOpen: boolean }) {
-  const [open, setOpen] = useState(false)
-  const expanded = forceOpen || open
+  // null = follow the filter default; an explicit toggle (true/false) wins so the
+  // user can still collapse/expand while a filter auto-expands the tree.
+  const [open, setOpen] = useState<boolean | null>(null)
+  const expanded = open ?? forceOpen
   const groups = (namespace.object_groups ?? []).filter((g) => (g.objects ?? []).length > 0)
 
   return (
     <div>
-      <TreeRow depth={0} typeIcon="database" chevron={expanded} bold label={namespace.name} onClick={() => setOpen((v) => !v)} />
+      <TreeRow depth={0} typeIcon="database" chevron={expanded} bold label={namespace.name} onClick={() => setOpen(!expanded)} />
       {expanded && groups.map((g) => <SchemaGroupNode key={g.kind} group={g} namespace={namespace.name} baseDepth={1} forceOpen={forceOpen} />)}
     </div>
   )
 }
 
 function SchemaGroupNode({ group, namespace, baseDepth, forceOpen }: { group: DbObjectGroup; namespace: string; baseDepth: number; forceOpen: boolean }) {
-  const [open, setOpen] = useState(false)
-  const expanded = forceOpen || open
+  const [open, setOpen] = useState<boolean | null>(null)
+  const expanded = open ?? forceOpen
   const objects = group.objects ?? []
   const icon = kindIcon(group.kind)
 
@@ -163,7 +165,7 @@ function SchemaGroupNode({ group, namespace, baseDepth, forceOpen }: { group: Db
         typeIcon={expanded ? 'folder-open' : 'folder'}
         chevron={expanded}
         label={`${group.label} (${objects.length})`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(!expanded)}
       />
       {expanded &&
         objects.map((o) => (
@@ -186,11 +188,11 @@ function SchemaObjectNode({
   depth: number
   forceOpen: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState<boolean | null>(null)
   const columns = object.columns ?? []
   const indexes = object.indexes ?? []
   const hasChildren = columns.length > 0 || indexes.length > 0
-  const expanded = hasChildren && (forceOpen || open)
+  const expanded = hasChildren && (open ?? forceOpen)
   const pk = new Set(object.primary_key ?? [])
   const fk = new Set((object.foreign_keys ?? []).flatMap((f) => f.columns))
   const insertable = useObjectInsert(namespace, object.name)
@@ -204,7 +206,7 @@ function SchemaObjectNode({
         leaf={!hasChildren}
         label={object.name}
         insertable={insertable}
-        onClick={() => hasChildren && setOpen((v) => !v)}
+        onClick={() => hasChildren && setOpen(!expanded)}
       />
       {expanded && (
         <>
