@@ -10,6 +10,7 @@ import { useIde, activeTabId as selectActiveTabId, type QueryResult } from './us
 import { useContextMenuOpener } from '#/components/ui/context-menu'
 import { copyWithToast, rowToTsv, rowToJson, valuesToLines } from './contextMenus/clipboard'
 import { buildCellMenu, buildRowMenu, buildColumnHeaderMenu } from './contextMenus/resultMenu'
+import { nextCell } from './resultGridNav'
 
 export function ResultsArea() {
   const maximizedPane = useIde((s) => s.maximizedPane)
@@ -241,18 +242,11 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
       return
     }
 
-    const { rowIdx, colIdx } = selection.anchor
-    let r = rowIdx, c = colIdx
-    switch (e.key) {
-      case 'ArrowUp': r = Math.max(0, rowIdx - 1); break
-      case 'ArrowDown': r = Math.min(rows.length - 1, rowIdx + 1); break
-      case 'ArrowLeft': c = Math.max(0, colIdx - 1); break
-      case 'ArrowRight': c = Math.min(columns.length - 1, colIdx + 1); break
-      default: return
-    }
+    const target = nextCell(e.key, selection.anchor, rows.length, columns.length)
+    if (!target) return
     e.preventDefault()
-    if (r !== rowIdx || c !== colIdx) {
-      setSelection({ anchor: { rowIdx: r, colIdx: c }, active: { rowIdx: r, colIdx: c } })
+    if (target.rowIdx !== selection.anchor.rowIdx || target.colIdx !== selection.anchor.colIdx) {
+      setSelection({ anchor: target, active: target })
     }
   }
 
