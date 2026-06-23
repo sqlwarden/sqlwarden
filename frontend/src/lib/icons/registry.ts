@@ -29,6 +29,7 @@ export type AppIcon =
   | 'refresh'
   | 'delete-01'
   | 'delete-02'
+  | 'download-01'
   | 'file-01'
   | 'floppy-disk'
   | 'flow-connection'

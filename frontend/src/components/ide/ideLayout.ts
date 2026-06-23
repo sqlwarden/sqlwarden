@@ -207,14 +207,18 @@ export function splitGroup(
   return { node: normalize(transform(node)), newGroupId }
 }
 
-/** Duplicate tabId into a new group at the far left/right of the root row (edge drop). */
-export function splitToEdge(
+/**
+ * Place tabId into a brand-new group at the far left/right edge of the root row,
+ * whether or not the tab already lives in another group. When the root already runs
+ * as a row the new group is appended/prepended; otherwise the whole tree is wrapped
+ * in a row beside the new group.
+ */
+export function placeTabAtEdge(
   node: LayoutNode,
   tabId: string,
   side: 'left' | 'right',
   newGroupId: string,
 ): { node: LayoutNode; newGroupId: string } {
-  if (!findGroupOfTab(node, tabId)) return { node, newGroupId }
   const newGroup = createGroup(newGroupId, [tabId], tabId)
   if (node.type === 'split' && node.orientation === 'row') {
     return {
@@ -231,6 +235,17 @@ export function splitToEdge(
     },
     newGroupId,
   }
+}
+
+/** Duplicate tabId into a new group at the far left/right of the root row (edge drop). */
+export function splitToEdge(
+  node: LayoutNode,
+  tabId: string,
+  side: 'left' | 'right',
+  newGroupId: string,
+): { node: LayoutNode; newGroupId: string } {
+  if (!findGroupOfTab(node, tabId)) return { node, newGroupId }
+  return placeTabAtEdge(node, tabId, side, newGroupId)
 }
 
 /** Build a default single-group layout for a workspace (used by migration). */

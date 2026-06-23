@@ -31,6 +31,7 @@ const icons: Record<AppIcon, string> = {
   'refresh': 'lucide:refresh-cw',
   'delete-01': 'lucide:trash',
   'delete-02': 'lucide:trash-2',
+  'download-01': 'lucide:download',
   'file-01': 'lucide:file',
   'floppy-disk': 'lucide:save',
   'flow-connection': 'lucide:workflow',

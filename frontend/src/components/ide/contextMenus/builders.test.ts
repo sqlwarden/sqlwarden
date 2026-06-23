@@ -41,9 +41,9 @@ describe('buildConnectionMenu', () => {
     expect(action(items, 'connect')).toBeUndefined()
     expect(action(items, 'refresh-schema')?.disabled).toBeFalsy()
   })
-  it('keeps copy-connection-string as soon', () => {
+  it('keeps edit-connection as soon', () => {
     const items = buildConnectionMenu({ ...base, isConnected: true })
-    expect(action(items, 'copy-connection-string')?.soon).toBe(true)
+    expect(action(items, 'edit-connection')?.soon).toBe(true)
   })
 })
 

@@ -13,6 +13,7 @@ import {
   moveTabBetweenGroups,
   splitGroup,
   splitToEdge,
+  placeTabAtEdge,
   removeTabFromGroup,
   migrateToLayout,
   tabsToClose,
@@ -166,6 +167,24 @@ describe('splitToEdge', () => {
     const { node } = splitToEdge(tree, 'a', 'left', 'g2')
     expect((node as SplitNode).orientation).toBe('row')
     expect((node as SplitNode).children.map((c) => (c as GroupNode).id)).toEqual(['g2', 'g1'])
+  })
+})
+
+describe('placeTabAtEdge', () => {
+  it('creates a new edge group for a tab that is not yet in the tree (open to the side)', () => {
+    const tree = createGroup('g1', ['a', 'b'], 'a')
+    const { node, newGroupId } = placeTabAtEdge(tree, 'c', 'right', 'g2')
+    const split = node as SplitNode
+    expect(split.orientation).toBe('row')
+    expect(split.children.map((c) => (c as GroupNode).id)).toEqual(['g1', 'g2'])
+    expect(findGroup(node, 'g1')!.tabIds).toEqual(['a', 'b'])
+    expect(findGroup(node, 'g2')!.tabIds).toEqual(['c'])
+    expect(newGroupId).toBe('g2')
+  })
+  it('appends to the existing root row rather than nesting', () => {
+    const tree = row([createGroup('g1', ['a'], 'a'), createGroup('g2', ['b'], 'b')])
+    const { node } = placeTabAtEdge(tree, 'c', 'right', 'g3')
+    expect((node as SplitNode).children.map((c) => (c as GroupNode).id)).toEqual(['g1', 'g2', 'g3'])
   })
 })
 

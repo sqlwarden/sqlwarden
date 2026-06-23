@@ -12,12 +12,7 @@ export function buildColumnMenu(ctx: ColumnMenuCtx): ContextMenuItem[] {
     { kind: 'action', id: 'copy-qualified-name', label: 'Copy qualified name', icon: 'copy-01', onSelect: ctx.onCopyQualifiedName },
     { kind: 'action', id: 'copy-type', label: 'Copy type', icon: 'copy-01', onSelect: ctx.onCopyType },
     { kind: 'separator' },
-    { kind: 'action', id: 'add-to-select', label: 'Add to SELECT', soon: true },
-    { kind: 'action', id: 'add-to-where', label: 'Add to WHERE', soon: true },
-    { kind: 'action', id: 'filter-by-column', label: 'Filter results by this column', soon: true },
-    { kind: 'separator' },
     { kind: 'action', id: 'rename', label: 'Rename', icon: 'pencil-edit-02', soon: true },
-    { kind: 'action', id: 'toggle-not-null', label: 'Set / Drop NOT NULL', soon: true },
     { kind: 'action', id: 'drop-column', label: 'Drop column', icon: 'delete-01', soon: true },
   ]
 }

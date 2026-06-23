@@ -11,6 +11,8 @@ type FileContextMenuProps = {
   nodeName?: string
   className?: string
   onOpen?: () => void
+  onOpenToSide?: () => void
+  onSaveAs?: () => void
   onCreateFile?: (parentId: number | null) => void
   onCreateFolder?: (parentId: number | null) => void
   onDelete?: () => void
@@ -24,6 +26,8 @@ export function FileContextMenu({
   nodeName,
   className,
   onOpen,
+  onOpenToSide,
+  onSaveAs,
   onCreateFile,
   onCreateFolder,
   onDelete,
@@ -37,7 +41,9 @@ export function FileContextMenu({
       ? buildFileMenu({
           name,
           onOpen: () => onOpen?.(),
+          onOpenToSide: () => onOpenToSide?.(),
           onCopyName: () => copyWithToast(name),
+          onSaveAs: () => onSaveAs?.(),
           onDelete,
         })
       : kind === 'folder'

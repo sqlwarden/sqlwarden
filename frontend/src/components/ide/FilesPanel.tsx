@@ -10,11 +10,13 @@ import {
 } from '#/lib/api/query'
 import type { Workspace, WorkspaceFile, WorkspaceFileBrowserResult } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
+import { toast } from 'sonner'
 import { useIde, activeTabId as selectActiveTabId, newFileTab } from './useIdeStore'
-import { deletePrivateWorkspaceFile } from '#/lib/api/files'
+import { deletePrivateWorkspaceFile, getPrivateWorkspaceFileContent } from '#/lib/api/files'
 import { SidebarPane } from './SidebarPane'
 import { FileContextMenu } from './FileContextMenu'
 import { CreateItemDialog } from './CreateItemDialog'
+import { saveTextAs } from './saveFile'
 
 type FilesPanelProps = {
   orgSlug: string
@@ -121,6 +123,7 @@ function FilesSection({
   onCreateFolder?: ((parentId: number | null) => void) | undefined
 }) {
   const openTab = useIde((s) => s.openTab)
+  const openTabToSide = useIde((s) => s.openTabToSide)
   const closeTab = useIde((s) => s.closeTab)
   // Hint the file open in the active tab.
   const activeFileId = useIde((s) => {
@@ -156,6 +159,19 @@ function FilesSection({
     openTab(newFileTab(file, workspace))
   }
 
+  function handleOpenToSide(file: WorkspaceFile) {
+    openTabToSide(newFileTab(file, workspace))
+  }
+
+  async function handleSaveAs(file: WorkspaceFile) {
+    try {
+      const { text } = await getPrivateWorkspaceFileContent(orgSlug, workspace.id, file.id)
+      saveTextAs(file.name, text)
+    } catch {
+      toast.error('Failed to save file.')
+    }
+  }
+
   function handleRefresh() {
     const key =
       visibility === 'private'
@@ -186,6 +202,8 @@ function FilesSection({
               depth={0}
               activeFileId={activeFileId}
               onOpenFile={handleOpenFile}
+              onOpenToSide={handleOpenToSide}
+              onSaveAs={handleSaveAs}
               onCreateFile={onCreateFile}
               onCreateFolder={onCreateFolder}
               onDelete={visibility === 'private' ? (id) => deleteMutation.mutate(id) : undefined}
@@ -197,6 +215,8 @@ function FilesSection({
               nodeId={file.id}
               nodeName={file.name}
               onOpen={() => handleOpenFile(file)}
+              onOpenToSide={() => handleOpenToSide(file)}
+              onSaveAs={() => handleSaveAs(file)}
               onDelete={visibility === 'private' ? () => deleteMutation.mutate(file.id) : undefined}
             >
               <FileTreeFile file={file} depth={0} active={file.id === activeFileId} onOpen={handleOpenFile} />
@@ -241,6 +261,8 @@ function FileTreeFolder({
   depth,
   activeFileId,
   onOpenFile,
+  onOpenToSide,
+  onSaveAs,
   onCreateFile,
   onCreateFolder,
   onDelete,
@@ -252,6 +274,8 @@ function FileTreeFolder({
   depth: number
   activeFileId?: number | undefined
   onOpenFile: (file: WorkspaceFile) => void
+  onOpenToSide: (file: WorkspaceFile) => void
+  onSaveAs: (file: WorkspaceFile) => void
   onCreateFile?: ((parentId: number | null) => void) | undefined
   onCreateFolder?: ((parentId: number | null) => void) | undefined
   onDelete?: ((nodeId: number) => void) | undefined
@@ -326,6 +350,8 @@ function FileTreeFolder({
               depth={depth + 1}
               activeFileId={activeFileId}
               onOpenFile={onOpenFile}
+              onOpenToSide={onOpenToSide}
+              onSaveAs={onSaveAs}
               onCreateFile={onCreateFile}
               onCreateFolder={onCreateFolder}
               onDelete={onDelete}
@@ -337,6 +363,8 @@ function FileTreeFolder({
               nodeId={child.id}
               nodeName={child.name}
               onOpen={() => onOpenFile(child)}
+              onOpenToSide={() => onOpenToSide(child)}
+              onSaveAs={() => onSaveAs(child)}
               onDelete={onDelete ? () => onDelete(child.id) : undefined}
             >
               <FileTreeFile file={child} depth={depth + 1} active={child.id === activeFileId} onOpen={onOpenFile} />

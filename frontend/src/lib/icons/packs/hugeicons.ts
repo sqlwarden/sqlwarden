@@ -31,6 +31,7 @@ const icons: Record<AppIcon, string> = {
   'refresh': 'hugeicons:refresh',
   'delete-01': 'hugeicons:delete-01',
   'delete-02': 'hugeicons:delete-02',
+  'download-01': 'hugeicons:download-01',
   'file-01': 'hugeicons:file-01',
   'floppy-disk': 'hugeicons:floppy-disk',
   'flow-connection': 'hugeicons:flow-connection',
