@@ -69,7 +69,7 @@ func (s *Session) Execute(ctx context.Context, sql string, args ...any) (*result
 }
 
 func (s *Session) StartQueryCursor(ctx context.Context, sql string, args ...any) (*QueryCursorHandle, error) {
-	cursorDriver, ok := s.Driver.(driver.QuerySessionDriver)
+	cursorDriver, ok := s.Driver.(driver.QueryCursorDriver)
 	if !ok {
 		return nil, ErrQueryCursorsUnsupported
 	}
