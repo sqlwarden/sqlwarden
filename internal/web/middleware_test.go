@@ -2,6 +2,8 @@ package web
 
 import (
 	"bytes"
+	"compress/gzip"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -53,6 +55,39 @@ func TestNoStoreCache(t *testing.T) {
 		assert.Equal(t, res.StatusCode, http.StatusGone)
 		assert.Equal(t, res.Header.Get("Cache-Control"), "no-store")
 	})
+}
+
+func TestRoutesCompressResponsesWhenRequested(t *testing.T) {
+	app := newTestApplication(t)
+	req := newTestRequest(t, http.MethodGet, "/api/setup/status", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.Header.Get("Content-Encoding"), "gzip")
+	assert.True(t, strings.Contains(res.Header.Get("Vary"), "Accept-Encoding"))
+
+	gz, err := gzip.NewReader(bytes.NewReader(res.BodyBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gz.Close()
+
+	body, err := io.ReadAll(gz)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.True(t, strings.Contains(string(body), "configured"))
+}
+
+func TestRoutesDoNotCompressWithoutAcceptEncoding(t *testing.T) {
+	app := newTestApplication(t)
+	req := newTestRequest(t, http.MethodGet, "/api/setup/status", nil)
+
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.Header.Get("Content-Encoding"), "")
+	assert.True(t, strings.Contains(string(res.BodyBytes), "configured"))
 }
 
 func TestLogAccess(t *testing.T) {

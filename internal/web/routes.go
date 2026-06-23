@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/sqlwarden/assets"
 	"github.com/sqlwarden/internal/access"
 )
@@ -19,6 +20,7 @@ func (app *application) routes() http.Handler {
 	mux.Use(app.requestLoggingContext)
 	mux.Use(app.logAccess)
 	mux.Use(app.recoverPanic)
+	mux.Use(middleware.Compress(5))
 
 	mux.With(app.noStoreCache).Post("/api/setup", app.setup)
 	mux.With(app.noStoreCache).Get("/api/setup/status", app.setupStatus)
