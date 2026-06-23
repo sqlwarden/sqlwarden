@@ -18,8 +18,10 @@ type Driver interface {
 
 // ConnectionConfig holds the configuration needed to open a driver connection.
 type ConnectionConfig struct {
-	DSN    string
-	Driver string
+	DSN            string
+	Driver         string
+	MaxResultRows  int
+	MaxResultBytes int64
 }
 
 // Dialect identifies the SQL dialect of a driver.

@@ -432,7 +432,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = d.Connect(ctx, driver.ConnectionConfig{DSN: input.DSN, Driver: input.Driver})
+	err = d.Connect(ctx, app.driverConnectionConfig(input.Driver, input.DSN))
 	if err != nil {
 		latency := time.Since(start).Milliseconds()
 		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "connect"), slog.String("error_category", connectionTestErrorCategory(err)))
@@ -513,7 +513,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		err = d.Connect(ctx, driver.ConnectionConfig{DSN: plainDSN, Driver: conn.Driver})
+		err = d.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN))
 		if err != nil {
 			return nil, err
 		}
@@ -661,6 +661,15 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 	app.connManager.Remove(sessionID)
 	app.logInfo(r, "database session revoked", slog.Int64("workspace_id", ws.ID), slog.String("session_id", sessionID), slog.String("session_account_id", session.AccountID))
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) driverConnectionConfig(driverName, dsn string) driver.ConnectionConfig {
+	return driver.ConnectionConfig{
+		DSN:            dsn,
+		Driver:         driverName,
+		MaxResultRows:  app.config.Query.MaxResultRows,
+		MaxResultBytes: int64(app.config.Query.MaxResultBytes),
+	}
 }
 
 func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {

@@ -54,6 +54,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if !cfg.Sessions.RevocationEnabled {
 		t.Fatal("expected session revocation to default to enabled")
 	}
+	if cfg.Query.MaxResultRows != defaultQueryMaxResultRows || cfg.Query.MaxResultBytes != defaultQueryMaxResultBytes {
+		t.Fatalf("unexpected default query config: %+v", cfg.Query)
+	}
 	if cfg.Desktop.ActiveBackend != "local" {
 		t.Fatalf("desktop.active_backend = %q, want local", cfg.Desktop.ActiveBackend)
 	}
@@ -134,6 +137,9 @@ files:
   revisions:
     enabled: false
     keep_latest: 7
+query:
+  max_result_rows: 1234
+  max_result_bytes: 5678
 `)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
@@ -186,6 +192,9 @@ files:
 	if cfg.Files.StorageBackends["local"].RootDir != "/tmp/sqlwarden-files" {
 		t.Fatalf("unexpected local storage backend: %+v", cfg.Files.StorageBackends["local"])
 	}
+	if cfg.Query.MaxResultRows != 1234 || cfg.Query.MaxResultBytes != 5678 {
+		t.Fatalf("unexpected query config: %+v", cfg.Query)
+	}
 }
 
 func TestLoadConfigEnvOverridesFile(t *testing.T) {
@@ -196,6 +205,8 @@ func TestLoadConfigEnvOverridesFile(t *testing.T) {
 	t.Setenv("FILES_REVISIONS_ENABLED", "false")
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("LOG_FORMAT", "text")
+	t.Setenv("QUERY_MAX_RESULT_ROWS", "4321")
+	t.Setenv("QUERY_MAX_RESULT_BYTES", "8765")
 	t.Setenv("TLS_ENABLED", "true")
 	t.Setenv("TLS_CERT_FILE", "/env/tls.crt")
 	t.Setenv("TLS_KEY_FILE", "/env/tls.key")
@@ -237,6 +248,9 @@ db:
 	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/env/tls.crt" || cfg.TLS.KeyFile != "/env/tls.key" {
 		t.Fatalf("unexpected tls config: %+v", cfg.TLS)
 	}
+	if cfg.Query.MaxResultRows != 4321 || cfg.Query.MaxResultBytes != 8765 {
+		t.Fatalf("unexpected query config: %+v", cfg.Query)
+	}
 }
 
 func TestLoadConfigFlagsOverrideEnvAndFile(t *testing.T) {
@@ -269,6 +283,8 @@ db:
 		"--files-root-dir", "/flag/sqlwarden-files",
 		"--files-revisions-enabled=false",
 		"--files-revisions-keep-latest", "3",
+		"--query-max-result-rows", "222",
+		"--query-max-result-bytes", "333",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -304,6 +320,9 @@ db:
 	if cfg.Files.Revisions.KeepLatest != 3 {
 		t.Fatalf("files.revisions.keep_latest = %d, want 3", cfg.Files.Revisions.KeepLatest)
 	}
+	if cfg.Query.MaxResultRows != 222 || cfg.Query.MaxResultBytes != 333 {
+		t.Fatalf("unexpected query config: %+v", cfg.Query)
+	}
 }
 
 func TestLoadConfigRejectsInternalRuntimeFlags(t *testing.T) {
@@ -332,6 +351,16 @@ func TestLoadConfigRejectsUnsupportedFileConfiguration(t *testing.T) {
 	_, _, err = loadConfig([]string{"--files-revisions-keep-latest", "-1"})
 	if err == nil {
 		t.Fatal("expected negative revision retention to fail")
+	}
+
+	_, _, err = loadConfig([]string{"--query-max-result-rows", "0"})
+	if err == nil {
+		t.Fatal("expected zero max result rows to fail")
+	}
+
+	_, _, err = loadConfig([]string{"--query-max-result-bytes", "-1"})
+	if err == nil {
+		t.Fatal("expected negative max result bytes to fail")
 	}
 }
 

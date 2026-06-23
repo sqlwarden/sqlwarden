@@ -740,6 +740,57 @@ func TestExecuteQueryExecuteBranch(t *testing.T) {
 	assert.Equal(t, execRes.StatusCode, http.StatusOK)
 }
 
+func TestExecuteQueryAppliesConfiguredResultLimit(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.config.Query.MaxResultRows = 2
+	app.config.Query.MaxResultBytes = 1024
+
+	_, tok, slug := registerAndLogin(t, app, "query-limit@example.com", "Query Limit", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Limit WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "LimitConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	queryURL := orgConnectionURL(slug, wsIDInt, envID, connID) + "/query"
+	for _, sql := range []string{
+		"CREATE TABLE t (id INTEGER)",
+		"INSERT INTO t (id) VALUES (1), (2), (3)",
+	} {
+		req := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": sql}, tok)
+		req.Header.Set("X-Warden-Session", sessionID)
+		res := send(t, req, app.routes())
+		assert.Equal(t, res.StatusCode, http.StatusOK)
+	}
+
+	selectReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT id FROM t ORDER BY id"}, tok)
+	selectReq.Header.Set("X-Warden-Session", sessionID)
+	selectRes := send(t, selectReq, app.routes())
+	assert.Equal(t, selectRes.StatusCode, http.StatusOK)
+	assert.Equal(t, selectRes.BodyFields["truncated"], true)
+	assert.Equal(t, selectRes.BodyFields["truncation_reason"], driver.TruncationReasonMaxRows)
+	if got := selectRes.BodyFields["rows_returned"]; got != float64(2) {
+		t.Fatalf("rows_returned = %v, want 2", got)
+	}
+	rows := selectRes.BodyFields["rows"].([]any)
+	assert.Equal(t, len(rows), 2)
+}
+
 func TestExecuteQueryRejectsSessionFromDifferentConnection(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

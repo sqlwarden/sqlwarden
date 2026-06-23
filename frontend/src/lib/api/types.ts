@@ -109,6 +109,10 @@ export interface ResultSet {
   columns: ResultColumn[] | null
   rows: ResultRow[] | null
   duration_ms: number
+  truncated: boolean
+  rows_returned: number
+  bytes_returned: number
+  truncation_reason?: string
 }
 
 export interface Connection {

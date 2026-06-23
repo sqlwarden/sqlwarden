@@ -454,7 +454,7 @@ func TestToValue(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.check(t, toValue(tc.input))
+			tc.check(t, driver.NormalizeValue(tc.input))
 		})
 	}
 }
