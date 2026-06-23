@@ -61,6 +61,18 @@ func (d *postgresDriver) Execute(ctx context.Context, query string, args ...any)
 	return driver.ScanRows(rows, d.scanOptions)
 }
 
+func (d *postgresDriver) StartQuery(ctx context.Context, req driver.QueryRequest) (driver.QueryCursor, error) {
+	rows, err := d.db.QueryContext(ctx, req.SQL, req.Args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: start query: %w", err)
+	}
+	cursor, err := driver.NewSQLRowsCursor(rows)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: start query cursor: %w", err)
+	}
+	return cursor, nil
+}
+
 func (d *postgresDriver) Dialect() driver.Dialect {
 	return driver.DialectPostgres
 }

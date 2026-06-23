@@ -81,6 +81,92 @@ func TestScanRowsFirstRowCanExceedMaxBytes(t *testing.T) {
 	}
 }
 
+func TestSQLRowsCursorFetchesPages(t *testing.T) {
+	db := openScanTestDB(t)
+	mustExecScanTest(t, db, "CREATE TABLE t (id INTEGER)")
+	mustExecScanTest(t, db, "INSERT INTO t (id) VALUES (1), (2), (3)")
+
+	rows, err := db.QueryContext(context.Background(), "SELECT id FROM t ORDER BY id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := NewSQLRowsCursor(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, state, err := cursor.Fetch(context.Background(), ScanOptions{MaxRows: 2, MaxBytes: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Exhausted || state.RowsReturned != 2 || first.RowsReturned != 2 {
+		t.Fatalf("first fetch state=%+v result=%+v, want 2 non-exhausted rows", state, first)
+	}
+	if first.Truncated {
+		t.Fatal("cursor page should not mark normal page boundaries as truncated")
+	}
+
+	second, state, err := cursor.Fetch(context.Background(), ScanOptions{MaxRows: 2, MaxBytes: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.Exhausted || state.RowsReturned != 1 || second.RowsReturned != 1 {
+		t.Fatalf("second fetch state=%+v result=%+v, want 1 exhausted row", state, second)
+	}
+}
+
+func TestSQLRowsCursorRejectsFetchAfterClose(t *testing.T) {
+	db := openScanTestDB(t)
+	mustExecScanTest(t, db, "CREATE TABLE t (id INTEGER)")
+	mustExecScanTest(t, db, "INSERT INTO t (id) VALUES (1)")
+
+	rows, err := db.QueryContext(context.Background(), "SELECT id FROM t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := NewSQLRowsCursor(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = cursor.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, state, err := cursor.Fetch(context.Background(), ScanOptions{MaxRows: 1, MaxBytes: 1024})
+	if err != ErrCursorClosed {
+		t.Fatalf("fetch after close err = %v, want ErrCursorClosed", err)
+	}
+	if !state.Exhausted {
+		t.Fatal("closed cursor should report exhausted state")
+	}
+}
+
+func TestSQLRowsCursorTruncatesPageByMaxBytes(t *testing.T) {
+	db := openScanTestDB(t)
+	mustExecScanTest(t, db, "CREATE TABLE t (name TEXT)")
+	mustExecScanTest(t, db, "INSERT INTO t (name) VALUES ('small'), ('"+strings.Repeat("x", 100)+"')")
+
+	rows, err := db.QueryContext(context.Background(), "SELECT name FROM t ORDER BY rowid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := NewSQLRowsCursor(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rs, state, err := cursor.Fetch(context.Background(), ScanOptions{MaxRows: 10, MaxBytes: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Exhausted {
+		t.Fatal("byte-truncated cursor page should not report exhausted")
+	}
+	if !rs.Truncated || rs.TruncationReason != TruncationReasonMaxBytes || rs.RowsReturned != 1 {
+		t.Fatalf("result = %+v, want byte-truncated one-row page", rs)
+	}
+}
+
 func openScanTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 

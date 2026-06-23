@@ -66,6 +66,18 @@ func (d *sqliteDriver) Execute(ctx context.Context, query string, args ...any) (
 	return driver.ScanRows(rows, d.scanOptions)
 }
 
+func (d *sqliteDriver) StartQuery(ctx context.Context, req driver.QueryRequest) (driver.QueryCursor, error) {
+	rows, err := d.db.QueryContext(ctx, req.SQL, req.Args...)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: start query: %w", err)
+	}
+	cursor, err := driver.NewSQLRowsCursor(rows)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: start query cursor: %w", err)
+	}
+	return cursor, nil
+}
+
 func (d *sqliteDriver) Dialect() driver.Dialect {
 	return driver.DialectSQLite
 }

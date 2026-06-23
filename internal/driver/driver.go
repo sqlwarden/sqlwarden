@@ -16,6 +16,27 @@ type Driver interface {
 	Dialect() Dialect
 }
 
+type QueryRequest struct {
+	SQL  string
+	Args []any
+}
+
+type QueryCursorState struct {
+	Exhausted     bool
+	RowsReturned  int
+	BytesReturned int64
+}
+
+type QueryCursor interface {
+	Columns() []result.Column
+	Fetch(ctx context.Context, opts ScanOptions) (*result.ResultSet, QueryCursorState, error)
+	Close() error
+}
+
+type QuerySessionDriver interface {
+	StartQuery(ctx context.Context, req QueryRequest) (QueryCursor, error)
+}
+
 // ConnectionConfig holds the configuration needed to open a driver connection.
 type ConnectionConfig struct {
 	DSN            string
