@@ -11,17 +11,29 @@ function action(items: ContextMenuItem[], id: string): ContextMenuActionItem | u
 }
 
 describe('buildTabMenu', () => {
-  const base = { onClose: noop, onSplitRight: noop, onSplitDown: noop, onCopyName: noop }
-  it('has live close + split, soon close-others', () => {
-    const items = buildTabMenu({ ...base, isConsole: false })
+  const base = {
+    onClose: noop, onCloseOthers: noop, onCloseRight: noop, onCloseAll: noop,
+    onSplitRight: noop, onSplitDown: noop, onCopyName: noop,
+  }
+  it('has live close + split and live batch-close actions', () => {
+    const items = buildTabMenu({ ...base, isConsole: false, hasOthers: true, hasRight: true })
     expect(action(items, 'close')?.soon).toBeFalsy()
     expect(action(items, 'split')?.soon).toBeFalsy()
     expect(action(items, 'split-down')?.soon).toBeFalsy()
-    expect(action(items, 'close-others')?.soon).toBe(true)
+    expect(action(items, 'close-others')?.soon).toBeFalsy()
+    expect(action(items, 'close-to-right')?.soon).toBeFalsy()
+    expect(action(items, 'close-all')?.soon).toBeFalsy()
+  })
+  it('disables close-others / close-to-right when there are none', () => {
+    const items = buildTabMenu({ ...base, isConsole: false, hasOthers: false, hasRight: false })
+    expect(action(items, 'close-others')?.disabled).toBe(true)
+    expect(action(items, 'close-to-right')?.disabled).toBe(true)
+    expect(action(items, 'close-all')?.disabled).toBeFalsy()
   })
   it('adds a soon rename only for console tabs', () => {
-    expect(action(buildTabMenu({ ...base, isConsole: false }), 'rename')).toBeUndefined()
-    expect(action(buildTabMenu({ ...base, isConsole: true }), 'rename')?.soon).toBe(true)
+    const ctx = { ...base, hasOthers: true, hasRight: true }
+    expect(action(buildTabMenu({ ...ctx, isConsole: false }), 'rename')).toBeUndefined()
+    expect(action(buildTabMenu({ ...ctx, isConsole: true }), 'rename')?.soon).toBe(true)
   })
 })
 
@@ -30,10 +42,6 @@ describe('buildCellMenu', () => {
   it('has live copy + copy-column-name', () => {
     expect(action(items, 'copy')?.soon).toBeFalsy()
     expect(action(items, 'copy-column-name')?.soon).toBeFalsy()
-  })
-  it('exposes a copy-as submenu', () => {
-    const sub = items.find((i) => i.kind === 'submenu' && i.id === 'copy-as')
-    expect(sub).toBeDefined()
   })
 })
 

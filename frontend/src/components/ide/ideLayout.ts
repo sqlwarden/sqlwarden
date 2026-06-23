@@ -237,3 +237,20 @@ export function splitToEdge(
 export function migrateToLayout(groupId: string, tabIds: string[], activeTabId?: string): LayoutNode {
   return createGroup(groupId, tabIds, activeTabId)
 }
+
+export type TabCloseScope = 'others' | 'right' | 'all'
+
+/** Tab ids a "Close others / to the right / all" action should close, relative
+ *  to `targetId` within the ordered `tabIds` of one group. */
+export function tabsToClose(scope: TabCloseScope, tabIds: string[], targetId: string): string[] {
+  switch (scope) {
+    case 'others':
+      return tabIds.filter((id) => id !== targetId)
+    case 'all':
+      return [...tabIds]
+    case 'right': {
+      const i = tabIds.indexOf(targetId)
+      return i === -1 ? [] : tabIds.slice(i + 1)
+    }
+  }
+}

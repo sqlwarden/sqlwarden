@@ -15,7 +15,7 @@ import { buildTabMenu } from './contextMenus/tabMenu'
 import type { Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, DEFAULT_CONSOLE_CONTENT, type EditorTab, type TabKind } from './useIdeStore'
-import { allGroups, type GroupNode, type SplitDirection } from './ideLayout'
+import { allGroups, tabsToClose, type GroupNode, type SplitDirection } from './ideLayout'
 import { DriverBadge } from './DriverBadge'
 
 type IdeTabBarProps = {
@@ -111,6 +111,15 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
     }
   }
 
+  // Batch close routes each tab through the same guard; tabs that need
+  // confirmation stay open (one dialog at a time) rather than closing silently.
+  function handleCloseMany(ids: string[]) {
+    for (const id of ids) {
+      const tab = tabs.find((t) => t.id === id)
+      if (tab) handleCloseRequest(tab)
+    }
+  }
+
   // Dropping anywhere in this group's tab bar (empty area included) moves the
   // dragged tab into this group at the end — a forgiving, full-width drop zone.
   function handleBarDragOver(e: DragEvent<HTMLDivElement>) {
@@ -144,8 +153,10 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
               active={tab.id === activeTabId}
               focused={focused}
               isRunning={!!runningTabs[tab.id]}
+              tabIds={group.tabIds}
               onActivate={() => setActiveTab(group.id, tab.id)}
               onClose={() => handleCloseRequest(tab)}
+              onCloseMany={handleCloseMany}
               onSplit={(direction) => splitActiveTab(workspace.id, group.id, tab.id, direction)}
               onDragStart={() => { setActiveTab(group.id, tab.id); setDraggingTab({ tabId: tab.id, fromGroupId: group.id }) }}
               onDragOverReorder={(position) => {
@@ -226,31 +237,42 @@ function ScrollChevron({ direction, onClick }: { direction: 'left' | 'right'; on
 
 function TabItem({
   tab,
+  tabIds,
   active,
   focused,
   isRunning,
   onActivate,
   onClose,
+  onCloseMany,
   onSplit,
   onDragStart,
   onDragOverReorder,
   onDragEnd,
 }: {
   tab: EditorTab
+  tabIds: string[]
   active: boolean
   focused: boolean
   isRunning: boolean
   onActivate: () => void
   onClose: () => void
+  onCloseMany: (ids: string[]) => void
   onSplit: (direction: SplitDirection) => void
   onDragStart: () => void
   onDragOverReorder: (position: 'before' | 'after') => void
   onDragEnd: () => void
 }) {
   const icon = TAB_ICONS[tab.kind]
+  const others = tabsToClose('others', tabIds, tab.id)
+  const right = tabsToClose('right', tabIds, tab.id)
   const menuItems = buildTabMenu({
     isConsole: tab.kind === 'scratch',
+    hasOthers: others.length > 0,
+    hasRight: right.length > 0,
     onClose,
+    onCloseOthers: () => onCloseMany(others),
+    onCloseRight: () => onCloseMany(right),
+    onCloseAll: () => onCloseMany(tabsToClose('all', tabIds, tab.id)),
     onSplitRight: () => onSplit('right'),
     onSplitDown: () => onSplit('down'),
     onCopyName: () => copyWithToast(tab.title),

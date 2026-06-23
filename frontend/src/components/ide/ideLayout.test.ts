@@ -15,6 +15,7 @@ import {
   splitToEdge,
   removeTabFromGroup,
   migrateToLayout,
+  tabsToClose,
   type GroupNode,
   type LayoutNode,
   type SplitNode,
@@ -184,5 +185,26 @@ describe('removeTabFromGroup', () => {
 describe('migrateToLayout', () => {
   it('builds a single group from a workspace tab list + active tab', () => {
     expect(migrateToLayout('g1', ['a', 'b', 'c'], 'b')).toEqual(createGroup('g1', ['a', 'b', 'c'], 'b'))
+  })
+})
+
+describe('tabsToClose', () => {
+  const ids = ['a', 'b', 'c', 'd']
+
+  it('others returns every tab except the target', () => {
+    expect(tabsToClose('others', ids, 'b')).toEqual(['a', 'c', 'd'])
+  })
+
+  it('right returns tabs after the target in order', () => {
+    expect(tabsToClose('right', ids, 'b')).toEqual(['c', 'd'])
+    expect(tabsToClose('right', ids, 'd')).toEqual([])
+  })
+
+  it('all returns every tab', () => {
+    expect(tabsToClose('all', ids, 'b')).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  it('right is empty when the target is absent', () => {
+    expect(tabsToClose('right', ids, 'z')).toEqual([])
   })
 })

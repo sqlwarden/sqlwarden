@@ -13,8 +13,6 @@ export function buildObjectMenu(ctx: ObjectMenuCtx): ContextMenuItem[] {
     { kind: 'action', id: 'copy-qualified-name', label: 'Copy qualified name', icon: 'copy-01', onSelect: ctx.onCopyQualifiedName },
     { kind: 'action', id: 'copy-column-list', label: 'Copy column list', icon: 'copy-01', onSelect: ctx.onCopyColumnList },
     { kind: 'separator' },
-    { kind: 'action', id: 'select-top-100', label: 'Select top 100', icon: 'play', soon: true },
-    { kind: 'action', id: 'generate-select', label: 'Generate SELECT *', soon: true },
     { kind: 'action', id: 'generate-insert-update', label: 'Generate INSERT / UPDATE…', soon: true },
     { kind: 'action', id: 'view-ddl', label: 'View DDL', soon: true },
     { kind: 'separator' },

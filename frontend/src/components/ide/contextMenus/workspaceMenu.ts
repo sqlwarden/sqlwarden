@@ -14,6 +14,5 @@ export function buildWorkspaceMenu(ctx: WorkspaceMenuCtx): ContextMenuItem[] {
     { kind: 'separator' },
     { kind: 'action', id: 'workspace-settings', label: 'Workspace settings', icon: 'settings-02', soon: true },
     { kind: 'action', id: 'manage-members', label: 'Manage members', soon: true },
-    { kind: 'action', id: 'refresh-all', label: 'Refresh all', icon: 'refresh', soon: true },
   ]
 }
