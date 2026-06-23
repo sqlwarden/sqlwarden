@@ -55,12 +55,6 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   const clearSession = useIde((s) => s.clearSession)
   const syncSessions = useIde((s) => s.syncSessions)
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
-  const collapseAllNodes = useIde((s) => s.collapseAllNodes)
-  const setNodeExpanded = useIde((s) => s.setNodeExpanded)
-  const activeConnId = useIde((s) => {
-    const id = selectActiveTabId(s, workspace.id)
-    return s.tabs.find((t) => t.id === id)?.connectionId
-  })
   const queryClient = useQueryClient()
 
   const [filter, setFilter] = useState('')
@@ -204,52 +198,17 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
     void createEnvironment.mutateAsync().catch(() => {})
   }
 
-  function handleRevealActive() {
-    if (activeConnId === undefined) return
-    const conn = connItems.find((c) => c.id === activeConnId)
-    if (conn) setNodeExpanded(`env:${conn.environment_id}`, true)
-    setNodeExpanded(`conn:${activeConnId}`, true)
-    requestAnimationFrame(() => {
-      document.querySelector(`[data-conn-id="${activeConnId}"]`)?.scrollIntoView({ block: 'nearest' })
-    })
-  }
-
-  const actions = (
-    <>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Reveal active connection"
-        title="Reveal active connection"
-        disabled={activeConnId === undefined}
-        onClick={handleRevealActive}
-      >
-        <Icon name="target" size={14} />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Collapse all"
-        title="Collapse all"
-        onClick={() => collapseAllNodes()}
-      >
-        <Icon name="arrow-shrink" size={14} />
-      </Button>
-      {canCreateEnvironment && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="New Environment"
-          onClick={() => setAddEnvOpen(true)}
-        >
-          <Icon name="plus-sign" size={14} />
-        </Button>
-      )}
-    </>
-  )
+  const actions = canCreateEnvironment ? (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      aria-label="New Environment"
+      onClick={() => setAddEnvOpen(true)}
+    >
+      <Icon name="plus-sign" size={14} />
+    </Button>
+  ) : undefined
 
   return (
     <>
@@ -547,7 +506,7 @@ function ConnectionRow({
   }
 
   return (
-    <div data-conn-id={connection.id}>
+    <div>
       <div
         onContextMenu={handleContextMenu}
         style={{ paddingLeft: connIndent }}
