@@ -33,7 +33,7 @@ type QueryCursor interface {
 	Close() error
 }
 
-type QuerySessionDriver interface {
+type QueryCursorDriver interface {
 	StartQuery(ctx context.Context, req QueryRequest) (QueryCursor, error)
 }
 
