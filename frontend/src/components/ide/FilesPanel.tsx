@@ -156,6 +156,14 @@ function FilesSection({
     openTab(newFileTab(file, workspace))
   }
 
+  function handleRefresh() {
+    const key =
+      visibility === 'private'
+        ? ['org-workspace-private-file-browser', orgSlug, workspace.id]
+        : ['org-workspace-shared-file-browser', orgSlug, workspace.id]
+    void queryClient.invalidateQueries({ queryKey: key })
+  }
+
   const children = data?.children ?? []
 
   const body = (
@@ -206,7 +214,21 @@ function FilesSection({
           {title}
         </div>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">{body}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
+        {visibility === 'private' && onCreateFile && onCreateFolder ? (
+          <FileContextMenu
+            kind="root"
+            className="min-h-full"
+            onCreateFile={onCreateFile}
+            onCreateFolder={onCreateFolder}
+            onRefresh={handleRefresh}
+          >
+            {body}
+          </FileContextMenu>
+        ) : (
+          body
+        )}
+      </div>
     </div>
   )
 }
