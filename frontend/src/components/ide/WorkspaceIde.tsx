@@ -19,6 +19,9 @@ import { visibleActivities } from './ideActivities'
 import type { Workspace } from '#/lib/api/types'
 import { useSession } from '#/hooks/use-session'
 import { cn } from '#/lib/utils'
+import { ContextMenu } from '#/components/ui/context-menu'
+import { copyWithToast } from './contextMenus/clipboard'
+import { buildWorkspaceMenu } from './contextMenus/workspaceMenu'
 import {
   createIdeStore,
   IdeStoreContext,
@@ -265,19 +268,38 @@ function WorkspaceTab({
   active: boolean
   onActivate: () => void
 }) {
+  const openConsole = useIde((s) => s.openConsole)
+  const setActiveWorkspace = useIde((s) => s.setActiveWorkspace)
+
+  function handleNewConsole() {
+    setActiveWorkspace(workspace.id)
+    const tmpDoc = new Y.Doc()
+    tmpDoc.getText('content').insert(0, DEFAULT_CONSOLE_CONTENT)
+    const yState = Array.from(Y.encodeStateAsUpdate(tmpDoc))
+    tmpDoc.destroy()
+    openConsole(workspace, yState)
+  }
+
+  const menuItems = buildWorkspaceMenu({
+    onNewConsole: handleNewConsole,
+    onCopyName: () => copyWithToast(workspace.name),
+  })
+
   return (
-    <button
-      type="button"
-      onClick={onActivate}
-      className={cn(
-        'flex h-full shrink-0 items-center border-b-2 px-4 text-xs font-medium transition-colors',
-        active
-          ? 'border-primary text-foreground'
-          : 'border-transparent text-muted-foreground hover:text-foreground',
-      )}
-    >
-      {workspace.name}
-    </button>
+    <ContextMenu items={menuItems} className="h-full shrink-0">
+      <button
+        type="button"
+        onClick={onActivate}
+        className={cn(
+          'flex h-full shrink-0 items-center border-b-2 px-4 text-xs font-medium transition-colors',
+          active
+            ? 'border-primary text-foreground'
+            : 'border-transparent text-muted-foreground hover:text-foreground',
+        )}
+      >
+        {workspace.name}
+      </button>
+    </ContextMenu>
   )
 }
 
