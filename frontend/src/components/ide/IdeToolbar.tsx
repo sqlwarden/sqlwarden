@@ -126,7 +126,17 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   }
 
   const handleRun = useCallback(async () => {
-    if (!activeTab || !activeConnection || isRunning) return
+    if (!activeTab || isRunning) return
+    // The Run button is disabled without a connection, so this guard only trips
+    // on the keyboard shortcut — tell the user why nothing happened.
+    if (!activeConnection) {
+      toast.warning(
+        hasConnections
+          ? 'Select a connection to run this query.'
+          : 'No connection available. Add a connection to run queries.',
+      )
+      return
+    }
 
     const view = viewRegistry.get(activeGroupId ? `${activeGroupId}:${activeTab.id}` : activeTab.id)
     let sql: string
@@ -199,7 +209,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       setTabController(activeTab.id, null)
       setTabRunning(activeTab.id, false)
     }
-  }, [activeTab, activeGroupId, activeConnection, isRunning, maximizedPane, sessions, orgSlug, workspace.id,
+  }, [activeTab, activeGroupId, activeConnection, hasConnections, isRunning, maximizedPane, sessions, orgSlug, workspace.id,
       registry, viewRegistry, abortControllers, setMaximizedPane, setQueryResult, setSession, setConnectionStatus,
       setTabController, setTabRunning])
 
