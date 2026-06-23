@@ -19,7 +19,7 @@ import { visibleActivities } from './ideActivities'
 import type { Workspace } from '#/lib/api/types'
 import { useSession } from '#/hooks/use-session'
 import { cn } from '#/lib/utils'
-import { ContextMenu } from '#/components/ui/context-menu'
+import { ContextMenu, ContextMenuProvider } from '#/components/ui/context-menu'
 import { copyWithToast } from './contextMenus/clipboard'
 import { buildWorkspaceMenu } from './contextMenus/workspaceMenu'
 import {
@@ -216,6 +216,7 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
     workspaces.find((w) => w.id === activeWorkspaceId) ?? workspaces[0]
 
   return (
+    <ContextMenuProvider>
     <div className="flex h-dvh min-h-0 w-dvw max-w-dvw flex-col overflow-hidden bg-background">
       {/* Top bar: brand + explorer toggle + workspace tabs + user controls */}
       <div className="flex h-10 shrink-0 items-stretch border-b border-border">
@@ -243,6 +244,7 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
         <WorkspaceIdeSurface orgSlug={orgSlug} workspace={activeWorkspace} />
       )}
     </div>
+    </ContextMenuProvider>
   )
 }
 

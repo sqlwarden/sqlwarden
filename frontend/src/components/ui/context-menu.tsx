@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { createContext, useCallback, useContext, useState } from 'react'
 import type { AppIcon } from '#/lib/icons'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
@@ -58,28 +58,28 @@ export function resolveMenuAction(item: ContextMenuActionItem): MenuActionOutcom
   return 'run'
 }
 
-function SoonBadge() {
-  return (
-    <span className="ml-auto rounded bg-muted px-1 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-      soon
-    </span>
-  )
-}
+export type OpenContextMenu = (items: ContextMenuItem[], e: React.MouseEvent) => void
 
-/** Headless context-menu controller. Attach `onContextMenu` to any element
- *  (including table cells where a wrapping div would be invalid) and render
- *  `menu` inside it; the menu portals out so its host element is irrelevant. */
-export function useContextMenu(items: ContextMenuItem[], contentClassName?: string) {
+const ContextMenuContext = createContext<OpenContextMenu | null>(null)
+const noopOpener: OpenContextMenu = () => {}
+
+/**
+ * Mounts a SINGLE menu + confirm dialog for the whole subtree. Every trigger
+ * (tree node, file, tab, grid cell, …) opens this one menu via the opener from
+ * `useContextMenuOpener`, instead of each mounting its own Base UI Menu.Root —
+ * which does not scale to large trees/result sets.
+ */
+export function ContextMenuProvider({ children }: { children: React.ReactNode }) {
+  const [target, setTarget] = useState<{ items: ContextMenuItem[]; x: number; y: number } | null>(null)
   const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState({ x: 0, y: 0 })
   const [confirmItem, setConfirmItem] = useState<ContextMenuActionItem | null>(null)
 
-  function onContextMenu(e: React.MouseEvent) {
+  const openContextMenu = useCallback<OpenContextMenu>((items, e) => {
     e.preventDefault()
     e.stopPropagation()
-    setPos({ x: e.clientX, y: e.clientY })
+    setTarget({ items, x: e.clientX, y: e.clientY })
     setOpen(true)
-  }
+  }, [])
 
   function selectAction(item: ContextMenuActionItem) {
     const outcome = resolveMenuAction(item)
@@ -89,18 +89,21 @@ export function useContextMenu(items: ContextMenuItem[], contentClassName?: stri
     else item.onSelect?.()
   }
 
-  const menu = (
-    <>
+  const items = target?.items ?? []
+
+  return (
+    <ContextMenuContext.Provider value={openContextMenu}>
+      {children}
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger
           nativeButton={false}
           render={
             <span
-              style={{ position: 'fixed', left: pos.x, top: pos.y, width: 0, height: 0, pointerEvents: 'none' }}
+              style={{ position: 'fixed', left: target?.x ?? 0, top: target?.y ?? 0, width: 0, height: 0, pointerEvents: 'none' }}
             />
           }
         />
-        <DropdownMenuContent align="start" side="bottom" sideOffset={2} className={cn('w-52', contentClassName)}>
+        <DropdownMenuContent align="start" side="bottom" sideOffset={2} className="w-52">
           {items.map((item, i) => renderItem(item, i, selectAction))}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -122,29 +125,42 @@ export function useContextMenu(items: ContextMenuItem[], contentClassName?: stri
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </ContextMenuContext.Provider>
   )
-
-  return { open, onContextMenu, menu }
 }
 
+/** The opener for the nearest ContextMenuProvider; a no-op when none is mounted. */
+export function useContextMenuOpener(): OpenContextMenu {
+  return useContext(ContextMenuContext) ?? noopOpener
+}
+
+/**
+ * Thin wrapper: attaches a right-click handler to a div that opens the shared
+ * provider menu with `items`. Does not mount its own menu, so it is cheap to
+ * render one per node.
+ */
 export function ContextMenu({
   items,
   children,
   className,
-  contentClassName,
 }: {
   items: ContextMenuItem[]
   children: React.ReactNode
   className?: string
-  contentClassName?: string
 }) {
-  const { open, onContextMenu, menu } = useContextMenu(items, contentClassName)
+  const open = useContextMenuOpener()
   return (
-    <div onContextMenu={onContextMenu} className={cn(open && 'bg-accent text-accent-foreground', className)}>
+    <div onContextMenu={(e) => open(items, e)} className={className}>
       {children}
-      {menu}
     </div>
+  )
+}
+
+function SoonBadge() {
+  return (
+    <span className="ml-auto rounded bg-muted px-1 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+      soon
+    </span>
   )
 }
 
