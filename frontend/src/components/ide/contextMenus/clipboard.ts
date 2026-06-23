@@ -34,3 +34,25 @@ export function columnList(names: string[]): string {
 export function qualifiedColumn(dialect: SqlDialect, table: string, column: string): string {
   return `${dialect.formatColumn(table)}.${dialect.formatColumn(column)}`
 }
+
+/** A single result row as tab-separated values. */
+export function rowToTsv(cells: string[]): string {
+  return cells.join('\t')
+}
+
+/** A result row as a pretty-printed JSON object keyed by column name. */
+export function rowToJson(columnNames: string[], cells: string[]): string {
+  const obj: Record<string, string> = {}
+  columnNames.forEach((name, i) => { obj[name] = cells[i] ?? '' })
+  return JSON.stringify(obj, null, 2)
+}
+
+/** Multiple rows as newline-joined TSV lines. */
+export function selectionToTsv(rows: string[][]): string {
+  return rows.map((r) => r.join('\t')).join('\n')
+}
+
+/** A single column's values, one per line. */
+export function valuesToLines(values: string[]): string {
+  return values.join('\n')
+}
