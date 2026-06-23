@@ -8,6 +8,7 @@ import { TooltipProvider } from '#/components/ui/tooltip'
 import { IconPackProvider } from '#/lib/icons'
 import { EditorThemeProvider } from '#/lib/editor-themes/context'
 import { EditorFontProvider } from '#/lib/editor-font/context'
+import { ConnectionLayoutProvider } from '#/components/ide/useConnectionLayout'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { AUTH_INVALIDATED_EVENT } from '#/lib/auth/invalidation'
 import '../styles.css'
@@ -41,6 +42,7 @@ function RootComponent() {
       <IconPackProvider>
       <EditorThemeProvider>
       <EditorFontProvider>
+      <ConnectionLayoutProvider>
       <TooltipProvider>
         <GlobalLoadingBar />
         <div className="flex min-h-screen flex-col">
@@ -49,6 +51,7 @@ function RootComponent() {
           </div>
         </div>
       </TooltipProvider>
+      </ConnectionLayoutProvider>
       </EditorFontProvider>
       <Toaster closeButton position="top-center" theme="system" />
       <Suspense fallback={null}>

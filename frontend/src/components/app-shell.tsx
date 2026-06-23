@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from '#/components/ui/select'
 import { useEditorTheme } from '#/lib/editor-themes/context'
+import { useConnectionLayout, type ConnectionLayout } from '#/components/ide/useConnectionLayout'
 import { EDITOR_THEME_LABELS, VALID_EDITOR_THEMES } from '#/lib/editor-themes'
 import type { EditorThemeName } from '#/lib/editor-themes'
 import { useEditorFont } from '#/lib/editor-font/context'
@@ -369,6 +370,7 @@ export function AppShellPreferencesPopover({
   const { packName, setPackName } = useIconPack()
   const { editorThemeDark, editorThemeLight, setEditorThemeDark, setEditorThemeLight } = useEditorTheme()
   const { editorFont, editorFontSize, setEditorFont, setEditorFontSize } = useEditorFont()
+  const { connectionLayout, setConnectionLayout } = useConnectionLayout()
 
   function updatePreference<Key extends keyof AppShellPreferences>(key: Key, value: AppShellPreferences[Key]) {
     window.localStorage.setItem(preferenceKeys[key], value)
@@ -446,6 +448,14 @@ export function AppShellPreferencesPopover({
               options={['hugeicons', 'lucide', 'remix']}
               labels={{ hugeicons: 'HugeIcons', lucide: 'Lucide', remix: 'Remix' }}
               onValueChange={(value) => setPackName(value as IconPackName)}
+            />
+
+            <PreferenceToggle
+              label="Connections"
+              value={connectionLayout}
+              options={['flat', 'grouped']}
+              labels={{ flat: 'Flat', grouped: 'By Environment' }}
+              onValueChange={(value) => setConnectionLayout(value as ConnectionLayout)}
             />
           </div>
 
