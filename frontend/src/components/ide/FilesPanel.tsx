@@ -27,7 +27,6 @@ type DialogState = { kind: 'file' | 'folder'; parentId: number | null } | null
 
 export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }: FilesPanelProps) {
   const [dialogState, setDialogState] = useState<DialogState>(null)
-  const collapseAllNodes = useIde((s) => s.collapseAllNodes)
 
   function openCreateDialog(kind: 'file' | 'folder', parentId: number | null) {
     setDialogState({ kind, parentId })
@@ -35,16 +34,6 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
 
   const headerActions = (
     <>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Collapse all"
-        title="Collapse all"
-        onClick={() => collapseAllNodes()}
-      >
-        <Icon name="arrow-shrink" size={13} />
-      </Button>
       <Button
         type="button"
         variant="ghost"
