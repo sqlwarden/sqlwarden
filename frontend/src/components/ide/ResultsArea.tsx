@@ -7,6 +7,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { cn } from '#/lib/utils'
 import type { ResultColumn, ResultValue } from '#/lib/api/types'
 import { useIde, activeTabId as selectActiveTabId, type QueryResult } from './useIdeStore'
+import { useContextMenu, type ContextMenuItem } from '#/components/ui/context-menu'
+import { copyWithToast, rowToTsv, rowToJson, valuesToLines } from './contextMenus/clipboard'
+import { buildCellMenu, buildRowMenu, buildColumnHeaderMenu } from './contextMenus/resultMenu'
 
 export function ResultsArea() {
   const maximizedPane = useIde((s) => s.maximizedPane)
@@ -177,6 +180,8 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
   const columns = result.data.columns ?? []
   const rows = result.data.rows ?? []
   const hasColumns = columns.length > 0
+  const columnNames = columns.map((c) => c.name)
+  const cellText = (v: ResultValue) => formatValue(v).display
 
   const [colWidths, setColWidths] = useState<number[]>(() => columns.map(() => DEFAULT_COL_WIDTH))
   const resizingRef = useRef<{ colIdx: number; startX: number; startWidth: number } | null>(null)
@@ -301,7 +306,43 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
     if (autoScrollRafRef.current == null) autoScrollRafRef.current = requestAnimationFrame(autoScrollStep)
   }
 
+  // One context menu for the whole grid: cells/rows/headers only record what was
+  // clicked, then open the single shared menu. Avoids mounting a menu controller
+  // per cell, which makes large result sets unusably slow to render.
+  const [menuTarget, setMenuTarget] = useState<{ kind: 'cell' | 'row' | 'column'; rowIdx: number; colIdx: number } | null>(null)
+
+  const gridMenuItems = ((): ContextMenuItem[] => {
+    if (!menuTarget) return []
+    if (menuTarget.kind === 'cell') {
+      const v = rows[menuTarget.rowIdx]?.[menuTarget.colIdx]
+      const { display, isNull } = v ? formatValue(v) : { display: '', isNull: true }
+      return buildCellMenu({
+        onCopyValue: () => copyWithToast(isNull ? 'NULL' : display),
+        onCopyColumnName: () => copyWithToast(columns[menuTarget.colIdx]?.name ?? ''),
+      })
+    }
+    if (menuTarget.kind === 'row') {
+      const row = rows[menuTarget.rowIdx] ?? []
+      return buildRowMenu({
+        onCopyRow: () => copyWithToast(rowToTsv(row.map(cellText))),
+        onCopyRowJson: () => copyWithToast(rowToJson(columnNames, row.map(cellText))),
+      })
+    }
+    return buildColumnHeaderMenu({
+      onCopyName: () => copyWithToast(columns[menuTarget.colIdx]?.name ?? ''),
+      onCopyAllValues: () => copyWithToast(valuesToLines(rows.map((r) => cellText(r[menuTarget.colIdx])))),
+    })
+  })()
+
+  const gridMenu = useContextMenu(gridMenuItems)
+
+  function openMenu(target: { kind: 'cell' | 'row' | 'column'; rowIdx: number; colIdx: number }, e: React.MouseEvent) {
+    setMenuTarget(target)
+    gridMenu.onContextMenu(e)
+  }
+
   function handleCellMouseDown(ri: number, ci: number, e: React.MouseEvent) {
+    if (e.button !== 0) return // ignore right/middle click (context menu handles right-click)
     e.preventDefault() // suppress browser text-selection drag (also suppresses auto-focus)
     isDraggingRef.current = true
     startAutoScroll(e)
@@ -356,6 +397,7 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
   }
 
   function handleRowHeaderMouseDown(ri: number, e: React.MouseEvent) {
+    if (e.button !== 0) return // ignore right/middle click (context menu handles right-click)
     e.preventDefault()
     setRowSelectionMode(true)
     setSelection({ anchor: { rowIdx: ri, colIdx: 0 }, active: { rowIdx: ri, colIdx: columns.length - 1 } })
@@ -384,23 +426,25 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
           <tr role="row">
             <th role="columnheader" style={{ width: ROW_NUM_COL_WIDTH }} className="sticky left-0 z-20 border-b border-r border-border bg-muted/80 px-2 py-1.5 text-right font-medium text-muted-foreground tabular-nums backdrop-blur-sm" />
             {columns.map((col, i) => (
-              <ColumnHeader key={i} col={col} width={colWidths[i]} onResizeStart={(e) => startResize(e, i)} />
+              <ColumnHeader
+                key={i}
+                col={col}
+                width={colWidths[i]}
+                onResizeStart={(e) => startResize(e, i)}
+                onContextMenu={(e) => openMenu({ kind: 'column', rowIdx: 0, colIdx: i }, e)}
+              />
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, ri) => (
             <tr key={ri} role="row" className="group">
-              <td
-                role="rowheader"
+              <RowHeaderCell
+                label={ri + 1}
+                selected={rowSelectionMode && isRowInRange(ri, selection)}
                 onMouseDown={(e) => handleRowHeaderMouseDown(ri, e)}
-                className={cn(
-                  'sticky left-0 z-[5] cursor-pointer border-b border-r border-border px-2 py-1 text-right font-mono text-muted-foreground tabular-nums',
-                  rowSelectionMode && isRowInRange(ri, selection) ? 'bg-primary/15' : 'bg-card',
-                )}
-              >
-                {ri + 1}
-              </td>
+                onContextMenu={(e) => openMenu({ kind: 'row', rowIdx: ri, colIdx: 0 }, e)}
+              />
               {row.map((val, ci) => (
                 <DataCell
                   key={ci}
@@ -412,6 +456,7 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
                   isInRange={cellInRange(ri, ci, selection)}
                   onMouseDown={(e) => handleCellMouseDown(ri, ci, e)}
                   onMouseEnter={() => handleCellDragEnter(ri, ci)}
+                  onContextMenu={(e) => openMenu({ kind: 'cell', rowIdx: ri, colIdx: ci }, e)}
                 />
               ))}
             </tr>
@@ -474,6 +519,7 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
         <span className="mx-1.5 opacity-40">·</span>
         <span className="tabular-nums">{durationMs}ms</span>
       </div>
+      {gridMenu.menu}
     </div>
   )
 }
@@ -491,14 +537,37 @@ const typeColor: Record<string, string> = {
   text: 'text-muted-foreground',
 }
 
-function ColumnHeader({ col, width, onResizeStart }: {
+function RowHeaderCell({ label, selected, onMouseDown, onContextMenu }: {
+  label: number
+  selected: boolean
+  onMouseDown: (e: React.MouseEvent) => void
+  onContextMenu: (e: React.MouseEvent) => void
+}) {
+  return (
+    <td
+      role="rowheader"
+      onMouseDown={onMouseDown}
+      onContextMenu={onContextMenu}
+      className={cn(
+        'sticky left-0 z-[5] cursor-pointer border-b border-r border-border px-2 py-1 text-right font-mono text-muted-foreground tabular-nums',
+        selected ? 'bg-primary/15' : 'bg-card',
+      )}
+    >
+      {label}
+    </td>
+  )
+}
+
+function ColumnHeader({ col, width, onResizeStart, onContextMenu }: {
   col: ResultColumn
   width: number
   onResizeStart: (e: React.MouseEvent) => void
+  onContextMenu: (e: React.MouseEvent) => void
 }) {
   return (
     <th
       style={{ width }}
+      onContextMenu={onContextMenu}
       className="relative border-b border-r border-border px-3 py-1.5 text-left font-medium select-none overflow-hidden"
     >
       <div className="flex flex-col gap-0.5">
@@ -515,7 +584,7 @@ function ColumnHeader({ col, width, onResizeStart }: {
   )
 }
 
-function DataCell({ value, col, rowIdx, colIdx, isAnchor, isInRange, onMouseDown, onMouseEnter }: {
+function DataCell({ value, col, rowIdx, colIdx, isAnchor, isInRange, onMouseDown, onMouseEnter, onContextMenu }: {
   value: ResultValue
   col: ResultColumn
   rowIdx: number
@@ -524,6 +593,7 @@ function DataCell({ value, col, rowIdx, colIdx, isAnchor, isInRange, onMouseDown
   isInRange: boolean
   onMouseDown: (e: React.MouseEvent) => void
   onMouseEnter: () => void
+  onContextMenu: (e: React.MouseEvent) => void
 }) {
   const { display, isNull, isNumeric } = formatValue(value)
   const isRightAlign = isNumeric || col.type === 'integer' || col.type === 'decimal'
@@ -535,6 +605,7 @@ function DataCell({ value, col, rowIdx, colIdx, isAnchor, isInRange, onMouseDown
       tabIndex={isAnchor ? 0 : -1}
       onMouseDown={onMouseDown}
       onMouseEnter={onMouseEnter}
+      onContextMenu={onContextMenu}
       className={cn(
         'max-w-0 cursor-default overflow-hidden border-b border-r border-border px-3 py-1 font-mono outline-none',
         isRightAlign ? 'text-right tabular-nums' : 'text-left',

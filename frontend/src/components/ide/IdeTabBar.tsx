@@ -9,12 +9,9 @@ import {
   DialogTitle,
 } from '#/components/ui/dialog'
 import { Button } from '#/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '#/components/ui/dropdown-menu'
+import { ContextMenu } from '#/components/ui/context-menu'
+import { copyWithToast } from './contextMenus/clipboard'
+import { buildTabMenu } from './contextMenus/tabMenu'
 import type { Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, DEFAULT_CONSOLE_CONTENT, type EditorTab, type TabKind } from './useIdeStore'
@@ -251,10 +248,16 @@ function TabItem({
   onDragEnd: () => void
 }) {
   const icon = TAB_ICONS[tab.kind]
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
+  const menuItems = buildTabMenu({
+    isConsole: tab.kind === 'scratch',
+    onClose,
+    onSplitRight: () => onSplit('right'),
+    onSplitDown: () => onSplit('down'),
+    onCopyName: () => copyWithToast(tab.title),
+  })
 
   return (
+    <ContextMenu items={menuItems} className="shrink-0">
     <div
       role="tab"
       data-tab-id={tab.id}
@@ -262,11 +265,6 @@ function TabItem({
       tabIndex={0}
       draggable
       onClick={onActivate}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        setMenuPos({ x: e.clientX, y: e.clientY })
-        setMenuOpen(true)
-      }}
       onKeyDown={(e) => e.key === 'Enter' && onActivate()}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = 'move'
@@ -313,31 +311,7 @@ function TabItem({
       >
         <Icon name="cancel-01" size={11} />
       </button>
-
-      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-        <DropdownMenuTrigger
-          nativeButton={false}
-          render={
-            <span
-              style={{ position: 'fixed', left: menuPos.x, top: menuPos.y, width: 0, height: 0, pointerEvents: 'none' }}
-            />
-          }
-        />
-        <DropdownMenuContent align="start" side="bottom" sideOffset={2} className="w-44">
-          <DropdownMenuItem onClick={() => { setMenuOpen(false); onSplit('right') }}>
-            <Icon name="layout-bottom" size={13} className="rotate-90" />
-            Split
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => { setMenuOpen(false); onSplit('down') }}>
-            <Icon name="layout-bottom" size={13} />
-            Split Down
-          </DropdownMenuItem>
-          <DropdownMenuItem data-variant="destructive" onClick={() => { setMenuOpen(false); onClose() }}>
-            <Icon name="cancel-01" size={13} />
-            Close
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
     </div>
+    </ContextMenu>
   )
 }
