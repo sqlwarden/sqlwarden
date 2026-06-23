@@ -66,59 +66,46 @@ function SoonBadge() {
   )
 }
 
-export function ContextMenu({
-  items,
-  children,
-  className,
-  contentClassName,
-}: {
-  items: ContextMenuItem[]
-  children: React.ReactNode
-  className?: string
-  contentClassName?: string
-}) {
-  const [menuOpen, setMenuOpen] = useState(false)
+/** Headless context-menu controller. Attach `onContextMenu` to any element
+ *  (including table cells where a wrapping div would be invalid) and render
+ *  `menu` inside it; the menu portals out so its host element is irrelevant. */
+export function useContextMenu(items: ContextMenuItem[], contentClassName?: string) {
+  const [open, setOpen] = useState(false)
   const [pos, setPos] = useState({ x: 0, y: 0 })
   const [confirmItem, setConfirmItem] = useState<ContextMenuActionItem | null>(null)
 
-  function handleContextMenu(e: React.MouseEvent) {
+  function onContextMenu(e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
     setPos({ x: e.clientX, y: e.clientY })
-    setMenuOpen(true)
+    setOpen(true)
   }
 
   function selectAction(item: ContextMenuActionItem) {
     const outcome = resolveMenuAction(item)
     if (outcome === 'noop') return
-    setMenuOpen(false)
+    setOpen(false)
     if (outcome === 'confirm') setConfirmItem(item)
     else item.onSelect?.()
   }
 
-  return (
+  const menu = (
     <>
-      <div
-        onContextMenu={handleContextMenu}
-        className={cn(menuOpen && 'bg-accent text-accent-foreground', className)}
-      >
-        {children}
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-          <DropdownMenuTrigger
-            nativeButton={false}
-            render={
-              <span
-                style={{ position: 'fixed', left: pos.x, top: pos.y, width: 0, height: 0, pointerEvents: 'none' }}
-              />
-            }
-          />
-          <DropdownMenuContent align="start" side="bottom" sideOffset={2} className={cn('w-52', contentClassName)}>
-            {items.map((item, i) => renderItem(item, i, selectAction))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger
+          nativeButton={false}
+          render={
+            <span
+              style={{ position: 'fixed', left: pos.x, top: pos.y, width: 0, height: 0, pointerEvents: 'none' }}
+            />
+          }
+        />
+        <DropdownMenuContent align="start" side="bottom" sideOffset={2} className={cn('w-52', contentClassName)}>
+          {items.map((item, i) => renderItem(item, i, selectAction))}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
-      <AlertDialog open={confirmItem !== null} onOpenChange={(open) => { if (!open) setConfirmItem(null) }}>
+      <AlertDialog open={confirmItem !== null} onOpenChange={(o) => { if (!o) setConfirmItem(null) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{confirmItem?.confirm?.title}</AlertDialogTitle>
@@ -136,6 +123,28 @@ export function ContextMenu({
         </AlertDialogContent>
       </AlertDialog>
     </>
+  )
+
+  return { open, onContextMenu, menu }
+}
+
+export function ContextMenu({
+  items,
+  children,
+  className,
+  contentClassName,
+}: {
+  items: ContextMenuItem[]
+  children: React.ReactNode
+  className?: string
+  contentClassName?: string
+}) {
+  const { open, onContextMenu, menu } = useContextMenu(items, contentClassName)
+  return (
+    <div onContextMenu={onContextMenu} className={cn(open && 'bg-accent text-accent-foreground', className)}>
+      {children}
+      {menu}
+    </div>
   )
 }
 
