@@ -152,7 +152,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		logger:        logger,
 		mailer:        mailer,
 		connManager:   connection.New(30 * time.Minute),
-		schemaService: schema.NewService(schema.NewMemCache(schemaCacheCapacity), schemaCacheTTL),
+		schemaService: schema.NewServiceWithLogger(schema.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
 		keyring:       keyring,
 		enforcer:      enforcer,
 		fileStores:    fileStores,
