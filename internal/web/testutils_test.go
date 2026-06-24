@@ -72,8 +72,8 @@ func newTestApplication(t *testing.T) *application {
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
 	app.mailer = smtp.NewMockMailer("test@example.com")
-	app.querySessions = newQuerySessionManager(30 * time.Minute)
-	t.Cleanup(func() { app.querySessions.Close() })
+	app.queryCursors = newQueryCursorManager(30 * time.Minute)
+	t.Cleanup(func() { app.queryCursors.Close() })
 	keyring, err := encrypt.NewKeyring("test-encryption-key-32bytes!!!!!")
 	if err != nil {
 		t.Fatal(err)

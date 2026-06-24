@@ -574,13 +574,13 @@ Implemented target drivers:
 Interactive query execution has two server APIs:
 
 - `POST .../query` executes a query and returns one bounded result set.
-- `POST .../query-sessions` starts a cursor-backed query session and returns the first page.
-- `POST .../query-sessions/{query_session_id}/fetch` fetches the next page.
-- `DELETE .../query-sessions/{query_session_id}` closes the cursor-backed session.
+- `POST .../query-cursors` starts a cursor-backed query cursor and returns the first page.
+- `POST .../query-cursors/{query_cursor_id}/fetch` fetches the next page.
+- `DELETE .../query-cursors/{query_cursor_id}` closes the cursor-backed query cursor.
 
-HTTP query sessions are in-memory and process-local. They are tied to the authenticated account, route context, live DB session, workspace, environment when present, and connection. They must not be treated as durable query history. Server restart, live DB session removal, cursor close, exhaustion, or idle reaping makes the query session unavailable and clients should run the query again.
+HTTP query cursors are in-memory and process-local. They are tied to the authenticated account, route context, live DB session, workspace, environment when present, and connection. They must not be treated as durable query history. Server restart, live DB session removal, cursor close, exhaustion, or idle reaping makes the query cursor unavailable and clients should run the query again.
 
-Query-session authorization uses the same SQL classification as direct query execution. `conn:execute` can run any query class. Otherwise `conn:dql`, `conn:dml`, or `conn:ddl` is required based on the query. Fetch requests re-check the permission that authorized the initial query before returning additional rows, so permission revocation stops further result delivery.
+Query-cursor authorization uses the same SQL classification as direct query execution. `conn:execute` can run any query class. Otherwise `conn:dql`, `conn:dml`, or `conn:ddl` is required based on the query. Fetch requests re-check the permission that authorized the initial query before returning additional rows, so permission revocation stops further result delivery.
 
 The initial response and each fetch page apply `query.max_result_rows` and `query.max_result_bytes`. Page boundaries are not truncation; `exhausted=false` means more rows can be fetched. Byte-limit truncation is reported on the page and the cursor remains available when more rows exist.
 

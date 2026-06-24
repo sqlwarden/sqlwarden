@@ -164,7 +164,7 @@ SESSIONS_REVOCATION_ENABLED=false
 
 These limits apply to interactive IDE query responses. Future export workflows should use dedicated streaming/export limits instead of relying on interactive query caps.
 
-The same limits apply to cursor-backed HTTP query sessions. Direct `/query` responses are capped once per response. Query-session start and fetch responses are capped per page; clients can continue fetching while the response has `exhausted=false`.
+The same limits apply to HTTP query cursors. Direct `/query` responses are capped once per response. Query-cursor start and fetch responses are capped per page; clients can continue fetching while the response has `exhausted=false`.
 
 ## TLS
 

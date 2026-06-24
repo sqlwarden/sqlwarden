@@ -662,7 +662,7 @@ func TestCreateConnectionRejectsEnvironmentFromOtherWorkspace(t *testing.T) {
 	assert.Equal(t, createRes.StatusCode, http.StatusNotFound)
 }
 
-func TestExecuteQuerySessionAndValidationBranches(t *testing.T) {
+func TestExecuteQueryCursorAndValidationBranches(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 
@@ -792,14 +792,14 @@ func TestExecuteQueryAppliesConfiguredResultLimit(t *testing.T) {
 	assert.Equal(t, len(rows), 2)
 }
 
-func TestQuerySessionPagesResultsAndExpiresAfterExhaustion(t *testing.T) {
+func TestQueryCursorPagesResultsAndExpiresAfterExhaustion(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 
-	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-session-page"), "Query Session Page", "securepass99")
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-cursor-page"), "Query Cursor Page", "securepass99")
 	wsRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+slug+"/workspaces",
-		map[string]any{"name": "Query Session WS"}, tok), app.routes())
+		map[string]any{"name": "Query Cursor WS"}, tok), app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
 	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
@@ -807,7 +807,7 @@ func TestQuerySessionPagesResultsAndExpiresAfterExhaustion(t *testing.T) {
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
 		orgEnvConnectionsURL(slug, wsIDInt, envID),
-		map[string]any{"name": "Query Session Conn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+		map[string]any{"name": "Query Cursor Conn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 
@@ -825,7 +825,7 @@ func TestQuerySessionPagesResultsAndExpiresAfterExhaustion(t *testing.T) {
 		assert.Equal(t, send(t, req, app.routes()).StatusCode, http.StatusOK)
 	}
 
-	startReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-sessions", map[string]any{
+	startReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors", map[string]any{
 		"sql":       "SELECT id FROM t ORDER BY id",
 		"page_size": 2,
 	}, tok)
@@ -834,30 +834,30 @@ func TestQuerySessionPagesResultsAndExpiresAfterExhaustion(t *testing.T) {
 	assert.Equal(t, startRes.StatusCode, http.StatusOK)
 	assert.Equal(t, startRes.BodyFields["exhausted"], false)
 	assert.Equal(t, startRes.BodyFields["rows_returned"], any(float64(2)))
-	querySessionID := startRes.BodyFields["query_session_id"].(string)
+	queryCursorID := startRes.BodyFields["query_cursor_id"].(string)
 
-	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-sessions/"+querySessionID+"/fetch", map[string]any{"page_size": 2}, tok)
+	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 2}, tok)
 	fetchReq.Header.Set("X-Warden-Session", sessionID)
 	fetchRes := send(t, fetchReq, app.routes())
 	assert.Equal(t, fetchRes.StatusCode, http.StatusOK)
 	assert.Equal(t, fetchRes.BodyFields["exhausted"], true)
 	assert.Equal(t, fetchRes.BodyFields["rows_returned"], any(float64(1)))
 
-	expiredReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-sessions/"+querySessionID+"/fetch", map[string]any{"page_size": 2}, tok)
+	expiredReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 2}, tok)
 	expiredReq.Header.Set("X-Warden-Session", sessionID)
 	expiredRes := send(t, expiredReq, app.routes())
 	assert.Equal(t, expiredRes.StatusCode, http.StatusGone)
-	assert.Equal(t, expiredRes.BodyFields["error"].(map[string]any)["code"], apiErrorQuerySessionUnavailable)
+	assert.Equal(t, expiredRes.BodyFields["error"].(map[string]any)["code"], apiErrorQueryCursorUnavailable)
 }
 
-func TestQuerySessionCloseAndRouteIsolation(t *testing.T) {
+func TestQueryCursorCloseAndRouteIsolation(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 
-	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-session-close"), "Query Session Close", "securepass99")
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-cursor-close"), "Query Cursor Close", "securepass99")
 	wsRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+slug+"/workspaces",
-		map[string]any{"name": "Query Session Close WS"}, tok), app.routes())
+		map[string]any{"name": "Query Cursor Close WS"}, tok), app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
 	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
@@ -865,7 +865,7 @@ func TestQuerySessionCloseAndRouteIsolation(t *testing.T) {
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
 		orgEnvConnectionsURL(slug, wsIDInt, envID),
-		map[string]any{"name": "Query Session Close Conn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+		map[string]any{"name": "Query Cursor Close Conn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 
@@ -875,36 +875,36 @@ func TestQuerySessionCloseAndRouteIsolation(t *testing.T) {
 	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
 	sessionID := connectRes.BodyFields["session_id"].(string)
 
-	startReq := newAuthRequest(t, http.MethodPost, envConnectionURL+"/query-sessions", map[string]any{
+	startReq := newAuthRequest(t, http.MethodPost, envConnectionURL+"/query-cursors", map[string]any{
 		"sql":       "SELECT 1 UNION ALL SELECT 2",
 		"page_size": 1,
 	}, tok)
 	startReq.Header.Set("X-Warden-Session", sessionID)
 	startRes := send(t, startReq, app.routes())
 	assert.Equal(t, startRes.StatusCode, http.StatusOK)
-	querySessionID := startRes.BodyFields["query_session_id"].(string)
+	queryCursorID := startRes.BodyFields["query_cursor_id"].(string)
 
-	crossRouteReq := newAuthRequest(t, http.MethodPost, directConnectionURL+"/query-sessions/"+querySessionID+"/fetch", map[string]any{"page_size": 1}, tok)
+	crossRouteReq := newAuthRequest(t, http.MethodPost, directConnectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 1}, tok)
 	crossRouteReq.Header.Set("X-Warden-Session", sessionID)
 	assert.Equal(t, send(t, crossRouteReq, app.routes()).StatusCode, http.StatusNotFound)
 
-	closeReq := newAuthRequest(t, http.MethodDelete, envConnectionURL+"/query-sessions/"+querySessionID, nil, tok)
+	closeReq := newAuthRequest(t, http.MethodDelete, envConnectionURL+"/query-cursors/"+queryCursorID, nil, tok)
 	closeReq.Header.Set("X-Warden-Session", sessionID)
 	assert.Equal(t, send(t, closeReq, app.routes()).StatusCode, http.StatusNoContent)
 
-	fetchReq := newAuthRequest(t, http.MethodPost, envConnectionURL+"/query-sessions/"+querySessionID+"/fetch", map[string]any{"page_size": 1}, tok)
+	fetchReq := newAuthRequest(t, http.MethodPost, envConnectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 1}, tok)
 	fetchReq.Header.Set("X-Warden-Session", sessionID)
 	assert.Equal(t, send(t, fetchReq, app.routes()).StatusCode, http.StatusGone)
 }
 
-func TestQuerySessionFetchHandlesParentSessionRemoval(t *testing.T) {
+func TestQueryCursorFetchHandlesParentSessionRemoval(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 
-	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-session-parent"), "Query Session Parent", "securepass99")
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-cursor-parent"), "Query Cursor Parent", "securepass99")
 	wsRes := send(t, newAuthRequest(t, http.MethodPost,
 		"/api/v1/orgs/"+slug+"/workspaces",
-		map[string]any{"name": "Query Session Parent WS"}, tok), app.routes())
+		map[string]any{"name": "Query Cursor Parent WS"}, tok), app.routes())
 	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
 	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
 	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
@@ -912,7 +912,7 @@ func TestQuerySessionFetchHandlesParentSessionRemoval(t *testing.T) {
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
 		orgEnvConnectionsURL(slug, wsIDInt, envID),
-		map[string]any{"name": "Query Session Parent Conn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+		map[string]any{"name": "Query Cursor Parent Conn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 	connectionURL := orgConnectionURL(slug, wsIDInt, envID, connID)
@@ -921,38 +921,38 @@ func TestQuerySessionFetchHandlesParentSessionRemoval(t *testing.T) {
 	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
 	sessionID := connectRes.BodyFields["session_id"].(string)
 
-	startReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-sessions", map[string]any{
+	startReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors", map[string]any{
 		"sql":       "SELECT 1 UNION ALL SELECT 2",
 		"page_size": 1,
 	}, tok)
 	startReq.Header.Set("X-Warden-Session", sessionID)
 	startRes := send(t, startReq, app.routes())
 	assert.Equal(t, startRes.StatusCode, http.StatusOK)
-	querySessionID := startRes.BodyFields["query_session_id"].(string)
+	queryCursorID := startRes.BodyFields["query_cursor_id"].(string)
 
 	app.connManager.Remove(sessionID)
 
-	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-sessions/"+querySessionID+"/fetch", map[string]any{"page_size": 1}, tok)
+	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 1}, tok)
 	fetchReq.Header.Set("X-Warden-Session", sessionID)
 	assert.Equal(t, send(t, fetchReq, app.routes()).StatusCode, http.StatusGone)
 }
 
-func TestQuerySessionFetchRechecksPermission(t *testing.T) {
+func TestQueryCursorFetchRechecksPermission(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 
-	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "query-session-perm-owner"), "Query Session Perm Owner", "Query Session Perm Org")
-	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "query-session-perm-member"), "Query Session Perm Member")
+	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "query-cursor-perm-owner"), "Query Cursor Perm Owner", "Query Cursor Perm Org")
+	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "query-cursor-perm-member"), "Query Cursor Perm Member")
 	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Query Session Perm WS", "")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Query Cursor Perm WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	wsID := strconv.FormatInt(ws.ID, 10)
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
 		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
-		map[string]any{"name": "Query Session Perm Conn", "driver": "sqlite", "dsn": "file::memory:?cache=shared"}, ownerTok), app.routes())
+		map[string]any{"name": "Query Cursor Perm Conn", "driver": "sqlite", "dsn": "file::memory:?cache=shared"}, ownerTok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 	connIDInt, _ := strconv.ParseInt(connID, 10, 64)
@@ -978,14 +978,14 @@ func TestQuerySessionFetchRechecksPermission(t *testing.T) {
 	assert.Equal(t, memberConnectRes.StatusCode, http.StatusOK)
 	memberSessionID := memberConnectRes.BodyFields["session_id"].(string)
 
-	startReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-sessions", map[string]any{
+	startReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors", map[string]any{
 		"sql":       fmt.Sprintf("SELECT id FROM %s ORDER BY id", tableName),
 		"page_size": 1,
 	}, memberTok)
 	startReq.Header.Set("X-Warden-Session", memberSessionID)
 	startRes := send(t, startReq, app.routes())
 	assert.Equal(t, startRes.StatusCode, http.StatusOK)
-	querySessionID := startRes.BodyFields["query_session_id"].(string)
+	queryCursorID := startRes.BodyFields["query_cursor_id"].(string)
 
 	var bindingID int64
 	if err := app.db.NewSelect().
@@ -1004,7 +1004,7 @@ func TestQuerySessionFetchRechecksPermission(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-sessions/"+querySessionID+"/fetch", map[string]any{"page_size": 1}, memberTok)
+	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 1}, memberTok)
 	fetchReq.Header.Set("X-Warden-Session", memberSessionID)
 	assert.Equal(t, send(t, fetchReq, app.routes()).StatusCode, http.StatusForbidden)
 }
