@@ -36,7 +36,7 @@ type application struct {
 	mailer           *smtp.Mailer
 	wg               sync.WaitGroup
 	connManager      *connection.Manager
-	querySessions    *querySessionManager
+	queryCursors     *queryCursorManager
 	schemaService    *schema.Service
 	keyring          *encrypt.Keyring
 	enforcer         *access.Enforcer
@@ -153,7 +153,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		logger:        logger,
 		mailer:        mailer,
 		connManager:   connection.New(30 * time.Minute),
-		querySessions: newQuerySessionManager(30 * time.Minute),
+		queryCursors:  newQueryCursorManager(30 * time.Minute),
 		schemaService: schema.NewServiceWithLogger(schema.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
 		keyring:       keyring,
 		enforcer:      enforcer,
@@ -176,8 +176,8 @@ func (app *application) Close() error {
 	app.wg.Wait()
 	app.logger.Info("background workers stopped", "duration_ms", time.Since(startedAt).Milliseconds())
 
-	if app.querySessions != nil {
-		app.querySessions.Close()
+	if app.queryCursors != nil {
+		app.queryCursors.Close()
 	}
 	if app.connManager != nil {
 		connCloseStartedAt := time.Now()
