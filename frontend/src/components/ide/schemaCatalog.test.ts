@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { DriverCapabilities, SchemaCatalog } from '#/lib/api/types'
+import type { SchemaCatalog, SchemaSpec } from '#/lib/api/types'
 import { filterCatalog, kindLabel, sortedGroups } from './schemaCatalog'
 
-const caps: DriverCapabilities = {
+const spec: SchemaSpec = {
   dialect: 'postgres',
   kinds: [
     { kind: 'table', label: 'Table', plural_label: 'Tables', order: 1, relational: true, supports_diagram: true, listing: 'enumerated' },
@@ -33,14 +33,14 @@ const catalog: SchemaCatalog = {
 }
 
 describe('kindLabel', () => {
-  it('uses the capability plural label, falling back to a capitalized plural kind', () => {
-    expect(kindLabel(caps, 'table')).toBe('Tables')
-    expect(kindLabel(caps, 'sequence')).toBe('Sequences')
+  it('uses the schema spec plural label, falling back to a capitalized plural kind', () => {
+    expect(kindLabel(spec, 'table')).toBe('Tables')
+    expect(kindLabel(spec, 'sequence')).toBe('Sequences')
     expect(kindLabel(undefined, 'materialized_view')).toBe('Materialized Views')
   })
 
-  it('replaces the temporary fallback with the backend plural label once capabilities load', () => {
-    const backendCaps: DriverCapabilities = {
+  it('replaces the temporary fallback with the backend plural label once schema spec loads', () => {
+    const backendSpec: SchemaSpec = {
       dialect: 'test',
       kinds: [
         {
@@ -56,14 +56,14 @@ describe('kindLabel', () => {
     }
 
     expect(kindLabel(undefined, 'foo')).toBe('Foos')
-    expect(kindLabel(backendCaps, 'foo')).toBe('Managed Foos')
+    expect(kindLabel(backendSpec, 'foo')).toBe('Managed Foos')
   })
 })
 
 describe('sortedGroups', () => {
-  it('orders groups by capability order', () => {
+  it('orders groups by schema spec order', () => {
     const ns = catalog.namespaces![0]
-    const groups = sortedGroups(ns, caps)
+    const groups = sortedGroups(ns, spec)
     expect(groups.map((g) => g.kind)).toEqual(['table', 'view'])
   })
 })

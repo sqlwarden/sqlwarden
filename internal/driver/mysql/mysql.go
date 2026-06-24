@@ -123,10 +123,10 @@ func (d *mysqlDriver) Dialect() driver.Dialect {
 	return driver.DialectMySQL
 }
 
-func (d *mysqlDriver) Capabilities() schema.DriverCapabilities {
-	return schema.DriverCapabilities{
+func (d *mysqlDriver) SchemaSpec() schema.SchemaSpec {
+	return schema.SchemaSpec{
 		Dialect: "mysql",
-		Kinds: []schema.KindDescriptor{
+		Kinds: []schema.SchemaObjectKind{
 			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
 			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
 			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
@@ -136,7 +136,7 @@ func (d *mysqlDriver) Capabilities() schema.DriverCapabilities {
 	}
 }
 
-func (d *mysqlDriver) IntrospectCatalog(ctx context.Context, opts schema.CatalogOptions) (*schema.Catalog, error) {
+func (d *mysqlDriver) InspectCatalog(ctx context.Context, opts schema.CatalogOptions) (*schema.Catalog, error) {
 	database := opts.Database
 	if database == "" {
 		if err := d.db.QueryRowContext(ctx, `SELECT DATABASE()`).Scan(&database); err != nil {
@@ -231,7 +231,7 @@ ORDER BY trigger_name`
 	return b.Build("", "mysql", database), nil
 }
 
-func (d *mysqlDriver) IntrospectObjects(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+func (d *mysqlDriver) InspectObjects(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
 	var relRefs []schema.ObjectRef
 	var routineRefs []schema.ObjectRef
 	var triggerRefs []schema.ObjectRef

@@ -31,15 +31,15 @@ func TestCatalogMarshalsRefsWithoutColumns(t *testing.T) {
 	}
 }
 
-func TestCapabilitiesMarshal(t *testing.T) {
-	caps := DriverCapabilities{
+func TestSchemaSpecMarshal(t *testing.T) {
+	spec := SchemaSpec{
 		Dialect: "postgres",
-		Kinds: []KindDescriptor{{
+		Kinds: []SchemaObjectKind{{
 			Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1,
 			Relational: true, SupportsDiagram: true, Listing: "enumerated",
 		}},
 	}
-	data, err := json.Marshal(caps)
+	data, err := json.Marshal(spec)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}

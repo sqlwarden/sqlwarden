@@ -353,13 +353,13 @@ func contains(s []string, v string) bool {
 	return false
 }
 
-func TestPostgresCapabilities(t *testing.T) {
-	caps := (&postgresDriver{}).Capabilities()
-	if caps.Dialect != "postgres" {
-		t.Fatalf("dialect: %s", caps.Dialect)
+func TestPostgresSchemaSpec(t *testing.T) {
+	spec := (&postgresDriver{}).SchemaSpec()
+	if spec.Dialect != "postgres" {
+		t.Fatalf("dialect: %s", spec.Dialect)
 	}
-	byKind := map[string]schema.KindDescriptor{}
-	for _, k := range caps.Kinds {
+	byKind := map[string]schema.SchemaObjectKind{}
+	for _, k := range spec.Kinds {
 		byKind[k.Kind] = k
 		if k.Listing != "enumerated" {
 			t.Errorf("%s listing = %q, want enumerated", k.Kind, k.Listing)
@@ -378,7 +378,7 @@ func TestPostgresCapabilities(t *testing.T) {
 	}
 }
 
-func TestPostgresIntrospectCatalog(t *testing.T) {
+func TestPostgresInspectCatalog(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
 	t.Cleanup(func() {
@@ -390,7 +390,7 @@ func TestPostgresIntrospectCatalog(t *testing.T) {
 	mustExec(t, d, `CREATE TABLE intro_users (id bigint PRIMARY KEY, org_id bigint REFERENCES intro_orgs(id))`)
 	mustExec(t, d, `CREATE VIEW intro_v AS SELECT id FROM intro_users`)
 
-	cat, err := d.IntrospectCatalog(ctx, schema.CatalogOptions{})
+	cat, err := d.InspectCatalog(ctx, schema.CatalogOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +420,7 @@ func TestPostgresIntrospectCatalog(t *testing.T) {
 	}
 }
 
-func TestPostgresIntrospectObjectsRelational(t *testing.T) {
+func TestPostgresInspectObjectsRelational(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
 	t.Cleanup(func() {
@@ -434,7 +434,7 @@ func TestPostgresIntrospectObjectsRelational(t *testing.T) {
 		{Namespace: "public", Kind: "table", Name: "intro_users"},
 		{Namespace: "public", Kind: "table", Name: "intro_orgs"},
 	}
-	objs, err := d.IntrospectObjects(ctx, refs)
+	objs, err := d.InspectObjects(ctx, refs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -458,7 +458,7 @@ func TestPostgresIntrospectObjectsRelational(t *testing.T) {
 	}
 }
 
-func TestPostgresIntrospectObjectsHonorsFilter(t *testing.T) {
+func TestPostgresInspectObjectsHonorsFilter(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
 	t.Cleanup(func() {
@@ -468,7 +468,7 @@ func TestPostgresIntrospectObjectsHonorsFilter(t *testing.T) {
 	mustExec(t, d, `CREATE TABLE intro_a (id bigint)`)
 	mustExec(t, d, `CREATE TABLE intro_b (id bigint)`)
 
-	objs, err := d.IntrospectObjects(ctx, []schema.ObjectRef{{Namespace: "public", Kind: "table", Name: "intro_a"}})
+	objs, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "public", Kind: "table", Name: "intro_a"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +477,7 @@ func TestPostgresIntrospectObjectsHonorsFilter(t *testing.T) {
 	}
 }
 
-func TestPostgresIntrospectObjectsFunctionDescriptors(t *testing.T) {
+func TestPostgresInspectObjectsFunctionDescriptors(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
 	t.Cleanup(func() {
@@ -485,7 +485,7 @@ func TestPostgresIntrospectObjectsFunctionDescriptors(t *testing.T) {
 	})
 	mustExec(t, d, `CREATE FUNCTION intro_add(a int, b int) RETURNS int LANGUAGE sql AS 'SELECT a + b'`)
 
-	objs, err := d.IntrospectObjects(ctx, []schema.ObjectRef{{Namespace: "public", Kind: "function", Name: "intro_add"}})
+	objs, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "public", Kind: "function", Name: "intro_add"}})
 	if err != nil {
 		t.Fatal(err)
 	}

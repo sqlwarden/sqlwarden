@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions, type QueryClient } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFilesResponse, WorkspaceFileBrowserResult, CatalogResponse, CapabilitiesResponse, ObjectsResponse, ObjectRef } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFilesResponse, WorkspaceFileBrowserResult, CatalogResponse, SchemaSpecResponse, ObjectsResponse, ObjectRef } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -464,8 +464,8 @@ export function connectionCatalogQueryKey(slug: string, workspaceId: string | nu
   return ['connection-catalog', slug, String(workspaceId), String(connectionId)] as const
 }
 
-export function connectionCapabilitiesQueryKey(slug: string, workspaceId: string | number, connectionId: string | number) {
-  return ['connection-capabilities', slug, String(workspaceId), String(connectionId)] as const
+export function connectionSchemaSpecQueryKey(slug: string, workspaceId: string | number, connectionId: string | number) {
+  return ['connection-schema-spec', slug, String(workspaceId), String(connectionId)] as const
 }
 
 function schemaBase(slug: string, workspaceId: string | number, connectionId: string | number) {
@@ -488,16 +488,16 @@ export function orgConnectionCatalogQueryOptions(
   })
 }
 
-export function orgConnectionCapabilitiesQueryOptions(
+export function orgConnectionSchemaSpecQueryOptions(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
   sessionId: string,
 ) {
   return queryOptions({
-    queryKey: connectionCapabilitiesQueryKey(slug, workspaceId, connectionId),
+    queryKey: connectionSchemaSpecQueryKey(slug, workspaceId, connectionId),
     queryFn: () =>
-      api.get<CapabilitiesResponse>(`${schemaBase(slug, workspaceId, connectionId)}/capabilities`, {
+      api.get<SchemaSpecResponse>(`${schemaBase(slug, workspaceId, connectionId)}/spec`, {
         headers: { 'X-Warden-Session': sessionId },
       }),
     staleTime: 5 * 60_000,

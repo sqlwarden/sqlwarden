@@ -13,7 +13,7 @@ import (
 	"github.com/sqlwarden/pkg/result"
 )
 
-// schemaFakeDriver implements schema.Introspector without requiring a live
+// schemaFakeDriver implements schema.SchemaInspector without requiring a live
 // target database, keeping schema handler tests focused on HTTP behavior.
 type schemaFakeDriver struct{}
 
@@ -28,10 +28,10 @@ func (schemaFakeDriver) Execute(context.Context, string, ...any) (*result.Result
 }
 func (schemaFakeDriver) Dialect() driver.Dialect { return driver.DialectSQLite }
 
-func (schemaFakeDriver) Capabilities() schema.DriverCapabilities {
-	return schema.DriverCapabilities{
+func (schemaFakeDriver) SchemaSpec() schema.SchemaSpec {
+	return schema.SchemaSpec{
 		Dialect: "sqlite",
-		Kinds: []schema.KindDescriptor{{
+		Kinds: []schema.SchemaObjectKind{{
 			Kind:            "table",
 			Label:           "Table",
 			PluralLabel:     "Tables",
@@ -43,7 +43,7 @@ func (schemaFakeDriver) Capabilities() schema.DriverCapabilities {
 	}
 }
 
-func (schemaFakeDriver) IntrospectCatalog(context.Context, schema.CatalogOptions) (*schema.Catalog, error) {
+func (schemaFakeDriver) InspectCatalog(context.Context, schema.CatalogOptions) (*schema.Catalog, error) {
 	return &schema.Catalog{
 		Dialect:  "sqlite",
 		Database: "test",
@@ -57,7 +57,7 @@ func (schemaFakeDriver) IntrospectCatalog(context.Context, schema.CatalogOptions
 	}, nil
 }
 
-func (schemaFakeDriver) IntrospectObjects(_ context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+func (schemaFakeDriver) InspectObjects(_ context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
 	out := make([]schema.Object, 0, len(refs))
 	for _, ref := range refs {
 		out = append(out, schema.Object{
@@ -84,7 +84,7 @@ func TestGetConnectionCatalog_RequiresSession(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusBadRequest)
 }
 
-func TestGetConnectionCatalog_IntrospectsAndCaches(t *testing.T) {
+func TestGetConnectionCatalog_InspectsAndCaches(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-owner2"), "Schema Owner2", "Schema Org2")
@@ -116,23 +116,23 @@ func TestGetConnectionCatalog_IntrospectsAndCaches(t *testing.T) {
 	assert.Equal(t, firstObject["name"], "widgets")
 }
 
-func TestGetConnectionCapabilities(t *testing.T) {
+func TestGetConnectionSchemaSpec(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-caps"), "Schema Caps", "Schema Caps Org")
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-spec"), "Schema Spec", "Schema Spec Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/capabilities", nil, tok)
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/spec", nil, tok)
 	req.Header.Set("X-Warden-Session", sess.ID)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	caps := res.BodyFields["capabilities"].(map[string]any)
-	kinds := caps["kinds"].([]any)
+	spec := res.BodyFields["spec"].(map[string]any)
+	kinds := spec["kinds"].([]any)
 	table := kinds[0].(map[string]any)
 	assert.Equal(t, table["kind"], "table")
 	assert.Equal(t, table["listing"], "enumerated")
@@ -223,19 +223,19 @@ func TestGetConnectionCatalog_SessionConnectionMismatch(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusForbidden)
 }
 
-// nonIntrospectableDriver exercises the 501 unsupported-driver path.
-type nonIntrospectableDriver struct{}
+// nonSchemaInspectableDriver exercises the 501 unsupported-driver path.
+type nonSchemaInspectableDriver struct{}
 
-func (nonIntrospectableDriver) Connect(context.Context, driver.ConnectionConfig) error { return nil }
-func (nonIntrospectableDriver) Ping(context.Context) error                             { return nil }
-func (nonIntrospectableDriver) Close() error                                           { return nil }
-func (nonIntrospectableDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
+func (nonSchemaInspectableDriver) Connect(context.Context, driver.ConnectionConfig) error { return nil }
+func (nonSchemaInspectableDriver) Ping(context.Context) error                             { return nil }
+func (nonSchemaInspectableDriver) Close() error                                           { return nil }
+func (nonSchemaInspectableDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }
-func (nonIntrospectableDriver) Execute(context.Context, string, ...any) (*result.ResultSet, error) {
+func (nonSchemaInspectableDriver) Execute(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }
-func (nonIntrospectableDriver) Dialect() driver.Dialect { return driver.DialectSQLite }
+func (nonSchemaInspectableDriver) Dialect() driver.Dialect { return driver.DialectSQLite }
 
 func TestGetConnectionCatalog_UnsupportedDriver(t *testing.T) {
 	t.Parallel()
@@ -244,7 +244,7 @@ func TestGetConnectionCatalog_UnsupportedDriver(t *testing.T) {
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	sess := openSchemaSession(t, app, owner.ID, conn.ID, nonIntrospectableDriver{})
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, nonSchemaInspectableDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
 		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/catalog", nil, tok)

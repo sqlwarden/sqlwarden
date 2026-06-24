@@ -240,7 +240,7 @@ func TestExecute_DML(t *testing.T) {
 	}
 }
 
-func TestIntrospectCatalogAndObjects(t *testing.T) {
+func TestInspectCatalogAndObjects(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
 
@@ -291,14 +291,14 @@ func TestIntrospectCatalogAndObjects(t *testing.T) {
 		t.Fatalf("create trigger: %v", err)
 	}
 
-	caps := d.Capabilities()
-	if caps.Dialect != "mysql" || len(caps.Kinds) != 5 {
-		t.Fatalf("unexpected capabilities: %+v", caps)
+	spec := d.SchemaSpec()
+	if spec.Dialect != "mysql" || len(spec.Kinds) != 5 {
+		t.Fatalf("unexpected schema spec: %+v", spec)
 	}
 
-	catalog, err := d.IntrospectCatalog(ctx, schema.CatalogOptions{})
+	catalog, err := d.InspectCatalog(ctx, schema.CatalogOptions{})
 	if err != nil {
-		t.Fatalf("IntrospectCatalog: %v", err)
+		t.Fatalf("InspectCatalog: %v", err)
 	}
 	if catalog.Dialect != "mysql" || catalog.Database != "testdb" {
 		t.Fatalf("unexpected catalog header: %+v", catalog)
@@ -319,9 +319,9 @@ func TestIntrospectCatalogAndObjects(t *testing.T) {
 		}
 	}
 
-	objects, err := d.IntrospectObjects(ctx, []schema.ObjectRef{{Namespace: "testdb", Kind: "table", Name: "introspect_child"}})
+	objects, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "testdb", Kind: "table", Name: "introspect_child"}})
 	if err != nil {
-		t.Fatalf("IntrospectObjects: %v", err)
+		t.Fatalf("InspectObjects: %v", err)
 	}
 	if len(objects) != 1 {
 		t.Fatalf("expected one object, got %d: %+v", len(objects), objects)
@@ -340,13 +340,13 @@ func TestIntrospectCatalogAndObjects(t *testing.T) {
 		t.Fatalf("expected idx_child_label index, got %+v", child.Relational.Indexes)
 	}
 
-	objects, err = d.IntrospectObjects(ctx, []schema.ObjectRef{
+	objects, err = d.InspectObjects(ctx, []schema.ObjectRef{
 		{Namespace: "testdb", Kind: "function", Name: "introspect_double"},
 		{Namespace: "testdb", Kind: "procedure", Name: "introspect_noop"},
 		{Namespace: "testdb", Kind: "trigger", Name: "introspect_child_bi"},
 	})
 	if err != nil {
-		t.Fatalf("IntrospectObjects descriptors: %v", err)
+		t.Fatalf("InspectObjects descriptors: %v", err)
 	}
 	if len(objects) != 3 {
 		t.Fatalf("expected three descriptor objects, got %d: %+v", len(objects), objects)
