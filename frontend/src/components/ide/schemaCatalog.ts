@@ -1,7 +1,7 @@
-import type { CatalogNamespace, CatalogObjectGroup, DriverCapabilities, SchemaCatalog } from '#/lib/api/types'
+import type { CatalogNamespace, CatalogObjectGroup, SchemaCatalog, SchemaSpec } from '#/lib/api/types'
 
-export function kindLabel(caps: DriverCapabilities | undefined, kind: string): string {
-  return caps?.kinds.find((k) => k.kind === kind)?.plural_label ?? fallbackKindLabel(kind)
+export function kindLabel(spec: SchemaSpec | undefined, kind: string): string {
+  return spec?.kinds.find((k) => k.kind === kind)?.plural_label ?? fallbackKindLabel(kind)
 }
 
 function fallbackKindLabel(kind: string): string {
@@ -13,13 +13,13 @@ function fallbackKindLabel(kind: string): string {
   return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
 }
 
-function kindOrder(caps: DriverCapabilities | undefined, kind: string): number {
-  return caps?.kinds.find((k) => k.kind === kind)?.order ?? Number.MAX_SAFE_INTEGER
+function kindOrder(spec: SchemaSpec | undefined, kind: string): number {
+  return spec?.kinds.find((k) => k.kind === kind)?.order ?? Number.MAX_SAFE_INTEGER
 }
 
-export function sortedGroups(ns: CatalogNamespace, caps: DriverCapabilities | undefined): CatalogObjectGroup[] {
+export function sortedGroups(ns: CatalogNamespace, spec: SchemaSpec | undefined): CatalogObjectGroup[] {
   return [...(ns.groups ?? [])].sort(
-    (a, b) => kindOrder(caps, a.kind) - kindOrder(caps, b.kind) || a.kind.localeCompare(b.kind),
+    (a, b) => kindOrder(spec, a.kind) - kindOrder(spec, b.kind) || a.kind.localeCompare(b.kind),
   )
 }
 

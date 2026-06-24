@@ -4,11 +4,11 @@ import { Icon, type AppIcon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { isApiError } from '#/lib/api/errors'
 import {
-  orgConnectionCapabilitiesQueryOptions,
   orgConnectionCatalogQueryOptions,
+  orgConnectionSchemaSpecQueryOptions,
   orgConnectionObjectQueryOptions,
 } from '#/lib/api/query'
-import type { CatalogNamespace, CatalogObjectGroup, DriverCapabilities, ObjectDescriptor, ObjectDetail, ObjectRef } from '#/lib/api/types'
+import type { CatalogNamespace, CatalogObjectGroup, ObjectDescriptor, ObjectDetail, ObjectRef, SchemaSpec } from '#/lib/api/types'
 import { useIde } from './useIdeStore'
 import { filterCatalog, kindLabel, sortedGroups } from './schemaCatalog'
 import { columnTypeIcon } from './columnTypeIcon'
@@ -26,7 +26,7 @@ type TreeCtx = {
   dialect: SqlDialect
   insert: (text: string) => void
   refresh: () => void
-  caps: DriverCapabilities | undefined
+  spec: SchemaSpec | undefined
   orgSlug: string
   workspaceId: number
   connectionId: number
@@ -70,7 +70,7 @@ function useTreeCtx() {
   return {
     dialect: ctx?.dialect ?? null,
     refresh: ctx?.refresh ?? (() => {}),
-    caps: ctx?.caps,
+    spec: ctx?.spec,
   }
 }
 
@@ -107,8 +107,8 @@ export function SchemaTree({
     ...orgConnectionCatalogQueryOptions(orgSlug, workspaceId, connectionId, sessionId ?? ''),
     enabled: Boolean(sessionId),
   })
-  const capsQuery = useQuery({
-    ...orgConnectionCapabilitiesQueryOptions(orgSlug, workspaceId, connectionId, sessionId ?? ''),
+  const specQuery = useQuery({
+    ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspaceId, connectionId, sessionId ?? ''),
     enabled: Boolean(sessionId),
   })
 
@@ -123,7 +123,7 @@ export function SchemaTree({
   }
   if (catalogQuery.isError) {
     if (isApiError(catalogQuery.error) && catalogQuery.error.status === 501) {
-      return <SchemaMessage>This driver doesn&apos;t support schema introspection.</SchemaMessage>
+      return <SchemaMessage>This driver doesn&apos;t support schema inspection.</SchemaMessage>
     }
     return (
       <div className="flex items-center gap-2 py-1.5 pr-2 text-xs text-muted-foreground" style={{ paddingLeft: indent(0) }}>
@@ -145,7 +145,7 @@ export function SchemaTree({
     return <SchemaMessage>{filtering ? 'No matches.' : 'No objects.'}</SchemaMessage>
   }
 
-  const caps = capsQuery.data?.capabilities
+  const spec = specQuery.data?.spec
   const single = namespaces.length === 1 ? namespaces[0] : null
   const ctx: TreeCtx = {
     dialect,
@@ -153,7 +153,7 @@ export function SchemaTree({
     refresh: () => {
       void catalogQuery.refetch()
     },
-    caps,
+    spec,
     orgSlug,
     workspaceId,
     connectionId,
@@ -164,7 +164,7 @@ export function SchemaTree({
     <SchemaTreeContext.Provider value={ctx}>
       <div>
         {single
-          ? sortedGroups(single, caps).map((g) => (
+          ? sortedGroups(single, spec).map((g) => (
               <SchemaGroupNode key={g.kind} group={g} baseDepth={0} forceOpen={filtering} />
             ))
           : namespaces.map((ns) => <SchemaNamespaceNode key={ns.name} namespace={ns} forceOpen={filtering} />)}
@@ -188,8 +188,8 @@ function SchemaSpinner({ size = 12 }: { size?: number }) {
 function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: CatalogNamespace; forceOpen: boolean }) {
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
-  const { refresh, caps } = useTreeCtx()
-  const groups = sortedGroups(namespace, caps)
+  const { refresh, spec } = useTreeCtx()
+  const groups = sortedGroups(namespace, spec)
   const menuItems = buildNamespaceMenu({
     onCopyName: () => copyWithToast(namespace.name),
     onRefresh: refresh,
@@ -218,8 +218,8 @@ function SchemaGroupNode({
   const expanded = open ?? forceOpen
   const objects = group.objects ?? []
   const icon = kindIcon(group.kind)
-  const { refresh, caps } = useTreeCtx()
-  const label = kindLabel(caps, group.kind)
+  const { refresh, spec } = useTreeCtx()
+  const label = kindLabel(spec, group.kind)
   const newLabel = `New ${label.replace(/s$/, '')}...`
   const menuItems = buildObjectGroupMenu({ newLabel, onRefresh: refresh })
 

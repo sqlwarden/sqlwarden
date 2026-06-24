@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-type fakeIntrospector struct {
+type fakeSchemaInspector struct {
 	mu          sync.Mutex
 	catalogHits int32
 	objectCalls int32
@@ -19,11 +19,11 @@ type fakeIntrospector struct {
 	delay       time.Duration
 }
 
-func (f *fakeIntrospector) Capabilities() DriverCapabilities {
-	return DriverCapabilities{Dialect: "fake", Kinds: []KindDescriptor{{Kind: "table"}}}
+func (f *fakeSchemaInspector) SchemaSpec() SchemaSpec {
+	return SchemaSpec{Dialect: "fake", Kinds: []SchemaObjectKind{{Kind: "table"}}}
 }
 
-func (f *fakeIntrospector) IntrospectCatalog(ctx context.Context, opts CatalogOptions) (*Catalog, error) {
+func (f *fakeSchemaInspector) InspectCatalog(ctx context.Context, opts CatalogOptions) (*Catalog, error) {
 	atomic.AddInt32(&f.catalogHits, 1)
 	if f.delay > 0 {
 		time.Sleep(f.delay)
@@ -37,7 +37,7 @@ func (f *fakeIntrospector) IntrospectCatalog(ctx context.Context, opts CatalogOp
 	}, nil
 }
 
-func (f *fakeIntrospector) IntrospectObjects(ctx context.Context, refs []ObjectRef) ([]Object, error) {
+func (f *fakeSchemaInspector) InspectObjects(ctx context.Context, refs []ObjectRef) ([]Object, error) {
 	atomic.AddInt32(&f.objectCalls, 1)
 	f.mu.Lock()
 	f.objectRefs = append(f.objectRefs, refs)
@@ -53,7 +53,7 @@ func newService() *Service { return NewService(NewMemCache(64), time.Minute) }
 
 func TestServiceCatalogCachesAfterMiss(t *testing.T) {
 	s := newService()
-	intr := &fakeIntrospector{}
+	intr := &fakeSchemaInspector{}
 	if _, err := s.Catalog(context.Background(), "c1", intr); err != nil {
 		t.Fatal(err)
 	}
@@ -61,13 +61,13 @@ func TestServiceCatalogCachesAfterMiss(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := atomic.LoadInt32(&intr.catalogHits); got != 1 {
-		t.Fatalf("want 1 introspection, got %d", got)
+		t.Fatalf("want 1 inspection, got %d", got)
 	}
 }
 
 func TestServiceCatalogSingleflight(t *testing.T) {
 	s := newService()
-	intr := &fakeIntrospector{delay: 50 * time.Millisecond}
+	intr := &fakeSchemaInspector{delay: 50 * time.Millisecond}
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
@@ -81,7 +81,7 @@ func TestServiceCatalogSingleflight(t *testing.T) {
 
 func TestServiceObjectsFetchesOnlyMissing(t *testing.T) {
 	s := newService()
-	intr := &fakeIntrospector{}
+	intr := &fakeSchemaInspector{}
 	ctx := context.Background()
 	users := ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
 	orders := ObjectRef{Namespace: "public", Kind: "table", Name: "orders"}
@@ -109,7 +109,7 @@ func TestServiceObjectsFetchesOnlyMissing(t *testing.T) {
 
 func TestServiceRefreshObjectVsConnection(t *testing.T) {
 	s := newService()
-	intr := &fakeIntrospector{}
+	intr := &fakeSchemaInspector{}
 	ctx := context.Background()
 	users := ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
 
@@ -132,22 +132,22 @@ func TestServiceRefreshObjectVsConnection(t *testing.T) {
 	_, _ = s.Catalog(ctx, "c1", intr)
 	_, _ = s.Objects(ctx, "c1", []ObjectRef{users}, intr)
 	if got := atomic.LoadInt32(&intr.catalogHits); got != 2 {
-		t.Fatalf("catalog should re-introspect after RefreshConnection, got %d", got)
+		t.Fatalf("catalog should re-inspect after RefreshConnection, got %d", got)
 	}
 	if got := atomic.LoadInt32(&intr.objectCalls); got != 3 {
 		t.Fatalf("object should re-fetch after RefreshConnection, got %d", got)
 	}
 }
 
-type erroringIntrospector struct{ fakeIntrospector }
+type erroringSchemaInspector struct{ fakeSchemaInspector }
 
-func (e *erroringIntrospector) IntrospectCatalog(ctx context.Context, opts CatalogOptions) (*Catalog, error) {
+func (e *erroringSchemaInspector) InspectCatalog(ctx context.Context, opts CatalogOptions) (*Catalog, error) {
 	return nil, context.DeadlineExceeded
 }
 
 func TestServiceDoesNotCacheCatalogError(t *testing.T) {
 	s := newService()
-	intr := &erroringIntrospector{}
+	intr := &erroringSchemaInspector{}
 	if _, err := s.Catalog(context.Background(), "c1", intr); err == nil {
 		t.Fatal("expected error")
 	}
@@ -156,11 +156,11 @@ func TestServiceDoesNotCacheCatalogError(t *testing.T) {
 	}
 }
 
-func TestServiceLogsIntrospectionWithoutObjectNames(t *testing.T) {
+func TestServiceLogsInspectionWithoutObjectNames(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	s := NewServiceWithLogger(NewMemCache(64), time.Minute, logger)
-	intr := &fakeIntrospector{}
+	intr := &fakeSchemaInspector{}
 	ctx := context.Background()
 	users := ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
 
@@ -176,9 +176,9 @@ func TestServiceLogsIntrospectionWithoutObjectNames(t *testing.T) {
 	logs := buf.String()
 	for _, want := range []string{
 		"schema catalog cache miss",
-		"schema catalog introspected",
+		"schema catalog inspected",
 		"schema object detail cache checked",
-		"schema object details introspected",
+		"schema object details inspected",
 		"schema object cache invalidated",
 		"schema connection cache invalidated",
 		"conn_id=c1",

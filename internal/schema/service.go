@@ -27,7 +27,7 @@ func objectKey(connID string, ref ObjectRef) string {
 func connObjectPrefix(connID string) string { return objectPrefix + connID + sep }
 
 // Service serves cached catalogs and object detail, collapsing concurrent
-// catalog misses for the same connection into a single introspection.
+// catalog misses for the same connection into a single inspection.
 type Service struct {
 	cache  Cache
 	ttl    time.Duration
@@ -40,7 +40,7 @@ func NewService(cache Cache, ttl time.Duration) *Service {
 	return NewServiceWithLogger(cache, ttl, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
-// NewServiceWithLogger builds a Service and emits structured introspection
+// NewServiceWithLogger builds a Service and emits structured inspection
 // events. Logs intentionally include counts and kinds, but not object names or
 // source bodies, because schema names can be sensitive in enterprise targets.
 func NewServiceWithLogger(cache Cache, ttl time.Duration, logger *slog.Logger) *Service {
@@ -50,22 +50,22 @@ func NewServiceWithLogger(cache Cache, ttl time.Duration, logger *slog.Logger) *
 	return &Service{cache: cache, ttl: ttl, logger: logger}
 }
 
-// Capabilities reports the driver's static kind catalog. It does not touch the
-// target database, so it works even when the catalog cannot be introspected.
-func (s *Service) Capabilities(intr Introspector) DriverCapabilities {
-	caps := intr.Capabilities()
-	s.logger.Debug("schema capabilities resolved",
+// Spec reports the driver's static schema object catalog. It does not touch the
+// target database, so it works even when the catalog cannot be inspected.
+func (s *Service) Spec(intr SchemaInspector) SchemaSpec {
+	spec := intr.SchemaSpec()
+	s.logger.Debug("schema spec resolved",
 		slog.Group("schema",
-			"operation", "capabilities",
-			"dialect", caps.Dialect,
-			"kinds", len(caps.Kinds),
+			"operation", "schema_spec",
+			"dialect", spec.Dialect,
+			"kinds", len(spec.Kinds),
 		),
 	)
-	return caps
+	return spec
 }
 
-// Catalog returns the cached catalog for connID, or introspects on a miss.
-func (s *Service) Catalog(ctx context.Context, connID string, intr Introspector) (*Catalog, error) {
+// Catalog returns the cached catalog for connID, or inspects on a miss.
+func (s *Service) Catalog(ctx context.Context, connID string, intr SchemaInspector) (*Catalog, error) {
 	key := catalogKey(connID)
 	start := time.Now()
 	if data, ok := s.cache.Get(key); ok {
@@ -104,14 +104,14 @@ func (s *Service) Catalog(ctx context.Context, connID string, intr Introspector)
 	)
 
 	v, err, shared := s.group.Do(key, func() (any, error) {
-		introspectStart := time.Now()
-		cat, err := intr.IntrospectCatalog(ctx, CatalogOptions{})
+		inspectStart := time.Now()
+		cat, err := intr.InspectCatalog(ctx, CatalogOptions{})
 		if err != nil {
-			s.logger.Warn("schema catalog introspection failed",
+			s.logger.Warn("schema catalog inspection failed",
 				slog.Group("schema",
 					"operation", "catalog",
 					"conn_id", connID,
-					"duration", time.Since(introspectStart).String(),
+					"duration", time.Since(inspectStart).String(),
 				),
 				"error", err,
 			)
@@ -132,14 +132,14 @@ func (s *Service) Catalog(ctx context.Context, connID string, intr Introspector)
 				"error", err,
 			)
 		}
-		s.logger.Info("schema catalog introspected",
+		s.logger.Info("schema catalog inspected",
 			slog.Group("schema",
 				"operation", "catalog",
 				"conn_id", connID,
 				"dialect", cat.Dialect,
 				"namespaces", len(cat.Namespaces),
 				"objects", countCatalogObjects(cat),
-				"duration", time.Since(introspectStart).String(),
+				"duration", time.Since(inspectStart).String(),
 			),
 		)
 		return cat, nil
@@ -162,9 +162,9 @@ func (s *Service) Catalog(ctx context.Context, connID string, intr Introspector)
 }
 
 // Objects returns detail for refs in request order, serving cached entries and
-// introspecting only the missing refs in one driver call. Refs the driver does
-// not return are omitted (partial success).
-func (s *Service) Objects(ctx context.Context, connID string, refs []ObjectRef, intr Introspector) ([]Object, error) {
+// inspecting only the missing refs in one driver call. Refs the driver does not
+// return are omitted (partial success).
+func (s *Service) Objects(ctx context.Context, connID string, refs []ObjectRef, intr SchemaInspector) ([]Object, error) {
 	start := time.Now()
 	found := make(map[ObjectRef]Object, len(refs))
 	var missing []ObjectRef
@@ -199,16 +199,16 @@ func (s *Service) Objects(ctx context.Context, connID string, refs []ObjectRef, 
 		"kinds", objectRefKindCounts(refs),
 	)
 	if len(missing) > 0 {
-		introspectStart := time.Now()
-		fetched, err := intr.IntrospectObjects(ctx, missing)
+		inspectStart := time.Now()
+		fetched, err := intr.InspectObjects(ctx, missing)
 		if err != nil {
-			s.logger.Warn("schema object detail introspection failed",
+			s.logger.Warn("schema object detail inspection failed",
 				slog.Group("schema",
 					"operation", "objects",
 					"conn_id", connID,
 					"requested", len(refs),
 					"missing", len(missing),
-					"duration", time.Since(introspectStart).String(),
+					"duration", time.Since(inspectStart).String(),
 				),
 				"kinds", objectRefKindCounts(missing),
 				"error", err,
@@ -230,14 +230,14 @@ func (s *Service) Objects(ctx context.Context, connID string, refs []ObjectRef, 
 			}
 			found[o.Ref] = o
 		}
-		s.logger.Info("schema object details introspected",
+		s.logger.Info("schema object details inspected",
 			slog.Group("schema",
 				"operation", "objects",
 				"conn_id", connID,
 				"requested", len(refs),
 				"cache_misses", len(missing),
 				"fetched", len(fetched),
-				"duration", time.Since(introspectStart).String(),
+				"duration", time.Since(inspectStart).String(),
 			),
 			"kinds", objectRefKindCounts(missing),
 		)

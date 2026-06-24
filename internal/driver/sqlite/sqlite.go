@@ -82,10 +82,10 @@ func (d *sqliteDriver) Dialect() driver.Dialect {
 	return driver.DialectSQLite
 }
 
-func (d *sqliteDriver) Capabilities() schema.DriverCapabilities {
-	return schema.DriverCapabilities{
+func (d *sqliteDriver) SchemaSpec() schema.SchemaSpec {
+	return schema.SchemaSpec{
 		Dialect: "sqlite",
-		Kinds: []schema.KindDescriptor{
+		Kinds: []schema.SchemaObjectKind{
 			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
 			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
 			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
@@ -93,7 +93,7 @@ func (d *sqliteDriver) Capabilities() schema.DriverCapabilities {
 	}
 }
 
-func (d *sqliteDriver) IntrospectCatalog(ctx context.Context, opts schema.CatalogOptions) (*schema.Catalog, error) {
+func (d *sqliteDriver) InspectCatalog(ctx context.Context, opts schema.CatalogOptions) (*schema.Catalog, error) {
 	b := build.NewCatalog()
 	b.DeclareKind("table")
 	b.DeclareKind("view")
@@ -134,7 +134,7 @@ func (d *sqliteDriver) IntrospectCatalog(ctx context.Context, opts schema.Catalo
 	return b.Build("", "sqlite", database), nil
 }
 
-func (d *sqliteDriver) IntrospectObjects(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+func (d *sqliteDriver) InspectObjects(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
 	allowed, err := d.sqliteNamespaceSet(ctx)
 	if err != nil {
 		return nil, err

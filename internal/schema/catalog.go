@@ -23,15 +23,15 @@ type ObjectGroupCatalog struct {
 	Objects []ObjectRef `json:"objects"` // empty for `searched` kinds
 }
 
-// DriverCapabilities is a driver's static declaration of the object kinds it
+// SchemaSpec is a driver's static declaration of the object kinds it
 // exposes, mirroring the permission catalog as the backend source of truth for
 // labels/ordering/flags. The frontend renders generically from it.
-type DriverCapabilities struct {
-	Dialect string           `json:"dialect"`
-	Kinds   []KindDescriptor `json:"kinds"`
+type SchemaSpec struct {
+	Dialect string             `json:"dialect"`
+	Kinds   []SchemaObjectKind `json:"kinds"`
 }
 
-type KindDescriptor struct {
+type SchemaObjectKind struct {
 	Kind            string `json:"kind"`
 	Label           string `json:"label"`
 	PluralLabel     string `json:"plural_label"`

@@ -30,7 +30,7 @@ func TestMemCacheLRUEviction(t *testing.T) {
 	c := NewMemCache(2)
 	c.Set("1", []byte("1"), time.Minute)
 	c.Set("2", []byte("2"), time.Minute)
-	_, _ = c.Get("1")                 // make "1" most-recently-used
+	_, _ = c.Get("1")                    // make "1" most-recently-used
 	c.Set("3", []byte("3"), time.Minute) // should evict "2"
 	if _, ok := c.Get("2"); ok {
 		t.Fatal("expected '2' to be evicted")

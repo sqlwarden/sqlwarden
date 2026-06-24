@@ -1,7 +1,7 @@
 // Package build assembles the two-tier schema models from the flat rows that a
-// driver's introspection queries return: a CatalogBuilder for the cheap listing,
+// driver's inspection queries return: a CatalogBuilder for the cheap listing,
 // and a RelationalBuilder for typed object detail with qualified foreign keys.
-// Neither is safe for concurrent use; each introspection uses its own builder.
+// Neither is safe for concurrent use; each inspection uses its own builder.
 package build
 
 import "github.com/sqlwarden/internal/schema"

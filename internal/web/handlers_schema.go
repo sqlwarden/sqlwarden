@@ -11,8 +11,8 @@ import (
 	"github.com/sqlwarden/internal/schema"
 )
 
-type capabilitiesResponse struct {
-	Capabilities schema.DriverCapabilities `json:"capabilities"`
+type schemaSpecResponse struct {
+	Spec schema.SchemaSpec `json:"spec"`
 }
 
 type catalogResponse struct {
@@ -69,34 +69,34 @@ func (app *application) resolveSchemaSession(w http.ResponseWriter, r *http.Requ
 	return session, true
 }
 
-// resolveIntrospector resolves the active database session and checks whether
-// the concrete driver supports schema introspection.
-func (app *application) resolveIntrospector(w http.ResponseWriter, r *http.Request) (*connection.Session, schema.Introspector, bool) {
+// resolveSchemaInspector resolves the active database session and checks whether
+// the concrete driver supports schema inspection.
+func (app *application) resolveSchemaInspector(w http.ResponseWriter, r *http.Request) (*connection.Session, schema.SchemaInspector, bool) {
 	session, ok := app.resolveSchemaSession(w, r)
 	if !ok {
 		return nil, nil, false
 	}
-	intr, ok := session.Driver.(schema.Introspector)
+	intr, ok := session.Driver.(schema.SchemaInspector)
 	if !ok {
-		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema introspection.", nil)
+		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
 		return nil, nil, false
 	}
 	return session, intr, true
 }
 
-func (app *application) getConnectionSchemaCapabilities(w http.ResponseWriter, r *http.Request) {
-	_, intr, ok := app.resolveIntrospector(w, r)
+func (app *application) getConnectionSchemaSpec(w http.ResponseWriter, r *http.Request) {
+	_, intr, ok := app.resolveSchemaInspector(w, r)
 	if !ok {
 		return
 	}
-	caps := app.schemaService.Capabilities(intr)
-	if err := response.JSON(w, http.StatusOK, capabilitiesResponse{Capabilities: caps}); err != nil {
+	spec := app.schemaService.Spec(intr)
+	if err := response.JSON(w, http.StatusOK, schemaSpecResponse{Spec: spec}); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) getConnectionSchemaCatalog(w http.ResponseWriter, r *http.Request) {
-	session, intr, ok := app.resolveIntrospector(w, r)
+	session, intr, ok := app.resolveSchemaInspector(w, r)
 	if !ok {
 		return
 	}
@@ -111,7 +111,7 @@ func (app *application) getConnectionSchemaCatalog(w http.ResponseWriter, r *htt
 }
 
 func (app *application) getConnectionSchemaObjects(w http.ResponseWriter, r *http.Request) {
-	session, intr, ok := app.resolveIntrospector(w, r)
+	session, intr, ok := app.resolveSchemaInspector(w, r)
 	if !ok {
 		return
 	}
@@ -131,7 +131,7 @@ func (app *application) getConnectionSchemaObjects(w http.ResponseWriter, r *htt
 }
 
 func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.Request) {
-	session, _, ok := app.resolveIntrospector(w, r)
+	session, _, ok := app.resolveSchemaInspector(w, r)
 	if !ok {
 		return
 	}

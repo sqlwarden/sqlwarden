@@ -54,7 +54,7 @@ func TestSQLiteDriver(t *testing.T) {
 	}
 }
 
-func TestIntrospectCatalogAndObjects(t *testing.T) {
+func TestInspectCatalogAndObjects(t *testing.T) {
 	d := &sqliteDriver{}
 	ctx := context.Background()
 
@@ -88,14 +88,14 @@ func TestIntrospectCatalogAndObjects(t *testing.T) {
 		t.Fatalf("create trigger: %v", err)
 	}
 
-	caps := d.Capabilities()
-	if caps.Dialect != "sqlite" || len(caps.Kinds) != 3 {
-		t.Fatalf("unexpected capabilities: %+v", caps)
+	spec := d.SchemaSpec()
+	if spec.Dialect != "sqlite" || len(spec.Kinds) != 3 {
+		t.Fatalf("unexpected schema spec: %+v", spec)
 	}
 
-	catalog, err := d.IntrospectCatalog(ctx, schema.CatalogOptions{})
+	catalog, err := d.InspectCatalog(ctx, schema.CatalogOptions{})
 	if err != nil {
-		t.Fatalf("IntrospectCatalog: %v", err)
+		t.Fatalf("InspectCatalog: %v", err)
 	}
 	if !catalogHasRef(catalog, schema.ObjectRef{Namespace: "main", Kind: "table", Name: "introspect_child"}) {
 		t.Fatalf("catalog missing child table: %+v", catalog.Namespaces)
@@ -107,9 +107,9 @@ func TestIntrospectCatalogAndObjects(t *testing.T) {
 		t.Fatalf("catalog missing child trigger: %+v", catalog.Namespaces)
 	}
 
-	objects, err := d.IntrospectObjects(ctx, []schema.ObjectRef{{Namespace: "main", Kind: "table", Name: "introspect_child"}})
+	objects, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "main", Kind: "table", Name: "introspect_child"}})
 	if err != nil {
-		t.Fatalf("IntrospectObjects: %v", err)
+		t.Fatalf("InspectObjects: %v", err)
 	}
 	if len(objects) != 1 {
 		t.Fatalf("expected one object, got %d: %+v", len(objects), objects)
@@ -128,9 +128,9 @@ func TestIntrospectCatalogAndObjects(t *testing.T) {
 		t.Fatalf("expected idx_child_label index, got %+v", child.Relational.Indexes)
 	}
 
-	objects, err = d.IntrospectObjects(ctx, []schema.ObjectRef{{Namespace: "main", Kind: "trigger", Name: "introspect_child_ai"}})
+	objects, err = d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "main", Kind: "trigger", Name: "introspect_child_ai"}})
 	if err != nil {
-		t.Fatalf("IntrospectObjects trigger: %v", err)
+		t.Fatalf("InspectObjects trigger: %v", err)
 	}
 	if len(objects) != 1 {
 		t.Fatalf("expected one trigger, got %d: %+v", len(objects), objects)

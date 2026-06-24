@@ -323,7 +323,7 @@ export interface SchemaCatalog {
   namespaces: CatalogNamespace[] | null
 }
 
-export interface KindDescriptor {
+export interface SchemaObjectKind {
   kind: string
   label: string
   plural_label: string
@@ -333,9 +333,9 @@ export interface KindDescriptor {
   listing: 'enumerated' | 'searched'
 }
 
-export interface DriverCapabilities {
+export interface SchemaSpec {
   dialect: string
-  kinds: KindDescriptor[]
+  kinds: SchemaObjectKind[]
 }
 
 export interface DbColumn {
@@ -400,8 +400,8 @@ export interface CatalogResponse {
   catalog: SchemaCatalog
 }
 
-export interface CapabilitiesResponse {
-  capabilities: DriverCapabilities
+export interface SchemaSpecResponse {
+  spec: SchemaSpec
 }
 
 export interface ObjectsResponse {

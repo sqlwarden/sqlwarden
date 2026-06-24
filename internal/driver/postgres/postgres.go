@@ -77,10 +77,10 @@ func (d *postgresDriver) Dialect() driver.Dialect {
 	return driver.DialectPostgres
 }
 
-func (d *postgresDriver) Capabilities() schema.DriverCapabilities {
-	return schema.DriverCapabilities{
+func (d *postgresDriver) SchemaSpec() schema.SchemaSpec {
+	return schema.SchemaSpec{
 		Dialect: "postgres",
-		Kinds: []schema.KindDescriptor{
+		Kinds: []schema.SchemaObjectKind{
 			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
 			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
 			{Kind: "materialized_view", Label: "Materialized View", PluralLabel: "Materialized Views", Order: 3, Relational: true, SupportsDiagram: false, Listing: "enumerated"},
@@ -90,7 +90,7 @@ func (d *postgresDriver) Capabilities() schema.DriverCapabilities {
 	}
 }
 
-func (d *postgresDriver) IntrospectCatalog(ctx context.Context, opts schema.CatalogOptions) (*schema.Catalog, error) {
+func (d *postgresDriver) InspectCatalog(ctx context.Context, opts schema.CatalogOptions) (*schema.Catalog, error) {
 	b := build.NewCatalog()
 	b.DeclareKind("table")
 	b.DeclareKind("view")
@@ -177,7 +177,7 @@ func (d *postgresDriver) queryRefs(ctx context.Context, q string, fn func(ns, na
 	return rows.Err()
 }
 
-func (d *postgresDriver) IntrospectObjects(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+func (d *postgresDriver) InspectObjects(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
 	var relRefs, mvRefs, fnRefs, seqRefs []schema.ObjectRef
 	for _, r := range refs {
 		switch r.Kind {
