@@ -1,7 +1,10 @@
 package schema
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -150,5 +153,44 @@ func TestServiceDoesNotCacheCatalogError(t *testing.T) {
 	}
 	if _, ok := s.cache.Get(catalogKey("c1")); ok {
 		t.Fatal("failed catalog must not be cached")
+	}
+}
+
+func TestServiceLogsIntrospectionWithoutObjectNames(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	s := NewServiceWithLogger(NewMemCache(64), time.Minute, logger)
+	intr := &fakeIntrospector{}
+	ctx := context.Background()
+	users := ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
+
+	if _, err := s.Catalog(ctx, "c1", intr); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Objects(ctx, "c1", []ObjectRef{users}, intr); err != nil {
+		t.Fatal(err)
+	}
+	s.RefreshObject("c1", users)
+	s.RefreshConnection("c1")
+
+	logs := buf.String()
+	for _, want := range []string{
+		"schema catalog cache miss",
+		"schema catalog introspected",
+		"schema object detail cache checked",
+		"schema object details introspected",
+		"schema object cache invalidated",
+		"schema connection cache invalidated",
+		"conn_id=c1",
+		"kind=table",
+	} {
+		if !strings.Contains(logs, want) {
+			t.Fatalf("expected logs to contain %q, got:\n%s", want, logs)
+		}
+	}
+	for _, sensitive := range []string{"users", "public"} {
+		if strings.Contains(logs, sensitive) {
+			t.Fatalf("logs should not contain object name/namespace %q:\n%s", sensitive, logs)
+		}
 	}
 }
