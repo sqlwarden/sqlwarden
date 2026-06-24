@@ -16,7 +16,7 @@ type CompletionRequest struct {
 	RequestMetadata
 	SQL          string
 	CursorOffset int
-	Schema       *schema.Schema
+	Catalog      *schema.Catalog
 }
 
 type CompletionResult struct {
