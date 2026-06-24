@@ -2,7 +2,7 @@ package sqlite
 
 import (
 	"context"
-	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -11,155 +11,11 @@ import (
 	"github.com/sqlwarden/pkg/result"
 )
 
-func mustExec(t *testing.T, d driver.Driver, sql string) {
-	t.Helper()
-	if _, err := d.Execute(context.Background(), sql); err != nil {
-		t.Fatalf("exec %q: %v", sql, err)
-	}
-}
-
-func introObject(t *testing.T, s *schema.Schema, ns, kind, name string) schema.Object {
-	t.Helper()
-	for _, n := range s.Namespaces {
-		if n.Name != ns {
-			continue
-		}
-		for _, g := range n.ObjectGroups {
-			if g.Kind != kind {
-				continue
-			}
-			for _, o := range g.Objects {
-				if o.Name == name {
-					return o
-				}
-			}
-		}
-	}
-	t.Fatalf("%s %s.%s not found in %+v", kind, ns, name, s)
-	return schema.Object{}
-}
-
-func introHasIndex(o schema.Object, name string) bool {
-	for _, ix := range o.Indexes {
-		if ix.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
-func TestSQLiteIntrospect(t *testing.T) {
-	d := &sqliteDriver{}
-	ctx := context.Background()
-	dsn := filepath.Join(t.TempDir(), "introspect.db")
-	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: dsn, Driver: "sqlite"}); err != nil {
-		t.Fatalf("Connect: %v", err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-
-	mustExec(t, d, `CREATE TABLE intro_orgs (id INTEGER PRIMARY KEY)`)
-	mustExec(t, d, `CREATE TABLE intro_users (
-		id INTEGER PRIMARY KEY,
-		org_id INTEGER NOT NULL REFERENCES intro_orgs(id),
-		email TEXT NOT NULL
-	)`)
-	mustExec(t, d, `CREATE INDEX intro_users_email_idx ON intro_users(email)`)
-
-	s, err := d.Introspect(ctx, schema.IntrospectOptions{})
-	if err != nil {
-		t.Fatalf("introspect: %v", err)
-	}
-	users := introObject(t, s, "main", "table", "intro_users")
-	if len(users.PrimaryKey) != 1 || users.PrimaryKey[0] != "id" {
-		t.Fatalf("expected PK [id], got %v", users.PrimaryKey)
-	}
-	if len(users.ForeignKeys) != 1 || users.ForeignKeys[0].ReferencedTable != "intro_orgs" {
-		t.Fatalf("expected FK to intro_orgs, got %+v", users.ForeignKeys)
-	}
-	if !introHasIndex(users, "intro_users_email_idx") {
-		t.Fatalf("expected intro_users_email_idx index, got %+v", users.Indexes)
-	}
-}
-
-func TestSQLiteIntrospectView(t *testing.T) {
-	d := &sqliteDriver{}
-	ctx := context.Background()
-	dsn := filepath.Join(t.TempDir(), "introspect_view.db")
-	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: dsn, Driver: "sqlite"}); err != nil {
-		t.Fatalf("Connect: %v", err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-
-	mustExec(t, d, `CREATE TABLE intro_accounts (id INTEGER PRIMARY KEY, email TEXT NOT NULL)`)
-	mustExec(t, d, `CREATE VIEW intro_active_accounts AS SELECT id, email FROM intro_accounts`)
-
-	s, err := d.Introspect(ctx, schema.IntrospectOptions{})
-	if err != nil {
-		t.Fatalf("introspect: %v", err)
-	}
-
-	var view *schema.Object
-	for i := range s.Namespaces {
-		for _, g := range s.Namespaces[i].ObjectGroups {
-			if g.Kind != "view" {
-				continue
-			}
-			for j := range g.Objects {
-				if g.Objects[j].Name == "intro_active_accounts" {
-					view = &g.Objects[j]
-				}
-			}
-		}
-	}
-	if view == nil {
-		t.Fatalf("view intro_active_accounts not found in views; schema=%+v", s)
-	}
-	if len(view.Columns) != 2 {
-		t.Fatalf("expected 2 columns on view, got %d (%+v)", len(view.Columns), view.Columns)
-	}
-
-	// A view must not also appear among the tables.
-	for _, ns := range s.Namespaces {
-		for _, g := range ns.ObjectGroups {
-			if g.Kind != "table" {
-				continue
-			}
-			for _, o := range g.Objects {
-				if o.Name == "intro_active_accounts" {
-					t.Fatal("view should not be listed as a table")
-				}
-			}
-		}
-	}
-}
-
-func TestSQLiteIntrospectTrigger(t *testing.T) {
-	d := &sqliteDriver{}
-	ctx := context.Background()
-	dsn := filepath.Join(t.TempDir(), "introspect_trigger.db")
-	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: dsn, Driver: "sqlite"}); err != nil {
-		t.Fatalf("Connect: %v", err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-
-	mustExec(t, d, `CREATE TABLE intro_log (id INTEGER PRIMARY KEY, n INTEGER)`)
-	mustExec(t, d, `CREATE TRIGGER intro_bump AFTER INSERT ON intro_log BEGIN UPDATE intro_log SET n = n + 1; END`)
-
-	s, err := d.Introspect(ctx, schema.IntrospectOptions{})
-	if err != nil {
-		t.Fatalf("introspect: %v", err)
-	}
-	trg := introObject(t, s, "main", "trigger", "intro_bump")
-	if trg.Attributes["table"] != "intro_log" {
-		t.Fatalf("expected trigger on intro_log, got attributes %+v", trg.Attributes)
-	}
-}
-
 func TestSQLiteDriver(t *testing.T) {
 	d := &sqliteDriver{}
 	ctx := context.Background()
 
-	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
+	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: "file:introspect_schema?mode=memory&cache=shared", Driver: "sqlite"}); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
 	defer d.Close()
@@ -195,6 +51,91 @@ func TestSQLiteDriver(t *testing.T) {
 	// Test Dialect.
 	if d.Dialect() != driver.DialectSQLite {
 		t.Errorf("expected dialect sqlite, got %s", d.Dialect())
+	}
+}
+
+func TestIntrospectCatalogAndObjects(t *testing.T) {
+	d := &sqliteDriver{}
+	ctx := context.Background()
+	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer d.Close()
+
+	if _, err := d.Execute(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		t.Fatalf("foreign_keys pragma: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE TABLE introspect_parent (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`); err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+	if _, err := d.Execute(ctx, `
+		CREATE TABLE introspect_child (
+			id INTEGER PRIMARY KEY,
+			parent_id INTEGER NOT NULL REFERENCES introspect_parent(id),
+			label TEXT
+		)
+	`); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE INDEX idx_child_label ON introspect_child(label)`); err != nil {
+		t.Fatalf("create index: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE VIEW introspect_child_view AS SELECT id, label FROM introspect_child`); err != nil {
+		t.Fatalf("create view: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE TRIGGER introspect_child_ai AFTER INSERT ON introspect_child BEGIN UPDATE introspect_child SET label = COALESCE(label, 'untitled') WHERE id = NEW.id; END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	caps := d.Capabilities()
+	if caps.Dialect != "sqlite" || len(caps.Kinds) != 3 {
+		t.Fatalf("unexpected capabilities: %+v", caps)
+	}
+
+	catalog, err := d.IntrospectCatalog(ctx, schema.CatalogOptions{})
+	if err != nil {
+		t.Fatalf("IntrospectCatalog: %v", err)
+	}
+	if !catalogHasRef(catalog, schema.ObjectRef{Namespace: "main", Kind: "table", Name: "introspect_child"}) {
+		t.Fatalf("catalog missing child table: %+v", catalog.Namespaces)
+	}
+	if !catalogHasRef(catalog, schema.ObjectRef{Namespace: "main", Kind: "view", Name: "introspect_child_view"}) {
+		t.Fatalf("catalog missing child view: %+v", catalog.Namespaces)
+	}
+	if !catalogHasRef(catalog, schema.ObjectRef{Namespace: "main", Kind: "trigger", Name: "introspect_child_ai"}) {
+		t.Fatalf("catalog missing child trigger: %+v", catalog.Namespaces)
+	}
+
+	objects, err := d.IntrospectObjects(ctx, []schema.ObjectRef{{Namespace: "main", Kind: "table", Name: "introspect_child"}})
+	if err != nil {
+		t.Fatalf("IntrospectObjects: %v", err)
+	}
+	if len(objects) != 1 {
+		t.Fatalf("expected one object, got %d: %+v", len(objects), objects)
+	}
+	child := objects[0]
+	if child.Relational == nil {
+		t.Fatalf("expected relational detail: %+v", child)
+	}
+	if !slices.Contains(child.Relational.PrimaryKey, "id") {
+		t.Fatalf("expected primary key id, got %+v", child.Relational.PrimaryKey)
+	}
+	if len(child.Relational.ForeignKeys) != 1 || child.Relational.ForeignKeys[0].References.Name != "introspect_parent" {
+		t.Fatalf("expected parent foreign key, got %+v", child.Relational.ForeignKeys)
+	}
+	if !hasIndex(child.Relational.Indexes, "idx_child_label", "label") {
+		t.Fatalf("expected idx_child_label index, got %+v", child.Relational.Indexes)
+	}
+
+	objects, err = d.IntrospectObjects(ctx, []schema.ObjectRef{{Namespace: "main", Kind: "trigger", Name: "introspect_child_ai"}})
+	if err != nil {
+		t.Fatalf("IntrospectObjects trigger: %v", err)
+	}
+	if len(objects) != 1 {
+		t.Fatalf("expected one trigger, got %d: %+v", len(objects), objects)
+	}
+	if objects[0].Relational != nil || len(objects[0].Descriptors) == 0 {
+		t.Fatalf("expected trigger descriptors, got %+v", objects[0])
 	}
 }
 
@@ -285,4 +226,26 @@ func TestToValue(t *testing.T) {
 			tc.check(t, toValue(tc.input))
 		})
 	}
+}
+
+func catalogHasRef(catalog *schema.Catalog, ref schema.ObjectRef) bool {
+	for _, ns := range catalog.Namespaces {
+		for _, group := range ns.Groups {
+			for _, got := range group.Objects {
+				if got == ref {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func hasIndex(indexes []schema.Index, name, column string) bool {
+	for _, ix := range indexes {
+		if ix.Name == name && slices.Contains(ix.Columns, column) {
+			return true
+		}
+	}
+	return false
 }

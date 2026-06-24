@@ -1,6 +1,6 @@
-import { keepPreviousData, queryOptions } from '@tanstack/react-query'
+import { keepPreviousData, queryOptions, type QueryClient } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFilesResponse, WorkspaceFileBrowserResult, ConnectionSchemaResponse } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFilesResponse, WorkspaceFileBrowserResult, CatalogResponse, CapabilitiesResponse, ObjectsResponse, ObjectRef } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -460,23 +460,80 @@ export function myConnectionsQueryOptions(workspaceId: string | number, environm
   })
 }
 
-export function connectionSchemaQueryKey(slug: string, workspaceId: string | number, connectionId: string | number) {
-  return ['connection-schema', slug, String(workspaceId), String(connectionId)] as const
+export function connectionCatalogQueryKey(slug: string, workspaceId: string | number, connectionId: string | number) {
+  return ['connection-catalog', slug, String(workspaceId), String(connectionId)] as const
 }
 
-export function orgConnectionSchemaQueryOptions(
+export function connectionCapabilitiesQueryKey(slug: string, workspaceId: string | number, connectionId: string | number) {
+  return ['connection-capabilities', slug, String(workspaceId), String(connectionId)] as const
+}
+
+function schemaBase(slug: string, workspaceId: string | number, connectionId: string | number) {
+  return `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/schema`
+}
+
+export function orgConnectionCatalogQueryOptions(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
   sessionId: string,
 ) {
   return queryOptions({
-    queryKey: connectionSchemaQueryKey(slug, workspaceId, connectionId),
+    queryKey: connectionCatalogQueryKey(slug, workspaceId, connectionId),
     queryFn: () =>
-      api.get<ConnectionSchemaResponse>(
-        `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/schema`,
+      api.get<CatalogResponse>(`${schemaBase(slug, workspaceId, connectionId)}/catalog`, {
+        headers: { 'X-Warden-Session': sessionId },
+      }),
+    staleTime: 60_000,
+  })
+}
+
+export function orgConnectionCapabilitiesQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string,
+) {
+  return queryOptions({
+    queryKey: connectionCapabilitiesQueryKey(slug, workspaceId, connectionId),
+    queryFn: () =>
+      api.get<CapabilitiesResponse>(`${schemaBase(slug, workspaceId, connectionId)}/capabilities`, {
+        headers: { 'X-Warden-Session': sessionId },
+      }),
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function connectionObjectsQueryKeyPrefix(slug: string, workspaceId: string | number, connectionId: string | number) {
+  return ['connection-object', slug, String(workspaceId), String(connectionId)] as const
+}
+
+export function connectionObjectQueryKey(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  ref: ObjectRef,
+) {
+  return [...connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId), ref.namespace, ref.kind, ref.name] as const
+}
+
+export function orgConnectionObjectQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string,
+  ref: ObjectRef,
+) {
+  return queryOptions({
+    queryKey: connectionObjectQueryKey(slug, workspaceId, connectionId, ref),
+    queryFn: async () => {
+      const res = await api.post<ObjectsResponse>(
+        `${schemaBase(slug, workspaceId, connectionId)}/objects`,
+        { refs: [ref] },
         { headers: { 'X-Warden-Session': sessionId } },
-      ),
+      )
+      return res.objects[0] ?? null
+    },
     staleTime: 60_000,
   })
 }
@@ -486,10 +543,28 @@ export function refreshConnectionSchema(
   workspaceId: string | number,
   connectionId: string | number,
   sessionId: string,
+  ref?: ObjectRef,
 ) {
-  return api.post<ConnectionSchemaResponse>(
-    `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/schema/refresh`,
-    undefined,
+  return api.post<{ status: string }>(
+    `${schemaBase(slug, workspaceId, connectionId)}/refresh`,
+    ref ? { ref } : undefined,
     { headers: { 'X-Warden-Session': sessionId } },
   )
+}
+
+/**
+ * Invalidates a connection's cached schema after a whole-connection refresh:
+ * the catalog and every lazily-fetched object detail. The server drops both on
+ * refresh, so expanded object nodes must refetch — not just the catalog.
+ */
+export function invalidateConnectionSchemaQueries(
+  queryClient: QueryClient,
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: connectionCatalogQueryKey(slug, workspaceId, connectionId) }),
+    queryClient.invalidateQueries({ queryKey: connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId) }),
+  ])
 }

@@ -6,82 +6,52 @@ import (
 	"github.com/sqlwarden/internal/schema"
 )
 
-func group(t *testing.T, s *schema.Schema, ns, kind string) schema.ObjectGroup {
-	t.Helper()
-	for _, n := range s.Namespaces {
-		if n.Name != ns {
-			continue
-		}
-		for _, g := range n.ObjectGroups {
-			if g.Kind == kind {
-				return g
-			}
-		}
-	}
-	t.Fatalf("group %s/%s not found in %+v", ns, kind, s)
-	return schema.ObjectGroup{}
-}
+func TestCatalogBuilderOrdersGroupsByDeclaration(t *testing.T) {
+	b := NewCatalog()
+	b.DeclareKind("table")
+	b.DeclareKind("view")
+	b.AddRef("public", "view", "v1")
+	b.AddRef("public", "table", "t1")
+	b.AddRef("public", "table", "t2")
 
-func TestBuilderTablesAndViews(t *testing.T) {
-	b := New()
-	b.AddColumn("public", "users", false, schema.Column{Name: "id"})
-	b.AddPrimaryKeyColumn("public", "users", "id")
-	b.AddIndex("public", "users", schema.Index{Name: "users_pkey", Unique: true})
-	b.AddColumn("public", "active_users", true, schema.Column{Name: "id"})
-
-	s := b.Build("app")
-	tables := group(t, s, "public", KindTable)
-	if tables.Label != "Tables" || len(tables.Objects) != 1 || tables.Objects[0].Name != "users" {
-		t.Fatalf("unexpected tables group: %+v", tables)
+	cat := b.Build("conn", "postgres", "app")
+	if cat.Dialect != "postgres" || cat.Database != "app" {
+		t.Fatalf("header wrong: %+v", cat)
 	}
-	if len(tables.Objects[0].PrimaryKey) != 1 || len(tables.Objects[0].Indexes) != 1 {
-		t.Fatalf("pk/index not attached: %+v", tables.Objects[0])
+	if len(cat.Namespaces) != 1 || len(cat.Namespaces[0].Groups) != 2 {
+		t.Fatalf("want 1 ns / 2 groups, got %+v", cat.Namespaces)
 	}
-	views := group(t, s, "public", KindView)
-	if views.Label != "Views" || len(views.Objects) != 1 {
-		t.Fatalf("unexpected views group: %+v", views)
+	g := cat.Namespaces[0].Groups
+	if g[0].Kind != "table" || g[1].Kind != "view" {
+		t.Fatalf("groups must follow declared order, got %s,%s", g[0].Kind, g[1].Kind)
+	}
+	if len(g[0].Objects) != 2 || g[0].Objects[0].Name != "t1" {
+		t.Fatalf("refs wrong/out of order: %+v", g[0].Objects)
 	}
 }
 
-func TestBuilderDeclaredGroupOrderAndAttributes(t *testing.T) {
-	b := New()
-	b.DeclareGroup("function", "Functions")
-	b.DeclareGroup("sequence", "Sequences")
-	// add out of declaration order; emit order must follow DeclareGroup order.
-	b.AddObject("public", "sequence", "users_id_seq")
-	b.SetObjectAttribute("public", "sequence", "users_id_seq", "increment", 1)
-	b.AddObject("public", "function", "now2")
-	b.AddColumn("public", "users", false, schema.Column{Name: "id"})
+func TestRelationalBuilderQualifiedFK(t *testing.T) {
+	b := NewRelational()
+	users := schema.ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
+	b.AddColumn(users, schema.Column{Name: "id", DataType: "int8", Ordinal: 1})
+	b.AddPrimaryKeyColumn(users, "id")
+	b.AddForeignKeyColumn(users, "users_org_fkey", "org_id",
+		schema.ObjectRef{Namespace: "billing", Kind: "table", Name: "orgs"}, "id")
+	b.AddIndex(users, schema.Index{Name: "users_pkey", Unique: true})
 
-	s := b.Build("app")
-	kinds := []string{}
-	for _, g := range s.Namespaces[0].ObjectGroups {
-		kinds = append(kinds, g.Kind)
+	objs := b.Build()
+	if len(objs) != 1 {
+		t.Fatalf("want 1 object, got %d", len(objs))
 	}
-	want := []string{"table", "function", "sequence"} // table pre-declared first; view empty, dropped
-	if len(kinds) != len(want) {
-		t.Fatalf("group order = %v, want %v", kinds, want)
+	o := objs[0]
+	if o.Ref != users || o.Relational == nil {
+		t.Fatalf("ref/facet wrong: %+v", o)
 	}
-	for i := range want {
-		if kinds[i] != want[i] {
-			t.Fatalf("group order = %v, want %v", kinds, want)
-		}
+	if len(o.Relational.PrimaryKey) != 1 || o.Relational.PrimaryKey[0] != "id" {
+		t.Fatalf("pk wrong: %+v", o.Relational.PrimaryKey)
 	}
-	seq := group(t, s, "public", "sequence")
-	if seq.Label != "Sequences" || seq.Objects[0].Attributes["increment"] != 1 {
-		t.Fatalf("sequence attribute not preserved: %+v", seq)
-	}
-}
-
-func TestBuilderUnknownKindEmittedLast(t *testing.T) {
-	b := New()
-	b.AddColumn("public", "users", false, schema.Column{Name: "id"})
-	b.AddObject("public", "widget", "thingy") // never DeclareGroup'd
-
-	s := b.Build("app")
-	groups := s.Namespaces[0].ObjectGroups
-	last := groups[len(groups)-1]
-	if last.Kind != "widget" || last.Label != "widget" {
-		t.Fatalf("undeclared kind should be last with kind as label, got %+v", last)
+	fk := o.Relational.ForeignKeys
+	if len(fk) != 1 || fk[0].References.Namespace != "billing" || fk[0].References.Name != "orgs" {
+		t.Fatalf("FK reference must be qualified, got %+v", fk)
 	}
 }

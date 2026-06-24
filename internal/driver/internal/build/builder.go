@@ -1,197 +1,156 @@
-// Package build assembles a *schema.Schema incrementally from the flat rows
-// that each driver's introspection queries return. It is shared by the
-// per-driver introspectors so they need not each reinvent row grouping.
-//
-// Objects are accumulated by kind and emitted as ordered ObjectGroups. The
-// contract for supporting a new object type (this database or a future driver)
-// is small:
-//
-//	b.DeclareGroup("function", "Functions") // heading + position
-//	b.AddObject(ns, "function", name)        // a column-less object
-//	b.AddObjectColumn(ns, "view", name, col) // an object with columns
-//	b.SetObjectAttribute(ns, "sequence", name, "increment", 1) // kind-specific
-//
-// table/view are pre-declared so the existing relational drivers need no change.
+// Package build assembles the two-tier schema models from the flat rows that a
+// driver's introspection queries return: a CatalogBuilder for the cheap listing,
+// and a RelationalBuilder for typed object detail with qualified foreign keys.
+// Neither is safe for concurrent use; each introspection uses its own builder.
 package build
 
 import "github.com/sqlwarden/internal/schema"
 
-// Universal relational object kinds, pre-declared by New().
-const (
-	KindTable = "table"
-	KindView  = "view"
-)
-
-// Builder assembles a *schema.Schema incrementally from flat introspection rows.
-// It is not safe for concurrent use; each Introspect call uses its own Builder.
-type Builder struct {
-	order      []string // namespace order
-	schemas    map[string]*nsAccum
-	groupOrder []string          // object-group kind order (driver-declared)
-	labels     map[string]string // kind -> heading
+// CatalogBuilder accumulates object refs per namespace and emits them grouped by
+// kind, in the order kinds were declared (undeclared kinds sort last, first-seen).
+type CatalogBuilder struct {
+	kindOrder []string
+	kindSeen  map[string]bool
+	nsOrder   []string
+	ns        map[string]*nsCat
 }
 
-type nsAccum struct {
-	name    string
-	objOrd  map[string][]string                  // kind -> object name order
-	objs    map[string]map[string]*schema.Object // kind -> name -> object
-	fkOrder map[string][]string                  // table -> fk name order
-	fks     map[string]map[string]*schema.ForeignKey
+type nsCat struct {
+	name       string
+	groupSeen  map[string]bool
+	groupOrder []string
+	groups     map[string][]schema.ObjectRef
 }
 
-// New returns a Builder with the universal relational kinds (table, view)
-// pre-declared. Drivers DeclareGroup any additional kinds in the order they
-// should appear.
-func New() *Builder {
-	b := &Builder{schemas: map[string]*nsAccum{}, labels: map[string]string{}}
-	b.DeclareGroup(KindTable, "Tables")
-	b.DeclareGroup(KindView, "Views")
-	return b
+// NewCatalog returns an empty CatalogBuilder.
+func NewCatalog() *CatalogBuilder {
+	return &CatalogBuilder{kindSeen: map[string]bool{}, ns: map[string]*nsCat{}}
 }
 
-// DeclareGroup registers an object-group kind with its heading and append
-// position. Re-declaring updates the label without changing position.
-func (b *Builder) DeclareGroup(kind, label string) {
-	if _, ok := b.labels[kind]; !ok {
-		b.groupOrder = append(b.groupOrder, kind)
+// DeclareKind fixes a kind's position in every namespace's group ordering.
+func (b *CatalogBuilder) DeclareKind(kind string) {
+	if !b.kindSeen[kind] {
+		b.kindSeen[kind] = true
+		b.kindOrder = append(b.kindOrder, kind)
 	}
-	b.labels[kind] = label
 }
 
-func (b *Builder) ns(name string) *nsAccum {
-	if a, ok := b.schemas[name]; ok {
-		return a
-	}
-	a := &nsAccum{
-		name:    name,
-		objOrd:  map[string][]string{},
-		objs:    map[string]map[string]*schema.Object{},
-		fkOrder: map[string][]string{},
-		fks:     map[string]map[string]*schema.ForeignKey{},
-	}
-	b.schemas[name] = a
-	b.order = append(b.order, name)
-	return a
-}
-
-func (b *Builder) obj(ns, kind, name string) *schema.Object {
-	a := b.ns(ns)
-	if a.objs[kind] == nil {
-		a.objs[kind] = map[string]*schema.Object{}
-	}
-	o, ok := a.objs[kind][name]
+// AddRef records an object of the given kind in the given namespace.
+func (b *CatalogBuilder) AddRef(namespace, kind, name string) {
+	n, ok := b.ns[namespace]
 	if !ok {
-		o = &schema.Object{Name: name}
-		a.objs[kind][name] = o
-		a.objOrd[kind] = append(a.objOrd[kind], name)
+		n = &nsCat{name: namespace, groupSeen: map[string]bool{}, groups: map[string][]schema.ObjectRef{}}
+		b.ns[namespace] = n
+		b.nsOrder = append(b.nsOrder, namespace)
+	}
+	if !n.groupSeen[kind] {
+		n.groupSeen[kind] = true
+		n.groupOrder = append(n.groupOrder, kind)
+	}
+	n.groups[kind] = append(n.groups[kind], schema.ObjectRef{Namespace: namespace, Kind: kind, Name: name})
+}
+
+// Build finalizes the catalog with the given header fields.
+func (b *CatalogBuilder) Build(connection, dialect, database string) *schema.Catalog {
+	cat := &schema.Catalog{Connection: connection, Dialect: dialect, Database: database}
+	for _, nsName := range b.nsOrder {
+		n := b.ns[nsName]
+		nc := schema.NamespaceCatalog{Name: n.name}
+		emitted := map[string]bool{}
+		emit := func(kind string) {
+			refs := n.groups[kind]
+			if len(refs) == 0 || emitted[kind] {
+				return
+			}
+			emitted[kind] = true
+			nc.Groups = append(nc.Groups, schema.ObjectGroupCatalog{Kind: kind, Objects: refs})
+		}
+		for _, kind := range b.kindOrder {
+			emit(kind)
+		}
+		for _, kind := range n.groupOrder { // undeclared kinds, first-seen
+			emit(kind)
+		}
+		cat.Namespaces = append(cat.Namespaces, nc)
+	}
+	return cat
+}
+
+// RelationalBuilder accumulates typed relational detail keyed by ObjectRef and
+// emits objects in first-seen order, each carrying a Relational facet.
+type RelationalBuilder struct {
+	order   []schema.ObjectRef
+	objs    map[schema.ObjectRef]*schema.Object
+	fkOrder map[schema.ObjectRef][]string
+	fks     map[schema.ObjectRef]map[string]*schema.ForeignKey
+}
+
+// NewRelational returns an empty RelationalBuilder.
+func NewRelational() *RelationalBuilder {
+	return &RelationalBuilder{
+		objs:    map[schema.ObjectRef]*schema.Object{},
+		fkOrder: map[schema.ObjectRef][]string{},
+		fks:     map[schema.ObjectRef]map[string]*schema.ForeignKey{},
+	}
+}
+
+func (b *RelationalBuilder) object(ref schema.ObjectRef) *schema.Object {
+	o, ok := b.objs[ref]
+	if !ok {
+		o = &schema.Object{Ref: ref, Relational: &schema.RelationalDetail{}}
+		b.objs[ref] = o
+		b.order = append(b.order, ref)
 	}
 	return o
 }
 
-// AddObject registers a column-less object of the given kind (e.g. a function,
-// sequence, or trigger).
-func (b *Builder) AddObject(ns, kind, name string) { b.obj(ns, kind, name) }
+// Ensure registers an object even if it has no columns yet.
+func (b *RelationalBuilder) Ensure(ref schema.ObjectRef) { b.object(ref) }
 
-// AddObjectColumn appends a column to an object of the given kind.
-func (b *Builder) AddObjectColumn(ns, kind, name string, c schema.Column) {
-	o := b.obj(ns, kind, name)
-	o.Columns = append(o.Columns, c)
+// AddColumn appends a column to the object's relational facet.
+func (b *RelationalBuilder) AddColumn(ref schema.ObjectRef, c schema.Column) {
+	o := b.object(ref)
+	o.Relational.Columns = append(o.Relational.Columns, c)
 }
 
-// SetObjectAttribute records a kind-specific detail (function signature,
-// sequence increment, …) on an object.
-func (b *Builder) SetObjectAttribute(ns, kind, name, key string, value any) {
-	o := b.obj(ns, kind, name)
-	if o.Attributes == nil {
-		o.Attributes = map[string]any{}
+// AddPrimaryKeyColumn appends a column to the object's primary key (call order).
+func (b *RelationalBuilder) AddPrimaryKeyColumn(ref schema.ObjectRef, col string) {
+	o := b.object(ref)
+	o.Relational.PrimaryKey = append(o.Relational.PrimaryKey, col)
+}
+
+// AddForeignKeyColumn appends a (column -> referenced column) pair to a named
+// foreign key, creating it on first sight with the qualified target reference.
+func (b *RelationalBuilder) AddForeignKeyColumn(ref schema.ObjectRef, fkName, col string, references schema.ObjectRef, refCol string) {
+	b.object(ref)
+	if b.fks[ref] == nil {
+		b.fks[ref] = map[string]*schema.ForeignKey{}
 	}
-	o.Attributes[key] = value
-}
-
-// AddColumn appends a column to a table (or view when isView is true). Thin
-// convenience over AddObjectColumn for the common relational case.
-func (b *Builder) AddColumn(ns, name string, isView bool, c schema.Column) {
-	kind := KindTable
-	if isView {
-		kind = KindView
-	}
-	b.AddObjectColumn(ns, kind, name, c)
-}
-
-// AddPrimaryKeyColumn appends a column to a table's primary key (in call order).
-func (b *Builder) AddPrimaryKeyColumn(ns, table, col string) {
-	o := b.obj(ns, KindTable, table)
-	o.PrimaryKey = append(o.PrimaryKey, col)
-}
-
-// AddForeignKeyColumn appends a (column -> referenced column) pair to a table's
-// named foreign key, creating the foreign key on first sight.
-func (b *Builder) AddForeignKeyColumn(ns, table, name, col, refTable, refCol string) {
-	a := b.ns(ns)
-	b.obj(ns, KindTable, table) // ensure the table exists even with no columns yet
-	if a.fks[table] == nil {
-		a.fks[table] = map[string]*schema.ForeignKey{}
-	}
-	fk, ok := a.fks[table][name]
+	fk, ok := b.fks[ref][fkName]
 	if !ok {
-		fk = &schema.ForeignKey{Name: name, ReferencedTable: refTable}
-		a.fks[table][name] = fk
-		a.fkOrder[table] = append(a.fkOrder[table], name)
+		fk = &schema.ForeignKey{Name: fkName, References: references}
+		b.fks[ref][fkName] = fk
+		b.fkOrder[ref] = append(b.fkOrder[ref], fkName)
 	}
 	fk.Columns = append(fk.Columns, col)
 	fk.ReferencedColumns = append(fk.ReferencedColumns, refCol)
 }
 
-// AddIndex appends an index to a table.
-func (b *Builder) AddIndex(ns, table string, ix schema.Index) {
-	o := b.obj(ns, KindTable, table)
-	o.Indexes = append(o.Indexes, ix)
+// AddIndex appends an index to the object's relational facet.
+func (b *RelationalBuilder) AddIndex(ref schema.ObjectRef, ix schema.Index) {
+	o := b.object(ref)
+	o.Relational.Indexes = append(o.Relational.Indexes, ix)
 }
 
-// Build finalizes the schema. database is the catalog/db name (may be empty).
-func (b *Builder) Build(database string) *schema.Schema {
-	out := &schema.Schema{Database: database}
-	for _, nsName := range b.order {
-		a := b.schemas[nsName]
-		ns := schema.Namespace{Name: a.name}
-
-		// Attach accumulated foreign keys to their tables.
-		for tbl, fkNames := range a.fkOrder {
-			t := a.objs[KindTable][tbl]
-			if t == nil {
-				continue
-			}
-			for _, fkName := range fkNames {
-				t.ForeignKeys = append(t.ForeignKeys, *a.fks[tbl][fkName])
-			}
+// Build attaches accumulated foreign keys and returns objects in first-seen order.
+func (b *RelationalBuilder) Build() []schema.Object {
+	out := make([]schema.Object, 0, len(b.order))
+	for _, ref := range b.order {
+		o := b.objs[ref]
+		for _, fkName := range b.fkOrder[ref] {
+			o.Relational.ForeignKeys = append(o.Relational.ForeignKeys, *b.fks[ref][fkName])
 		}
-
-		seen := map[string]bool{}
-		emit := func(kind, label string) {
-			names := a.objOrd[kind]
-			if len(names) == 0 {
-				return
-			}
-			seen[kind] = true
-			g := schema.ObjectGroup{Kind: kind, Label: label}
-			for _, n := range names {
-				g.Objects = append(g.Objects, *a.objs[kind][n])
-			}
-			ns.ObjectGroups = append(ns.ObjectGroups, g)
-		}
-
-		for _, kind := range b.groupOrder {
-			emit(kind, b.labels[kind])
-		}
-		// Any kinds emitted without a DeclareGroup (forward-compatibility) go
-		// last, using the kind itself as the heading.
-		for kind := range a.objs {
-			if !seen[kind] {
-				emit(kind, kind)
-			}
-		}
-
-		out.Namespaces = append(out.Namespaces, ns)
+		out = append(out, *o)
 	}
 	return out
 }

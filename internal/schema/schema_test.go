@@ -2,49 +2,60 @@ package schema
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
-func TestSchemaJSONRoundTrip(t *testing.T) {
-	def := "0"
-	in := &Schema{
-		Connection: "42",
-		Database:   "app",
-		Namespaces: []Namespace{{
-			Name: "public",
-			ObjectGroups: []ObjectGroup{
-				{Kind: "table", Label: "Tables", Objects: []Object{{
-					Name:       "users",
-					PrimaryKey: []string{"id"},
-					Columns: []Column{
-						{Name: "id", DataType: "bigint", Nullable: false, Ordinal: 1},
-						{Name: "status", DataType: "text", Nullable: true, Default: &def, Ordinal: 2},
-					},
-					ForeignKeys: []ForeignKey{{
-						Name: "fk_org", Columns: []string{"org_id"},
-						ReferencedTable: "orgs", ReferencedColumns: []string{"id"},
-					}},
-					Indexes:    []Index{{Name: "users_pkey", Columns: []string{"id"}, Unique: true}},
-					Attributes: map[string]any{"comment": "people"},
-				}}},
-				{Kind: "view", Label: "Views", Objects: []Object{{Name: "active_users"}}},
-			},
-		}},
+func TestObjectMarshalsRelationalOnly(t *testing.T) {
+	o := Object{
+		Ref: ObjectRef{Namespace: "public", Kind: "table", Name: "users"},
+		Relational: &RelationalDetail{
+			Columns:    []Column{{Name: "id", DataType: "int8", Ordinal: 1}},
+			PrimaryKey: []string{"id"},
+			ForeignKeys: []ForeignKey{{
+				Name:              "users_org_fkey",
+				Columns:           []string{"org_id"},
+				References:        ObjectRef{Namespace: "billing", Kind: "table", Name: "orgs"},
+				ReferencedColumns: []string{"id"},
+			}},
+		},
 	}
-
-	raw, err := json.Marshal(in)
+	data, err := json.Marshal(o)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var out Schema
-	if err := json.Unmarshal(raw, &out); err != nil {
+	s := string(data)
+	if !strings.Contains(s, `"relational"`) {
+		t.Errorf("expected relational facet, got %s", s)
+	}
+	if strings.Contains(s, `"descriptors"`) {
+		t.Errorf("descriptors should be omitted when empty: %s", s)
+	}
+	if !strings.Contains(s, `"references":{"namespace":"billing","kind":"table","name":"orgs"}`) {
+		t.Errorf("FK reference must be a qualified ObjectRef: %s", s)
+	}
+}
+
+func TestObjectMarshalsDescriptorsOnly(t *testing.T) {
+	o := Object{
+		Ref: ObjectRef{Namespace: "public", Kind: "function", Name: "f"},
+		Descriptors: []Descriptor{
+			{Kind: "fields", Title: "Signature", Fields: []Field{{Name: "language", Value: "sql"}}},
+			{Kind: "source", Title: "Definition", Source: &Source{Language: "sql", Body: "SELECT 1"}},
+		},
+	}
+	data, err := json.Marshal(o)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var round Object
+	if err := json.Unmarshal(data, &round); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	users := out.Namespaces[0].ObjectGroups[0].Objects[0]
-	if users.Columns[1].Default == nil || *users.Columns[1].Default != "0" {
-		t.Fatalf("default not preserved")
+	if round.Relational != nil {
+		t.Errorf("relational should be nil, got %+v", round.Relational)
 	}
-	if users.Attributes["comment"] != "people" {
-		t.Fatalf("attributes not preserved")
+	if len(round.Descriptors) != 2 || round.Descriptors[1].Source.Body != "SELECT 1" {
+		t.Errorf("descriptors did not round-trip: %+v", round.Descriptors)
 	}
 }

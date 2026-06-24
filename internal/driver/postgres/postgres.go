@@ -67,228 +67,406 @@ func (d *postgresDriver) Dialect() driver.Dialect {
 	return driver.DialectPostgres
 }
 
-func (d *postgresDriver) Introspect(ctx context.Context, opts schema.IntrospectOptions) (*schema.Schema, error) {
-	const q = `
-WITH cols AS (
-	-- udt_name is the raw pg_catalog type (varchar, timestamptz, int8, bool, …);
-	-- information_schema.data_type returns verbose SQL-standard names instead
-	-- (e.g. "character varying", "timestamp without time zone").
-	SELECT table_schema, table_name, column_name, udt_name, is_nullable,
-	       column_default, ordinal_position
-	FROM information_schema.columns
-	WHERE table_catalog = current_database()
-	  AND table_schema NOT IN ('pg_catalog', 'information_schema')
-)
-SELECT t.table_schema, t.table_name, t.table_type,
-       c.column_name, c.udt_name, c.is_nullable, c.column_default, c.ordinal_position
-FROM information_schema.tables t
-JOIN cols c ON c.table_schema = t.table_schema AND c.table_name = t.table_name
-WHERE t.table_catalog = current_database()
-  AND t.table_schema NOT IN ('pg_catalog', 'information_schema')
-ORDER BY t.table_schema, t.table_name, c.ordinal_position`
+func (d *postgresDriver) Capabilities() schema.DriverCapabilities {
+	return schema.DriverCapabilities{
+		Dialect: "postgres",
+		Kinds: []schema.KindDescriptor{
+			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
+			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
+			{Kind: "materialized_view", Label: "Materialized View", PluralLabel: "Materialized Views", Order: 3, Relational: true, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "sequence", Label: "Sequence", PluralLabel: "Sequences", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+		},
+	}
+}
 
+func (d *postgresDriver) IntrospectCatalog(ctx context.Context, opts schema.CatalogOptions) (*schema.Catalog, error) {
+	b := build.NewCatalog()
+	b.DeclareKind("table")
+	b.DeclareKind("view")
+	b.DeclareKind("materialized_view")
+	b.DeclareKind("function")
+	b.DeclareKind("sequence")
+
+	const tblQ = `
+SELECT table_schema, table_name, table_type
+FROM information_schema.tables
+WHERE table_catalog = current_database()
+  AND table_schema NOT IN ('pg_catalog', 'information_schema')
+ORDER BY table_schema, table_name`
+	if err := d.queryRefs(ctx, tblQ, func(ns, name, t string) {
+		kind := "table"
+		if t == "VIEW" {
+			kind = "view"
+		}
+		b.AddRef(ns, kind, name)
+	}); err != nil {
+		return nil, fmt.Errorf("postgres: catalog tables: %w", err)
+	}
+
+	const mvQ = `
+SELECT n.nspname, c.relname
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relkind = 'm' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY n.nspname, c.relname`
+	if err := d.queryRefs(ctx, mvQ, func(ns, name, _ string) { b.AddRef(ns, "materialized_view", name) }); err != nil {
+		return nil, fmt.Errorf("postgres: catalog matviews: %w", err)
+	}
+
+	const fnQ = `
+SELECT n.nspname, p.proname
+FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE p.prokind = 'f' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY n.nspname, p.proname`
+	if err := d.queryRefs(ctx, fnQ, func(ns, name, _ string) { b.AddRef(ns, "function", name) }); err != nil {
+		return nil, fmt.Errorf("postgres: catalog functions: %w", err)
+	}
+
+	const seqQ = `
+SELECT sequence_schema, sequence_name
+FROM information_schema.sequences
+WHERE sequence_schema NOT IN ('pg_catalog', 'information_schema')
+ORDER BY sequence_schema, sequence_name`
+	if err := d.queryRefs(ctx, seqQ, func(ns, name, _ string) { b.AddRef(ns, "sequence", name) }); err != nil {
+		return nil, fmt.Errorf("postgres: catalog sequences: %w", err)
+	}
+
+	var dbName string
+	if err := d.db.QueryRowContext(ctx, `SELECT current_database()`).Scan(&dbName); err != nil {
+		return nil, fmt.Errorf("postgres: catalog database name: %w", err)
+	}
+	return b.Build("", "postgres", dbName), nil
+}
+
+// queryRefs runs a 2- or 3-column query (schema, name[, type]) and calls fn per
+// row; the third column is passed as "" when the query selects only two columns.
+func (d *postgresDriver) queryRefs(ctx context.Context, q string, fn func(ns, name, extra string)) error {
 	rows, err := d.db.QueryContext(ctx, q)
 	if err != nil {
-		return nil, fmt.Errorf("postgres: introspect columns: %w", err)
+		return err
 	}
-	b := build.New()
+	defer rows.Close()
+	cols, err := rows.Columns()
+	if err != nil {
+		return err
+	}
+	three := len(cols) == 3
 	for rows.Next() {
-		var ns, tbl, tblType, col, dtype, nullable string
+		var ns, name, extra string
+		if three {
+			if err := rows.Scan(&ns, &name, &extra); err != nil {
+				return err
+			}
+		} else {
+			if err := rows.Scan(&ns, &name); err != nil {
+				return err
+			}
+		}
+		fn(ns, name, extra)
+	}
+	return rows.Err()
+}
+
+func (d *postgresDriver) IntrospectObjects(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+	var relRefs, mvRefs, fnRefs, seqRefs []schema.ObjectRef
+	for _, r := range refs {
+		switch r.Kind {
+		case "table", "view":
+			relRefs = append(relRefs, r)
+		case "materialized_view":
+			mvRefs = append(mvRefs, r)
+		case "function":
+			fnRefs = append(fnRefs, r)
+		case "sequence":
+			seqRefs = append(seqRefs, r)
+		}
+	}
+
+	var out []schema.Object
+	if len(relRefs) > 0 {
+		objs, err := d.introspectRelational(ctx, relRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(mvRefs) > 0 {
+		objs, err := d.introspectMatviews(ctx, mvRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(fnRefs) > 0 {
+		objs, err := d.introspectFunctions(ctx, fnRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(seqRefs) > 0 {
+		objs, err := d.introspectSequences(ctx, seqRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	return out, nil
+}
+
+// pairFilter builds a "($n,$n+1),($n+2,$n+3),…" tuple list plus the flattened
+// (namespace, name) args, for a "(schema, name) IN (...)" predicate.
+func pairFilter(refs []schema.ObjectRef, start int) (string, []any) {
+	var sb strings.Builder
+	args := make([]any, 0, len(refs)*2)
+	for i, r := range refs {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		fmt.Fprintf(&sb, "($%d,$%d)", start+i*2, start+i*2+1)
+		args = append(args, r.Namespace, r.Name)
+	}
+	return sb.String(), args
+}
+
+func (d *postgresDriver) introspectRelational(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+	kindOf := make(map[string]string, len(refs))
+	for _, r := range refs {
+		kindOf[r.Namespace+"\x00"+r.Name] = r.Kind
+	}
+	refFor := func(ns, name string) schema.ObjectRef {
+		return schema.ObjectRef{Namespace: ns, Kind: kindOf[ns+"\x00"+name], Name: name}
+	}
+
+	b := build.NewRelational()
+	for _, r := range refs {
+		b.Ensure(r)
+	}
+
+	pairs, args := pairFilter(refs, 1)
+
+	colQ := `
+SELECT table_schema, table_name, column_name, udt_name, is_nullable, column_default, ordinal_position
+FROM information_schema.columns
+WHERE table_catalog = current_database()
+  AND (table_schema, table_name) IN (` + pairs + `)
+ORDER BY table_schema, table_name, ordinal_position`
+	crows, err := d.db.QueryContext(ctx, colQ, args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: object columns: %w", err)
+	}
+	for crows.Next() {
+		var ns, tbl, col, dtype, nullable string
 		var def sql.NullString
 		var ord int
-		if err := rows.Scan(&ns, &tbl, &tblType, &col, &dtype, &nullable, &def, &ord); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("postgres: introspect scan: %w", err)
+		if err := crows.Scan(&ns, &tbl, &col, &dtype, &nullable, &def, &ord); err != nil {
+			crows.Close()
+			return nil, fmt.Errorf("postgres: object columns scan: %w", err)
 		}
-		isView := tblType == "VIEW"
 		c := schema.Column{Name: col, DataType: dtype, Nullable: nullable == "YES", Ordinal: ord}
 		if def.Valid {
 			v := def.String
 			c.Default = &v
 		}
-		b.AddColumn(ns, tbl, isView, c)
+		b.AddColumn(refFor(ns, tbl), c)
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, fmt.Errorf("postgres: introspect rows: %w", err)
+	if err := crows.Err(); err != nil {
+		crows.Close()
+		return nil, fmt.Errorf("postgres: object columns rows: %w", err)
 	}
-	rows.Close()
+	crows.Close()
 
-	if err := d.loadPostgresConstraints(ctx, b); err != nil {
-		return nil, err
-	}
-	if err := d.loadPostgresIndexes(ctx, b); err != nil {
-		return nil, err
-	}
-	if err := d.loadPostgresExtraObjects(ctx, b); err != nil {
-		return nil, err
-	}
-
-	return b.Build(opts.Database), nil
-}
-
-// loadPostgresExtraObjects introspects materialized views (with columns),
-// functions, and sequences, declaring their groups so they render natively.
-func (d *postgresDriver) loadPostgresExtraObjects(ctx context.Context, b *build.Builder) error {
-	b.DeclareGroup("materialized_view", "Materialized Views")
-	b.DeclareGroup("function", "Functions")
-	b.DeclareGroup("sequence", "Sequences")
-
-	const mvQ = `
-SELECT n.nspname, c.relname, a.attname, format_type(a.atttypid, a.atttypmod), a.attnum
-FROM pg_class c
-JOIN pg_namespace n ON n.oid = c.relnamespace
-JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-WHERE c.relkind = 'm'
-  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-ORDER BY n.nspname, c.relname, a.attnum`
-	mvRows, err := d.db.QueryContext(ctx, mvQ)
-	if err != nil {
-		return fmt.Errorf("postgres: introspect matviews: %w", err)
-	}
-	for mvRows.Next() {
-		var ns, mv, col, dtype string
-		var attnum int
-		if err := mvRows.Scan(&ns, &mv, &col, &dtype, &attnum); err != nil {
-			mvRows.Close()
-			return fmt.Errorf("postgres: introspect matviews scan: %w", err)
-		}
-		b.AddObjectColumn(ns, "materialized_view", mv, schema.Column{Name: col, DataType: dtype, Ordinal: attnum})
-	}
-	if err := mvRows.Err(); err != nil {
-		mvRows.Close()
-		return fmt.Errorf("postgres: introspect matviews rows: %w", err)
-	}
-	mvRows.Close()
-
-	const fnQ = `
-SELECT n.nspname, p.proname, pg_get_function_arguments(p.oid), pg_get_function_result(p.oid)
-FROM pg_proc p
-JOIN pg_namespace n ON n.oid = p.pronamespace
-WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-ORDER BY n.nspname, p.proname`
-	fnRows, err := d.db.QueryContext(ctx, fnQ)
-	if err != nil {
-		return fmt.Errorf("postgres: introspect functions: %w", err)
-	}
-	for fnRows.Next() {
-		var ns, name, args string
-		var ret sql.NullString
-		if err := fnRows.Scan(&ns, &name, &args, &ret); err != nil {
-			fnRows.Close()
-			return fmt.Errorf("postgres: introspect functions scan: %w", err)
-		}
-		b.AddObject(ns, "function", name)
-		b.SetObjectAttribute(ns, "function", name, "arguments", args)
-		if ret.Valid {
-			b.SetObjectAttribute(ns, "function", name, "returns", ret.String)
-		}
-	}
-	if err := fnRows.Err(); err != nil {
-		fnRows.Close()
-		return fmt.Errorf("postgres: introspect functions rows: %w", err)
-	}
-	fnRows.Close()
-
-	const seqQ = `
-SELECT sequence_schema, sequence_name, data_type
-FROM information_schema.sequences
-WHERE sequence_schema NOT IN ('pg_catalog', 'information_schema')
-ORDER BY sequence_schema, sequence_name`
-	seqRows, err := d.db.QueryContext(ctx, seqQ)
-	if err != nil {
-		return fmt.Errorf("postgres: introspect sequences: %w", err)
-	}
-	defer seqRows.Close()
-	for seqRows.Next() {
-		var ns, name, dtype string
-		if err := seqRows.Scan(&ns, &name, &dtype); err != nil {
-			return fmt.Errorf("postgres: introspect sequences scan: %w", err)
-		}
-		b.AddObject(ns, "sequence", name)
-		b.SetObjectAttribute(ns, "sequence", name, "data_type", dtype)
-	}
-	return seqRows.Err()
-}
-
-func (d *postgresDriver) loadPostgresConstraints(ctx context.Context, b *build.Builder) error {
-	const pkQ = `
+	pkQ := `
 SELECT tc.table_schema, tc.table_name, kcu.column_name
 FROM information_schema.table_constraints tc
 JOIN information_schema.key_column_usage kcu
   ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
 WHERE tc.constraint_type = 'PRIMARY KEY'
-  AND tc.table_schema NOT IN ('pg_catalog', 'information_schema')
+  AND (tc.table_schema, tc.table_name) IN (` + pairs + `)
 ORDER BY tc.table_schema, tc.table_name, kcu.ordinal_position`
-
-	rows, err := d.db.QueryContext(ctx, pkQ)
+	prows, err := d.db.QueryContext(ctx, pkQ, args...)
 	if err != nil {
-		return fmt.Errorf("postgres: introspect pk: %w", err)
+		return nil, fmt.Errorf("postgres: object pk: %w", err)
 	}
-	for rows.Next() {
+	for prows.Next() {
 		var ns, tbl, col string
-		if err := rows.Scan(&ns, &tbl, &col); err != nil {
-			rows.Close()
-			return fmt.Errorf("postgres: introspect pk scan: %w", err)
+		if err := prows.Scan(&ns, &tbl, &col); err != nil {
+			prows.Close()
+			return nil, fmt.Errorf("postgres: object pk scan: %w", err)
 		}
-		b.AddPrimaryKeyColumn(ns, tbl, col)
+		b.AddPrimaryKeyColumn(refFor(ns, tbl), col)
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return fmt.Errorf("postgres: introspect pk rows: %w", err)
+	if err := prows.Err(); err != nil {
+		prows.Close()
+		return nil, fmt.Errorf("postgres: object pk rows: %w", err)
 	}
-	rows.Close()
+	prows.Close()
 
-	const fkQ = `
-SELECT tc.table_schema, tc.table_name, tc.constraint_name,
-       kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column
+	// ref_schema is the cross-schema fix: foreign keys carry a qualified target.
+	fkQ := `
+SELECT tc.table_schema, tc.table_name, tc.constraint_name, kcu.column_name,
+       ccu.table_schema AS ref_schema, ccu.table_name AS ref_table, ccu.column_name AS ref_column
 FROM information_schema.table_constraints tc
 JOIN information_schema.key_column_usage kcu
   ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
 JOIN information_schema.constraint_column_usage ccu
   ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
 WHERE tc.constraint_type = 'FOREIGN KEY'
-  AND tc.table_schema NOT IN ('pg_catalog', 'information_schema')
+  AND (tc.table_schema, tc.table_name) IN (` + pairs + `)
 ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_position`
-
-	frows, err := d.db.QueryContext(ctx, fkQ)
+	frows, err := d.db.QueryContext(ctx, fkQ, args...)
 	if err != nil {
-		return fmt.Errorf("postgres: introspect fk: %w", err)
+		return nil, fmt.Errorf("postgres: object fk: %w", err)
 	}
-	defer frows.Close()
 	for frows.Next() {
-		var ns, tbl, name, col, refTbl, refCol string
-		if err := frows.Scan(&ns, &tbl, &name, &col, &refTbl, &refCol); err != nil {
-			return fmt.Errorf("postgres: introspect fk scan: %w", err)
+		var ns, tbl, name, col, refNs, refTbl, refCol string
+		if err := frows.Scan(&ns, &tbl, &name, &col, &refNs, &refTbl, &refCol); err != nil {
+			frows.Close()
+			return nil, fmt.Errorf("postgres: object fk scan: %w", err)
 		}
-		b.AddForeignKeyColumn(ns, tbl, name, col, refTbl, refCol)
+		b.AddForeignKeyColumn(refFor(ns, tbl), name, col,
+			schema.ObjectRef{Namespace: refNs, Kind: "table", Name: refTbl}, refCol)
 	}
-	return frows.Err()
-}
+	if err := frows.Err(); err != nil {
+		frows.Close()
+		return nil, fmt.Errorf("postgres: object fk rows: %w", err)
+	}
+	frows.Close()
 
-func (d *postgresDriver) loadPostgresIndexes(ctx context.Context, b *build.Builder) error {
-	const q = `
+	idxQ := `
 SELECT schemaname, tablename, indexname, indexdef
 FROM pg_indexes
-WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+WHERE (schemaname, tablename) IN (` + pairs + `)
 ORDER BY schemaname, tablename, indexname`
-
-	rows, err := d.db.QueryContext(ctx, q)
+	irows, err := d.db.QueryContext(ctx, idxQ, args...)
 	if err != nil {
-		return fmt.Errorf("postgres: introspect indexes: %w", err)
+		return nil, fmt.Errorf("postgres: object indexes: %w", err)
+	}
+	for irows.Next() {
+		var ns, tbl, name, def string
+		if err := irows.Scan(&ns, &tbl, &name, &def); err != nil {
+			irows.Close()
+			return nil, fmt.Errorf("postgres: object index scan: %w", err)
+		}
+		unique := strings.Contains(def, "CREATE UNIQUE INDEX")
+		b.AddIndex(refFor(ns, tbl), schema.Index{Name: name, Unique: unique, Attributes: map[string]any{"definition": def}})
+	}
+	if err := irows.Err(); err != nil {
+		irows.Close()
+		return nil, fmt.Errorf("postgres: object index rows: %w", err)
+	}
+	irows.Close()
+
+	return b.Build(), nil
+}
+
+func (d *postgresDriver) introspectMatviews(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+	b := build.NewRelational()
+	for _, r := range refs {
+		b.Ensure(r)
+	}
+	refFor := func(ns, name string) schema.ObjectRef {
+		return schema.ObjectRef{Namespace: ns, Kind: "materialized_view", Name: name}
+	}
+	pairs, args := pairFilter(refs, 1)
+
+	colQ := `
+SELECT n.nspname, c.relname, a.attname, format_type(a.atttypid, a.atttypmod), a.attnum
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+WHERE c.relkind = 'm' AND (n.nspname, c.relname) IN (` + pairs + `)
+ORDER BY n.nspname, c.relname, a.attnum`
+	rows, err := d.db.QueryContext(ctx, colQ, args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: matview columns: %w", err)
+	}
+	for rows.Next() {
+		var ns, mv, col, dtype string
+		var attnum int
+		if err := rows.Scan(&ns, &mv, &col, &dtype, &attnum); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("postgres: matview columns scan: %w", err)
+		}
+		b.AddColumn(refFor(ns, mv), schema.Column{Name: col, DataType: dtype, Ordinal: attnum})
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("postgres: matview columns rows: %w", err)
+	}
+	rows.Close()
+	return b.Build(), nil
+}
+
+func (d *postgresDriver) introspectFunctions(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+	pairs, args := pairFilter(refs, 1)
+	q := `
+SELECT n.nspname, p.proname,
+       pg_get_function_arguments(p.oid),
+       pg_get_function_result(p.oid),
+       l.lanname,
+       pg_get_functiondef(p.oid)
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+JOIN pg_language l ON l.oid = p.prolang
+WHERE p.prokind = 'f' AND (n.nspname, p.proname) IN (` + pairs + `)
+ORDER BY n.nspname, p.proname`
+	rows, err := d.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: function detail: %w", err)
 	}
 	defer rows.Close()
+	var out []schema.Object
 	for rows.Next() {
-		var ns, tbl, name, def string
-		if err := rows.Scan(&ns, &tbl, &name, &def); err != nil {
-			return fmt.Errorf("postgres: introspect index scan: %w", err)
+		var ns, name, fnArgs, lang, def string
+		var ret sql.NullString
+		if err := rows.Scan(&ns, &name, &fnArgs, &ret, &lang, &def); err != nil {
+			return nil, fmt.Errorf("postgres: function detail scan: %w", err)
 		}
-		// indexdef is authoritative for uniqueness; column extraction beyond the
-		// relational core is deferred (Attributes carries the raw def).
-		unique := strings.Contains(def, "CREATE UNIQUE INDEX")
-		b.AddIndex(ns, tbl, schema.Index{Name: name, Unique: unique, Attributes: map[string]any{"definition": def}})
+		fields := []schema.Field{
+			{Name: "Arguments", Value: fnArgs},
+			{Name: "Language", Value: lang},
+		}
+		if ret.Valid {
+			fields = append(fields, schema.Field{Name: "Returns", Value: ret.String})
+		}
+		out = append(out, schema.Object{
+			Ref: schema.ObjectRef{Namespace: ns, Kind: "function", Name: name},
+			Descriptors: []schema.Descriptor{
+				{Kind: "fields", Title: "Signature", Fields: fields},
+				{Kind: "source", Title: "Definition", Source: &schema.Source{Language: lang, Body: def}},
+			},
+		})
 	}
-	return rows.Err()
+	return out, rows.Err()
+}
+
+func (d *postgresDriver) introspectSequences(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+	pairs, args := pairFilter(refs, 1)
+	q := `
+SELECT sequence_schema, sequence_name, data_type
+FROM information_schema.sequences
+WHERE (sequence_schema, sequence_name) IN (` + pairs + `)
+ORDER BY sequence_schema, sequence_name`
+	rows, err := d.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: sequence detail: %w", err)
+	}
+	defer rows.Close()
+	var out []schema.Object
+	for rows.Next() {
+		var ns, name, dtype string
+		if err := rows.Scan(&ns, &name, &dtype); err != nil {
+			return nil, fmt.Errorf("postgres: sequence detail scan: %w", err)
+		}
+		out = append(out, schema.Object{
+			Ref: schema.ObjectRef{Namespace: ns, Kind: "sequence", Name: name},
+			Descriptors: []schema.Descriptor{
+				{Kind: "fields", Title: "Sequence", Fields: []schema.Field{{Name: "Data type", Value: dtype}}},
+			},
+		})
+	}
+	return out, rows.Err()
 }
 
 func scanRows(rows *sql.Rows) (*result.ResultSet, error) {

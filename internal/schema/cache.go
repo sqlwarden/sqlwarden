@@ -1,38 +1,35 @@
 package schema
 
 import (
-	"bytes"
-	"compress/gzip"
 	"container/list"
-	"encoding/json"
-	"io"
+	"strings"
 	"sync"
 	"time"
 )
 
-// Cache stores connection-keyed schema snapshots. Implementations must be
-// safe for concurrent use. Values are keyed by connection ID (not by user)
-// because schema is a property of the target database.
+// Cache stores opaque byte values keyed by string. The schema Service derives
+// keys from connection ID and ObjectRef, and stores gzip-compressed JSON, so a
+// future Redis-backed Cache can reuse the same byte representation.
+// Implementations must be safe for concurrent use.
 type Cache interface {
-	Get(connID string) (*Schema, bool)
-	Set(connID string, s *Schema, ttl time.Duration)
-	Invalidate(connID string)
+	Get(key string) ([]byte, bool)
+	Set(key string, data []byte, ttl time.Duration)
+	Invalidate(key string)
+	InvalidatePrefix(prefix string)
 }
 
 type cacheEntry struct {
 	key       string
-	data      []byte // gzip-compressed JSON
+	data      []byte
 	expiresAt time.Time
 }
 
-// memCache is a bounded LRU cache with per-entry TTL. Snapshots are stored
-// gzip-compressed so per-entry memory stays small and a future Redis-backed
-// Cache can reuse the same byte representation.
+// memCache is a bounded LRU cache with per-entry TTL.
 type memCache struct {
 	mu    sync.Mutex
 	cap   int
-	items map[string]*list.Element // key -> *list.Element holding *cacheEntry
-	order *list.List               // front = most recently used
+	items map[string]*list.Element
+	order *list.List // front = most recently used
 }
 
 // NewMemCache returns an in-memory Cache holding at most capacity entries.
@@ -47,11 +44,11 @@ func NewMemCache(capacity int) Cache {
 	}
 }
 
-func (c *memCache) Get(connID string) (*Schema, bool) {
+func (c *memCache) Get(key string) ([]byte, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	el, ok := c.items[connID]
+	el, ok := c.items[key]
 	if !ok {
 		return nil, false
 	}
@@ -61,25 +58,14 @@ func (c *memCache) Get(connID string) (*Schema, bool) {
 		return nil, false
 	}
 	c.order.MoveToFront(el)
-
-	s, err := decodeSchema(ent.data)
-	if err != nil {
-		c.removeElement(el)
-		return nil, false
-	}
-	return s, true
+	return ent.data, true
 }
 
-func (c *memCache) Set(connID string, s *Schema, ttl time.Duration) {
-	data, err := encodeSchema(s)
-	if err != nil {
-		return // unservable snapshot; skip caching rather than poison the cache
-	}
-
+func (c *memCache) Set(key string, data []byte, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if el, ok := c.items[connID]; ok {
+	if el, ok := c.items[key]; ok {
 		ent := el.Value.(*cacheEntry)
 		ent.data = data
 		ent.expiresAt = time.Now().Add(ttl)
@@ -87,20 +73,30 @@ func (c *memCache) Set(connID string, s *Schema, ttl time.Duration) {
 		return
 	}
 
-	ent := &cacheEntry{key: connID, data: data, expiresAt: time.Now().Add(ttl)}
+	ent := &cacheEntry{key: key, data: data, expiresAt: time.Now().Add(ttl)}
 	el := c.order.PushFront(ent)
-	c.items[connID] = el
+	c.items[key] = el
 
 	for c.order.Len() > c.cap {
 		c.removeElement(c.order.Back())
 	}
 }
 
-func (c *memCache) Invalidate(connID string) {
+func (c *memCache) Invalidate(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if el, ok := c.items[connID]; ok {
+	if el, ok := c.items[key]; ok {
 		c.removeElement(el)
+	}
+}
+
+func (c *memCache) InvalidatePrefix(prefix string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for key, el := range c.items {
+		if strings.HasPrefix(key, prefix) {
+			c.removeElement(el)
+		}
 	}
 }
 
@@ -111,33 +107,4 @@ func (c *memCache) removeElement(el *list.Element) {
 	}
 	c.order.Remove(el)
 	delete(c.items, el.Value.(*cacheEntry).key)
-}
-
-func encodeSchema(s *Schema) ([]byte, error) {
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	if err := json.NewEncoder(gz).Encode(s); err != nil {
-		return nil, err
-	}
-	if err := gz.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func decodeSchema(data []byte) (*Schema, error) {
-	gz, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	defer gz.Close()
-	raw, err := io.ReadAll(gz)
-	if err != nil {
-		return nil, err
-	}
-	var s Schema
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return nil, err
-	}
-	return &s, nil
 }

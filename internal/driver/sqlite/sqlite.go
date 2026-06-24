@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -72,144 +72,263 @@ func (d *sqliteDriver) Dialect() driver.Dialect {
 	return driver.DialectSQLite
 }
 
-func (d *sqliteDriver) Introspect(ctx context.Context, opts schema.IntrospectOptions) (*schema.Schema, error) {
-	const ns = "main"
-	b := build.New()
-
-	type obj struct {
-		name   string
-		isView bool
+func (d *sqliteDriver) Capabilities() schema.DriverCapabilities {
+	return schema.DriverCapabilities{
+		Dialect: "sqlite",
+		Kinds: []schema.KindDescriptor{
+			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
+			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
+			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+		},
 	}
-	var objects []obj
+}
 
-	rows, err := d.db.QueryContext(ctx,
-		`SELECT name, type FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name`)
+func (d *sqliteDriver) IntrospectCatalog(ctx context.Context, opts schema.CatalogOptions) (*schema.Catalog, error) {
+	b := build.NewCatalog()
+	b.DeclareKind("table")
+	b.DeclareKind("view")
+	b.DeclareKind("trigger")
+
+	namespaces, err := d.sqliteNamespaces(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("sqlite: introspect objects: %w", err)
+		return nil, err
+	}
+	for _, ns := range namespaces {
+		if opts.Namespace != "" && ns != opts.Namespace {
+			continue
+		}
+		q := fmt.Sprintf(`SELECT type, name FROM %s.sqlite_master WHERE type IN ('table','view','trigger') AND name NOT LIKE 'sqlite_%%' ORDER BY type, name`, sqliteQuoteIdent(ns))
+		rows, err := d.db.QueryContext(ctx, q)
+		if err != nil {
+			return nil, fmt.Errorf("sqlite: catalog objects: %w", err)
+		}
+		for rows.Next() {
+			var typ, name string
+			if err := rows.Scan(&typ, &name); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("sqlite: catalog objects scan: %w", err)
+			}
+			b.AddRef(ns, typ, name)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("sqlite: catalog objects rows: %w", err)
+		}
+		rows.Close()
+	}
+
+	database := opts.Database
+	if database == "" {
+		database = "main"
+	}
+	return b.Build("", "sqlite", database), nil
+}
+
+func (d *sqliteDriver) IntrospectObjects(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+	allowed, err := d.sqliteNamespaceSet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	b := build.NewRelational()
+	var triggerRefs []schema.ObjectRef
+	for _, ref := range refs {
+		if !allowed[ref.Namespace] {
+			continue
+		}
+		switch ref.Kind {
+		case "table", "view":
+			if err := d.introspectSQLiteRelational(ctx, b, ref); err != nil {
+				return nil, err
+			}
+		case "trigger":
+			triggerRefs = append(triggerRefs, ref)
+		}
+	}
+	out := b.Build()
+	if len(triggerRefs) > 0 {
+		triggers, err := d.introspectSQLiteTriggers(ctx, triggerRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, triggers...)
+	}
+	return out, nil
+}
+
+func (d *sqliteDriver) sqliteNamespaces(ctx context.Context) ([]string, error) {
+	rows, err := d.db.QueryContext(ctx, `PRAGMA database_list`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: database list: %w", err)
+	}
+	defer rows.Close()
+
+	var namespaces []string
+	for rows.Next() {
+		var seq int
+		var name, file string
+		if err := rows.Scan(&seq, &name, &file); err != nil {
+			return nil, fmt.Errorf("sqlite: database list scan: %w", err)
+		}
+		namespaces = append(namespaces, name)
+	}
+	return namespaces, rows.Err()
+}
+
+func (d *sqliteDriver) sqliteNamespaceSet(ctx context.Context) (map[string]bool, error) {
+	namespaces, err := d.sqliteNamespaces(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(namespaces))
+	for _, ns := range namespaces {
+		out[ns] = true
+	}
+	return out, nil
+}
+
+func (d *sqliteDriver) introspectSQLiteRelational(ctx context.Context, b *build.RelationalBuilder, ref schema.ObjectRef) error {
+	b.Ensure(ref)
+
+	tableArg := sqliteQuoteIdent(ref.Name)
+	prefix := sqliteQuoteIdent(ref.Namespace)
+
+	colQ := fmt.Sprintf(`PRAGMA %s.table_xinfo(%s)`, prefix, tableArg)
+	rows, err := d.db.QueryContext(ctx, colQ)
+	if err != nil {
+		return fmt.Errorf("sqlite: object columns: %w", err)
 	}
 	for rows.Next() {
-		var name, typ string
-		if err := rows.Scan(&name, &typ); err != nil {
+		var cid, notNull, pk, hidden int
+		var name, dtype string
+		var def sql.NullString
+		if err := rows.Scan(&cid, &name, &dtype, &notNull, &def, &pk, &hidden); err != nil {
 			rows.Close()
-			return nil, fmt.Errorf("sqlite: introspect objects scan: %w", err)
+			return fmt.Errorf("sqlite: object columns scan: %w", err)
 		}
-		objects = append(objects, obj{name: name, isView: typ == "view"})
+		if hidden != 0 {
+			continue
+		}
+		col := schema.Column{Name: name, DataType: dtype, Nullable: notNull == 0 && pk == 0, Ordinal: cid + 1}
+		if def.Valid {
+			v := def.String
+			col.Default = &v
+		}
+		b.AddColumn(ref, col)
+		if pk > 0 {
+			b.AddPrimaryKeyColumn(ref, name)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return nil, fmt.Errorf("sqlite: introspect objects rows: %w", err)
+		return fmt.Errorf("sqlite: object columns rows: %w", err)
 	}
 	rows.Close()
 
-	for _, o := range objects {
-		// Columns + primary key. PRAGMA table_info: cid, name, type, notnull, dflt_value, pk.
-		cinfo, err := d.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%q)", o.name))
-		if err != nil {
-			return nil, fmt.Errorf("sqlite: introspect columns %s: %w", o.name, err)
-		}
-		type pkCol struct {
-			name string
-			pos  int
-		}
-		var pks []pkCol
-		for cinfo.Next() {
-			var cid, notnull, pk int
-			var name, ctype string
-			var dflt sql.NullString
-			if err := cinfo.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-				cinfo.Close()
-				return nil, fmt.Errorf("sqlite: introspect column scan %s: %w", o.name, err)
-			}
-			c := schema.Column{Name: name, DataType: ctype, Nullable: notnull == 0, Ordinal: cid + 1}
-			if dflt.Valid {
-				v := dflt.String
-				c.Default = &v
-			}
-			b.AddColumn(ns, o.name, o.isView, c)
-			if pk > 0 {
-				pks = append(pks, pkCol{name: name, pos: pk})
-			}
-		}
-		if err := cinfo.Err(); err != nil {
-			cinfo.Close()
-			return nil, fmt.Errorf("sqlite: introspect column rows %s: %w", o.name, err)
-		}
-		cinfo.Close()
-
-		sort.Slice(pks, func(i, j int) bool { return pks[i].pos < pks[j].pos })
-		for _, p := range pks {
-			b.AddPrimaryKeyColumn(ns, o.name, p.name)
-		}
-
-		if o.isView {
-			continue
-		}
-
-		// Foreign keys. PRAGMA foreign_key_list: id, seq, table, from, to, on_update, on_delete, match.
-		fkInfo, err := d.db.QueryContext(ctx, fmt.Sprintf("PRAGMA foreign_key_list(%q)", o.name))
-		if err != nil {
-			return nil, fmt.Errorf("sqlite: introspect fk %s: %w", o.name, err)
-		}
-		for fkInfo.Next() {
-			var id, seq int
-			var refTbl, from, to, onUpdate, onDelete, match string
-			if err := fkInfo.Scan(&id, &seq, &refTbl, &from, &to, &onUpdate, &onDelete, &match); err != nil {
-				fkInfo.Close()
-				return nil, fmt.Errorf("sqlite: introspect fk scan %s: %w", o.name, err)
-			}
-			fkName := fmt.Sprintf("%s_fk_%d", o.name, id)
-			b.AddForeignKeyColumn(ns, o.name, fkName, from, refTbl, to)
-		}
-		if err := fkInfo.Err(); err != nil {
-			fkInfo.Close()
-			return nil, fmt.Errorf("sqlite: introspect fk rows %s: %w", o.name, err)
-		}
-		fkInfo.Close()
-
-		// Indexes. PRAGMA index_list: seq, name, unique, origin, partial.
-		idxInfo, err := d.db.QueryContext(ctx, fmt.Sprintf("PRAGMA index_list(%q)", o.name))
-		if err != nil {
-			return nil, fmt.Errorf("sqlite: introspect index %s: %w", o.name, err)
-		}
-		for idxInfo.Next() {
-			var seq, unique, partial int
-			var name, origin string
-			if err := idxInfo.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
-				idxInfo.Close()
-				return nil, fmt.Errorf("sqlite: introspect index scan %s: %w", o.name, err)
-			}
-			b.AddIndex(ns, o.name, schema.Index{Name: name, Unique: unique == 1})
-		}
-		if err := idxInfo.Err(); err != nil {
-			idxInfo.Close()
-			return nil, fmt.Errorf("sqlite: introspect index rows %s: %w", o.name, err)
-		}
-		idxInfo.Close()
-	}
-
-	// Triggers.
-	b.DeclareGroup("trigger", "Triggers")
-	trows, err := d.db.QueryContext(ctx,
-		`SELECT name, tbl_name FROM sqlite_master WHERE type = 'trigger' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
+	fkQ := fmt.Sprintf(`PRAGMA %s.foreign_key_list(%s)`, prefix, tableArg)
+	fkRows, err := d.db.QueryContext(ctx, fkQ)
 	if err != nil {
-		return nil, fmt.Errorf("sqlite: introspect triggers: %w", err)
+		return fmt.Errorf("sqlite: object fk: %w", err)
 	}
-	for trows.Next() {
-		var name, tbl string
-		if err := trows.Scan(&name, &tbl); err != nil {
-			trows.Close()
-			return nil, fmt.Errorf("sqlite: introspect triggers scan: %w", err)
+	for fkRows.Next() {
+		var id, seq int
+		var refTbl, fromCol, toCol, onUpdate, onDelete, match string
+		if err := fkRows.Scan(&id, &seq, &refTbl, &fromCol, &toCol, &onUpdate, &onDelete, &match); err != nil {
+			fkRows.Close()
+			return fmt.Errorf("sqlite: object fk scan: %w", err)
 		}
-		b.AddObject(ns, "trigger", name)
-		b.SetObjectAttribute(ns, "trigger", name, "table", tbl)
+		b.AddForeignKeyColumn(ref, fmt.Sprintf("fk_%d", id), fromCol,
+			schema.ObjectRef{Namespace: ref.Namespace, Kind: "table", Name: refTbl}, toCol)
 	}
-	if err := trows.Err(); err != nil {
-		trows.Close()
-		return nil, fmt.Errorf("sqlite: introspect triggers rows: %w", err)
+	if err := fkRows.Err(); err != nil {
+		fkRows.Close()
+		return fmt.Errorf("sqlite: object fk rows: %w", err)
 	}
-	trows.Close()
+	fkRows.Close()
 
-	return b.Build(""), nil
+	idxQ := fmt.Sprintf(`PRAGMA %s.index_list(%s)`, prefix, tableArg)
+	idxRows, err := d.db.QueryContext(ctx, idxQ)
+	if err != nil {
+		return fmt.Errorf("sqlite: object indexes: %w", err)
+	}
+	var indexes []schema.Index
+	for idxRows.Next() {
+		var seq, partial int
+		var name, origin string
+		var unique int
+		if err := idxRows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
+			idxRows.Close()
+			return fmt.Errorf("sqlite: object index scan: %w", err)
+		}
+		indexes = append(indexes, schema.Index{Name: name, Unique: unique == 1})
+	}
+	if err := idxRows.Err(); err != nil {
+		idxRows.Close()
+		return fmt.Errorf("sqlite: object index rows: %w", err)
+	}
+	idxRows.Close()
+	for _, ix := range indexes {
+		columns, err := d.sqliteIndexColumns(ctx, ref.Namespace, ix.Name)
+		if err != nil {
+			return err
+		}
+		ix.Columns = columns
+		b.AddIndex(ref, ix)
+	}
+
+	return nil
+}
+
+func (d *sqliteDriver) sqliteIndexColumns(ctx context.Context, _ string, indexName string) ([]string, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT name FROM pragma_index_info(?) ORDER BY seqno`, indexName)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: object index columns: %w", err)
+	}
+	defer rows.Close()
+
+	var columns []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("sqlite: object index columns scan: %w", err)
+		}
+		columns = append(columns, name)
+	}
+	return columns, rows.Err()
+}
+
+func (d *sqliteDriver) introspectSQLiteTriggers(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+	var out []schema.Object
+	for _, ref := range refs {
+		q := fmt.Sprintf(`SELECT tbl_name, sql FROM %s.sqlite_master WHERE type = 'trigger' AND name = ?`, sqliteQuoteIdent(ref.Namespace))
+		row := d.db.QueryRowContext(ctx, q, ref.Name)
+		var tableName string
+		var definition sql.NullString
+		if err := row.Scan(&tableName, &definition); err != nil {
+			if err == sql.ErrNoRows {
+				continue
+			}
+			return nil, fmt.Errorf("sqlite: trigger detail: %w", err)
+		}
+		obj := schema.Object{
+			Ref: schema.ObjectRef{Namespace: ref.Namespace, Kind: "trigger", Name: ref.Name},
+			Descriptors: []schema.Descriptor{
+				{Kind: "fields", Title: "Trigger", Fields: []schema.Field{{Name: "Table", Value: tableName}}},
+			},
+		}
+		if definition.Valid && definition.String != "" {
+			obj.Descriptors = append(obj.Descriptors, schema.Descriptor{
+				Kind:   "source",
+				Title:  "Definition",
+				Source: &schema.Source{Language: "sql", Body: definition.String},
+			})
+		}
+		out = append(out, obj)
+	}
+	return out, nil
+}
+
+func sqliteQuoteIdent(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
 func scanRows(rows *sql.Rows) (*result.ResultSet, error) {

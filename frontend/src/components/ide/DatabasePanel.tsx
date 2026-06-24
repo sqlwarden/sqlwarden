@@ -8,7 +8,7 @@ import {
   orgEnvironmentsQueryOptions,
   orgWorkspaceConnectionsQueryOptions,
   refreshConnectionSchema,
-  connectionSchemaQueryKey,
+  invalidateConnectionSchemaQueries,
 } from '#/lib/api/query'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
@@ -496,10 +496,9 @@ function ConnectionRow({
   const queryClient = useQueryClient()
   const refresh = useMutation({
     mutationFn: () => refreshConnectionSchema(orgSlug, connection.workspace_id, connection.id, sessionId ?? ''),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: connectionSchemaQueryKey(orgSlug, connection.workspace_id, connection.id),
-      }),
+    onSuccess: () => {
+      void invalidateConnectionSchemaQueries(queryClient, orgSlug, connection.workspace_id, connection.id)
+    },
   })
 
   const menuItems = buildConnectionMenu({

@@ -295,6 +295,45 @@ export interface ListQuery {
   [key: string]: string | number | boolean | undefined
 }
 
+export interface ObjectRef {
+  namespace: string
+  kind: string
+  name: string
+}
+
+export interface CatalogObjectGroup {
+  kind: string
+  objects: ObjectRef[]
+}
+
+export interface CatalogNamespace {
+  name: string
+  groups: CatalogObjectGroup[] | null
+}
+
+export interface SchemaCatalog {
+  connection: string
+  dialect: string
+  database: string
+  generated_at: string
+  namespaces: CatalogNamespace[] | null
+}
+
+export interface KindDescriptor {
+  kind: string
+  label: string
+  plural_label: string
+  order: number
+  relational: boolean
+  supports_diagram: boolean
+  listing: 'enumerated' | 'searched'
+}
+
+export interface DriverCapabilities {
+  dialect: string
+  kinds: KindDescriptor[]
+}
+
 export interface DbColumn {
   name: string
   data_type: string
@@ -306,7 +345,7 @@ export interface DbColumn {
 export interface DbForeignKey {
   name: string
   columns: string[]
-  referenced_table: string
+  references: ObjectRef
   referenced_columns: string[]
 }
 
@@ -316,32 +355,51 @@ export interface DbIndex {
   unique: boolean
 }
 
-export interface DbObject {
-  name: string
-  columns?: DbColumn[] | null
+export interface RelationalDetail {
+  columns: DbColumn[]
   primary_key?: string[]
   foreign_keys?: DbForeignKey[]
   indexes?: DbIndex[]
 }
 
-export interface DbObjectGroup {
-  kind: string
-  label: string
-  objects: DbObject[] | null
-}
-
-export interface DbNamespace {
+export interface ObjectField {
   name: string
-  object_groups: DbObjectGroup[] | null
+  value: string
 }
 
-export interface DbSchema {
-  connection: string
-  database: string
-  generated_at: string
-  namespaces: DbNamespace[] | null
+export interface ObjectRowSet {
+  columns: string[]
+  rows: string[][]
 }
 
-export interface ConnectionSchemaResponse {
-  schema: DbSchema
+export interface ObjectSource {
+  language: string
+  body: string
+}
+
+export interface ObjectDescriptor {
+  kind: 'fields' | 'rows' | 'source'
+  title: string
+  fields?: ObjectField[]
+  rows?: ObjectRowSet
+  source?: ObjectSource
+}
+
+export interface ObjectDetail {
+  ref: ObjectRef
+  relational?: RelationalDetail
+  descriptors?: ObjectDescriptor[]
+  attributes?: Record<string, unknown>
+}
+
+export interface CatalogResponse {
+  catalog: SchemaCatalog
+}
+
+export interface CapabilitiesResponse {
+  capabilities: DriverCapabilities
+}
+
+export interface ObjectsResponse {
+  objects: ObjectDetail[]
 }

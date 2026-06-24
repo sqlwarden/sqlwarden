@@ -3,10 +3,14 @@ import { useQuery } from '@tanstack/react-query'
 import { Icon, type AppIcon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { isApiError } from '#/lib/api/errors'
-import { orgConnectionSchemaQueryOptions } from '#/lib/api/query'
-import type { DbNamespace, DbObjectGroup, DbObject } from '#/lib/api/types'
+import {
+  orgConnectionCapabilitiesQueryOptions,
+  orgConnectionCatalogQueryOptions,
+  orgConnectionObjectQueryOptions,
+} from '#/lib/api/query'
+import type { CatalogNamespace, CatalogObjectGroup, DriverCapabilities, ObjectDescriptor, ObjectDetail, ObjectRef } from '#/lib/api/types'
 import { useIde } from './useIdeStore'
-import { filterSchema } from './schemaFilter'
+import { filterCatalog, kindLabel, sortedGroups } from './schemaCatalog'
 import { columnTypeIcon } from './columnTypeIcon'
 import { dialectFor, IDENTIFIER_DND_MIME, type SqlDialect } from './sqlDialect'
 import { useInsertIntoEditor } from './useInsertIntoEditor'
@@ -18,7 +22,18 @@ import { buildColumnMenu, buildIndexMenu } from './contextMenus/columnMenu'
 
 const indent = (depth: number) => 4 + depth * 10
 
-const SchemaInsertContext = createContext<{ dialect: SqlDialect; insert: (t: string) => void; refresh: () => void } | null>(null)
+type TreeCtx = {
+  dialect: SqlDialect
+  insert: (text: string) => void
+  refresh: () => void
+  caps: DriverCapabilities | undefined
+  orgSlug: string
+  workspaceId: number
+  connectionId: number
+  sessionId: string
+}
+
+const SchemaTreeContext = createContext<TreeCtx | null>(null)
 
 type InsertableProps = {
   draggable: boolean
@@ -26,11 +41,7 @@ type InsertableProps = {
   onDoubleClick: () => void
 }
 
-/** Builds drag + double-click props that insert the already-formatted `text`. */
-function dragPropsFor(
-  ctx: { insert: (t: string) => void } | null,
-  text: string | undefined,
-): InsertableProps | undefined {
+function dragPropsFor(ctx: { insert: (text: string) => void } | null, text: string | undefined): InsertableProps | undefined {
   if (!ctx || text === undefined) return undefined
   return {
     draggable: true,
@@ -44,29 +55,25 @@ function dragPropsFor(
   }
 }
 
-/** Drag + double-click props for a database object (qualified per dialect). */
 function useObjectInsert(namespace: string, name: string): InsertableProps | undefined {
-  const ctx = useContext(SchemaInsertContext)
+  const ctx = useContext(SchemaTreeContext)
   return dragPropsFor(ctx, ctx ? ctx.dialect.formatObject(namespace, name) : undefined)
 }
 
-/** Drag + double-click props for a column (bare, quoted if needed). */
 function useColumnInsert(name: string): InsertableProps | undefined {
-  const ctx = useContext(SchemaInsertContext)
+  const ctx = useContext(SchemaTreeContext)
   return dragPropsFor(ctx, ctx ? ctx.dialect.formatColumn(name) : undefined)
 }
 
-/** Dialect + refresh for context menus; safe defaults when outside the provider. */
-function useSchemaMenuCtx() {
-  const ctx = useContext(SchemaInsertContext)
+function useTreeCtx() {
+  const ctx = useContext(SchemaTreeContext)
   return {
     dialect: ctx?.dialect ?? null,
     refresh: ctx?.refresh ?? (() => {}),
+    caps: ctx?.caps,
   }
 }
 
-// Icon per object-group kind. Unknown kinds (future drivers/Phase C) fall back
-// to a generic icon so they still render natively without a code change here.
 const KIND_ICON: Record<string, AppIcon> = {
   table: 'table',
   view: 'eye',
@@ -76,6 +83,7 @@ const KIND_ICON: Record<string, AppIcon> = {
   sequence: 'sort',
   trigger: 'flow-connection',
 }
+
 const kindIcon = (kind: string): AppIcon => KIND_ICON[kind] ?? 'box'
 
 export function SchemaTree({
@@ -95,69 +103,93 @@ export function SchemaTree({
   const insert = useInsertIntoEditor()
   const dialect = dialectFor(driver)
 
-  const schemaQuery = useQuery({
-    ...orgConnectionSchemaQueryOptions(orgSlug, workspaceId, connectionId, sessionId ?? ''),
+  const catalogQuery = useQuery({
+    ...orgConnectionCatalogQueryOptions(orgSlug, workspaceId, connectionId, sessionId ?? ''),
+    enabled: Boolean(sessionId),
+  })
+  const capsQuery = useQuery({
+    ...orgConnectionCapabilitiesQueryOptions(orgSlug, workspaceId, connectionId, sessionId ?? ''),
     enabled: Boolean(sessionId),
   })
 
   if (!sessionId) return <SchemaMessage>Not connected.</SchemaMessage>
-  if (schemaQuery.isLoading) return <SchemaMessage>Loading schema…</SchemaMessage>
-  if (schemaQuery.isError) {
-    if (isApiError(schemaQuery.error) && schemaQuery.error.status === 501) {
+  if (catalogQuery.isLoading) {
+    return (
+      <SchemaMessage>
+        <SchemaSpinner />
+        Loading schema...
+      </SchemaMessage>
+    )
+  }
+  if (catalogQuery.isError) {
+    if (isApiError(catalogQuery.error) && catalogQuery.error.status === 501) {
       return <SchemaMessage>This driver doesn&apos;t support schema introspection.</SchemaMessage>
     }
     return (
       <div className="flex items-center gap-2 py-1.5 pr-2 text-xs text-muted-foreground" style={{ paddingLeft: indent(0) }}>
         <span>Failed to load schema.</span>
-        <button type="button" className="underline hover:text-foreground" onClick={() => schemaQuery.refetch()}>
+        <button type="button" className="underline hover:text-foreground" onClick={() => catalogQuery.refetch()}>
           Retry
         </button>
       </div>
     )
   }
 
-  const raw = schemaQuery.data?.schema
+  const raw = catalogQuery.data?.catalog
   if (!raw) return <SchemaMessage>No schema.</SchemaMessage>
 
   const filtering = filter.trim() !== ''
-  const namespaces = filterSchema(raw, filter).namespaces ?? []
+  const namespaces = filterCatalog(raw, filter).namespaces ?? []
 
   if (namespaces.length === 0) {
     return <SchemaMessage>{filtering ? 'No matches.' : 'No objects.'}</SchemaMessage>
   }
 
+  const caps = capsQuery.data?.capabilities
   const single = namespaces.length === 1 ? namespaces[0] : null
+  const ctx: TreeCtx = {
+    dialect,
+    insert,
+    refresh: () => {
+      void catalogQuery.refetch()
+    },
+    caps,
+    orgSlug,
+    workspaceId,
+    connectionId,
+    sessionId,
+  }
 
   return (
-    <SchemaInsertContext.Provider value={{ dialect, insert, refresh: () => { void schemaQuery.refetch() } }}>
+    <SchemaTreeContext.Provider value={ctx}>
       <div>
         {single
-          ? (single.object_groups ?? [])
-              .filter((g) => (g.objects ?? []).length > 0)
-              .map((g) => (
-                <SchemaGroupNode key={g.kind} group={g} namespace={single.name} baseDepth={0} forceOpen={filtering} />
-              ))
+          ? sortedGroups(single, caps).map((g) => (
+              <SchemaGroupNode key={g.kind} group={g} baseDepth={0} forceOpen={filtering} />
+            ))
           : namespaces.map((ns) => <SchemaNamespaceNode key={ns.name} namespace={ns} forceOpen={filtering} />)}
       </div>
-    </SchemaInsertContext.Provider>
+    </SchemaTreeContext.Provider>
   )
 }
 
 function SchemaMessage({ children }: { children: React.ReactNode }) {
   return (
-    <div className="py-1.5 pr-2 text-xs text-muted-foreground" style={{ paddingLeft: indent(0) }}>
+    <div className="flex items-center gap-1.5 py-1.5 pr-2 text-xs text-muted-foreground" style={{ paddingLeft: indent(0) }}>
       {children}
     </div>
   )
 }
 
-function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: DbNamespace; forceOpen: boolean }) {
-  // null = follow the filter default; an explicit toggle (true/false) wins so the
-  // user can still collapse/expand while a filter auto-expands the tree.
+function SchemaSpinner({ size = 12 }: { size?: number }) {
+  return <Icon name="loading-03" size={size} className="shrink-0 animate-spin text-muted-foreground" />
+}
+
+function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: CatalogNamespace; forceOpen: boolean }) {
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
-  const groups = (namespace.object_groups ?? []).filter((g) => (g.objects ?? []).length > 0)
-  const { refresh } = useSchemaMenuCtx()
+  const { refresh, caps } = useTreeCtx()
+  const groups = sortedGroups(namespace, caps)
   const menuItems = buildNamespaceMenu({
     onCopyName: () => copyWithToast(namespace.name),
     onRefresh: refresh,
@@ -168,20 +200,28 @@ function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: DbNamespace;
       <ContextMenu items={menuItems}>
         <TreeRow depth={0} typeIcon="database" chevron={expanded} bold label={namespace.name} onClick={() => setOpen(!expanded)} />
       </ContextMenu>
-      {expanded && groups.map((g) => <SchemaGroupNode key={g.kind} group={g} namespace={namespace.name} baseDepth={1} forceOpen={forceOpen} />)}
+      {expanded && groups.map((g) => <SchemaGroupNode key={g.kind} group={g} baseDepth={1} forceOpen={forceOpen} />)}
     </div>
   )
 }
 
-function SchemaGroupNode({ group, namespace, baseDepth, forceOpen }: { group: DbObjectGroup; namespace: string; baseDepth: number; forceOpen: boolean }) {
+function SchemaGroupNode({
+  group,
+  baseDepth,
+  forceOpen,
+}: {
+  group: CatalogObjectGroup
+  baseDepth: number
+  forceOpen: boolean
+}) {
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
   const objects = group.objects ?? []
   const icon = kindIcon(group.kind)
-  const { refresh } = useSchemaMenuCtx()
-  const newLabel = `New ${group.label.replace(/s$/, '')}…`
+  const { refresh, caps } = useTreeCtx()
+  const label = kindLabel(caps, group.kind)
+  const newLabel = `New ${label.replace(/s$/, '')}...`
   const menuItems = buildObjectGroupMenu({ newLabel, onRefresh: refresh })
-  const isView = group.kind === 'view' || group.kind === 'materialized_view'
 
   return (
     <div>
@@ -190,46 +230,45 @@ function SchemaGroupNode({ group, namespace, baseDepth, forceOpen }: { group: Db
           depth={baseDepth}
           typeIcon={expanded ? 'folder-open' : 'folder'}
           chevron={expanded}
-          label={`${group.label} (${objects.length})`}
+          label={`${label} (${objects.length})`}
           onClick={() => setOpen(!expanded)}
         />
       </ContextMenu>
       {expanded &&
-        objects.map((o) => (
-          <SchemaObjectNode key={o.name} object={o} namespace={namespace} typeIcon={icon} depth={baseDepth + 1} forceOpen={forceOpen} isView={isView} />
+        objects.map((ref) => (
+          <SchemaObjectNode key={`${ref.kind}:${ref.name}`} objectRef={ref} typeIcon={icon} depth={baseDepth + 1} forceOpen={forceOpen} />
         ))}
     </div>
   )
 }
 
 function SchemaObjectNode({
-  object,
-  namespace,
+  objectRef,
   typeIcon,
   depth,
   forceOpen,
-  isView,
 }: {
-  object: DbObject
-  namespace: string
+  objectRef: ObjectRef
   typeIcon: AppIcon
   depth: number
   forceOpen: boolean
-  isView: boolean
 }) {
+  const ctx = useContext(SchemaTreeContext)
   const [open, setOpen] = useState<boolean | null>(null)
-  const columns = object.columns ?? []
-  const indexes = object.indexes ?? []
-  const hasChildren = columns.length > 0 || indexes.length > 0
-  const expanded = hasChildren && (open ?? forceOpen)
-  const pk = new Set(object.primary_key ?? [])
-  const fk = new Set((object.foreign_keys ?? []).flatMap((f) => f.columns))
-  const insertable = useObjectInsert(namespace, object.name)
-  const { dialect } = useSchemaMenuCtx()
+  const expanded = open ?? forceOpen
+  const detailQuery = useQuery({
+    ...orgConnectionObjectQueryOptions(ctx!.orgSlug, ctx!.workspaceId, ctx!.connectionId, ctx!.sessionId, objectRef),
+    enabled: Boolean(ctx) && expanded,
+  })
+  const detail = detailQuery.data ?? null
+  const columns = detail?.relational?.columns ?? []
+  const insertable = useObjectInsert(objectRef.namespace, objectRef.name)
+  const { dialect } = useTreeCtx()
+  const isView = objectRef.kind === 'view' || objectRef.kind === 'materialized_view'
   const objectMenu = buildObjectMenu({
     isView,
-    onCopyName: () => copyWithToast(object.name),
-    onCopyQualifiedName: () => copyWithToast(dialect ? dialect.formatObject(namespace, object.name) : object.name),
+    onCopyName: () => copyWithToast(objectRef.name),
+    onCopyQualifiedName: () => copyWithToast(dialect ? dialect.formatObject(objectRef.namespace, objectRef.name) : objectRef.name),
     onCopyColumnList: () => copyWithToast(columnList(columns.map((c) => (dialect ? dialect.formatColumn(c.name) : c.name)))),
   })
 
@@ -240,43 +279,100 @@ function SchemaObjectNode({
           depth={depth}
           typeIcon={typeIcon}
           chevron={expanded}
-          leaf={!hasChildren}
-          label={object.name}
+          label={objectRef.name}
           insertable={insertable}
-          onClick={() => hasChildren && setOpen(!expanded)}
+          onClick={() => setOpen(!expanded)}
         />
       </ContextMenu>
-      {expanded && (
-        <>
-          {columns.map((c) => (
-            <ContextMenu
-              key={c.name}
-              items={buildColumnMenu({
-                onCopyName: () => copyWithToast(dialect ? dialect.formatColumn(c.name) : c.name),
-                onCopyQualifiedName: () => copyWithToast(dialect ? qualifiedColumn(dialect, object.name, c.name) : `${object.name}.${c.name}`),
-                onCopyType: () => copyWithToast(c.data_type),
-              })}
-            >
-              <LeafRow
-                depth={depth + 1}
-                icon={columnTypeIcon(c.data_type)}
-                label={c.name}
-                meta={`${c.data_type}${c.nullable ? ' · null' : ''}`}
-                badge={pk.has(c.name) ? 'PK' : fk.has(c.name) ? 'FK' : undefined}
-                insertName={c.name}
-              />
-            </ContextMenu>
+      {expanded && <SchemaObjectDetail detail={detail} loading={detailQuery.isLoading} depth={depth + 1} objectName={objectRef.name} />}
+    </div>
+  )
+}
+
+function SchemaObjectDetail({
+  detail,
+  loading,
+  depth,
+  objectName,
+}: {
+  detail: ObjectDetail | null
+  loading: boolean
+  depth: number
+  objectName: string
+}) {
+  const { dialect } = useTreeCtx()
+  if (loading && !detail) {
+    return (
+      <DetailMessage depth={depth}>
+        <SchemaSpinner size={11} />
+        Loading...
+      </DetailMessage>
+    )
+  }
+  const rel = detail?.relational
+  if (!rel) {
+    return <SchemaDescriptors descriptors={detail?.descriptors ?? []} depth={depth} />
+  }
+  const pk = new Set(rel.primary_key ?? [])
+  const fk = new Set((rel.foreign_keys ?? []).flatMap((f) => f.columns))
+  return (
+    <>
+      {(rel.columns ?? []).map((c) => (
+        <ContextMenu
+          key={c.name}
+          items={buildColumnMenu({
+            onCopyName: () => copyWithToast(dialect ? dialect.formatColumn(c.name) : c.name),
+            onCopyQualifiedName: () => copyWithToast(dialect ? qualifiedColumn(dialect, objectName, c.name) : `${objectName}.${c.name}`),
+            onCopyType: () => copyWithToast(c.data_type),
+          })}
+        >
+          <LeafRow
+            depth={depth}
+            icon={columnTypeIcon(c.data_type)}
+            label={c.name}
+            meta={`${c.data_type}${c.nullable ? ' · null' : ''}`}
+            badge={pk.has(c.name) ? 'PK' : fk.has(c.name) ? 'FK' : undefined}
+            insertName={c.name}
+          />
+        </ContextMenu>
+      ))}
+      {(rel.indexes ?? []).map((ix) => (
+        <ContextMenu key={`ix:${ix.name}`} items={buildIndexMenu({ onCopyName: () => copyWithToast(ix.name) })}>
+          <LeafRow depth={depth} icon="key-01" label={ix.name} meta={ix.unique ? 'unique' : 'index'} />
+        </ContextMenu>
+      ))}
+    </>
+  )
+}
+
+function SchemaDescriptors({ descriptors, depth }: { descriptors: ObjectDescriptor[]; depth: number }) {
+  if (descriptors.length === 0) {
+    return null
+  }
+  return (
+    <>
+      {descriptors.map((descriptor) => (
+        <div key={`${descriptor.kind}:${descriptor.title}`}>
+          <DetailMessage depth={depth}>{descriptor.title}</DetailMessage>
+          {(descriptor.fields ?? []).map((field) => (
+            <LeafRow key={`${descriptor.title}:${field.name}`} depth={depth + 1} icon="box" label={field.name} meta={field.value} />
           ))}
-          {indexes.map((ix) => (
-            <ContextMenu
-              key={`ix:${ix.name}`}
-              items={buildIndexMenu({ onCopyName: () => copyWithToast(ix.name) })}
-            >
-              <LeafRow depth={depth + 1} icon="key-01" label={ix.name} meta={ix.unique ? 'unique' : 'index'} />
-            </ContextMenu>
-          ))}
-        </>
-      )}
+          {descriptor.source ? (
+            <LeafRow depth={depth + 1} icon="terminal" label={descriptor.source.language.toUpperCase()} meta={descriptor.source.body} />
+          ) : null}
+          {descriptor.rows ? (
+            <DetailMessage depth={depth + 1}>{`${descriptor.rows.rows.length} rows`}</DetailMessage>
+          ) : null}
+        </div>
+      ))}
+    </>
+  )
+}
+
+function DetailMessage({ depth, children }: { depth: number; children: React.ReactNode }) {
+  return (
+    <div className="flex h-5 items-center gap-1.5 pr-3 text-[11px] text-muted-foreground" style={{ paddingLeft: indent(depth) }}>
+      {children}
     </div>
   )
 }
@@ -300,18 +396,19 @@ function LeafRow({
   const dnd = insertName ? insertable : undefined
   return (
     <div
-      className={cn(
-        'flex h-5 w-full items-center gap-1.5 pr-3 text-[11px]',
-        dnd && 'cursor-grab active:cursor-grabbing',
-      )}
+      className={cn('flex h-5 w-full items-center gap-1.5 pr-3 text-[11px]', dnd && 'cursor-grab active:cursor-grabbing')}
       style={{ paddingLeft: indent(depth) }}
       draggable={dnd?.draggable}
       onDragStart={dnd?.onDragStart}
       onDoubleClick={dnd?.onDoubleClick}
     >
       <Icon name={icon} size={12} className="shrink-0 text-muted-foreground" />
-      <span className={cn('min-w-0 flex-1 truncate', !dnd && 'select-text')} title={label}>{label}</span>
-      <span className="min-w-0 max-w-[55%] shrink truncate pl-3 text-right text-muted-foreground" title={meta}>{meta}</span>
+      <span className={cn('min-w-0 flex-1 truncate', !dnd && 'select-text')} title={label}>
+        {label}
+      </span>
+      <span className="min-w-0 max-w-[55%] shrink truncate pl-3 text-right text-muted-foreground" title={meta}>
+        {meta}
+      </span>
       {badge ? <KeyBadge>{badge}</KeyBadge> : null}
     </div>
   )
@@ -336,12 +433,9 @@ function TreeRow({
   insertable?: InsertableProps
   onClick: () => void
 }) {
-  // A plain click toggles; a drag that leaves text selected does not (so the
-  // label can be highlighted and copied). Rendered as a div (not a button) so
-  // the text is natively selectable.
   function handleClick(e: React.MouseEvent) {
     if (window.getSelection()?.toString()) return
-    if (insertable && e.detail > 1) return // second click of a double-click → let it insert, not re-toggle
+    if (insertable && e.detail > 1) return
     onClick()
   }
 
@@ -368,7 +462,9 @@ function TreeRow({
         <Icon name={chevron ? 'chevron-down' : 'chevron-right'} size={11} className="shrink-0 text-muted-foreground" />
       )}
       <Icon name={typeIcon} size={13} className="shrink-0 text-muted-foreground" />
-      <span className={cn('min-w-0 flex-1 truncate', !insertable && 'select-text', bold && 'font-medium')} title={label}>{label}</span>
+      <span className={cn('min-w-0 flex-1 truncate', !insertable && 'select-text', bold && 'font-medium')} title={label}>
+        {label}
+      </span>
     </div>
   )
 }

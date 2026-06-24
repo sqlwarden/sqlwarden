@@ -240,6 +240,127 @@ func TestExecute_DML(t *testing.T) {
 	}
 }
 
+func TestIntrospectCatalogAndObjects(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+
+	_, _ = d.Execute(ctx, "DROP VIEW IF EXISTS introspect_child_view")
+	_, _ = d.Execute(ctx, "DROP TRIGGER IF EXISTS introspect_child_bi")
+	_, _ = d.Execute(ctx, "DROP FUNCTION IF EXISTS introspect_double")
+	_, _ = d.Execute(ctx, "DROP PROCEDURE IF EXISTS introspect_noop")
+	_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS introspect_child")
+	_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS introspect_parent")
+	t.Cleanup(func() {
+		_, _ = d.Execute(ctx, "DROP VIEW IF EXISTS introspect_child_view")
+		_, _ = d.Execute(ctx, "DROP TRIGGER IF EXISTS introspect_child_bi")
+		_, _ = d.Execute(ctx, "DROP FUNCTION IF EXISTS introspect_double")
+		_, _ = d.Execute(ctx, "DROP PROCEDURE IF EXISTS introspect_noop")
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS introspect_child")
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS introspect_parent")
+	})
+
+	if _, err := d.Execute(ctx, `
+		CREATE TABLE introspect_parent (
+			id INT PRIMARY KEY,
+			name VARCHAR(64) NOT NULL
+		)
+	`); err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+	if _, err := d.Execute(ctx, `
+		CREATE TABLE introspect_child (
+			id INT PRIMARY KEY,
+			parent_id INT NOT NULL,
+			label VARCHAR(64),
+			INDEX idx_child_label (label),
+			CONSTRAINT fk_child_parent FOREIGN KEY (parent_id) REFERENCES introspect_parent(id)
+		)
+	`); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE VIEW introspect_child_view AS SELECT id, label FROM introspect_child`); err != nil {
+		t.Fatalf("create view: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE FUNCTION introspect_double(n INT) RETURNS INT DETERMINISTIC RETURN n * 2`); err != nil {
+		t.Fatalf("create function: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE PROCEDURE introspect_noop() BEGIN SELECT 1; END`); err != nil {
+		t.Fatalf("create procedure: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE TRIGGER introspect_child_bi BEFORE INSERT ON introspect_child FOR EACH ROW SET NEW.label = COALESCE(NEW.label, 'untitled')`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	caps := d.Capabilities()
+	if caps.Dialect != "mysql" || len(caps.Kinds) != 5 {
+		t.Fatalf("unexpected capabilities: %+v", caps)
+	}
+
+	catalog, err := d.IntrospectCatalog(ctx, schema.CatalogOptions{})
+	if err != nil {
+		t.Fatalf("IntrospectCatalog: %v", err)
+	}
+	if catalog.Dialect != "mysql" || catalog.Database != "testdb" {
+		t.Fatalf("unexpected catalog header: %+v", catalog)
+	}
+	if !catalogHasRef(catalog, schema.ObjectRef{Namespace: "testdb", Kind: "table", Name: "introspect_child"}) {
+		t.Fatalf("catalog missing child table: %+v", catalog.Namespaces)
+	}
+	if !catalogHasRef(catalog, schema.ObjectRef{Namespace: "testdb", Kind: "view", Name: "introspect_child_view"}) {
+		t.Fatalf("catalog missing child view: %+v", catalog.Namespaces)
+	}
+	for _, ref := range []schema.ObjectRef{
+		{Namespace: "testdb", Kind: "function", Name: "introspect_double"},
+		{Namespace: "testdb", Kind: "procedure", Name: "introspect_noop"},
+		{Namespace: "testdb", Kind: "trigger", Name: "introspect_child_bi"},
+	} {
+		if !catalogHasRef(catalog, ref) {
+			t.Fatalf("catalog missing %s %s: %+v", ref.Kind, ref.Name, catalog.Namespaces)
+		}
+	}
+
+	objects, err := d.IntrospectObjects(ctx, []schema.ObjectRef{{Namespace: "testdb", Kind: "table", Name: "introspect_child"}})
+	if err != nil {
+		t.Fatalf("IntrospectObjects: %v", err)
+	}
+	if len(objects) != 1 {
+		t.Fatalf("expected one object, got %d: %+v", len(objects), objects)
+	}
+	child := objects[0]
+	if child.Relational == nil {
+		t.Fatalf("expected relational detail: %+v", child)
+	}
+	if !slices.Contains(child.Relational.PrimaryKey, "id") {
+		t.Fatalf("expected primary key id, got %+v", child.Relational.PrimaryKey)
+	}
+	if len(child.Relational.ForeignKeys) != 1 || child.Relational.ForeignKeys[0].References.Name != "introspect_parent" {
+		t.Fatalf("expected parent foreign key, got %+v", child.Relational.ForeignKeys)
+	}
+	if !hasIndex(child.Relational.Indexes, "idx_child_label", "label") {
+		t.Fatalf("expected idx_child_label index, got %+v", child.Relational.Indexes)
+	}
+
+	objects, err = d.IntrospectObjects(ctx, []schema.ObjectRef{
+		{Namespace: "testdb", Kind: "function", Name: "introspect_double"},
+		{Namespace: "testdb", Kind: "procedure", Name: "introspect_noop"},
+		{Namespace: "testdb", Kind: "trigger", Name: "introspect_child_bi"},
+	})
+	if err != nil {
+		t.Fatalf("IntrospectObjects descriptors: %v", err)
+	}
+	if len(objects) != 3 {
+		t.Fatalf("expected three descriptor objects, got %d: %+v", len(objects), objects)
+	}
+	for _, object := range objects {
+		if object.Relational != nil {
+			t.Fatalf("expected non-relational %s, got %+v", object.Ref.Kind, object.Relational)
+		}
+		if len(object.Descriptors) == 0 {
+			t.Fatalf("expected descriptors for %s, got %+v", object.Ref.Kind, object)
+		}
+	}
+}
+
 func TestToValue(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -338,6 +459,28 @@ func TestToValue(t *testing.T) {
 	}
 }
 
+func catalogHasRef(catalog *schema.Catalog, ref schema.ObjectRef) bool {
+	for _, ns := range catalog.Namespaces {
+		for _, group := range ns.Groups {
+			for _, got := range group.Objects {
+				if got == ref {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func hasIndex(indexes []schema.Index, name, column string) bool {
+	for _, ix := range indexes {
+		if ix.Name == name && slices.Contains(ix.Columns, column) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestDialect(t *testing.T) {
 	d := &mysqlDriver{}
 	if d.Dialect() != driver.DialectMySQL {
@@ -387,123 +530,4 @@ func containsParam(dsn, param string) bool {
 	}
 	parts := strings.Split(query, "&")
 	return slices.Contains(parts, param)
-}
-
-func mustExec(t *testing.T, d driver.Driver, sql string) {
-	t.Helper()
-	if _, err := d.Execute(context.Background(), sql); err != nil {
-		t.Fatalf("exec %q: %v", sql, err)
-	}
-}
-
-func introTable(t *testing.T, s *schema.Schema, ns, name string) schema.Object {
-	t.Helper()
-	for _, n := range s.Namespaces {
-		if n.Name != ns {
-			continue
-		}
-		for _, g := range n.ObjectGroups {
-			if g.Kind != "table" {
-				continue
-			}
-			for _, o := range g.Objects {
-				if o.Name == name {
-					return o
-				}
-			}
-		}
-	}
-	t.Fatalf("table %s.%s not found in %+v", ns, name, s)
-	return schema.Object{}
-}
-
-func introHasIndex(tbl schema.Object, name string) bool {
-	for _, ix := range tbl.Indexes {
-		if ix.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
-func TestMySQLIntrospect(t *testing.T) {
-	d := newConnectedDriver(t)
-	ctx := context.Background()
-
-	t.Cleanup(func() {
-		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_users")
-		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_orgs")
-	})
-	mustExec(t, d, `CREATE TABLE intro_orgs (id BIGINT PRIMARY KEY)`)
-	mustExec(t, d, `CREATE TABLE intro_users (
-		id BIGINT PRIMARY KEY,
-		org_id BIGINT NOT NULL,
-		email VARCHAR(255) NOT NULL,
-		CONSTRAINT fk_intro_org FOREIGN KEY (org_id) REFERENCES intro_orgs(id)
-	)`)
-	mustExec(t, d, `CREATE INDEX intro_users_email_idx ON intro_users(email)`)
-
-	s, err := d.Introspect(ctx, schema.IntrospectOptions{})
-	if err != nil {
-		t.Fatalf("introspect: %v", err)
-	}
-	users := introTable(t, s, s.Namespaces[0].Name, "intro_users")
-	if len(users.PrimaryKey) != 1 || users.PrimaryKey[0] != "id" {
-		t.Fatalf("expected PK [id], got %v", users.PrimaryKey)
-	}
-	if len(users.ForeignKeys) != 1 || users.ForeignKeys[0].ReferencedTable != "intro_orgs" {
-		t.Fatalf("expected FK to intro_orgs, got %+v", users.ForeignKeys)
-	}
-	if !introHasIndex(users, "intro_users_email_idx") {
-		t.Fatalf("expected intro_users_email_idx index, got %+v", users.Indexes)
-	}
-}
-
-func introObj(t *testing.T, s *schema.Schema, kind, name string) schema.Object {
-	t.Helper()
-	for _, n := range s.Namespaces {
-		for _, g := range n.ObjectGroups {
-			if g.Kind != kind {
-				continue
-			}
-			for _, o := range g.Objects {
-				if o.Name == name {
-					return o
-				}
-			}
-		}
-	}
-	t.Fatalf("%s %s not found in %+v", kind, name, s)
-	return schema.Object{}
-}
-
-func TestMySQLIntrospectExtraObjects(t *testing.T) {
-	d := newConnectedDriver(t)
-	ctx := context.Background()
-
-	t.Cleanup(func() {
-		_, _ = d.Execute(ctx, "DROP TRIGGER IF EXISTS intro_trg")
-		_, _ = d.Execute(ctx, "DROP PROCEDURE IF EXISTS intro_proc")
-		_, _ = d.Execute(ctx, "DROP FUNCTION IF EXISTS intro_fn")
-		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_trg_tbl")
-	})
-	mustExec(t, d, `CREATE TABLE intro_trg_tbl (id BIGINT PRIMARY KEY, n BIGINT)`)
-	mustExec(t, d, `CREATE FUNCTION intro_fn(x INT) RETURNS INT DETERMINISTIC RETURN x + 1`)
-	mustExec(t, d, `CREATE PROCEDURE intro_proc() BEGIN SELECT 1; END`)
-	mustExec(t, d, `CREATE TRIGGER intro_trg BEFORE INSERT ON intro_trg_tbl FOR EACH ROW SET NEW.n = 0`)
-
-	s, err := d.Introspect(ctx, schema.IntrospectOptions{})
-	if err != nil {
-		t.Fatalf("introspect: %v", err)
-	}
-	if introObj(t, s, "function", "intro_fn").Name != "intro_fn" {
-		t.Fatal("function intro_fn not found")
-	}
-	if introObj(t, s, "procedure", "intro_proc").Name != "intro_proc" {
-		t.Fatal("procedure intro_proc not found")
-	}
-	trg := introObj(t, s, "trigger", "intro_trg")
-	if trg.Attributes["table"] != "intro_trg_tbl" {
-		t.Fatalf("expected trigger on intro_trg_tbl, got %+v", trg.Attributes)
-	}
 }
