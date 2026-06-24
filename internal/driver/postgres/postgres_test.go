@@ -344,132 +344,171 @@ func mustExec(t *testing.T, d driver.Driver, sql string) {
 	}
 }
 
-func introTable(t *testing.T, s *schema.Schema, ns, name string) schema.Object {
-	t.Helper()
-	for _, n := range s.Namespaces {
-		if n.Name != ns {
-			continue
-		}
-		for _, g := range n.ObjectGroups {
-			if g.Kind != "table" {
-				continue
-			}
-			for _, o := range g.Objects {
-				if o.Name == name {
-					return o
-				}
-			}
-		}
-	}
-	t.Fatalf("table %s.%s not found in %+v", ns, name, s)
-	return schema.Object{}
-}
-
-func introHasIndex(tbl schema.Object, name string) bool {
-	for _, ix := range tbl.Indexes {
-		if ix.Name == name {
+func contains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
 			return true
 		}
 	}
 	return false
 }
 
-func TestPostgresIntrospect(t *testing.T) {
+func TestPostgresCapabilities(t *testing.T) {
+	caps := (&postgresDriver{}).Capabilities()
+	if caps.Dialect != "postgres" {
+		t.Fatalf("dialect: %s", caps.Dialect)
+	}
+	byKind := map[string]schema.KindDescriptor{}
+	for _, k := range caps.Kinds {
+		byKind[k.Kind] = k
+		if k.Listing != "enumerated" {
+			t.Errorf("%s listing = %q, want enumerated", k.Kind, k.Listing)
+		}
+	}
+	if !byKind["table"].Relational || !byKind["table"].SupportsDiagram {
+		t.Errorf("table must be relational + diagrammable: %+v", byKind["table"])
+	}
+	if byKind["function"].Relational {
+		t.Errorf("function must not be relational")
+	}
+	for _, want := range []string{"table", "view", "materialized_view", "function", "sequence"} {
+		if _, ok := byKind[want]; !ok {
+			t.Errorf("missing kind %q", want)
+		}
+	}
+}
+
+func TestPostgresIntrospectCatalog(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
+	t.Cleanup(func() {
+		_, _ = d.Execute(ctx, "DROP VIEW IF EXISTS intro_v")
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_users")
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_orgs")
+	})
+	mustExec(t, d, `CREATE TABLE intro_orgs (id bigint PRIMARY KEY)`)
+	mustExec(t, d, `CREATE TABLE intro_users (id bigint PRIMARY KEY, org_id bigint REFERENCES intro_orgs(id))`)
+	mustExec(t, d, `CREATE VIEW intro_v AS SELECT id FROM intro_users`)
 
+	cat, err := d.IntrospectCatalog(ctx, schema.CatalogOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cat.Dialect != "postgres" {
+		t.Fatalf("dialect: %s", cat.Dialect)
+	}
+	var public *schema.NamespaceCatalog
+	for i := range cat.Namespaces {
+		if cat.Namespaces[i].Name == "public" {
+			public = &cat.Namespaces[i]
+		}
+	}
+	if public == nil {
+		t.Fatal("no public namespace")
+	}
+	names := map[string][]string{}
+	for _, g := range public.Groups {
+		for _, ref := range g.Objects {
+			names[g.Kind] = append(names[g.Kind], ref.Name)
+		}
+	}
+	if !contains(names["table"], "intro_users") || !contains(names["table"], "intro_orgs") {
+		t.Errorf("missing tables: %+v", names["table"])
+	}
+	if !contains(names["view"], "intro_v") {
+		t.Errorf("missing view: %+v", names["view"])
+	}
+}
+
+func TestPostgresIntrospectObjectsRelational(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
 	t.Cleanup(func() {
 		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_users")
 		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_orgs")
 	})
 	mustExec(t, d, `CREATE TABLE intro_orgs (id bigint PRIMARY KEY)`)
-	mustExec(t, d, `CREATE TABLE intro_users (
-		id bigint PRIMARY KEY,
-		org_id bigint NOT NULL REFERENCES intro_orgs(id),
-		email text NOT NULL
-	)`)
-	mustExec(t, d, `CREATE INDEX intro_users_email_idx ON intro_users(email)`)
+	mustExec(t, d, `CREATE TABLE intro_users (id bigint PRIMARY KEY, org_id bigint REFERENCES intro_orgs(id))`)
 
-	s, err := d.Introspect(ctx, schema.IntrospectOptions{})
+	refs := []schema.ObjectRef{
+		{Namespace: "public", Kind: "table", Name: "intro_users"},
+		{Namespace: "public", Kind: "table", Name: "intro_orgs"},
+	}
+	objs, err := d.IntrospectObjects(ctx, refs)
 	if err != nil {
-		t.Fatalf("introspect: %v", err)
+		t.Fatal(err)
 	}
-
-	users := introTable(t, s, "public", "intro_users")
-	if len(users.PrimaryKey) != 1 || users.PrimaryKey[0] != "id" {
-		t.Fatalf("expected PK [id], got %v", users.PrimaryKey)
+	byName := map[string]schema.Object{}
+	for _, o := range objs {
+		byName[o.Ref.Name] = o
 	}
-	if len(users.ForeignKeys) != 1 || users.ForeignKeys[0].ReferencedTable != "intro_orgs" {
-		t.Fatalf("expected FK to intro_orgs, got %+v", users.ForeignKeys)
+	users, ok := byName["intro_users"]
+	if !ok || users.Relational == nil {
+		t.Fatalf("intro_users missing relational facet: %+v", byName)
 	}
-	if !introHasIndex(users, "intro_users_email_idx") {
-		t.Fatalf("expected intro_users_email_idx index, got %+v", users.Indexes)
+	if len(users.Relational.PrimaryKey) != 1 || users.Relational.PrimaryKey[0] != "id" {
+		t.Errorf("pk: %+v", users.Relational.PrimaryKey)
 	}
-
-	// Column data types use the raw pg_catalog type (udt_name), not the verbose
-	// information_schema names ("bigint" / "character varying").
-	colTypes := map[string]string{}
-	for _, c := range users.Columns {
-		colTypes[c.Name] = c.DataType
+	if len(users.Relational.ForeignKeys) != 1 {
+		t.Fatalf("want 1 fk, got %+v", users.Relational.ForeignKeys)
 	}
-	if colTypes["id"] != "int8" {
-		t.Fatalf("expected id raw type int8, got %q", colTypes["id"])
-	}
-	if colTypes["email"] != "text" {
-		t.Fatalf("expected email raw type text, got %q", colTypes["email"])
+	ref := users.Relational.ForeignKeys[0].References
+	if ref.Namespace != "public" || ref.Kind != "table" || ref.Name != "intro_orgs" {
+		t.Errorf("FK reference must be qualified, got %+v", ref)
 	}
 }
 
-func introObj(t *testing.T, s *schema.Schema, ns, kind, name string) schema.Object {
-	t.Helper()
-	for _, n := range s.Namespaces {
-		if n.Name != ns {
-			continue
-		}
-		for _, g := range n.ObjectGroups {
-			if g.Kind != kind {
-				continue
-			}
-			for _, o := range g.Objects {
-				if o.Name == name {
-					return o
-				}
-			}
-		}
-	}
-	t.Fatalf("%s %s.%s not found in %+v", kind, ns, name, s)
-	return schema.Object{}
-}
-
-func TestPostgresIntrospectExtraObjects(t *testing.T) {
+func TestPostgresIntrospectObjectsHonorsFilter(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
-
 	t.Cleanup(func() {
-		_, _ = d.Execute(ctx, "DROP MATERIALIZED VIEW IF EXISTS intro_mv")
-		_, _ = d.Execute(ctx, "DROP SEQUENCE IF EXISTS intro_seq")
-		_, _ = d.Execute(ctx, "DROP FUNCTION IF EXISTS intro_fn(integer)")
-		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_mv_src")
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_a")
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS intro_b")
 	})
-	mustExec(t, d, `CREATE TABLE intro_mv_src (id bigint, label text)`)
-	mustExec(t, d, `CREATE MATERIALIZED VIEW intro_mv AS SELECT id, label FROM intro_mv_src`)
-	mustExec(t, d, `CREATE SEQUENCE intro_seq`)
-	mustExec(t, d, `CREATE FUNCTION intro_fn(x integer) RETURNS integer LANGUAGE sql AS 'SELECT x + 1'`)
+	mustExec(t, d, `CREATE TABLE intro_a (id bigint)`)
+	mustExec(t, d, `CREATE TABLE intro_b (id bigint)`)
 
-	s, err := d.Introspect(ctx, schema.IntrospectOptions{})
+	objs, err := d.IntrospectObjects(ctx, []schema.ObjectRef{{Namespace: "public", Kind: "table", Name: "intro_a"}})
 	if err != nil {
-		t.Fatalf("introspect: %v", err)
+		t.Fatal(err)
 	}
+	if len(objs) != 1 || objs[0].Ref.Name != "intro_a" {
+		t.Fatalf("filter not honored, got %+v", objs)
+	}
+}
 
-	mv := introObj(t, s, "public", "materialized_view", "intro_mv")
-	if len(mv.Columns) != 2 {
-		t.Fatalf("expected 2 columns on matview, got %d (%+v)", len(mv.Columns), mv.Columns)
+func TestPostgresIntrospectObjectsFunctionDescriptors(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_, _ = d.Execute(ctx, "DROP FUNCTION IF EXISTS intro_add(int, int)")
+	})
+	mustExec(t, d, `CREATE FUNCTION intro_add(a int, b int) RETURNS int LANGUAGE sql AS 'SELECT a + b'`)
+
+	objs, err := d.IntrospectObjects(ctx, []schema.ObjectRef{{Namespace: "public", Kind: "function", Name: "intro_add"}})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if introObj(t, s, "public", "sequence", "intro_seq").Name != "intro_seq" {
-		t.Fatal("sequence intro_seq not found")
+	if len(objs) != 1 {
+		t.Fatalf("want 1 object, got %d", len(objs))
 	}
-	fn := introObj(t, s, "public", "function", "intro_fn")
-	if fn.Attributes["returns"] == nil {
-		t.Fatalf("expected function return attribute, got %+v", fn.Attributes)
+	o := objs[0]
+	if o.Relational != nil {
+		t.Errorf("function must not have a relational facet")
+	}
+	var hasFields, hasSource bool
+	for _, des := range o.Descriptors {
+		switch des.Kind {
+		case "fields":
+			hasFields = true
+		case "source":
+			hasSource = true
+			if des.Source == nil || des.Source.Body == "" {
+				t.Errorf("source descriptor empty: %+v", des)
+			}
+		}
+	}
+	if !hasFields || !hasSource {
+		t.Errorf("function should expose fields + source descriptors, got %+v", o.Descriptors)
 	}
 }

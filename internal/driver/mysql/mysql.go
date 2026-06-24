@@ -113,192 +113,397 @@ func (d *mysqlDriver) Dialect() driver.Dialect {
 	return driver.DialectMySQL
 }
 
-func (d *mysqlDriver) Introspect(ctx context.Context, opts schema.IntrospectOptions) (*schema.Schema, error) {
-	b := build.New()
-	ns := currentDatabase(ctx, d.db)
-
-	const colQ = `
-SELECT t.table_name, t.table_type, c.column_name, c.column_type,
-       c.is_nullable, c.column_default, c.ordinal_position
-FROM information_schema.tables t
-JOIN information_schema.columns c
-  ON c.table_schema = t.table_schema AND c.table_name = t.table_name
-WHERE t.table_schema = DATABASE()
-ORDER BY t.table_name, c.ordinal_position`
-
-	rows, err := d.db.QueryContext(ctx, colQ)
-	if err != nil {
-		return nil, fmt.Errorf("mysql: introspect columns: %w", err)
+func (d *mysqlDriver) Capabilities() schema.DriverCapabilities {
+	return schema.DriverCapabilities{
+		Dialect: "mysql",
+		Kinds: []schema.KindDescriptor{
+			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
+			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
+			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+		},
 	}
+}
+
+func (d *mysqlDriver) IntrospectCatalog(ctx context.Context, opts schema.CatalogOptions) (*schema.Catalog, error) {
+	database := opts.Database
+	if database == "" {
+		if err := d.db.QueryRowContext(ctx, `SELECT DATABASE()`).Scan(&database); err != nil {
+			return nil, fmt.Errorf("mysql: catalog database name: %w", err)
+		}
+	}
+
+	b := build.NewCatalog()
+	b.DeclareKind("table")
+	b.DeclareKind("view")
+	b.DeclareKind("function")
+	b.DeclareKind("procedure")
+	b.DeclareKind("trigger")
+
+	q := `
+SELECT table_schema, table_name, table_type
+FROM information_schema.tables
+WHERE table_schema = ?
+ORDER BY table_schema, table_name`
+	rows, err := d.db.QueryContext(ctx, q, database)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: catalog tables: %w", err)
+	}
+	defer rows.Close()
+
 	for rows.Next() {
-		var tbl, tblType, col, ctype, nullable string
+		var ns, name, tableType string
+		if err := rows.Scan(&ns, &name, &tableType); err != nil {
+			return nil, fmt.Errorf("mysql: catalog tables scan: %w", err)
+		}
+		kind := "table"
+		if tableType == "VIEW" {
+			kind = "view"
+		}
+		b.AddRef(ns, kind, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("mysql: catalog tables rows: %w", err)
+	}
+	rows.Close()
+
+	const routineQ = `
+SELECT routine_schema, routine_name, routine_type
+FROM information_schema.routines
+WHERE routine_schema = ?
+ORDER BY routine_type, routine_name`
+	routineRows, err := d.db.QueryContext(ctx, routineQ, database)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: catalog routines: %w", err)
+	}
+	for routineRows.Next() {
+		var ns, name, routineType string
+		if err := routineRows.Scan(&ns, &name, &routineType); err != nil {
+			routineRows.Close()
+			return nil, fmt.Errorf("mysql: catalog routines scan: %w", err)
+		}
+		kind := "procedure"
+		if routineType == "FUNCTION" {
+			kind = "function"
+		}
+		b.AddRef(ns, kind, name)
+	}
+	if err := routineRows.Err(); err != nil {
+		routineRows.Close()
+		return nil, fmt.Errorf("mysql: catalog routines rows: %w", err)
+	}
+	routineRows.Close()
+
+	const triggerQ = `
+SELECT trigger_schema, trigger_name
+FROM information_schema.triggers
+WHERE trigger_schema = ?
+ORDER BY trigger_name`
+	triggerRows, err := d.db.QueryContext(ctx, triggerQ, database)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: catalog triggers: %w", err)
+	}
+	for triggerRows.Next() {
+		var ns, name string
+		if err := triggerRows.Scan(&ns, &name); err != nil {
+			triggerRows.Close()
+			return nil, fmt.Errorf("mysql: catalog triggers scan: %w", err)
+		}
+		b.AddRef(ns, "trigger", name)
+	}
+	if err := triggerRows.Err(); err != nil {
+		triggerRows.Close()
+		return nil, fmt.Errorf("mysql: catalog triggers rows: %w", err)
+	}
+	triggerRows.Close()
+
+	return b.Build("", "mysql", database), nil
+}
+
+func (d *mysqlDriver) IntrospectObjects(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+	var relRefs []schema.ObjectRef
+	var routineRefs []schema.ObjectRef
+	var triggerRefs []schema.ObjectRef
+	for _, ref := range refs {
+		switch ref.Kind {
+		case "table", "view":
+			relRefs = append(relRefs, ref)
+		case "function", "procedure":
+			routineRefs = append(routineRefs, ref)
+		case "trigger":
+			triggerRefs = append(triggerRefs, ref)
+		}
+	}
+
+	var out []schema.Object
+	if len(relRefs) > 0 {
+		objs, err := d.introspectRelational(ctx, relRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(routineRefs) > 0 {
+		objs, err := d.introspectRoutines(ctx, routineRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(triggerRefs) > 0 {
+		objs, err := d.introspectTriggers(ctx, triggerRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	return out, nil
+}
+
+func mysqlPairFilter(refs []schema.ObjectRef) (string, []any) {
+	var sb strings.Builder
+	args := make([]any, 0, len(refs)*2)
+	for i, ref := range refs {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		sb.WriteString("(?,?)")
+		args = append(args, ref.Namespace, ref.Name)
+	}
+	return sb.String(), args
+}
+
+func (d *mysqlDriver) introspectRelational(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+	kindOf := make(map[string]string, len(refs))
+	for _, ref := range refs {
+		kindOf[ref.Namespace+"\x00"+ref.Name] = ref.Kind
+	}
+	refFor := func(ns, name string) schema.ObjectRef {
+		return schema.ObjectRef{Namespace: ns, Kind: kindOf[ns+"\x00"+name], Name: name}
+	}
+
+	b := build.NewRelational()
+	for _, ref := range refs {
+		b.Ensure(ref)
+	}
+
+	pairs, args := mysqlPairFilter(refs)
+
+	colQ := `
+SELECT table_schema, table_name, column_name, column_type, is_nullable, column_default, ordinal_position
+FROM information_schema.columns
+WHERE (table_schema, table_name) IN (` + pairs + `)
+ORDER BY table_schema, table_name, ordinal_position`
+	crows, err := d.db.QueryContext(ctx, colQ, args...)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: object columns: %w", err)
+	}
+	for crows.Next() {
+		var ns, tbl, col, dtype, nullable string
 		var def sql.NullString
 		var ord int
-		if err := rows.Scan(&tbl, &tblType, &col, &ctype, &nullable, &def, &ord); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("mysql: introspect scan: %w", err)
+		if err := crows.Scan(&ns, &tbl, &col, &dtype, &nullable, &def, &ord); err != nil {
+			crows.Close()
+			return nil, fmt.Errorf("mysql: object columns scan: %w", err)
 		}
-		c := schema.Column{Name: col, DataType: ctype, Nullable: nullable == "YES", Ordinal: ord}
+		c := schema.Column{Name: col, DataType: dtype, Nullable: nullable == "YES", Ordinal: ord}
 		if def.Valid {
 			v := def.String
 			c.Default = &v
 		}
-		b.AddColumn(ns, tbl, tblType == "VIEW", c)
+		b.AddColumn(refFor(ns, tbl), c)
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, fmt.Errorf("mysql: introspect rows: %w", err)
+	if err := crows.Err(); err != nil {
+		crows.Close()
+		return nil, fmt.Errorf("mysql: object columns rows: %w", err)
 	}
-	rows.Close()
+	crows.Close()
 
-	const pkQ = `
-SELECT kcu.table_name, kcu.column_name
-FROM information_schema.table_constraints tc
-JOIN information_schema.key_column_usage kcu
-  ON kcu.constraint_name = tc.constraint_name
- AND kcu.table_schema = tc.table_schema
- AND kcu.table_name = tc.table_name
-WHERE tc.table_schema = DATABASE() AND tc.constraint_type = 'PRIMARY KEY'
-ORDER BY kcu.table_name, kcu.ordinal_position`
-
-	pkRows, err := d.db.QueryContext(ctx, pkQ)
+	pkQ := `
+SELECT table_schema, table_name, column_name
+FROM information_schema.key_column_usage
+WHERE constraint_name = 'PRIMARY'
+  AND (table_schema, table_name) IN (` + pairs + `)
+ORDER BY table_schema, table_name, ordinal_position`
+	prows, err := d.db.QueryContext(ctx, pkQ, args...)
 	if err != nil {
-		return nil, fmt.Errorf("mysql: introspect pk: %w", err)
+		return nil, fmt.Errorf("mysql: object pk: %w", err)
 	}
-	for pkRows.Next() {
-		var tbl, col string
-		if err := pkRows.Scan(&tbl, &col); err != nil {
-			pkRows.Close()
-			return nil, fmt.Errorf("mysql: introspect pk scan: %w", err)
+	for prows.Next() {
+		var ns, tbl, col string
+		if err := prows.Scan(&ns, &tbl, &col); err != nil {
+			prows.Close()
+			return nil, fmt.Errorf("mysql: object pk scan: %w", err)
 		}
-		b.AddPrimaryKeyColumn(ns, tbl, col)
+		b.AddPrimaryKeyColumn(refFor(ns, tbl), col)
 	}
-	if err := pkRows.Err(); err != nil {
-		pkRows.Close()
-		return nil, fmt.Errorf("mysql: introspect pk rows: %w", err)
+	if err := prows.Err(); err != nil {
+		prows.Close()
+		return nil, fmt.Errorf("mysql: object pk rows: %w", err)
 	}
-	pkRows.Close()
+	prows.Close()
 
-	const fkQ = `
-SELECT kcu.table_name, kcu.constraint_name, kcu.column_name,
-       kcu.referenced_table_name, kcu.referenced_column_name
-FROM information_schema.key_column_usage kcu
-WHERE kcu.table_schema = DATABASE() AND kcu.referenced_table_name IS NOT NULL
-ORDER BY kcu.table_name, kcu.constraint_name, kcu.ordinal_position`
-
-	fkRows, err := d.db.QueryContext(ctx, fkQ)
+	fkQ := `
+SELECT table_schema, table_name, constraint_name, column_name,
+       referenced_table_schema, referenced_table_name, referenced_column_name
+FROM information_schema.key_column_usage
+WHERE referenced_table_schema IS NOT NULL
+  AND referenced_table_name IS NOT NULL
+  AND referenced_column_name IS NOT NULL
+  AND (table_schema, table_name) IN (` + pairs + `)
+ORDER BY table_schema, table_name, constraint_name, ordinal_position`
+	frows, err := d.db.QueryContext(ctx, fkQ, args...)
 	if err != nil {
-		return nil, fmt.Errorf("mysql: introspect fk: %w", err)
+		return nil, fmt.Errorf("mysql: object fk: %w", err)
 	}
-	for fkRows.Next() {
-		var tbl, name, col, refTbl, refCol string
-		if err := fkRows.Scan(&tbl, &name, &col, &refTbl, &refCol); err != nil {
-			fkRows.Close()
-			return nil, fmt.Errorf("mysql: introspect fk scan: %w", err)
+	for frows.Next() {
+		var ns, tbl, name, col, refNs, refTbl, refCol string
+		if err := frows.Scan(&ns, &tbl, &name, &col, &refNs, &refTbl, &refCol); err != nil {
+			frows.Close()
+			return nil, fmt.Errorf("mysql: object fk scan: %w", err)
 		}
-		b.AddForeignKeyColumn(ns, tbl, name, col, refTbl, refCol)
+		b.AddForeignKeyColumn(refFor(ns, tbl), name, col,
+			schema.ObjectRef{Namespace: refNs, Kind: "table", Name: refTbl}, refCol)
 	}
-	if err := fkRows.Err(); err != nil {
-		fkRows.Close()
-		return nil, fmt.Errorf("mysql: introspect fk rows: %w", err)
+	if err := frows.Err(); err != nil {
+		frows.Close()
+		return nil, fmt.Errorf("mysql: object fk rows: %w", err)
 	}
-	fkRows.Close()
+	frows.Close()
 
-	const idxQ = `
-SELECT table_name, index_name, non_unique
+	idxQ := `
+SELECT table_schema, table_name, index_name, non_unique, column_name, seq_in_index
 FROM information_schema.statistics
-WHERE table_schema = DATABASE()
-GROUP BY table_name, index_name, non_unique
-ORDER BY table_name, index_name`
-
-	idxRows, err := d.db.QueryContext(ctx, idxQ)
+WHERE (table_schema, table_name) IN (` + pairs + `)
+ORDER BY table_schema, table_name, index_name, seq_in_index`
+	irows, err := d.db.QueryContext(ctx, idxQ, args...)
 	if err != nil {
-		return nil, fmt.Errorf("mysql: introspect indexes: %w", err)
+		return nil, fmt.Errorf("mysql: object indexes: %w", err)
 	}
-	defer idxRows.Close()
-	for idxRows.Next() {
-		var tbl, name string
+	type idxKey struct{ ns, tbl, name string }
+	indexes := map[idxKey]*schema.Index{}
+	var indexOrder []idxKey
+	for irows.Next() {
+		var ns, tbl, name, col string
 		var nonUnique int
-		if err := idxRows.Scan(&tbl, &name, &nonUnique); err != nil {
-			return nil, fmt.Errorf("mysql: introspect index scan: %w", err)
+		var seq int
+		if err := irows.Scan(&ns, &tbl, &name, &nonUnique, &col, &seq); err != nil {
+			irows.Close()
+			return nil, fmt.Errorf("mysql: object index scan: %w", err)
 		}
-		b.AddIndex(ns, tbl, schema.Index{Name: name, Unique: nonUnique == 0})
+		key := idxKey{ns: ns, tbl: tbl, name: name}
+		ix, ok := indexes[key]
+		if !ok {
+			ix = &schema.Index{Name: name, Unique: nonUnique == 0}
+			indexes[key] = ix
+			indexOrder = append(indexOrder, key)
+		}
+		ix.Columns = append(ix.Columns, col)
 	}
-	if err := idxRows.Err(); err != nil {
-		return nil, fmt.Errorf("mysql: introspect index rows: %w", err)
+	if err := irows.Err(); err != nil {
+		irows.Close()
+		return nil, fmt.Errorf("mysql: object index rows: %w", err)
+	}
+	irows.Close()
+	for _, key := range indexOrder {
+		b.AddIndex(refFor(key.ns, key.tbl), *indexes[key])
 	}
 
-	if err := d.loadMySQLExtraObjects(ctx, b, ns); err != nil {
-		return nil, err
-	}
-
-	return b.Build(ns), nil
+	return b.Build(), nil
 }
 
-// loadMySQLExtraObjects introspects functions, stored procedures, and triggers.
-func (d *mysqlDriver) loadMySQLExtraObjects(ctx context.Context, b *build.Builder, ns string) error {
-	b.DeclareGroup("function", "Functions")
-	b.DeclareGroup("procedure", "Procedures")
-	b.DeclareGroup("trigger", "Triggers")
-
-	const rtnQ = `
-SELECT routine_name, routine_type, data_type
+func (d *mysqlDriver) introspectRoutines(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+	kindOf := make(map[string]string, len(refs))
+	for _, ref := range refs {
+		kindOf[ref.Namespace+"\x00"+ref.Name] = ref.Kind
+	}
+	pairs, args := mysqlPairFilter(refs)
+	q := `
+SELECT routine_schema, routine_name, routine_type, data_type, routine_definition,
+       external_language, sql_data_access, is_deterministic
 FROM information_schema.routines
-WHERE routine_schema = DATABASE()
-ORDER BY routine_type, routine_name`
-	rows, err := d.db.QueryContext(ctx, rtnQ)
+WHERE (routine_schema, routine_name) IN (` + pairs + `)
+ORDER BY routine_schema, routine_name`
+	rows, err := d.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return fmt.Errorf("mysql: introspect routines: %w", err)
+		return nil, fmt.Errorf("mysql: routine detail: %w", err)
 	}
-	for rows.Next() {
-		var name, rtype string
-		var dtype sql.NullString
-		if err := rows.Scan(&name, &rtype, &dtype); err != nil {
-			rows.Close()
-			return fmt.Errorf("mysql: introspect routines scan: %w", err)
-		}
-		kind := "procedure"
-		if rtype == "FUNCTION" {
-			kind = "function"
-		}
-		b.AddObject(ns, kind, name)
-		if dtype.Valid && dtype.String != "" {
-			b.SetObjectAttribute(ns, kind, name, "returns", dtype.String)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return fmt.Errorf("mysql: introspect routines rows: %w", err)
-	}
-	rows.Close()
+	defer rows.Close()
 
-	const trgQ = `
-SELECT trigger_name, action_timing, event_manipulation, event_object_table
-FROM information_schema.triggers
-WHERE trigger_schema = DATABASE()
-ORDER BY trigger_name`
-	trows, err := d.db.QueryContext(ctx, trgQ)
-	if err != nil {
-		return fmt.Errorf("mysql: introspect triggers: %w", err)
-	}
-	defer trows.Close()
-	for trows.Next() {
-		var name, timing, event, tbl string
-		if err := trows.Scan(&name, &timing, &event, &tbl); err != nil {
-			return fmt.Errorf("mysql: introspect triggers scan: %w", err)
+	var out []schema.Object
+	for rows.Next() {
+		var ns, name, routineType, sqlAccess, deterministic string
+		var dataType, definition, language sql.NullString
+		if err := rows.Scan(&ns, &name, &routineType, &dataType, &definition, &language, &sqlAccess, &deterministic); err != nil {
+			return nil, fmt.Errorf("mysql: routine detail scan: %w", err)
 		}
-		b.AddObject(ns, "trigger", name)
-		b.SetObjectAttribute(ns, "trigger", name, "timing", timing)
-		b.SetObjectAttribute(ns, "trigger", name, "event", event)
-		b.SetObjectAttribute(ns, "trigger", name, "table", tbl)
+		kind := kindOf[ns+"\x00"+name]
+		if kind == "" {
+			kind = strings.ToLower(routineType)
+		}
+		fields := []schema.Field{
+			{Name: "Type", Value: routineType},
+			{Name: "SQL data access", Value: sqlAccess},
+			{Name: "Deterministic", Value: deterministic},
+		}
+		if dataType.Valid && dataType.String != "" {
+			fields = append(fields, schema.Field{Name: "Returns", Value: dataType.String})
+		}
+		if language.Valid && language.String != "" {
+			fields = append(fields, schema.Field{Name: "Language", Value: language.String})
+		}
+		obj := schema.Object{
+			Ref: schema.ObjectRef{Namespace: ns, Kind: kind, Name: name},
+			Descriptors: []schema.Descriptor{
+				{Kind: "fields", Title: "Routine", Fields: fields},
+			},
+		}
+		if definition.Valid && definition.String != "" {
+			obj.Descriptors = append(obj.Descriptors, schema.Descriptor{
+				Kind:   "source",
+				Title:  "Definition",
+				Source: &schema.Source{Language: "sql", Body: definition.String},
+			})
+		}
+		out = append(out, obj)
 	}
-	return trows.Err()
+	return out, rows.Err()
 }
 
-func currentDatabase(ctx context.Context, db *sql.DB) string {
-	var name sql.NullString
-	_ = db.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&name)
-	return name.String
+func (d *mysqlDriver) introspectTriggers(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+	pairs, args := mysqlPairFilter(refs)
+	q := `
+SELECT trigger_schema, trigger_name, action_timing, event_manipulation,
+       event_object_schema, event_object_table, action_statement
+FROM information_schema.triggers
+WHERE (trigger_schema, trigger_name) IN (` + pairs + `)
+ORDER BY trigger_schema, trigger_name`
+	rows, err := d.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: trigger detail: %w", err)
+	}
+	defer rows.Close()
+
+	var out []schema.Object
+	for rows.Next() {
+		var ns, name, timing, event, tableNs, tableName, statement string
+		if err := rows.Scan(&ns, &name, &timing, &event, &tableNs, &tableName, &statement); err != nil {
+			return nil, fmt.Errorf("mysql: trigger detail scan: %w", err)
+		}
+		out = append(out, schema.Object{
+			Ref: schema.ObjectRef{Namespace: ns, Kind: "trigger", Name: name},
+			Descriptors: []schema.Descriptor{
+				{Kind: "fields", Title: "Trigger", Fields: []schema.Field{
+					{Name: "Timing", Value: timing},
+					{Name: "Event", Value: event},
+					{Name: "Table", Value: tableNs + "." + tableName},
+				}},
+				{Kind: "source", Title: "Statement", Source: &schema.Source{Language: "sql", Body: statement}},
+			},
+		})
+	}
+	return out, rows.Err()
 }
 
 func scanRows(rows *sql.Rows) (*result.ResultSet, error) {

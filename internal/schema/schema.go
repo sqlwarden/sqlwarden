@@ -1,44 +1,31 @@
 package schema
 
-import "time"
-
-// Schema is a driver-agnostic snapshot of a target database's structure.
-type Schema struct {
-	Connection  string         `json:"connection"`
-	Database    string         `json:"database"`
-	GeneratedAt time.Time      `json:"generated_at"`
-	Namespaces  []Namespace    `json:"namespaces"`
-	Attributes  map[string]any `json:"attributes,omitempty"`
+// ObjectRef is the qualified, addressable identity of a database object. It
+// replaces bare name strings wherever an object is referenced (including
+// foreign-key targets), which is what makes cross-schema references and
+// click-to-navigate possible.
+type ObjectRef struct {
+	Namespace string `json:"namespace"`
+	Kind      string `json:"kind"` // table, view, function, …
+	Name      string `json:"name"`
 }
 
-// Namespace is a logical container of database objects (a postgres schema,
-// a mysql database, or sqlite's single implicit namespace).
-type Namespace struct {
-	Name         string         `json:"name"`
-	ObjectGroups []ObjectGroup  `json:"object_groups"`
-	Attributes   map[string]any `json:"attributes,omitempty"`
-}
-
-// ObjectGroup is an ordered, driver-labelled category of like objects
-// (Tables, Views, Functions, …). Kind is a stable machine id; Label is the
-// human heading. A new database extends the schema simply by declaring new
-// kinds — no change to this type or to generic consumers is required.
-type ObjectGroup struct {
-	Kind    string   `json:"kind"`
-	Label   string   `json:"label"`
-	Objects []Object `json:"objects"`
-}
-
-// Object is a single database object. Relational kinds (table/view/matview)
-// populate Columns and the key/index fields; other kinds carry kind-specific
-// data in Attributes. The object's kind lives on the enclosing ObjectGroup.
+// Object is the on-demand detail for a single database object. Known relational
+// kinds populate the typed Relational facet; any other (or unknown) kind carries
+// self-describing Descriptors. A relational object never duplicates its columns
+// into Descriptors — the two facets are disjoint by construction.
 type Object struct {
-	Name        string         `json:"name"`
-	Columns     []Column       `json:"columns,omitempty"`
-	PrimaryKey  []string       `json:"primary_key,omitempty"`
-	ForeignKeys []ForeignKey   `json:"foreign_keys,omitempty"`
-	Indexes     []Index        `json:"indexes,omitempty"`
-	Attributes  map[string]any `json:"attributes,omitempty"`
+	Ref         ObjectRef         `json:"ref"`
+	Relational  *RelationalDetail `json:"relational,omitempty"`
+	Descriptors []Descriptor      `json:"descriptors,omitempty"`
+	Attributes  map[string]any    `json:"attributes,omitempty"`
+}
+
+type RelationalDetail struct {
+	Columns     []Column     `json:"columns"`
+	PrimaryKey  []string     `json:"primary_key,omitempty"`
+	ForeignKeys []ForeignKey `json:"foreign_keys,omitempty"`
+	Indexes     []Index      `json:"indexes,omitempty"`
 }
 
 type Column struct {
@@ -53,7 +40,7 @@ type Column struct {
 type ForeignKey struct {
 	Name              string         `json:"name"`
 	Columns           []string       `json:"columns"`
-	ReferencedTable   string         `json:"referenced_table"`
+	References        ObjectRef      `json:"references"` // qualified target
 	ReferencedColumns []string       `json:"referenced_columns"`
 	Attributes        map[string]any `json:"attributes,omitempty"`
 }
@@ -63,4 +50,29 @@ type Index struct {
 	Columns    []string       `json:"columns"`
 	Unique     bool           `json:"unique"`
 	Attributes map[string]any `json:"attributes,omitempty"`
+}
+
+// Descriptor is a self-describing piece of an object's structure, named by data
+// shape (not by widget). Exactly one of Fields/Rows/Source is set per Kind.
+type Descriptor struct {
+	Kind   string  `json:"kind"` // "fields" | "rows" | "source"
+	Title  string  `json:"title"`
+	Fields []Field `json:"fields,omitempty"`
+	Rows   *RowSet `json:"rows,omitempty"`
+	Source *Source `json:"source,omitempty"`
+}
+
+type Field struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type RowSet struct {
+	Columns []string   `json:"columns"`
+	Rows    [][]string `json:"rows"`
+}
+
+type Source struct {
+	Language string `json:"language"`
+	Body     string `json:"body"`
 }
