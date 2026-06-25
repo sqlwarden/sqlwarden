@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/driver"
 )
 
 var errSQLiteTargetDisabled = errors.New("sqlite file target connections are disabled for this instance")
@@ -21,7 +20,7 @@ func (app *application) validateTargetConnection(driverName, dsn string) error {
 		return err
 	}
 
-	if driverName != string(driver.DialectSQLite) {
+	if driverName != string(dbengine.DialectSQLite) {
 		return nil
 	}
 	if isInMemorySQLiteDSN(dsn) {

@@ -6,7 +6,6 @@ import (
 
 	"github.com/sqlwarden/internal/dbengine/dbsql"
 	"github.com/sqlwarden/internal/dbengine/schema"
-	"github.com/sqlwarden/internal/driver"
 )
 
 // schemaCursorDriver implements the optional schema + cursor interfaces so we
@@ -30,7 +29,7 @@ func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	resetRegistry(t)
 	Register(Registration{
 		ID: "postgres", DisplayName: "PostgreSQL", Dialect: DialectPostgres,
-		NewDriver: func() driver.Driver { return schemaCursorDriver{} },
+		New: func() Driver { return schemaCursorDriver{} },
 	})
 	set, ok := Describe("postgres")
 	if !ok {

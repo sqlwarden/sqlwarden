@@ -35,7 +35,7 @@ type CapabilitySet struct {
 // hand-declared, so a reported capability can never disagree with the
 // implementation. The probe driver is created but never connected.
 func capabilitiesOf(reg Registration) (map[Capability]bool, *schema.SchemaSpec) {
-	probe := reg.NewDriver()
+	probe := reg.New()
 	caps := map[Capability]bool{
 		CapabilitySchemaCatalog: false,
 		CapabilitySchemaObjects: false,
@@ -48,9 +48,7 @@ func capabilitiesOf(reg Registration) (map[Capability]bool, *schema.SchemaSpec) 
 		s := si.SchemaSpec()
 		spec = &s
 	}
-	if _, ok := probe.(dbsql.QueryCursorDriver); ok {
-		caps[CapabilityQueryCursor] = true
-	}
+	_, caps[CapabilityQueryCursor] = probe.(dbsql.QueryCursorDriver)
 	_, caps[CapabilitySQLClassify] = probe.(classifier.Classifier)
 	_, caps[CapabilitySQLParse] = probe.(parser.Parser)
 	_, caps[CapabilitySQLRewrite] = probe.(rewriter.Rewriter)

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/classifier"
-	"github.com/sqlwarden/internal/driver"
 )
 
 // TestClassifierPropertyDangerousNeverDQL generates dangerous statements,
@@ -25,7 +25,7 @@ func TestClassifierPropertyDangerousNeverDQL(t *testing.T) {
 	}
 	// Each prefix is itself a benign read; the danger is the trailing statement.
 	prefixes := []string{"", "SELECT 1; ", "SELECT * FROM accounts; ", "WITH t AS (SELECT 1) SELECT * FROM t; "}
-	dialects := []driver.Dialect{driver.DialectPostgres, driver.DialectMySQL, driver.DialectSQLite}
+	dialects := []dbengine.Dialect{dbengine.DialectPostgres, dbengine.DialectMySQL, dbengine.DialectSQLite}
 
 	for _, d := range dialects {
 		for _, prefix := range prefixes {

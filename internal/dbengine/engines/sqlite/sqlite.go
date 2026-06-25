@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/dbsql"
 	"github.com/sqlwarden/internal/dbengine/schema"
 	build "github.com/sqlwarden/internal/dbengine/schema/build"
-	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/pkg/result"
 
 	_ "modernc.org/sqlite"
@@ -20,7 +20,7 @@ type sqliteDriver struct {
 	scanOptions dbsql.ScanOptions
 }
 
-func (d *sqliteDriver) Connect(ctx context.Context, cfg driver.ConnectionConfig) error {
+func (d *sqliteDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfig) error {
 	db, err := sql.Open("sqlite", cfg.DSN)
 	if err != nil {
 		return fmt.Errorf("sqlite: open: %w", err)
@@ -75,8 +75,8 @@ func (d *sqliteDriver) StartQuery(ctx context.Context, req dbsql.QueryRequest) (
 	return cursor, nil
 }
 
-func (d *sqliteDriver) Dialect() driver.Dialect {
-	return driver.DialectSQLite
+func (d *sqliteDriver) Dialect() dbengine.Dialect {
+	return dbengine.DialectSQLite
 }
 
 func (d *sqliteDriver) SchemaSpec() schema.SchemaSpec {

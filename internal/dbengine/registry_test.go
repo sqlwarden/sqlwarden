@@ -5,22 +5,21 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/pkg/result"
 )
 
 type fakeDriver struct{}
 
-func (fakeDriver) Connect(context.Context, driver.ConnectionConfig) error { return nil }
-func (fakeDriver) Ping(context.Context) error                             { return nil }
-func (fakeDriver) Close() error                                           { return nil }
+func (fakeDriver) Connect(context.Context, ConnectionConfig) error { return nil }
+func (fakeDriver) Ping(context.Context) error                      { return nil }
+func (fakeDriver) Close() error                                    { return nil }
 func (fakeDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }
 func (fakeDriver) Execute(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }
-func (fakeDriver) Dialect() driver.Dialect { return driver.DialectPostgres }
+func (fakeDriver) Dialect() Dialect { return DialectPostgres }
 
 func resetRegistry(t *testing.T) {
 	t.Helper()
@@ -34,7 +33,7 @@ func registerFake(id EngineID, dialect Dialect) {
 		ID:          id,
 		DisplayName: string(id),
 		Dialect:     dialect,
-		NewDriver:   func() driver.Driver { return fakeDriver{} },
+		New:         func() Driver { return fakeDriver{} },
 	})
 }
 

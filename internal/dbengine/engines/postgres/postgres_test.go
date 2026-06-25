@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/dbsql"
 	"github.com/sqlwarden/internal/dbengine/schema"
-	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/pkg/result"
 
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -51,7 +51,7 @@ func newConnectedDriver(t *testing.T) *postgresDriver {
 	t.Helper()
 	d := &postgresDriver{}
 	ctx := context.Background()
-	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: testDSN, Driver: "postgres"}); err != nil {
+	if err := d.Connect(ctx, dbengine.ConnectionConfig{DSN: testDSN, Driver: "postgres"}); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
 	t.Cleanup(func() { _ = d.Close() })
@@ -62,7 +62,7 @@ func TestConnect(t *testing.T) {
 	t.Run("valid DSN", func(t *testing.T) {
 		d := &postgresDriver{}
 		ctx := context.Background()
-		if err := d.Connect(ctx, driver.ConnectionConfig{DSN: testDSN, Driver: "postgres"}); err != nil {
+		if err := d.Connect(ctx, dbengine.ConnectionConfig{DSN: testDSN, Driver: "postgres"}); err != nil {
 			t.Fatalf("expected connect to succeed, got: %v", err)
 		}
 		_ = d.Close()
@@ -71,7 +71,7 @@ func TestConnect(t *testing.T) {
 	t.Run("invalid DSN", func(t *testing.T) {
 		d := &postgresDriver{}
 		ctx := context.Background()
-		err := d.Connect(ctx, driver.ConnectionConfig{DSN: "postgres://invalid:5432/nonexistent?sslmode=disable", Driver: "postgres"})
+		err := d.Connect(ctx, dbengine.ConnectionConfig{DSN: "postgres://invalid:5432/nonexistent?sslmode=disable", Driver: "postgres"})
 		if err == nil {
 			_ = d.Close()
 			t.Fatal("expected connect to fail with invalid DSN, got nil")
@@ -333,12 +333,12 @@ func TestToValue(t *testing.T) {
 
 func TestDialect(t *testing.T) {
 	d := &postgresDriver{}
-	if d.Dialect() != driver.DialectPostgres {
-		t.Errorf("expected dialect %q, got %q", driver.DialectPostgres, d.Dialect())
+	if d.Dialect() != dbengine.DialectPostgres {
+		t.Errorf("expected dialect %q, got %q", dbengine.DialectPostgres, d.Dialect())
 	}
 }
 
-func mustExec(t *testing.T, d driver.Driver, sql string) {
+func mustExec(t *testing.T, d dbengine.Driver, sql string) {
 	t.Helper()
 	if _, err := d.Execute(context.Background(), sql); err != nil {
 		t.Fatalf("exec %q: %v", sql, err)

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/dbsql"
 	"github.com/sqlwarden/internal/dbengine/schema"
 	build "github.com/sqlwarden/internal/dbengine/schema/build"
-	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/pkg/result"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -20,7 +20,7 @@ type postgresDriver struct {
 	scanOptions dbsql.ScanOptions
 }
 
-func (d *postgresDriver) Connect(ctx context.Context, cfg driver.ConnectionConfig) error {
+func (d *postgresDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfig) error {
 	db, err := sql.Open("pgx", cfg.DSN)
 	if err != nil {
 		return fmt.Errorf("postgres: open: %w", err)
@@ -70,8 +70,8 @@ func (d *postgresDriver) StartQuery(ctx context.Context, req dbsql.QueryRequest)
 	return cursor, nil
 }
 
-func (d *postgresDriver) Dialect() driver.Dialect {
-	return driver.DialectPostgres
+func (d *postgresDriver) Dialect() dbengine.Dialect {
+	return dbengine.DialectPostgres
 }
 
 func (d *postgresDriver) SchemaSpec() schema.SchemaSpec {
