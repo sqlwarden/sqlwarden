@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/cursor"
 	"github.com/sqlwarden/internal/dbengine/schema"
 	build "github.com/sqlwarden/internal/dbengine/schema/build"
 	"github.com/sqlwarden/pkg/result"
@@ -17,7 +17,7 @@ import (
 
 type sqliteDriver struct {
 	db          *sql.DB
-	scanOptions dbsql.ScanOptions
+	scanOptions cursor.ScanOptions
 }
 
 func (d *sqliteDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfig) error {
@@ -35,7 +35,7 @@ func (d *sqliteDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfi
 		return fmt.Errorf("sqlite: WAL mode: %w", err)
 	}
 	d.db = db
-	d.scanOptions = dbsql.ScanOptions{MaxRows: cfg.MaxResultRows, MaxBytes: cfg.MaxResultBytes}
+	d.scanOptions = cursor.ScanOptions{MaxRows: cfg.MaxResultRows, MaxBytes: cfg.MaxResultBytes}
 	return nil
 }
 
@@ -52,7 +52,7 @@ func (d *sqliteDriver) Query(ctx context.Context, query string, args ...any) (*r
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: query: %w", err)
 	}
-	return dbsql.ScanRows(rows, d.scanOptions)
+	return cursor.ScanRows(rows, d.scanOptions)
 }
 
 func (d *sqliteDriver) Execute(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
@@ -60,15 +60,15 @@ func (d *sqliteDriver) Execute(ctx context.Context, query string, args ...any) (
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: execute: %w", err)
 	}
-	return dbsql.ScanRows(rows, d.scanOptions)
+	return cursor.ScanRows(rows, d.scanOptions)
 }
 
-func (d *sqliteDriver) StartQuery(ctx context.Context, req dbsql.QueryRequest) (dbsql.QueryCursor, error) {
+func (d *sqliteDriver) StartQuery(ctx context.Context, req cursor.QueryRequest) (cursor.QueryCursor, error) {
 	rows, err := d.db.QueryContext(ctx, req.SQL, req.Args...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: start query: %w", err)
 	}
-	cursor, err := dbsql.NewSQLRowsCursor(rows)
+	cursor, err := cursor.NewSQLRowsCursor(rows)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: start query cursor: %w", err)
 	}

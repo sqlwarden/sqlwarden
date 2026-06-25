@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/cursor"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -355,10 +355,10 @@ func TestSessionTracksMultipleQueryCursors(t *testing.T) {
 		t.Fatalf("tracked cursors = %d, want 2", len(sess.cursors))
 	}
 
-	if _, _, err = first.Fetch(context.Background(), dbsql.ScanOptions{MaxRows: 1}); err != nil {
+	if _, _, err = first.Fetch(context.Background(), cursor.ScanOptions{MaxRows: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = second.Fetch(context.Background(), dbsql.ScanOptions{MaxRows: 1}); err != nil {
+	if _, _, err = second.Fetch(context.Background(), cursor.ScanOptions{MaxRows: 1}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -412,7 +412,7 @@ type mockCursorDriver struct {
 	cursors []*mockQueryCursor
 }
 
-func (d *mockCursorDriver) StartQuery(context.Context, dbsql.QueryRequest) (dbsql.QueryCursor, error) {
+func (d *mockCursorDriver) StartQuery(context.Context, cursor.QueryRequest) (cursor.QueryCursor, error) {
 	cursor := &mockQueryCursor{}
 	d.cursors = append(d.cursors, cursor)
 	return cursor, nil
@@ -427,14 +427,14 @@ func (c *mockQueryCursor) Columns() []result.Column {
 	return []result.Column{{Name: "id", Type: result.ColumnTypeInteger, RawType: "integer"}}
 }
 
-func (c *mockQueryCursor) Fetch(context.Context, dbsql.ScanOptions) (*result.ResultSet, dbsql.QueryCursorState, error) {
+func (c *mockQueryCursor) Fetch(context.Context, cursor.ScanOptions) (*result.ResultSet, cursor.QueryCursorState, error) {
 	c.fetches++
 	return &result.ResultSet{
 		Columns:       c.Columns(),
 		Rows:          []result.Row{{{Type: result.ValueTypeInteger, Integer: int64(c.fetches)}}},
 		RowsReturned:  1,
 		BytesReturned: 8,
-	}, dbsql.QueryCursorState{RowsReturned: 1, BytesReturned: 8}, nil
+	}, cursor.QueryCursorState{RowsReturned: 1, BytesReturned: 8}, nil
 }
 
 func (c *mockQueryCursor) Close() error {

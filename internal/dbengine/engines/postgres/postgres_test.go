@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/cursor"
 	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/pkg/result"
 
@@ -326,7 +326,7 @@ func TestToValue(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.check(t, dbsql.NormalizeValue(tc.input))
+			tc.check(t, cursor.NormalizeValue(tc.input))
 		})
 	}
 }

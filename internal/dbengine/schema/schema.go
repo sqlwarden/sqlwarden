@@ -1,3 +1,9 @@
+// Package schema is the schema-introspection domain. It defines the
+// SchemaInspector capability an engine implements to report its objects in two
+// tiers (a cheap Catalog listing and on-demand Object detail), the data model
+// those reports use (objects, columns, keys, descriptors), the static SchemaSpec
+// describing which object kinds an engine exposes, and a caching Service that
+// serves catalogs and object detail to the IDE's schema tree.
 package schema
 
 // ObjectRef is the qualified, addressable identity of a database object. It
@@ -21,6 +27,8 @@ type Object struct {
 	Attributes  map[string]any    `json:"attributes,omitempty"`
 }
 
+// RelationalDetail is the typed structure of a relational object (table or
+// view): its columns, primary key, foreign keys, and indexes.
 type RelationalDetail struct {
 	Columns     []Column     `json:"columns"`
 	PrimaryKey  []string     `json:"primary_key,omitempty"`
@@ -28,6 +36,8 @@ type RelationalDetail struct {
 	Indexes     []Index      `json:"indexes,omitempty"`
 }
 
+// Column is one column of a relational object. Ordinal is its position; engine-
+// specific extras live in Attributes.
 type Column struct {
 	Name       string         `json:"name"`
 	DataType   string         `json:"data_type"`
@@ -37,6 +47,9 @@ type Column struct {
 	Attributes map[string]any `json:"attributes,omitempty"`
 }
 
+// ForeignKey is a foreign-key constraint. References is the qualified target
+// object (carrying its namespace), which is what enables cross-schema
+// click-to-navigate.
 type ForeignKey struct {
 	Name              string         `json:"name"`
 	Columns           []string       `json:"columns"`
@@ -45,6 +58,7 @@ type ForeignKey struct {
 	Attributes        map[string]any `json:"attributes,omitempty"`
 }
 
+// Index is a secondary index on a relational object.
 type Index struct {
 	Name       string         `json:"name"`
 	Columns    []string       `json:"columns"`
@@ -62,16 +76,22 @@ type Descriptor struct {
 	Source *Source `json:"source,omitempty"`
 }
 
+// Field is a single name/value pair in a "fields" Descriptor (e.g. a sequence's
+// current value or a function's return type).
 type Field struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
 }
 
+// RowSet is a small tabular payload in a "rows" Descriptor (e.g. a trigger's
+// timing/event columns).
 type RowSet struct {
 	Columns []string   `json:"columns"`
 	Rows    [][]string `json:"rows"`
 }
 
+// Source is a code body in a "source" Descriptor (e.g. a view or function
+// definition) with its language for syntax highlighting.
 type Source struct {
 	Language string `json:"language"`
 	Body     string `json:"body"`

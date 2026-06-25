@@ -13,11 +13,15 @@ type Catalog struct {
 	Namespaces  []NamespaceCatalog `json:"namespaces"`
 }
 
+// NamespaceCatalog lists a single namespace's objects, grouped by kind.
 type NamespaceCatalog struct {
 	Name   string               `json:"name"`
 	Groups []ObjectGroupCatalog `json:"groups"`
 }
 
+// ObjectGroupCatalog is the set of objects of one kind within a namespace.
+// Objects is empty for kinds whose Listing is "searched" (too many to enumerate
+// up front).
 type ObjectGroupCatalog struct {
 	Kind    string      `json:"kind"`
 	Objects []ObjectRef `json:"objects"` // empty for `searched` kinds
@@ -31,6 +35,10 @@ type SchemaSpec struct {
 	Kinds   []SchemaObjectKind `json:"kinds"`
 }
 
+// SchemaObjectKind describes one object kind an engine exposes: its labels and
+// display order, whether it is relational (has the typed column/key detail) or
+// supports an ER diagram, and how it is listed ("enumerated" up front, or
+// "searched" on demand).
 type SchemaObjectKind struct {
 	Kind            string `json:"kind"`
 	Label           string `json:"label"`

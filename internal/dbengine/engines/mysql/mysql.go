@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/cursor"
 	"github.com/sqlwarden/internal/dbengine/schema"
 	build "github.com/sqlwarden/internal/dbengine/schema/build"
 	"github.com/sqlwarden/pkg/result"
@@ -17,7 +17,7 @@ import (
 
 type mysqlDriver struct {
 	db          *sql.DB
-	scanOptions dbsql.ScanOptions
+	scanOptions cursor.ScanOptions
 }
 
 // ensureParams ensures parseTime=true is in the DSN.
@@ -76,7 +76,7 @@ func (d *mysqlDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfig
 		return fmt.Errorf("mysql: ping: %w", err)
 	}
 	d.db = db
-	d.scanOptions = dbsql.ScanOptions{MaxRows: cfg.MaxResultRows, MaxBytes: cfg.MaxResultBytes}
+	d.scanOptions = cursor.ScanOptions{MaxRows: cfg.MaxResultRows, MaxBytes: cfg.MaxResultBytes}
 	return nil
 }
 
@@ -93,7 +93,7 @@ func (d *mysqlDriver) Query(ctx context.Context, query string, args ...any) (*re
 	if err != nil {
 		return nil, fmt.Errorf("mysql: query: %w", err)
 	}
-	return dbsql.ScanRows(rows, d.scanOptions)
+	return cursor.ScanRows(rows, d.scanOptions)
 }
 
 func (d *mysqlDriver) Execute(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
@@ -101,15 +101,15 @@ func (d *mysqlDriver) Execute(ctx context.Context, query string, args ...any) (*
 	if err != nil {
 		return nil, fmt.Errorf("mysql: execute: %w", err)
 	}
-	return dbsql.ScanRows(rows, d.scanOptions)
+	return cursor.ScanRows(rows, d.scanOptions)
 }
 
-func (d *mysqlDriver) StartQuery(ctx context.Context, req dbsql.QueryRequest) (dbsql.QueryCursor, error) {
+func (d *mysqlDriver) StartQuery(ctx context.Context, req cursor.QueryRequest) (cursor.QueryCursor, error) {
 	rows, err := d.db.QueryContext(ctx, req.SQL, req.Args...)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: start query: %w", err)
 	}
-	cursor, err := dbsql.NewSQLRowsCursor(rows)
+	cursor, err := cursor.NewSQLRowsCursor(rows)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: start query cursor: %w", err)
 	}

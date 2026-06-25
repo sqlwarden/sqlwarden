@@ -1,4 +1,4 @@
-package dbsql
+package cursor
 
 import (
 	"context"
