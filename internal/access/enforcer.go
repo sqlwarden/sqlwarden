@@ -13,12 +13,12 @@ import (
 // Enforcer evaluates permissions using domain tables (no Casbin).
 type Enforcer struct {
 	db    *bun.DB
-	cache Cache
+	cache AuthorizationCache
 }
 
 // New creates an Enforcer backed by the given database.
 func New(db *bun.DB) (*Enforcer, error) {
-	return &Enforcer{db: db, cache: NewMemoryCache()}, nil
+	return &Enforcer{db: db, cache: NewMemoryAuthorizationCache()}, nil
 }
 
 // Can returns true if accountID holds permission on the given resource within orgID.

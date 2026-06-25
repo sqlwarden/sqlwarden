@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const cacheTTL = 15 * time.Minute
+const authorizationCacheTTL = 15 * time.Minute
 
 // AncestorLevel is one row from resource_hierarchy for a given child.
 type AncestorLevel struct {
@@ -36,8 +36,10 @@ type cachedRoleBinding struct {
 	expiresAt   *time.Time
 }
 
-// Cache defines the caching contract for the Enforcer.
-type Cache interface {
+// AuthorizationCache defines the typed caching contract for the Enforcer.
+// It is intentionally domain-specific rather than a generic byte cache because
+// permission checks are hot-path and should avoid serialization overhead.
+type AuthorizationCache interface {
 	GetOrgPolicy(orgID int64) (*OrgPolicy, bool)
 	SetOrgPolicy(orgID int64, policy *OrgPolicy)
 	InvalidateOrgPolicy(orgID int64)
@@ -51,8 +53,8 @@ type Cache interface {
 	InvalidateAncestry(resourceType string, resourceID int64)
 }
 
-// MemoryCache is an in-process cache with TTL-based expiry.
-type MemoryCache struct {
+// MemoryAuthorizationCache is an in-process RBAC cache with TTL-based expiry.
+type MemoryAuthorizationCache struct {
 	mu          sync.RWMutex
 	orgPolicies map[int64]*cachedOrgPolicy
 	principals  map[principalKey]*cachedPrincipals
@@ -86,16 +88,16 @@ type cachedAncestry struct {
 	expiresAt time.Time
 }
 
-// NewMemoryCache returns an empty MemoryCache.
-func NewMemoryCache() *MemoryCache {
-	return &MemoryCache{
+// NewMemoryAuthorizationCache returns an empty in-process RBAC cache.
+func NewMemoryAuthorizationCache() *MemoryAuthorizationCache {
+	return &MemoryAuthorizationCache{
 		orgPolicies: make(map[int64]*cachedOrgPolicy),
 		principals:  make(map[principalKey]*cachedPrincipals),
 		ancestries:  make(map[resourceKey]*cachedAncestry),
 	}
 }
 
-func (c *MemoryCache) GetOrgPolicy(orgID int64) (*OrgPolicy, bool) {
+func (c *MemoryAuthorizationCache) GetOrgPolicy(orgID int64) (*OrgPolicy, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	entry, ok := c.orgPolicies[orgID]
@@ -105,19 +107,19 @@ func (c *MemoryCache) GetOrgPolicy(orgID int64) (*OrgPolicy, bool) {
 	return entry.policy, true
 }
 
-func (c *MemoryCache) SetOrgPolicy(orgID int64, policy *OrgPolicy) {
+func (c *MemoryAuthorizationCache) SetOrgPolicy(orgID int64, policy *OrgPolicy) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.orgPolicies[orgID] = &cachedOrgPolicy{policy: policy, expiresAt: time.Now().Add(cacheTTL)}
+	c.orgPolicies[orgID] = &cachedOrgPolicy{policy: policy, expiresAt: time.Now().Add(authorizationCacheTTL)}
 }
 
-func (c *MemoryCache) InvalidateOrgPolicy(orgID int64) {
+func (c *MemoryAuthorizationCache) InvalidateOrgPolicy(orgID int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.orgPolicies, orgID)
 }
 
-func (c *MemoryCache) GetPrincipals(orgID, accountID int64) (Principals, bool) {
+func (c *MemoryAuthorizationCache) GetPrincipals(orgID, accountID int64) (Principals, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	entry, ok := c.principals[principalKey{orgID, accountID}]
@@ -127,19 +129,19 @@ func (c *MemoryCache) GetPrincipals(orgID, accountID int64) (Principals, bool) {
 	return entry.principals, true
 }
 
-func (c *MemoryCache) SetPrincipals(orgID, accountID int64, principals Principals) {
+func (c *MemoryAuthorizationCache) SetPrincipals(orgID, accountID int64, principals Principals) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.principals[principalKey{orgID, accountID}] = &cachedPrincipals{principals: principals, expiresAt: time.Now().Add(cacheTTL)}
+	c.principals[principalKey{orgID, accountID}] = &cachedPrincipals{principals: principals, expiresAt: time.Now().Add(authorizationCacheTTL)}
 }
 
-func (c *MemoryCache) InvalidatePrincipals(orgID, accountID int64) {
+func (c *MemoryAuthorizationCache) InvalidatePrincipals(orgID, accountID int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.principals, principalKey{orgID, accountID})
 }
 
-func (c *MemoryCache) GetAncestry(resourceType string, resourceID int64) ([]AncestorLevel, bool) {
+func (c *MemoryAuthorizationCache) GetAncestry(resourceType string, resourceID int64) ([]AncestorLevel, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	entry, ok := c.ancestries[resourceKey{resourceType, resourceID}]
@@ -149,13 +151,13 @@ func (c *MemoryCache) GetAncestry(resourceType string, resourceID int64) ([]Ance
 	return entry.levels, true
 }
 
-func (c *MemoryCache) SetAncestry(resourceType string, resourceID int64, ancestry []AncestorLevel) {
+func (c *MemoryAuthorizationCache) SetAncestry(resourceType string, resourceID int64, ancestry []AncestorLevel) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.ancestries[resourceKey{resourceType, resourceID}] = &cachedAncestry{levels: ancestry, expiresAt: time.Now().Add(cacheTTL)}
+	c.ancestries[resourceKey{resourceType, resourceID}] = &cachedAncestry{levels: ancestry, expiresAt: time.Now().Add(authorizationCacheTTL)}
 }
 
-func (c *MemoryCache) InvalidateAncestry(resourceType string, resourceID int64) {
+func (c *MemoryAuthorizationCache) InvalidateAncestry(resourceType string, resourceID int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.ancestries, resourceKey{resourceType, resourceID})
