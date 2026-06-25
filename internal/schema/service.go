@@ -57,8 +57,8 @@ func NewServiceWithLogger(c cache.Cache, ttl time.Duration, logger *slog.Logger)
 
 // Spec reports the driver's static schema object catalog. It does not touch the
 // target database, so it works even when the catalog cannot be inspected.
-func (s *Service) Spec(intr schemameta.SchemaInspector) schemameta.SchemaSpec {
-	spec := intr.SchemaSpec()
+func (s *Service) Spec(inspector schemameta.SchemaInspector) schemameta.SchemaSpec {
+	spec := inspector.SchemaSpec()
 	s.logger.Debug("schema spec resolved",
 		slog.Group("schema",
 			"operation", "schema_spec",
@@ -70,7 +70,7 @@ func (s *Service) Spec(intr schemameta.SchemaInspector) schemameta.SchemaSpec {
 }
 
 // Catalog returns the cached catalog for connID, or inspects on a miss.
-func (s *Service) Catalog(ctx context.Context, connID string, intr schemameta.SchemaInspector) (*schemameta.Catalog, error) {
+func (s *Service) Catalog(ctx context.Context, connID string, inspector schemameta.SchemaInspector) (*schemameta.Catalog, error) {
 	key := catalogKey(connID)
 	start := time.Now()
 	if data, ok := s.cache.Get(key); ok {
@@ -110,7 +110,7 @@ func (s *Service) Catalog(ctx context.Context, connID string, intr schemameta.Sc
 
 	v, err, shared := s.group.Do(key, func() (any, error) {
 		inspectStart := time.Now()
-		cat, err := intr.InspectCatalog(ctx, schemameta.CatalogOptions{})
+		cat, err := inspector.InspectCatalog(ctx, schemameta.CatalogOptions{})
 		if err != nil {
 			s.logger.Warn("schema catalog inspection failed",
 				slog.Group("schema",
@@ -169,7 +169,7 @@ func (s *Service) Catalog(ctx context.Context, connID string, intr schemameta.Sc
 // Objects returns detail for refs in request order, serving cached entries and
 // inspecting only the missing refs in one driver call. Refs the driver does not
 // return are omitted (partial success).
-func (s *Service) Objects(ctx context.Context, connID string, refs []schemameta.ObjectRef, intr schemameta.SchemaInspector) ([]schemameta.Object, error) {
+func (s *Service) Objects(ctx context.Context, connID string, refs []schemameta.ObjectRef, inspector schemameta.SchemaInspector) ([]schemameta.Object, error) {
 	start := time.Now()
 	found := make(map[schemameta.ObjectRef]schemameta.Object, len(refs))
 	var missing []schemameta.ObjectRef
@@ -205,7 +205,7 @@ func (s *Service) Objects(ctx context.Context, connID string, refs []schemameta.
 	)
 	if len(missing) > 0 {
 		inspectStart := time.Now()
-		fetched, err := intr.InspectObjects(ctx, missing)
+		fetched, err := inspector.InspectObjects(ctx, missing)
 		if err != nil {
 			s.logger.Warn("schema object detail inspection failed",
 				slog.Group("schema",

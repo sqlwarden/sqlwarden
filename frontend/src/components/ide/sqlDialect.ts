@@ -38,7 +38,7 @@ class PostgresDialect implements SqlDialect {
   }
 }
 
-// MySQL: introspection surfaces only the current database (one namespace), so
+// MySQL: schema inspection surfaces only the current database (one namespace), so
 // object references never need qualifying. Identifiers are backtick-quoted.
 class MySqlDialect implements SqlDialect {
   private q = makeQuoter('`')

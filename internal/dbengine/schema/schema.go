@@ -1,9 +1,8 @@
-// Package schema is the schema-introspection domain. It defines the
+// Package schema is the schema inspection domain. It defines the
 // SchemaInspector capability an engine implements to report its objects in two
 // tiers (a cheap Catalog listing and on-demand Object detail), the data model
 // those reports use (objects, columns, keys, descriptors), the static SchemaSpec
-// describing which object kinds an engine exposes, and a caching Service that
-// serves catalogs and object detail to the IDE's schema tree.
+// describing which object kinds an engine exposes.
 package schema
 
 // ObjectRef is the qualified, addressable identity of a database object. It
