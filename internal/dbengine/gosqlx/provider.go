@@ -1,3 +1,8 @@
+// Package gosqlx provides GoSQLX-backed implementations of the SQL-language
+// capabilities (classify, parse, rewrite) as plain helper functions. Each engine
+// calls these from its own classifier.Classifier / parser.Parser /
+// rewriter.Rewriter methods, passing its dialect — keeping the GoSQLX dependency
+// in one place so it can be replaced per engine without touching consumers.
 package gosqlx
 
 import (

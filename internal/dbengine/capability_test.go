@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/cursor"
 	"github.com/sqlwarden/internal/dbengine/schema"
 )
 
@@ -21,7 +21,7 @@ func (schemaCursorDriver) InspectCatalog(context.Context, schema.CatalogOptions)
 func (schemaCursorDriver) InspectObjects(context.Context, []schema.ObjectRef) ([]schema.Object, error) {
 	return nil, nil
 }
-func (schemaCursorDriver) StartQuery(context.Context, dbsql.QueryRequest) (dbsql.QueryCursor, error) {
+func (schemaCursorDriver) StartQuery(context.Context, cursor.QueryRequest) (cursor.QueryCursor, error) {
 	return nil, nil
 }
 

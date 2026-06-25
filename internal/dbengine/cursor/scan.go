@@ -1,4 +1,4 @@
-package dbsql
+package cursor
 
 import (
 	"context"
@@ -12,13 +12,19 @@ import (
 	"github.com/sqlwarden/pkg/result"
 )
 
+// Truncation reasons recorded on a ResultSet when a scan stops early because it
+// hit a configured limit.
 const (
 	TruncationReasonMaxRows  = "max_result_rows"
 	TruncationReasonMaxBytes = "max_result_bytes"
 )
 
+// ErrCursorClosed is returned when Fetch is called on a cursor that has been
+// closed or exhausted.
 var ErrCursorClosed = errors.New("query cursor is closed")
 
+// ScanOptions bounds a single scan or cursor page. MaxRows caps the number of
+// rows and MaxBytes caps the encoded size; a zero value means unbounded.
 type ScanOptions struct {
 	MaxRows  int
 	MaxBytes int64
@@ -93,6 +99,9 @@ func scanRow(rows *sql.Rows, columnCount int) (result.Row, int64, error) {
 	return row, rowBytes, nil
 }
 
+// SQLRowsCursor is the default QueryCursor implementation: a thin, concurrency-
+// safe adapter over database/sql rows that yields pages via Fetch and owns
+// closing the underlying rows.
 type SQLRowsCursor struct {
 	rows    *sql.Rows
 	columns []result.Column

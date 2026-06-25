@@ -10,7 +10,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/cursor"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -44,7 +44,7 @@ type Session struct {
 
 type QueryCursorHandle struct {
 	ID     string
-	Cursor dbsql.QueryCursor
+	Cursor cursor.QueryCursor
 	mu     sync.Mutex
 }
 
@@ -70,12 +70,12 @@ func (s *Session) Execute(ctx context.Context, sql string, args ...any) (*result
 }
 
 func (s *Session) StartQueryCursor(ctx context.Context, sql string, args ...any) (*QueryCursorHandle, error) {
-	cursorDriver, ok := s.Conn.(dbsql.QueryCursorDriver)
+	cursorDriver, ok := s.Conn.(cursor.QueryCursorDriver)
 	if !ok {
 		return nil, ErrQueryCursorsUnsupported
 	}
 
-	cursor, err := cursorDriver.StartQuery(ctx, dbsql.QueryRequest{SQL: sql, Args: args})
+	cursor, err := cursorDriver.StartQuery(ctx, cursor.QueryRequest{SQL: sql, Args: args})
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (h *QueryCursorHandle) Columns() []result.Column {
 	return h.Cursor.Columns()
 }
 
-func (h *QueryCursorHandle) Fetch(ctx context.Context, opts dbsql.ScanOptions) (*result.ResultSet, dbsql.QueryCursorState, error) {
+func (h *QueryCursorHandle) Fetch(ctx context.Context, opts cursor.ScanOptions) (*result.ResultSet, cursor.QueryCursorState, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.Cursor.Fetch(ctx, opts)

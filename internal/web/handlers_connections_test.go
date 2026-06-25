@@ -19,7 +19,7 @@ import (
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/cursor"
 	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -785,7 +785,7 @@ func TestExecuteQueryAppliesConfiguredResultLimit(t *testing.T) {
 	selectRes := send(t, selectReq, app.routes())
 	assert.Equal(t, selectRes.StatusCode, http.StatusOK)
 	assert.Equal(t, selectRes.BodyFields["truncated"], true)
-	assert.Equal(t, selectRes.BodyFields["truncation_reason"], dbsql.TruncationReasonMaxRows)
+	assert.Equal(t, selectRes.BodyFields["truncation_reason"], cursor.TruncationReasonMaxRows)
 	if got := selectRes.BodyFields["rows_returned"]; got != float64(2) {
 		t.Fatalf("rows_returned = %v, want 2", got)
 	}

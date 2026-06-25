@@ -3,15 +3,18 @@ package dbengine
 import (
 	"github.com/sqlwarden/internal/dbengine/classifier"
 	"github.com/sqlwarden/internal/dbengine/completer"
-	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/cursor"
 	"github.com/sqlwarden/internal/dbengine/parser"
 	"github.com/sqlwarden/internal/dbengine/rewriter"
 	"github.com/sqlwarden/internal/dbengine/schema"
 )
 
-// Capability is a stable, serializable identifier for an engine feature.
+// Capability is a stable, serializable identifier for an engine feature,
+// reported to the frontend so it can gate UI on what an engine supports.
 type Capability string
 
+// The capability keys an engine may report. Each corresponds to an optional
+// interface the engine type implements (see CapabilitySet and capabilitiesOf).
 const (
 	CapabilitySchemaCatalog Capability = "schema.catalog"
 	CapabilitySchemaObjects Capability = "schema.objects"
@@ -30,10 +33,11 @@ type CapabilitySet struct {
 	Schema       *schema.SchemaSpec  `json:"schema,omitempty"`
 }
 
-// capabilitiesOf derives capabilities from the interfaces the driver implements
-// and the SQL provider registered for the dialect. Booleans are DERIVED, never
-// hand-declared, so a reported capability can never disagree with the
-// implementation. The probe driver is created but never connected.
+// capabilitiesOf derives an engine's capabilities by type-asserting a fresh,
+// unconnected probe driver against each capability interface. The booleans are
+// DERIVED, never hand-declared, so a reported capability can never disagree with
+// what the engine actually implements. The probe is created but never connected,
+// which is why this works for the static /engines report.
 func capabilitiesOf(reg Registration) (map[Capability]bool, *schema.SchemaSpec) {
 	probe := reg.New()
 	caps := map[Capability]bool{
@@ -48,7 +52,7 @@ func capabilitiesOf(reg Registration) (map[Capability]bool, *schema.SchemaSpec) 
 		s := si.SchemaSpec()
 		spec = &s
 	}
-	_, caps[CapabilityQueryCursor] = probe.(dbsql.QueryCursorDriver)
+	_, caps[CapabilityQueryCursor] = probe.(cursor.QueryCursorDriver)
 	_, caps[CapabilitySQLClassify] = probe.(classifier.Classifier)
 	_, caps[CapabilitySQLParse] = probe.(parser.Parser)
 	_, caps[CapabilitySQLRewrite] = probe.(rewriter.Rewriter)

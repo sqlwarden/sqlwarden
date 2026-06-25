@@ -9,7 +9,7 @@ import (
 // Driver is the connection capability every engine must implement. An engine
 // type also implements whichever optional capability interfaces it supports
 // (classifier.Classifier, parser.Parser, rewriter.Rewriter, completer.Completer,
-// schema.SchemaInspector, dbsql.QueryCursorDriver), resolved by type assertion.
+// schema.SchemaInspector, cursor.QueryCursorDriver), resolved by type assertion.
 type Driver interface {
 	Connect(ctx context.Context, cfg ConnectionConfig) error
 	Ping(ctx context.Context) error
@@ -19,9 +19,11 @@ type Driver interface {
 	Dialect() Dialect
 }
 
-// Dialect identifies the SQL dialect of an engine.
+// Dialect identifies the SQL dialect of an engine. It is also the canonical
+// engine name used as the registry key.
 type Dialect string
 
+// The dialects SQLWarden ships engines for.
 const (
 	DialectPostgres Dialect = "postgres"
 	DialectMySQL    Dialect = "mysql"
