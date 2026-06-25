@@ -14,9 +14,10 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/cache"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/token"
 )
 
@@ -29,7 +30,7 @@ func newTestApp(t *testing.T) *application {
 	}
 	app.enforcer = enforcer
 	app.connManager = connection.New(30 * time.Minute)
-	app.schemaService = schema.NewService(schema.NewMemCache(schemaCacheCapacity), schemaCacheTTL)
+	app.schemaService = schemaapp.NewService(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL)
 	t.Cleanup(func() { app.connManager.Close() })
 	return app
 }

@@ -1,3 +1,6 @@
+// Package schema provides the application schema inspection service used by HTTP
+// handlers. It owns caching, refresh, singleflight, logging, and serialization
+// policy for schema metadata returned by database engines.
 package schema
 
 import (
@@ -9,6 +12,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/sqlwarden/internal/cache"
+	schemameta "github.com/sqlwarden/internal/dbengine/schema"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -20,7 +25,7 @@ const (
 
 func catalogKey(connID string) string { return catalogPrefix + connID }
 
-func objectKey(connID string, ref ObjectRef) string {
+func objectKey(connID string, ref schemameta.ObjectRef) string {
 	return objectPrefix + connID + sep + ref.Namespace + sep + ref.Kind + sep + ref.Name
 }
 
@@ -29,30 +34,30 @@ func connObjectPrefix(connID string) string { return objectPrefix + connID + sep
 // Service serves cached catalogs and object detail, collapsing concurrent
 // catalog misses for the same connection into a single inspection.
 type Service struct {
-	cache  Cache
+	cache  cache.Cache
 	ttl    time.Duration
 	group  singleflight.Group
 	logger *slog.Logger
 }
 
 // NewService builds a Service over the given cache with the given entry TTL.
-func NewService(cache Cache, ttl time.Duration) *Service {
-	return NewServiceWithLogger(cache, ttl, slog.New(slog.NewTextHandler(io.Discard, nil)))
+func NewService(c cache.Cache, ttl time.Duration) *Service {
+	return NewServiceWithLogger(c, ttl, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 // NewServiceWithLogger builds a Service and emits structured inspection
 // events. Logs intentionally include counts and kinds, but not object names or
 // source bodies, because schema names can be sensitive in enterprise targets.
-func NewServiceWithLogger(cache Cache, ttl time.Duration, logger *slog.Logger) *Service {
+func NewServiceWithLogger(c cache.Cache, ttl time.Duration, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Service{cache: cache, ttl: ttl, logger: logger}
+	return &Service{cache: c, ttl: ttl, logger: logger}
 }
 
 // Spec reports the driver's static schema object catalog. It does not touch the
 // target database, so it works even when the catalog cannot be inspected.
-func (s *Service) Spec(intr SchemaInspector) SchemaSpec {
+func (s *Service) Spec(intr schemameta.SchemaInspector) schemameta.SchemaSpec {
 	spec := intr.SchemaSpec()
 	s.logger.Debug("schema spec resolved",
 		slog.Group("schema",
@@ -65,11 +70,11 @@ func (s *Service) Spec(intr SchemaInspector) SchemaSpec {
 }
 
 // Catalog returns the cached catalog for connID, or inspects on a miss.
-func (s *Service) Catalog(ctx context.Context, connID string, intr SchemaInspector) (*Catalog, error) {
+func (s *Service) Catalog(ctx context.Context, connID string, intr schemameta.SchemaInspector) (*schemameta.Catalog, error) {
 	key := catalogKey(connID)
 	start := time.Now()
 	if data, ok := s.cache.Get(key); ok {
-		var c Catalog
+		var c schemameta.Catalog
 		decodeErr := gunzipJSON(data, &c)
 		if decodeErr == nil {
 			s.logger.Debug("schema catalog cache hit",
@@ -105,7 +110,7 @@ func (s *Service) Catalog(ctx context.Context, connID string, intr SchemaInspect
 
 	v, err, shared := s.group.Do(key, func() (any, error) {
 		inspectStart := time.Now()
-		cat, err := intr.InspectCatalog(ctx, CatalogOptions{})
+		cat, err := intr.InspectCatalog(ctx, schemameta.CatalogOptions{})
 		if err != nil {
 			s.logger.Warn("schema catalog inspection failed",
 				slog.Group("schema",
@@ -148,7 +153,7 @@ func (s *Service) Catalog(ctx context.Context, connID string, intr SchemaInspect
 		return nil, err
 	}
 	if shared {
-		cat := v.(*Catalog)
+		cat := v.(*schemameta.Catalog)
 		s.logger.Debug("schema catalog singleflight shared",
 			slog.Group("schema",
 				"operation", "catalog",
@@ -158,19 +163,19 @@ func (s *Service) Catalog(ctx context.Context, connID string, intr SchemaInspect
 			),
 		)
 	}
-	return v.(*Catalog), nil
+	return v.(*schemameta.Catalog), nil
 }
 
 // Objects returns detail for refs in request order, serving cached entries and
 // inspecting only the missing refs in one driver call. Refs the driver does not
 // return are omitted (partial success).
-func (s *Service) Objects(ctx context.Context, connID string, refs []ObjectRef, intr SchemaInspector) ([]Object, error) {
+func (s *Service) Objects(ctx context.Context, connID string, refs []schemameta.ObjectRef, intr schemameta.SchemaInspector) ([]schemameta.Object, error) {
 	start := time.Now()
-	found := make(map[ObjectRef]Object, len(refs))
-	var missing []ObjectRef
+	found := make(map[schemameta.ObjectRef]schemameta.Object, len(refs))
+	var missing []schemameta.ObjectRef
 	for _, ref := range refs {
 		if data, ok := s.cache.Get(objectKey(connID, ref)); ok {
-			var o Object
+			var o schemameta.Object
 			decodeErr := gunzipJSON(data, &o)
 			if decodeErr == nil {
 				found[ref] = o
@@ -242,7 +247,7 @@ func (s *Service) Objects(ctx context.Context, connID string, refs []ObjectRef, 
 			"kinds", objectRefKindCounts(missing),
 		)
 	}
-	out := make([]Object, 0, len(refs))
+	out := make([]schemameta.Object, 0, len(refs))
 	for _, ref := range refs {
 		if o, ok := found[ref]; ok {
 			out = append(out, o)
@@ -261,7 +266,7 @@ func (s *Service) Objects(ctx context.Context, connID string, refs []ObjectRef, 
 }
 
 // RefreshObject drops one object's cached detail.
-func (s *Service) RefreshObject(connID string, ref ObjectRef) {
+func (s *Service) RefreshObject(connID string, ref schemameta.ObjectRef) {
 	s.cache.Invalidate(objectKey(connID, ref))
 	s.logger.Info("schema object cache invalidated",
 		slog.Group("schema",
@@ -284,7 +289,7 @@ func (s *Service) RefreshConnection(connID string) {
 	)
 }
 
-func countCatalogObjects(cat *Catalog) int {
+func countCatalogObjects(cat *schemameta.Catalog) int {
 	if cat == nil {
 		return 0
 	}
@@ -297,7 +302,7 @@ func countCatalogObjects(cat *Catalog) int {
 	return total
 }
 
-func objectRefKindCounts(refs []ObjectRef) map[string]int {
+func objectRefKindCounts(refs []schemameta.ObjectRef) map[string]int {
 	counts := make(map[string]int)
 	for _, ref := range refs {
 		counts[ref.Kind]++

@@ -13,12 +13,13 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/cache"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/filestore"
+	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/smtp"
 )
 
@@ -37,7 +38,7 @@ type application struct {
 	wg               sync.WaitGroup
 	connManager      *connection.Manager
 	queryCursors     *queryCursorManager
-	schemaService    *schema.Service
+	schemaService    *schemaapp.Service
 	keyring          *encrypt.Keyring
 	enforcer         *access.Enforcer
 	fileStores       *fileStoreRegistry
@@ -154,7 +155,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		mailer:        mailer,
 		connManager:   connection.New(30 * time.Minute),
 		queryCursors:  newQueryCursorManager(30 * time.Minute),
-		schemaService: schema.NewServiceWithLogger(schema.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
+		schemaService: schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
 		keyring:       keyring,
 		enforcer:      enforcer,
 		fileStores:    fileStores,
