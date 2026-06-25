@@ -27,12 +27,11 @@ type enginesResponse struct {
 	Engines []engineView `json:"engines"`
 }
 
-func engineToView(eng dbengine.Engine) engineView {
-	set := eng.Capabilities()
+func engineToView(set dbengine.CapabilitySet) engineView {
 	v := engineView{
-		ID:           string(eng.ID()),
-		DisplayName:  eng.DisplayName(),
-		Dialect:      string(eng.Dialect()),
+		ID:           string(set.Engine.ID),
+		DisplayName:  set.Engine.DisplayName,
+		Dialect:      string(set.Engine.Dialect),
 		Capabilities: set.Capabilities,
 	}
 	if set.Schema != nil {
@@ -44,8 +43,8 @@ func engineToView(eng dbengine.Engine) engineView {
 func (app *application) listEngines(w http.ResponseWriter, r *http.Request) {
 	engines := dbengine.Engines()
 	views := make([]engineView, 0, len(engines))
-	for _, eng := range engines {
-		views = append(views, engineToView(eng))
+	for _, set := range engines {
+		views = append(views, engineToView(set))
 	}
 	if err := response.JSON(w, http.StatusOK, enginesResponse{Engines: views}); err != nil {
 		app.serverError(w, r, err)
@@ -53,12 +52,12 @@ func (app *application) listEngines(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) getEngine(w http.ResponseWriter, r *http.Request) {
-	eng, err := dbengine.New(chi.URLParam(r, "engine_id"))
-	if err != nil {
+	set, ok := dbengine.Describe(chi.URLParam(r, "engine_id"))
+	if !ok {
 		app.errorMessage(w, r, http.StatusNotFound, "Unknown engine.", nil)
 		return
 	}
-	if err := response.JSON(w, http.StatusOK, engineToView(eng)); err != nil {
+	if err := response.JSON(w, http.StatusOK, engineToView(set)); err != nil {
 		app.serverError(w, r, err)
 	}
 }

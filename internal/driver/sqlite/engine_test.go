@@ -8,16 +8,16 @@ import (
 )
 
 func TestSQLiteEngineRegisteredAndConforms(t *testing.T) {
-	eng, err := dbengine.New("sqlite")
-	if err != nil {
-		t.Fatalf("dbengine.New(sqlite): %v", err)
+	set, ok := dbengine.Describe("sqlite")
+	if !ok {
+		t.Fatal("sqlite engine not registered")
 	}
-	if eng.DisplayName() != "SQLite" || eng.Dialect() != dbengine.DialectSQLite {
-		t.Fatalf("unexpected engine: name=%q dialect=%q", eng.DisplayName(), eng.Dialect())
+	if set.Engine.DisplayName != "SQLite" || set.Engine.Dialect != dbengine.DialectSQLite {
+		t.Fatalf("unexpected engine: name=%q dialect=%q", set.Engine.DisplayName, set.Engine.Dialect)
 	}
-	enginetest.RunCapabilityContract(t, eng)
+	enginetest.RunCapabilityContract(t, "sqlite")
 
-	caps := eng.Capabilities().Capabilities
+	caps := set.Capabilities
 	if !caps[dbengine.CapabilitySchemaCatalog] || !caps[dbengine.CapabilityQueryCursor] {
 		t.Errorf("sqlite should report schema.catalog + query.cursor: %+v", caps)
 	}

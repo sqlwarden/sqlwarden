@@ -15,10 +15,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-func init() {
-	driver.Register("postgres", func() driver.Driver { return &postgresDriver{} })
-}
-
 type postgresDriver struct {
 	db          *sql.DB
 	scanOptions dbsql.ScanOptions

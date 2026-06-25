@@ -15,10 +15,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func init() {
-	driver.Register("sqlite", func() driver.Driver { return &sqliteDriver{} })
-}
-
 type sqliteDriver struct {
 	db          *sql.DB
 	scanOptions dbsql.ScanOptions

@@ -25,7 +25,7 @@ func (fakeDriver) Dialect() driver.Dialect { return driver.DialectPostgres }
 func resetRegistry(t *testing.T) {
 	t.Helper()
 	registryMu.Lock()
-	registry = map[EngineID]*facadeEngine{}
+	registry = map[EngineID]Registration{}
 	registryMu.Unlock()
 }
 
@@ -38,16 +38,19 @@ func registerFake(id EngineID, dialect Dialect) {
 	})
 }
 
-func TestRegisterAndNew(t *testing.T) {
+func TestNewReturnsNonConnectedDriver(t *testing.T) {
 	resetRegistry(t)
 	registerFake("postgres", DialectPostgres)
 
-	eng, err := New("postgres")
+	d, err := New("postgres")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if eng.ID() != "postgres" || eng.Dialect() != DialectPostgres {
-		t.Fatalf("unexpected engine: id=%q dialect=%q", eng.ID(), eng.Dialect())
+	if d == nil {
+		t.Fatal("New returned a nil driver")
+	}
+	if d.Dialect() != DialectPostgres {
+		t.Fatalf("dialect = %q, want postgres", d.Dialect())
 	}
 }
 
@@ -64,6 +67,19 @@ func TestNewUnknownReturnsTypedError(t *testing.T) {
 	resetRegistry(t)
 	if _, err := New("nope"); !errors.Is(err, ErrUnknownEngine) {
 		t.Fatalf("want ErrUnknownEngine, got %v", err)
+	}
+}
+
+func TestDescribeReturnsMetadata(t *testing.T) {
+	resetRegistry(t)
+	registerFake("postgres", DialectPostgres)
+
+	set, ok := Describe("postgresql") // alias resolves
+	if !ok {
+		t.Fatal("Describe should find postgres via alias")
+	}
+	if set.Engine.ID != "postgres" || set.Engine.Dialect != DialectPostgres {
+		t.Fatalf("unexpected descriptor: %+v", set.Engine)
 	}
 }
 
@@ -90,8 +106,8 @@ func TestEnginesSortedByID(t *testing.T) {
 		t.Fatalf("got %d engines, want %d", len(got), len(want))
 	}
 	for i, id := range want {
-		if got[i].ID() != id {
-			t.Fatalf("position %d = %q, want %q", i, got[i].ID(), id)
+		if got[i].Engine.ID != id {
+			t.Fatalf("position %d = %q, want %q", i, got[i].Engine.ID, id)
 		}
 	}
 }

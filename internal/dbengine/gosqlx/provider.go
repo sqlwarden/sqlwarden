@@ -15,32 +15,23 @@ import (
 	"github.com/sqlwarden/internal/driver"
 )
 
-// NewClassifier returns a GoSQLX-backed classifier bound to a dialect.
-func NewClassifier(d driver.Dialect) classifier.Classifier { return classifierImpl{dialect: d} }
-
-// NewParser returns a GoSQLX-backed parser bound to a dialect.
-func NewParser(d driver.Dialect) parser.Parser { return parserImpl{dialect: d} }
-
-// NewRewriter returns a GoSQLX-backed pagination rewriter bound to a dialect.
-func NewRewriter(d driver.Dialect) rewriter.Rewriter { return rewriterImpl{dialect: d} }
-
-type classifierImpl struct{ dialect driver.Dialect }
-
-func (c classifierImpl) Classify(ctx context.Context, req classifier.Request) (classifier.Result, error) {
-	if hasMySQLVersionedComment(c.dialect, req.SQL) {
+// Classify is a GoSQLX-backed classification helper. Drivers call it from their
+// own classifier.Classifier method, passing their dialect.
+func Classify(ctx context.Context, dialect driver.Dialect, req classifier.Request) (classifier.Result, error) {
+	if hasMySQLVersionedComment(dialect, req.SQL) {
 		return classifier.Result{Kind: classifier.KindUnknown, Source: "gosqlx"}, nil
 	}
-	tree, err := parseWithDialect(ctx, req.SQL, c.dialect)
+	tree, err := parseWithDialect(ctx, req.SQL, dialect)
 	if err != nil {
 		return classifier.Result{Kind: classifier.KindUnknown, Source: "gosqlx"}, nil
 	}
 	return classifier.Result{Kind: classifyStatements(tree.Statements), Source: "gosqlx"}, nil
 }
 
-type parserImpl struct{ dialect driver.Dialect }
-
-func (p parserImpl) Parse(ctx context.Context, req parser.Request) (parser.Result, error) {
-	tree, err := parseWithDialect(ctx, req.SQL, p.dialect)
+// Parse is a GoSQLX-backed parse helper. Drivers call it from their own
+// parser.Parser method, passing their dialect.
+func Parse(ctx context.Context, dialect driver.Dialect, req parser.Request) (parser.Result, error) {
+	tree, err := parseWithDialect(ctx, req.SQL, dialect)
 	if err == nil {
 		return parser.Result{Complete: true, AST: parser.NewOpaqueAST(tree), StatementCount: len(tree.Statements)}, nil
 	}
@@ -48,16 +39,16 @@ func (p parserImpl) Parse(ctx context.Context, req parser.Request) (parser.Resul
 	return parser.Result{Complete: false, AST: parser.NewOpaqueAST(stmts), StatementCount: len(stmts)}, nil
 }
 
-type rewriterImpl struct{ dialect driver.Dialect }
-
-func (rw rewriterImpl) Rewrite(ctx context.Context, req rewriter.Request) (rewriter.Result, error) {
+// Rewrite is a GoSQLX-backed pagination rewrite helper. Drivers call it from
+// their own rewriter.Rewriter method, passing their dialect.
+func Rewrite(ctx context.Context, dialect driver.Dialect, req rewriter.Request) (rewriter.Result, error) {
 	if req.Purpose != rewriter.PurposePagination {
 		return rewriteNotApplied(req.SQL, "unsupported rewrite purpose"), nil
 	}
 	if req.Limit < 0 || req.Offset < 0 {
 		return rewriteNotApplied(req.SQL, "limit and offset must be non-negative"), nil
 	}
-	tree, err := parseWithDialect(ctx, req.SQL, rw.dialect)
+	tree, err := parseWithDialect(ctx, req.SQL, dialect)
 	if err != nil {
 		return rewriteNotApplied(req.SQL, "parse failed"), nil
 	}
@@ -74,7 +65,7 @@ func (rw rewriterImpl) Rewrite(ctx context.Context, req rewriter.Request) (rewri
 	if err := transform.Apply(tree.Statements[0], transform.SetLimit(req.Limit), transform.SetOffset(req.Offset)); err != nil {
 		return rewriteNotApplied(req.SQL, err.Error()), nil
 	}
-	return rewriter.Result{SQL: transform.FormatSQLWithDialect(tree.Statements[0], toGoSQLXDialect(rw.dialect)), Applied: true}, nil
+	return rewriter.Result{SQL: transform.FormatSQLWithDialect(tree.Statements[0], toGoSQLXDialect(dialect)), Applied: true}, nil
 }
 
 func rewriteNotApplied(sql, reason string) rewriter.Result {

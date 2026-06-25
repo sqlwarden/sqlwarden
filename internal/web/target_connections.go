@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/driver"
 )
 
@@ -16,7 +17,7 @@ func (app *application) validateTargetConnection(driverName, dsn string) error {
 	driverName = strings.TrimSpace(driverName)
 	dsn = strings.TrimSpace(dsn)
 
-	if _, err := driver.New(driverName); err != nil {
+	if _, err := dbengine.New(driverName); err != nil {
 		return err
 	}
 

@@ -51,9 +51,20 @@ func capabilitiesOf(reg Registration) (map[Capability]bool, *schema.SchemaSpec) 
 	if _, ok := probe.(dbsql.QueryCursorDriver); ok {
 		caps[CapabilityQueryCursor] = true
 	}
-	caps[CapabilitySQLClassify] = classifier.For(reg.Dialect) != nil
-	caps[CapabilitySQLParse] = parser.For(reg.Dialect) != nil
-	caps[CapabilitySQLRewrite] = rewriter.For(reg.Dialect) != nil
-	caps[CapabilitySQLComplete] = completer.For(reg.Dialect) != nil
+	_, caps[CapabilitySQLClassify] = probe.(classifier.Classifier)
+	_, caps[CapabilitySQLParse] = probe.(parser.Parser)
+	_, caps[CapabilitySQLRewrite] = probe.(rewriter.Rewriter)
+	_, caps[CapabilitySQLComplete] = probe.(completer.Completer)
 	return caps, spec
+}
+
+// capabilityReport builds the full static capability report for an engine: its
+// descriptor plus the derived capability map and schema spec.
+func capabilityReport(reg Registration) CapabilitySet {
+	caps, spec := capabilitiesOf(reg)
+	return CapabilitySet{
+		Engine:       EngineDescriptor{ID: reg.ID, DisplayName: reg.DisplayName, Dialect: reg.Dialect},
+		Capabilities: caps,
+		Schema:       spec,
+	}
 }

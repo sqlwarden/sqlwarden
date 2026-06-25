@@ -1,15 +1,22 @@
 package sqlite
 
 import (
+	"context"
+
 	"github.com/sqlwarden/internal/dbengine/classifier"
 	"github.com/sqlwarden/internal/dbengine/gosqlx"
 	"github.com/sqlwarden/internal/dbengine/parser"
 	"github.com/sqlwarden/internal/dbengine/rewriter"
-	"github.com/sqlwarden/internal/driver"
 )
 
-func init() {
-	classifier.Register(driver.DialectSQLite, gosqlx.NewClassifier(driver.DialectSQLite))
-	parser.Register(driver.DialectSQLite, gosqlx.NewParser(driver.DialectSQLite))
-	rewriter.Register(driver.DialectSQLite, gosqlx.NewRewriter(driver.DialectSQLite))
+func (d *sqliteDriver) Classify(ctx context.Context, req classifier.Request) (classifier.Result, error) {
+	return gosqlx.Classify(ctx, d.Dialect(), req)
+}
+
+func (d *sqliteDriver) Parse(ctx context.Context, req parser.Request) (parser.Result, error) {
+	return gosqlx.Parse(ctx, d.Dialect(), req)
+}
+
+func (d *sqliteDriver) Rewrite(ctx context.Context, req rewriter.Request) (rewriter.Result, error) {
+	return gosqlx.Rewrite(ctx, d.Dialect(), req)
 }

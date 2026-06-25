@@ -191,8 +191,20 @@ func (app *application) hasConnectionPermission(r *http.Request, orgID int64, ow
 }
 
 func (app *application) classifyConnectionSQL(r *http.Request, conn database.Connection, sql string) (classifier.Result, error) {
-	d := driver.Dialect(driver.NormalizeName(conn.Driver))
-	return classifier.For(d).Classify(r.Context(), classifier.Request{SQL: sql})
+	return connectionClassifier(conn.Driver).Classify(r.Context(), classifier.Request{SQL: sql})
+}
+
+// connectionClassifier resolves a stateless classifier for a connection's
+// driver by type-asserting a fresh (unconnected) driver instance — the same
+// pattern as schema/cursor capabilities — and falls back to the conservative
+// heuristic when the driver does not implement classification.
+func connectionClassifier(driverName string) classifier.Classifier {
+	if d, err := dbengine.New(driverName); err == nil {
+		if c, ok := d.(classifier.Classifier); ok {
+			return c
+		}
+	}
+	return classifier.NewHeuristic()
 }
 
 func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
@@ -417,7 +429,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 
-	d, err := driver.New(input.Driver)
+	d, err := dbengine.New(input.Driver)
 	if err != nil {
 		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", time.Since(start).Milliseconds()), slog.String("stage", "driver_init"), slog.String("error_category", connectionTestErrorCategory(err)))
 		err = response.JSON(w, http.StatusUnprocessableEntity, map[string]any{
@@ -505,13 +517,16 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		OrgID:       strconv.FormatInt(org.ID, 10),
 		WorkspaceID: strconv.FormatInt(ws.ID, 10),
 	}, func() (dbengine.Connection, error) {
-		eng, err := dbengine.New(conn.Driver)
+		d, err := dbengine.New(conn.Driver)
 		if err != nil {
 			return nil, err
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		return eng.Open(ctx, app.driverConnectionConfig(conn.Driver, plainDSN))
+		if err := d.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN)); err != nil {
+			return nil, err
+		}
+		return d, nil
 	})
 	if err != nil {
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)

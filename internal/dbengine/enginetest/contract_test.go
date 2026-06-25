@@ -28,10 +28,6 @@ func TestHarnessAcceptsValidEngine(t *testing.T) {
 		ID: "harness-fake", DisplayName: "Harness Fake", Dialect: dbengine.DialectSQLite,
 		NewDriver: func() driver.Driver { return selectOneDriver{} },
 	})
-	eng, err := dbengine.New("harness-fake")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	enginetest.RunCapabilityContract(t, eng)
-	enginetest.RunConnectionContract(t, eng, dbengine.ConnectionConfig{DSN: "ignored", Driver: "harness-fake"})
+	enginetest.RunCapabilityContract(t, "harness-fake")
+	enginetest.RunConnectionContract(t, "harness-fake", dbengine.ConnectionConfig{DSN: "ignored", Driver: "harness-fake"})
 }

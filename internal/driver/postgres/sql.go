@@ -1,15 +1,22 @@
 package postgres
 
 import (
+	"context"
+
 	"github.com/sqlwarden/internal/dbengine/classifier"
 	"github.com/sqlwarden/internal/dbengine/gosqlx"
 	"github.com/sqlwarden/internal/dbengine/parser"
 	"github.com/sqlwarden/internal/dbengine/rewriter"
-	"github.com/sqlwarden/internal/driver"
 )
 
-func init() {
-	classifier.Register(driver.DialectPostgres, gosqlx.NewClassifier(driver.DialectPostgres))
-	parser.Register(driver.DialectPostgres, gosqlx.NewParser(driver.DialectPostgres))
-	rewriter.Register(driver.DialectPostgres, gosqlx.NewRewriter(driver.DialectPostgres))
+func (d *postgresDriver) Classify(ctx context.Context, req classifier.Request) (classifier.Result, error) {
+	return gosqlx.Classify(ctx, d.Dialect(), req)
+}
+
+func (d *postgresDriver) Parse(ctx context.Context, req parser.Request) (parser.Result, error) {
+	return gosqlx.Parse(ctx, d.Dialect(), req)
+}
+
+func (d *postgresDriver) Rewrite(ctx context.Context, req rewriter.Request) (rewriter.Result, error) {
+	return gosqlx.Rewrite(ctx, d.Dialect(), req)
 }
