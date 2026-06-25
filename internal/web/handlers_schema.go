@@ -76,31 +76,31 @@ func (app *application) resolveSchemaInspector(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return nil, nil, false
 	}
-	intr, ok := session.Conn.(schema.SchemaInspector)
+	inspector, ok := session.Conn.(schema.SchemaInspector)
 	if !ok {
 		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
 		return nil, nil, false
 	}
-	return session, intr, true
+	return session, inspector, true
 }
 
 func (app *application) getConnectionSchemaSpec(w http.ResponseWriter, r *http.Request) {
-	_, intr, ok := app.resolveSchemaInspector(w, r)
+	_, inspector, ok := app.resolveSchemaInspector(w, r)
 	if !ok {
 		return
 	}
-	spec := app.schemaService.Spec(intr)
+	spec := app.schemaService.Spec(inspector)
 	if err := response.JSON(w, http.StatusOK, schemaSpecResponse{Spec: spec}); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) getConnectionSchemaCatalog(w http.ResponseWriter, r *http.Request) {
-	session, intr, ok := app.resolveSchemaInspector(w, r)
+	session, inspector, ok := app.resolveSchemaInspector(w, r)
 	if !ok {
 		return
 	}
-	cat, err := app.schemaService.Catalog(r.Context(), session.ConnectionID, intr)
+	cat, err := app.schemaService.Catalog(r.Context(), session.ConnectionID, inspector)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -111,7 +111,7 @@ func (app *application) getConnectionSchemaCatalog(w http.ResponseWriter, r *htt
 }
 
 func (app *application) getConnectionSchemaObjects(w http.ResponseWriter, r *http.Request) {
-	session, intr, ok := app.resolveSchemaInspector(w, r)
+	session, inspector, ok := app.resolveSchemaInspector(w, r)
 	if !ok {
 		return
 	}
@@ -120,7 +120,7 @@ func (app *application) getConnectionSchemaObjects(w http.ResponseWriter, r *htt
 		app.badRequest(w, r, err)
 		return
 	}
-	objects, err := app.schemaService.Objects(r.Context(), session.ConnectionID, input.Refs, intr)
+	objects, err := app.schemaService.Objects(r.Context(), session.ConnectionID, input.Refs, inspector)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
