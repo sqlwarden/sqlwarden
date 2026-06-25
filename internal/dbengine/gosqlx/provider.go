@@ -9,15 +9,15 @@ import (
 	"github.com/ajitpratap0/GoSQLX/pkg/sql/keywords"
 	"github.com/ajitpratap0/GoSQLX/pkg/transform"
 
+	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/classifier"
 	"github.com/sqlwarden/internal/dbengine/parser"
 	"github.com/sqlwarden/internal/dbengine/rewriter"
-	"github.com/sqlwarden/internal/driver"
 )
 
 // Classify is a GoSQLX-backed classification helper. Drivers call it from their
 // own classifier.Classifier method, passing their dialect.
-func Classify(ctx context.Context, dialect driver.Dialect, req classifier.Request) (classifier.Result, error) {
+func Classify(ctx context.Context, dialect dbengine.Dialect, req classifier.Request) (classifier.Result, error) {
 	if hasMySQLVersionedComment(dialect, req.SQL) {
 		return classifier.Result{Kind: classifier.KindUnknown, Source: "gosqlx"}, nil
 	}
@@ -30,7 +30,7 @@ func Classify(ctx context.Context, dialect driver.Dialect, req classifier.Reques
 
 // Parse is a GoSQLX-backed parse helper. Drivers call it from their own
 // parser.Parser method, passing their dialect.
-func Parse(ctx context.Context, dialect driver.Dialect, req parser.Request) (parser.Result, error) {
+func Parse(ctx context.Context, dialect dbengine.Dialect, req parser.Request) (parser.Result, error) {
 	tree, err := parseWithDialect(ctx, req.SQL, dialect)
 	if err == nil {
 		return parser.Result{Complete: true, AST: parser.NewOpaqueAST(tree), StatementCount: len(tree.Statements)}, nil
@@ -41,7 +41,7 @@ func Parse(ctx context.Context, dialect driver.Dialect, req parser.Request) (par
 
 // Rewrite is a GoSQLX-backed pagination rewrite helper. Drivers call it from
 // their own rewriter.Rewriter method, passing their dialect.
-func Rewrite(ctx context.Context, dialect driver.Dialect, req rewriter.Request) (rewriter.Result, error) {
+func Rewrite(ctx context.Context, dialect dbengine.Dialect, req rewriter.Request) (rewriter.Result, error) {
 	if req.Purpose != rewriter.PurposePagination {
 		return rewriteNotApplied(req.SQL, "unsupported rewrite purpose"), nil
 	}
@@ -72,7 +72,7 @@ func rewriteNotApplied(sql, reason string) rewriter.Result {
 	return rewriter.Result{SQL: sql, Applied: false, Reason: reason}
 }
 
-func parseWithDialect(ctx context.Context, sql string, dialect driver.Dialect) (*gosqlxast.AST, error) {
+func parseWithDialect(ctx context.Context, sql string, dialect dbengine.Dialect) (*gosqlxast.AST, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -86,13 +86,13 @@ func parseWithDialect(ctx context.Context, sql string, dialect driver.Dialect) (
 	return tree, nil
 }
 
-func toGoSQLXDialect(dialect driver.Dialect) keywords.SQLDialect {
+func toGoSQLXDialect(dialect dbengine.Dialect) keywords.SQLDialect {
 	switch dialect {
-	case driver.DialectPostgres:
+	case dbengine.DialectPostgres:
 		return keywords.DialectPostgreSQL
-	case driver.DialectMySQL:
+	case dbengine.DialectMySQL:
 		return keywords.DialectMySQL
-	case driver.DialectSQLite:
+	case dbengine.DialectSQLite:
 		return keywords.DialectSQLite
 	default:
 		return keywords.DialectGeneric
@@ -161,8 +161,8 @@ func pragmaHasSideEffects(stmt *gosqlxast.PragmaStatement) bool {
 	return strings.TrimSpace(stmt.Value) != ""
 }
 
-func hasMySQLVersionedComment(dialect driver.Dialect, sql string) bool {
-	return dialect == driver.DialectMySQL && strings.Contains(sql, "/*!")
+func hasMySQLVersionedComment(dialect dbengine.Dialect, sql string) bool {
+	return dialect == dbengine.DialectMySQL && strings.Contains(sql, "/*!")
 }
 
 func maxRisk(left, right classifier.Kind) classifier.Kind {

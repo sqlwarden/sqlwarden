@@ -10,7 +10,6 @@ import (
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/schema"
-	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -18,16 +17,16 @@ import (
 // target database, keeping schema handler tests focused on HTTP behavior.
 type schemaFakeDriver struct{}
 
-func (schemaFakeDriver) Connect(context.Context, driver.ConnectionConfig) error { return nil }
-func (schemaFakeDriver) Ping(context.Context) error                             { return nil }
-func (schemaFakeDriver) Close() error                                           { return nil }
+func (schemaFakeDriver) Connect(context.Context, dbengine.ConnectionConfig) error { return nil }
+func (schemaFakeDriver) Ping(context.Context) error                               { return nil }
+func (schemaFakeDriver) Close() error                                             { return nil }
 func (schemaFakeDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }
 func (schemaFakeDriver) Execute(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }
-func (schemaFakeDriver) Dialect() driver.Dialect { return driver.DialectSQLite }
+func (schemaFakeDriver) Dialect() dbengine.Dialect { return dbengine.DialectSQLite }
 
 func (schemaFakeDriver) SchemaSpec() schema.SchemaSpec {
 	return schema.SchemaSpec{
@@ -227,16 +226,18 @@ func TestGetConnectionCatalog_SessionConnectionMismatch(t *testing.T) {
 // nonSchemaInspectableDriver exercises the 501 unsupported-driver path.
 type nonSchemaInspectableDriver struct{}
 
-func (nonSchemaInspectableDriver) Connect(context.Context, driver.ConnectionConfig) error { return nil }
-func (nonSchemaInspectableDriver) Ping(context.Context) error                             { return nil }
-func (nonSchemaInspectableDriver) Close() error                                           { return nil }
+func (nonSchemaInspectableDriver) Connect(context.Context, dbengine.ConnectionConfig) error {
+	return nil
+}
+func (nonSchemaInspectableDriver) Ping(context.Context) error { return nil }
+func (nonSchemaInspectableDriver) Close() error               { return nil }
 func (nonSchemaInspectableDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }
 func (nonSchemaInspectableDriver) Execute(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }
-func (nonSchemaInspectableDriver) Dialect() driver.Dialect { return driver.DialectSQLite }
+func (nonSchemaInspectableDriver) Dialect() dbengine.Dialect { return dbengine.DialectSQLite }
 
 func TestGetConnectionCatalog_UnsupportedDriver(t *testing.T) {
 	t.Parallel()
@@ -254,12 +255,12 @@ func TestGetConnectionCatalog_UnsupportedDriver(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusNotImplemented)
 }
 
-func openSchemaSession(t *testing.T, app *application, accountID, connectionID int64, drv driver.Driver) *connection.Session {
+func openSchemaSession(t *testing.T, app *application, accountID, connectionID int64, drv dbengine.Driver) *connection.Session {
 	t.Helper()
 	sess, _, err := app.connManager.GetOrCreate(
 		strconv.FormatInt(accountID, 10),
 		strconv.FormatInt(connectionID, 10),
-		func() (dbengine.Connection, error) { return drv, nil },
+		func() (dbengine.Driver, error) { return drv, nil },
 	)
 	if err != nil {
 		t.Fatal(err)

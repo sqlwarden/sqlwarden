@@ -8,11 +8,10 @@ import (
 
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/dbsql"
-	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/pkg/result"
 )
 
-// mockDriver is a test double for driver.Driver that tracks calls.
+// mockDriver is a test double for dbengine.Driver that tracks calls.
 type mockDriver struct {
 	mu     sync.Mutex
 	closed bool
@@ -21,7 +20,7 @@ type mockDriver struct {
 	execs  int
 }
 
-func (d *mockDriver) Connect(ctx context.Context, cfg driver.ConnectionConfig) error { return nil }
+func (d *mockDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfig) error { return nil }
 func (d *mockDriver) Ping(ctx context.Context) error {
 	d.mu.Lock()
 	d.pings++
@@ -46,7 +45,7 @@ func (d *mockDriver) Execute(ctx context.Context, sql string, args ...any) (*res
 	d.mu.Unlock()
 	return &result.ResultSet{}, nil
 }
-func (d *mockDriver) Dialect() driver.Dialect { return driver.DialectSQLite }
+func (d *mockDriver) Dialect() dbengine.Dialect { return dbengine.DialectSQLite }
 
 // TestReuse verifies that calling GetOrCreate twice for the same account+conn returns the same session.
 func TestReuse(t *testing.T) {
@@ -54,7 +53,7 @@ func TestReuse(t *testing.T) {
 	defer m.Close()
 
 	calls := 0
-	open := func() (dbengine.Connection, error) {
+	open := func() (dbengine.Driver, error) {
 		calls++
 		d := &mockDriver{}
 		return d, nil
@@ -90,7 +89,7 @@ func TestIsolation(t *testing.T) {
 	m := New(5 * time.Minute)
 	defer m.Close()
 
-	open := func() (dbengine.Connection, error) {
+	open := func() (dbengine.Driver, error) {
 		return &mockDriver{}, nil
 	}
 
@@ -114,7 +113,7 @@ func TestGetByID(t *testing.T) {
 	m := New(5 * time.Minute)
 	defer m.Close()
 
-	open := func() (dbengine.Connection, error) {
+	open := func() (dbengine.Driver, error) {
 		return &mockDriver{}, nil
 	}
 
@@ -152,7 +151,7 @@ func TestReapIdle(t *testing.T) {
 	defer m.Close()
 
 	md := &mockDriver{}
-	open := func() (dbengine.Connection, error) {
+	open := func() (dbengine.Driver, error) {
 		return md, nil
 	}
 
@@ -187,7 +186,7 @@ func TestClose(t *testing.T) {
 	m := New(5 * time.Minute)
 
 	md := &mockDriver{}
-	open := func() (dbengine.Connection, error) {
+	open := func() (dbengine.Driver, error) {
 		return md, nil
 	}
 
@@ -219,7 +218,7 @@ func TestRemove(t *testing.T) {
 	defer m.Close()
 
 	md := &mockDriver{}
-	open := func() (dbengine.Connection, error) {
+	open := func() (dbengine.Driver, error) {
 		return md, nil
 	}
 
@@ -249,7 +248,7 @@ func TestCountAndRemoveForConnection(t *testing.T) {
 	m := New(5 * time.Minute)
 	defer m.Close()
 
-	open := func() (dbengine.Connection, error) {
+	open := func() (dbengine.Driver, error) {
 		return &mockDriver{}, nil
 	}
 
@@ -297,7 +296,7 @@ func TestSessionQueryAndExecuteUpdateLastUsed(t *testing.T) {
 	defer m.Close()
 
 	md := &mockDriver{}
-	open := func() (dbengine.Connection, error) {
+	open := func() (dbengine.Driver, error) {
 		return md, nil
 	}
 
@@ -388,7 +387,7 @@ func TestRemoveClosesActiveCursorsBeforeDriver(t *testing.T) {
 	defer m.Close()
 
 	md := &mockCursorDriver{}
-	sess, _, err := m.GetOrCreate("alice", "conn1", func() (dbengine.Connection, error) {
+	sess, _, err := m.GetOrCreate("alice", "conn1", func() (dbengine.Driver, error) {
 		return md, nil
 	})
 	if err != nil {

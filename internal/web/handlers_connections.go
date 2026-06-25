@@ -16,7 +16,6 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/classifier"
-	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -516,7 +515,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 	session, created, err := app.connManager.GetOrCreateWithMetadata(accountID, connID, connection.SessionMetadata{
 		OrgID:       strconv.FormatInt(org.ID, 10),
 		WorkspaceID: strconv.FormatInt(ws.ID, 10),
-	}, func() (dbengine.Connection, error) {
+	}, func() (dbengine.Driver, error) {
 		d, err := dbengine.New(conn.Driver)
 		if err != nil {
 			return nil, err
@@ -672,8 +671,8 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) driverConnectionConfig(driverName, dsn string) driver.ConnectionConfig {
-	return driver.ConnectionConfig{
+func (app *application) driverConnectionConfig(driverName, dsn string) dbengine.ConnectionConfig {
+	return dbengine.ConnectionConfig{
 		DSN:            dsn,
 		Driver:         driverName,
 		MaxResultRows:  app.config.Query.MaxResultRows,

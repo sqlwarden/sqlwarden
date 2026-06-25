@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/dbsql"
 	"github.com/sqlwarden/internal/dbengine/schema"
 	build "github.com/sqlwarden/internal/dbengine/schema/build"
-	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/pkg/result"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -65,7 +65,7 @@ func ensureParams(dsn string) string {
 	return base + "?" + query + "&" + addition
 }
 
-func (d *mysqlDriver) Connect(ctx context.Context, cfg driver.ConnectionConfig) error {
+func (d *mysqlDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfig) error {
 	dsn := ensureParams(cfg.DSN)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -116,8 +116,8 @@ func (d *mysqlDriver) StartQuery(ctx context.Context, req dbsql.QueryRequest) (d
 	return cursor, nil
 }
 
-func (d *mysqlDriver) Dialect() driver.Dialect {
-	return driver.DialectMySQL
+func (d *mysqlDriver) Dialect() dbengine.Dialect {
+	return dbengine.DialectMySQL
 }
 
 func (d *mysqlDriver) SchemaSpec() schema.SchemaSpec {

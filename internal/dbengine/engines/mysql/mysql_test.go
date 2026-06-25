@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/docker/go-connections/nat"
+	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/dbsql"
 	"github.com/sqlwarden/internal/dbengine/schema"
-	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/pkg/result"
 	"github.com/testcontainers/testcontainers-go"
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
@@ -64,7 +64,7 @@ func newConnectedDriver(t *testing.T) *mysqlDriver {
 	t.Helper()
 	d := &mysqlDriver{}
 	ctx := context.Background()
-	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: testDSN, Driver: "mysql"}); err != nil {
+	if err := d.Connect(ctx, dbengine.ConnectionConfig{DSN: testDSN, Driver: "mysql"}); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
 	t.Cleanup(func() { _ = d.Close() })
@@ -75,7 +75,7 @@ func TestConnect(t *testing.T) {
 	t.Run("valid DSN", func(t *testing.T) {
 		d := &mysqlDriver{}
 		ctx := context.Background()
-		if err := d.Connect(ctx, driver.ConnectionConfig{DSN: testDSN, Driver: "mysql"}); err != nil {
+		if err := d.Connect(ctx, dbengine.ConnectionConfig{DSN: testDSN, Driver: "mysql"}); err != nil {
 			t.Fatalf("expected connect to succeed, got: %v", err)
 		}
 		t.Cleanup(func() { _ = d.Close() })
@@ -84,7 +84,7 @@ func TestConnect(t *testing.T) {
 	t.Run("invalid DSN", func(t *testing.T) {
 		d := &mysqlDriver{}
 		ctx := context.Background()
-		err := d.Connect(ctx, driver.ConnectionConfig{DSN: "testuser:testpass@tcp(127.0.0.1:19999)/nonexistent", Driver: "mysql"})
+		err := d.Connect(ctx, dbengine.ConnectionConfig{DSN: "testuser:testpass@tcp(127.0.0.1:19999)/nonexistent", Driver: "mysql"})
 		if err == nil {
 			_ = d.Close()
 			t.Fatal("expected connect to fail with invalid DSN, got nil")
@@ -484,8 +484,8 @@ func hasIndex(indexes []schema.Index, name, column string) bool {
 
 func TestDialect(t *testing.T) {
 	d := &mysqlDriver{}
-	if d.Dialect() != driver.DialectMySQL {
-		t.Errorf("expected dialect %q, got %q", driver.DialectMySQL, d.Dialect())
+	if d.Dialect() != dbengine.DialectMySQL {
+		t.Errorf("expected dialect %q, got %q", dbengine.DialectMySQL, d.Dialect())
 	}
 }
 

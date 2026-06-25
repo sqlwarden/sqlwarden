@@ -36,8 +36,8 @@ type Session struct {
 	ConnectionID string
 	OrgID        string
 	WorkspaceID  string
-	Conn         dbengine.Connection // open connection
-	mu           sync.Mutex          // serializes Query/Execute on this session
+	Conn         dbengine.Driver // open connection
+	mu           sync.Mutex      // serializes Query/Execute on this session
 	cursors      map[string]*QueryCursorHandle
 	lastUsed     time.Time
 }
@@ -164,13 +164,13 @@ func New(idleTimeout time.Duration) *Manager {
 
 // GetOrCreate returns the existing session for (accountID, connID) or creates one using open().
 // Returns: (session, created, error) where created=true means a new session was opened.
-func (m *Manager) GetOrCreate(accountID, connID string, open func() (dbengine.Connection, error)) (*Session, bool, error) {
+func (m *Manager) GetOrCreate(accountID, connID string, open func() (dbengine.Driver, error)) (*Session, bool, error) {
 	return m.GetOrCreateWithMetadata(accountID, connID, SessionMetadata{}, open)
 }
 
 // GetOrCreateWithMetadata returns an existing session or creates one with
 // resource metadata used for workspace-scoped admin visibility and revocation.
-func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata SessionMetadata, open func() (dbengine.Connection, error)) (*Session, bool, error) {
+func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata SessionMetadata, open func() (dbengine.Driver, error)) (*Session, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

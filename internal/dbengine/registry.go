@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-
-	"github.com/sqlwarden/internal/driver"
 )
 
 // Registration declares one engine: its identity plus a factory that returns a
@@ -16,7 +14,7 @@ type Registration struct {
 	ID          EngineID
 	DisplayName string
 	Dialect     Dialect
-	NewDriver   func() driver.Driver
+	New         func() Driver
 }
 
 var (
@@ -29,8 +27,8 @@ func Register(reg Registration) {
 	if reg.ID == "" {
 		panic("dbengine: Register called with empty id")
 	}
-	if reg.NewDriver == nil {
-		panic(fmt.Sprintf("dbengine: Register %q called with nil NewDriver", reg.ID))
+	if reg.New == nil {
+		panic(fmt.Sprintf("dbengine: Register %q called with nil New", reg.ID))
 	}
 	registryMu.Lock()
 	defer registryMu.Unlock()
@@ -43,20 +41,20 @@ func Register(reg Registration) {
 // New returns a fresh, non-connected driver for the engine registered under
 // name (alias-normalized: "postgresql" -> "postgres", etc.). Call Connect for a
 // live session; assert capability interfaces for connectionless features.
-func New(name string) (driver.Driver, error) {
+func New(name string) (Driver, error) {
 	registryMu.RLock()
-	reg, ok := registry[EngineID(driver.NormalizeName(name))]
+	reg, ok := registry[EngineID(NormalizeName(name))]
 	registryMu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", ErrUnknownEngine, name)
 	}
-	return reg.NewDriver(), nil
+	return reg.New(), nil
 }
 
 // Describe returns the static capability report for one engine.
 func Describe(name string) (CapabilitySet, bool) {
 	registryMu.RLock()
-	reg, ok := registry[EngineID(driver.NormalizeName(name))]
+	reg, ok := registry[EngineID(NormalizeName(name))]
 	registryMu.RUnlock()
 	if !ok {
 		return CapabilitySet{}, false

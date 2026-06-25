@@ -6,9 +6,9 @@ import (
 
 	"github.com/sqlwarden/internal/assert"
 
-	_ "github.com/sqlwarden/internal/driver/mysql"
-	_ "github.com/sqlwarden/internal/driver/postgres"
-	_ "github.com/sqlwarden/internal/driver/sqlite"
+	_ "github.com/sqlwarden/internal/dbengine/engines/mysql"
+	_ "github.com/sqlwarden/internal/dbengine/engines/postgres"
+	_ "github.com/sqlwarden/internal/dbengine/engines/sqlite"
 )
 
 func TestListEngines(t *testing.T) {

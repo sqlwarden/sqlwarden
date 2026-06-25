@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/dbsql"
 	"github.com/sqlwarden/internal/dbengine/schema"
-	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -16,7 +16,7 @@ func TestSQLiteDriver(t *testing.T) {
 	d := &sqliteDriver{}
 	ctx := context.Background()
 
-	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: "file:introspect_schema?mode=memory&cache=shared", Driver: "sqlite"}); err != nil {
+	if err := d.Connect(ctx, dbengine.ConnectionConfig{DSN: "file:introspect_schema?mode=memory&cache=shared", Driver: "sqlite"}); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
 	defer d.Close()
@@ -50,7 +50,7 @@ func TestSQLiteDriver(t *testing.T) {
 	}
 
 	// Test Dialect.
-	if d.Dialect() != driver.DialectSQLite {
+	if d.Dialect() != dbengine.DialectSQLite {
 		t.Errorf("expected dialect sqlite, got %s", d.Dialect())
 	}
 }
@@ -59,7 +59,7 @@ func TestInspectCatalogAndObjects(t *testing.T) {
 	d := &sqliteDriver{}
 	ctx := context.Background()
 
-	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
+	if err := d.Connect(ctx, dbengine.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
 	defer d.Close()
@@ -145,7 +145,7 @@ func TestSQLiteStartQueryCursor(t *testing.T) {
 	d := &sqliteDriver{}
 	ctx := context.Background()
 
-	if err := d.Connect(ctx, driver.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
+	if err := d.Connect(ctx, dbengine.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
 	defer d.Close()

@@ -20,7 +20,6 @@ import (
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/dbsql"
-	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -1382,7 +1381,7 @@ func TestRevokeWorkspaceDatabaseSession_OwnerCanRevokeOwnSession(t *testing.T) {
 			OrgID:       strconv.FormatInt(org.ID, 10),
 			WorkspaceID: strconv.FormatInt(ws.ID, 10),
 		},
-		func() (dbengine.Connection, error) { return newIdleQueryDriver(), nil },
+		func() (dbengine.Driver, error) { return newIdleQueryDriver(), nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1414,7 +1413,7 @@ func TestRevokeWorkspaceDatabaseSession_AdminCanRevokeWorkspaceSession(t *testin
 			OrgID:       strconv.FormatInt(org.ID, 10),
 			WorkspaceID: strconv.FormatInt(ws.ID, 10),
 		},
-		func() (dbengine.Connection, error) { return newIdleQueryDriver(), nil },
+		func() (dbengine.Driver, error) { return newIdleQueryDriver(), nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1444,7 +1443,7 @@ func TestRevokeWorkspaceDatabaseSession_CrossWorkspaceHidden(t *testing.T) {
 			OrgID:       strconv.FormatInt(org.ID, 10),
 			WorkspaceID: strconv.FormatInt(wsB.ID, 10),
 		},
-		func() (dbengine.Connection, error) { return newIdleQueryDriver(), nil },
+		func() (dbengine.Driver, error) { return newIdleQueryDriver(), nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1531,7 +1530,7 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 	cancelledSession, _, err := app.connManager.GetOrCreate(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(connA.ID, 10),
-		func() (dbengine.Connection, error) { return blockingDriver, nil },
+		func() (dbengine.Driver, error) { return blockingDriver, nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1540,7 +1539,7 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 	unrelatedSession, _, err := app.connManager.GetOrCreate(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(connB.ID, 10),
-		func() (dbengine.Connection, error) { return newIdleQueryDriver(), nil },
+		func() (dbengine.Driver, error) { return newIdleQueryDriver(), nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1861,10 +1860,10 @@ func newBlockingQueryDriver() *blockingQueryDriver {
 	return &blockingQueryDriver{started: make(chan struct{})}
 }
 
-func (d *blockingQueryDriver) Connect(context.Context, driver.ConnectionConfig) error { return nil }
-func (d *blockingQueryDriver) Ping(context.Context) error                             { return nil }
-func (d *blockingQueryDriver) Close() error                                           { return nil }
-func (d *blockingQueryDriver) Dialect() driver.Dialect                                { return driver.DialectSQLite }
+func (d *blockingQueryDriver) Connect(context.Context, dbengine.ConnectionConfig) error { return nil }
+func (d *blockingQueryDriver) Ping(context.Context) error                               { return nil }
+func (d *blockingQueryDriver) Close() error                                             { return nil }
+func (d *blockingQueryDriver) Dialect() dbengine.Dialect                                { return dbengine.DialectSQLite }
 func (d *blockingQueryDriver) Query(ctx context.Context, _ string, _ ...any) (*result.ResultSet, error) {
 	d.startOnce.Do(func() { close(d.started) })
 	<-ctx.Done()
@@ -1878,10 +1877,10 @@ type idleQueryDriver struct{}
 
 func newIdleQueryDriver() *idleQueryDriver { return &idleQueryDriver{} }
 
-func (d *idleQueryDriver) Connect(context.Context, driver.ConnectionConfig) error { return nil }
-func (d *idleQueryDriver) Ping(context.Context) error                             { return nil }
-func (d *idleQueryDriver) Close() error                                           { return nil }
-func (d *idleQueryDriver) Dialect() driver.Dialect                                { return driver.DialectSQLite }
+func (d *idleQueryDriver) Connect(context.Context, dbengine.ConnectionConfig) error { return nil }
+func (d *idleQueryDriver) Ping(context.Context) error                               { return nil }
+func (d *idleQueryDriver) Close() error                                             { return nil }
+func (d *idleQueryDriver) Dialect() dbengine.Dialect                                { return dbengine.DialectSQLite }
 func (d *idleQueryDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }
