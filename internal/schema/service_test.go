@@ -9,47 +9,50 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/sqlwarden/internal/cache"
+	schemameta "github.com/sqlwarden/internal/dbengine/schema"
 )
 
 type fakeSchemaInspector struct {
 	mu          sync.Mutex
 	catalogHits int32
 	objectCalls int32
-	objectRefs  [][]ObjectRef
+	objectRefs  [][]schemameta.ObjectRef
 	delay       time.Duration
 }
 
-func (f *fakeSchemaInspector) SchemaSpec() SchemaSpec {
-	return SchemaSpec{Dialect: "fake", Kinds: []SchemaObjectKind{{Kind: "table"}}}
+func (f *fakeSchemaInspector) SchemaSpec() schemameta.SchemaSpec {
+	return schemameta.SchemaSpec{Dialect: "fake", Kinds: []schemameta.SchemaObjectKind{{Kind: "table"}}}
 }
 
-func (f *fakeSchemaInspector) InspectCatalog(ctx context.Context, opts CatalogOptions) (*Catalog, error) {
+func (f *fakeSchemaInspector) InspectCatalog(ctx context.Context, opts schemameta.CatalogOptions) (*schemameta.Catalog, error) {
 	atomic.AddInt32(&f.catalogHits, 1)
 	if f.delay > 0 {
 		time.Sleep(f.delay)
 	}
-	return &Catalog{
+	return &schemameta.Catalog{
 		Dialect: "fake",
-		Namespaces: []NamespaceCatalog{{Name: "public", Groups: []ObjectGroupCatalog{{
+		Namespaces: []schemameta.NamespaceCatalog{{Name: "public", Groups: []schemameta.ObjectGroupCatalog{{
 			Kind:    "table",
-			Objects: []ObjectRef{{Namespace: "public", Kind: "table", Name: "users"}},
+			Objects: []schemameta.ObjectRef{{Namespace: "public", Kind: "table", Name: "users"}},
 		}}}},
 	}, nil
 }
 
-func (f *fakeSchemaInspector) InspectObjects(ctx context.Context, refs []ObjectRef) ([]Object, error) {
+func (f *fakeSchemaInspector) InspectObjects(ctx context.Context, refs []schemameta.ObjectRef) ([]schemameta.Object, error) {
 	atomic.AddInt32(&f.objectCalls, 1)
 	f.mu.Lock()
 	f.objectRefs = append(f.objectRefs, refs)
 	f.mu.Unlock()
-	out := make([]Object, 0, len(refs))
+	out := make([]schemameta.Object, 0, len(refs))
 	for _, r := range refs {
-		out = append(out, Object{Ref: r, Relational: &RelationalDetail{Columns: []Column{{Name: "id"}}}})
+		out = append(out, schemameta.Object{Ref: r, Relational: &schemameta.RelationalDetail{Columns: []schemameta.Column{{Name: "id"}}}})
 	}
 	return out, nil
 }
 
-func newService() *Service { return NewService(NewMemCache(64), time.Minute) }
+func newService() *Service { return NewService(cache.NewMemCache(64), time.Minute) }
 
 func TestServiceCatalogCachesAfterMiss(t *testing.T) {
 	s := newService()
@@ -83,14 +86,14 @@ func TestServiceObjectsFetchesOnlyMissing(t *testing.T) {
 	s := newService()
 	intr := &fakeSchemaInspector{}
 	ctx := context.Background()
-	users := ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
-	orders := ObjectRef{Namespace: "public", Kind: "table", Name: "orders"}
+	users := schemameta.ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
+	orders := schemameta.ObjectRef{Namespace: "public", Kind: "table", Name: "orders"}
 
-	if _, err := s.Objects(ctx, "c1", []ObjectRef{users}, intr); err != nil {
+	if _, err := s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr); err != nil {
 		t.Fatal(err)
 	}
 	// users now cached; requesting users+orders must fetch only orders.
-	got, err := s.Objects(ctx, "c1", []ObjectRef{users, orders}, intr)
+	got, err := s.Objects(ctx, "c1", []schemameta.ObjectRef{users, orders}, intr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,14 +114,14 @@ func TestServiceRefreshObjectVsConnection(t *testing.T) {
 	s := newService()
 	intr := &fakeSchemaInspector{}
 	ctx := context.Background()
-	users := ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
+	users := schemameta.ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
 
 	_, _ = s.Catalog(ctx, "c1", intr)
-	_, _ = s.Objects(ctx, "c1", []ObjectRef{users}, intr)
+	_, _ = s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr)
 
 	// RefreshObject drops only the object; catalog stays cached.
 	s.RefreshObject("c1", users)
-	_, _ = s.Objects(ctx, "c1", []ObjectRef{users}, intr)
+	_, _ = s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr)
 	_, _ = s.Catalog(ctx, "c1", intr)
 	if got := atomic.LoadInt32(&intr.objectCalls); got != 2 {
 		t.Fatalf("want 2 object fetches after RefreshObject, got %d", got)
@@ -130,7 +133,7 @@ func TestServiceRefreshObjectVsConnection(t *testing.T) {
 	// RefreshConnection drops catalog + all object detail.
 	s.RefreshConnection("c1")
 	_, _ = s.Catalog(ctx, "c1", intr)
-	_, _ = s.Objects(ctx, "c1", []ObjectRef{users}, intr)
+	_, _ = s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr)
 	if got := atomic.LoadInt32(&intr.catalogHits); got != 2 {
 		t.Fatalf("catalog should re-inspect after RefreshConnection, got %d", got)
 	}
@@ -141,7 +144,7 @@ func TestServiceRefreshObjectVsConnection(t *testing.T) {
 
 type erroringSchemaInspector struct{ fakeSchemaInspector }
 
-func (e *erroringSchemaInspector) InspectCatalog(ctx context.Context, opts CatalogOptions) (*Catalog, error) {
+func (e *erroringSchemaInspector) InspectCatalog(ctx context.Context, opts schemameta.CatalogOptions) (*schemameta.Catalog, error) {
 	return nil, context.DeadlineExceeded
 }
 
@@ -159,15 +162,15 @@ func TestServiceDoesNotCacheCatalogError(t *testing.T) {
 func TestServiceLogsInspectionWithoutObjectNames(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	s := NewServiceWithLogger(NewMemCache(64), time.Minute, logger)
+	s := NewServiceWithLogger(cache.NewMemCache(64), time.Minute, logger)
 	intr := &fakeSchemaInspector{}
 	ctx := context.Background()
-	users := ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
+	users := schemameta.ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
 
 	if _, err := s.Catalog(ctx, "c1", intr); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Objects(ctx, "c1", []ObjectRef{users}, intr); err != nil {
+	if _, err := s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr); err != nil {
 		t.Fatal(err)
 	}
 	s.RefreshObject("c1", users)

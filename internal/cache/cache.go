@@ -1,4 +1,7 @@
-package schema
+// Package cache provides reusable in-process cache primitives for application
+// services. Implementations store opaque bytes so domain packages control their
+// own serialization format.
+package cache
 
 import (
 	"container/list"
@@ -7,10 +10,8 @@ import (
 	"time"
 )
 
-// Cache stores opaque byte values keyed by string. The schema Service derives
-// keys from connection ID and ObjectRef, and stores gzip-compressed JSON, so a
-// future Redis-backed Cache can reuse the same byte representation.
-// Implementations must be safe for concurrent use.
+// Cache stores opaque byte values keyed by string. Implementations must be safe
+// for concurrent use.
 type Cache interface {
 	Get(key string) ([]byte, bool)
 	Set(key string, data []byte, ttl time.Duration)
