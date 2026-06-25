@@ -28,11 +28,10 @@ func TestClassifierPropertyDangerousNeverDQL(t *testing.T) {
 	dialects := []driver.Dialect{driver.DialectPostgres, driver.DialectMySQL, driver.DialectSQLite}
 
 	for _, d := range dialects {
-		c := NewClassifier(d)
 		for _, prefix := range prefixes {
 			for _, danger := range dangerous {
 				sql := prefix + danger
-				got, err := c.Classify(context.Background(), classifier.Request{SQL: sql})
+				got, err := Classify(context.Background(), d, classifier.Request{SQL: sql})
 				if err != nil {
 					t.Fatalf("Classify(%q) error: %v", sql, err)
 				}

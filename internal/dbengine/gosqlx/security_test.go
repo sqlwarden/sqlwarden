@@ -58,7 +58,7 @@ func TestProviderSecurityClassificationNeverTreatsDangerousSQLAsDQL(t *testing.T
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := NewClassifier(fixture.dialect).Classify(context.Background(), classifier.Request{SQL: fixture.sql})
+			got, err := Classify(context.Background(), fixture.dialect, classifier.Request{SQL: fixture.sql})
 			if err != nil {
 				t.Fatalf("Classify() error = %v", err)
 			}
@@ -89,7 +89,7 @@ func TestProviderSecurityClassificationAllowsSafeDQLWithInjectionLikeText(t *tes
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := NewClassifier(fixture.dialect).Classify(context.Background(), classifier.Request{SQL: fixture.sql})
+			got, err := Classify(context.Background(), fixture.dialect, classifier.Request{SQL: fixture.sql})
 			if err != nil {
 				t.Fatalf("Classify() error = %v", err)
 			}
@@ -120,7 +120,7 @@ func TestProviderRewriteRejectsSecuritySensitiveSQL(t *testing.T) {
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := NewRewriter(fixture.dialect).Rewrite(context.Background(), rewriter.Request{
+			got, err := Rewrite(context.Background(), fixture.dialect, rewriter.Request{
 				SQL:     fixture.sql,
 				Purpose: rewriter.PurposePagination,
 				Limit:   50,

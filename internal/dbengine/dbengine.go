@@ -10,8 +10,8 @@ import (
 // EngineID is the canonical identifier for a database engine (e.g. "postgres").
 type EngineID string
 
-// Dialect re-exports the driver dialect during the facade phase so callers can
-// depend on dbengine without importing internal/driver directly.
+// Dialect re-exports the driver dialect so callers can depend on dbengine
+// without importing internal/driver directly.
 type Dialect = driver.Dialect
 
 const (
@@ -20,7 +20,7 @@ const (
 	DialectSQLite   = driver.DialectSQLite
 )
 
-// ConnectionConfig re-exports driver.ConnectionConfig during the facade phase.
+// ConnectionConfig re-exports driver.ConnectionConfig.
 type ConnectionConfig = driver.ConnectionConfig
 
 // EngineDescriptor is the static identity of an engine, safe to serialize and
@@ -31,19 +31,10 @@ type EngineDescriptor struct {
 	Dialect     Dialect  `json:"dialect"`
 }
 
-// Engine is a registered database engine. Every method except Open is static
-// and must not require a live target connection.
-type Engine interface {
-	ID() EngineID
-	DisplayName() string
-	Dialect() Dialect
-	Capabilities() CapabilitySet
-	Open(ctx context.Context, cfg ConnectionConfig) (Connection, error)
-}
-
-// Connection is a live target-database session opened by an Engine. Optional
-// capabilities (schema inspection, cursors) are resolved by asserting the
-// concrete connection against schema.SchemaInspector / dbsql.QueryCursorDriver.
+// Connection is a live target-database session: a driver returned by New on
+// which Connect has been called. Optional capabilities (schema inspection,
+// cursors) are resolved by asserting the concrete connection against
+// schema.SchemaInspector / dbsql.QueryCursorDriver.
 type Connection interface {
 	Ping(ctx context.Context) error
 	Close() error

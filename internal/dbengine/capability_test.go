@@ -32,8 +32,10 @@ func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 		ID: "postgres", DisplayName: "PostgreSQL", Dialect: DialectPostgres,
 		NewDriver: func() driver.Driver { return schemaCursorDriver{} },
 	})
-	eng, _ := New("postgres")
-	set := eng.Capabilities()
+	set, ok := Describe("postgres")
+	if !ok {
+		t.Fatal("Describe should find the registered engine")
+	}
 
 	if set.Engine.ID != "postgres" {
 		t.Fatalf("descriptor ID = %q", set.Engine.ID)
@@ -47,16 +49,16 @@ func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	if set.Schema == nil || len(set.Schema.Kinds) != 1 {
 		t.Errorf("schema spec should be populated from SchemaSpec(): %+v", set.Schema)
 	}
-	if !set.Capabilities[CapabilitySQLClassify] {
-		t.Errorf("sql.classify should be true (heuristic fallback always classifies)")
+	// SQL features are derived from interfaces too: this fake implements none.
+	if set.Capabilities[CapabilitySQLClassify] || set.Capabilities[CapabilitySQLParse] || set.Capabilities[CapabilitySQLRewrite] {
+		t.Errorf("sql caps should be false for a driver implementing no SQL feature: %+v", set.Capabilities)
 	}
 }
 
 func TestCapabilitiesAbsentWhenInterfacesNotImplemented(t *testing.T) {
 	resetRegistry(t)
 	registerFake("plain", DialectPostgres) // fakeDriver implements neither schema nor cursor
-	eng, _ := New("plain")
-	set := eng.Capabilities()
+	set, _ := Describe("plain")
 
 	if set.Capabilities[CapabilitySchemaCatalog] || set.Capabilities[CapabilityQueryCursor] {
 		t.Errorf("plain driver must not report schema/cursor caps: %+v", set.Capabilities)

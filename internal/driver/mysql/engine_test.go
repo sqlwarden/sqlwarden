@@ -8,10 +8,6 @@ import (
 )
 
 func TestMySQLEngineContract(t *testing.T) {
-	eng, err := dbengine.New("mysql")
-	if err != nil {
-		t.Fatalf("dbengine.New(mysql): %v", err)
-	}
-	enginetest.RunCapabilityContract(t, eng)
-	enginetest.RunConnectionContract(t, eng, dbengine.ConnectionConfig{DSN: testDSN, Driver: "mysql"})
+	enginetest.RunCapabilityContract(t, "mysql")
+	enginetest.RunConnectionContract(t, "mysql", dbengine.ConnectionConfig{DSN: testDSN, Driver: "mysql"})
 }

@@ -15,10 +15,6 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-func init() {
-	driver.Register("mysql", func() driver.Driver { return &mysqlDriver{} })
-}
-
 type mysqlDriver struct {
 	db          *sql.DB
 	scanOptions dbsql.ScanOptions

@@ -8,10 +8,6 @@ import (
 )
 
 func TestPostgresEngineContract(t *testing.T) {
-	eng, err := dbengine.New("postgres")
-	if err != nil {
-		t.Fatalf("dbengine.New(postgres): %v", err)
-	}
-	enginetest.RunCapabilityContract(t, eng)
-	enginetest.RunConnectionContract(t, eng, dbengine.ConnectionConfig{DSN: testDSN, Driver: "postgres"})
+	enginetest.RunCapabilityContract(t, "postgres")
+	enginetest.RunConnectionContract(t, "postgres", dbengine.ConnectionConfig{DSN: testDSN, Driver: "postgres"})
 }

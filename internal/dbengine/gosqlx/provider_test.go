@@ -58,7 +58,7 @@ func TestProviderClassifiesSQLWardenCorpus(t *testing.T) {
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := NewClassifier(fixture.dialect).Classify(context.Background(), classifier.Request{SQL: fixture.sql})
+			got, err := Classify(context.Background(), fixture.dialect, classifier.Request{SQL: fixture.sql})
 			if err != nil {
 				t.Fatalf("Classify() error = %v", err)
 			}
@@ -75,7 +75,7 @@ func TestProviderClassifiesSQLWardenCorpus(t *testing.T) {
 func TestProviderClassifiesInvalidSQLAsUnknown(t *testing.T) {
 	t.Parallel()
 
-	got, err := NewClassifier(driver.DialectPostgres).Classify(context.Background(), classifier.Request{SQL: "SELECT FROM WHERE"})
+	got, err := Classify(context.Background(), driver.DialectPostgres, classifier.Request{SQL: "SELECT FROM WHERE"})
 	if err != nil {
 		t.Fatalf("Classify() error = %v", err)
 	}
@@ -87,7 +87,7 @@ func TestProviderClassifiesInvalidSQLAsUnknown(t *testing.T) {
 func TestProviderParsesCompleteAndIncompleteSQL(t *testing.T) {
 	t.Parallel()
 
-	complete, err := NewParser(driver.DialectPostgres).Parse(context.Background(), parser.Request{
+	complete, err := Parse(context.Background(), driver.DialectPostgres, parser.Request{
 		SQL: "SELECT * FROM accounts; SELECT * FROM sessions",
 	})
 	if err != nil {
@@ -98,7 +98,7 @@ func TestProviderParsesCompleteAndIncompleteSQL(t *testing.T) {
 	}
 
 	cursor := len("SELECT * FROM")
-	incomplete, err := NewParser(driver.DialectPostgres).Parse(context.Background(), parser.Request{
+	incomplete, err := Parse(context.Background(), driver.DialectPostgres, parser.Request{
 		SQL:          "SELECT * FROM",
 		CursorOffset: &cursor,
 	})
@@ -174,7 +174,7 @@ func TestProviderRewritePagination(t *testing.T) {
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := NewRewriter(fixture.dialect).Rewrite(context.Background(), rewriter.Request{
+			got, err := Rewrite(context.Background(), fixture.dialect, rewriter.Request{
 				SQL:     fixture.sql,
 				Purpose: rewriter.PurposePagination,
 				Limit:   fixture.limit,

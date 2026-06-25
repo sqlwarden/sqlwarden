@@ -22,18 +22,18 @@ var knownCapabilities = map[dbengine.Capability]bool{
 }
 
 // RunCapabilityContract asserts the static-capability invariants every engine
-// must satisfy. It MUST pass without opening a target connection.
-func RunCapabilityContract(t *testing.T, eng dbengine.Engine) {
+// must satisfy. It must pass without opening a target connection.
+func RunCapabilityContract(t *testing.T, name string) {
 	t.Helper()
-	if eng.ID() == "" {
+	set, ok := dbengine.Describe(name)
+	if !ok {
+		t.Fatalf("engine %q is not registered", name)
+	}
+	if set.Engine.ID == "" {
 		t.Fatal("engine ID must not be empty")
 	}
-	if eng.Dialect() == "" {
+	if set.Engine.Dialect == "" {
 		t.Fatal("engine Dialect must not be empty")
-	}
-	set := eng.Capabilities()
-	if set.Engine.ID != eng.ID() {
-		t.Fatalf("descriptor ID %q != engine ID %q", set.Engine.ID, eng.ID())
 	}
 	for capability := range set.Capabilities {
 		if !knownCapabilities[capability] {
@@ -48,19 +48,22 @@ func RunCapabilityContract(t *testing.T, eng dbengine.Engine) {
 	}
 }
 
-// RunConnectionContract opens a real connection and verifies the adapter
-// round-trips a trivial query. Callers supply a live DSN (e.g. a testcontainer).
-func RunConnectionContract(t *testing.T, eng dbengine.Engine, cfg dbengine.ConnectionConfig) {
+// RunConnectionContract opens a real connection — New + Connect — and verifies a
+// trivial query round-trips. Callers supply a live DSN (e.g. a testcontainer).
+func RunConnectionContract(t *testing.T, name string, cfg dbengine.ConnectionConfig) {
 	t.Helper()
-	conn, err := eng.Open(context.Background(), cfg)
+	d, err := dbengine.New(name)
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("New: %v", err)
 	}
-	t.Cleanup(func() { _ = conn.Close() })
-	if err := conn.Ping(context.Background()); err != nil {
+	if err := d.Connect(context.Background(), cfg); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = d.Close() })
+	if err := d.Ping(context.Background()); err != nil {
 		t.Fatalf("Ping: %v", err)
 	}
-	rs, err := conn.Query(context.Background(), "SELECT 1")
+	rs, err := d.Query(context.Background(), "SELECT 1")
 	if err != nil {
 		t.Fatalf("Query SELECT 1: %v", err)
 	}
