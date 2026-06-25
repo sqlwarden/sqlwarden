@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/schema"
+	build "github.com/sqlwarden/internal/dbengine/schema/build"
 	"github.com/sqlwarden/internal/driver"
-	build "github.com/sqlwarden/internal/driver/internal/build"
-	"github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/pkg/result"
 
 	_ "modernc.org/sqlite"
@@ -20,7 +21,7 @@ func init() {
 
 type sqliteDriver struct {
 	db          *sql.DB
-	scanOptions driver.ScanOptions
+	scanOptions dbsql.ScanOptions
 }
 
 func (d *sqliteDriver) Connect(ctx context.Context, cfg driver.ConnectionConfig) error {
@@ -38,7 +39,7 @@ func (d *sqliteDriver) Connect(ctx context.Context, cfg driver.ConnectionConfig)
 		return fmt.Errorf("sqlite: WAL mode: %w", err)
 	}
 	d.db = db
-	d.scanOptions = driver.ScanOptions{MaxRows: cfg.MaxResultRows, MaxBytes: cfg.MaxResultBytes}
+	d.scanOptions = dbsql.ScanOptions{MaxRows: cfg.MaxResultRows, MaxBytes: cfg.MaxResultBytes}
 	return nil
 }
 
@@ -55,7 +56,7 @@ func (d *sqliteDriver) Query(ctx context.Context, query string, args ...any) (*r
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: query: %w", err)
 	}
-	return driver.ScanRows(rows, d.scanOptions)
+	return dbsql.ScanRows(rows, d.scanOptions)
 }
 
 func (d *sqliteDriver) Execute(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
@@ -63,15 +64,15 @@ func (d *sqliteDriver) Execute(ctx context.Context, query string, args ...any) (
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: execute: %w", err)
 	}
-	return driver.ScanRows(rows, d.scanOptions)
+	return dbsql.ScanRows(rows, d.scanOptions)
 }
 
-func (d *sqliteDriver) StartQuery(ctx context.Context, req driver.QueryRequest) (driver.QueryCursor, error) {
+func (d *sqliteDriver) StartQuery(ctx context.Context, req dbsql.QueryRequest) (dbsql.QueryCursor, error) {
 	rows, err := d.db.QueryContext(ctx, req.SQL, req.Args...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: start query: %w", err)
 	}
-	cursor, err := driver.NewSQLRowsCursor(rows)
+	cursor, err := dbsql.NewSQLRowsCursor(rows)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: start query cursor: %w", err)
 	}

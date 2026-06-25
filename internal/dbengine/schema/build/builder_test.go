@@ -3,7 +3,7 @@ package build
 import (
 	"testing"
 
-	"github.com/sqlwarden/internal/schema"
+	"github.com/sqlwarden/internal/dbengine/schema"
 )
 
 func TestCatalogBuilderOrdersGroupsByDeclaration(t *testing.T) {

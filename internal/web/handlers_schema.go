@@ -6,9 +6,9 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
-	"github.com/sqlwarden/internal/schema"
 )
 
 type schemaSpecResponse struct {
@@ -76,7 +76,7 @@ func (app *application) resolveSchemaInspector(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return nil, nil, false
 	}
-	intr, ok := session.Driver.(schema.SchemaInspector)
+	intr, ok := session.Conn.(schema.SchemaInspector)
 	if !ok {
 		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
 		return nil, nil, false

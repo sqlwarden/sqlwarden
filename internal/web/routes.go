@@ -63,6 +63,9 @@ func (app *application) routes() http.Handler {
 			r.Delete("/account/sessions", app.revokeAccountSessions)
 			r.Delete("/account/sessions/{session_id}", app.revokeAccountSession)
 			r.Get("/session", app.getSession)
+
+			r.Get("/engines", app.listEngines)
+			r.Get("/engines/{engine_id}", app.getEngine)
 		})
 
 		r.Route("/me", func(r chi.Router) {

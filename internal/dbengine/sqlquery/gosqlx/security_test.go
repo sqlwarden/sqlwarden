@@ -1,12 +1,12 @@
-package gosqlxprovider
+package gosqlx
 
 import (
 	"context"
 	"strings"
 	"testing"
 
+	"github.com/sqlwarden/internal/dbengine/sqlquery"
 	"github.com/sqlwarden/internal/driver"
-	"github.com/sqlwarden/internal/sqlquery"
 )
 
 func TestProviderSecurityClassificationNeverTreatsDangerousSQLAsDQL(t *testing.T) {
@@ -57,7 +57,7 @@ func TestProviderSecurityClassificationNeverTreatsDangerousSQLAsDQL(t *testing.T
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := sqlquery.Classify(context.Background(), sqlquery.ClassifyRequest{
+			got, err := NewClassifier().Classify(context.Background(), sqlquery.ClassifyRequest{
 				RequestMetadata: sqlquery.RequestMetadata{Dialect: fixture.dialect},
 				SQL:             fixture.sql,
 			})
@@ -91,7 +91,7 @@ func TestProviderSecurityClassificationAllowsSafeDQLWithInjectionLikeText(t *tes
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := sqlquery.Classify(context.Background(), sqlquery.ClassifyRequest{
+			got, err := NewClassifier().Classify(context.Background(), sqlquery.ClassifyRequest{
 				RequestMetadata: sqlquery.RequestMetadata{Dialect: fixture.dialect},
 				SQL:             fixture.sql,
 			})
@@ -125,7 +125,7 @@ func TestProviderRewriteRejectsSecuritySensitiveSQL(t *testing.T) {
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := sqlquery.Rewrite(context.Background(), sqlquery.RewriteRequest{
+			got, err := NewRewriter().Rewrite(context.Background(), sqlquery.RewriteRequest{
 				RequestMetadata: sqlquery.RequestMetadata{Dialect: fixture.dialect},
 				SQL:             fixture.sql,
 				Purpose:         sqlquery.RewritePurposePagination,

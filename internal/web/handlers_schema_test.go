@@ -8,8 +8,9 @@ import (
 
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/dbengine"
+	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/internal/driver"
-	"github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -258,7 +259,7 @@ func openSchemaSession(t *testing.T, app *application, accountID, connectionID i
 	sess, _, err := app.connManager.GetOrCreate(
 		strconv.FormatInt(accountID, 10),
 		strconv.FormatInt(connectionID, 10),
-		func() (driver.Driver, error) { return drv, nil },
+		func() (dbengine.Connection, error) { return drv, nil },
 	)
 	if err != nil {
 		t.Fatal(err)

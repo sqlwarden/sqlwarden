@@ -9,7 +9,8 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"github.com/sqlwarden/internal/driver"
+	"github.com/sqlwarden/internal/dbengine"
+	"github.com/sqlwarden/internal/dbengine/dbsql"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -35,15 +36,15 @@ type Session struct {
 	ConnectionID string
 	OrgID        string
 	WorkspaceID  string
-	Driver       driver.Driver // open connection
-	mu           sync.Mutex    // serializes Query/Execute on this session
+	Conn         dbengine.Connection // open connection
+	mu           sync.Mutex          // serializes Query/Execute on this session
 	cursors      map[string]*QueryCursorHandle
 	lastUsed     time.Time
 }
 
 type QueryCursorHandle struct {
 	ID     string
-	Cursor driver.QueryCursor
+	Cursor dbsql.QueryCursor
 	mu     sync.Mutex
 }
 
@@ -57,7 +58,7 @@ func (s *Session) Query(ctx context.Context, sql string, args ...any) (*result.R
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastUsed = time.Now()
-	return s.Driver.Query(ctx, sql, args...)
+	return s.Conn.Query(ctx, sql, args...)
 }
 
 // Execute executes a statement on the session, serialized via the session mutex.
@@ -65,16 +66,16 @@ func (s *Session) Execute(ctx context.Context, sql string, args ...any) (*result
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastUsed = time.Now()
-	return s.Driver.Execute(ctx, sql, args...)
+	return s.Conn.Execute(ctx, sql, args...)
 }
 
 func (s *Session) StartQueryCursor(ctx context.Context, sql string, args ...any) (*QueryCursorHandle, error) {
-	cursorDriver, ok := s.Driver.(driver.QueryCursorDriver)
+	cursorDriver, ok := s.Conn.(dbsql.QueryCursorDriver)
 	if !ok {
 		return nil, ErrQueryCursorsUnsupported
 	}
 
-	cursor, err := cursorDriver.StartQuery(ctx, driver.QueryRequest{SQL: sql, Args: args})
+	cursor, err := cursorDriver.StartQuery(ctx, dbsql.QueryRequest{SQL: sql, Args: args})
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +126,7 @@ func (h *QueryCursorHandle) Columns() []result.Column {
 	return h.Cursor.Columns()
 }
 
-func (h *QueryCursorHandle) Fetch(ctx context.Context, opts driver.ScanOptions) (*result.ResultSet, driver.QueryCursorState, error) {
+func (h *QueryCursorHandle) Fetch(ctx context.Context, opts dbsql.ScanOptions) (*result.ResultSet, dbsql.QueryCursorState, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.Cursor.Fetch(ctx, opts)
@@ -163,13 +164,13 @@ func New(idleTimeout time.Duration) *Manager {
 
 // GetOrCreate returns the existing session for (accountID, connID) or creates one using open().
 // Returns: (session, created, error) where created=true means a new session was opened.
-func (m *Manager) GetOrCreate(accountID, connID string, open func() (driver.Driver, error)) (*Session, bool, error) {
+func (m *Manager) GetOrCreate(accountID, connID string, open func() (dbengine.Connection, error)) (*Session, bool, error) {
 	return m.GetOrCreateWithMetadata(accountID, connID, SessionMetadata{}, open)
 }
 
 // GetOrCreateWithMetadata returns an existing session or creates one with
 // resource metadata used for workspace-scoped admin visibility and revocation.
-func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata SessionMetadata, open func() (driver.Driver, error)) (*Session, bool, error) {
+func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata SessionMetadata, open func() (dbengine.Connection, error)) (*Session, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -196,7 +197,7 @@ func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata Ses
 		ConnectionID: connID,
 		OrgID:        metadata.OrgID,
 		WorkspaceID:  metadata.WorkspaceID,
-		Driver:       d,
+		Conn:         d,
 		lastUsed:     time.Now(),
 	}
 
@@ -427,5 +428,5 @@ func (m *Manager) reapIdle() {
 
 func (s *Session) close() {
 	s.CloseAllCursors()
-	_ = s.Driver.Close()
+	_ = s.Conn.Close()
 }

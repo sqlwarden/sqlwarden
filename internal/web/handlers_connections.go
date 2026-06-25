@@ -14,10 +14,11 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/dbengine"
+	"github.com/sqlwarden/internal/dbengine/sqlquery"
 	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
-	"github.com/sqlwarden/internal/sqlquery"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -507,18 +508,14 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 	session, created, err := app.connManager.GetOrCreateWithMetadata(accountID, connID, connection.SessionMetadata{
 		OrgID:       strconv.FormatInt(org.ID, 10),
 		WorkspaceID: strconv.FormatInt(ws.ID, 10),
-	}, func() (driver.Driver, error) {
-		d, err := driver.New(conn.Driver)
+	}, func() (dbengine.Connection, error) {
+		eng, err := dbengine.New(conn.Driver)
 		if err != nil {
 			return nil, err
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		err = d.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN))
-		if err != nil {
-			return nil, err
-		}
-		return d, nil
+		return eng.Open(ctx, app.driverConnectionConfig(conn.Driver, plainDSN))
 	})
 	if err != nil {
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)

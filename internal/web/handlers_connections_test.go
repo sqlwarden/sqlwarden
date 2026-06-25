@@ -18,6 +18,8 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/dbengine"
+	"github.com/sqlwarden/internal/dbengine/dbsql"
 	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/pkg/result"
@@ -784,7 +786,7 @@ func TestExecuteQueryAppliesConfiguredResultLimit(t *testing.T) {
 	selectRes := send(t, selectReq, app.routes())
 	assert.Equal(t, selectRes.StatusCode, http.StatusOK)
 	assert.Equal(t, selectRes.BodyFields["truncated"], true)
-	assert.Equal(t, selectRes.BodyFields["truncation_reason"], driver.TruncationReasonMaxRows)
+	assert.Equal(t, selectRes.BodyFields["truncation_reason"], dbsql.TruncationReasonMaxRows)
 	if got := selectRes.BodyFields["rows_returned"]; got != float64(2) {
 		t.Fatalf("rows_returned = %v, want 2", got)
 	}
@@ -1380,7 +1382,7 @@ func TestRevokeWorkspaceDatabaseSession_OwnerCanRevokeOwnSession(t *testing.T) {
 			OrgID:       strconv.FormatInt(org.ID, 10),
 			WorkspaceID: strconv.FormatInt(ws.ID, 10),
 		},
-		func() (driver.Driver, error) { return newIdleQueryDriver(), nil },
+		func() (dbengine.Connection, error) { return newIdleQueryDriver(), nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1412,7 +1414,7 @@ func TestRevokeWorkspaceDatabaseSession_AdminCanRevokeWorkspaceSession(t *testin
 			OrgID:       strconv.FormatInt(org.ID, 10),
 			WorkspaceID: strconv.FormatInt(ws.ID, 10),
 		},
-		func() (driver.Driver, error) { return newIdleQueryDriver(), nil },
+		func() (dbengine.Connection, error) { return newIdleQueryDriver(), nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1442,7 +1444,7 @@ func TestRevokeWorkspaceDatabaseSession_CrossWorkspaceHidden(t *testing.T) {
 			OrgID:       strconv.FormatInt(org.ID, 10),
 			WorkspaceID: strconv.FormatInt(wsB.ID, 10),
 		},
-		func() (driver.Driver, error) { return newIdleQueryDriver(), nil },
+		func() (dbengine.Connection, error) { return newIdleQueryDriver(), nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1529,7 +1531,7 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 	cancelledSession, _, err := app.connManager.GetOrCreate(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(connA.ID, 10),
-		func() (driver.Driver, error) { return blockingDriver, nil },
+		func() (dbengine.Connection, error) { return blockingDriver, nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1538,7 +1540,7 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 	unrelatedSession, _, err := app.connManager.GetOrCreate(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(connB.ID, 10),
-		func() (driver.Driver, error) { return newIdleQueryDriver(), nil },
+		func() (dbengine.Connection, error) { return newIdleQueryDriver(), nil },
 	)
 	if err != nil {
 		t.Fatal(err)

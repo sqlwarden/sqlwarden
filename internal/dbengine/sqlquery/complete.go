@@ -3,7 +3,7 @@ package sqlquery
 import (
 	"context"
 
-	"github.com/sqlwarden/internal/schema"
+	"github.com/sqlwarden/internal/dbengine/schema"
 )
 
 // Completer returns cursor-aware suggestions using parse context and optional
