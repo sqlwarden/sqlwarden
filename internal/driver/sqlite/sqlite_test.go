@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/internal/driver"
-	"github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -156,13 +157,13 @@ func TestSQLiteStartQueryCursor(t *testing.T) {
 		t.Fatalf("insert cursor_users: %v", err)
 	}
 
-	cursor, err := d.StartQuery(ctx, driver.QueryRequest{SQL: `SELECT id, name FROM cursor_users ORDER BY id`})
+	cursor, err := d.StartQuery(ctx, dbsql.QueryRequest{SQL: `SELECT id, name FROM cursor_users ORDER BY id`})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cursor.Close()
 
-	first, state, err := cursor.Fetch(ctx, driver.ScanOptions{MaxRows: 2, MaxBytes: 1024})
+	first, state, err := cursor.Fetch(ctx, dbsql.ScanOptions{MaxRows: 2, MaxBytes: 1024})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +171,7 @@ func TestSQLiteStartQueryCursor(t *testing.T) {
 		t.Fatalf("first fetch state=%+v result=%+v, want 2 non-exhausted rows", state, first)
 	}
 
-	second, state, err := cursor.Fetch(ctx, driver.ScanOptions{MaxRows: 2, MaxBytes: 1024})
+	second, state, err := cursor.Fetch(ctx, dbsql.ScanOptions{MaxRows: 2, MaxBytes: 1024})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +264,7 @@ func TestToValue(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.check(t, driver.NormalizeValue(tc.input))
+			tc.check(t, dbsql.NormalizeValue(tc.input))
 		})
 	}
 }

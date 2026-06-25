@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/internal/driver"
-	"github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/pkg/result"
 
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -325,7 +326,7 @@ func TestToValue(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.check(t, driver.NormalizeValue(tc.input))
+			tc.check(t, dbsql.NormalizeValue(tc.input))
 		})
 	}
 }

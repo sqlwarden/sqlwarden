@@ -11,8 +11,9 @@ import (
 	"time"
 
 	"github.com/docker/go-connections/nat"
+	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/internal/driver"
-	"github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/pkg/result"
 	"github.com/testcontainers/testcontainers-go"
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
@@ -454,7 +455,7 @@ func TestToValue(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.check(t, driver.NormalizeValue(tc.input))
+			tc.check(t, dbsql.NormalizeValue(tc.input))
 		})
 	}
 }

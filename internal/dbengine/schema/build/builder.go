@@ -4,7 +4,7 @@
 // Neither is safe for concurrent use; each inspection uses its own builder.
 package build
 
-import "github.com/sqlwarden/internal/schema"
+import "github.com/sqlwarden/internal/dbengine/schema"
 
 // CatalogBuilder accumulates object refs per namespace and emits them grouped by
 // kind, in the order kinds were declared (undeclared kinds sort last, first-seen).

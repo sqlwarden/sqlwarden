@@ -16,7 +16,7 @@ import (
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/schema"
+	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/internal/token"
 )
 

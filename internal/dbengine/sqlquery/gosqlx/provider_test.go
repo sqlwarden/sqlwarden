@@ -1,12 +1,12 @@
-package gosqlxprovider
+package gosqlx
 
 import (
 	"context"
 	"strings"
 	"testing"
 
+	"github.com/sqlwarden/internal/dbengine/sqlquery"
 	"github.com/sqlwarden/internal/driver"
-	"github.com/sqlwarden/internal/sqlquery"
 )
 
 func TestProviderClassifiesSQLWardenCorpus(t *testing.T) {
@@ -56,7 +56,7 @@ func TestProviderClassifiesSQLWardenCorpus(t *testing.T) {
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := sqlquery.Classify(context.Background(), sqlquery.ClassifyRequest{
+			got, err := NewClassifier().Classify(context.Background(), sqlquery.ClassifyRequest{
 				RequestMetadata: sqlquery.RequestMetadata{Dialect: fixture.dialect},
 				SQL:             fixture.sql,
 			})
@@ -76,7 +76,7 @@ func TestProviderClassifiesSQLWardenCorpus(t *testing.T) {
 func TestProviderClassifiesInvalidSQLAsUnknown(t *testing.T) {
 	t.Parallel()
 
-	got, err := sqlquery.Classify(context.Background(), sqlquery.ClassifyRequest{
+	got, err := NewClassifier().Classify(context.Background(), sqlquery.ClassifyRequest{
 		RequestMetadata: sqlquery.RequestMetadata{Dialect: driver.DialectPostgres},
 		SQL:             "SELECT FROM WHERE",
 	})
@@ -94,7 +94,7 @@ func TestProviderClassifiesInvalidSQLAsUnknown(t *testing.T) {
 func TestProviderParsesCompleteAndIncompleteSQL(t *testing.T) {
 	t.Parallel()
 
-	complete, err := sqlquery.Parse(context.Background(), sqlquery.ParseRequest{
+	complete, err := NewParser().Parse(context.Background(), sqlquery.ParseRequest{
 		RequestMetadata: sqlquery.RequestMetadata{Dialect: driver.DialectPostgres},
 		SQL:             "SELECT * FROM accounts; SELECT * FROM sessions",
 	})
@@ -106,7 +106,7 @@ func TestProviderParsesCompleteAndIncompleteSQL(t *testing.T) {
 	}
 
 	cursor := len("SELECT * FROM")
-	incomplete, err := sqlquery.Parse(context.Background(), sqlquery.ParseRequest{
+	incomplete, err := NewParser().Parse(context.Background(), sqlquery.ParseRequest{
 		RequestMetadata: sqlquery.RequestMetadata{Dialect: driver.DialectPostgres},
 		SQL:             "SELECT * FROM",
 		CursorOffset:    &cursor,
@@ -186,7 +186,7 @@ func TestProviderRewritePagination(t *testing.T) {
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := sqlquery.Rewrite(context.Background(), sqlquery.RewriteRequest{
+			got, err := NewRewriter().Rewrite(context.Background(), sqlquery.RewriteRequest{
 				RequestMetadata: sqlquery.RequestMetadata{Dialect: fixture.dialect},
 				SQL:             fixture.sql,
 				Purpose:         sqlquery.RewritePurposePagination,

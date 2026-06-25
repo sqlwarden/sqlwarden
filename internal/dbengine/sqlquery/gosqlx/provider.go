@@ -1,4 +1,4 @@
-package gosqlxprovider
+package gosqlx
 
 import (
 	"context"
@@ -6,27 +6,23 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ajitpratap0/GoSQLX/pkg/gosqlx"
+	gosqlxlib "github.com/ajitpratap0/GoSQLX/pkg/gosqlx"
 	gosqlxast "github.com/ajitpratap0/GoSQLX/pkg/sql/ast"
 	"github.com/ajitpratap0/GoSQLX/pkg/sql/keywords"
 	"github.com/ajitpratap0/GoSQLX/pkg/transform"
+	"github.com/sqlwarden/internal/dbengine/sqlquery"
 	"github.com/sqlwarden/internal/driver"
-	"github.com/sqlwarden/internal/sqlquery"
 )
 
-type provider struct{}
+// NewClassifier returns a GoSQLX-backed classifier. Engines compose these
+// constructors in their own sql.go; the gosqlx package no longer self-registers.
+func NewClassifier() sqlquery.Classifier { return classifier{} }
 
-func init() {
-	p := provider{}
-	sqlquery.Register(driver.DialectPostgres, p)
-	sqlquery.Register(driver.DialectMySQL, p)
-	sqlquery.Register(driver.DialectSQLite, p)
-}
+// NewParser returns a GoSQLX-backed parser.
+func NewParser() sqlquery.Parser { return parser{} }
 
-func (provider) Classifier() sqlquery.Classifier { return classifier{} }
-func (provider) Parser() sqlquery.Parser         { return parser{} }
-func (provider) Completer() sqlquery.Completer   { return nil }
-func (provider) Rewriter() sqlquery.Rewriter     { return rewriter{} }
+// NewRewriter returns a GoSQLX-backed pagination rewriter.
+func NewRewriter() sqlquery.Rewriter { return rewriter{} }
 
 type classifier struct{}
 
@@ -66,7 +62,7 @@ func (parser) Parse(ctx context.Context, req sqlquery.ParseRequest) (sqlquery.Pa
 		}, nil
 	}
 
-	stmts, recoveryErrs := gosqlx.ParseWithRecovery(req.SQL)
+	stmts, recoveryErrs := gosqlxlib.ParseWithRecovery(req.SQL)
 	diagnostics := diagnosticsFromError(err)
 	for _, recoveryErr := range recoveryErrs {
 		diagnostics = append(diagnostics, diagnosticsFromError(recoveryErr)...)
@@ -126,7 +122,7 @@ func parseWithDialect(ctx context.Context, sql string, dialect driver.Dialect) (
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	tree, err := gosqlx.ParseWithDialect(sql, toGoSQLXDialect(dialect))
+	tree, err := gosqlxlib.ParseWithDialect(sql, toGoSQLXDialect(dialect))
 	if err != nil {
 		return nil, err
 	}

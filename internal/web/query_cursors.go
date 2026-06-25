@@ -14,10 +14,10 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
-	"github.com/sqlwarden/internal/driver"
+	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/sqlquery"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
-	"github.com/sqlwarden/internal/sqlquery"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -366,7 +366,7 @@ func (app *application) fetchQueryCursor(w http.ResponseWriter, r *http.Request)
 			app.errorMessage(w, r, statusClientClosedRequest, "Query was cancelled.", nil)
 			return
 		}
-		if errors.Is(err, driver.ErrCursorClosed) {
+		if errors.Is(err, dbsql.ErrCursorClosed) {
 			app.queryCursorUnavailable(w, r)
 			return
 		}
@@ -450,8 +450,8 @@ func (app *application) queryCursorPageSize(requested *int) int {
 	return pageSize
 }
 
-func (app *application) queryCursorScanOptions(pageSize int) driver.ScanOptions {
-	return driver.ScanOptions{
+func (app *application) queryCursorScanOptions(pageSize int) dbsql.ScanOptions {
+	return dbsql.ScanOptions{
 		MaxRows:  pageSize,
 		MaxBytes: int64(app.config.Query.MaxResultBytes),
 	}

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sqlwarden/internal/dbengine"
+	"github.com/sqlwarden/internal/dbengine/dbsql"
 	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -52,7 +54,7 @@ func TestReuse(t *testing.T) {
 	defer m.Close()
 
 	calls := 0
-	open := func() (driver.Driver, error) {
+	open := func() (dbengine.Connection, error) {
 		calls++
 		d := &mockDriver{}
 		return d, nil
@@ -88,7 +90,7 @@ func TestIsolation(t *testing.T) {
 	m := New(5 * time.Minute)
 	defer m.Close()
 
-	open := func() (driver.Driver, error) {
+	open := func() (dbengine.Connection, error) {
 		return &mockDriver{}, nil
 	}
 
@@ -112,7 +114,7 @@ func TestGetByID(t *testing.T) {
 	m := New(5 * time.Minute)
 	defer m.Close()
 
-	open := func() (driver.Driver, error) {
+	open := func() (dbengine.Connection, error) {
 		return &mockDriver{}, nil
 	}
 
@@ -150,7 +152,7 @@ func TestReapIdle(t *testing.T) {
 	defer m.Close()
 
 	md := &mockDriver{}
-	open := func() (driver.Driver, error) {
+	open := func() (dbengine.Connection, error) {
 		return md, nil
 	}
 
@@ -185,7 +187,7 @@ func TestClose(t *testing.T) {
 	m := New(5 * time.Minute)
 
 	md := &mockDriver{}
-	open := func() (driver.Driver, error) {
+	open := func() (dbengine.Connection, error) {
 		return md, nil
 	}
 
@@ -217,7 +219,7 @@ func TestRemove(t *testing.T) {
 	defer m.Close()
 
 	md := &mockDriver{}
-	open := func() (driver.Driver, error) {
+	open := func() (dbengine.Connection, error) {
 		return md, nil
 	}
 
@@ -247,7 +249,7 @@ func TestCountAndRemoveForConnection(t *testing.T) {
 	m := New(5 * time.Minute)
 	defer m.Close()
 
-	open := func() (driver.Driver, error) {
+	open := func() (dbengine.Connection, error) {
 		return &mockDriver{}, nil
 	}
 
@@ -295,7 +297,7 @@ func TestSessionQueryAndExecuteUpdateLastUsed(t *testing.T) {
 	defer m.Close()
 
 	md := &mockDriver{}
-	open := func() (driver.Driver, error) {
+	open := func() (dbengine.Connection, error) {
 		return md, nil
 	}
 
@@ -328,7 +330,7 @@ func TestSessionQueryAndExecuteUpdateLastUsed(t *testing.T) {
 }
 
 func TestStartQueryCursorRequiresSupportingDriver(t *testing.T) {
-	sess := &Session{Driver: &mockDriver{}}
+	sess := &Session{Conn: &mockDriver{}}
 	_, err := sess.StartQueryCursor(context.Background(), "SELECT 1")
 	if err != ErrQueryCursorsUnsupported {
 		t.Fatalf("StartQueryCursor err = %v, want ErrQueryCursorsUnsupported", err)
@@ -337,7 +339,7 @@ func TestStartQueryCursorRequiresSupportingDriver(t *testing.T) {
 
 func TestSessionTracksMultipleQueryCursors(t *testing.T) {
 	md := &mockCursorDriver{}
-	sess := &Session{Driver: md}
+	sess := &Session{Conn: md}
 
 	first, err := sess.StartQueryCursor(context.Background(), "SELECT 1")
 	if err != nil {
@@ -354,17 +356,17 @@ func TestSessionTracksMultipleQueryCursors(t *testing.T) {
 		t.Fatalf("tracked cursors = %d, want 2", len(sess.cursors))
 	}
 
-	if _, _, err = first.Fetch(context.Background(), driver.ScanOptions{MaxRows: 1}); err != nil {
+	if _, _, err = first.Fetch(context.Background(), dbsql.ScanOptions{MaxRows: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = second.Fetch(context.Background(), driver.ScanOptions{MaxRows: 1}); err != nil {
+	if _, _, err = second.Fetch(context.Background(), dbsql.ScanOptions{MaxRows: 1}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestCloseCursorRemovesAndClosesCursor(t *testing.T) {
 	md := &mockCursorDriver{}
-	sess := &Session{Driver: md}
+	sess := &Session{Conn: md}
 
 	handle, err := sess.StartQueryCursor(context.Background(), "SELECT 1")
 	if err != nil {
@@ -386,7 +388,7 @@ func TestRemoveClosesActiveCursorsBeforeDriver(t *testing.T) {
 	defer m.Close()
 
 	md := &mockCursorDriver{}
-	sess, _, err := m.GetOrCreate("alice", "conn1", func() (driver.Driver, error) {
+	sess, _, err := m.GetOrCreate("alice", "conn1", func() (dbengine.Connection, error) {
 		return md, nil
 	})
 	if err != nil {
@@ -411,7 +413,7 @@ type mockCursorDriver struct {
 	cursors []*mockQueryCursor
 }
 
-func (d *mockCursorDriver) StartQuery(context.Context, driver.QueryRequest) (driver.QueryCursor, error) {
+func (d *mockCursorDriver) StartQuery(context.Context, dbsql.QueryRequest) (dbsql.QueryCursor, error) {
 	cursor := &mockQueryCursor{}
 	d.cursors = append(d.cursors, cursor)
 	return cursor, nil
@@ -426,14 +428,14 @@ func (c *mockQueryCursor) Columns() []result.Column {
 	return []result.Column{{Name: "id", Type: result.ColumnTypeInteger, RawType: "integer"}}
 }
 
-func (c *mockQueryCursor) Fetch(context.Context, driver.ScanOptions) (*result.ResultSet, driver.QueryCursorState, error) {
+func (c *mockQueryCursor) Fetch(context.Context, dbsql.ScanOptions) (*result.ResultSet, dbsql.QueryCursorState, error) {
 	c.fetches++
 	return &result.ResultSet{
 		Columns:       c.Columns(),
 		Rows:          []result.Row{{{Type: result.ValueTypeInteger, Integer: int64(c.fetches)}}},
 		RowsReturned:  1,
 		BytesReturned: 8,
-	}, driver.QueryCursorState{RowsReturned: 1, BytesReturned: 8}, nil
+	}, dbsql.QueryCursorState{RowsReturned: 1, BytesReturned: 8}, nil
 }
 
 func (c *mockQueryCursor) Close() error {
