@@ -1,9 +1,12 @@
 package dbengine
 
 import (
+	"github.com/sqlwarden/internal/dbengine/classifier"
+	"github.com/sqlwarden/internal/dbengine/completer"
 	"github.com/sqlwarden/internal/dbengine/dbsql"
+	"github.com/sqlwarden/internal/dbengine/parser"
+	"github.com/sqlwarden/internal/dbengine/rewriter"
 	"github.com/sqlwarden/internal/dbengine/schema"
-	"github.com/sqlwarden/internal/dbengine/sqlquery"
 )
 
 // Capability is a stable, serializable identifier for an engine feature.
@@ -48,10 +51,9 @@ func capabilitiesOf(reg Registration) (map[Capability]bool, *schema.SchemaSpec) 
 	if _, ok := probe.(dbsql.QueryCursorDriver); ok {
 		caps[CapabilityQueryCursor] = true
 	}
-	p := sqlquery.ProviderFor(reg.Dialect)
-	caps[CapabilitySQLParse] = p.Parser() != nil
-	caps[CapabilitySQLClassify] = p.Classifier() != nil
-	caps[CapabilitySQLRewrite] = p.Rewriter() != nil
-	caps[CapabilitySQLComplete] = p.Completer() != nil
+	caps[CapabilitySQLClassify] = classifier.For(reg.Dialect) != nil
+	caps[CapabilitySQLParse] = parser.For(reg.Dialect) != nil
+	caps[CapabilitySQLRewrite] = rewriter.For(reg.Dialect) != nil
+	caps[CapabilitySQLComplete] = completer.For(reg.Dialect) != nil
 	return caps, spec
 }

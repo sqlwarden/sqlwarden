@@ -5,7 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sqlwarden/internal/dbengine/sqlquery"
+	"github.com/sqlwarden/internal/dbengine/classifier"
+	"github.com/sqlwarden/internal/dbengine/rewriter"
 	"github.com/sqlwarden/internal/driver"
 )
 
@@ -57,15 +58,12 @@ func TestProviderSecurityClassificationNeverTreatsDangerousSQLAsDQL(t *testing.T
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := NewClassifier().Classify(context.Background(), sqlquery.ClassifyRequest{
-				RequestMetadata: sqlquery.RequestMetadata{Dialect: fixture.dialect},
-				SQL:             fixture.sql,
-			})
+			got, err := NewClassifier(fixture.dialect).Classify(context.Background(), classifier.Request{SQL: fixture.sql})
 			if err != nil {
 				t.Fatalf("Classify() error = %v", err)
 			}
-			if got.Kind == sqlquery.KindDQL {
-				t.Fatalf("dangerous SQL classified as DQL; diagnostics=%+v sql=%q", got.Diagnostics, fixture.sql)
+			if got.Kind == classifier.KindDQL {
+				t.Fatalf("dangerous SQL classified as DQL: sql=%q", fixture.sql)
 			}
 		})
 	}
@@ -91,15 +89,12 @@ func TestProviderSecurityClassificationAllowsSafeDQLWithInjectionLikeText(t *tes
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := NewClassifier().Classify(context.Background(), sqlquery.ClassifyRequest{
-				RequestMetadata: sqlquery.RequestMetadata{Dialect: fixture.dialect},
-				SQL:             fixture.sql,
-			})
+			got, err := NewClassifier(fixture.dialect).Classify(context.Background(), classifier.Request{SQL: fixture.sql})
 			if err != nil {
 				t.Fatalf("Classify() error = %v", err)
 			}
-			if got.Kind != sqlquery.KindDQL {
-				t.Fatalf("safe DQL classified as %q, want DQL; diagnostics=%+v", got.Kind, got.Diagnostics)
+			if got.Kind != classifier.KindDQL {
+				t.Fatalf("safe DQL classified as %q, want DQL", got.Kind)
 			}
 		})
 	}
@@ -125,11 +120,10 @@ func TestProviderRewriteRejectsSecuritySensitiveSQL(t *testing.T) {
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := NewRewriter().Rewrite(context.Background(), sqlquery.RewriteRequest{
-				RequestMetadata: sqlquery.RequestMetadata{Dialect: fixture.dialect},
-				SQL:             fixture.sql,
-				Purpose:         sqlquery.RewritePurposePagination,
-				Limit:           50,
+			got, err := NewRewriter(fixture.dialect).Rewrite(context.Background(), rewriter.Request{
+				SQL:     fixture.sql,
+				Purpose: rewriter.PurposePagination,
+				Limit:   50,
 			})
 			if err != nil {
 				t.Fatalf("Rewrite() error = %v", err)

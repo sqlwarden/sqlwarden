@@ -1,4 +1,4 @@
-package sqlquery
+package completer
 
 import (
 	"context"
@@ -6,22 +6,20 @@ import (
 	"github.com/sqlwarden/internal/dbengine/schema"
 )
 
-// Completer returns cursor-aware suggestions using parse context and optional
-// schema metadata.
+// Completer returns cursor-aware suggestions from parse context and optional
+// schema metadata. Stateless: the caller passes the catalog in.
 type Completer interface {
-	Complete(ctx context.Context, req CompletionRequest) (CompletionResult, error)
+	Complete(ctx context.Context, req Request) (Result, error)
 }
 
-type CompletionRequest struct {
-	RequestMetadata
+type Request struct {
 	SQL          string
 	CursorOffset int
 	Catalog      *schema.Catalog
 }
 
-type CompletionResult struct {
+type Result struct {
 	Suggestions []Suggestion `json:"suggestions"`
-	Diagnostics []Diagnostic `json:"diagnostics,omitempty"`
 }
 
 type Suggestion struct {

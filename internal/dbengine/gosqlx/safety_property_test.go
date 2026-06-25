@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sqlwarden/internal/dbengine/sqlquery"
+	"github.com/sqlwarden/internal/dbengine/classifier"
 	"github.com/sqlwarden/internal/driver"
 )
 
@@ -13,7 +13,6 @@ import (
 // asserts the GoSQLX classifier never labels them DQL.
 func TestClassifierPropertyDangerousNeverDQL(t *testing.T) {
 	t.Parallel()
-	c := NewClassifier()
 
 	dangerous := []string{
 		"DROP TABLE accounts",
@@ -29,18 +28,16 @@ func TestClassifierPropertyDangerousNeverDQL(t *testing.T) {
 	dialects := []driver.Dialect{driver.DialectPostgres, driver.DialectMySQL, driver.DialectSQLite}
 
 	for _, d := range dialects {
+		c := NewClassifier(d)
 		for _, prefix := range prefixes {
 			for _, danger := range dangerous {
 				sql := prefix + danger
-				got, err := c.Classify(context.Background(), sqlquery.ClassifyRequest{
-					RequestMetadata: sqlquery.RequestMetadata{Dialect: d},
-					SQL:             sql,
-				})
+				got, err := c.Classify(context.Background(), classifier.Request{SQL: sql})
 				if err != nil {
 					t.Fatalf("Classify(%q) error: %v", sql, err)
 				}
-				if got.Kind == sqlquery.KindDQL {
-					t.Fatalf("dangerous SQL classified DQL: dialect=%s sql=%q diagnostics=%+v", d, sql, got.Diagnostics)
+				if got.Kind == classifier.KindDQL {
+					t.Fatalf("dangerous SQL classified DQL: dialect=%s sql=%q", d, sql)
 				}
 			}
 		}

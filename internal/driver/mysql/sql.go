@@ -1,15 +1,15 @@
 package mysql
 
 import (
-	"github.com/sqlwarden/internal/dbengine/sqlquery"
-	"github.com/sqlwarden/internal/dbengine/sqlquery/gosqlx"
+	"github.com/sqlwarden/internal/dbengine/classifier"
+	"github.com/sqlwarden/internal/dbengine/gosqlx"
+	"github.com/sqlwarden/internal/dbengine/parser"
+	"github.com/sqlwarden/internal/dbengine/rewriter"
 	"github.com/sqlwarden/internal/driver"
 )
 
 func init() {
-	sqlquery.Register(driver.DialectMySQL, sqlquery.StaticProvider{
-		ClassifyCapability: gosqlx.NewClassifier(),
-		ParseCapability:    gosqlx.NewParser(),
-		RewriteCapability:  gosqlx.NewRewriter(),
-	})
+	classifier.Register(driver.DialectMySQL, gosqlx.NewClassifier(driver.DialectMySQL))
+	parser.Register(driver.DialectMySQL, gosqlx.NewParser(driver.DialectMySQL))
+	rewriter.Register(driver.DialectMySQL, gosqlx.NewRewriter(driver.DialectMySQL))
 }
