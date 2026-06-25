@@ -14,8 +14,8 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/dbengine/classifier"
 	"github.com/sqlwarden/internal/dbengine/dbsql"
-	"github.com/sqlwarden/internal/dbengine/sqlquery"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -542,15 +542,15 @@ func (app *application) requiredConnectionRuntimePermission(r *http.Request, sql
 	}
 
 	switch classification.Kind {
-	case sqlquery.KindDQL:
+	case classifier.KindDQL:
 		if app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnDQL) {
 			return access.PermConnDQL, true, nil
 		}
-	case sqlquery.KindDML:
+	case classifier.KindDML:
 		if app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnDML) {
 			return access.PermConnDML, true, nil
 		}
-	case sqlquery.KindDDL:
+	case classifier.KindDDL:
 		if app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnDDL) {
 			return access.PermConnDDL, true, nil
 		}

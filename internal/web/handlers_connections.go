@@ -15,7 +15,7 @@ import (
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/sqlquery"
+	"github.com/sqlwarden/internal/dbengine/classifier"
 	"github.com/sqlwarden/internal/driver"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -166,13 +166,13 @@ func compareConnection(left, right database.Connection, sortBy string) int {
 	return 0
 }
 
-func queryLogAttrs(account database.Account, org database.Organization, ws database.Workspace, conn database.Connection, classification sqlquery.ClassifyResult) []any {
+func queryLogAttrs(account database.Account, org database.Organization, ws database.Workspace, conn database.Connection, classification classifier.Result) []any {
 	return []any{
 		slog.Group("account", "id", account.ID),
 		slog.Group("org", "id", org.ID, "slug", org.Slug),
 		slog.Group("workspace", "id", ws.ID, "owner_type", ws.OwnerType),
 		slog.Group("connection", "id", conn.ID, "driver", conn.Driver),
-		slog.Group("query", "kind", classification.Kind, "classifier", classification.Source, "diagnostics", len(classification.Diagnostics)),
+		slog.Group("query", "kind", classification.Kind, "classifier", classification.Source),
 	}
 }
 
@@ -190,13 +190,9 @@ func (app *application) hasConnectionPermission(r *http.Request, orgID int64, ow
 	return app.enforcer.Can(r.Context(), account.ID, orgID, ownerType, "connection", connectionID, permission)
 }
 
-func (app *application) classifyConnectionSQL(r *http.Request, conn database.Connection, sql string) (sqlquery.ClassifyResult, error) {
-	return sqlquery.Classify(r.Context(), sqlquery.ClassifyRequest{
-		RequestMetadata: sqlquery.RequestMetadata{
-			Dialect: driver.Dialect(driver.NormalizeName(conn.Driver)),
-		},
-		SQL: sql,
-	})
+func (app *application) classifyConnectionSQL(r *http.Request, conn database.Connection, sql string) (classifier.Result, error) {
+	d := driver.Dialect(driver.NormalizeName(conn.Driver))
+	return classifier.For(d).Classify(r.Context(), classifier.Request{SQL: sql})
 }
 
 func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
@@ -721,7 +717,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logAttrs := queryLogAttrs(account, org, ws, conn, classification)
-	if classification.Kind == sqlquery.KindUnknown {
+	if classification.Kind == classifier.KindUnknown {
 		app.logger.Warn("query classification unknown", logAttrs...)
 	} else {
 		app.logger.Debug("query classified", logAttrs...)
@@ -732,7 +728,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
 	switch classification.Kind {
-	case sqlquery.KindDQL:
+	case classifier.KindDQL:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
 			ws.OwnerType, "connection", conn.ID,
@@ -743,7 +739,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		rs, execErr = session.Query(r.Context(), input.SQL)
-	case sqlquery.KindDML:
+	case classifier.KindDML:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
 			ws.OwnerType, "connection", conn.ID,
@@ -754,7 +750,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		rs, execErr = session.Execute(r.Context(), input.SQL)
-	case sqlquery.KindDDL:
+	case classifier.KindDDL:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
 			ws.OwnerType, "connection", conn.ID,
