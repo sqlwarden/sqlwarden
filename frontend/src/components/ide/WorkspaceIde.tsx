@@ -430,7 +430,7 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
         collapsedSize="0%"
         className="flex min-h-0 flex-col overflow-hidden"
       >
-        <ResultsArea />
+        <ResultsArea orgSlug={orgSlug} workspace={workspace} />
       </ResizablePanel>
     </ResizablePanelGroup>
   )

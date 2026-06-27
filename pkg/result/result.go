@@ -14,6 +14,9 @@ type ResultSet struct {
 	RowsReturned     int      `json:"rows_returned"`
 	BytesReturned    int64    `json:"bytes_returned"`
 	TruncationReason string   `json:"truncation_reason,omitempty"`
+	QueryCursorID    string   `json:"query_cursor_id,omitempty"`
+	Exhausted        *bool    `json:"exhausted,omitempty"`
+	PageSize         int      `json:"page_size,omitempty"`
 }
 
 // Column describes a single column in a ResultSet.

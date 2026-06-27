@@ -37,7 +37,7 @@ type application struct {
 	mailer           *smtp.Mailer
 	wg               sync.WaitGroup
 	connManager      *connection.Manager
-	queryCursors     *queryCursorManager
+	queryCursors     *connection.QueryCursorManager
 	schemaService    *schemaapp.Service
 	keyring          *encrypt.Keyring
 	enforcer         *access.Enforcer
@@ -154,7 +154,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		logger:        logger,
 		mailer:        mailer,
 		connManager:   connection.New(30 * time.Minute),
-		queryCursors:  newQueryCursorManager(30 * time.Minute),
+		queryCursors:  connection.NewQueryCursorManager(30 * time.Minute),
 		schemaService: schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
 		keyring:       keyring,
 		enforcer:      enforcer,

@@ -27,7 +27,7 @@ import {
 export type QueryResult =
   | { status: 'idle' }
   | { status: 'running' }
-  | { status: 'ok'; data: ResultSet; durationMs: number; sql: string }
+  | { status: 'ok'; data: ResultSet; durationMs: number; sql: string; isFetchingNextPage?: boolean; cursorMessage?: string }
   | { status: 'error'; message: string; sql: string }
   | { status: 'cancelled'; sql: string }
 

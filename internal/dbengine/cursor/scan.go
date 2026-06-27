@@ -138,7 +138,6 @@ func (c *SQLRowsCursor) Fetch(ctx context.Context, opts ScanOptions) (*result.Re
 		return nil, QueryCursorState{Exhausted: true}, ErrCursorClosed
 	}
 	if err := ctx.Err(); err != nil {
-		_ = c.closeLocked()
 		return nil, QueryCursorState{Exhausted: true}, err
 	}
 

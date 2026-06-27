@@ -45,6 +45,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const setTabController = useIde((s) => s.setTabController)
   const runningTabs = useIde((s) => s.runningTabs)
   const abortControllers = useIde((s) => s.abortControllers)
+  const results = useIde((s) => s.results)
 
   const registry = useYDocRegistry()
   const viewRegistry = useEditorViewRegistry()
@@ -125,6 +126,17 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     abortControllers[activeTabId]?.abort()
   }
 
+  const closeQueryCursor = useCallback(async (queryCursorId: string | undefined) => {
+    if (!queryCursorId || !activeConnection) return
+    try {
+      await api.delete(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/query-cursors/${queryCursorId}`,
+      )
+    } catch {
+      // Best-effort cleanup only; backend idle reaper closes leaked cursors.
+    }
+  }, [activeConnection, orgSlug, workspace.id])
+
   const handleRun = useCallback(async () => {
     if (!activeTab || isRunning) return
     // The Run button is disabled without a connection, so this guard only trips
@@ -160,6 +172,10 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
 
     // Abort any stale controller for this tab (safety net).
     abortControllers[activeTab.id]?.abort()
+    const previousResult = results[activeTab.id]
+    if (previousResult?.status === 'ok') {
+      void closeQueryCursor(previousResult.data.query_cursor_id)
+    }
 
     const controller = new AbortController()
     setTabController(activeTab.id, controller)
@@ -188,7 +204,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
 
       const result = await api.post<ResultSet>(
         `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/query`,
-        { sql },
+        { sql, use_cursor: true },
         { headers: { 'X-Warden-Session': sessionId }, signal: controller.signal },
       )
 
@@ -210,8 +226,8 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       setTabRunning(activeTab.id, false)
     }
   }, [activeTab, activeGroupId, activeConnection, hasConnections, isRunning, maximizedPane, sessions, orgSlug, workspace.id,
-      registry, viewRegistry, abortControllers, setMaximizedPane, setQueryResult, setSession, setConnectionStatus,
-      setTabController, setTabRunning])
+      registry, viewRegistry, abortControllers, results, setMaximizedPane, setQueryResult, setSession, setConnectionStatus,
+      setTabController, setTabRunning, closeQueryCursor])
 
   // Global ⌘Enter / Ctrl+Enter shortcut.
   // capture:true fires before CodeMirror's contentDOM listener; stopPropagation

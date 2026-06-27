@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, type UIEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { Icon } from '#/lib/icons'
@@ -6,14 +6,21 @@ import { Button } from '#/components/ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/components/ui/resizable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { cn } from '#/lib/utils'
-import type { ResultColumn, ResultValue } from '#/lib/api/types'
+import type { ResultColumn, ResultSet, ResultValue, Workspace } from '#/lib/api/types'
 import { useIde, activeTabId as selectActiveTabId, type QueryResult } from './useIdeStore'
 import { useContextMenuOpener } from '#/components/ui/context-menu'
+import { api } from '#/lib/api/client'
+import { ApiError } from '#/lib/api/errors'
 import { copyWithToast, rowToTsv, rowToJson, valuesToLines } from './contextMenus/clipboard'
 import { buildCellMenu, buildRowMenu, buildColumnHeaderMenu } from './contextMenus/resultMenu'
 import { nextCell } from './resultGridNav'
 
-export function ResultsArea() {
+type ResultsAreaProps = {
+  orgSlug: string
+  workspace: Workspace
+}
+
+export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
   const activeTabId = useIde((s) => (s.activeWorkspaceId ? selectActiveTabId(s, s.activeWorkspaceId) : undefined))
@@ -63,7 +70,7 @@ export function ResultsArea() {
       </div>
 
       <TabsContent value="results" className="min-h-0 flex-1 overflow-hidden m-0 p-0">
-        <ResultsContent key={activeTabId} result={result} />
+        <ResultsContent key={activeTabId} orgSlug={orgSlug} workspace={workspace} activeTabId={activeTabId} result={result} />
       </TabsContent>
       <TabsContent value="history" className="min-h-0 flex-1 overflow-hidden m-0 p-0">
         <StubPane message="Query history coming soon." />
@@ -77,7 +84,17 @@ export function ResultsArea() {
 
 // ─── Result content switcher ────────────────────────────────────────────────
 
-function ResultsContent({ result }: { result: QueryResult }) {
+function ResultsContent({
+  orgSlug,
+  workspace,
+  activeTabId,
+  result,
+}: {
+  orgSlug: string
+  workspace: Workspace
+  activeTabId?: string
+  result: QueryResult
+}) {
   switch (result.status) {
     case 'idle':
       return <EmptyState />
@@ -88,7 +105,7 @@ function ResultsContent({ result }: { result: QueryResult }) {
     case 'error':
       return <ErrorState message={result.message} />
     case 'ok':
-      return <OkState result={result} />
+      return <OkState orgSlug={orgSlug} workspace={workspace} activeTabId={activeTabId} result={result} />
   }
 }
 
@@ -178,7 +195,17 @@ function isRowInRange(ri: number, sel: CellSelection | null): boolean {
   return ri >= minR && ri <= maxR
 }
 
-function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> }) {
+function OkState({
+  orgSlug,
+  workspace,
+  activeTabId,
+  result,
+}: {
+  orgSlug: string
+  workspace: Workspace
+  activeTabId?: string
+  result: Extract<QueryResult, { status: 'ok' }>
+}) {
   const { durationMs } = result
   const columns = result.data.columns ?? []
   const rows = result.data.rows ?? []
@@ -195,10 +222,16 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
   const tablePanelRef = useRef<PanelImperativeHandle>(null)
   const tableContainerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const fetchingNextPageRef = useRef(false)
   const isDraggingRef = useRef(false)
   const scrollElRef = useRef<HTMLElement | null>(null)
   const pointerRef = useRef<{ x: number; y: number } | null>(null)
   const autoScrollRafRef = useRef<number | null>(null)
+  const tabs = useIde((s) => s.tabs)
+  const setQueryResult = useIde((s) => s.setQueryResult)
+  const activeTab = activeTabId ? tabs.find((t) => t.id === activeTabId) : undefined
+  const queryCursorId = result.data.query_cursor_id
+  const canFetchMore = Boolean(queryCursorId && result.data.exhausted === false && !result.isFetchingNextPage && activeTab?.connectionId)
 
   // Track the pointer while drag-selecting, and stop drag + auto-scroll on mouseup.
   useEffect(() => {
@@ -256,6 +289,59 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
     e.preventDefault()
     if (target.rowIdx !== selection.anchor.rowIdx || target.colIdx !== selection.anchor.colIdx) {
       setSelection({ anchor: target, active: target })
+    }
+  }
+
+  async function fetchNextPage() {
+    if (!activeTabId || !activeTab?.connectionId || !queryCursorId || !canFetchMore || fetchingNextPageRef.current) return
+    fetchingNextPageRef.current = true
+    setQueryResult(activeTabId, { ...result, isFetchingNextPage: true, cursorMessage: undefined })
+    try {
+      const page = await api.post<ResultSet>(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeTab.connectionId}/query-cursors/${queryCursorId}/fetch`,
+        { page_size: result.data.page_size },
+      )
+      const nextRows = [...(result.data.rows ?? []), ...(page.rows ?? [])]
+      const exhausted = page.exhausted ?? true
+      const nextCursorId = exhausted ? undefined : (page.query_cursor_id ?? queryCursorId)
+      setQueryResult(activeTabId, {
+        ...result,
+        isFetchingNextPage: false,
+        data: {
+          ...result.data,
+          rows: nextRows,
+          rows_returned: nextRows.length,
+          bytes_returned: result.data.bytes_returned + page.bytes_returned,
+          truncated: result.data.truncated || page.truncated,
+          truncation_reason: page.truncation_reason ?? result.data.truncation_reason,
+          query_cursor_id: nextCursorId,
+          exhausted,
+          page_size: page.page_size ?? result.data.page_size,
+        },
+      })
+    } catch (err) {
+      const expired = err instanceof ApiError && err.code === 'query_cursor_unavailable'
+      setQueryResult(activeTabId, {
+        ...result,
+        isFetchingNextPage: false,
+        cursorMessage: expired ? 'Cursor expired. Run the query again.' : (err instanceof Error ? err.message : 'Failed to load more rows.'),
+        data: {
+          ...result.data,
+          query_cursor_id: expired ? undefined : result.data.query_cursor_id,
+          exhausted: expired ? true : result.data.exhausted,
+        },
+      })
+    } finally {
+      fetchingNextPageRef.current = false
+    }
+  }
+
+  function handleGridScroll(e: UIEvent<HTMLDivElement>) {
+    if (!canFetchMore) return
+    const el = e.currentTarget
+    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (remaining < 400) {
+      void fetchNextPage()
     }
   }
 
@@ -502,7 +588,7 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
           className="min-h-0 overflow-hidden"
           onResize={(size) => setTableCollapsed(size.asPercentage === 0)}
         >
-          <div ref={scrollRef} className="h-full overflow-auto">
+          <div ref={scrollRef} className="h-full overflow-auto" onScroll={handleGridScroll}>
             {tableEl}
           </div>
         </ResizablePanel>
@@ -524,8 +610,20 @@ function OkState({ result }: { result: Extract<QueryResult, { status: 'ok' }> })
 
       <div className="flex shrink-0 items-center border-t border-border bg-muted/40 px-3 py-1 text-[10px] text-muted-foreground">
         <span className="tabular-nums">
-          {rows.length === 1 ? '1 row' : `${rows.length} rows`}
+          {rows.length === 1 ? '1 row' : `${rows.length} rows`}{queryCursorId ? ' loaded' : ''}
         </span>
+        {result.isFetchingNextPage && (
+          <>
+            <span className="mx-1.5 opacity-40">·</span>
+            <span>Loading more…</span>
+          </>
+        )}
+        {result.cursorMessage && (
+          <>
+            <span className="mx-1.5 opacity-40">·</span>
+            <span>{result.cursorMessage}</span>
+          </>
+        )}
         <span className="mx-1.5 opacity-40">·</span>
         <span className="tabular-nums">{durationMs}ms</span>
       </div>

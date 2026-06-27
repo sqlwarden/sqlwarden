@@ -113,6 +113,9 @@ export interface ResultSet {
   rows_returned: number
   bytes_returned: number
   truncation_reason?: string
+  query_cursor_id?: string
+  exhausted?: boolean
+  page_size?: number
 }
 
 export interface Connection {
