@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -780,7 +781,10 @@ func TestExecuteQueryAppliesConfiguredResultLimit(t *testing.T) {
 		assert.Equal(t, res.StatusCode, http.StatusOK)
 	}
 
-	selectReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT id FROM t ORDER BY id"}, tok)
+	selectReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{
+		"sql":        "SELECT id FROM t ORDER BY id",
+		"use_cursor": false,
+	}, tok)
 	selectReq.Header.Set("X-Warden-Session", sessionID)
 	selectRes := send(t, selectReq, app.routes())
 	assert.Equal(t, selectRes.StatusCode, http.StatusOK)
@@ -851,6 +855,250 @@ func TestQueryCursorPagesResultsAndExpiresAfterExhaustion(t *testing.T) {
 	assert.Equal(t, expiredRes.BodyFields["error"].(map[string]any)["code"], apiErrorQueryCursorUnavailable)
 }
 
+func TestExecuteQueryReturnsCursorForPagedDQL(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-cursor-unified"), "Query Cursor Unified", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Unified Cursor WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "Unified Cursor Conn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+	connectionURL := orgConnectionURL(slug, wsIDInt, envID, connID)
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost, connectionURL+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	for _, sql := range []string{
+		"CREATE TABLE t (id INTEGER)",
+		"INSERT INTO t (id) VALUES (1), (2), (3)",
+	} {
+		req := newAuthRequest(t, http.MethodPost, connectionURL+"/query", map[string]any{"sql": sql}, tok)
+		req.Header.Set("X-Warden-Session", sessionID)
+		assert.Equal(t, send(t, req, app.routes()).StatusCode, http.StatusOK)
+	}
+
+	queryReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query", map[string]any{
+		"sql":       "SELECT id FROM t ORDER BY id",
+		"page_size": 2,
+	}, tok)
+	queryReq.Header.Set("X-Warden-Session", sessionID)
+	queryRes := send(t, queryReq, app.routes())
+	assert.Equal(t, queryRes.StatusCode, http.StatusOK)
+	assert.Equal(t, queryRes.BodyFields["exhausted"], false)
+	assert.Equal(t, queryRes.BodyFields["page_size"], any(float64(2)))
+	assert.Equal(t, queryRes.BodyFields["rows_returned"], any(float64(2)))
+	queryCursorID := queryRes.BodyFields["query_cursor_id"].(string)
+
+	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 2}, tok)
+	fetchReq.Header.Set("X-Warden-Session", sessionID)
+	fetchRes := send(t, fetchReq, app.routes())
+	assert.Equal(t, fetchRes.StatusCode, http.StatusOK)
+	assert.Equal(t, fetchRes.BodyFields["exhausted"], true)
+	assert.Equal(t, fetchRes.BodyFields["rows_returned"], any(float64(1)))
+}
+
+func TestQueryCursorFetchCancellationDoesNotExpireCursor(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-cursor-cancel-fetch"), "Query Cursor Cancel Fetch", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Cursor Cancel Fetch WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "Cursor Cancel Fetch Conn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+	connectionURL := orgConnectionURL(slug, wsIDInt, envID, connID)
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost, connectionURL+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+	parentSession, ok := app.connManager.Get(sessionID)
+	if !ok {
+		t.Fatal("expected parent session")
+	}
+
+	fakeCursor := &cancelOnceQueryCursor{}
+	qc := app.queryCursorManager().Create(connection.QueryCursorCreateParams{
+		ParentSession: parentSession,
+		Cursor:        &connection.QueryCursorHandle{ID: "test-cursor", Cursor: fakeCursor},
+	})
+
+	cancelledFetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+qc.ID+"/fetch", map[string]any{"page_size": 1}, tok)
+	cancelledFetchReq.Header.Set("X-Warden-Session", sessionID)
+	cancelledFetchRes := send(t, cancelledFetchReq, app.routes())
+	assert.Equal(t, cancelledFetchRes.StatusCode, statusClientClosedRequest)
+
+	retryReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+qc.ID+"/fetch", map[string]any{"page_size": 1}, tok)
+	retryReq.Header.Set("X-Warden-Session", sessionID)
+	retryRes := send(t, retryReq, app.routes())
+	assert.Equal(t, retryRes.StatusCode, http.StatusOK)
+	assert.Equal(t, retryRes.BodyFields["rows_returned"], any(float64(1)))
+	assert.Equal(t, retryRes.BodyFields["exhausted"], false)
+}
+
+func TestQueryCursorLifetimeContextSurvivesRequestCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	lifetimeCtx := queryCursorLifetimeContext(ctx)
+
+	cancel()
+
+	if err := ctx.Err(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("request context err = %v, want context.Canceled", err)
+	}
+	if err := lifetimeCtx.Err(); err != nil {
+		t.Fatalf("cursor lifetime context err = %v, want nil", err)
+	}
+}
+
+type cancelOnceQueryCursor struct {
+	fetches int
+	closed  bool
+}
+
+func (c *cancelOnceQueryCursor) Columns() []result.Column {
+	return []result.Column{{Name: "id", Type: result.ColumnTypeInteger, RawType: "integer"}}
+}
+
+func (c *cancelOnceQueryCursor) Fetch(context.Context, cursor.ScanOptions) (*result.ResultSet, cursor.QueryCursorState, error) {
+	c.fetches++
+	if c.fetches == 1 {
+		return nil, cursor.QueryCursorState{Exhausted: true}, context.Canceled
+	}
+	rs := &result.ResultSet{
+		Columns:       c.Columns(),
+		Rows:          []result.Row{{{Type: result.ValueTypeInteger, Integer: 1}}},
+		RowsReturned:  1,
+		BytesReturned: 8,
+	}
+	return rs, cursor.QueryCursorState{RowsReturned: 1, BytesReturned: 8}, nil
+}
+
+func (c *cancelOnceQueryCursor) Close() error {
+	c.closed = true
+	return nil
+}
+
+func TestExecuteQueryCursorOptOutUsesImmediateResult(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-cursor-optout"), "Query Cursor Opt Out", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Cursor Opt Out WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "Cursor Opt Out Conn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+	connectionURL := orgConnectionURL(slug, wsIDInt, envID, connID)
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost, connectionURL+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	for _, sql := range []string{
+		"CREATE TABLE t (id INTEGER)",
+		"INSERT INTO t (id) VALUES (1), (2), (3)",
+	} {
+		req := newAuthRequest(t, http.MethodPost, connectionURL+"/query", map[string]any{"sql": sql}, tok)
+		req.Header.Set("X-Warden-Session", sessionID)
+		assert.Equal(t, send(t, req, app.routes()).StatusCode, http.StatusOK)
+	}
+
+	queryReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query", map[string]any{
+		"sql":        "SELECT id FROM t ORDER BY id",
+		"page_size":  2,
+		"use_cursor": false,
+	}, tok)
+	queryReq.Header.Set("X-Warden-Session", sessionID)
+	queryRes := send(t, queryReq, app.routes())
+	assert.Equal(t, queryRes.StatusCode, http.StatusOK)
+	assert.Equal(t, queryRes.BodyFields["rows_returned"], any(float64(3)))
+	assert.Nil(t, queryRes.BodyFields["query_cursor_id"])
+	assert.Nil(t, queryRes.BodyFields["exhausted"])
+}
+
+func TestExecuteQueryDoesNotReturnCursorWhenDQLFitsFirstPage(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-cursor-fits"), "Query Cursor Fits", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Cursor Fits WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "Cursor Fits Conn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+	connectionURL := orgConnectionURL(slug, wsIDInt, envID, connID)
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost, connectionURL+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	queryReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query", map[string]any{
+		"sql":       "SELECT 1 AS id",
+		"page_size": 100,
+	}, tok)
+	queryReq.Header.Set("X-Warden-Session", sessionID)
+	queryRes := send(t, queryReq, app.routes())
+	assert.Equal(t, queryRes.StatusCode, http.StatusOK)
+	assert.Equal(t, queryRes.BodyFields["rows_returned"], any(float64(1)))
+	assert.Nil(t, queryRes.BodyFields["query_cursor_id"])
+	assert.Nil(t, queryRes.BodyFields["exhausted"])
+}
+
+func TestExecuteDQLQueryFallsBackToSessionQueryWhenCursorUnsupported(t *testing.T) {
+	t.Parallel()
+
+	app := &application{}
+	driver := &cursorUnsupportedQueryDriver{}
+	session := &connection.Session{Conn: driver}
+	useCursor := true
+	req := httptest.NewRequest(http.MethodPost, "/query", nil)
+
+	rs, err := app.executeDQLQuery(req, session, "SELECT 1", &useCursor, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, driver.queryCalls, 1)
+	assert.Equal(t, rs.RowsReturned, 1)
+	assert.Equal(t, rs.QueryCursorID, "")
+}
+
 func TestQueryCursorCloseAndRouteIsolation(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -885,9 +1133,9 @@ func TestQueryCursorCloseAndRouteIsolation(t *testing.T) {
 	assert.Equal(t, startRes.StatusCode, http.StatusOK)
 	queryCursorID := startRes.BodyFields["query_cursor_id"].(string)
 
-	crossRouteReq := newAuthRequest(t, http.MethodPost, directConnectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 1}, tok)
-	crossRouteReq.Header.Set("X-Warden-Session", sessionID)
-	assert.Equal(t, send(t, crossRouteReq, app.routes()).StatusCode, http.StatusNotFound)
+	directFetchReq := newAuthRequest(t, http.MethodPost, directConnectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 1}, tok)
+	directFetchReq.Header.Set("X-Warden-Session", sessionID)
+	assert.Equal(t, send(t, directFetchReq, app.routes()).StatusCode, http.StatusOK)
 
 	closeReq := newAuthRequest(t, http.MethodDelete, envConnectionURL+"/query-cursors/"+queryCursorID, nil, tok)
 	closeReq.Header.Set("X-Warden-Session", sessionID)
@@ -938,7 +1186,7 @@ func TestQueryCursorFetchHandlesParentSessionRemoval(t *testing.T) {
 	assert.Equal(t, send(t, fetchReq, app.routes()).StatusCode, http.StatusGone)
 }
 
-func TestQueryCursorFetchRechecksPermission(t *testing.T) {
+func TestQueryCursorFetchDoesNotRecheckRevokedPermission(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 
@@ -1007,7 +1255,9 @@ func TestQueryCursorFetchRechecksPermission(t *testing.T) {
 
 	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 1}, memberTok)
 	fetchReq.Header.Set("X-Warden-Session", memberSessionID)
-	assert.Equal(t, send(t, fetchReq, app.routes()).StatusCode, http.StatusForbidden)
+	fetchRes := send(t, fetchReq, app.routes())
+	assert.Equal(t, fetchRes.StatusCode, http.StatusOK)
+	assert.Equal(t, fetchRes.BodyFields["rows_returned"], any(float64(1)))
 }
 
 func TestExecuteQueryRejectsSessionFromDifferentConnection(t *testing.T) {
@@ -1886,4 +2136,27 @@ func (d *idleQueryDriver) Query(context.Context, string, ...any) (*result.Result
 }
 func (d *idleQueryDriver) Execute(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
+}
+
+type cursorUnsupportedQueryDriver struct {
+	queryCalls int
+}
+
+func (d *cursorUnsupportedQueryDriver) Connect(context.Context, dbengine.ConnectionConfig) error {
+	return nil
+}
+func (d *cursorUnsupportedQueryDriver) Ping(context.Context) error { return nil }
+func (d *cursorUnsupportedQueryDriver) Close() error               { return nil }
+func (d *cursorUnsupportedQueryDriver) Dialect() dbengine.Dialect  { return dbengine.DialectSQLite }
+func (d *cursorUnsupportedQueryDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
+	d.queryCalls++
+	return &result.ResultSet{
+		Columns:       []result.Column{{Name: "id", Type: result.ColumnTypeInteger, RawType: "integer"}},
+		Rows:          []result.Row{{{Type: result.ValueTypeInteger, Integer: 1}}},
+		RowsReturned:  1,
+		BytesReturned: 8,
+	}, nil
+}
+func (d *cursorUnsupportedQueryDriver) Execute(ctx context.Context, sql string, args ...any) (*result.ResultSet, error) {
+	return d.Query(ctx, sql, args...)
 }

@@ -407,6 +407,61 @@ func TestRemoveClosesActiveCursorsBeforeDriver(t *testing.T) {
 	}
 }
 
+func TestQueryCursorManagerRemoveClosesSessionCursor(t *testing.T) {
+	md := &mockCursorDriver{}
+	sess := &Session{Conn: md}
+	handle, err := sess.StartQueryCursor(context.Background(), "SELECT 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewQueryCursorManager(5 * time.Minute)
+	defer m.Close()
+
+	record := m.Create(QueryCursorCreateParams{
+		ParentSession: sess,
+		Cursor:        handle,
+	})
+
+	if !m.Remove(record.ID) {
+		t.Fatal("expected cursor record to be removed")
+	}
+	if len(sess.cursors) != 0 {
+		t.Fatalf("tracked cursors = %d, want 0", len(sess.cursors))
+	}
+	if !md.cursors[0].closed {
+		t.Fatal("expected underlying cursor to be closed")
+	}
+}
+
+func TestQueryCursorManagerReapIdleClosesExpiredCursor(t *testing.T) {
+	md := &mockCursorDriver{}
+	sess := &Session{Conn: md}
+	handle, err := sess.StartQueryCursor(context.Background(), "SELECT 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewQueryCursorManager(time.Minute)
+	defer m.Close()
+
+	record := m.Create(QueryCursorCreateParams{
+		ParentSession: sess,
+		Cursor:        handle,
+	})
+	record.LastUsedAt = time.Now().Add(-2 * time.Minute)
+
+	if got := m.ReapIdle(time.Now()); got != 1 {
+		t.Fatalf("reaped cursors = %d, want 1", got)
+	}
+	if _, ok := m.Get(record.ID); ok {
+		t.Fatal("expected expired cursor record to be removed")
+	}
+	if !md.cursors[0].closed {
+		t.Fatal("expected expired cursor to be closed")
+	}
+}
+
 type mockCursorDriver struct {
 	mockDriver
 	cursors []*mockQueryCursor

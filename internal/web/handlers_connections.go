@@ -682,8 +682,10 @@ func (app *application) driverConnectionConfig(driverName, dsn string) dbengine.
 
 func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		SQL string              `json:"sql"`
-		V   validator.Validator `json:"-"`
+		SQL       string              `json:"sql"`
+		PageSize  *int                `json:"page_size"`
+		UseCursor *bool               `json:"use_cursor"`
+		V         validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -693,6 +695,9 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input.V.CheckField(input.SQL != "", "sql", "SQL is required.")
+	if input.PageSize != nil {
+		input.V.CheckField(*input.PageSize > 0, "page_size", "Page size must be greater than 0.")
+	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -752,7 +757,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = session.Query(r.Context(), input.SQL)
+		rs, execErr = app.executeDQLQuery(r, session, input.SQL, input.UseCursor, input.PageSize, start)
 	case classifier.KindDML:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
@@ -800,10 +805,73 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	app.logger.Info("query executed", append(logAttrs,
 		"duration_ms", rs.DurationMs,
 		slog.Group("result", "rows", len(rs.Rows), "columns", len(rs.Columns)),
+		slog.String("query_cursor_id", rs.QueryCursorID),
 	)...)
 
 	err = response.JSON(w, http.StatusOK, rs)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func (app *application) executeDQLQuery(r *http.Request, session *connection.Session, sql string, useCursor *bool, pageSize *int, start time.Time) (*result.ResultSet, error) {
+	if useCursor == nil || *useCursor {
+		rs, err := app.executeQueryWithCursor(r, session, sql, app.queryCursorPageSize(pageSize), start)
+		if err == nil && rs != nil {
+			return rs, nil
+		}
+		if err != nil && !errors.Is(err, connection.ErrQueryCursorsUnsupported) {
+			return nil, err
+		}
+		if errors.Is(err, connection.ErrQueryCursorsUnsupported) {
+			app.logInfo(r, "query cursor unsupported; falling back to buffered query",
+				slog.String("session_id", session.ID),
+			)
+		}
+	}
+	return session.Query(r.Context(), sql)
+}
+
+func (app *application) executeQueryWithCursor(r *http.Request, session *connection.Session, sql string, pageSize int, start time.Time) (*result.ResultSet, error) {
+	app.logInfo(r, "query cursor opening",
+		slog.String("session_id", session.ID),
+		slog.Int("page_size", pageSize),
+	)
+
+	cursorHandle, err := session.StartQueryCursor(queryCursorLifetimeContext(r.Context()), sql)
+	if err != nil {
+		return nil, err
+	}
+
+	qc := app.queryCursorManager().Create(connection.QueryCursorCreateParams{
+		ParentSession: session,
+		Cursor:        cursorHandle,
+	})
+
+	rs, state, err := cursorHandle.Fetch(r.Context(), app.queryCursorScanOptions(pageSize))
+	if err != nil {
+		app.queryCursorManager().Remove(qc.ID)
+		return nil, err
+	}
+	rs.DurationMs = time.Since(start).Milliseconds()
+	rs.PageSize = pageSize
+	if state.Exhausted {
+		qc.MarkExhausted()
+		app.queryCursorManager().Remove(qc.ID)
+	} else {
+		exhausted := false
+		rs.QueryCursorID = qc.ID
+		rs.Exhausted = &exhausted
+	}
+	app.logInfo(r, "query cursor initial page returned",
+		queryCursorRecordAttrs(qc,
+			slog.Int("page_size", pageSize),
+			slog.Int("rows_returned", state.RowsReturned),
+			slog.Int64("bytes_returned", state.BytesReturned),
+			slog.Bool("exhausted", state.Exhausted),
+			slog.Bool("truncated", rs.Truncated),
+			slog.Int64("duration_ms", rs.DurationMs),
+		)...,
+	)
+	return rs, nil
 }

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/smtp"
@@ -72,7 +73,7 @@ func newTestApplication(t *testing.T) *application {
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
 	app.mailer = smtp.NewMockMailer("test@example.com")
-	app.queryCursors = newQueryCursorManager(30 * time.Minute)
+	app.queryCursors = connection.NewQueryCursorManager(30 * time.Minute)
 	t.Cleanup(func() { app.queryCursors.Close() })
 	keyring, err := encrypt.NewKeyring("test-encryption-key-32bytes!!!!!")
 	if err != nil {

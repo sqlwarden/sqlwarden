@@ -7,11 +7,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/oklog/ulid/v2"
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/dbengine/classifier"
@@ -23,7 +21,7 @@ import (
 )
 
 const (
-	defaultQueryCursorPageSize = 500
+	defaultQueryCursorPageSize = 20
 
 	apiErrorQueryCursorUnavailable = "query_cursor_unavailable"
 )
@@ -51,189 +49,9 @@ type queryCursorPageResponse struct {
 	PageSize         int             `json:"page_size"`
 }
 
-type queryCursorCreateParams struct {
-	AccountID          int64
-	OrgID              int64
-	WorkspaceID        int64
-	EnvironmentID      int64
-	ConnectionID       int64
-	ParentSessionID    string
-	ParentSession      *connection.Session
-	Cursor             *connection.QueryCursorHandle
-	RequiredPermission string
-}
-
-type queryCursor struct {
-	ID                 string
-	AccountID          int64
-	OrgID              int64
-	WorkspaceID        int64
-	EnvironmentID      int64
-	ConnectionID       int64
-	ParentSessionID    string
-	ParentSession      *connection.Session
-	CursorID           string
-	Cursor             *connection.QueryCursorHandle
-	RequiredPermission string
-	CreatedAt          time.Time
-	LastUsedAt         time.Time
-	Closed             bool
-	Exhausted          bool
-	mu                 sync.Mutex
-}
-
-type queryCursorManager struct {
-	mu          sync.RWMutex
-	cursors     map[string]*queryCursor
-	idleTimeout time.Duration
-	stop        chan struct{}
-	stopped     chan struct{}
-	closeOnce   sync.Once
-}
-
-func newQueryCursorManager(idleTimeout time.Duration) *queryCursorManager {
-	m := &queryCursorManager{
-		cursors:     make(map[string]*queryCursor),
-		idleTimeout: idleTimeout,
-		stop:        make(chan struct{}),
-		stopped:     make(chan struct{}),
-	}
-	go m.reap()
-	return m
-}
-
-func (m *queryCursorManager) Create(params queryCursorCreateParams) *queryCursor {
-	now := time.Now()
-	qc := &queryCursor{
-		ID:                 ulid.Make().String(),
-		AccountID:          params.AccountID,
-		OrgID:              params.OrgID,
-		WorkspaceID:        params.WorkspaceID,
-		EnvironmentID:      params.EnvironmentID,
-		ConnectionID:       params.ConnectionID,
-		ParentSessionID:    params.ParentSessionID,
-		ParentSession:      params.ParentSession,
-		CursorID:           params.Cursor.ID,
-		Cursor:             params.Cursor,
-		RequiredPermission: params.RequiredPermission,
-		CreatedAt:          now,
-		LastUsedAt:         now,
-	}
-
-	m.mu.Lock()
-	m.cursors[qc.ID] = qc
-	m.mu.Unlock()
-	return qc
-}
-
-func (m *queryCursorManager) Get(id string) (*queryCursor, bool) {
-	m.mu.RLock()
-	qc, ok := m.cursors[id]
-	m.mu.RUnlock()
-	return qc, ok
-}
-
-func (m *queryCursorManager) Remove(id string) bool {
-	qc, ok := m.take(id)
-	if !ok {
-		return false
-	}
-	return qc.close()
-}
-
-func (m *queryCursorManager) Close() {
-	m.closeOnce.Do(func() {
-		close(m.stop)
-	})
-	<-m.stopped
-
-	m.mu.Lock()
-	cursors := make([]*queryCursor, 0, len(m.cursors))
-	for id, qc := range m.cursors {
-		cursors = append(cursors, qc)
-		delete(m.cursors, id)
-	}
-	m.mu.Unlock()
-
-	for _, qc := range cursors {
-		qc.close()
-	}
-}
-
-func (m *queryCursorManager) take(id string) (*queryCursor, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	qc, ok := m.cursors[id]
-	if ok {
-		delete(m.cursors, id)
-	}
-	return qc, ok
-}
-
-func (m *queryCursorManager) reap() {
-	defer close(m.stopped)
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-m.stop:
-			return
-		case now := <-ticker.C:
-			m.reapIdle(now)
-		}
-	}
-}
-
-func (m *queryCursorManager) reapIdle(now time.Time) int {
-	m.mu.Lock()
-	expired := make([]*queryCursor, 0)
-	for id, qc := range m.cursors {
-		qc.mu.Lock()
-		expiredCursor := qc.Closed || now.Sub(qc.LastUsedAt) > m.idleTimeout
-		qc.mu.Unlock()
-		if expiredCursor {
-			expired = append(expired, qc)
-			delete(m.cursors, id)
-		}
-	}
-	m.mu.Unlock()
-
-	for _, qc := range expired {
-		qc.close()
-	}
-	return len(expired)
-}
-
-func (qc *queryCursor) touch() bool {
-	qc.mu.Lock()
-	defer qc.mu.Unlock()
-	if qc.Closed {
-		return false
-	}
-	qc.LastUsedAt = time.Now()
-	return true
-}
-
-func (qc *queryCursor) close() bool {
-	qc.mu.Lock()
-	if qc.Closed {
-		qc.mu.Unlock()
-		return false
-	}
-	qc.Closed = true
-	qc.mu.Unlock()
-
-	if qc.ParentSession != nil {
-		_ = qc.ParentSession.CloseCursor(qc.CursorID)
-	} else if qc.Cursor != nil {
-		_ = qc.Cursor.Close()
-	}
-	return true
-}
-
-func (app *application) queryCursorManager() *queryCursorManager {
+func (app *application) queryCursorManager() *connection.QueryCursorManager {
 	if app.queryCursors == nil {
-		app.queryCursors = newQueryCursorManager(30 * time.Minute)
+		app.queryCursors = connection.NewQueryCursorManager(30 * time.Minute)
 	}
 	return app.queryCursors
 }
@@ -255,42 +73,43 @@ func (app *application) startQueryCursor(w http.ResponseWriter, r *http.Request)
 	}
 
 	pageSize := app.queryCursorPageSize(input.PageSize)
-	session, requiredPermission, ok := app.resolveQueryRuntimeSession(w, r, input.SQL)
+	session, ok := app.resolveQueryRuntimeSession(w, r, input.SQL)
 	if !ok {
 		return
 	}
 
 	start := time.Now()
-	cursor, err := session.StartQueryCursor(r.Context(), input.SQL)
+	cursor, err := session.StartQueryCursor(queryCursorLifetimeContext(r.Context()), input.SQL)
 	if err != nil {
 		if errors.Is(err, connection.ErrQueryCursorsUnsupported) {
+			app.logWarn(r, "query cursor unsupported",
+				slog.String("session_id", session.ID),
+				slog.Int("page_size", pageSize),
+			)
 			app.errorMessage(w, r, http.StatusUnprocessableEntity, "Connection driver does not support query cursors.", nil)
 			return
 		}
 		if app.isQueryRequestCanceled(r, err) {
 			app.connManager.Remove(session.ID)
+			app.logWarn(r, "query cursor start cancelled",
+				slog.String("session_id", session.ID),
+				slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+			)
 			app.errorMessage(w, r, statusClientClosedRequest, "Query was cancelled.", nil)
 			return
 		}
+		app.logWarn(r, "query cursor start failed",
+			slog.String("session_id", session.ID),
+			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+			slog.String("error", err.Error()),
+		)
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 		return
 	}
 
-	account := contextGetAccount(r)
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	env := contextGetEnvironment(r)
-	conn := contextGetConnection(r)
-	qc := app.queryCursorManager().Create(queryCursorCreateParams{
-		AccountID:          account.ID,
-		OrgID:              org.ID,
-		WorkspaceID:        ws.ID,
-		EnvironmentID:      env.ID,
-		ConnectionID:       conn.ID,
-		ParentSessionID:    session.ID,
-		ParentSession:      session,
-		Cursor:             cursor,
-		RequiredPermission: requiredPermission,
+	qc := app.queryCursorManager().Create(connection.QueryCursorCreateParams{
+		ParentSession: session,
+		Cursor:        cursor,
 	})
 
 	rs, state, err := cursor.Fetch(r.Context(), app.queryCursorScanOptions(pageSize))
@@ -298,27 +117,38 @@ func (app *application) startQueryCursor(w http.ResponseWriter, r *http.Request)
 		app.queryCursorManager().Remove(qc.ID)
 		if app.isQueryRequestCanceled(r, err) {
 			app.connManager.Remove(session.ID)
+			app.logWarn(r, "query cursor initial fetch cancelled",
+				queryCursorRecordAttrs(qc,
+					slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+				)...,
+			)
 			app.errorMessage(w, r, statusClientClosedRequest, "Query was cancelled.", nil)
 			return
 		}
+		app.logWarn(r, "query cursor initial fetch failed",
+			queryCursorRecordAttrs(qc,
+				slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+				slog.String("error", err.Error()),
+			)...,
+		)
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 		return
 	}
 
 	if state.Exhausted {
+		qc.MarkExhausted()
 		app.queryCursorManager().Remove(qc.ID)
 	}
 
-	app.logger.Info("query cursor started",
-		slog.String("query_cursor_id", qc.ID),
-		slog.Int64("account_id", account.ID),
-		slog.Int64("org_id", org.ID),
-		slog.Int64("workspace_id", ws.ID),
-		slog.Int64("connection_id", conn.ID),
-		slog.Int("rows_returned", state.RowsReturned),
-		slog.Int64("bytes_returned", state.BytesReturned),
-		slog.Bool("exhausted", state.Exhausted),
-		slog.Bool("truncated", rs.Truncated),
+	app.logInfo(r, "query cursor started",
+		queryCursorRecordAttrs(qc,
+			slog.Int("page_size", pageSize),
+			slog.Int("rows_returned", state.RowsReturned),
+			slog.Int64("bytes_returned", state.BytesReturned),
+			slog.Bool("exhausted", state.Exhausted),
+			slog.Bool("truncated", rs.Truncated),
+			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+		)...,
 	)
 
 	app.writeQueryCursorPage(w, r, qc.ID, rs, state.Exhausted, pageSize, time.Since(start))
@@ -342,18 +172,27 @@ func (app *application) fetchQueryCursor(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if !app.canUseQueryCursorPermission(r, qc) {
+	if qc.ParentSession == nil {
 		app.queryCursorManager().Remove(qc.ID)
-		app.notPermitted(w, r)
-		return
-	}
-	if _, ok := app.connManager.Get(qc.ParentSessionID); !ok {
-		app.queryCursorManager().Remove(qc.ID)
+		app.logWarn(r, "query cursor unavailable",
+			queryCursorRecordAttrs(qc, slog.String("reason", "missing_parent_session"))...,
+		)
 		app.queryCursorUnavailable(w, r)
 		return
 	}
-	if !qc.touch() {
+	if _, ok := app.connManager.Get(qc.ParentSession.ID); !ok {
 		app.queryCursorManager().Remove(qc.ID)
+		app.logWarn(r, "query cursor unavailable",
+			queryCursorRecordAttrs(qc, slog.String("reason", "parent_session_not_found"))...,
+		)
+		app.queryCursorUnavailable(w, r)
+		return
+	}
+	if !qc.Touch() {
+		app.queryCursorManager().Remove(qc.ID)
+		app.logWarn(r, "query cursor unavailable",
+			queryCursorRecordAttrs(qc, slog.String("reason", "cursor_closed"))...,
+		)
 		app.queryCursorUnavailable(w, r)
 		return
 	}
@@ -361,32 +200,46 @@ func (app *application) fetchQueryCursor(w http.ResponseWriter, r *http.Request)
 	start := time.Now()
 	rs, state, err := qc.Cursor.Fetch(r.Context(), app.queryCursorScanOptions(pageSize))
 	if err != nil {
-		app.queryCursorManager().Remove(qc.ID)
 		if app.isQueryRequestCanceled(r, err) {
+			app.logWarn(r, "query cursor fetch cancelled",
+				queryCursorRecordAttrs(qc,
+					slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+				)...,
+			)
 			app.errorMessage(w, r, statusClientClosedRequest, "Query was cancelled.", nil)
 			return
 		}
+		app.queryCursorManager().Remove(qc.ID)
 		if errors.Is(err, cursor.ErrCursorClosed) {
+			app.logWarn(r, "query cursor unavailable",
+				queryCursorRecordAttrs(qc, slog.String("reason", "driver_cursor_closed"))...,
+			)
 			app.queryCursorUnavailable(w, r)
 			return
 		}
+		app.logWarn(r, "query cursor fetch failed",
+			queryCursorRecordAttrs(qc,
+				slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+				slog.String("error", err.Error()),
+			)...,
+		)
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 		return
 	}
 	if state.Exhausted {
+		qc.MarkExhausted()
 		app.queryCursorManager().Remove(qc.ID)
 	}
 
-	app.logger.Info("query cursor fetched",
-		slog.String("query_cursor_id", qc.ID),
-		slog.Int64("account_id", qc.AccountID),
-		slog.Int64("org_id", qc.OrgID),
-		slog.Int64("workspace_id", qc.WorkspaceID),
-		slog.Int64("connection_id", qc.ConnectionID),
-		slog.Int("rows_returned", state.RowsReturned),
-		slog.Int64("bytes_returned", state.BytesReturned),
-		slog.Bool("exhausted", state.Exhausted),
-		slog.Bool("truncated", rs.Truncated),
+	app.logInfo(r, "query cursor fetched",
+		queryCursorRecordAttrs(qc,
+			slog.Int("page_size", pageSize),
+			slog.Int("rows_returned", state.RowsReturned),
+			slog.Int64("bytes_returned", state.BytesReturned),
+			slog.Bool("exhausted", state.Exhausted),
+			slog.Bool("truncated", rs.Truncated),
+			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+		)...,
 	)
 
 	app.writeQueryCursorPage(w, r, qc.ID, rs, state.Exhausted, pageSize, time.Since(start))
@@ -397,18 +250,14 @@ func (app *application) closeQueryCursor(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	app.queryCursorManager().Remove(qc.ID)
-	app.logger.Info("query cursor closed",
-		slog.String("query_cursor_id", qc.ID),
-		slog.Int64("account_id", qc.AccountID),
-		slog.Int64("org_id", qc.OrgID),
-		slog.Int64("workspace_id", qc.WorkspaceID),
-		slog.Int64("connection_id", qc.ConnectionID),
+	removed := app.queryCursorManager().Remove(qc.ID)
+	app.logInfo(r, "query cursor closed",
+		queryCursorRecordAttrs(qc, slog.Bool("removed", removed))...,
 	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) resolveQueryCursorRecord(w http.ResponseWriter, r *http.Request) (*queryCursor, bool) {
+func (app *application) resolveQueryCursorRecord(w http.ResponseWriter, r *http.Request) (*connection.QueryCursorRecord, bool) {
 	id := strings.TrimSpace(chi.URLParam(r, "query_cursor_id"))
 	if id == "" {
 		app.notFound(w, r)
@@ -420,23 +269,45 @@ func (app *application) resolveQueryCursorRecord(w http.ResponseWriter, r *http.
 		return nil, false
 	}
 	if !app.queryCursorMatchesRequest(r, qc) {
+		app.logWarn(r, "query cursor scope mismatch", queryCursorRecordAttrs(qc)...)
 		app.notFound(w, r)
 		return nil, false
 	}
 	return qc, true
 }
 
-func (app *application) queryCursorMatchesRequest(r *http.Request, qc *queryCursor) bool {
+func (app *application) queryCursorMatchesRequest(r *http.Request, qc *connection.QueryCursorRecord) bool {
+	if qc.ParentSession == nil {
+		return false
+	}
 	account := contextGetAccount(r)
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
-	env := contextGetEnvironment(r)
 	conn := contextGetConnection(r)
-	return qc.AccountID == account.ID &&
-		qc.OrgID == org.ID &&
-		qc.WorkspaceID == ws.ID &&
-		qc.EnvironmentID == env.ID &&
-		qc.ConnectionID == conn.ID
+	return qc.ParentSession.AccountID == strconv.FormatInt(account.ID, 10) &&
+		qc.ParentSession.OrgID == strconv.FormatInt(org.ID, 10) &&
+		qc.ParentSession.WorkspaceID == strconv.FormatInt(ws.ID, 10) &&
+		qc.ParentSession.ConnectionID == strconv.FormatInt(conn.ID, 10)
+}
+
+func queryCursorRecordAttrs(qc *connection.QueryCursorRecord, attrs ...slog.Attr) []slog.Attr {
+	closed, exhausted := qc.State()
+	out := []slog.Attr{
+		slog.String("query_cursor_id", qc.ID),
+		slog.String("session_id", qc.ParentSessionID),
+		slog.String("driver_cursor_id", qc.CursorID),
+		slog.Bool("closed", closed),
+		slog.Bool("exhausted", exhausted),
+	}
+	if qc.ParentSession != nil {
+		out = append(out,
+			slog.String("session_account_id", qc.ParentSession.AccountID),
+			slog.String("session_org_id", qc.ParentSession.OrgID),
+			slog.String("session_workspace_id", qc.ParentSession.WorkspaceID),
+			slog.String("session_connection_id", qc.ParentSession.ConnectionID),
+		)
+	}
+	return append(out, attrs...)
 }
 
 func (app *application) queryCursorPageSize(requested *int) int {
@@ -478,53 +349,51 @@ func (app *application) writeQueryCursorPage(w http.ResponseWriter, r *http.Requ
 	}
 }
 
-func (app *application) queryCursorUnavailable(w http.ResponseWriter, r *http.Request) {
-	app.apiError(w, r, http.StatusGone, apiErrorQueryCursorUnavailable, "Query cursor is no longer available. Run the query again.", response.APIError{}, nil)
+func queryCursorLifetimeContext(ctx context.Context) context.Context {
+	// database/sql ties Rows to the QueryContext used to create them. A query
+	// cursor must survive beyond the HTTP request that opened it, so detach it
+	// from request cancellation; explicit close, exhaustion, parent session
+	// removal, and the idle reaper own cursor cleanup after creation.
+	return context.WithoutCancel(ctx)
 }
 
-func (app *application) canUseQueryCursorPermission(r *http.Request, qc *queryCursor) bool {
-	if qc.RequiredPermission == "" {
-		return false
-	}
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	account := contextGetAccount(r)
-	return app.enforcer.Can(r.Context(), account.ID, org.ID, ws.OwnerType, "connection", qc.ConnectionID, qc.RequiredPermission)
+func (app *application) queryCursorUnavailable(w http.ResponseWriter, r *http.Request) {
+	app.apiError(w, r, http.StatusGone, apiErrorQueryCursorUnavailable, "Query cursor is no longer available. Run the query again.", response.APIError{}, nil)
 }
 
 func (app *application) isQueryRequestCanceled(r *http.Request, err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || r.Context().Err() != nil
 }
 
-func (app *application) resolveQueryRuntimeSession(w http.ResponseWriter, r *http.Request, sql string) (*connection.Session, string, bool) {
+func (app *application) resolveQueryRuntimeSession(w http.ResponseWriter, r *http.Request, sql string) (*connection.Session, bool) {
 	account := contextGetAccount(r)
 	conn := contextGetConnection(r)
 
-	requiredPermission, allowed, err := app.requiredConnectionRuntimePermission(r, sql)
+	_, allowed, err := app.requiredConnectionRuntimePermission(r, sql)
 	if err != nil {
 		app.serverError(w, r, err)
-		return nil, "", false
+		return nil, false
 	}
 	if !allowed {
 		app.notPermitted(w, r)
-		return nil, "", false
+		return nil, false
 	}
 
 	sessionID := r.Header.Get("X-Warden-Session")
 	if sessionID == "" {
 		app.errorMessage(w, r, http.StatusBadRequest, "X-Warden-Session header is required.", nil)
-		return nil, "", false
+		return nil, false
 	}
 	session, ok := app.connManager.Get(sessionID)
 	if !ok {
 		app.errorMessage(w, r, http.StatusGone, "Session has expired or does not exist.", nil)
-		return nil, "", false
+		return nil, false
 	}
 	if session.AccountID != strconv.FormatInt(account.ID, 10) || session.ConnectionID != strconv.FormatInt(conn.ID, 10) {
 		app.notPermitted(w, r)
-		return nil, "", false
+		return nil, false
 	}
-	return session, requiredPermission, true
+	return session, true
 }
 
 func (app *application) requiredConnectionRuntimePermission(r *http.Request, sql string) (string, bool, error) {

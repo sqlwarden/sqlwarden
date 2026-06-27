@@ -144,6 +144,9 @@ func accessLogAttrs(r *http.Request, mw *response.MetricsResponseWriter, duratio
 // logInfo records a successful domain event with the same request/resource
 // correlation fields used by access and error logs.
 func (app *application) logInfo(r *http.Request, message string, attrs ...slog.Attr) {
+	if app.logger == nil {
+		return
+	}
 	base := []slog.Attr{
 		slog.Group("request", attrsToAny(requestAttrs(r))...),
 		slog.Group("resource", attrsToAny(resourceAttrs(r))...),
@@ -155,6 +158,9 @@ func (app *application) logInfo(r *http.Request, message string, attrs ...slog.A
 // logWarn records a high-signal blocked or degraded domain event with request
 // correlation. Routine 4xx responses are still covered by access logs.
 func (app *application) logWarn(r *http.Request, message string, attrs ...slog.Attr) {
+	if app.logger == nil {
+		return
+	}
 	base := []slog.Attr{
 		slog.Group("request", attrsToAny(requestAttrs(r))...),
 		slog.Group("resource", attrsToAny(resourceAttrs(r))...),
