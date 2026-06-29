@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -71,6 +72,22 @@ func newConnectedDriver(t *testing.T) *mysqlDriver {
 	return d
 }
 
+func currentHeapAlloc() uint64 {
+	runtime.GC()
+	runtime.GC()
+
+	var stats runtime.MemStats
+	runtime.ReadMemStats(&stats)
+	return stats.HeapAlloc
+}
+
+func heapGrowth(before, after uint64) uint64 {
+	if after <= before {
+		return 0
+	}
+	return after - before
+}
+
 func TestConnect(t *testing.T) {
 	t.Run("valid DSN", func(t *testing.T) {
 		d := &mysqlDriver{}
@@ -97,6 +114,51 @@ func TestPing(t *testing.T) {
 	ctx := context.Background()
 	if err := d.Ping(ctx); err != nil {
 		t.Fatalf("Ping: %v", err)
+	}
+}
+
+func TestQueryCursorDoesNotMaterializeLargeResultSet(t *testing.T) {
+	d := newConnectedDriver(t)
+
+	const (
+		totalRows        = 200_000
+		payloadBytes     = 1024
+		pageSize         = 10
+		maxHeapGrowthMiB = 64
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	before := currentHeapAlloc()
+	qc, err := d.StartQuery(ctx, cursor.QueryRequest{SQL: fmt.Sprintf(`
+		WITH RECURSIVE seq(n) AS (
+			SELECT 1
+			UNION ALL
+			SELECT n + 1 FROM seq WHERE n < %d
+		)
+		SELECT /*+ SET_VAR(cte_max_recursion_depth=%d) */ n, REPEAT('x', %d) AS payload
+		FROM seq
+	`, totalRows, totalRows, payloadBytes)})
+	if err != nil {
+		t.Fatalf("StartQuery: %v", err)
+	}
+	defer qc.Close()
+
+	rs, state, err := qc.Fetch(ctx, cursor.ScanOptions{MaxRows: pageSize})
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if state.Exhausted {
+		t.Fatal("expected cursor to remain open after first page")
+	}
+	if len(rs.Rows) != pageSize {
+		t.Fatalf("expected %d rows, got %d", pageSize, len(rs.Rows))
+	}
+
+	after := currentHeapAlloc()
+	if growth := heapGrowth(before, after); growth > maxHeapGrowthMiB*1024*1024 {
+		t.Fatalf("heap grew by %.2f MiB after fetching %d of %d logical rows; driver may be materializing the full result set", float64(growth)/(1024*1024), pageSize, totalRows)
 	}
 }
 
