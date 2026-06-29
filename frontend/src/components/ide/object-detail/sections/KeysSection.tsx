@@ -24,20 +24,25 @@ export function KeysSection({ vm }: { vm: ObjectViewModel }) {
         <Group title="Foreign keys">
           {fks.map((f) => (
             <div key={f.name} className="font-mono text-muted-foreground">
-              <span className="text-foreground">{f.name}</span>: ({f.columns.join(', ')}) →{' '}
+              <span className="text-foreground">{f.name}</span>: ({(f.columns ?? []).join(', ')}) →{' '}
               {f.references.namespace ? `${f.references.namespace}.` : ''}
-              {f.references.name} ({f.referenced_columns.join(', ')})
+              {f.references.name} ({(f.referenced_columns ?? []).join(', ')})
             </div>
           ))}
         </Group>
       )}
       {indexes.length > 0 && (
         <Group title="Indexes">
-          {indexes.map((ix) => (
-            <div key={ix.name} className="font-mono text-muted-foreground">
-              <span className="text-foreground">{ix.name}</span> ({ix.columns.join(', ')}){ix.unique ? ' · unique' : ''}
-            </div>
-          ))}
+          {indexes.map((ix) => {
+            const cols = ix.columns ?? []
+            return (
+              <div key={ix.name} className="font-mono text-muted-foreground">
+                <span className="text-foreground">{ix.name}</span>
+                {cols.length > 0 ? ` (${cols.join(', ')})` : ''}
+                {ix.unique ? ' · unique' : ''}
+              </div>
+            )
+          })}
         </Group>
       )}
     </div>
@@ -62,11 +67,11 @@ function DescriptorList({ vm }: { vm: ObjectViewModel }) {
           {d.rows && (
             <table className="border-separate border-spacing-0">
               <thead>
-                <tr>{d.rows.columns.map((c) => <th key={c} className="border-b border-border px-2 py-1 text-left text-muted-foreground">{c}</th>)}</tr>
+                <tr>{(d.rows.columns ?? []).map((c) => <th key={c} className="border-b border-border px-2 py-1 text-left text-muted-foreground">{c}</th>)}</tr>
               </thead>
               <tbody>
-                {d.rows.rows.map((row, i) => (
-                  <tr key={i}>{row.map((v, j) => <td key={j} className="border-b border-border px-2 py-1 font-mono">{v}</td>)}</tr>
+                {(d.rows.rows ?? []).map((row, i) => (
+                  <tr key={i}>{(row ?? []).map((v, j) => <td key={j} className="border-b border-border px-2 py-1 font-mono">{v}</td>)}</tr>
                 ))}
               </tbody>
             </table>

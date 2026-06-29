@@ -6,7 +6,7 @@ export function ColumnsSection({ vm, extras }: { vm: ObjectViewModel; extras: Co
   const rel = vm.detail.relational
   const columns = rel?.columns ?? []
   const pk = new Set(rel?.primary_key ?? [])
-  const fk = new Set((rel?.foreign_keys ?? []).flatMap((f) => f.columns))
+  const fk = new Set((rel?.foreign_keys ?? []).flatMap((f) => f.columns ?? []))
 
   if (columns.length === 0) {
     return <Empty>No columns.</Empty>
