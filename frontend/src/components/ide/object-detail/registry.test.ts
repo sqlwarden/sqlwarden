@@ -25,12 +25,33 @@ describe('getObjectRenderer', () => {
     expect(r.columnExtras(vm(tableDetail, 'sqlite'))).toEqual([])
   })
 
-  it('renders a single Overview section for non-relational objects', () => {
+  it('renders a single Overview section for non-relational objects without source', () => {
     const fnDetail: ObjectDetail = {
       ref: { namespace: 'public', kind: 'function', name: 'f' },
       descriptors: [{ kind: 'fields', title: 'Function', fields: [{ name: 'returns', value: 'int' }] }],
     }
     expect(getObjectRenderer('postgres').sections(vm(fnDetail)).map((s) => s.id)).toEqual(['overview'])
+  })
+
+  it('adds a source section (labeled by title) for non-relational objects carrying SQL', () => {
+    const fnDetail: ObjectDetail = {
+      ref: { namespace: 'public', kind: 'function', name: 'f' },
+      descriptors: [
+        { kind: 'fields', title: 'Signature', fields: [{ name: 'returns', value: 'int' }] },
+        { kind: 'source', title: 'Definition', source: { language: 'plpgsql', body: 'BEGIN RETURN 1; END' } },
+      ],
+    }
+    const sections = getObjectRenderer('postgres').sections(vm(fnDetail))
+    expect(sections.map((s) => s.id)).toEqual(['overview', 'source-0'])
+    expect(sections.map((s) => s.label)).toContain('Definition')
+  })
+
+  it('uses the descriptor title for the source label (e.g. mysql trigger Statement)', () => {
+    const trigDetail: ObjectDetail = {
+      ref: { namespace: 'db', kind: 'trigger', name: 't' },
+      descriptors: [{ kind: 'source', title: 'Statement', source: { language: 'sql', body: 'BEGIN END' } }],
+    }
+    expect(getObjectRenderer('mysql').sections(vm(trigDetail, 'mysql')).map((s) => s.label)).toEqual(['Statement'])
   })
 
   it('mysql renderer surfaces engine/collation badges but not the approx row estimate', () => {
