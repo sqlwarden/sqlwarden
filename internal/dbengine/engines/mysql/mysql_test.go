@@ -522,6 +522,80 @@ func TestToValue(t *testing.T) {
 	}
 }
 
+func TestMySQLObjectDefinitionsAndAttributes(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+
+	if _, err := d.Execute(ctx, `DROP VIEW IF EXISTS defs_v`); err != nil {
+		t.Fatalf("drop view: %v", err)
+	}
+	if _, err := d.Execute(ctx, `DROP TABLE IF EXISTS defs_t`); err != nil {
+		t.Fatalf("drop table: %v", err)
+	}
+	if _, err := d.Execute(ctx, "CREATE TABLE defs_t (id INT PRIMARY KEY AUTO_INCREMENT, n VARCHAR(20) COMMENT 'the name') ENGINE=InnoDB"); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE VIEW defs_v AS SELECT id FROM defs_t`); err != nil {
+		t.Fatalf("create view: %v", err)
+	}
+
+	tbl, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "testdb", Kind: "table", Name: "defs_t"}})
+	if err != nil {
+		t.Fatalf("InspectObjects table: %v", err)
+	}
+	if got := attrString(tbl[0].Attributes, "engine"); got != "InnoDB" {
+		t.Fatalf("engine = %q, want InnoDB", got)
+	}
+	if got := attrString(tbl[0].Attributes, "collation"); got == "" {
+		t.Fatalf("collation attribute missing: %+v", tbl[0].Attributes)
+	}
+	col := findColumn(tbl[0].Relational.Columns, "n")
+	if got := attrString(col.Attributes, "comment"); got != "the name" {
+		t.Fatalf("column comment = %q, want 'the name'", got)
+	}
+	idCol := findColumn(tbl[0].Relational.Columns, "id")
+	if got := attrString(idCol.Attributes, "extra"); !strings.Contains(got, "auto_increment") {
+		t.Fatalf("id extra = %q, want it to contain auto_increment", got)
+	}
+	if ddl := descriptorByTitle(tbl[0].Descriptors, "DDL"); ddl == nil || !strings.Contains(ddl.Body, "CREATE TABLE") {
+		t.Fatalf("table DDL descriptor missing/blank: %+v", tbl[0].Descriptors)
+	}
+
+	view, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "testdb", Kind: "view", Name: "defs_v"}})
+	if err != nil {
+		t.Fatalf("InspectObjects view: %v", err)
+	}
+	if def := descriptorByTitle(view[0].Descriptors, "Definition"); def == nil || !strings.Contains(strings.ToUpper(def.Body), "SELECT") {
+		t.Fatalf("view definition descriptor missing/blank: %+v", view[0].Descriptors)
+	}
+}
+
+func attrString(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	s, _ := m[key].(string)
+	return s
+}
+
+func findColumn(cols []schema.Column, name string) schema.Column {
+	for _, c := range cols {
+		if c.Name == name {
+			return c
+		}
+	}
+	return schema.Column{}
+}
+
+func descriptorByTitle(ds []schema.Descriptor, title string) *schema.Source {
+	for _, d := range ds {
+		if d.Title == title && d.Source != nil {
+			return d.Source
+		}
+	}
+	return nil
+}
+
 func catalogHasRef(catalog *schema.Catalog, ref schema.ObjectRef) bool {
 	for _, ns := range catalog.Namespaces {
 		for _, group := range ns.Groups {

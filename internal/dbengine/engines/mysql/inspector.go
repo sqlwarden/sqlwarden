@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/sqlwarden/internal/dbengine/schema"
@@ -190,7 +191,8 @@ func (d *mysqlDriver) inspectRelational(ctx context.Context, refs []schema.Objec
 	pairs, args := mysqlPairFilter(refs)
 
 	colQ := `
-SELECT table_schema, table_name, column_name, column_type, is_nullable, column_default, ordinal_position
+SELECT table_schema, table_name, column_name, column_type, is_nullable, column_default, ordinal_position,
+       column_comment, extra
 FROM information_schema.columns
 WHERE (table_schema, table_name) IN (` + pairs + `)
 ORDER BY table_schema, table_name, ordinal_position`
@@ -202,7 +204,8 @@ ORDER BY table_schema, table_name, ordinal_position`
 		var ns, tbl, col, dtype, nullable string
 		var def sql.NullString
 		var ord int
-		if err := crows.Scan(&ns, &tbl, &col, &dtype, &nullable, &def, &ord); err != nil {
+		var comment, extra string
+		if err := crows.Scan(&ns, &tbl, &col, &dtype, &nullable, &def, &ord, &comment, &extra); err != nil {
 			crows.Close()
 			return nil, fmt.Errorf("mysql: object columns scan: %w", err)
 		}
@@ -211,6 +214,8 @@ ORDER BY table_schema, table_name, ordinal_position`
 			v := def.String
 			c.Default = &v
 		}
+		setColumnAttr(&c, "comment", comment)
+		setColumnAttr(&c, "extra", extra)
 		b.AddColumn(refFor(ns, tbl), c)
 	}
 	if err := crows.Err(); err != nil {
@@ -309,7 +314,147 @@ ORDER BY table_schema, table_name, index_name, seq_in_index`
 		b.AddIndex(refFor(key.ns, key.tbl), *indexes[key])
 	}
 
-	return b.Build(), nil
+	out := b.Build()
+	if err := d.attachMySQLTableAttributes(ctx, out, pairs, args); err != nil {
+		return nil, err
+	}
+	if err := d.attachMySQLDefinitions(ctx, out, pairs, args); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// attachMySQLTableAttributes populates each table object's engine, collation,
+// and estimated row count from information_schema.tables.
+func (d *mysqlDriver) attachMySQLTableAttributes(ctx context.Context, objs []schema.Object, pairs string, args []any) error {
+	q := `
+SELECT table_schema, table_name, engine, table_collation, table_rows
+FROM information_schema.tables
+WHERE (table_schema, table_name) IN (` + pairs + `)`
+	rows, err := d.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return fmt.Errorf("mysql: table attributes: %w", err)
+	}
+	defer rows.Close()
+
+	type meta struct {
+		engine    string
+		collation string
+		rows      string
+	}
+	byName := map[string]meta{}
+	for rows.Next() {
+		var ns, tbl string
+		var engine, collation sql.NullString
+		var tableRows sql.NullInt64
+		if err := rows.Scan(&ns, &tbl, &engine, &collation, &tableRows); err != nil {
+			return fmt.Errorf("mysql: table attributes scan: %w", err)
+		}
+		m := meta{engine: engine.String, collation: collation.String}
+		if tableRows.Valid {
+			m.rows = strconv.FormatInt(tableRows.Int64, 10)
+		}
+		byName[ns+"\x00"+tbl] = m
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("mysql: table attributes rows: %w", err)
+	}
+	for i := range objs {
+		m, ok := byName[objs[i].Ref.Namespace+"\x00"+objs[i].Ref.Name]
+		if !ok {
+			continue
+		}
+		setObjectAttr(&objs[i], "engine", m.engine)
+		setObjectAttr(&objs[i], "collation", m.collation)
+		setObjectAttr(&objs[i], "row_estimate", m.rows)
+	}
+	return nil
+}
+
+// attachMySQLDefinitions appends a "source" descriptor per object: views get
+// their definition from information_schema.views; tables get DDL from SHOW
+// CREATE TABLE.
+func (d *mysqlDriver) attachMySQLDefinitions(ctx context.Context, objs []schema.Object, pairs string, args []any) error {
+	viewDefs := map[string]string{}
+	vrows, err := d.db.QueryContext(ctx, `
+SELECT table_schema, table_name, view_definition
+FROM information_schema.views
+WHERE (table_schema, table_name) IN (`+pairs+`)`, args...)
+	if err != nil {
+		return fmt.Errorf("mysql: view definitions: %w", err)
+	}
+	for vrows.Next() {
+		var ns, name string
+		var def sql.NullString
+		if err := vrows.Scan(&ns, &name, &def); err != nil {
+			vrows.Close()
+			return fmt.Errorf("mysql: view definitions scan: %w", err)
+		}
+		if def.Valid {
+			viewDefs[ns+"\x00"+name] = def.String
+		}
+	}
+	if err := vrows.Err(); err != nil {
+		vrows.Close()
+		return fmt.Errorf("mysql: view definitions rows: %w", err)
+	}
+	vrows.Close()
+
+	for i := range objs {
+		switch objs[i].Ref.Kind {
+		case "view":
+			if def := viewDefs[objs[i].Ref.Namespace+"\x00"+objs[i].Ref.Name]; def != "" {
+				appendSource(&objs[i], "Definition", def)
+			}
+		case "table":
+			row := d.db.QueryRowContext(ctx, "SHOW CREATE TABLE "+mysqlQuoteQualified(objs[i].Ref.Namespace, objs[i].Ref.Name))
+			var name, ddl string
+			if err := row.Scan(&name, &ddl); err != nil {
+				return fmt.Errorf("mysql: show create table: %w", err)
+			}
+			appendSource(&objs[i], "DDL", ddl)
+		}
+	}
+	return nil
+}
+
+func mysqlQuoteQualified(namespace, name string) string {
+	return mysqlQuoteIdent(namespace) + "." + mysqlQuoteIdent(name)
+}
+
+func mysqlQuoteIdent(s string) string {
+	return "`" + strings.ReplaceAll(s, "`", "``") + "`"
+}
+
+func setColumnAttr(c *schema.Column, key, value string) {
+	if value == "" {
+		return
+	}
+	if c.Attributes == nil {
+		c.Attributes = map[string]any{}
+	}
+	c.Attributes[key] = value
+}
+
+func setObjectAttr(o *schema.Object, key, value string) {
+	if value == "" {
+		return
+	}
+	if o.Attributes == nil {
+		o.Attributes = map[string]any{}
+	}
+	o.Attributes[key] = value
+}
+
+func appendSource(o *schema.Object, title, body string) {
+	if body == "" {
+		return
+	}
+	o.Descriptors = append(o.Descriptors, schema.Descriptor{
+		Kind:   "source",
+		Title:  title,
+		Source: &schema.Source{Language: "sql", Body: body},
+	})
 }
 
 func (d *mysqlDriver) inspectRoutines(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {

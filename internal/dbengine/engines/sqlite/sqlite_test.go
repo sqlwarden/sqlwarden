@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -305,6 +306,50 @@ func TestToValue(t *testing.T) {
 			tc.check(t, cursor.NormalizeValue(tc.input))
 		})
 	}
+}
+
+func TestSQLiteObjectDefinitions(t *testing.T) {
+	d := &sqliteDriver{}
+	ctx := context.Background()
+
+	if err := d.Connect(ctx, dbengine.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer d.Close()
+
+	if _, err := d.Execute(ctx, `CREATE TABLE defs_t (id INTEGER PRIMARY KEY, n TEXT)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE VIEW defs_v AS SELECT id FROM defs_t`); err != nil {
+		t.Fatalf("create view: %v", err)
+	}
+
+	tbl, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "main", Kind: "table", Name: "defs_t"}})
+	if err != nil {
+		t.Fatalf("InspectObjects table: %v", err)
+	}
+	ddl := descriptorByTitle(tbl[0].Descriptors, "DDL")
+	if ddl == nil || !strings.Contains(ddl.Body, "CREATE TABLE") {
+		t.Fatalf("table DDL descriptor missing/blank: %+v", tbl[0].Descriptors)
+	}
+
+	view, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "main", Kind: "view", Name: "defs_v"}})
+	if err != nil {
+		t.Fatalf("InspectObjects view: %v", err)
+	}
+	def := descriptorByTitle(view[0].Descriptors, "Definition")
+	if def == nil || !strings.Contains(strings.ToUpper(def.Body), "SELECT") {
+		t.Fatalf("view definition descriptor missing/blank: %+v", view[0].Descriptors)
+	}
+}
+
+func descriptorByTitle(ds []schema.Descriptor, title string) *schema.Source {
+	for _, d := range ds {
+		if d.Title == title && d.Source != nil {
+			return d.Source
+		}
+	}
+	return nil
 }
 
 func catalogHasRef(catalog *schema.Catalog, ref schema.ObjectRef) bool {

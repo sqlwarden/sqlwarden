@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -85,6 +86,9 @@ func (d *sqliteDriver) InspectObjects(ctx context.Context, refs []schema.ObjectR
 		}
 	}
 	out := b.Build()
+	if err := d.attachSQLiteDefinitions(ctx, out); err != nil {
+		return nil, err
+	}
 	if len(triggerRefs) > 0 {
 		triggers, err := d.inspectSQLiteTriggers(ctx, triggerRefs)
 		if err != nil {
@@ -93,6 +97,38 @@ func (d *sqliteDriver) InspectObjects(ctx context.Context, refs []schema.ObjectR
 		out = append(out, triggers...)
 	}
 	return out, nil
+}
+
+// attachSQLiteDefinitions appends the stored CREATE statement from sqlite_master
+// as a "source" descriptor: tables get their DDL, views get their definition.
+func (d *sqliteDriver) attachSQLiteDefinitions(ctx context.Context, objs []schema.Object) error {
+	for i := range objs {
+		var typ, title string
+		switch objs[i].Ref.Kind {
+		case "table":
+			typ, title = "table", "DDL"
+		case "view":
+			typ, title = "view", "Definition"
+		default:
+			continue
+		}
+		var ddl sql.NullString
+		q := fmt.Sprintf(`SELECT sql FROM %s.sqlite_master WHERE type = ? AND name = ?`, sqliteQuoteIdent(objs[i].Ref.Namespace))
+		if err := d.db.QueryRowContext(ctx, q, typ, objs[i].Ref.Name).Scan(&ddl); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return fmt.Errorf("sqlite: object definition: %w", err)
+		}
+		if ddl.Valid && ddl.String != "" {
+			objs[i].Descriptors = append(objs[i].Descriptors, schema.Descriptor{
+				Kind:   "source",
+				Title:  title,
+				Source: &schema.Source{Language: "sql", Body: ddl.String},
+			})
+		}
+	}
+	return nil
 }
 
 func (d *sqliteDriver) sqliteNamespaces(ctx context.Context) ([]string, error) {
