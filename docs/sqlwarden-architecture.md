@@ -1,6 +1,6 @@
 # SQLWarden Architecture
 
-Updated: 2026-06-11
+Updated: 2026-06-29
 
 SQLWarden is a self-hosted database access platform and SQL IDE. The current repository contains a Go backend, embedded React SPA, custom RBAC engine, database connection/session manager, and workspace file storage foundation. Future product direction includes Wails desktop packaging, SSO/SCIM, stronger audit/compliance features, connector agents, and broader file/storage backends.
 
@@ -30,6 +30,7 @@ Implemented today:
 - Filesystem-backed file content storage under `~/.sqlwarden/files` by default.
 - Workspace file content retention reaper.
 - DSN and file encryption key rotation foundation.
+- Database engine registry and capability abstractions for schema inspection, query classification, parsing, rewriting, completion, and cursor-backed result paging.
 - Schema introspection abstraction, cache, and API.
 - React 19 frontend with TanStack Router, TanStack Query, Tailwind CSS 4, shadcn/ui, Base UI primitives, CodeMirror 6, Zustand, IndexedDB, Y.js, and BroadcastChannel.
 - IDE workspace tabs, explorer, file tabs, console tabs, query execution, results pane, editor theme preferences, and same-browser cross-window sync.
@@ -78,7 +79,7 @@ sqlwarden/
 │   ├── access/                       # custom RBAC enforcer and permissions catalog
 │   ├── connection/                   # live target DB sessions
 │   ├── database/                     # Bun models and query helpers
-│   ├── driver/                       # target database driver abstraction
+│   ├── dbengine/                     # target database engines and capabilities
 │   ├── encrypt/                      # AES-GCM/keyring helpers
 │   ├── files/                        # workspace file service
 │   ├── filestore/                    # filesystem object storage
@@ -554,13 +555,24 @@ Cross-org and cross-workspace boundaries must be enforced when creating workspac
 
 ## Query Execution And Live Sessions
 
-`internal/driver` is for target databases. It is separate from `internal/database`, which stores SQLWarden metadata.
+`internal/dbengine` is for target databases. It is separate from `internal/database`, which stores SQLWarden metadata.
 
 Implemented target drivers:
 
 - PostgreSQL
 - MySQL
 - SQLite
+
+Each engine registers through the `dbengine` registry and advertises implemented capabilities. Current capability packages include:
+
+- `schema`: cheap catalog listing and on-demand object detail.
+- `classifier`: query kind classification used for RBAC decisions.
+- `parser`: SQL parse surface for future AST-backed IDE behavior.
+- `rewriter`: query rewrite surface for future pagination/export behavior.
+- `completer`: autocomplete surface.
+- `cursor`: forward-only query result paging over a live database session.
+
+Each concrete engine keeps capability implementations in separate files such as `driver.go`, `inspector.go`, `classifier.go`, `parser.go`, `rewriter.go`, and `cursor.go`. Shared helpers such as the GoSQLX-backed SQL provider live behind those interfaces; engines remain the source of truth for which capabilities they expose.
 
 `internal/connection` manages live target database sessions:
 
@@ -573,16 +585,20 @@ Implemented target drivers:
 
 Interactive query execution has two server APIs:
 
-- `POST .../query` executes a query and returns one bounded result set.
+- `POST .../query` executes a query and returns one bounded result set. For DQL/select-style queries, clients can request cursor use; when the engine supports cursor-backed results, the response can include `query_cursor_id`, `page_size`, and `exhausted`.
 - `POST .../query-cursors` starts a cursor-backed query cursor and returns the first page.
 - `POST .../query-cursors/{query_cursor_id}/fetch` fetches the next page.
 - `DELETE .../query-cursors/{query_cursor_id}` closes the cursor-backed query cursor.
 
 HTTP query cursors are in-memory and process-local. They are tied to the authenticated account, route context, live DB session, workspace, environment when present, and connection. They must not be treated as durable query history. Server restart, live DB session removal, cursor close, exhaustion, or idle reaping makes the query cursor unavailable and clients should run the query again.
 
-Query-cursor authorization uses the same SQL classification as direct query execution. `conn:execute` can run any query class. Otherwise `conn:dql`, `conn:dml`, or `conn:ddl` is required based on the query. Fetch requests re-check the permission that authorized the initial query before returning additional rows, so permission revocation stops further result delivery.
+Query-cursor authorization uses the same SQL classification as direct query execution. `conn:execute` can run any query class. Otherwise `conn:dql`, `conn:dml`, or `conn:ddl` is required based on the query. Authorization is checked when the query cursor is opened. Fetch requests validate authentication, route scope, live parent session ownership, and cursor lifecycle state; they do not reclassify or reauthorize the already-open SQL text.
 
 The initial response and each fetch page apply `query.max_result_rows` and `query.max_result_bytes`. Page boundaries are not truncation; `exhausted=false` means more rows can be fetched. Byte-limit truncation is reported on the page and the cursor remains available when more rows exist.
+
+The default cursor implementation wraps `database/sql.Rows` and scans only the requested page. Driver integration tests for PostgreSQL and MySQL assert that fetching a small page from a large generated result does not grow Go heap in proportion to the full logical result set. Add the same materialization guard test whenever a new engine advertises cursor support.
+
+Operational logs cover query classification, permission denial, cursor opening, initial page return, fetch, close, cancellation, fallback to buffered query, and unavailable cursor reasons. Logs intentionally omit SQL text, DSNs, bind parameters, and row values.
 
 Future phases:
 
@@ -632,9 +648,10 @@ Future:
 
 Implemented schema introspection includes:
 
-- Driver-level schema listing abstraction.
+- Engine-level schema capability for cheap catalog listing and on-demand object detail.
 - Cache in SQLWarden metadata DB.
 - API surface for schema explorer use.
+- Request-aware logs for schema session validation, unsupported engine capability, cache refresh requests, and response summaries. The schema service logs cache hit/miss, inspection failures, successful inspection, and cache invalidation.
 
 This should become the foundation for IDE explorer expansion, autocomplete, and metadata refresh policies. Cache invalidation and deep per-database metadata behavior should remain driver-specific behind the shared abstraction.
 
@@ -770,7 +787,7 @@ Likely enterprise-only features:
 - License enforcement.
 - Air-gapped enterprise packaging.
 
-The core RBAC engine, local auth, SQL IDE, driver layer, and self-hosted server should remain usable in the community distribution.
+The core RBAC engine, local auth, SQL IDE, database engine layer, and self-hosted server should remain usable in the community distribution.
 
 ## Implementation Invariants
 

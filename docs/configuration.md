@@ -109,7 +109,9 @@ JSON logs are the default for production and log aggregation systems. Text logs 
 
 Every HTTP response includes `X-Request-ID`. If the request provides a valid bounded `X-Request-ID`, SQLWarden preserves it; otherwise it generates one. Access logs include request ID, route, path, response status, duration, remote IP, user agent, and resolved account/resource identifiers when available.
 
-Server logs do not include request bodies, authorization headers, DSNs, SQL text, or raw query strings by default.
+Server logs include request-aware operational events for authentication, authorization failures, resource mutation, database engine capability lookup, schema inspection, live database sessions, and query cursor lifecycle. `debug` enables lower-level diagnostics such as capability resolution and schema response summaries.
+
+Server logs do not include request bodies, authorization headers, DSNs, SQL text, bind parameters, raw query strings, or row values by default.
 
 ## Database
 
@@ -165,6 +167,8 @@ SESSIONS_REVOCATION_ENABLED=false
 These limits apply to interactive IDE query responses. Future export workflows should use dedicated streaming/export limits instead of relying on interactive query caps.
 
 The same limits apply to HTTP query cursors. Direct `/query` responses are capped once per response. Query-cursor start and fetch responses are capped per page; clients can continue fetching while the response has `exhausted=false`.
+
+For DQL/select-style queries, the IDE can request cursor-backed results through `/query`. When the selected target engine supports cursor-backed results, the first response includes the first page plus cursor metadata. Engines that do not support cursor-backed results fall back to the bounded direct query path. Cursor state is process-local and tied to the authenticated live database session; it is not durable query history.
 
 ## TLS
 
