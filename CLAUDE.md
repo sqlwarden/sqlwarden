@@ -21,7 +21,7 @@ SQLWarden is a Go API plus embedded React SPA.
 - `internal/database` stores SQLWarden metadata through Bun against SQLite/PostgreSQL.
 - `internal/access` is the custom RBAC enforcer and permissions catalog.
 - `internal/connection` manages live target database sessions.
-- `internal/driver` contains target database drivers for PostgreSQL, MySQL, and SQLite.
+- `internal/dbengine` contains target database engines and capabilities for PostgreSQL, MySQL, and SQLite.
 - `internal/files` and `internal/filestore` implement workspace file metadata/content storage.
 - `frontend/` is the React app using TanStack Router, TanStack Query, Tailwind CSS, shadcn/ui, Base UI, CodeMirror, Zustand, IndexedDB, Y.js, and BroadcastChannel.
 
@@ -110,6 +110,7 @@ Configuration uses spf13/viper through `internal/web`.
 - UI-facing paginated lists use `{ "items": [], "page": 1, "page_size": 25, "total": 0 }`.
 - Non-paginated list responses should still avoid top-level arrays.
 - Keep API JSON lower snake_case.
+- Add robust logs for new backend behavior where useful. Use request-aware `logDebug`, `logInfo`, and `logWarn` helpers in `internal/web` for HTTP/domain events so logs carry request/resource correlation. Log high-signal lifecycle events, denied/degraded paths, unsupported capabilities, cache decisions, and background worker outcomes. Do not log request bodies, authorization headers, DSNs, SQL text, bind parameters, raw query strings, or row values.
 
 ## RBAC Invariants
 
@@ -192,4 +193,3 @@ When changing Go version:
 - Run `go mod tidy`.
 - Run `make audit`.
 - Run a local Docker build if release images are affected.
-
