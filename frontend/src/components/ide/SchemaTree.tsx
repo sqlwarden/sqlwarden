@@ -8,8 +8,9 @@ import {
   orgConnectionSchemaSpecQueryOptions,
   orgConnectionObjectQueryOptions,
 } from '#/lib/api/query'
-import type { CatalogNamespace, CatalogObjectGroup, ObjectDescriptor, ObjectDetail, ObjectRef, SchemaSpec } from '#/lib/api/types'
+import type { CatalogNamespace, CatalogObjectGroup, Connection, ObjectDescriptor, ObjectDetail, ObjectRef, SchemaSpec, Workspace } from '#/lib/api/types'
 import { useIde } from './useIdeStore'
+import { newObjectTab } from './object-detail/objectTab'
 import { filterCatalog, kindLabel, sortedGroups } from './schemaCatalog'
 import { columnTypeIcon } from './columnTypeIcon'
 import { dialectFor, IDENTIFIER_DND_MIME, type SqlDialect } from './sqlDialect'
@@ -26,6 +27,7 @@ type TreeCtx = {
   dialect: SqlDialect
   insert: (text: string) => void
   refresh: () => void
+  openObject: (ref: ObjectRef) => void
   spec: SchemaSpec | undefined
   orgSlug: string
   workspaceId: number
@@ -100,8 +102,12 @@ export function SchemaTree({
   filter: string
 }) {
   const sessionId = useIde((s) => s.sessions[connectionId])
+  const openTab = useIde((s) => s.openTab)
   const insert = useInsertIntoEditor()
   const dialect = dialectFor(driver)
+
+  const openObject = (ref: ObjectRef) =>
+    openTab(newObjectTab({ id: connectionId, driver } as Connection, { id: workspaceId } as Workspace, ref))
 
   const catalogQuery = useQuery({
     ...orgConnectionCatalogQueryOptions(orgSlug, workspaceId, connectionId, sessionId ?? ''),
@@ -153,6 +159,7 @@ export function SchemaTree({
     refresh: () => {
       void catalogQuery.refetch()
     },
+    openObject,
     spec,
     orgSlug,
     workspaceId,
@@ -267,6 +274,7 @@ function SchemaObjectNode({
   const isView = objectRef.kind === 'view' || objectRef.kind === 'materialized_view'
   const objectMenu = buildObjectMenu({
     isView,
+    onOpen: () => ctx?.openObject(objectRef),
     onCopyName: () => copyWithToast(objectRef.name),
     onCopyQualifiedName: () => copyWithToast(dialect ? dialect.formatObject(objectRef.namespace, objectRef.name) : objectRef.name),
     onCopyColumnList: () => copyWithToast(columnList(columns.map((c) => (dialect ? dialect.formatColumn(c.name) : c.name)))),
@@ -282,6 +290,7 @@ function SchemaObjectNode({
           label={objectRef.name}
           insertable={insertable}
           onClick={() => setOpen(!expanded)}
+          onDoubleClickRow={() => ctx?.openObject(objectRef)}
         />
       </ContextMenu>
       {expanded && <SchemaObjectDetail detail={detail} loading={detailQuery.isLoading} depth={depth + 1} objectName={objectRef.name} />}
@@ -423,6 +432,7 @@ function TreeRow({
   leaf,
   insertable,
   onClick,
+  onDoubleClickRow,
 }: {
   depth: number
   typeIcon: AppIcon
@@ -432,6 +442,9 @@ function TreeRow({
   leaf?: boolean
   insertable?: InsertableProps
   onClick: () => void
+  /** When set, double-clicking the row runs this instead of the insertable's
+   *  insert action (object rows open their detail tab; drag-to-insert stays). */
+  onDoubleClickRow?: () => void
 }) {
   function handleClick(e: React.MouseEvent) {
     if (window.getSelection()?.toString()) return
@@ -445,7 +458,7 @@ function TreeRow({
       tabIndex={0}
       draggable={insertable?.draggable}
       onDragStart={insertable?.onDragStart}
-      onDoubleClick={insertable?.onDoubleClick}
+      onDoubleClick={onDoubleClickRow ?? insertable?.onDoubleClick}
       onClick={handleClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {

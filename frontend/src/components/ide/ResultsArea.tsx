@@ -610,7 +610,7 @@ function OkState({
 
       <div className="flex shrink-0 items-center border-t border-border bg-muted/40 px-3 py-1 text-[10px] text-muted-foreground">
         <span className="tabular-nums">
-          {rows.length === 1 ? '1 row' : `${rows.length} rows`}{queryCursorId ? ' loaded' : ''}
+          {rows.length === 1 ? '1 row' : `${rows.length} rows`}{queryCursorId ? ' fetched' : ''}
         </span>
         {result.isFetchingNextPage && (
           <>

@@ -30,6 +30,7 @@ const TAB_ICONS: Record<TabKind, AppIcon> = {
   scratch: 'terminal',
   file: 'file-01',
   connection: 'database',
+  object: 'table',
 }
 
 export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocus }: IdeTabBarProps) {

@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions, type QueryClient } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFilesResponse, WorkspaceFileBrowserResult, CatalogResponse, SchemaSpecResponse, ObjectsResponse, ObjectRef } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFilesResponse, WorkspaceFileBrowserResult, CatalogResponse, SchemaSpecResponse, ObjectsResponse, ObjectRef, ResultSet } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -534,8 +534,48 @@ export function orgConnectionObjectQueryOptions(
       )
       return res.objects[0] ?? null
     },
-    staleTime: 60_000,
+    staleTime: 3 * 60_000,
   })
+}
+
+export function connectionPreviewQueryKey(slug: string, workspaceId: string | number, connectionId: string | number, ref: ObjectRef) {
+  return ['connection-preview', slug, String(workspaceId), String(connectionId), ref.namespace, ref.kind, ref.name] as const
+}
+
+export function connectionPreviewCountQueryKey(slug: string, workspaceId: string | number, connectionId: string | number, ref: ObjectRef) {
+  return ['connection-preview-count', slug, String(workspaceId), String(connectionId), ref.namespace, ref.kind, ref.name] as const
+}
+
+/** Runs a query on a connection. Pass useCursor to get a cursor-backed first
+ *  page that can be paged with fetchConnectionCursorPage; pageSize sets that
+ *  first page's size (the backend default is small). */
+export function runConnectionQuery(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string,
+  sql: string,
+  useCursor: boolean,
+  pageSize?: number,
+) {
+  return api.post<ResultSet>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/query`,
+    { sql, use_cursor: useCursor, page_size: pageSize },
+    { headers: { 'X-Warden-Session': sessionId } })
+}
+
+/** Fetches the next page of an open query cursor (mirrors the result grid's
+ *  paging; the cursor id authorizes the fetch, so no session header is sent). */
+export function fetchConnectionCursorPage(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  cursorId: string,
+  pageSize?: number,
+) {
+  return api.post<ResultSet>(
+    `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/query-cursors/${cursorId}/fetch`,
+    { page_size: pageSize },
+  )
 }
 
 export function refreshConnectionSchema(
