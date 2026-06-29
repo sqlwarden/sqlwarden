@@ -155,6 +155,21 @@ func (app *application) logInfo(r *http.Request, message string, attrs ...slog.A
 	app.logger.LogAttrs(r.Context(), slog.LevelInfo, message, base...)
 }
 
+// logDebug records low-volume diagnostic events with request/resource
+// correlation. Use this for capability resolution, cache decisions, and other
+// read-only paths that are useful during troubleshooting but too noisy for info.
+func (app *application) logDebug(r *http.Request, message string, attrs ...slog.Attr) {
+	if app.logger == nil {
+		return
+	}
+	base := []slog.Attr{
+		slog.Group("request", attrsToAny(requestAttrs(r))...),
+		slog.Group("resource", attrsToAny(resourceAttrs(r))...),
+	}
+	base = append(base, attrs...)
+	app.logger.LogAttrs(r.Context(), slog.LevelDebug, message, base...)
+}
+
 // logWarn records a high-signal blocked or degraded domain event with request
 // correlation. Routine 4xx responses are still covered by access logs.
 func (app *application) logWarn(r *http.Request, message string, attrs ...slog.Attr) {
