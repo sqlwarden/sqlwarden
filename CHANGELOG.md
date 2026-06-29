@@ -1,5 +1,97 @@
 # Changelog
 
+## [0.7.0](https://github.com/sqlwarden/sqlwarden/compare/v0.6.2...v0.7.0) (2026-06-29)
+
+
+### Features
+
+* **http:** compress responses with chi ([508976c](https://github.com/sqlwarden/sqlwarden/commit/508976cb7a67587cabeb334c8cd700af9b73ba22))
+* **icons:** add target icon for reveal-active ([10d8dd6](https://github.com/sqlwarden/sqlwarden/commit/10d8dd646c9b41cf3bf5f434f9241fb854990ea7))
+* **ide:** add activity-bar sidebar (Files/Connections), resizable file panels, and icon updates ([8ad9103](https://github.com/sqlwarden/sqlwarden/commit/8ad9103180823d6b59c1c7b6dba0c17f4f9b69fb))
+* **ide:** auto-scroll results grid while drag-selecting cells ([9682037](https://github.com/sqlwarden/sqlwarden/commit/9682037fa7f2960ddc80e1851edd1fd499d088e9))
+* **ide:** close others/right/all from tab menu and prune unneeded soon items ([409e3eb](https://github.com/sqlwarden/sqlwarden/commit/409e3eb9f112d1bba95dc4aa6b4143fece0c619a))
+* **ide:** collapse empty environments by default in sidebar ([a50ef03](https://github.com/sqlwarden/sqlwarden/commit/a50ef037a0e4d6a452e0c553f18b8242dff72420))
+* **ide:** collapse single schema namespace and tighten tree indent ([b4fff3b](https://github.com/sqlwarden/sqlwarden/commit/b4fff3b77176131ac0ab12d5e31bde04fc57b51b))
+* **ide:** compact, horizontally-scrollable sidebar trees ([3c48dc3](https://github.com/sqlwarden/sqlwarden/commit/3c48dc3f2e58286b2676c46e2f7c1081bad77f0e))
+* **ide:** connecting/error/connected status indicators on connection rows ([c8253bc](https://github.com/sqlwarden/sqlwarden/commit/c8253bcdf7bddd2b3118a7597e1026b396cd9fb0))
+* **ide:** connection-layout preference (flat default / grouped) in Appearance ([747406f](https://github.com/sqlwarden/sqlwarden/commit/747406f4df6c47edfc91045254c1a204bbf8b27d))
+* **ide:** custom design-system find/replace panel ([18c5c6c](https://github.com/sqlwarden/sqlwarden/commit/18c5c6c4554ce8db3e5a49848e8eaaf6cde2657c))
+* **ide:** drag or double-click schema objects to insert into editor ([4f12b8a](https://github.com/sqlwarden/sqlwarden/commit/4f12b8a0af6bd17bcfb1dd5b560a9810e976d012))
+* **ide:** explorer-first sidebar, truncated names, lazy schema expand ([43dadd9](https://github.com/sqlwarden/sqlwarden/commit/43dadd9793b6f9e15883a1b12efc4bfea4046234))
+* **ide:** files sidebar context menus on shared primitive ([49756b8](https://github.com/sqlwarden/sqlwarden/commit/49756b85bc3373b4a0136ec86e3f31409b78d678))
+* **ide:** flat connection explorer with environment filter ([beb021a](https://github.com/sqlwarden/sqlwarden/commit/beb021a4f1b9c8505f898c77b6b1550f0fdcc20c))
+* **ide:** headless useContextMenu hook + tab/workspace/result menu builders ([8cf78f1](https://github.com/sqlwarden/sqlwarden/commit/8cf78f1e761021a60e5d719c3594a7e67011c60e))
+* **ide:** highlight active file and connection in explorers ([2a0da02](https://github.com/sqlwarden/sqlwarden/commit/2a0da023fbec1ea92ca1086ed2251537e8f74125))
+* **ide:** inline schema explorer in connections panel with raw column types ([24fd9b3](https://github.com/sqlwarden/sqlwarden/commit/24fd9b3891a3932f0506e8cbb31067bc9f14a397))
+* **ide:** modern blue palette and midnight-blue dark mode ([fd2b62d](https://github.com/sqlwarden/sqlwarden/commit/fd2b62d4a1b9c761c27914ce873b4a05899459a6))
+* **ide:** per-data-type column icons in schema tree ([bdaa7fb](https://github.com/sqlwarden/sqlwarden/commit/bdaa7fbba1a470170489294949151eece5bd6921))
+* **ide:** per-database SQL dialect for identifier quoting & qualification ([4e8ae17](https://github.com/sqlwarden/sqlwarden/commit/4e8ae172acc1f7ecbb0ef1ad8d0d7b8152aea0ab))
+* **ide:** persist sidebar expansion with collapse-all and reveal controls ([43f2508](https://github.com/sqlwarden/sqlwarden/commit/43f2508e3eefe839dc9874068c10de5b0bd53be0))
+* **ide:** persisted explorer expansion state ([736cc13](https://github.com/sqlwarden/sqlwarden/commit/736cc1332ca8b39c5f23ae57fdf068566fe5b507))
+* **ide:** prune context menus, add icons, and wire Save As / Open to the side ([2a46867](https://github.com/sqlwarden/sqlwarden/commit/2a4686751edbed6d3e2d6ebbbcbf1d188d5cf958))
+* **ide:** reflect auto-connect status in the sidebar on Run ([0d44765](https://github.com/sqlwarden/sqlwarden/commit/0d4476523f7a6ffa9a56a4fc57dd3537780a8722))
+* **ide:** reusable context-menu primitive and explorer menu builders ([aad5e03](https://github.com/sqlwarden/sqlwarden/commit/aad5e036dbf0960b582dfe0b68318656984c9833))
+* **ide:** scrollable tab bar with overflow chevrons and drag-to-reorder ([318a7e3](https://github.com/sqlwarden/sqlwarden/commit/318a7e3be9d759e9377cbb6e2bbcd18872a7c93e))
+* **ide:** split editor into side-by-side and stacked groups ([aecd150](https://github.com/sqlwarden/sqlwarden/commit/aecd150fdcdc944b016151dba95f4fd780a60bdf))
+* **ide:** toast when running a query via keyboard without a connection ([ea9a237](https://github.com/sqlwarden/sqlwarden/commit/ea9a2377ee133f0428a465765bc0c2108dd11d4f))
+* **ide:** transient connection status state + selector ([14f739a](https://github.com/sqlwarden/sqlwarden/commit/14f739a7e58213fe73901314af85c92e8abb1482))
+* **ide:** wire context menus into explorer connections and schema tree ([0ed140d](https://github.com/sqlwarden/sqlwarden/commit/0ed140d9ae66f5f017cedefde97acb3b38807604))
+* **ide:** wire context menus into tabs, workspace switcher, and result grid ([4daf14e](https://github.com/sqlwarden/sqlwarden/commit/4daf14e8518bea613df8831e76256c6eb2a5727b))
+* **logging:** add structured operational logging ([7b3edfe](https://github.com/sqlwarden/sqlwarden/commit/7b3edfe15f8b6295d10de6198d4a804c0cb3c2bf))
+* **logging:** record connection test outcomes ([a7efa65](https://github.com/sqlwarden/sqlwarden/commit/a7efa65f7ddcbde0fa6ba3a1e4e85eb26b7be70d))
+* **query:** add driver cursor foundation ([049af4e](https://github.com/sqlwarden/sqlwarden/commit/049af4e23d69dc5b315c4c73e6ef957f12e55d58))
+* **query:** add gosqlx parser provider ([361296a](https://github.com/sqlwarden/sqlwarden/commit/361296a6dbfb18811379fb50bc36962a3177de64))
+* **query:** add HTTP query sessions ([bdc901a](https://github.com/sqlwarden/sqlwarden/commit/bdc901ae12aa1e7d0539bf21db4fab7374cb8aa5))
+* **query:** add query capability abstraction ([673bf04](https://github.com/sqlwarden/sqlwarden/commit/673bf0457dc859ed42bfd7ac05a7c58ad3cb44a5))
+* **query:** bound interactive result sets ([721b0f1](https://github.com/sqlwarden/sqlwarden/commit/721b0f12a5c6150a0087940690c54d2631f81e59))
+* **query:** support cursor-backed IDE results ([6a87e0e](https://github.com/sqlwarden/sqlwarden/commit/6a87e0ecb88549a2cfe2f678569ca5ed01bf4fa8))
+* **schema:** add structured introspection logging ([8c5d46d](https://github.com/sqlwarden/sqlwarden/commit/8c5d46d1fc212ef9e86848ed5d33fde967ede78a))
+* **schema:** driver-declared object groups; categorized tree with functions, sequences, matviews & triggers ([c62c52f](https://github.com/sqlwarden/sqlwarden/commit/c62c52ff8f4ffa1d381c5c9b361d5bb0ae8e334c))
+* **schema:** two-tier capability-driven introspection with lazy-loaded object detail ([99c8266](https://github.com/sqlwarden/sqlwarden/commit/99c8266e970b043ca83aa310791c1e36496c92f6))
+
+
+### Bug Fixes
+
+* **deps:** upgrade pgx for placeholder sanitization ([7538c01](https://github.com/sqlwarden/sqlwarden/commit/7538c01e543bac6571e80b66b150c5115a39dcbb))
+* **ide:** allow collapsing schema nodes while a filter is active ([f9544eb](https://github.com/sqlwarden/sqlwarden/commit/f9544ebbcf8c746654d358eaf4cb3f6f8f7043f8))
+* **ide:** avoid duplicate codemirror state packages ([8dc52c3](https://github.com/sqlwarden/sqlwarden/commit/8dc52c3f64a4b9690a198124f25f46cc58e2d95b))
+* **ide:** prioritize column name over type in schema rows ([696ff08](https://github.com/sqlwarden/sqlwarden/commit/696ff08d4a4eb1c7baed24ddf36902d5ae2ea769))
+* **ide:** respect editor font in VS Code themes and default to SQLWarden themes ([9354ce5](https://github.com/sqlwarden/sqlwarden/commit/9354ce51564d9214b96603354b2d20b5095720e6))
+* **query:** align completion request with schema catalog ([2a7c090](https://github.com/sqlwarden/sqlwarden/commit/2a7c09047ae7c2a506694c3d7d2865d1841a7284))
+* **web:** set Cache-Control no-store on API responses ([39a1881](https://github.com/sqlwarden/sqlwarden/commit/39a1881d48bf12a995a54b387517c22c83404e3e))
+
+
+### Performance Improvements
+
+* **ide:** share a single context menu instance across the IDE ([d8090eb](https://github.com/sqlwarden/sqlwarden/commit/d8090eb3864b5c0d4f58749674d39a1b9fa43d27))
+* **ide:** virtualize results table rows ([40d6661](https://github.com/sqlwarden/sqlwarden/commit/40d6661165b56be22e1ee9d24e6f2bccb4c2c7cf))
+
+
+### Documentation
+
+* **architecture:** document engine cursor behavior ([49f4c89](https://github.com/sqlwarden/sqlwarden/commit/49f4c89a00bd8a9e4f8492df5cdb99716d48d659))
+* **claude:** require self-contained code comments, not change narration ([dcea023](https://github.com/sqlwarden/sqlwarden/commit/dcea023c1e60fb69fce3e21fafe12533e1225e3f))
+* **config:** simplify server configuration ([b35a8c5](https://github.com/sqlwarden/sqlwarden/commit/b35a8c553e36ea94478dd79863fc60ff0043e5e4))
+* **go:** add package comments ([626714e](https://github.com/sqlwarden/sqlwarden/commit/626714ea0ada9dd225badb67cde1b6587b2c1709))
+* **query:** document HTTP query sessions ([0a1fef0](https://github.com/sqlwarden/sqlwarden/commit/0a1fef0c628f33df9b271af47a436a81e2b492ad))
+
+
+### Code Refactoring
+
+* **access:** clarify authorization cache naming ([385487d](https://github.com/sqlwarden/sqlwarden/commit/385487dc0540296ac230f07fe809f5bb4724069b))
+* **dbengine:** introduce engine/Connection abstraction; relocate schema, sql, and cursor domains ([2a74752](https://github.com/sqlwarden/sqlwarden/commit/2a747523485d04acf57808db5c41af6a9ba1ad06))
+* **dbengine:** merge driver package into dbengine; engines under dbengine/engines ([4a437b0](https://github.com/sqlwarden/sqlwarden/commit/4a437b0490a6b2bac86655cc3e495ed85fe93b18))
+* **dbengine:** rename dbsql to cursor and add package/godoc documentation ([78f3848](https://github.com/sqlwarden/sqlwarden/commit/78f38482a08a56443f7bca4eabc95d47add4731f))
+* **dbengine:** single registry returning a non-connected driver; drivers implement SQL capabilities directly ([3bd9dc4](https://github.com/sqlwarden/sqlwarden/commit/3bd9dc4b0bd02fe3c2ad84e43df6824646cd310b))
+* **dbengine:** split engine capabilities by file ([25efe92](https://github.com/sqlwarden/sqlwarden/commit/25efe92e70832d61940bcb096aa37fb8a9c2e502))
+* **dbengine:** split sqlquery into per-capability packages (classifier/parser/rewriter/completer) ([28b4fd2](https://github.com/sqlwarden/sqlwarden/commit/28b4fd2ba8c708837b5925e9c3c46583789c1359))
+* **ide:** extract pure nextCell grid-nav helper ([a44acfe](https://github.com/sqlwarden/sqlwarden/commit/a44acfe7438a45064f9131cb7b4164ec4539fdad))
+* **ide:** remove reveal-active and collapse-all explorer controls ([e207f0f](https://github.com/sqlwarden/sqlwarden/commit/e207f0fd986682c05bcea2e48fc1e546e50dbd39))
+* **query:** rename HTTP query sessions to cursors ([e03ed15](https://github.com/sqlwarden/sqlwarden/commit/e03ed157a790a9901b632ce230ed8924c0a0aebb))
+* **query:** rename query cursor driver interface ([4aab748](https://github.com/sqlwarden/sqlwarden/commit/4aab748c0e5ff9d4be7bdaddc08b766042ab0a6b))
+* **schema:** rename introspection contract to inspection spec ([20ddcc9](https://github.com/sqlwarden/sqlwarden/commit/20ddcc9a042f6c268b27f802b873b268c54f1f42))
+* **schema:** split app service from engine metadata ([e7aa21e](https://github.com/sqlwarden/sqlwarden/commit/e7aa21e70fd3ff86d59f7fb63c886f9ddb77bcf1))
+
 ## [0.6.2](https://github.com/sqlwarden/sqlwarden/compare/v0.6.1...v0.6.2) (2026-06-16)
 
 
