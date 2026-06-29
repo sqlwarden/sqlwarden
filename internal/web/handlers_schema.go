@@ -1,6 +1,7 @@
 package web
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -47,22 +48,39 @@ func (app *application) resolveSchemaSession(w http.ResponseWriter, r *http.Requ
 
 	if !app.hasAnyConnectionRuntimePermission(r, org.ID, ws.OwnerType, conn.ID,
 		access.PermConnExecute, access.PermConnDQL, access.PermConnDML, access.PermConnDDL) {
+		app.logWarn(r, "schema access denied",
+			slog.Int64("connection_id", conn.ID),
+			slog.Int64("workspace_id", ws.ID),
+			slog.String("reason", "missing_runtime_permission"),
+		)
 		app.notPermitted(w, r)
 		return nil, false
 	}
 
 	sessionID := r.Header.Get("X-Warden-Session")
 	if sessionID == "" {
+		app.logWarn(r, "schema session missing", slog.Int64("connection_id", conn.ID))
 		app.errorMessage(w, r, http.StatusBadRequest, "X-Warden-Session header is required.", nil)
 		return nil, false
 	}
 	session, ok := app.connManager.Get(sessionID)
 	if !ok {
+		app.logWarn(r, "schema session unavailable",
+			slog.String("session_id", sessionID),
+			slog.Int64("connection_id", conn.ID),
+		)
 		app.errorMessage(w, r, http.StatusGone, "Session has expired or does not exist.", nil)
 		return nil, false
 	}
 	if session.AccountID != strconv.FormatInt(account.ID, 10) ||
 		session.ConnectionID != strconv.FormatInt(conn.ID, 10) {
+		app.logWarn(r, "schema session scope mismatch",
+			slog.String("session_id", session.ID),
+			slog.String("session_account_id", session.AccountID),
+			slog.String("session_connection_id", session.ConnectionID),
+			slog.Int64("account_id", account.ID),
+			slog.Int64("connection_id", conn.ID),
+		)
 		app.notPermitted(w, r)
 		return nil, false
 	}
@@ -78,6 +96,10 @@ func (app *application) resolveSchemaInspector(w http.ResponseWriter, r *http.Re
 	}
 	inspector, ok := session.Conn.(schema.SchemaInspector)
 	if !ok {
+		app.logWarn(r, "schema inspection unsupported",
+			slog.String("session_id", session.ID),
+			slog.Int64("connection_id", contextGetConnection(r).ID),
+		)
 		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
 		return nil, nil, false
 	}
@@ -85,11 +107,16 @@ func (app *application) resolveSchemaInspector(w http.ResponseWriter, r *http.Re
 }
 
 func (app *application) getConnectionSchemaSpec(w http.ResponseWriter, r *http.Request) {
-	_, inspector, ok := app.resolveSchemaInspector(w, r)
+	session, inspector, ok := app.resolveSchemaInspector(w, r)
 	if !ok {
 		return
 	}
 	spec := app.schemaService.Spec(inspector)
+	app.logDebug(r, "schema spec returned",
+		slog.String("session_id", session.ID),
+		slog.String("dialect", spec.Dialect),
+		slog.Int("kind_count", len(spec.Kinds)),
+	)
 	if err := response.JSON(w, http.StatusOK, schemaSpecResponse{Spec: spec}); err != nil {
 		app.serverError(w, r, err)
 	}
@@ -105,6 +132,11 @@ func (app *application) getConnectionSchemaCatalog(w http.ResponseWriter, r *htt
 		app.serverError(w, r, err)
 		return
 	}
+	app.logDebug(r, "schema catalog returned",
+		slog.String("session_id", session.ID),
+		slog.String("dialect", cat.Dialect),
+		slog.Int("namespace_count", len(cat.Namespaces)),
+	)
 	if err := response.JSON(w, http.StatusOK, catalogResponse{Catalog: cat}); err != nil {
 		app.serverError(w, r, err)
 	}
@@ -125,6 +157,11 @@ func (app *application) getConnectionSchemaObjects(w http.ResponseWriter, r *htt
 		app.serverError(w, r, err)
 		return
 	}
+	app.logDebug(r, "schema objects returned",
+		slog.String("session_id", session.ID),
+		slog.Int("requested_ref_count", len(input.Refs)),
+		slog.Int("object_count", len(objects)),
+	)
 	if err := response.JSON(w, http.StatusOK, objectsResponse{Objects: objects}); err != nil {
 		app.serverError(w, r, err)
 	}
@@ -144,8 +181,19 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 	}
 	if input.Ref != nil {
 		app.schemaService.RefreshObject(session.ConnectionID, *input.Ref)
+		app.logInfo(r, "schema object cache refresh requested",
+			slog.String("session_id", session.ID),
+			slog.String("connection_id", session.ConnectionID),
+			slog.String("kind", input.Ref.Kind),
+			slog.String("namespace", input.Ref.Namespace),
+			slog.String("name", input.Ref.Name),
+		)
 	} else {
 		app.schemaService.RefreshConnection(session.ConnectionID)
+		app.logInfo(r, "schema connection cache refresh requested",
+			slog.String("session_id", session.ID),
+			slog.String("connection_id", session.ConnectionID),
+		)
 	}
 	if err := response.JSON(w, http.StatusOK, schemaStatusResponse{Status: "ok"}); err != nil {
 		app.serverError(w, r, err)

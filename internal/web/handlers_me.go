@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -78,6 +79,7 @@ func (app *application) createMyWorkspace(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	app.logInfo(r, "personal workspace created", slog.Int64("workspace_id", ws.ID), slog.Int64("owner_account_id", account.ID))
 	err = response.JSON(w, http.StatusCreated, ws)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -150,6 +152,7 @@ func (app *application) createMyEnvironment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	app.logInfo(r, "personal workspace environment created", slog.Int64("workspace_id", ws.ID), slog.Int64("environment_id", env.ID))
 	err = response.JSON(w, http.StatusCreated, env)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -281,6 +284,12 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	app.logInfo(r, "personal workspace connection created",
+		slog.Int64("workspace_id", ws.ID),
+		slog.Int64("connection_id", conn.ID),
+		slog.String("driver", conn.Driver),
+		slog.String("access_mode", conn.AccessMode),
+	)
 	err = response.JSON(w, http.StatusCreated, conn)
 	if err != nil {
 		app.serverError(w, r, err)

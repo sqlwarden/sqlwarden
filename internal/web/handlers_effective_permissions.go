@@ -1,6 +1,7 @@
 package web
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -37,6 +38,11 @@ func (app *application) getEffectivePermissions(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	app.logDebug(r, "effective permissions resolved",
+		slog.String("resource_type", resourceType),
+		slog.Int64("resource_id", resourceID),
+		slog.Int("permission_count", len(permissions)),
+	)
 	err = response.JSON(w, http.StatusOK, effectivePermissionsResponse{
 		ResourceType: resourceType,
 		ResourceID:   resourceID,
@@ -61,6 +67,12 @@ func (app *application) resolveEffectivePermissionResource(w http.ResponseWriter
 			return 0, false
 		}
 		if resourceID != org.ID {
+			app.logWarn(r, "effective permissions resource rejected",
+				slog.String("resource_type", resourceType),
+				slog.Int64("resource_id", resourceID),
+				slog.Int64("org_id", org.ID),
+				slog.String("reason", "org_mismatch"),
+			)
 			app.notFound(w, r)
 			return 0, false
 		}
@@ -77,6 +89,12 @@ func (app *application) resolveEffectivePermissionResource(w http.ResponseWriter
 			return 0, false
 		}
 		if !found || ws.OrgID == nil || *ws.OrgID != org.ID {
+			app.logWarn(r, "effective permissions resource rejected",
+				slog.String("resource_type", resourceType),
+				slog.Int64("resource_id", resourceID),
+				slog.Int64("org_id", org.ID),
+				slog.String("reason", "workspace_not_in_org"),
+			)
 			app.notFound(w, r)
 			return 0, false
 		}
@@ -93,6 +111,11 @@ func (app *application) resolveEffectivePermissionResource(w http.ResponseWriter
 			return 0, false
 		}
 		if !found {
+			app.logWarn(r, "effective permissions resource rejected",
+				slog.String("resource_type", resourceType),
+				slog.Int64("resource_id", resourceID),
+				slog.String("reason", "environment_not_found"),
+			)
 			app.notFound(w, r)
 			return 0, false
 		}
@@ -102,6 +125,12 @@ func (app *application) resolveEffectivePermissionResource(w http.ResponseWriter
 			return 0, false
 		}
 		if !found || ws.OrgID == nil || *ws.OrgID != org.ID {
+			app.logWarn(r, "effective permissions resource rejected",
+				slog.String("resource_type", resourceType),
+				slog.Int64("resource_id", resourceID),
+				slog.Int64("org_id", org.ID),
+				slog.String("reason", "environment_workspace_not_in_org"),
+			)
 			app.notFound(w, r)
 			return 0, false
 		}
@@ -118,6 +147,11 @@ func (app *application) resolveEffectivePermissionResource(w http.ResponseWriter
 			return 0, false
 		}
 		if !found {
+			app.logWarn(r, "effective permissions resource rejected",
+				slog.String("resource_type", resourceType),
+				slog.Int64("resource_id", resourceID),
+				slog.String("reason", "connection_not_found"),
+			)
 			app.notFound(w, r)
 			return 0, false
 		}
@@ -127,6 +161,12 @@ func (app *application) resolveEffectivePermissionResource(w http.ResponseWriter
 			return 0, false
 		}
 		if !found || ws.OrgID == nil || *ws.OrgID != org.ID {
+			app.logWarn(r, "effective permissions resource rejected",
+				slog.String("resource_type", resourceType),
+				slog.Int64("resource_id", resourceID),
+				slog.Int64("org_id", org.ID),
+				slog.String("reason", "connection_workspace_not_in_org"),
+			)
 			app.notFound(w, r)
 			return 0, false
 		}
