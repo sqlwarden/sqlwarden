@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	defaultQueryCursorPageSize = 20
+	defaultQueryCursorPageSize = 200
 
 	apiErrorQueryCursorUnavailable = "query_cursor_unavailable"
 )
