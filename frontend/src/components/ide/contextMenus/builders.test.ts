@@ -63,7 +63,12 @@ describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
 })
 
 describe('buildObjectMenu', () => {
-  const base = { onCopyName: noop, onCopyQualifiedName: noop, onCopyColumnList: noop }
+  const base = { onOpen: noop, onCopyName: noop, onCopyQualifiedName: noop, onCopyColumnList: noop }
+  it('exposes a live Open action', () => {
+    const items = buildObjectMenu({ ...base, isView: false })
+    expect(action(items, 'open')?.label).toBe('Open')
+    expect(action(items, 'open')?.soon).toBeFalsy()
+  })
   it('table omits the view-only action', () => {
     const items = buildObjectMenu({ ...base, isView: false })
     expect(action(items, 'copy-qualified-name')?.soon).toBeFalsy()

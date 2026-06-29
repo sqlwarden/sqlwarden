@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react'
 import { createStore, useStore } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import type { Connection, ResultSet, Workspace, WorkspaceFile } from '#/lib/api/types'
+import type { Connection, ObjectRef, ResultSet, Workspace, WorkspaceFile } from '#/lib/api/types'
 import { makeRoleGatedStorage, electPrimary, type WindowRole } from './windowRole'
 import {
   createGroup,
@@ -31,7 +31,7 @@ export type QueryResult =
   | { status: 'error'; message: string; sql: string }
   | { status: 'cancelled'; sql: string }
 
-export type TabKind = 'scratch' | 'file' | 'connection'
+export type TabKind = 'scratch' | 'file' | 'connection' | 'object'
 
 export type EditorTab = {
   id: string
@@ -42,6 +42,8 @@ export type EditorTab = {
   connectionId?: number
   driver?: string
   fileId?: number
+  /** Set for `object` tabs: the qualified database object this tab views. */
+  objectRef?: ObjectRef
   etag?: string
   isDirty?: boolean
   content: string

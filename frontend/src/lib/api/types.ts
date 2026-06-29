@@ -347,6 +347,7 @@ export interface DbColumn {
   nullable: boolean
   default?: string
   ordinal: number
+  attributes?: Record<string, unknown>
 }
 
 export interface DbForeignKey {

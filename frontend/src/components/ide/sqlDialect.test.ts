@@ -43,3 +43,25 @@ describe('unknown driver', () => {
     expect(d.formatObject('analytics', 'events')).toBe('analytics.events')
   })
 })
+
+describe('preview / count query builders', () => {
+  const ref = { namespace: 'public', kind: 'table', name: 'users' }
+
+  it('postgres builds preview, exact-count, and bounded-count queries', () => {
+    const d = dialectFor('postgres')
+    expect(d.previewQuery(ref)).toBe('SELECT * FROM users')
+    expect(d.exactCountQuery(ref)).toBe('SELECT COUNT(*) FROM users')
+    expect(d.boundedCountQuery(ref, 10001)).toBe('SELECT COUNT(*) FROM (SELECT 1 FROM users LIMIT 10001) AS _warden_count')
+  })
+
+  it('qualifies and quotes through formatObject in built queries', () => {
+    const d = dialectFor('postgres')
+    expect(d.previewQuery({ namespace: 'analytics', kind: 'table', name: 'Daily' })).toBe('SELECT * FROM analytics."Daily"')
+  })
+
+  it('mysql backtick-quotes object names in built queries', () => {
+    const d = dialectFor('mysql')
+    expect(d.boundedCountQuery({ namespace: 'appdb', kind: 'table', name: 'Orders' }, 5))
+      .toBe('SELECT COUNT(*) FROM (SELECT 1 FROM `Orders` LIMIT 5) AS _warden_count')
+  })
+})

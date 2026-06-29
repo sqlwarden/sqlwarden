@@ -2,6 +2,7 @@ import type { ContextMenuItem } from '#/components/ui/context-menu'
 
 export type ObjectMenuCtx = {
   isView: boolean
+  onOpen: () => void
   onCopyName: () => void
   onCopyQualifiedName: () => void
   onCopyColumnList: () => void
@@ -9,6 +10,8 @@ export type ObjectMenuCtx = {
 
 export function buildObjectMenu(ctx: ObjectMenuCtx): ContextMenuItem[] {
   const items: ContextMenuItem[] = [
+    { kind: 'action', id: 'open', label: 'Open', icon: 'arrow-up-right-01', onSelect: ctx.onOpen },
+    { kind: 'separator' },
     { kind: 'action', id: 'copy-name', label: 'Copy name', icon: 'copy-01', onSelect: ctx.onCopyName },
     { kind: 'action', id: 'copy-qualified-name', label: 'Copy qualified name', icon: 'copy-01', onSelect: ctx.onCopyQualifiedName },
     { kind: 'action', id: 'copy-column-list', label: 'Copy column list', icon: 'copy-01', onSelect: ctx.onCopyColumnList },
