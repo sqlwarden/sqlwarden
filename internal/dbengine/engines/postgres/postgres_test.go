@@ -530,6 +530,32 @@ func TestPostgresTableDDLRoundTrips(t *testing.T) {
 	}
 }
 
+func TestPostgresIndexColumns(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+
+	mustExec(t, d, `DROP TABLE IF EXISTS idx_cols`)
+	mustExec(t, d, `CREATE TABLE idx_cols (id bigint PRIMARY KEY, a text, b text)`)
+	mustExec(t, d, `CREATE INDEX idx_cols_ab ON idx_cols (a, b)`)
+
+	objs, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "public", Kind: "table", Name: "idx_cols"}})
+	if err != nil {
+		t.Fatalf("InspectObjects: %v", err)
+	}
+	var found *schema.Index
+	for i := range objs[0].Relational.Indexes {
+		if objs[0].Relational.Indexes[i].Name == "idx_cols_ab" {
+			found = &objs[0].Relational.Indexes[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("index idx_cols_ab not found: %+v", objs[0].Relational.Indexes)
+	}
+	if got := strings.Join(found.Columns, ","); got != "a,b" {
+		t.Fatalf("index columns = %q, want a,b", got)
+	}
+}
+
 func attrString(m map[string]any, key string) string {
 	if m == nil {
 		return ""

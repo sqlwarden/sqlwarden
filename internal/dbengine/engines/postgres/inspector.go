@@ -278,29 +278,51 @@ ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_positio
 	}
 	frows.Close()
 
+	// One row per index key column: pg_get_indexdef(idx, n, true) renders the
+	// n-th key as a column name or expression, so this also covers expression
+	// indexes. Columns are aggregated per index in attnum order.
 	idxQ := `
-SELECT schemaname, tablename, indexname, indexdef
-FROM pg_indexes
-WHERE (schemaname, tablename) IN (` + pairs + `)
-ORDER BY schemaname, tablename, indexname`
+SELECT ns.nspname, t.relname, i.relname, ix.indisunique,
+       pg_get_indexdef(i.oid),
+       pg_get_indexdef(i.oid, g.n, true)
+FROM pg_index ix
+JOIN pg_class i ON i.oid = ix.indexrelid
+JOIN pg_class t ON t.oid = ix.indrelid
+JOIN pg_namespace ns ON ns.oid = t.relnamespace
+CROSS JOIN LATERAL generate_series(1, ix.indnkeyatts) AS g(n)
+WHERE (ns.nspname, t.relname) IN (` + pairs + `)
+ORDER BY ns.nspname, t.relname, i.relname, g.n`
 	irows, err := d.db.QueryContext(ctx, idxQ, args...)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: object indexes: %w", err)
 	}
+	type idxKey struct{ ns, tbl, name string }
+	indexes := map[idxKey]*schema.Index{}
+	var indexOrder []idxKey
 	for irows.Next() {
-		var ns, tbl, name, def string
-		if err := irows.Scan(&ns, &tbl, &name, &def); err != nil {
+		var ns, tbl, name, def, col string
+		var unique bool
+		if err := irows.Scan(&ns, &tbl, &name, &unique, &def, &col); err != nil {
 			irows.Close()
 			return nil, fmt.Errorf("postgres: object index scan: %w", err)
 		}
-		unique := strings.Contains(def, "CREATE UNIQUE INDEX")
-		b.AddIndex(refFor(ns, tbl), schema.Index{Name: name, Unique: unique, Attributes: map[string]any{"definition": def}})
+		key := idxKey{ns: ns, tbl: tbl, name: name}
+		ix, ok := indexes[key]
+		if !ok {
+			ix = &schema.Index{Name: name, Unique: unique, Attributes: map[string]any{"definition": def}}
+			indexes[key] = ix
+			indexOrder = append(indexOrder, key)
+		}
+		ix.Columns = append(ix.Columns, col)
 	}
 	if err := irows.Err(); err != nil {
 		irows.Close()
 		return nil, fmt.Errorf("postgres: object index rows: %w", err)
 	}
 	irows.Close()
+	for _, key := range indexOrder {
+		b.AddIndex(refFor(key.ns, key.tbl), *indexes[key])
+	}
 
 	out := b.Build()
 	if err := d.attachPostgresComments(ctx, out, pairs, args); err != nil {
