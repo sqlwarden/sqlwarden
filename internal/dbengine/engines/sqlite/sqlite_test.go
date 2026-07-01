@@ -343,6 +343,37 @@ func TestSQLiteObjectDefinitions(t *testing.T) {
 	}
 }
 
+func TestSQLiteInspectRelationships(t *testing.T) {
+	d := &sqliteDriver{}
+	ctx := context.Background()
+	if err := d.Connect(ctx, dbengine.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer d.Close()
+
+	if _, err := d.Execute(ctx, `CREATE TABLE rel_parent (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Execute(ctx, `CREATE TABLE rel_child (id INTEGER PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES rel_parent(id))`); err != nil {
+		t.Fatal(err)
+	}
+
+	graph, err := d.InspectRelationships(ctx, "main")
+	if err != nil {
+		t.Fatalf("InspectRelationships: %v", err)
+	}
+	var found bool
+	for _, r := range graph.Relationships {
+		if r.Source.Name == "rel_child" && r.References.Name == "rel_parent" &&
+			strings.Join(r.Columns, ",") == "parent_id" && strings.Join(r.ReferencedColumns, ",") == "id" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("edge rel_child->rel_parent not found: %+v", graph.Relationships)
+	}
+}
+
 func descriptorByTitle(ds []schema.Descriptor, title string) *schema.Source {
 	for _, d := range ds {
 		if d.Title == title && d.Source != nil {
