@@ -12,6 +12,10 @@ import (
 const (
 	TypeFileContentReap = "file_content_reap"
 
+	EventLevelInfo  = "info"
+	EventLevelWarn  = "warn"
+	EventLevelError = "error"
+
 	StatusQueued    = "queued"
 	StatusRunning   = "running"
 	StatusSucceeded = "succeeded"
@@ -33,6 +37,7 @@ var (
 	ErrNotRunnable  = errors.New("job is not runnable")
 	ErrNotOwned     = errors.New("job is not owned by account")
 	ErrInvalidScope = errors.New("job scope is invalid")
+	ErrInvalidEvent = errors.New("job event is invalid")
 )
 
 // Record mirrors a persisted job row. Payloads are stored as strings for
@@ -78,16 +83,58 @@ type EnqueueInput struct {
 	Input          any
 }
 
+// Event is a user-facing progress entry for a user-visible job. Events are
+// intentionally separate from server logs and audit logs.
+type Event struct {
+	bun.BaseModel `bun:"table:job_events"`
+	ID            string    `bun:",pk" json:"id"`
+	JobID         string    `bun:",notnull" json:"job_id"`
+	Level         string    `bun:",notnull" json:"level"`
+	Code          string    `bun:",notnull" json:"code"`
+	Message       string    `bun:",notnull" json:"message"`
+	DetailsJSON   string    `bun:",nullzero" json:"-"`
+	Details       any       `bun:"-" json:"details,omitempty"`
+	CreatedAt     time.Time `bun:",notnull" json:"created_at"`
+}
+
+// EventInput describes a new job event. Details must be safe for users and
+// must not contain SQL text, credentials, bind values, row values, or secrets.
+type EventInput struct {
+	JobID   string
+	Level   string
+	Code    string
+	Message string
+	Details any
+}
+
+type EventPage struct {
+	Items       []Event `json:"items"`
+	NextAfterID string  `json:"next_after_id,omitempty"`
+}
+
+// EventWriter records user-facing job progress. Implementations may be
+// best-effort; handlers should treat events as progress UX, not job state.
+type EventWriter interface {
+	Info(ctx context.Context, code, message string, details any)
+	Warn(ctx context.Context, code, message string, details any)
+	Error(ctx context.Context, code, message string, details any)
+}
+
+type Runtime struct {
+	Job    Record
+	Events EventWriter
+}
+
 // Handler executes one claimed job. It must honor ctx cancellation for
 // cooperative shutdown and user-requested cancellation.
 type Handler interface {
-	Handle(ctx context.Context, job Record) (any, error)
+	Handle(ctx context.Context, runtime Runtime) (any, error)
 }
 
-type HandlerFunc func(context.Context, Record) (any, error)
+type HandlerFunc func(context.Context, Runtime) (any, error)
 
-func (fn HandlerFunc) Handle(ctx context.Context, job Record) (any, error) {
-	return fn(ctx, job)
+func (fn HandlerFunc) Handle(ctx context.Context, runtime Runtime) (any, error) {
+	return fn(ctx, runtime)
 }
 
 type Definition struct {

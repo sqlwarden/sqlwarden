@@ -1,6 +1,6 @@
 # SQLWarden Architecture
 
-Updated: 2026-06-29
+Updated: 2026-07-01
 
 SQLWarden is a self-hosted database access platform and SQL IDE. The current repository contains a Go backend, embedded React SPA, custom RBAC engine, database connection/session manager, and workspace file storage foundation. Future product direction includes Wails desktop packaging, SSO/SCIM, stronger audit/compliance features, connector agents, and broader file/storage backends.
 
@@ -30,6 +30,7 @@ Implemented today:
 - Filesystem-backed file content storage under `~/.sqlwarden/files` by default.
 - Workspace file content retention reaper.
 - Database-backed background job framework for durable one-off and scheduled work.
+- User-facing job event timeline for progress updates on background jobs.
 - DSN and file encryption key rotation foundation.
 - Database engine registry and capability abstractions for schema inspection, query classification, parsing, rewriting, completion, and cursor-backed result paging.
 - Schema introspection abstraction, cache, and API.
@@ -640,6 +641,8 @@ Background jobs:
 - Jobs are persisted in the application database with user/internal visibility and lifecycle state.
 - The API process runs in-process workers using database claim leases, cooperative cancellation, retry policy, priority-aware best-effort claiming, stale-claim recovery, and completed-job retention pruning.
 - User-visible job APIs are scoped under organization workspace routes and currently expose only the authenticated user's jobs in that workspace.
+- User-facing job events are append-only progress records for user-visible jobs. They are fetched incrementally with an `after_id` marker and are retained with the parent job.
+- Job events are progress UX, not server logs or audit logs. They must not contain SQL text, DSNs, bind values, row values, credentials, or secrets.
 - File content deletion cleanup is registered as a low-priority internal job.
 
 Current default storage path is `~/.sqlwarden/files`.

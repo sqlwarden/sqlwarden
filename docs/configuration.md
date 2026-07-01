@@ -187,6 +187,8 @@ For DQL/select-style queries, the IDE can request cursor-backed results through 
 
 Jobs are persisted in the application database. Workers always run inside the API process and use database claim leases so a future separate worker binary can use the same job table safely. Job scheduling is best effort: due jobs run when a worker is available, with higher-priority due jobs claimed before lower-priority due jobs. Internal maintenance such as stale file-content cleanup uses this framework.
 
+User-facing jobs can also persist progress events. Events are read through the scoped job API with an `after_id` marker so clients can poll only for new events. Events follow the parent job retention period configured by `jobs.completed_retention`; there is no separate event retention setting.
+
 ## TLS
 
 | Config key | Environment | CLI flag | Default | Notes |

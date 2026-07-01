@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -51,6 +52,42 @@ func (app *application) getWorkspaceJob(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := response.JSON(w, http.StatusOK, job); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) listWorkspaceJobEvents(w http.ResponseWriter, r *http.Request) {
+	if !app.ensureWorkspaceJobAccess(w, r) {
+		return
+	}
+	account := contextGetAccount(r)
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
+	q, errs := readListQuery(r.URL.Query(), map[string]string{
+		"created_at": "created_at",
+	})
+	if len(errs) != 0 {
+		app.failedValidation(w, r, fieldErrors(errs))
+		return
+	}
+	events, err := app.workspaceJobStore().ListUserWorkspaceJobEvents(
+		r.Context(),
+		org.ID,
+		ws.ID,
+		account.ID,
+		chi.URLParam(r, "job_id"),
+		r.URL.Query().Get("after_id"),
+		q.PageSize,
+	)
+	if errors.Is(err, jobs.ErrNotFound) {
+		app.notFound(w, r)
+		return
+	}
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, events); err != nil {
 		app.serverError(w, r, err)
 	}
 }

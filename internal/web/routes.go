@@ -218,6 +218,7 @@ func (app *application) routes() http.Handler {
 					r.Route("/jobs", func(r chi.Router) {
 						r.Get("/", app.listWorkspaceJobs)
 						r.Get("/{job_id}", app.getWorkspaceJob)
+						r.Get("/{job_id}/events", app.listWorkspaceJobEvents)
 						r.Post("/{job_id}/cancel", app.cancelWorkspaceJob)
 					})
 

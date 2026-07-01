@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -157,6 +158,113 @@ func TestHasActiveJobTypeOnlyCountsQueuedAndRunning(t *testing.T) {
 	}
 }
 
+func TestStoreAppendsAndListsUserWorkspaceJobEvents(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := context.Background()
+	accountID, orgID, workspaceID := newJobScope(t, db)
+	job, err := store.Enqueue(ctx, EnqueueInput{
+		Type:           "export",
+		Visibility:     VisibilityUser,
+		OrgID:          &orgID,
+		WorkspaceID:    &workspaceID,
+		OwnerAccountID: &accountID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.AppendEvent(ctx, EventInput{JobID: job.ID, Level: EventLevelInfo, Code: "query_started", Message: "Query started."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.AppendEvent(ctx, EventInput{
+		JobID:   job.ID,
+		Level:   EventLevelWarn,
+		Code:    "rows_truncated",
+		Message: "Rows were truncated.",
+		Details: map[string]any{"rows": 100},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := store.AppendEvent(ctx, EventInput{JobID: job.ID, Level: EventLevelInfo, Code: "file_saved", Message: "File saved."})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := store.ListUserWorkspaceJobEvents(ctx, orgID, workspaceID, accountID, job.ID, "", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 2 || page.Items[0].ID != first.ID || page.Items[1].ID != second.ID {
+		t.Fatalf("page items = %+v, want first two events", page.Items)
+	}
+	if page.NextAfterID != second.ID {
+		t.Fatalf("next_after_id = %q, want %q", page.NextAfterID, second.ID)
+	}
+	if details, ok := page.Items[1].Details.(map[string]any); !ok || details["rows"].(float64) != 100 {
+		t.Fatalf("details = %#v, want rows detail", page.Items[1].Details)
+	}
+
+	page, err = store.ListUserWorkspaceJobEvents(ctx, orgID, workspaceID, accountID, job.ID, page.NextAfterID, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != third.ID {
+		t.Fatalf("page after marker = %+v, want third event", page.Items)
+	}
+}
+
+func TestJobEventsCascadeWhenJobIsPruned(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := context.Background()
+	accountID, orgID, workspaceID := newJobScope(t, db)
+	job, err := store.Enqueue(ctx, EnqueueInput{
+		Type:           "noop",
+		Visibility:     VisibilityUser,
+		OrgID:          &orgID,
+		WorkspaceID:    &workspaceID,
+		OwnerAccountID: &accountID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AppendEvent(ctx, EventInput{JobID: job.ID, Level: EventLevelInfo, Code: "test_event", Message: "Test event."}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Complete(ctx, job.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.NewUpdate().Model((*Record)(nil)).
+		Set("finished_at = ?", time.Now().Add(-time.Hour)).
+		Where("id = ?", job.ID).
+		Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if processed, err := store.PruneCompleted(ctx, time.Now(), 100); err != nil || processed != 1 {
+		t.Fatalf("processed=%d err=%v, want one pruned job", processed, err)
+	}
+	var count int
+	if err := db.NewSelect().Model((*Event)(nil)).ColumnExpr("COUNT(*)").Where("job_id = ?", job.ID).Scan(ctx, &count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("job event count = %d, want cascade delete", count)
+	}
+}
+
+func TestStoreRejectsEventsForInternalJobs(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+	job, err := store.Enqueue(ctx, EnqueueInput{Type: "noop", Visibility: VisibilityInternal})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.AppendEvent(ctx, EventInput{JobID: job.ID, Level: EventLevelInfo, Code: "internal_event", Message: "Internal event."})
+	if !errors.Is(err, ErrInvalidEvent) {
+		t.Fatalf("error = %v, want ErrInvalidEvent", err)
+	}
+}
+
 func TestRecoverExpiredRunningJobs(t *testing.T) {
 	store, _ := newTestStore(t)
 	ctx := context.Background()
@@ -208,13 +316,66 @@ func TestRecoverExpiredRunningJobFailsWhenAttemptsExhausted(t *testing.T) {
 	}
 }
 
+func TestRunnerRecordsUserJobLifecycleAndHandlerEvents(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := context.Background()
+	accountID, orgID, workspaceID := newJobScope(t, db)
+	registry := NewRegistry()
+	registry.Register(Definition{
+		Type: "export",
+		Handler: HandlerFunc(func(ctx context.Context, runtime Runtime) (any, error) {
+			runtime.Events.Info(ctx, "export_started", "Export started.", map[string]any{"format": "csv"})
+			return map[string]any{"file_id": "file-1"}, nil
+		}),
+	})
+	job, err := store.Enqueue(ctx, EnqueueInput{
+		Type:           "export",
+		Visibility:     VisibilityUser,
+		OrgID:          &orgID,
+		WorkspaceID:    &workspaceID,
+		OwnerAccountID: &accountID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := NewRunner(store, registry, slog.New(slog.NewTextHandler(io.Discard, nil)), WorkerConfig{ClaimLease: time.Minute})
+	if !runner.runOnce(ctx, 0) {
+		t.Fatal("runner did not claim job")
+	}
+
+	var stored Record
+	if err := db.NewSelect().Model(&stored).Where("id = ?", job.ID).Scan(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != StatusSucceeded {
+		t.Fatalf("status = %s, want succeeded", stored.Status)
+	}
+	page, err := store.ListUserWorkspaceJobEvents(ctx, orgID, workspaceID, accountID, job.ID, "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes := make([]string, 0, len(page.Items))
+	for _, event := range page.Items {
+		codes = append(codes, event.Code)
+	}
+	want := []string{"job_started", "export_started", "job_succeeded"}
+	if len(codes) != len(want) {
+		t.Fatalf("event codes = %v, want %v", codes, want)
+	}
+	for i := range want {
+		if codes[i] != want[i] {
+			t.Fatalf("event codes = %v, want %v", codes, want)
+		}
+	}
+}
+
 func TestRunnerCompletesJobAndStoresOutput(t *testing.T) {
 	store, db := newTestStore(t)
 	ctx := context.Background()
 	registry := NewRegistry()
 	registry.Register(Definition{
 		Type: "answer",
-		Handler: HandlerFunc(func(context.Context, Record) (any, error) {
+		Handler: HandlerFunc(func(context.Context, Runtime) (any, error) {
 			return map[string]int{"answer": 42}, nil
 		}),
 	})
@@ -251,7 +412,7 @@ func TestRunnerRetriesRetryableFailure(t *testing.T) {
 		Type:        "retry",
 		MaxAttempts: 2,
 		Backoff:     func(int) time.Duration { return time.Millisecond },
-		Handler: HandlerFunc(func(context.Context, Record) (any, error) {
+		Handler: HandlerFunc(func(context.Context, Runtime) (any, error) {
 			return nil, Retryable("temporary", "Temporary failure.")
 		}),
 	})
@@ -281,7 +442,7 @@ func TestRunningJobCancellationCancelsHandler(t *testing.T) {
 	registry := NewRegistry()
 	registry.Register(Definition{
 		Type: "blocking",
-		Handler: HandlerFunc(func(ctx context.Context, _ Record) (any, error) {
+		Handler: HandlerFunc(func(ctx context.Context, _ Runtime) (any, error) {
 			close(started)
 			<-ctx.Done()
 			return nil, ctx.Err()
