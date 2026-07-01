@@ -5,11 +5,18 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/response"
 	"github.com/uptrace/bun"
+)
+
+const (
+	maxEventMessageLength = 1000
+	maxEventCodeLength    = 128
+	maxEventDetailsBytes  = 16 * 1024
 )
 
 type Store struct {
@@ -122,6 +129,66 @@ func (s *Store) GetUserWorkspaceJob(ctx context.Context, orgID, workspaceID, acc
 	return job, err == nil, err
 }
 
+// AppendEvent records one user-facing job progress event.
+func (s *Store) AppendEvent(ctx context.Context, input EventInput) (Event, error) {
+	event, err := newEvent(input)
+	if err != nil {
+		return Event{}, err
+	}
+	var job Record
+	if err := s.db.NewSelect().Model(&job).Column("id", "visibility").Where("id = ?", event.JobID).Scan(ctx); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Event{}, ErrNotFound
+		}
+		return Event{}, err
+	}
+	if job.Visibility != VisibilityUser {
+		return Event{}, ErrInvalidEvent
+	}
+	_, err = s.db.NewInsert().Model(&event).Exec(ctx)
+	if err != nil {
+		return Event{}, err
+	}
+	populateEventDetails(&event)
+	return event, nil
+}
+
+// ListUserWorkspaceJobEvents lists user-visible progress events for a job the
+// current account owns in the workspace. afterID is a ULID marker returned by a
+// previous response; only newer events are returned.
+func (s *Store) ListUserWorkspaceJobEvents(ctx context.Context, orgID, workspaceID, accountID int64, jobID, afterID string, pageSize int) (EventPage, error) {
+	if _, found, err := s.GetUserWorkspaceJob(ctx, orgID, workspaceID, accountID, jobID); err != nil {
+		return EventPage{}, err
+	} else if !found {
+		return EventPage{}, ErrNotFound
+	}
+	if pageSize < 1 {
+		pageSize = 100
+	}
+	if pageSize > 500 {
+		pageSize = 500
+	}
+	var events []Event
+	q := s.db.NewSelect().Model(&events).
+		Where("job_id = ?", jobID).
+		OrderExpr("id ASC").
+		Limit(pageSize)
+	if strings.TrimSpace(afterID) != "" {
+		q = q.Where("id > ?", afterID)
+	}
+	if err := q.Scan(ctx); err != nil {
+		return EventPage{}, err
+	}
+	for i := range events {
+		populateEventDetails(&events[i])
+	}
+	page := EventPage{Items: events}
+	if len(events) > 0 {
+		page.NextAfterID = events[len(events)-1].ID
+	}
+	return page, nil
+}
+
 func (s *Store) RequestCancelUserWorkspaceJob(ctx context.Context, orgID, workspaceID, accountID int64, jobID string) (Record, bool, error) {
 	now := time.Now()
 	var job Record
@@ -215,6 +282,44 @@ func (s *Store) ClaimDue(ctx context.Context, workerID string, now time.Time, le
 	return claimed, claimed.ID != "", nil
 }
 
+func newEvent(input EventInput) (Event, error) {
+	input.JobID = strings.TrimSpace(input.JobID)
+	input.Level = strings.TrimSpace(input.Level)
+	input.Code = strings.TrimSpace(input.Code)
+	input.Message = strings.TrimSpace(input.Message)
+	if input.JobID == "" || input.Code == "" || input.Message == "" {
+		return Event{}, ErrInvalidEvent
+	}
+	if input.Level == "" {
+		input.Level = EventLevelInfo
+	}
+	switch input.Level {
+	case EventLevelInfo, EventLevelWarn, EventLevelError:
+	default:
+		return Event{}, ErrInvalidEvent
+	}
+	if len(input.Code) > maxEventCodeLength || len(input.Message) > maxEventMessageLength {
+		return Event{}, ErrInvalidEvent
+	}
+	details, err := marshalPayload(input.Details)
+	if err != nil {
+		return Event{}, err
+	}
+	if len(details) > maxEventDetailsBytes {
+		return Event{}, ErrInvalidEvent
+	}
+	now := time.Now()
+	return Event{
+		ID:          database.NewID(),
+		JobID:       input.JobID,
+		Level:       input.Level,
+		Code:        input.Code,
+		Message:     input.Message,
+		DetailsJSON: details,
+		CreatedAt:   now,
+	}, nil
+}
+
 func populateOutput(job *Record) {
 	if job == nil || job.OutputJSON == "" {
 		return
@@ -222,6 +327,16 @@ func populateOutput(job *Record) {
 	var output any
 	if err := json.Unmarshal([]byte(job.OutputJSON), &output); err == nil {
 		job.Output = output
+	}
+}
+
+func populateEventDetails(event *Event) {
+	if event == nil || event.DetailsJSON == "" {
+		return
+	}
+	var details any
+	if err := json.Unmarshal([]byte(event.DetailsJSON), &details); err == nil {
+		event.Details = details
 	}
 }
 

@@ -108,3 +108,57 @@ func TestWorkspaceJobGetAndCancelAreScopedToOwnerAndWorkspace(t *testing.T) {
 	decodeJSONResponse(t, res.BodyBytes, &cancelled)
 	assert.Equal(t, jobs.StatusCancelled, cancelled.Status)
 }
+
+func TestWorkspaceJobEventsAreScopedAndIncremental(t *testing.T) {
+	app := newTestApp(t)
+	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "jobs-events-owner"), "Jobs Events Owner", "Jobs Events Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Jobs Events Workspace", "")
+	otherWS := seedWorkspaceForAccount(t, app, org, owner, "Other Jobs Events Workspace", "")
+	if err := app.db.AddWorkspaceMember(context.Background(), ws.ID, owner.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.db.AddWorkspaceMember(context.Background(), otherWS.ID, owner.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	store := jobs.NewStore(app.db)
+	ctx := context.Background()
+	job, err := store.Enqueue(ctx, jobs.EnqueueInput{
+		Type:           "export",
+		Visibility:     jobs.VisibilityUser,
+		OrgID:          &org.ID,
+		WorkspaceID:    &ws.ID,
+		OwnerAccountID: &owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.AppendEvent(ctx, jobs.EventInput{JobID: job.ID, Level: jobs.EventLevelInfo, Code: "query_started", Message: "Query started."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.AppendEvent(ctx, jobs.EventInput{JobID: job.ID, Level: jobs.EventLevelInfo, Code: "file_saved", Message: "File saved."})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	eventsURL := "/api/v1/orgs/" + org.Slug + "/workspaces/" + strconv.FormatInt(ws.ID, 10) + "/jobs/" + job.ID + "/events?page_size=1"
+	res := send(t, newAuthRequest(t, http.MethodGet, eventsURL, nil, token), app.routes())
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	var page jobs.EventPage
+	decodeJSONResponse(t, res.BodyBytes, &page)
+	if assert.Len(t, page.Items, 1) {
+		assert.Equal(t, first.ID, page.Items[0].ID)
+	}
+	assert.Equal(t, first.ID, page.NextAfterID)
+
+	res = send(t, newAuthRequest(t, http.MethodGet, eventsURL+"&after_id="+page.NextAfterID, nil, token), app.routes())
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	decodeJSONResponse(t, res.BodyBytes, &page)
+	if assert.Len(t, page.Items, 1) {
+		assert.Equal(t, second.ID, page.Items[0].ID)
+	}
+
+	wrongWorkspaceURL := "/api/v1/orgs/" + org.Slug + "/workspaces/" + strconv.FormatInt(otherWS.ID, 10) + "/jobs/" + job.ID + "/events"
+	res = send(t, newAuthRequest(t, http.MethodGet, wrongWorkspaceURL, nil, token), app.routes())
+	assert.Equal(t, http.StatusNotFound, res.StatusCode)
+}

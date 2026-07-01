@@ -159,8 +159,10 @@ func (r *Runner) execute(parent context.Context, worker int, job Record) {
 	go r.heartbeat(ctx, job, worker, cancel, done)
 
 	startedAt := time.Now()
+	events := newStoreEventWriter(r.store, r.logger, job)
 	r.logger.InfoContext(ctx, "job started", jobAttrs(job, worker, nil)...)
-	output, err := def.Handler.Handle(ctx, job)
+	events.Info(ctx, "job_started", "Job started.", nil)
+	output, err := def.Handler.Handle(ctx, Runtime{Job: job, Events: events})
 	close(done)
 
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -173,6 +175,9 @@ func (r *Runner) execute(parent context.Context, worker int, job Record) {
 				r.logger.ErrorContext(context.Background(), "job cancel update failed", jobAttrs(job, worker, markErr)...)
 				return
 			}
+			events.Info(context.Background(), "job_cancelled", "Job cancelled.", map[string]any{
+				"duration_ms": time.Since(startedAt).Milliseconds(),
+			})
 			r.logger.InfoContext(context.Background(), "job cancelled", append(jobAttrs(job, worker, nil), "duration_ms", time.Since(startedAt).Milliseconds())...)
 			return
 		}
@@ -187,9 +192,17 @@ func (r *Runner) execute(parent context.Context, worker int, job Record) {
 			return
 		}
 		if status == StatusQueued {
+			events.Warn(context.Background(), "job_retry_scheduled", "Job will retry.", map[string]any{
+				"error_code": code,
+				"attempt":    job.Attempts,
+			})
 			r.logger.WarnContext(context.Background(), "job retry scheduled", attrs...)
 			return
 		}
+		events.Error(context.Background(), "job_failed", "Job failed.", map[string]any{
+			"error_code":  code,
+			"duration_ms": time.Since(startedAt).Milliseconds(),
+		})
 		r.logger.WarnContext(context.Background(), "job failed", attrs...)
 		return
 	}
@@ -198,6 +211,9 @@ func (r *Runner) execute(parent context.Context, worker int, job Record) {
 		r.logger.ErrorContext(context.Background(), "job completion update failed", jobAttrs(job, worker, err)...)
 		return
 	}
+	events.Info(context.Background(), "job_succeeded", "Job completed.", map[string]any{
+		"duration_ms": time.Since(startedAt).Milliseconds(),
+	})
 	r.logger.InfoContext(context.Background(), "job succeeded", append(jobAttrs(job, worker, nil), "duration_ms", time.Since(startedAt).Milliseconds())...)
 }
 
@@ -263,4 +279,53 @@ func jobAttrs(job Record, worker int, err error) []any {
 		attrs = append(attrs, "error", err)
 	}
 	return attrs
+}
+
+type noopEventWriter struct{}
+
+func (noopEventWriter) Info(context.Context, string, string, any)  {}
+func (noopEventWriter) Warn(context.Context, string, string, any)  {}
+func (noopEventWriter) Error(context.Context, string, string, any) {}
+
+type storeEventWriter struct {
+	store  *Store
+	logger *slog.Logger
+	job    Record
+}
+
+func newStoreEventWriter(store *Store, logger *slog.Logger, job Record) EventWriter {
+	if job.Visibility != VisibilityUser || store == nil {
+		return noopEventWriter{}
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return storeEventWriter{store: store, logger: logger, job: job}
+}
+
+func (w storeEventWriter) Info(ctx context.Context, code, message string, details any) {
+	w.write(ctx, EventLevelInfo, code, message, details)
+}
+
+func (w storeEventWriter) Warn(ctx context.Context, code, message string, details any) {
+	w.write(ctx, EventLevelWarn, code, message, details)
+}
+
+func (w storeEventWriter) Error(ctx context.Context, code, message string, details any) {
+	w.write(ctx, EventLevelError, code, message, details)
+}
+
+func (w storeEventWriter) write(ctx context.Context, level, code, message string, details any) {
+	event, err := w.store.AppendEvent(ctx, EventInput{
+		JobID:   w.job.ID,
+		Level:   level,
+		Code:    code,
+		Message: message,
+		Details: details,
+	})
+	if err != nil {
+		w.logger.WarnContext(ctx, "job event write failed", append(jobAttrs(w.job, -1, err), "event.level", level, "event.code", code)...)
+		return
+	}
+	w.logger.DebugContext(ctx, "job event recorded", append(jobAttrs(w.job, -1, nil), "event.id", event.ID, "event.level", event.Level, "event.code", event.Code)...)
 }
