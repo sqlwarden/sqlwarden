@@ -556,6 +556,37 @@ func TestPostgresIndexColumns(t *testing.T) {
 	}
 }
 
+func TestPostgresInspectRelationships(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+
+	mustExec(t, d, `DROP TABLE IF EXISTS rel_child`)
+	mustExec(t, d, `DROP TABLE IF EXISTS rel_parent`)
+	mustExec(t, d, `CREATE TABLE rel_parent (id bigint PRIMARY KEY)`)
+	mustExec(t, d, `CREATE TABLE rel_child (id bigint PRIMARY KEY, parent_id bigint NOT NULL REFERENCES rel_parent(id))`)
+
+	graph, err := d.InspectRelationships(ctx, "public")
+	if err != nil {
+		t.Fatalf("InspectRelationships: %v", err)
+	}
+	var found *schema.Relationship
+	for i := range graph.Relationships {
+		r := &graph.Relationships[i]
+		if r.Source.Name == "rel_child" && r.References.Name == "rel_parent" {
+			found = r
+		}
+	}
+	if found == nil {
+		t.Fatalf("edge rel_child->rel_parent not found: %+v", graph.Relationships)
+	}
+	if strings.Join(found.Columns, ",") != "parent_id" || strings.Join(found.ReferencedColumns, ",") != "id" {
+		t.Fatalf("edge columns wrong: %+v", found)
+	}
+	if found.Source.Namespace != "public" || found.References.Kind != "table" {
+		t.Fatalf("edge refs not qualified: %+v", found)
+	}
+}
+
 func attrString(m map[string]any, key string) string {
 	if m == nil {
 		return ""
