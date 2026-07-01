@@ -70,6 +70,68 @@ func (schemaFakeDriver) InspectObjects(_ context.Context, refs []schema.ObjectRe
 	return out, nil
 }
 
+// schemaRelDriver is schemaFakeDriver plus the optional RelationshipInspector
+// capability, used to exercise the relationships endpoint. schemaFakeDriver
+// deliberately does NOT implement it, so it drives the 501 path.
+type schemaRelDriver struct{ schemaFakeDriver }
+
+func (schemaRelDriver) InspectRelationships(_ context.Context, namespace string) (*schema.RelationshipGraph, error) {
+	return &schema.RelationshipGraph{
+		Namespace: namespace,
+		Relationships: []schema.Relationship{{
+			Name:              "orders_user_fk",
+			Source:            schema.ObjectRef{Namespace: namespace, Kind: "table", Name: "orders"},
+			Columns:           []string{"user_id"},
+			References:        schema.ObjectRef{Namespace: namespace, Kind: "table", Name: "users"},
+			ReferencedColumns: []string{"id"},
+		}},
+	}, nil
+}
+
+func TestGetConnectionSchemaRelationships(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-rel"), "Schema Rel", "Schema Rel Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaRelDriver{})
+
+	req := newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/relationships?namespace=public", nil, tok)
+	req.Header.Set("X-Warden-Session", sess.ID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	graph, ok := res.BodyFields["graph"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected graph object, got %v", res.BodyFields)
+	}
+	rels, ok := graph["relationships"].([]any)
+	if !ok || len(rels) != 1 {
+		t.Fatalf("expected one relationship, got %v", graph)
+	}
+	first := rels[0].(map[string]any)
+	refObj := first["references"].(map[string]any)
+	assert.Equal(t, refObj["name"], "users")
+}
+
+func TestGetConnectionSchemaRelationships_Unsupported(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-rel-unsup"), "Schema Rel U", "Schema Rel U Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
+
+	req := newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/relationships?namespace=public", nil, tok)
+	req.Header.Set("X-Warden-Session", sess.ID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotImplemented)
+}
+
 func TestGetConnectionCatalog_RequiresSession(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

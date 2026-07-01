@@ -18,12 +18,19 @@ import (
 )
 
 const (
-	catalogPrefix = "cat:"
-	objectPrefix  = "obj:"
-	sep           = "\x00"
+	catalogPrefix       = "cat:"
+	objectPrefix        = "obj:"
+	relationshipsPrefix = "rel:"
+	sep                 = "\x00"
 )
 
 func catalogKey(connID string) string { return catalogPrefix + connID }
+
+func relationshipsKey(connID, namespace string) string {
+	return relationshipsPrefix + connID + sep + namespace
+}
+
+func connRelationshipsPrefix(connID string) string { return relationshipsPrefix + connID + sep }
 
 func objectKey(connID string, ref schemameta.ObjectRef) string {
 	return objectPrefix + connID + sep + ref.Namespace + sep + ref.Kind + sep + ref.Name
@@ -265,6 +272,38 @@ func (s *Service) Objects(ctx context.Context, connID string, refs []schemameta.
 	return out, nil
 }
 
+// Relationships returns the cached FK topology for (connID, namespace), or
+// inspects on a miss. Mirrors Catalog's cache + singleflight + gzip handling.
+func (s *Service) Relationships(ctx context.Context, connID, namespace string, inspector schemameta.RelationshipInspector) (*schemameta.RelationshipGraph, error) {
+	key := relationshipsKey(connID, namespace)
+	if data, ok := s.cache.Get(key); ok {
+		var g schemameta.RelationshipGraph
+		if err := gunzipJSON(data, &g); err == nil {
+			s.logger.Debug("schema relationships cache hit",
+				slog.Group("schema", "operation", "relationships", "conn_id", connID,
+					"cache", "hit", "edges", len(g.Relationships)))
+			return &g, nil
+		}
+	}
+	v, err, _ := s.group.Do(key, func() (any, error) {
+		g, err := inspector.InspectRelationships(ctx, namespace)
+		if err != nil {
+			return nil, err
+		}
+		if data, gzErr := gzipJSON(g); gzErr == nil {
+			s.cache.Set(key, data, s.ttl)
+		}
+		s.logger.Info("schema relationships inspected",
+			slog.Group("schema", "operation", "relationships", "conn_id", connID,
+				"namespace", namespace, "edges", len(g.Relationships)))
+		return g, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*schemameta.RelationshipGraph), nil
+}
+
 // RefreshObject drops one object's cached detail.
 func (s *Service) RefreshObject(connID string, ref schemameta.ObjectRef) {
 	s.cache.Invalidate(objectKey(connID, ref))
@@ -281,6 +320,7 @@ func (s *Service) RefreshObject(connID string, ref schemameta.ObjectRef) {
 func (s *Service) RefreshConnection(connID string) {
 	s.cache.Invalidate(catalogKey(connID))
 	s.cache.InvalidatePrefix(connObjectPrefix(connID))
+	s.cache.InvalidatePrefix(connRelationshipsPrefix(connID))
 	s.logger.Info("schema connection cache invalidated",
 		slog.Group("schema",
 			"operation", "refresh_connection",
