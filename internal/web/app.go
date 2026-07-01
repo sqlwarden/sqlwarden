@@ -28,6 +28,8 @@ import (
 const (
 	schemaCacheTTL      = 10 * time.Minute
 	schemaCacheCapacity = 256
+	fileReaperInterval  = 15 * time.Minute
+	fileReaperRetry     = time.Minute
 )
 
 type App = application
@@ -228,7 +230,7 @@ func (app *application) defaultJobRegistry() *jobs.Registry {
 			return time.Duration(attempt) * time.Minute
 		},
 		Handler: jobs.HandlerFunc(func(ctx context.Context, _ jobs.Runtime) (any, error) {
-			processed, err := app.workspaceFileService().ReapContentDeletionsOnce(ctx, 100, time.Minute)
+			processed, err := app.workspaceFileService().ReapContentDeletionsOnce(ctx, 100, fileReaperRetry)
 			if err != nil {
 				return nil, jobs.Retryable("file_content_reap_failed", err.Error())
 			}
@@ -273,7 +275,7 @@ func (app *application) startFileContentDeletionReaper() {
 	go func() {
 		defer app.wg.Done()
 		app.logger.Info("file content deletion reaper started")
-		ticker := time.NewTicker(time.Minute)
+		ticker := time.NewTicker(fileReaperInterval)
 		defer ticker.Stop()
 		for {
 			if err := app.enqueueFileContentReapJob(ctx); err != nil {
