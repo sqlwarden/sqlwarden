@@ -32,6 +32,10 @@ type refreshRequest struct {
 	Ref *schema.ObjectRef `json:"ref"`
 }
 
+type relationshipsResponse struct {
+	Graph *schema.RelationshipGraph `json:"graph"`
+}
+
 type schemaStatusResponse struct {
 	Status string `json:"status"`
 }
@@ -104,6 +108,46 @@ func (app *application) resolveSchemaInspector(w http.ResponseWriter, r *http.Re
 		return nil, nil, false
 	}
 	return session, inspector, true
+}
+
+// resolveRelationshipInspector resolves the session and asserts the optional
+// relationship capability, returning 501 when the driver lacks it.
+func (app *application) resolveRelationshipInspector(w http.ResponseWriter, r *http.Request) (*connection.Session, schema.RelationshipInspector, bool) {
+	session, ok := app.resolveSchemaSession(w, r)
+	if !ok {
+		return nil, nil, false
+	}
+	inspector, ok := session.Conn.(schema.RelationshipInspector)
+	if !ok {
+		app.logWarn(r, "schema relationships unsupported",
+			slog.String("session_id", session.ID),
+			slog.Int64("connection_id", contextGetConnection(r).ID),
+		)
+		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema relationships.", nil)
+		return nil, nil, false
+	}
+	return session, inspector, true
+}
+
+func (app *application) getConnectionSchemaRelationships(w http.ResponseWriter, r *http.Request) {
+	session, inspector, ok := app.resolveRelationshipInspector(w, r)
+	if !ok {
+		return
+	}
+	namespace := r.URL.Query().Get("namespace")
+	graph, err := app.schemaService.Relationships(r.Context(), session.ConnectionID, namespace, inspector)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	app.logDebug(r, "schema relationships returned",
+		slog.String("session_id", session.ID),
+		slog.String("namespace", namespace),
+		slog.Int("edge_count", len(graph.Relationships)),
+	)
+	if err := response.JSON(w, http.StatusOK, relationshipsResponse{Graph: graph}); err != nil {
+		app.serverError(w, r, err)
+	}
 }
 
 func (app *application) getConnectionSchemaSpec(w http.ResponseWriter, r *http.Request) {
