@@ -38,6 +38,7 @@ var (
 	ErrNotOwned     = errors.New("job is not owned by account")
 	ErrInvalidScope = errors.New("job scope is invalid")
 	ErrInvalidEvent = errors.New("job event is invalid")
+	ErrActiveExists = errors.New("active singleton job already exists")
 )
 
 // Record mirrors a persisted job row. Payloads are stored as strings for
@@ -46,6 +47,7 @@ type Record struct {
 	bun.BaseModel     `bun:"table:jobs"`
 	ID                string     `bun:",pk" json:"id"`
 	Type              string     `bun:",notnull" json:"type"`
+	SingletonKey      string     `bun:",nullzero" json:"-"`
 	Visibility        string     `bun:",notnull" json:"visibility"`
 	Status            string     `bun:",notnull" json:"status"`
 	OrgID             *int64     `bun:",nullzero" json:"org_id,omitempty"`
@@ -73,6 +75,7 @@ type Record struct {
 // JSON-marshalable value; handlers own validation after decoding.
 type EnqueueInput struct {
 	Type           string
+	SingletonKey   string
 	Visibility     string
 	OrgID          *int64
 	WorkspaceID    *int64

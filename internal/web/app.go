@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -300,14 +301,21 @@ func (app *application) enqueueFileContentReapJob(ctx context.Context) error {
 		app.logger.DebugContext(ctx, "file content deletion reaper job already active", "job.type", jobs.TypeFileContentReap)
 		return nil
 	}
-	job, err := app.jobStore.Enqueue(ctx, jobs.EnqueueInput{
-		Type:        jobs.TypeFileContentReap,
-		Visibility:  jobs.VisibilityInternal,
-		Priority:    jobs.PriorityLow,
-		MaxAttempts: 3,
+	job, created, err := app.jobStore.EnqueueSingleton(ctx, jobs.EnqueueInput{
+		Type:         jobs.TypeFileContentReap,
+		SingletonKey: jobs.TypeFileContentReap,
+		Visibility:   jobs.VisibilityInternal,
+		Priority:     jobs.PriorityLow,
+		MaxAttempts:  3,
 	})
+	if errors.Is(err, jobs.ErrActiveExists) {
+		app.logger.DebugContext(ctx, "file content deletion reaper job already active", "job.type", jobs.TypeFileContentReap)
+		return nil
+	}
 	if err == nil {
-		app.logger.InfoContext(ctx, "file content deletion reaper job queued", "job.id", job.ID, "job.type", job.Type, "job.priority", job.Priority)
+		if created {
+			app.logger.InfoContext(ctx, "file content deletion reaper job queued", "job.id", job.ID, "job.type", job.Type, "job.priority", job.Priority)
+		}
 	}
 	return err
 }

@@ -28,6 +28,41 @@ func NewStore(db *database.DB) *Store {
 }
 
 func (s *Store) Enqueue(ctx context.Context, input EnqueueInput) (Record, error) {
+	if strings.TrimSpace(input.SingletonKey) != "" {
+		return Record{}, ErrInvalidScope
+	}
+	job, err := newRecord(input)
+	if err != nil {
+		return Record{}, err
+	}
+	_, err = s.db.NewInsert().Model(&job).Exec(ctx)
+	if err != nil {
+		return Record{}, err
+	}
+	return job, nil
+}
+
+// EnqueueSingleton inserts a job that may have only one active queued/running
+// instance for the same singleton key across all API/worker processes.
+func (s *Store) EnqueueSingleton(ctx context.Context, input EnqueueInput) (Record, bool, error) {
+	if strings.TrimSpace(input.SingletonKey) == "" {
+		return Record{}, false, ErrInvalidScope
+	}
+	job, err := newRecord(input)
+	if err != nil {
+		return Record{}, false, err
+	}
+	_, err = s.db.NewInsert().Model(&job).Exec(ctx)
+	if err != nil {
+		if isUniqueConstraintError(err) {
+			return Record{}, false, ErrActiveExists
+		}
+		return Record{}, false, err
+	}
+	return job, true, nil
+}
+
+func newRecord(input EnqueueInput) (Record, error) {
 	if input.Type == "" {
 		return Record{}, ErrUnknownType
 	}
@@ -51,9 +86,10 @@ func (s *Store) Enqueue(ctx context.Context, input EnqueueInput) (Record, error)
 		return Record{}, err
 	}
 	now := time.Now()
-	job := Record{
+	return Record{
 		ID:             database.NewID(),
 		Type:           input.Type,
+		SingletonKey:   strings.TrimSpace(input.SingletonKey),
 		Visibility:     input.Visibility,
 		Status:         StatusQueued,
 		OrgID:          input.OrgID,
@@ -65,12 +101,7 @@ func (s *Store) Enqueue(ctx context.Context, input EnqueueInput) (Record, error)
 		InputJSON:      payload,
 		CreatedAt:      now,
 		UpdatedAt:      now,
-	}
-	_, err = s.db.NewInsert().Model(&job).Exec(ctx)
-	if err != nil {
-		return Record{}, err
-	}
-	return job, nil
+	}, nil
 }
 
 // HasActiveJobType reports whether a queued or running job of the same
@@ -338,6 +369,16 @@ func populateEventDetails(event *Event) {
 	if err := json.Unmarshal([]byte(event.DetailsJSON), &details); err == nil {
 		event.Details = details
 	}
+}
+
+func isUniqueConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique constraint") ||
+		strings.Contains(msg, "duplicate key value") ||
+		strings.Contains(msg, "constraint failed")
 }
 
 func (s *Store) Complete(ctx context.Context, jobID string, output any) error {

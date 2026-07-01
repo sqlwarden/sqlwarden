@@ -9,6 +9,7 @@ import (
 
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/stretchr/testify/assert"
+	"github.com/uptrace/bun"
 )
 
 func TestWorkspaceJobsListShowsOnlyCurrentUsersVisibleJobs(t *testing.T) {
@@ -161,4 +162,28 @@ func TestWorkspaceJobEventsAreScopedAndIncremental(t *testing.T) {
 	wrongWorkspaceURL := "/api/v1/orgs/" + org.Slug + "/workspaces/" + strconv.FormatInt(otherWS.ID, 10) + "/jobs/" + job.ID + "/events"
 	res = send(t, newAuthRequest(t, http.MethodGet, wrongWorkspaceURL, nil, token), app.routes())
 	assert.Equal(t, http.StatusNotFound, res.StatusCode)
+}
+
+func TestFileContentReaperEnqueueUsesSingletonJob(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	if err := app.enqueueFileContentReapJob(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.enqueueFileContentReapJob(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var count int
+	err := app.db.NewSelect().Model((*jobs.Record)(nil)).
+		ColumnExpr("COUNT(*)").
+		Where("type = ?", jobs.TypeFileContentReap).
+		Where("visibility = ?", jobs.VisibilityInternal).
+		Where("status IN (?)", bun.In([]string{jobs.StatusQueued, jobs.StatusRunning})).
+		Scan(ctx, &count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, 1, count)
 }

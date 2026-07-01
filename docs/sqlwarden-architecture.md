@@ -640,6 +640,7 @@ Background jobs:
 
 - Jobs are persisted in the application database with user/internal visibility and lifecycle state.
 - The API process runs in-process workers using database claim leases, cooperative cancellation, retry policy, priority-aware best-effort claiming, stale-claim recovery, and completed-job retention pruning.
+- Singleton internal jobs use a database-enforced active `singleton_key` so multiple API pods can safely race to schedule maintenance work without creating duplicate queued/running jobs.
 - User-visible job APIs are scoped under organization workspace routes and currently expose only the authenticated user's jobs in that workspace.
 - User-facing job events are append-only progress records for user-visible jobs. They are fetched incrementally with an `after_id` marker and are retained with the parent job.
 - Job events are progress UX, not server logs or audit logs. They must not contain SQL text, DSNs, bind values, row values, credentials, or secrets.

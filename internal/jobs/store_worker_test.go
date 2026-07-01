@@ -158,6 +158,60 @@ func TestHasActiveJobTypeOnlyCountsQueuedAndRunning(t *testing.T) {
 	}
 }
 
+func TestStoreEnqueueSingletonAllowsOnlyOneActiveJob(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+	first, created, err := store.EnqueueSingleton(ctx, EnqueueInput{
+		Type:         TypeFileContentReap,
+		SingletonKey: TypeFileContentReap,
+		Visibility:   VisibilityInternal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created || first.SingletonKey != TypeFileContentReap {
+		t.Fatalf("created=%v singleton_key=%q, want created singleton", created, first.SingletonKey)
+	}
+	_, created, err = store.EnqueueSingleton(ctx, EnqueueInput{
+		Type:         TypeFileContentReap,
+		SingletonKey: TypeFileContentReap,
+		Visibility:   VisibilityInternal,
+	})
+	if !errors.Is(err, ErrActiveExists) {
+		t.Fatalf("error = %v, want ErrActiveExists", err)
+	}
+	if created {
+		t.Fatal("duplicate singleton job reported created")
+	}
+
+	if err := store.Complete(ctx, first.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	second, created, err := store.EnqueueSingleton(ctx, EnqueueInput{
+		Type:         TypeFileContentReap,
+		SingletonKey: TypeFileContentReap,
+		Visibility:   VisibilityInternal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created || second.ID == first.ID {
+		t.Fatalf("second=%+v created=%v, want new singleton after completion", second, created)
+	}
+}
+
+func TestStoreEnqueueRejectsSingletonKey(t *testing.T) {
+	store, _ := newTestStore(t)
+	_, err := store.Enqueue(context.Background(), EnqueueInput{
+		Type:         "noop",
+		SingletonKey: "noop",
+		Visibility:   VisibilityInternal,
+	})
+	if !errors.Is(err, ErrInvalidScope) {
+		t.Fatalf("error = %v, want ErrInvalidScope", err)
+	}
+}
+
 func TestStoreAppendsAndListsUserWorkspaceJobEvents(t *testing.T) {
 	store, db := newTestStore(t)
 	ctx := context.Background()
