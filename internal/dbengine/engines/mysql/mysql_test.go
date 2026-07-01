@@ -570,6 +570,39 @@ func TestMySQLObjectDefinitionsAndAttributes(t *testing.T) {
 	}
 }
 
+func TestMySQLInspectRelationships(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+
+	if _, err := d.Execute(ctx, `DROP TABLE IF EXISTS rel_child`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Execute(ctx, `DROP TABLE IF EXISTS rel_parent`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Execute(ctx, `CREATE TABLE rel_parent (id bigint PRIMARY KEY) ENGINE=InnoDB`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Execute(ctx, `CREATE TABLE rel_child (id bigint PRIMARY KEY, parent_id bigint NOT NULL, FOREIGN KEY (parent_id) REFERENCES rel_parent(id)) ENGINE=InnoDB`); err != nil {
+		t.Fatal(err)
+	}
+
+	graph, err := d.InspectRelationships(ctx, "testdb")
+	if err != nil {
+		t.Fatalf("InspectRelationships: %v", err)
+	}
+	var found bool
+	for _, r := range graph.Relationships {
+		if r.Source.Name == "rel_child" && r.References.Name == "rel_parent" &&
+			strings.Join(r.Columns, ",") == "parent_id" && strings.Join(r.ReferencedColumns, ",") == "id" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("edge rel_child->rel_parent not found: %+v", graph.Relationships)
+	}
+}
+
 func attrString(m map[string]any, key string) string {
 	if m == nil {
 		return ""
