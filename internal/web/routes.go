@@ -215,6 +215,11 @@ func (app *application) routes() http.Handler {
 					r.With(app.requireWorkspacePermission("ws:delete")).Delete("/", app.deleteWorkspace)
 					r.Get("/sessions", app.listActiveSessions)
 					r.Delete("/sessions/{session_id}", app.revokeWorkspaceDatabaseSession)
+					r.Route("/jobs", func(r chi.Router) {
+						r.Get("/", app.listWorkspaceJobs)
+						r.Get("/{job_id}", app.getWorkspaceJob)
+						r.Post("/{job_id}/cancel", app.cancelWorkspaceJob)
+					})
 
 					r.Get("/permissions", app.listWorkspacePermissions)
 

@@ -29,6 +29,7 @@ Implemented today:
 - Workspace file metadata/content APIs for private and shared files.
 - Filesystem-backed file content storage under `~/.sqlwarden/files` by default.
 - Workspace file content retention reaper.
+- Database-backed background job framework for durable one-off and scheduled work.
 - DSN and file encryption key rotation foundation.
 - Database engine registry and capability abstractions for schema inspection, query classification, parsing, rewriting, completion, and cursor-backed result paging.
 - Schema introspection abstraction, cache, and API.
@@ -633,6 +634,13 @@ Implemented:
 - Content save/read APIs with ETag support.
 - Retention reaper for stale content.
 - File encryption key rotation foundation.
+
+Background jobs:
+
+- Jobs are persisted in the application database with user/internal visibility and lifecycle state.
+- The API process runs in-process workers using database claim leases, cooperative cancellation, retry policy, priority-aware best-effort claiming, stale-claim recovery, and completed-job retention pruning.
+- User-visible job APIs are scoped under organization workspace routes and currently expose only the authenticated user's jobs in that workspace.
+- File content deletion cleanup is registered as a low-priority internal job.
 
 Current default storage path is `~/.sqlwarden/files`.
 
