@@ -31,7 +31,7 @@ export type QueryResult =
   | { status: 'error'; message: string; sql: string }
   | { status: 'cancelled'; sql: string }
 
-export type TabKind = 'scratch' | 'file' | 'connection' | 'object'
+export type TabKind = 'scratch' | 'file' | 'connection' | 'object' | 'diagram'
 
 export type EditorTab = {
   id: string
@@ -44,6 +44,8 @@ export type EditorTab = {
   fileId?: number
   /** Set for `object` tabs: the qualified database object this tab views. */
   objectRef?: ObjectRef
+  /** Set for `diagram` tabs: what the ER diagram is anchored to. */
+  diagramTarget?: import('./schema-diagram/diagramTab').DiagramTarget
   etag?: string
   isDirty?: boolean
   content: string

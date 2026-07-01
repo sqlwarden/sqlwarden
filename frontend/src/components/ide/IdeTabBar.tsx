@@ -31,6 +31,7 @@ const TAB_ICONS: Record<TabKind, AppIcon> = {
   file: 'file-01',
   connection: 'database',
   object: 'table',
+  diagram: 'flow-connection',
 }
 
 export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocus }: IdeTabBarProps) {
