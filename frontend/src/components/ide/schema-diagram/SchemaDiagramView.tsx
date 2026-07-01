@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Background, Controls, MiniMap, ReactFlow, ReactFlowProvider, useReactFlow,
-  type Edge, type Node, type NodeChange, type NodeTypes,
+  Background, Controls, MiniMap, ReactFlow, ReactFlowProvider, useNodesState, useReactFlow,
+  type Edge, type Node, type NodeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -28,6 +28,7 @@ import { TableNode, type TableNodeData } from './nodes/TableNode'
 import { OBJECT_REF_DND_MIME } from './dnd'
 
 const NODE_TYPES: NodeTypes = { table: TableNode }
+type FlowNode = Node<TableNodeData, 'table'>
 
 export function SchemaDiagramView(props: { orgSlug: string; workspace: Workspace; tab: EditorTab }) {
   return (
@@ -68,8 +69,6 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   const spec = specQuery.data?.spec
   const edges = useMemo(() => relQuery.data?.relationships ?? [], [relQuery.data])
 
-  // Candidate table refs in this namespace, plus every edge endpoint, so any
-  // neighbor we expand into can be resolved back to an ObjectRef.
   const refByKey = useMemo(() => {
     const map = new Map<string, ObjectRef>()
     const diagramKinds = new Set((spec?.kinds ?? []).filter((k) => k.supports_diagram).map((k) => k.kind))
@@ -89,8 +88,10 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   }, [catalogQuery.data, edges, spec, namespace, target])
 
   const [present, setPresent] = useState<ObjectRef[]>([])
-  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([])
+  const savedPositions = useRef<Record<string, { x: number; y: number }>>({})
+  const laidOut = useRef<Set<string>>(new Set())
   const seededRef = useRef(false)
   const hydratedRef = useRef(false)
 
@@ -102,24 +103,20 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       if (saved.present.length === 0) return
       const refs = saved.present.map((k) => refByKey.get(k)).filter((r): r is ObjectRef => Boolean(r))
       if (refs.length === 0) return
+      savedPositions.current = saved.positions
+      for (const k of Object.keys(saved.positions)) laidOut.current.add(k)
       seededRef.current = true
       setPresent(refs)
-      setPositions(saved.positions)
       setCollapsed(new Set(saved.collapsed))
     })
   }, [tab.id, refByKey])
 
   // Seed the working set from the target once catalog + relationships are ready.
   useEffect(() => {
-    if (seededRef.current || !target || catalogQuery.isLoading || relQuery.isLoading) return
-    if (relQuery.isError) return
+    if (seededRef.current || !target || catalogQuery.isLoading || relQuery.isLoading || relQuery.isError) return
     seededRef.current = true
-    if (target.kind === 'object') {
-      setPresent(planObjectSeed(target.ref, edges))
-    } else {
-      const tableRefs = [...refByKey.values()]
-      setPresent(planNamespaceSeed(tableRefs, edges).seed)
-    }
+    if (target.kind === 'object') setPresent(planObjectSeed(target.ref, edges))
+    else setPresent(planNamespaceSeed([...refByKey.values()], edges).seed)
   }, [target, edges, refByKey, catalogQuery.isLoading, relQuery.isLoading, relQuery.isError])
 
   // Fetch column detail for on-canvas nodes (reuses the object-detail cache).
@@ -143,110 +140,112 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   const addRef = useCallback((ref: ObjectRef) => {
     setPresent((prev) => (prev.some((r) => refKey(r) === refKey(ref)) ? prev : [...prev, ref]))
   }, [])
-
   const expandNeighbors = useCallback((ref: ObjectRef) => {
-    const neighbors = hiddenNeighbors(ref, edges, presentKeys)
-    if (neighbors.length > 0) setPresent((prev) => [...prev, ...neighbors])
-  }, [edges, presentKeys])
-
+    setPresent((prev) => {
+      const keys = new Set(prev.map(refKey))
+      const add = hiddenNeighbors(ref, edges, keys)
+      return add.length ? [...prev, ...add] : prev
+    })
+  }, [edges])
   const toggleCollapse = useCallback((key: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
+      next.has(key) ? next.delete(key) : next.add(key)
       return next
     })
   }, [])
 
-  // Auto-layout: place any present node that lacks a position (keeps manual
-  // positions for existing nodes; only new nodes get elk coordinates).
+  // Stable signatures so the reconcile/layout effects fire only on real changes,
+  // not on the fresh array identities useQueries returns each render.
+  const presentSig = present.map(refKey).join('|')
+  const collapsedSig = [...collapsed].sort().join('|')
+  const detailSig = present.map((r) => {
+    const e = detailByKey.get(refKey(r))
+    return `${refKey(r)}:${e?.detail ? 1 : 0}:${e?.loading ? 1 : 0}`
+  }).join('|')
+
+  // Reconcile the React Flow node list from data, preserving each node's live
+  // position (drag state) and only updating its data.
   useEffect(() => {
-    const missing = present.filter((r) => !positions[refKey(r)])
-    if (missing.length === 0 || present.length === 0) return
-    const nodes = present.map((r) => {
-      const key = refKey(r)
-      const size = estimateNodeSize(detailByKey.get(key)?.detail ?? undefined, collapsed.has(key))
-      return { id: key, width: size.width, height: size.height }
-    })
-    const rfEdges = edges
-      .filter((e) => presentKeys.has(refKey(e.source)) && presentKeys.has(refKey(e.references)))
-      .map((e, i) => ({ id: `${e.name}-${i}`, source: refKey(e.source), target: refKey(e.references) }))
-    let cancelled = false
-    void layoutGraph(nodes, rfEdges).then((laid) => {
-      if (cancelled) return
-      setPositions((prev) => {
-        const next = { ...prev }
-        for (const r of missing) {
-          const p = laid.get(refKey(r))
-          if (p) next[refKey(r)] = p
-        }
-        return next
+    setNodes((prev) => {
+      const prevById = new Map(prev.map((n) => [n.id, n]))
+      return present.map((ref) => {
+        const key = refKey(ref)
+        const existing = prevById.get(key)
+        const position = existing?.position ?? savedPositions.current[key] ?? { x: 0, y: 0 }
+        if (existing || savedPositions.current[key]) laidOut.current.add(key)
+        const entry = detailByKey.get(key)
+        const rel = entry?.detail?.relational
+        const columns = rel?.columns ?? []
+        return {
+          ...(existing ?? {}),
+          id: key,
+          type: 'table' as const,
+          position,
+          data: {
+            label: ref.name,
+            namespace: ref.namespace,
+            columns,
+            pk: new Set(rel?.primary_key ?? []),
+            fk: new Set((rel?.foreign_keys ?? []).flatMap((f) => f.columns ?? [])),
+            hiddenCount: hiddenNeighbors(ref, edges, presentKeys).length,
+            collapsed: collapsed.has(key),
+            loading: entry?.loading ?? false,
+            onToggleCollapse: () => toggleCollapse(key),
+            onExpand: () => expandNeighbors(ref),
+            onOpenDetail: () => {
+              if (connectionId) openTab(newObjectTab({ id: connectionId, driver } as never, workspace, ref))
+            },
+          },
+        } as FlowNode
       })
     })
-    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [present])
-
-  // Persist layout on change.
-  useEffect(() => {
-    if (!seededRef.current) return
-    void saveDiagram(tab.id, {
-      present: present.map(refKey),
-      positions,
-      collapsed: [...collapsed],
-    })
-  }, [tab.id, present, positions, collapsed])
-
-  const flowNodes: Node<TableNodeData>[] = useMemo(() => {
-    return present.map((ref) => {
-      const key = refKey(ref)
-      const entry = detailByKey.get(key)
-      const rel = entry?.detail?.relational
-      const columns = rel?.columns ?? []
-      const pk = new Set(rel?.primary_key ?? [])
-      const fk = new Set((rel?.foreign_keys ?? []).flatMap((f) => f.columns ?? []))
-      const hiddenCount = hiddenNeighbors(ref, edges, presentKeys).length
-      return {
-        id: key,
-        type: 'table',
-        position: positions[key] ?? { x: 0, y: 0 },
-        data: {
-          label: ref.name,
-          namespace: ref.namespace,
-          columns,
-          pk,
-          fk,
-          hiddenCount,
-          collapsed: collapsed.has(key),
-          loading: entry?.loading ?? false,
-          onToggleCollapse: () => toggleCollapse(key),
-          onExpand: () => expandNeighbors(ref),
-          onOpenDetail: () => {
-            if (connectionId) openTab(newObjectTab({ id: connectionId, driver } as never, workspace, ref))
-          },
-        },
-      }
-    })
-  }, [present, detailByKey, positions, collapsed, edges, presentKeys, connectionId, driver, workspace, openTab, toggleCollapse, expandNeighbors])
+  }, [presentSig, detailSig, collapsedSig])
 
   const flowEdges: Edge[] = useMemo(() => {
     return edges
       .filter((e) => presentKeys.has(refKey(e.source)) && presentKeys.has(refKey(e.references)))
-      .map((e, i) => ({ id: `${e.name}-${i}`, source: refKey(e.source), target: refKey(e.references), animated: false }))
+      .map((e, i) => ({ id: `${e.name}-${i}`, source: refKey(e.source), target: refKey(e.references) }))
   }, [edges, presentKeys])
 
-  const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setPositions((prev) => {
-      let next = prev
-      for (const c of changes) {
-        if (c.type === 'position' && c.position) {
-          if (next === prev) next = { ...prev }
-          next[c.id] = c.position
-        }
-      }
-      return next
+  // Auto-layout only nodes that were never placed (new/expanded), keeping any
+  // manual positions intact.
+  useEffect(() => {
+    const pending = present.map(refKey).filter((k) => !laidOut.current.has(k))
+    if (pending.length === 0 || present.length === 0) return
+    const sizes = present.map((r) => {
+      const k = refKey(r)
+      const s = estimateNodeSize(detailByKey.get(k)?.detail ?? undefined, collapsed.has(k))
+      return { id: k, width: s.width, height: s.height }
     })
-  }, [])
+    const le = flowEdges.map((e) => ({ id: e.id, source: e.source, target: e.target }))
+    let cancelled = false
+    void layoutGraph(sizes, le).then((laid) => {
+      if (cancelled) return
+      const pendingSet = new Set(pending)
+      pending.forEach((k) => laidOut.current.add(k))
+      setNodes((prev) => prev.map((n) => (pendingSet.has(n.id) ? { ...n, position: laid.get(n.id) ?? n.position } : n)))
+      requestAnimationFrame(() => fitView({ duration: 200 }))
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presentSig])
+
+  // Persist layout (debounced so per-pixel drags don't hammer IndexedDB).
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => {
+    if (!seededRef.current) return
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      void saveDiagram(tab.id, {
+        present: present.map(refKey),
+        positions: Object.fromEntries(nodes.map((n) => [n.id, n.position])),
+        collapsed: [...collapsed],
+      })
+    }, 400)
+    return () => clearTimeout(saveTimer.current)
+  }, [tab.id, nodes, presentSig, collapsedSig])
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -270,21 +269,18 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       setConnectionStatus(connectionId, null)
     }
   }
-
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: connectionRelationshipsQueryKey(orgSlug, workspace.id, connectionId ?? 0, namespace) })
     void queryClient.invalidateQueries({ queryKey: connectionObjectsQueryKeyPrefix(orgSlug, workspace.id, connectionId ?? 0) })
   }
-
   async function relayout() {
-    const nodes = present.map((r) => {
-      const key = refKey(r)
-      const size = estimateNodeSize(detailByKey.get(key)?.detail ?? undefined, collapsed.has(key))
-      return { id: key, width: size.width, height: size.height }
+    const sizes = present.map((r) => {
+      const k = refKey(r)
+      const s = estimateNodeSize(detailByKey.get(k)?.detail ?? undefined, collapsed.has(k))
+      return { id: k, width: s.width, height: s.height }
     })
-    const rfEdges = flowEdges.map((e) => ({ id: e.id, source: e.source, target: e.target }))
-    const laid = await layoutGraph(nodes, rfEdges)
-    setPositions(Object.fromEntries(laid))
+    const laid = await layoutGraph(sizes, flowEdges.map((e) => ({ id: e.id, source: e.source, target: e.target })))
+    setNodes((prev) => prev.map((n) => ({ ...n, position: laid.get(n.id) ?? n.position })))
     requestAnimationFrame(() => fitView({ duration: 200 }))
   }
 
@@ -319,7 +315,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       </div>
       <div className="min-h-0 flex-1" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
         <ReactFlow
-          nodes={flowNodes}
+          nodes={nodes}
           edges={flowEdges}
           nodeTypes={NODE_TYPES}
           onNodesChange={onNodesChange}
