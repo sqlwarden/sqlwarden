@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions, type QueryClient } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFilesResponse, WorkspaceFileBrowserResult, CatalogResponse, SchemaSpecResponse, ObjectsResponse, ObjectRef, ResultSet } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFilesResponse, WorkspaceFileBrowserResult, CatalogResponse, SchemaSpecResponse, ObjectsResponse, ObjectRef, ResultSet, RelationshipsResponse } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -501,6 +501,30 @@ export function orgConnectionSchemaSpecQueryOptions(
         headers: { 'X-Warden-Session': sessionId },
       }),
     staleTime: 5 * 60_000,
+  })
+}
+
+export function connectionRelationshipsQueryKey(slug: string, workspaceId: string | number, connectionId: string | number, namespace: string) {
+  return ['connection-relationships', slug, String(workspaceId), String(connectionId), namespace] as const
+}
+
+export function orgConnectionRelationshipsQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string,
+  namespace: string,
+) {
+  return queryOptions({
+    queryKey: connectionRelationshipsQueryKey(slug, workspaceId, connectionId, namespace),
+    queryFn: async () => {
+      const res = await api.get<RelationshipsResponse>(
+        `${schemaBase(slug, workspaceId, connectionId)}/relationships?namespace=${encodeURIComponent(namespace)}`,
+        { headers: { 'X-Warden-Session': sessionId } },
+      )
+      return res.graph
+    },
+    staleTime: 3 * 60_000,
   })
 }
 

@@ -411,3 +411,20 @@ export interface SchemaSpecResponse {
 export interface ObjectsResponse {
   objects: ObjectDetail[]
 }
+
+export interface Relationship {
+  name: string
+  source: ObjectRef
+  columns: string[]
+  references: ObjectRef
+  referenced_columns: string[]
+}
+
+export interface RelationshipGraph {
+  namespace: string
+  relationships: Relationship[] | null
+}
+
+export interface RelationshipsResponse {
+  graph: RelationshipGraph
+}
