@@ -11,6 +11,9 @@ import {
 import type { CatalogNamespace, CatalogObjectGroup, Connection, ObjectDescriptor, ObjectDetail, ObjectRef, SchemaSpec, Workspace } from '#/lib/api/types'
 import { useIde } from './useIdeStore'
 import { newObjectTab } from './object-detail/objectTab'
+import { newDiagramTab, type DiagramTarget } from './schema-diagram/diagramTab'
+import { diagramSupported, diagramSupportedForKind } from './schema-diagram/capability'
+import { OBJECT_REF_DND_MIME } from './schema-diagram/dnd'
 import { filterCatalog, kindLabel, sortedGroups } from './schemaCatalog'
 import { columnTypeIcon } from './columnTypeIcon'
 import { dialectFor, IDENTIFIER_DND_MIME, type SqlDialect } from './sqlDialect'
@@ -28,6 +31,7 @@ type TreeCtx = {
   insert: (text: string) => void
   refresh: () => void
   openObject: (ref: ObjectRef) => void
+  openDiagram: (target: DiagramTarget) => void
   spec: SchemaSpec | undefined
   orgSlug: string
   workspaceId: number
@@ -43,13 +47,15 @@ type InsertableProps = {
   onDoubleClick: () => void
 }
 
-function dragPropsFor(ctx: { insert: (text: string) => void } | null, text: string | undefined): InsertableProps | undefined {
+function dragPropsFor(ctx: { insert: (text: string) => void } | null, text: string | undefined, objectRef?: ObjectRef): InsertableProps | undefined {
   if (!ctx || text === undefined) return undefined
   return {
     draggable: true,
     onDragStart: (e) => {
       e.dataTransfer.setData(IDENTIFIER_DND_MIME, text)
       e.dataTransfer.setData('text/plain', text)
+      // Object rows also carry their ref so they can be dropped onto a diagram.
+      if (objectRef) e.dataTransfer.setData(OBJECT_REF_DND_MIME, JSON.stringify(objectRef))
       e.dataTransfer.effectAllowed = 'copy'
       e.stopPropagation()
     },
@@ -57,9 +63,9 @@ function dragPropsFor(ctx: { insert: (text: string) => void } | null, text: stri
   }
 }
 
-function useObjectInsert(namespace: string, name: string): InsertableProps | undefined {
+function useObjectInsert(ref: ObjectRef): InsertableProps | undefined {
   const ctx = useContext(SchemaTreeContext)
-  return dragPropsFor(ctx, ctx ? ctx.dialect.formatObject(namespace, name) : undefined)
+  return dragPropsFor(ctx, ctx ? ctx.dialect.formatObject(ref.namespace, ref.name) : undefined, ref)
 }
 
 function useColumnInsert(name: string): InsertableProps | undefined {
@@ -73,6 +79,7 @@ function useTreeCtx() {
     dialect: ctx?.dialect ?? null,
     refresh: ctx?.refresh ?? (() => {}),
     spec: ctx?.spec,
+    openDiagram: ctx?.openDiagram,
   }
 }
 
@@ -108,6 +115,9 @@ export function SchemaTree({
 
   const openObject = (ref: ObjectRef) =>
     openTab(newObjectTab({ id: connectionId, driver } as Connection, { id: workspaceId } as Workspace, ref))
+
+  const openDiagram = (target: DiagramTarget) =>
+    openTab(newDiagramTab({ id: connectionId, driver } as Connection, { id: workspaceId } as Workspace, target))
 
   const catalogQuery = useQuery({
     ...orgConnectionCatalogQueryOptions(orgSlug, workspaceId, connectionId, sessionId ?? ''),
@@ -160,6 +170,7 @@ export function SchemaTree({
       void catalogQuery.refetch()
     },
     openObject,
+    openDiagram,
     spec,
     orgSlug,
     workspaceId,
@@ -195,11 +206,14 @@ function SchemaSpinner({ size = 12 }: { size?: number }) {
 function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: CatalogNamespace; forceOpen: boolean }) {
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
-  const { refresh, spec } = useTreeCtx()
+  const { refresh, spec, openDiagram } = useTreeCtx()
   const groups = sortedGroups(namespace, spec)
   const menuItems = buildNamespaceMenu({
     onCopyName: () => copyWithToast(namespace.name),
     onRefresh: refresh,
+    onViewDiagram: diagramSupported(spec) && openDiagram
+      ? () => openDiagram({ kind: 'namespace', namespace: namespace.name })
+      : undefined,
   })
 
   return (
@@ -269,12 +283,15 @@ function SchemaObjectNode({
   })
   const detail = detailQuery.data ?? null
   const columns = detail?.relational?.columns ?? []
-  const insertable = useObjectInsert(objectRef.namespace, objectRef.name)
-  const { dialect } = useTreeCtx()
+  const insertable = useObjectInsert(objectRef)
+  const { dialect, spec, openDiagram } = useTreeCtx()
   const isView = objectRef.kind === 'view' || objectRef.kind === 'materialized_view'
   const objectMenu = buildObjectMenu({
     isView,
     onOpen: () => ctx?.openObject(objectRef),
+    onViewDiagram: diagramSupportedForKind(spec, objectRef.kind) && openDiagram
+      ? () => openDiagram({ kind: 'object', ref: objectRef })
+      : undefined,
     onCopyName: () => copyWithToast(objectRef.name),
     onCopyQualifiedName: () => copyWithToast(dialect ? dialect.formatObject(objectRef.namespace, objectRef.name) : objectRef.name),
     onCopyColumnList: () => copyWithToast(columnList(columns.map((c) => (dialect ? dialect.formatColumn(c.name) : c.name)))),

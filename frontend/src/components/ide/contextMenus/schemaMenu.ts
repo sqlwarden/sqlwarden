@@ -3,10 +3,17 @@ import type { ContextMenuItem } from '#/components/ui/context-menu'
 export type NamespaceMenuCtx = {
   onCopyName: () => void
   onRefresh: () => void
+  onViewDiagram?: () => void
 }
 
 export function buildNamespaceMenu(ctx: NamespaceMenuCtx): ContextMenuItem[] {
   return [
+    ...(ctx.onViewDiagram
+      ? [
+          { kind: 'action', id: 'view-schema-diagram', label: 'View schema diagram', icon: 'flow-connection', onSelect: ctx.onViewDiagram } as ContextMenuItem,
+          { kind: 'separator' } as ContextMenuItem,
+        ]
+      : []),
     { kind: 'action', id: 'copy-schema-name', label: 'Copy schema name', icon: 'copy-01', onSelect: ctx.onCopyName },
     { kind: 'action', id: 'refresh', label: 'Refresh', icon: 'refresh', onSelect: ctx.onRefresh },
     { kind: 'separator' },

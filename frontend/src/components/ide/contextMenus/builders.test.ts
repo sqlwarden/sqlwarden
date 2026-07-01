@@ -53,6 +53,12 @@ describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
     expect(action(items, 'copy-schema-name')?.soon).toBeFalsy()
     expect(action(items, 'refresh')?.soon).toBeFalsy()
     expect(action(items, 'drop-schema')?.soon).toBe(true)
+    expect(action(items, 'view-schema-diagram')).toBeUndefined()
+  })
+  it('namespace shows View schema diagram when the callback is provided', () => {
+    const items = buildNamespaceMenu({ onCopyName: noop, onRefresh: noop, onViewDiagram: noop })
+    expect(action(items, 'view-schema-diagram')?.label).toBe('View schema diagram')
+    expect(action(items, 'view-schema-diagram')?.soon).toBeFalsy()
   })
   it('object-group uses the provided new-label and keeps it soon', () => {
     const items = buildObjectGroupMenu({ newLabel: 'New Table…', onRefresh: noop })
@@ -68,6 +74,12 @@ describe('buildObjectMenu', () => {
     const items = buildObjectMenu({ ...base, isView: false })
     expect(action(items, 'open')?.label).toBe('Open')
     expect(action(items, 'open')?.soon).toBeFalsy()
+  })
+  it('omits View diagram unless the callback is provided', () => {
+    expect(action(buildObjectMenu({ ...base, isView: false }), 'view-diagram')).toBeUndefined()
+    const items = buildObjectMenu({ ...base, isView: false, onViewDiagram: noop })
+    expect(action(items, 'view-diagram')?.label).toBe('View diagram')
+    expect(action(items, 'view-diagram')?.soon).toBeFalsy()
   })
   it('table omits the view-only action', () => {
     const items = buildObjectMenu({ ...base, isView: false })
