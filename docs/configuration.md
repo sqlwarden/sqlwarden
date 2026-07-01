@@ -70,7 +70,7 @@ query:
   max_result_bytes: 26214400
 
 jobs:
-  worker_count: 2
+  worker_count: 16
   poll_interval: 1s
   claim_lease: 5m
   completed_retention: 168h
@@ -180,7 +180,7 @@ For DQL/select-style queries, the IDE can request cursor-backed results through 
 
 | Config key | Environment | CLI flag | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `jobs.worker_count` | `JOBS_WORKER_COUNT` | `--jobs-worker-count` | `2` | Number of in-process background job workers. |
+| `jobs.worker_count` | `JOBS_WORKER_COUNT` | `--jobs-worker-count` | `16` | Number of in-process background job workers. |
 | `jobs.poll_interval` | `JOBS_POLL_INTERVAL` | `--jobs-poll-interval` | `1s` | How often workers poll for due queued jobs. |
 | `jobs.claim_lease` | `JOBS_CLAIM_LEASE` | `--jobs-claim-lease` | `5m` | Lease duration for a claimed running job before another worker may recover it. |
 | `jobs.completed_retention` | `JOBS_COMPLETED_RETENTION` | `--jobs-completed-retention` | `168h` | How long succeeded, failed, and cancelled job records are retained. |
@@ -190,6 +190,8 @@ Jobs are persisted in the application database. Workers always run inside the AP
 Maintenance jobs that must have only one active instance use a database-enforced singleton key, so multiple API processes can safely race to schedule the same maintenance work in distributed deployments.
 
 User-facing jobs can also persist progress events. Events are read through the scoped job API with an `after_id` marker so clients can poll only for new events. Events follow the parent job retention period configured by `jobs.completed_retention`; there is no separate event retention setting.
+
+The claim lease is stale-worker recovery time, not a maximum job runtime. Running jobs heartbeat to extend the lease while the worker is healthy.
 
 ## TLS
 

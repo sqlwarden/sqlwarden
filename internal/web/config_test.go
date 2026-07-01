@@ -57,6 +57,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.Query.MaxResultRows != defaultQueryMaxResultRows || cfg.Query.MaxResultBytes != defaultQueryMaxResultBytes {
 		t.Fatalf("unexpected default query config: %+v", cfg.Query)
 	}
+	if cfg.Jobs.WorkerCount != defaultJobsWorkerCount || cfg.Jobs.ClaimLease != defaultJobsClaimLease {
+		t.Fatalf("unexpected default jobs config: %+v", cfg.Jobs)
+	}
 	if cfg.Desktop.ActiveBackend != "local" {
 		t.Fatalf("desktop.active_backend = %q, want local", cfg.Desktop.ActiveBackend)
 	}

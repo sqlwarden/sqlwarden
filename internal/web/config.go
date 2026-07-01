@@ -30,7 +30,7 @@ const (
 	defaultSessionRevocation       = true
 	defaultQueryMaxResultRows      = 10000
 	defaultQueryMaxResultBytes     = 25 * 1024 * 1024
-	defaultJobsWorkerCount         = 2
+	defaultJobsWorkerCount         = 16
 	defaultJobsPollInterval        = time.Second
 	defaultJobsClaimLease          = 5 * time.Minute
 	defaultJobsCompletedRetention  = 7 * 24 * time.Hour
