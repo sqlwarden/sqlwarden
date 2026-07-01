@@ -17,6 +17,14 @@ type SchemaInspector interface {
 	InspectObjects(ctx context.Context, refs []ObjectRef) ([]Object, error)
 }
 
+// RelationshipInspector is the OPTIONAL capability to report a namespace's
+// foreign-key edges cheaply (no column detail). Relational engines implement it;
+// engines without a foreign-key concept do not, and callers report 501 via the
+// same type-assertion path used for SchemaInspector.
+type RelationshipInspector interface {
+	InspectRelationships(ctx context.Context, namespace string) (*RelationshipGraph, error)
+}
+
 // CatalogOptions scopes a catalog request. Empty fields mean the driver's
 // current/default database and all namespaces.
 type CatalogOptions struct {
