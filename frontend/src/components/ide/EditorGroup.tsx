@@ -9,6 +9,7 @@ import { SqlEditor } from './SqlEditor'
 import { useYDocRegistry } from './useYDocRegistry'
 import { useFileContent } from './useFileContent'
 import { ObjectDetailView } from './object-detail/ObjectDetailView'
+import { SchemaDiagramView } from './schema-diagram/SchemaDiagramView'
 
 type EditorGroupProps = {
   orgSlug: string
@@ -36,12 +37,13 @@ export function EditorGroup({ orgSlug, workspace, group, focused, showFocus, onC
   })
 
   const isObject = activeTab?.kind === 'object'
+  const isDiagram = activeTab?.kind === 'diagram'
 
   // Populate the Y.Doc synchronously in render so SqlEditor mounts with content
   // (React runs child effects before parent effects, so deferring is too late).
-  // Object tabs are not editors and never get a Y.Doc.
+  // Object and diagram tabs are not editors and never get a Y.Doc.
   let doc: Y.Doc | undefined
-  if (activeTab && !isObject) {
+  if (activeTab && !isObject && !isDiagram) {
     const initState = activeTab.ySnapshot ?? activeTab.yState
     const initialContent = !initState && activeTab.kind !== 'file' ? activeTab.content : undefined
     doc = registry.getOrCreate(activeTab.id, initialContent)
@@ -63,7 +65,9 @@ export function EditorGroup({ orgSlug, workspace, group, focused, showFocus, onC
         onFocus={() => focusGroup(workspace.id, group.id)}
       />
       <div className="min-h-0 flex-1 border-t border-border bg-card">
-        {activeTab && isObject ? (
+        {activeTab && isDiagram ? (
+          <SchemaDiagramView orgSlug={orgSlug} workspace={workspace} tab={activeTab} />
+        ) : activeTab && isObject ? (
           <ObjectDetailView orgSlug={orgSlug} workspace={workspace} tab={activeTab} />
         ) : activeTab && doc ? (
           isLoading ? (
