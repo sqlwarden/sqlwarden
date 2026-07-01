@@ -19,6 +19,7 @@ import (
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/filestore"
+	"github.com/sqlwarden/internal/jobs"
 	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/smtp"
 )
@@ -44,6 +45,9 @@ type application struct {
 	fileStores       *fileStoreRegistry
 	fileLocks        sync.Map
 	fileReaperCancel context.CancelFunc
+	jobStore         *jobs.Store
+	jobRegistry      *jobs.Registry
+	jobRunnerCancel  context.CancelFunc
 }
 
 type fileStoreRegistry struct {
@@ -98,6 +102,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			"storage_mode", cfg.Files.StorageMode,
 			"active_backend", cfg.Files.ActiveStorageBackend,
 			"revisions_enabled", cfg.Files.Revisions.Enabled,
+		),
+		slog.Group("jobs",
+			"worker_count", cfg.Jobs.WorkerCount,
+			"poll_interval_ms", cfg.Jobs.PollInterval.Milliseconds(),
+			"claim_lease_ms", cfg.Jobs.ClaimLease.Milliseconds(),
 		),
 		slog.Group("drivers",
 			"sqlite_allowed_sources", cfg.Drivers.SQLite.AllowedSources,
@@ -159,7 +168,10 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		keyring:       keyring,
 		enforcer:      enforcer,
 		fileStores:    fileStores,
+		jobStore:      jobs.NewStore(db),
 	}
+	app.jobRegistry = app.defaultJobRegistry()
+	app.startJobRunner()
 	app.startFileContentDeletionReaper()
 	return app, nil
 }
@@ -173,6 +185,9 @@ func (app *application) Close() error {
 	app.logger.Info("stopping application")
 	if app.fileReaperCancel != nil {
 		app.fileReaperCancel()
+	}
+	if app.jobRunnerCancel != nil {
+		app.jobRunnerCancel()
 	}
 	app.wg.Wait()
 	app.logger.Info("background workers stopped", "duration_ms", time.Since(startedAt).Milliseconds())
@@ -196,10 +211,63 @@ func (app *application) Close() error {
 	return nil
 }
 
+func (app *application) defaultJobRegistry() *jobs.Registry {
+	registry := jobs.NewRegistry()
+	registry.Register(jobs.Definition{
+		Type:        "noop",
+		MaxAttempts: 1,
+		Handler: jobs.HandlerFunc(func(context.Context, jobs.Record) (any, error) {
+			return map[string]any{"ok": true}, nil
+		}),
+	})
+	registry.Register(jobs.Definition{
+		Type:        jobs.TypeFileContentReap,
+		MaxAttempts: 3,
+		Backoff: func(attempt int) time.Duration {
+			return time.Duration(attempt) * time.Minute
+		},
+		Handler: jobs.HandlerFunc(func(ctx context.Context, _ jobs.Record) (any, error) {
+			processed, err := app.workspaceFileService().ReapContentDeletionsOnce(ctx, 100, time.Minute)
+			if err != nil {
+				return nil, jobs.Retryable("file_content_reap_failed", err.Error())
+			}
+			if processed > 0 {
+				app.logger.InfoContext(ctx, "file content deletion job processed batch", "processed", processed)
+			} else {
+				app.logger.DebugContext(ctx, "file content deletion job found no work")
+			}
+			return map[string]any{"processed": processed}, nil
+		}),
+	})
+	return registry
+}
+
+func (app *application) startJobRunner() {
+	if app.jobStore == nil {
+		app.jobStore = jobs.NewStore(app.db)
+	}
+	if app.jobRegistry == nil {
+		app.jobRegistry = app.defaultJobRegistry()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	app.jobRunnerCancel = cancel
+	runner := jobs.NewRunner(app.jobStore, app.jobRegistry, app.logger, jobs.WorkerConfig{
+		WorkerID:           "api",
+		WorkerCount:        app.config.Jobs.WorkerCount,
+		PollInterval:       app.config.Jobs.PollInterval,
+		ClaimLease:         app.config.Jobs.ClaimLease,
+		CompletedRetention: app.config.Jobs.CompletedRetention,
+	})
+	app.wg.Add(1)
+	go func() {
+		defer app.wg.Done()
+		runner.Run(ctx)
+	}()
+}
+
 func (app *application) startFileContentDeletionReaper() {
 	ctx, cancel := context.WithCancel(context.Background())
 	app.fileReaperCancel = cancel
-	service := app.workspaceFileService()
 	app.wg.Add(1)
 	go func() {
 		defer app.wg.Done()
@@ -207,12 +275,8 @@ func (app *application) startFileContentDeletionReaper() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 		for {
-			processed, err := service.ReapContentDeletionsOnce(ctx, 100, time.Minute)
-			if err != nil {
-				app.logger.ErrorContext(ctx, "file content deletion reaper failed", "error", err)
-			}
-			if processed > 0 {
-				app.logger.InfoContext(ctx, "file content deletion reaper processed batch", "processed", processed)
+			if err := app.enqueueFileContentReapJob(ctx); err != nil {
+				app.logger.ErrorContext(ctx, "file content deletion reaper job enqueue failed", "error", err)
 			}
 			select {
 			case <-ctx.Done():
@@ -222,6 +286,30 @@ func (app *application) startFileContentDeletionReaper() {
 			}
 		}
 	}()
+}
+
+func (app *application) enqueueFileContentReapJob(ctx context.Context) error {
+	if app.jobStore == nil {
+		app.jobStore = jobs.NewStore(app.db)
+	}
+	active, err := app.jobStore.HasActiveJobType(ctx, jobs.VisibilityInternal, jobs.TypeFileContentReap)
+	if err != nil {
+		return err
+	}
+	if active {
+		app.logger.DebugContext(ctx, "file content deletion reaper job already active", "job.type", jobs.TypeFileContentReap)
+		return nil
+	}
+	job, err := app.jobStore.Enqueue(ctx, jobs.EnqueueInput{
+		Type:        jobs.TypeFileContentReap,
+		Visibility:  jobs.VisibilityInternal,
+		Priority:    jobs.PriorityLow,
+		MaxAttempts: 3,
+	})
+	if err == nil {
+		app.logger.InfoContext(ctx, "file content deletion reaper job queued", "job.id", job.ID, "job.type", job.Type, "job.priority", job.Priority)
+	}
+	return err
 }
 
 func ensureSQLiteParentDir(cfg Config) error {

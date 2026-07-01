@@ -68,6 +68,12 @@ files:
 query:
   max_result_rows: 10000
   max_result_bytes: 26214400
+
+jobs:
+  worker_count: 2
+  poll_interval: 1s
+  claim_lease: 5m
+  completed_retention: 168h
 ```
 
 ## Docker Example
@@ -169,6 +175,17 @@ These limits apply to interactive IDE query responses. Future export workflows s
 The same limits apply to HTTP query cursors. Direct `/query` responses are capped once per response. Query-cursor start and fetch responses are capped per page; clients can continue fetching while the response has `exhausted=false`.
 
 For DQL/select-style queries, the IDE can request cursor-backed results through `/query`. When the selected target engine supports cursor-backed results, the first response includes the first page plus cursor metadata. Engines that do not support cursor-backed results fall back to the bounded direct query path. Cursor state is process-local and tied to the authenticated live database session; it is not durable query history.
+
+## Background Jobs
+
+| Config key | Environment | CLI flag | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `jobs.worker_count` | `JOBS_WORKER_COUNT` | `--jobs-worker-count` | `2` | Number of in-process background job workers. |
+| `jobs.poll_interval` | `JOBS_POLL_INTERVAL` | `--jobs-poll-interval` | `1s` | How often workers poll for due queued jobs. |
+| `jobs.claim_lease` | `JOBS_CLAIM_LEASE` | `--jobs-claim-lease` | `5m` | Lease duration for a claimed running job before another worker may recover it. |
+| `jobs.completed_retention` | `JOBS_COMPLETED_RETENTION` | `--jobs-completed-retention` | `168h` | How long succeeded, failed, and cancelled job records are retained. |
+
+Jobs are persisted in the application database. Workers always run inside the API process and use database claim leases so a future separate worker binary can use the same job table safely. Job scheduling is best effort: due jobs run when a worker is available, with higher-priority due jobs claimed before lower-priority due jobs. Internal maintenance such as stale file-content cleanup uses this framework.
 
 ## TLS
 

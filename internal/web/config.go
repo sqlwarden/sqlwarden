@@ -30,6 +30,10 @@ const (
 	defaultSessionRevocation       = true
 	defaultQueryMaxResultRows      = 10000
 	defaultQueryMaxResultBytes     = 25 * 1024 * 1024
+	defaultJobsWorkerCount         = 2
+	defaultJobsPollInterval        = time.Second
+	defaultJobsClaimLease          = 5 * time.Minute
+	defaultJobsCompletedRetention  = 7 * 24 * time.Hour
 	defaultTLSEnabled              = false
 	defaultTLSCertFile             = ""
 	defaultTLSKeyFile              = ""
@@ -125,6 +129,12 @@ type Config struct {
 		MaxResultRows  int
 		MaxResultBytes int
 	}
+	Jobs struct {
+		WorkerCount        int
+		PollInterval       time.Duration
+		ClaimLease         time.Duration
+		CompletedRetention time.Duration
+	}
 	TLS struct {
 		Enabled  bool
 		CertFile string
@@ -197,6 +207,10 @@ func DefaultConfig() Config {
 	cfg.Sessions.RevocationEnabled = defaultSessionRevocation
 	cfg.Query.MaxResultRows = defaultQueryMaxResultRows
 	cfg.Query.MaxResultBytes = defaultQueryMaxResultBytes
+	cfg.Jobs.WorkerCount = defaultJobsWorkerCount
+	cfg.Jobs.PollInterval = defaultJobsPollInterval
+	cfg.Jobs.ClaimLease = defaultJobsClaimLease
+	cfg.Jobs.CompletedRetention = defaultJobsCompletedRetention
 	cfg.TLS.Enabled = defaultTLSEnabled
 	cfg.TLS.CertFile = defaultTLSCertFile
 	cfg.TLS.KeyFile = defaultTLSKeyFile
@@ -265,6 +279,10 @@ var configOptions = []configOption{
 	{key: "sessions.revocation_enabled", env: "SESSIONS_REVOCATION_ENABLED", flagName: "sessions-revocation-enabled", defaultValue: defaultSessionRevocation, usage: "Enable database-backed session revocation checks"},
 	{key: "query.max_result_rows", env: "QUERY_MAX_RESULT_ROWS", flagName: "query-max-result-rows", defaultValue: defaultQueryMaxResultRows, usage: "Maximum rows returned by an interactive query result"},
 	{key: "query.max_result_bytes", env: "QUERY_MAX_RESULT_BYTES", flagName: "query-max-result-bytes", defaultValue: defaultQueryMaxResultBytes, usage: "Approximate maximum bytes returned by an interactive query result"},
+	{key: "jobs.worker_count", env: "JOBS_WORKER_COUNT", flagName: "jobs-worker-count", defaultValue: defaultJobsWorkerCount, usage: "Number of background job workers"},
+	{key: "jobs.poll_interval", env: "JOBS_POLL_INTERVAL", flagName: "jobs-poll-interval", defaultValue: defaultJobsPollInterval, usage: "Background job polling interval"},
+	{key: "jobs.claim_lease", env: "JOBS_CLAIM_LEASE", flagName: "jobs-claim-lease", defaultValue: defaultJobsClaimLease, usage: "Background job claim lease duration"},
+	{key: "jobs.completed_retention", env: "JOBS_COMPLETED_RETENTION", flagName: "jobs-completed-retention", defaultValue: defaultJobsCompletedRetention, usage: "How long completed background job records are retained"},
 	{key: "tls.enabled", env: "TLS_ENABLED", flagName: "tls-enabled", defaultValue: defaultTLSEnabled, usage: "Serve HTTPS using configured TLS certificate and key files"},
 	{key: "tls.cert_file", env: "TLS_CERT_FILE", flagName: "tls-cert-file", defaultValue: defaultTLSCertFile, usage: "Path to PEM encoded TLS certificate file"},
 	{key: "tls.key_file", env: "TLS_KEY_FILE", flagName: "tls-key-file", defaultValue: defaultTLSKeyFile, usage: "Path to PEM encoded TLS private key file"},
@@ -366,6 +384,10 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.Sessions.RevocationEnabled = v.GetBool("sessions.revocation_enabled")
 	cfg.Query.MaxResultRows = v.GetInt("query.max_result_rows")
 	cfg.Query.MaxResultBytes = v.GetInt("query.max_result_bytes")
+	cfg.Jobs.WorkerCount = v.GetInt("jobs.worker_count")
+	cfg.Jobs.PollInterval = v.GetDuration("jobs.poll_interval")
+	cfg.Jobs.ClaimLease = v.GetDuration("jobs.claim_lease")
+	cfg.Jobs.CompletedRetention = v.GetDuration("jobs.completed_retention")
 	cfg.TLS.Enabled = v.GetBool("tls.enabled")
 	cfg.TLS.CertFile = v.GetString("tls.cert_file")
 	cfg.TLS.KeyFile = v.GetString("tls.key_file")
@@ -414,6 +436,18 @@ func validateConfig(cfg Config) error {
 	}
 	if cfg.Query.MaxResultBytes <= 0 {
 		return fmt.Errorf("query.max_result_bytes must be greater than 0")
+	}
+	if cfg.Jobs.WorkerCount <= 0 {
+		return fmt.Errorf("jobs.worker_count must be greater than 0")
+	}
+	if cfg.Jobs.PollInterval <= 0 {
+		return fmt.Errorf("jobs.poll_interval must be greater than 0")
+	}
+	if cfg.Jobs.ClaimLease <= 0 {
+		return fmt.Errorf("jobs.claim_lease must be greater than 0")
+	}
+	if cfg.Jobs.CompletedRetention <= 0 {
+		return fmt.Errorf("jobs.completed_retention must be greater than 0")
 	}
 	if cfg.TLS.Enabled {
 		if strings.TrimSpace(cfg.TLS.CertFile) == "" {
