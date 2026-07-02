@@ -4,6 +4,8 @@ export type DiagramPersistedState = {
   present: string[] // refKeys currently on the canvas
   positions: Record<string, { x: number; y: number }>
   collapsed: string[] // refKeys collapsed to title-only
+  depth?: number | 'all' // object-diagram depth control (Infinity persisted as 'all')
+  viewport?: { x: number; y: number; zoom: number } // camera pan + zoom
 }
 
 const EMPTY: DiagramPersistedState = { present: [], positions: {}, collapsed: [] }
@@ -20,6 +22,8 @@ export function deserializeDiagram(raw: string | null): DiagramPersistedState {
       present: parsed.present ?? [],
       positions: parsed.positions ?? {},
       collapsed: parsed.collapsed ?? [],
+      depth: parsed.depth,
+      viewport: parsed.viewport,
     }
   } catch {
     return { ...EMPTY }
