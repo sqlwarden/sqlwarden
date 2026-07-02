@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  refKey, hiddenNeighbors, rankByDegree, reachableRefs, planNamespaceSeed, estimateNodeSize, DIAGRAM_MAX_TABLES,
+  refKey, hiddenNeighbors, rankByDegree, reachableRefs, planNamespaceSeed, estimateNodeSize, edgeCardinality, DIAGRAM_MAX_TABLES,
 } from './diagramModel'
 import type { ObjectRef, Relationship, ObjectDetail } from '#/lib/api/types'
 
@@ -69,5 +69,21 @@ describe('diagramModel', () => {
     const collapsed = estimateNodeSize(detail, true)
     expect(open.height).toBeGreaterThan(collapsed.height)
     expect(DIAGRAM_MAX_TABLES).toBe(60)
+  })
+})
+
+describe('edgeCardinality', () => {
+  const detail = (over: object): ObjectDetail => ({ ref: t('x'), relational: { columns: [], ...over } }) as ObjectDetail
+  it('is one_to_many when the FK columns are not unique on the child', () => {
+    expect(edgeCardinality(['parent_id'], detail({ primary_key: ['id'], indexes: [] }))).toBe('one_to_many')
+  })
+  it('is one_to_one when the FK columns match the child primary key', () => {
+    expect(edgeCardinality(['id'], detail({ primary_key: ['id'] }))).toBe('one_to_one')
+  })
+  it('is one_to_one when the FK columns match a unique index', () => {
+    expect(edgeCardinality(['parent_id'], detail({ primary_key: ['id'], indexes: [{ name: 'u', columns: ['parent_id'], unique: true }] }))).toBe('one_to_one')
+  })
+  it('defaults to one_to_many when the child detail is missing', () => {
+    expect(edgeCardinality(['parent_id'], undefined)).toBe('one_to_many')
   })
 })
