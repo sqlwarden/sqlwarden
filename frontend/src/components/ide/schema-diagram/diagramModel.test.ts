@@ -43,6 +43,13 @@ describe('diagramModel', () => {
     expect(reachableRefs([t('isolated')], edges).map((r) => r.name)).toEqual(['isolated'])
   })
 
+  it('reachableRefs honors maxDepth (1 hop vs 2 hops)', () => {
+    const oneHop = reachableRefs([t('orders')], edges, 60, 1).map((r) => r.name).sort()
+    expect(oneHop).toEqual(['orders', 'products', 'users']) // reviews is 2 hops away via products
+    const twoHop = reachableRefs([t('orders')], edges, 60, 2).map((r) => r.name).sort()
+    expect(twoHop).toEqual(['orders', 'products', 'reviews', 'users'])
+  })
+
   it('planNamespaceSeed returns all tables when under the cap', () => {
     const refs = [t('users'), t('orders'), t('products')]
     expect(planNamespaceSeed(refs, edges, 60)).toEqual({ seed: refs, progressive: false })
