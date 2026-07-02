@@ -11,6 +11,7 @@ import (
 
 const (
 	TypeFileContentReap = "file_content_reap"
+	TypeExportQueryCSV  = "export_query_csv"
 
 	EventLevelInfo  = "info"
 	EventLevelWarn  = "warn"

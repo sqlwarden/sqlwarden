@@ -609,6 +609,33 @@ Future phases:
 - Admin cancellation.
 - WebSocket updates for query state.
 
+## Query Result Exports
+
+Exports are intentionally built on top of the query, job, and file foundations rather than as a separate database-specific subsystem.
+
+Implemented:
+
+- CSV export format.
+- Synchronous export download under connection routes.
+- Background export jobs under connection routes.
+- Background export output stored as private workspace files in an `Exports` folder.
+- User-facing job events for background export progress.
+
+Synchronous exports use the caller's existing live database session from `X-Warden-Session`. This avoids opening another target database connection for small explicit downloads and lets request cancellation stop the stream when the browser disconnects. Synchronous exports are bounded by `exports.sync_max_bytes`.
+
+Background exports run through the persisted job framework. A background export opens its own short-lived target database connection, re-checks authorization at execution time, classifies the SQL as DQL/read-only again, streams the result through the engine cursor capability, and writes the output to a private workspace file. Background exports are appropriate when the user may leave the IDE and return later to download the generated file.
+
+Export jobs currently require an engine that supports cursor-backed query results. This keeps large exports streaming and avoids materializing the full result set in Go memory. Engines without cursor support should reject background export until a safe streaming strategy exists for that engine.
+
+Export logs and job events must not include SQL text, DSNs, bind parameters, credentials, or row values. Job events are safe user-facing progress messages such as connection started, file created, rows streamed, and export completed.
+
+Future export phases:
+
+- Additional formats such as XLSX, SQL inserts, and Parquet.
+- Export destination selection, including shared workspace files when permissioned.
+- Optional resumable/download token behavior for generated artifacts.
+- Admin observability for long-running export jobs.
+
 ## Workspace Files
 
 Workspace files are scoped to workspaces and can be:
