@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Background, Controls, MiniMap, ReactFlow, ReactFlowProvider, useNodesState, useReactFlow, useUpdateNodeInternals,
+  Background, ControlButton, Controls, MiniMap, ReactFlow, ReactFlowProvider, useNodesState, useReactFlow, useUpdateNodeInternals,
   type Edge, type Node, type NodeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -25,7 +25,7 @@ import {
 } from './diagramModel'
 import { layoutGraph } from './layout'
 import { loadDiagram, saveDiagram } from './diagramStore'
-import { TableNode, type TableNodeData } from './nodes/TableNode'
+import { TableNode, type HoverRelation, type TableNodeData } from './nodes/TableNode'
 import { OBJECT_REF_DND_MIME } from './dnd'
 
 const NODE_TYPES: NodeTypes = { table: TableNode }
@@ -50,7 +50,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const openTab = useIde((s) => s.openTab)
   const queryClient = useQueryClient()
-  const { fitView } = useReactFlow()
+  const { fitView, screenToFlowPosition } = useReactFlow()
   const updateNodeInternals = useUpdateNodeInternals()
 
   const enabled = Boolean(sessionId && connectionId && target)
@@ -190,7 +190,6 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     })
     requestLayout()
   }, [requestLayout])
-  const addRef = useCallback((ref: ObjectRef) => addRefs([ref]), [addRefs])
   const toggleCollapse = useCallback((key: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -198,6 +197,21 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       return next
     })
   }, [])
+  // Remove a table from the diagram only (never the database). No relayout, so
+  // the rest of the graph stays put; its edges drop out automatically.
+  const removeRefs = useCallback((keys: Set<string>) => {
+    setPresent((prev) => prev.filter((r) => !keys.has(refKey(r))))
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      for (const k of keys) next.delete(k)
+      return next
+    })
+    for (const k of keys) delete savedPositions.current[k]
+  }, [])
+  const removeRef = useCallback((key: string) => removeRefs(new Set([key])), [removeRefs])
+
+  const [highlight, setHighlight] = useState<HoverRelation | null>(null)
+  const onHoverRelation = useCallback((rel: HoverRelation | null) => setHighlight(rel), [])
 
   // Stable signatures so the reconcile/layout effects fire only on real changes,
   // not on the fresh array identities useQueries returns each render.
@@ -239,6 +253,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           id: key,
           type: 'table' as const,
           position,
+          width: existing?.width ?? 240,
           data: {
             label: ref.name,
             namespace: ref.namespace,
@@ -254,6 +269,8 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
             onOpenDetail: () => {
               if (connectionId) openTab(newObjectTab({ id: connectionId, driver } as never, workspace, ref))
             },
+            onRemove: () => removeRef(key),
+            onHoverRelation,
           },
         } as FlowNode
       })
@@ -268,6 +285,20 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailSig, collapsedSig])
 
+  // Ring the referenced table when an expanded FK column is hovered.
+  useEffect(() => {
+    setNodes((prev) => {
+      let changed = false
+      const next = prev.map((n) => {
+        const cls = highlight && n.id === highlight.target ? 'rounded ring-2 ring-primary' : ''
+        if ((n.className ?? '') === cls) return n
+        changed = true
+        return { ...n, className: cls }
+      })
+      return changed ? next : prev
+    })
+  }, [highlight, setNodes])
+
   // Anchor each edge to the specific FK column handles when both nodes are
   // expanded and loaded; otherwise fall back to the node-level handles.
   const flowEdges: Edge[] = useMemo(() => {
@@ -279,16 +310,20 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
         const tk = refKey(e.references)
         const srcCol = e.columns[0]
         const tgtCol = e.referenced_columns[0]
+        const isHi = Boolean(highlight && sk === highlight.source && tk === highlight.target && srcCol === highlight.column)
         return {
           id: `${e.name}-${i}`,
           source: sk,
           target: tk,
           sourceHandle: anchored(sk) && srcCol ? `col:${srcCol}:out` : 'node:out',
           targetHandle: anchored(tk) && tgtCol ? `col:${tgtCol}:in` : 'node:in',
+          animated: isHi,
+          zIndex: isHi ? 1000 : undefined,
+          style: isHi ? { stroke: 'var(--primary)', strokeWidth: 2 } : undefined,
         }
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [edges, presentSig, collapsedSig, detailSig])
+  }, [edges, presentSig, collapsedSig, detailSig, highlight])
 
   // Full, consistent elk layout of every node whenever the structure changes
   // (seed / expand / drop / manual re-layout). Applying positions to ALL nodes
@@ -327,15 +362,23 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     return () => clearTimeout(saveTimer.current)
   }, [tab.id, nodes, presentSig, collapsedSig])
 
+  // Dropping a table from the tree: place it exactly where it was dropped and
+  // leave the rest of the layout untouched — only the new node + its edges
+  // appear. (No requestLayout, so nothing else moves.)
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     const raw = e.dataTransfer.getData(OBJECT_REF_DND_MIME)
     if (!raw) return
     try {
       const ref = JSON.parse(raw) as ObjectRef
-      if (ref?.namespace && ref?.name) addRef(ref)
+      if (!ref?.namespace || !ref?.name) return
+      const key = refKey(ref)
+      const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+      // Seed the reconcile position for the new node (reconcile reads this).
+      savedPositions.current[key] = pos
+      setPresent((prev) => (prev.some((r) => refKey(r) === key) ? prev : [...prev, ref]))
     } catch { /* ignore malformed payload */ }
-  }, [addRef])
+  }, [screenToFlowPosition])
 
   async function reconnect() {
     if (!connectionId) return
@@ -399,8 +442,6 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
             </div>
           </div>
         )}
-        <ToolbarButton label="Re-layout" onClick={requestLayout} icon="arrow-down-01" />
-        <ToolbarButton label="Fit" onClick={() => fitView({ duration: 200 })} icon="maximize" />
         <ToolbarButton label="Refresh" onClick={refresh} icon="refresh" />
       </div>
       <div className="min-h-0 flex-1" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
@@ -409,13 +450,18 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           edges={flowEdges}
           nodeTypes={NODE_TYPES}
           onNodesChange={onNodesChange}
+          onNodesDelete={(deleted) => removeRefs(new Set(deleted.map((n) => n.id)))}
           fitView
           proOptions={{ hideAttribution: true }}
           minZoom={0.1}
         >
           <Background />
-          <Controls />
-          <MiniMap pannable zoomable className="!bg-card" />
+          <Controls>
+            <ControlButton onClick={requestLayout} title="Auto-layout">
+              <Icon name="sparkles" size={14} />
+            </ControlButton>
+          </Controls>
+          <MiniMap pannable zoomable className="!bg-card" style={{ width: 120, height: 80 }} />
         </ReactFlow>
       </div>
     </div>
