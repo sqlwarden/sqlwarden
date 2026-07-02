@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Background, Controls, MiniMap, ReactFlow, ReactFlowProvider, useNodesState, useReactFlow,
+  Background, Controls, MiniMap, ReactFlow, ReactFlowProvider, useNodesState, useReactFlow, useUpdateNodeInternals,
   type Edge, type Node, type NodeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -51,6 +51,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   const openTab = useIde((s) => s.openTab)
   const queryClient = useQueryClient()
   const { fitView } = useReactFlow()
+  const updateNodeInternals = useUpdateNodeInternals()
 
   const enabled = Boolean(sessionId && connectionId && target)
 
@@ -259,6 +260,13 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presentSig, detailSig, collapsedSig])
+
+  // A node's handles change as its columns load or it collapses; tell React Flow
+  // to re-scan them so edges re-attach to the per-column handles (avoids #008).
+  useEffect(() => {
+    for (const r of present) updateNodeInternals(refKey(r))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailSig, collapsedSig])
 
   // Anchor each edge to the specific FK column handles when both nodes are
   // expanded and loaded; otherwise fall back to the node-level handles.
