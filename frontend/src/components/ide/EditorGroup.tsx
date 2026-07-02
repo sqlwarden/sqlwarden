@@ -66,9 +66,9 @@ export function EditorGroup({ orgSlug, workspace, group, focused, showFocus, onC
       />
       <div className="min-h-0 flex-1 border-t border-border bg-card">
         {activeTab && isDiagram ? (
-          <SchemaDiagramView orgSlug={orgSlug} workspace={workspace} tab={activeTab} />
+          <SchemaDiagramView key={`${group.id}:${activeTab.id}`} orgSlug={orgSlug} workspace={workspace} tab={activeTab} />
         ) : activeTab && isObject ? (
-          <ObjectDetailView orgSlug={orgSlug} workspace={workspace} tab={activeTab} />
+          <ObjectDetailView key={`${group.id}:${activeTab.id}`} orgSlug={orgSlug} workspace={workspace} tab={activeTab} />
         ) : activeTab && doc ? (
           isLoading ? (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Loading…</div>
