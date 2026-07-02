@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background, ControlButton, Controls, MiniMap, ReactFlow, ReactFlowProvider, useNodesState, useReactFlow, useUpdateNodeInternals,
-  type Edge, type Node, type NodeTypes,
+  type Edge, type Node, type NodeTypes, type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -68,8 +68,10 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const openTab = useIde((s) => s.openTab)
   const queryClient = useQueryClient()
-  const { fitView, screenToFlowPosition, getNodes } = useReactFlow()
+  const { fitView, screenToFlowPosition, getNodes, getViewport, setViewport } = useReactFlow()
   const updateNodeInternals = useUpdateNodeInternals()
+  const savedViewport = useRef<Viewport | null>(null)
+  const viewportRestored = useRef(false)
 
   const enabled = Boolean(sessionId && connectionId && target)
 
@@ -124,18 +126,26 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   const [layoutReq, setLayoutReq] = useState(0)
   const requestLayout = useCallback(() => setLayoutReq((v) => v + 1), [])
 
-  // Load persisted positions + collapse once the schema data is ready. The
-  // working SET is always seeded fresh (below), not restored — so persistence
-  // only preserves arrangement, never a stale/partial set of tables.
+  // Restore the persisted diagram once the schema data (and thus refByKey) is
+  // ready: positions, collapse, depth, AND the working set of tables — so
+  // expanded/removed tables are exactly where the user left them on reload. If
+  // there's a saved set, mark it seeded so the fresh seed below doesn't run.
   useEffect(() => {
     if (hydratedRef.current || !catalogQuery.isSuccess || !relQuery.isSuccess) return
     hydratedRef.current = true
     void loadDiagram(tab.id).then((saved) => {
       savedPositions.current = saved.positions
+      savedViewport.current = saved.viewport ?? null
       if (saved.collapsed.length > 0) setCollapsed(new Set(saved.collapsed))
+      if (saved.depth != null) setDepth(saved.depth === 'all' ? Infinity : saved.depth)
+      const refs = saved.present.map((k) => refByKey.get(k)).filter((r): r is ObjectRef => Boolean(r))
+      if (refs.length > 0) {
+        seededRef.current = true
+        setPresent(refs)
+      }
       setHydrateChecked(true)
     })
-  }, [tab.id, catalogQuery.isSuccess, relQuery.isSuccess])
+  }, [tab.id, refByKey, catalogQuery.isSuccess, relQuery.isSuccess])
 
   // Seed the working set from the target — only after the queries have
   // SUCCEEDED (so edges are populated) and persisted positions have loaded.
@@ -387,18 +397,33 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
 
   // Persist layout (debounced so per-pixel drags don't hammer IndexedDB).
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  useEffect(() => {
+  const persist = useCallback(() => {
     if (!seededRef.current) return
+    void saveDiagram(tab.id, {
+      present: present.map(refKey),
+      positions: Object.fromEntries(getNodes().map((n) => [n.id, n.position])),
+      collapsed: [...collapsed],
+      depth: depth === Infinity ? 'all' : depth,
+      viewport: getViewport(),
+    })
+  }, [tab.id, present, collapsed, depth, getNodes, getViewport])
+  const schedulePersist = useCallback(() => {
     clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => {
-      void saveDiagram(tab.id, {
-        present: present.map(refKey),
-        positions: Object.fromEntries(nodes.map((n) => [n.id, n.position])),
-        collapsed: [...collapsed],
-      })
-    }, 400)
+    saveTimer.current = setTimeout(persist, 400)
+  }, [persist])
+  // Persist on structure/position changes and on camera moves (onMoveEnd).
+  useEffect(() => {
+    schedulePersist()
     return () => clearTimeout(saveTimer.current)
-  }, [tab.id, nodes, presentSig, collapsedSig])
+  }, [schedulePersist, nodes])
+
+  // Restore the saved camera once the nodes exist (no re-fit for restored views).
+  useEffect(() => {
+    if (viewportRestored.current || !savedViewport.current || nodes.length === 0) return
+    viewportRestored.current = true
+    const vp = savedViewport.current
+    requestAnimationFrame(() => setViewport(vp))
+  }, [nodes.length, setViewport])
 
   // Dropping a table from the tree: place it exactly where it was dropped and
   // leave the rest of the layout untouched — only the new node + its edges
@@ -490,7 +515,8 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           nodeTypes={NODE_TYPES}
           onNodesChange={onNodesChange}
           onNodesDelete={(deleted) => removeRefs(new Set(deleted.map((n) => n.id)))}
-          fitView
+          onMoveEnd={schedulePersist}
+          fitView={!savedViewport.current}
           proOptions={{ hideAttribution: true }}
           minZoom={0.1}
         >
