@@ -6,7 +6,8 @@ import {
 import '@xyflow/react/dist/style.css'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
-import { cn } from '#/lib/utils'
+import { Button } from '#/components/ui/button'
+import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
 import type { ObjectDetail, ObjectRef, Workspace } from '#/lib/api/types'
@@ -31,6 +32,23 @@ import { OBJECT_REF_DND_MIME } from './dnd'
 const NODE_TYPES: NodeTypes = { table: TableNode }
 type FlowNode = Node<TableNodeData, 'table'>
 
+type Box = { x: number; y: number; w: number; h: number }
+function boxesOverlap(a: Box, b: Box, pad = 16): boolean {
+  return a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y
+}
+// Find an empty slot at startX, scanning vertically (down then up) from startY so
+// a newly expanded node lands next to its source without overlapping anything.
+function findFreePosition(startX: number, startY: number, w: number, h: number, occupied: Box[]): { x: number; y: number } {
+  const step = h + 24
+  for (let i = 0; i <= 40; i++) {
+    for (const dy of i === 0 ? [0] : [i * step, -i * step]) {
+      const box: Box = { x: startX, y: startY + dy, w, h }
+      if (!occupied.some((o) => boxesOverlap(box, o))) return { x: box.x, y: box.y }
+    }
+  }
+  return { x: startX, y: startY }
+}
+
 export function SchemaDiagramView(props: { orgSlug: string; workspace: Workspace; tab: EditorTab }) {
   return (
     <ReactFlowProvider>
@@ -50,7 +68,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const openTab = useIde((s) => s.openTab)
   const queryClient = useQueryClient()
-  const { fitView, screenToFlowPosition } = useReactFlow()
+  const { fitView, screenToFlowPosition, getNodes } = useReactFlow()
   const updateNodeInternals = useUpdateNodeInternals()
 
   const enabled = Boolean(sessionId && connectionId && target)
@@ -181,15 +199,35 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     return m
   }, [edges])
 
-  // Add one or more specific tables to the canvas (per-column expand + drop).
-  const addRefs = useCallback((refs: ObjectRef[]) => {
-    setPresent((prev) => {
-      const have = new Set(prev.map(refKey))
-      const add = refs.filter((r) => !have.has(refKey(r)))
-      return add.length ? [...prev, ...add] : prev
-    })
-    requestLayout()
-  }, [requestLayout])
+  // Per-column expand: add the specific related table(s) next to the source
+  // node in free space, keeping every existing node exactly where it is (no
+  // relayout).
+  const expandFrom = useCallback((refs: ObjectRef[], opts: { fromKey: string; direction: 'in' | 'out' }) => {
+    const rfNodes = getNodes()
+    const have = new Set(rfNodes.map((n) => n.id))
+    const toAdd = refs.filter((r) => !have.has(refKey(r)))
+    if (toAdd.length === 0) return
+    const occupied: Box[] = rfNodes.map((n) => ({
+      x: n.position.x,
+      y: n.position.y,
+      w: n.measured?.width ?? n.width ?? 240,
+      h: n.measured?.height ?? 120,
+    }))
+    const from = rfNodes.find((n) => n.id === opts.fromKey)
+    const fromX = from?.position.x ?? 0
+    const fromY = from?.position.y ?? 0
+    const fromW = from?.measured?.width ?? from?.width ?? 240
+    for (const ref of toAdd) {
+      const key = refKey(ref)
+      const w = 240
+      const h = estimateNodeSize(undefined, false).height
+      const startX = opts.direction === 'out' ? fromX + fromW + 60 : fromX - w - 60
+      const pos = findFreePosition(startX, fromY, w, h, occupied)
+      savedPositions.current[key] = pos
+      occupied.push({ x: pos.x, y: pos.y, w, h })
+    }
+    setPresent((prev) => [...prev, ...toAdd])
+  }, [getNodes])
   const toggleCollapse = useCallback((key: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -265,7 +303,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
             collapsed: collapsed.has(key),
             loading: entry?.loading ?? false,
             onToggleCollapse: () => toggleCollapse(key),
-            onExpand: addRefs,
+            onExpand: expandFrom,
             onOpenDetail: () => {
               if (connectionId) openTab(newObjectTab({ id: connectionId, driver } as never, workspace, ref))
             },
@@ -423,26 +461,27 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
         <span className="text-[10px] text-muted-foreground">{driver}</span>
         <div className="flex-1" />
         {target.kind === 'object' && (
-          <div className="mr-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+          <div className="mr-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
             <span>Depth</span>
-            <div className="flex overflow-hidden rounded border border-border">
-              {([['1', 1], ['2', 2], ['All', Infinity]] as const).map(([label, d]) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => changeDepth(d)}
-                  className={cn(
-                    'px-1.5 py-0.5 text-[10px]',
-                    depth === d ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted',
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <ToggleGroup
+              size="sm"
+              variant="outline"
+              value={[depth === Infinity ? 'all' : String(depth)]}
+              onValueChange={(next) => {
+                const v = next[0]
+                if (v) changeDepth(v === 'all' ? Infinity : Number(v))
+              }}
+            >
+              <ToggleGroupItem value="1" aria-label="One hop">1</ToggleGroupItem>
+              <ToggleGroupItem value="2" aria-label="Two hops">2</ToggleGroupItem>
+              <ToggleGroupItem value="all" aria-label="All connected">All</ToggleGroupItem>
+            </ToggleGroup>
           </div>
         )}
-        <ToolbarButton label="Refresh" onClick={refresh} icon="refresh" />
+        <Button variant="ghost" size="sm" onClick={refresh}>
+          <Icon name="refresh" size={13} />
+          Refresh
+        </Button>
       </div>
       <div className="min-h-0 flex-1" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
         <ReactFlow
@@ -468,19 +507,6 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   )
 }
 
-function ToolbarButton({ label, onClick, icon }: { label: string; onClick: () => void; icon: Parameters<typeof Icon>[0]['name'] }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-    >
-      <Icon name={icon} size={13} />
-      {label}
-    </button>
-  )
-}
-
 function Center({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <div className={`flex h-full items-center justify-center gap-2 text-xs text-muted-foreground ${className}`}>{children}</div>
 }
@@ -492,9 +518,7 @@ function Reconnect({ namespace, driver, onReconnect }: { namespace: string; driv
         <div className="text-sm font-medium text-foreground">{namespace}</div>
         <div className="text-xs text-muted-foreground">{driver} · connection not available</div>
       </div>
-      <button type="button" onClick={onReconnect} className="rounded border border-border px-3 py-1.5 text-xs text-foreground hover:bg-accent">
-        Reconnect
-      </button>
+      <Button variant="outline" size="sm" onClick={onReconnect}>Reconnect</Button>
     </div>
   )
 }
