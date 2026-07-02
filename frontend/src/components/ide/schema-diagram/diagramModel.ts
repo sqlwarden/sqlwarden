@@ -50,10 +50,13 @@ export function planNamespaceSeed(
   return { seed: rankByDegree(tableRefs, edges).slice(0, maxTables), progressive: true }
 }
 
-/** Estimated node box size for elk layout — grows with column count. */
+/** Estimated node box size for elk layout — grows with column count. While a
+ *  node's columns are still loading (detail undefined) we assume a few rows so
+ *  layout leaves room and nodes don't overlap once their columns arrive. */
 export function estimateNodeSize(detail: ObjectDetail | undefined, collapsed: boolean): { width: number; height: number } {
   const HEADER = 34
   const ROW = 22
-  const cols = detail?.relational?.columns?.length ?? 0
+  const LOADING_ROWS = 8
+  const cols = detail?.relational?.columns?.length ?? LOADING_ROWS
   return { width: 240, height: collapsed || cols === 0 ? HEADER : HEADER + Math.min(cols, 40) * ROW }
 }

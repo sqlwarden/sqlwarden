@@ -91,9 +91,12 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([])
   const savedPositions = useRef<Record<string, { x: number; y: number }>>({})
-  const laidOut = useRef<Set<string>>(new Set())
   const seededRef = useRef(false)
   const hydratedRef = useRef(false)
+  // Bumped whenever the node set changes structurally (seed / expand / drop /
+  // manual re-layout) to trigger a full, consistent elk layout of every node.
+  const [layoutReq, setLayoutReq] = useState(0)
+  const requestLayout = useCallback(() => setLayoutReq((v) => v + 1), [])
 
   // Hydrate persisted layout once.
   useEffect(() => {
@@ -104,8 +107,8 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       const refs = saved.present.map((k) => refByKey.get(k)).filter((r): r is ObjectRef => Boolean(r))
       if (refs.length === 0) return
       savedPositions.current = saved.positions
-      for (const k of Object.keys(saved.positions)) laidOut.current.add(k)
       seededRef.current = true
+      // Restore saved positions as-is; no relayout (respects manual arrangement).
       setPresent(refs)
       setCollapsed(new Set(saved.collapsed))
     })
@@ -117,7 +120,8 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     seededRef.current = true
     if (target.kind === 'object') setPresent(planObjectSeed(target.ref, edges))
     else setPresent(planNamespaceSeed([...refByKey.values()], edges).seed)
-  }, [target, edges, refByKey, catalogQuery.isLoading, relQuery.isLoading, relQuery.isError])
+    requestLayout()
+  }, [target, edges, refByKey, catalogQuery.isLoading, relQuery.isLoading, relQuery.isError, requestLayout])
 
   // Fetch column detail for on-canvas nodes (reuses the object-detail cache).
   const detailResults = useQueries({
@@ -139,14 +143,16 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
 
   const addRef = useCallback((ref: ObjectRef) => {
     setPresent((prev) => (prev.some((r) => refKey(r) === refKey(ref)) ? prev : [...prev, ref]))
-  }, [])
+    requestLayout()
+  }, [requestLayout])
   const expandNeighbors = useCallback((ref: ObjectRef) => {
     setPresent((prev) => {
       const keys = new Set(prev.map(refKey))
       const add = hiddenNeighbors(ref, edges, keys)
       return add.length ? [...prev, ...add] : prev
     })
-  }, [edges])
+    requestLayout()
+  }, [edges, requestLayout])
   const toggleCollapse = useCallback((key: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -173,7 +179,6 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
         const key = refKey(ref)
         const existing = prevById.get(key)
         const position = existing?.position ?? savedPositions.current[key] ?? { x: 0, y: 0 }
-        if (existing || savedPositions.current[key]) laidOut.current.add(key)
         const entry = detailByKey.get(key)
         const rel = entry?.detail?.relational
         const columns = rel?.columns ?? []
@@ -209,11 +214,12 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       .map((e, i) => ({ id: `${e.name}-${i}`, source: refKey(e.source), target: refKey(e.references) }))
   }, [edges, presentKeys])
 
-  // Auto-layout only nodes that were never placed (new/expanded), keeping any
-  // manual positions intact.
+  // Full, consistent elk layout of every node whenever the structure changes
+  // (seed / expand / drop / manual re-layout). Applying positions to ALL nodes
+  // — not just new ones — keeps the whole graph in one coordinate frame, which
+  // is what stops newly-expanded nodes from stacking behind existing ones.
   useEffect(() => {
-    const pending = present.map(refKey).filter((k) => !laidOut.current.has(k))
-    if (pending.length === 0 || present.length === 0) return
+    if (layoutReq === 0 || present.length === 0) return
     const sizes = present.map((r) => {
       const k = refKey(r)
       const s = estimateNodeSize(detailByKey.get(k)?.detail ?? undefined, collapsed.has(k))
@@ -223,14 +229,12 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     let cancelled = false
     void layoutGraph(sizes, le).then((laid) => {
       if (cancelled) return
-      const pendingSet = new Set(pending)
-      pending.forEach((k) => laidOut.current.add(k))
-      setNodes((prev) => prev.map((n) => (pendingSet.has(n.id) ? { ...n, position: laid.get(n.id) ?? n.position } : n)))
+      setNodes((prev) => prev.map((n) => ({ ...n, position: laid.get(n.id) ?? n.position })))
       requestAnimationFrame(() => fitView({ duration: 200 }))
     })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presentSig])
+  }, [layoutReq])
 
   // Persist layout (debounced so per-pixel drags don't hammer IndexedDB).
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -273,16 +277,6 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     void queryClient.invalidateQueries({ queryKey: connectionRelationshipsQueryKey(orgSlug, workspace.id, connectionId ?? 0, namespace) })
     void queryClient.invalidateQueries({ queryKey: connectionObjectsQueryKeyPrefix(orgSlug, workspace.id, connectionId ?? 0) })
   }
-  async function relayout() {
-    const sizes = present.map((r) => {
-      const k = refKey(r)
-      const s = estimateNodeSize(detailByKey.get(k)?.detail ?? undefined, collapsed.has(k))
-      return { id: k, width: s.width, height: s.height }
-    })
-    const laid = await layoutGraph(sizes, flowEdges.map((e) => ({ id: e.id, source: e.source, target: e.target })))
-    setNodes((prev) => prev.map((n) => ({ ...n, position: laid.get(n.id) ?? n.position })))
-    requestAnimationFrame(() => fitView({ duration: 200 }))
-  }
 
   // ── State handling ─────────────────────────────────────────────────────────
   if (!target || !connectionId) return <Center>This tab is missing its diagram target.</Center>
@@ -309,7 +303,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
         </span>
         <span className="text-[10px] text-muted-foreground">{driver}</span>
         <div className="flex-1" />
-        <ToolbarButton label="Re-layout" onClick={() => void relayout()} icon="arrow-down-01" />
+        <ToolbarButton label="Re-layout" onClick={requestLayout} icon="arrow-down-01" />
         <ToolbarButton label="Fit" onClick={() => fitView({ duration: 200 })} icon="maximize" />
         <ToolbarButton label="Refresh" onClick={refresh} icon="refresh" />
       </div>
