@@ -96,3 +96,22 @@ export function estimateNodeSize(detail: ObjectDetail | undefined, collapsed: bo
   const cols = detail?.relational?.columns?.length ?? LOADING_ROWS
   return { width: 240, height: collapsed || cols === 0 ? HEADER : HEADER + Math.min(cols, 40) * ROW }
 }
+
+export type Cardinality = 'one_to_one' | 'one_to_many'
+
+/** Cardinality of a foreign key from the child's side: many children may point
+ *  at one parent (one_to_many) unless the child's FK columns are unique — i.e.
+ *  they are (or match) the child's primary key or a unique index — in which case
+ *  each child maps to exactly one parent (one_to_one). Falls back to one_to_many
+ *  when the child's detail (keys/indexes) isn't available. */
+export function edgeCardinality(fkColumns: string[], sourceDetail: ObjectDetail | undefined): Cardinality {
+  const rel = sourceDetail?.relational
+  if (!rel || fkColumns.length === 0) return 'one_to_many'
+  const sameSet = (a: string[], b: string[]) =>
+    a.length === b.length && [...a].sort().join('\x00') === [...b].sort().join('\x00')
+  if (rel.primary_key && sameSet(rel.primary_key, fkColumns)) return 'one_to_one'
+  for (const ix of rel.indexes ?? []) {
+    if (ix.unique && sameSet(ix.columns ?? [], fkColumns)) return 'one_to_one'
+  }
+  return 'one_to_many'
+}

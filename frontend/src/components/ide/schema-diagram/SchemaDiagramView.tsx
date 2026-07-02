@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background, ControlButton, Controls, MiniMap, ReactFlow, ReactFlowProvider, useNodesState, useReactFlow, useUpdateNodeInternals,
-  type Edge, type Node, type NodeTypes, type Viewport,
+  type Edge, type EdgeTypes, type Node, type NodeTypes, type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -22,14 +22,16 @@ import {
 import { useIde, type EditorTab } from '../useIdeStore'
 import { newObjectTab } from '../object-detail/objectTab'
 import {
-  estimateNodeSize, planNamespaceSeed, reachableRefs, refKey,
+  edgeCardinality, estimateNodeSize, planNamespaceSeed, reachableRefs, refKey,
 } from './diagramModel'
+import { FkEdge } from './edges/FkEdge'
 import { layoutGraph } from './layout'
 import { loadDiagram, saveDiagram } from './diagramStore'
 import { TableNode, type HoverRelation, type TableNodeData } from './nodes/TableNode'
 import { OBJECT_REF_DND_MIME } from './dnd'
 
 const NODE_TYPES: NodeTypes = { table: TableNode }
+const EDGE_TYPES: EdgeTypes = { fk: FkEdge }
 type FlowNode = Node<TableNodeData, 'table'>
 
 type Box = { x: number; y: number; w: number; h: number }
@@ -114,6 +116,9 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   // Default seed depth for an object diagram: 1 hop (focused), like DataGrip/
   // DBeaver. The toolbar depth control re-seeds to 1 / 2 / all hops.
   const [depth, setDepth] = useState<number>(1)
+  // Edge routing: bezier (curved, default) vs orthogonal (right-angle, shows
+  // crow's-foot cardinality). Toggled from the Controls panel; persisted.
+  const [orthogonal, setOrthogonal] = useState(false)
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([])
   const savedPositions = useRef<Record<string, { x: number; y: number }>>({})
   const seededRef = useRef(false)
@@ -138,6 +143,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       savedViewport.current = saved.viewport ?? null
       if (saved.collapsed.length > 0) setCollapsed(new Set(saved.collapsed))
       if (saved.depth != null) setDepth(saved.depth === 'all' ? Infinity : saved.depth)
+      if (saved.orthogonalEdges != null) setOrthogonal(saved.orthogonalEdges)
       const refs = saved.present.map((k) => refByKey.get(k)).filter((r): r is ObjectRef => Boolean(r))
       if (refs.length > 0) {
         seededRef.current = true
@@ -387,25 +393,31 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
         const isHi = Boolean(highlight && sk === highlight.source && tk === highlight.target && srcCol === highlight.column)
         const touchesSel = Boolean(activeSelected && (sk === activeSelected || tk === activeSelected))
         const dimmed = Boolean(activeSelected && !touchesSel)
+        // Cardinality from the child (source) side: crow's-foot "many" unless the
+        // FK columns are unique on the child (then "one" — a 1:1 relationship).
+        const card = edgeCardinality(e.columns, detailByKey.get(sk)?.detail ?? undefined)
+        const base = { stroke: 'var(--muted-foreground)', strokeWidth: 1 }
         return {
           id: `${e.name}-${i}`,
+          type: 'fk',
           source: sk,
           target: tk,
           sourceHandle: anchored(sk) && srcCol ? `col:${srcCol}:out` : 'node:out',
           targetHandle: anchored(tk) && tgtCol ? `col:${tgtCol}:in` : 'node:in',
+          data: { sourceMarker: card === 'one_to_one' ? 'one' : 'many', targetMarker: 'one', orthogonal },
           animated: isHi,
           zIndex: isHi ? 1000 : touchesSel ? 500 : undefined,
           style: isHi
-            ? { stroke: 'var(--primary)', strokeWidth: 2 }
+            ? { ...base, stroke: 'var(--primary)', strokeWidth: 2 }
             : touchesSel
-              ? { stroke: 'var(--primary)', strokeWidth: 1.5 }
+              ? { ...base, stroke: 'var(--primary)', strokeWidth: 1.5 }
               : dimmed
-                ? { opacity: 0.12 }
-                : undefined,
+                ? { ...base, opacity: 0.12 }
+                : base,
         }
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [edges, presentSig, collapsedSig, detailSig, highlight, activeSelected])
+  }, [edges, presentSig, collapsedSig, detailSig, highlight, activeSelected, orthogonal])
 
   // Full, consistent elk layout of every node whenever the structure changes
   // (seed / expand / drop / manual re-layout). Applying positions to ALL nodes
@@ -439,8 +451,9 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       collapsed: [...collapsed],
       depth: depth === Infinity ? 'all' : depth,
       viewport: getViewport(),
+      orthogonalEdges: orthogonal,
     })
-  }, [tab.id, present, collapsed, depth, getNodes, getViewport])
+  }, [tab.id, present, collapsed, depth, orthogonal, getNodes, getViewport])
   const schedulePersist = useCallback(() => {
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(persist, 400)
@@ -547,6 +560,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           nodes={nodes}
           edges={flowEdges}
           nodeTypes={NODE_TYPES}
+          edgeTypes={EDGE_TYPES}
           onNodesChange={onNodesChange}
           onNodesDelete={(deleted) => removeRefs(new Set(deleted.map((n) => n.id)))}
           onNodeClick={(_, node) => setSelectedKey(node.id)}
@@ -560,6 +574,12 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           <Controls>
             <ControlButton onClick={requestLayout} title="Auto-layout">
               <Icon name="sparkles" size={14} />
+            </ControlButton>
+            <ControlButton
+              onClick={() => setOrthogonal((v) => !v)}
+              title={orthogonal ? 'Switch to curved edges (hide cardinality)' : 'Switch to orthogonal edges with crow’s-foot cardinality'}
+            >
+              <Icon name="flow-connection" size={14} />
             </ControlButton>
           </Controls>
           <MiniMap pannable zoomable className="!bg-card" style={{ width: 120, height: 80 }} />
