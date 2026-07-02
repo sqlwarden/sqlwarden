@@ -261,6 +261,22 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   const [highlight, setHighlight] = useState<HoverRelation | null>(null)
   const onHoverRelation = useCallback((rel: HoverRelation | null) => setHighlight(rel), [])
 
+  // Click-to-select a table: ring it + its directly-connected tables/edges and
+  // dim the rest (focus mode). Cleared by clicking the empty canvas.
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const activeSelected = selectedKey && presentKeys.has(selectedKey) ? selectedKey : null
+  const selectionRelated = useMemo(() => {
+    if (!activeSelected) return null
+    const set = new Set<string>([activeSelected])
+    for (const e of edges) {
+      const s = refKey(e.source)
+      const t = refKey(e.references)
+      if (s === activeSelected) set.add(t)
+      else if (t === activeSelected) set.add(s)
+    }
+    return set
+  }, [activeSelected, edges])
+
   // Stable signatures so the reconcile/layout effects fire only on real changes,
   // not on the fresh array identities useQueries returns each render.
   const presentSig = present.map(refKey).join('|')
@@ -333,19 +349,29 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailSig, collapsedSig])
 
-  // Ring the referenced table when an expanded FK column is hovered.
+  // Node emphasis: FK-hover rings the referenced table; click-selection rings
+  // the selected table + its neighbors and dims everything else.
   useEffect(() => {
+    const classFor = (id: string): string => {
+      if (highlight && id === highlight.target) return 'rounded ring-2 ring-primary'
+      if (activeSelected) {
+        if (id === activeSelected) return 'rounded ring-2 ring-primary'
+        if (selectionRelated?.has(id)) return 'rounded ring-1 ring-primary/50'
+        return 'opacity-40 transition-opacity'
+      }
+      return ''
+    }
     setNodes((prev) => {
       let changed = false
       const next = prev.map((n) => {
-        const cls = highlight && n.id === highlight.target ? 'rounded ring-2 ring-primary' : ''
+        const cls = classFor(n.id)
         if ((n.className ?? '') === cls) return n
         changed = true
         return { ...n, className: cls }
       })
       return changed ? next : prev
     })
-  }, [highlight, setNodes])
+  }, [highlight, activeSelected, selectionRelated, setNodes])
 
   // Anchor each edge to the specific FK column handles when both nodes are
   // expanded and loaded; otherwise fall back to the node-level handles.
@@ -359,6 +385,8 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
         const srcCol = e.columns[0]
         const tgtCol = e.referenced_columns[0]
         const isHi = Boolean(highlight && sk === highlight.source && tk === highlight.target && srcCol === highlight.column)
+        const touchesSel = Boolean(activeSelected && (sk === activeSelected || tk === activeSelected))
+        const dimmed = Boolean(activeSelected && !touchesSel)
         return {
           id: `${e.name}-${i}`,
           source: sk,
@@ -366,12 +394,18 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           sourceHandle: anchored(sk) && srcCol ? `col:${srcCol}:out` : 'node:out',
           targetHandle: anchored(tk) && tgtCol ? `col:${tgtCol}:in` : 'node:in',
           animated: isHi,
-          zIndex: isHi ? 1000 : undefined,
-          style: isHi ? { stroke: 'var(--primary)', strokeWidth: 2 } : undefined,
+          zIndex: isHi ? 1000 : touchesSel ? 500 : undefined,
+          style: isHi
+            ? { stroke: 'var(--primary)', strokeWidth: 2 }
+            : touchesSel
+              ? { stroke: 'var(--primary)', strokeWidth: 1.5 }
+              : dimmed
+                ? { opacity: 0.12 }
+                : undefined,
         }
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [edges, presentSig, collapsedSig, detailSig, highlight])
+  }, [edges, presentSig, collapsedSig, detailSig, highlight, activeSelected])
 
   // Full, consistent elk layout of every node whenever the structure changes
   // (seed / expand / drop / manual re-layout). Applying positions to ALL nodes
@@ -515,6 +549,8 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           nodeTypes={NODE_TYPES}
           onNodesChange={onNodesChange}
           onNodesDelete={(deleted) => removeRefs(new Set(deleted.map((n) => n.id)))}
+          onNodeClick={(_, node) => setSelectedKey(node.id)}
+          onPaneClick={() => setSelectedKey(null)}
           onMoveEnd={schedulePersist}
           fitView={!savedViewport.current}
           proOptions={{ hideAttribution: true }}
