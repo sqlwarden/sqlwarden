@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  refKey, hiddenNeighbors, rankByDegree, planObjectSeed, planNamespaceSeed, estimateNodeSize, DIAGRAM_MAX_TABLES,
+  refKey, hiddenNeighbors, rankByDegree, reachableRefs, planNamespaceSeed, estimateNodeSize, DIAGRAM_MAX_TABLES,
 } from './diagramModel'
 import type { ObjectRef, Relationship, ObjectDetail } from '#/lib/api/types'
 
@@ -26,9 +26,21 @@ describe('diagramModel', () => {
     expect(ranked.slice(0, 2).sort()).toEqual(['orders', 'products'])
   })
 
-  it('planObjectSeed returns the ref plus its 1-hop neighbors', () => {
-    const seed = planObjectSeed(t('orders'), edges).map((r) => r.name).sort()
-    expect(seed).toEqual(['orders', 'products', 'users'])
+  it('reachableRefs follows FK edges transitively across the whole component', () => {
+    // orders→users, orders→products, reviews→products: from orders you can reach
+    // reviews transitively through products.
+    const got = reachableRefs([t('orders')], edges).map((r) => r.name).sort()
+    expect(got).toEqual(['orders', 'products', 'reviews', 'users'])
+  })
+
+  it('reachableRefs is bounded by maxTables (BFS keeps the seed nearest first)', () => {
+    const got = reachableRefs([t('orders')], edges, 2)
+    expect(got).toHaveLength(2)
+    expect(got.map((r) => r.name)).toContain('orders')
+  })
+
+  it('reachableRefs returns just the seed when it has no edges', () => {
+    expect(reachableRefs([t('isolated')], edges).map((r) => r.name)).toEqual(['isolated'])
   })
 
   it('planNamespaceSeed returns all tables when under the cap', () => {

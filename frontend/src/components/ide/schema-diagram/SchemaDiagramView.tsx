@@ -20,7 +20,7 @@ import {
 import { useIde, type EditorTab } from '../useIdeStore'
 import { newObjectTab } from '../object-detail/objectTab'
 import {
-  estimateNodeSize, hiddenNeighbors, planNamespaceSeed, planObjectSeed, refKey,
+  estimateNodeSize, hiddenNeighbors, planNamespaceSeed, reachableRefs, refKey,
 } from './diagramModel'
 import { layoutGraph } from './layout'
 import { loadDiagram, saveDiagram } from './diagramStore'
@@ -118,7 +118,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   useEffect(() => {
     if (seededRef.current || !target || catalogQuery.isLoading || relQuery.isLoading || relQuery.isError) return
     seededRef.current = true
-    if (target.kind === 'object') setPresent(planObjectSeed(target.ref, edges))
+    if (target.kind === 'object') setPresent(reachableRefs([target.ref], edges))
     else setPresent(planNamespaceSeed([...refByKey.values()], edges).seed)
     requestLayout()
   }, [target, edges, refByKey, catalogQuery.isLoading, relQuery.isLoading, relQuery.isError, requestLayout])
@@ -145,11 +145,12 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     setPresent((prev) => (prev.some((r) => refKey(r) === refKey(ref)) ? prev : [...prev, ref]))
     requestLayout()
   }, [requestLayout])
+  // Expand transitively: pull in the entire remaining connected component
+  // reachable from what's already on the canvas (bounded by the table cap).
   const expandNeighbors = useCallback((ref: ObjectRef) => {
     setPresent((prev) => {
-      const keys = new Set(prev.map(refKey))
-      const add = hiddenNeighbors(ref, edges, keys)
-      return add.length ? [...prev, ...add] : prev
+      const next = reachableRefs([...prev, ref], edges)
+      return next.length > prev.length ? next : prev
     })
     requestLayout()
   }, [edges, requestLayout])
