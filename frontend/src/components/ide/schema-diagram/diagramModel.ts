@@ -35,10 +35,16 @@ export function rankByDegree(refs: ObjectRef[], edges: Relationship[]): ObjectRe
 }
 
 /** Every ref reachable from the seeds by following FK edges in either
- *  direction (transitive closure of the connected component), bounded to
- *  maxTables so a huge component can't blow past the render budget. BFS order
- *  keeps the seeds and their nearer relations first when the bound truncates. */
-export function reachableRefs(seeds: ObjectRef[], edges: Relationship[], maxTables: number = DIAGRAM_MAX_TABLES): ObjectRef[] {
+ *  direction, out to `maxDepth` hops (default unbounded = the whole connected
+ *  component), bounded to `maxTables` so a huge component can't blow past the
+ *  render budget. BFS order keeps the seeds and their nearer relations first
+ *  when a bound truncates. */
+export function reachableRefs(
+  seeds: ObjectRef[],
+  edges: Relationship[],
+  maxTables: number = DIAGRAM_MAX_TABLES,
+  maxDepth: number = Infinity,
+): ObjectRef[] {
   const adj = new Map<string, ObjectRef[]>()
   const link = (a: ObjectRef, b: ObjectRef) => {
     const ak = refKey(a)
@@ -50,21 +56,22 @@ export function reachableRefs(seeds: ObjectRef[], edges: Relationship[], maxTabl
     link(e.references, e.source)
   }
   const result = new Map<string, ObjectRef>()
-  const queue: ObjectRef[] = []
+  const queue: { ref: ObjectRef; depth: number }[] = []
   for (const s of seeds) {
     if (!result.has(refKey(s))) {
       result.set(refKey(s), s)
-      queue.push(s)
+      queue.push({ ref: s, depth: 0 })
     }
   }
   while (queue.length > 0 && result.size < maxTables) {
     const cur = queue.shift()!
-    for (const nb of adj.get(refKey(cur)) ?? []) {
+    if (cur.depth >= maxDepth) continue
+    for (const nb of adj.get(refKey(cur.ref)) ?? []) {
       if (result.size >= maxTables) break
       const k = refKey(nb)
       if (result.has(k)) continue
       result.set(k, nb)
-      queue.push(nb)
+      queue.push({ ref: nb, depth: cur.depth + 1 })
     }
   }
   return [...result.values()]

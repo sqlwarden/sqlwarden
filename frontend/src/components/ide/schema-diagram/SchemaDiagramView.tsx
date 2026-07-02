@@ -6,6 +6,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
+import { cn } from '#/lib/utils'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
 import type { ObjectDetail, ObjectRef, Workspace } from '#/lib/api/types'
@@ -20,7 +21,7 @@ import {
 import { useIde, type EditorTab } from '../useIdeStore'
 import { newObjectTab } from '../object-detail/objectTab'
 import {
-  estimateNodeSize, hiddenNeighbors, planNamespaceSeed, reachableRefs, refKey,
+  estimateNodeSize, planNamespaceSeed, reachableRefs, refKey,
 } from './diagramModel'
 import { layoutGraph } from './layout'
 import { loadDiagram, saveDiagram } from './diagramStore'
@@ -89,6 +90,9 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
 
   const [present, setPresent] = useState<ObjectRef[]>([])
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // Default seed depth for an object diagram: 1 hop (focused), like DataGrip/
+  // DBeaver. The toolbar depth control re-seeds to 1 / 2 / all hops.
+  const [depth, setDepth] = useState<number>(1)
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([])
   const savedPositions = useRef<Record<string, { x: number; y: number }>>({})
   const seededRef = useRef(false)
@@ -118,10 +122,19 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   useEffect(() => {
     if (seededRef.current || !target || catalogQuery.isLoading || relQuery.isLoading || relQuery.isError) return
     seededRef.current = true
-    if (target.kind === 'object') setPresent(reachableRefs([target.ref], edges))
+    if (target.kind === 'object') setPresent(reachableRefs([target.ref], edges, undefined, depth))
     else setPresent(planNamespaceSeed([...refByKey.values()], edges).seed)
     requestLayout()
-  }, [target, edges, refByKey, catalogQuery.isLoading, relQuery.isLoading, relQuery.isError, requestLayout])
+  }, [target, edges, refByKey, catalogQuery.isLoading, relQuery.isLoading, relQuery.isError, requestLayout, depth])
+
+  // Depth control (object diagrams): re-seed from the anchor table to N hops.
+  const changeDepth = useCallback((d: number) => {
+    setDepth(d)
+    if (target?.kind === 'object') {
+      setPresent(reachableRefs([target.ref], edges, undefined, d))
+      requestLayout()
+    }
+  }, [target, edges, requestLayout])
 
   // Fetch column detail for on-canvas nodes (reuses the object-detail cache).
   const detailResults = useQueries({
@@ -141,19 +154,33 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
 
   const presentKeys = useMemo(() => new Set(present.map(refKey)), [present])
 
-  const addRef = useCallback((ref: ObjectRef) => {
-    setPresent((prev) => (prev.some((r) => refKey(r) === refKey(ref)) ? prev : [...prev, ref]))
-    requestLayout()
-  }, [requestLayout])
-  // Expand transitively: pull in the entire remaining connected component
-  // reachable from what's already on the canvas (bounded by the table cap).
-  const expandNeighbors = useCallback((ref: ObjectRef) => {
+  // For each table, which of its columns are referenced by other tables and by
+  // whom (incoming FKs). Outgoing FKs come from each node's own detail.
+  const incomingByTable = useMemo(() => {
+    const m = new Map<string, Map<string, ObjectRef[]>>()
+    for (const e of edges) {
+      const tk = refKey(e.references)
+      const col = e.referenced_columns[0]
+      if (!col) continue
+      let byCol = m.get(tk)
+      if (!byCol) { byCol = new Map(); m.set(tk, byCol) }
+      const arr = byCol.get(col) ?? []
+      arr.push(e.source)
+      byCol.set(col, arr)
+    }
+    return m
+  }, [edges])
+
+  // Add one or more specific tables to the canvas (per-column expand + drop).
+  const addRefs = useCallback((refs: ObjectRef[]) => {
     setPresent((prev) => {
-      const next = reachableRefs([...prev, ref], edges)
-      return next.length > prev.length ? next : prev
+      const have = new Set(prev.map(refKey))
+      const add = refs.filter((r) => !have.has(refKey(r)))
+      return add.length ? [...prev, ...add] : prev
     })
     requestLayout()
-  }, [edges, requestLayout])
+  }, [requestLayout])
+  const addRef = useCallback((ref: ObjectRef) => addRefs([ref]), [addRefs])
   const toggleCollapse = useCallback((key: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -183,6 +210,20 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
         const entry = detailByKey.get(key)
         const rel = entry?.detail?.relational
         const columns = rel?.columns ?? []
+
+        const outgoingByCol: Record<string, { target: ObjectRef; hidden: boolean }> = {}
+        for (const f of rel?.foreign_keys ?? []) {
+          const col = f.columns?.[0]
+          if (!col) continue
+          outgoingByCol[col] = { target: f.references, hidden: !presentKeys.has(refKey(f.references)) }
+        }
+        const incomingByCol: Record<string, { hidden: boolean; sources: ObjectRef[] }> = {}
+        for (const [col, sources] of incomingByTable.get(key) ?? []) {
+          incomingByCol[col] = { hidden: sources.some((s) => !presentKeys.has(refKey(s))), sources }
+        }
+        const hasHidden =
+          Object.values(outgoingByCol).some((o) => o.hidden) || Object.values(incomingByCol).some((i) => i.hidden)
+
         return {
           ...(existing ?? {}),
           id: key,
@@ -193,12 +234,13 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
             namespace: ref.namespace,
             columns,
             pk: new Set(rel?.primary_key ?? []),
-            fk: new Set((rel?.foreign_keys ?? []).flatMap((f) => f.columns ?? [])),
-            hiddenCount: hiddenNeighbors(ref, edges, presentKeys).length,
+            outgoingByCol,
+            incomingByCol,
+            hasHidden,
             collapsed: collapsed.has(key),
             loading: entry?.loading ?? false,
             onToggleCollapse: () => toggleCollapse(key),
-            onExpand: () => expandNeighbors(ref),
+            onExpand: addRefs,
             onOpenDetail: () => {
               if (connectionId) openTab(newObjectTab({ id: connectionId, driver } as never, workspace, ref))
             },
@@ -209,11 +251,27 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presentSig, detailSig, collapsedSig])
 
+  // Anchor each edge to the specific FK column handles when both nodes are
+  // expanded and loaded; otherwise fall back to the node-level handles.
   const flowEdges: Edge[] = useMemo(() => {
+    const anchored = (key: string) => detailByKey.get(key)?.detail && !collapsed.has(key)
     return edges
       .filter((e) => presentKeys.has(refKey(e.source)) && presentKeys.has(refKey(e.references)))
-      .map((e, i) => ({ id: `${e.name}-${i}`, source: refKey(e.source), target: refKey(e.references) }))
-  }, [edges, presentKeys])
+      .map((e, i) => {
+        const sk = refKey(e.source)
+        const tk = refKey(e.references)
+        const srcCol = e.columns[0]
+        const tgtCol = e.referenced_columns[0]
+        return {
+          id: `${e.name}-${i}`,
+          source: sk,
+          target: tk,
+          sourceHandle: anchored(sk) && srcCol ? `col:${srcCol}:out` : 'node:out',
+          targetHandle: anchored(tk) && tgtCol ? `col:${tgtCol}:in` : 'node:in',
+        }
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edges, presentSig, collapsedSig, detailSig])
 
   // Full, consistent elk layout of every node whenever the structure changes
   // (seed / expand / drop / manual re-layout). Applying positions to ALL nodes
@@ -304,6 +362,26 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
         </span>
         <span className="text-[10px] text-muted-foreground">{driver}</span>
         <div className="flex-1" />
+        {target.kind === 'object' && (
+          <div className="mr-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+            <span>Depth</span>
+            <div className="flex overflow-hidden rounded border border-border">
+              {([['1', 1], ['2', 2], ['All', Infinity]] as const).map(([label, d]) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => changeDepth(d)}
+                  className={cn(
+                    'px-1.5 py-0.5 text-[10px]',
+                    depth === d ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <ToolbarButton label="Re-layout" onClick={requestLayout} icon="arrow-down-01" />
         <ToolbarButton label="Fit" onClick={() => fitView({ duration: 200 })} icon="maximize" />
         <ToolbarButton label="Refresh" onClick={refresh} icon="refresh" />
