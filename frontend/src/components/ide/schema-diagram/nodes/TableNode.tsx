@@ -1,6 +1,7 @@
 import { Handle, NodeResizeControl, Position, ResizeControlVariant, type NodeProps } from '@xyflow/react'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
+import { Button } from '#/components/ui/button'
 import type { DbColumn, ObjectRef } from '#/lib/api/types'
 import { refKey } from '../diagramModel'
 
@@ -20,7 +21,7 @@ export type TableNodeData = {
   loading: boolean
   hasHidden: boolean
   onToggleCollapse: () => void
-  onExpand: (refs: ObjectRef[]) => void
+  onExpand: (refs: ObjectRef[], opts: { fromKey: string; direction: 'in' | 'out' }) => void
   onOpenDetail: () => void
   onRemove: () => void
   onHoverRelation: (rel: HoverRelation | null) => void
@@ -59,27 +60,29 @@ export function TableNode({ id, data }: NodeProps & { data: TableNodeData }) {
         className="flex items-center gap-1 rounded-t border-b border-border bg-muted/60 px-2 py-1"
         onDoubleClick={data.onOpenDetail}
       >
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-xs"
           onClick={(e) => { e.stopPropagation(); data.onToggleCollapse() }}
           aria-label={data.collapsed ? 'Expand columns' : 'Collapse columns'}
-          className="cursor-pointer text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground"
         >
           <Icon name={data.collapsed ? 'arrow-right-01' : 'arrow-down-01'} size={12} />
-        </button>
+        </Button>
         <span className="min-w-0 flex-1 truncate font-medium text-foreground">{data.label}</span>
         {data.collapsed && data.hasHidden && (
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/60" title="Has hidden relations" />
         )}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-xs"
           onClick={(e) => { e.stopPropagation(); data.onRemove() }}
           title="Remove from diagram"
           aria-label="Remove from diagram"
-          className="shrink-0 cursor-pointer rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+          className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
         >
           <Icon name="cancel-01" size={12} />
-        </button>
+        </Button>
       </div>
 
       {!data.collapsed && (
@@ -105,7 +108,7 @@ export function TableNode({ id, data }: NodeProps & { data: TableNodeData }) {
                 {inc?.hidden && (
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); data.onExpand(inc.sources) }}
+                    onClick={(e) => { e.stopPropagation(); data.onExpand(inc.sources, { fromKey: id, direction: 'in' }) }}
                     className="absolute -left-2 top-1/2 z-10 flex h-3.5 w-3.5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-card text-primary hover:bg-primary/10"
                     title="Add tables that reference this column"
                   >
@@ -114,13 +117,13 @@ export function TableNode({ id, data }: NodeProps & { data: TableNodeData }) {
                 )}
                 <span className={cn('min-w-0 flex-1 truncate', data.pk.has(c.name) ? 'font-semibold text-foreground' : 'text-muted-foreground')}>{c.name}</span>
                 <span title={c.data_type} className="ml-1 max-w-[50%] shrink truncate font-mono text-[10px] text-muted-foreground">{c.data_type}</span>
-                {data.pk.has(c.name) && <span className="shrink-0 text-[9px] text-amber-500">PK</span>}
-                {out && <span className="shrink-0 text-[9px] text-blue-500">FK</span>}
+                {data.pk.has(c.name) && <span className="shrink-0 text-[9px] font-medium text-chart-4">PK</span>}
+                {out && <span className="shrink-0 text-[9px] font-medium text-chart-1">FK</span>}
                 {out && <Handle id={`col:${c.name}:out`} type="source" position={Position.Right} className={cn(DOT, '!right-0')} isConnectable={false} />}
                 {out?.hidden && (
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); data.onExpand([out.target]) }}
+                    onClick={(e) => { e.stopPropagation(); data.onExpand([out.target], { fromKey: id, direction: 'out' }) }}
                     className="absolute -right-2 top-1/2 z-10 flex h-3.5 w-3.5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-card text-primary hover:bg-primary/10"
                     title={`Add referenced table "${out.target.name}"`}
                   >
