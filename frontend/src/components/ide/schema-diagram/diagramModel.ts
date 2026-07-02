@@ -34,11 +34,40 @@ export function rankByDegree(refs: ObjectRef[], edges: Relationship[]): ObjectRe
   return [...refs].sort((a, b) => (degree.get(refKey(b)) ?? 0) - (degree.get(refKey(a)) ?? 0))
 }
 
-/** Seed for an object diagram: the ref plus its 1-hop FK neighbors. */
-export function planObjectSeed(ref: ObjectRef, edges: Relationship[]): ObjectRef[] {
-  const seed = new Map<string, ObjectRef>([[refKey(ref), ref]])
-  for (const n of hiddenNeighbors(ref, edges, new Set([refKey(ref)]))) seed.set(refKey(n), n)
-  return [...seed.values()]
+/** Every ref reachable from the seeds by following FK edges in either
+ *  direction (transitive closure of the connected component), bounded to
+ *  maxTables so a huge component can't blow past the render budget. BFS order
+ *  keeps the seeds and their nearer relations first when the bound truncates. */
+export function reachableRefs(seeds: ObjectRef[], edges: Relationship[], maxTables: number = DIAGRAM_MAX_TABLES): ObjectRef[] {
+  const adj = new Map<string, ObjectRef[]>()
+  const link = (a: ObjectRef, b: ObjectRef) => {
+    const ak = refKey(a)
+    if (!adj.has(ak)) adj.set(ak, [])
+    adj.get(ak)!.push(b)
+  }
+  for (const e of edges) {
+    link(e.source, e.references)
+    link(e.references, e.source)
+  }
+  const result = new Map<string, ObjectRef>()
+  const queue: ObjectRef[] = []
+  for (const s of seeds) {
+    if (!result.has(refKey(s))) {
+      result.set(refKey(s), s)
+      queue.push(s)
+    }
+  }
+  while (queue.length > 0 && result.size < maxTables) {
+    const cur = queue.shift()!
+    for (const nb of adj.get(refKey(cur)) ?? []) {
+      if (result.size >= maxTables) break
+      const k = refKey(nb)
+      if (result.has(k)) continue
+      result.set(k, nb)
+      queue.push(nb)
+    }
+  }
+  return [...result.values()]
 }
 
 /** Seed for a namespace diagram: all tables if under the cap, else the most
