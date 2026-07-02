@@ -69,6 +69,10 @@ query:
   max_result_rows: 10000
   max_result_bytes: 26214400
 
+exports:
+  sync_max_bytes: 104857600
+  background_max_bytes: 0
+
 jobs:
   worker_count: 16
   poll_interval: 1s
@@ -175,6 +179,15 @@ These limits apply to interactive IDE query responses. Future export workflows s
 The same limits apply to HTTP query cursors. Direct `/query` responses are capped once per response. Query-cursor start and fetch responses are capped per page; clients can continue fetching while the response has `exhausted=false`.
 
 For DQL/select-style queries, the IDE can request cursor-backed results through `/query`. When the selected target engine supports cursor-backed results, the first response includes the first page plus cursor metadata. Engines that do not support cursor-backed results fall back to the bounded direct query path. Cursor state is process-local and tied to the authenticated live database session; it is not durable query history.
+
+## Exports
+
+| Config key | Environment | CLI flag | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `exports.sync_max_bytes` | `EXPORTS_SYNC_MAX_BYTES` | `--exports-sync-max-bytes` | `104857600` | Maximum bytes streamed by synchronous HTTP exports. |
+| `exports.background_max_bytes` | `EXPORTS_BACKGROUND_MAX_BYTES` | `--exports-background-max-bytes` | `0` | Maximum bytes written by background export jobs. `0` disables the background cap. |
+
+Synchronous exports use the caller's existing live database session and stop if the HTTP request is cancelled. Background exports run as user-visible jobs, open their own short-lived target database connection, and write output to private workspace files.
 
 ## Background Jobs
 
