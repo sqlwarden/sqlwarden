@@ -242,6 +242,13 @@ func (app *application) defaultJobRegistry() *jobs.Registry {
 			return map[string]any{"processed": processed}, nil
 		}),
 	})
+	registry.Register(jobs.Definition{
+		Type:        jobs.TypeExportQueryCSV,
+		MaxAttempts: 1,
+		Handler: jobs.HandlerFunc(func(ctx context.Context, runtime jobs.Runtime) (any, error) {
+			return app.handleExportJob(ctx, runtime)
+		}),
+	})
 	return registry
 }
 

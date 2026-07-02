@@ -57,6 +57,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.Query.MaxResultRows != defaultQueryMaxResultRows || cfg.Query.MaxResultBytes != defaultQueryMaxResultBytes {
 		t.Fatalf("unexpected default query config: %+v", cfg.Query)
 	}
+	if cfg.Exports.SyncMaxBytes != defaultExportsSyncMaxBytes || cfg.Exports.BackgroundMaxBytes != defaultExportsBackgroundMaxBytes {
+		t.Fatalf("unexpected default exports config: %+v", cfg.Exports)
+	}
 	if cfg.Jobs.WorkerCount != defaultJobsWorkerCount || cfg.Jobs.ClaimLease != defaultJobsClaimLease {
 		t.Fatalf("unexpected default jobs config: %+v", cfg.Jobs)
 	}

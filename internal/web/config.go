@@ -12,45 +12,47 @@ import (
 )
 
 const (
-	defaultBaseURL                 = "http://localhost:6020"
-	defaultHTTPPort                = 6020
-	defaultDeploymentMode          = DeploymentModeServer
-	defaultAccessMode              = AccessModeMultiUser
-	defaultPersonalSpacesEnabled   = true
-	defaultLogLevel                = LogLevelInfo
-	defaultLogFormat               = LogFormatJSON
-	defaultCookieSecretKey         = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
-	defaultDBLogQueries            = false
-	defaultDBDriver                = "sqlite"
-	defaultDBDSN                   = "~/.sqlwarden/sqlwarden.db"
-	defaultDBAutomigrate           = true
-	defaultEncryptionKey           = "dev-insecure-key-32byteslong!!"
-	defaultJWTSecretKey            = "fb57i5hiud5mzmykaquqsln5gcmolbac"
-	defaultJWTAccessTokenTTL       = 24 * time.Hour
-	defaultSessionRevocation       = true
-	defaultQueryMaxResultRows      = 10000
-	defaultQueryMaxResultBytes     = 25 * 1024 * 1024
-	defaultJobsWorkerCount         = 16
-	defaultJobsPollInterval        = time.Second
-	defaultJobsClaimLease          = 5 * time.Minute
-	defaultJobsCompletedRetention  = 7 * 24 * time.Hour
-	defaultTLSEnabled              = false
-	defaultTLSCertFile             = ""
-	defaultTLSKeyFile              = ""
-	defaultFilesStorageMode        = FilesStorageModeObject
-	defaultFilesActiveBackend      = "local"
-	defaultFilesRootDir            = "~/.sqlwarden/files"
-	defaultFilesRevisionsEnabled   = true
-	defaultFilesRevisionKeepLatest = 50
-	defaultNotificationsEmail      = ""
-	defaultSMTPHost                = "example.smtp.host"
-	defaultSMTPPort                = 25
-	defaultSMTPUsername            = "example_username"
-	defaultSMTPPassword            = "pa55word"
-	defaultSMTPFrom                = "Example Name <no_reply@example.org>"
-	defaultDesktopAppDir           = ""
-	defaultDesktopActiveBackend    = "local"
-	defaultAllowUserBackends       = true
+	defaultBaseURL                   = "http://localhost:6020"
+	defaultHTTPPort                  = 6020
+	defaultDeploymentMode            = DeploymentModeServer
+	defaultAccessMode                = AccessModeMultiUser
+	defaultPersonalSpacesEnabled     = true
+	defaultLogLevel                  = LogLevelInfo
+	defaultLogFormat                 = LogFormatJSON
+	defaultCookieSecretKey           = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
+	defaultDBLogQueries              = false
+	defaultDBDriver                  = "sqlite"
+	defaultDBDSN                     = "~/.sqlwarden/sqlwarden.db"
+	defaultDBAutomigrate             = true
+	defaultEncryptionKey             = "dev-insecure-key-32byteslong!!"
+	defaultJWTSecretKey              = "fb57i5hiud5mzmykaquqsln5gcmolbac"
+	defaultJWTAccessTokenTTL         = 24 * time.Hour
+	defaultSessionRevocation         = true
+	defaultQueryMaxResultRows        = 10000
+	defaultQueryMaxResultBytes       = 25 * 1024 * 1024
+	defaultExportsSyncMaxBytes       = 100 * 1024 * 1024
+	defaultExportsBackgroundMaxBytes = 0
+	defaultJobsWorkerCount           = 16
+	defaultJobsPollInterval          = time.Second
+	defaultJobsClaimLease            = 5 * time.Minute
+	defaultJobsCompletedRetention    = 7 * 24 * time.Hour
+	defaultTLSEnabled                = false
+	defaultTLSCertFile               = ""
+	defaultTLSKeyFile                = ""
+	defaultFilesStorageMode          = FilesStorageModeObject
+	defaultFilesActiveBackend        = "local"
+	defaultFilesRootDir              = "~/.sqlwarden/files"
+	defaultFilesRevisionsEnabled     = true
+	defaultFilesRevisionKeepLatest   = 50
+	defaultNotificationsEmail        = ""
+	defaultSMTPHost                  = "example.smtp.host"
+	defaultSMTPPort                  = 25
+	defaultSMTPUsername              = "example_username"
+	defaultSMTPPassword              = "pa55word"
+	defaultSMTPFrom                  = "Example Name <no_reply@example.org>"
+	defaultDesktopAppDir             = ""
+	defaultDesktopActiveBackend      = "local"
+	defaultAllowUserBackends         = true
 )
 
 var defaultSQLiteDriverSources = []string{}
@@ -128,6 +130,10 @@ type Config struct {
 	Query struct {
 		MaxResultRows  int
 		MaxResultBytes int
+	}
+	Exports struct {
+		SyncMaxBytes       int64
+		BackgroundMaxBytes int64
 	}
 	Jobs struct {
 		WorkerCount        int
@@ -207,6 +213,8 @@ func DefaultConfig() Config {
 	cfg.Sessions.RevocationEnabled = defaultSessionRevocation
 	cfg.Query.MaxResultRows = defaultQueryMaxResultRows
 	cfg.Query.MaxResultBytes = defaultQueryMaxResultBytes
+	cfg.Exports.SyncMaxBytes = defaultExportsSyncMaxBytes
+	cfg.Exports.BackgroundMaxBytes = defaultExportsBackgroundMaxBytes
 	cfg.Jobs.WorkerCount = defaultJobsWorkerCount
 	cfg.Jobs.PollInterval = defaultJobsPollInterval
 	cfg.Jobs.ClaimLease = defaultJobsClaimLease
@@ -279,6 +287,8 @@ var configOptions = []configOption{
 	{key: "sessions.revocation_enabled", env: "SESSIONS_REVOCATION_ENABLED", flagName: "sessions-revocation-enabled", defaultValue: defaultSessionRevocation, usage: "Enable database-backed session revocation checks"},
 	{key: "query.max_result_rows", env: "QUERY_MAX_RESULT_ROWS", flagName: "query-max-result-rows", defaultValue: defaultQueryMaxResultRows, usage: "Maximum rows returned by an interactive query result"},
 	{key: "query.max_result_bytes", env: "QUERY_MAX_RESULT_BYTES", flagName: "query-max-result-bytes", defaultValue: defaultQueryMaxResultBytes, usage: "Approximate maximum bytes returned by an interactive query result"},
+	{key: "exports.sync_max_bytes", env: "EXPORTS_SYNC_MAX_BYTES", flagName: "exports-sync-max-bytes", defaultValue: defaultExportsSyncMaxBytes, usage: "Maximum bytes streamed by synchronous exports"},
+	{key: "exports.background_max_bytes", env: "EXPORTS_BACKGROUND_MAX_BYTES", flagName: "exports-background-max-bytes", defaultValue: defaultExportsBackgroundMaxBytes, usage: "Maximum bytes written by background exports (0 disables the cap)"},
 	{key: "jobs.worker_count", env: "JOBS_WORKER_COUNT", flagName: "jobs-worker-count", defaultValue: defaultJobsWorkerCount, usage: "Number of background job workers"},
 	{key: "jobs.poll_interval", env: "JOBS_POLL_INTERVAL", flagName: "jobs-poll-interval", defaultValue: defaultJobsPollInterval, usage: "Background job polling interval"},
 	{key: "jobs.claim_lease", env: "JOBS_CLAIM_LEASE", flagName: "jobs-claim-lease", defaultValue: defaultJobsClaimLease, usage: "Background job claim lease duration"},
@@ -384,6 +394,8 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.Sessions.RevocationEnabled = v.GetBool("sessions.revocation_enabled")
 	cfg.Query.MaxResultRows = v.GetInt("query.max_result_rows")
 	cfg.Query.MaxResultBytes = v.GetInt("query.max_result_bytes")
+	cfg.Exports.SyncMaxBytes = v.GetInt64("exports.sync_max_bytes")
+	cfg.Exports.BackgroundMaxBytes = v.GetInt64("exports.background_max_bytes")
 	cfg.Jobs.WorkerCount = v.GetInt("jobs.worker_count")
 	cfg.Jobs.PollInterval = v.GetDuration("jobs.poll_interval")
 	cfg.Jobs.ClaimLease = v.GetDuration("jobs.claim_lease")
@@ -436,6 +448,12 @@ func validateConfig(cfg Config) error {
 	}
 	if cfg.Query.MaxResultBytes <= 0 {
 		return fmt.Errorf("query.max_result_bytes must be greater than 0")
+	}
+	if cfg.Exports.SyncMaxBytes <= 0 {
+		return fmt.Errorf("exports.sync_max_bytes must be greater than 0")
+	}
+	if cfg.Exports.BackgroundMaxBytes < 0 {
+		return fmt.Errorf("exports.background_max_bytes must be greater than or equal to 0")
 	}
 	if cfg.Jobs.WorkerCount <= 0 {
 		return fmt.Errorf("jobs.worker_count must be greater than 0")
