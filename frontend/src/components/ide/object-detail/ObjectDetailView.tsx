@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { api } from '#/lib/api/client'
-import type { ObjectRef, Workspace } from '#/lib/api/types'
+import type { Connection, ObjectRef, Workspace } from '#/lib/api/types'
 import {
   orgConnectionObjectQueryOptions,
   orgConnectionSchemaSpecQueryOptions,
@@ -12,6 +12,8 @@ import {
 } from '#/lib/api/query'
 import { dialectFor } from '../sqlDialect'
 import { useIde, type EditorTab } from '../useIdeStore'
+import { newDiagramTab } from '../schema-diagram/diagramTab'
+import { diagramSupportedForKind } from '../schema-diagram/capability'
 import { getObjectRenderer, type HeaderBadge, type ObjectViewModel } from './registry'
 import { resolveObjectViewState, type ObjectViewState } from './viewState'
 
@@ -22,6 +24,7 @@ export function ObjectDetailView({ orgSlug, workspace, tab }: { orgSlug: string;
   const sessionId = useIde((s) => (connectionId ? s.sessions[connectionId] : undefined))
   const setSession = useIde((s) => s.setSession)
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
+  const openTab = useIde((s) => s.openTab)
   const queryClient = useQueryClient()
   const [activeSection, setActiveSection] = useState<string>('columns')
 
@@ -82,6 +85,11 @@ export function ObjectDetailView({ orgSlug, workspace, tab }: { orgSlug: string;
         badges={vm ? renderer.headerBadges(vm) : []}
         onRefresh={refresh}
         canRefresh={state.kind === 'ready'}
+        onViewInDiagram={
+          ref && connectionId && diagramSupportedForKind(specQuery.data?.spec, ref.kind)
+            ? () => openTab(newDiagramTab({ id: connectionId, driver } as Connection, workspace, { kind: 'object', ref }))
+            : undefined
+        }
       />
       <div className="min-h-0 flex-1">
         {state.kind === 'ready' && vm && current ? (
@@ -121,12 +129,14 @@ function Header({
   badges,
   onRefresh,
   canRefresh,
+  onViewInDiagram,
 }: {
   objectRef: ObjectRef
   driver: string
   badges: HeaderBadge[]
   onRefresh: () => void
   canRefresh: boolean
+  onViewInDiagram?: () => void
 }) {
   return (
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
@@ -142,6 +152,17 @@ function Header({
         </Tag>
       ))}
       <div className="flex-1" />
+      {onViewInDiagram && (
+        <button
+          type="button"
+          onClick={onViewInDiagram}
+          title="View in diagram"
+          aria-label="View in diagram"
+          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <Icon name="flow-connection" size={14} />
+        </button>
+      )}
       <button
         type="button"
         onClick={onRefresh}
