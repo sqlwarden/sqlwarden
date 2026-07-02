@@ -97,35 +97,44 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   const savedPositions = useRef<Record<string, { x: number; y: number }>>({})
   const seededRef = useRef(false)
   const hydratedRef = useRef(false)
+  // Gates the seed so it runs only after we've checked persisted state — this
+  // stops an async hydrate from clobbering a fresh seed (and vice-versa).
+  const [hydrateChecked, setHydrateChecked] = useState(false)
   // Bumped whenever the node set changes structurally (seed / expand / drop /
   // manual re-layout) to trigger a full, consistent elk layout of every node.
   const [layoutReq, setLayoutReq] = useState(0)
   const requestLayout = useCallback(() => setLayoutReq((v) => v + 1), [])
 
-  // Hydrate persisted layout once.
+  // Load persisted positions + collapse once the schema data is ready. The
+  // working SET is always seeded fresh (below), not restored — so persistence
+  // only preserves arrangement, never a stale/partial set of tables.
   useEffect(() => {
-    if (hydratedRef.current || refByKey.size === 0) return
+    if (hydratedRef.current || !catalogQuery.isSuccess || !relQuery.isSuccess) return
     hydratedRef.current = true
     void loadDiagram(tab.id).then((saved) => {
-      if (saved.present.length === 0) return
-      const refs = saved.present.map((k) => refByKey.get(k)).filter((r): r is ObjectRef => Boolean(r))
-      if (refs.length === 0) return
       savedPositions.current = saved.positions
-      seededRef.current = true
-      // Restore saved positions as-is; no relayout (respects manual arrangement).
-      setPresent(refs)
-      setCollapsed(new Set(saved.collapsed))
+      if (saved.collapsed.length > 0) setCollapsed(new Set(saved.collapsed))
+      setHydrateChecked(true)
     })
-  }, [tab.id, refByKey])
+  }, [tab.id, catalogQuery.isSuccess, relQuery.isSuccess])
 
-  // Seed the working set from the target once catalog + relationships are ready.
+  // Seed the working set from the target — only after the queries have
+  // SUCCEEDED (so edges are populated) and persisted positions have loaded.
+  // Guarding on isSuccess (not !isLoading) matters: a disabled/idle query
+  // reports isLoading:false with no data, which would otherwise seed with empty
+  // edges and show only the anchor table.
   useEffect(() => {
-    if (seededRef.current || !target || catalogQuery.isLoading || relQuery.isLoading || relQuery.isError) return
+    if (seededRef.current || !hydrateChecked || !target) return
+    if (!catalogQuery.isSuccess || !relQuery.isSuccess) return
     seededRef.current = true
-    if (target.kind === 'object') setPresent(reachableRefs([target.ref], edges, undefined, depth))
-    else setPresent(planNamespaceSeed([...refByKey.values()], edges).seed)
-    requestLayout()
-  }, [target, edges, refByKey, catalogQuery.isLoading, relQuery.isLoading, relQuery.isError, requestLayout, depth])
+    const seed = target.kind === 'object'
+      ? reachableRefs([target.ref], edges, undefined, depth)
+      : planNamespaceSeed([...refByKey.values()], edges).seed
+    setPresent(seed)
+    // Reuse saved positions when they cover the whole seed (stable reopen);
+    // otherwise auto-layout.
+    if (!seed.every((r) => savedPositions.current[refKey(r)])) requestLayout()
+  }, [target, edges, refByKey, catalogQuery.isSuccess, relQuery.isSuccess, hydrateChecked, requestLayout, depth])
 
   // Depth control (object diagrams): re-seed from the anchor table to N hops.
   const changeDepth = useCallback((d: number) => {
