@@ -46,8 +46,6 @@ export function IdeTopBarControls({
         setPreferences={setPreferences}
         buttonLabel=""
         buttonClassName="size-7 justify-center px-0"
-        contentSide="bottom"
-        contentAlign="end"
       />
 
       <DropdownMenu>

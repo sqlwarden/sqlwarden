@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, type UIEvent } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { Icon } from '#/lib/icons'
@@ -14,6 +15,11 @@ import { ApiError } from '#/lib/api/errors'
 import { copyWithToast, rowToTsv, rowToJson, valuesToLines } from './contextMenus/clipboard'
 import { buildCellMenu, buildRowMenu, buildColumnHeaderMenu } from './contextMenus/resultMenu'
 import { nextCell } from './resultGridNav'
+import { RUN_SHORTCUT } from './IdeToolbar'
+import { Tip } from './schema-diagram/Tip'
+import { DriverBadge } from './DriverBadge'
+import { columnTypeIcon, columnTypeIconColor } from './columnTypeIcon'
+import { orgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
 
 type ResultsAreaProps = {
   orgSlug: string
@@ -55,18 +61,33 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
             Explain
           </TabsTrigger>
         </TabsList>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Toggle results maximize"
-          onClick={toggleMaximize}
-        >
-          <Icon
-            name={maximizedPane === 'results' ? 'minimize' : 'maximize'}
-            size={14}
-          />
-        </Button>
+        <div className="flex items-center gap-0.5 pr-1">
+          <Tip label={maximizedPane === 'results' ? 'Restore results panel' : 'Maximize results panel'}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Toggle results maximize"
+              onClick={toggleMaximize}
+            >
+              <Icon
+                name={maximizedPane === 'results' ? 'minimize' : 'maximize'}
+                size={14}
+              />
+            </Button>
+          </Tip>
+          <Tip label="Hide results panel">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Hide results panel"
+              onClick={() => setMaximizedPane('editor')}
+            >
+              <Icon name="cancel-01" size={14} />
+            </Button>
+          </Tip>
+        </div>
       </div>
 
       <TabsContent value="results" className="min-h-0 flex-1 overflow-hidden m-0 p-0">
@@ -112,9 +133,14 @@ function ResultsContent({
 function CancelledState() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
-      <div className="flex min-h-0 flex-1 items-start gap-2.5 overflow-auto p-4">
-        <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
-        <span className="text-xs text-muted-foreground">Query cancelled.</span>
+      <div className="min-h-0 flex-1 overflow-auto p-3">
+        <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 p-3">
+          <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs font-medium text-foreground">Query cancelled</span>
+            <span className="text-xs text-muted-foreground">The request was stopped before it finished.</span>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -124,9 +150,19 @@ function EmptyState() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
       <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center">
-        <div className="flex flex-col gap-1.5">
-          <div className="text-sm font-medium text-foreground">Run a query to see results</div>
-          <div className="text-xs text-muted-foreground">Select a connection and press Run or ⌘↵</div>
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-muted/50">
+            <Icon name="table" size={17} className="text-muted-foreground" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <div className="text-sm font-medium text-foreground">Run a query to see results</div>
+            <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
+              Select a connection and press Run or
+              <kbd className="rounded border border-border bg-muted px-1 font-sans text-[10px] leading-4 text-foreground">
+                {RUN_SHORTCUT}
+              </kbd>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -137,8 +173,8 @@ function RunningState() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
       <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-xs text-muted-foreground">
-        <Icon name="loading-03" size={14} className="animate-spin" />
-        Running…
+        <Icon name="loading-03" size={14} className="animate-spin text-primary" />
+        Running query…
       </div>
     </div>
   )
@@ -147,9 +183,14 @@ function RunningState() {
 function ErrorState({ message }: { message: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
-      <div className="flex min-h-0 flex-1 items-start gap-2.5 overflow-auto p-4">
-        <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-destructive" />
-        <pre className="whitespace-pre-wrap break-all font-mono text-xs text-destructive">{message}</pre>
+      <div className="min-h-0 flex-1 overflow-auto p-3">
+        <div className="flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+          <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-destructive" />
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-xs font-medium text-destructive">Query failed</span>
+            <pre className="whitespace-pre-wrap break-all font-mono text-xs text-destructive/90">{message}</pre>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -195,7 +236,28 @@ function isRowInRange(ri: number, sel: CellSelection | null): boolean {
   return ri >= minR && ri <= maxR
 }
 
-function OkState({
+function OkState(props: {
+  orgSlug: string
+  workspace: Workspace
+  activeTabId?: string
+  result: Extract<QueryResult, { status: 'ok' }>
+}) {
+  // The store holds one result set per tab, so this renders a single-element
+  // stack; running several statements at once only has to append to this list.
+  const resultSets = [props.result]
+
+  return (
+    <div className="flex h-full min-h-0 flex-col divide-y divide-border">
+      {resultSets.map((set, i) => (
+        <div key={i} className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <ResultSetView {...props} result={set} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ResultSetView({
   orgSlug,
   workspace,
   activeTabId,
@@ -231,6 +293,13 @@ function OkState({
   const setQueryResult = useIde((s) => s.setQueryResult)
   const activeTab = activeTabId ? tabs.find((t) => t.id === activeTabId) : undefined
   const queryCursorId = result.data.query_cursor_id
+  // Same query key the toolbar uses, so this is a cache hit, not a new request.
+  const connectionsQuery = useQuery(
+    orgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
+  )
+  const executedConnection = connectionsQuery.data?.items.find(
+    (c) => c.id === (result.connectionId ?? activeTab?.connectionId),
+  )
   const canFetchMore = Boolean(queryCursorId && result.data.exhausted === false && !result.isFetchingNextPage && activeTab?.connectionId)
 
   // Track the pointer while drag-selecting, and stop drag + auto-scroll on mouseup.
@@ -501,9 +570,13 @@ function OkState({
   if (!hasColumns) {
     return (
       <div className="flex h-full min-h-0 flex-col bg-card">
-        <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-xs text-muted-foreground">
-          <Icon name="checkmark-circle-02" size={14} className="text-green-500" />
-          <span>Query executed · {durationMs}ms</span>
+        <ResultSqlCaption sql={result.sql} />
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <Icon name="checkmark-circle-02" size={14} className="text-green-500" />
+            <span className="font-medium text-foreground">Query executed</span>
+            <span className="tabular-nums">· {durationMs}ms</span>
+          </div>
         </div>
       </div>
     )
@@ -572,6 +645,7 @@ function OkState({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
+      <ResultSqlCaption sql={result.sql} />
       {/*
        * Always render the table inside ResizablePanelGroup so the table's
        * scroll container is a stable DOM element. Switching between a plain
@@ -608,41 +682,62 @@ function OkState({
         )}
       </ResizablePanelGroup>
 
-      <div className="flex shrink-0 items-center border-t border-border bg-muted/40 px-3 py-1 text-[10px] text-muted-foreground">
-        <span className="tabular-nums">
+      <div className="flex h-6 shrink-0 items-center border-t border-border bg-sidebar px-3 text-[11px] text-muted-foreground">
+        <span className="shrink-0 tabular-nums">
           {rows.length === 1 ? '1 row' : `${rows.length} rows`}{queryCursorId ? ' fetched' : ''}
         </span>
+        <span className="mx-1.5 shrink-0 opacity-40">·</span>
+        <span className="shrink-0 tabular-nums">{durationMs}ms</span>
         {result.isFetchingNextPage && (
           <>
-            <span className="mx-1.5 opacity-40">·</span>
-            <span>Loading more…</span>
+            <span className="mx-1.5 shrink-0 opacity-40">·</span>
+            <span className="shrink-0">Loading more…</span>
           </>
         )}
         {result.cursorMessage && (
           <>
-            <span className="mx-1.5 opacity-40">·</span>
-            <span>{result.cursorMessage}</span>
+            <span className="mx-1.5 shrink-0 opacity-40">·</span>
+            <span className="min-w-0 truncate">{result.cursorMessage}</span>
           </>
         )}
-        <span className="mx-1.5 opacity-40">·</span>
-        <span className="tabular-nums">{durationMs}ms</span>
+        <div className="min-w-3 flex-1" />
+        {executedConnection && (
+          <span className="flex min-w-0 max-w-56 items-center gap-1.5" title={executedConnection.name}>
+            <DriverBadge driver={executedConnection.driver} size="sm" className="size-3.5 shrink-0" />
+            <span className="truncate">{executedConnection.name}</span>
+          </span>
+        )}
       </div>
     </div>
   )
 }
 
-// ─── Table sub-components ────────────────────────────────────────────────────
+// ─── SQL caption ──────────────────────────────────────────────────────────────
 
-const typeColor: Record<string, string> = {
-  integer: 'text-blue-500',
-  decimal: 'text-blue-400',
-  boolean: 'text-amber-500',
-  datetime: 'text-purple-500',
-  json: 'text-green-500',
-  uuid: 'text-orange-400',
-  bytes: 'text-red-400',
-  text: 'text-muted-foreground',
+/** Slim strip above each result set naming the query it came from. */
+function ResultSqlCaption({ sql }: { sql: string }) {
+  if (!sql) return null
+  return (
+    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-muted/30 pl-3 pr-1.5">
+      <Icon name="terminal" size={11} className="shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground" title={sql}>
+        {sql.replace(/\s+/g, ' ').trim()}
+      </span>
+      <Tip label="Copy query">
+        <button
+          type="button"
+          aria-label="Copy query"
+          onClick={() => copyWithToast(sql)}
+          className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Icon name="copy-01" size={11} />
+        </button>
+      </Tip>
+    </div>
+  )
 }
+
+// ─── Table sub-components ────────────────────────────────────────────────────
 
 function RowHeaderCell({ label, selected, onMouseDown, onContextMenu }: {
   label: number
@@ -712,17 +807,21 @@ function ColumnHeader({ col, width, onResizeStart, onContextMenu }: {
   onResizeStart: (e: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent) => void
 }) {
+  const icon = columnTypeIcon(col.type)
   return (
     <th
       style={{ width }}
       onContextMenu={onContextMenu}
-      className="relative border-b border-r border-border px-3 py-1.5 text-left font-medium select-none overflow-hidden"
+      className="relative border-b border-r border-border px-2.5 py-1.5 text-left font-medium select-none overflow-hidden"
     >
-      <div className="flex flex-col gap-0.5">
-        <span className="truncate text-foreground">{col.name}</span>
-        <span className={cn('text-[9px] font-normal uppercase tracking-wider', typeColor[col.type] ?? 'text-muted-foreground')}>
-          {col.type}
-        </span>
+      <div className="flex items-center gap-1.5">
+        <Icon name={icon} size={13} className={cn('shrink-0', columnTypeIconColor[icon] ?? 'text-muted-foreground')} />
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate leading-tight text-foreground">{col.name}</span>
+          <span className="truncate text-[9px] font-normal uppercase leading-tight tracking-wider text-muted-foreground/70">
+            {col.type}
+          </span>
+        </div>
       </div>
       <div
         className="absolute inset-y-0 right-0 w-[2px] cursor-col-resize hover:bg-primary/50"
@@ -794,8 +893,13 @@ function CellDetailPanel({ value, col, tableCollapsed, onMaximize, onClose }: {
     <>
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <Icon
+            name={columnTypeIcon(col.type)}
+            size={12}
+            className={cn('shrink-0', columnTypeIconColor[columnTypeIcon(col.type)] ?? 'text-muted-foreground')}
+          />
           <span className="truncate text-xs font-medium text-foreground">{col.name}</span>
-          <span className={cn('shrink-0 text-[9px] font-normal uppercase tracking-wider', typeColor[col.type] ?? 'text-muted-foreground')}>
+          <span className="shrink-0 text-[9px] font-normal uppercase tracking-wider text-muted-foreground/70">
             {col.type}
           </span>
         </div>

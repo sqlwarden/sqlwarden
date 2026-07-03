@@ -11,6 +11,8 @@ export const mysqlDriver: DriverDef = {
       type: 'text',
       placeholder: 'localhost',
       required: true,
+      section: 'Server',
+      span: 'wide',
     },
     {
       key: 'port',
@@ -18,6 +20,8 @@ export const mysqlDriver: DriverDef = {
       type: 'number',
       default: '3306',
       required: true,
+      section: 'Server',
+      span: 'compact',
     },
     {
       key: 'database',
@@ -25,6 +29,7 @@ export const mysqlDriver: DriverDef = {
       type: 'text',
       placeholder: 'mydb',
       required: true,
+      section: 'Server',
     },
     {
       key: 'username',
@@ -32,11 +37,15 @@ export const mysqlDriver: DriverDef = {
       type: 'text',
       placeholder: 'root',
       required: true,
+      section: 'Credentials',
+      span: 'half',
     },
     {
       key: 'password',
       label: 'Password',
       type: 'password',
+      section: 'Credentials',
+      span: 'half',
     },
   ],
   buildDSN: (values) => {

@@ -17,10 +17,10 @@ type SidebarPaneProps = {
 export function SidebarPane({ title, icon, maximized, onMaximizedChange, actions, scroll = true, children }: SidebarPaneProps) {
   return (
     <section className="flex h-full min-h-0 flex-col">
-      <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-2">
+      <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
         <div className="flex min-w-0 items-center gap-2">
-          <Icon name={icon} size={14} className="shrink-0 text-muted-foreground" />
-          <span className="truncate text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          <Icon name={icon} size={13} className="shrink-0 text-muted-foreground" />
+          <span className="truncate text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             {title}
           </span>
         </div>

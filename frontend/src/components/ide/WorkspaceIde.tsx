@@ -35,6 +35,7 @@ import { EditorLayout } from './EditorLayout'
 import { ResultsArea } from './ResultsArea'
 import { createYDocRegistry, YDocRegistryContext, useYDocRegistry } from './useYDocRegistry'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
+import { Tip } from './schema-diagram/Tip'
 
 // ─── Root ──────────────────────────────────────────────────────────────────────
 
@@ -178,7 +179,10 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
       <YDocRegistryContext.Provider value={registry}>
         <EditorViewRegistryContext.Provider value={viewRegistry}>
           {workspaces.isLoading ? (
-            <IdeFrame>Loading workspaces…</IdeFrame>
+            <IdeFrame>
+              <Icon name="loading-03" size={14} className="animate-spin" />
+              Loading workspaces…
+            </IdeFrame>
           ) : workspaces.isError ? (
             <IdeFrame>Unable to load workspaces.</IdeFrame>
           ) : items.length === 0 ? (
@@ -218,9 +222,9 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
     <ContextMenuProvider>
     <div className="flex h-dvh min-h-0 w-dvw max-w-dvw flex-col overflow-hidden bg-background">
       {/* Top bar: brand + explorer toggle + workspace tabs + user controls */}
-      <div className="flex h-10 shrink-0 items-stretch border-b border-border">
+      <div className="flex h-10 shrink-0 items-stretch border-b border-border bg-sidebar">
         <IdeBrand />
-        <div className="flex min-w-0 flex-1 items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {workspaces.map((ws) => (
             <WorkspaceTab
               key={ws.id}
@@ -252,10 +256,12 @@ function IdeBrand() {
   return (
     <Link
       to="/"
-      className="flex shrink-0 items-center gap-1.5 border-r border-border px-3 text-xs font-semibold tracking-tight text-foreground"
+      className="flex shrink-0 items-center gap-2 border-r border-border px-3 text-xs font-semibold tracking-tight text-foreground transition-colors hover:bg-sidebar-accent/50"
       aria-label="SQLWarden home"
     >
-      <Icon name="database-lightning" size={15} />
+      <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary to-chart-2 text-primary-foreground shadow-sm">
+        <Icon name="database-lightning" size={14} />
+      </span>
       <span className="hidden sm:inline">SQLWarden</span>
     </Link>
   )
@@ -298,10 +304,10 @@ function WorkspaceTab({
         type="button"
         onClick={onActivate}
         className={cn(
-          'flex h-full shrink-0 items-center border-b-2 px-4 text-xs font-medium transition-colors',
+          'relative flex h-full shrink-0 items-center px-4 text-xs font-medium transition-colors',
           active
-            ? 'border-primary text-foreground'
-            : 'border-transparent text-muted-foreground hover:text-foreground',
+            ? 'bg-background text-foreground after:absolute after:inset-x-0 after:top-0 after:h-[2px] after:bg-primary'
+            : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
         )}
       >
         {workspace.name}
@@ -647,18 +653,36 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
 // ─── Editor status bar ─────────────────────────────────────────────────────────
 
 function EditorStatusBar({ cursorInfo, hasActiveTab }: { cursorInfo: CursorInfo | null; hasActiveTab: boolean }) {
+  const maximizedPane = useIde((s) => s.maximizedPane)
+  const setMaximizedPane = useIde((s) => s.setMaximizedPane)
+  const resultsVisible = maximizedPane !== 'editor'
+
   return (
-    <div className="flex h-5 shrink-0 items-center border-t border-border bg-muted/30 px-3 text-[10px] text-muted-foreground">
+    <div className="flex h-6 shrink-0 items-center gap-3 border-t border-border bg-sidebar pl-3 pr-1 text-[11px] text-muted-foreground">
       {hasActiveTab && cursorInfo && (
         <>
           <span className="tabular-nums">Ln {cursorInfo.line}, Col {cursorInfo.col}</span>
           {cursorInfo.sel > 0 && (
-            <span className="ml-2 tabular-nums">({cursorInfo.sel} selected)</span>
+            <span className="tabular-nums">{cursorInfo.sel} selected</span>
           )}
         </>
       )}
       <div className="flex-1" />
-      {hasActiveTab && <span>SQL</span>}
+      {hasActiveTab && <span className="font-medium">SQL</span>}
+      <Tip label={resultsVisible ? 'Hide results panel' : 'Show results panel'}>
+        <button
+          type="button"
+          aria-label={resultsVisible ? 'Hide results panel' : 'Show results panel'}
+          aria-pressed={resultsVisible}
+          onClick={() => setMaximizedPane(resultsVisible ? 'editor' : null)}
+          className={cn(
+            'flex h-5 items-center rounded-sm px-1.5 transition-colors hover:bg-sidebar-accent hover:text-foreground',
+            resultsVisible ? 'text-foreground' : 'text-muted-foreground',
+          )}
+        >
+          <Icon name="layout-bottom" size={12} />
+        </button>
+      </Tip>
     </div>
   )
 }
@@ -697,9 +721,14 @@ type EmptyEditorStateProps = {
 function EmptyEditorState({ onNewConsole, onNewFile }: EmptyEditorStateProps) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-8 p-8">
-      <div className="text-center">
-        <p className="text-sm font-semibold text-foreground">No editors open</p>
-        <p className="mt-1 text-xs text-muted-foreground">Start by opening a console or a file.</p>
+      <div className="flex flex-col items-center gap-3 text-center">
+        <div className="flex size-11 items-center justify-center rounded-xl border border-border bg-muted/50">
+          <Icon name="database-lightning" size={20} className="text-muted-foreground" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-foreground">No editors open</p>
+          <p className="mt-1 text-xs text-muted-foreground">Start by opening a console or a file.</p>
+        </div>
       </div>
 
       <div className="flex gap-3">
@@ -743,17 +772,16 @@ function EmptyStateCard({
       type="button"
       onClick={onClick}
       className={cn(
-        'group flex w-44 flex-col items-center gap-3 rounded-lg p-5 text-center',
-        'ring-1 ring-foreground/10 transition-all',
-        'hover:bg-accent hover:ring-foreground/20',
+        'group flex w-48 flex-col items-center gap-3 rounded-xl border border-border bg-background/60 p-5 text-center',
+        'transition-all hover:border-primary/40 hover:bg-accent/50 hover:shadow-sm',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
       )}
     >
       <div className={cn(
-        'flex h-10 w-10 items-center justify-center rounded-md',
-        'bg-muted transition-colors group-hover:bg-background',
+        'flex size-10 items-center justify-center rounded-lg',
+        'bg-muted transition-colors group-hover:bg-primary/10',
       )}>
-        <Icon name={icon} size={18} className="text-muted-foreground group-hover:text-foreground transition-colors" />
+        <Icon name={icon} size={18} className="text-muted-foreground transition-colors group-hover:text-primary" />
       </div>
       <div className="flex flex-col gap-1">
         <p className="text-xs font-medium text-foreground">{title}</p>
@@ -767,7 +795,7 @@ function EmptyStateCard({
 
 function IdeFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-dvh w-dvw items-center justify-center overflow-hidden bg-background text-sm text-muted-foreground">
+    <div className="flex h-dvh w-dvw items-center justify-center gap-2 overflow-hidden bg-background text-sm text-muted-foreground">
       {children}
     </div>
   )
