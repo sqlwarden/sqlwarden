@@ -88,12 +88,25 @@ export function planNamespaceSeed(
 
 /** Estimated node box size for elk layout — grows with column count. While a
  *  node's columns are still loading (detail undefined) we assume a few rows so
- *  layout leaves room and nodes don't overlap once their columns arrive. */
-export function estimateNodeSize(detail: ObjectDetail | undefined, collapsed: boolean): { width: number; height: number } {
+ *  layout leaves room and nodes don't overlap once their columns arrive. In
+ *  keys-only mode we count just PK/FK columns (plus a row for the "N more"
+ *  indicator) so layout matches the compacted node. */
+export function estimateNodeSize(
+  detail: ObjectDetail | undefined,
+  collapsed: boolean,
+  keysOnly = false,
+): { width: number; height: number } {
   const HEADER = 34
   const ROW = 22
   const LOADING_ROWS = 8
-  const cols = detail?.relational?.columns?.length ?? LOADING_ROWS
+  const rel = detail?.relational
+  const allCols = rel?.columns?.length ?? LOADING_ROWS
+  let cols = allCols
+  if (keysOnly && rel) {
+    const keys = new Set<string>(rel.primary_key ?? [])
+    for (const f of rel.foreign_keys ?? []) if (f.columns?.[0]) keys.add(f.columns[0])
+    cols = keys.size + (keys.size < allCols ? 1 : 0)
+  }
   return { width: 240, height: collapsed || cols === 0 ? HEADER : HEADER + Math.min(cols, 40) * ROW }
 }
 

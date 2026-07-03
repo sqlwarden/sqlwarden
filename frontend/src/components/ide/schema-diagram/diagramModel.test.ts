@@ -70,6 +70,22 @@ describe('diagramModel', () => {
     expect(open.height).toBeGreaterThan(collapsed.height)
     expect(DIAGRAM_MAX_TABLES).toBe(60)
   })
+
+  it('estimateNodeSize in keys-only mode counts only PK/FK columns (plus a row for the rest)', () => {
+    const col = (name: string) => ({ name, data_type: 'int', nullable: false, ordinal: 1 })
+    const detail = {
+      ref: t('orders'),
+      relational: {
+        columns: [col('id'), col('user_id'), col('note'), col('total')],
+        primary_key: ['id'],
+        foreign_keys: [{ columns: ['user_id'], references: t('users'), referenced_columns: ['id'] }],
+      },
+    } as ObjectDetail
+    const all = estimateNodeSize(detail, false)
+    const keys = estimateNodeSize(detail, false, true)
+    // 2 key columns (id, user_id) + 1 "more" row < 4 columns.
+    expect(keys.height).toBeLessThan(all.height)
+  })
 })
 
 describe('edgeCardinality', () => {

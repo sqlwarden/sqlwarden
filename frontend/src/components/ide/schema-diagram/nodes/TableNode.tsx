@@ -18,6 +18,7 @@ export type TableNodeData = {
   outgoingByCol: Record<string, ColumnOutgoing> // this column is an FK → target table
   incomingByCol: Record<string, ColumnIncoming> // this column is referenced by other tables
   collapsed: boolean
+  keysOnly: boolean // render only PK/FK columns (plus a "N more" indicator)
   loading: boolean
   hasHidden: boolean
   onToggleCollapse: () => void
@@ -33,8 +34,16 @@ const DOT = '!h-2 !w-2 !min-w-0 !rounded-full !border-border !bg-muted-foregroun
 // left dot on a referenced column, the right dot on a foreign-key column. When
 // the related table is off-canvas a small `+` chip next to that dot expands it.
 // Collapsed/loading nodes fall back to the always-present node-level handles.
+// A column is a "key" if it's part of the primary key, is a foreign key, or is
+// referenced by another table's foreign key — the columns keys-only mode keeps.
+function isKeyColumn(name: string, data: TableNodeData): boolean {
+  return data.pk.has(name) || Boolean(data.outgoingByCol[name]) || Boolean(data.incomingByCol[name])
+}
+
 export function TableNode({ id, data }: NodeProps & { data: TableNodeData }) {
   const { outgoingByCol, incomingByCol } = data
+  const visibleColumns = data.keysOnly ? data.columns.filter((c) => isKeyColumn(c.name, data)) : data.columns
+  const hiddenCount = data.columns.length - visibleColumns.length
   return (
     <div className="group relative cursor-move rounded border border-border bg-card text-xs shadow-sm" style={{ width: '100%' }}>
       {/* Horizontal-only resizers on the left/right edges: transparent until you
@@ -91,7 +100,7 @@ export function TableNode({ id, data }: NodeProps & { data: TableNodeData }) {
           {!data.loading && data.columns.length === 0 && (
             <div className="px-2 py-1 text-[10px] text-muted-foreground">No columns</div>
           )}
-          {data.columns.map((c) => {
+          {visibleColumns.map((c) => {
             const out = outgoingByCol[c.name]
             const inc = incomingByCol[c.name]
             // Hovering an FK column whose relation is on-canvas highlights the
@@ -133,6 +142,11 @@ export function TableNode({ id, data }: NodeProps & { data: TableNodeData }) {
               </div>
             )
           })}
+          {hiddenCount > 0 && (
+            <div className="px-2 py-0.5 text-[10px] italic text-muted-foreground">
+              {hiddenCount} more {hiddenCount === 1 ? 'column' : 'columns'}
+            </div>
+          )}
         </div>
       )}
     </div>
