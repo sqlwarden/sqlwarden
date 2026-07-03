@@ -439,3 +439,23 @@ describe('activity state', () => {
     expect(store.getState().activeActivityId).toBe('connections')
   })
 })
+
+describe('syncSessions', () => {
+  it('replaces the whole map when no scope is given', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().setSession(1, 'a')
+    store.getState().setSession(2, 'b')
+    store.getState().syncSessions({ 3: 'c' })
+    expect(store.getState().sessions).toEqual({ 3: 'c' })
+  })
+
+  it('scoped sync only touches the given connections', () => {
+    const store = createIdeStore('test-org', 1)
+    // Connection 9 belongs to another workspace and must survive a scoped sync.
+    store.getState().setSession(9, 'other-ws')
+    store.getState().setSession(1, 'stale')
+    store.getState().setSession(2, 'still-alive')
+    store.getState().syncSessions({ 2: 'still-alive' }, [1, 2, 3])
+    expect(store.getState().sessions).toEqual({ 9: 'other-ws', 2: 'still-alive' })
+  })
+})

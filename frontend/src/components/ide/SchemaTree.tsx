@@ -23,6 +23,7 @@ import { copyWithToast, columnList, qualifiedColumn } from './contextMenus/clipb
 import { buildNamespaceMenu, buildObjectGroupMenu } from './contextMenus/schemaMenu'
 import { buildObjectMenu } from './contextMenus/objectMenu'
 import { buildColumnMenu, buildIndexMenu } from './contextMenus/columnMenu'
+import { useEvictGoneSession } from './sessionErrors'
 
 type TreeCtx = {
   dialect: SqlDialect
@@ -100,14 +101,18 @@ export function SchemaTree({
   connectionId,
   driver,
   filter,
+  onConnect,
 }: {
   orgSlug: string
   workspaceId: number
   connectionId: number
   driver: string
   filter: string
+  /** Starts a fresh session for this connection (used by the reconnect hint). */
+  onConnect?: () => void
 }) {
   const sessionId = useIde((s) => s.sessions[connectionId])
+  const connStatus = useIde((s) => s.connectionStatus[connectionId])
   const openTab = useIde((s) => s.openTab)
   const insert = useInsertIntoEditor()
   const dialect = dialectFor(driver)
@@ -127,7 +132,31 @@ export function SchemaTree({
     enabled: Boolean(sessionId),
   })
 
-  if (!sessionId) return <SchemaMessage>Not connected.</SchemaMessage>
+  // A 410 from any schema endpoint means the server-side session died (idle
+  // timeout, restart). Drop it so the tree flips to the reconnect hint instead
+  // of erroring forever against a dead session id.
+  useEvictGoneSession(connectionId, [catalogQuery.error, specQuery.error])
+
+  if (!sessionId) {
+    if (connStatus === 'connecting') {
+      return (
+        <SchemaMessage>
+          <SchemaSpinner />
+          Connecting…
+        </SchemaMessage>
+      )
+    }
+    return (
+      <SchemaMessage>
+        <span>Not connected.</span>
+        {onConnect && (
+          <button type="button" className="font-medium text-primary hover:underline" onClick={onConnect}>
+            Connect
+          </button>
+        )}
+      </SchemaMessage>
+    )
+  }
   if (catalogQuery.isLoading) {
     return (
       <SchemaMessage>
@@ -282,6 +311,7 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
     ...orgConnectionObjectQueryOptions(ctx!.orgSlug, ctx!.workspaceId, ctx!.connectionId, ctx!.sessionId, objectRef),
     enabled: Boolean(ctx) && expanded,
   })
+  useEvictGoneSession(ctx?.connectionId, [detailQuery.error])
   const detail = detailQuery.data ?? null
   const columns = detail?.relational?.columns ?? []
   const insertable = useObjectInsert(objectRef)

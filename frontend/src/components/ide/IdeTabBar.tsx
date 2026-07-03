@@ -190,11 +190,10 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
           <button
             type="button"
             onClick={handleNewConsole}
-            className="flex h-9 shrink-0 items-center gap-1 border-l border-border px-3 text-xs text-muted-foreground transition-colors hover:bg-card/50 hover:text-foreground"
+            className="flex h-9 w-8 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-card/50 hover:text-foreground"
             aria-label="New SQL console"
           >
-            <Icon name="plus-sign" size={11} />
-            New
+            <Icon name="plus-sign" size={13} />
           </button>
         </Tip>
       </div>

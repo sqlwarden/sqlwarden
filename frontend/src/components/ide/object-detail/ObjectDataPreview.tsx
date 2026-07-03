@@ -10,6 +10,7 @@ import {
 } from '#/lib/api/query'
 import { extractRowCount, nextCursorParam, previewColumns, previewRows, rowCountDisplay } from './previewData'
 import type { ObjectViewModel } from './registry'
+import { useEvictGoneSession } from '../sessionErrors'
 
 const PREVIEW_PAGE_SIZE = 200
 // Count at most this many rows up front; beyond it the table shows `N+` with a
@@ -54,6 +55,8 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
     enabled,
     staleTime: 60_000,
   })
+
+  useEvictGoneSession(connectionId, [data.error, boundedCount.error])
 
   const [wantExact, setWantExact] = useState(false)
   const exactCount = useQuery({

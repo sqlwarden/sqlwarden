@@ -15,13 +15,14 @@ export interface ResolveInput {
   hasData: boolean
 }
 
-/** Maps the detail query's status into a single view state. Cached data renders
- *  (`ready`) even while a fresh authorized refetch is in flight; a missing
- *  session or a 403/410/501 collapses to the matching non-data state so cached
- *  bytes never show without a successful server authorization this session. */
+/** Maps the detail query's status into a single view state. A missing session
+ *  always wins — even over cached data — so a dead cloud session shows the
+ *  reconnect pane instead of stale content with silently broken sub-queries.
+ *  With a live session, cached data renders (`ready`) even while a fresh
+ *  refetch is in flight; 403/410/501 collapse to the matching non-data state. */
 export function resolveObjectViewState({ hasSession, error, hasData }: ResolveInput): ObjectViewState {
-  if (hasData) return { kind: 'ready' }
   if (!hasSession) return { kind: 'no-session' }
+  if (hasData) return { kind: 'ready' }
   if (error) {
     if (isApiError(error)) {
       if (error.status === 501) return { kind: 'unsupported' }

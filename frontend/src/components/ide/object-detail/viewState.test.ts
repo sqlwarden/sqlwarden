@@ -33,4 +33,8 @@ describe('resolveObjectViewState', () => {
     expect(resolveObjectViewState({ hasSession: true, isLoading: true, error: null, hasData: true }))
       .toEqual({ kind: 'ready' })
   })
+  it('no session wins over cached data (expired cloud session shows reconnect)', () => {
+    expect(resolveObjectViewState({ hasSession: false, isLoading: false, error: null, hasData: true }))
+      .toEqual({ kind: 'no-session' })
+  })
 })

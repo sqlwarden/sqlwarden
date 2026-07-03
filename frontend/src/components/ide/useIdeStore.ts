@@ -132,8 +132,12 @@ export type IdeActions = {
   setSidebarCollapsed: (collapsed: boolean) => void
   setSession: (connectionId: number, sessionId: string) => void
   clearSession: (connectionId: number) => void
-  /** Replace the entire sessions map with authoritative data from the backend. */
-  syncSessions: (backendSessions: Record<number, string>) => void
+  /** Reconcile the sessions map with authoritative backend data. When
+   *  `scopeConnectionIds` is given, only those connections' entries are
+   *  replaced (the backend lists sessions per workspace, and connections in
+   *  other workspaces must keep their sessions); otherwise the whole map is
+   *  replaced. */
+  syncSessions: (backendSessions: Record<number, string>, scopeConnectionIds?: number[]) => void
   setQueryResult: (tabId: string, result: QueryResult) => void
   setTabRunning: (tabId: string, running: boolean) => void
   setTabController: (tabId: string, controller: AbortController | null) => void
@@ -458,7 +462,16 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             return { sessions: rest }
           }),
 
-        syncSessions: (backendSessions) => set({ sessions: backendSessions }),
+        syncSessions: (backendSessions, scopeConnectionIds) =>
+          set((s) => {
+            if (!scopeConnectionIds) return { sessions: backendSessions }
+            const next = { ...s.sessions }
+            for (const id of scopeConnectionIds) delete next[id]
+            for (const [id, sessionId] of Object.entries(backendSessions)) {
+              next[Number(id)] = sessionId
+            }
+            return { sessions: next }
+          }),
 
         setQueryResult: (tabId, result) =>
           set((s) => ({ results: { ...s.results, [tabId]: result } })),

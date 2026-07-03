@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import * as Y from 'yjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
@@ -23,6 +23,7 @@ import { buildConnectionMenu } from './contextMenus/connectionMenu'
 import { buildEnvironmentMenu } from './contextMenus/environmentMenu'
 import { SidebarPane } from './SidebarPane'
 import { SchemaTree } from './SchemaTree'
+import { workspaceSessionsQueryKey } from './useSessionSync'
 import { ConnectionDialog } from './ConnectionDialog'
 import { DriverBadge } from './DriverBadge'
 import { Button } from '#/components/ui/button'
@@ -59,7 +60,6 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   const sessions = useIde((s) => s.sessions)
   const setSession = useIde((s) => s.setSession)
   const clearSession = useIde((s) => s.clearSession)
-  const syncSessions = useIde((s) => s.syncSessions)
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const queryClient = useQueryClient()
 
@@ -85,34 +85,15 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
     orgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
   )
 
-  // Authoritative session list from the backend — reconciles persisted frontend
-  // state with what the server actually has alive (handles restarts, TTL expiry, etc).
-  const backendSessionsQuery = useQuery({
-    queryKey: ['org-workspace-sessions', orgSlug, workspace.id],
-    queryFn: () =>
-      api.get<{ sessions: { connection_id: number; session_id: string }[] }>(
-        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/sessions`,
-      ),
-    staleTime: 0,
-    refetchOnWindowFocus: true,
-  })
-
-  useEffect(() => {
-    if (!backendSessionsQuery.data) return
-    const map: Record<number, string> = {}
-    for (const s of backendSessionsQuery.data.sessions) {
-      map[s.connection_id] = s.session_id
-    }
-    syncSessions(map)
-  }, [backendSessionsQuery.data, syncSessions])
-
   const envItems = environments.data?.items ?? []
   const connItems = connections.data?.items ?? []
   const envNameById = (id: number) => envItems.find((e) => e.id === id)?.name ?? ''
 
   const connectedIds = new Set(Object.keys(sessions).map(Number))
 
-  const sessionsQueryKey = ['org-workspace-sessions', orgSlug, workspace.id]
+  // Session reconciliation itself runs IDE-wide (useSessionSync in the shell);
+  // this panel only invalidates it after explicit connect/disconnect.
+  const sessionsQueryKey = workspaceSessionsQueryKey(orgSlug, workspace.id)
 
   const connectMutation = useMutation({
     mutationFn: (conn: Connection) =>
@@ -316,7 +297,19 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
             {environments.isLoading || connections.isLoading ? (
               <SidebarMessage>Loading...</SidebarMessage>
             ) : environments.isError || connections.isError ? (
-              <SidebarMessage>Failed to load database tree.</SidebarMessage>
+              <SidebarMessage>
+                <span>Failed to load connections.</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void environments.refetch()
+                    void connections.refetch()
+                  }}
+                  className="font-medium text-primary hover:underline"
+                >
+                  Retry
+                </button>
+              </SidebarMessage>
             ) : envItems.length === 0 ? (
               <SidebarMessage>No environments available.</SidebarMessage>
             ) : connLayout === 'grouped' ? (
@@ -587,7 +580,7 @@ function ConnectionRow({
               : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
           )}
         >
-        {isConnected ? (
+        {isConnected || expanded ? (
           <button
             type="button"
             aria-label={expanded ? 'Collapse schema' : 'Expand schema'}
@@ -638,7 +631,10 @@ function ConnectionRow({
         </div>
       </ContextMenu>
 
-      {isConnected && expanded && (
+      {/* Stays mounted while disconnected so an expanded tree can show its
+          "Not connected · Connect" hint instead of vanishing when the
+          server-side session expires. */}
+      {expanded && (
         <div style={{ marginLeft: connIndent + 14 }} className="border-l border-border/60">
           <SchemaTree
             orgSlug={orgSlug}
@@ -646,6 +642,7 @@ function ConnectionRow({
             connectionId={connection.id}
             driver={connection.driver}
             filter={filter}
+            onConnect={onConnect}
           />
         </div>
       )}
@@ -674,5 +671,5 @@ function ConnectionStatusDot({ state }: { state: ConnectionState }) {
 }
 
 function SidebarMessage({ children }: { children: React.ReactNode }) {
-  return <div className="px-3 py-3 text-xs text-muted-foreground">{children}</div>
+  return <div className="flex items-center gap-2 px-3 py-3 text-xs text-muted-foreground">{children}</div>
 }
