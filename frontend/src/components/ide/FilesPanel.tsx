@@ -15,6 +15,7 @@ import { useIde, activeTabId as selectActiveTabId, newFileTab } from './useIdeSt
 import { deletePrivateWorkspaceFile, getPrivateWorkspaceFileContent } from '#/lib/api/files'
 import { SidebarPane } from './SidebarPane'
 import { FileContextMenu } from './FileContextMenu'
+import { Tip } from './schema-diagram/Tip'
 import { CreateItemDialog } from './CreateItemDialog'
 import { saveTextAs } from './saveFile'
 
@@ -36,24 +37,28 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
 
   const headerActions = (
     <>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        aria-label="New file"
-        onClick={() => openCreateDialog('file', null)}
-      >
-        <Icon name="file-01" size={13} />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        aria-label="New folder"
-        onClick={() => openCreateDialog('folder', null)}
-      >
-        <Icon name="folder-add" size={13} />
-      </Button>
+      <Tip label="New file">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="New file"
+          onClick={() => openCreateDialog('file', null)}
+        >
+          <Icon name="file-01" size={13} />
+        </Button>
+      </Tip>
+      <Tip label="New folder">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="New folder"
+          onClick={() => openCreateDialog('folder', null)}
+        >
+          <Icon name="folder-add" size={13} />
+        </Button>
+      </Tip>
     </>
   )
 

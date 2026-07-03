@@ -63,6 +63,7 @@ import {
   RADIUS_RANGE,
   UI_SCALE_RANGE,
 } from '#/lib/theme-lab/context'
+import { Tip } from '#/components/ide/schema-diagram/Tip'
 import { Slider } from '#/components/ui/slider'
 import { cn } from '#/lib/utils'
 
@@ -381,25 +382,29 @@ export function AppShellPreferencesPopover({
 }) {
   const [open, setOpen] = useState(false)
 
+  const trigger = (
+    <Button
+      type="button"
+      variant="ghost"
+      aria-label={buttonLabel || 'UI Lab'}
+      aria-pressed={open}
+      onClick={() => setOpen((v) => !v)}
+      className={cn(
+        'w-full justify-start gap-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0',
+        open && 'bg-muted text-foreground',
+        buttonClassName,
+      )}
+    >
+      <Icon name="paint-board" size={20} />
+      {buttonLabel ? (
+        <span className="group-data-[collapsible=icon]:hidden">{buttonLabel}</span>
+      ) : null}
+    </Button>
+  )
+
   return (
     <>
-      <Button
-        type="button"
-        variant="ghost"
-        aria-label={buttonLabel || 'UI Lab'}
-        aria-pressed={open}
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          'w-full justify-start gap-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0',
-          open && 'bg-muted text-foreground',
-          buttonClassName,
-        )}
-      >
-        <Icon name="paint-board" size={20} />
-        {buttonLabel ? (
-          <span className="group-data-[collapsible=icon]:hidden">{buttonLabel}</span>
-        ) : null}
-      </Button>
+      {buttonLabel ? trigger : <Tip label="UI Lab">{trigger}</Tip>}
       {open && (
         <UiLabPanel
           preferences={preferences}
@@ -510,12 +515,16 @@ function UiLabPanel({
             Live controls — drag me anywhere, the app stays interactive.
           </div>
         </div>
-        <Button type="button" variant="ghost" size="sm" onClick={restoreDefaults}>
-          Reset
-        </Button>
-        <Button type="button" variant="ghost" size="icon-sm" aria-label="Close UI Lab" onClick={onClose}>
-          <Icon name="cancel-01" size={13} />
-        </Button>
+        <Tip label="Reset all UI preferences">
+          <Button type="button" variant="ghost" size="sm" onClick={restoreDefaults}>
+            Reset
+          </Button>
+        </Tip>
+        <Tip label="Close UI Lab">
+          <Button type="button" variant="ghost" size="icon-sm" aria-label="Close UI Lab" onClick={onClose}>
+            <Icon name="cancel-01" size={13} />
+          </Button>
+        </Tip>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-3">

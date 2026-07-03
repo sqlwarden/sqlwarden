@@ -254,16 +254,18 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
 
 function IdeBrand() {
   return (
-    <Link
-      to="/"
-      className="flex shrink-0 items-center gap-2 border-r border-border px-3 text-xs font-semibold tracking-tight text-foreground transition-colors hover:bg-sidebar-accent/50"
-      aria-label="SQLWarden home"
-    >
-      <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary to-chart-2 text-primary-foreground shadow-sm">
-        <Icon name="database-lightning" size={14} />
-      </span>
-      <span className="hidden sm:inline">SQLWarden</span>
-    </Link>
+    <Tip label="Back to dashboard" side="bottom">
+      <Link
+        to="/"
+        className="flex shrink-0 items-center gap-2 border-r border-border px-3 text-xs font-semibold tracking-tight text-foreground transition-colors hover:bg-sidebar-accent/50"
+        aria-label="SQLWarden home"
+      >
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary to-chart-2 text-primary-foreground shadow-sm">
+          <Icon name="database-lightning" size={14} />
+        </span>
+        <span className="hidden sm:inline">SQLWarden</span>
+      </Link>
+    </Tip>
   )
 }
 

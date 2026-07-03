@@ -16,6 +16,7 @@ import { api } from '#/lib/api/client'
 import { clearAccessToken } from '#/lib/auth/access-token'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import type { SessionResponse } from '#/lib/api/types'
+import { Tip } from './schema-diagram/Tip'
 
 export function IdeTopBarControls({
   orgSlug,
@@ -49,9 +50,11 @@ export function IdeTopBarControls({
       />
 
       <DropdownMenu>
-        <DropdownMenuTrigger className="inline-flex cursor-pointer items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <InitialsAvatar value={session.account.name} fallback="U" className="size-7 rounded-full" />
-        </DropdownMenuTrigger>
+        <Tip label={session.account.name}>
+          <DropdownMenuTrigger className="inline-flex cursor-pointer items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <InitialsAvatar value={session.account.name} fallback="U" className="size-7 rounded-full" />
+          </DropdownMenuTrigger>
+        </Tip>
         <DropdownMenuContent align="end" className="w-64 min-w-64">
           <DropdownMenuGroup>
             <DropdownMenuLabel className="px-2 py-2">

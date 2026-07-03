@@ -812,6 +812,7 @@ function ColumnHeader({ col, width, onResizeStart, onContextMenu }: {
     <th
       style={{ width }}
       onContextMenu={onContextMenu}
+      title={`${col.name} · ${col.type}`}
       className="relative border-b border-r border-border px-2.5 py-1.5 text-left font-medium select-none overflow-hidden"
     >
       <div className="flex items-center gap-1.5">
@@ -909,31 +910,37 @@ function CellDetailPanel({ value, col, tableCollapsed, onMaximize, onClose }: {
               Copied
             </div>
           )}
+          <Tip label="Copy value">
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Copy value"
+            >
+              <Icon name={copied ? 'tick-02' : 'copy-01'} size={13} />
+            </button>
+          </Tip>
+        </div>
+        <Tip label={tableCollapsed ? 'Restore grid' : 'Maximize value panel'}>
           <button
             type="button"
-            onClick={handleCopy}
+            onClick={onMaximize}
             className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Copy value"
+            aria-label={tableCollapsed ? 'Restore' : 'Maximize'}
           >
-            <Icon name={copied ? 'tick-02' : 'copy-01'} size={13} />
+            <Icon name={tableCollapsed ? 'minimize' : 'maximize'} size={13} />
           </button>
-        </div>
-        <button
-          type="button"
-          onClick={onMaximize}
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label={tableCollapsed ? 'Restore' : 'Maximize'}
-        >
-          <Icon name={tableCollapsed ? 'minimize' : 'maximize'} size={13} />
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label="Close"
-        >
-          <Icon name="cancel-01" size={13} />
-        </button>
+        </Tip>
+        <Tip label="Close value panel">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Close"
+          >
+            <Icon name="cancel-01" size={13} />
+          </button>
+        </Tip>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-3">

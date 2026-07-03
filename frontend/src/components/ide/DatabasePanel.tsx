@@ -210,13 +210,15 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   const canAddConnection = envItems.length > 0
   const actions = canAddConnection || canCreateEnvironment ? (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="Add connection or environment">
-            <Icon name="plus-sign" size={14} />
-          </Button>
-        }
-      />
+      <Tip label="New connection or environment">
+        <DropdownMenuTrigger
+          render={
+            <Button type="button" variant="ghost" size="icon-sm" aria-label="Add connection or environment">
+              <Icon name="plus-sign" size={14} />
+            </Button>
+          }
+        />
+      </Tip>
       <DropdownMenuContent align="end" className="min-w-48">
         <DropdownMenuGroup>
           {canAddConnection && (
@@ -260,14 +262,16 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
               className="h-7 border-transparent bg-muted/60 pl-7 text-xs focus-visible:bg-background dark:bg-muted/40 dark:focus-visible:bg-input/30"
             />
             {filter && (
-              <button
-                type="button"
-                aria-label="Clear filter"
-                onClick={() => setFilter('')}
-                className="absolute right-1.5 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Icon name="cancel-01" size={10} />
-              </button>
+              <Tip label="Clear filter">
+                <button
+                  type="button"
+                  aria-label="Clear filter"
+                  onClick={() => setFilter('')}
+                  className="absolute right-1.5 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <Icon name="cancel-01" size={10} />
+                </button>
+              </Tip>
             )}
           </div>
           {connLayout === 'flat' && envItems.length > 0 && (
@@ -478,14 +482,16 @@ function EnvironmentRow({
             <span className="min-w-0 flex-1 truncate font-medium" title={environment.name}>{environment.name}</span>
           </button>
           {canCreateConnection && (
-            <button
-              type="button"
-              onClick={onAddConnection}
-              aria-label={`New connection in ${environment.name}`}
-              className="mr-1 flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
-            >
-              <Icon name="plus-sign" size={11} />
-            </button>
+            <Tip label={`New connection in ${environment.name}`}>
+              <button
+                type="button"
+                onClick={onAddConnection}
+                aria-label={`New connection in ${environment.name}`}
+                className="mr-1 flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+              >
+                <Icon name="plus-sign" size={11} />
+              </button>
+            </Tip>
           )}
         </div>
       </ContextMenu>
@@ -607,18 +613,20 @@ function ConnectionRow({
         </button>
 
         {isConnected && (
-          <button
-            type="button"
-            aria-label="Refresh schema"
-            disabled={refresh.isPending}
-            onClick={(e) => {
-              e.stopPropagation()
-              refresh.mutate()
-            }}
-            className="ml-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-          >
-            <Icon name="refresh" size={11} className={refresh.isPending ? 'animate-spin' : undefined} />
-          </button>
+          <Tip label="Refresh schema">
+            <button
+              type="button"
+              aria-label="Refresh schema"
+              disabled={refresh.isPending}
+              onClick={(e) => {
+                e.stopPropagation()
+                refresh.mutate()
+              }}
+              className="ml-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+            >
+              <Icon name="refresh" size={11} className={refresh.isPending ? 'animate-spin' : undefined} />
+            </button>
+          </Tip>
         )}
         <div className="flex h-6 min-w-0 flex-1 items-center justify-end">
           {envLabel && (
