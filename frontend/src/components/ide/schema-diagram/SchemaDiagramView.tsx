@@ -693,7 +693,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           </div>
         )}
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="sm" disabled={exporting} title="Export diagram" />}>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="sm" disabled={exporting} />}>
             <Icon name={exporting ? 'loading-03' : 'download-01'} size={13} className={exporting ? 'animate-spin' : undefined} />
             Export
           </DropdownMenuTrigger>

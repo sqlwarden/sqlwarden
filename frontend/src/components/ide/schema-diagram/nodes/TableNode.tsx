@@ -4,6 +4,7 @@ import { cn } from '#/lib/utils'
 import { Button } from '#/components/ui/button'
 import type { DbColumn, ObjectRef } from '#/lib/api/types'
 import { refKey } from '../diagramModel'
+import { Tip } from '../Tip'
 
 export type HoverRelation = { source: string; target: string; column: string }
 
@@ -80,18 +81,21 @@ export function TableNode({ id, data }: NodeProps & { data: TableNodeData }) {
         </Button>
         <span className="min-w-0 flex-1 truncate font-medium text-foreground">{data.label}</span>
         {data.collapsed && data.hasHidden && (
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/60" title="Has hidden relations" />
+          <Tip label="Has hidden relations">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/60" />
+          </Tip>
         )}
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={(e) => { e.stopPropagation(); data.onRemove() }}
-          title="Remove from diagram"
-          aria-label="Remove from diagram"
-          className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-        >
-          <Icon name="cancel-01" size={12} />
-        </Button>
+        <Tip label="Remove from diagram">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={(e) => { e.stopPropagation(); data.onRemove() }}
+            aria-label="Remove from diagram"
+            className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+          >
+            <Icon name="cancel-01" size={12} />
+          </Button>
+        </Tip>
       </div>
 
       {!data.collapsed && (
@@ -115,29 +119,34 @@ export function TableNode({ id, data }: NodeProps & { data: TableNodeData }) {
               >
                 {inc && <Handle id={`col:${c.name}:in`} type="target" position={Position.Left} className={cn(DOT, '!left-0')} isConnectable={false} />}
                 {inc?.hidden && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); data.onExpand(inc.sources, { fromKey: id, direction: 'in' }) }}
-                    className="absolute -left-2 top-1/2 z-10 flex h-3.5 w-3.5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-card text-primary hover:bg-primary/10"
-                    title="Add tables that reference this column"
-                  >
-                    <Icon name="plus-sign" size={9} />
-                  </button>
+                  <Tip label="Add tables that reference this column" side="left">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); data.onExpand(inc.sources, { fromKey: id, direction: 'in' }) }}
+                      className="absolute -left-2 top-1/2 z-10 flex h-3.5 w-3.5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-card text-primary hover:bg-primary/10"
+                    >
+                      <Icon name="plus-sign" size={9} />
+                    </button>
+                  </Tip>
                 )}
                 <span className={cn('min-w-0 flex-1 truncate', data.pk.has(c.name) ? 'font-semibold text-foreground' : 'text-muted-foreground')}>{c.name}</span>
+                {/* Native title (not the shared Tip) on purpose: this is one per
+                    column across every node, so a Tooltip instance each would be
+                    thousands on a large diagram — native title stays cheap. */}
                 <span title={c.data_type} className="ml-1 max-w-[50%] shrink truncate font-mono text-[10px] text-muted-foreground">{c.data_type}</span>
                 {data.pk.has(c.name) && <span className="shrink-0 text-[9px] font-medium text-chart-4">PK</span>}
                 {out && <span className="shrink-0 text-[9px] font-medium text-chart-1">FK</span>}
                 {out && <Handle id={`col:${c.name}:out`} type="source" position={Position.Right} className={cn(DOT, '!right-0')} isConnectable={false} />}
                 {out?.hidden && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); data.onExpand([out.target], { fromKey: id, direction: 'out' }) }}
-                    className="absolute -right-2 top-1/2 z-10 flex h-3.5 w-3.5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-card text-primary hover:bg-primary/10"
-                    title={`Add referenced table "${out.target.name}"`}
-                  >
-                    <Icon name="plus-sign" size={9} />
-                  </button>
+                  <Tip label={`Add referenced table "${out.target.name}"`} side="right">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); data.onExpand([out.target], { fromKey: id, direction: 'out' }) }}
+                      className="absolute -right-2 top-1/2 z-10 flex h-3.5 w-3.5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-card text-primary hover:bg-primary/10"
+                    >
+                      <Icon name="plus-sign" size={9} />
+                    </button>
+                  </Tip>
                 )}
               </div>
             )
