@@ -6,6 +6,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
+import { cn } from '#/lib/utils'
 import { Button } from '#/components/ui/button'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
 import { api } from '#/lib/api/client'
@@ -283,6 +284,41 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     return set
   }, [activeSelected, edges])
 
+  // Find-a-table search over every table in the namespace (on-canvas or not).
+  const [search, setSearch] = useState('')
+  const searchResults = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return []
+    return [...refByKey.values()].filter((r) => r.name.toLowerCase().includes(q)).slice(0, 8)
+  }, [search, refByKey])
+
+  // Focus a table (pan/zoom + select). If it's not on the canvas, add it first
+  // in free space, then focus it once it has rendered.
+  const [pendingFocus, setPendingFocus] = useState<string | null>(null)
+  const focusOrAdd = useCallback((ref: ObjectRef) => {
+    const key = refKey(ref)
+    const rfNodes = getNodes()
+    if (!rfNodes.some((n) => n.id === key)) {
+      const occupied: Box[] = rfNodes.map((n) => ({
+        x: n.position.x, y: n.position.y,
+        w: n.measured?.width ?? n.width ?? 240, h: n.measured?.height ?? 120,
+      }))
+      const cx = rfNodes.length ? rfNodes.reduce((s, n) => s + n.position.x, 0) / rfNodes.length : 0
+      const cy = rfNodes.length ? rfNodes.reduce((s, n) => s + n.position.y, 0) / rfNodes.length : 0
+      const pos = findFreePosition(cx, cy, 240, estimateNodeSize(undefined, false).height, occupied)
+      savedPositions.current[key] = pos
+      setPresent((prev) => (prev.some((r) => refKey(r) === key) ? prev : [...prev, ref]))
+    }
+    setPendingFocus(key)
+  }, [getNodes])
+  useEffect(() => {
+    if (!pendingFocus || !getNodes().some((n) => n.id === pendingFocus)) return
+    const key = pendingFocus
+    setPendingFocus(null)
+    setSelectedKey(key)
+    requestAnimationFrame(() => void fitView({ nodes: [{ id: key }], duration: 400, maxZoom: 1.2 }))
+  }, [pendingFocus, nodes, getNodes, fitView])
+
   // Stable signatures so the reconcile/layout effects fire only on real changes,
   // not on the fresh array identities useQueries returns each render.
   const presentSig = present.map(refKey).join('|')
@@ -532,6 +568,39 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
         </span>
         <span className="text-[10px] text-muted-foreground">{driver}</span>
         <div className="flex-1" />
+        <div className="relative mr-1">
+          <div className="flex items-center gap-1 rounded border border-border px-1.5">
+            <Icon name="search-01" size={12} className="shrink-0 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && searchResults[0]) { focusOrAdd(searchResults[0]); setSearch('') }
+                if (e.key === 'Escape') setSearch('')
+              }}
+              placeholder="Find table…"
+              className="h-6 w-32 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+          {searchResults.length > 0 && (
+            <div className="absolute right-0 top-7 z-20 w-56 overflow-hidden rounded-md border border-border bg-card p-1 shadow-md">
+              {searchResults.map((r) => (
+                <button
+                  key={refKey(r)}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { focusOrAdd(r); setSearch('') }}
+                  className="flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-xs hover:bg-accent"
+                >
+                  <span className="min-w-0 truncate text-foreground">{r.name}</span>
+                  <span className={cn('shrink-0 text-[9px]', presentKeys.has(refKey(r)) ? 'text-muted-foreground' : 'text-primary')}>
+                    {presentKeys.has(refKey(r)) ? 'on canvas' : 'add'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         {target.kind === 'object' && (
           <div className="mr-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
             <span>Depth</span>
