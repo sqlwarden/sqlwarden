@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Background, ControlButton, Controls, MiniMap, ReactFlow, ReactFlowProvider, useNodesState, useReactFlow, useUpdateNodeInternals,
+  Background, ControlButton, Controls, getNodesBounds, getViewportForBounds, MiniMap, ReactFlow, ReactFlowProvider,
+  useNodesState, useReactFlow, useUpdateNodeInternals,
   type Edge, type EdgeTypes, type Node, type NodeTypes, type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { toPng, toSvg } from 'html-to-image'
+import { toast } from 'sonner'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { Button } from '#/components/ui/button'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '#/components/ui/dropdown-menu'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
 import type { ObjectDetail, ObjectRef, Workspace } from '#/lib/api/types'
@@ -28,6 +34,7 @@ import {
 import { FkEdge } from './edges/FkEdge'
 import { layoutGraph } from './layout'
 import { loadDiagram, saveDiagram } from './diagramStore'
+import { diagramFileName, downloadDataUrl, exportDimensions, type ExportFormat } from './export'
 import { TableNode, type HoverRelation, type TableNodeData } from './nodes/TableNode'
 import { OBJECT_REF_DND_MIME } from './dnd'
 
@@ -75,6 +82,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   const updateNodeInternals = useUpdateNodeInternals()
   const savedViewport = useRef<Viewport | null>(null)
   const viewportRestored = useRef(false)
+  const containerRef = useRef<HTMLDivElement | null>(null)
 
   const enabled = Boolean(sessionId && connectionId && target)
 
@@ -550,6 +558,64 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     void queryClient.invalidateQueries({ queryKey: connectionObjectsQueryKeyPrefix(orgSlug, workspace.id, connectionId ?? 0) })
   }
 
+  // Render the whole diagram (every node, not just the visible viewport) to an
+  // image data URL. We render the react-flow viewport element at a transform
+  // that frames all nodes, sized to their bounds so nothing is cropped
+  // regardless of the current pan/zoom. PNG gets an opaque themed background;
+  // SVG stays transparent.
+  const [exporting, setExporting] = useState(false)
+  const renderImage = useCallback(async (format: ExportFormat): Promise<string | null> => {
+    const rfNodes = getNodes()
+    const viewportEl = containerRef.current?.querySelector<HTMLElement>('.react-flow__viewport')
+    if (rfNodes.length === 0 || !viewportEl) return null
+    const bounds = getNodesBounds(rfNodes)
+    const { width, height } = exportDimensions(bounds)
+    const t = getViewportForBounds(bounds, width, height, 0.2, 4, 0.1)
+    const bg = getComputedStyle(viewportEl).getPropertyValue('--background').trim() || '#ffffff'
+    const options = {
+      width, height,
+      backgroundColor: format === 'png' ? bg : undefined,
+      style: {
+        width: `${width}px`,
+        height: `${height}px`,
+        transform: `translate(${t.x}px, ${t.y}px) scale(${t.zoom})`,
+      },
+    }
+    return format === 'png' ? toPng(viewportEl, options) : toSvg(viewportEl, options)
+  }, [getNodes])
+
+  const exportImage = useCallback(async (format: ExportFormat) => {
+    setExporting(true)
+    try {
+      const dataUrl = await renderImage(format)
+      if (dataUrl) {
+        downloadDataUrl(dataUrl, diagramFileName(namespace, target?.kind === 'object' ? target.ref.name : undefined, format))
+      }
+    } catch {
+      toast.error('Failed to export the diagram.')
+    } finally {
+      setExporting(false)
+    }
+  }, [renderImage, namespace, target])
+
+  // Copy a PNG of the diagram to the system clipboard (paste-as-picture into
+  // docs/chat). The Clipboard API only accepts image/png here — SVG isn't on the
+  // browser safelist — so copy is always PNG.
+  const copyImage = useCallback(async () => {
+    setExporting(true)
+    try {
+      const dataUrl = await renderImage('png')
+      if (!dataUrl) return
+      const blob = await (await fetch(dataUrl)).blob()
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+      toast.success('Diagram copied to clipboard.')
+    } catch {
+      toast.error('Failed to copy the diagram.')
+    } finally {
+      setExporting(false)
+    }
+  }, [renderImage])
+
   // ── State handling ─────────────────────────────────────────────────────────
   if (!target || !connectionId) return <Center>This tab is missing its diagram target.</Center>
   if (!sessionId) return <Reconnect namespace={namespace} driver={driver} onReconnect={reconnect} />
@@ -568,7 +634,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   if (present.length === 0) return <Center>No tables to diagram in this schema.</Center>
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div ref={containerRef} className="flex h-full min-h-0 flex-col">
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
         <span className="truncate text-xs font-medium text-foreground">
           {target.kind === 'namespace' ? namespace : `${namespace}.${target.ref.name}`}
@@ -626,6 +692,27 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
             </ToggleGroup>
           </div>
         )}
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="sm" disabled={exporting} title="Export diagram" />}>
+            <Icon name={exporting ? 'loading-03' : 'download-01'} size={13} className={exporting ? 'animate-spin' : undefined} />
+            Export
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => void exportImage('png')}>
+              <Icon name="download-01" size={13} />
+              Download PNG
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void exportImage('svg')}>
+              <Icon name="download-01" size={13} />
+              Download SVG
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => void copyImage()}>
+              <Icon name="copy-01" size={13} />
+              Copy image
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button variant="ghost" size="sm" onClick={refresh}>
           <Icon name="refresh" size={13} />
           Refresh
