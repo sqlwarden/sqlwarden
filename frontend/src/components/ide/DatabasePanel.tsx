@@ -37,9 +37,11 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
+import { Tip } from './schema-diagram/Tip'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { Textarea } from '#/components/ui/textarea'
@@ -66,6 +68,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   const [envFilter, setEnvFilter] = useState<number | 'all'>('all')
   const [addEnvOpen, setAddEnvOpen] = useState(false)
   const [addConnEnvironmentId, setAddConnEnvironmentId] = useState<number | null>(null)
+  const [addConnOpen, setAddConnOpen] = useState(false)
   const [envName, setEnvName] = useState('')
   const [envDescription, setEnvDescription] = useState('')
   const [envNameError, setEnvNameError] = useState<string | undefined>(undefined)
@@ -202,16 +205,35 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
     void createEnvironment.mutateAsync().catch(() => {})
   }
 
-  const actions = canCreateEnvironment ? (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      aria-label="New Environment"
-      onClick={() => setAddEnvOpen(true)}
-    >
-      <Icon name="plus-sign" size={14} />
-    </Button>
+  // Connection creation is available from the panel header regardless of the
+  // grouped/flat layout; per-environment permissions are enforced server-side.
+  const canAddConnection = envItems.length > 0
+  const actions = canAddConnection || canCreateEnvironment ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button type="button" variant="ghost" size="icon-sm" aria-label="Add connection or environment">
+            <Icon name="plus-sign" size={14} />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="end" className="min-w-48">
+        <DropdownMenuGroup>
+          {canAddConnection && (
+            <DropdownMenuItem onClick={() => setAddConnOpen(true)}>
+              <Icon name="database" size={16} />
+              New Connection…
+            </DropdownMenuItem>
+          )}
+          {canCreateEnvironment && (
+            <DropdownMenuItem onClick={() => setAddEnvOpen(true)}>
+              <Icon name="server-stack-01" size={16} />
+              New Environment…
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   ) : undefined
 
   return (
@@ -224,36 +246,67 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
         actions={actions}
         scroll={false}
       >
-        <div className="border-b border-border p-1.5">
-          <Input
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter schema…"
-            className="h-7 text-xs"
-          />
-        </div>
-        {connLayout === 'flat' && envItems.length > 0 && (
-          <div className="border-b border-border px-1.5 py-1">
+        <div className="flex items-center gap-1.5 border-b border-border p-2">
+          <div className="relative min-w-0 flex-1">
+            <Icon
+              name="search-01"
+              size={12}
+              className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter schema…"
+              className="h-7 border-transparent bg-muted/60 pl-7 text-xs focus-visible:bg-background dark:bg-muted/40 dark:focus-visible:bg-input/30"
+            />
+            {filter && (
+              <button
+                type="button"
+                aria-label="Clear filter"
+                onClick={() => setFilter('')}
+                className="absolute right-1.5 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Icon name="cancel-01" size={10} />
+              </button>
+            )}
+          </div>
+          {connLayout === 'flat' && envItems.length > 0 && (
             <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button type="button" variant="outline" size="sm" className="h-6 w-full justify-between text-xs font-normal">
-                    <span className="truncate">{envFilter === 'all' ? 'All environments' : envNameById(envFilter)}</span>
-                    <Icon name="chevron-down" size={12} className="shrink-0 text-muted-foreground" />
-                  </Button>
-                }
-              />
-              <DropdownMenuContent align="start" className="min-w-44">
-                <DropdownMenuItem onClick={() => setEnvFilter('all')}>All environments</DropdownMenuItem>
-                {envItems.map((env) => (
-                  <DropdownMenuItem key={env.id} onClick={() => setEnvFilter(env.id)}>
-                    {env.name}
+              <Tip label={envFilter === 'all' ? 'Filter by environment' : `Environment: ${envNameById(envFilter)}`}>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Filter by environment"
+                      className={cn(
+                        'size-7',
+                        envFilter !== 'all' && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
+                      )}
+                    >
+                      <Icon name="server-stack-01" size={14} />
+                    </Button>
+                  }
+                />
+              </Tip>
+              <DropdownMenuContent align="end" className="min-w-44">
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={() => setEnvFilter('all')}>
+                    <span className="min-w-0 flex-1 truncate">All environments</span>
+                    {envFilter === 'all' && <Icon name="tick-02" size={14} className="text-primary" />}
                   </DropdownMenuItem>
-                ))}
+                  {envItems.map((env) => (
+                    <DropdownMenuItem key={env.id} onClick={() => setEnvFilter(env.id)}>
+                      <span className="min-w-0 flex-1 truncate">{env.name}</span>
+                      {envFilter === env.id && <Icon name="tick-02" size={14} className="text-primary" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-        )}
+          )}
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
           <div className="flex flex-col py-1">
             {environments.isLoading || connections.isLoading ? (
@@ -354,8 +407,13 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
       </Dialog>
 
       <ConnectionDialog
-        open={addConnEnvironmentId !== null}
-        onOpenChange={(open) => { if (!open) setAddConnEnvironmentId(null) }}
+        open={addConnOpen || addConnEnvironmentId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAddConnOpen(false)
+            setAddConnEnvironmentId(null)
+          }
+        }}
         orgSlug={orgSlug}
         workspaceId={workspace.id}
         environments={envItems}
@@ -401,7 +459,7 @@ function EnvironmentRow({
   return (
     <div>
       <ContextMenu items={buildEnvironmentMenu({ onCopyName: () => copyWithToast(environment.name) })}>
-        <div className="group flex h-6 w-full items-center text-xs transition-colors hover:bg-accent hover:text-accent-foreground">
+        <div className="group mx-1 flex h-6 items-center rounded-md text-xs transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
           <button
             type="button"
             onClick={() => setNodeExpanded(nodeKey, !expanded)}
@@ -517,10 +575,10 @@ function ConnectionRow({
         <div
           style={{ paddingLeft: connIndent }}
           className={cn(
-            'flex items-center transition-colors',
+            'mx-1 flex items-center rounded-md transition-colors',
             isActive
               ? 'bg-primary/10 hover:bg-primary/15'
-              : 'hover:bg-accent hover:text-accent-foreground',
+              : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
           )}
         >
         {isConnected ? (
@@ -573,7 +631,7 @@ function ConnectionRow({
       </ContextMenu>
 
       {isConnected && expanded && (
-        <div style={{ marginLeft: connIndent + 12 }} className="border-l border-border">
+        <div style={{ marginLeft: connIndent + 14 }} className="border-l border-border/60">
           <SchemaTree
             orgSlug={orgSlug}
             workspaceId={connection.workspace_id}

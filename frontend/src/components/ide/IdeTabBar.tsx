@@ -93,6 +93,15 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
     el.scrollBy({ left: direction * Math.max(160, el.clientWidth * 0.7), behavior: 'smooth' })
   }
 
+  // Mouse-wheel over the strip pans it horizontally (trackpads already emit
+  // deltaX; this maps the dominant vertical wheel axis onto the strip).
+  function handleWheel(e: React.WheelEvent<HTMLDivElement>) {
+    const el = scrollRef.current
+    if (!el || el.scrollWidth <= el.clientWidth) return
+    const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX
+    el.scrollBy({ left: delta })
+  }
+
   function handleNewConsole() {
     onFocus() // open the new console into this group
     const tmpDoc = new Y.Doc()
@@ -139,13 +148,19 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
   return (
     <>
       <div
-        className={cn('flex h-9 shrink-0 items-end bg-background', draggingTab && 'bg-accent/30')}
+        className={cn('flex h-9 shrink-0 items-end bg-sidebar', draggingTab && 'bg-accent/30')}
         onDragOver={handleBarDragOver}
       >
-        {canScrollLeft && <ScrollChevron direction="left" onClick={() => scrollTabs(-1)} />}
+        {(canScrollLeft || canScrollRight) && (
+          <div className="flex h-9 shrink-0 items-center border-r border-border">
+            <ScrollChevron direction="left" disabled={!canScrollLeft} onClick={() => scrollTabs(-1)} />
+            <ScrollChevron direction="right" disabled={!canScrollRight} onClick={() => scrollTabs(1)} />
+          </div>
+        )}
         <div
           ref={scrollRef}
           onDragOver={handleBarDragOver}
+          onWheel={handleWheel}
           className="flex min-w-0 items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {groupTabs.map((tab) => (
@@ -170,14 +185,14 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
             />
           ))}
         </div>
-        {canScrollRight && <ScrollChevron direction="right" onClick={() => scrollTabs(1)} />}
         <button
           type="button"
           onClick={handleNewConsole}
-          className="flex h-9 shrink-0 items-center border-l border-border px-3 text-xs text-muted-foreground transition-colors hover:bg-card/50 hover:text-foreground"
+          className="flex h-9 shrink-0 items-center gap-1 border-l border-border px-3 text-xs text-muted-foreground transition-colors hover:bg-card/50 hover:text-foreground"
           aria-label="New SQL console"
         >
-          + New
+          <Icon name="plus-sign" size={11} />
+          New
         </button>
       </div>
 
@@ -221,15 +236,16 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
   )
 }
 
-function ScrollChevron({ direction, onClick }: { direction: 'left' | 'right'; onClick: () => void }) {
+function ScrollChevron({ direction, disabled, onClick }: { direction: 'left' | 'right'; disabled?: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
       aria-label={direction === 'left' ? 'Scroll tabs left' : 'Scroll tabs right'}
       className={cn(
-        'flex h-9 w-7 shrink-0 items-center justify-center bg-background text-muted-foreground transition-colors hover:bg-card/50 hover:text-foreground',
-        direction === 'left' ? 'border-r border-border' : 'border-l border-border',
+        'flex h-9 w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors',
+        disabled ? 'opacity-35' : 'hover:bg-card/50 hover:text-foreground',
       )}
     >
       <Icon name="chevron-right" size={14} className={direction === 'left' ? 'rotate-180' : undefined} />
@@ -306,10 +322,10 @@ function TabItem({
         'group relative flex h-9 max-w-52 shrink-0 cursor-pointer select-none items-center gap-1 border-r border-border pl-2.5 pr-1',
         active
           ? cn(
-              'bg-card text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px]',
+              'bg-card text-foreground after:absolute after:left-0 after:right-0 after:top-0 after:h-[2px]',
               focused ? 'after:bg-primary' : 'after:bg-border',
             )
-          : 'bg-background text-muted-foreground hover:bg-card/50 hover:text-foreground',
+          : 'text-muted-foreground hover:bg-card/50 hover:text-foreground',
       )}
     >
       {isRunning ? (

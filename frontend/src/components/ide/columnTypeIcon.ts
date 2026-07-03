@@ -20,7 +20,8 @@ export function columnTypeIcon(dataType: string): AppIcon {
   if (t.startsWith('time')) return 'type-time'
 
   // Binary — before string so `varbinary` isn't caught by the "var" string rule.
-  if (t.includes('binary') || t === 'bytea' || t.includes('blob')) return 'type-binary'
+  // `bytes` is the normalized result-column type from the query API.
+  if (t.includes('binary') || t === 'bytea' || t === 'bytes' || t.includes('blob')) return 'type-binary'
 
   if (t === 'uuid' || t.includes('uniqueidentifier')) return 'type-uuid'
   if (t.includes('json')) return 'type-json'
@@ -44,4 +45,17 @@ export function columnTypeIcon(dataType: string): AppIcon {
   }
 
   return 'column'
+}
+
+/** Accent class per type-category icon, shared by the schema tree and results
+ *  grid so a data type reads the same color everywhere. */
+export const columnTypeIconColor: Record<string, string> = {
+  'type-number': 'text-blue-500',
+  'type-boolean': 'text-amber-500',
+  'type-timestamp': 'text-purple-500',
+  'type-date': 'text-purple-500',
+  'type-time': 'text-purple-500',
+  'type-uuid': 'text-orange-400',
+  'type-json': 'text-green-500',
+  'type-binary': 'text-red-400',
 }

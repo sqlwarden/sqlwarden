@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
 export type EditorFont = {
@@ -7,14 +7,15 @@ export type EditorFont = {
 }
 
 export const EDITOR_FONTS: EditorFont[] = [
-  // Roboto Mono is the app default — already loaded globally via styles.css
-  { label: 'Roboto Mono',      fontFamily: "'Roboto Mono Variable', ui-monospace, monospace" },
+  // Geist Mono is the app default — already loaded globally via styles.css
+  { label: 'Geist Mono',       fontFamily: "'Geist Mono', ui-monospace, monospace" },
   { label: 'System Font',      fontFamily: 'ui-monospace, monospace' },
   // @fontsource-variable packages register under the "Variable" family name
   { label: 'JetBrains Mono',   fontFamily: "'JetBrains Mono Variable', ui-monospace, monospace" },
   { label: 'Fira Code',        fontFamily: "'Fira Code Variable', ui-monospace, monospace" },
   { label: 'Cascadia Code',    fontFamily: "'Cascadia Code', ui-monospace, monospace" },
   { label: 'Source Code Pro',  fontFamily: "'Source Code Pro Variable', ui-monospace, monospace" },
+  { label: 'Roboto Mono',      fontFamily: "'Roboto Mono Variable', ui-monospace, monospace" },
   { label: 'Courier New',      fontFamily: "'Courier New', monospace" },
 ]
 
@@ -35,7 +36,8 @@ export async function loadEditorFont(font: EditorFont): Promise<void> {
     case 'Fira Code':       await import('@fontsource-variable/fira-code');       break
     case 'Cascadia Code':   await import('@fontsource/cascadia-code');            break
     case 'Source Code Pro': await import('@fontsource-variable/source-code-pro'); break
-    // Roboto Mono: loaded globally in styles.css — no lazy load needed.
+    case 'Roboto Mono':     await import('@fontsource-variable/roboto-mono');     break
+    // Geist Mono: loaded globally in styles.css — no lazy load needed.
     // System Font, Courier New: no web font required.
   }
 }
@@ -78,6 +80,18 @@ const EditorFontContext = createContext<EditorFontContextValue>({
 export function EditorFontProvider({ children }: { children: ReactNode }) {
   const [font, setFontState] = useState<EditorFont>(() => readFont())
   const [size, setSizeState] = useState<EditorFontSize>(() => readFontSize())
+
+  // The editor font doubles as the app's data font: styles.css routes the
+  // font-mono utility through --font-data, so result grids, cell values, and
+  // type metadata render in the same face as the SQL being edited.
+  useEffect(() => {
+    let cancelled = false
+    void loadEditorFont(font).then(() => {
+      if (cancelled) return
+      document.documentElement.style.setProperty('--font-data', font.fontFamily)
+    })
+    return () => { cancelled = true }
+  }, [font])
 
   function setEditorFont(f: EditorFont) {
     localStorage.setItem(FONT_KEY, f.fontFamily)

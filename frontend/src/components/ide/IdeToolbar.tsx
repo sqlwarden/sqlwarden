@@ -23,6 +23,9 @@ type IdeToolbarProps = {
   workspace: Workspace
 }
 
+export const RUN_SHORTCUT =
+  typeof navigator !== 'undefined' && /mac/i.test(navigator.platform) ? '⌘↵' : 'Ctrl ↵'
+
 export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [connSearch, setConnSearch] = useState('')
@@ -213,6 +216,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         data: result,
         durationMs: result.duration_ms,
         sql,
+        connectionId: activeConnection.id,
       })
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
@@ -255,11 +259,11 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
 
   return (
     <>
-    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-2">
+    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-background px-2.5">
       {/* Run button — always shown; disabled while running */}
       <Button
         type="button"
-        size="sm"
+        className="px-2.5"
         disabled={runDisabled}
         onClick={() => void handleRun()}
       >
@@ -270,13 +274,17 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           className={isRunning ? 'animate-spin' : undefined}
         />
         {isRunning ? 'Running…' : 'Run'}
+        {!isRunning && (
+          <kbd className="ml-0.5 hidden rounded bg-primary-foreground/20 px-1 font-sans text-[9px] font-medium leading-4 tracking-wide sm:inline">
+            {RUN_SHORTCUT}
+          </kbd>
+        )}
       </Button>
 
       {/* Cancel button — appears only while a query is in flight */}
       {isRunning && (
         <Button
           type="button"
-          size="sm"
           variant="outline"
           onClick={handleCancel}
         >
@@ -290,7 +298,6 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         <Button
           type="button"
           variant="outline"
-          size="sm"
           aria-label="Save file"
           onClick={handleSave}
         >
@@ -310,10 +317,10 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           render={
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
               disabled={selectorDisabled}
-              className="h-7 min-w-0 max-w-56 gap-1.5 rounded-md border border-border/60 px-2 text-xs font-normal hover:border-border"
+              className="h-7 min-w-0 max-w-60 gap-1.5 px-2 text-xs font-normal"
             />
           }
         >

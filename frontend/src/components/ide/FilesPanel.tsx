@@ -230,7 +230,7 @@ function FilesSection({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {visibility === 'shared' ? (
-        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground select-none">
+        <div className="border-b border-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground select-none">
           {title}
         </div>
       ) : null}
@@ -303,8 +303,8 @@ function FileTreeFolder({
       onClick={() => setNodeExpanded(nodeKey, !expanded)}
       style={{ paddingLeft: `${6 + depth * 11}px` }}
       className={cn(
-        'flex h-6 w-full min-w-0 items-center gap-1.5 pr-3 text-left text-xs',
-        'transition-colors hover:bg-accent hover:text-accent-foreground',
+        'mx-1 flex h-6 w-[calc(100%-0.5rem)] min-w-0 items-center gap-1.5 rounded-md pr-2 text-left text-xs',
+        'transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
       )}
     >
       <Icon
@@ -392,10 +392,10 @@ function FileTreeFile({
       onClick={() => onOpen(file)}
       style={{ paddingLeft: `${6 + depth * 11 + 14}px` }}
       className={cn(
-        'flex h-6 w-full min-w-0 items-center gap-2 pr-3 text-left text-xs transition-colors',
+        'mx-1 flex h-6 w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-md pr-2 text-left text-xs transition-colors',
         active
           ? 'bg-primary/10 text-foreground hover:bg-primary/15'
-          : 'hover:bg-accent hover:text-accent-foreground',
+          : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
       )}
     >
       <Icon name="file-01" size={13} className="shrink-0 text-muted-foreground" />

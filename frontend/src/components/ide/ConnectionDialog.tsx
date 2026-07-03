@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
-import { driverBrands } from './connection-drivers/index'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
 import type { Environment } from '#/lib/api/types'
+import { cn } from '#/lib/utils'
 import { Button } from '#/components/ui/button'
 import {
   Dialog,
@@ -24,10 +24,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
-import { drivers, driverMap, defaultFieldValues } from './connection-drivers/index'
+import {
+  drivers,
+  driverMap,
+  driverBrands,
+  defaultFieldValues,
+  type DriverDef,
+  type FieldDef,
+} from './connection-drivers/index'
 import { DriverBadge } from './DriverBadge'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
+
+type Stage = 'driver' | 'form'
 
 type TestState =
   | { status: 'idle' }
@@ -40,13 +49,6 @@ type FormErrors = {
   environmentId?: string
   fields: Record<string, string>
   _form?: string
-}
-
-type DriverFormProps = {
-  fields: Record<string, string>
-  errors: Record<string, string>
-  disabled: boolean
-  onChange: (key: string, value: string) => void
 }
 
 // ─── Main component ─────────────────────────────────────────────────────────────
@@ -64,6 +66,7 @@ type Props = {
 export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, environments, lockedEnvironmentId }: Props) {
   const queryClient = useQueryClient()
 
+  const [stage, setStage] = useState<Stage>('driver')
   const [driverId, setDriverId] = useState(drivers[0].id)
   const [name, setName] = useState('')
   const [environmentId, setEnvironmentId] = useState('')
@@ -80,13 +83,16 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
     }
   }, [open, environments, environmentId, lockedEnvironmentId])
 
-  function handleDriverChange(newDriverId: string) {
+  function handlePickDriver(newDriverId: string) {
     const def = driverMap.get(newDriverId)
     if (!def) return
+    if (newDriverId !== driverId) {
+      setFields(defaultFieldValues(def))
+      setErrors({ fields: {} })
+      setTestState({ status: 'idle' })
+    }
     setDriverId(newDriverId)
-    setFields(defaultFieldValues(def))
-    setErrors({ fields: {} })
-    setTestState({ status: 'idle' })
+    setStage('form')
   }
 
   function handleFieldChange(key: string, value: string) {
@@ -99,6 +105,7 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
   }
 
   function resetForm() {
+    setStage('driver')
     setDriverId(drivers[0].id)
     setName('')
     setEnvironmentId(
@@ -183,6 +190,7 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (stage !== 'form') return
     if (!validateForm()) return
     void createMutation.mutateAsync().catch(() => {})
   }
@@ -196,130 +204,115 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>New Connection</DialogTitle>
+          <DialogTitle>{stage === 'driver' ? 'Choose a database' : 'New Connection'}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col">
-          <div className="flex flex-col gap-4 overflow-y-auto max-h-[min(560px,calc(100svh-14rem))] pb-1">
-
-            {/* Driver selector */}
-            <FormField label="Database">
-              <Select
-                value={driverId}
-                onValueChange={(v) => { if (v) handleDriverChange(v) }}
-                disabled={isPending}
-              >
-                <SelectTrigger>
-                  <SelectValue>
-                    <div className="flex items-center gap-2">
-                      <DriverBadge driver={driverId} size="sm" />
-                      <span>{currentDriver.label}</span>
-                    </div>
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="min-w-[220px]">
-                  {drivers.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      <div className="flex items-center gap-2.5 py-0.5">
-                        <DriverBadge driver={d.id} size="sm" />
-                        <div>
-                          <div className="text-xs font-medium">{d.label}</div>
-                          <div className="text-[10px] text-muted-foreground">{driverBrands[d.id]?.description}</div>
-                        </div>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FormField>
-
-            {/* Basic info */}
-            <SectionDivider label="Details" />
-
-            <FormField label="Name" error={errors.name}>
-              <Input
-                value={name}
-                disabled={isPending}
-                placeholder={`My ${currentDriver.label}`}
-                aria-invalid={errors.name ? true : undefined}
-                onChange={(e) => {
-                  setName(e.target.value)
-                  setErrors((prev) => ({ ...prev, name: undefined }))
-                }}
-              />
-            </FormField>
-
-            {environments.length > 0 ? (
-              <FormField label="Environment" error={errors.environmentId}>
-                <Select
-                  value={environmentId}
-                  onValueChange={(v) => {
-                    if (!v) return
-                    setEnvironmentId(v)
-                    setErrors((prev) => ({ ...prev, environmentId: undefined }))
-                  }}
-                  disabled={isPending || !!lockedEnvironmentId}
-                >
-                  <SelectTrigger aria-invalid={errors.environmentId ? true : undefined}>
-                    <SelectValue>{selectedEnvName}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="min-w-[180px]">
-                    {environments.map((env) => (
-                      <SelectItem key={env.id} value={String(env.id)}>
-                        {env.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormField>
-            ) : null}
-
-            {/* Per-driver connection form */}
-            <SectionDivider label="Connection" />
-
-            {driverId === 'postgres' ? (
-              <PostgresForm
-                fields={fields}
-                errors={errors.fields}
-                disabled={isPending}
-                onChange={handleFieldChange}
-              />
+          <div className="flex max-h-[min(560px,calc(100svh-14rem))] flex-col gap-4 overflow-y-auto pb-1">
+            {stage === 'driver' ? (
+              <DriverGallery onPick={handlePickDriver} />
             ) : (
-              <MysqlForm
-                fields={fields}
-                errors={errors.fields}
-                disabled={isPending}
-                onChange={handleFieldChange}
-              />
+              <>
+                {/* Selected driver summary — one click back to the gallery. */}
+                <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 p-3">
+                  <DriverBadge driver={driverId} size="md" className="size-8 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium text-foreground">{currentDriver.label}</div>
+                    <div className="truncate text-[10px] text-muted-foreground">
+                      {driverBrands[driverId]?.description}
+                    </div>
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" disabled={isPending} onClick={() => setStage('driver')}>
+                    Change
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-6 gap-3">
+                  <div className={cn('col-span-6', environments.length > 0 && 'sm:col-span-3')}>
+                    <FormField label="Name" error={errors.name}>
+                      <Input
+                        value={name}
+                        disabled={isPending}
+                        placeholder={`My ${currentDriver.label}`}
+                        aria-invalid={errors.name ? true : undefined}
+                        onChange={(e) => {
+                          setName(e.target.value)
+                          setErrors((prev) => ({ ...prev, name: undefined }))
+                        }}
+                      />
+                    </FormField>
+                  </div>
+
+                  {environments.length > 0 ? (
+                    <div className="col-span-6 sm:col-span-3">
+                      <FormField label="Environment" error={errors.environmentId}>
+                        <Select
+                          value={environmentId}
+                          onValueChange={(v) => {
+                            if (!v) return
+                            setEnvironmentId(v)
+                            setErrors((prev) => ({ ...prev, environmentId: undefined }))
+                          }}
+                          disabled={isPending || !!lockedEnvironmentId}
+                        >
+                          <SelectTrigger aria-invalid={errors.environmentId ? true : undefined} className="w-full">
+                            <SelectValue>{selectedEnvName}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent className="min-w-[180px]">
+                            {environments.map((env) => (
+                              <SelectItem key={env.id} value={String(env.id)}>
+                                {env.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormField>
+                    </div>
+                  ) : null}
+
+                  <DriverFields
+                    driver={currentDriver}
+                    values={fields}
+                    errors={errors.fields}
+                    disabled={isPending}
+                    onChange={handleFieldChange}
+                  />
+                </div>
+
+                {errors._form ? <p className="text-xs text-destructive">{errors._form}</p> : null}
+              </>
             )}
-
-            {errors._form ? <p className="text-xs text-destructive">{errors._form}</p> : null}
-
-            {/* Test connection */}
-            <div className="flex items-center gap-3 pt-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!requiredFieldsFilled || testMutation.isPending || isPending}
-                onClick={() => void testMutation.mutateAsync().catch(() => {})}
-              >
-                {testMutation.isPending ? 'Testing…' : 'Test Connection'}
-              </Button>
-              <TestStatusIndicator state={testState} />
-            </div>
-
           </div>
 
-          <DialogFooter className="mt-4 border-t border-border/60 pt-4">
-            <DialogClose render={<Button type="button" variant="ghost" disabled={isPending} />}>
-              Cancel
-            </DialogClose>
-            <Button type="submit" disabled={isPending}>
-              {isPending ? 'Creating…' : 'Create'}
-            </Button>
+          <DialogFooter className="mt-4 items-center gap-3 border-t border-border/60 pt-4 sm:justify-between">
+            {stage === 'form' ? (
+              <div className="flex min-w-0 items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!requiredFieldsFilled || testMutation.isPending || isPending}
+                  onClick={() => void testMutation.mutateAsync().catch(() => {})}
+                >
+                  {testMutation.isPending ? 'Testing…' : 'Test Connection'}
+                </Button>
+                <TestStatusIndicator state={testState} />
+              </div>
+            ) : (
+              <span />
+            )}
+            <div className="flex items-center gap-2">
+              <DialogClose render={<Button type="button" variant="ghost" disabled={isPending} />}>
+                Cancel
+              </DialogClose>
+              {stage === 'form' && (
+                <Button type="submit" disabled={isPending}>
+                  {isPending ? 'Creating…' : 'Create'}
+                </Button>
+              )}
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -327,145 +320,165 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
   )
 }
 
-// ─── Per-driver form components ─────────────────────────────────────────────────
+// ─── Driver gallery ─────────────────────────────────────────────────────────────
 
-function PostgresForm({ fields, errors, disabled, onChange }: DriverFormProps) {
-  const ssl = fields.sslmode || 'prefer'
-  const sslLabel = { disable: 'Disable', prefer: 'Prefer', require: 'Require' }[ssl] ?? ssl
+function DriverGallery({ onPick }: { onPick: (driverId: string) => void }) {
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const filtered = drivers.filter(
+    (d) =>
+      !q ||
+      d.label.toLowerCase().includes(q) ||
+      d.id.toLowerCase().includes(q) ||
+      (driverBrands[d.id]?.description ?? '').toLowerCase().includes(q),
+  )
 
   return (
-    <>
-      <div className="grid grid-cols-[1fr_6.5rem] gap-3">
-        <FormField label="Host" error={errors.host}>
-          <Input
-            value={fields.host ?? ''}
-            placeholder="localhost"
-            disabled={disabled}
-            aria-invalid={errors.host ? true : undefined}
-            onChange={(e) => onChange('host', e.target.value)}
-          />
-        </FormField>
-        <FormField label="Port" error={errors.port}>
-          <Input
-            type="number"
-            value={fields.port ?? '5432'}
-            disabled={disabled}
-            aria-invalid={errors.port ? true : undefined}
-            onChange={(e) => onChange('port', e.target.value)}
-          />
-        </FormField>
-      </div>
-
-      <FormField label="Database" error={errors.database}>
-        <Input
-          value={fields.database ?? ''}
-          placeholder="mydb"
-          disabled={disabled}
-          aria-invalid={errors.database ? true : undefined}
-          onChange={(e) => onChange('database', e.target.value)}
+    <div className="flex flex-col gap-3">
+      <div className="relative">
+        <Icon
+          name="search-01"
+          size={13}
+          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
         />
-      </FormField>
-
-      <SectionDivider label="Credentials" />
-
-      <div className="grid grid-cols-2 gap-3">
-        <FormField label="Username" error={errors.username}>
-          <Input
-            value={fields.username ?? ''}
-            placeholder="postgres"
-            disabled={disabled}
-            aria-invalid={errors.username ? true : undefined}
-            onChange={(e) => onChange('username', e.target.value)}
-          />
-        </FormField>
-        <FormField label="Password">
-          <Input
-            type="password"
-            value={fields.password ?? ''}
-            disabled={disabled}
-            onChange={(e) => onChange('password', e.target.value)}
-          />
-        </FormField>
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search databases…"
+          autoFocus
+          className="h-8 pl-8"
+        />
       </div>
 
-      <SectionDivider label="Security" />
-
-      <FormField label="SSL Mode">
-        <Select
-          value={ssl}
-          onValueChange={(v) => { if (v) onChange('sslmode', v) }}
-          disabled={disabled}
-        >
-          <SelectTrigger>
-            <SelectValue>{sslLabel}</SelectValue>
-          </SelectTrigger>
-          <SelectContent className="min-w-[120px]">
-            <SelectItem value="disable">Disable</SelectItem>
-            <SelectItem value="prefer">Prefer</SelectItem>
-            <SelectItem value="require">Require</SelectItem>
-          </SelectContent>
-        </Select>
-      </FormField>
-    </>
+      {filtered.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">
+          No databases match &ldquo;{search}&rdquo;
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {filtered.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => onPick(d.id)}
+              className={cn(
+                'group flex flex-col items-start gap-2.5 rounded-xl border border-border bg-card p-3 text-left',
+                'transition-all hover:border-primary/50 hover:bg-accent/40 hover:shadow-sm',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              )}
+            >
+              <DriverBadge driver={d.id} size="md" className="size-8" />
+              <div className="min-w-0">
+                <div className="text-xs font-medium text-foreground">{d.label}</div>
+                <div className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground">
+                  {driverBrands[d.id]?.description}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
-function MysqlForm({ fields, errors, disabled, onChange }: DriverFormProps) {
+// ─── Registry-driven driver form ─────────────────────────────────────────────────
+// Fields, sections, and layout all come from the driver definition, so adding a
+// new database means writing one driver def — no dialog changes.
+
+const SPAN_CLASS: Record<NonNullable<FieldDef['span']>, string> = {
+  full: 'col-span-6',
+  wide: 'col-span-4',
+  half: 'col-span-3',
+  compact: 'col-span-2',
+}
+
+function DriverFields({
+  driver,
+  values,
+  errors,
+  disabled,
+  onChange,
+}: {
+  driver: DriverDef
+  values: Record<string, string>
+  errors: Record<string, string>
+  disabled: boolean
+  onChange: (key: string, value: string) => void
+}) {
+  const nodes: React.ReactNode[] = []
+  let lastSection: string | undefined
+
+  for (const field of driver.fields) {
+    if (field.section && field.section !== lastSection) {
+      lastSection = field.section
+      nodes.push(
+        <div key={`section:${field.section}`} className="col-span-6">
+          <SectionDivider label={field.section} />
+        </div>,
+      )
+    }
+    nodes.push(
+      <div key={field.key} className={SPAN_CLASS[field.span ?? 'full']}>
+        <FormField label={field.label} error={errors[field.key]}>
+          <DriverFieldControl
+            field={field}
+            value={values[field.key] ?? ''}
+            invalid={Boolean(errors[field.key])}
+            disabled={disabled}
+            onChange={onChange}
+          />
+        </FormField>
+      </div>,
+    )
+  }
+
+  return <>{nodes}</>
+}
+
+function DriverFieldControl({
+  field,
+  value,
+  invalid,
+  disabled,
+  onChange,
+}: {
+  field: FieldDef
+  value: string
+  invalid: boolean
+  disabled: boolean
+  onChange: (key: string, value: string) => void
+}) {
+  if (field.type === 'select') {
+    const selectedLabel = field.options?.find((o) => o.value === (value || field.default))?.label ?? value
+    return (
+      <Select
+        value={value || field.default || ''}
+        onValueChange={(v) => { if (v) onChange(field.key, v) }}
+        disabled={disabled}
+      >
+        <SelectTrigger className="w-full">
+          <SelectValue>{selectedLabel}</SelectValue>
+        </SelectTrigger>
+        <SelectContent className="min-w-[120px]">
+          {(field.options ?? []).map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    )
+  }
   return (
-    <>
-      <div className="grid grid-cols-[1fr_6.5rem] gap-3">
-        <FormField label="Host" error={errors.host}>
-          <Input
-            value={fields.host ?? ''}
-            placeholder="localhost"
-            disabled={disabled}
-            aria-invalid={errors.host ? true : undefined}
-            onChange={(e) => onChange('host', e.target.value)}
-          />
-        </FormField>
-        <FormField label="Port" error={errors.port}>
-          <Input
-            type="number"
-            value={fields.port ?? '3306'}
-            disabled={disabled}
-            aria-invalid={errors.port ? true : undefined}
-            onChange={(e) => onChange('port', e.target.value)}
-          />
-        </FormField>
-      </div>
-
-      <FormField label="Database" error={errors.database}>
-        <Input
-          value={fields.database ?? ''}
-          placeholder="mydb"
-          disabled={disabled}
-          aria-invalid={errors.database ? true : undefined}
-          onChange={(e) => onChange('database', e.target.value)}
-        />
-      </FormField>
-
-      <SectionDivider label="Credentials" />
-
-      <div className="grid grid-cols-2 gap-3">
-        <FormField label="Username" error={errors.username}>
-          <Input
-            value={fields.username ?? ''}
-            placeholder="root"
-            disabled={disabled}
-            aria-invalid={errors.username ? true : undefined}
-            onChange={(e) => onChange('username', e.target.value)}
-          />
-        </FormField>
-        <FormField label="Password">
-          <Input
-            type="password"
-            value={fields.password ?? ''}
-            disabled={disabled}
-            onChange={(e) => onChange('password', e.target.value)}
-          />
-        </FormField>
-      </div>
-    </>
+    <Input
+      type={field.type === 'number' ? 'number' : field.type === 'password' ? 'password' : 'text'}
+      value={value}
+      placeholder={field.placeholder}
+      disabled={disabled}
+      aria-invalid={invalid ? true : undefined}
+      onChange={(e) => onChange(field.key, e.target.value)}
+    />
   )
 }
 
@@ -473,8 +486,8 @@ function MysqlForm({ fields, errors, disabled, onChange }: DriverFormProps) {
 
 function SectionDivider({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+    <div className="flex items-center gap-2 pt-1">
+      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
       <div className="h-px flex-1 bg-border" />
@@ -508,9 +521,9 @@ function TestStatusIndicator({ state }: { state: TestState }) {
     )
   }
   return (
-    <span className="flex items-center gap-1 text-xs text-destructive">
-      <Icon name="cancel-01" size={13} />
-      {state.message}
+    <span className="flex min-w-0 items-center gap-1 text-xs text-destructive">
+      <Icon name="cancel-01" size={13} className="shrink-0" />
+      <span className="truncate" title={state.message}>{state.message}</span>
     </span>
   )
 }

@@ -8,6 +8,8 @@ import { TooltipProvider } from '#/components/ui/tooltip'
 import { IconPackProvider } from '#/lib/icons'
 import { EditorThemeProvider } from '#/lib/editor-themes/context'
 import { EditorFontProvider } from '#/lib/editor-font/context'
+import { InterfaceFontProvider } from '#/lib/interface-font/context'
+import { ThemeLabProvider } from '#/lib/theme-lab/context'
 import { ConnectionLayoutProvider } from '#/components/ide/useConnectionLayout'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { AUTH_INVALIDATED_EVENT } from '#/lib/auth/invalidation'
@@ -39,9 +41,11 @@ function RootComponent() {
 
   return (
     <ThemeProvider defaultTheme="system" storageKey="theme">
+      <ThemeLabProvider>
       <IconPackProvider>
       <EditorThemeProvider>
       <EditorFontProvider>
+      <InterfaceFontProvider>
       <ConnectionLayoutProvider>
       <TooltipProvider>
         <GlobalLoadingBar />
@@ -52,6 +56,7 @@ function RootComponent() {
         </div>
       </TooltipProvider>
       </ConnectionLayoutProvider>
+      </InterfaceFontProvider>
       </EditorFontProvider>
       <Toaster closeButton position="top-center" theme="system" />
       <Suspense fallback={null}>
@@ -59,6 +64,7 @@ function RootComponent() {
       </Suspense>
       </EditorThemeProvider>
       </IconPackProvider>
+      </ThemeLabProvider>
     </ThemeProvider>
   )
 }

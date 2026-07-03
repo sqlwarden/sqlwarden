@@ -45,6 +45,7 @@ describe('columnTypeIcon', () => {
     expect(columnTypeIcon('json')).toBe('type-json')
     expect(columnTypeIcon('jsonb')).toBe('type-json')
     expect(columnTypeIcon('bytea')).toBe('type-binary')
+    expect(columnTypeIcon('bytes')).toBe('type-binary')
     expect(columnTypeIcon('blob')).toBe('type-binary')
     expect(columnTypeIcon('varbinary(16)')).toBe('type-binary')
   })

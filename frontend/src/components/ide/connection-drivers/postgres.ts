@@ -11,6 +11,8 @@ export const postgresDriver: DriverDef = {
       type: 'text',
       placeholder: 'localhost',
       required: true,
+      section: 'Server',
+      span: 'wide',
     },
     {
       key: 'port',
@@ -18,6 +20,8 @@ export const postgresDriver: DriverDef = {
       type: 'number',
       default: '5432',
       required: true,
+      section: 'Server',
+      span: 'compact',
     },
     {
       key: 'database',
@@ -25,6 +29,7 @@ export const postgresDriver: DriverDef = {
       type: 'text',
       placeholder: 'mydb',
       required: true,
+      section: 'Server',
     },
     {
       key: 'username',
@@ -32,17 +37,23 @@ export const postgresDriver: DriverDef = {
       type: 'text',
       placeholder: 'postgres',
       required: true,
+      section: 'Credentials',
+      span: 'half',
     },
     {
       key: 'password',
       label: 'Password',
       type: 'password',
+      section: 'Credentials',
+      span: 'half',
     },
     {
       key: 'sslmode',
       label: 'SSL Mode',
       type: 'select',
       default: 'prefer',
+      section: 'Security',
+      span: 'half',
       options: [
         { label: 'Disable', value: 'disable' },
         { label: 'Prefer', value: 'prefer' },

@@ -16,6 +16,10 @@ export type FieldDef = {
   default?: string
   required?: boolean
   options?: { label: string; value: string }[]
+  /** Width on the form grid (defaults to 'full'): full · wide · half · compact. */
+  span?: 'full' | 'wide' | 'half' | 'compact'
+  /** Section heading; a divider renders whenever it differs from the previous field's. */
+  section?: string
 }
 
 export type DriverDef = {

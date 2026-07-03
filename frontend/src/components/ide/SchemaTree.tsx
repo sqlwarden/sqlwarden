@@ -15,7 +15,7 @@ import { newDiagramTab, type DiagramTarget } from './schema-diagram/diagramTab'
 import { diagramSupported, diagramSupportedForKind } from './schema-diagram/capability'
 import { OBJECT_REF_DND_MIME } from './schema-diagram/dnd'
 import { filterCatalog, kindLabel, sortedGroups } from './schemaCatalog'
-import { columnTypeIcon } from './columnTypeIcon'
+import { columnTypeIcon, columnTypeIconColor } from './columnTypeIcon'
 import { dialectFor, IDENTIFIER_DND_MIME, type SqlDialect } from './sqlDialect'
 import { useInsertIntoEditor } from './useInsertIntoEditor'
 import { ContextMenu } from '#/components/ui/context-menu'
@@ -23,8 +23,6 @@ import { copyWithToast, columnList, qualifiedColumn } from './contextMenus/clipb
 import { buildNamespaceMenu, buildObjectGroupMenu } from './contextMenus/schemaMenu'
 import { buildObjectMenu } from './contextMenus/objectMenu'
 import { buildColumnMenu, buildIndexMenu } from './contextMenus/columnMenu'
-
-const indent = (depth: number) => 4 + depth * 10
 
 type TreeCtx = {
   dialect: SqlDialect
@@ -83,17 +81,18 @@ function useTreeCtx() {
   }
 }
 
-const KIND_ICON: Record<string, AppIcon> = {
-  table: 'table',
-  view: 'eye',
-  materialized_view: 'table',
-  function: 'play',
-  procedure: 'terminal',
-  sequence: 'sort',
-  trigger: 'flow-connection',
+/** Icon + accent color per object kind, so tables/views/functions scan at a glance. */
+const KIND_STYLE: Record<string, { icon: AppIcon; className: string }> = {
+  table: { icon: 'table', className: 'text-chart-4' },
+  view: { icon: 'eye', className: 'text-chart-2' },
+  materialized_view: { icon: 'eye', className: 'text-chart-2' },
+  function: { icon: 'play', className: 'text-chart-1' },
+  procedure: { icon: 'terminal', className: 'text-chart-1' },
+  sequence: { icon: 'sort', className: 'text-chart-3' },
+  trigger: { icon: 'flow-connection', className: 'text-chart-5' },
 }
 
-const kindIcon = (kind: string): AppIcon => KIND_ICON[kind] ?? 'box'
+const kindStyle = (kind: string) => KIND_STYLE[kind] ?? { icon: 'box' as AppIcon, className: 'text-muted-foreground' }
 
 export function SchemaTree({
   orgSlug,
@@ -142,7 +141,7 @@ export function SchemaTree({
       return <SchemaMessage>This driver doesn&apos;t support schema inspection.</SchemaMessage>
     }
     return (
-      <div className="flex items-center gap-2 py-1.5 pr-2 text-xs text-muted-foreground" style={{ paddingLeft: indent(0) }}>
+      <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
         <span>Failed to load schema.</span>
         <button type="button" className="underline hover:text-foreground" onClick={() => catalogQuery.refetch()}>
           Retry
@@ -180,10 +179,10 @@ export function SchemaTree({
 
   return (
     <SchemaTreeContext.Provider value={ctx}>
-      <div>
+      <div className="py-0.5">
         {single
           ? sortedGroups(single, spec).map((g) => (
-              <SchemaGroupNode key={g.kind} group={g} baseDepth={0} forceOpen={filtering} />
+              <SchemaGroupNode key={g.kind} group={g} forceOpen={filtering} />
             ))
           : namespaces.map((ns) => <SchemaNamespaceNode key={ns.name} namespace={ns} forceOpen={filtering} />)}
       </div>
@@ -193,7 +192,7 @@ export function SchemaTree({
 
 function SchemaMessage({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-1.5 py-1.5 pr-2 text-xs text-muted-foreground" style={{ paddingLeft: indent(0) }}>
+    <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground">
       {children}
     </div>
   )
@@ -201,6 +200,12 @@ function SchemaMessage({ children }: { children: React.ReactNode }) {
 
 function SchemaSpinner({ size = 12 }: { size?: number }) {
   return <Icon name="loading-03" size={size} className="shrink-0 animate-spin text-muted-foreground" />
+}
+
+/** Indent guide: children of an expanded node nest inside this container, which
+ *  draws a continuous vertical line under the parent's chevron. */
+function GuideChildren({ children }: { children: React.ReactNode }) {
+  return <div className="ml-[13px] border-l border-border/60">{children}</div>
 }
 
 function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: CatalogNamespace; forceOpen: boolean }) {
@@ -219,26 +224,28 @@ function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: CatalogNames
   return (
     <div>
       <ContextMenu items={menuItems}>
-        <TreeRow depth={0} typeIcon="database" chevron={expanded} bold label={namespace.name} onClick={() => setOpen(!expanded)} />
+        <TreeRow
+          typeIcon="database"
+          chevron={expanded}
+          bold
+          label={namespace.name}
+          onClick={() => setOpen(!expanded)}
+        />
       </ContextMenu>
-      {expanded && groups.map((g) => <SchemaGroupNode key={g.kind} group={g} baseDepth={1} forceOpen={forceOpen} />)}
+      {expanded && (
+        <GuideChildren>
+          {groups.map((g) => <SchemaGroupNode key={g.kind} group={g} forceOpen={forceOpen} />)}
+        </GuideChildren>
+      )}
     </div>
   )
 }
 
-function SchemaGroupNode({
-  group,
-  baseDepth,
-  forceOpen,
-}: {
-  group: CatalogObjectGroup
-  baseDepth: number
-  forceOpen: boolean
-}) {
+function SchemaGroupNode({ group, forceOpen }: { group: CatalogObjectGroup; forceOpen: boolean }) {
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
   const objects = group.objects ?? []
-  const icon = kindIcon(group.kind)
+  const style = kindStyle(group.kind)
   const { refresh, spec } = useTreeCtx()
   const label = kindLabel(spec, group.kind)
   const newLabel = `New ${label.replace(/s$/, '')}...`
@@ -248,32 +255,26 @@ function SchemaGroupNode({
     <div>
       <ContextMenu items={menuItems}>
         <TreeRow
-          depth={baseDepth}
-          typeIcon={expanded ? 'folder-open' : 'folder'}
+          typeIcon={style.icon}
+          typeIconClass={style.className}
           chevron={expanded}
-          label={`${label} (${objects.length})`}
+          label={label}
+          count={objects.length}
           onClick={() => setOpen(!expanded)}
         />
       </ContextMenu>
-      {expanded &&
-        objects.map((ref) => (
-          <SchemaObjectNode key={`${ref.kind}:${ref.name}`} objectRef={ref} typeIcon={icon} depth={baseDepth + 1} forceOpen={forceOpen} />
-        ))}
+      {expanded && (
+        <GuideChildren>
+          {objects.map((ref) => (
+            <SchemaObjectNode key={`${ref.kind}:${ref.name}`} objectRef={ref} forceOpen={forceOpen} />
+          ))}
+        </GuideChildren>
+      )}
     </div>
   )
 }
 
-function SchemaObjectNode({
-  objectRef,
-  typeIcon,
-  depth,
-  forceOpen,
-}: {
-  objectRef: ObjectRef
-  typeIcon: AppIcon
-  depth: number
-  forceOpen: boolean
-}) {
+function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forceOpen: boolean }) {
   const ctx = useContext(SchemaTreeContext)
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
@@ -285,6 +286,7 @@ function SchemaObjectNode({
   const columns = detail?.relational?.columns ?? []
   const insertable = useObjectInsert(objectRef)
   const { dialect, spec, openDiagram } = useTreeCtx()
+  const style = kindStyle(objectRef.kind)
   const isView = objectRef.kind === 'view' || objectRef.kind === 'materialized_view'
   const objectMenu = buildObjectMenu({
     isView,
@@ -301,8 +303,8 @@ function SchemaObjectNode({
     <div>
       <ContextMenu items={objectMenu}>
         <TreeRow
-          depth={depth}
-          typeIcon={typeIcon}
+          typeIcon={style.icon}
+          typeIconClass={style.className}
           chevron={expanded}
           label={objectRef.name}
           insertable={insertable}
@@ -310,7 +312,11 @@ function SchemaObjectNode({
           onDoubleClickRow={() => ctx?.openObject(objectRef)}
         />
       </ContextMenu>
-      {expanded && <SchemaObjectDetail detail={detail} loading={detailQuery.isLoading} depth={depth + 1} objectName={objectRef.name} />}
+      {expanded && (
+        <GuideChildren>
+          <SchemaObjectDetail detail={detail} loading={detailQuery.isLoading} objectName={objectRef.name} />
+        </GuideChildren>
+      )}
     </div>
   )
 }
@@ -318,18 +324,16 @@ function SchemaObjectNode({
 function SchemaObjectDetail({
   detail,
   loading,
-  depth,
   objectName,
 }: {
   detail: ObjectDetail | null
   loading: boolean
-  depth: number
   objectName: string
 }) {
   const { dialect } = useTreeCtx()
   if (loading && !detail) {
     return (
-      <DetailMessage depth={depth}>
+      <DetailMessage>
         <SchemaSpinner size={11} />
         Loading...
       </DetailMessage>
@@ -337,41 +341,119 @@ function SchemaObjectDetail({
   }
   const rel = detail?.relational
   if (!rel) {
-    return <SchemaDescriptors descriptors={detail?.descriptors ?? []} depth={depth} />
+    return <SchemaDescriptors descriptors={detail?.descriptors ?? []} />
   }
   const pk = new Set(rel.primary_key ?? [])
   const fk = new Set((rel.foreign_keys ?? []).flatMap((f) => f.columns))
+  const columns = rel.columns ?? []
+  const indexes = rel.indexes ?? []
   return (
     <>
-      {(rel.columns ?? []).map((c) => (
-        <ContextMenu
-          key={c.name}
-          items={buildColumnMenu({
-            onCopyName: () => copyWithToast(dialect ? dialect.formatColumn(c.name) : c.name),
-            onCopyQualifiedName: () => copyWithToast(dialect ? qualifiedColumn(dialect, objectName, c.name) : `${objectName}.${c.name}`),
-            onCopyType: () => copyWithToast(c.data_type),
-          })}
-        >
-          <LeafRow
-            depth={depth}
-            icon={columnTypeIcon(c.data_type)}
-            label={c.name}
-            meta={`${c.data_type}${c.nullable ? ' · null' : ''}`}
-            badge={pk.has(c.name) ? 'PK' : fk.has(c.name) ? 'FK' : undefined}
-            insertName={c.name}
-          />
-        </ContextMenu>
-      ))}
-      {(rel.indexes ?? []).map((ix) => (
-        <ContextMenu key={`ix:${ix.name}`} items={buildIndexMenu({ onCopyName: () => copyWithToast(ix.name) })}>
-          <LeafRow depth={depth} icon="key-01" label={ix.name} meta={ix.unique ? 'unique' : 'index'} />
-        </ContextMenu>
-      ))}
+      <DetailGroup label="Columns" count={columns.length} defaultOpen>
+        {columns.map((c) => (
+          <ContextMenu
+            key={c.name}
+            items={buildColumnMenu({
+              onCopyName: () => copyWithToast(dialect ? dialect.formatColumn(c.name) : c.name),
+              onCopyQualifiedName: () => copyWithToast(dialect ? qualifiedColumn(dialect, objectName, c.name) : `${objectName}.${c.name}`),
+              onCopyType: () => copyWithToast(c.data_type),
+            })}
+          >
+            <ColumnRow
+              name={c.name}
+              dataType={c.data_type}
+              nullable={c.nullable}
+              keyKind={pk.has(c.name) ? 'PK' : fk.has(c.name) ? 'FK' : undefined}
+            />
+          </ContextMenu>
+        ))}
+      </DetailGroup>
+      {indexes.length > 0 && (
+        <DetailGroup label="Indexes" count={indexes.length}>
+          {indexes.map((ix) => (
+            <ContextMenu key={`ix:${ix.name}`} items={buildIndexMenu({ onCopyName: () => copyWithToast(ix.name) })}>
+              <LeafRow icon="key-01" iconClass="text-chart-4" label={ix.name} meta={ix.unique ? 'unique' : 'index'} />
+            </ContextMenu>
+          ))}
+        </DetailGroup>
+      )}
     </>
   )
 }
 
-function SchemaDescriptors({ descriptors, depth }: { descriptors: ObjectDescriptor[]; depth: number }) {
+/** Collapsible sub-section under an expanded object (Columns, Indexes, …). */
+function DetailGroup({
+  label,
+  count,
+  defaultOpen = false,
+  children,
+}: {
+  label: string
+  count: number
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={cn(
+          'mx-1 flex h-[22px] w-[calc(100%-0.5rem)] items-center gap-1 rounded-md pl-1 pr-2 text-left',
+          'text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80',
+          'transition-colors hover:bg-sidebar-accent hover:text-foreground',
+        )}
+      >
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={10} className="shrink-0 text-muted-foreground/60" />
+        <span className="truncate">{label}</span>
+        <span className="font-normal tabular-nums text-muted-foreground/60">{count}</span>
+      </button>
+      {open && <GuideChildren>{children}</GuideChildren>}
+    </div>
+  )
+}
+
+function ColumnRow({
+  name,
+  dataType,
+  nullable,
+  keyKind,
+}: {
+  name: string
+  dataType: string
+  nullable?: boolean
+  keyKind?: 'PK' | 'FK'
+}) {
+  const insertable = useColumnInsert(name)
+  const icon = columnTypeIcon(dataType)
+  return (
+    <div
+      className={cn(
+        'mx-1 flex h-[22px] items-center gap-1.5 rounded-md pl-1 pr-2 text-[11px] transition-colors hover:bg-sidebar-accent/60',
+        insertable && 'cursor-grab active:cursor-grabbing',
+      )}
+      draggable={insertable?.draggable}
+      onDragStart={insertable?.onDragStart}
+      onDoubleClick={insertable?.onDoubleClick}
+    >
+      <Icon name={icon} size={12} className={cn('shrink-0', columnTypeIconColor[icon] ?? 'text-muted-foreground')} />
+      <span className={cn('min-w-0 flex-1 truncate', !insertable && 'select-text')} title={name}>
+        {name}
+      </span>
+      {keyKind && <KeyBadge kind={keyKind} />}
+      <span
+        className="min-w-0 max-w-[45%] shrink truncate text-right font-mono text-[10px] text-muted-foreground/80"
+        title={`${dataType}${nullable ? ' · nullable' : ''}`}
+      >
+        {dataType}
+        {nullable ? '?' : ''}
+      </span>
+    </div>
+  )
+}
+
+function SchemaDescriptors({ descriptors }: { descriptors: ObjectDescriptor[] }) {
   if (descriptors.length === 0) {
     return null
   }
@@ -379,84 +461,73 @@ function SchemaDescriptors({ descriptors, depth }: { descriptors: ObjectDescript
     <>
       {descriptors.map((descriptor) => (
         <div key={`${descriptor.kind}:${descriptor.title}`}>
-          <DetailMessage depth={depth}>{descriptor.title}</DetailMessage>
-          {(descriptor.fields ?? []).map((field) => (
-            <LeafRow key={`${descriptor.title}:${field.name}`} depth={depth + 1} icon="box" label={field.name} meta={field.value} />
-          ))}
-          {descriptor.source ? (
-            <LeafRow depth={depth + 1} icon="terminal" label={descriptor.source.language.toUpperCase()} meta={descriptor.source.body} />
-          ) : null}
-          {descriptor.rows ? (
-            <DetailMessage depth={depth + 1}>{`${descriptor.rows.rows.length} rows`}</DetailMessage>
-          ) : null}
+          <DetailMessage>{descriptor.title}</DetailMessage>
+          <GuideChildren>
+            {(descriptor.fields ?? []).map((field) => (
+              <LeafRow key={`${descriptor.title}:${field.name}`} icon="box" label={field.name} meta={field.value} />
+            ))}
+            {descriptor.source ? (
+              <LeafRow icon="terminal" label={descriptor.source.language.toUpperCase()} meta={descriptor.source.body} />
+            ) : null}
+            {descriptor.rows ? (
+              <DetailMessage>{`${descriptor.rows.rows.length} rows`}</DetailMessage>
+            ) : null}
+          </GuideChildren>
         </div>
       ))}
     </>
   )
 }
 
-function DetailMessage({ depth, children }: { depth: number; children: React.ReactNode }) {
+function DetailMessage({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-5 items-center gap-1.5 pr-3 text-[11px] text-muted-foreground" style={{ paddingLeft: indent(depth) }}>
+    <div className="flex h-[22px] items-center gap-1.5 pl-2 pr-3 text-[11px] text-muted-foreground">
       {children}
     </div>
   )
 }
 
 function LeafRow({
-  depth,
   icon,
+  iconClass,
   label,
   meta,
-  badge,
-  insertName,
 }: {
-  depth: number
   icon: AppIcon
+  iconClass?: string
   label: string
   meta: string
-  badge?: string
-  insertName?: string
 }) {
-  const insertable = useColumnInsert(insertName ?? '')
-  const dnd = insertName ? insertable : undefined
   return (
-    <div
-      className={cn('flex h-5 w-full items-center gap-1.5 pr-3 text-[11px]', dnd && 'cursor-grab active:cursor-grabbing')}
-      style={{ paddingLeft: indent(depth) }}
-      draggable={dnd?.draggable}
-      onDragStart={dnd?.onDragStart}
-      onDoubleClick={dnd?.onDoubleClick}
-    >
-      <Icon name={icon} size={12} className="shrink-0 text-muted-foreground" />
-      <span className={cn('min-w-0 flex-1 truncate', !dnd && 'select-text')} title={label}>
+    <div className="mx-1 flex h-[22px] items-center gap-1.5 rounded-md pl-1 pr-2 text-[11px] transition-colors hover:bg-sidebar-accent/60">
+      <Icon name={icon} size={12} className={cn('shrink-0', iconClass ?? 'text-muted-foreground')} />
+      <span className="min-w-0 flex-1 select-text truncate" title={label}>
         {label}
       </span>
-      <span className="min-w-0 max-w-[55%] shrink truncate pl-3 text-right text-muted-foreground" title={meta}>
+      <span className="min-w-0 max-w-[55%] shrink truncate pl-3 text-right font-mono text-[10px] text-muted-foreground/80" title={meta}>
         {meta}
       </span>
-      {badge ? <KeyBadge>{badge}</KeyBadge> : null}
     </div>
   )
 }
 
 function TreeRow({
-  depth,
   typeIcon,
+  typeIconClass,
   chevron,
   label,
+  count,
   bold,
-  leaf,
   insertable,
   onClick,
   onDoubleClickRow,
 }: {
-  depth: number
   typeIcon: AppIcon
+  typeIconClass?: string
   chevron: boolean
   label: string
+  count?: number
   bold?: boolean
-  leaf?: boolean
   insertable?: InsertableProps
   onClick: () => void
   /** When set, double-clicking the row runs this instead of the insertable's
@@ -483,22 +554,31 @@ function TreeRow({
           onClick()
         }
       }}
-      style={{ paddingLeft: indent(depth) }}
-      className="flex h-6 w-full cursor-pointer items-center gap-1.5 pr-3 text-left text-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+      className="mx-1 flex h-6 cursor-pointer items-center gap-1.5 rounded-md pl-1 pr-2 text-left text-xs transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
     >
-      {leaf ? (
-        <span className="w-[11px] shrink-0" />
-      ) : (
-        <Icon name={chevron ? 'chevron-down' : 'chevron-right'} size={11} className="shrink-0 text-muted-foreground" />
-      )}
-      <Icon name={typeIcon} size={13} className="shrink-0 text-muted-foreground" />
+      <Icon name={chevron ? 'chevron-down' : 'chevron-right'} size={11} className="shrink-0 text-muted-foreground/70" />
+      <Icon name={typeIcon} size={13} className={cn('shrink-0', typeIconClass ?? 'text-muted-foreground')} />
       <span className={cn('min-w-0 flex-1 truncate', !insertable && 'select-text', bold && 'font-medium')} title={label}>
         {label}
       </span>
+      {count !== undefined && (
+        <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground/60">{count}</span>
+      )}
     </div>
   )
 }
 
-function KeyBadge({ children }: { children: React.ReactNode }) {
-  return <span className="shrink-0 rounded bg-muted px-1 text-[9px] font-medium text-muted-foreground">{children}</span>
+function KeyBadge({ kind }: { kind: 'PK' | 'FK' }) {
+  return (
+    <span
+      className={cn(
+        'shrink-0 rounded px-1 text-[9px] font-semibold tracking-wide',
+        kind === 'PK'
+          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+          : 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
+      )}
+    >
+      {kind}
+    </span>
+  )
 }
