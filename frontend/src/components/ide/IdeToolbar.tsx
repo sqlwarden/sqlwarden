@@ -16,6 +16,7 @@ import { useIde, activeTabId as selectActiveTabId, type EditorTab } from './useI
 import { DriverBadge } from './DriverBadge'
 import { SaveAsDialog } from './SaveAsDialog'
 import { Tip } from './schema-diagram/Tip'
+import { isSessionGone } from './sessionErrors'
 import { useYDocRegistry } from './useYDocRegistry'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 
@@ -43,6 +44,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
   const sessions = useIde((s) => s.sessions)
   const setSession = useIde((s) => s.setSession)
+  const clearSession = useIde((s) => s.clearSession)
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const setQueryResult = useIde((s) => s.setQueryResult)
   const setTabRunning = useIde((s) => s.setTabRunning)
@@ -187,38 +189,53 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     setQueryResult(activeTab.id, { status: 'running' })
 
     try {
-      // Auto-connect if no live session.
-      let sessionId = sessions[activeConnection.id]
-      if (!sessionId) {
-        setConnectionStatus(activeConnection.id, 'connecting')
+      let sessionId: string | undefined = sessions[activeConnection.id]
+
+      // One transparent retry: when the stored session died server-side (410),
+      // drop it, connect fresh, and run again. Returning to a cloud IDE with a
+      // stale session should reconnect, not error.
+      for (let attempt = 0; ; attempt++) {
+        if (!sessionId) {
+          setConnectionStatus(activeConnection.id, 'connecting')
+          try {
+            const connectData = await api.post<{ session_id: string; reused: boolean }>(
+              `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/connect`,
+              undefined,
+              { signal: controller.signal },
+            )
+            sessionId = connectData.session_id
+            setSession(activeConnection.id, sessionId)
+          } finally {
+            // Clears 'connecting'; on success the new session drives 'connected',
+            // on failure it returns to idle (the query error surfaces in results).
+            setConnectionStatus(activeConnection.id, null)
+          }
+        }
+
         try {
-          const connectData = await api.post<{ session_id: string; reused: boolean }>(
-            `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/connect`,
-            undefined,
-            { signal: controller.signal },
+          const result = await api.post<ResultSet>(
+            `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/query`,
+            { sql, use_cursor: true },
+            { headers: { 'X-Warden-Session': sessionId }, signal: controller.signal },
           )
-          sessionId = connectData.session_id
-          setSession(activeConnection.id, sessionId)
-        } finally {
-          // Clears 'connecting'; on success the new session drives 'connected',
-          // on failure it returns to idle (the query error surfaces in results).
-          setConnectionStatus(activeConnection.id, null)
+
+          setQueryResult(activeTab.id, {
+            status: 'ok',
+            data: result,
+            durationMs: result.duration_ms,
+            sql,
+            connectionId: activeConnection.id,
+          })
+          break
+        } catch (err) {
+          if (attempt === 0 && isSessionGone(err)) {
+            clearSession(activeConnection.id)
+            sessionId = undefined
+            continue
+          }
+          throw err
         }
       }
-
-      const result = await api.post<ResultSet>(
-        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/query`,
-        { sql, use_cursor: true },
-        { headers: { 'X-Warden-Session': sessionId }, signal: controller.signal },
-      )
-
-      setQueryResult(activeTab.id, {
-        status: 'ok',
-        data: result,
-        durationMs: result.duration_ms,
-        sql,
-        connectionId: activeConnection.id,
-      })
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         setQueryResult(activeTab.id, { status: 'cancelled', sql })
@@ -231,8 +248,8 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       setTabRunning(activeTab.id, false)
     }
   }, [activeTab, activeGroupId, activeConnection, hasConnections, isRunning, maximizedPane, sessions, orgSlug, workspace.id,
-      registry, viewRegistry, abortControllers, results, setMaximizedPane, setQueryResult, setSession, setConnectionStatus,
-      setTabController, setTabRunning, closeQueryCursor])
+      registry, viewRegistry, abortControllers, results, setMaximizedPane, setQueryResult, setSession, clearSession,
+      setConnectionStatus, setTabController, setTabRunning, closeQueryCursor])
 
   // Global ⌘Enter / Ctrl+Enter shortcut.
   // capture:true fires before CodeMirror's contentDOM listener; stopPropagation
@@ -314,33 +331,46 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         open={popoverOpen}
         onOpenChange={(open) => { setPopoverOpen(open); if (!open) setConnSearch('') }}
       >
-        <PopoverTrigger
-          render={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={selectorDisabled}
-              className="h-7 min-w-0 max-w-60 gap-1.5 px-2 text-xs font-normal"
-            />
+        <Tip
+          label={
+            activeConnection
+              ? sessions[activeConnection.id]
+                ? `Connected to ${activeConnection.name}`
+                : 'Not connected — Run connects automatically'
+              : 'Choose a connection to run queries'
           }
         >
-          {activeConnection ? (
-            <>
-              <DriverBadge driver={activeConnection.driver} size="sm" className="shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{activeConnection.name}</span>
-              {sessions[activeConnection.id] && (
-                <span className="size-1.5 shrink-0 rounded-full bg-green-500" />
-              )}
-            </>
-          ) : (
-            <>
-              <Icon name="database" size={12} className="shrink-0 text-muted-foreground" />
-              <span className="text-muted-foreground">{selectorLabel}</span>
-            </>
-          )}
-          <Icon name="arrow-down-01" size={10} className="ml-0.5 shrink-0 text-muted-foreground" />
-        </PopoverTrigger>
+          <PopoverTrigger
+            render={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={selectorDisabled}
+                className="h-7 min-w-0 max-w-60 gap-1.5 px-2 text-xs font-normal"
+              />
+            }
+          >
+            {activeConnection ? (
+              <>
+                <DriverBadge driver={activeConnection.driver} size="sm" className="shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{activeConnection.name}</span>
+                <span
+                  className={cn(
+                    'size-1.5 shrink-0 rounded-full',
+                    sessions[activeConnection.id] ? 'bg-green-500' : 'border border-muted-foreground/60',
+                  )}
+                />
+              </>
+            ) : (
+              <>
+                <Icon name="database" size={12} className="shrink-0 text-muted-foreground" />
+                <span className="text-muted-foreground">{selectorLabel}</span>
+              </>
+            )}
+            <Icon name="arrow-down-01" size={10} className="ml-0.5 shrink-0 text-muted-foreground" />
+          </PopoverTrigger>
+        </Tip>
 
         <PopoverContent align="end" className="w-72 p-0 overflow-hidden">
           {connections.isLoading ? (

@@ -29,7 +29,7 @@ export function EditorGroup({ orgSlug, workspace, group, focused, showFocus, onC
 
   const activeTab = useMemo(() => tabs.find((t) => t.id === group.activeTabId), [tabs, group.activeTabId])
 
-  const { isLoading, isError } = useFileContent({
+  const { isLoading, isError, retry } = useFileContent({
     orgSlug,
     workspaceId: workspace.id,
     tab: activeTab,
@@ -73,8 +73,15 @@ export function EditorGroup({ orgSlug, workspace, group, focused, showFocus, onC
           isLoading ? (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Loading…</div>
           ) : isError ? (
-            <div className="flex h-full items-center justify-center text-xs text-destructive">
-              Failed to load file content.
+            <div className="flex h-full flex-col items-center justify-center gap-2.5 text-xs">
+              <span className="text-destructive">Failed to load file content.</span>
+              <button
+                type="button"
+                onClick={retry}
+                className="rounded-md border border-border px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-accent"
+              >
+                Retry
+              </button>
             </div>
           ) : (
             <SqlEditor

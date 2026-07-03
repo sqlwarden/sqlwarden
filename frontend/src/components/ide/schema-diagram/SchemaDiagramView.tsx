@@ -38,6 +38,7 @@ import { diagramFileName, downloadDataUrl, exportDimensions, type ExportFormat }
 import { TableNode, type HoverRelation, type TableNodeData } from './nodes/TableNode'
 import { OBJECT_REF_DND_MIME } from './dnd'
 import { Tip } from './Tip'
+import { useEvictGoneSession } from '../sessionErrors'
 
 const NODE_TYPES: NodeTypes = { table: TableNode }
 const EDGE_TYPES: EdgeTypes = { fk: FkEdge }
@@ -99,6 +100,10 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     ...orgConnectionRelationshipsQueryOptions(orgSlug, workspace.id, connectionId ?? 0, sessionId ?? '', namespace),
     enabled,
   })
+
+  // A 410 from any diagram query means the server-side session died — drop it
+  // so the canvas flips to its reconnect pane instead of silently stalling.
+  useEvictGoneSession(connectionId, [specQuery.error, catalogQuery.error, relQuery.error])
 
   const spec = specQuery.data?.spec
   const edges = useMemo(() => relQuery.data?.relationships ?? [], [relQuery.data])
@@ -201,6 +206,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       enabled,
     })),
   })
+  useEvictGoneSession(connectionId, detailResults.map((r) => r.error))
   const detailByKey = useMemo(() => {
     const map = new Map<string, { detail: ObjectDetail | null; loading: boolean }>()
     present.forEach((ref, i) => {
@@ -700,10 +706,19 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           </div>
         )}
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="sm" disabled={exporting} />}>
-            <Icon name={exporting ? 'loading-03' : 'download-01'} size={13} className={exporting ? 'animate-spin' : undefined} />
-            Export
-          </DropdownMenuTrigger>
+          <Tip label="Export diagram">
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon-sm" disabled={exporting} aria-label="Export diagram">
+                  <Icon
+                    name={exporting ? 'loading-03' : 'download-01'}
+                    size={14}
+                    className={exporting ? 'animate-spin' : undefined}
+                  />
+                </Button>
+              }
+            />
+          </Tip>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => void exportImage('png')}>
               <Icon name="download-01" size={13} />
@@ -720,10 +735,11 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button variant="ghost" size="sm" onClick={refresh}>
-          <Icon name="refresh" size={13} />
-          Refresh
-        </Button>
+        <Tip label="Refresh schema">
+          <Button variant="ghost" size="icon-sm" aria-label="Refresh schema" onClick={refresh}>
+            <Icon name="refresh" size={14} />
+          </Button>
+        </Tip>
       </div>
       <div className="min-h-0 flex-1" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
         <ReactFlow

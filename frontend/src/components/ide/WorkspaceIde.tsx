@@ -36,6 +36,7 @@ import { ResultsArea } from './ResultsArea'
 import { createYDocRegistry, YDocRegistryContext, useYDocRegistry } from './useYDocRegistry'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 import { Tip } from './schema-diagram/Tip'
+import { useSessionSync } from './useSessionSync'
 
 // ─── Root ──────────────────────────────────────────────────────────────────────
 
@@ -325,6 +326,10 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
   const activeActivityId = useIde((s) => s.activeActivityId)
+
+  // Reconcile persisted sessions with the backend for as long as the IDE is
+  // open — regardless of which sidebar activity is visible.
+  useSessionSync(orgSlug, workspace)
 
   const activities = visibleActivities()
   const activeActivity = activities.find((a) => a.id === activeActivityId) ?? activities[0]

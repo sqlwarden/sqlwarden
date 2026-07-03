@@ -3,7 +3,9 @@ import { ApiError } from '#/lib/api/errors'
 
 function shouldRetry(failureCount: number, error: unknown) {
   if (error instanceof ApiError) {
-    if ([400, 401, 403, 404, 409, 422].includes(error.status)) {
+    // 410 = expired DB session or cursor — retrying with the same dead
+    // session id can never succeed and only delays the "reconnect" UI.
+    if ([400, 401, 403, 404, 409, 410, 422].includes(error.status)) {
       return false
     }
   }

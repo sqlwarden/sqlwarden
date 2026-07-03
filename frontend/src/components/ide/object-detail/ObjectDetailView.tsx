@@ -17,6 +17,7 @@ import { diagramSupportedForKind } from '../schema-diagram/capability'
 import { getObjectRenderer, type HeaderBadge, type ObjectViewModel } from './registry'
 import { resolveObjectViewState, type ObjectViewState } from './viewState'
 import { Tip } from '../schema-diagram/Tip'
+import { useEvictGoneSession } from '../sessionErrors'
 
 export function ObjectDetailView({ orgSlug, workspace, tab }: { orgSlug: string; workspace: Workspace; tab: EditorTab }) {
   const ref = tab.objectRef
@@ -37,6 +38,10 @@ export function ObjectDetailView({ orgSlug, workspace, tab }: { orgSlug: string;
     ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspace.id, connectionId ?? 0, sessionId ?? ''),
     enabled: Boolean(sessionId && connectionId),
   })
+
+  // A 410 means the server-side session died while this tab was open — drop it
+  // so the view flips to the reconnect pane instead of erroring on stale data.
+  useEvictGoneSession(connectionId, [detailQuery.error, specQuery.error])
 
   const detail = detailQuery.data ?? null
   const state = resolveObjectViewState({

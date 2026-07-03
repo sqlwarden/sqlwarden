@@ -66,5 +66,6 @@ export function useFileContent({
   return {
     isLoading: needsLoad && query.isLoading,
     isError: query.isError,
+    retry: () => void query.refetch(),
   }
 }

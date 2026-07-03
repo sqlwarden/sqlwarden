@@ -143,7 +143,7 @@ function FilesSection({
       ? orgWorkspacePrivateFileBrowserQueryOptions(orgSlug, workspace.id, null)
       : orgWorkspaceSharedFileBrowserQueryOptions(orgSlug, workspace.id, null)
 
-  const { data, isLoading, isError } = useQuery(
+  const { data, isLoading, isError, refetch } = useQuery(
     queryOptions as UseQueryOptions<WorkspaceFileBrowserResult>,
   )
 
@@ -192,7 +192,16 @@ function FilesSection({
       {isLoading ? (
         <div className="px-3 py-2 text-xs text-muted-foreground">Loading...</div>
       ) : isError ? (
-        <div className="px-3 py-2 text-xs text-muted-foreground">Failed to load files.</div>
+        <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
+          <span>Failed to load files.</span>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="font-medium text-primary hover:underline"
+          >
+            Retry
+          </button>
+        </div>
       ) : children.length === 0 ? (
         <div className="px-3 py-2 text-xs text-muted-foreground">No files yet.</div>
       ) : (
