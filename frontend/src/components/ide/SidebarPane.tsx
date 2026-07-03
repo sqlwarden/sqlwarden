@@ -1,6 +1,7 @@
 import { Icon, type AppIcon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import { ScrollArea } from '#/components/ui/scroll-area'
+import { Tip } from './schema-diagram/Tip'
 
 type SidebarPaneProps = {
   title: string
@@ -27,15 +28,17 @@ export function SidebarPane({ title, icon, maximized, onMaximizedChange, actions
         <div className="flex items-center gap-0.5">
           {actions}
           {onMaximizedChange ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Toggle ${title} maximize`}
-              onClick={() => onMaximizedChange(!maximized)}
-            >
-              <Icon name={maximized ? 'minimize' : 'maximize'} size={14} />
-            </Button>
+            <Tip label={maximized ? `Restore ${title.toLowerCase()} panel` : `Maximize ${title.toLowerCase()} panel`}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Toggle ${title} maximize`}
+                onClick={() => onMaximizedChange(!maximized)}
+              >
+                <Icon name={maximized ? 'minimize' : 'maximize'} size={14} />
+              </Button>
+            </Tip>
           ) : null}
         </div>
       </div>

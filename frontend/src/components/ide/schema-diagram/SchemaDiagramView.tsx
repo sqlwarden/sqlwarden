@@ -37,6 +37,7 @@ import { loadDiagram, saveDiagram } from './diagramStore'
 import { diagramFileName, downloadDataUrl, exportDimensions, type ExportFormat } from './export'
 import { TableNode, type HoverRelation, type TableNodeData } from './nodes/TableNode'
 import { OBJECT_REF_DND_MIME } from './dnd'
+import { Tip } from './Tip'
 
 const NODE_TYPES: NodeTypes = { table: TableNode }
 const EDGE_TYPES: EdgeTypes = { fk: FkEdge }
@@ -686,9 +687,15 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
                 if (v) changeDepth(v === 'all' ? Infinity : Number(v))
               }}
             >
-              <ToggleGroupItem value="1" aria-label="One hop">1</ToggleGroupItem>
-              <ToggleGroupItem value="2" aria-label="Two hops">2</ToggleGroupItem>
-              <ToggleGroupItem value="all" aria-label="All connected">All</ToggleGroupItem>
+              <Tip label="Directly related tables only">
+                <ToggleGroupItem value="1" aria-label="One hop">1</ToggleGroupItem>
+              </Tip>
+              <Tip label="Relations up to two hops away">
+                <ToggleGroupItem value="2" aria-label="Two hops">2</ToggleGroupItem>
+              </Tip>
+              <Tip label="Every connected table">
+                <ToggleGroupItem value="all" aria-label="All connected">All</ToggleGroupItem>
+              </Tip>
             </ToggleGroup>
           </div>
         )}

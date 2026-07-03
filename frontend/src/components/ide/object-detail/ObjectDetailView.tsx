@@ -16,6 +16,7 @@ import { newDiagramTab } from '../schema-diagram/diagramTab'
 import { diagramSupportedForKind } from '../schema-diagram/capability'
 import { getObjectRenderer, type HeaderBadge, type ObjectViewModel } from './registry'
 import { resolveObjectViewState, type ObjectViewState } from './viewState'
+import { Tip } from '../schema-diagram/Tip'
 
 export function ObjectDetailView({ orgSlug, workspace, tab }: { orgSlug: string; workspace: Workspace; tab: EditorTab }) {
   const ref = tab.objectRef
@@ -153,25 +154,32 @@ function Header({
       ))}
       <div className="flex-1" />
       {onViewInDiagram && (
-        <button
-          type="button"
-          onClick={onViewInDiagram}
-          title="View in diagram"
-          aria-label="View in diagram"
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <Icon name="flow-connection" size={14} />
-        </button>
+        <Tip label="View in diagram">
+          <button
+            type="button"
+            onClick={onViewInDiagram}
+            aria-label="View in diagram"
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Icon name="flow-connection" size={14} />
+          </button>
+        </Tip>
       )}
-      <button
-        type="button"
-        onClick={onRefresh}
-        disabled={!canRefresh}
-        aria-label="Refresh"
-        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-      >
-        <Icon name="refresh" size={14} />
-      </button>
+      <Tip label={canRefresh ? `Refresh ${objectRef.kind || 'object'}` : 'Connect first to refresh'}>
+        {/* Span wrapper so the tooltip still fires while the button is disabled
+            (disabled buttons swallow pointer events). */}
+        <span className={cn('inline-flex', !canRefresh && 'cursor-not-allowed')}>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={!canRefresh}
+            aria-label="Refresh"
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+          >
+            <Icon name="refresh" size={14} />
+          </button>
+        </span>
+      </Tip>
     </div>
   )
 }

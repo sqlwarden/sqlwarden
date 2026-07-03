@@ -15,6 +15,7 @@ import { cn } from '#/lib/utils'
 import { useIde, activeTabId as selectActiveTabId, type EditorTab } from './useIdeStore'
 import { DriverBadge } from './DriverBadge'
 import { SaveAsDialog } from './SaveAsDialog'
+import { Tip } from './schema-diagram/Tip'
 import { useYDocRegistry } from './useYDocRegistry'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 
@@ -423,18 +424,20 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       </Popover>
 
       {/* Maximize toggle */}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Toggle editor maximize"
-        onClick={toggleMaximize}
-      >
-        <Icon
-          name={maximizedPane === 'editor' ? 'minimize' : 'maximize'}
-          size={14}
-        />
-      </Button>
+      <Tip label={maximizedPane === 'editor' ? 'Restore layout' : 'Maximize editor'}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Toggle editor maximize"
+          onClick={toggleMaximize}
+        >
+          <Icon
+            name={maximizedPane === 'editor' ? 'minimize' : 'maximize'}
+            size={14}
+          />
+        </Button>
+      </Tip>
     </div>
 
     {saveAsTab && (

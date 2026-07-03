@@ -17,6 +17,7 @@ import { cn } from '#/lib/utils'
 import { useIde, DEFAULT_CONSOLE_CONTENT, type EditorTab, type TabKind } from './useIdeStore'
 import { allGroups, tabsToClose, type GroupNode, type SplitDirection } from './ideLayout'
 import { DriverBadge } from './DriverBadge'
+import { Tip } from './schema-diagram/Tip'
 
 type IdeTabBarProps = {
   orgSlug: string
@@ -185,15 +186,17 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
             />
           ))}
         </div>
-        <button
-          type="button"
-          onClick={handleNewConsole}
-          className="flex h-9 shrink-0 items-center gap-1 border-l border-border px-3 text-xs text-muted-foreground transition-colors hover:bg-card/50 hover:text-foreground"
-          aria-label="New SQL console"
-        >
-          <Icon name="plus-sign" size={11} />
-          New
-        </button>
+        <Tip label="New SQL console">
+          <button
+            type="button"
+            onClick={handleNewConsole}
+            className="flex h-9 shrink-0 items-center gap-1 border-l border-border px-3 text-xs text-muted-foreground transition-colors hover:bg-card/50 hover:text-foreground"
+            aria-label="New SQL console"
+          >
+            <Icon name="plus-sign" size={11} />
+            New
+          </button>
+        </Tip>
       </div>
 
       {pendingCloseTab && (
@@ -335,13 +338,15 @@ function TabItem({
       ) : (
         <Icon name={icon} size={13} className="shrink-0 opacity-60" />
       )}
-      <span className="min-w-0 flex-1 truncate text-xs">
+      {/* Native title keeps per-tab hover hints cheap — no tooltip component per tab. */}
+      <span className="min-w-0 flex-1 truncate text-xs" title={tab.subtitle ?? tab.title}>
         {tab.isDirty && <span className="mr-1 text-primary">●</span>}
         {tab.title}
       </span>
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onClose() }}
+        title="Close tab"
         aria-label={`Close ${tab.title}`}
         className={cn(
           'flex size-5 shrink-0 items-center justify-center rounded transition-colors',
