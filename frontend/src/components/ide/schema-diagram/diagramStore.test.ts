@@ -23,4 +23,8 @@ describe('diagram persistence', () => {
     const vp = { x: 120, y: -40, zoom: 1.75 }
     expect(deserializeDiagram(serializeDiagram({ ...state, viewport: vp })).viewport).toEqual(vp)
   })
+  it('round-trips the keys-only flag', () => {
+    expect(deserializeDiagram(serializeDiagram({ ...state, keysOnly: true })).keysOnly).toBe(true)
+    expect(deserializeDiagram(serializeDiagram(state)).keysOnly).toBeUndefined()
+  })
 })

@@ -120,6 +120,9 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   // Edge routing: bezier (curved, default) vs orthogonal (right-angle, shows
   // crow's-foot cardinality). Toggled from the Controls panel; persisted.
   const [orthogonal, setOrthogonal] = useState(false)
+  // Keys-only mode: render just PK/FK columns to de-clutter big diagrams.
+  // Toggled from the Controls panel; persisted.
+  const [keysOnly, setKeysOnly] = useState(false)
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([])
   const savedPositions = useRef<Record<string, { x: number; y: number }>>({})
   const seededRef = useRef(false)
@@ -145,6 +148,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       if (saved.collapsed.length > 0) setCollapsed(new Set(saved.collapsed))
       if (saved.depth != null) setDepth(saved.depth === 'all' ? Infinity : saved.depth)
       if (saved.orthogonalEdges != null) setOrthogonal(saved.orthogonalEdges)
+      if (saved.keysOnly != null) setKeysOnly(saved.keysOnly)
       const refs = saved.present.map((k) => refByKey.get(k)).filter((r): r is ObjectRef => Boolean(r))
       if (refs.length > 0) {
         seededRef.current = true
@@ -369,6 +373,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
             incomingByCol,
             hasHidden,
             collapsed: collapsed.has(key),
+            keysOnly,
             loading: entry?.loading ?? false,
             onToggleCollapse: () => toggleCollapse(key),
             onExpand: expandFrom,
@@ -382,14 +387,15 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       })
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presentSig, detailSig, collapsedSig])
+  }, [presentSig, detailSig, collapsedSig, keysOnly])
 
-  // A node's handles change as its columns load or it collapses; tell React Flow
-  // to re-scan them so edges re-attach to the per-column handles (avoids #008).
+  // A node's handles change as its columns load, it collapses, or keys-only mode
+  // toggles; tell React Flow to re-scan them so edges re-attach to the per-column
+  // handles (avoids #008).
   useEffect(() => {
     for (const r of present) updateNodeInternals(refKey(r))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detailSig, collapsedSig])
+  }, [detailSig, collapsedSig, keysOnly])
 
   // Node emphasis: FK-hover rings the referenced table; click-selection rings
   // the selected table + its neighbors and dims everything else.
@@ -463,7 +469,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     if (layoutReq === 0 || present.length === 0) return
     const sizes = present.map((r) => {
       const k = refKey(r)
-      const s = estimateNodeSize(detailByKey.get(k)?.detail ?? undefined, collapsed.has(k))
+      const s = estimateNodeSize(detailByKey.get(k)?.detail ?? undefined, collapsed.has(k), keysOnly)
       return { id: k, width: s.width, height: s.height }
     })
     const le = flowEdges.map((e) => ({ id: e.id, source: e.source, target: e.target }))
@@ -488,8 +494,9 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       depth: depth === Infinity ? 'all' : depth,
       viewport: getViewport(),
       orthogonalEdges: orthogonal,
+      keysOnly,
     })
-  }, [tab.id, present, collapsed, depth, orthogonal, getNodes, getViewport])
+  }, [tab.id, present, collapsed, depth, orthogonal, keysOnly, getNodes, getViewport])
   const schedulePersist = useCallback(() => {
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(persist, 400)
@@ -649,6 +656,12 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
               title={orthogonal ? 'Switch to curved edges (hide cardinality)' : 'Switch to orthogonal edges with crow’s-foot cardinality'}
             >
               <Icon name="flow-connection" size={14} />
+            </ControlButton>
+            <ControlButton
+              onClick={() => setKeysOnly((v) => !v)}
+              title={keysOnly ? 'Show all columns' : 'Show only key columns (PK/FK)'}
+            >
+              <Icon name="key-01" size={14} />
             </ControlButton>
           </Controls>
           <MiniMap pannable zoomable className="!bg-card" style={{ width: 120, height: 80 }} />

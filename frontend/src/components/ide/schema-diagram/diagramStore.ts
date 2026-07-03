@@ -7,6 +7,7 @@ export type DiagramPersistedState = {
   depth?: number | 'all' // object-diagram depth control (Infinity persisted as 'all')
   viewport?: { x: number; y: number; zoom: number } // camera pan + zoom
   orthogonalEdges?: boolean // orthogonal (crow's-foot) vs bezier edge routing
+  keysOnly?: boolean // show only PK/FK columns (de-clutter) vs all columns
 }
 
 const EMPTY: DiagramPersistedState = { present: [], positions: {}, collapsed: [] }
@@ -26,6 +27,7 @@ export function deserializeDiagram(raw: string | null): DiagramPersistedState {
       depth: parsed.depth,
       viewport: parsed.viewport,
       orthogonalEdges: parsed.orthogonalEdges,
+      keysOnly: parsed.keysOnly,
     }
   } catch {
     return { ...EMPTY }
