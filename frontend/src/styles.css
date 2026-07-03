@@ -138,6 +138,19 @@
     }
 }
 
+/* React Flow's dark palette is gated behind `.react-flow.dark`, but this app
+   toggles dark mode on an ancestor, so that class never matches and the diagram
+   controls keep light-mode colors (white button, inherited light icons = an
+   invisible white-on-white logo in dark mode). Drive React Flow's control
+   variables from our design tokens so they follow the active theme. */
+.react-flow__controls {
+  --xy-controls-button-background-color: var(--card);
+  --xy-controls-button-background-color-hover: var(--accent);
+  --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-color-hover: var(--accent-foreground);
+  --xy-controls-button-border-color: var(--border);
+}
+
 @keyframes global-loading-bar {
   0% {
     transform: translateX(-100%) scaleX(0.35);
