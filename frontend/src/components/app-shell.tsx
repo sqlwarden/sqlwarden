@@ -65,6 +65,7 @@ import {
 } from '#/lib/theme-lab/context'
 import { Tip } from '#/components/ide/schema-diagram/Tip'
 import { Slider } from '#/components/ui/slider'
+import { buildUserMenuItems } from '#/lib/user-menu'
 import { cn } from '#/lib/utils'
 
 export type AppShellTheme = 'dark' | 'light' | 'system'
@@ -80,6 +81,7 @@ export type AppShellNavItem = {
   label: string
   icon: AppIcon
   params?: Record<string, string>
+  search?: Record<string, unknown>
   disabled?: boolean
   badge?: string
   activePathPrefixes?: string[]
@@ -196,17 +198,15 @@ export function AppShellSidebarFooter({
   session,
   preferences,
   setPreferences,
-  extraUserItems = [],
 }: {
   session: SessionResponse
   preferences: AppShellPreferences
   setPreferences: Dispatch<SetStateAction<AppShellPreferences>>
-  extraUserItems?: AppShellNavItem[]
 }) {
   return (
     <SidebarFooter className="border-t border-sidebar-border">
       <AppShellPreferencesPopover preferences={preferences} setPreferences={setPreferences} />
-      <AppShellUserMenu session={session} extraItems={extraUserItems} />
+      <AppShellUserMenu session={session} />
       <div className="flex justify-center px-2 pb-1">
         <SidebarTrigger className="w-full cursor-pointer group-data-[collapsible=icon]:w-auto" aria-label="Toggle sidebar" />
       </div>
@@ -264,7 +264,7 @@ function AppShellNavMenuItem({
     <SidebarMenuItem>
       <div className="pointer-events-none absolute inset-y-0.5 left-0 w-0.5 bg-sidebar-primary opacity-0 transition-opacity peer-data-active/menu-button:opacity-100" />
       <SidebarMenuButton
-        render={<Link to={item.to as never} params={item.params as never} />}
+        render={<Link to={item.to as never} params={item.params as never} search={item.search as never} />}
         isActive={isActive}
         tooltip={item.label}
       >
@@ -275,15 +275,10 @@ function AppShellNavMenuItem({
   )
 }
 
-function AppShellUserMenu({
-  session,
-  extraItems,
-}: {
-  session: SessionResponse
-  extraItems: AppShellNavItem[]
-}) {
+function AppShellUserMenu({ session }: { session: SessionResponse }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const menuItems = buildUserMenuItems({ session })
 
   const logout = useMutation({
     mutationFn: async () => api.post<void>('/api/v1/auth/logout'),
@@ -331,19 +326,9 @@ function AppShellUserMenu({
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem render={<Link to="/settings/account" />}>
-                <Icon name="settings-02" size={20} />
-                Settings
-              </DropdownMenuItem>
-              {session.organizations.length >= 2 ? (
-                <DropdownMenuItem render={<Link to="/settings/my-organizations" />}>
-                  <Icon name="building-04" size={20} />
-                  Switch Organization
-                </DropdownMenuItem>
-              ) : null}
-              {extraItems.map((item) => (
+              {menuItems.map((item) => (
                 <DropdownMenuItem
-                  key={navItemKey(item)}
+                  key={item.id}
                   render={<Link to={item.to as never} params={item.params as never} />}
                 >
                   <Icon name={item.icon} size={20} />

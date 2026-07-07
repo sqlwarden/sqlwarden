@@ -12,6 +12,7 @@ import { Button } from '#/components/ui/button'
 import type { AccountOrganization, Organization, SessionResponse } from '#/lib/api/types'
 import { clearAccessToken, getAccessToken } from '#/lib/auth/access-token'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
+import { buildUserMenuItems } from '#/lib/user-menu'
 import { Badge } from '#/components/ui/badge'
 import { Card, CardContent, CardDescription, CardTitle } from '#/components/ui/card'
 import {
@@ -69,7 +70,7 @@ function LandingPage() {
   if (!session.data.personal_spaces_enabled && session.data.organizations.length === 1) {
     return (
       <Navigate
-        to="/orgs/$org_slug/workspaces"
+        to="/ide/$org_slug"
         params={{ org_slug: session.data.organizations[0].slug }}
         replace
       />
@@ -205,7 +206,7 @@ function PersonalSpaceCard() {
 function AdministrationChoiceCard() {
   return (
     <Link
-      to="/settings/administrators"
+      to="/administration"
       className="group block h-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="flex h-full flex-col border border-border bg-card text-card-foreground transition-all group-hover:border-foreground/20 group-hover:bg-muted/20 group-hover:shadow-sm">
@@ -233,6 +234,8 @@ function AdministrationChoiceCard() {
 function LandingUserMenu({ session }: { session: SessionResponse }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  // Already on the landing hub — a Switch Organization self-link is noise.
+  const menuItems = buildUserMenuItems({ session }).filter((item) => item.id !== 'switch-organization')
 
   const logout = useMutation({
     mutationFn: async () => api.post<void>('/api/v1/auth/logout'),
@@ -258,10 +261,15 @@ function LandingUserMenu({ session }: { session: SessionResponse }) {
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem render={<Link to="/settings" />}>
-          <Icon name="settings-02" size={20} />
-          Settings
-        </DropdownMenuItem>
+        {menuItems.map((item) => (
+          <DropdownMenuItem
+            key={item.id}
+            render={<Link to={item.to as never} params={item.params as never} />}
+          >
+            <Icon name={item.icon} size={20} />
+            {item.label}
+          </DropdownMenuItem>
+        ))}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           variant="destructive"

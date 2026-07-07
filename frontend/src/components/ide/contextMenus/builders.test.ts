@@ -13,11 +13,16 @@ function action(items: ContextMenuItem[], id: string): ContextMenuActionItem | u
 }
 
 describe('buildEnvironmentMenu', () => {
-  const items = buildEnvironmentMenu({ onCopyName: noop })
+  const items = buildEnvironmentMenu({ onCopyName: noop, onManageEnvironments: noop })
   it('has a live copy-name action', () => {
     const it = action(items, 'copy-name')
     expect(it?.soon).toBeFalsy()
     expect(typeof it?.onSelect).toBe('function')
+  })
+  it('has a live manage-environments action', () => {
+    const item = action(items, 'manage-environments')
+    expect(item?.soon).toBeFalsy()
+    expect(typeof item?.onSelect).toBe('function')
   })
   it('marks delete-environment as soon', () => {
     expect(action(items, 'delete-environment')?.soon).toBe(true)
@@ -27,7 +32,7 @@ describe('buildEnvironmentMenu', () => {
 describe('buildConnectionMenu', () => {
   const base = {
     onOpen: noop, onOpenConsole: noop, onConnect: noop, onDisconnect: noop,
-    onRefreshSchema: noop, onCopyName: noop,
+    onRefreshSchema: noop, onCopyName: noop, onManageConnections: noop,
   }
   it('shows connect (not disconnect) and disables refresh when not connected', () => {
     const items = buildConnectionMenu({ ...base, isConnected: false })
@@ -44,6 +49,12 @@ describe('buildConnectionMenu', () => {
   it('keeps edit-connection as soon', () => {
     const items = buildConnectionMenu({ ...base, isConnected: true })
     expect(action(items, 'edit-connection')?.soon).toBe(true)
+  })
+  it('has a live manage-connections action', () => {
+    const items = buildConnectionMenu({ ...base, isConnected: true })
+    const item = action(items, 'manage-connections')
+    expect(item?.soon).toBeFalsy()
+    expect(typeof item?.onSelect).toBe('function')
   })
 })
 

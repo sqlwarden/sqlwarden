@@ -14,7 +14,13 @@ import { useSession } from '#/hooks/use-session'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { orgEffectivePermissionsQueryOptions, orgQueryOptions, orgWorkspaceQueryOptions } from '#/lib/api/query'
 import { getAccessToken } from '#/lib/auth/access-token'
-import { hasAnyPermission, permission, type Permission } from '#/lib/permissions'
+import { hasAnyPermission, permission } from '#/lib/permissions'
+import {
+  workspaceConnectionPagePermissions,
+  workspaceEnvironmentPagePermissions,
+  workspacePolicyPagePermissions,
+  workspaceSettingsPagePermissions,
+} from '#/lib/workspace-page-permissions'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 
 export const Route = createFileRoute('/orgs/$org_slug')({
@@ -144,47 +150,11 @@ function OrganizationLayout() {
   )
 }
 
-const workspaceEnvironmentPagePermissions = [
-  permission.envRead,
-  permission.envWrite,
-  permission.envCreate,
-  permission.envDelete,
-  permission.envDeploy,
-  permission.connRead,
-  permission.connWrite,
-  permission.connCreate,
-  permission.connDelete,
-  permission.connExecute,
-  permission.connDql,
-  permission.connDml,
-  permission.connDdl,
-] as const satisfies readonly Permission[]
-
-const workspaceConnectionPagePermissions = [
-  permission.connRead,
-  permission.connWrite,
-  permission.connCreate,
-  permission.connDelete,
-  permission.connExecute,
-  permission.connDql,
-  permission.connDml,
-  permission.connDdl,
-] as const satisfies readonly Permission[]
-
-const workspacePolicyPagePermissions = [
-  permission.policyRead,
-  permission.policyModify,
-] as const satisfies readonly Permission[]
-
-const workspaceSettingsPagePermissions = [
-  permission.wsRead,
-  permission.wsWrite,
-] as const satisfies readonly Permission[]
-
 function workspacePrimaryItems(orgSlug: string, workspaceId: string, permissions: readonly string[] | undefined): AppShellNavItem[] {
   const items: AppShellNavItem[] = [
     { to: '/orgs/$org_slug/workspaces', params: { org_slug: orgSlug }, label: 'All Workspaces', icon: 'arrow-left-01' },
     { to: '/orgs/$org_slug/workspaces/$workspace_id', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Overview', icon: 'home-04' },
+    { to: '/ide/$org_slug', params: { org_slug: orgSlug }, search: { ws: Number(workspaceId) }, label: 'Open in IDE', icon: 'database-lightning' },
   ]
 
   if (hasAnyPermission(permissions, workspaceEnvironmentPagePermissions)) {
@@ -264,6 +234,7 @@ function isPathInSection(pathname: string, basePath: string, section: string) {
 
 function organizationItems(orgSlug: string): AppShellNavItem[] {
   return [
+    { to: '/ide/$org_slug', params: { org_slug: orgSlug }, label: 'Open IDE', icon: 'database-lightning' },
     { to: '/orgs/$org_slug/workspaces', params: { org_slug: orgSlug }, label: 'Workspaces', icon: 'briefcase-01' },
   ]
 }

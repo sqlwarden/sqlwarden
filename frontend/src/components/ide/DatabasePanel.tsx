@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import * as Y from 'yjs'
+import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
@@ -444,6 +445,7 @@ function EnvironmentRow({
   onAddConnection: () => void
 }) {
   const nodeKey = `env:${environment.id}`
+  const navigate = useNavigate()
   const stored = useIde((s) => s.expandedNodes[nodeKey])
   const setNodeExpanded = useIde((s) => s.setNodeExpanded)
   const expanded = stored ?? connections.length > 0
@@ -455,7 +457,16 @@ function EnvironmentRow({
 
   return (
     <div>
-      <ContextMenu items={buildEnvironmentMenu({ onCopyName: () => copyWithToast(environment.name) })}>
+      <ContextMenu
+        items={buildEnvironmentMenu({
+          onCopyName: () => copyWithToast(environment.name),
+          onManageEnvironments: () =>
+            navigate({
+              to: '/orgs/$org_slug/workspaces/$workspace_id/environments',
+              params: { org_slug: orgSlug, workspace_id: String(environment.workspace_id) },
+            }),
+        })}
+      >
         <div className="group mx-1 flex h-6 items-center rounded-md text-xs transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
           <button
             type="button"
@@ -539,6 +550,7 @@ function ConnectionRow({
   onDisconnect: () => void
 }) {
   const nodeKey = `conn:${connection.id}`
+  const navigate = useNavigate()
   const storedExpanded = useIde((s) => s.expandedNodes[nodeKey])
   const setNodeExpanded = useIde((s) => s.setNodeExpanded)
   const expanded = storedExpanded ?? false
@@ -566,6 +578,11 @@ function ConnectionRow({
     onDisconnect,
     onRefreshSchema: () => refresh.mutate(),
     onCopyName: () => copyWithToast(connection.name),
+    onManageConnections: () =>
+      navigate({
+        to: '/orgs/$org_slug/workspaces/$workspace_id/connections',
+        params: { org_slug: orgSlug, workspace_id: String(connection.workspace_id) },
+      }),
   })
 
   return (

@@ -1,5 +1,6 @@
 import { Navigate, createFileRoute } from '@tanstack/react-router'
 import { WorkspaceIde } from '#/components/ide/WorkspaceIde'
+import { parseIdeSearch } from '#/components/ide/ideDeepLink'
 import { RoutePending } from '#/components/RoutePending'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { useSession } from '#/hooks/use-session'
@@ -8,6 +9,7 @@ import { getAccessToken } from '#/lib/auth/access-token'
 export const Route = createFileRoute('/ide/$org_slug')({
   component: IdePage,
   pendingComponent: RoutePending,
+  validateSearch: parseIdeSearch,
 })
 
 function IdePage() {
