@@ -216,10 +216,10 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
       {workspaces.isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="flex flex-col border border-border bg-card">
+            <div key={index} className="flex flex-col rounded-lg border border-border bg-card">
               <div className="flex flex-col gap-3 p-5">
                 <div className="flex items-start gap-3">
-                  <Skeleton className="size-10 shrink-0" />
+                  <Skeleton className="size-10 shrink-0 rounded-md" />
                   <div className="flex flex-1 flex-col gap-2 pt-1">
                     <Skeleton className="h-4 w-28" />
                     <Skeleton className="h-3 w-44" />
@@ -264,11 +264,11 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
                 key={workspace.id}
                 to="/orgs/$org_slug/workspaces/$workspace_id"
                 params={{ org_slug: orgSlug, workspace_id: String(workspace.id) }}
-                className="group flex flex-col border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:bg-muted/20 hover:shadow-sm"
+                className="group flex flex-col rounded-lg border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:bg-muted/20 hover:shadow-sm"
               >
                 <div className="flex flex-1 flex-col gap-3 p-5">
                   <div className="flex items-center gap-3">
-                    <div className={cn('flex size-10 shrink-0 items-center justify-center text-sm font-semibold', workspaceColor(workspace.name))}>
+                    <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold', workspaceColor(workspace.name))}>
                       {getInitials(workspace.name, 'W')}
                     </div>
                     <div className="min-w-0 flex-1">

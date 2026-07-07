@@ -18,17 +18,14 @@ export const Route = createFileRoute('/settings')({
   component: SettingsLayout,
 })
 
+const homeItems: AppShellNavItem[] = [
+  { to: '/', label: 'Home', icon: 'arrow-left-01' },
+]
+
 const accountItems: AppShellNavItem[] = [
   { to: '/settings/account', label: 'Account', icon: 'user-02' },
   { to: '/settings/my-organizations', label: 'My Organizations', icon: 'briefcase-01' },
   { to: '/settings/api-tokens', label: 'API Tokens', icon: 'key-01' },
-]
-
-const adminItems: AppShellNavItem[] = [
-  { to: '/settings/instance', label: 'Instance', icon: 'settings-02' },
-  { to: '/settings/users', label: 'Users', icon: 'user-multiple-02' },
-  { to: '/settings/administrators', label: 'Administrators', icon: 'shield-user' },
-  { to: '/settings/organizations', label: 'Organizations', icon: 'building-04' },
 ]
 
 function SettingsLayout() {
@@ -69,10 +66,8 @@ function SettingsLayout() {
       <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
         <AppShellHeader label="Settings" icon="settings-02" />
         <SidebarContent>
+          <AppShellNavSection items={homeItems} pathname={pathname} />
           <AppShellNavSection label="Account" items={accountItems} pathname={pathname} />
-          {session.data.is_instance_admin ? (
-            <AppShellNavSection label="Instance Admin" items={adminItems} pathname={pathname} />
-          ) : null}
         </SidebarContent>
         <AppShellSidebarFooter
           session={session.data}

@@ -1,9 +1,9 @@
 import { Navigate, createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/administration/')({
-  component: AdministrationIndexRedirectPage,
+  component: AdministrationIndexPage,
 })
 
-function AdministrationIndexRedirectPage() {
-  return <Navigate to="/settings/administrators" replace />
+function AdministrationIndexPage() {
+  return <Navigate to="/administration/users" replace />
 }

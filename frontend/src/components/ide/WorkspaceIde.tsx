@@ -10,8 +10,9 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '#/components/ui/resizable'
-import { Link, useNavigate } from '@tanstack/react-router'
-import { orgWorkspacesQueryOptions, orgEffectivePermissionsQueryOptions } from '#/lib/api/query'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { orgWorkspacesQueryOptions, orgEffectivePermissionsQueryOptions, orgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
+import { resolveDeepLink } from './ideDeepLink'
 import { hasAnyPermission, permission } from '#/lib/permissions'
 import { IdeTopBarControls } from './IdeTopBarControls'
 import { IdeActivityBar } from './IdeActivityBar'
@@ -216,6 +217,8 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
     }
   }, [activeWorkspaceId, workspaces, setActiveWorkspace])
 
+  useIdeDeepLink(orgSlug, workspaces)
+
   const activeWorkspace =
     workspaces.find((w) => w.id === activeWorkspaceId) ?? workspaces[0]
 
@@ -251,6 +254,49 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
     </div>
     </ContextMenuProvider>
   )
+}
+
+/** Applies ?ws=&conn= once on mount, then strips the params with a replace
+ *  navigation so refreshes and cross-window sync don't re-force the
+ *  selection. Called after the default-workspace effect in WorkspaceIdeInner
+ *  so its setActiveWorkspace wins the initial render. */
+function useIdeDeepLink(orgSlug: string, workspaces: Workspace[]) {
+  const search = useSearch({ from: '/ide/$org_slug' })
+  const navigate = useNavigate()
+  const setActiveWorkspace = useIde((s) => s.setActiveWorkspace)
+  const setNodeExpanded = useIde((s) => s.setNodeExpanded)
+
+  const hasParams = search.ws !== undefined || search.conn !== undefined
+  const needsConnections = search.ws !== undefined && search.conn !== undefined
+  const connections = useQuery({
+    ...orgWorkspaceConnectionsQueryOptions(orgSlug, search.ws ?? 0, { page_size: 100, sort: 'name', order: 'asc' }),
+    enabled: needsConnections,
+  })
+
+  useEffect(() => {
+    if (!hasParams) return
+
+    const resolution = resolveDeepLink(search, workspaces, connections.data?.items)
+    if (!resolution.ready && !connections.isError) return
+
+    if (resolution.activateWorkspaceId !== undefined) {
+      setActiveWorkspace(resolution.activateWorkspaceId)
+    }
+    for (const key of resolution.expandKeys) {
+      setNodeExpanded(key, true)
+    }
+    void navigate({ to: '/ide/$org_slug', params: { org_slug: orgSlug }, search: {}, replace: true })
+  }, [
+    hasParams,
+    search,
+    workspaces,
+    connections.data,
+    connections.isError,
+    setActiveWorkspace,
+    setNodeExpanded,
+    navigate,
+    orgSlug,
+  ])
 }
 
 function IdeBrand() {

@@ -8,6 +8,7 @@ export type ConnectionMenuCtx = {
   onDisconnect: () => void
   onRefreshSchema: () => void
   onCopyName: () => void
+  onManageConnections: () => void
 }
 
 export function buildConnectionMenu(ctx: ConnectionMenuCtx): ContextMenuItem[] {
@@ -21,6 +22,8 @@ export function buildConnectionMenu(ctx: ConnectionMenuCtx): ContextMenuItem[] {
     { kind: 'action', id: 'refresh-schema', label: 'Refresh schema', icon: 'refresh', disabled: !ctx.isConnected, onSelect: ctx.onRefreshSchema },
     { kind: 'separator' },
     { kind: 'action', id: 'copy-name', label: 'Copy name', icon: 'copy-01', onSelect: ctx.onCopyName },
+    { kind: 'separator' },
+    { kind: 'action', id: 'manage-connections', label: 'Manage connections', icon: 'settings-02', onSelect: ctx.onManageConnections },
     { kind: 'separator' },
     { kind: 'action', id: 'edit-connection', label: 'Edit connection', icon: 'pencil-edit-02', soon: true },
     { kind: 'separator' },

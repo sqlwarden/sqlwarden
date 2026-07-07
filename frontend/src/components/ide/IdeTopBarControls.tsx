@@ -16,6 +16,7 @@ import { api } from '#/lib/api/client'
 import { clearAccessToken } from '#/lib/auth/access-token'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import type { SessionResponse } from '#/lib/api/types'
+import { buildUserMenuItems } from '#/lib/user-menu'
 import { Tip } from './schema-diagram/Tip'
 
 export function IdeTopBarControls({
@@ -30,6 +31,7 @@ export function IdeTopBarControls({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { preferences, setPreferences } = useAppShellPreferences()
+  const menuItems = buildUserMenuItems({ session, orgSlug, canAccessOrgSettings })
 
   const logout = useMutation({
     mutationFn: async () => api.post<void>('/api/v1/auth/logout'),
@@ -66,16 +68,15 @@ export function IdeTopBarControls({
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
-            {canAccessOrgSettings ? (
-              <DropdownMenuItem render={<Link to="/orgs/$org_slug" params={{ org_slug: orgSlug }} />}>
-                <Icon name="settings-02" size={20} />
-                Organization Settings
+            {menuItems.map((item) => (
+              <DropdownMenuItem
+                key={item.id}
+                render={<Link to={item.to as never} params={item.params as never} />}
+              >
+                <Icon name={item.icon} size={20} />
+                {item.label}
               </DropdownMenuItem>
-            ) : null}
-            <DropdownMenuItem render={<Link to="/" />}>
-              <Icon name="building-04" size={20} />
-              Switch Organization
-            </DropdownMenuItem>
+            ))}
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuItem
