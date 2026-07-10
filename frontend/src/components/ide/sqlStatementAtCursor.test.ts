@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sqlStatementAtCursor } from './IdeToolbar'
+import { sqlStatementAtCursor, countSqlStatements } from './sqlStatements'
 
 // Helper: find the index of the Nth occurrence of a substring.
 function nthIndex(text: string, sub: string, n: number): number {
@@ -261,5 +261,39 @@ describe('sqlStatementAtCursor', () => {
     it('only whitespace → empty string', () => {
       expect(sqlStatementAtCursor('   \n\n   ', 2)).toBe('')
     })
+  })
+})
+
+describe('countSqlStatements', () => {
+  it('single statement, no semicolon', () => {
+    expect(countSqlStatements('SELECT 1')).toBe(1)
+  })
+
+  it('single statement with trailing semicolon', () => {
+    expect(countSqlStatements('SELECT 1;')).toBe(1)
+  })
+
+  it('two statements', () => {
+    expect(countSqlStatements('SELECT 1; SELECT 2;')).toBe(2)
+  })
+
+  it('semicolon inside a string literal is not a separator', () => {
+    expect(countSqlStatements("SELECT ';' AS sep")).toBe(1)
+  })
+
+  it('semicolon inside a line comment is not a separator', () => {
+    expect(countSqlStatements('SELECT 1 -- trailing ; comment\n')).toBe(1)
+  })
+
+  it('empty text has no statements', () => {
+    expect(countSqlStatements('')).toBe(0)
+  })
+
+  it('only whitespace has no statements', () => {
+    expect(countSqlStatements('   \n\n   ')).toBe(0)
+  })
+
+  it('trailing semicolon with nothing after does not count as a second statement', () => {
+    expect(countSqlStatements('SELECT 1;   ')).toBe(1)
   })
 })

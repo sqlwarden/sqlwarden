@@ -3,6 +3,7 @@ import type { AppIcon } from '#/lib/icons'
 import type { Workspace } from '#/lib/api/types'
 import { DatabasePanel } from './DatabasePanel'
 import { FilesPanel } from './FilesPanel'
+import { ExportsPanel } from './exports/ExportsPanel'
 
 /** Context every activity surface receives from the IDE shell. */
 export type IdeSidebarPanelProps = {
@@ -28,6 +29,7 @@ export type IdeActivity = {
 export const IDE_ACTIVITIES: IdeActivity[] = [
   { id: 'connections', label: 'Explorer', icon: 'database', mode: 'sidebar', component: DatabasePanel },
   { id: 'files', label: 'Files', icon: 'file-01', mode: 'sidebar', component: FilesPanel },
+  { id: 'exports', label: 'Exports', icon: 'download-01', mode: 'sidebar', component: ExportsPanel },
 ]
 
 /** Activities visible to the current user (honours `requires`). */

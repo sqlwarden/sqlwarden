@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -51,6 +52,49 @@ func TestDownloadConnectionExportStreamsCSVFromLiveSession(t *testing.T) {
 	assert.Equal(t, res.Header.Get("Content-Type"), "text/csv; charset=utf-8")
 	assert.True(t, strings.Contains(res.Header.Get("Content-Disposition"), "report.csv"))
 	assert.Equal(t, string(res.BodyBytes), "id,name\n1,alpha\n")
+}
+
+func TestDownloadConnectionExportAbortsOnByteLimitExceeded(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.config.Exports.SyncMaxBytes = 5
+
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "export-overflow"), "Export Overflow", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Export Overflow WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "ExportOverflowConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+	baseURL := orgConnectionURL(slug, wsIDInt, envID, connID)
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost, baseURL+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	req := newAuthRequest(t, http.MethodPost, baseURL+"/exports/download", map[string]any{
+		"sql":      "SELECT 1 AS id, 'alpha' AS name",
+		"filename": "overflow",
+	}, tok)
+	req.Header.Set("X-Warden-Session", sessionID)
+
+	rec := httptest.NewRecorder()
+	var panicked any
+	func() {
+		defer func() { panicked = recover() }()
+		app.routes().ServeHTTP(rec, req)
+	}()
+
+	gotErr, ok := panicked.(error)
+	assert.True(t, ok)
+	assert.ErrorIs(t, gotErr, http.ErrAbortHandler)
 }
 
 func TestCreateConnectionExportQueuesUserJob(t *testing.T) {
@@ -113,6 +157,38 @@ func TestConnectionExportRejectsNonReadQuery(t *testing.T) {
 
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
 	assertValidationField(t, res, "sql")
+}
+
+func TestConnectionExportRejectsMultiStatementQuery(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "export-multi"), "Export Multi", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Export Multi WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "ExportMultiConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/exports",
+		map[string]any{"sql": "SELECT 1 AS id; SELECT 2 AS id"}, tok), app.routes())
+
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "sql")
+
+	downloadRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/exports/download",
+		map[string]any{"sql": "SELECT 1 AS id; SELECT 2 AS id"}, tok), app.routes())
+	assert.Equal(t, downloadRes.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, downloadRes, "sql")
 }
 
 func TestHandleExportJobWritesPrivateWorkspaceFile(t *testing.T) {

@@ -72,6 +72,26 @@ func TestProviderClassifiesSQLWardenCorpus(t *testing.T) {
 	}
 }
 
+func TestProviderClassifyReportsStatementCount(t *testing.T) {
+	t.Parallel()
+
+	single, err := Classify(context.Background(), dbengine.DialectPostgres, classifier.Request{SQL: "SELECT * FROM accounts"})
+	if err != nil {
+		t.Fatalf("Classify() error = %v", err)
+	}
+	if single.StatementCount != 1 {
+		t.Fatalf("StatementCount = %d, want 1", single.StatementCount)
+	}
+
+	multi, err := Classify(context.Background(), dbengine.DialectPostgres, classifier.Request{SQL: "SELECT * FROM accounts; SELECT * FROM sessions"})
+	if err != nil {
+		t.Fatalf("Classify() error = %v", err)
+	}
+	if multi.StatementCount != 2 {
+		t.Fatalf("StatementCount = %d, want 2", multi.StatementCount)
+	}
+}
+
 func TestProviderClassifiesInvalidSQLAsUnknown(t *testing.T) {
 	t.Parallel()
 

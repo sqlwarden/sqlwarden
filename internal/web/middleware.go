@@ -34,9 +34,16 @@ func (app *application) recoverPanic(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			pv := recover()
-			if pv != nil {
-				app.serverError(w, r, fmt.Errorf("%v", pv))
+			if pv == nil {
+				return
 			}
+			if pv == http.ErrAbortHandler {
+				// http.ErrAbortHandler is net/http's documented sentinel for aborting
+				// an in-flight response without logging or completing it normally —
+				// re-panic so the real server (not our recovery middleware) handles it.
+				panic(pv)
+			}
+			app.serverError(w, r, fmt.Errorf("%v", pv))
 		}()
 
 		next.ServeHTTP(w, r)
