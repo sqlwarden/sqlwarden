@@ -139,6 +139,9 @@ func (app *application) downloadConnectionExport(w http.ResponseWriter, r *http.
 	})
 	if err != nil {
 		app.logWarn(r, "synchronous export failed", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID), slog.String("error", exportErrorCategory(err)))
+		if errors.Is(err, exports.ErrByteLimitExceeded) {
+			panic(http.ErrAbortHandler)
+		}
 		return
 	}
 	app.logInfo(r, "synchronous export completed", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID), slog.Int64("rows", result.Rows), slog.Int64("bytes", result.Bytes))
@@ -173,6 +176,10 @@ func (app *application) validateExportSQL(w http.ResponseWriter, r *http.Request
 	}
 	if classification.Kind != classifier.KindDQL {
 		app.failedValidation(w, r, fieldErrors(map[string]string{"sql": "Only read queries can be exported."}))
+		return false
+	}
+	if classification.StatementCount > 1 {
+		app.failedValidation(w, r, fieldErrors(map[string]string{"sql": "Only a single query can be exported. Multi-query export isn't supported yet."}))
 		return false
 	}
 	return true
@@ -227,6 +234,9 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 	}
 	if classification.Kind != classifier.KindDQL {
 		return nil, jobs.Permanent("export_not_read_query", "Only read queries can be exported.")
+	}
+	if classification.StatementCount > 1 {
+		return nil, jobs.Permanent("export_multi_statement", "Only a single query can be exported. Multi-query export isn't supported yet.")
 	}
 
 	plainDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)

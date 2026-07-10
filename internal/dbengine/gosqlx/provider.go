@@ -30,7 +30,7 @@ func Classify(ctx context.Context, dialect dbengine.Dialect, req classifier.Requ
 	if err != nil {
 		return classifier.Result{Kind: classifier.KindUnknown, Source: "gosqlx"}, nil
 	}
-	return classifier.Result{Kind: classifyStatements(tree.Statements), Source: "gosqlx"}, nil
+	return classifier.Result{Kind: classifyStatements(tree.Statements), Source: "gosqlx", StatementCount: len(tree.Statements)}, nil
 }
 
 // Parse is a GoSQLX-backed parse helper. Drivers call it from their own

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '#/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover'
 import {
   orgEnvironmentsQueryOptions,
@@ -13,10 +14,15 @@ import { updatePrivateWorkspaceFileContent } from '#/lib/api/files'
 import type { Connection, ResultSet, Workspace, WorkspaceFile } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, activeTabId as selectActiveTabId, type EditorTab } from './useIdeStore'
+import { sqlStatementAtCursor } from './sqlStatements'
 import { DriverBadge } from './DriverBadge'
 import { SaveAsDialog } from './SaveAsDialog'
+import { ExportConfirmDialog } from './exports/ExportConfirmDialog'
+import { ExportToFilesDialog } from './exports/ExportToFilesDialog'
+import { formatBytes } from './exports/formatBytes'
+import { useDownloadNow } from './exports/useDownloadNow'
 import { Tip } from './schema-diagram/Tip'
-import { isSessionGone } from './sessionErrors'
+import { useEnsureSession } from './sessionErrors'
 import { useYDocRegistry } from './useYDocRegistry'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 
@@ -32,6 +38,8 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [connSearch, setConnSearch] = useState('')
   const [saveAsTab, setSaveAsTab] = useState<EditorTab | null>(null)
+  const [confirmExportSql, setConfirmExportSql] = useState<string | null>(null)
+  const [exportToWorkspaceOpen, setExportToWorkspaceOpen] = useState(false)
 
   const activeTabId = useIde((s) => selectActiveTabId(s, workspace.id))
   const activeGroupId = useIde((s) => s.activeGroupId[workspace.id])
@@ -43,9 +51,6 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
   const sessions = useIde((s) => s.sessions)
-  const setSession = useIde((s) => s.setSession)
-  const clearSession = useIde((s) => s.clearSession)
-  const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const setQueryResult = useIde((s) => s.setQueryResult)
   const setTabRunning = useIde((s) => s.setTabRunning)
   const setTabController = useIde((s) => s.setTabController)
@@ -143,6 +148,31 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     }
   }, [activeConnection, orgSlug, workspace.id])
 
+  const ensureSession = useEnsureSession(orgSlug, workspace.id)
+  const downloadNow = useDownloadNow(orgSlug, workspace.id)
+
+  const resolveSql = useCallback((): string => {
+    if (!activeTab) return ''
+    const view = viewRegistry.get(activeGroupId ? `${activeGroupId}:${activeTab.id}` : activeTab.id)
+    if (view) {
+      const sel = view.state.selection.main
+      if (sel.from !== sel.to) {
+        // Explicit selection — run exactly that text.
+        return view.state.sliceDoc(sel.from, sel.to).trim()
+      }
+      // No selection — run the statement the cursor is inside.
+      return sqlStatementAtCursor(view.state.doc.toString(), sel.head)
+    }
+    const doc = registry.get(activeTab.id)
+    return (doc ? doc.getText('content').toString() : activeTab.content).trim()
+  }, [activeTab, activeGroupId, viewRegistry, registry])
+
+  function handleExportClick() {
+    const sql = resolveSql()
+    if (!sql) return
+    setConfirmExportSql(sql)
+  }
+
   const handleRun = useCallback(async () => {
     if (!activeTab || isRunning) return
     // The Run button is disabled without a connection, so this guard only trips
@@ -156,21 +186,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       return
     }
 
-    const view = viewRegistry.get(activeGroupId ? `${activeGroupId}:${activeTab.id}` : activeTab.id)
-    let sql: string
-    if (view) {
-      const sel = view.state.selection.main
-      if (sel.from !== sel.to) {
-        // Explicit selection — run exactly that text.
-        sql = view.state.sliceDoc(sel.from, sel.to).trim()
-      } else {
-        // No selection — run the statement the cursor is inside.
-        sql = sqlStatementAtCursor(view.state.doc.toString(), sel.head)
-      }
-    } else {
-      const doc = registry.get(activeTab.id)
-      sql = (doc ? doc.getText('content').toString() : activeTab.content).trim()
-    }
+    const sql = resolveSql()
     if (!sql) return
 
     // Ensure results pane is visible.
@@ -189,53 +205,24 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     setQueryResult(activeTab.id, { status: 'running' })
 
     try {
-      let sessionId: string | undefined = sessions[activeConnection.id]
-
-      // One transparent retry: when the stored session died server-side (410),
-      // drop it, connect fresh, and run again. Returning to a cloud IDE with a
-      // stale session should reconnect, not error.
-      for (let attempt = 0; ; attempt++) {
-        if (!sessionId) {
-          setConnectionStatus(activeConnection.id, 'connecting')
-          try {
-            const connectData = await api.post<{ session_id: string; reused: boolean }>(
-              `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/connect`,
-              undefined,
-              { signal: controller.signal },
-            )
-            sessionId = connectData.session_id
-            setSession(activeConnection.id, sessionId)
-          } finally {
-            // Clears 'connecting'; on success the new session drives 'connected',
-            // on failure it returns to idle (the query error surfaces in results).
-            setConnectionStatus(activeConnection.id, null)
-          }
-        }
-
-        try {
-          const result = await api.post<ResultSet>(
+      const result = await ensureSession(
+        activeConnection.id,
+        (sessionId) =>
+          api.post<ResultSet>(
             `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/query`,
             { sql, use_cursor: true },
             { headers: { 'X-Warden-Session': sessionId }, signal: controller.signal },
-          )
+          ),
+        controller.signal,
+      )
 
-          setQueryResult(activeTab.id, {
-            status: 'ok',
-            data: result,
-            durationMs: result.duration_ms,
-            sql,
-            connectionId: activeConnection.id,
-          })
-          break
-        } catch (err) {
-          if (attempt === 0 && isSessionGone(err)) {
-            clearSession(activeConnection.id)
-            sessionId = undefined
-            continue
-          }
-          throw err
-        }
-      }
+      setQueryResult(activeTab.id, {
+        status: 'ok',
+        data: result,
+        durationMs: result.duration_ms,
+        sql,
+        connectionId: activeConnection.id,
+      })
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         setQueryResult(activeTab.id, { status: 'cancelled', sql })
@@ -247,9 +234,9 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
       setTabController(activeTab.id, null)
       setTabRunning(activeTab.id, false)
     }
-  }, [activeTab, activeGroupId, activeConnection, hasConnections, isRunning, maximizedPane, sessions, orgSlug, workspace.id,
-      registry, viewRegistry, abortControllers, results, setMaximizedPane, setQueryResult, setSession, clearSession,
-      setConnectionStatus, setTabController, setTabRunning, closeQueryCursor])
+  }, [activeTab, activeConnection, hasConnections, isRunning, maximizedPane, orgSlug, workspace.id,
+      resolveSql, abortControllers, results, setMaximizedPane, setQueryResult, ensureSession,
+      setTabController, setTabRunning, closeQueryCursor])
 
   // Global ⌘Enter / Ctrl+Enter shortcut.
   // capture:true fires before CodeMirror's contentDOM listener; stopPropagation
@@ -278,26 +265,66 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   return (
     <>
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-background px-2.5">
-      {/* Run button — always shown; disabled while running */}
-      <Button
-        type="button"
-        className="px-2.5"
-        disabled={runDisabled}
-        onClick={() => void handleRun()}
-      >
-        <Icon
-          name={isRunning ? 'loading-03' : 'play'}
-          size={13}
-          data-icon="inline-start"
-          className={isRunning ? 'animate-spin' : undefined}
-        />
-        {isRunning ? 'Running…' : 'Run'}
-        {!isRunning && (
-          <kbd className="ml-0.5 hidden rounded bg-primary-foreground/20 px-1 font-sans text-[9px] font-medium leading-4 tracking-wide sm:inline">
-            {RUN_SHORTCUT}
-          </kbd>
+      {/* Run button — combined with quick-export options via the split arrow */}
+      <div className="flex items-stretch">
+        <Button
+          type="button"
+          className="rounded-r-none px-2.5"
+          disabled={runDisabled}
+          onClick={() => void handleRun()}
+        >
+          <Icon
+            name={isRunning ? 'loading-03' : 'play'}
+            size={13}
+            data-icon="inline-start"
+            className={isRunning ? 'animate-spin' : undefined}
+          />
+          {isRunning ? 'Running…' : 'Run'}
+          {!isRunning && (
+            <kbd className="ml-0.5 hidden rounded bg-primary-foreground/20 px-1 font-sans text-[9px] font-medium leading-4 tracking-wide sm:inline">
+              {RUN_SHORTCUT}
+            </kbd>
+          )}
+        </Button>
+
+        {downloadNow.isDownloading ? (
+          <Tip label={`Exporting… ${formatBytes(downloadNow.bytesDownloaded)} — click to cancel`}>
+            <Button
+              type="button"
+              className="rounded-l-none border-l border-l-primary-foreground/20 px-2"
+              aria-label="Cancel export"
+              onClick={downloadNow.cancel}
+            >
+              <Icon name="loading-03" size={13} className="animate-spin" />
+            </Button>
+          </Tip>
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  className="rounded-l-none border-l border-l-primary-foreground/20 px-1.5"
+                  aria-label="More run options"
+                  disabled={runDisabled}
+                />
+              }
+            >
+              <Icon name="chevron-down" size={12} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={handleExportClick}>
+                <Icon name="download-01" size={13} data-icon="inline-start" />
+                Export
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setExportToWorkspaceOpen(true)}>
+                <Icon name="folder" size={13} data-icon="inline-start" />
+                Export to workspace
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
-      </Button>
+      </div>
 
       {/* Cancel button — appears only while a query is in flight */}
       {isRunning && (
@@ -480,82 +507,33 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         onSuccess={(file, etag) => handleSaveAsSuccess(saveAsTab, file, etag)}
       />
     )}
+
+    {activeConnection && confirmExportSql !== null && (
+      <ExportConfirmDialog
+        open
+        onOpenChange={(open) => { if (!open) setConfirmExportSql(null) }}
+        sql={confirmExportSql}
+        onConfirm={() => {
+          void downloadNow.download(activeConnection.id, confirmExportSql)
+          setConfirmExportSql(null)
+        }}
+      />
+    )}
+
+    {activeConnection && exportToWorkspaceOpen && (
+      <ExportToFilesDialog
+        open
+        onOpenChange={setExportToWorkspaceOpen}
+        orgSlug={orgSlug}
+        workspaceId={workspace.id}
+        connectionId={activeConnection.id}
+        getSql={resolveSql}
+      />
+    )}
     </>
   )
 }
 
 // ─── SQL statement extraction ──────────────────────────────────────────────────
 
-/**
- * Returns the SQL statement that contains `cursor` (a character offset).
- * Scans for semicolons that are not inside string literals or comments.
- * Falls back to the full trimmed text when no semicolons are present.
- *
- * Statement spans are [inclusive_start, exclusive_end]. When the cursor
- * sits in whitespace between statements, the preceding statement wins.
- */
-export function sqlStatementAtCursor(text: string, cursor: number): string {
-  type LexState = 'normal' | 'sq' | 'dq' | 'lc' | 'bc'
-  let state: LexState = 'normal'
-  const semis: number[] = []
-
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i]
-    const n = text[i + 1] ?? ''
-    switch (state) {
-      case 'normal':
-        if (c === "'") { state = 'sq' }
-        else if (c === '"') { state = 'dq' }
-        else if (c === '-' && n === '-') { state = 'lc'; i++ }
-        else if (c === '/' && n === '*') { state = 'bc'; i++ }
-        else if (c === ';') { semis.push(i) }
-        break
-      case 'sq':
-        if (c === "'" && n === "'") { i++ } // escaped ''
-        else if (c === "'") { state = 'normal' }
-        break
-      case 'dq':
-        if (c === '"' && n === '"') { i++ } // escaped ""
-        else if (c === '"') { state = 'normal' }
-        break
-      case 'lc':
-        if (c === '\n') { state = 'normal' }
-        break
-      case 'bc':
-        if (c === '*' && n === '/') { state = 'normal'; i++ }
-        break
-    }
-  }
-
-  if (semis.length === 0) return text.trim()
-
-  // Build [start, exclusive_end] spans from semicolon positions.
-  // Each next span starts at the first non-whitespace char after the semicolon
-  // so that the gap between statements belongs to no span — the cursor-in-gap
-  // case then correctly falls back to the preceding statement.
-  const spans: Array<[number, number]> = []
-  let start = 0
-  for (const semi of semis) {
-    spans.push([start, semi + 1]) // include the semicolon in the span
-    let nextStart = semi + 1
-    while (nextStart < text.length && /\s/.test(text[nextStart])) nextStart++
-    start = nextStart
-  }
-  // Trailing content after the last semicolon (statement without terminator).
-  if (text.slice(start).trim()) {
-    spans.push([start, text.length])
-  }
-
-  // Find the span that contains the cursor.
-  for (const [s, e] of spans) {
-    if (cursor >= s && cursor < e) return text.slice(s, e).trim()
-  }
-
-  // Cursor is in trailing whitespace — return the last span that started at or
-  // before the cursor (i.e. the statement immediately preceding it).
-  let best = spans[0]
-  for (const span of spans) {
-    if (span[0] <= cursor) best = span
-  }
-  return text.slice(best[0], best[1]).trim()
-}
+export { sqlStatementAtCursor, countSqlStatements } from './sqlStatements'

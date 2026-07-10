@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions, type QueryClient } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFilesResponse, WorkspaceFileBrowserResult, CatalogResponse, SchemaSpecResponse, ObjectsResponse, ObjectRef, ResultSet, RelationshipsResponse } from '#/lib/api/types'
+import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFilesResponse, WorkspaceFileBrowserResult, CatalogResponse, SchemaSpecResponse, ObjectsResponse, ObjectRef, ResultSet, RelationshipsResponse, JobRecord } from '#/lib/api/types'
 
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
@@ -70,6 +70,8 @@ export const queryKeys = {
     ['my-connections', workspaceId, environmentId, query ?? {}] as const,
   orgPolicies: (slug: string, query?: ListQuery) => ['org-policies', slug, query ?? {}] as const,
   orgPolicy: (slug: string, bindingId: string | number) => ['org-policy', slug, bindingId] as const,
+  orgWorkspaceJobs: (slug: string, workspaceId: string | number, query?: ListQuery) =>
+    ['org-workspace-jobs', slug, workspaceId, query ?? {}] as const,
 }
 
 export function setupStatusQueryOptions() {
@@ -429,6 +431,14 @@ export function orgWorkspaceConnectionsQueryOptions(slug: string, workspaceId: s
   return queryOptions({
     queryKey: queryKeys.orgWorkspaceConnections(slug, workspaceId, query),
     queryFn: () => api.get<Paginated<Connection>>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections`, { query }),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function orgWorkspaceJobsQueryOptions(slug: string, workspaceId: string | number, query?: ListQuery) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspaceJobs(slug, workspaceId, query),
+    queryFn: () => api.get<Paginated<JobRecord>>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/jobs`, { query }),
     placeholderData: keepPreviousData,
   })
 }

@@ -18,6 +18,7 @@ import { nextCell } from './resultGridNav'
 import { RUN_SHORTCUT } from './IdeToolbar'
 import { Tip } from './schema-diagram/Tip'
 import { DriverBadge } from './DriverBadge'
+import { ExportButton } from './exports/ExportButton'
 import { columnTypeIcon, columnTypeIconColor } from './columnTypeIcon'
 import { orgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
 
@@ -570,7 +571,7 @@ function ResultSetView({
   if (!hasColumns) {
     return (
       <div className="flex h-full min-h-0 flex-col bg-card">
-        <ResultSqlCaption sql={result.sql} />
+        <ResultSqlCaption sql={result.sql} orgSlug={orgSlug} workspaceId={workspace.id} connectionId={executedConnection?.id} />
         <div className="flex min-h-0 flex-1 items-center justify-center">
           <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <Icon name="checkmark-circle-02" size={14} className="text-green-500" />
@@ -645,7 +646,7 @@ function ResultSetView({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
-      <ResultSqlCaption sql={result.sql} />
+      <ResultSqlCaption sql={result.sql} orgSlug={orgSlug} workspaceId={workspace.id} connectionId={executedConnection?.id} />
       {/*
        * Always render the table inside ResizablePanelGroup so the table's
        * scroll container is a stable DOM element. Switching between a plain
@@ -715,7 +716,7 @@ function ResultSetView({
 // ─── SQL caption ──────────────────────────────────────────────────────────────
 
 /** Slim strip above each result set naming the query it came from. */
-function ResultSqlCaption({ sql }: { sql: string }) {
+function ResultSqlCaption({ sql, orgSlug, workspaceId, connectionId }: { sql: string; orgSlug: string; workspaceId: number; connectionId: number | undefined }) {
   if (!sql) return null
   return (
     <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-muted/30 pl-3 pr-1.5">
@@ -723,6 +724,13 @@ function ResultSqlCaption({ sql }: { sql: string }) {
       <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground" title={sql}>
         {sql.replace(/\s+/g, ' ').trim()}
       </span>
+      <ExportButton
+        orgSlug={orgSlug}
+        workspaceId={workspaceId}
+        connectionId={connectionId}
+        getSql={() => sql}
+        className="scale-90"
+      />
       <Tip label="Copy query">
         <button
           type="button"

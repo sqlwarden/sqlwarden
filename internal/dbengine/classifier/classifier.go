@@ -38,4 +38,8 @@ type Request struct {
 type Result struct {
 	Kind   Kind   `json:"kind"`
 	Source string `json:"source,omitempty"` // which classifier produced it: "gosqlx" | "heuristic"
+	// StatementCount is the number of statements found in the input, when the
+	// classifier is able to determine it (gosqlx-backed classifiers only). It
+	// is 0 when unknown, so callers must not treat 0 as "single statement".
+	StatementCount int `json:"statement_count,omitempty"`
 }

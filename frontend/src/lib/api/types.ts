@@ -428,3 +428,50 @@ export interface RelationshipGraph {
 export interface RelationshipsResponse {
   graph: RelationshipGraph
 }
+
+export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+
+export interface JobRecord {
+  id: string
+  type: string
+  visibility: string
+  status: JobStatus
+  org_id?: number
+  workspace_id?: number
+  owner_account_id?: number
+  run_at: string
+  priority: number
+  attempts: number
+  max_attempts: number
+  started_at?: string
+  finished_at?: string
+  cancel_requested_at?: string
+  error_code?: string
+  error_message?: string
+  output?: unknown
+  created_at: string
+  updated_at: string
+}
+
+export interface JobEvent {
+  id: string
+  job_id: string
+  level: 'info' | 'warn' | 'error'
+  code: string
+  message: string
+  details?: unknown
+  created_at: string
+}
+
+export interface JobEventPage {
+  items: JobEvent[]
+  next_after_id?: string
+}
+
+export interface ExportJobOutput {
+  file_id: number
+  filename: string
+  format: string
+  row_count: number
+  byte_count: number
+}
