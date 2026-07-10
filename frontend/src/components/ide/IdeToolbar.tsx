@@ -63,6 +63,14 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const isRunning = !!(activeTabId && runningTabs[activeTabId])
 
+  // Export only makes sense for a runnable SQL query — not for a database
+  // object/diagram tab or a non-SQL file (e.g. a previously exported CSV).
+  const isSqlTab = !!activeTab && (
+    activeTab.kind === 'scratch' ||
+    activeTab.kind === 'connection' ||
+    (activeTab.kind === 'file' && activeTab.title.toLowerCase().endsWith('.sql'))
+  )
+
   const showSave = activeTab?.kind !== 'file' || activeTab?.isDirty
 
   async function handleSave() {
@@ -265,11 +273,11 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   return (
     <>
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-background px-2.5">
-      {/* Run button — combined with quick-export options via the split arrow */}
+      {/* Run button — combined with quick-export options via the split arrow, when the active tab is a runnable query */}
       <div className="flex items-stretch">
         <Button
           type="button"
-          className="rounded-r-none px-2.5"
+          className={cn('px-2.5', isSqlTab && 'rounded-r-none')}
           disabled={runDisabled}
           onClick={() => void handleRun()}
         >
@@ -287,42 +295,44 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           )}
         </Button>
 
-        {downloadNow.isDownloading ? (
-          <Tip label={`Exporting… ${formatBytes(downloadNow.bytesDownloaded)} — click to cancel`}>
-            <Button
-              type="button"
-              className="rounded-l-none border-l border-l-primary-foreground/20 px-2"
-              aria-label="Cancel export"
-              onClick={downloadNow.cancel}
-            >
-              <Icon name="loading-03" size={13} className="animate-spin" />
-            </Button>
-          </Tip>
-        ) : (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  type="button"
-                  className="rounded-l-none border-l border-l-primary-foreground/20 px-1.5"
-                  aria-label="More run options"
-                  disabled={runDisabled}
-                />
-              }
-            >
-              <Icon name="chevron-down" size={12} />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={handleExportClick}>
-                <Icon name="download-01" size={13} data-icon="inline-start" />
-                Export
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setExportToWorkspaceOpen(true)}>
-                <Icon name="folder" size={13} data-icon="inline-start" />
-                Export to workspace
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+        {isSqlTab && (
+          downloadNow.isDownloading ? (
+            <Tip label={`Exporting… ${formatBytes(downloadNow.bytesDownloaded)} — click to cancel`}>
+              <Button
+                type="button"
+                className="rounded-l-none border-l border-l-primary-foreground/20 px-2"
+                aria-label="Cancel export"
+                onClick={downloadNow.cancel}
+              >
+                <Icon name="loading-03" size={13} className="animate-spin" />
+              </Button>
+            </Tip>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    type="button"
+                    className="rounded-l-none border-l border-l-primary-foreground/20 px-1.5"
+                    aria-label="More run options"
+                    disabled={runDisabled}
+                  />
+                }
+              >
+                <Icon name="chevron-down" size={12} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={handleExportClick}>
+                  <Icon name="download-01" size={13} data-icon="inline-start" />
+                  Export
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setExportToWorkspaceOpen(true)}>
+                  <Icon name="folder" size={13} data-icon="inline-start" />
+                  Export to workspace
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )
         )}
       </div>
 
