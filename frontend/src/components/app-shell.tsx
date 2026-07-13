@@ -1,4 +1,3 @@
-import { trimTrailingSlash } from '#/lib/utils'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
@@ -68,66 +67,18 @@ import { Tip } from '#/components/ide/schema-diagram/Tip'
 import { Slider } from '#/components/ui/slider'
 import { buildUserMenuItems } from '#/lib/user-menu'
 import { cn } from '#/lib/utils'
+import {
+  appShellPreferenceKeys,
+  defaultAppShellPreferences,
+  useAppShellPreferences,
+  type AppShellPreferences,
+  type AppShellSidebarStyle,
+  type AppShellTheme,
+} from './app-shell-preferences'
+import { isNavItemActive, navItemKey, type AppShellNavItem } from './app-shell-navigation'
 
-export type AppShellTheme = 'dark' | 'light' | 'system'
-export type AppShellSidebarStyle = 'sidebar' | 'inset' | 'floating'
-
-export type AppShellPreferences = {
-  themeMode: AppShellTheme
-  sidebarStyle: AppShellSidebarStyle
-}
-
-export type AppShellNavItem = {
-  to: string
-  label: string
-  icon: AppIcon
-  params?: Record<string, string>
-  search?: Record<string, unknown>
-  disabled?: boolean
-  badge?: string
-  activePathPrefixes?: string[]
-}
-
-const preferenceKeys = {
-  themeMode: 'sqlwarden.preference.theme_mode',
-  sidebarStyle: 'sqlwarden.preference.sidebar_style',
-} as const
-
-const defaultPreferences: AppShellPreferences = {
-  themeMode: 'system',
-  sidebarStyle: 'sidebar',
-}
-
-export function useAppShellPreferences() {
-  const { theme, setTheme } = useTheme()
-  const [preferences, setPreferencesState] = useState<AppShellPreferences>(() => readPreferences(theme))
-
-  useEffect(() => {
-    applyPreferences(preferences)
-  }, [preferences])
-
-  useEffect(() => {
-    setPreferencesState((current) => (
-      current.themeMode === theme ? current : { ...current, themeMode: theme }
-    ))
-  }, [theme])
-
-  const setPreferences: Dispatch<SetStateAction<AppShellPreferences>> = (nextPreferences) => {
-    setPreferencesState((current) => {
-      const resolvedPreferences = typeof nextPreferences === 'function'
-        ? nextPreferences(current)
-        : nextPreferences
-
-      if (resolvedPreferences.themeMode !== current.themeMode) {
-        setTheme(resolvedPreferences.themeMode)
-      }
-
-      return resolvedPreferences
-    })
-  }
-
-  return { preferences, setPreferences }
-}
+export { useAppShellPreferences }
+export type { AppShellPreferences, AppShellNavItem, AppShellSidebarStyle, AppShellTheme }
 
 export function AppShellHeader({
   label,
@@ -276,7 +227,7 @@ function AppShellNavMenuItem({
   )
 }
 
-function AppShellUserMenu({ session }: { session: SessionResponse }) {
+export function AppShellUserMenu({ session }: { session: SessionResponse }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const menuItems = buildUserMenuItems({ session })
@@ -342,7 +293,7 @@ function AppShellUserMenu({ session }: { session: SessionResponse }) {
               variant="destructive"
               disabled={logout.isPending}
               onClick={() => {
-                void logout.mutateAsync()
+                logout.mutate()
               }}
             >
               <Icon name="logout-03" size={20} />
@@ -460,7 +411,7 @@ function UiLabPanel({
   }
 
   function updatePreference<Key extends keyof AppShellPreferences>(key: Key, value: AppShellPreferences[Key]) {
-    window.localStorage.setItem(preferenceKeys[key], value)
+    window.localStorage.setItem(appShellPreferenceKeys[key], value)
     setPreferences((current) => ({
       ...current,
       [key]: value,
@@ -468,11 +419,11 @@ function UiLabPanel({
   }
 
   function restoreDefaults() {
-    Object.entries(preferenceKeys).forEach(([key, storageKey]) => {
+    Object.entries(appShellPreferenceKeys).forEach(([key, storageKey]) => {
       const typedKey = key as keyof AppShellPreferences
-      window.localStorage.setItem(storageKey, defaultPreferences[typedKey])
+      window.localStorage.setItem(storageKey, defaultAppShellPreferences[typedKey])
     })
-    setPreferences(defaultPreferences)
+    setPreferences(defaultAppShellPreferences)
     setPackName('hugeicons')
     setEditorThemeDark('vscode-dark')
     setEditorThemeLight('vscode-light')
@@ -944,54 +895,9 @@ function EditorFontSizeSlider({
   )
 }
 
-function readPreferences(themeMode: AppShellTheme): AppShellPreferences {
-  return {
-    themeMode,
-    sidebarStyle: readPreference(preferenceKeys.sidebarStyle, ['sidebar', 'inset', 'floating'], defaultPreferences.sidebarStyle),
-  }
-}
-
-function readPreference<Value extends string>(key: string, allowed: Value[], fallback: Value) {
-  const stored = window.localStorage.getItem(key)
-  return stored && allowed.includes(stored as Value) ? stored as Value : fallback
-}
-
-function applyPreferences(preferences: AppShellPreferences) {
-  const root = document.documentElement
-  root.setAttribute('data-theme-mode', preferences.themeMode)
-  root.removeAttribute('data-theme-preset')
-  root.removeAttribute('data-font')
-  root.setAttribute('data-content-layout', 'full-width')
-  root.removeAttribute('data-navbar-style')
-  root.setAttribute('data-sidebar-variant', preferences.sidebarStyle)
-  root.setAttribute('data-sidebar-collapsible', 'icon')
-}
-
 function titleCase(value: string) {
   return value
     .split('-')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
-}
-
-function navItemKey(item: AppShellNavItem) {
-  return `${item.to}:${JSON.stringify(item.params ?? {})}`
-}
-
-function isNavItemActive(pathname: string, item: AppShellNavItem) {
-  const normalizedPathname = trimTrailingSlash(pathname)
-  const resolvedTo = resolvePath(item.to, item.params ?? {})
-
-  if (normalizedPathname === trimTrailingSlash(resolvedTo)) return true
-
-  return (
-    item.activePathPrefixes?.some((prefix) => {
-      const normalizedPrefix = trimTrailingSlash(prefix)
-      return normalizedPathname === normalizedPrefix || normalizedPathname.startsWith(`${normalizedPrefix}/`)
-    }) ?? false
-  )
-}
-
-function resolvePath(to: string, params: Record<string, string>) {
-  return Object.entries(params).reduce((path, [key, value]) => path.replace(`$${key}`, value), to)
 }
