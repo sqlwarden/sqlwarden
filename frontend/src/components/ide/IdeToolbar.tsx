@@ -9,9 +9,8 @@ import {
   orgEnvironmentsQueryOptions,
   allOrgWorkspaceConnectionsQueryOptions,
 } from '#/lib/api/query'
-import { api } from '#/lib/api/client'
 import { updatePrivateWorkspaceFileContent } from '#/lib/api/files'
-import type { Connection, ResultSet, Workspace, WorkspaceFile } from '#/lib/api/types'
+import type { Connection, Workspace, WorkspaceFile } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, activeTabId as selectActiveTabId, type EditorTab } from './useIdeStore'
 import { sqlStatementAtCursor } from './sqlStatements'
@@ -22,7 +21,7 @@ import { ExportToFilesDialog } from './exports/ExportToFilesDialog'
 import { formatBytes } from './exports/formatBytes'
 import { useDownloadNow } from './exports/useDownloadNow'
 import { Tip } from './schema-diagram/Tip'
-import { useEnsureSession } from './sessionErrors'
+import { useQueryExecution } from './useQueryExecution'
 import { useYDocRegistry } from './useYDocRegistry'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 
@@ -51,17 +50,10 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
   const sessions = useIde((s) => s.sessions)
-  const setQueryResult = useIde((s) => s.setQueryResult)
-  const setTabRunning = useIde((s) => s.setTabRunning)
-  const setTabController = useIde((s) => s.setTabController)
-  const runningTabs = useIde((s) => s.runningTabs)
-  const abortControllers = useIde((s) => s.abortControllers)
-  const results = useIde((s) => s.results)
 
   const registry = useYDocRegistry()
   const viewRegistry = useEditorViewRegistry()
   const activeTab = tabs.find((t) => t.id === activeTabId)
-  const isRunning = !!(activeTabId && runningTabs[activeTabId])
 
   // Export only makes sense for a runnable SQL query — not for a database
   // object/diagram tab or a non-SQL file (e.g. a previously exported CSV).
@@ -129,6 +121,16 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const connItems = connections.data?.items ?? []
   const activeConnection = connItems.find((c) => c.id === activeTab?.connectionId)
   const hasConnections = connItems.length > 0
+  const {
+    cancel: cancelQuery,
+    isRunning,
+    run: runQuery,
+  } = useQueryExecution(
+    orgSlug,
+    workspace.id,
+    activeTab?.id,
+    activeConnection?.id,
+  )
 
   function selectConnection(conn: Connection) {
     if (activeTabId) setTabConnection(activeTabId, conn.id, conn.driver)
@@ -141,22 +143,8 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   }
 
   function handleCancel() {
-    if (!activeTabId) return
-    abortControllers[activeTabId]?.abort()
+    cancelQuery()
   }
-
-  const closeQueryCursor = useCallback(async (queryCursorId: string | undefined) => {
-    if (!queryCursorId || !activeConnection) return
-    try {
-      await api.delete(
-        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/query-cursors/${queryCursorId}`,
-      )
-    } catch {
-      // Best-effort cleanup only; backend idle reaper closes leaked cursors.
-    }
-  }, [activeConnection, orgSlug, workspace.id])
-
-  const ensureSession = useEnsureSession(orgSlug, workspace.id)
   const downloadNow = useDownloadNow(orgSlug, workspace.id)
 
   const resolveSql = useCallback((): string => {
@@ -200,51 +188,9 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     // Ensure results pane is visible.
     if (maximizedPane === 'editor') setMaximizedPane(null)
 
-    // Abort any stale controller for this tab (safety net).
-    abortControllers[activeTab.id]?.abort()
-    const previousResult = results[activeTab.id]
-    if (previousResult?.status === 'ok') {
-      void closeQueryCursor(previousResult.data.query_cursor_id)
-    }
-
-    const controller = new AbortController()
-    setTabController(activeTab.id, controller)
-    setTabRunning(activeTab.id, true)
-    setQueryResult(activeTab.id, { status: 'running' })
-
-    try {
-      const result = await ensureSession(
-        activeConnection.id,
-        (sessionId) =>
-          api.post<ResultSet>(
-            `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeConnection.id}/query`,
-            { sql, use_cursor: true },
-            { headers: { 'X-Warden-Session': sessionId }, signal: controller.signal },
-          ),
-        controller.signal,
-      )
-
-      setQueryResult(activeTab.id, {
-        status: 'ok',
-        data: result,
-        durationMs: result.duration_ms,
-        sql,
-        connectionId: activeConnection.id,
-      })
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        setQueryResult(activeTab.id, { status: 'cancelled', sql })
-      } else {
-        const message = err instanceof Error ? err.message : 'Query failed'
-        setQueryResult(activeTab.id, { status: 'error', message, sql })
-      }
-    } finally {
-      setTabController(activeTab.id, null)
-      setTabRunning(activeTab.id, false)
-    }
-  }, [activeTab, activeConnection, hasConnections, isRunning, maximizedPane, orgSlug, workspace.id,
-      resolveSql, abortControllers, results, setMaximizedPane, setQueryResult, ensureSession,
-      setTabController, setTabRunning, closeQueryCursor])
+    await runQuery(sql)
+  }, [activeTab, activeConnection, hasConnections, isRunning, maximizedPane,
+      resolveSql, setMaximizedPane, runQuery])
 
   // Global ⌘Enter / Ctrl+Enter shortcut.
   // capture:true fires before CodeMirror's contentDOM listener; stopPropagation

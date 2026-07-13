@@ -561,6 +561,17 @@ export function fetchConnectionCursorPage(
   )
 }
 
+export function closeConnectionQueryCursor(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  cursorId: string,
+) {
+  return api.delete<void>(
+    `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/query-cursors/${cursorId}`,
+  )
+}
+
 export function refreshConnectionSchema(
   slug: string,
   workspaceId: string | number,

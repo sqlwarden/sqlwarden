@@ -7,11 +7,9 @@ import { Button } from '#/components/ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/components/ui/resizable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { cn } from '#/lib/utils'
-import type { ResultColumn, ResultSet, ResultValue, Workspace } from '#/lib/api/types'
+import type { ResultColumn, ResultValue, Workspace } from '#/lib/api/types'
 import { useIde, activeTabId as selectActiveTabId, type QueryResult } from './useIdeStore'
 import { useContextMenuOpener } from '#/components/ui/context-menu'
-import { api } from '#/lib/api/client'
-import { ApiError } from '#/lib/api/errors'
 import { copyWithToast, rowToTsv, rowToJson, valuesToLines } from './contextMenus/clipboard'
 import { buildCellMenu, buildRowMenu, buildColumnHeaderMenu } from './contextMenus/resultMenu'
 import { nextCell } from './resultGridNav'
@@ -20,7 +18,11 @@ import { Tip } from './schema-diagram/Tip'
 import { DriverBadge } from './DriverBadge'
 import { ExportButton } from './exports/ExportButton'
 import { columnTypeIcon, columnTypeIconColor } from './columnTypeIcon'
-import { allOrgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
+import {
+  allOrgWorkspaceConnectionsQueryOptions,
+  fetchConnectionCursorPage,
+} from '#/lib/api/query'
+import { applyCursorPageError, mergeCursorPage } from './cursorPaging'
 
 type ResultsAreaProps = {
   orgSlug: string
@@ -294,6 +296,7 @@ function ResultSetView({
   const setQueryResult = useIde((s) => s.setQueryResult)
   const activeTab = activeTabId ? tabs.find((t) => t.id === activeTabId) : undefined
   const queryCursorId = result.data.query_cursor_id
+  const cursorConnectionId = result.connectionId ?? activeTab?.connectionId
   // Same query key the toolbar uses, so this is a cache hit, not a new request.
   const connectionsQuery = useQuery(
     allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id),
@@ -301,7 +304,7 @@ function ResultSetView({
   const executedConnection = connectionsQuery.data?.items.find(
     (c) => c.id === (result.connectionId ?? activeTab?.connectionId),
   )
-  const canFetchMore = Boolean(queryCursorId && result.data.exhausted === false && !result.isFetchingNextPage && activeTab?.connectionId)
+  const canFetchMore = Boolean(queryCursorId && result.data.exhausted === false && !result.isFetchingNextPage && cursorConnectionId)
 
   // Track the pointer while drag-selecting, and stop drag + auto-scroll on mouseup.
   useEffect(() => {
@@ -363,44 +366,20 @@ function ResultSetView({
   }
 
   async function fetchNextPage() {
-    if (!activeTabId || !activeTab?.connectionId || !queryCursorId || !canFetchMore || fetchingNextPageRef.current) return
+    if (!activeTabId || !cursorConnectionId || !queryCursorId || !canFetchMore || fetchingNextPageRef.current) return
     fetchingNextPageRef.current = true
     setQueryResult(activeTabId, { ...result, isFetchingNextPage: true, cursorMessage: undefined })
     try {
-      const page = await api.post<ResultSet>(
-        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${activeTab.connectionId}/query-cursors/${queryCursorId}/fetch`,
-        { page_size: result.data.page_size },
+      const page = await fetchConnectionCursorPage(
+        orgSlug,
+        workspace.id,
+        cursorConnectionId,
+        queryCursorId,
+        result.data.page_size,
       )
-      const nextRows = [...(result.data.rows ?? []), ...(page.rows ?? [])]
-      const exhausted = page.exhausted ?? true
-      const nextCursorId = exhausted ? undefined : (page.query_cursor_id ?? queryCursorId)
-      setQueryResult(activeTabId, {
-        ...result,
-        isFetchingNextPage: false,
-        data: {
-          ...result.data,
-          rows: nextRows,
-          rows_returned: nextRows.length,
-          bytes_returned: result.data.bytes_returned + page.bytes_returned,
-          truncated: result.data.truncated || page.truncated,
-          truncation_reason: page.truncation_reason ?? result.data.truncation_reason,
-          query_cursor_id: nextCursorId,
-          exhausted,
-          page_size: page.page_size ?? result.data.page_size,
-        },
-      })
+      setQueryResult(activeTabId, mergeCursorPage(result, page, queryCursorId))
     } catch (err) {
-      const expired = err instanceof ApiError && err.code === 'query_cursor_unavailable'
-      setQueryResult(activeTabId, {
-        ...result,
-        isFetchingNextPage: false,
-        cursorMessage: expired ? 'Cursor expired. Run the query again.' : (err instanceof Error ? err.message : 'Failed to load more rows.'),
-        data: {
-          ...result.data,
-          query_cursor_id: expired ? undefined : result.data.query_cursor_id,
-          exhausted: expired ? true : result.data.exhausted,
-        },
-      })
+      setQueryResult(activeTabId, applyCursorPageError(result, err))
     } finally {
       fetchingNextPageRef.current = false
     }

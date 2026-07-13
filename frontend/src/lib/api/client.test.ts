@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AUTH_INVALIDATED_EVENT } from '#/lib/auth/invalidation'
 import { setAccessToken } from '#/lib/auth/access-token'
+import { errorMessage } from '#/lib/api/errors'
 import { apiRequest, buildSearchParams, parseAPIErrorPayload } from './client'
 
 describe('buildSearchParams', () => {
@@ -16,6 +17,14 @@ describe('buildSearchParams', () => {
     })
 
     expect(params.toString()).toBe('page=0&page_size=25&include_inherited=false')
+  })
+})
+
+describe('errorMessage', () => {
+  it('uses an Error message and otherwise returns the fallback', () => {
+    expect(errorMessage(new Error('Database unavailable.'), 'Fallback')).toBe('Database unavailable.')
+    expect(errorMessage({ message: 'not trusted' }, 'Fallback')).toBe('Fallback')
+    expect(errorMessage(new Error(''), 'Fallback')).toBe('Fallback')
   })
 })
 

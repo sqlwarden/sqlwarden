@@ -1,0 +1,62 @@
+import { errorMessage } from '#/lib/api/errors'
+import type { ResultSet } from '#/lib/api/types'
+import type { QueryResult } from './useIdeStore'
+
+export type QueryExecutionRequest = {
+  tabId: string
+  connectionId: number
+  sql: string
+  controller: AbortController
+}
+
+export type QueryExecutionDependencies = {
+  ensureSession: <T>(
+    connectionId: number,
+    run: (sessionId: string) => Promise<T>,
+    signal?: AbortSignal,
+  ) => Promise<T>
+  runQuery: (sessionId: string, signal: AbortSignal) => Promise<ResultSet>
+  setResult: (tabId: string, result: QueryResult) => void
+  setRunning: (tabId: string, running: boolean) => void
+  setController: (tabId: string, controller: AbortController | null) => void
+}
+
+export function isQueryAbort(error: unknown) {
+  return error instanceof Error && error.name === 'AbortError'
+}
+
+/** Executes one query and owns every transient store transition for its tab. */
+export async function executeQuery(
+  request: QueryExecutionRequest,
+  dependencies: QueryExecutionDependencies,
+) {
+  const { connectionId, controller, sql, tabId } = request
+  dependencies.setController(tabId, controller)
+  dependencies.setRunning(tabId, true)
+  dependencies.setResult(tabId, { status: 'running' })
+
+  try {
+    const result = await dependencies.ensureSession(
+      connectionId,
+      (sessionId) => dependencies.runQuery(sessionId, controller.signal),
+      controller.signal,
+    )
+    dependencies.setResult(tabId, {
+      status: 'ok',
+      data: result,
+      durationMs: result.duration_ms,
+      sql,
+      connectionId,
+    })
+  } catch (error) {
+    dependencies.setResult(
+      tabId,
+      isQueryAbort(error)
+        ? { status: 'cancelled', sql }
+        : { status: 'error', message: errorMessage(error, 'Query failed'), sql },
+    )
+  } finally {
+    dependencies.setController(tabId, null)
+    dependencies.setRunning(tabId, false)
+  }
+}
