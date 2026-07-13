@@ -16,7 +16,6 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
 import { api } from '#/lib/api/client'
-import { isApiError } from '#/lib/api/errors'
 import type { ObjectDetail, ObjectRef, Workspace } from '#/lib/api/types'
 import {
   orgConnectionCatalogQueryOptions,
@@ -39,6 +38,7 @@ import { TableNode, type HoverRelation, type TableNodeData } from './nodes/Table
 import { OBJECT_REF_DND_MIME } from './dnd'
 import { Tip } from './Tip'
 import { useEvictGoneSession } from '../sessionErrors'
+import { resolveDiagramViewState } from './viewState'
 
 const NODE_TYPES: NodeTypes = { table: TableNode }
 const EDGE_TYPES: EdgeTypes = { fk: FkEdge }
@@ -623,22 +623,26 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     }
   }, [renderImage])
 
-  // ── State handling ─────────────────────────────────────────────────────────
-  if (!target || !connectionId) return <Center>This tab is missing its diagram target.</Center>
-  if (!sessionId) return <Reconnect namespace={namespace} driver={driver} onReconnect={reconnect} />
-
-  const unsupported =
-    (isApiError(relQuery.error) && relQuery.error.status === 501) ||
-    (spec != null && !spec.kinds.some((k) => k.supports_diagram))
-  if (unsupported) return <Center>Diagrams aren&apos;t available for this connection.</Center>
-
-  const forbidden = [specQuery.error, catalogQuery.error, relQuery.error].some((e) => isApiError(e) && e.status === 403)
-  if (forbidden) return <Center className="text-destructive">You no longer have access to this connection.</Center>
-
-  if (catalogQuery.isLoading || relQuery.isLoading) {
+  const viewState = resolveDiagramViewState({
+    hasTarget: Boolean(target),
+    hasConnection: Boolean(connectionId),
+    hasSession: Boolean(sessionId),
+    spec,
+    specError: specQuery.error,
+    catalogError: catalogQuery.error,
+    relationshipsError: relQuery.error,
+    catalogLoading: catalogQuery.isLoading,
+    relationshipsLoading: relQuery.isLoading,
+    presentCount: present.length,
+  })
+  if (viewState === 'missing-target' || !target || !connectionId) return <Center>This tab is missing its diagram target.</Center>
+  if (viewState === 'no-session') return <Reconnect namespace={namespace} driver={driver} onReconnect={reconnect} />
+  if (viewState === 'unsupported') return <Center>Diagrams aren&apos;t available for this connection.</Center>
+  if (viewState === 'forbidden') return <Center className="text-destructive">You no longer have access to this connection.</Center>
+  if (viewState === 'loading') {
     return <Center><Icon name="loading-03" size={16} className="animate-spin" /> Loading schema…</Center>
   }
-  if (present.length === 0) return <Center>No tables to diagram in this schema.</Center>
+  if (viewState === 'empty') return <Center>No tables to diagram in this schema.</Center>
 
   return (
     <div ref={containerRef} className="flex h-full min-h-0 flex-col">
