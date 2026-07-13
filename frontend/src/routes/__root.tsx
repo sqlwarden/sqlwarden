@@ -17,7 +17,7 @@ import '../styles.css'
 
 // Dev-only. The import.meta.env.DEV guard lets Rollup drop the devtools
 // (and their dependencies) from production bundles entirely.
-const Devtools = import.meta.env.DEV
+const Devtools = import.meta.env.DEV && import.meta.env.MODE !== 'test'
   ? lazy(() => import('#/components/devtools'))
   : () => null
 

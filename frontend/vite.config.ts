@@ -27,6 +27,24 @@ const config = defineConfig({
       },
     },
   },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    restoreMocks: true,
+    clearMocks: true,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary', 'html'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/**/*.test.{ts,tsx}',
+        'src/test/**',
+        'src/routeTree.gen.ts',
+        'src/main.tsx',
+        'src/components/ui/**',
+      ],
+    },
+  },
 })
 
 export default config
