@@ -53,7 +53,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     (activeTab.kind === 'file' && activeTab.title.toLowerCase().endsWith('.sql'))
   )
 
-  const showSave = activeTab?.kind !== 'file' || activeTab?.isDirty
+  const showSave = Boolean(activeTab && (activeTab.kind !== 'file' || activeTab.isDirty))
 
   async function handleSave() {
     if (!activeTab) return
