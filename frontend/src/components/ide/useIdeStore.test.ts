@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createIdeStore, activeTabId, connectionState, isNodeExpanded, newScratchTab, newConnectionTab, newFileTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
-import type { IdeState } from './useIdeStore'
+import { createIdeStore, activeTabId, connectionState, isNodeExpanded, newConnectionTab, newFileTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
+import type { EditorTab, IdeState } from './useIdeStore'
 
 vi.mock('idb-keyval', () => ({
   get: vi.fn(() => Promise.resolve(null)),
@@ -39,6 +39,16 @@ const mockFile = {
   updated_by: 1,
   created_at: '',
   updated_at: '',
+}
+
+function newScratchTab(workspace: typeof mockWorkspace): EditorTab {
+  return {
+    id: `scratch:${workspace.id}:${Date.now()}`,
+    workspaceId: workspace.id,
+    title: 'Console',
+    kind: 'scratch',
+    content: DEFAULT_CONSOLE_CONTENT,
+  }
 }
 
 describe('useIdeStore', () => {

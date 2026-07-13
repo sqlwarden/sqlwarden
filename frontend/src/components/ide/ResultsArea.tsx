@@ -23,6 +23,7 @@ import {
   fetchConnectionCursorPage,
 } from '#/lib/api/query'
 import { applyCursorPageError, mergeCursorPage } from './cursorPaging'
+import { cellInRange, formatResultValue as formatValue, isRowInRange, type CellSelection } from './resultValues'
 
 type ResultsAreaProps = {
   orgSlug: string
@@ -204,9 +205,6 @@ const DEFAULT_COL_WIDTH = 150
 const MIN_COL_WIDTH = 60
 const ROW_HEIGHT = 29
 
-type CellCoord = { rowIdx: number; colIdx: number }
-type CellSelection = { anchor: CellCoord; active: CellCoord }
-
 function copyToClipboard(text: string) {
   try {
     if (navigator.clipboard) {
@@ -221,22 +219,6 @@ function copyToClipboard(text: string) {
       document.body.removeChild(el)
     }
   } catch { /* ignore */ }
-}
-
-function cellInRange(ri: number, ci: number, sel: CellSelection | null): boolean {
-  if (!sel) return false
-  const minR = Math.min(sel.anchor.rowIdx, sel.active.rowIdx)
-  const maxR = Math.max(sel.anchor.rowIdx, sel.active.rowIdx)
-  const minC = Math.min(sel.anchor.colIdx, sel.active.colIdx)
-  const maxC = Math.max(sel.anchor.colIdx, sel.active.colIdx)
-  return ri >= minR && ri <= maxR && ci >= minC && ci <= maxC
-}
-
-function isRowInRange(ri: number, sel: CellSelection | null): boolean {
-  if (!sel) return false
-  const minR = Math.min(sel.anchor.rowIdx, sel.active.rowIdx)
-  const maxR = Math.max(sel.anchor.rowIdx, sel.active.rowIdx)
-  return ri >= minR && ri <= maxR
 }
 
 function OkState(props: {
@@ -950,20 +932,6 @@ function CellContent({ display, isNull, col: _col }: { display: string; isNull: 
 }
 
 // ─── Value formatter ─────────────────────────────────────────────────────────
-
-function formatValue(v: ResultValue): { display: string; isNull: boolean; isNumeric: boolean } {
-  if (v.type === 'null') return { display: 'NULL', isNull: true, isNumeric: false }
-  switch (v.type) {
-    case 'text': return { display: v.text ?? '', isNull: false, isNumeric: false }
-    case 'integer': return { display: String(v.integer ?? 0), isNull: false, isNumeric: true }
-    case 'float': return { display: String(v.float ?? 0), isNull: false, isNumeric: true }
-    case 'decimal': return { display: v.decimal ?? '', isNull: false, isNumeric: true }
-    case 'bool': return { display: v.bool ? 'true' : 'false', isNull: false, isNumeric: false }
-    case 'time': return { display: v.time ?? '', isNull: false, isNumeric: false }
-    case 'bytes': return { display: '(binary)', isNull: false, isNumeric: false }
-    default: return { display: '', isNull: false, isNumeric: false }
-  }
-}
 
 // ─── Stub ─────────────────────────────────────────────────────────────────────
 

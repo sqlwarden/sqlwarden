@@ -632,19 +632,6 @@ export function useIde<T>(selector: (state: IdeState & IdeActions) => T): T {
 
 export const DEFAULT_CONSOLE_CONTENT = '';
 
-/** @deprecated Use the openConsole store action instead, which gives consoles
- *  stable numbered IDs and embeds a canonical Y.js initial state for cross-window sync. */
-export function newScratchTab(workspace: Workspace): EditorTab {
-  const ts = Date.now()
-  return {
-    id: `scratch:${workspace.id}:${ts}`,
-    workspaceId: workspace.id,
-    title: `Console ${new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-    kind: 'scratch',
-    content: DEFAULT_CONSOLE_CONTENT,
-  }
-}
-
 export function newConnectionTab(connection: Connection, workspace: Workspace): EditorTab {
   return {
     id: `connection:${connection.id}`,
