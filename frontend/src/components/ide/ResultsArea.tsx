@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type UIEvent } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
@@ -20,10 +20,10 @@ import { ExportButton } from './exports/ExportButton'
 import { columnTypeIcon, columnTypeIconColor } from './columnTypeIcon'
 import {
   allOrgWorkspaceConnectionsQueryOptions,
-  fetchConnectionCursorPage,
 } from '#/lib/api/query'
-import { applyCursorPageError, mergeCursorPage } from './cursorPaging'
 import { cellInRange, formatResultValue as formatValue, isRowInRange, type CellSelection } from './resultValues'
+import { useResultCursorPaging } from './useResultCursorPaging'
+import { useColumnResize } from './useColumnResize'
 
 type ResultsAreaProps = {
   orgSlug: string
@@ -260,8 +260,11 @@ function ResultSetView({
   const columnNames = columns.map((c) => c.name)
   const cellText = (v: ResultValue) => formatValue(v).display
 
-  const [colWidths, setColWidths] = useState<number[]>(() => columns.map(() => DEFAULT_COL_WIDTH))
-  const resizingRef = useRef<{ colIdx: number; startX: number; startWidth: number } | null>(null)
+  const { columnWidths: colWidths, startResize } = useColumnResize(
+    columns.length,
+    DEFAULT_COL_WIDTH,
+    MIN_COL_WIDTH,
+  )
 
   const [selection, setSelection] = useState<CellSelection | null>(null)
   const [rowSelectionMode, setRowSelectionMode] = useState(false)
@@ -269,13 +272,11 @@ function ResultSetView({
   const tablePanelRef = useRef<PanelImperativeHandle>(null)
   const tableContainerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const fetchingNextPageRef = useRef(false)
   const isDraggingRef = useRef(false)
   const scrollElRef = useRef<HTMLElement | null>(null)
   const pointerRef = useRef<{ x: number; y: number } | null>(null)
   const autoScrollRafRef = useRef<number | null>(null)
   const tabs = useIde((s) => s.tabs)
-  const setQueryResult = useIde((s) => s.setQueryResult)
   const activeTab = activeTabId ? tabs.find((t) => t.id === activeTabId) : undefined
   const queryCursorId = result.data.query_cursor_id
   const cursorConnectionId = result.connectionId ?? activeTab?.connectionId
@@ -286,7 +287,13 @@ function ResultSetView({
   const executedConnection = connectionsQuery.data?.items.find(
     (c) => c.id === (result.connectionId ?? activeTab?.connectionId),
   )
-  const canFetchMore = Boolean(queryCursorId && result.data.exhausted === false && !result.isFetchingNextPage && cursorConnectionId)
+  const { handleGridScroll } = useResultCursorPaging({
+    activeTabId,
+    connectionId: cursorConnectionId,
+    orgSlug,
+    result,
+    workspaceId: workspace.id,
+  })
 
   // Track the pointer while drag-selecting, and stop drag + auto-scroll on mouseup.
   useEffect(() => {
@@ -344,35 +351,6 @@ function ResultSetView({
     e.preventDefault()
     if (target.rowIdx !== selection.anchor.rowIdx || target.colIdx !== selection.anchor.colIdx) {
       setSelection({ anchor: target, active: target })
-    }
-  }
-
-  async function fetchNextPage() {
-    if (!activeTabId || !cursorConnectionId || !queryCursorId || !canFetchMore || fetchingNextPageRef.current) return
-    fetchingNextPageRef.current = true
-    setQueryResult(activeTabId, { ...result, isFetchingNextPage: true, cursorMessage: undefined })
-    try {
-      const page = await fetchConnectionCursorPage(
-        orgSlug,
-        workspace.id,
-        cursorConnectionId,
-        queryCursorId,
-        result.data.page_size,
-      )
-      setQueryResult(activeTabId, mergeCursorPage(result, page, queryCursorId))
-    } catch (err) {
-      setQueryResult(activeTabId, applyCursorPageError(result, err))
-    } finally {
-      fetchingNextPageRef.current = false
-    }
-  }
-
-  function handleGridScroll(e: UIEvent<HTMLDivElement>) {
-    if (!canFetchMore) return
-    const el = e.currentTarget
-    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight
-    if (remaining < 400) {
-      void fetchNextPage()
     }
   }
 
@@ -480,35 +458,6 @@ function ResultSetView({
   function handleCellDragEnter(ri: number, ci: number) {
     if (!isDraggingRef.current) return
     setSelection(prev => prev ? { ...prev, active: { rowIdx: ri, colIdx: ci } } : null)
-  }
-
-  function startResize(e: React.MouseEvent, colIdx: number) {
-    e.preventDefault()
-    resizingRef.current = { colIdx, startX: e.clientX, startWidth: colWidths[colIdx] }
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-
-    function onMouseMove(ev: MouseEvent) {
-      if (!resizingRef.current) return
-      const delta = ev.clientX - resizingRef.current.startX
-      const newWidth = Math.max(MIN_COL_WIDTH, resizingRef.current.startWidth + delta)
-      setColWidths(prev => {
-        const next = [...prev]
-        next[resizingRef.current!.colIdx] = newWidth
-        return next
-      })
-    }
-
-    function onMouseUp() {
-      resizingRef.current = null
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      window.removeEventListener('mousemove', onMouseMove)
-      window.removeEventListener('mouseup', onMouseUp)
-    }
-
-    window.addEventListener('mousemove', onMouseMove)
-    window.addEventListener('mouseup', onMouseUp)
   }
 
   function closePanel() {

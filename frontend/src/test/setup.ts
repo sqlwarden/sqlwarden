@@ -16,14 +16,9 @@ afterEach(() => {
 afterAll(() => server.close())
 
 class ResizeObserverMock implements ResizeObserver {
-  constructor(private readonly callback: ResizeObserverCallback) {}
+  constructor(_callback: ResizeObserverCallback) {}
 
-  observe(target: Element) {
-    this.callback(
-      [{ target, contentRect: target.getBoundingClientRect() } as ResizeObserverEntry],
-      this,
-    )
-  }
+  observe(_target: Element) {}
 
   unobserve() {}
   disconnect() {}
