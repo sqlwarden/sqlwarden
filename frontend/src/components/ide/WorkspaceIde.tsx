@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { queryKeys } from '#/lib/api/query-keys'
 import * as Y from 'yjs'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
@@ -27,7 +26,6 @@ import {
   useIde,
   activeTabId as selectActiveTabId,
   DEFAULT_CONSOLE_CONTENT,
-  type EditorTab,
 } from './useIdeStore'
 import { SaveAsDialog } from './SaveAsDialog'
 import { IdeToolbar } from './IdeToolbar'
@@ -39,6 +37,12 @@ import { Tip } from './schema-diagram/Tip'
 import { useSessionSync } from './useSessionSync'
 import { useSaveEditorTab } from './useSaveEditorTab'
 import { createStoreSync } from './storeSync'
+import {
+  useClosedFileCacheCleanup,
+  useEditorDocumentLifecycle,
+  useEditorSaveShortcut,
+  useEditorSnapshotPersistence,
+} from './useEditorDocumentLifecycle'
 
 // ─── Root ──────────────────────────────────────────────────────────────────────
 
@@ -436,102 +440,16 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
     openConsole(workspace, yState)
   }, [workspace, openConsole])
 
-  // ── Tab → Y.Doc lifecycle ──────────────────────────────────────────────────
-  // Use ALL tabs (not just wsTabs) so switching workspaces never destroys
-  // Y.Docs for tabs in other workspaces. Docs are only torn down when a tab
-  // is explicitly closed (removed from `tabs`).
-  const trackedIdsRef = useRef(new Set<string>())
-  useEffect(() => {
-    const currentIds = new Set(tabs.map((t) => t.id))
-    for (const tab of tabs) {
-      if (!trackedIdsRef.current.has(tab.id)) {
-        // Init priority: ySnapshot > yState > plain-text content
-        // ySnapshot: current Y.js state persisted on each debounced write — used
-        //   on page reload so console edits and dirty file edits survive refresh.
-        // yState: creation-time state — for cross-window sync bootstrapping.
-        // content: plain text fallback for connection tabs and legacy scratch tabs.
-        const initState = tab.ySnapshot ?? tab.yState
-        const doc = registry.getOrCreate(
-          tab.id,
-          initState ? undefined : tab.kind === 'file' ? undefined : tab.content,
-        )
-        if (initState && doc.getText('content').length === 0) {
-          // ySnapshot → 'init': restoring local state, no broadcast needed.
-          // yState only → 'server-load': first open in another window; broadcast
-          //   so peers don't need to re-fetch the creation-time state.
-          const origin = tab.ySnapshot ? 'init' : 'server-load'
-          Y.applyUpdate(doc, new Uint8Array(initState), origin)
-        }
-      }
-    }
-    for (const id of trackedIdsRef.current) {
-      if (!currentIds.has(id)) registry.destroy(id)
-    }
-    trackedIdsRef.current = currentIds
-  }, [tabs, registry])
-
-  // ── File tab close → remove query cache so reopen always fetches fresh ────
-  const prevTabsRef = useRef<EditorTab[]>(tabs)
-  useEffect(() => {
-    const prevTabs = prevTabsRef.current
-    const currIds = new Set(tabs.map((t) => t.id))
-    for (const tab of prevTabs) {
-      if (!currIds.has(tab.id) && tab.kind === 'file' && tab.fileId != null) {
-        queryClient.removeQueries({ queryKey: queryKeys.fileContent(orgSlug, workspace.id, tab.fileId) })
-      }
-    }
-    prevTabsRef.current = tabs
-  }, [tabs, queryClient, orgSlug, workspace.id])
-
-  // ── Y.Doc → store: debounced snapshot for IndexedDB persistence + isDirty ─
-  // 'server-load' and 'init' are skipped — they are not user edits.
-  // User typing and 'broadcast' (cross-window sync) both update the snapshot
-  // and, via updateTabContent's existing isDirty logic, mark the tab dirty
-  // when an etag is set.
-  // Use ALL tabs so switching workspaces doesn't cancel pending debounce timers
-  // for tabs in other workspaces, which would lose uncommitted edits.
-  useEffect(() => {
-    const cleanups: Array<() => void> = []
-    const timers: Record<string, ReturnType<typeof setTimeout>> = {}
-
-    for (const tab of tabs) {
-      const doc = registry.get(tab.id)
-      if (!doc) continue
-      const observer = (_update: Uint8Array, origin: unknown) => {
-        if (origin === 'server-load' || origin === 'init') return
-        clearTimeout(timers[tab.id])
-        timers[tab.id] = setTimeout(() => {
-          const content = doc.getText('content').toString()
-          const snapshot = Array.from(Y.encodeStateAsUpdate(doc))
-          updateTabContent(tab.id, content, snapshot)
-        }, 400)
-      }
-      doc.on('update', observer)
-      cleanups.push(() => {
-        doc.off('update', observer)
-        clearTimeout(timers[tab.id])
-      })
-    }
-
-    return () => cleanups.forEach((c) => c())
-  }, [tabs, registry, updateTabContent])
+  useEditorDocumentLifecycle(tabs, registry)
+  useClosedFileCacheCleanup(tabs, orgSlug, queryClient)
+  useEditorSnapshotPersistence(tabs, registry, updateTabContent)
 
   // Reset cursor info when the active tab changes.
   useEffect(() => { setCursorInfo(null) }, [activeTabId])
 
   // No "ensure one tab" guard — users can close all tabs to reach the empty state.
 
-  // ── ⌘S / Ctrl+S: save file tab in-place ────────────────────────────────────
-  useEffect(() => {
-    async function handleKeyDown(e: KeyboardEvent) {
-      if (!(e.metaKey || e.ctrlKey) || e.key !== 's') return
-      e.preventDefault()
-      if (!activeTab || activeTab.kind !== 'file' || !activeTab.etag || !activeTab.fileId) return
-      await saveEditorTab(activeTab)
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [activeTab, saveEditorTab])
+  useEditorSaveShortcut(activeTab, saveEditorTab)
 
   // ── Render ─────────────────────────────────────────────────────────────────
   // Each EditorGroup populates its own Y.Doc synchronously and loads its own file
