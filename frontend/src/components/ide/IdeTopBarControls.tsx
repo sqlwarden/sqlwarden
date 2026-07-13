@@ -53,7 +53,10 @@ export function IdeTopBarControls({
 
       <DropdownMenu>
         <Tip label={session.account.name}>
-          <DropdownMenuTrigger className="inline-flex cursor-pointer items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <DropdownMenuTrigger
+            aria-label={session.account.name}
+            className="inline-flex cursor-pointer items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <InitialsAvatar value={session.account.name} fallback="U" className="size-7 rounded-full" />
           </DropdownMenuTrigger>
         </Tip>
@@ -83,7 +86,7 @@ export function IdeTopBarControls({
             variant="destructive"
             disabled={logout.isPending}
             onClick={() => {
-              void logout.mutateAsync()
+              logout.mutate()
             }}
           >
             <Icon name="logout-03" size={20} />
