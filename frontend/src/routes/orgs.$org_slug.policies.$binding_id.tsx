@@ -52,7 +52,7 @@ import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { RoutePending } from '#/components/RoutePending'
 import { Skeleton } from '#/components/ui/skeleton'
 import { cn } from '#/lib/utils'
-import { roleColor, roleDisplayName, subjectDisplayName } from './orgs.$org_slug.policies'
+import { roleColor, subjectDisplayName } from './orgs.$org_slug.policies'
 
 export const Route = createFileRoute('/orgs/$org_slug/policies/$binding_id')({
   component: PolicyContextPage,
@@ -90,7 +90,7 @@ function PolicyContextPage() {
   })
 
   const pageTitle = binding.data
-    ? `${subjectDisplayName(binding.data)} → ${binding.data.role_name ? roleDisplayName(binding.data.role_name) : 'Policy'}`
+    ? `${subjectDisplayName(binding.data)} → ${binding.data.role_name ? binding.data.role_name : 'Policy'}`
     : `Policy #${bindingId}`
 
   useEffect(() => {
@@ -146,7 +146,7 @@ function PolicyContextPage() {
             <p className="text-sm text-muted-foreground">
               Policy binding granting{' '}
               <span className="font-medium text-foreground">
-                {binding.data?.role_name ? roleDisplayName(binding.data.role_name) : 'a role'}
+                {binding.data?.role_name ? binding.data.role_name : 'a role'}
               </span>{' '}
               to{' '}
               <span className="font-medium text-foreground">
@@ -165,7 +165,7 @@ function PolicyContextPage() {
                   <AlertDialogTitle>Revoke policy binding?</AlertDialogTitle>
                   <AlertDialogDescription>
                     This will remove the{' '}
-                    <span className="font-medium">{binding.data?.role_name ? roleDisplayName(binding.data.role_name) : 'role'}</span>{' '}
+                    <span className="font-medium">{binding.data?.role_name ? binding.data.role_name : 'role'}</span>{' '}
                     binding from{' '}
                     <span className="font-medium">{binding.data ? subjectDisplayName(binding.data) : '…'}</span>.
                     They will lose any permissions granted by this role.
@@ -232,7 +232,7 @@ function PolicyContextPage() {
                         roleColor(binding.data.role_name ?? ''),
                       )}
                     >
-                      {binding.data.role_name ? roleDisplayName(binding.data.role_name) : '—'}
+                      {binding.data.role_name ? binding.data.role_name : '—'}
                     </Link>
                   ) : null}
                 </div>
@@ -287,7 +287,7 @@ function PolicyContextPage() {
                     roleColor(role.data.name),
                   )}
                 >
-                  {roleDisplayName(role.data.name)}
+                  {role.data.name}
                 </Link>
               </span>
             ) : (

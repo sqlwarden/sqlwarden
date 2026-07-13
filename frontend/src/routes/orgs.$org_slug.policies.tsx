@@ -30,7 +30,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '#/components/ui/alert-dialog'
-import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import {
@@ -56,14 +55,17 @@ import { SearchComboboxField } from '#/components/access-control/SearchComboboxF
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
-import { Skeleton } from '#/components/ui/skeleton'
 import { TableEmptyState } from '#/components/EmptyState'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { cn } from '#/lib/utils'
-import { getInitials } from '#/components/InitialsAvatar'
-import { entityColor, GROUP_COLOR } from '#/lib/entity-colors'
+import { entityColor } from '#/lib/entity-colors'
 import { SectionTabNav } from '#/components/SectionTabNav'
+import {
+  PoliciesTableSkeleton,
+  PolicySubjectCell,
+  policySubjectDisplayName,
+} from '#/components/access-control/PolicyTablePrimitives'
 
 export const Route = createFileRoute('/orgs/$org_slug/policies')({
   component: OrganizationPoliciesRoute,
@@ -259,7 +261,7 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
 
   const roleItems = (roles.data?.items ?? []).map((r: Role) => ({
     value: String(r.id),
-    label: roleDisplayName(r.name),
+    label: r.name,
     sublabel: r.description,
     permissions: r.permissions ?? [],
   }))
@@ -540,15 +542,7 @@ function PolicyRow({
       }}
     >
       <TableCell>
-        <div className="flex min-w-0 items-center gap-3">
-          <SubjectIcon binding={binding} />
-          <div className="min-w-0">
-            <div className="truncate font-medium text-foreground">{subjectDisplayName(binding)}</div>
-            <div className="mt-0.5 flex items-center gap-1.5">
-              <SubjectTypeBadge subjectType={binding.subject_type} />
-            </div>
-          </div>
-        </div>
+        <PolicySubjectCell binding={binding} />
       </TableCell>
       <TableCell>
         {binding.role_id ? (
@@ -561,11 +555,11 @@ function PolicyRow({
               entityColor(binding.role_name ?? ''),
             )}
           >
-            {binding.role_name ? roleDisplayName(binding.role_name) : '—'}
+            {binding.role_name ? binding.role_name : '—'}
           </Link>
         ) : (
           <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', entityColor(binding.role_name ?? ''))}>
-            {binding.role_name ? roleDisplayName(binding.role_name) : '—'}
+            {binding.role_name ? binding.role_name : '—'}
           </span>
         )}
       </TableCell>
@@ -590,7 +584,7 @@ function PolicyRow({
                 <AlertDialogTitle>Revoke policy binding?</AlertDialogTitle>
                 <AlertDialogDescription>
                   This will remove the{' '}
-                  <span className="font-medium">{binding.role_name ? roleDisplayName(binding.role_name) : 'role'}</span>{' '}
+                  <span className="font-medium">{binding.role_name ? binding.role_name : 'role'}</span>{' '}
                   binding from <span className="font-medium">{subjectDisplayName(binding)}</span>. They will lose any permissions granted by this role.
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -612,80 +606,12 @@ function PolicyRow({
   )
 }
 
-function SubjectIcon({ binding }: { binding: PolicyBinding }) {
-  if (binding.subject_type === 'account') {
-    return (
-      <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(binding.subject_name))}>
-        {getInitials(binding.subject_name, '?')}
-      </div>
-    )
-  }
-  if (binding.subject_type === 'team') {
-    return (
-      <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', entityColor(binding.subject_name))}>
-        <Icon name="user-group" size={20} className="size-4" />
-      </div>
-    )
-  }
-  return (
-    <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', GROUP_COLOR)}>
-      <Icon name="user-multiple-02" size={20} className="size-4" />
-    </div>
-  )
-}
-
-function SubjectTypeBadge({ subjectType }: { subjectType: PolicyBinding['subject_type'] }) {
-  switch (subjectType) {
-    case 'account':
-      return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">User</Badge>
-    case 'team':
-      return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">Team</Badge>
-    case 'org_members':
-      return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">All users</Badge>
-  }
-}
-
-function PoliciesTableSkeleton({ canModify }: { canModify: boolean }) {
-  return (
-    <>
-      {Array.from({ length: 5 }).map((_, index) => (
-        <TableRow key={index}>
-          <TableCell>
-            <div className="flex items-center gap-3">
-              <Skeleton className="size-8 rounded-md" />
-              <div className="flex flex-col gap-2">
-                <Skeleton className="h-4 w-36" />
-                <Skeleton className="h-3 w-16" />
-              </div>
-            </div>
-          </TableCell>
-          <TableCell>
-            <Skeleton className="h-5 w-24 rounded-md" />
-          </TableCell>
-          <TableCell>
-            <Skeleton className="h-4 w-24" />
-          </TableCell>
-          {canModify ? (
-            <TableCell className="text-end">
-              <Skeleton className="ms-auto h-8 w-16" />
-            </TableCell>
-          ) : null}
-        </TableRow>
-      ))}
-    </>
-  )
-}
-
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 export function subjectDisplayName(binding: PolicyBinding): string {
-  if (binding.subject_type === 'org_members') return 'All users'
-  return binding.subject_name || String(binding.subject_id)
+  return policySubjectDisplayName(binding)
 }
 
-export function roleDisplayName(name: string): string {
-  return name
-}
 
 
 

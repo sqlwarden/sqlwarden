@@ -425,10 +425,10 @@ function RoleRow({
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
           <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(role.name))}>
-            {roleDisplayName(role).slice(0, 2).toUpperCase()}
+            {role.name.slice(0, 2).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <div className="truncate font-medium text-foreground">{roleDisplayName(role)}</div>
+            <div className="truncate font-medium text-foreground">{role.name}</div>
             {role.description ? <div className="truncate text-sm text-muted-foreground">{role.description}</div> : null}
           </div>
         </div>
@@ -475,7 +475,7 @@ function RoleRow({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete role?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This permanently deletes <strong>{roleDisplayName(role)}</strong>. Deletion will fail if any policy bindings still reference this role — remove those bindings first.
+                    This permanently deletes <strong>{role.name}</strong>. Deletion will fail if any policy bindings still reference this role — remove those bindings first.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -513,8 +513,4 @@ function scopeLabel(value: RoleScope) {
     case 'connection':
       return 'Connection'
   }
-}
-
-function roleDisplayName(role: Role) {
-  return role.name
 }

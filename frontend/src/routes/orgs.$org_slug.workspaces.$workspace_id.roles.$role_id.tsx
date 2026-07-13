@@ -55,7 +55,7 @@ function WorkspaceRoleContextPage() {
     ...orgWorkspaceRoleQueryOptions(orgSlug, workspaceId, roleId),
     enabled: canReadRole,
   })
-  const displayName = role.data ? roleDisplayName(role.data.name) : `Role #${roleId}`
+  const displayName = role.data ? role.data.name : `Role #${roleId}`
 
   useEffect(() => {
     if (!role.error) {
@@ -154,7 +154,7 @@ function WorkspaceRoleContextPage() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete role?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This permanently deletes {roleDisplayName(role.data.name)}. Any policies using this role will no longer grant its permissions.
+                    This permanently deletes {role.data.name}. Any policies using this role will no longer grant its permissions.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -288,9 +288,6 @@ function scopeLabel(value: RoleScope) {
   }
 }
 
-function roleDisplayName(value: string) {
-  return value
-}
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (

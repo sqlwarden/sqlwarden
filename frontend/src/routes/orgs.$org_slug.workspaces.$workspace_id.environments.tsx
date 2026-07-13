@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -41,11 +42,6 @@ export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/e
   pendingComponent: RoutePending,
 })
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
 
 type EnvironmentFormValues = {
   name: string
@@ -419,7 +415,7 @@ function EnvironmentRow({
       <TableCell className="max-w-sm truncate text-muted-foreground">
         {environment.description || <span className="text-muted-foreground">-</span>}
       </TableCell>
-      <TableCell className="text-muted-foreground">{dateFormatter.format(new Date(environment.created_at))}</TableCell>
+      <TableCell className="text-muted-foreground">{formatDate(environment.created_at)}</TableCell>
       {canEditEnvironment || canDeleteEnvironment ? (
         <TableCell>
           <div className="flex justify-end gap-2">

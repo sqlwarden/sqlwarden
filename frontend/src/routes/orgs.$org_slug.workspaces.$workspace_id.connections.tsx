@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { formatDate } from '#/lib/format'
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
@@ -23,11 +24,6 @@ export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/c
   pendingComponent: RoutePending,
 })
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
 
 function WorkspaceConnectionsPage() {
   const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
@@ -183,7 +179,7 @@ function ConnectionRow({
       <TableCell className="text-muted-foreground">
         {environmentName ?? `Environment #${connection.environment_id}`}
       </TableCell>
-      <TableCell className="text-muted-foreground">{dateFormatter.format(new Date(connection.created_at))}</TableCell>
+      <TableCell className="text-muted-foreground">{formatDate(connection.created_at)}</TableCell>
       <TableCell className="text-end">
         <Button
           variant="outline"

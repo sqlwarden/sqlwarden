@@ -32,7 +32,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '#/components/ui/alert-dialog'
-import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
@@ -48,15 +47,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
-import { Skeleton } from '#/components/ui/skeleton'
 import { TableEmptyState } from '#/components/EmptyState'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
-import { getInitials } from '#/components/InitialsAvatar'
 import { cn } from '#/lib/utils'
-import { entityColor, GROUP_COLOR } from '#/lib/entity-colors'
+import { entityColor } from '#/lib/entity-colors'
 import { SectionTabNav } from '#/components/SectionTabNav'
 import { SearchComboboxField } from '#/components/access-control/SearchComboboxField'
+import {
+  PoliciesTableSkeleton,
+  PolicySubjectCell,
+  policySubjectDisplayName,
+} from '#/components/access-control/PolicyTablePrimitives'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/policies')({
   component: WorkspacePoliciesPage,
@@ -527,7 +529,7 @@ function WorkspacePoliciesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {effectivePermissions.isLoading || policies.isLoading ? <PoliciesTableSkeleton canModify={canModifyPolicies} /> : null}
+              {effectivePermissions.isLoading || policies.isLoading ? <PoliciesTableSkeleton canModify={canModifyPolicies} showResource /> : null}
               {policies.isError ? <TableEmptyState colSpan={colSpan} icon="user-shield-01" message="Failed to load policies." /> : null}
               {!effectivePermissions.isLoading && !canReadPolicies ? (
                 <TableEmptyState colSpan={colSpan} icon="user-shield-01" message="You do not have permission to view workspace policies." />
@@ -586,15 +588,10 @@ function PolicyRow({
   return (
     <TableRow>
       <TableCell>
-        <div className="flex min-w-0 items-center gap-3">
-          <SubjectIcon binding={binding} />
-          <div className="min-w-0">
-            <div className="truncate font-medium text-foreground">{subjectDisplayName(binding)}</div>
-            <div className="mt-0.5 flex items-center gap-1.5">
-              <SubjectTypeBadge subjectType={binding.subject_type} />
-            </div>
-          </div>
-        </div>
+        <PolicySubjectCell
+          binding={binding}
+          labels={{ org_members: 'All org users', workspace_members: 'All workspace users' }}
+        />
       </TableCell>
       <TableCell>
         <div className="flex min-w-0 flex-col gap-0.5">
@@ -636,87 +633,11 @@ function PolicyRow({
   )
 }
 
-function SubjectIcon({ binding }: { binding: PolicyBinding }) {
-  if (binding.subject_type === 'account') {
-    return (
-      <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(binding.subject_name))}>
-        {getInitials(binding.subject_name, '?')}
-      </div>
-    )
-  }
-  if (binding.subject_type === 'team') {
-    return (
-      <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', entityColor(binding.subject_name))}>
-        <Icon name="user-group" size={20} className="size-4" />
-      </div>
-    )
-  }
-  return (
-    <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', GROUP_COLOR)}>
-      <Icon name="user-multiple-02" size={20} className="size-4" />
-    </div>
-  )
-}
-
-function SubjectTypeBadge({ subjectType }: { subjectType: PolicyBinding['subject_type'] }) {
-  switch (subjectType) {
-    case 'account':
-      return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">User</Badge>
-    case 'team':
-      return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">Team</Badge>
-    case 'org_members':
-      return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">All org users</Badge>
-    case 'workspace_members':
-      return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">All workspace users</Badge>
-  }
-}
-
-function PoliciesTableSkeleton({ canModify }: { canModify: boolean }) {
-  return (
-    <>
-      {Array.from({ length: 5 }).map((_, index) => (
-        <TableRow key={index}>
-          <TableCell>
-            <div className="flex items-center gap-3">
-              <Skeleton className="size-8 rounded-md" />
-              <div className="flex flex-col gap-2">
-                <Skeleton className="h-4 w-36" />
-                <Skeleton className="h-3 w-20" />
-              </div>
-            </div>
-          </TableCell>
-          <TableCell>
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-4 w-32" />
-              <Skeleton className="h-3 w-20" />
-            </div>
-          </TableCell>
-          <TableCell>
-            <Skeleton className="h-5 w-24 rounded-md" />
-          </TableCell>
-          <TableCell>
-            <Skeleton className="h-4 w-24" />
-          </TableCell>
-          {canModify ? (
-            <TableCell className="text-end">
-              <Skeleton className="ms-auto h-8 w-16" />
-            </TableCell>
-          ) : null}
-        </TableRow>
-      ))}
-    </>
-  )
-}
-
 function subjectDisplayName(binding: PolicyBinding): string {
-  switch (binding.subject_type) {
-    case 'org_members':
-      return 'All organization users'
-    case 'workspace_members':
-      return 'All workspace users'
-    default:
-      return binding.subject_name || String(binding.subject_id)
-  }
+  return policySubjectDisplayName(binding, {
+    org_members: 'All organization users',
+    workspace_members: 'All workspace users',
+  })
 }
 
 function resourceLabelFor(value: ResourceType) {

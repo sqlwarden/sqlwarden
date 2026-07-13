@@ -2,8 +2,14 @@
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { PermissionDefinition } from '#/lib/api/types'
+import type { PermissionDefinition, PolicyBinding } from '#/lib/api/types'
+import { Table, TableBody } from '#/components/ui/table'
 import { PermissionPicker, groupPermissionDetails } from './PermissionPicker'
+import {
+  PoliciesTableSkeleton,
+  PolicySubjectCell,
+  policySubjectDisplayName,
+} from './PolicyTablePrimitives'
 import { SearchComboboxField } from './SearchComboboxField'
 
 const permissionDetails: PermissionDefinition[] = [
@@ -67,5 +73,42 @@ describe('SearchComboboxField', () => {
     fireEvent.click(screen.getByText('Administrator'))
     expect(onChange).toHaveBeenCalledWith('1', 'Administrator', expect.objectContaining({ value: '1' }))
     expect(onSearchChange).toHaveBeenLastCalledWith('')
+  })
+})
+
+const policyBinding: PolicyBinding = {
+  binding_kind: 'role',
+  binding_id: 1,
+  subject_id: 2,
+  subject_type: 'org_members',
+  subject_name: '',
+  resource_id: 3,
+  resource_type: 'org',
+  resource_name: 'Acme',
+  role_id: 4,
+  role_name: 'Baseline Access',
+  created_at: '2026-01-01T00:00:00Z',
+}
+
+describe('policy table primitives', () => {
+  it('uses route-specific labels for aggregate subjects', () => {
+    expect(policySubjectDisplayName(policyBinding)).toBe('All users')
+    expect(policySubjectDisplayName(policyBinding, { org_members: 'All organization users' }))
+      .toBe('All organization users')
+
+    render(<PolicySubjectCell binding={policyBinding} labels={{ org_members: 'All org users' }} />)
+    expect(screen.getAllByText('All org users')).toHaveLength(2)
+  })
+
+  it('adds a resource placeholder only for workspace policy tables', () => {
+    const { rerender } = render(
+      <Table><TableBody><PoliciesTableSkeleton canModify={false} /></TableBody></Table>,
+    )
+    expect(document.querySelectorAll('tbody tr')[0]?.children).toHaveLength(3)
+
+    rerender(
+      <Table><TableBody><PoliciesTableSkeleton canModify showResource /></TableBody></Table>,
+    )
+    expect(document.querySelectorAll('tbody tr')[0]?.children).toHaveLength(5)
   })
 })
