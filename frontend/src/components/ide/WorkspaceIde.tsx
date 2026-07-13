@@ -85,37 +85,49 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
     orgWorkspacesQueryOptions(orgSlug, { page_size: 100, sort: 'name', order: 'asc' }),
   )
 
-  const items = workspaces.data?.items ?? []
-
   // Always render providers so useIde never runs without context, even when
   // the workspaces query is still loading or the component suspends mid-render.
   return (
     <IdeStoreContext.Provider value={store}>
       <YDocRegistryContext.Provider value={registry}>
         <EditorViewRegistryContext.Provider value={viewRegistry}>
-          {workspaces.isLoading ? (
-            <IdeFrame>
-              <Icon name="loading-03" size={14} className="animate-spin" />
-              Loading workspaces…
-            </IdeFrame>
-          ) : workspaces.isError ? (
-            <IdeFrame>Unable to load workspaces.</IdeFrame>
-          ) : items.length === 0 ? (
-            <IdeFrame>No accessible workspaces.</IdeFrame>
-          ) : (
-            <WorkspaceIdeInner orgSlug={orgSlug} workspaces={items} />
-          )}
+          <WorkspaceIdeContent
+            orgSlug={orgSlug}
+            isLoading={workspaces.isLoading}
+            isError={workspaces.isError}
+            workspaces={workspaces.data?.items ?? []}
+          />
         </EditorViewRegistryContext.Provider>
       </YDocRegistryContext.Provider>
     </IdeStoreContext.Provider>
   )
 }
 
+type WorkspaceIdeContentProps = {
+  orgSlug: string
+  isLoading: boolean
+  isError: boolean
+  workspaces: Workspace[]
+}
+
+export function WorkspaceIdeContent({ orgSlug, isLoading, isError, workspaces }: WorkspaceIdeContentProps) {
+  if (isLoading) {
+    return (
+      <IdeFrame>
+        <Icon name="loading-03" size={14} className="animate-spin" />
+        Loading workspaces…
+      </IdeFrame>
+    )
+  }
+  if (isError) return <IdeFrame>Unable to load workspaces.</IdeFrame>
+  if (workspaces.length === 0) return <IdeFrame>No accessible workspaces.</IdeFrame>
+  return <WorkspaceIdeInner orgSlug={orgSlug} workspaces={workspaces} />
+}
+
 // ─── Inner ─────────────────────────────────────────────────────────────────────
 
 function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspaces: Workspace[] }) {
-  const activeWorkspaceId = useIde((s) => s.activeWorkspaceId)
-  const setActiveWorkspace = useIde((s) => s.setActiveWorkspace)
+  const { activeWorkspace, setActiveWorkspace } = useWorkspaceSelection(workspaces)
   const { data: session } = useSession()
 
   const orgPermissions = useQuery({
@@ -124,16 +136,7 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
   })
   const canAccessOrgSettings = hasAnyPermission(orgPermissions.data?.permissions, [permission.orgRead])
 
-  useEffect(() => {
-    if (!activeWorkspaceId && workspaces.length > 0) {
-      setActiveWorkspace(workspaces[0].id)
-    }
-  }, [activeWorkspaceId, workspaces, setActiveWorkspace])
-
   useIdeDeepLink(orgSlug, workspaces)
-
-  const activeWorkspace =
-    workspaces.find((w) => w.id === activeWorkspaceId) ?? workspaces[0]
 
   return (
     <ContextMenuProvider>
@@ -167,6 +170,22 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
     </div>
     </ContextMenuProvider>
   )
+}
+
+export function useWorkspaceSelection(workspaces: Workspace[]) {
+  const activeWorkspaceId = useIde((s) => s.activeWorkspaceId)
+  const setActiveWorkspace = useIde((s) => s.setActiveWorkspace)
+
+  useEffect(() => {
+    if (workspaces.length > 0 && !workspaces.some((workspace) => workspace.id === activeWorkspaceId)) {
+      setActiveWorkspace(workspaces[0].id)
+    }
+  }, [activeWorkspaceId, workspaces, setActiveWorkspace])
+
+  return {
+    activeWorkspace: workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0],
+    setActiveWorkspace,
+  }
 }
 
 /** Applies ?ws=&conn= once on mount, then strips the params with a replace
