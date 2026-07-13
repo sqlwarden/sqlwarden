@@ -8,8 +8,8 @@ import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
 import { orgEffectivePermissionsQueryOptions, orgPermissionsQueryOptions, orgWorkspaceRolesQueryOptions } from '#/lib/api/query'
-import type { PermissionDefinition, Role, RoleScope } from '#/lib/api/types'
-import { hasPermission, permission, permissionDefinitionMap, permissionDescription, permissionDisplayName, type Permission } from '#/lib/permissions'
+import type { Role, RoleScope } from '#/lib/api/types'
+import { hasPermission, permission, permissionDefinitionMap, type Permission } from '#/lib/permissions'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +24,6 @@ import {
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
-import { Checkbox } from '#/components/ui/checkbox'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
@@ -40,12 +39,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
-import { Skeleton } from '#/components/ui/skeleton'
 import { TableEmptyState } from '#/components/EmptyState'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { Textarea } from '#/components/ui/textarea'
-import { ScrollArea } from '#/components/ui/scroll-area'
+import { PermissionPicker } from '#/components/access-control/PermissionPicker'
+import { RolesTableSkeleton } from '#/components/access-control/RolesTableSkeleton'
 import { cn } from '#/lib/utils'
 import { entityColor } from '#/lib/entity-colors'
 import { SectionTabNav } from '#/components/SectionTabNav'
@@ -327,7 +326,8 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
 
                   <PermissionPicker
                     key={scopeType}
-                    scopeType={scopeType}
+                    description={`Select the capabilities this role should grant for ${scopeLabel(scopeType).toLowerCase()} resources.`}
+                    idPrefix="workspace-permission"
                     selectedPermissions={selectedPermissions}
                     permissionDetails={scopePermissionDetails}
                     permissionDefinitions={permissionDefinitions}
@@ -383,7 +383,7 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
               </TableRow>
             </TableHeader>
             <TableBody>
-              {effectivePermissions.isLoading || roles.isLoading ? <RolesTableSkeleton canModifyRoles={canModifyRoles} /> : null}
+              {effectivePermissions.isLoading || roles.isLoading ? <RolesTableSkeleton showActions={canModifyRoles} /> : null}
               {roles.isError ? <TableEmptyState colSpan={canModifyRoles ? 5 : 4} icon="user-shield-01" message="Failed to load roles." /> : null}
               {!effectivePermissions.isLoading && !canReadRoles ? (
                 <TableEmptyState colSpan={canModifyRoles ? 5 : 4} icon="user-shield-01" message="You do not have permission to view roles." />
@@ -546,151 +546,6 @@ function RoleRow({
       ) : null}
     </TableRow>
   )
-}
-
-function PermissionPicker({
-  scopeType,
-  selectedPermissions,
-  permissionDetails,
-  permissionDefinitions,
-  disabled,
-  error,
-  onPermissionChecked,
-}: {
-  scopeType: RoleScope
-  selectedPermissions: Set<Permission>
-  permissionDetails: readonly PermissionDefinition[]
-  permissionDefinitions: ReadonlyMap<string, PermissionDefinition>
-  disabled: boolean
-  error?: string
-  onPermissionChecked: (value: Permission, checked: boolean) => void
-}) {
-  const [search, setSearch] = useState('')
-  const totalPermissions = permissionDetails.length
-  const groupedPermissions = groupPermissionDetails(permissionDetails)
-
-  const filteredGroups = search
-    ? groupedPermissions
-        .map((group) => ({
-          ...group,
-          permissions: group.permissions.filter((item) => {
-            const q = search.toLowerCase()
-            return (
-              item.label.toLowerCase().includes(q) ||
-              item.description.toLowerCase().includes(q) ||
-              item.key.toLowerCase().includes(q)
-            )
-          }),
-        }))
-        .filter((group) => group.permissions.length > 0)
-    : groupedPermissions
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-end justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <Label>Permissions</Label>
-          <p className="text-sm text-muted-foreground">Select the capabilities this role should grant for {scopeLabel(scopeType).toLowerCase()} resources.</p>
-        </div>
-        {selectedPermissions.size > 0 ? (
-          <span className="shrink-0 text-xs text-muted-foreground">{selectedPermissions.size} of {totalPermissions} selected</span>
-        ) : null}
-      </div>
-      <div className="rounded-md border border-border">
-        <div className="flex items-center gap-2 border-b border-border px-3">
-          <Icon name="search-01" size={20} className="size-4 shrink-0 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Filter permissions…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-9 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          />
-          {search ? (
-            <button type="button" onClick={() => setSearch('')} className="shrink-0 text-muted-foreground hover:text-foreground">
-              <Icon name="cancel-01" size={20} className="size-3.5" />
-            </button>
-          ) : null}
-        </div>
-        <ScrollArea className="h-60">
-          <div className="flex flex-col gap-5 p-4">
-            {filteredGroups.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No permissions match your search.</p>
-            ) : null}
-            {filteredGroups.map((group) => (
-              <div key={group.name} className="flex flex-col gap-3">
-                <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{group.name}</p>
-                <div className="flex flex-col gap-3">
-                  {group.permissions.map((item) => {
-                    const id = `workspace-permission-${item.key.replace(/[^a-z0-9]+/g, '-')}`
-                    const description = permissionDescription(item.key, permissionDefinitions)
-                    return (
-                      <label key={item.key} htmlFor={id} className="flex cursor-pointer items-start gap-2.5">
-                        <Checkbox
-                          id={id}
-                          className="mt-0.5"
-                          checked={selectedPermissions.has(item.key)}
-                          disabled={disabled}
-                          onCheckedChange={(checked) => onPermissionChecked(item.key, checked === true)}
-                        />
-                        <span className="flex flex-col gap-0.5">
-                          <span className="text-sm font-medium text-foreground">{permissionDisplayName(item.key, permissionDefinitions)}</span>
-                          {description ? <span className="text-xs text-muted-foreground">{description}</span> : null}
-                        </span>
-                      </label>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-      </div>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-    </div>
-  )
-}
-
-function RolesTableSkeleton({ canModifyRoles }: { canModifyRoles: boolean }) {
-  return (
-    <>
-      {Array.from({ length: 5 }).map((_, index) => (
-        <TableRow key={index}>
-          <TableCell>
-            <div className="flex items-center gap-3">
-              <Skeleton className="size-8 rounded-md" />
-              <div className="flex flex-col gap-2">
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="h-3 w-48" />
-              </div>
-            </div>
-          </TableCell>
-          <TableCell>
-            <Skeleton className="h-5 w-20 rounded-full" />
-          </TableCell>
-          <TableCell>
-            <Skeleton className="h-5 w-16 rounded-full" />
-          </TableCell>
-          <TableCell>
-            <Skeleton className="h-4 w-24" />
-          </TableCell>
-          {canModifyRoles ? (
-            <TableCell className="text-end">
-              <Skeleton className="ms-auto h-8 w-16" />
-            </TableCell>
-          ) : null}
-        </TableRow>
-      ))}
-    </>
-  )
-}
-
-function groupPermissionDetails(permissions: readonly PermissionDefinition[]) {
-  const groups = new Map<string, PermissionDefinition[]>()
-  for (const item of permissions) {
-    groups.set(item.group, [...(groups.get(item.group) ?? []), item])
-  }
-  return Array.from(groups.entries()).map(([name, items]) => ({ name, permissions: items }))
 }
 
 function scopeLabel(value: RoleScope) {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
@@ -35,10 +35,8 @@ import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Label } from '#/components/ui/label'
-import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
-import { ScrollArea } from '#/components/ui/scroll-area'
 import { SearchInput } from '#/components/SearchInput'
 import {
   Select,
@@ -56,6 +54,7 @@ import { getInitials } from '#/components/InitialsAvatar'
 import { cn } from '#/lib/utils'
 import { entityColor, GROUP_COLOR } from '#/lib/entity-colors'
 import { SectionTabNav } from '#/components/SectionTabNav'
+import { SearchComboboxField } from '#/components/access-control/SearchComboboxField'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/policies')({
   component: WorkspacePoliciesPage,
@@ -350,7 +349,7 @@ function WorkspacePoliciesPage() {
                   </div>
 
                   {subjectType === 'account' ? (
-                    <ComboboxField
+                    <SearchComboboxField
                       label="User"
                       placeholder="Select a user..."
                       searchPlaceholder="Search users..."
@@ -370,7 +369,7 @@ function WorkspacePoliciesPage() {
                   ) : null}
 
                   {subjectType === 'team' ? (
-                    <ComboboxField
+                    <SearchComboboxField
                       label="Team"
                       placeholder="Select a team..."
                       searchPlaceholder="Search teams..."
@@ -424,7 +423,7 @@ function WorkspacePoliciesPage() {
                   </div>
 
                   {resourceType === 'environment' ? (
-                    <ComboboxField
+                    <SearchComboboxField
                       label="Environment"
                       placeholder="Select an environment..."
                       searchPlaceholder="Search environments..."
@@ -445,7 +444,7 @@ function WorkspacePoliciesPage() {
                   ) : null}
 
                   {resourceType === 'connection' ? (
-                    <ComboboxField
+                    <SearchComboboxField
                       label="Connection"
                       placeholder="Select a connection..."
                       searchPlaceholder="Search connections..."
@@ -465,7 +464,7 @@ function WorkspacePoliciesPage() {
                     />
                   ) : null}
 
-                  <ComboboxField
+                  <SearchComboboxField
                     label="Role"
                     placeholder="Select a role..."
                     searchPlaceholder="Search roles..."
@@ -572,141 +571,6 @@ function WorkspacePoliciesPage() {
         />
       ) : null}
       </div>
-    </div>
-  )
-}
-
-type PickerItem = { value: string; label: string; sublabel?: string }
-
-function ComboboxField({
-  label,
-  placeholder,
-  searchPlaceholder,
-  selectedValue,
-  selectedLabel,
-  items,
-  isLoading,
-  error,
-  disabled,
-  emptyMessage,
-  onChange,
-  onSearchChange,
-}: {
-  label: string
-  placeholder: string
-  searchPlaceholder: string
-  selectedValue: string
-  selectedLabel: string
-  items: PickerItem[]
-  isLoading: boolean
-  error?: string
-  disabled: boolean
-  emptyMessage?: string
-  onChange: (value: string, label: string) => void
-  onSearchChange: (q: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  function handleSearchChange(value: string) {
-    setSearch(value)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => onSearchChange(value), 300)
-  }
-
-  function handleSelect(item: PickerItem) {
-    onChange(item.value, item.label)
-    setOpen(false)
-    setSearch('')
-    onSearchChange('')
-  }
-
-  function handleOpenChange(nextOpen: boolean) {
-    setOpen(nextOpen)
-    if (!nextOpen) {
-      setSearch('')
-      onSearchChange('')
-    } else {
-      setTimeout(() => inputRef.current?.focus(), 0)
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      <Label>{label}</Label>
-      <Popover open={open} onOpenChange={handleOpenChange}>
-        <PopoverTrigger
-          disabled={disabled}
-          className={cn(
-            'flex h-7 w-full items-center justify-between gap-1.5 rounded-md border border-input bg-input/20 px-2 py-1.5 text-xs/relaxed whitespace-nowrap transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50',
-            error && 'border-destructive ring-2 ring-destructive/20',
-            !selectedValue && 'text-muted-foreground',
-          )}
-        >
-          <span className="truncate">{selectedValue ? selectedLabel : placeholder}</span>
-          <svg className="size-3.5 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        </PopoverTrigger>
-        <PopoverContent className="w-(--anchor-width) p-0" align="start" sideOffset={4}>
-          <div className="flex items-center gap-2 border-b border-border px-2">
-            <Icon name="search-01" size={20} className="size-3.5 shrink-0 text-muted-foreground" />
-            <input
-              ref={inputRef}
-              type="text"
-              value={search}
-              onChange={(event) => handleSearchChange(event.target.value)}
-              placeholder={searchPlaceholder}
-              className="h-8 w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
-            />
-            {search ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearch('')
-                  onSearchChange('')
-                }}
-                className="shrink-0 text-muted-foreground hover:text-foreground"
-              >
-                <Icon name="cancel-01" size={20} className="size-3" />
-              </button>
-            ) : null}
-          </div>
-          <ScrollArea className="max-h-52">
-            <div className="flex flex-col p-1">
-              {isLoading ? (
-                <div className="flex flex-col gap-1 p-1">
-                  {Array.from({ length: 4 }).map((_, index) => (
-                    <Skeleton key={index} className="h-7 w-full rounded-md" />
-                  ))}
-                </div>
-              ) : items.length === 0 ? (
-                <p className="py-5 text-center text-xs text-muted-foreground">
-                  {search ? 'No matches found.' : (emptyMessage ?? `No ${label.toLowerCase()}s available.`)}
-                </p>
-              ) : (
-                items.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    onClick={() => handleSelect(item)}
-                    className={cn(
-                      'flex flex-col items-start rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent hover:text-accent-foreground',
-                      item.value === selectedValue && 'bg-accent text-accent-foreground',
-                    )}
-                  >
-                    <span className="text-xs font-medium">{item.label}</span>
-                    {item.sublabel ? <span className="text-[10px] text-muted-foreground">{item.sublabel}</span> : null}
-                  </button>
-                ))
-              )}
-            </div>
-          </ScrollArea>
-        </PopoverContent>
-      </Popover>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </div>
   )
 }
