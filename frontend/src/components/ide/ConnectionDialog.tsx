@@ -1,11 +1,5 @@
-import { errorMessage } from '#/lib/api/errors'
-import { useState, useEffect } from 'react'
-import { queryKeys } from '#/lib/api/query-keys'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Icon } from '#/lib/icons'
-import { toast } from 'sonner'
-import { api } from '#/lib/api/client'
-import { isApiError } from '#/lib/api/errors'
 import type { Environment } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { Button } from '#/components/ui/button'
@@ -28,30 +22,14 @@ import {
 } from '#/components/ui/select'
 import {
   drivers,
-  driverMap,
   driverBrands,
-  defaultFieldValues,
   type DriverDef,
   type FieldDef,
 } from './connection-drivers/index'
 import { DriverBadge } from './DriverBadge'
+import { useConnectionForm, type ConnectionTestState } from './useConnectionForm'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
-
-type Stage = 'driver' | 'form'
-
-type TestState =
-  | { status: 'idle' }
-  | { status: 'pending' }
-  | { status: 'ok'; latencyMs: number }
-  | { status: 'error'; message: string }
-
-type FormErrors = {
-  name?: string
-  environmentId?: string
-  fields: Record<string, string>
-  _form?: string
-}
 
 // ─── Main component ─────────────────────────────────────────────────────────────
 
@@ -66,201 +44,67 @@ type Props = {
 }
 
 export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, environments, lockedEnvironmentId }: Props) {
-  const queryClient = useQueryClient()
-
-  const [stage, setStage] = useState<Stage>('driver')
-  const [driverId, setDriverId] = useState(drivers[0].id)
-  const [name, setName] = useState('')
-  const [environmentId, setEnvironmentId] = useState('')
-  const [fields, setFields] = useState<Record<string, string>>(() => defaultFieldValues(drivers[0]))
-  const [errors, setErrors] = useState<FormErrors>({ fields: {} })
-  const [testState, setTestState] = useState<TestState>({ status: 'idle' })
-
-  useEffect(() => {
-    if (!open) return
-    if (lockedEnvironmentId) {
-      setEnvironmentId(String(lockedEnvironmentId))
-    } else if (environments.length > 0 && !environmentId) {
-      setEnvironmentId(String(environments[0].id))
-    }
-  }, [open, environments, environmentId, lockedEnvironmentId])
-
-  function handlePickDriver(newDriverId: string) {
-    const def = driverMap.get(newDriverId)
-    if (!def) return
-    if (newDriverId !== driverId) {
-      setFields(defaultFieldValues(def))
-      setErrors({ fields: {} })
-      setTestState({ status: 'idle' })
-    }
-    setDriverId(newDriverId)
-    setStage('form')
-  }
-
-  function handleFieldChange(key: string, value: string) {
-    setFields((prev) => ({ ...prev, [key]: value }))
-    setErrors((prev) => {
-      const { [key]: _removed, ...rest } = prev.fields
-      return { ...prev, fields: rest }
-    })
-    setTestState({ status: 'idle' })
-  }
-
-  function resetForm() {
-    setStage('driver')
-    setDriverId(drivers[0].id)
-    setName('')
-    setEnvironmentId(
-      lockedEnvironmentId
-        ? String(lockedEnvironmentId)
-        : environments.length > 0 ? String(environments[0].id) : '',
-    )
-    setFields(defaultFieldValues(drivers[0]))
-    setErrors({ fields: {} })
-    setTestState({ status: 'idle' })
-  }
-
-  function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen) resetForm()
-    onOpenChange(nextOpen)
-  }
-
-  const currentDriver = driverMap.get(driverId) ?? drivers[0]
-
-  function buildDSN() {
-    return currentDriver.buildDSN(fields)
-  }
-
-  function validateForm(): boolean {
-    const nextErrors: FormErrors = { fields: {} }
-    if (!name.trim()) nextErrors.name = 'Name is required.'
-    if (!environmentId) nextErrors.environmentId = 'Environment is required.'
-    for (const field of currentDriver.fields) {
-      if (field.required && !fields[field.key]?.trim()) {
-        nextErrors.fields[field.key] = `${field.label} is required.`
-      }
-    }
-    setErrors(nextErrors)
-    return !nextErrors.name && !nextErrors.environmentId && Object.keys(nextErrors.fields).length === 0
-  }
-
-  const testMutation = useMutation({
-    mutationFn: () =>
-      api.post<{ ok: boolean; latency_ms: number; error?: string }>(
-        `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections/test`,
-        { driver: driverId, dsn: buildDSN() },
-      ),
-    onMutate: () => setTestState({ status: 'pending' }),
-    onSuccess: (data) => {
-      if (data.ok) {
-        setTestState({ status: 'ok', latencyMs: data.latency_ms })
-      } else {
-        setTestState({ status: 'error', message: data.error ?? 'Connection failed.' })
-      }
-    },
-    onError: () => setTestState({ status: 'error', message: 'Request failed.' }),
-  })
-
-  const createMutation = useMutation({
-    mutationFn: () =>
-      api.post(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections`, {
-        name: name.trim(),
-        driver: driverId,
-        dsn: buildDSN(),
-        environment_id: Number(environmentId),
-        access_mode: 'open',
-      }),
-    onSuccess: async () => {
-      onOpenChange(false)
-      resetForm()
-      toast.success('Connection created')
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceConnectionsScope(orgSlug, workspaceId) })
-    },
-    onError: (error) => {
-      if (isApiError(error) && error.fieldErrors) {
-        const nextErrors: FormErrors = { fields: {} }
-        if (error.fieldErrors.name) nextErrors.name = error.fieldErrors.name
-        if (error.fieldErrors.driver || error.fieldErrors.dsn) {
-          nextErrors._form = error.fieldErrors.driver ?? error.fieldErrors.dsn
-        }
-        setErrors(nextErrors)
-        return
-      }
-      toast.error(errorMessage(error, 'Failed to create connection'))
-    },
-  })
+  const form = useConnectionForm({ open, onOpenChange, orgSlug, workspaceId, environments, lockedEnvironmentId })
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (stage !== 'form') return
-    if (!validateForm()) return
-    void createMutation.mutateAsync().catch(() => {})
+    form.submit()
   }
-
-  const requiredFieldsFilled = currentDriver.fields
-    .filter((f) => f.required)
-    .every((f) => fields[f.key]?.trim())
-
-  const isPending = createMutation.isPending
-  const selectedEnvName = environments.find((e) => String(e.id) === environmentId)?.name ?? ''
+  const isPending = form.createConnection.isPending
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={form.handleOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{stage === 'driver' ? 'Choose a database' : 'New Connection'}</DialogTitle>
+          <DialogTitle>{form.stage === 'driver' ? 'Choose a database' : 'New Connection'}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col">
           <div className="flex max-h-[min(560px,calc(100svh-14rem))] flex-col gap-4 overflow-y-auto pb-1">
-            {stage === 'driver' ? (
-              <DriverGallery onPick={handlePickDriver} />
+            {form.stage === 'driver' ? (
+              <DriverGallery onPick={form.pickDriver} />
             ) : (
               <>
                 {/* Selected driver summary — one click back to the gallery. */}
                 <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 p-3">
-                  <DriverBadge driver={driverId} size="md" className="size-8 shrink-0" />
+                  <DriverBadge driver={form.driverId} size="md" className="size-8 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium text-foreground">{currentDriver.label}</div>
+                    <div className="text-xs font-medium text-foreground">{form.currentDriver.label}</div>
                     <div className="truncate text-[10px] text-muted-foreground">
-                      {driverBrands[driverId]?.description}
+                      {driverBrands[form.driverId]?.description}
                     </div>
                   </div>
-                  <Button type="button" variant="ghost" size="sm" disabled={isPending} onClick={() => setStage('driver')}>
+                  <Button type="button" variant="ghost" size="sm" disabled={isPending} onClick={() => form.setStage('driver')}>
                     Change
                   </Button>
                 </div>
 
                 <div className="grid grid-cols-6 gap-3">
                   <div className={cn('col-span-6', environments.length > 0 && 'sm:col-span-3')}>
-                    <FormField label="Name" error={errors.name}>
+                    <FormField label="Name" error={form.errors.name}>
                       <Input
-                        value={name}
+                        value={form.name}
                         disabled={isPending}
-                        placeholder={`My ${currentDriver.label}`}
-                        aria-invalid={errors.name ? true : undefined}
-                        onChange={(e) => {
-                          setName(e.target.value)
-                          setErrors((prev) => ({ ...prev, name: undefined }))
-                        }}
+                        placeholder={`My ${form.currentDriver.label}`}
+                        aria-invalid={form.errors.name ? true : undefined}
+                        onChange={(e) => form.changeName(e.target.value)}
                       />
                     </FormField>
                   </div>
 
                   {environments.length > 0 ? (
                     <div className="col-span-6 sm:col-span-3">
-                      <FormField label="Environment" error={errors.environmentId}>
+                      <FormField label="Environment" error={form.errors.environmentId}>
                         <Select
-                          value={environmentId}
+                          value={form.environmentId}
                           onValueChange={(v) => {
                             if (!v) return
-                            setEnvironmentId(v)
-                            setErrors((prev) => ({ ...prev, environmentId: undefined }))
+                            form.changeEnvironment(v)
                           }}
                           disabled={isPending || !!lockedEnvironmentId}
                         >
-                          <SelectTrigger aria-invalid={errors.environmentId ? true : undefined} className="w-full">
-                            <SelectValue>{selectedEnvName}</SelectValue>
+                          <SelectTrigger aria-invalid={form.errors.environmentId ? true : undefined} className="w-full">
+                            <SelectValue>{form.selectedEnvironmentName}</SelectValue>
                           </SelectTrigger>
                           <SelectContent className="min-w-[180px]">
                             {environments.map((env) => (
@@ -275,32 +119,32 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
                   ) : null}
 
                   <DriverFields
-                    driver={currentDriver}
-                    values={fields}
-                    errors={errors.fields}
+                    driver={form.currentDriver}
+                    values={form.fields}
+                    errors={form.errors.fields}
                     disabled={isPending}
-                    onChange={handleFieldChange}
+                    onChange={form.changeField}
                   />
                 </div>
 
-                {errors._form ? <p className="text-xs text-destructive">{errors._form}</p> : null}
+                {form.errors._form ? <p className="text-xs text-destructive">{form.errors._form}</p> : null}
               </>
             )}
           </div>
 
           <DialogFooter className="mt-4 items-center gap-3 border-t border-border/60 pt-4 sm:justify-between">
-            {stage === 'form' ? (
+            {form.stage === 'form' ? (
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={!requiredFieldsFilled || testMutation.isPending || isPending}
-                  onClick={() => void testMutation.mutateAsync().catch(() => {})}
+                  disabled={!form.requiredFieldsFilled || form.testConnection.isPending || isPending}
+                  onClick={() => void form.testConnection.mutateAsync().catch(() => {})}
                 >
-                  {testMutation.isPending ? 'Testing…' : 'Test Connection'}
+                  {form.testConnection.isPending ? 'Testing…' : 'Test Connection'}
                 </Button>
-                <TestStatusIndicator state={testState} />
+                <TestStatusIndicator state={form.testState} />
               </div>
             ) : (
               <span />
@@ -309,7 +153,7 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
               <DialogClose render={<Button type="button" variant="ghost" disabled={isPending} />}>
                 Cancel
               </DialogClose>
-              {stage === 'form' && (
+              {form.stage === 'form' && (
                 <Button type="submit" disabled={isPending}>
                   {isPending ? 'Creating…' : 'Create'}
                 </Button>
@@ -509,7 +353,7 @@ function FormField({ label, error, children }: { label: string; error?: string; 
 
 // ─── Test status indicator ───────────────────────────────────────────────────────
 
-function TestStatusIndicator({ state }: { state: TestState }) {
+function TestStatusIndicator({ state }: { state: ConnectionTestState }) {
   if (state.status === 'idle') return null
   if (state.status === 'pending') {
     return <span className="text-xs text-muted-foreground">Connecting…</span>
