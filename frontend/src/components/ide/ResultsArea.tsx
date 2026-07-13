@@ -312,6 +312,10 @@ function ResultSetView({
     return () => {
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup', onMouseUp)
+      if (autoScrollRafRef.current != null) {
+        cancelAnimationFrame(autoScrollRafRef.current)
+        autoScrollRafRef.current = null
+      }
     }
   }, [])
 
