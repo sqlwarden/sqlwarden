@@ -13,6 +13,8 @@ export type YDocRegistry = {
   getOrCreate: (tabId: string, initialContent?: string) => Y.Doc
   /** Destroys the doc and closes its BroadcastChannel. No-op if tabId unknown. */
   destroy: (tabId: string) => void
+  /** Destroys every doc and channel owned by this registry. */
+  disposeAll: () => void
   /** Returns the doc for tabId, or undefined if not yet created. */
   get: (tabId: string) => Y.Doc | undefined
 }
@@ -36,12 +38,13 @@ type ChannelMsg   = SyncRequest | FullState | UpdateMsg
 
 // ─── Factory ───────────────────────────────────────────────────────────────────
 
-export function createYDocRegistry(accountId: number): YDocRegistry {
+export function createYDocRegistry(accountId: number, scope?: string): YDocRegistry {
   const entries = new Map<string, { doc: Y.Doc; cleanup: () => void }>()
 
   function createEntry(tabId: string, initialContent?: string): Y.Doc {
     const doc = new Y.Doc()
-    const channel = new BroadcastChannel(`sqlwarden:tab:${accountId}:${tabId}`)
+    const channelScope = scope ? `${scope}:` : ''
+    const channel = new BroadcastChannel(`sqlwarden:tab:${accountId}:${channelScope}${tabId}`)
 
     // ── Outgoing: handle Y.Doc updates ────────────────────────────────────────
     const handleUpdate = (update: Uint8Array, origin: unknown) => {
@@ -133,6 +136,10 @@ export function createYDocRegistry(accountId: number): YDocRegistry {
       if (!entry) return
       entry.cleanup()
       entries.delete(tabId)
+    },
+    disposeAll() {
+      for (const entry of entries.values()) entry.cleanup()
+      entries.clear()
     },
     get(tabId) {
       return entries.get(tabId)?.doc

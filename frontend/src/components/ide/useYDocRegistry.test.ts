@@ -77,6 +77,30 @@ describe('createYDocRegistry', () => {
     expect(() => createYDocRegistry(1).destroy('nope')).not.toThrow()
   })
 
+  it('disposeAll destroys every document and closes every channel', () => {
+    const reg = createYDocRegistry(1)
+    reg.getOrCreate('tab:1')
+    reg.getOrCreate('tab:2')
+
+    reg.disposeAll()
+
+    expect(reg.get('tab:1')).toBeUndefined()
+    expect(reg.get('tab:2')).toBeUndefined()
+    expect(channels.get('sqlwarden:tab:1:tab:1')?.size ?? 0).toBe(0)
+    expect(channels.get('sqlwarden:tab:1:tab:2')?.size ?? 0).toBe(0)
+  })
+
+  it('isolates channels with the same tab id across organization scopes', () => {
+    const regA = createYDocRegistry(1, 'org-a')
+    const regB = createYDocRegistry(1, 'org-b')
+    const docA = regA.getOrCreate('file:1')
+    const docB = regB.getOrCreate('file:1')
+
+    docA.getText('content').insert(0, 'private to org A')
+
+    expect(docB.getText('content').toString()).toBe('')
+  })
+
   it('user edits are broadcast as incremental updates', () => {
     const regA = createYDocRegistry(1)
     const regB = createYDocRegistry(1)

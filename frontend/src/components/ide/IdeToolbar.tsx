@@ -9,7 +9,6 @@ import {
   orgEnvironmentsQueryOptions,
   allOrgWorkspaceConnectionsQueryOptions,
 } from '#/lib/api/query'
-import { updatePrivateWorkspaceFileContent } from '#/lib/api/files'
 import type { Connection, Workspace, WorkspaceFile } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, activeTabId as selectActiveTabId, type EditorTab } from './useIdeStore'
@@ -24,6 +23,7 @@ import { Tip } from './schema-diagram/Tip'
 import { useQueryExecution } from './useQueryExecution'
 import { useYDocRegistry } from './useYDocRegistry'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
+import { useSaveEditorTab } from './useSaveEditorTab'
 
 type IdeToolbarProps = {
   orgSlug: string
@@ -46,13 +46,13 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const openTab = useIde((s) => s.openTab)
   const closeTab = useIde((s) => s.closeTab)
   const setTabConnection = useIde((s) => s.setTabConnection)
-  const updateTabEtag = useIde((s) => s.updateTabEtag)
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
   const sessions = useIde((s) => s.sessions)
 
   const registry = useYDocRegistry()
   const viewRegistry = useEditorViewRegistry()
+  const saveEditorTab = useSaveEditorTab(orgSlug, workspace.id)
   const activeTab = tabs.find((t) => t.id === activeTabId)
 
   // Export only makes sense for a runnable SQL query — not for a database
@@ -67,30 +67,8 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
 
   async function handleSave() {
     if (!activeTab) return
-    const doc = registry.get(activeTab.id)
-    const content = doc ? doc.getText('content').toString() : activeTab.content
-
-    if (activeTab.kind === 'file' && activeTab.etag && activeTab.fileId) {
-      try {
-        const result = await updatePrivateWorkspaceFileContent(
-          orgSlug,
-          workspace.id,
-          activeTab.fileId,
-          content,
-          activeTab.etag,
-        )
-        updateTabEtag(activeTab.id, result.etag)
-      } catch (err) {
-        const status = (err as { status?: number }).status
-        if (status === 412 || status === 409) {
-          toast.error('File changed externally. Reload before saving.')
-        } else {
-          toast.error('Failed to save file.')
-        }
-      }
-    } else {
-      setSaveAsTab({ ...activeTab, content })
-    }
+    const result = await saveEditorTab(activeTab)
+    if (result?.kind === 'save-as') setSaveAsTab(result.tab)
   }
 
   function handleSaveAsSuccess(tab: EditorTab, file: WorkspaceFile, etag: string) {

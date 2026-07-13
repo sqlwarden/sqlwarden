@@ -2,9 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import * as Y from 'yjs'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
 import { Icon } from '#/lib/icons'
-import { updatePrivateWorkspaceFileContent } from '#/lib/api/files'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import {
   ResizableHandle,
@@ -39,6 +37,8 @@ import { createYDocRegistry, YDocRegistryContext, useYDocRegistry } from './useY
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 import { Tip } from './schema-diagram/Tip'
 import { useSessionSync } from './useSessionSync'
+import { useSaveEditorTab } from './useSaveEditorTab'
+import { createStoreSync } from './storeSync'
 
 // ─── Root ──────────────────────────────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
   const accountId = session?.account?.id ?? 0
 
   const store = useMemo(() => createIdeStore(orgSlug, accountId), [orgSlug, accountId])
-  const registry = useMemo(() => createYDocRegistry(accountId), [orgSlug, accountId])
+  const registry = useMemo(() => createYDocRegistry(accountId, orgSlug), [orgSlug, accountId])
   const viewRegistry = useMemo(() => createEditorViewRegistry(), [])
 
   // Release the primary lock when this IDE window unmounts so another window can
@@ -60,105 +60,13 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
   useEffect(() => {
     return () => {
       ;(store as unknown as { __cleanupElection?: () => void }).__cleanupElection?.()
+      registry.disposeAll()
     }
-  }, [store])
+  }, [store, registry])
 
-  // ── Cross-window etag / dirty-state sync ─────────────────────────────────
-  // When any window saves a file (etag changes) or completes a server load
-  // (initial etag set), broadcast the new etag to all other windows on the
-  // same origin so their dirty indicator and save ETag stay in sync.
-  // The receiving window calls updateTabEtag directly — no re-broadcast.
   useEffect(() => {
     const channel = new BroadcastChannel(`sqlwarden:store:${orgSlug}:${accountId}`)
-    const prevEtags = new Map<string, string>()
-    const prevTabIds = new Set<string>()
-    let prevSessions: Record<number, string> = {}
-    let applyingRemote = false
-    let seeded = false
-
-    function handleRemote(event: MessageEvent) {
-      const msg = event.data as Record<string, unknown>
-      if (!msg?.type) return
-      applyingRemote = true
-      if (msg.type === 'etag-update' && typeof msg.tabId === 'string' && typeof msg.etag === 'string') {
-        store.getState().updateTabEtag(msg.tabId, msg.etag)
-      } else if (msg.type === 'tab-opened' && msg.tab) {
-        store.getState().ensureTab(msg.tab as EditorTab)
-      } else if (msg.type === 'tab-closed' && typeof msg.tabId === 'string') {
-        store.getState().closeTab(msg.tabId)
-      } else if (msg.type === 'session-set' && typeof msg.connectionId === 'number' && typeof msg.sessionId === 'string') {
-        store.getState().setSession(msg.connectionId, msg.sessionId)
-      } else if (msg.type === 'session-cleared' && typeof msg.connectionId === 'number') {
-        store.getState().clearSession(msg.connectionId)
-      }
-      applyingRemote = false
-    }
-
-    const unsub = store.subscribe((state) => {
-      const currentTabIds = new Set(state.tabs.map((t) => t.id))
-
-      // First callback is the post-hydration snapshot. Seed prev state without
-      // broadcasting so we don't mistake restored tabs for newly opened ones.
-      if (!seeded) {
-        seeded = true
-        currentTabIds.forEach((id) => prevTabIds.add(id))
-        for (const tab of state.tabs) {
-          if (tab.etag !== undefined) prevEtags.set(tab.id, tab.etag)
-        }
-        prevSessions = { ...state.sessions }
-        return
-      }
-
-      if (!applyingRemote) {
-        // Etag changes
-        for (const tab of state.tabs) {
-          const prev = prevEtags.get(tab.id)
-          if (tab.etag !== undefined && tab.etag !== prev) {
-            channel.postMessage({ type: 'etag-update', tabId: tab.id, etag: tab.etag })
-          }
-        }
-        // Scratch tab opens — file tabs are per-window, consoles are shared
-        for (const tab of state.tabs) {
-          if (!prevTabIds.has(tab.id) && tab.kind === 'scratch') {
-            channel.postMessage({ type: 'tab-opened', tab })
-          }
-        }
-        // Scratch tab closes
-        for (const id of prevTabIds) {
-          if (!currentTabIds.has(id) && id.startsWith('scratch:')) {
-            channel.postMessage({ type: 'tab-closed', tabId: id })
-          }
-        }
-        // Session changes — drives the green connected dot across windows
-        for (const [connIdStr, sessionId] of Object.entries(state.sessions)) {
-          const connId = Number(connIdStr)
-          if (prevSessions[connId] !== sessionId) {
-            channel.postMessage({ type: 'session-set', connectionId: connId, sessionId })
-          }
-        }
-        for (const connIdStr of Object.keys(prevSessions)) {
-          const connId = Number(connIdStr)
-          if (!(connId in state.sessions)) {
-            channel.postMessage({ type: 'session-cleared', connectionId: connId })
-          }
-        }
-      }
-
-      // Always update prev state (even when applyingRemote) to stay current.
-      prevTabIds.clear()
-      currentTabIds.forEach((id) => prevTabIds.add(id))
-      for (const tab of state.tabs) {
-        if (tab.etag !== undefined) prevEtags.set(tab.id, tab.etag)
-      }
-      prevSessions = { ...state.sessions }
-    })
-
-    channel.addEventListener('message', handleRemote)
-    return () => {
-      unsub()
-      channel.removeEventListener('message', handleRemote)
-      channel.close()
-    }
+    return createStoreSync(store, channel)
   }, [store, orgSlug, accountId])
 
   // Abort all in-flight queries when the IDE unmounts (e.g. navigation away).
@@ -512,7 +420,7 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   const openConsole = useIde((s) => s.openConsole)
   const openTab = useIde((s) => s.openTab)
   const updateTabContent = useIde((s) => s.updateTabContent)
-  const updateTabEtag = useIde((s) => s.updateTabEtag)
+  const saveEditorTab = useSaveEditorTab(orgSlug, workspace.id)
 
   const activeTab = useMemo(
     () => tabs.find((t) => t.id === activeTabId && t.workspaceId === workspace.id),
@@ -619,30 +527,11 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
       if (!(e.metaKey || e.ctrlKey) || e.key !== 's') return
       e.preventDefault()
       if (!activeTab || activeTab.kind !== 'file' || !activeTab.etag || !activeTab.fileId) return
-      // Read from Y.Doc — more current than the 400 ms debounced snapshot.
-      const doc = registry.get(activeTab.id)
-      const content = doc ? doc.getText('content').toString() : activeTab.content
-      try {
-        const result = await updatePrivateWorkspaceFileContent(
-          orgSlug,
-          workspace.id,
-          activeTab.fileId,
-          content,
-          activeTab.etag,
-        )
-        updateTabEtag(activeTab.id, result.etag)
-      } catch (err) {
-        const status = (err as { status?: number }).status
-        if (status === 412 || status === 409) {
-          toast.error('File changed externally. Reload before saving.')
-        } else {
-          toast.error('Failed to save file.')
-        }
-      }
+      await saveEditorTab(activeTab)
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [activeTab, orgSlug, workspace.id, updateTabEtag, registry])
+  }, [activeTab, saveEditorTab])
 
   // ── Render ─────────────────────────────────────────────────────────────────
   // Each EditorGroup populates its own Y.Doc synchronously and loads its own file
