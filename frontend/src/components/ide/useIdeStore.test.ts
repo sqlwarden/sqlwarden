@@ -41,9 +41,11 @@ const mockFile = {
   updated_at: '',
 }
 
-function newScratchTab(workspace: typeof mockWorkspace): EditorTab {
+let scratchFixtureId = 0
+
+function scratchTabFixture(workspace: typeof mockWorkspace): EditorTab {
   return {
-    id: `scratch:${workspace.id}:${Date.now()}`,
+    id: `scratch:${workspace.id}:fixture-${scratchFixtureId++}`,
     workspaceId: workspace.id,
     title: 'Console',
     kind: 'scratch',
@@ -55,6 +57,7 @@ describe('useIdeStore', () => {
   let store: ReturnType<typeof createIdeStore>
 
   beforeEach(() => {
+    scratchFixtureId = 0
     store = createIdeStore('test-org', 1)
   })
 
@@ -69,7 +72,7 @@ describe('useIdeStore', () => {
   })
 
   it('openTab adds a tab and sets it active for its workspace', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     expect(store.getState().tabs).toHaveLength(1)
     expect(active(mockWorkspace.id)).toBe(tab.id)
@@ -83,7 +86,7 @@ describe('useIdeStore', () => {
   })
 
   it('closeTab removes the tab and clears activeTabId for its workspace', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     store.getState().closeTab(tab.id)
     expect(store.getState().tabs).toHaveLength(0)
@@ -92,7 +95,7 @@ describe('useIdeStore', () => {
 
   it('closeTab focuses another tab in same workspace when closed tab was active', () => {
     store.getState().setActiveWorkspace(1)
-    const tab1 = newScratchTab(mockWorkspace)
+    const tab1 = scratchTabFixture(mockWorkspace)
     const tab2 = newFileTab(mockFile, mockWorkspace)
     store.getState().openTab(tab1)
     store.getState().openTab(tab2)
@@ -102,8 +105,8 @@ describe('useIdeStore', () => {
 
   it('tabs from different workspaces do not share active tab state', () => {
     const ws2 = { ...mockWorkspace, id: 2, name: 'Analytics' }
-    const tab1 = newScratchTab(mockWorkspace)
-    const tab2 = newScratchTab(ws2)
+    const tab1 = scratchTabFixture(mockWorkspace)
+    const tab2 = scratchTabFixture(ws2)
     store.getState().openTab(tab1)
     store.getState().openTab(tab2)
     expect(active(mockWorkspace.id)).toBe(tab1.id)
@@ -114,7 +117,7 @@ describe('useIdeStore', () => {
   })
 
   it('updateTabContent updates only the target tab', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     store.getState().updateTabContent(tab.id, 'SELECT 1;')
     expect(store.getState().tabs[0].content).toBe('SELECT 1;')
@@ -126,7 +129,7 @@ describe('useIdeStore', () => {
   // and all console edits were silently discarded.
 
   it('updateTabContent persists ySnapshot when provided', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     const snapshot = [1, 2, 3, 4]
     store.getState().updateTabContent(tab.id, 'SELECT 1;', snapshot)
@@ -135,7 +138,7 @@ describe('useIdeStore', () => {
   })
 
   it('updateTabContent without ySnapshot does not clear an existing snapshot', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     store.getState().updateTabContent(tab.id, 'SELECT 1;', [1, 2, 3])
     store.getState().updateTabContent(tab.id, 'SELECT 2;')
@@ -158,7 +161,7 @@ describe('useIdeStore', () => {
   // Switching to workspace 2 left workspace 1's tab rendered in the editor.
 
   it('setActiveTab is a no-op for an unknown tabId', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     const before = active(mockWorkspace.id)
     store.getState().setActiveTab(groupId(mockWorkspace.id), 'nonexistent:id')
@@ -167,8 +170,8 @@ describe('useIdeStore', () => {
 
   it('setActiveTab updates only the owning workspace entry', () => {
     const ws2 = { ...mockWorkspace, id: 2, name: 'Analytics' }
-    const tab1 = newScratchTab(mockWorkspace)
-    const tab2a = newScratchTab(ws2)
+    const tab1 = scratchTabFixture(mockWorkspace)
+    const tab2a = scratchTabFixture(ws2)
     const tab2b = newFileTab(mockFile, ws2)
     store.getState().openTab(tab1)
     store.getState().openTab(tab2a)
@@ -182,8 +185,8 @@ describe('useIdeStore', () => {
 
   it('closeTab on the active tab of workspace 2 does not change workspace 1 active tab', () => {
     const ws2 = { ...mockWorkspace, id: 2, name: 'Analytics' }
-    const tab1 = newScratchTab(mockWorkspace)
-    const tab2 = newScratchTab(ws2)
+    const tab1 = scratchTabFixture(mockWorkspace)
+    const tab2 = scratchTabFixture(ws2)
     store.getState().openTab(tab1)
     store.getState().openTab(tab2)
     store.getState().closeTab(tab2.id)
@@ -192,7 +195,7 @@ describe('useIdeStore', () => {
   })
 
   it('setTabConnection persists connectionId on the tab', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     store.getState().setTabConnection(tab.id, 42)
     expect(store.getState().tabs[0].connectionId).toBe(42)
@@ -235,7 +238,7 @@ describe('useIdeStore', () => {
   })
 
   it('updateTabContent does not mark scratch tab dirty', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     store.getState().updateTabContent(tab.id, 'SELECT 2;')
     expect(store.getState().tabs[0].isDirty).toBeUndefined()
