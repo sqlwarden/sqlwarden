@@ -1,5 +1,5 @@
 import { cn } from '#/lib/utils'
-import { driverBrands } from './connection-drivers/index'
+import { findFrontendEngine } from './engines/registry'
 
 type Size = 'sm' | 'md'
 
@@ -9,18 +9,18 @@ const sizes: Record<Size, string> = {
 }
 
 export function DriverBadge({ driver, size = 'md', className }: { driver: string; size?: Size; className?: string }) {
-  const brand = driverBrands[driver]
-  if (!brand) {
+  const engine = findFrontendEngine(driver)
+  if (!engine?.brand.icon) {
     return (
       <div className={cn('flex shrink-0 items-center justify-center rounded bg-muted text-[8px] font-bold text-muted-foreground', sizes[size], className)}>
-        {driver.slice(0, 2).toUpperCase()}
+        {engine ? engine.label.slice(0, 2).toUpperCase() : '?'}
       </div>
     )
   }
   return (
     <img
-      src={brand.icon}
-      alt={driver}
+      src={engine.brand.icon}
+      alt={engine.label}
       className={cn('shrink-0 object-contain', sizes[size], className)}
     />
   )

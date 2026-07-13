@@ -1,11 +1,11 @@
-import type { ColumnExtra, DriverHooks, HeaderBadge, ObjectViewModel } from '../registry'
+import type { ColumnExtra, HeaderBadge, ObjectDetailHooks, ObjectViewModel } from '../types'
 
 function attr(obj: Record<string, unknown> | undefined, key: string): string | undefined {
   const v = obj?.[key]
   return typeof v === 'string' ? v : undefined
 }
 
-export const postgresHooks: DriverHooks = {
+export const postgresHooks: ObjectDetailHooks = {
   headerBadges(vm: ObjectViewModel): HeaderBadge[] {
     const comment = attr(vm.detail.attributes, 'comment')
     return comment ? [{ id: 'comment', label: 'Comment', value: comment }] : []

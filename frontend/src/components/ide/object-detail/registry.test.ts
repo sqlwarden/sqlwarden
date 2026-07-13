@@ -13,10 +13,10 @@ const tableDetail: ObjectDetail = {
 }
 
 describe('getObjectRenderer', () => {
-  it('falls back to the base renderer for unknown drivers', () => {
-    const r = getObjectRenderer('does-not-exist')
-    const ids = r.sections(vm(tableDetail, 'does-not-exist')).map((s) => s.id)
-    expect(ids).toEqual(['columns', 'keys', 'ddl', 'data'])
+  it('rejects drivers without a bundled frontend implementation', () => {
+    expect(() => getObjectRenderer('does-not-exist')).toThrow(
+      'Unsupported frontend database driver: does-not-exist',
+    )
   })
 
   it('base renderer shows no header badges or column extras', () => {

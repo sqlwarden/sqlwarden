@@ -37,10 +37,8 @@ describe('sqlite dialect', () => {
 })
 
 describe('unknown driver', () => {
-  it('falls back to the postgres dialect', () => {
-    const d = dialectFor('cockroach')
-    expect(d.formatColumn('Mixed')).toBe('"Mixed"')
-    expect(d.formatObject('analytics', 'events')).toBe('analytics.events')
+  it('rejects drivers without a bundled frontend implementation', () => {
+    expect(() => dialectFor('cockroach')).toThrow('Unsupported frontend database driver: cockroach')
   })
 })
 
