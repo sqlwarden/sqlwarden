@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -174,7 +175,7 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
       setIsCreating(false)
       resetForm()
       toast.success('Policy binding created')
-      await queryClient.invalidateQueries({ queryKey: ['org-policies', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgPoliciesScope(orgSlug) })
     },
     onError: (error) => {
       const protectedMessage = protectedOrgPolicyMessage(rolePermissions, effectivePermissions.data?.permissions)
@@ -201,7 +202,7 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
       api.delete<void>(`/api/v1/orgs/${orgSlug}/policies/${bindingId}`),
     onSuccess: async () => {
       toast.success('Policy binding revoked')
-      await queryClient.invalidateQueries({ queryKey: ['org-policies', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgPoliciesScope(orgSlug) })
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to revoke policy binding')

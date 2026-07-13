@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UseQueryOptions } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
@@ -153,7 +154,7 @@ function FilesSection({
     onSuccess: (_, nodeId) => {
       // Invalidate all browser queries for this workspace so every open folder refreshes
       queryClient.invalidateQueries({
-        queryKey: ['org-workspace-private-file-browser', orgSlug, workspace.id],
+        queryKey: queryKeys.orgWorkspacePrivateFileBrowserScope(orgSlug, workspace.id),
       })
       // Close the tab if this file was open
       closeTab(`file:${nodeId}`)
@@ -180,8 +181,8 @@ function FilesSection({
   function handleRefresh() {
     const key =
       visibility === 'private'
-        ? ['org-workspace-private-file-browser', orgSlug, workspace.id]
-        : ['org-workspace-shared-file-browser', orgSlug, workspace.id]
+        ? queryKeys.orgWorkspacePrivateFileBrowserScope(orgSlug, workspace.id)
+        : queryKeys.orgWorkspaceSharedFileBrowserScope(orgSlug, workspace.id)
     void queryClient.invalidateQueries({ queryKey: key })
   }
 

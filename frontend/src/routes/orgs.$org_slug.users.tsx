@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -113,8 +114,8 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
       setIsAddingUser(false)
       resetAddUser()
       toast.success('Done')
-      await queryClient.invalidateQueries({ queryKey: ['org-members', orgSlug] })
-      await queryClient.invalidateQueries({ queryKey: ['org-member-candidates', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgMembersScope(orgSlug) })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgMemberCandidatesScope(orgSlug) })
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to add user')

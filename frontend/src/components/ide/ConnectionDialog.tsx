@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
@@ -172,7 +173,7 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
       onOpenChange(false)
       resetForm()
       toast.success('Connection created')
-      await queryClient.invalidateQueries({ queryKey: ['org-workspace-connections', orgSlug, workspaceId] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceConnectionsScope(orgSlug, workspaceId) })
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors) {

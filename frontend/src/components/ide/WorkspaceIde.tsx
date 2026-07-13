@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import * as Y from 'yjs'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -11,7 +12,7 @@ import {
   ResizablePanelGroup,
 } from '#/components/ui/resizable'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { orgWorkspacesQueryOptions, orgEffectivePermissionsQueryOptions, orgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
+import { orgWorkspacesQueryOptions, orgEffectivePermissionsQueryOptions, allOrgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
 import { resolveDeepLink } from './ideDeepLink'
 import { hasAnyPermission, permission } from '#/lib/permissions'
 import { IdeTopBarControls } from './IdeTopBarControls'
@@ -269,7 +270,7 @@ function useIdeDeepLink(orgSlug: string, workspaces: Workspace[]) {
   const hasParams = search.ws !== undefined || search.conn !== undefined
   const needsConnections = search.ws !== undefined && search.conn !== undefined
   const connections = useQuery({
-    ...orgWorkspaceConnectionsQueryOptions(orgSlug, search.ws ?? 0, { page_size: 100, sort: 'name', order: 'asc' }),
+    ...allOrgWorkspaceConnectionsQueryOptions(orgSlug, search.ws ?? 0),
     enabled: needsConnections,
   })
 
@@ -568,7 +569,7 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
     const currIds = new Set(tabs.map((t) => t.id))
     for (const tab of prevTabs) {
       if (!currIds.has(tab.id) && tab.kind === 'file' && tab.fileId != null) {
-        queryClient.removeQueries({ queryKey: ['file-content', orgSlug, workspace.id, tab.fileId] })
+        queryClient.removeQueries({ queryKey: queryKeys.fileContent(orgSlug, workspace.id, tab.fileId) })
       }
     }
     prevTabsRef.current = tabs

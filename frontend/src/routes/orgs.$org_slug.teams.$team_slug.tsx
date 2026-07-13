@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -121,8 +122,8 @@ function OrganizationTeamContextPage() {
     onSuccess: async (_, accountID) => {
       toast.success('Done')
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['org-team-members', orgSlug, teamSlug] }),
-        queryClient.invalidateQueries({ queryKey: ['org-member-teams', orgSlug, accountID] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgTeamMembersScope(orgSlug, teamSlug) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgMemberTeamsScope(orgSlug, accountID) }),
       ])
     },
     onError: (error) => {
@@ -136,8 +137,8 @@ function OrganizationTeamContextPage() {
     onSuccess: async (_, accountID) => {
       toast.success('Done')
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['org-team-members', orgSlug, teamSlug] }),
-        queryClient.invalidateQueries({ queryKey: ['org-member-teams', orgSlug, accountID] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgTeamMembersScope(orgSlug, teamSlug) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgMemberTeamsScope(orgSlug, accountID) }),
       ])
     },
     onError: (error) => {

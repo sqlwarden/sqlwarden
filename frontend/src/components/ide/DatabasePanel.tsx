@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import * as Y from 'yjs'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -7,7 +8,7 @@ import { toast } from 'sonner'
 import {
   orgEffectivePermissionsQueryOptions,
   orgEnvironmentsQueryOptions,
-  orgWorkspaceConnectionsQueryOptions,
+  allOrgWorkspaceConnectionsQueryOptions,
   refreshConnectionSchema,
   invalidateConnectionSchemaQueries,
 } from '#/lib/api/query'
@@ -24,7 +25,6 @@ import { buildConnectionMenu } from './contextMenus/connectionMenu'
 import { buildEnvironmentMenu } from './contextMenus/environmentMenu'
 import { SidebarPane } from './SidebarPane'
 import { SchemaTree } from './SchemaTree'
-import { workspaceSessionsQueryKey } from './useSessionSync'
 import { ConnectionDialog } from './ConnectionDialog'
 import { DriverBadge } from './DriverBadge'
 import { Button } from '#/components/ui/button'
@@ -83,7 +83,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
     orgEnvironmentsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
   )
   const connections = useQuery(
-    orgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
+    allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id),
   )
 
   const envItems = environments.data?.items ?? []
@@ -94,7 +94,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
 
   // Session reconciliation itself runs IDE-wide (useSessionSync in the shell);
   // this panel only invalidates it after explicit connect/disconnect.
-  const sessionsQueryKey = workspaceSessionsQueryKey(orgSlug, workspace.id)
+  const sessionsQueryKey = queryKeys.workspaceSessions(orgSlug, workspace.id)
 
   const connectMutation = useMutation({
     mutationFn: (conn: Connection) =>
@@ -166,7 +166,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
       setEnvDescription('')
       setEnvNameError(undefined)
       toast.success('Environment created')
-      await queryClient.invalidateQueries({ queryKey: ['org-environments', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgEnvironmentsScope(orgSlug) })
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors) {

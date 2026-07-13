@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -91,7 +92,7 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
       setNewWorkspaceDescription('')
       setCreateFieldErrors({})
       toast.success('Workspace created')
-      await queryClient.invalidateQueries({ queryKey: ['org-workspaces', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspacesScope(orgSlug) })
       await navigate({
         to: '/orgs/$org_slug/workspaces/$workspace_id',
         params: { org_slug: orgSlug, workspace_id: String(workspace.id) },

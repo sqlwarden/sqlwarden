@@ -40,7 +40,10 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
     queryKey: connectionPreviewQueryKey(orgSlug, workspaceId, connectionId, ref),
     queryFn: ({ pageParam }) =>
       pageParam === null
-        ? runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, dialect.previewQuery(ref), true, PREVIEW_PAGE_SIZE)
+        ? runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, dialect.previewQuery(ref), {
+            useCursor: true,
+            pageSize: PREVIEW_PAGE_SIZE,
+          })
         : fetchConnectionCursorPage(orgSlug, workspaceId, connectionId, pageParam, PREVIEW_PAGE_SIZE),
     initialPageParam: null as string | null,
     getNextPageParam: (last, _all, lastParam) => nextCursorParam(last, lastParam),
@@ -51,7 +54,9 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
   const boundedCount = useQuery({
     queryKey: connectionPreviewCountQueryKey(orgSlug, workspaceId, connectionId, ref),
     queryFn: () =>
-      runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, dialect.boundedCountQuery(ref, COUNT_THRESHOLD + 1), false),
+      runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, dialect.boundedCountQuery(ref, COUNT_THRESHOLD + 1), {
+        useCursor: false,
+      }),
     enabled,
     staleTime: 60_000,
   })
@@ -61,7 +66,9 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
   const [wantExact, setWantExact] = useState(false)
   const exactCount = useQuery({
     queryKey: [...connectionPreviewCountQueryKey(orgSlug, workspaceId, connectionId, ref), 'exact'],
-    queryFn: () => runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, dialect.exactCountQuery(ref), false),
+    queryFn: () => runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, dialect.exactCountQuery(ref), {
+      useCursor: false,
+    }),
     enabled: enabled && wantExact,
     staleTime: 60_000,
   })

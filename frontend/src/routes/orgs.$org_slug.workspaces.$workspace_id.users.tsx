@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -552,7 +553,7 @@ function workspaceMemberToRowItem(member: WorkspaceMember): WorkspaceUserRowItem
 
 async function invalidateWorkspaceUserQueries(queryClient: ReturnType<typeof useQueryClient>, orgSlug: string, workspaceId: string) {
   await Promise.all([
-    queryClient.invalidateQueries({ queryKey: ['org-workspace-members', orgSlug, workspaceId] }),
-    queryClient.invalidateQueries({ queryKey: ['org-workspace-effective-members', orgSlug, workspaceId] }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceMembersScope(orgSlug, workspaceId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceEffectiveMembersScope(orgSlug, workspaceId) }),
   ])
 }

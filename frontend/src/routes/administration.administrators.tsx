@@ -52,7 +52,7 @@ function SettingsAdministratorsPage() {
       setEmail('')
       setFieldError(null)
       toast.success('Administrator added')
-      await queryClient.invalidateQueries({ queryKey: ['instance-admins'] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.instanceAdminsScope() })
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors?.email) {
@@ -69,7 +69,7 @@ function SettingsAdministratorsPage() {
     onSuccess: async () => {
       toast.success('Administrator removed')
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['instance-admins'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.instanceAdminsScope() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.session() }),
       ])
     },

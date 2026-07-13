@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -110,8 +111,8 @@ function PolicyContextPage() {
     onSuccess: async () => {
       toast.success('Policy binding revoked')
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['org-policies', orgSlug] }),
-        queryClient.invalidateQueries({ queryKey: ['org-policy', orgSlug, bindingId] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgPoliciesScope(orgSlug) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgPolicy(orgSlug, bindingId) }),
       ])
       void navigate({ to: '/orgs/$org_slug/policies', params: { org_slug: orgSlug } })
     },

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -109,7 +110,7 @@ function WorkspaceTeamsPage() {
       api.post<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/teams`, { team_id: teamId }),
     onSuccess: async () => {
       toast.success('Team added')
-      await queryClient.invalidateQueries({ queryKey: ['org-workspace-teams', orgSlug, workspaceId] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceTeamsScope(orgSlug, workspaceId) })
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to add team')
@@ -121,7 +122,7 @@ function WorkspaceTeamsPage() {
       api.delete<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/teams/${teamId}`),
     onSuccess: async () => {
       toast.success('Team removed')
-      await queryClient.invalidateQueries({ queryKey: ['org-workspace-teams', orgSlug, workspaceId] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceTeamsScope(orgSlug, workspaceId) })
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to remove team')

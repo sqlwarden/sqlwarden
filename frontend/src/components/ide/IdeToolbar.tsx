@@ -7,7 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover'
 import {
   orgEnvironmentsQueryOptions,
-  orgWorkspaceConnectionsQueryOptions,
+  allOrgWorkspaceConnectionsQueryOptions,
 } from '#/lib/api/query'
 import { api } from '#/lib/api/client'
 import { updatePrivateWorkspaceFileContent } from '#/lib/api/files'
@@ -122,7 +122,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     orgEnvironmentsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
   )
   const connections = useQuery(
-    orgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
+    allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id),
   )
 
   const envItems = environments.data?.items ?? []

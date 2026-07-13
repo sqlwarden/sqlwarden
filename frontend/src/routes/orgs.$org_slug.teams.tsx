@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -101,7 +102,7 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
       setIsCreating(false)
       resetCreateTeam()
       toast.success('Team created')
-      await queryClient.invalidateQueries({ queryKey: ['org-teams', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgTeamsScope(orgSlug) })
     },
     onError: (error) => {
       if (isApiError(error)) {

@@ -52,8 +52,8 @@ function OrganizationGeneralSettingsPage() {
       toast.success('Organization updated')
       queryClient.setQueryData(queryKeys.org(orgSlug), updated)
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['account-organizations'] }),
-        queryClient.invalidateQueries({ queryKey: ['instance-organizations'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.accountOrganizationsScope() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.instanceOrganizationsScope() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.session() }),
       ])
     },
@@ -74,7 +74,7 @@ function OrganizationGeneralSettingsPage() {
       toast.success('Organization deleted')
       queryClient.removeQueries({ queryKey: queryKeys.org(orgSlug) })
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['account-organizations'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.accountOrganizationsScope() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.session() }),
       ])
       await navigate({ to: '/', replace: true })

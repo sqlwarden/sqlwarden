@@ -77,7 +77,7 @@ function SettingsOrganizationsPage() {
       setCreateFieldErrors({})
       toast.success('Organization created')
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['instance-organizations'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.instanceOrganizationsScope() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.session() }),
       ])
     },

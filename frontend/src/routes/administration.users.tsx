@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { createFileRoute } from '@tanstack/react-router'
@@ -74,7 +75,7 @@ function SettingsUsersPage() {
       setIsCreating(false)
       resetCreateUser()
       toast.success('User created')
-      await queryClient.invalidateQueries({ queryKey: ['instance-accounts'] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.instanceAccountsScope() })
     },
     onError: (error) => {
       if (isApiError(error)) {

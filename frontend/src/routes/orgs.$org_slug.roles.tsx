@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -133,7 +134,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
       setIsCreating(false)
       resetCreateRole()
       toast.success('Role created')
-      await queryClient.invalidateQueries({ queryKey: ['org-roles', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgRolesScope(orgSlug) })
     },
     onError: (error) => {
       if (isApiError(error)) {
@@ -156,7 +157,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
     mutationFn: async (roleId: number) => api.delete<void>(`/api/v1/orgs/${orgSlug}/roles/${roleId}`),
     onSuccess: async () => {
       toast.success('Role deleted')
-      await queryClient.invalidateQueries({ queryKey: ['org-roles', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgRolesScope(orgSlug) })
     },
     onError: (error) => {
       if (isApiError(error) && error.status === 409) {
@@ -673,4 +674,3 @@ function formatDate(value: string) {
 function trimTrailingSlash(path: string) {
   return path === '/' ? path : path.replace(/\/$/, '')
 }
-

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '#/components/ui/button'
@@ -296,7 +297,7 @@ function ExportJobRow({
 
 function ExportJobLog({ orgSlug, workspaceId, jobId }: { orgSlug: string; workspaceId: number; jobId: string }) {
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['export-job-log', orgSlug, workspaceId, jobId],
+    queryKey: queryKeys.exportJobLog(orgSlug, workspaceId, jobId),
     queryFn: () => getJobEvents(orgSlug, workspaceId, jobId),
   })
 

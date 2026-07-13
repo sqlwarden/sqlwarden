@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useQuery } from '@tanstack/react-query'
 import { getPrivateWorkspaceFileContent } from '#/lib/api/files'
 import type { EditorTab } from './useIdeStore'
@@ -25,7 +26,7 @@ export function useFileContent({
   const needsLoad = fileId != null
 
   const query = useQuery({
-    queryKey: ['file-content', orgSlug, workspaceId, fileId],
+    queryKey: queryKeys.fileContent(orgSlug, workspaceId, fileId),
     queryFn: () => getPrivateWorkspaceFileContent(orgSlug, workspaceId, fileId!),
     enabled: needsLoad,
     staleTime: Infinity,

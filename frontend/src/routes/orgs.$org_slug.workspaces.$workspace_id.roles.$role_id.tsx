@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -88,8 +89,8 @@ function WorkspaceRoleContextPage() {
     onSuccess: async () => {
       toast.success('Role deleted')
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['org-workspace-roles', orgSlug, workspaceId] }),
-        queryClient.invalidateQueries({ queryKey: ['org-workspace-role', orgSlug, workspaceId, roleId] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceRolesScope(orgSlug, workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceRole(orgSlug, workspaceId, roleId) }),
       ])
       void navigate({
         to: '/orgs/$org_slug/workspaces/$workspace_id/roles',

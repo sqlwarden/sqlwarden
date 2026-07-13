@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -175,7 +176,7 @@ function WorkspacePoliciesPage() {
       setIsCreating(false)
       resetForm()
       toast.success('Policy binding created')
-      await queryClient.invalidateQueries({ queryKey: ['org-workspace-policies', orgSlug, workspaceId] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspacePoliciesScope(orgSlug, workspaceId) })
     },
     onError: (error) => {
       if (isApiError(error)) {
@@ -197,7 +198,7 @@ function WorkspacePoliciesPage() {
       api.delete<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/policies/${bindingId}`),
     onSuccess: async () => {
       toast.success('Policy binding revoked')
-      await queryClient.invalidateQueries({ queryKey: ['org-workspace-policies', orgSlug, workspaceId] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspacePoliciesScope(orgSlug, workspaceId) })
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to revoke policy binding')

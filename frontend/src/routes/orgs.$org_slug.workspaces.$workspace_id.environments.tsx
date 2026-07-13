@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -107,7 +108,7 @@ function WorkspaceEnvironmentsPage() {
       setCreateValues({ name: '', description: '' })
       setCreateErrors({})
       toast.success('Environment created')
-      await queryClient.invalidateQueries({ queryKey: ['org-environments', orgSlug, workspaceId] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgEnvironmentsScope(orgSlug, workspaceId) })
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors) {
@@ -134,7 +135,7 @@ function WorkspaceEnvironmentsPage() {
       setEditValues({ name: '', description: '' })
       setEditErrors({})
       toast.success('Environment updated')
-      await queryClient.invalidateQueries({ queryKey: ['org-environments', orgSlug, workspaceId] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgEnvironmentsScope(orgSlug, workspaceId) })
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors) {
@@ -153,7 +154,7 @@ function WorkspaceEnvironmentsPage() {
       api.delete<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/environments/${environmentId}`),
     onSuccess: async () => {
       toast.success('Environment deleted')
-      await queryClient.invalidateQueries({ queryKey: ['org-environments', orgSlug, workspaceId] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgEnvironmentsScope(orgSlug, workspaceId) })
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to delete environment')

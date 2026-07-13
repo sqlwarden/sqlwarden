@@ -1,78 +1,9 @@
 import { keepPreviousData, queryOptions, type QueryClient } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
 import type { ListQuery, Paginated, SessionResponse, SetupStatusResponse, Workspace, Environment, Connection, Organization, InstanceAdmin, InstanceSettings, Account, AccountOrganization, EffectivePermissions, PermissionsCatalog, ResourceType, OrgMember, WorkspaceMember, WorkspaceEffectiveMember, WorkspaceTeam, Team, TeamMember, Role, PolicyBinding, WorkspaceFilesResponse, WorkspaceFileBrowserResult, CatalogResponse, SchemaSpecResponse, ObjectsResponse, ObjectRef, ResultSet, RelationshipsResponse, JobRecord } from '#/lib/api/types'
+import { queryKeys } from '#/lib/api/query-keys'
 
-export const queryKeys = {
-  setupStatus: () => ['setup-status'] as const,
-  session: () => ['session'] as const,
-  accountOrganizations: (query?: ListQuery) => ['account-organizations', query ?? {}] as const,
-  instanceAccounts: (query?: ListQuery) => ['instance-accounts', query ?? {}] as const,
-  instanceAdmins: (query?: ListQuery) => ['instance-admins', query ?? {}] as const,
-  instanceOrganizations: (query?: ListQuery) => ['instance-organizations', query ?? {}] as const,
-  instanceSettings: () => ['instance-settings'] as const,
-  orgEffectivePermissions: (slug: string, resourceType: ResourceType, resourceId?: string | number) =>
-    ['org-effective-permissions', slug, resourceType, resourceId ?? null] as const,
-  orgPermissions: (slug: string) => ['org-permissions', slug] as const,
-  org: (slug: string) => ['org', slug] as const,
-  orgMembers: (slug: string, query?: ListQuery) => ['org-members', slug, query ?? {}] as const,
-  orgMemberCandidates: (slug: string, query?: ListQuery) => ['org-member-candidates', slug, query ?? {}] as const,
-  orgMember: (slug: string, accountId: string | number) => ['org-member', slug, accountId] as const,
-  orgMemberTeams: (slug: string, accountId: string | number, query?: ListQuery) =>
-    ['org-member-teams', slug, accountId, query ?? {}] as const,
-  orgTeams: (slug: string, query?: ListQuery) => ['org-teams', slug, query ?? {}] as const,
-  orgTeam: (slug: string, teamSlug: string) => ['org-team', slug, teamSlug] as const,
-  orgTeamMembers: (slug: string, teamSlug: string, query?: ListQuery) =>
-    ['org-team-members', slug, teamSlug, query ?? {}] as const,
-  orgRoles: (slug: string, query?: ListQuery) => ['org-roles', slug, query ?? {}] as const,
-  orgRole: (slug: string, roleId: string | number) => ['org-role', slug, roleId] as const,
-  orgWorkspaceRoles: (slug: string, workspaceId: string | number, query?: ListQuery) =>
-    ['org-workspace-roles', slug, workspaceId, query ?? {}] as const,
-  orgWorkspaceRole: (slug: string, workspaceId: string | number, roleId: string | number) =>
-    ['org-workspace-role', slug, workspaceId, roleId] as const,
-  orgWorkspaces: (slug: string, query?: ListQuery) => ['org-workspaces', slug, query ?? {}] as const,
-  orgWorkspace: (slug: string, workspaceId: string | number) => ['org-workspace', slug, workspaceId] as const,
-  orgWorkspaceMembers: (slug: string, workspaceId: string | number, query?: ListQuery) =>
-    ['org-workspace-members', slug, workspaceId, query ?? {}] as const,
-  orgWorkspaceEffectiveMembers: (slug: string, workspaceId: string | number, query?: ListQuery) =>
-    ['org-workspace-effective-members', slug, workspaceId, query ?? {}] as const,
-  orgWorkspaceTeams: (slug: string, workspaceId: string | number, query?: ListQuery) =>
-    ['org-workspace-teams', slug, workspaceId, query ?? {}] as const,
-  orgWorkspacePolicies: (slug: string, workspaceId: string | number, query?: ListQuery) =>
-    ['org-workspace-policies', slug, workspaceId, query ?? {}] as const,
-  orgWorkspacePrivateFiles: (slug: string, workspaceId: string | number, parentId?: string | number | null) =>
-    ['org-workspace-private-files', slug, workspaceId, parentId ?? null] as const,
-  orgWorkspaceSharedFiles: (slug: string, workspaceId: string | number, parentId?: string | number | null) =>
-    ['org-workspace-shared-files', slug, workspaceId, parentId ?? null] as const,
-  orgWorkspacePrivateFileBrowser: (slug: string, workspaceId: string | number, fileId?: string | number | null) =>
-    ['org-workspace-private-file-browser', slug, workspaceId, fileId ?? null] as const,
-  orgWorkspaceSharedFileBrowser: (slug: string, workspaceId: string | number, fileId?: string | number | null) =>
-    ['org-workspace-shared-file-browser', slug, workspaceId, fileId ?? null] as const,
-  orgWorkspacePrivateRecentFiles: (slug: string, workspaceId: string | number, limit?: number) =>
-    ['org-workspace-private-recent-files', slug, workspaceId, limit ?? null] as const,
-  orgWorkspaceSharedRecentFiles: (slug: string, workspaceId: string | number, limit?: number) =>
-    ['org-workspace-shared-recent-files', slug, workspaceId, limit ?? null] as const,
-  myWorkspaces: (query?: ListQuery) => ['my-workspaces', query ?? {}] as const,
-  myWorkspacePrivateFiles: (workspaceId: string | number, parentId?: string | number | null) =>
-    ['my-workspace-private-files', workspaceId, parentId ?? null] as const,
-  myWorkspacePrivateFileBrowser: (workspaceId: string | number, fileId?: string | number | null) =>
-    ['my-workspace-private-file-browser', workspaceId, fileId ?? null] as const,
-  myWorkspacePrivateRecentFiles: (workspaceId: string | number, limit?: number) =>
-    ['my-workspace-private-recent-files', workspaceId, limit ?? null] as const,
-  orgEnvironments: (slug: string, workspaceId: string | number, query?: ListQuery) =>
-    ['org-environments', slug, workspaceId, query ?? {}] as const,
-  myEnvironments: (workspaceId: string | number, query?: ListQuery) =>
-    ['my-environments', workspaceId, query ?? {}] as const,
-  orgConnections: (slug: string, workspaceId: string | number, environmentId: string | number, query?: ListQuery) =>
-    ['org-connections', slug, workspaceId, environmentId, query ?? {}] as const,
-  orgWorkspaceConnections: (slug: string, workspaceId: string | number, query?: ListQuery) =>
-    ['org-workspace-connections', slug, workspaceId, query ?? {}] as const,
-  myConnections: (workspaceId: string | number, environmentId: string | number, query?: ListQuery) =>
-    ['my-connections', workspaceId, environmentId, query ?? {}] as const,
-  orgPolicies: (slug: string, query?: ListQuery) => ['org-policies', slug, query ?? {}] as const,
-  orgPolicy: (slug: string, bindingId: string | number) => ['org-policy', slug, bindingId] as const,
-  orgWorkspaceJobs: (slug: string, workspaceId: string | number, query?: ListQuery) =>
-    ['org-workspace-jobs', slug, workspaceId, query ?? {}] as const,
-}
+export { queryKeys } from '#/lib/api/query-keys'
 
 export function setupStatusQueryOptions() {
   return queryOptions({
@@ -435,6 +366,17 @@ export function orgWorkspaceConnectionsQueryOptions(slug: string, workspaceId: s
   })
 }
 
+const allWorkspaceConnectionsQuery = {
+  page_size: 100,
+  sort: 'name',
+  order: 'asc',
+} satisfies ListQuery
+
+/** The canonical complete connection list used throughout the IDE. */
+export function allOrgWorkspaceConnectionsQueryOptions(slug: string, workspaceId: string | number) {
+  return orgWorkspaceConnectionsQueryOptions(slug, workspaceId, allWorkspaceConnectionsQuery)
+}
+
 export function orgWorkspaceJobsQueryOptions(slug: string, workspaceId: string | number, query?: ListQuery) {
   return queryOptions({
     queryKey: queryKeys.orgWorkspaceJobs(slug, workspaceId, query),
@@ -577,24 +519,29 @@ export function connectionPreviewQueryKey(slug: string, workspaceId: string | nu
 }
 
 export function connectionPreviewCountQueryKey(slug: string, workspaceId: string | number, connectionId: string | number, ref: ObjectRef) {
-  return ['connection-preview-count', slug, String(workspaceId), String(connectionId), ref.namespace, ref.kind, ref.name] as const
+  return queryKeys.connectionPreviewCount(slug, String(workspaceId), String(connectionId), ref)
 }
 
 /** Runs a query on a connection. Pass useCursor to get a cursor-backed first
  *  page that can be paged with fetchConnectionCursorPage; pageSize sets that
  *  first page's size (the backend default is small). */
+export type RunConnectionQueryOptions = {
+  useCursor: boolean
+  pageSize?: number
+  signal?: AbortSignal
+}
+
 export function runConnectionQuery(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
   sessionId: string,
   sql: string,
-  useCursor: boolean,
-  pageSize?: number,
+  options: RunConnectionQueryOptions,
 ) {
   return api.post<ResultSet>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/query`,
-    { sql, use_cursor: useCursor, page_size: pageSize },
-    { headers: { 'X-Warden-Session': sessionId } })
+    { sql, use_cursor: options.useCursor, page_size: options.pageSize },
+    { headers: { 'X-Warden-Session': sessionId }, signal: options.signal })
 }
 
 /** Fetches the next page of an open query cursor (mirrors the result grid's
@@ -605,10 +552,12 @@ export function fetchConnectionCursorPage(
   connectionId: string | number,
   cursorId: string,
   pageSize?: number,
+  signal?: AbortSignal,
 ) {
   return api.post<ResultSet>(
     `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/query-cursors/${cursorId}/fetch`,
     { page_size: pageSize },
+    { signal },
   )
 }
 

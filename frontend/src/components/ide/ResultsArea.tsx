@@ -20,7 +20,7 @@ import { Tip } from './schema-diagram/Tip'
 import { DriverBadge } from './DriverBadge'
 import { ExportButton } from './exports/ExportButton'
 import { columnTypeIcon, columnTypeIconColor } from './columnTypeIcon'
-import { orgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
+import { allOrgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
 
 type ResultsAreaProps = {
   orgSlug: string
@@ -296,7 +296,7 @@ function ResultSetView({
   const queryCursorId = result.data.query_cursor_id
   // Same query key the toolbar uses, so this is a cache hit, not a new request.
   const connectionsQuery = useQuery(
-    orgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
+    allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id),
   )
   const executedConnection = connectionsQuery.data?.items.find(
     (c) => c.id === (result.connectionId ?? activeTab?.connectionId),
