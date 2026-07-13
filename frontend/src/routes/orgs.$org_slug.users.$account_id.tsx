@@ -1,3 +1,4 @@
+import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -45,11 +46,6 @@ export const Route = createFileRoute('/orgs/$org_slug/users/$account_id')({
   pendingComponent: RoutePending,
 })
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
 
 function OrganizationUserContextPage() {
   const { org_slug: orgSlug, account_id: accountId } = Route.useParams()
@@ -508,12 +504,4 @@ function roleBadgeVariant(role: string): 'default' | 'secondary' | 'outline' {
 
 function roleLabel(role: string) {
   return role
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return 'Unknown'
-  }
-  return dateFormatter.format(date)
 }

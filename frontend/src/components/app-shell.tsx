@@ -1,3 +1,4 @@
+import { trimTrailingSlash } from '#/lib/utils'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
@@ -993,8 +994,4 @@ function isNavItemActive(pathname: string, item: AppShellNavItem) {
 
 function resolvePath(to: string, params: Record<string, string>) {
   return Object.entries(params).reduce((path, [key, value]) => path.replace(`$${key}`, value), to)
-}
-
-function trimTrailingSlash(path: string) {
-  return path === '/' ? path : path.replace(/\/$/, '')
 }

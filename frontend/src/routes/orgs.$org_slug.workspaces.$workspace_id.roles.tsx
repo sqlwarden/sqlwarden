@@ -1,3 +1,5 @@
+import { trimTrailingSlash } from '#/lib/utils'
+import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -54,11 +56,6 @@ export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/r
   pendingComponent: RoutePending,
 })
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
 
 const workspaceRoleScopes = ['workspace', 'environment', 'connection'] as const satisfies readonly RoleScope[]
 
@@ -567,16 +564,4 @@ function isWorkspaceRoleScope(value: string | null): value is RoleScope {
 
 function roleDisplayName(role: Role) {
   return role.name
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return 'Unknown'
-  }
-  return dateFormatter.format(date)
-}
-
-function trimTrailingSlash(path: string) {
-  return path === '/' ? path : path.replace(/\/$/, '')
 }

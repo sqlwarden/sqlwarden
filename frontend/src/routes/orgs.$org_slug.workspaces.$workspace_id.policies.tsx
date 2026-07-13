@@ -1,3 +1,4 @@
+import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -61,11 +62,6 @@ export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/p
   pendingComponent: RoutePending,
 })
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
 
 type WorkspaceSubjectType = 'account' | 'team' | 'org_members' | 'workspace_members'
 type WorkspacePolicyResourceType = Extract<ResourceType, 'workspace' | 'environment' | 'connection'>
@@ -741,10 +737,4 @@ function isWorkspaceSubjectType(value: string | null): value is WorkspaceSubject
 
 function isWorkspacePolicyResourceType(value: string | null): value is WorkspacePolicyResourceType {
   return value === 'workspace' || value === 'environment' || value === 'connection'
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return dateFormatter.format(date)
 }

@@ -1,3 +1,5 @@
+import { trimTrailingSlash } from '#/lib/utils'
+import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -30,11 +32,6 @@ export const Route = createFileRoute('/orgs/$org_slug/users')({
   pendingComponent: RoutePending,
 })
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
 
 function OrganizationUsersRoute() {
   const { org_slug: orgSlug } = Route.useParams()
@@ -396,14 +393,4 @@ function elevationLabel(role: string) {
   if (role.includes('owner')) return 'Owner'
   if (role.includes('admin')) return 'Admin'
   return role
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return dateFormatter.format(date)
-}
-
-function trimTrailingSlash(path: string) {
-  return path === '/' ? path : path.replace(/\/$/, '')
 }

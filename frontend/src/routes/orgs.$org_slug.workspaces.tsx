@@ -1,3 +1,4 @@
+import { trimTrailingSlash } from '#/lib/utils'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -328,8 +329,4 @@ const WORKSPACE_COLORS = [
 function workspaceColor(name: string): string {
   const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
   return WORKSPACE_COLORS[hash % WORKSPACE_COLORS.length]
-}
-
-function trimTrailingSlash(path: string) {
-  return path === '/' ? path : path.replace(/\/$/, '')
 }

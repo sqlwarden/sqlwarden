@@ -1,3 +1,4 @@
+import { trimTrailingSlash } from '#/lib/utils'
 import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useRouterState } from '@tanstack/react-router'
 import { Icon, type AppIcon } from '#/lib/icons'
@@ -148,8 +149,4 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
       </div>
     </div>
   )
-}
-
-function trimTrailingSlash(path: string) {
-  return path === '/' ? path : path.replace(/\/$/, '')
 }

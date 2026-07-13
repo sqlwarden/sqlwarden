@@ -1,3 +1,5 @@
+import { trimTrailingSlash } from '#/lib/utils'
+import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -30,11 +32,6 @@ export const Route = createFileRoute('/orgs/$org_slug/teams')({
   pendingComponent: RoutePending,
 })
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
 
 function OrganizationTeamsRoute() {
   const { org_slug: orgSlug } = Route.useParams()
@@ -342,11 +339,6 @@ function TeamsTableSkeleton() {
   )
 }
 
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return dateFormatter.format(date)
-}
 
 function slugify(value: string) {
   return value
@@ -354,8 +346,4 @@ function slugify(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-}
-
-function trimTrailingSlash(path: string) {
-  return path === '/' ? path : path.replace(/\/$/, '')
 }

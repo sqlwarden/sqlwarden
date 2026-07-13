@@ -1,3 +1,4 @@
+import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -310,15 +311,4 @@ function FormInput({
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </div>
   )
-}
-
-function formatDate(value?: string) {
-  if (!value) return 'Unknown'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return new Intl.DateTimeFormat(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(date)
 }

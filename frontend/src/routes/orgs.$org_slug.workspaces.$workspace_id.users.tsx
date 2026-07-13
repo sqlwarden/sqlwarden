@@ -1,3 +1,4 @@
+import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -48,11 +49,6 @@ export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/u
   pendingComponent: RoutePending,
 })
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
 
 function WorkspaceUsersPage() {
   const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
@@ -535,11 +531,6 @@ function MessageRow({ colSpan, icon, message }: { colSpan: number; icon: import(
   )
 }
 
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return dateFormatter.format(date)
-}
 
 type WorkspaceUserRowItem = WorkspaceEffectiveMember
 

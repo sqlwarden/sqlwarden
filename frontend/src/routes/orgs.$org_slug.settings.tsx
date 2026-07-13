@@ -1,3 +1,4 @@
+import { trimTrailingSlash } from '#/lib/utils'
 import { Navigate, Outlet, createFileRoute, useRouterState } from '@tanstack/react-router'
 import { RoutePending } from '#/components/RoutePending'
 
@@ -16,8 +17,4 @@ function OrganizationSettingsRoute() {
   }
 
   return <Outlet />
-}
-
-function trimTrailingSlash(path: string) {
-  return path === '/' ? path : path.replace(/\/$/, '')
 }

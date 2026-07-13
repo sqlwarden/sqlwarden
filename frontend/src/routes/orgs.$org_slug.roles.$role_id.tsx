@@ -1,3 +1,4 @@
+import { formatDate } from '#/lib/format'
 import { useEffect } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -39,11 +40,6 @@ export const Route = createFileRoute('/orgs/$org_slug/roles/$role_id')({
   pendingComponent: RoutePending,
 })
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
 
 function OrganizationRoleContextPage() {
   const { org_slug: orgSlug, role_id: roleId } = Route.useParams()
@@ -308,13 +304,6 @@ function ContextMessage({ message }: { message: string }) {
   )
 }
 
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return 'Unknown'
-  }
-  return dateFormatter.format(date)
-}
 
 const ROLE_COLORS = [
   'bg-violet-500/10 text-violet-600',

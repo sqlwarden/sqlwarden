@@ -1,3 +1,4 @@
+import { formatDate } from '#/lib/format'
 import { useEffect } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -57,11 +58,6 @@ export const Route = createFileRoute('/orgs/$org_slug/policies/$binding_id')({
   pendingComponent: RoutePending,
 })
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
 
 function PolicyContextPage() {
   const { org_slug: orgSlug, binding_id: bindingId } = Route.useParams()
@@ -453,12 +449,4 @@ function groupPermissions(permissions: readonly Permission[], definitions: Reado
     groups.set(group, [...(groups.get(group) ?? []), item])
   }
   return Array.from(groups.entries()).map(([name, items]) => ({ name, permissions: items }))
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return 'Unknown'
-  }
-  return dateFormatter.format(date)
 }

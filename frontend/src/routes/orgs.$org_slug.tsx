@@ -1,3 +1,4 @@
+import { trimTrailingSlash } from '#/lib/utils'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Navigate, Outlet, createFileRoute, useRouterState } from '@tanstack/react-router'
@@ -281,9 +282,6 @@ function workspaceIdFromPath(pathname: string, orgSlug: string) {
   return match?.[1]
 }
 
-function trimTrailingSlash(path: string) {
-  return path === '/' ? path : path.replace(/\/$/, '')
-}
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
