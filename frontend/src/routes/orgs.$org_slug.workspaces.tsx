@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { trimTrailingSlash } from '#/lib/utils'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -70,7 +71,7 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
       return
     }
 
-    toast.error(workspaces.error instanceof Error ? workspaces.error.message : 'Failed to load workspaces')
+    toast.error(errorMessage(workspaces.error, 'Failed to load workspaces'))
   }, [workspaces.error])
 
   useEffect(() => {
@@ -78,7 +79,7 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
       return
     }
 
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load workspace permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load workspace permissions'))
   }, [effectivePermissions.error])
 
   const createWorkspace = useMutation({
@@ -110,7 +111,7 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
         }
         return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to create workspace')
+      toast.error(errorMessage(error, 'Failed to create workspace'))
     },
   })
 

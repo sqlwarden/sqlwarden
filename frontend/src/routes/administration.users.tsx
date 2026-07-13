@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -62,7 +63,7 @@ function SettingsUsersPage() {
 
   useEffect(() => {
     if (!users.error) return
-    toast.error(users.error instanceof Error ? users.error.message : 'Failed to load users')
+    toast.error(errorMessage(users.error, 'Failed to load users'))
   }, [users.error])
 
   const createUser = useMutation({
@@ -89,7 +90,7 @@ function SettingsUsersPage() {
           return
         }
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to create user')
+      toast.error(errorMessage(error, 'Failed to create user'))
     },
   })
 

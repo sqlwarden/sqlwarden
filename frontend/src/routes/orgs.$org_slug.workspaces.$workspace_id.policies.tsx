@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -141,17 +142,17 @@ function WorkspacePoliciesPage() {
 
   useEffect(() => {
     if (!effectivePermissions.error) return
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load policy permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load policy permissions'))
   }, [effectivePermissions.error])
 
   useEffect(() => {
     if (!canReadPolicies || !policies.error) return
-    toast.error(policies.error instanceof Error ? policies.error.message : 'Failed to load workspace policies')
+    toast.error(errorMessage(policies.error, 'Failed to load workspace policies'))
   }, [canReadPolicies, policies.error])
 
   useEffect(() => {
     if (!isCreating || !org.error) return
-    toast.error(org.error instanceof Error ? org.error.message : 'Failed to load organization')
+    toast.error(errorMessage(org.error, 'Failed to load organization'))
   }, [isCreating, org.error])
 
   const createPolicy = useMutation({
@@ -184,7 +185,7 @@ function WorkspacePoliciesPage() {
           return
         }
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to create policy binding')
+      toast.error(errorMessage(error, 'Failed to create policy binding'))
     },
   })
 
@@ -196,7 +197,7 @@ function WorkspacePoliciesPage() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspacePoliciesScope(orgSlug, workspaceId) })
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to revoke policy binding')
+      toast.error(errorMessage(error, 'Failed to revoke policy binding'))
     },
   })
 

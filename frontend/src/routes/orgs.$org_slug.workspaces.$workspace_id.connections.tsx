@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
@@ -52,7 +53,7 @@ function WorkspaceConnectionsPage() {
 
   useEffect(() => {
     if (!connections.error) return
-    toast.error(connections.error instanceof Error ? connections.error.message : 'Failed to load connections')
+    toast.error(errorMessage(connections.error, 'Failed to load connections'))
   }, [connections.error])
 
   return (

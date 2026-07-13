@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -86,28 +87,28 @@ function OrganizationTeamContextPage() {
     if (!canReadTeam || !team.error) {
       return
     }
-    toast.error(team.error instanceof Error ? team.error.message : 'Failed to load team')
+    toast.error(errorMessage(team.error, 'Failed to load team'))
   }, [canReadTeam, team.error])
 
   useEffect(() => {
     if (!canReadTeam || !members.error) {
       return
     }
-    toast.error(members.error instanceof Error ? members.error.message : 'Failed to load team members')
+    toast.error(errorMessage(members.error, 'Failed to load team members'))
   }, [canReadTeam, members.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) {
       return
     }
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load team permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load team permissions'))
   }, [effectivePermissions.error])
 
   useEffect(() => {
     if (!canReadTeam || !orgMembers.error) {
       return
     }
-    toast.error(orgMembers.error instanceof Error ? orgMembers.error.message : 'Failed to load users')
+    toast.error(errorMessage(orgMembers.error, 'Failed to load users'))
   }, [canReadTeam, orgMembers.error])
 
   const addMember = useMutation({
@@ -123,7 +124,7 @@ function OrganizationTeamContextPage() {
       ])
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to add user')
+      toast.error(errorMessage(error, 'Failed to add user'))
     },
   })
 
@@ -138,7 +139,7 @@ function OrganizationTeamContextPage() {
       ])
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to remove user')
+      toast.error(errorMessage(error, 'Failed to remove user'))
     },
   })
 

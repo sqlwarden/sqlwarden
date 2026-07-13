@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -87,28 +88,28 @@ function OrganizationUserContextPage() {
     if (!canReadUser || !member.error) {
       return
     }
-    toast.error(member.error instanceof Error ? member.error.message : 'Failed to load user')
+    toast.error(errorMessage(member.error, 'Failed to load user'))
   }, [canReadUser, member.error])
 
   useEffect(() => {
     if (!canReadUser || !teams.error) {
       return
     }
-    toast.error(teams.error instanceof Error ? teams.error.message : 'Failed to load user teams')
+    toast.error(errorMessage(teams.error, 'Failed to load user teams'))
   }, [canReadUser, teams.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) {
       return
     }
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load user permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load user permissions'))
   }, [effectivePermissions.error])
 
   useEffect(() => {
     if (!canReadUser || !orgTeams.error) {
       return
     }
-    toast.error(orgTeams.error instanceof Error ? orgTeams.error.message : 'Failed to load teams')
+    toast.error(errorMessage(orgTeams.error, 'Failed to load teams'))
   }, [canReadUser, orgTeams.error])
 
   const addTeam = useMutation({
@@ -124,7 +125,7 @@ function OrganizationUserContextPage() {
       ])
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to add team')
+      toast.error(errorMessage(error, 'Failed to add team'))
     },
   })
 
@@ -139,7 +140,7 @@ function OrganizationUserContextPage() {
       ])
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to remove team')
+      toast.error(errorMessage(error, 'Failed to remove team'))
     },
   })
 

@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useMemo, useState } from 'react'
 import { Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -50,7 +51,7 @@ function SetupPage() {
         return
       }
 
-      toast.error(error instanceof Error ? error.message : 'Failed to complete setup')
+      toast.error(errorMessage(error, 'Failed to complete setup'))
     },
   })
 

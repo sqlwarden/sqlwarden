@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
@@ -53,7 +54,7 @@ function SettingsOrganizationsPage() {
       return
     }
 
-    toast.error(organizations.error instanceof Error ? organizations.error.message : 'Failed to load organizations')
+    toast.error(errorMessage(organizations.error, 'Failed to load organizations'))
   }, [organizations.error])
 
   useEffect(() => {
@@ -92,7 +93,7 @@ function SettingsOrganizationsPage() {
         }
         return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to create organization')
+      toast.error(errorMessage(error, 'Failed to create organization'))
     },
   })
 

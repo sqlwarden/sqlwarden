@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { trimTrailingSlash } from '#/lib/utils'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
@@ -91,17 +92,17 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
 
   useEffect(() => {
     if (!canReadUsers || !members.error) return
-    toast.error(members.error instanceof Error ? members.error.message : 'Failed to load users')
+    toast.error(errorMessage(members.error, 'Failed to load users'))
   }, [canReadUsers, members.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) return
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load user permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load user permissions'))
   }, [effectivePermissions.error])
 
   useEffect(() => {
     if (!isAddingUser || !canAddUser || !candidates.error) return
-    toast.error(candidates.error instanceof Error ? candidates.error.message : 'Failed to load users')
+    toast.error(errorMessage(candidates.error, 'Failed to load users'))
   }, [canAddUser, candidates.error, isAddingUser])
 
   const addUser = useMutation({
@@ -115,7 +116,7 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
       await queryClient.invalidateQueries({ queryKey: queryKeys.orgMemberCandidatesScope(orgSlug) })
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to add user')
+      toast.error(errorMessage(error, 'Failed to add user'))
     },
   })
 

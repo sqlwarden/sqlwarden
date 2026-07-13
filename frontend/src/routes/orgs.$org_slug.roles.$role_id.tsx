@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { formatDate } from '#/lib/format'
 import { useEffect } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -61,7 +62,7 @@ function OrganizationRoleContextPage() {
       return
     }
 
-    toast.error(role.error instanceof Error ? role.error.message : 'Failed to load role')
+    toast.error(errorMessage(role.error, 'Failed to load role'))
   }, [role.error])
 
   useEffect(() => {
@@ -69,7 +70,7 @@ function OrganizationRoleContextPage() {
       return
     }
 
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load role permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load role permissions'))
   }, [effectivePermissions.error])
 
   useEffect(() => {
@@ -77,7 +78,7 @@ function OrganizationRoleContextPage() {
       return
     }
 
-    toast.error(permissionsCatalog.error instanceof Error ? permissionsCatalog.error.message : 'Failed to load permission catalog')
+    toast.error(errorMessage(permissionsCatalog.error, 'Failed to load permission catalog'))
   }, [permissionsCatalog.error])
 
   const deleteRole = useMutation({
@@ -91,7 +92,7 @@ function OrganizationRoleContextPage() {
       void navigate({ to: '/orgs/$org_slug/roles', params: { org_slug: orgSlug } })
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to delete role')
+      toast.error(errorMessage(error, 'Failed to delete role'))
     },
   })
 

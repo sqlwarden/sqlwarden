@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import * as Y from 'yjs'
@@ -110,7 +111,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
       void queryClient.invalidateQueries({ queryKey: sessionsQueryKey })
     },
     onError: (error, conn) => {
-      const message = error instanceof Error ? error.message : 'Failed to connect'
+      const message = errorMessage(error, 'Failed to connect')
       setConnectionStatus(conn.id, { error: message })
       toast.error(message)
     },
@@ -128,7 +129,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
       void queryClient.invalidateQueries({ queryKey: sessionsQueryKey })
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to disconnect')
+      toast.error(errorMessage(error, 'Failed to disconnect'))
     },
   })
 
@@ -173,7 +174,7 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
         setEnvNameError(error.fieldErrors.name)
         if (error.fieldErrors.name) return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to create environment')
+      toast.error(errorMessage(error, 'Failed to create environment'))
     },
   })
 

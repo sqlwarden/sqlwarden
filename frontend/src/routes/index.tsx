@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
@@ -52,7 +53,7 @@ function LandingPage() {
       return
     }
 
-    toast.error(organizations.error instanceof Error ? organizations.error.message : 'Failed to load organizations')
+    toast.error(errorMessage(organizations.error, 'Failed to load organizations'))
   }, [organizations.error])
 
   if (setupStatus.isLoading || (hasToken && session.isLoading)) {

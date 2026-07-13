@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
@@ -67,7 +68,7 @@ function WorkspaceSettingsPage() {
         })
         if (error.fieldErrors.name || error.fieldErrors.description) return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to update workspace')
+      toast.error(errorMessage(error, 'Failed to update workspace'))
     },
   })
 
@@ -79,7 +80,7 @@ function WorkspaceSettingsPage() {
       await navigate({ to: '/orgs/$org_slug/workspaces', params: { org_slug: orgSlug }, replace: true })
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to delete workspace')
+      toast.error(errorMessage(error, 'Failed to delete workspace'))
     },
   })
 

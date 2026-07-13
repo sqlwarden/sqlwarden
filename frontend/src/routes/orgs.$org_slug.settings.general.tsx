@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -65,7 +66,7 @@ function OrganizationGeneralSettingsPage() {
         })
         if (error.fieldErrors.name) return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to update organization')
+      toast.error(errorMessage(error, 'Failed to update organization'))
     },
   })
 
@@ -81,7 +82,7 @@ function OrganizationGeneralSettingsPage() {
       await navigate({ to: '/', replace: true })
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to delete organization')
+      toast.error(errorMessage(error, 'Failed to delete organization'))
     },
   })
 

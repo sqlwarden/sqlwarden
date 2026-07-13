@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { formatDate } from '#/lib/format'
 import { useEffect } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -94,12 +95,12 @@ function PolicyContextPage() {
 
   useEffect(() => {
     if (!binding.error) return
-    toast.error(binding.error instanceof Error ? binding.error.message : 'Failed to load policy binding')
+    toast.error(errorMessage(binding.error, 'Failed to load policy binding'))
   }, [binding.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) return
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load permissions'))
   }, [effectivePermissions.error])
 
   const revokePolicy = useMutation({
@@ -118,7 +119,7 @@ function PolicyContextPage() {
         toast.error(protectedMessage)
         return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to revoke policy binding')
+      toast.error(errorMessage(error, 'Failed to revoke policy binding'))
     },
   })
 

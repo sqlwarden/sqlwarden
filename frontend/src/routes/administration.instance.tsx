@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
@@ -54,7 +55,7 @@ function SettingsInstancePage() {
 
   useEffect(() => {
     if (!settings.error) return
-    toast.error(settings.error instanceof Error ? settings.error.message : 'Failed to load instance settings')
+    toast.error(errorMessage(settings.error, 'Failed to load instance settings'))
   }, [settings.error])
 
   const updateSettings = useMutation({
@@ -85,7 +86,7 @@ function SettingsInstancePage() {
         })
         return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to update instance settings')
+      toast.error(errorMessage(error, 'Failed to update instance settings'))
     },
   })
 

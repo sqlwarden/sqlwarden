@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { trimTrailingSlash } from '#/lib/utils'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -146,12 +147,12 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
 
   useEffect(() => {
     if (!policies.error) return
-    toast.error(policies.error instanceof Error ? policies.error.message : 'Failed to load policies')
+    toast.error(errorMessage(policies.error, 'Failed to load policies'))
   }, [policies.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) return
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load permissions'))
   }, [effectivePermissions.error])
 
   const createPolicy = useMutation({
@@ -189,7 +190,7 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
           return
         }
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to create policy binding')
+      toast.error(errorMessage(error, 'Failed to create policy binding'))
     },
   })
 
@@ -201,7 +202,7 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
       await queryClient.invalidateQueries({ queryKey: queryKeys.orgPoliciesScope(orgSlug) })
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to revoke policy binding')
+      toast.error(errorMessage(error, 'Failed to revoke policy binding'))
     },
   })
 

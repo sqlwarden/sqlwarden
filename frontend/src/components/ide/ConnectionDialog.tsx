@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useState, useEffect } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -185,7 +186,7 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
         setErrors(nextErrors)
         return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to create connection')
+      toast.error(errorMessage(error, 'Failed to create connection'))
     },
   })
 

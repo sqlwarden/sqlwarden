@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -88,17 +89,17 @@ function WorkspaceTeamsPage() {
 
   useEffect(() => {
     if (!effectivePermissions.error) return
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load team permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load team permissions'))
   }, [effectivePermissions.error])
 
   useEffect(() => {
     if (!canReadTeams || !teams.error) return
-    toast.error(teams.error instanceof Error ? teams.error.message : 'Failed to load workspace teams')
+    toast.error(errorMessage(teams.error, 'Failed to load workspace teams'))
   }, [canReadTeams, teams.error])
 
   useEffect(() => {
     if (!isAddingTeam || !canModifyTeams || !orgTeams.error) return
-    toast.error(orgTeams.error instanceof Error ? orgTeams.error.message : 'Failed to load organization teams')
+    toast.error(errorMessage(orgTeams.error, 'Failed to load organization teams'))
   }, [canModifyTeams, isAddingTeam, orgTeams.error])
 
   const addTeam = useMutation({
@@ -109,7 +110,7 @@ function WorkspaceTeamsPage() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceTeamsScope(orgSlug, workspaceId) })
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to add team')
+      toast.error(errorMessage(error, 'Failed to add team'))
     },
   })
 
@@ -121,7 +122,7 @@ function WorkspaceTeamsPage() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceTeamsScope(orgSlug, workspaceId) })
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to remove team')
+      toast.error(errorMessage(error, 'Failed to remove team'))
     },
   })
 

@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -99,17 +100,17 @@ function WorkspaceUsersPage() {
 
   useEffect(() => {
     if (!effectivePermissions.error) return
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load user permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load user permissions'))
   }, [effectivePermissions.error])
 
   useEffect(() => {
     if (!canReadUsers || !activeMembers.error) return
-    toast.error(activeMembers.error instanceof Error ? activeMembers.error.message : 'Failed to load workspace users')
+    toast.error(errorMessage(activeMembers.error, 'Failed to load workspace users'))
   }, [canReadUsers, activeMembers.error])
 
   useEffect(() => {
     if (!isAddingUser || !canModifyUsers || !orgMembers.error) return
-    toast.error(orgMembers.error instanceof Error ? orgMembers.error.message : 'Failed to load organization users')
+    toast.error(errorMessage(orgMembers.error, 'Failed to load organization users'))
   }, [canModifyUsers, isAddingUser, orgMembers.error])
 
   const addUser = useMutation({
@@ -120,7 +121,7 @@ function WorkspaceUsersPage() {
       await invalidateWorkspaceUserQueries(queryClient, orgSlug, workspaceId)
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to add user')
+      toast.error(errorMessage(error, 'Failed to add user'))
     },
   })
 
@@ -132,7 +133,7 @@ function WorkspaceUsersPage() {
       await invalidateWorkspaceUserQueries(queryClient, orgSlug, workspaceId)
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to remove user')
+      toast.error(errorMessage(error, 'Failed to remove user'))
     },
   })
 

@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { trimTrailingSlash } from '#/lib/utils'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -81,12 +82,12 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
 
   useEffect(() => {
     if (!canReadTeams || !teams.error) return
-    toast.error(teams.error instanceof Error ? teams.error.message : 'Failed to load teams')
+    toast.error(errorMessage(teams.error, 'Failed to load teams'))
   }, [canReadTeams, teams.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) return
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load team permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load team permissions'))
   }, [effectivePermissions.error])
 
   const createTeam = useMutation({
@@ -109,7 +110,7 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
         })
         if (error.fieldErrors?.name || error.fieldErrors?.slug) return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to create team')
+      toast.error(errorMessage(error, 'Failed to create team'))
     },
   })
 

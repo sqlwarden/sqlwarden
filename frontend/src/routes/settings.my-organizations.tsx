@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
@@ -42,7 +43,7 @@ function SettingsMyOrganizationsPage() {
       return
     }
 
-    toast.error(organizations.error instanceof Error ? organizations.error.message : 'Failed to load organizations')
+    toast.error(errorMessage(organizations.error, 'Failed to load organizations'))
   }, [organizations.error])
 
   return (

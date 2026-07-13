@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useRef, useState, type UIEvent } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
@@ -87,7 +88,7 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
     return <Pane><Icon name="loading-03" size={14} className="animate-spin" /> Loading data…</Pane>
   }
   if (data.isError) {
-    return <Pane className="text-destructive">{data.error instanceof Error ? data.error.message : 'Failed to load data.'}</Pane>
+    return <Pane className="text-destructive">{errorMessage(data.error, 'Failed to load data.')}</Pane>
   }
 
   const pages = data.data?.pages ?? []

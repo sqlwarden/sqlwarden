@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { trimTrailingSlash } from '#/lib/utils'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -99,7 +100,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
       return
     }
 
-    toast.error(roles.error instanceof Error ? roles.error.message : 'Failed to load roles')
+    toast.error(errorMessage(roles.error, 'Failed to load roles'))
   }, [roles.error])
 
   useEffect(() => {
@@ -107,7 +108,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
       return
     }
 
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load role permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load role permissions'))
   }, [effectivePermissions.error])
 
   useEffect(() => {
@@ -115,7 +116,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
       return
     }
 
-    toast.error(permissionsCatalog.error instanceof Error ? permissionsCatalog.error.message : 'Failed to load permission catalog')
+    toast.error(errorMessage(permissionsCatalog.error, 'Failed to load permission catalog'))
   }, [permissionsCatalog.error])
 
   const createRole = useMutation({
@@ -145,7 +146,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
         }
       }
 
-      toast.error(error instanceof Error ? error.message : 'Failed to create role')
+      toast.error(errorMessage(error, 'Failed to create role'))
     },
   })
 
@@ -165,7 +166,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
         )
         return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to delete role')
+      toast.error(errorMessage(error, 'Failed to delete role'))
     },
   })
 

@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
@@ -60,7 +61,7 @@ function SettingsAdministratorsPage() {
         return
       }
 
-      toast.error(error instanceof Error ? error.message : 'Failed to add administrator')
+      toast.error(errorMessage(error, 'Failed to add administrator'))
     },
   })
 
@@ -74,7 +75,7 @@ function SettingsAdministratorsPage() {
       ])
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to remove administrator')
+      toast.error(errorMessage(error, 'Failed to remove administrator'))
     },
   })
 
@@ -83,7 +84,7 @@ function SettingsAdministratorsPage() {
       return
     }
 
-    toast.error(administrators.error instanceof Error ? administrators.error.message : 'Failed to load administrators')
+    toast.error(errorMessage(administrators.error, 'Failed to load administrators'))
   }, [administrators.error])
 
   function submitCreate(event: React.FormEvent<HTMLFormElement>) {

@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -89,12 +90,12 @@ function WorkspaceEnvironmentsPage() {
 
   useEffect(() => {
     if (!effectivePermissions.error) return
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load environment permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load environment permissions'))
   }, [effectivePermissions.error])
 
   useEffect(() => {
     if (!environments.error) return
-    toast.error(environments.error instanceof Error ? environments.error.message : 'Failed to load environments')
+    toast.error(errorMessage(environments.error, 'Failed to load environments'))
   }, [environments.error])
 
   const createEnvironment = useMutation({
@@ -118,7 +119,7 @@ function WorkspaceEnvironmentsPage() {
         })
         if (error.fieldErrors.name || error.fieldErrors.description) return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to create environment')
+      toast.error(errorMessage(error, 'Failed to create environment'))
     },
   })
 
@@ -145,7 +146,7 @@ function WorkspaceEnvironmentsPage() {
         })
         if (error.fieldErrors.name || error.fieldErrors.description) return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to update environment')
+      toast.error(errorMessage(error, 'Failed to update environment'))
     },
   })
 
@@ -157,7 +158,7 @@ function WorkspaceEnvironmentsPage() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.orgEnvironmentsScope(orgSlug, workspaceId) })
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to delete environment')
+      toast.error(errorMessage(error, 'Failed to delete environment'))
     },
   })
 

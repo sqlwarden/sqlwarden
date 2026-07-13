@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { isApiError } from '#/lib/api/errors'
 
 export type ObjectViewState =
@@ -29,7 +30,7 @@ export function resolveObjectViewState({ hasSession, error, hasData }: ResolveIn
       if (error.status === 403) return { kind: 'forbidden' }
       if (error.status === 410) return { kind: 'no-session' }
     }
-    return { kind: 'error', message: error instanceof Error ? error.message : 'Failed to load object details.' }
+    return { kind: 'error', message: errorMessage(error, 'Failed to load object details.') }
   }
   return { kind: 'loading' }
 }

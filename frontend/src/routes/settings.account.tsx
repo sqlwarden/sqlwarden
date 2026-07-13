@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
@@ -59,7 +60,7 @@ function SettingsAccountPage() {
         setProfileErrors({ name: error.fieldErrors.name })
         return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to update profile')
+      toast.error(errorMessage(error, 'Failed to update profile'))
     },
   })
 
@@ -89,7 +90,7 @@ function SettingsAccountPage() {
           return
         }
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to change password')
+      toast.error(errorMessage(error, 'Failed to change password'))
     },
   })
 
