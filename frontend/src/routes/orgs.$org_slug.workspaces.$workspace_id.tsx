@@ -107,6 +107,7 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
           ) : null}
         </div>
         <Button
+          nativeButton={false}
           render={
             <Link
               to="/ide/$org_slug"
