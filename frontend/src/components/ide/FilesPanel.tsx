@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { queryKeys } from '#/lib/api/query-keys'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import type { UseQueryOptions } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
@@ -11,14 +10,12 @@ import {
 } from '#/lib/api/query'
 import type { Workspace, WorkspaceFile, WorkspaceFileBrowserResult } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
-import { toast } from 'sonner'
-import { useIde, activeTabId as selectActiveTabId, newFileTab } from './useIdeStore'
-import { deletePrivateWorkspaceFile, getPrivateWorkspaceFileContent } from '#/lib/api/files'
+import { useIde } from './useIdeStore'
 import { SidebarPane } from './SidebarPane'
 import { FileContextMenu } from './FileContextMenu'
 import { Tip } from './schema-diagram/Tip'
 import { CreateItemDialog } from './CreateItemDialog'
-import { saveTextAs } from './saveFile'
+import { useFileActions } from './useFileActions'
 
 type FilesPanelProps = {
   orgSlug: string
@@ -128,16 +125,7 @@ function FilesSection({
   onCreateFile?: ((parentId: number | null) => void) | undefined
   onCreateFolder?: ((parentId: number | null) => void) | undefined
 }) {
-  const openTab = useIde((s) => s.openTab)
-  const openTabToSide = useIde((s) => s.openTabToSide)
-  const closeTab = useIde((s) => s.closeTab)
-  // Hint the file open in the active tab.
-  const activeFileId = useIde((s) => {
-    const id = selectActiveTabId(s, workspace.id)
-    const tab = s.tabs.find((t) => t.id === id)
-    return tab?.kind === 'file' ? tab.fileId : undefined
-  })
-  const queryClient = useQueryClient()
+  const actions = useFileActions(orgSlug, workspace, visibility)
 
   const queryOptions =
     visibility === 'private'
@@ -147,44 +135,6 @@ function FilesSection({
   const { data, isLoading, isError, refetch } = useQuery(
     queryOptions as UseQueryOptions<WorkspaceFileBrowserResult>,
   )
-
-  const deleteMutation = useMutation({
-    mutationFn: (nodeId: number) =>
-      deletePrivateWorkspaceFile(orgSlug, workspace.id, nodeId),
-    onSuccess: (_, nodeId) => {
-      // Invalidate all browser queries for this workspace so every open folder refreshes
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.orgWorkspacePrivateFileBrowserScope(orgSlug, workspace.id),
-      })
-      // Close the tab if this file was open
-      closeTab(`file:${nodeId}`)
-    },
-  })
-
-  function handleOpenFile(file: WorkspaceFile) {
-    openTab(newFileTab(file, workspace))
-  }
-
-  function handleOpenToSide(file: WorkspaceFile) {
-    openTabToSide(newFileTab(file, workspace))
-  }
-
-  async function handleSaveAs(file: WorkspaceFile) {
-    try {
-      const { text } = await getPrivateWorkspaceFileContent(orgSlug, workspace.id, file.id)
-      saveTextAs(file.name, text)
-    } catch {
-      toast.error('Failed to save file.')
-    }
-  }
-
-  function handleRefresh() {
-    const key =
-      visibility === 'private'
-        ? queryKeys.orgWorkspacePrivateFileBrowserScope(orgSlug, workspace.id)
-        : queryKeys.orgWorkspaceSharedFileBrowserScope(orgSlug, workspace.id)
-    void queryClient.invalidateQueries({ queryKey: key })
-  }
 
   const children = data?.children ?? []
 
@@ -215,13 +165,13 @@ function FilesSection({
               workspaceId={workspace.id}
               visibility={visibility}
               depth={0}
-              activeFileId={activeFileId}
-              onOpenFile={handleOpenFile}
-              onOpenToSide={handleOpenToSide}
-              onSaveAs={handleSaveAs}
+              activeFileId={actions.activeFileId}
+              onOpenFile={actions.open}
+              onOpenToSide={actions.openToSide}
+              onSaveAs={actions.saveAs}
               onCreateFile={onCreateFile}
               onCreateFolder={onCreateFolder}
-              onDelete={visibility === 'private' ? (id) => deleteMutation.mutate(id) : undefined}
+              onDelete={visibility === 'private' ? (id) => actions.deleteFile.mutate(id) : undefined}
             />
           ) : (
             <FileContextMenu
@@ -229,12 +179,12 @@ function FilesSection({
               kind="file"
               nodeId={file.id}
               nodeName={file.name}
-              onOpen={() => handleOpenFile(file)}
-              onOpenToSide={() => handleOpenToSide(file)}
-              onSaveAs={() => handleSaveAs(file)}
-              onDelete={visibility === 'private' ? () => deleteMutation.mutate(file.id) : undefined}
+              onOpen={() => actions.open(file)}
+              onOpenToSide={() => actions.openToSide(file)}
+              onSaveAs={() => actions.saveAs(file)}
+              onDelete={visibility === 'private' ? () => actions.deleteFile.mutate(file.id) : undefined}
             >
-              <FileTreeFile file={file} depth={0} active={file.id === activeFileId} onOpen={handleOpenFile} />
+              <FileTreeFile file={file} depth={0} active={file.id === actions.activeFileId} onOpen={actions.open} />
             </FileContextMenu>
           ),
         )
@@ -256,7 +206,7 @@ function FilesSection({
             className="min-h-full"
             onCreateFile={onCreateFile}
             onCreateFolder={onCreateFolder}
-            onRefresh={handleRefresh}
+            onRefresh={actions.refresh}
           >
             {body}
           </FileContextMenu>

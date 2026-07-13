@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
+import { useState, type DragEvent } from 'react'
 import * as Y from 'yjs'
 import { Icon, type AppIcon } from '#/lib/icons'
 import {
@@ -18,6 +18,7 @@ import { useIde, DEFAULT_CONSOLE_CONTENT, type EditorTab, type TabKind } from '.
 import { allGroups, tabsToClose, type GroupNode, type SplitDirection } from './ideLayout'
 import { DriverBadge } from './DriverBadge'
 import { Tip } from './schema-diagram/Tip'
+import { useTabStripOverflow } from './useTabStripOverflow'
 
 type IdeTabBarProps = {
   orgSlug: string
@@ -33,6 +34,12 @@ const TAB_ICONS: Record<TabKind, AppIcon> = {
   connection: 'database',
   object: 'table',
   diagram: 'flow-connection',
+}
+
+export function requiresCloseConfirmation(tab: EditorTab, running: boolean, instances: number): boolean {
+  if (instances > 1) return false
+  const hasConsoleContent = tab.kind === 'scratch' && tab.content.trim() !== ''
+  return running || (tab.kind === 'file' && Boolean(tab.isDirty)) || hasConsoleContent
 }
 
 export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocus }: IdeTabBarProps) {
@@ -54,54 +61,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
     .map((id) => tabs.find((t) => t.id === id))
     .filter((t): t is EditorTab => Boolean(t))
 
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const [canScrollLeft, setCanScrollLeft] = useState(false)
-  const [canScrollRight, setCanScrollRight] = useState(false)
-
-  const updateScrollButtons = useCallback(() => {
-    const el = scrollRef.current
-    if (!el) return
-    setCanScrollLeft(el.scrollLeft > 1)
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1)
-  }, [])
-
-  // Track overflow as the strip scrolls or the bar resizes.
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    updateScrollButtons()
-    el.addEventListener('scroll', updateScrollButtons, { passive: true })
-    const ro = new ResizeObserver(updateScrollButtons)
-    ro.observe(el)
-    return () => {
-      el.removeEventListener('scroll', updateScrollButtons)
-      ro.disconnect()
-    }
-  }, [updateScrollButtons])
-
-  // Keep the active tab visible (e.g. after opening a new tab that lands off-screen).
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el && activeTabId) {
-      el.querySelector(`[data-tab-id="${activeTabId}"]`)?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
-    }
-    updateScrollButtons()
-  }, [activeTabId, groupTabs.length, updateScrollButtons])
-
-  function scrollTabs(direction: -1 | 1) {
-    const el = scrollRef.current
-    if (!el) return
-    el.scrollBy({ left: direction * Math.max(160, el.clientWidth * 0.7), behavior: 'smooth' })
-  }
-
-  // Mouse-wheel over the strip pans it horizontally (trackpads already emit
-  // deltaX; this maps the dominant vertical wheel axis onto the strip).
-  function handleWheel(e: React.WheelEvent<HTMLDivElement>) {
-    const el = scrollRef.current
-    if (!el || el.scrollWidth <= el.clientWidth) return
-    const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX
-    el.scrollBy({ left: delta })
-  }
+  const overflow = useTabStripOverflow(activeTabId, groupTabs.length)
 
   function handleNewConsole() {
     onFocus() // open the new console into this group
@@ -115,8 +75,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
   function handleCloseRequest(tab: EditorTab) {
     // Closing one pane only loses content when it's the tab's last instance.
     const instances = layout ? allGroups(layout).filter((g) => g.tabIds.includes(tab.id)).length : 1
-    const hasConsoleContent = tab.kind === 'scratch' && tab.content.trim() !== ''
-    if (instances <= 1 && (runningTabs[tab.id] || (tab.kind === 'file' && tab.isDirty) || hasConsoleContent)) {
+    if (requiresCloseConfirmation(tab, Boolean(runningTabs[tab.id]), instances)) {
       setPendingCloseTabId(tab.id)
     } else {
       closeTabInstance(group.id, tab.id)
@@ -152,16 +111,16 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
         className={cn('flex h-9 shrink-0 items-end bg-sidebar', draggingTab && 'bg-accent/30')}
         onDragOver={handleBarDragOver}
       >
-        {(canScrollLeft || canScrollRight) && (
+        {(overflow.canScrollLeft || overflow.canScrollRight) && (
           <div className="flex h-9 shrink-0 items-center border-r border-border">
-            <ScrollChevron direction="left" disabled={!canScrollLeft} onClick={() => scrollTabs(-1)} />
-            <ScrollChevron direction="right" disabled={!canScrollRight} onClick={() => scrollTabs(1)} />
+            <ScrollChevron direction="left" disabled={!overflow.canScrollLeft} onClick={() => overflow.scroll(-1)} />
+            <ScrollChevron direction="right" disabled={!overflow.canScrollRight} onClick={() => overflow.scroll(1)} />
           </div>
         )}
         <div
-          ref={scrollRef}
+          ref={overflow.scrollRef}
           onDragOver={handleBarDragOver}
-          onWheel={handleWheel}
+          onWheel={overflow.handleWheel}
           className="flex min-w-0 items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {groupTabs.map((tab) => (
