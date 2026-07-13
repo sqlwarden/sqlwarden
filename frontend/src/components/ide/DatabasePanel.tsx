@@ -1,7 +1,6 @@
 import { errorMessage } from '#/lib/api/errors'
 import { useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
-import * as Y from 'yjs'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
@@ -18,7 +17,7 @@ import { isApiError } from '#/lib/api/errors'
 import type { Connection, Environment, Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { hasPermission, permission } from '#/lib/permissions'
-import { useIde, activeTabId as selectActiveTabId, resolveConnectionState, type ConnectionState, newConnectionTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
+import { useIde, activeTabId as selectActiveTabId, resolveConnectionState, type ConnectionState } from './useIdeStore'
 import { useConnectionLayout } from './useConnectionLayout'
 import { ContextMenu } from '#/components/ui/context-menu'
 import { copyWithToast } from './contextMenus/clipboard'
@@ -48,6 +47,7 @@ import { Tip } from './schema-diagram/Tip'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { Textarea } from '#/components/ui/textarea'
+import { useConnectionActions } from './useConnectionActions'
 
 type DatabasePanelProps = {
   orgSlug: string
@@ -57,13 +57,8 @@ type DatabasePanelProps = {
 }
 
 export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange }: DatabasePanelProps) {
-  const openTab = useIde((s) => s.openTab)
-  const openConsole = useIde((s) => s.openConsole)
-  const sessions = useIde((s) => s.sessions)
-  const setSession = useIde((s) => s.setSession)
-  const clearSession = useIde((s) => s.clearSession)
-  const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const queryClient = useQueryClient()
+  const connectionActions = useConnectionActions(orgSlug, workspace)
 
   const [filter, setFilter] = useState('')
   const { connectionLayout: connLayout } = useConnectionLayout()
@@ -90,70 +85,6 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   const envItems = environments.data?.items ?? []
   const connItems = connections.data?.items ?? []
   const envNameById = (id: number) => envItems.find((e) => e.id === id)?.name ?? ''
-
-  const connectedIds = new Set(Object.keys(sessions).map(Number))
-
-  // Session reconciliation itself runs IDE-wide (useSessionSync in the shell);
-  // this panel only invalidates it after explicit connect/disconnect.
-  const sessionsQueryKey = queryKeys.workspaceSessions(orgSlug, workspace.id)
-
-  const connectMutation = useMutation({
-    mutationFn: (conn: Connection) =>
-      api.post<{ session_id: string; reused: boolean }>(
-        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${conn.id}/connect`,
-      ),
-    onMutate: (conn) => {
-      setConnectionStatus(conn.id, 'connecting')
-    },
-    onSuccess: (data, conn) => {
-      setConnectionStatus(conn.id, null)
-      setSession(conn.id, data.session_id)
-      void queryClient.invalidateQueries({ queryKey: sessionsQueryKey })
-    },
-    onError: (error, conn) => {
-      const message = errorMessage(error, 'Failed to connect')
-      setConnectionStatus(conn.id, { error: message })
-      toast.error(message)
-    },
-  })
-
-  const disconnectMutation = useMutation({
-    mutationFn: ({ conn, sessionId }: { conn: Connection; sessionId: string }) =>
-      api.delete(
-        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${conn.id}/session`,
-        { headers: { 'X-Warden-Session': sessionId } },
-      ),
-    onSuccess: (_, { conn }) => {
-      clearSession(conn.id)
-      setConnectionStatus(conn.id, null)
-      void queryClient.invalidateQueries({ queryKey: sessionsQueryKey })
-    },
-    onError: (error) => {
-      toast.error(errorMessage(error, 'Failed to disconnect'))
-    },
-  })
-
-  function handleOpenConnection(conn: Connection) {
-    openTab(newConnectionTab(conn, workspace))
-  }
-
-  function handleOpenConsole(conn: Connection) {
-    const tmpDoc = new Y.Doc()
-    tmpDoc.getText('content').insert(0, DEFAULT_CONSOLE_CONTENT)
-    const yState = Array.from(Y.encodeStateAsUpdate(tmpDoc))
-    tmpDoc.destroy()
-    openConsole(workspace, yState, conn.id)
-  }
-
-  function handleConnect(conn: Connection) {
-    void connectMutation.mutateAsync(conn).catch(() => {})
-  }
-
-  function handleDisconnect(conn: Connection) {
-    const sessionId = sessions[conn.id]
-    if (!sessionId) return
-    void disconnectMutation.mutateAsync({ conn, sessionId }).catch(() => {})
-  }
 
   const createEnvironment = useMutation({
     mutationFn: async () =>
@@ -320,13 +251,13 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
                   key={env.id}
                   environment={env}
                   connections={connItems.filter((c) => c.environment_id === env.id)}
-                  connectedIds={connectedIds}
+                  connectedIds={connectionActions.connectedIds}
                   orgSlug={orgSlug}
                   filter={filter}
-                  onOpen={handleOpenConnection}
-                  onOpenConsole={handleOpenConsole}
-                  onConnect={handleConnect}
-                  onDisconnect={handleDisconnect}
+                  onOpen={connectionActions.openConnection}
+                  onOpenConsole={connectionActions.openConnectionConsole}
+                  onConnect={connectionActions.connect}
+                  onDisconnect={connectionActions.disconnect}
                   onAddConnection={() => setAddConnEnvironmentId(env.id)}
                 />
               ))
@@ -338,15 +269,15 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
                   <ConnectionRow
                     key={conn.id}
                     connection={conn}
-                    isConnected={connectedIds.has(conn.id)}
+                    isConnected={connectionActions.connectedIds.has(conn.id)}
                     connIndent={0}
                     envLabel={envFilter === 'all' ? envNameById(conn.environment_id) : undefined}
                     orgSlug={orgSlug}
                     filter={filter}
-                    onOpen={() => handleOpenConnection(conn)}
-                    onOpenConsole={() => handleOpenConsole(conn)}
-                    onConnect={() => handleConnect(conn)}
-                    onDisconnect={() => handleDisconnect(conn)}
+                    onOpen={() => connectionActions.openConnection(conn)}
+                    onOpenConsole={() => connectionActions.openConnectionConsole(conn)}
+                    onConnect={() => connectionActions.connect(conn)}
+                    onDisconnect={() => connectionActions.disconnect(conn)}
                   />
                 ))
               })()
