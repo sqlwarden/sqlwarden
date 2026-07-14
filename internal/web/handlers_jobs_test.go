@@ -180,7 +180,7 @@ func TestFileContentReaperEnqueueUsesSingletonJob(t *testing.T) {
 		ColumnExpr("COUNT(*)").
 		Where("type = ?", jobs.TypeFileContentReap).
 		Where("visibility = ?", jobs.VisibilityInternal).
-		Where("status IN (?)", bun.In([]string{jobs.StatusQueued, jobs.StatusRunning})).
+		Where("status IN (?)", bun.List([]string{jobs.StatusQueued, jobs.StatusRunning})).
 		Scan(ctx, &count)
 	if err != nil {
 		t.Fatal(err)

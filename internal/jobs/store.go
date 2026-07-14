@@ -113,7 +113,7 @@ func (s *Store) HasActiveJobType(ctx context.Context, visibility, jobType string
 		ColumnExpr("COUNT(*) > 0").
 		Where("visibility = ?", visibility).
 		Where("type = ?", jobType).
-		Where("status IN (?)", bun.In([]string{StatusQueued, StatusRunning})).
+		Where("status IN (?)", bun.List([]string{StatusQueued, StatusRunning})).
 		Scan(ctx, &exists)
 	return exists, err
 }
@@ -521,7 +521,7 @@ func (s *Store) PruneCompleted(ctx context.Context, olderThan time.Time, limit i
 	}
 	var jobs []Record
 	if err := s.db.NewSelect().Model(&jobs).
-		Where("status IN (?)", bun.In([]string{StatusSucceeded, StatusFailed, StatusCancelled})).
+		Where("status IN (?)", bun.List([]string{StatusSucceeded, StatusFailed, StatusCancelled})).
 		Where("finished_at IS NOT NULL AND finished_at < ?", olderThan).
 		OrderExpr("finished_at ASC").
 		Limit(limit).
@@ -535,7 +535,7 @@ func (s *Store) PruneCompleted(ctx context.Context, olderThan time.Time, limit i
 	for _, job := range jobs {
 		ids = append(ids, job.ID)
 	}
-	res, err := s.db.NewDelete().Model((*Record)(nil)).Where("id IN (?)", bun.In(ids)).Exec(ctx)
+	res, err := s.db.NewDelete().Model((*Record)(nil)).Where("id IN (?)", bun.List(ids)).Exec(ctx)
 	if err != nil {
 		return 0, err
 	}
