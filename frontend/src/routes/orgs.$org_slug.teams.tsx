@@ -14,6 +14,7 @@ import { orgEffectivePermissionsQueryOptions, orgTeamsQueryOptions } from '#/lib
 import type { Team } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
 import { entityColor } from '#/lib/entity-colors'
+import { slugify } from '#/lib/strings'
 import { SectionTabNav } from '#/components/SectionTabNav'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
@@ -338,13 +339,4 @@ function TeamsTableSkeleton() {
       ))}
     </>
   )
-}
-
-
-function slugify(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
 }

@@ -151,6 +151,7 @@ Configuration uses spf13/viper through `internal/web`.
 - Use backend permission catalog data for permission labels/descriptions/scope maps.
 - Use Sonner for user-visible mutation/error toasts where needed.
 - Avoid adding future-plan/development artifact text into the UI.
+- Keep trivial helpers local when they have one caller. Before adding a helper, search for an existing implementation; move repeated or correctness-critical behavior into a domain-appropriate module with focused tests rather than a catch-all utilities file.
 
 ## IDE Notes
 

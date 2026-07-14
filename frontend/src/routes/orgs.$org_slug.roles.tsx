@@ -11,7 +11,7 @@ import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
 import { orgEffectivePermissionsQueryOptions, orgPermissionsQueryOptions, orgRolesQueryOptions } from '#/lib/api/query'
-import type { Role, RoleScope } from '#/lib/api/types'
+import type { Role } from '#/lib/api/types'
 import { hasPermission, permission, permissionDefinitionMap, type Permission } from '#/lib/permissions'
 import { entityColor } from '#/lib/entity-colors'
 import { SectionTabNav } from '#/components/SectionTabNav'
@@ -42,6 +42,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#
 import { Textarea } from '#/components/ui/textarea'
 import { PermissionPicker } from '#/components/access-control/PermissionPicker'
 import { RolesTableSkeleton } from '#/components/access-control/RolesTableSkeleton'
+import { roleScopeLabel } from '#/components/access-control/roleScope'
 import { cn } from '#/lib/utils'
 
 export const Route = createFileRoute('/orgs/$org_slug/roles')({
@@ -434,7 +435,7 @@ function RoleRow({
         </div>
       </TableCell>
       <TableCell>
-        <Badge variant="outline">{scopeLabel(role.scope_type)}</Badge>
+        <Badge variant="outline">{roleScopeLabel(role.scope_type)}</Badge>
       </TableCell>
       <TableCell>
         <Badge variant={role.is_builtin ? 'secondary' : 'outline'}>{role.is_builtin ? 'System' : 'Custom'}</Badge>
@@ -500,17 +501,4 @@ function RoleRow({
       ) : null}
     </TableRow>
   )
-}
-
-function scopeLabel(value: RoleScope) {
-  switch (value) {
-    case 'org':
-      return 'Organization'
-    case 'workspace':
-      return 'Workspace'
-    case 'environment':
-      return 'Environment'
-    case 'connection':
-      return 'Connection'
-  }
 }

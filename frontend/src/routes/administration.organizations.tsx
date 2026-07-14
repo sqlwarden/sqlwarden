@@ -20,6 +20,7 @@ import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { cn } from '#/lib/utils'
+import { slugify } from '#/lib/strings'
 
 export const Route = createFileRoute('/administration/organizations')({
   component: SettingsOrganizationsPage,
@@ -61,7 +62,7 @@ function SettingsOrganizationsPage() {
     if (slugTouched) {
       return
     }
-    setNewOrganizationSlug(slugify(newOrganizationName))
+    setNewOrganizationSlug(slugify(newOrganizationName, { maxLength: 64 }))
   }, [newOrganizationName, slugTouched])
 
   const createOrganization = useMutation({
@@ -169,7 +170,7 @@ function SettingsOrganizationsPage() {
                     value={newOrganizationSlug}
                     onChange={(event) => {
                       setSlugTouched(true)
-                      setNewOrganizationSlug(slugify(event.target.value))
+                      setNewOrganizationSlug(slugify(event.target.value, { maxLength: 64 }))
                       setCreateFieldErrors((current) => ({ ...current, slug: undefined }))
                     }}
                     placeholder="organization-slug"
@@ -279,13 +280,4 @@ const ORG_COLORS = [
 function orgColor(name: string): string {
   const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
   return ORG_COLORS[hash % ORG_COLORS.length]
-}
-
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
 }

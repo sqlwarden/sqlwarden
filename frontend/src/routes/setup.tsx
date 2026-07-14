@@ -9,6 +9,7 @@ import { api } from '#/lib/api/client'
 import type { SetupResponse } from '#/lib/api/types'
 import { clearAccessToken } from '#/lib/auth/access-token'
 import { queryKeys } from '#/lib/api/query'
+import { slugify } from '#/lib/strings'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
@@ -79,7 +80,7 @@ function SetupPage() {
     setValues((current) => {
       const next = { ...current, [field]: value }
       if (field === 'organizationName' && !slugTouched) {
-        next.organizationSlug = slugify(value)
+        next.organizationSlug = slugify(value, { maxLength: 64 })
       }
       return next
     })
@@ -195,7 +196,7 @@ function SetupPage() {
                       value={values.organizationSlug}
                       onChange={(event) => {
                         setSlugTouched(true)
-                        updateField('organizationSlug', slugify(event.target.value))
+                        updateField('organizationSlug', slugify(event.target.value, { maxLength: 64 }))
                       }}
                     />
                   </Field>
@@ -277,15 +278,6 @@ function setupDescription(requiresOrganization: boolean) {
     return 'Create the first administrator and organization for this SQLWarden deployment.'
   }
   return 'Create the first administrator for this SQLWarden deployment.'
-}
-
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
 }
 
 function Field({

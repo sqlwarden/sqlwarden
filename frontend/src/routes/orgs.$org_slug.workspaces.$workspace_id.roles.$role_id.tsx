@@ -8,7 +8,7 @@ import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
 import { orgEffectivePermissionsQueryOptions, orgPermissionsQueryOptions, orgWorkspaceRoleQueryOptions } from '#/lib/api/query'
-import type { PermissionDefinition, RoleScope } from '#/lib/api/types'
+import type { PermissionDefinition } from '#/lib/api/types'
 import { hasPermission, permission, permissionDefinitionMap, permissionDescription, permissionDisplayName, permissionGroupName, type Permission } from '#/lib/permissions'
 import {
   AlertDialog,
@@ -35,6 +35,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import { RoutePending } from '#/components/RoutePending'
 import { Skeleton } from '#/components/ui/skeleton'
 import { cn } from '#/lib/utils'
+import { roleScopeLabel } from '#/components/access-control/roleScope'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/roles/$role_id')({
   component: WorkspaceRoleContextPage,
@@ -135,7 +136,7 @@ function WorkspaceRoleContextPage() {
                     <Badge variant={role.data.is_builtin ? 'secondary' : 'outline'}>
                       {role.data.is_builtin ? 'System' : 'Custom'}
                     </Badge>
-                    <Badge variant="outline">{scopeLabel(role.data.scope_type)}</Badge>
+                    <Badge variant="outline">{roleScopeLabel(role.data.scope_type)}</Badge>
                   </>
                 ) : null}
               </div>
@@ -274,20 +275,6 @@ function groupPermissions(permissions: readonly Permission[], definitions: Reado
   }
   return Array.from(groups.entries()).map(([name, items]) => ({ name, permissions: items }))
 }
-
-function scopeLabel(value: RoleScope) {
-  switch (value) {
-    case 'org':
-      return 'Organization'
-    case 'workspace':
-      return 'Workspace'
-    case 'environment':
-      return 'Environment'
-    case 'connection':
-      return 'Connection'
-  }
-}
-
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (

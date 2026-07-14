@@ -48,6 +48,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#
 import { Textarea } from '#/components/ui/textarea'
 import { PermissionPicker } from '#/components/access-control/PermissionPicker'
 import { RolesTableSkeleton } from '#/components/access-control/RolesTableSkeleton'
+import { roleScopeLabel } from '#/components/access-control/roleScope'
 import { cn } from '#/lib/utils'
 import { entityColor } from '#/lib/entity-colors'
 import { SectionTabNav } from '#/components/SectionTabNav'
@@ -281,7 +282,7 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
                   <div className="flex flex-col gap-2">
                     <Label>Scope</Label>
                     <Select
-                      items={workspaceRoleScopes.map((scope) => ({ label: scopeLabel(scope), value: scope }))}
+                      items={workspaceRoleScopes.map((scope) => ({ label: roleScopeLabel(scope), value: scope }))}
                       value={scopeType}
                       onValueChange={(value) => {
                         if (isWorkspaceRoleScope(value)) {
@@ -297,7 +298,7 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
                         <SelectGroup>
                           {workspaceRoleScopes.map((scope) => (
                             <SelectItem key={scope} value={scope}>
-                              {scopeLabel(scope)}
+                              {roleScopeLabel(scope)}
                             </SelectItem>
                           ))}
                         </SelectGroup>
@@ -324,7 +325,7 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
 
                   <PermissionPicker
                     key={scopeType}
-                    description={`Select the capabilities this role should grant for ${scopeLabel(scopeType).toLowerCase()} resources.`}
+                    description={`Select the capabilities this role should grant for ${roleScopeLabel(scopeType).toLowerCase()} resources.`}
                     idPrefix="workspace-permission"
                     selectedPermissions={selectedPermissions}
                     permissionDetails={scopePermissionDetails}
@@ -478,7 +479,7 @@ function RoleRow({
         </div>
       </TableCell>
       <TableCell>
-        <Badge variant="outline">{scopeLabel(role.scope_type)}</Badge>
+        <Badge variant="outline">{roleScopeLabel(role.scope_type)}</Badge>
       </TableCell>
       <TableCell>
         <Badge variant={role.is_builtin ? 'secondary' : 'outline'}>{role.is_builtin ? 'System' : 'Custom'}</Badge>
@@ -544,19 +545,6 @@ function RoleRow({
       ) : null}
     </TableRow>
   )
-}
-
-function scopeLabel(value: RoleScope) {
-  switch (value) {
-    case 'org':
-      return 'Organization'
-    case 'workspace':
-      return 'Workspace'
-    case 'environment':
-      return 'Environment'
-    case 'connection':
-      return 'Connection'
-  }
 }
 
 function isWorkspaceRoleScope(value: string | null): value is RoleScope {
