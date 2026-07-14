@@ -95,7 +95,8 @@ func (db *DB) listRoles(ctx context.Context, params ListRolesParams) ([]Role, er
 		query = query.Where("is_builtin = ?", *params.IsBuiltin)
 	}
 
-	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", roleSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx)
+	direction := sqlSortDirection(params.Order)
+	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", roleSortColumn(params.Sort), direction, direction)).Scan(ctx)
 	return roles, err
 }
 

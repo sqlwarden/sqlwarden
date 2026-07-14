@@ -111,7 +111,8 @@ func (db *DB) ListTeamsPage(ctx context.Context, params ListTeamsParams) (respon
 	}
 
 	var teams []Team
-	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", teamSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx, &teams)
+	direction := sqlSortDirection(params.Order)
+	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", teamSortColumn(params.Sort), direction, direction)).Scan(ctx, &teams)
 	if err != nil {
 		return response.Paginated[Team]{}, err
 	}
@@ -203,7 +204,8 @@ func (db *DB) ListAccountTeamsPage(ctx context.Context, params ListTeamsParams, 
 	}
 
 	var teams []Team
-	err := query.OrderExpr(fmt.Sprintf("team.%s %s, team.id %s", teamSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx, &teams)
+	direction := sqlSortDirection(params.Order)
+	err := query.OrderExpr(fmt.Sprintf("team.%s %s, team.id %s", teamSortColumn(params.Sort), direction, direction)).Scan(ctx, &teams)
 	if err != nil {
 		return response.Paginated[Team]{}, err
 	}
@@ -278,10 +280,11 @@ func normalizeTeamMemberListParams(params ListTeamMembersParams) ListTeamMembers
 }
 
 func teamMemberOrderExpr(params ListTeamMembersParams) string {
+	direction := sqlSortDirection(params.Order)
 	switch params.Sort {
 	case "account_id":
-		return "tm.account_id " + strings.ToUpper(params.Order) + ", tm.created_at " + strings.ToUpper(params.Order)
+		return "tm.account_id " + direction + ", tm.created_at " + direction
 	default:
-		return "tm.created_at " + strings.ToUpper(params.Order) + ", tm.account_id " + strings.ToUpper(params.Order)
+		return "tm.created_at " + direction + ", tm.account_id " + direction
 	}
 }

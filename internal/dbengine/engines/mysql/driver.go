@@ -87,6 +87,8 @@ func (d *mysqlDriver) Close() error {
 }
 
 func (d *mysqlDriver) Query(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
+	// SQL is intentionally user-authored IDE input and is permission-gated by the web layer.
+	// codeql[go/sql-injection]
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: query: %w", err)
@@ -95,6 +97,8 @@ func (d *mysqlDriver) Query(ctx context.Context, query string, args ...any) (*re
 }
 
 func (d *mysqlDriver) Execute(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
+	// SQL is intentionally user-authored IDE input and is permission-gated by the web layer.
+	// codeql[go/sql-injection]
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: execute: %w", err)

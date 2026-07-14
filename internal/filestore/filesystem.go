@@ -2,6 +2,7 @@ package filestore
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -62,35 +63,44 @@ func (s *Filesystem) Root() string {
 }
 
 func (s *Filesystem) Put(_ context.Context, key string, content io.Reader) (StoredObject, error) {
-	path, err := s.pathForWrite(key)
+	clean, parts, err := validKey(key)
 	if err != nil {
+		return StoredObject{}, err
+	}
+	root, err := os.OpenRoot(s.root)
+	if err != nil {
+		return StoredObject{}, err
+	}
+	defer root.Close()
+	if err = ensureWritePath(root, clean, parts); err != nil {
 		return StoredObject{}, err
 	}
 
-	temp, err := os.CreateTemp(filepath.Dir(path), ".sqlwarden-write-*")
+	temp, tempName, err := createRootTemp(root, filepath.Dir(clean))
 	if err != nil {
 		return StoredObject{}, err
 	}
-	tempPath := temp.Name()
-	defer os.Remove(tempPath)
+	defer root.Remove(tempName)
 
 	hash := sha256.New()
 	size, copyErr := io.Copy(io.MultiWriter(temp, hash), content)
-	closeErr := temp.Close()
 	if copyErr != nil {
+		temp.Close()
 		return StoredObject{}, copyErr
 	}
+	if err = temp.Chmod(0o640); err != nil {
+		temp.Close()
+		return StoredObject{}, err
+	}
+	closeErr := temp.Close()
 	if closeErr != nil {
 		return StoredObject{}, closeErr
 	}
-	if err = os.Chmod(tempPath, 0o640); err != nil {
-		return StoredObject{}, err
-	}
-	if err = os.Rename(tempPath, path); err != nil {
+	if err = root.Rename(tempName, clean); err != nil {
 		return StoredObject{}, err
 	}
 
-	info, err := os.Stat(path)
+	info, err := root.Stat(clean)
 	if err != nil {
 		return StoredObject{}, err
 	}
@@ -103,11 +113,19 @@ func (s *Filesystem) Put(_ context.Context, key string, content io.Reader) (Stor
 }
 
 func (s *Filesystem) Get(_ context.Context, key string) (io.ReadCloser, StoredObject, error) {
-	path, err := s.pathForRead(key)
+	clean, parts, err := validKey(key)
 	if err != nil {
 		return nil, StoredObject{}, err
 	}
-	file, err := os.Open(path)
+	root, err := os.OpenRoot(s.root)
+	if err != nil {
+		return nil, StoredObject{}, err
+	}
+	defer root.Close()
+	if err = rejectSymlinkComponents(root, parts); err != nil {
+		return nil, StoredObject{}, err
+	}
+	file, err := root.Open(clean)
 	if err != nil {
 		return nil, StoredObject{}, err
 	}
@@ -136,14 +154,22 @@ func (s *Filesystem) Get(_ context.Context, key string) (io.ReadCloser, StoredOb
 }
 
 func (s *Filesystem) Delete(_ context.Context, key string) error {
-	path, err := s.pathForRead(key)
+	clean, parts, err := validKey(key)
 	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(s.root)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err = rejectSymlinkComponents(root, parts); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return err
 	}
-	err = os.Remove(path)
+	err = root.Remove(clean)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -151,12 +177,17 @@ func (s *Filesystem) Delete(_ context.Context, key string) error {
 }
 
 func (s *Filesystem) PruneEmptyDirectories(_ context.Context, key string) error {
-	dir, _, err := s.validPath(key)
+	dir, _, err := validKey(key)
 	if err != nil {
 		return err
 	}
-	for dir != s.root {
-		err = os.Remove(dir)
+	root, err := os.OpenRoot(s.root)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	for dir != "." {
+		err = root.Remove(dir)
 		switch {
 		case err == nil, errors.Is(err, os.ErrNotExist):
 			dir = filepath.Dir(dir)
@@ -169,56 +200,48 @@ func (s *Filesystem) PruneEmptyDirectories(_ context.Context, key string) error 
 	return nil
 }
 
-func (s *Filesystem) pathForRead(key string) (string, error) {
-	path, parts, err := s.validPath(key)
-	if err != nil {
-		return "", err
-	}
-	current := s.root
+func rejectSymlinkComponents(root *os.Root, parts []string) error {
+	current := ""
 	for _, part := range parts {
 		current = filepath.Join(current, part)
-		info, err := os.Lstat(current)
+		info, err := root.Lstat(current)
 		if err != nil {
-			return "", err
+			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return "", ErrInvalidKey
+			return ErrInvalidKey
 		}
 	}
-	return path, nil
+	return nil
 }
 
-func (s *Filesystem) pathForWrite(key string) (string, error) {
-	path, parts, err := s.validPath(key)
-	if err != nil {
-		return "", err
-	}
-	current := s.root
+func ensureWritePath(root *os.Root, clean string, parts []string) error {
+	current := ""
 	for _, part := range parts[:len(parts)-1] {
 		current = filepath.Join(current, part)
-		info, err := os.Lstat(current)
+		info, err := root.Lstat(current)
 		if errors.Is(err, os.ErrNotExist) {
-			if err = os.Mkdir(current, 0o750); err != nil {
-				return "", err
+			if err = root.Mkdir(current, 0o750); err != nil {
+				return err
 			}
 			continue
 		}
 		if err != nil {
-			return "", err
+			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return "", ErrInvalidKey
+			return ErrInvalidKey
 		}
 	}
-	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		return "", ErrInvalidKey
+	if info, err := root.Lstat(clean); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return ErrInvalidKey
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", err
+		return err
 	}
-	return path, nil
+	return nil
 }
 
-func (s *Filesystem) validPath(key string) (string, []string, error) {
+func validKey(key string) (string, []string, error) {
 	if key == "" || filepath.IsAbs(key) {
 		return "", nil, ErrInvalidKey
 	}
@@ -232,10 +255,21 @@ func (s *Filesystem) validPath(key string) (string, []string, error) {
 			return "", nil, ErrInvalidKey
 		}
 	}
-	path := filepath.Join(s.root, clean)
-	rel, err := filepath.Rel(s.root, path)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", nil, ErrInvalidKey
+	return clean, parts, nil
+}
+
+func createRootTemp(root *os.Root, dir string) (*os.File, string, error) {
+	for range 100 {
+		random := make([]byte, 16)
+		if _, err := rand.Read(random); err != nil {
+			return nil, "", err
+		}
+		name := filepath.Join(dir, ".sqlwarden-write-"+hex.EncodeToString(random))
+		file, err := root.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		return file, name, err
 	}
-	return path, parts, nil
+	return nil, "", errors.New("create temporary file: exhausted attempts")
 }

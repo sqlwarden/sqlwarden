@@ -130,10 +130,11 @@ func normalizeInstanceAdminListParams(params ListInstanceAdminsParams) ListInsta
 }
 
 func instanceAdminOrderExpr(params ListInstanceAdminsParams) string {
+	direction := sqlSortDirection(params.Order)
 	switch params.Sort {
 	case "account_id":
-		return "instance_admin.account_id " + params.Order + ", instance_admin.created_at " + params.Order
+		return "instance_admin.account_id " + direction + ", instance_admin.created_at " + direction
 	default:
-		return "instance_admin.created_at " + params.Order + ", instance_admin.account_id " + params.Order
+		return "instance_admin.created_at " + direction + ", instance_admin.account_id " + direction
 	}
 }

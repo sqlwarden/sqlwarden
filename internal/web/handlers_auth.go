@@ -3,6 +3,7 @@ package web
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -151,14 +152,8 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.logInfo(r, "account logged in", slog.Int64("account_id", account.ID), slog.String("auth_session_id", authSession.ID))
-	http.SetCookie(w, &http.Cookie{
-		Name:     "refresh_token",
-		Value:    family,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/api/v1/auth",
-		MaxAge:   7 * 24 * 3600,
-	})
+	// Local HTTP is supported; refreshTokenCookie enforces Secure for HTTPS and built-in TLS.
+	http.SetCookie(w, app.refreshTokenCookie(r, family, 7*24*3600))
 
 	err = response.JSON(w, http.StatusOK, map[string]string{"access_token": accessToken})
 	if err != nil {
@@ -252,14 +247,8 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.logInfo(r, "access token refreshed", slog.Int64("account_id", account.ID), slog.String("auth_session_id", authSession.ID))
-	http.SetCookie(w, &http.Cookie{
-		Name:     "refresh_token",
-		Value:    family,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/api/v1/auth",
-		MaxAge:   7 * 24 * 3600,
-	})
+	// Local HTTP is supported; refreshTokenCookie enforces Secure for HTTPS and built-in TLS.
+	http.SetCookie(w, app.refreshTokenCookie(r, family, 7*24*3600))
 
 	err = response.JSON(w, http.StatusOK, map[string]string{"access_token": accessToken})
 	if err != nil {
@@ -279,15 +268,29 @@ func (app *application) logoutAccount(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	http.SetCookie(w, &http.Cookie{
+	// Local HTTP is supported; refreshTokenCookie enforces Secure for HTTPS and built-in TLS.
+	http.SetCookie(w, app.refreshTokenCookie(r, "", -1))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) refreshTokenCookie(r *http.Request, value string, maxAge int) *http.Cookie {
+	return &http.Cookie{
 		Name:     "refresh_token",
-		Value:    "",
+		Value:    value,
 		HttpOnly: true,
+		Secure:   app.secureCookies(r),
 		SameSite: http.SameSiteLaxMode,
 		Path:     "/api/v1/auth",
-		MaxAge:   -1,
-	})
-	w.WriteHeader(http.StatusNoContent)
+		MaxAge:   maxAge,
+	}
+}
+
+func (app *application) secureCookies(r *http.Request) bool {
+	if app.config.TLS.Enabled || r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		return true
+	}
+	baseURL, err := url.Parse(app.config.BaseURL)
+	return err == nil && strings.EqualFold(baseURL.Scheme, "https")
 }
 
 func (app *application) listAccountSessions(w http.ResponseWriter, r *http.Request) {

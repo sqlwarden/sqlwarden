@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -82,6 +83,44 @@ func extractRefreshCookie(t *testing.T, res testResponse) *http.Cookie {
 	}
 	t.Fatal("refresh_token cookie not found")
 	return nil
+}
+
+func TestRefreshTokenCookieSecurityPolicy(t *testing.T) {
+	tests := []struct {
+		name           string
+		baseURL        string
+		tls            bool
+		requestTLS     bool
+		forwardedProto string
+		secure         bool
+	}{
+		{name: "local HTTP", baseURL: "http://localhost:6020", secure: false},
+		{name: "external HTTPS", baseURL: "https://sqlwarden.example.com", secure: true},
+		{name: "mixed-case HTTPS", baseURL: "HTTPS://sqlwarden.example.com", secure: true},
+		{name: "built-in TLS", baseURL: "http://localhost:6020", tls: true, secure: true},
+		{name: "request TLS", baseURL: "http://localhost:6020", requestTLS: true, secure: true},
+		{name: "reverse proxy TLS", baseURL: "http://localhost:6020", forwardedProto: "https", secure: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := newTestApp(t)
+			app.config.BaseURL = tt.baseURL
+			app.config.TLS.Enabled = tt.tls
+			r := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+			if tt.requestTLS {
+				r.TLS = &tls.ConnectionState{}
+			}
+			if tt.forwardedProto != "" {
+				r.Header.Set("X-Forwarded-Proto", tt.forwardedProto)
+			}
+			cookie := app.refreshTokenCookie(r, "token", 60)
+			assert.Equal(t, cookie.Secure, tt.secure)
+			assert.True(t, cookie.HttpOnly)
+			assert.Equal(t, cookie.SameSite, http.SameSiteLaxMode)
+			assert.Equal(t, cookie.Path, "/api/v1/auth")
+		})
+	}
 }
 
 func TestRegisterBlockedBeforeSetup(t *testing.T) {

@@ -404,3 +404,11 @@ func hasIndex(indexes []schema.Index, name, column string) bool {
 	}
 	return false
 }
+
+func TestSQLiteQuoteIdentEscapesDoubleQuotes(t *testing.T) {
+	got := sqliteQuoteIdent(`main"; ATTACH DATABASE '/tmp/other.db' AS other; --`)
+	want := `"main""; ATTACH DATABASE '/tmp/other.db' AS other; --"`
+	if got != want {
+		t.Fatalf("sqliteQuoteIdent() = %q, want %q", got, want)
+	}
+}

@@ -407,6 +407,8 @@ WHERE (table_schema, table_name) IN (`+pairs+`)`, args...)
 				appendSource(&objs[i], "Definition", def)
 			}
 		case "table":
+			// MySQL cannot bind identifiers; mysqlQuoteQualified escapes both components.
+			// codeql[go/sql-injection]
 			row := d.db.QueryRowContext(ctx, "SHOW CREATE TABLE "+mysqlQuoteQualified(objs[i].Ref.Namespace, objs[i].Ref.Name))
 			var name, ddl string
 			if err := row.Scan(&name, &ddl); err != nil {

@@ -701,3 +701,11 @@ func containsParam(dsn, param string) bool {
 	parts := strings.Split(query, "&")
 	return slices.Contains(parts, param)
 }
+
+func TestMySQLQuoteIdentEscapesBackticks(t *testing.T) {
+	got := mysqlQuoteQualified("tenant`; DROP DATABASE prod; --", "users` WHERE 1=1 --")
+	want := "`tenant``; DROP DATABASE prod; --`.`users`` WHERE 1=1 --`"
+	if got != want {
+		t.Fatalf("mysqlQuoteQualified() = %q, want %q", got, want)
+	}
+}

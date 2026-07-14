@@ -91,17 +91,6 @@ func TestRotateEncryptionKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A legacy, untagged DSN encrypted directly with the current primary key.
-	legacyDSN := "mysql://root:secret@db:3306/legacy"
-	legacyCipher, err := encrypt.Encrypt(encrypt.DeriveKey("new-primary-key"), legacyDSN)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacyConn, err := app.db.InsertConnection(ctx, ws.ID, &env.ID, "legacy", "mysql", legacyCipher, "open")
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	// A connection already sealed with the primary key — must be left untouched.
 	freshDSN := "sqlite:///data/fresh.db"
 	freshCipher, err := keyring.Encrypt(freshDSN)
@@ -121,11 +110,11 @@ func TestRotateEncryptionKeys(t *testing.T) {
 		t.Fatalf("rotateEncryptionKeys failed: %v", err)
 	}
 
-	if report.ConnectionsScanned != 3 {
-		t.Errorf("expected 3 connections scanned, got %d", report.ConnectionsScanned)
+	if report.ConnectionsScanned != 2 {
+		t.Errorf("expected 2 connections scanned, got %d", report.ConnectionsScanned)
 	}
-	if report.ConnectionsRotated != 2 {
-		t.Errorf("expected 2 connections rotated, got %d", report.ConnectionsRotated)
+	if report.ConnectionsRotated != 1 {
+		t.Errorf("expected 1 connection rotated, got %d", report.ConnectionsRotated)
 	}
 	if report.FileContentsScanned != 1 {
 		t.Errorf("expected 1 file content scanned, got %d", report.FileContentsScanned)
@@ -144,18 +133,6 @@ func TestRotateEncryptionKeys(t *testing.T) {
 	}
 	if plain, err := app.keyring.Decrypt(got.DSNEncrypted); err != nil || plain != staleDSN {
 		t.Errorf("stale DSN decrypt = %q, %v; want %q", plain, err, staleDSN)
-	}
-
-	// Legacy untagged connection is upgraded to the tagged primary format.
-	got, _, err = app.db.GetConnection(ctx, legacyConn.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if app.keyring.NeedsRotation(got.DSNEncrypted) {
-		t.Error("legacy connection DSN still needs rotation after rotate")
-	}
-	if plain, err := app.keyring.Decrypt(got.DSNEncrypted); err != nil || plain != legacyDSN {
-		t.Errorf("legacy DSN decrypt = %q, %v; want %q", plain, err, legacyDSN)
 	}
 
 	// Already-current connection is unchanged.

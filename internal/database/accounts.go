@@ -106,7 +106,8 @@ NOT EXISTS (
 		search := "%" + strings.ToLower(params.Search) + "%"
 		query = query.Where("(LOWER(email) LIKE ? OR LOWER(name) LIKE ?)", search, search)
 	}
-	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", accountSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx)
+	direction := sqlSortDirection(params.Order)
+	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", accountSortColumn(params.Sort), direction, direction)).Scan(ctx)
 	if err != nil {
 		return response.Paginated[Account]{}, err
 	}

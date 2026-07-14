@@ -131,7 +131,7 @@ func (db *DB) ListEnvironmentsPage(ctx context.Context, params ListEnvironmentsP
 	}
 
 	var envs []Environment
-	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", environmentSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).
+	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", environmentSortColumn(params.Sort), sqlSortDirection(params.Order), sqlSortDirection(params.Order))).
 		Scan(ctx, &envs)
 	if err != nil {
 		return response.Paginated[Environment]{}, err

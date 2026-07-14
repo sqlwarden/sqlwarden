@@ -14,7 +14,9 @@ var _ schema.RelationshipInspector = (*sqliteDriver)(nil)
 // PRAGMA foreign_key_list per table, grouping rows by fk id.
 func (d *sqliteDriver) InspectRelationships(ctx context.Context, namespace string) (*schema.RelationshipGraph, error) {
 	prefix := sqliteQuoteIdent(namespace)
+	// SQLite cannot bind identifiers; sqliteQuoteIdent escapes the namespace.
 	tableRows, err := d.db.QueryContext(ctx,
+		// codeql[go/sql-injection]
 		fmt.Sprintf(`SELECT name FROM %s.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%%' ORDER BY name`, prefix))
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: relationships tables: %w", err)
@@ -36,6 +38,7 @@ func (d *sqliteDriver) InspectRelationships(ctx context.Context, namespace strin
 
 	graph := &schema.RelationshipGraph{Namespace: namespace}
 	for _, tbl := range tables {
+		// codeql[go/sql-injection]
 		fkRows, err := d.db.QueryContext(ctx, fmt.Sprintf(`PRAGMA %s.foreign_key_list(%s)`, prefix, sqliteQuoteIdent(tbl)))
 		if err != nil {
 			return nil, fmt.Errorf("sqlite: relationships fk: %w", err)

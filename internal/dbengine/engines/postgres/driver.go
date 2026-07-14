@@ -40,6 +40,8 @@ func (d *postgresDriver) Close() error {
 }
 
 func (d *postgresDriver) Query(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
+	// SQL is intentionally user-authored IDE input and is permission-gated by the web layer.
+	// codeql[go/sql-injection]
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: query: %w", err)
@@ -48,6 +50,8 @@ func (d *postgresDriver) Query(ctx context.Context, query string, args ...any) (
 }
 
 func (d *postgresDriver) Execute(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
+	// SQL is intentionally user-authored IDE input and is permission-gated by the web layer.
+	// codeql[go/sql-injection]
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: execute: %w", err)

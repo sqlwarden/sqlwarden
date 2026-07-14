@@ -56,6 +56,20 @@ func TestFilesystemRejectsTraversalAndSymlinks(t *testing.T) {
 	if _, err := store.Put(context.Background(), "link/escape.sql", strings.NewReader("bad")); !errors.Is(err, ErrInvalidKey) {
 		t.Fatalf("symlink write error = %v, want ErrInvalidKey", err)
 	}
+
+	outsideFile := filepath.Join(outside, "outside.sql")
+	if err := os.WriteFile(outsideFile, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.Get(context.Background(), "link/outside.sql"); !errors.Is(err, ErrInvalidKey) {
+		t.Fatalf("symlink read error = %v, want ErrInvalidKey", err)
+	}
+	if err := store.Delete(context.Background(), "link/outside.sql"); !errors.Is(err, ErrInvalidKey) {
+		t.Fatalf("symlink delete error = %v, want ErrInvalidKey", err)
+	}
+	if _, err := os.Stat(outsideFile); err != nil {
+		t.Fatalf("outside file was affected: %v", err)
+	}
 }
 
 func TestFilesystemDeleteMissingObjectIsIdempotent(t *testing.T) {
