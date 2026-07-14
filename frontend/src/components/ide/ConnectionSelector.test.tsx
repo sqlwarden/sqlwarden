@@ -10,8 +10,26 @@ const environments: Environment[] = [
   { id: 2, workspace_id: 3, name: 'Production', created_at: '', updated_at: '' },
 ]
 const connections: Connection[] = [
-  { id: 7, workspace_id: 3, environment_id: 1, name: 'app-db', driver: 'postgres', access_mode: 'open', created_at: '', updated_at: '' },
-  { id: 8, workspace_id: 3, environment_id: 2, name: 'warehouse', driver: 'mysql', access_mode: 'open', created_at: '', updated_at: '' },
+  {
+    id: 7,
+    workspace_id: 3,
+    environment_id: 1,
+    name: 'app-db',
+    driver: 'postgres',
+    access_mode: 'open',
+    created_at: '',
+    updated_at: '',
+  },
+  {
+    id: 8,
+    workspace_id: 3,
+    environment_id: 2,
+    name: 'warehouse',
+    driver: 'mysql',
+    access_mode: 'open',
+    created_at: '',
+    updated_at: '',
+  },
 ]
 
 describe('groupConnections', () => {
@@ -28,7 +46,9 @@ describe('groupConnections', () => {
 })
 
 describe('ConnectionSelector', () => {
-  function renderSelector(options: { active?: Connection; loading?: boolean; tabAvailable?: boolean } = {}) {
+  function renderSelector(
+    options: { active?: Connection; loading?: boolean; tabAvailable?: boolean } = {},
+  ) {
     const store = createIdeStore('acme', 1, 'ephemeral')
     store.getState().setSession(7, 'session-7')
     const onSelect = vi.fn()
@@ -56,7 +76,9 @@ describe('ConnectionSelector', () => {
     fireEvent.click(screen.getByRole('button', { name: /warehouse/ }))
 
     expect(onSelect).toHaveBeenCalledWith(connections[1])
-    await waitFor(() => expect(screen.queryByPlaceholderText('Search connections…')).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText('Search connections…')).not.toBeInTheDocument(),
+    )
   })
 
   it('shows connected state and disables selection without an editor tab', () => {
@@ -68,7 +90,13 @@ describe('ConnectionSelector', () => {
   it('disables the trigger while connections load or no tab is active', () => {
     const { unmount } = render(
       <IdeStoreContext.Provider value={createIdeStore('acme', 1, 'ephemeral')}>
-        <ConnectionSelector connections={connections} environments={environments} isLoading tabAvailable onSelect={vi.fn()} />
+        <ConnectionSelector
+          connections={connections}
+          environments={environments}
+          isLoading
+          tabAvailable
+          onSelect={vi.fn()}
+        />
       </IdeStoreContext.Provider>,
     )
     expect(screen.getByRole('button', { name: /Loading connections/ })).toBeDisabled()

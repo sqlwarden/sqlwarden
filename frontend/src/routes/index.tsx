@@ -7,7 +7,10 @@ import { toast } from 'sonner'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { useSession } from '#/hooks/use-session'
 import { api } from '#/lib/api/client'
-import { accountOrganizationsQueryOptions, orgEffectivePermissionsQueryOptions } from '#/lib/api/query'
+import {
+  accountOrganizationsQueryOptions,
+  orgEffectivePermissionsQueryOptions,
+} from '#/lib/api/query'
 import { hasAnyPermission, permission } from '#/lib/permissions'
 import { Button } from '#/components/ui/button'
 import type { AccountOrganization, Organization, SessionResponse } from '#/lib/api/types'
@@ -36,7 +39,11 @@ function LandingPage() {
   const setupStatus = useSetupStatus()
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
-  const shouldLoadOrganizations = Boolean(hasToken && session.data && (session.data.personal_spaces_enabled || session.data.organizations.length !== 1))
+  const shouldLoadOrganizations = Boolean(
+    hasToken &&
+    session.data &&
+    (session.data.personal_spaces_enabled || session.data.organizations.length !== 1),
+  )
   const organizations = useQuery({
     ...accountOrganizationsQueryOptions({
       page: 1,
@@ -78,7 +85,9 @@ function LandingPage() {
     )
   }
 
-  const organizationItems = (organizations.data?.items ?? session.data.organizations) as Array<AccountOrganization | Organization>
+  const organizationItems = (organizations.data?.items ?? session.data.organizations) as Array<
+    AccountOrganization | Organization
+  >
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-8 px-4 py-8 md:px-6">
@@ -109,7 +118,11 @@ function LandingPage() {
         </div>
       ) : null}
 
-      {!organizations.isLoading && !organizations.isError && !session.data.personal_spaces_enabled && organizationItems.length === 0 && !session.data.is_instance_admin ? (
+      {!organizations.isLoading &&
+      !organizations.isError &&
+      !session.data.personal_spaces_enabled &&
+      organizationItems.length === 0 &&
+      !session.data.is_instance_admin ? (
         <Card>
           <CardContent>
             <EmptyState
@@ -124,7 +137,11 @@ function LandingPage() {
   )
 }
 
-function OrganizationChoiceCard({ organization }: { organization: AccountOrganization | Organization }) {
+function OrganizationChoiceCard({
+  organization,
+}: {
+  organization: AccountOrganization | Organization
+}) {
   const memberCount = 'member_count' in organization ? organization.member_count : undefined
   const teamCount = 'team_count' in organization ? organization.team_count : undefined
   const role = 'role' in organization ? organization.role : undefined
@@ -139,7 +156,12 @@ function OrganizationChoiceCard({ organization }: { organization: AccountOrganiz
     <div className="flex h-full flex-col border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:shadow-sm">
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex min-w-0 items-start gap-3">
-          <div className={cn('flex size-10 shrink-0 items-center justify-center text-sm font-semibold', organizationColor(organization.name))}>
+          <div
+            className={cn(
+              'flex size-10 shrink-0 items-center justify-center text-sm font-semibold',
+              organizationColor(organization.name),
+            )}
+          >
             {getInitials(organization.name, 'O')}
           </div>
           <div className="min-w-0 flex-1 pt-0.5">
@@ -148,7 +170,10 @@ function OrganizationChoiceCard({ organization }: { organization: AccountOrganiz
                 {organization.name}
               </p>
               {role ? (
-                <Badge variant="outline" className="h-4 max-w-24 shrink-0 truncate px-1.5 py-0 text-[10px] capitalize">
+                <Badge
+                  variant="outline"
+                  className="h-4 max-w-24 shrink-0 truncate px-1.5 py-0 text-[10px] capitalize"
+                >
                   {role}
                 </Badge>
               ) : null}
@@ -169,12 +194,19 @@ function OrganizationChoiceCard({ organization }: { organization: AccountOrganiz
       </div>
       <div className="flex items-center gap-2 border-t border-border/60 px-5 py-3">
         {canAccessSettings ? (
-          <Button variant="outline" size="sm" render={<Link to="/orgs/$org_slug" params={{ org_slug: organization.slug }} />}>
+          <Button
+            variant="outline"
+            size="sm"
+            render={<Link to="/orgs/$org_slug" params={{ org_slug: organization.slug }} />}
+          >
             <Icon name="settings-02" size={20} />
             Settings
           </Button>
         ) : null}
-        <Button size="sm" render={<Link to="/ide/$org_slug" params={{ org_slug: organization.slug }} />}>
+        <Button
+          size="sm"
+          render={<Link to="/ide/$org_slug" params={{ org_slug: organization.slug }} />}
+        >
           <Icon name="database-lightning" size={20} />
           IDE
         </Button>
@@ -220,7 +252,9 @@ function AdministrationChoiceCard() {
               <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
                 Administration
               </p>
-              <p className="mt-1.5 truncate text-xs text-muted-foreground">Instance settings and users.</p>
+              <p className="mt-1.5 truncate text-xs text-muted-foreground">
+                Instance settings and users.
+              </p>
             </div>
           </div>
         </div>
@@ -236,7 +270,9 @@ function LandingUserMenu({ session }: { session: SessionResponse }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   // Already on the landing hub — a Switch Organization self-link is noise.
-  const menuItems = buildUserMenuItems({ session }).filter((item) => item.id !== 'switch-organization')
+  const menuItems = buildUserMenuItems({ session }).filter(
+    (item) => item.id !== 'switch-organization',
+  )
 
   const logout = useMutation({
     mutationFn: async () => api.post<void>('/api/v1/auth/logout'),
@@ -256,8 +292,12 @@ function LandingUserMenu({ session }: { session: SessionResponse }) {
         <DropdownMenuGroup>
           <DropdownMenuLabel className="px-2 py-2">
             <div className="flex flex-col gap-0.5 normal-case tracking-normal">
-              <span className="truncate text-sm font-medium text-foreground">{session.account.name}</span>
-              <span className="truncate text-xs font-normal text-muted-foreground">{session.account.email}</span>
+              <span className="truncate text-sm font-medium text-foreground">
+                {session.account.name}
+              </span>
+              <span className="truncate text-xs font-normal text-muted-foreground">
+                {session.account.email}
+              </span>
             </div>
           </DropdownMenuLabel>
         </DropdownMenuGroup>

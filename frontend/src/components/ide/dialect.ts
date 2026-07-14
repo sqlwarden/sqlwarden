@@ -30,7 +30,10 @@ export abstract class BaseSqlDialect implements SqlDialect {
 
 const BARE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/
 
-export function createIdentifierQuoter(openingQuote: string, closingQuote = openingQuote): (name: string) => string {
+export function createIdentifierQuoter(
+  openingQuote: string,
+  closingQuote = openingQuote,
+): (name: string) => string {
   return (name) => {
     if (BARE_IDENTIFIER.test(name)) return name
     const escapedName = name.split(closingQuote).join(closingQuote + closingQuote)

@@ -105,14 +105,17 @@ function SettingsInstancePage() {
 
   const hasChanges = hasFormChanges(form, settings.data)
 
-  function updateField<K extends keyof InstanceSettingsForm>(field: K, value: InstanceSettingsForm[K]) {
+  function updateField<K extends keyof InstanceSettingsForm>(
+    field: K,
+    value: InstanceSettingsForm[K],
+  ) {
     setForm((current) => ({ ...current, [field]: value }))
     setFieldErrors((current) => ({ ...current, [field]: undefined }))
   }
 
   function submitSettings(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    void updateSettings.mutateAsync().catch(() => { })
+    void updateSettings.mutateAsync().catch(() => {})
   }
 
   return (
@@ -172,12 +175,15 @@ function SettingsInstancePage() {
               <Checkbox
                 checked={form.personal_spaces_enabled}
                 disabled={updateSettings.isPending}
-                onCheckedChange={(checked) => updateField('personal_spaces_enabled', checked === true)}
+                onCheckedChange={(checked) =>
+                  updateField('personal_spaces_enabled', checked === true)
+                }
               />
               <span className="flex flex-col gap-1">
                 <span className="font-medium text-foreground">Enable personal spaces</span>
                 <span className="text-muted-foreground">
-                  Allow users to create personal workspaces outside organization RBAC. Disabling this drops active personal connection sessions.
+                  Allow users to create personal workspaces outside organization RBAC. Disabling
+                  this drops active personal connection sessions.
                 </span>
               </span>
             </label>
@@ -190,7 +196,6 @@ function SettingsInstancePage() {
           </form>
         </CardContent>
       </Card>
-
     </div>
   )
 }

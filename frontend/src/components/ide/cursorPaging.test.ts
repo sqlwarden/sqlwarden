@@ -47,13 +47,17 @@ describe('mergeCursorPage', () => {
   })
 
   it('removes the cursor when the page exhausts it', () => {
-    const merged = mergeCursorPage(initial, {
-      ...initial.data,
-      rows: [],
-      rows_returned: 0,
-      bytes_returned: 0,
-      exhausted: true,
-    }, 'cursor-1')
+    const merged = mergeCursorPage(
+      initial,
+      {
+        ...initial.data,
+        rows: [],
+        rows_returned: 0,
+        bytes_returned: 0,
+        exhausted: true,
+      },
+      'cursor-1',
+    )
     expect(merged.data.query_cursor_id).toBeUndefined()
     expect(merged.data.exhausted).toBe(true)
   })
@@ -61,9 +65,12 @@ describe('mergeCursorPage', () => {
 
 describe('applyCursorPageError', () => {
   it('retires an expired cursor', () => {
-    const next = applyCursorPageError(initial, new ApiError('gone', 410, {
-      code: 'query_cursor_unavailable',
-    }))
+    const next = applyCursorPageError(
+      initial,
+      new ApiError('gone', 410, {
+        code: 'query_cursor_unavailable',
+      }),
+    )
     expect(next.cursorMessage).toBe('Cursor expired. Run the query again.')
     expect(next.data.query_cursor_id).toBeUndefined()
     expect(next.data.exhausted).toBe(true)

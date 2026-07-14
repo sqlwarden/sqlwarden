@@ -46,9 +46,19 @@ describe('workspace file dialogs', () => {
         return new HttpResponse(null, { headers: { ETag: '"v1"' } })
       }),
     )
-    render(provider(
-      <CreateItemDialog open onOpenChange={onOpenChange} kind="file" parentId={9} orgSlug="acme" workspaceId={3} onSuccess={onSuccess} />,
-    ))
+    render(
+      provider(
+        <CreateItemDialog
+          open
+          onOpenChange={onOpenChange}
+          kind="file"
+          parentId={9}
+          orgSlug="acme"
+          workspaceId={3}
+          onSuccess={onSuccess}
+        />,
+      ),
+    )
 
     const input = screen.getByLabelText('Name')
     await user.clear(input)
@@ -56,7 +66,9 @@ describe('workspace file dialogs', () => {
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({ id: 7 })))
-    expect(createBody).toEqual(expect.objectContaining({ name: 'report.sql', object_type: 'file', parent_id: 9 }))
+    expect(createBody).toEqual(
+      expect.objectContaining({ name: 'report.sql', object_type: 'file', parent_id: 9 }),
+    )
     expect(initialized).toBe(true)
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
@@ -66,15 +78,27 @@ describe('workspace file dialogs', () => {
     const onSuccess = vi.fn()
     let contentRequests = 0
     server.use(
-      http.post('/api/v1/orgs/acme/workspaces/3/files/private', () => HttpResponse.json(file(8, 'Queries', 'folder'), { status: 201 })),
+      http.post('/api/v1/orgs/acme/workspaces/3/files/private', () =>
+        HttpResponse.json(file(8, 'Queries', 'folder'), { status: 201 }),
+      ),
       http.put('/api/v1/orgs/acme/workspaces/3/files/private/8/content', () => {
         contentRequests += 1
         return new HttpResponse(null)
       }),
     )
-    render(provider(
-      <CreateItemDialog open onOpenChange={vi.fn()} kind="folder" parentId={null} orgSlug="acme" workspaceId={3} onSuccess={onSuccess} />,
-    ))
+    render(
+      provider(
+        <CreateItemDialog
+          open
+          onOpenChange={vi.fn()}
+          kind="folder"
+          parentId={null}
+          orgSlug="acme"
+          workspaceId={3}
+          onSuccess={onSuccess}
+        />,
+      ),
+    )
 
     await user.type(screen.getByLabelText('Name'), 'Queries')
     await user.click(screen.getByRole('button', { name: 'Create' }))
@@ -90,7 +114,9 @@ describe('workspace file dialogs', () => {
     let createBody: unknown
     let savedContent = ''
     server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/files/private/browser', () => HttpResponse.json({ file: null, path: [], children: [folder] })),
+      http.get('/api/v1/orgs/acme/workspaces/3/files/private/browser', () =>
+        HttpResponse.json({ file: null, path: [], children: [folder] }),
+      ),
       http.post('/api/v1/orgs/acme/workspaces/3/files/private', async ({ request }) => {
         createBody = await request.json()
         return HttpResponse.json(file(10, 'daily.sql'), { status: 201 })
@@ -100,10 +126,25 @@ describe('workspace file dialogs', () => {
         return new HttpResponse(null, { headers: { ETag: '"etag-10"' } })
       }),
     )
-    const tab: EditorTab = { id: 'scratch:1', workspaceId: 3, title: 'Console', kind: 'scratch', content: 'select 42' }
-    render(provider(
-      <SaveAsDialog open onOpenChange={vi.fn()} tab={tab} orgSlug="acme" workspaceId={3} onSuccess={onSuccess} />,
-    ))
+    const tab: EditorTab = {
+      id: 'scratch:1',
+      workspaceId: 3,
+      title: 'Console',
+      kind: 'scratch',
+      content: 'select 42',
+    }
+    render(
+      provider(
+        <SaveAsDialog
+          open
+          onOpenChange={vi.fn()}
+          tab={tab}
+          orgSlug="acme"
+          workspaceId={3}
+          onSuccess={onSuccess}
+        />,
+      ),
+    )
 
     await user.click(await screen.findByRole('button', { name: /Reports/ }))
     const input = screen.getByLabelText('Name')
@@ -111,7 +152,9 @@ describe('workspace file dialogs', () => {
     await user.type(input, 'daily')
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({ id: 10 }), 'etag-10'))
+    await waitFor(() =>
+      expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({ id: 10 }), 'etag-10'),
+    )
     expect(createBody).toEqual(expect.objectContaining({ name: 'daily.sql', parent_id: 9 }))
     expect(savedContent).toBe('select 42')
   })

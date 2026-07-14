@@ -73,7 +73,9 @@ describe('useFileActions', () => {
 
     act(() => result.current.open(target))
 
-    expect(store.getState().tabs).toEqual(expect.arrayContaining([expect.objectContaining({ fileId: 11 })]))
+    expect(store.getState().tabs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ fileId: 11 })]),
+    )
     expect(result.current.activeFileId).toBe(11)
   })
 
@@ -84,26 +86,41 @@ describe('useFileActions', () => {
     act(() => result.current.openToSide(file(12)))
 
     expect(store.getState().layout[3]?.type).toBe('split')
-    expect(store.getState().tabs).toEqual(expect.arrayContaining([expect.objectContaining({ fileId: 12 })]))
+    expect(store.getState().tabs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ fileId: 12 })]),
+    )
   })
 
   it('deletes a private file, invalidates its browser tree, and closes its tab', async () => {
     const target = file(13)
     store.getState().openTab(newFileTab(target, workspace))
-    server.use(http.delete('/api/v1/orgs/acme/workspaces/3/files/private/13', () => new HttpResponse(null, { status: 204 })))
+    server.use(
+      http.delete(
+        '/api/v1/orgs/acme/workspaces/3/files/private/13',
+        () => new HttpResponse(null, { status: 204 }),
+      ),
+    )
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
     const { result } = renderActions()
 
     act(() => result.current.deleteFile.mutate(13))
 
     await waitFor(() => expect(store.getState().tabs.some((tab) => tab.fileId === 13)).toBe(false))
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['org-workspace-private-file-browser', 'acme', 3] })
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['org-workspace-private-file-browser', 'acme', 3],
+    })
   })
 
   it('downloads file content with the original filename', async () => {
-    server.use(http.get('/api/v1/orgs/acme/workspaces/3/files/private/14/content', () => new HttpResponse('select 1', {
-      headers: { ETag: '"v1"' },
-    })))
+    server.use(
+      http.get(
+        '/api/v1/orgs/acme/workspaces/3/files/private/14/content',
+        () =>
+          new HttpResponse('select 1', {
+            headers: { ETag: '"v1"' },
+          }),
+      ),
+    )
     const { result } = renderActions()
 
     await act(() => result.current.saveAs(file(14, 'one.sql')))
@@ -115,10 +132,14 @@ describe('useFileActions', () => {
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
     const privateActions = renderActions('private')
     act(() => privateActions.result.current.refresh())
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['org-workspace-private-file-browser', 'acme', 3] })
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['org-workspace-private-file-browser', 'acme', 3],
+    })
 
     const sharedActions = renderActions('shared')
     act(() => sharedActions.result.current.refresh())
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['org-workspace-shared-file-browser', 'acme', 3] })
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['org-workspace-shared-file-browser', 'acme', 3],
+    })
   })
 })

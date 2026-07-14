@@ -25,7 +25,9 @@ describe('API query domains', () => {
   })
 
   it('passes list queries through instance and organization domains', async () => {
-    const get = vi.spyOn(api, 'get').mockResolvedValue({ items: [], page: 2, page_size: 20, total: 0 })
+    const get = vi
+      .spyOn(api, 'get')
+      .mockResolvedValue({ items: [], page: 2, page_size: 20, total: 0 })
     const query = { page: 2, page_size: 20, q: 'alex' }
     await runQuery(instanceAccountsQueryOptions(query))
     await runQuery(orgMembersQueryOptions('acme', query))
@@ -34,13 +36,16 @@ describe('API query domains', () => {
   })
 
   it('builds workspace and file paths from explicit scope', async () => {
-    const get = vi.spyOn(api, 'get')
+    const get = vi
+      .spyOn(api, 'get')
       .mockResolvedValueOnce({ id: 4 })
       .mockResolvedValueOnce({ files: [] })
     await runQuery(orgWorkspaceQueryOptions('acme', 4))
     await runQuery(orgWorkspacePrivateFilesQueryOptions('acme', 4, 9))
     expect(get).toHaveBeenNthCalledWith(1, '/api/v1/orgs/acme/workspaces/4')
-    expect(get).toHaveBeenNthCalledWith(2, '/api/v1/orgs/acme/workspaces/4/files/private', { query: { parent_id: 9 } })
+    expect(get).toHaveBeenNthCalledWith(2, '/api/v1/orgs/acme/workspaces/4/files/private', {
+      query: { parent_id: 9 },
+    })
   })
 
   it('sends the live database session for schema calls', async () => {

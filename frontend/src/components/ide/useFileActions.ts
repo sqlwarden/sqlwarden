@@ -50,9 +50,10 @@ export function useFileActions(
   }
 
   function refresh() {
-    const queryKey = visibility === 'private'
-      ? queryKeys.orgWorkspacePrivateFileBrowserScope(orgSlug, workspace.id)
-      : queryKeys.orgWorkspaceSharedFileBrowserScope(orgSlug, workspace.id)
+    const queryKey =
+      visibility === 'private'
+        ? queryKeys.orgWorkspacePrivateFileBrowserScope(orgSlug, workspace.id)
+        : queryKeys.orgWorkspaceSharedFileBrowserScope(orgSlug, workspace.id)
     void queryClient.invalidateQueries({ queryKey })
   }
 

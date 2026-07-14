@@ -10,7 +10,11 @@ export class UnsupportedFrontendEngineError extends Error {
   }
 }
 
-export const frontendEngines: readonly FrontendEngine[] = [postgresEngine, mysqlEngine, sqliteEngine]
+export const frontendEngines: readonly FrontendEngine[] = [
+  postgresEngine,
+  mysqlEngine,
+  sqliteEngine,
+]
 
 const engineMap = new Map(frontendEngines.map((engine) => [engine.id, engine]))
 
@@ -29,5 +33,6 @@ export function dialectFor(driver: string) {
 }
 
 export const connectableEngines = frontendEngines.filter(
-  (engine): engine is FrontendEngine & { connection: NonNullable<FrontendEngine['connection']> } => Boolean(engine.connection),
+  (engine): engine is FrontendEngine & { connection: NonNullable<FrontendEngine['connection']> } =>
+    Boolean(engine.connection),
 )

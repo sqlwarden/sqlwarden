@@ -31,7 +31,15 @@ function markerPath(kind: FkMarker, x: number, y: number, pos: Position): string
 }
 
 export function FkEdge({
-  sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, data, markerEnd,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  style,
+  data,
+  markerEnd,
 }: EdgeProps) {
   const d = data as unknown as FkEdgeData | undefined
   const orthogonal = Boolean(d?.orthogonal)
@@ -43,7 +51,13 @@ export function FkEdge({
     <>
       <BaseEdge path={path} style={style} markerEnd={markerEnd} />
       {d && orthogonal && (
-        <g stroke={stroke} strokeWidth={1.2} fill="none" opacity={opacity} style={{ pointerEvents: 'none' }}>
+        <g
+          stroke={stroke}
+          strokeWidth={1.2}
+          fill="none"
+          opacity={opacity}
+          style={{ pointerEvents: 'none' }}
+        >
           <path d={markerPath(d.sourceMarker, sourceX, sourceY, sourcePosition)} />
           <path d={markerPath(d.targetMarker, targetX, targetY, targetPosition)} />
         </g>

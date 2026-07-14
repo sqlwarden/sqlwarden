@@ -14,7 +14,16 @@ import type { Account } from '#/lib/api/types'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { SearchInput } from '#/components/SearchInput'
@@ -22,7 +31,14 @@ import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 
 export const Route = createFileRoute('/administration/users')({
   component: SettingsUsersPage,
@@ -45,14 +61,17 @@ function SettingsUsersPage() {
     password: '',
     confirmPassword: '',
   })
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof CreateUserValues, string>>>({})
-  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
-    page: 1,
-    page_size: 10,
-    sort: 'created_at',
-    order: 'desc',
-    q: '',
-  })
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof CreateUserValues, string>>>(
+    {},
+  )
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
+    useListPageState({
+      page: 1,
+      page_size: 10,
+      sort: 'created_at',
+      order: 'desc',
+      q: '',
+    })
 
   const users = useQuery(instanceAccountsQueryOptions(query))
   const items = users.data?.items ?? []
@@ -119,9 +138,11 @@ function SettingsUsersPage() {
     if (!values.name.trim()) nextErrors.name = 'Name is required.'
     if (!values.email.trim()) nextErrors.email = 'Email is required.'
     if (!values.password) nextErrors.password = 'Password is required.'
-    else if (values.password.length < 8) nextErrors.password = 'Password must be at least 8 characters.'
+    else if (values.password.length < 8)
+      nextErrors.password = 'Password must be at least 8 characters.'
     if (!values.confirmPassword) nextErrors.confirmPassword = 'Confirm the password.'
-    else if (values.password !== values.confirmPassword) nextErrors.confirmPassword = 'Passwords do not match.'
+    else if (values.password !== values.confirmPassword)
+      nextErrors.confirmPassword = 'Passwords do not match.'
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors)
       return
@@ -157,7 +178,10 @@ function SettingsUsersPage() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create user</DialogTitle>
-                <DialogDescription>Create a local account. Organization membership is managed from organization user pages.</DialogDescription>
+                <DialogDescription>
+                  Create a local account. Organization membership is managed from organization user
+                  pages.
+                </DialogDescription>
               </DialogHeader>
               <form className="mt-6 flex flex-col gap-4" onSubmit={submitCreateUser}>
                 <FormInput
@@ -197,7 +221,11 @@ function SettingsUsersPage() {
                 />
 
                 <DialogFooter>
-                  <DialogClose render={<Button type="button" variant="ghost" disabled={createUser.isPending} />}>
+                  <DialogClose
+                    render={
+                      <Button type="button" variant="ghost" disabled={createUser.isPending} />
+                    }
+                  >
                     Cancel
                   </DialogClose>
                   <Button type="submit" disabled={createUser.isPending}>
@@ -223,24 +251,50 @@ function SettingsUsersPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>
-                  <TableColumnHeader label="User" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  <TableColumnHeader
+                    label="User"
+                    sort="name"
+                    currentSort={query.sort}
+                    currentOrder={query.order}
+                    onSortChange={toggleSort}
+                  />
                 </TableHead>
                 <TableHead>
                   <TableColumnHeader label="Status" />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Account ID" sort="id" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  <TableColumnHeader
+                    label="Account ID"
+                    sort="id"
+                    currentSort={query.sort}
+                    currentOrder={query.order}
+                    onSortChange={toggleSort}
+                  />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  <TableColumnHeader
+                    label="Created"
+                    sort="created_at"
+                    currentSort={query.sort}
+                    currentOrder={query.order}
+                    onSortChange={toggleSort}
+                  />
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.isLoading ? <TableEmptyState colSpan={4} compact message="Loading users..." /> : null}
-              {users.isError ? <TableEmptyState colSpan={4} compact message="Failed to load users." /> : null}
+              {users.isLoading ? (
+                <TableEmptyState colSpan={4} compact message="Loading users..." />
+              ) : null}
+              {users.isError ? (
+                <TableEmptyState colSpan={4} compact message="Failed to load users." />
+              ) : null}
               {!users.isLoading && !users.isError && items.length === 0 ? (
-                <TableEmptyState colSpan={4} compact message={query.q ? 'No users matched your search.' : 'No users exist yet.'} />
+                <TableEmptyState
+                  colSpan={4}
+                  compact
+                  message={query.q ? 'No users matched your search.' : 'No users exist yet.'}
+                />
               ) : null}
               {items.map((user) => (
                 <TableRow key={user.id}>
@@ -254,10 +308,14 @@ function SettingsUsersPage() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={user.is_active ? 'secondary' : 'outline'}>{user.is_active ? 'Active' : 'Inactive'}</Badge>
+                    <Badge variant={user.is_active ? 'secondary' : 'outline'}>
+                      {user.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{user.id}</TableCell>
-                  <TableCell className="text-muted-foreground">{formatDate(user.created_at)}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDate(user.created_at)}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

@@ -15,7 +15,12 @@ import {
   orgWorkspaceEffectiveMembersQueryOptions,
   orgWorkspaceMembersQueryOptions,
 } from '#/lib/api/query'
-import type { OrgMember, WorkspaceEffectiveMember, WorkspaceMember, WorkspaceMembershipSource } from '#/lib/api/types'
+import type {
+  OrgMember,
+  WorkspaceEffectiveMember,
+  WorkspaceMember,
+  WorkspaceMembershipSource,
+} from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
 import {
   AlertDialog,
@@ -32,7 +37,15 @@ import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Checkbox } from '#/components/ui/checkbox'
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
 import { getInitials } from '#/components/InitialsAvatar'
 import { SectionTabNav } from '#/components/SectionTabNav'
 import { entityColor } from '#/lib/entity-colors'
@@ -43,31 +56,48 @@ import { SearchInput } from '#/components/SearchInput'
 import { Skeleton } from '#/components/ui/skeleton'
 import { TableEmptyState } from '#/components/EmptyState'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/users')({
   component: WorkspaceUsersPage,
   pendingComponent: RoutePending,
 })
 
-
 function WorkspaceUsersPage() {
   const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
   const queryClient = useQueryClient()
   const [isAddingUser, setIsAddingUser] = useState(false)
   const [includeInheritedUsers, setIncludeInheritedUsers] = useState(false)
-  const { searchText: pickerSearchText, setSearchText: setPickerSearchText, debouncedQuery: pickerSearch, clearSearch: clearPickerSearch } = useDebouncedQueryText()
-  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
-    page: 1,
-    page_size: 10,
-    sort: 'name',
-    order: 'asc',
-    q: '',
-  })
+  const {
+    searchText: pickerSearchText,
+    setSearchText: setPickerSearchText,
+    debouncedQuery: pickerSearch,
+    clearSearch: clearPickerSearch,
+  } = useDebouncedQueryText()
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
+    useListPageState({
+      page: 1,
+      page_size: 10,
+      sort: 'name',
+      order: 'asc',
+      q: '',
+    })
 
-  const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId))
+  const effectivePermissions = useQuery(
+    orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId),
+  )
   const canReadUsers = hasPermission(effectivePermissions.data?.permissions, permission.policyRead)
-  const canModifyUsers = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
+  const canModifyUsers = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.policyModify,
+  )
   const directMembers = useQuery({
     ...orgWorkspaceMembersQueryOptions(orgSlug, workspaceId, query),
     enabled: canReadUsers,
@@ -91,7 +121,9 @@ function WorkspaceUsersPage() {
   const items: WorkspaceUserRowItem[] = includeInheritedUsers
     ? (effectiveMembers.data?.items ?? [])
     : (directMembers.data?.items ?? []).map(workspaceMemberToRowItem)
-  const existingAccountIds = new Set((directMembers.data?.items ?? []).map((member) => member.account_id))
+  const existingAccountIds = new Set(
+    (directMembers.data?.items ?? []).map((member) => member.account_id),
+  )
   const page = activeMembers.data?.page ?? Number(query.page ?? 1)
   const pageSize = activeMembers.data?.page_size ?? Number(query.page_size ?? 10)
   const total = activeMembers.data?.total ?? 0
@@ -115,7 +147,9 @@ function WorkspaceUsersPage() {
 
   const addUser = useMutation({
     mutationFn: async (accountId: number) =>
-      api.post<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/users`, { account_id: accountId }),
+      api.post<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/users`, {
+        account_id: accountId,
+      }),
     onSuccess: async () => {
       toast.success('User added')
       await invalidateWorkspaceUserQueries(queryClient, orgSlug, workspaceId)
@@ -141,172 +175,226 @@ function WorkspaceUsersPage() {
     <div className="flex flex-col">
       <SectionTabNav
         tabs={[
-          { label: 'Users', to: '/orgs/$org_slug/workspaces/$workspace_id/users', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: true },
-          { label: 'Teams', to: '/orgs/$org_slug/workspaces/$workspace_id/teams', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: false },
+          {
+            label: 'Users',
+            to: '/orgs/$org_slug/workspaces/$workspace_id/users',
+            params: { org_slug: orgSlug, workspace_id: workspaceId },
+            isActive: true,
+          },
+          {
+            label: 'Teams',
+            to: '/orgs/$org_slug/workspaces/$workspace_id/teams',
+            params: { org_slug: orgSlug, workspace_id: workspaceId },
+            isActive: false,
+          },
         ]}
       />
 
       <div className="flex flex-col gap-6 pt-6">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            {!activeMembers.isLoading && total > 0
-              ? `${total} user${total !== 1 ? 's' : ''} in this workspace`
-              : includeInheritedUsers
-                ? 'Direct and inherited members of this workspace.'
-                : 'Users explicitly added to this workspace.'}
-          </p>
-          {canModifyUsers ? (
-            <Dialog
-              open={isAddingUser}
-              onOpenChange={(open) => {
-                setIsAddingUser(open)
-                if (!open) clearPickerSearch()
-              }}
-            >
-              <DialogTrigger render={<Button />}>
-                <Icon name="plus-sign" size={20} data-icon="inline-start" />
-                Add User
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add User</DialogTitle>
-                </DialogHeader>
-                <div className="mt-6 flex flex-col gap-4">
-                  <SearchInput
-                    value={pickerSearchText}
-                    onValueChange={setPickerSearchText}
-                    onClear={clearPickerSearch}
-                    placeholder="Search organization users"
-                    className="max-w-none"
-                  />
-                  <div className="min-h-64">
-                    <Table>
-                      <TableBody>
-                        {orgMembers.isLoading ? <UserPickerSkeleton /> : null}
-                        {orgMembers.isError ? <MessageRow colSpan={2} icon="user-multiple" message="Failed to load users." /> : null}
-                        {!orgMembers.isLoading && !orgMembers.isError && (orgMembers.data?.items ?? []).length === 0 ? (
-                          <MessageRow colSpan={2} icon="user-multiple" message="No users found." />
-                        ) : null}
-                        {!orgMembers.isLoading && !orgMembers.isError
-                          ? (orgMembers.data?.items ?? []).map((member) => (
-                              <UserPickerRow
-                                key={member.account_id}
-                                member={member}
-                                isExistingMember={existingAccountIds.has(member.account_id)}
-                                isPending={addUser.isPending}
-                                onAdd={(accountId) => addUser.mutate(accountId)}
-                              />
-                            ))
-                          : null}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <DialogClose render={<Button type="button" variant="ghost" />}>Close</DialogClose>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          ) : null}
-        </div>
-
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <SearchInput
-            value={searchText}
-            onValueChange={setSearchText}
-            onClear={clearSearch}
-            placeholder="Search users"
-          />
-          <label className="flex shrink-0 cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-            <Checkbox
-              checked={includeInheritedUsers}
-              onCheckedChange={(checked) => {
-                setIncludeInheritedUsers(checked === true)
-                setPage(1)
-              }}
-            />
-            Show inherited users
-          </label>
-        </div>
-      </div>
-
-      <Card>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <TableColumnHeader label="User" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                </TableHead>
-                <TableHead>
-                  <TableColumnHeader label="Added" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                </TableHead>
-                {includeInheritedUsers ? (
-                  <TableHead>
-                    <TableColumnHeader label="Source" />
-                  </TableHead>
-                ) : null}
-                {canModifyUsers ? (
-                  <TableHead className="text-end">
-                    <TableColumnHeader label="Actions" />
-                  </TableHead>
-                ) : null}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {effectivePermissions.isLoading || activeMembers.isLoading ? (
-                <UsersTableSkeleton canModifyUsers={canModifyUsers} includeSource={includeInheritedUsers} />
-              ) : null}
-              {activeMembers.isError ? (
-                <TableEmptyState colSpan={tableColumnCount} icon="user-multiple" message="Failed to load users." />
-              ) : null}
-              {!effectivePermissions.isLoading && !canReadUsers ? (
-                <TableEmptyState colSpan={tableColumnCount} icon="user-multiple" message="You do not have permission to view workspace users." />
-              ) : null}
-              {!effectivePermissions.isLoading && canReadUsers && !activeMembers.isLoading && !activeMembers.isError && items.length === 0 ? (
-                <TableEmptyState
-                  colSpan={tableColumnCount}
-                  icon="user-multiple"
-                  message={
-                    query.q
-                      ? 'No users matched your search.'
-                      : includeInheritedUsers
-                        ? 'No direct or inherited workspace users found.'
-                        : 'No workspace users found.'
-                  }
-                />
-              ) : null}
-              {!effectivePermissions.isLoading && canReadUsers && !activeMembers.isLoading && !activeMembers.isError
-                ? items.map((member) => (
-                    <WorkspaceUserRow
-                      key={member.account_id}
-                      orgSlug={orgSlug}
-                      member={member}
-                      canModifyUsers={canModifyUsers}
-                      showSource={includeInheritedUsers}
-                      isRemoving={removeUser.isPending}
-                      onRemove={(accountId) => removeUser.mutate(accountId)}
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              {!activeMembers.isLoading && total > 0
+                ? `${total} user${total !== 1 ? 's' : ''} in this workspace`
+                : includeInheritedUsers
+                  ? 'Direct and inherited members of this workspace.'
+                  : 'Users explicitly added to this workspace.'}
+            </p>
+            {canModifyUsers ? (
+              <Dialog
+                open={isAddingUser}
+                onOpenChange={(open) => {
+                  setIsAddingUser(open)
+                  if (!open) clearPickerSearch()
+                }}
+              >
+                <DialogTrigger render={<Button />}>
+                  <Icon name="plus-sign" size={20} data-icon="inline-start" />
+                  Add User
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Add User</DialogTitle>
+                  </DialogHeader>
+                  <div className="mt-6 flex flex-col gap-4">
+                    <SearchInput
+                      value={pickerSearchText}
+                      onValueChange={setPickerSearchText}
+                      onClear={clearPickerSearch}
+                      placeholder="Search organization users"
+                      className="max-w-none"
                     />
-                  ))
-                : null}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                    <div className="min-h-64">
+                      <Table>
+                        <TableBody>
+                          {orgMembers.isLoading ? <UserPickerSkeleton /> : null}
+                          {orgMembers.isError ? (
+                            <MessageRow
+                              colSpan={2}
+                              icon="user-multiple"
+                              message="Failed to load users."
+                            />
+                          ) : null}
+                          {!orgMembers.isLoading &&
+                          !orgMembers.isError &&
+                          (orgMembers.data?.items ?? []).length === 0 ? (
+                            <MessageRow
+                              colSpan={2}
+                              icon="user-multiple"
+                              message="No users found."
+                            />
+                          ) : null}
+                          {!orgMembers.isLoading && !orgMembers.isError
+                            ? (orgMembers.data?.items ?? []).map((member) => (
+                                <UserPickerRow
+                                  key={member.account_id}
+                                  member={member}
+                                  isExistingMember={existingAccountIds.has(member.account_id)}
+                                  isPending={addUser.isPending}
+                                  onAdd={(accountId) => addUser.mutate(accountId)}
+                                />
+                              ))
+                            : null}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <DialogClose render={<Button type="button" variant="ghost" />}>
+                      Close
+                    </DialogClose>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            ) : null}
+          </div>
 
-      {canReadUsers && !activeMembers.isLoading && !activeMembers.isError && items.length > 0 ? (
-        <PaginationFooter
-          itemLabel="users"
-          page={page}
-          pageCount={pageCount}
-          pageSize={pageSize}
-          total={total}
-          isFetching={activeMembers.isFetching}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
-        />
-      ) : null}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <SearchInput
+              value={searchText}
+              onValueChange={setSearchText}
+              onClear={clearSearch}
+              placeholder="Search users"
+            />
+            <label className="flex shrink-0 cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+              <Checkbox
+                checked={includeInheritedUsers}
+                onCheckedChange={(checked) => {
+                  setIncludeInheritedUsers(checked === true)
+                  setPage(1)
+                }}
+              />
+              Show inherited users
+            </label>
+          </div>
+        </div>
+
+        <Card>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <TableColumnHeader
+                      label="User"
+                      sort="name"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
+                    />
+                  </TableHead>
+                  <TableHead>
+                    <TableColumnHeader
+                      label="Added"
+                      sort="created_at"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
+                    />
+                  </TableHead>
+                  {includeInheritedUsers ? (
+                    <TableHead>
+                      <TableColumnHeader label="Source" />
+                    </TableHead>
+                  ) : null}
+                  {canModifyUsers ? (
+                    <TableHead className="text-end">
+                      <TableColumnHeader label="Actions" />
+                    </TableHead>
+                  ) : null}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {effectivePermissions.isLoading || activeMembers.isLoading ? (
+                  <UsersTableSkeleton
+                    canModifyUsers={canModifyUsers}
+                    includeSource={includeInheritedUsers}
+                  />
+                ) : null}
+                {activeMembers.isError ? (
+                  <TableEmptyState
+                    colSpan={tableColumnCount}
+                    icon="user-multiple"
+                    message="Failed to load users."
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading && !canReadUsers ? (
+                  <TableEmptyState
+                    colSpan={tableColumnCount}
+                    icon="user-multiple"
+                    message="You do not have permission to view workspace users."
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading &&
+                canReadUsers &&
+                !activeMembers.isLoading &&
+                !activeMembers.isError &&
+                items.length === 0 ? (
+                  <TableEmptyState
+                    colSpan={tableColumnCount}
+                    icon="user-multiple"
+                    message={
+                      query.q
+                        ? 'No users matched your search.'
+                        : includeInheritedUsers
+                          ? 'No direct or inherited workspace users found.'
+                          : 'No workspace users found.'
+                    }
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading &&
+                canReadUsers &&
+                !activeMembers.isLoading &&
+                !activeMembers.isError
+                  ? items.map((member) => (
+                      <WorkspaceUserRow
+                        key={member.account_id}
+                        orgSlug={orgSlug}
+                        member={member}
+                        canModifyUsers={canModifyUsers}
+                        showSource={includeInheritedUsers}
+                        isRemoving={removeUser.isPending}
+                        onRemove={(accountId) => removeUser.mutate(accountId)}
+                      />
+                    ))
+                  : null}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        {canReadUsers && !activeMembers.isLoading && !activeMembers.isError && items.length > 0 ? (
+          <PaginationFooter
+            itemLabel="users"
+            page={page}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            total={total}
+            isFetching={activeMembers.isFetching}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
       </div>
     </div>
   )
@@ -327,11 +415,18 @@ function UserPickerRow({
     <TableRow>
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(member.name || member.email))}>
+          <div
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
+              entityColor(member.name || member.email),
+            )}
+          >
             {getInitials(member.name || member.email, '?')}
           </div>
           <div className="min-w-0">
-            <div className="truncate font-medium text-foreground">{member.name || member.email}</div>
+            <div className="truncate font-medium text-foreground">
+              {member.name || member.email}
+            </div>
             <div className="truncate text-sm text-muted-foreground">{member.email}</div>
           </div>
         </div>
@@ -398,11 +493,18 @@ function WorkspaceUserRow({
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(member.name || member.email))}>
+          <div
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
+              entityColor(member.name || member.email),
+            )}
+          >
             {getInitials(member.name || member.email, '?')}
           </div>
           <div className="min-w-0">
-            <div className="truncate font-medium text-foreground">{member.name || member.email}</div>
+            <div className="truncate font-medium text-foreground">
+              {member.name || member.email}
+            </div>
             <div className="truncate text-sm text-muted-foreground">{member.email}</div>
           </div>
         </div>
@@ -431,15 +533,23 @@ function WorkspaceUserRow({
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel variant="ghost" disabled={isRemoving}>Cancel</AlertDialogCancel>
-                  <AlertDialogAction variant="destructive" disabled={isRemoving} onClick={() => onRemove(member.account_id)}>
+                  <AlertDialogCancel variant="ghost" disabled={isRemoving}>
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    disabled={isRemoving}
+                    onClick={() => onRemove(member.account_id)}
+                  >
                     Remove
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
           ) : (
-            <Badge variant="outline" className="text-muted-foreground">Inherited</Badge>
+            <Badge variant="outline" className="text-muted-foreground">
+              Inherited
+            </Badge>
           )}
         </TableCell>
       ) : null}
@@ -455,7 +565,10 @@ function MembershipSourceBadges({ sources }: { sources: WorkspaceMembershipSourc
     <div className="flex flex-wrap gap-1.5">
       {hasDirectSource ? <Badge variant="outline">Direct</Badge> : null}
       {teamSources.map((source) => (
-        <Badge key={`${source.team_id ?? source.team_slug}-${source.team_name ?? 'team'}`} variant="outline">
+        <Badge
+          key={`${source.team_id ?? source.team_slug}-${source.team_name ?? 'team'}`}
+          variant="outline"
+        >
           {source.team_name || source.team_slug || 'Team'}
         </Badge>
       ))}
@@ -486,7 +599,13 @@ function UserPickerSkeleton() {
   )
 }
 
-function UsersTableSkeleton({ canModifyUsers, includeSource }: { canModifyUsers: boolean; includeSource: boolean }) {
+function UsersTableSkeleton({
+  canModifyUsers,
+  includeSource,
+}: {
+  canModifyUsers: boolean
+  includeSource: boolean
+}) {
   return (
     <>
       {Array.from({ length: 5 }).map((_, index) => (
@@ -519,7 +638,15 @@ function UsersTableSkeleton({ canModifyUsers, includeSource }: { canModifyUsers:
   )
 }
 
-function MessageRow({ colSpan, icon, message }: { colSpan: number; icon: import('#/lib/icons').AppIcon; message: string }) {
+function MessageRow({
+  colSpan,
+  icon,
+  message,
+}: {
+  colSpan: number
+  icon: import('#/lib/icons').AppIcon
+  message: string
+}) {
   return (
     <TableRow>
       <TableCell colSpan={colSpan}>
@@ -532,7 +659,6 @@ function MessageRow({ colSpan, icon, message }: { colSpan: number; icon: import(
   )
 }
 
-
 type WorkspaceUserRowItem = WorkspaceEffectiveMember
 
 function workspaceMemberToRowItem(member: WorkspaceMember): WorkspaceUserRowItem {
@@ -543,9 +669,17 @@ function workspaceMemberToRowItem(member: WorkspaceMember): WorkspaceUserRowItem
   }
 }
 
-async function invalidateWorkspaceUserQueries(queryClient: ReturnType<typeof useQueryClient>, orgSlug: string, workspaceId: string) {
+async function invalidateWorkspaceUserQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  orgSlug: string,
+  workspaceId: string,
+) {
   await Promise.all([
-    queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceMembersScope(orgSlug, workspaceId) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceEffectiveMembersScope(orgSlug, workspaceId) }),
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.orgWorkspaceMembersScope(orgSlug, workspaceId),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.orgWorkspaceEffectiveMembersScope(orgSlug, workspaceId),
+    }),
   ])
 }

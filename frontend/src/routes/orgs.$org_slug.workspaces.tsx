@@ -14,7 +14,16 @@ import type { Workspace } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { EmptyState } from '#/components/EmptyState'
 import { getInitials } from '#/components/InitialsAvatar'
@@ -47,7 +56,10 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
   const [isCreating, setIsCreating] = useState(false)
   const [newWorkspaceName, setNewWorkspaceName] = useState('')
   const [newWorkspaceDescription, setNewWorkspaceDescription] = useState('')
-  const [createFieldErrors, setCreateFieldErrors] = useState<{ name?: string; description?: string }>({})
+  const [createFieldErrors, setCreateFieldErrors] = useState<{
+    name?: string
+    description?: string
+  }>({})
   const { query, searchText, setSearchText, clearSearch, setPage, setPageSize } = useListPageState({
     page: 1,
     page_size: 12,
@@ -58,7 +70,10 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
 
   const workspaces = useQuery(orgWorkspacesQueryOptions(orgSlug, query))
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
-  const canCreateWorkspace = hasPermission(effectivePermissions.data?.permissions, permission.wsCreate)
+  const canCreateWorkspace = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.wsCreate,
+  )
   const data = workspaces.data
   const items = data?.items ?? []
   const page = data?.page ?? Number(query.page ?? 1)
@@ -177,7 +192,9 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
                       aria-invalid={createFieldErrors.name ? true : undefined}
                       disabled={createWorkspace.isPending}
                     />
-                    {createFieldErrors.name ? <p className="text-sm text-destructive">{createFieldErrors.name}</p> : null}
+                    {createFieldErrors.name ? (
+                      <p className="text-sm text-destructive">{createFieldErrors.name}</p>
+                    ) : null}
                   </div>
 
                   <div className="flex flex-col gap-2">
@@ -191,11 +208,21 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
                       aria-invalid={createFieldErrors.description ? true : undefined}
                       disabled={createWorkspace.isPending}
                     />
-                    {createFieldErrors.description ? <p className="text-sm text-destructive">{createFieldErrors.description}</p> : null}
+                    {createFieldErrors.description ? (
+                      <p className="text-sm text-destructive">{createFieldErrors.description}</p>
+                    ) : null}
                   </div>
 
                   <DialogFooter>
-                    <DialogClose render={<Button type="button" variant="ghost" disabled={createWorkspace.isPending} />}>
+                    <DialogClose
+                      render={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          disabled={createWorkspace.isPending}
+                        />
+                      }
+                    >
                       Cancel
                     </DialogClose>
                     <Button type="submit" disabled={createWorkspace.isPending}>
@@ -242,7 +269,11 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
       {workspaces.isError ? (
         <Card>
           <CardContent>
-            <EmptyState icon="briefcase-01" message="Failed to load workspaces" description="Refresh the page and try again." />
+            <EmptyState
+              icon="briefcase-01"
+              message="Failed to load workspaces"
+              description="Refresh the page and try again."
+            />
           </CardContent>
         </Card>
       ) : null}
@@ -253,7 +284,11 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
             <EmptyState
               icon="briefcase-01"
               message={query.q ? 'No workspaces matched your search.' : 'No workspaces found'}
-              description={query.q ? 'Try a different workspace name.' : 'This organization does not have any visible workspaces yet.'}
+              description={
+                query.q
+                  ? 'Try a different workspace name.'
+                  : 'This organization does not have any visible workspaces yet.'
+              }
             />
           </CardContent>
         </Card>
@@ -271,7 +306,12 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
               >
                 <div className="flex flex-1 flex-col gap-3 p-5">
                   <div className="flex items-center gap-3">
-                    <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold', workspaceColor(workspace.name))}>
+                    <div
+                      className={cn(
+                        'flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold',
+                        workspaceColor(workspace.name),
+                      )}
+                    >
                       {getInitials(workspace.name, 'W')}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -289,11 +329,17 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
                 <div className="flex items-center gap-5 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
                   <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
                     <Icon name="database" size={20} />
-                    <span>{workspace.environment_count} {workspace.environment_count === 1 ? 'environment' : 'environments'}</span>
+                    <span>
+                      {workspace.environment_count}{' '}
+                      {workspace.environment_count === 1 ? 'environment' : 'environments'}
+                    </span>
                   </div>
                   <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
                     <Icon name="flow-connection" size={20} />
-                    <span>{workspace.connection_count} {workspace.connection_count === 1 ? 'connection' : 'connections'}</span>
+                    <span>
+                      {workspace.connection_count}{' '}
+                      {workspace.connection_count === 1 ? 'connection' : 'connections'}
+                    </span>
                   </div>
                 </div>
               </Link>

@@ -8,7 +8,11 @@ export class ApiError extends Error {
   details?: unknown
   fieldErrors?: ApiFieldErrors
 
-  constructor(message: string, status: number, options?: { code?: string; details?: unknown; fieldErrors?: ApiFieldErrors }) {
+  constructor(
+    message: string,
+    status: number,
+    options?: { code?: string; details?: unknown; fieldErrors?: ApiFieldErrors },
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status

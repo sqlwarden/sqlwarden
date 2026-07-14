@@ -30,10 +30,12 @@ describe('useQueryExecution', () => {
   beforeEach(() => {
     mocks.closeCursor.mockReset().mockResolvedValue(undefined)
     mocks.runQuery.mockReset().mockResolvedValue(result)
-    mocks.ensureSession.mockReset().mockImplementation(async (
-      _connectionId: number,
-      run: (sessionId: string) => Promise<unknown>,
-    ) => run('session-1'))
+    mocks.ensureSession
+      .mockReset()
+      .mockImplementation(
+        async (_connectionId: number, run: (sessionId: string) => Promise<unknown>) =>
+          run('session-1'),
+      )
   })
 
   it('closes the previous cursor and executes through the ensured session', async () => {
@@ -52,22 +54,31 @@ describe('useQueryExecution', () => {
     function wrapper({ children }: PropsWithChildren) {
       return <IdeStoreContext.Provider value={store}>{children}</IdeStoreContext.Provider>
     }
-    const { result: hook } = renderHook(
-      () => useQueryExecution('acme', 3, 'query', 7),
-      { wrapper },
-    )
+    const { result: hook } = renderHook(() => useQueryExecution('acme', 3, 'query', 7), { wrapper })
 
     await act(async () => hook.current.run('select 1'))
 
     expect(mocks.closeCursor).toHaveBeenCalledWith('acme', 3, 8, 'cursor-1')
-    expect(mocks.ensureSession).toHaveBeenCalledWith(7, expect.any(Function), expect.any(AbortSignal))
+    expect(mocks.ensureSession).toHaveBeenCalledWith(
+      7,
+      expect.any(Function),
+      expect.any(AbortSignal),
+    )
     expect(mocks.runQuery).toHaveBeenCalledWith(
-      'acme', 3, 7, 'session-1', 'select 1',
+      'acme',
+      3,
+      7,
+      'session-1',
+      'select 1',
       expect.objectContaining({ useCursor: true, signal: expect.any(AbortSignal) }),
     )
-    expect(store.getState().results.query).toEqual(expect.objectContaining({
-      status: 'ok', sql: 'select 1', connectionId: 7,
-    }))
+    expect(store.getState().results.query).toEqual(
+      expect.objectContaining({
+        status: 'ok',
+        sql: 'select 1',
+        connectionId: 7,
+      }),
+    )
     expect(store.getState().runningTabs.query).toBe(false)
     expect(store.getState().abortControllers.query).toBeUndefined()
   })
@@ -88,7 +99,9 @@ describe('useQueryExecution', () => {
     await act(async () => hook.result.current.run('select 1'))
     expect(mocks.runQuery).not.toHaveBeenCalled()
 
-    const unavailable = renderHook(() => useQueryExecution('acme', 3, undefined, undefined), { wrapper })
+    const unavailable = renderHook(() => useQueryExecution('acme', 3, undefined, undefined), {
+      wrapper,
+    })
     await act(async () => unavailable.result.current.run('select 1'))
     expect(mocks.ensureSession).not.toHaveBeenCalled()
   })

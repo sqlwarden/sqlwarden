@@ -65,10 +65,27 @@ describe('ObjectDetailView', () => {
 
   function respondReady() {
     server.use(
-      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects', () => HttpResponse.json({ objects: [detail] })),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () => HttpResponse.json({
-        spec: { dialect: 'postgres', kinds: [{ kind: 'table', label: 'Table', plural_label: 'Tables', order: 1, relational: true, supports_diagram: true, listing: 'enumerated' }] },
-      })),
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects', () =>
+        HttpResponse.json({ objects: [detail] }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({
+          spec: {
+            dialect: 'postgres',
+            kinds: [
+              {
+                kind: 'table',
+                label: 'Table',
+                plural_label: 'Tables',
+                order: 1,
+                relational: true,
+                supports_diagram: true,
+                listing: 'enumerated',
+              },
+            ],
+          },
+        }),
+      ),
     )
   }
 
@@ -79,7 +96,11 @@ describe('ObjectDetailView', () => {
 
   it('reconnects a stale tab and stores the replacement session', async () => {
     respondReady()
-    server.use(http.post('/api/v1/orgs/acme/workspaces/3/connections/7/connect', () => HttpResponse.json({ session_id: 'session-7' })))
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/connect', () =>
+        HttpResponse.json({ session_id: 'session-7' }),
+      ),
+    )
     renderView()
 
     fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }))
@@ -98,21 +119,30 @@ describe('ObjectDetailView', () => {
     expect(screen.getByText('id')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'View in diagram' }))
-    expect(store.getState().tabs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'diagram', connectionId: 7 }),
-    ]))
+    expect(store.getState().tabs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'diagram', connectionId: 7 })]),
+    )
   })
 
   it('renders permission loss without stale object data', async () => {
     store.getState().setSession(7, 'session-7')
     server.use(
-      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects', () => HttpResponse.json({
-        error: { code: 'forbidden', message: 'Forbidden' },
-      }, { status: 403 })),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () => HttpResponse.json({ spec: { dialect: 'postgres', kinds: [] } })),
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects', () =>
+        HttpResponse.json(
+          {
+            error: { code: 'forbidden', message: 'Forbidden' },
+          },
+          { status: 403 },
+        ),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({ spec: { dialect: 'postgres', kinds: [] } }),
+      ),
     )
     renderView()
 
-    expect(await screen.findByText('You no longer have access to this connection.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('You no longer have access to this connection.'),
+    ).toBeInTheDocument()
   })
 })

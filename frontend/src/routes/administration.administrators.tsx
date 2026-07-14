@@ -10,7 +10,16 @@ import { isApiError } from '#/lib/api/errors'
 import { instanceAdminsQueryOptions, queryKeys } from '#/lib/api/query'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { SearchInput } from '#/components/SearchInput'
@@ -18,7 +27,14 @@ import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 
 export const Route = createFileRoute('/administration/administrators')({
   component: SettingsAdministratorsPage,
@@ -30,13 +46,14 @@ function SettingsAdministratorsPage() {
   const [isCreating, setIsCreating] = useState(false)
   const [email, setEmail] = useState('')
   const [fieldError, setFieldError] = useState<string | null>(null)
-  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
-    page: 1,
-    page_size: 10,
-    sort: 'created_at',
-    order: 'asc',
-    q: '',
-  })
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
+    useListPageState({
+      page: 1,
+      page_size: 10,
+      sort: 'created_at',
+      order: 'asc',
+      q: '',
+    })
 
   const administrators = useQuery(instanceAdminsQueryOptions(query))
   const data = administrators.data
@@ -47,7 +64,8 @@ function SettingsAdministratorsPage() {
   const pageCount = total > 0 ? Math.ceil(total / pageSize) : 1
 
   const addAdministrator = useMutation({
-    mutationFn: async (value: string) => api.post<void>('/api/v1/instance/admins', { email: value }),
+    mutationFn: async (value: string) =>
+      api.post<void>('/api/v1/instance/admins', { email: value }),
     onSuccess: async () => {
       setIsCreating(false)
       setEmail('')
@@ -66,7 +84,8 @@ function SettingsAdministratorsPage() {
   })
 
   const removeAdministrator = useMutation({
-    mutationFn: async (accountId: number) => api.delete<void>(`/api/v1/instance/admins/${accountId}`),
+    mutationFn: async (accountId: number) =>
+      api.delete<void>(`/api/v1/instance/admins/${accountId}`),
     onSuccess: async () => {
       toast.success('Administrator removed')
       await Promise.all([
@@ -129,7 +148,9 @@ function SettingsAdministratorsPage() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Add administrator</DialogTitle>
-                <DialogDescription>Grant instance administrator access to an existing account by email.</DialogDescription>
+                <DialogDescription>
+                  Grant instance administrator access to an existing account by email.
+                </DialogDescription>
               </DialogHeader>
               <form className="mt-6 flex flex-col gap-4" onSubmit={submitCreate}>
                 <div className="flex flex-col gap-2">
@@ -148,7 +169,11 @@ function SettingsAdministratorsPage() {
                 </div>
 
                 <DialogFooter>
-                  <DialogClose render={<Button type="button" variant="ghost" disabled={addAdministrator.isPending} />}>
+                  <DialogClose
+                    render={
+                      <Button type="button" variant="ghost" disabled={addAdministrator.isPending} />
+                    }
+                  >
                     Cancel
                   </DialogClose>
                   <Button type="submit" disabled={addAdministrator.isPending}>
@@ -177,10 +202,22 @@ function SettingsAdministratorsPage() {
                   <TableColumnHeader label="Account" />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Account ID" sort="account_id" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  <TableColumnHeader
+                    label="Account ID"
+                    sort="account_id"
+                    currentSort={query.sort}
+                    currentOrder={query.order}
+                    onSortChange={toggleSort}
+                  />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Added" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  <TableColumnHeader
+                    label="Added"
+                    sort="created_at"
+                    currentSort={query.sort}
+                    currentOrder={query.order}
+                    onSortChange={toggleSort}
+                  />
                 </TableHead>
                 <TableHead className="w-1 text-right">
                   <TableColumnHeader label="Actions" />
@@ -195,20 +232,36 @@ function SettingsAdministratorsPage() {
                 <TableEmptyState colSpan={4} compact message="Failed to load administrators." />
               ) : null}
               {!administrators.isLoading && !administrators.isError && items.length === 0 ? (
-                <TableEmptyState colSpan={4} compact message={query.q ? 'No administrators matched your search.' : 'No administrators exist yet.'} />
+                <TableEmptyState
+                  colSpan={4}
+                  compact
+                  message={
+                    query.q
+                      ? 'No administrators matched your search.'
+                      : 'No administrators exist yet.'
+                  }
+                />
               ) : null}
               {items.map((administrator) => (
                 <TableRow key={administrator.account_id}>
                   <TableCell>
                     <div className="flex min-w-0 items-center gap-3">
-                      <InitialsAvatar value={administrator.account?.name || administrator.account?.email || 'A'} />
+                      <InitialsAvatar
+                        value={administrator.account?.name || administrator.account?.email || 'A'}
+                      />
                       <div className="min-w-0">
-                        <div className="truncate font-medium text-foreground">{administrator.account?.name ?? 'Unknown'}</div>
-                        <div className="truncate text-muted-foreground">{administrator.account?.email ?? 'Unknown'}</div>
+                        <div className="truncate font-medium text-foreground">
+                          {administrator.account?.name ?? 'Unknown'}
+                        </div>
+                        <div className="truncate text-muted-foreground">
+                          {administrator.account?.email ?? 'Unknown'}
+                        </div>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{administrator.account_id}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {administrator.account_id}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {new Intl.DateTimeFormat(undefined, {
                       year: 'numeric',
@@ -224,7 +277,9 @@ function SettingsAdministratorsPage() {
                       className="cursor-pointer text-destructive hover:text-destructive"
                       disabled={removeAdministrator.isPending}
                       onClick={() => {
-                        void removeAdministrator.mutateAsync(administrator.account_id).catch(() => {})
+                        void removeAdministrator
+                          .mutateAsync(administrator.account_id)
+                          .catch(() => {})
                       }}
                     >
                       <Icon name="delete-02" size={20} data-icon="inline-start" />

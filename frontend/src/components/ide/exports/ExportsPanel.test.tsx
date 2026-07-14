@@ -51,9 +51,10 @@ function job(id: string, status: JobRecord['status']): JobRecord {
     attempts: 0,
     max_attempts: 1,
     error_message: status === 'failed' ? 'Connection lost' : undefined,
-    output: status === 'succeeded'
-      ? { file_id: 42, filename: 'orders.csv', format: 'csv', row_count: 2, byte_count: 20 }
-      : undefined,
+    output:
+      status === 'succeeded'
+        ? { file_id: 42, filename: 'orders.csv', format: 'csv', row_count: 2, byte_count: 20 }
+        : undefined,
     created_at: '',
     updated_at: '',
   }
@@ -73,11 +74,21 @@ describe('ExportsPanel', () => {
   }
 
   it('renders loading and empty states', () => {
-    mocks.useExportJobs.mockReturnValue({ jobs: [], isLoading: true, latestEventByJobId: new Map(), refresh: vi.fn() })
+    mocks.useExportJobs.mockReturnValue({
+      jobs: [],
+      isLoading: true,
+      latestEventByJobId: new Map(),
+      refresh: vi.fn(),
+    })
     const view = renderPanel()
     expect(screen.getByText('Loading exports…')).toBeInTheDocument()
 
-    mocks.useExportJobs.mockReturnValue({ jobs: [], isLoading: false, latestEventByJobId: new Map(), refresh: vi.fn() })
+    mocks.useExportJobs.mockReturnValue({
+      jobs: [],
+      isLoading: false,
+      latestEventByJobId: new Map(),
+      refresh: vi.fn(),
+    })
     view.rerender(
       <QueryClientProvider client={createTestQueryClient()}>
         <ExportsPanel orgSlug="acme" workspace={workspace} />

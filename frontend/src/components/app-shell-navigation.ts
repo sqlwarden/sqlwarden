@@ -25,7 +25,10 @@ export function isNavItemActive(pathname: string, item: AppShellNavItem) {
   return (
     item.activePathPrefixes?.some((prefix) => {
       const normalizedPrefix = trimTrailingSlash(prefix)
-      return normalizedPathname === normalizedPrefix || normalizedPathname.startsWith(`${normalizedPrefix}/`)
+      return (
+        normalizedPathname === normalizedPrefix ||
+        normalizedPathname.startsWith(`${normalizedPrefix}/`)
+      )
     }) ?? false
   )
 }

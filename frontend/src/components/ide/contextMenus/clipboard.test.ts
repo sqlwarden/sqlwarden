@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { columnList, qualifiedColumn, rowToTsv, rowToJson, selectionToTsv, valuesToLines } from './clipboard'
+import {
+  columnList,
+  qualifiedColumn,
+  rowToTsv,
+  rowToJson,
+  selectionToTsv,
+  valuesToLines,
+} from './clipboard'
 import { dialectFor } from '../sqlDialect'
 
 describe('columnList', () => {
@@ -29,7 +36,12 @@ describe('result-grid producers', () => {
     expect(rowToJson(['id', 'name'], ['1', 'alice'])).toBe('{\n  "id": "1",\n  "name": "alice"\n}')
   })
   it('selectionToTsv joins rows with newlines', () => {
-    expect(selectionToTsv([['1', 'a'], ['2', 'b']])).toBe('1\ta\n2\tb')
+    expect(
+      selectionToTsv([
+        ['1', 'a'],
+        ['2', 'b'],
+      ]),
+    ).toBe('1\ta\n2\tb')
   })
   it('valuesToLines joins values with newlines', () => {
     expect(valuesToLines(['a', 'b', 'c'])).toBe('a\nb\nc')

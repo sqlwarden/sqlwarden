@@ -19,10 +19,16 @@ describe('app shell preferences', () => {
 
   it('reads only supported persisted values', () => {
     localStorage.setItem('sqlwarden.preference.sidebar_style', 'floating')
-    expect(readAppShellPreferences('light')).toEqual({ themeMode: 'light', sidebarStyle: 'floating' })
+    expect(readAppShellPreferences('light')).toEqual({
+      themeMode: 'light',
+      sidebarStyle: 'floating',
+    })
 
     localStorage.setItem('sqlwarden.preference.sidebar_style', 'unknown')
-    expect(readAppShellPreferences('system')).toEqual({ themeMode: 'system', sidebarStyle: 'sidebar' })
+    expect(readAppShellPreferences('system')).toEqual({
+      themeMode: 'system',
+      sidebarStyle: 'sidebar',
+    })
   })
 
   it('applies the supported shell attributes and removes obsolete attributes', () => {
@@ -42,8 +48,16 @@ describe('app shell preferences', () => {
     const { result } = renderHook(() => useAppShellPreferences())
     expect(result.current.preferences.themeMode).toBe('dark')
 
-    act(() => result.current.setPreferences((current) => ({ ...current, themeMode: 'light', sidebarStyle: 'floating' })))
+    act(() =>
+      result.current.setPreferences((current) => ({
+        ...current,
+        themeMode: 'light',
+        sidebarStyle: 'floating',
+      })),
+    )
     expect(theme.setTheme).toHaveBeenCalledWith('light')
-    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-sidebar-variant', 'floating'))
+    await waitFor(() =>
+      expect(document.documentElement).toHaveAttribute('data-sidebar-variant', 'floating'),
+    )
   })
 })

@@ -40,10 +40,12 @@ export function PermissionPicker({
     ? groupedPermissions
         .map((group) => ({
           ...group,
-          permissions: group.permissions.filter((item) =>
-            item.label.toLowerCase().includes(query) ||
-            item.description.toLowerCase().includes(query) ||
-            item.key.toLowerCase().includes(query)),
+          permissions: group.permissions.filter(
+            (item) =>
+              item.label.toLowerCase().includes(query) ||
+              item.description.toLowerCase().includes(query) ||
+              item.key.toLowerCase().includes(query),
+          ),
         }))
         .filter((group) => group.permissions.length > 0)
     : groupedPermissions
@@ -56,7 +58,9 @@ export function PermissionPicker({
           <p className="text-sm text-muted-foreground">{description}</p>
         </div>
         {selectedPermissions.size > 0 ? (
-          <span className="shrink-0 text-xs text-muted-foreground">{selectedPermissions.size} of {permissionDetails.length} selected</span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {selectedPermissions.size} of {permissionDetails.length} selected
+          </span>
         ) : null}
       </div>
       <div className="rounded-md border border-border">
@@ -70,33 +74,53 @@ export function PermissionPicker({
             className="h-9 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
           {search ? (
-            <button type="button" onClick={() => setSearch('')} className="shrink-0 text-muted-foreground hover:text-foreground">
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+            >
               <Icon name="cancel-01" size={20} className="size-3.5" />
             </button>
           ) : null}
         </div>
         <ScrollArea className="h-60">
           <div className="flex flex-col gap-5 p-4">
-            {filteredGroups.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">No permissions match your search.</p> : null}
+            {filteredGroups.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No permissions match your search.
+              </p>
+            ) : null}
             {filteredGroups.map((group) => (
               <div key={group.name} className="flex flex-col gap-3">
-                <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{group.name}</p>
+                <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+                  {group.name}
+                </p>
                 <div className="flex flex-col gap-3">
                   {group.permissions.map((item) => {
                     const id = `${idPrefix}-${item.key.replace(/[^a-z0-9]+/g, '-')}`
                     const itemDescription = permissionDescription(item.key, permissionDefinitions)
                     return (
-                      <label key={item.key} htmlFor={id} className="flex cursor-pointer items-start gap-2.5">
+                      <label
+                        key={item.key}
+                        htmlFor={id}
+                        className="flex cursor-pointer items-start gap-2.5"
+                      >
                         <Checkbox
                           id={id}
                           className="mt-0.5"
                           checked={selectedPermissions.has(item.key)}
                           disabled={disabled}
-                          onCheckedChange={(checked) => onPermissionChecked(item.key, checked === true)}
+                          onCheckedChange={(checked) =>
+                            onPermissionChecked(item.key, checked === true)
+                          }
                         />
                         <span className="flex flex-col gap-0.5">
-                          <span className="text-sm font-medium text-foreground">{permissionDisplayName(item.key, permissionDefinitions)}</span>
-                          {itemDescription ? <span className="text-xs text-muted-foreground">{itemDescription}</span> : null}
+                          <span className="text-sm font-medium text-foreground">
+                            {permissionDisplayName(item.key, permissionDefinitions)}
+                          </span>
+                          {itemDescription ? (
+                            <span className="text-xs text-muted-foreground">{itemDescription}</span>
+                          ) : null}
                         </span>
                       </label>
                     )

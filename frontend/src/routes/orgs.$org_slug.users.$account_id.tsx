@@ -9,7 +9,12 @@ import { toast } from 'sonner'
 import { useDebouncedQueryText } from '#/hooks/use-debounced-query-text'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
-import { orgEffectivePermissionsQueryOptions, orgMemberQueryOptions, orgMemberTeamsQueryOptions, orgTeamsQueryOptions } from '#/lib/api/query'
+import {
+  orgEffectivePermissionsQueryOptions,
+  orgMemberQueryOptions,
+  orgMemberTeamsQueryOptions,
+  orgTeamsQueryOptions,
+} from '#/lib/api/query'
 import type { Team } from '#/lib/api/types'
 import { builtinRole, hasPermission, permission } from '#/lib/permissions'
 import {
@@ -34,25 +39,44 @@ import {
   BreadcrumbSeparator,
 } from '#/components/ui/breadcrumb'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
 import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { Skeleton } from '#/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 
 export const Route = createFileRoute('/orgs/$org_slug/users/$account_id')({
   component: OrganizationUserContextPage,
   pendingComponent: RoutePending,
 })
 
-
 function OrganizationUserContextPage() {
   const { org_slug: orgSlug, account_id: accountId } = Route.useParams()
   const queryClient = useQueryClient()
   const [isAddingTeam, setIsAddingTeam] = useState(false)
-  const { searchText, setSearchText, debouncedQuery: teamSearch, clearSearch } = useDebouncedQueryText()
+  const {
+    searchText,
+    setSearchText,
+    debouncedQuery: teamSearch,
+    clearSearch,
+  } = useDebouncedQueryText()
   const { query: teamsQuery, toggleSort: toggleTeamsSort } = useListPageState({
     page: 1,
     page_size: 25,
@@ -82,7 +106,8 @@ function OrganizationUserContextPage() {
   const teamItems = teams.data?.items ?? []
   const existingTeamSlugs = new Set(teamItems.map((team) => team.slug))
   const displayName = member.data?.name || member.data?.email || `User #${accountId}`
-  const canManageTeams = canReadUser && hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
+  const canManageTeams =
+    canReadUser && hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
 
   useEffect(() => {
     if (!canReadUser || !member.error) {
@@ -120,8 +145,12 @@ function OrganizationUserContextPage() {
     onSuccess: async (_, teamSlug) => {
       toast.success('Done')
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.orgMemberTeamsScope(orgSlug, accountId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.orgTeamMembersScope(orgSlug, teamSlug) }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.orgMemberTeamsScope(orgSlug, accountId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.orgTeamMembersScope(orgSlug, teamSlug),
+        }),
       ])
     },
     onError: (error) => {
@@ -135,8 +164,12 @@ function OrganizationUserContextPage() {
     onSuccess: async (_, teamSlug) => {
       toast.success('Done')
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.orgMemberTeamsScope(orgSlug, accountId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.orgTeamMembersScope(orgSlug, teamSlug) }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.orgMemberTeamsScope(orgSlug, accountId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.orgTeamMembersScope(orgSlug, teamSlug),
+        }),
       ])
     },
     onError: (error) => {
@@ -154,7 +187,9 @@ function OrganizationUserContextPage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink render={<Link to="/orgs/$org_slug/users" params={{ org_slug: orgSlug }} />}>
+              <BreadcrumbLink
+                render={<Link to="/orgs/$org_slug/users" params={{ org_slug: orgSlug }} />}
+              >
                 Users
               </BreadcrumbLink>
             </BreadcrumbItem>
@@ -175,7 +210,9 @@ function OrganizationUserContextPage() {
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
               {member.data?.role ? (
-                <Badge variant={roleBadgeVariant(member.data.role)}>{roleLabel(member.data.role)}</Badge>
+                <Badge variant={roleBadgeVariant(member.data.role)}>
+                  {roleLabel(member.data.role)}
+                </Badge>
               ) : null}
             </div>
             {member.data ? (
@@ -193,7 +230,10 @@ function OrganizationUserContextPage() {
         ) : null}
         {!effectivePermissions.isLoading && !canReadUser ? (
           <CardContent>
-            <ContextMessage icon="user-multiple" message="You do not have permission to view this user." />
+            <ContextMessage
+              icon="user-multiple"
+              message="You do not have permission to view this user."
+            />
           </CardContent>
         ) : null}
         {effectivePermissions.isLoading || member.isLoading ? (
@@ -248,8 +288,16 @@ function OrganizationUserContextPage() {
                     <Table>
                       <TableBody>
                         {orgTeams.isLoading ? <TeamsPickerSkeleton /> : null}
-                        {orgTeams.isError ? <MessageRow colSpan={2} icon="user-group" message="Failed to load teams." /> : null}
-                        {!orgTeams.isLoading && !orgTeams.isError && (orgTeams.data?.items ?? []).length === 0 ? (
+                        {orgTeams.isError ? (
+                          <MessageRow
+                            colSpan={2}
+                            icon="user-group"
+                            message="Failed to load teams."
+                          />
+                        ) : null}
+                        {!orgTeams.isLoading &&
+                        !orgTeams.isError &&
+                        (orgTeams.data?.items ?? []).length === 0 ? (
                           <MessageRow colSpan={2} icon="user-group" message="No teams found." />
                         ) : null}
                         {!orgTeams.isLoading && !orgTeams.isError
@@ -268,9 +316,7 @@ function OrganizationUserContextPage() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <DialogClose render={<Button type="button" variant="ghost" />}>
-                    Close
-                  </DialogClose>
+                  <DialogClose render={<Button type="button" variant="ghost" />}>Close</DialogClose>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -281,10 +327,22 @@ function OrganizationUserContextPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>
-                  <TableColumnHeader label="Team" sort="name" currentSort={teamsQuery.sort} currentOrder={teamsQuery.order} onSortChange={toggleTeamsSort} />
+                  <TableColumnHeader
+                    label="Team"
+                    sort="name"
+                    currentSort={teamsQuery.sort}
+                    currentOrder={teamsQuery.order}
+                    onSortChange={toggleTeamsSort}
+                  />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Created" sort="created_at" currentSort={teamsQuery.sort} currentOrder={teamsQuery.order} onSortChange={toggleTeamsSort} />
+                  <TableColumnHeader
+                    label="Created"
+                    sort="created_at"
+                    currentSort={teamsQuery.sort}
+                    currentOrder={teamsQuery.order}
+                    onSortChange={toggleTeamsSort}
+                  />
                 </TableHead>
                 {canManageTeams ? (
                   <TableHead className="text-end">
@@ -295,12 +353,30 @@ function OrganizationUserContextPage() {
             </TableHeader>
             <TableBody>
               {effectivePermissions.isLoading || teams.isLoading ? <TeamsTableSkeleton /> : null}
-              {teams.isError ? <MessageRow colSpan={canManageTeams ? 3 : 2} icon="user-group" message="Failed to load teams." /> : null}
-              {!effectivePermissions.isLoading && !canReadUser ? (
-                <MessageRow colSpan={canManageTeams ? 3 : 2} icon="user-group" message="You do not have permission to view this user's teams." />
+              {teams.isError ? (
+                <MessageRow
+                  colSpan={canManageTeams ? 3 : 2}
+                  icon="user-group"
+                  message="Failed to load teams."
+                />
               ) : null}
-              {!effectivePermissions.isLoading && canReadUser && !teams.isLoading && !teams.isError && teamItems.length === 0 ? (
-                <MessageRow colSpan={canManageTeams ? 3 : 2} icon="user-group" message="This user does not belong to any teams." />
+              {!effectivePermissions.isLoading && !canReadUser ? (
+                <MessageRow
+                  colSpan={canManageTeams ? 3 : 2}
+                  icon="user-group"
+                  message="You do not have permission to view this user's teams."
+                />
+              ) : null}
+              {!effectivePermissions.isLoading &&
+              canReadUser &&
+              !teams.isLoading &&
+              !teams.isError &&
+              teamItems.length === 0 ? (
+                <MessageRow
+                  colSpan={canManageTeams ? 3 : 2}
+                  icon="user-group"
+                  message="This user does not belong to any teams."
+                />
               ) : null}
               {!effectivePermissions.isLoading && canReadUser && !teams.isLoading && !teams.isError
                 ? teamItems.map((team) => (
@@ -419,7 +495,8 @@ function TeamRow({
               <AlertDialogHeader>
                 <AlertDialogTitle>Remove team from user?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will remove the user from {team.name}. Access granted through this team will no longer apply.
+                  This will remove the user from {team.name}. Access granted through this team will
+                  no longer apply.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -468,13 +545,21 @@ function TeamsTableSkeleton() {
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5 border-l-2 border-border pl-3">
-      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{label}</span>
+      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+        {label}
+      </span>
       <span className="text-sm font-medium text-foreground">{value}</span>
     </div>
   )
 }
 
-function ContextMessage({ icon, message }: { icon: import('#/lib/icons').AppIcon; message: string }) {
+function ContextMessage({
+  icon,
+  message,
+}: {
+  icon: import('#/lib/icons').AppIcon
+  message: string
+}) {
   return (
     <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
       <Icon name={icon} size={20} className="size-10 text-muted-foreground" />
@@ -483,7 +568,15 @@ function ContextMessage({ icon, message }: { icon: import('#/lib/icons').AppIcon
   )
 }
 
-function MessageRow({ colSpan, icon, message }: { colSpan: number; icon: import('#/lib/icons').AppIcon; message: string }) {
+function MessageRow({
+  colSpan,
+  icon,
+  message,
+}: {
+  colSpan: number
+  icon: import('#/lib/icons').AppIcon
+  message: string
+}) {
   return (
     <TableRow>
       <TableCell colSpan={colSpan}>

@@ -53,7 +53,10 @@ export function setupStatusFixture(
   }
 }
 
-export function paginatedFixture<T>(items: T[], overrides: Partial<Paginated<T>> = {}): Paginated<T> {
+export function paginatedFixture<T>(
+  items: T[],
+  overrides: Partial<Paginated<T>> = {},
+): Paginated<T> {
   return {
     items,
     page: 1,

@@ -1,13 +1,28 @@
 import { queryOptions, type QueryClient } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { CatalogResponse, ObjectRef, ObjectsResponse, RelationshipsResponse, ResultSet, SchemaSpecResponse } from '#/lib/api/types'
+import type {
+  CatalogResponse,
+  ObjectRef,
+  ObjectsResponse,
+  RelationshipsResponse,
+  ResultSet,
+  SchemaSpecResponse,
+} from '#/lib/api/types'
 import { queryKeys } from '#/lib/api/query-keys'
 
-export function connectionCatalogQueryKey(slug: string, workspaceId: string | number, connectionId: string | number) {
+export function connectionCatalogQueryKey(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+) {
   return ['connection-catalog', slug, String(workspaceId), String(connectionId)] as const
 }
 
-export function connectionSchemaSpecQueryKey(slug: string, workspaceId: string | number, connectionId: string | number) {
+export function connectionSchemaSpecQueryKey(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+) {
   return ['connection-schema-spec', slug, String(workspaceId), String(connectionId)] as const
 }
 
@@ -47,8 +62,19 @@ export function orgConnectionSchemaSpecQueryOptions(
   })
 }
 
-export function connectionRelationshipsQueryKey(slug: string, workspaceId: string | number, connectionId: string | number, namespace: string) {
-  return ['connection-relationships', slug, String(workspaceId), String(connectionId), namespace] as const
+export function connectionRelationshipsQueryKey(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  namespace: string,
+) {
+  return [
+    'connection-relationships',
+    slug,
+    String(workspaceId),
+    String(connectionId),
+    namespace,
+  ] as const
 }
 
 export function orgConnectionRelationshipsQueryOptions(
@@ -71,7 +97,11 @@ export function orgConnectionRelationshipsQueryOptions(
   })
 }
 
-export function connectionObjectsQueryKeyPrefix(slug: string, workspaceId: string | number, connectionId: string | number) {
+export function connectionObjectsQueryKeyPrefix(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+) {
   return ['connection-object', slug, String(workspaceId), String(connectionId)] as const
 }
 
@@ -81,7 +111,12 @@ export function connectionObjectQueryKey(
   connectionId: string | number,
   ref: ObjectRef,
 ) {
-  return [...connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId), ref.namespace, ref.kind, ref.name] as const
+  return [
+    ...connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId),
+    ref.namespace,
+    ref.kind,
+    ref.name,
+  ] as const
 }
 
 export function orgConnectionObjectQueryOptions(
@@ -105,11 +140,29 @@ export function orgConnectionObjectQueryOptions(
   })
 }
 
-export function connectionPreviewQueryKey(slug: string, workspaceId: string | number, connectionId: string | number, ref: ObjectRef) {
-  return ['connection-preview', slug, String(workspaceId), String(connectionId), ref.namespace, ref.kind, ref.name] as const
+export function connectionPreviewQueryKey(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  ref: ObjectRef,
+) {
+  return [
+    'connection-preview',
+    slug,
+    String(workspaceId),
+    String(connectionId),
+    ref.namespace,
+    ref.kind,
+    ref.name,
+  ] as const
 }
 
-export function connectionPreviewCountQueryKey(slug: string, workspaceId: string | number, connectionId: string | number, ref: ObjectRef) {
+export function connectionPreviewCountQueryKey(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  ref: ObjectRef,
+) {
   return queryKeys.connectionPreviewCount(slug, String(workspaceId), String(connectionId), ref)
 }
 
@@ -130,9 +183,11 @@ export function runConnectionQuery(
   sql: string,
   options: RunConnectionQueryOptions,
 ) {
-  return api.post<ResultSet>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/query`,
+  return api.post<ResultSet>(
+    `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/query`,
     { sql, use_cursor: options.useCursor, page_size: options.pageSize },
-    { headers: { 'X-Warden-Session': sessionId }, signal: options.signal })
+    { headers: { 'X-Warden-Session': sessionId }, signal: options.signal },
+  )
 }
 
 /** Fetches the next page of an open query cursor (mirrors the result grid's
@@ -189,7 +244,11 @@ export function invalidateConnectionSchemaQueries(
   connectionId: string | number,
 ) {
   return Promise.all([
-    queryClient.invalidateQueries({ queryKey: connectionCatalogQueryKey(slug, workspaceId, connectionId) }),
-    queryClient.invalidateQueries({ queryKey: connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId) }),
+    queryClient.invalidateQueries({
+      queryKey: connectionCatalogQueryKey(slug, workspaceId, connectionId),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId),
+    }),
   ])
 }

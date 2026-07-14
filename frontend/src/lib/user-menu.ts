@@ -40,14 +40,29 @@ export function buildUserMenuItems({
     })
   }
 
-  items.push({ id: 'personal-settings', to: '/settings/account', label: 'Personal Settings', icon: 'user-02' })
+  items.push({
+    id: 'personal-settings',
+    to: '/settings/account',
+    label: 'Personal Settings',
+    icon: 'user-02',
+  })
 
   if (canReachLandingHub(session)) {
-    items.push({ id: 'switch-organization', to: '/', label: 'Switch Organization', icon: 'building-04' })
+    items.push({
+      id: 'switch-organization',
+      to: '/',
+      label: 'Switch Organization',
+      icon: 'building-04',
+    })
   }
 
   if (session.is_instance_admin) {
-    items.push({ id: 'administration', to: '/administration', label: 'Administration', icon: 'shield-user' })
+    items.push({
+      id: 'administration',
+      to: '/administration',
+      label: 'Administration',
+      icon: 'shield-user',
+    })
   }
 
   return items

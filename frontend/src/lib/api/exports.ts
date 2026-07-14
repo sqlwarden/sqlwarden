@@ -49,12 +49,20 @@ export async function downloadExport(
   if (!response.ok) {
     const payload = await response.json().catch(() => null)
     const parsed = parseAPIErrorPayload(payload, response.statusText || 'Export failed')
-    throw new ApiError(parsed.message, response.status, { code: parsed.code, details: parsed.details, fieldErrors: parsed.fieldErrors })
+    throw new ApiError(parsed.message, response.status, {
+      code: parsed.code,
+      details: parsed.details,
+      fieldErrors: parsed.fieldErrors,
+    })
   }
   return response
 }
 
-export async function cancelExportJob(orgSlug: string, workspaceId: number, jobId: string): Promise<JobRecord> {
+export async function cancelExportJob(
+  orgSlug: string,
+  workspaceId: number,
+  jobId: string,
+): Promise<JobRecord> {
   return apiRequest<JobRecord>(
     `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/jobs/${jobId}/cancel`,
     { method: 'POST' },

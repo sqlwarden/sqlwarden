@@ -46,9 +46,12 @@ export function SearchComboboxField<T extends ComboboxItem>({
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-  }, [])
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    },
+    [],
+  )
 
   function resetSearch() {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -88,7 +91,13 @@ export function SearchComboboxField<T extends ComboboxItem>({
           )}
         >
           <span className="truncate">{selectedValue ? selectedLabel : placeholder}</span>
-          <svg className="size-3.5 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            className="size-3.5 shrink-0 text-muted-foreground"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M6 9l6 6 6-6" />
           </svg>
         </PopoverTrigger>
@@ -104,7 +113,11 @@ export function SearchComboboxField<T extends ComboboxItem>({
               className="h-8 w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
             />
             {search ? (
-              <button type="button" onClick={resetSearch} className="shrink-0 text-muted-foreground hover:text-foreground">
+              <button
+                type="button"
+                onClick={resetSearch}
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+              >
                 <Icon name="cancel-01" size={20} className="size-3" />
               </button>
             ) : null}
@@ -113,26 +126,34 @@ export function SearchComboboxField<T extends ComboboxItem>({
             <div className="flex flex-col p-1">
               {isLoading ? (
                 <div className="flex flex-col gap-1 p-1">
-                  {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-7 w-full rounded-md" />)}
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <Skeleton key={index} className="h-7 w-full rounded-md" />
+                  ))}
                 </div>
               ) : items.length === 0 ? (
                 <p className="py-5 text-center text-xs text-muted-foreground">
-                  {search ? 'No matches found.' : (emptyMessage ?? `No ${label.toLowerCase()}s available.`)}
+                  {search
+                    ? 'No matches found.'
+                    : (emptyMessage ?? `No ${label.toLowerCase()}s available.`)}
                 </p>
-              ) : items.map((item) => (
-                <button
-                  key={item.value}
-                  type="button"
-                  onClick={() => handleSelect(item)}
-                  className={cn(
-                    'flex flex-col items-start rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent hover:text-accent-foreground',
-                    item.value === selectedValue && 'bg-accent text-accent-foreground',
-                  )}
-                >
-                  <span className="text-xs font-medium">{item.label}</span>
-                  {item.sublabel ? <span className="text-[10px] text-muted-foreground">{item.sublabel}</span> : null}
-                </button>
-              ))}
+              ) : (
+                items.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => handleSelect(item)}
+                    className={cn(
+                      'flex flex-col items-start rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent hover:text-accent-foreground',
+                      item.value === selectedValue && 'bg-accent text-accent-foreground',
+                    )}
+                  >
+                    <span className="text-xs font-medium">{item.label}</span>
+                    {item.sublabel ? (
+                      <span className="text-[10px] text-muted-foreground">{item.sublabel}</span>
+                    ) : null}
+                  </button>
+                ))
+              )}
             </div>
           </ScrollArea>
         </PopoverContent>

@@ -17,8 +17,15 @@ vi.mock('idb-keyval', () => ({
 }))
 
 const workspace: Workspace = {
-  id: 3, org_id: 1, owner_type: 'org', owner_id: 1, name: 'Analytics',
-  environment_count: 1, connection_count: 1, created_at: '', updated_at: '',
+  id: 3,
+  org_id: 1,
+  owner_type: 'org',
+  owner_id: 1,
+  name: 'Analytics',
+  environment_count: 1,
+  connection_count: 1,
+  created_at: '',
+  updated_at: '',
 }
 
 const tab: EditorTab = {
@@ -56,21 +63,39 @@ describe('SchemaDiagramView', () => {
   function schemaHandlers(options: { supportsDiagram?: boolean; forbidden?: boolean } = {}) {
     const base = '/api/v1/orgs/acme/workspaces/3/connections/7/schema'
     server.use(
-      http.get(`${base}/spec`, () => options.forbidden
-        ? HttpResponse.json({ error: { message: 'Forbidden' } }, { status: 403 })
-        : HttpResponse.json({ spec: {
-          dialect: 'postgres',
-          kinds: options.supportsDiagram === false ? [] : [{
-            kind: 'table', label: 'Table', plural_label: 'Tables', order: 1,
-            relational: true, supports_diagram: true, listing: 'enumerated',
-          }],
-        } })),
-      http.get(`${base}/catalog`, () => HttpResponse.json({
-        catalog: { generated_at: '', namespaces: [{ name: 'public', groups: [] }] },
-      })),
-      http.get(`${base}/relationships`, () => HttpResponse.json({
-        graph: { namespace: 'public', relationships: [] },
-      })),
+      http.get(`${base}/spec`, () =>
+        options.forbidden
+          ? HttpResponse.json({ error: { message: 'Forbidden' } }, { status: 403 })
+          : HttpResponse.json({
+              spec: {
+                dialect: 'postgres',
+                kinds:
+                  options.supportsDiagram === false
+                    ? []
+                    : [
+                        {
+                          kind: 'table',
+                          label: 'Table',
+                          plural_label: 'Tables',
+                          order: 1,
+                          relational: true,
+                          supports_diagram: true,
+                          listing: 'enumerated',
+                        },
+                      ],
+              },
+            }),
+      ),
+      http.get(`${base}/catalog`, () =>
+        HttpResponse.json({
+          catalog: { generated_at: '', namespaces: [{ name: 'public', groups: [] }] },
+        }),
+      ),
+      http.get(`${base}/relationships`, () =>
+        HttpResponse.json({
+          graph: { namespace: 'public', relationships: [] },
+        }),
+      ),
     )
   }
 
@@ -81,17 +106,20 @@ describe('SchemaDiagramView', () => {
 
   it('reconnects a stale diagram tab and stores the new session', async () => {
     schemaHandlers({ supportsDiagram: false })
-    server.use(http.post(
-      '/api/v1/orgs/acme/workspaces/3/connections/7/connect',
-      () => HttpResponse.json({ session_id: 'session-new' }),
-    ))
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/connect', () =>
+        HttpResponse.json({ session_id: 'session-new' }),
+      ),
+    )
     const { user } = renderDiagram()
 
     expect(screen.getByText('postgres · connection not available')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Reconnect' }))
 
     await waitFor(() => expect(store.getState().sessions[7]).toBe('session-new'))
-    expect(await screen.findByText("Diagrams aren't available for this connection.")).toBeInTheDocument()
+    expect(
+      await screen.findByText("Diagrams aren't available for this connection."),
+    ).toBeInTheDocument()
     expect(store.getState().connectionStatus[7]).toBeUndefined()
   })
 
@@ -99,12 +127,16 @@ describe('SchemaDiagramView', () => {
     store.getState().setSession(7, 'session-7')
     schemaHandlers({ supportsDiagram: false })
     const unsupported = renderDiagram()
-    expect(await screen.findByText("Diagrams aren't available for this connection.")).toBeInTheDocument()
+    expect(
+      await screen.findByText("Diagrams aren't available for this connection."),
+    ).toBeInTheDocument()
     unsupported.unmount()
 
     schemaHandlers({ forbidden: true })
     const forbidden = renderDiagram()
-    expect(await screen.findByText('You no longer have access to this connection.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('You no longer have access to this connection.'),
+    ).toBeInTheDocument()
     forbidden.unmount()
 
     schemaHandlers()
@@ -117,49 +149,98 @@ describe('SchemaDiagramView', () => {
     const storeRef = { namespace: 'public', kind: 'table', name: 'store' }
     const reactFlowErrors: unknown[][] = []
     const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => {
-      if (args.some((arg) => String(arg).includes("Couldn't create edge"))) reactFlowErrors.push(args)
+      if (args.some((arg) => String(arg).includes("Couldn't create edge")))
+        reactFlowErrors.push(args)
     })
     store.getState().setSession(7, 'session-7')
-    vi.mocked(get).mockResolvedValueOnce(JSON.stringify({
-      present: ['public table customer', 'public table store'],
-      positions: {
-        'public table customer': { x: 0, y: 0 },
-        'public table store': { x: 300, y: 0 },
-      },
-      collapsed: [],
-      keysOnly: true,
-    }))
+    vi.mocked(get).mockResolvedValueOnce(
+      JSON.stringify({
+        present: ['public table customer', 'public table store'],
+        positions: {
+          'public table customer': { x: 0, y: 0 },
+          'public table store': { x: 300, y: 0 },
+        },
+        collapsed: [],
+        keysOnly: true,
+      }),
+    )
     const base = '/api/v1/orgs/acme/workspaces/3/connections/7/schema'
     server.use(
-      http.get(`${base}/spec`, () => HttpResponse.json({ spec: {
-        dialect: 'postgres',
-        kinds: [{ kind: 'table', label: 'Table', plural_label: 'Tables', order: 1, relational: true, supports_diagram: true, listing: 'enumerated' }],
-      } })),
-      http.get(`${base}/catalog`, () => HttpResponse.json({ catalog: {
-        connection: 'test', dialect: 'postgres', database: 'test', generated_at: '',
-        namespaces: [{ name: 'public', groups: [{ kind: 'table', objects: [customer, storeRef] }] }],
-      } })),
-      http.get(`${base}/relationships`, () => HttpResponse.json({ graph: {
-        namespace: 'public',
-        relationships: [{ name: 'fk_customer_store', source: customer, columns: ['store_id'], references: storeRef, referenced_columns: ['id'] }],
-      } })),
+      http.get(`${base}/spec`, () =>
+        HttpResponse.json({
+          spec: {
+            dialect: 'postgres',
+            kinds: [
+              {
+                kind: 'table',
+                label: 'Table',
+                plural_label: 'Tables',
+                order: 1,
+                relational: true,
+                supports_diagram: true,
+                listing: 'enumerated',
+              },
+            ],
+          },
+        }),
+      ),
+      http.get(`${base}/catalog`, () =>
+        HttpResponse.json({
+          catalog: {
+            connection: 'test',
+            dialect: 'postgres',
+            database: 'test',
+            generated_at: '',
+            namespaces: [
+              { name: 'public', groups: [{ kind: 'table', objects: [customer, storeRef] }] },
+            ],
+          },
+        }),
+      ),
+      http.get(`${base}/relationships`, () =>
+        HttpResponse.json({
+          graph: {
+            namespace: 'public',
+            relationships: [
+              {
+                name: 'fk_customer_store',
+                source: customer,
+                columns: ['store_id'],
+                references: storeRef,
+                referenced_columns: ['id'],
+              },
+            ],
+          },
+        }),
+      ),
       http.post(`${base}/objects`, async ({ request }) => {
-        const body = await request.json() as { refs: Array<{ name: string }> }
+        const body = (await request.json()) as { refs: Array<{ name: string }> }
         const ref = body.refs[0]
         const isCustomer = ref.name === 'customer'
-        return HttpResponse.json({ objects: [{
-          ref: isCustomer ? customer : storeRef,
-          relational: {
-            columns: isCustomer
-              ? [{ name: 'store_id', data_type: 'integer', nullable: false, ordinal: 1 }]
-              : [{ name: 'id', data_type: 'integer', nullable: false, ordinal: 1 }],
-            primary_key: isCustomer ? [] : ['id'],
-            foreign_keys: isCustomer
-              ? [{ name: 'fk_customer_store', columns: ['store_id'], references: storeRef, referenced_columns: ['id'] }]
-              : [],
-            indexes: [],
-          },
-        }] })
+        return HttpResponse.json({
+          objects: [
+            {
+              ref: isCustomer ? customer : storeRef,
+              relational: {
+                columns: isCustomer
+                  ? [{ name: 'store_id', data_type: 'integer', nullable: false, ordinal: 1 }]
+                  : [{ name: 'id', data_type: 'integer', nullable: false, ordinal: 1 }],
+                primary_key: isCustomer ? [] : ['id'],
+                foreign_keys: isCustomer
+                  ? [
+                      {
+                        name: 'fk_customer_store',
+                        columns: ['store_id'],
+                        references: storeRef,
+                        referenced_columns: ['id'],
+                      },
+                    ]
+                  : [],
+                indexes: [],
+              },
+            },
+          ],
+        })
       }),
     )
 
@@ -168,9 +249,11 @@ describe('SchemaDiagramView', () => {
       expect(await screen.findByRole('status')).toHaveTextContent('Preparing diagram')
       expect(await screen.findByText('store_id')).toBeInTheDocument()
       await act(async () => {
-        await new Promise<void>((resolve) => window.requestAnimationFrame(() =>
-          window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())),
-        ))
+        await new Promise<void>((resolve) =>
+          window.requestAnimationFrame(() =>
+            window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())),
+          ),
+        )
       })
       await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
       expect(reactFlowErrors).toEqual([])

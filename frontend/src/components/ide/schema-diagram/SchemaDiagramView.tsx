@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Background, ControlButton, Controls, getNodesBounds, getViewportForBounds, MiniMap, ReactFlow, ReactFlowProvider,
-  useNodesState, useReactFlow,
-  type Edge, type EdgeTypes, type Node, type NodeTypes, type Viewport,
+  Background,
+  ControlButton,
+  Controls,
+  getNodesBounds,
+  getViewportForBounds,
+  MiniMap,
+  ReactFlow,
+  ReactFlowProvider,
+  useNodesState,
+  useReactFlow,
+  type Edge,
+  type EdgeTypes,
+  type Node,
+  type NodeTypes,
+  type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { toPng, toSvg } from 'html-to-image'
@@ -13,7 +25,11 @@ import { cn } from '#/lib/utils'
 import { Button } from '#/components/ui/button'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
 import { api } from '#/lib/api/client'
 import type { ObjectDetail, ObjectRef, Workspace } from '#/lib/api/types'
@@ -28,7 +44,12 @@ import {
 import { useIde, type EditorTab } from '../useIdeStore'
 import { newObjectTab } from '../object-detail/objectTab'
 import {
-  edgeCardinality, estimateNodeSize, planNamespaceSeed, reachableRefs, refKey, relationshipHandleId,
+  edgeCardinality,
+  estimateNodeSize,
+  planNamespaceSeed,
+  reachableRefs,
+  refKey,
+  relationshipHandleId,
 } from './diagramModel'
 import { FkEdge } from './edges/FkEdge'
 import { layoutGraph } from './layout'
@@ -46,11 +67,19 @@ type FlowNode = Node<TableNodeData, 'table'>
 
 type Box = { x: number; y: number; w: number; h: number }
 function boxesOverlap(a: Box, b: Box, pad = 16): boolean {
-  return a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y
+  return (
+    a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y
+  )
 }
 // Find an empty slot at startX, scanning vertically (down then up) from startY so
 // a newly expanded node lands next to its source without overlapping anything.
-function findFreePosition(startX: number, startY: number, w: number, h: number, occupied: Box[]): { x: number; y: number } {
+function findFreePosition(
+  startX: number,
+  startY: number,
+  w: number,
+  h: number,
+  occupied: Box[],
+): { x: number; y: number } {
   const step = h + 24
   for (let i = 0; i <= 40; i++) {
     for (const dy of i === 0 ? [0] : [i * step, -i * step]) {
@@ -61,7 +90,11 @@ function findFreePosition(startX: number, startY: number, w: number, h: number, 
   return { x: startX, y: startY }
 }
 
-export function SchemaDiagramView(props: { orgSlug: string; workspace: Workspace; tab: EditorTab }) {
+export function SchemaDiagramView(props: {
+  orgSlug: string
+  workspace: Workspace
+  tab: EditorTab
+}) {
   return (
     <ReactFlowProvider>
       <DiagramCanvas {...props} />
@@ -69,11 +102,23 @@ export function SchemaDiagramView(props: { orgSlug: string; workspace: Workspace
   )
 }
 
-function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace: Workspace; tab: EditorTab }) {
+function DiagramCanvas({
+  orgSlug,
+  workspace,
+  tab,
+}: {
+  orgSlug: string
+  workspace: Workspace
+  tab: EditorTab
+}) {
   const target = tab.diagramTarget
   const connectionId = tab.connectionId
   const driver = tab.driver ?? 'postgres'
-  const namespace = target ? (target.kind === 'namespace' ? target.namespace : target.ref.namespace) : ''
+  const namespace = target
+    ? target.kind === 'namespace'
+      ? target.namespace
+      : target.ref.namespace
+    : ''
 
   const sessionId = useIde((s) => (connectionId ? s.sessions[connectionId] : undefined))
   const setSession = useIde((s) => s.setSession)
@@ -88,7 +133,12 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   const enabled = Boolean(sessionId && connectionId && target)
 
   const specQuery = useQuery({
-    ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspace.id, connectionId ?? 0, sessionId ?? ''),
+    ...orgConnectionSchemaSpecQueryOptions(
+      orgSlug,
+      workspace.id,
+      connectionId ?? 0,
+      sessionId ?? '',
+    ),
     enabled,
   })
   const catalogQuery = useQuery({
@@ -96,7 +146,13 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     enabled,
   })
   const relQuery = useQuery({
-    ...orgConnectionRelationshipsQueryOptions(orgSlug, workspace.id, connectionId ?? 0, sessionId ?? '', namespace),
+    ...orgConnectionRelationshipsQueryOptions(
+      orgSlug,
+      workspace.id,
+      connectionId ?? 0,
+      sessionId ?? '',
+      namespace,
+    ),
     enabled,
   })
 
@@ -109,7 +165,9 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
 
   const refByKey = useMemo(() => {
     const map = new Map<string, ObjectRef>()
-    const diagramKinds = new Set((spec?.kinds ?? []).filter((k) => k.supports_diagram).map((k) => k.kind))
+    const diagramKinds = new Set(
+      (spec?.kinds ?? []).filter((k) => k.supports_diagram).map((k) => k.kind),
+    )
     for (const ns of catalogQuery.data?.catalog?.namespaces ?? []) {
       if (ns.name !== namespace) continue
       for (const group of ns.groups ?? []) {
@@ -163,7 +221,9 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       if (saved.depth != null) setDepth(saved.depth === 'all' ? Infinity : saved.depth)
       if (saved.orthogonalEdges != null) setOrthogonal(saved.orthogonalEdges)
       if (saved.keysOnly != null) setKeysOnly(saved.keysOnly)
-      const refs = saved.present.map((k) => refByKey.get(k)).filter((r): r is ObjectRef => Boolean(r))
+      const refs = saved.present
+        .map((k) => refByKey.get(k))
+        .filter((r): r is ObjectRef => Boolean(r))
       if (refs.length > 0) {
         seededRef.current = true
         setPresent(refs)
@@ -181,32 +241,54 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     if (seededRef.current || !hydrateChecked || !target) return
     if (!catalogQuery.isSuccess || !relQuery.isSuccess) return
     seededRef.current = true
-    const seed = target.kind === 'object'
-      ? reachableRefs([target.ref], edges, undefined, depth)
-      : planNamespaceSeed([...refByKey.values()], edges).seed
+    const seed =
+      target.kind === 'object'
+        ? reachableRefs([target.ref], edges, undefined, depth)
+        : planNamespaceSeed([...refByKey.values()], edges).seed
     setPresent(seed)
     // Reuse saved positions when they cover the whole seed (stable reopen);
     // otherwise auto-layout.
     if (!seed.every((r) => savedPositions.current[refKey(r)])) requestLayout()
-  }, [target, edges, refByKey, catalogQuery.isSuccess, relQuery.isSuccess, hydrateChecked, requestLayout, depth])
+  }, [
+    target,
+    edges,
+    refByKey,
+    catalogQuery.isSuccess,
+    relQuery.isSuccess,
+    hydrateChecked,
+    requestLayout,
+    depth,
+  ])
 
   // Depth control (object diagrams): re-seed from the anchor table to N hops.
-  const changeDepth = useCallback((d: number) => {
-    setDepth(d)
-    if (target?.kind === 'object') {
-      setPresent(reachableRefs([target.ref], edges, undefined, d))
-      requestLayout()
-    }
-  }, [target, edges, requestLayout])
+  const changeDepth = useCallback(
+    (d: number) => {
+      setDepth(d)
+      if (target?.kind === 'object') {
+        setPresent(reachableRefs([target.ref], edges, undefined, d))
+        requestLayout()
+      }
+    },
+    [target, edges, requestLayout],
+  )
 
   // Fetch column detail for on-canvas nodes (reuses the object-detail cache).
   const detailResults = useQueries({
     queries: present.map((ref) => ({
-      ...orgConnectionObjectQueryOptions(orgSlug, workspace.id, connectionId ?? 0, sessionId ?? '', ref),
+      ...orgConnectionObjectQueryOptions(
+        orgSlug,
+        workspace.id,
+        connectionId ?? 0,
+        sessionId ?? '',
+        ref,
+      ),
       enabled,
     })),
   })
-  useEvictGoneSession(connectionId, detailResults.map((r) => r.error))
+  useEvictGoneSession(
+    connectionId,
+    detailResults.map((r) => r.error),
+  )
   const detailByKey = useMemo(() => {
     const map = new Map<string, { detail: ObjectDetail | null; loading: boolean }>()
     present.forEach((ref, i) => {
@@ -227,7 +309,10 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       const col = e.referenced_columns[0]
       if (!col) continue
       let byCol = m.get(tk)
-      if (!byCol) { byCol = new Map(); m.set(tk, byCol) }
+      if (!byCol) {
+        byCol = new Map()
+        m.set(tk, byCol)
+      }
       const arr = byCol.get(col) ?? []
       arr.push(e.source)
       byCol.set(col, arr)
@@ -238,36 +323,40 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   // Per-column expand: add the specific related table(s) next to the source
   // node in free space, keeping every existing node exactly where it is (no
   // relayout).
-  const expandFrom = useCallback((refs: ObjectRef[], opts: { fromKey: string; direction: 'in' | 'out' }) => {
-    const rfNodes = getNodes()
-    const have = new Set(rfNodes.map((n) => n.id))
-    const toAdd = refs.filter((r) => !have.has(refKey(r)))
-    if (toAdd.length === 0) return
-    const occupied: Box[] = rfNodes.map((n) => ({
-      x: n.position.x,
-      y: n.position.y,
-      w: n.measured?.width ?? n.width ?? 240,
-      h: n.measured?.height ?? 120,
-    }))
-    const from = rfNodes.find((n) => n.id === opts.fromKey)
-    const fromX = from?.position.x ?? 0
-    const fromY = from?.position.y ?? 0
-    const fromW = from?.measured?.width ?? from?.width ?? 240
-    for (const ref of toAdd) {
-      const key = refKey(ref)
-      const w = 240
-      const h = estimateNodeSize(undefined, false).height
-      const startX = opts.direction === 'out' ? fromX + fromW + 60 : fromX - w - 60
-      const pos = findFreePosition(startX, fromY, w, h, occupied)
-      savedPositions.current[key] = pos
-      occupied.push({ x: pos.x, y: pos.y, w, h })
-    }
-    setPresent((prev) => [...prev, ...toAdd])
-  }, [getNodes])
+  const expandFrom = useCallback(
+    (refs: ObjectRef[], opts: { fromKey: string; direction: 'in' | 'out' }) => {
+      const rfNodes = getNodes()
+      const have = new Set(rfNodes.map((n) => n.id))
+      const toAdd = refs.filter((r) => !have.has(refKey(r)))
+      if (toAdd.length === 0) return
+      const occupied: Box[] = rfNodes.map((n) => ({
+        x: n.position.x,
+        y: n.position.y,
+        w: n.measured?.width ?? n.width ?? 240,
+        h: n.measured?.height ?? 120,
+      }))
+      const from = rfNodes.find((n) => n.id === opts.fromKey)
+      const fromX = from?.position.x ?? 0
+      const fromY = from?.position.y ?? 0
+      const fromW = from?.measured?.width ?? from?.width ?? 240
+      for (const ref of toAdd) {
+        const key = refKey(ref)
+        const w = 240
+        const h = estimateNodeSize(undefined, false).height
+        const startX = opts.direction === 'out' ? fromX + fromW + 60 : fromX - w - 60
+        const pos = findFreePosition(startX, fromY, w, h, occupied)
+        savedPositions.current[key] = pos
+        occupied.push({ x: pos.x, y: pos.y, w, h })
+      }
+      setPresent((prev) => [...prev, ...toAdd])
+    },
+    [getNodes],
+  )
   const toggleCollapse = useCallback((key: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
   }, [])
@@ -314,22 +403,37 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   // Focus a table (pan/zoom + select). If it's not on the canvas, add it first
   // in free space, then focus it once it has rendered.
   const [pendingFocus, setPendingFocus] = useState<string | null>(null)
-  const focusOrAdd = useCallback((ref: ObjectRef) => {
-    const key = refKey(ref)
-    const rfNodes = getNodes()
-    if (!rfNodes.some((n) => n.id === key)) {
-      const occupied: Box[] = rfNodes.map((n) => ({
-        x: n.position.x, y: n.position.y,
-        w: n.measured?.width ?? n.width ?? 240, h: n.measured?.height ?? 120,
-      }))
-      const cx = rfNodes.length ? rfNodes.reduce((s, n) => s + n.position.x, 0) / rfNodes.length : 0
-      const cy = rfNodes.length ? rfNodes.reduce((s, n) => s + n.position.y, 0) / rfNodes.length : 0
-      const pos = findFreePosition(cx, cy, 240, estimateNodeSize(undefined, false).height, occupied)
-      savedPositions.current[key] = pos
-      setPresent((prev) => (prev.some((r) => refKey(r) === key) ? prev : [...prev, ref]))
-    }
-    setPendingFocus(key)
-  }, [getNodes])
+  const focusOrAdd = useCallback(
+    (ref: ObjectRef) => {
+      const key = refKey(ref)
+      const rfNodes = getNodes()
+      if (!rfNodes.some((n) => n.id === key)) {
+        const occupied: Box[] = rfNodes.map((n) => ({
+          x: n.position.x,
+          y: n.position.y,
+          w: n.measured?.width ?? n.width ?? 240,
+          h: n.measured?.height ?? 120,
+        }))
+        const cx = rfNodes.length
+          ? rfNodes.reduce((s, n) => s + n.position.x, 0) / rfNodes.length
+          : 0
+        const cy = rfNodes.length
+          ? rfNodes.reduce((s, n) => s + n.position.y, 0) / rfNodes.length
+          : 0
+        const pos = findFreePosition(
+          cx,
+          cy,
+          240,
+          estimateNodeSize(undefined, false).height,
+          occupied,
+        )
+        savedPositions.current[key] = pos
+        setPresent((prev) => (prev.some((r) => refKey(r) === key) ? prev : [...prev, ref]))
+      }
+      setPendingFocus(key)
+    },
+    [getNodes],
+  )
   useEffect(() => {
     if (!pendingFocus || !getNodes().some((n) => n.id === pendingFocus)) return
     const key = pendingFocus
@@ -342,10 +446,12 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   // not on the fresh array identities useQueries returns each render.
   const presentSig = present.map(refKey).join('|')
   const collapsedSig = [...collapsed].sort().join('|')
-  const detailSig = present.map((r) => {
-    const e = detailByKey.get(refKey(r))
-    return `${refKey(r)}:${e?.detail ? 1 : 0}:${e?.loading ? 1 : 0}`
-  }).join('|')
+  const detailSig = present
+    .map((r) => {
+      const e = detailByKey.get(refKey(r))
+      return `${refKey(r)}:${e?.detail ? 1 : 0}:${e?.loading ? 1 : 0}`
+    })
+    .join('|')
 
   // Reconcile the React Flow node list from data, preserving each node's live
   // position (drag state) and only updating its data.
@@ -364,14 +470,18 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
         for (const f of rel?.foreign_keys ?? []) {
           const col = f.columns?.[0]
           if (!col) continue
-          outgoingByCol[col] = { target: f.references, hidden: !presentKeys.has(refKey(f.references)) }
+          outgoingByCol[col] = {
+            target: f.references,
+            hidden: !presentKeys.has(refKey(f.references)),
+          }
         }
         const incomingByCol: Record<string, { hidden: boolean; sources: ObjectRef[] }> = {}
         for (const [col, sources] of incomingByTable.get(key) ?? []) {
           incomingByCol[col] = { hidden: sources.some((s) => !presentKeys.has(refKey(s))), sources }
         }
         const hasHidden =
-          Object.values(outgoingByCol).some((o) => o.hidden) || Object.values(incomingByCol).some((i) => i.hidden)
+          Object.values(outgoingByCol).some((o) => o.hidden) ||
+          Object.values(incomingByCol).some((i) => i.hidden)
 
         return {
           ...(existing ?? {}),
@@ -393,7 +503,8 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
             onToggleCollapse: () => toggleCollapse(key),
             onExpand: expandFrom,
             onOpenDetail: () => {
-              if (connectionId) openTab(newObjectTab({ id: connectionId, driver } as never, workspace, ref))
+              if (connectionId)
+                openTab(newObjectTab({ id: connectionId, driver } as never, workspace, ref))
             },
             onRemove: () => removeRef(key),
             onHoverRelation,
@@ -443,10 +554,21 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
         const targetRel = detailByKey.get(tk)?.detail?.relational
         const sourceColumns = new Set((sourceRel?.columns ?? []).map((column) => column.name))
         const targetColumns = new Set((targetRel?.columns ?? []).map((column) => column.name))
-        const outgoingColumns = new Set((sourceRel?.foreign_keys ?? []).flatMap((foreignKey) => foreignKey.columns?.slice(0, 1) ?? []))
+        const outgoingColumns = new Set(
+          (sourceRel?.foreign_keys ?? []).flatMap(
+            (foreignKey) => foreignKey.columns?.slice(0, 1) ?? [],
+          ),
+        )
         const incomingColumns = new Set(incomingByTable.get(tk)?.keys() ?? [])
-        const isHi = Boolean(highlight && sk === highlight.source && tk === highlight.target && srcCol === highlight.column)
-        const touchesSel = Boolean(activeSelected && (sk === activeSelected || tk === activeSelected))
+        const isHi = Boolean(
+          highlight &&
+          sk === highlight.source &&
+          tk === highlight.target &&
+          srcCol === highlight.column,
+        )
+        const touchesSel = Boolean(
+          activeSelected && (sk === activeSelected || tk === activeSelected),
+        )
         const dimmed = Boolean(activeSelected && !touchesSel)
         // Cardinality from the child (source) side: crow's-foot "many" unless the
         // FK columns are unique on the child (then "one" — a 1:1 relationship).
@@ -471,7 +593,11 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
             availableColumns: targetColumns,
             connectedColumns: incomingColumns,
           }),
-          data: { sourceMarker: card === 'one_to_one' ? 'one' : 'many', targetMarker: 'one', orthogonal },
+          data: {
+            sourceMarker: card === 'one_to_one' ? 'one' : 'many',
+            targetMarker: 'one',
+            orthogonal,
+          },
           animated: isHi,
           zIndex: isHi ? 1000 : touchesSel ? 500 : undefined,
           style: isHi
@@ -487,12 +613,15 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   }, [edges, presentSig, collapsedSig, detailSig, highlight, activeSelected, orthogonal])
 
   const edgeResolution = resolvedEdges
-    .map((edge) => `${edge.id}:${edge.source}:${edge.sourceHandle ?? ''}:${edge.target}:${edge.targetHandle ?? ''}`)
+    .map(
+      (edge) =>
+        `${edge.id}:${edge.source}:${edge.sourceHandle ?? ''}:${edge.target}:${edge.targetHandle ?? ''}`,
+    )
     .join('|')
-  const requiredEdgeHandles = useMemo(() => resolvedEdges.flatMap((edge) => [
+  const requiredEdgeHandles = resolvedEdges.flatMap((edge) => [
     `${edge.source}|${edge.sourceHandle}`,
     `${edge.target}|${edge.targetHandle}`,
-  ]), [edgeResolution]) // eslint-disable-line react-hooks/exhaustive-deps
+  ])
   const edgeResolutionSig = `${presentSig}::${collapsedSig}::${detailSig}::${keysOnly ? 1 : 0}::${edgeResolution}`
   const detailsSettled = present.every((ref) => !detailByKey.get(refKey(ref))?.loading)
 
@@ -507,9 +636,9 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
 
     const verifyHandles = () => {
       const renderedHandles = new Set(
-        Array.from(containerRef.current?.querySelectorAll<HTMLElement>('[data-nodeid][data-handleid]') ?? []).map((handle) =>
-          `${handle.dataset.nodeid}|${handle.dataset.handleid}`,
-        ),
+        Array.from(
+          containerRef.current?.querySelectorAll<HTMLElement>('[data-nodeid][data-handleid]') ?? [],
+        ).map((handle) => `${handle.dataset.nodeid}|${handle.dataset.handleid}`),
       )
       const allRendered = requiredEdgeHandles.every((handle) => renderedHandles.has(handle))
 
@@ -539,7 +668,11 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     if (layoutReq === 0 || present.length === 0) return
     const sizes = present.map((r) => {
       const k = refKey(r)
-      const s = estimateNodeSize(detailByKey.get(k)?.detail ?? undefined, collapsed.has(k), keysOnly)
+      const s = estimateNodeSize(
+        detailByKey.get(k)?.detail ?? undefined,
+        collapsed.has(k),
+        keysOnly,
+      )
       return { id: k, width: s.width, height: s.height }
     })
     const le = flowEdges.map((e) => ({ id: e.id, source: e.source, target: e.target }))
@@ -549,7 +682,9 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       setNodes((prev) => prev.map((n) => ({ ...n, position: laid.get(n.id) ?? n.position })))
       requestAnimationFrame(() => fitView({ duration: 200 }))
     })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutReq])
 
@@ -588,20 +723,25 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   // Dropping a table from the tree: place it exactly where it was dropped and
   // leave the rest of the layout untouched — only the new node + its edges
   // appear. (No requestLayout, so nothing else moves.)
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    const raw = e.dataTransfer.getData(OBJECT_REF_DND_MIME)
-    if (!raw) return
-    try {
-      const ref = JSON.parse(raw) as ObjectRef
-      if (!ref?.namespace || !ref?.name) return
-      const key = refKey(ref)
-      const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY })
-      // Seed the reconcile position for the new node (reconcile reads this).
-      savedPositions.current[key] = pos
-      setPresent((prev) => (prev.some((r) => refKey(r) === key) ? prev : [...prev, ref]))
-    } catch { /* ignore malformed payload */ }
-  }, [screenToFlowPosition])
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      const raw = e.dataTransfer.getData(OBJECT_REF_DND_MIME)
+      if (!raw) return
+      try {
+        const ref = JSON.parse(raw) as ObjectRef
+        if (!ref?.namespace || !ref?.name) return
+        const key = refKey(ref)
+        const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+        // Seed the reconcile position for the new node (reconcile reads this).
+        savedPositions.current[key] = pos
+        setPresent((prev) => (prev.some((r) => refKey(r) === key) ? prev : [...prev, ref]))
+      } catch {
+        /* ignore malformed payload */
+      }
+    },
+    [screenToFlowPosition],
+  )
 
   async function reconnect() {
     if (!connectionId) return
@@ -611,13 +751,24 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
         `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${connectionId}/connect`,
       )
       setSession(connectionId, data.session_id)
-    } catch { /* surfaced by the next fetch */ } finally {
+    } catch {
+      /* surfaced by the next fetch */
+    } finally {
       setConnectionStatus(connectionId, null)
     }
   }
   function refresh() {
-    void queryClient.invalidateQueries({ queryKey: connectionRelationshipsQueryKey(orgSlug, workspace.id, connectionId ?? 0, namespace) })
-    void queryClient.invalidateQueries({ queryKey: connectionObjectsQueryKeyPrefix(orgSlug, workspace.id, connectionId ?? 0) })
+    void queryClient.invalidateQueries({
+      queryKey: connectionRelationshipsQueryKey(
+        orgSlug,
+        workspace.id,
+        connectionId ?? 0,
+        namespace,
+      ),
+    })
+    void queryClient.invalidateQueries({
+      queryKey: connectionObjectsQueryKeyPrefix(orgSlug, workspace.id, connectionId ?? 0),
+    })
   }
 
   // Render the whole diagram (every node, not just the visible viewport) to an
@@ -626,39 +777,53 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   // regardless of the current pan/zoom. PNG gets an opaque themed background;
   // SVG stays transparent.
   const [exporting, setExporting] = useState(false)
-  const renderImage = useCallback(async (format: ExportFormat): Promise<string | null> => {
-    const rfNodes = getNodes()
-    const viewportEl = containerRef.current?.querySelector<HTMLElement>('.react-flow__viewport')
-    if (rfNodes.length === 0 || !viewportEl) return null
-    const bounds = getNodesBounds(rfNodes)
-    const { width, height } = exportDimensions(bounds)
-    const t = getViewportForBounds(bounds, width, height, 0.2, 4, 0.1)
-    const bg = getComputedStyle(viewportEl).getPropertyValue('--background').trim() || '#ffffff'
-    const options = {
-      width, height,
-      backgroundColor: format === 'png' ? bg : undefined,
-      style: {
-        width: `${width}px`,
-        height: `${height}px`,
-        transform: `translate(${t.x}px, ${t.y}px) scale(${t.zoom})`,
-      },
-    }
-    return format === 'png' ? toPng(viewportEl, options) : toSvg(viewportEl, options)
-  }, [getNodes])
-
-  const exportImage = useCallback(async (format: ExportFormat) => {
-    setExporting(true)
-    try {
-      const dataUrl = await renderImage(format)
-      if (dataUrl) {
-        downloadDataUrl(dataUrl, diagramFileName(namespace, target?.kind === 'object' ? target.ref.name : undefined, format))
+  const renderImage = useCallback(
+    async (format: ExportFormat): Promise<string | null> => {
+      const rfNodes = getNodes()
+      const viewportEl = containerRef.current?.querySelector<HTMLElement>('.react-flow__viewport')
+      if (rfNodes.length === 0 || !viewportEl) return null
+      const bounds = getNodesBounds(rfNodes)
+      const { width, height } = exportDimensions(bounds)
+      const t = getViewportForBounds(bounds, width, height, 0.2, 4, 0.1)
+      const bg = getComputedStyle(viewportEl).getPropertyValue('--background').trim() || '#ffffff'
+      const options = {
+        width,
+        height,
+        backgroundColor: format === 'png' ? bg : undefined,
+        style: {
+          width: `${width}px`,
+          height: `${height}px`,
+          transform: `translate(${t.x}px, ${t.y}px) scale(${t.zoom})`,
+        },
       }
-    } catch {
-      toast.error('Failed to export the diagram.')
-    } finally {
-      setExporting(false)
-    }
-  }, [renderImage, namespace, target])
+      return format === 'png' ? toPng(viewportEl, options) : toSvg(viewportEl, options)
+    },
+    [getNodes],
+  )
+
+  const exportImage = useCallback(
+    async (format: ExportFormat) => {
+      setExporting(true)
+      try {
+        const dataUrl = await renderImage(format)
+        if (dataUrl) {
+          downloadDataUrl(
+            dataUrl,
+            diagramFileName(
+              namespace,
+              target?.kind === 'object' ? target.ref.name : undefined,
+              format,
+            ),
+          )
+        }
+      } catch {
+        toast.error('Failed to export the diagram.')
+      } finally {
+        setExporting(false)
+      }
+    },
+    [renderImage, namespace, target],
+  )
 
   // Copy a PNG of the diagram to the system clipboard (paste-as-picture into
   // docs/chat). The Clipboard API only accepts image/png here — SVG isn't on the
@@ -690,12 +855,22 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     relationshipsLoading: relQuery.isLoading,
     presentCount: present.length,
   })
-  if (viewState === 'missing-target' || !target || !connectionId) return <Center>This tab is missing its diagram target.</Center>
-  if (viewState === 'no-session') return <Reconnect namespace={namespace} driver={driver} onReconnect={reconnect} />
-  if (viewState === 'unsupported') return <Center>Diagrams aren&apos;t available for this connection.</Center>
-  if (viewState === 'forbidden') return <Center className="text-destructive">You no longer have access to this connection.</Center>
+  if (viewState === 'missing-target' || !target || !connectionId)
+    return <Center>This tab is missing its diagram target.</Center>
+  if (viewState === 'no-session')
+    return <Reconnect namespace={namespace} driver={driver} onReconnect={reconnect} />
+  if (viewState === 'unsupported')
+    return <Center>Diagrams aren&apos;t available for this connection.</Center>
+  if (viewState === 'forbidden')
+    return (
+      <Center className="text-destructive">You no longer have access to this connection.</Center>
+    )
   if (viewState === 'loading') {
-    return <Center><Icon name="loading-03" size={16} className="animate-spin" /> Loading schema…</Center>
+    return (
+      <Center>
+        <Icon name="loading-03" size={16} className="animate-spin" /> Loading schema…
+      </Center>
+    )
   }
   if (viewState === 'empty') return <Center>No tables to diagram in this schema.</Center>
 
@@ -714,7 +889,10 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && searchResults[0]) { focusOrAdd(searchResults[0]); setSearch('') }
+                if (e.key === 'Enter' && searchResults[0]) {
+                  focusOrAdd(searchResults[0])
+                  setSearch('')
+                }
                 if (e.key === 'Escape') setSearch('')
               }}
               placeholder="Find table…"
@@ -728,11 +906,19 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
                   key={refKey(r)}
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => { focusOrAdd(r); setSearch('') }}
+                  onClick={() => {
+                    focusOrAdd(r)
+                    setSearch('')
+                  }}
                   className="flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-xs hover:bg-accent"
                 >
                   <span className="min-w-0 truncate text-foreground">{r.name}</span>
-                  <span className={cn('shrink-0 text-[9px]', presentKeys.has(refKey(r)) ? 'text-muted-foreground' : 'text-primary')}>
+                  <span
+                    className={cn(
+                      'shrink-0 text-[9px]',
+                      presentKeys.has(refKey(r)) ? 'text-muted-foreground' : 'text-primary',
+                    )}
+                  >
                     {presentKeys.has(refKey(r)) ? 'on canvas' : 'add'}
                   </span>
                 </button>
@@ -753,13 +939,19 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
               }}
             >
               <Tip label="Directly related tables only">
-                <ToggleGroupItem value="1" aria-label="One hop">1</ToggleGroupItem>
+                <ToggleGroupItem value="1" aria-label="One hop">
+                  1
+                </ToggleGroupItem>
               </Tip>
               <Tip label="Relations up to two hops away">
-                <ToggleGroupItem value="2" aria-label="Two hops">2</ToggleGroupItem>
+                <ToggleGroupItem value="2" aria-label="Two hops">
+                  2
+                </ToggleGroupItem>
               </Tip>
               <Tip label="Every connected table">
-                <ToggleGroupItem value="all" aria-label="All connected">All</ToggleGroupItem>
+                <ToggleGroupItem value="all" aria-label="All connected">
+                  All
+                </ToggleGroupItem>
               </Tip>
             </ToggleGroup>
           </div>
@@ -768,7 +960,12 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           <Tip label="Export diagram">
             <DropdownMenuTrigger
               render={
-                <Button variant="ghost" size="icon-sm" disabled={exporting} aria-label="Export diagram">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={exporting}
+                  aria-label="Export diagram"
+                >
                   <Icon
                     name={exporting ? 'loading-03' : 'download-01'}
                     size={14}
@@ -800,9 +997,17 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           </Button>
         </Tip>
       </div>
-      <div className="relative min-h-0 flex-1" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
+      <div
+        className="relative min-h-0 flex-1"
+        onDrop={onDrop}
+        onDragOver={(e) => e.preventDefault()}
+      >
         {!graphReady ? (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center" role="status" aria-live="polite">
+          <div
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
+            role="status"
+            aria-live="polite"
+          >
             <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground shadow-sm">
               <Icon name="loading-03" size={14} className="animate-spin text-primary" />
               <span className="flex flex-col">
@@ -813,7 +1018,10 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           </div>
         ) : null}
         <ReactFlow
-          className={cn('transition-opacity duration-150', graphReady ? 'opacity-100' : 'pointer-events-none opacity-0')}
+          className={cn(
+            'transition-opacity duration-150',
+            graphReady ? 'opacity-100' : 'pointer-events-none opacity-0',
+          )}
           nodes={nodes}
           edges={flowEdges}
           nodeTypes={NODE_TYPES}
@@ -834,7 +1042,11 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
             </ControlButton>
             <ControlButton
               onClick={() => setOrthogonal((v) => !v)}
-              title={orthogonal ? 'Switch to curved edges (hide cardinality)' : 'Switch to orthogonal edges with crow’s-foot cardinality'}
+              title={
+                orthogonal
+                  ? 'Switch to curved edges (hide cardinality)'
+                  : 'Switch to orthogonal edges with crow’s-foot cardinality'
+              }
             >
               <Icon name="flow-connection" size={14} />
             </ControlButton>
@@ -853,17 +1065,33 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
 }
 
 function Center({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`flex h-full items-center justify-center gap-2 text-xs text-muted-foreground ${className}`}>{children}</div>
+  return (
+    <div
+      className={`flex h-full items-center justify-center gap-2 text-xs text-muted-foreground ${className}`}
+    >
+      {children}
+    </div>
+  )
 }
 
-function Reconnect({ namespace, driver, onReconnect }: { namespace: string; driver: string; onReconnect: () => void }) {
+function Reconnect({
+  namespace,
+  driver,
+  onReconnect,
+}: {
+  namespace: string
+  driver: string
+  onReconnect: () => void
+}) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
       <div className="flex flex-col gap-1">
         <div className="text-sm font-medium text-foreground">{namespace}</div>
         <div className="text-xs text-muted-foreground">{driver} · connection not available</div>
       </div>
-      <Button variant="outline" size="sm" onClick={onReconnect}>Reconnect</Button>
+      <Button variant="outline" size="sm" onClick={onReconnect}>
+        Reconnect
+      </Button>
     </div>
   )
 }

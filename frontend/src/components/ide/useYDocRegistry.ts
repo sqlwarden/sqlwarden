@@ -31,10 +31,10 @@ export type YDocRegistry = {
 //   'broadcast'   — applied from a channel message; not re-broadcast, marks dirty
 //   undefined     — user typing via yCollab; incremental broadcast, marks dirty
 
-type SyncRequest  = { type: 'sync-request' }
-type FullState    = { type: 'full-state';  data: Uint8Array }
-type UpdateMsg    = { type: 'update';      data: Uint8Array }
-type ChannelMsg   = SyncRequest | FullState | UpdateMsg
+type SyncRequest = { type: 'sync-request' }
+type FullState = { type: 'full-state'; data: Uint8Array }
+type UpdateMsg = { type: 'update'; data: Uint8Array }
+type ChannelMsg = SyncRequest | FullState | UpdateMsg
 
 // ─── Factory ───────────────────────────────────────────────────────────────────
 

@@ -15,25 +15,46 @@ function sqlStatementSpans(text: string): Array<[number, number]> {
     const n = text[i + 1] ?? ''
     switch (state) {
       case 'normal':
-        if (c === "'") { state = 'sq' }
-        else if (c === '"') { state = 'dq' }
-        else if (c === '-' && n === '-') { state = 'lc'; i++ }
-        else if (c === '/' && n === '*') { state = 'bc'; i++ }
-        else if (c === ';') { semis.push(i) }
+        if (c === "'") {
+          state = 'sq'
+        } else if (c === '"') {
+          state = 'dq'
+        } else if (c === '-' && n === '-') {
+          state = 'lc'
+          i++
+        } else if (c === '/' && n === '*') {
+          state = 'bc'
+          i++
+        } else if (c === ';') {
+          semis.push(i)
+        }
         break
       case 'sq':
-        if (c === "'" && n === "'") { i++ } // escaped ''
-        else if (c === "'") { state = 'normal' }
+        if (c === "'" && n === "'") {
+          i++
+        } // escaped ''
+        else if (c === "'") {
+          state = 'normal'
+        }
         break
       case 'dq':
-        if (c === '"' && n === '"') { i++ } // escaped ""
-        else if (c === '"') { state = 'normal' }
+        if (c === '"' && n === '"') {
+          i++
+        } // escaped ""
+        else if (c === '"') {
+          state = 'normal'
+        }
         break
       case 'lc':
-        if (c === '\n') { state = 'normal' }
+        if (c === '\n') {
+          state = 'normal'
+        }
         break
       case 'bc':
-        if (c === '*' && n === '/') { state = 'normal'; i++ }
+        if (c === '*' && n === '/') {
+          state = 'normal'
+          i++
+        }
         break
     }
   }

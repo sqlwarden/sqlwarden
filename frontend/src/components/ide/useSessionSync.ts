@@ -17,9 +17,7 @@ import { useIde } from './useIdeStore'
 export function useSessionSync(orgSlug: string, workspace: Workspace) {
   const syncSessions = useIde((s) => s.syncSessions)
 
-  const connections = useQuery(
-    allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id),
-  )
+  const connections = useQuery(allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id))
 
   const sessionsQuery = useQuery({
     queryKey: queryKeys.workspaceSessions(orgSlug, workspace.id),
@@ -38,6 +36,9 @@ export function useSessionSync(orgSlug: string, workspace: Workspace) {
     for (const s of sessionsQuery.data.sessions) {
       map[s.connection_id] = s.session_id
     }
-    syncSessions(map, connections.data.items.map((c) => c.id))
+    syncSessions(
+      map,
+      connections.data.items.map((c) => c.id),
+    )
   }, [sessionsQuery.data, connections.data, syncSessions])
 }

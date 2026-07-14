@@ -50,14 +50,24 @@ export function PolicySubjectCell({
 function PolicySubjectIcon({ binding }: { binding: PolicyBinding }) {
   if (binding.subject_type === 'account') {
     return (
-      <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(binding.subject_name))}>
+      <div
+        className={cn(
+          'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
+          entityColor(binding.subject_name),
+        )}
+      >
         {getInitials(binding.subject_name, '?')}
       </div>
     )
   }
   if (binding.subject_type === 'team') {
     return (
-      <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', entityColor(binding.subject_name))}>
+      <div
+        className={cn(
+          'flex size-8 shrink-0 items-center justify-center rounded-md',
+          entityColor(binding.subject_name),
+        )}
+      >
         <Icon name="user-group" size={20} className="size-4" />
       </div>
     )
@@ -95,8 +105,12 @@ export function PoliciesTableSkeleton({
           </div>
         </TableCell>
       ) : null}
-      <TableCell><Skeleton className="h-5 w-24 rounded-md" /></TableCell>
-      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+      <TableCell>
+        <Skeleton className="h-5 w-24 rounded-md" />
+      </TableCell>
+      <TableCell>
+        <Skeleton className="h-4 w-24" />
+      </TableCell>
       {canModify ? (
         <TableCell className="text-end">
           <Skeleton className="ms-auto h-8 w-16" />

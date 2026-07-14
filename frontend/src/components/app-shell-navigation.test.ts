@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isNavItemActive, navItemKey, resolveNavPath, type AppShellNavItem } from './app-shell-navigation'
+import {
+  isNavItemActive,
+  navItemKey,
+  resolveNavPath,
+  type AppShellNavItem,
+} from './app-shell-navigation'
 
 const item: AppShellNavItem = {
   to: '/orgs/$org_slug/workspaces/$workspace_id',
@@ -21,9 +26,11 @@ describe('app shell navigation', () => {
   })
 
   it('uses route params to keep repeated navigation entries distinct', () => {
-    expect(navItemKey(item)).not.toBe(navItemKey({
-      ...item,
-      params: { org_slug: 'acme', workspace_id: '4' },
-    }))
+    expect(navItemKey(item)).not.toBe(
+      navItemKey({
+        ...item,
+        params: { org_slug: 'acme', workspace_id: '4' },
+      }),
+    )
   })
 })

@@ -31,7 +31,8 @@ export function resolveDeepLink(
   workspaces: Workspace[],
   connections: Connection[] | undefined,
 ): DeepLinkResolution {
-  const ws = search.ws !== undefined && workspaces.some((w) => w.id === search.ws) ? search.ws : undefined
+  const ws =
+    search.ws !== undefined && workspaces.some((w) => w.id === search.ws) ? search.ws : undefined
 
   if (search.conn === undefined || ws === undefined) {
     return { activateWorkspaceId: ws, expandKeys: [], ready: true }

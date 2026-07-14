@@ -8,11 +8,25 @@ const sizes: Record<Size, string> = {
   md: 'size-9',
 }
 
-export function DriverBadge({ driver, size = 'md', className }: { driver: string; size?: Size; className?: string }) {
+export function DriverBadge({
+  driver,
+  size = 'md',
+  className,
+}: {
+  driver: string
+  size?: Size
+  className?: string
+}) {
   const engine = findFrontendEngine(driver)
   if (!engine?.brand.icon) {
     return (
-      <div className={cn('flex shrink-0 items-center justify-center rounded bg-muted text-[8px] font-bold text-muted-foreground', sizes[size], className)}>
+      <div
+        className={cn(
+          'flex shrink-0 items-center justify-center rounded bg-muted text-[8px] font-bold text-muted-foreground',
+          sizes[size],
+          className,
+        )}
+      >
         {engine ? engine.label.slice(0, 2).toUpperCase() : '?'}
       </div>
     )

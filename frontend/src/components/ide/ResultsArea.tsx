@@ -18,10 +18,13 @@ import { Tip } from './schema-diagram/Tip'
 import { DriverBadge } from './DriverBadge'
 import { ExportButton } from './exports/ExportButton'
 import { columnTypeIcon, columnTypeIconColor } from './columnTypeIcon'
+import { allOrgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
 import {
-  allOrgWorkspaceConnectionsQueryOptions,
-} from '#/lib/api/query'
-import { cellInRange, formatResultValue as formatValue, isRowInRange, type CellSelection } from './resultValues'
+  cellInRange,
+  formatResultValue as formatValue,
+  isRowInRange,
+  type CellSelection,
+} from './resultValues'
 import { useResultCursorPaging } from './useResultCursorPaging'
 import { useColumnResize } from './useColumnResize'
 
@@ -33,10 +36,14 @@ type ResultsAreaProps = {
 export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
-  const activeTabId = useIde((s) => (s.activeWorkspaceId ? selectActiveTabId(s, s.activeWorkspaceId) : undefined))
+  const activeTabId = useIde((s) =>
+    s.activeWorkspaceId ? selectActiveTabId(s, s.activeWorkspaceId) : undefined,
+  )
   const results = useIde((s) => s.results)
 
-  const result: QueryResult = activeTabId ? (results[activeTabId] ?? { status: 'idle' }) : { status: 'idle' }
+  const result: QueryResult = activeTabId
+    ? (results[activeTabId] ?? { status: 'idle' })
+    : { status: 'idle' }
 
   function toggleMaximize() {
     setMaximizedPane(maximizedPane === 'results' ? null : 'results')
@@ -46,10 +53,7 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
     <Tabs defaultValue="results" className="flex min-h-0 flex-1 flex-col gap-0">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-background px-1">
         <TabsList variant="line" className="h-full gap-0 rounded-none p-0">
-          <TabsTrigger
-            value="results"
-            className="h-full rounded-none px-3 text-xs gap-1.5"
-          >
+          <TabsTrigger value="results" className="h-full rounded-none px-3 text-xs gap-1.5">
             <Icon name="table" size={13} />
             Results
             {result.status === 'ok' && (result.data.rows?.length ?? 0) > 0 && (
@@ -66,7 +70,9 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
           </TabsTrigger>
         </TabsList>
         <div className="flex items-center gap-0.5 pr-1">
-          <Tip label={maximizedPane === 'results' ? 'Restore results panel' : 'Maximize results panel'}>
+          <Tip
+            label={maximizedPane === 'results' ? 'Restore results panel' : 'Maximize results panel'}
+          >
             <Button
               type="button"
               variant="ghost"
@@ -74,10 +80,7 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
               aria-label="Toggle results maximize"
               onClick={toggleMaximize}
             >
-              <Icon
-                name={maximizedPane === 'results' ? 'minimize' : 'maximize'}
-                size={14}
-              />
+              <Icon name={maximizedPane === 'results' ? 'minimize' : 'maximize'} size={14} />
             </Button>
           </Tip>
           <Tip label="Hide results panel">
@@ -95,7 +98,13 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
       </div>
 
       <TabsContent value="results" className="min-h-0 flex-1 overflow-hidden m-0 p-0">
-        <ResultsContent key={activeTabId} orgSlug={orgSlug} workspace={workspace} activeTabId={activeTabId} result={result} />
+        <ResultsContent
+          key={activeTabId}
+          orgSlug={orgSlug}
+          workspace={workspace}
+          activeTabId={activeTabId}
+          result={result}
+        />
       </TabsContent>
       <TabsContent value="history" className="min-h-0 flex-1 overflow-hidden m-0 p-0">
         <StubPane message="Query history coming soon." />
@@ -130,7 +139,14 @@ function ResultsContent({
     case 'error':
       return <ErrorState message={result.message} />
     case 'ok':
-      return <OkState orgSlug={orgSlug} workspace={workspace} activeTabId={activeTabId} result={result} />
+      return (
+        <OkState
+          orgSlug={orgSlug}
+          workspace={workspace}
+          activeTabId={activeTabId}
+          result={result}
+        />
+      )
   }
 }
 
@@ -142,7 +158,9 @@ function CancelledState() {
           <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
           <div className="flex flex-col gap-0.5">
             <span className="text-xs font-medium text-foreground">Query cancelled</span>
-            <span className="text-xs text-muted-foreground">The request was stopped before it finished.</span>
+            <span className="text-xs text-muted-foreground">
+              The request was stopped before it finished.
+            </span>
           </div>
         </div>
       </div>
@@ -192,7 +210,9 @@ function ErrorState({ message }: { message: string }) {
           <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-destructive" />
           <div className="flex min-w-0 flex-col gap-1">
             <span className="text-xs font-medium text-destructive">Query failed</span>
-            <pre className="whitespace-pre-wrap break-all font-mono text-xs text-destructive/90">{message}</pre>
+            <pre className="whitespace-pre-wrap break-all font-mono text-xs text-destructive/90">
+              {message}
+            </pre>
           </div>
         </div>
       </div>
@@ -218,7 +238,9 @@ function copyToClipboard(text: string) {
       document.execCommand('copy')
       document.body.removeChild(el)
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 function OkState(props: {
@@ -281,9 +303,7 @@ function ResultSetView({
   const queryCursorId = result.data.query_cursor_id
   const cursorConnectionId = result.connectionId ?? activeTab?.connectionId
   // Same query key the toolbar uses, so this is a cache hit, not a new request.
-  const connectionsQuery = useQuery(
-    allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id),
-  )
+  const connectionsQuery = useQuery(allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id))
   const executedConnection = connectionsQuery.data?.items.find(
     (c) => c.id === (result.connectionId ?? activeTab?.connectionId),
   )
@@ -344,7 +364,12 @@ function ResultSetView({
       const maxC = Math.max(selection.anchor.colIdx, selection.active.colIdx)
       const text = rows
         .slice(minR, maxR + 1)
-        .map(row => row.slice(minC, maxC + 1).map(v => formatValue(v).display).join('\t'))
+        .map((row) =>
+          row
+            .slice(minC, maxC + 1)
+            .map((v) => formatValue(v).display)
+            .join('\t'),
+        )
         .join('\n')
       copyToClipboard(text)
       return
@@ -378,7 +403,9 @@ function ResultSetView({
     else if (p.y > rect.bottom - EDGE) dy = ramp(p.y - (rect.bottom - EDGE))
     if (dx || dy) {
       el.scrollBy(dx, dy)
-      const cell = (document.elementFromPoint(p.x, p.y) as HTMLElement | null)?.closest<HTMLElement>('[data-cell]')
+      const cell = (
+        document.elementFromPoint(p.x, p.y) as HTMLElement | null
+      )?.closest<HTMLElement>('[data-cell]')
       const data = cell?.dataset.cell
       if (data) {
         const [r, c] = data.split('-').map(Number)
@@ -395,7 +422,8 @@ function ResultSetView({
   function startAutoScroll(e: React.MouseEvent) {
     pointerRef.current = { x: e.clientX, y: e.clientY }
     scrollElRef.current = scrollRef.current
-    if (autoScrollRafRef.current == null) autoScrollRafRef.current = requestAnimationFrame(autoScrollStep)
+    if (autoScrollRafRef.current == null)
+      autoScrollRafRef.current = requestAnimationFrame(autoScrollStep)
   }
 
   // One context menu for the whole grid: cells/rows/headers build their items
@@ -461,7 +489,7 @@ function ResultSetView({
 
   function handleCellDragEnter(ri: number, ci: number) {
     if (!isDraggingRef.current) return
-    setSelection(prev => prev ? { ...prev, active: { rowIdx: ri, colIdx: ci } } : null)
+    setSelection((prev) => (prev ? { ...prev, active: { rowIdx: ri, colIdx: ci } } : null))
   }
 
   function closePanel() {
@@ -474,18 +502,28 @@ function ResultSetView({
     if (e.button !== 0) return // ignore right/middle click (context menu handles right-click)
     e.preventDefault()
     setRowSelectionMode(true)
-    setSelection({ anchor: { rowIdx: ri, colIdx: 0 }, active: { rowIdx: ri, colIdx: columns.length - 1 } })
+    setSelection({
+      anchor: { rowIdx: ri, colIdx: 0 },
+      active: { rowIdx: ri, colIdx: columns.length - 1 },
+    })
   }
 
   const totalWidth = ROW_NUM_COL_WIDTH + colWidths.reduce((a, b) => a + b, 0)
 
-  const panelValue = selection ? rows[selection.anchor.rowIdx]?.[selection.anchor.colIdx] : undefined
+  const panelValue = selection
+    ? rows[selection.anchor.rowIdx]?.[selection.anchor.colIdx]
+    : undefined
   const panelCol = selection ? columns[selection.anchor.colIdx] : undefined
 
   if (!hasColumns) {
     return (
       <div className="flex h-full min-h-0 flex-col bg-card">
-        <ResultSqlCaption sql={result.sql} orgSlug={orgSlug} workspaceId={workspace.id} connectionId={executedConnection?.id} />
+        <ResultSqlCaption
+          sql={result.sql}
+          orgSlug={orgSlug}
+          workspaceId={workspace.id}
+          connectionId={executedConnection?.id}
+        />
         <div className="flex min-h-0 flex-1 items-center justify-center">
           <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <Icon name="checkmark-circle-02" size={14} className="text-green-500" />
@@ -499,10 +537,18 @@ function ResultSetView({
 
   const tableEl = (
     <div ref={tableContainerRef} onKeyDown={handleTableKeyDown} className="select-none">
-      <table role="grid" className="table-fixed border-separate border-spacing-0 text-xs" style={{ width: totalWidth }}>
+      <table
+        role="grid"
+        className="table-fixed border-separate border-spacing-0 text-xs"
+        style={{ width: totalWidth }}
+      >
         <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm">
           <tr role="row">
-            <th role="columnheader" style={{ width: ROW_NUM_COL_WIDTH }} className="sticky left-0 z-20 border-b border-r border-border bg-muted/80 px-2 py-1.5 text-right font-medium text-muted-foreground tabular-nums backdrop-blur-sm" />
+            <th
+              role="columnheader"
+              style={{ width: ROW_NUM_COL_WIDTH }}
+              className="sticky left-0 z-20 border-b border-r border-border bg-muted/80 px-2 py-1.5 text-right font-medium text-muted-foreground tabular-nums backdrop-blur-sm"
+            />
             {columns.map((col, i) => (
               <ColumnHeader
                 key={i}
@@ -538,7 +584,9 @@ function ResultSetView({
           {virtualRows.length > 0 && (
             <tr
               aria-hidden
-              style={{ height: rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end }}
+              style={{
+                height: rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end,
+              }}
             >
               <td colSpan={columns.length + 1} className="p-0" />
             </tr>
@@ -560,7 +608,12 @@ function ResultSetView({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
-      <ResultSqlCaption sql={result.sql} orgSlug={orgSlug} workspaceId={workspace.id} connectionId={executedConnection?.id} />
+      <ResultSqlCaption
+        sql={result.sql}
+        orgSlug={orgSlug}
+        workspaceId={workspace.id}
+        connectionId={executedConnection?.id}
+      />
       {/*
        * Always render the table inside ResizablePanelGroup so the table's
        * scroll container is a stable DOM element. Switching between a plain
@@ -584,12 +637,20 @@ function ResultSetView({
         {selection && panelValue && panelCol && (
           <>
             <ResizableHandle withHandle />
-            <ResizablePanel defaultSize="25%" minSize="15%" className="flex flex-col border-l border-border">
+            <ResizablePanel
+              defaultSize="25%"
+              minSize="15%"
+              className="flex flex-col border-l border-border"
+            >
               <CellDetailPanel
                 value={panelValue}
                 col={panelCol}
                 tableCollapsed={tableCollapsed}
-                onMaximize={() => tableCollapsed ? tablePanelRef.current?.expand() : tablePanelRef.current?.collapse()}
+                onMaximize={() =>
+                  tableCollapsed
+                    ? tablePanelRef.current?.expand()
+                    : tablePanelRef.current?.collapse()
+                }
                 onClose={closePanel}
               />
             </ResizablePanel>
@@ -599,7 +660,8 @@ function ResultSetView({
 
       <div className="flex h-6 shrink-0 items-center border-t border-border bg-sidebar px-3 text-[11px] text-muted-foreground">
         <span className="shrink-0 tabular-nums">
-          {rows.length === 1 ? '1 row' : `${rows.length} rows`}{queryCursorId ? ' fetched' : ''}
+          {rows.length === 1 ? '1 row' : `${rows.length} rows`}
+          {queryCursorId ? ' fetched' : ''}
         </span>
         <span className="mx-1.5 shrink-0 opacity-40">·</span>
         <span className="shrink-0 tabular-nums">{durationMs}ms</span>
@@ -617,8 +679,15 @@ function ResultSetView({
         )}
         <div className="min-w-3 flex-1" />
         {executedConnection && (
-          <span className="flex min-w-0 max-w-56 items-center gap-1.5" title={executedConnection.name}>
-            <DriverBadge driver={executedConnection.driver} size="sm" className="size-3.5 shrink-0" />
+          <span
+            className="flex min-w-0 max-w-56 items-center gap-1.5"
+            title={executedConnection.name}
+          >
+            <DriverBadge
+              driver={executedConnection.driver}
+              size="sm"
+              className="size-3.5 shrink-0"
+            />
             <span className="truncate">{executedConnection.name}</span>
           </span>
         )}
@@ -630,12 +699,25 @@ function ResultSetView({
 // ─── SQL caption ──────────────────────────────────────────────────────────────
 
 /** Slim strip above each result set naming the query it came from. */
-function ResultSqlCaption({ sql, orgSlug, workspaceId, connectionId }: { sql: string; orgSlug: string; workspaceId: number; connectionId: number | undefined }) {
+function ResultSqlCaption({
+  sql,
+  orgSlug,
+  workspaceId,
+  connectionId,
+}: {
+  sql: string
+  orgSlug: string
+  workspaceId: number
+  connectionId: number | undefined
+}) {
   if (!sql) return null
   return (
     <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-muted/30 pl-3 pr-1.5">
       <Icon name="terminal" size={11} className="shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground" title={sql}>
+      <span
+        className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground"
+        title={sql}
+      >
         {sql.replace(/\s+/g, ' ').trim()}
       </span>
       <ExportButton
@@ -661,7 +743,12 @@ function ResultSqlCaption({ sql, orgSlug, workspaceId, connectionId }: { sql: st
 
 // ─── Table sub-components ────────────────────────────────────────────────────
 
-function RowHeaderCell({ label, selected, onMouseDown, onContextMenu }: {
+function RowHeaderCell({
+  label,
+  selected,
+  onMouseDown,
+  onContextMenu,
+}: {
   label: number
   selected: boolean
   onMouseDown: (e: React.MouseEvent) => void
@@ -683,8 +770,16 @@ function RowHeaderCell({ label, selected, onMouseDown, onContextMenu }: {
 }
 
 function DataRow({
-  row, columns, rowIdx, selection, rowSelectionMode,
-  onRowHeaderMouseDown, onRowHeaderContextMenu, onCellMouseDown, onCellMouseEnter, onCellContextMenu,
+  row,
+  columns,
+  rowIdx,
+  selection,
+  rowSelectionMode,
+  onRowHeaderMouseDown,
+  onRowHeaderContextMenu,
+  onCellMouseDown,
+  onCellMouseEnter,
+  onCellContextMenu,
 }: {
   row: ResultValue[]
   columns: ResultColumn[]
@@ -723,7 +818,12 @@ function DataRow({
   )
 }
 
-function ColumnHeader({ col, width, onResizeStart, onContextMenu }: {
+function ColumnHeader({
+  col,
+  width,
+  onResizeStart,
+  onContextMenu,
+}: {
   col: ResultColumn
   width: number
   onResizeStart: (e: React.MouseEvent) => void
@@ -738,7 +838,11 @@ function ColumnHeader({ col, width, onResizeStart, onContextMenu }: {
       className="relative border-b border-r border-border px-2.5 py-1.5 text-left font-medium select-none overflow-hidden"
     >
       <div className="flex items-center gap-1.5">
-        <Icon name={icon} size={13} className={cn('shrink-0', columnTypeIconColor[icon] ?? 'text-muted-foreground')} />
+        <Icon
+          name={icon}
+          size={13}
+          className={cn('shrink-0', columnTypeIconColor[icon] ?? 'text-muted-foreground')}
+        />
         <div className="flex min-w-0 flex-col">
           <span className="truncate leading-tight text-foreground">{col.name}</span>
           <span className="truncate text-[9px] font-normal uppercase leading-tight tracking-wider text-muted-foreground/70">
@@ -754,7 +858,17 @@ function ColumnHeader({ col, width, onResizeStart, onContextMenu }: {
   )
 }
 
-function DataCell({ value, col, rowIdx, colIdx, isAnchor, isInRange, onMouseDown, onMouseEnter, onContextMenu }: {
+function DataCell({
+  value,
+  col,
+  rowIdx,
+  colIdx,
+  isAnchor,
+  isInRange,
+  onMouseDown,
+  onMouseEnter,
+  onContextMenu,
+}: {
   value: ResultValue
   col: ResultColumn
   rowIdx: number
@@ -795,7 +909,13 @@ function DataCell({ value, col, rowIdx, colIdx, isAnchor, isInRange, onMouseDown
 
 // ─── Cell detail panel ────────────────────────────────────────────────────────
 
-function CellDetailPanel({ value, col, tableCollapsed, onMaximize, onClose }: {
+function CellDetailPanel({
+  value,
+  col,
+  tableCollapsed,
+  onMaximize,
+  onClose,
+}: {
   value: ResultValue
   col: ResultColumn
   tableCollapsed: boolean
@@ -819,7 +939,10 @@ function CellDetailPanel({ value, col, tableCollapsed, onMaximize, onClose }: {
           <Icon
             name={columnTypeIcon(col.type)}
             size={12}
-            className={cn('shrink-0', columnTypeIconColor[columnTypeIcon(col.type)] ?? 'text-muted-foreground')}
+            className={cn(
+              'shrink-0',
+              columnTypeIconColor[columnTypeIcon(col.type)] ?? 'text-muted-foreground',
+            )}
           />
           <span className="truncate text-xs font-medium text-foreground">{col.name}</span>
           <span className="shrink-0 text-[9px] font-normal uppercase tracking-wider text-muted-foreground/70">
@@ -872,7 +995,15 @@ function CellDetailPanel({ value, col, tableCollapsed, onMaximize, onClose }: {
   )
 }
 
-function CellContent({ display, isNull, col: _col }: { display: string; isNull: boolean; col: ResultColumn }) {
+function CellContent({
+  display,
+  isNull,
+  col: _col,
+}: {
+  display: string
+  isNull: boolean
+  col: ResultColumn
+}) {
   if (isNull) {
     return <span className="font-mono text-xs italic text-muted-foreground">NULL</span>
   }

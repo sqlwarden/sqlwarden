@@ -46,10 +46,7 @@ import {
 } from '#/lib/theme-lab/context'
 import { Tip } from '#/components/ide/schema-diagram/Tip'
 import { cn } from '#/lib/utils'
-import {
-  appShellPreferenceKeys,
-  defaultAppShellPreferences,
-} from './app-shell-preferences'
+import { appShellPreferenceKeys, defaultAppShellPreferences } from './app-shell-preferences'
 import type {
   AppShellPreferences,
   AppShellSidebarStyle,
@@ -68,13 +65,21 @@ export function UiLabPanel({
   onClose: () => void
 }) {
   const { packName, setPackName } = useIconPack()
-  const { editorThemeDark, editorThemeLight, setEditorThemeDark, setEditorThemeLight } = useEditorTheme()
+  const { editorThemeDark, editorThemeLight, setEditorThemeDark, setEditorThemeLight } =
+    useEditorTheme()
   const { editorFont, editorFontSize, setEditorFont, setEditorFontSize } = useEditorFont()
   const { interfaceFont, setInterfaceFont } = useInterfaceFont()
   const { connectionLayout, setConnectionLayout } = useConnectionLayout()
   const {
-    accent, surface, radius, uiScale,
-    setAccent, setSurface, setRadius, setUiScale, resetThemeLab,
+    accent,
+    surface,
+    radius,
+    uiScale,
+    setAccent,
+    setSurface,
+    setRadius,
+    setUiScale,
+    resetThemeLab,
   } = useThemeLab()
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === 'dark'
@@ -113,7 +118,10 @@ export function UiLabPanel({
     window.addEventListener('pointerup', onUp)
   }
 
-  function updatePreference<Key extends keyof AppShellPreferences>(key: Key, value: AppShellPreferences[Key]) {
+  function updatePreference<Key extends keyof AppShellPreferences>(
+    key: Key,
+    value: AppShellPreferences[Key],
+  ) {
     window.localStorage.setItem(appShellPreferenceKeys[key], value)
     setPreferences((current) => ({
       ...current,
@@ -161,7 +169,13 @@ export function UiLabPanel({
           </Button>
         </Tip>
         <Tip label="Close UI Lab">
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="Close UI Lab" onClick={onClose}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Close UI Lab"
+            onClick={onClose}
+          >
             <Icon name="cancel-01" size={13} />
           </Button>
         </Tip>
@@ -209,7 +223,9 @@ export function UiLabPanel({
             value={preferences.sidebarStyle}
             options={['inset', 'sidebar', 'floating']}
             labels={{ inset: 'Inset', sidebar: 'Sidebar', floating: 'Floating' }}
-            onValueChange={(value) => updatePreference('sidebarStyle', value as AppShellSidebarStyle)}
+            onValueChange={(value) =>
+              updatePreference('sidebarStyle', value as AppShellSidebarStyle)
+            }
           />
 
           <PreferenceToggle
@@ -241,14 +257,8 @@ export function UiLabPanel({
             value={editorThemeLight}
             onValueChange={setEditorThemeLight}
           />
-          <EditorFontSelect
-            value={editorFont}
-            onValueChange={setEditorFont}
-          />
-          <EditorFontSizeSlider
-            value={editorFontSize}
-            onValueChange={setEditorFontSize}
-          />
+          <EditorFontSelect value={editorFont} onValueChange={setEditorFont} />
+          <EditorFontSizeSlider value={editorFontSize} onValueChange={setEditorFontSize} />
         </div>
       </div>
     </div>,
@@ -346,9 +356,12 @@ function AccentPicker({
   // Local state keeps the swatch live while the theme commit trails behind.
   const [draftHex, setDraftHex] = useState<string | null>(null)
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => () => {
-    if (commitTimerRef.current) clearTimeout(commitTimerRef.current)
-  }, [])
+  useEffect(
+    () => () => {
+      if (commitTimerRef.current) clearTimeout(commitTimerRef.current)
+    },
+    [],
+  )
 
   function handleCustomChange(hex: string) {
     setDraftHex(hex)
@@ -390,9 +403,10 @@ function AccentPicker({
             customActive && 'ring-2 ring-ring ring-offset-2 ring-offset-popover',
           )}
           style={{
-            background: customActive || draftHex
-              ? customHex
-              : 'conic-gradient(oklch(0.7 0.18 0), oklch(0.8 0.16 90), oklch(0.7 0.16 180), oklch(0.6 0.2 270), oklch(0.7 0.18 360))',
+            background:
+              customActive || draftHex
+                ? customHex
+                : 'conic-gradient(oklch(0.7 0.18 0), oklch(0.8 0.16 90), oklch(0.7 0.16 180), oklch(0.6 0.2 270), oklch(0.7 0.18 360))',
           }}
         >
           <input
@@ -604,4 +618,3 @@ function titleCase(value: string) {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
 }
-

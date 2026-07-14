@@ -67,11 +67,26 @@ function DescriptorList({ vm }: { vm: ObjectViewModel }) {
           {d.rows && (
             <table className="border-separate border-spacing-0">
               <thead>
-                <tr>{(d.rows.columns ?? []).map((c) => <th key={c} className="border-b border-border px-2 py-1 text-left text-muted-foreground">{c}</th>)}</tr>
+                <tr>
+                  {(d.rows.columns ?? []).map((c) => (
+                    <th
+                      key={c}
+                      className="border-b border-border px-2 py-1 text-left text-muted-foreground"
+                    >
+                      {c}
+                    </th>
+                  ))}
+                </tr>
               </thead>
               <tbody>
                 {(d.rows.rows ?? []).map((row, i) => (
-                  <tr key={i}>{(row ?? []).map((v, j) => <td key={j} className="border-b border-border px-2 py-1 font-mono">{v}</td>)}</tr>
+                  <tr key={i}>
+                    {(row ?? []).map((v, j) => (
+                      <td key={j} className="border-b border-border px-2 py-1 font-mono">
+                        {v}
+                      </td>
+                    ))}
+                  </tr>
                 ))}
               </tbody>
             </table>
@@ -85,7 +100,9 @@ function DescriptorList({ vm }: { vm: ObjectViewModel }) {
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{title}</div>
+      <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        {title}
+      </div>
       {children}
     </div>
   )

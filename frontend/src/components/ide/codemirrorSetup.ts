@@ -1,4 +1,9 @@
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
+import {
+  autocompletion,
+  closeBrackets,
+  closeBracketsKeymap,
+  completionKeymap,
+} from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import {
   bracketMatching,
@@ -49,8 +54,12 @@ const schemaDropHandler = EditorView.domEventHandlers({
     const text = event.dataTransfer?.getData(IDENTIFIER_DND_MIME)
     if (!text) return false
     event.preventDefault()
-    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.selection.main.head
-    view.dispatch({ changes: { from: pos, insert: text }, selection: { anchor: pos + text.length } })
+    const pos =
+      view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.selection.main.head
+    view.dispatch({
+      changes: { from: pos, insert: text },
+      selection: { anchor: pos + text.length },
+    })
     view.focus()
     return true
   },

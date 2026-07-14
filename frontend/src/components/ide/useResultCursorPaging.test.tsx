@@ -44,28 +44,30 @@ describe('useResultCursorPaging', () => {
 
   function renderPaging(result = initialResult) {
     return renderHook(
-      () => useResultCursorPaging({
-        activeTabId: 'tab-1',
-        connectionId: 7,
-        orgSlug: 'acme',
-        result,
-        workspaceId: 3,
-      }),
+      () =>
+        useResultCursorPaging({
+          activeTabId: 'tab-1',
+          connectionId: 7,
+          orgSlug: 'acme',
+          result,
+          workspaceId: 3,
+        }),
       { wrapper },
     )
   }
 
   it('merges a successful page and retires an exhausted cursor', async () => {
-    server.use(http.post(
-      '/api/v1/orgs/acme/workspaces/3/connections/7/query-cursors/cursor-1/fetch',
-      () => HttpResponse.json({
-        ...initialResult.data,
-        rows: [[{ type: 'integer', integer: 2 }]],
-        rows_returned: 1,
-        bytes_returned: 9,
-        exhausted: true,
-      }),
-    ))
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/query-cursors/cursor-1/fetch', () =>
+        HttpResponse.json({
+          ...initialResult.data,
+          rows: [[{ type: 'integer', integer: 2 }]],
+          rows_returned: 1,
+          bytes_returned: 9,
+          exhausted: true,
+        }),
+      ),
+    )
     const { result } = renderPaging()
 
     await act(() => result.current.fetchNextPage())
@@ -81,14 +83,18 @@ describe('useResultCursorPaging', () => {
   it('deduplicates concurrent page requests', async () => {
     let requests = 0
     let resolveRequest: (() => void) | undefined
-    server.use(http.post(
-      '/api/v1/orgs/acme/workspaces/3/connections/7/query-cursors/cursor-1/fetch',
-      async () => {
-        requests += 1
-        await new Promise<void>((resolve) => { resolveRequest = resolve })
-        return HttpResponse.json({ ...initialResult.data, rows: [], exhausted: true })
-      },
-    ))
+    server.use(
+      http.post(
+        '/api/v1/orgs/acme/workspaces/3/connections/7/query-cursors/cursor-1/fetch',
+        async () => {
+          requests += 1
+          await new Promise<void>((resolve) => {
+            resolveRequest = resolve
+          })
+          return HttpResponse.json({ ...initialResult.data, rows: [], exhausted: true })
+        },
+      ),
+    )
     const { result } = renderPaging()
 
     let first: Promise<void>
@@ -104,13 +110,14 @@ describe('useResultCursorPaging', () => {
   })
 
   it('retires an expired cursor with an actionable message', async () => {
-    server.use(http.post(
-      '/api/v1/orgs/acme/workspaces/3/connections/7/query-cursors/cursor-1/fetch',
-      () => HttpResponse.json(
-        { error: { code: 'query_cursor_unavailable', message: 'Cursor unavailable.' } },
-        { status: 410 },
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/query-cursors/cursor-1/fetch', () =>
+        HttpResponse.json(
+          { error: { code: 'query_cursor_unavailable', message: 'Cursor unavailable.' } },
+          { status: 410 },
+        ),
       ),
-    ))
+    )
     const { result } = renderPaging()
 
     await act(() => result.current.fetchNextPage())

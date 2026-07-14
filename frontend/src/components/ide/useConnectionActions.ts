@@ -5,11 +5,7 @@ import { api } from '#/lib/api/client'
 import { errorMessage } from '#/lib/api/errors'
 import { queryKeys } from '#/lib/api/query-keys'
 import type { Connection, Workspace } from '#/lib/api/types'
-import {
-  DEFAULT_CONSOLE_CONTENT,
-  newConnectionTab,
-  useIde,
-} from './useIdeStore'
+import { DEFAULT_CONSOLE_CONTENT, newConnectionTab, useIde } from './useIdeStore'
 
 export function useConnectionActions(orgSlug: string, workspace: Workspace) {
   const openTab = useIde((state) => state.openTab)

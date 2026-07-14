@@ -1,6 +1,13 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { Account, InstanceAdmin, InstanceSettings, ListQuery, Organization, Paginated } from '#/lib/api/types'
+import type {
+  Account,
+  InstanceAdmin,
+  InstanceSettings,
+  ListQuery,
+  Organization,
+  Paginated,
+} from '#/lib/api/types'
 import { queryKeys } from '#/lib/api/query-keys'
 
 export function instanceOrganizationsQueryOptions(query?: ListQuery) {
@@ -34,4 +41,3 @@ export function instanceSettingsQueryOptions() {
     staleTime: 60_000,
   })
 }
-

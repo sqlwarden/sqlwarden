@@ -16,7 +16,9 @@ function createView(doc = 'alpha beta alpha', readOnly = false, customPanel = fa
     state: EditorState.create({
       doc,
       extensions: [
-        search(customPanel ? { createPanel: () => ({ dom: document.createElement('div') }) } : undefined),
+        search(
+          customPanel ? { createPanel: () => ({ dom: document.createElement('div') }) } : undefined,
+        ),
         EditorState.readOnly.of(readOnly),
       ],
     }),
@@ -50,15 +52,22 @@ describe('FindPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Match case' }))
     await user.click(screen.getByRole('button', { name: 'Use regular expression' }))
     await user.click(screen.getByRole('button', { name: 'Match whole word' }))
-    expect(getSearchQuery(editor.state)).toEqual(expect.objectContaining({
-      search: 'alpha', caseSensitive: true, regexp: true, wholeWord: true,
-    }))
+    expect(getSearchQuery(editor.state)).toEqual(
+      expect.objectContaining({
+        search: 'alpha',
+        caseSensitive: true,
+        regexp: true,
+        wholeWord: true,
+      }),
+    )
   })
 
   it('replaces matches and closes the CodeMirror search panel', async () => {
     const editor = createView('alpha beta alpha', false, true)
     const user = userEvent.setup()
-    act(() => { openSearchPanel(editor) })
+    act(() => {
+      openSearchPanel(editor)
+    })
     render(<FindPanel view={editor} />)
 
     await user.type(screen.getByPlaceholderText('Find'), 'alpha')

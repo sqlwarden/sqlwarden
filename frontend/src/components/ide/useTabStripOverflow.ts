@@ -28,7 +28,9 @@ export function useTabStripOverflow(activeTabId: string | undefined, tabCount: n
   useEffect(() => {
     const element = scrollRef.current
     if (element && activeTabId) {
-      element.querySelector(`[data-tab-id="${activeTabId}"]`)?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+      element
+        .querySelector(`[data-tab-id="${activeTabId}"]`)
+        ?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
     }
     update()
   }, [activeTabId, tabCount, update])
@@ -36,7 +38,10 @@ export function useTabStripOverflow(activeTabId: string | undefined, tabCount: n
   function scroll(direction: -1 | 1) {
     const element = scrollRef.current
     if (!element) return
-    element.scrollBy({ left: direction * Math.max(160, element.clientWidth * 0.7), behavior: 'smooth' })
+    element.scrollBy({
+      left: direction * Math.max(160, element.clientWidth * 0.7),
+      behavior: 'smooth',
+    })
   }
 
   function handleWheel(event: WheelEvent<HTMLDivElement>) {

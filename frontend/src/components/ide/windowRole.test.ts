@@ -55,12 +55,18 @@ describe('electPrimary', () => {
     const onBecamePrimary = vi.fn()
 
     const cleanup = electPrimary('ide', onBecamePrimary)
-    expect(request).toHaveBeenCalledWith('ide', expect.objectContaining({ signal: expect.any(AbortSignal) }), expect.any(Function))
+    expect(request).toHaveBeenCalledWith(
+      'ide',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      expect.any(Function),
+    )
 
     const held = lockCallback?.()
     expect(onBecamePrimary).toHaveBeenCalledOnce()
     let released = false
-    void held?.then(() => { released = true })
+    void held?.then(() => {
+      released = true
+    })
     await Promise.resolve()
     expect(released).toBe(false)
 

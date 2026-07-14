@@ -7,9 +7,21 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
-import { orgEffectivePermissionsQueryOptions, orgPermissionsQueryOptions, orgRoleQueryOptions } from '#/lib/api/query'
+import {
+  orgEffectivePermissionsQueryOptions,
+  orgPermissionsQueryOptions,
+  orgRoleQueryOptions,
+} from '#/lib/api/query'
 import type { PermissionDefinition } from '#/lib/api/types'
-import { hasPermission, permission, permissionDefinitionMap, permissionDescription, permissionDisplayName, permissionGroupName, type Permission } from '#/lib/permissions'
+import {
+  hasPermission,
+  permission,
+  permissionDefinitionMap,
+  permissionDescription,
+  permissionDisplayName,
+  permissionGroupName,
+  type Permission,
+} from '#/lib/permissions'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,14 +54,16 @@ export const Route = createFileRoute('/orgs/$org_slug/roles/$role_id')({
   pendingComponent: RoutePending,
 })
 
-
 function OrganizationRoleContextPage() {
   const { org_slug: orgSlug, role_id: roleId } = Route.useParams()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
   const canReadRole = hasPermission(effectivePermissions.data?.permissions, permission.policyRead)
-  const canDeleteRole = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
+  const canDeleteRole = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.policyModify,
+  )
   const permissionsCatalog = useQuery(orgPermissionsQueryOptions(orgSlug))
   const permissionDefinitions = permissionDefinitionMap(permissionsCatalog.data?.permission_details)
   const role = useQuery({
@@ -103,7 +117,9 @@ function OrganizationRoleContextPage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink render={<Link to="/orgs/$org_slug/roles" params={{ org_slug: orgSlug }} />}>
+              <BreadcrumbLink
+                render={<Link to="/orgs/$org_slug/roles" params={{ org_slug: orgSlug }} />}
+              >
                 Roles
               </BreadcrumbLink>
             </BreadcrumbItem>
@@ -117,7 +133,12 @@ function OrganizationRoleContextPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             {role.data ? (
-              <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold', roleColor(role.data.name))}>
+              <div
+                className={cn(
+                  'flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold',
+                  roleColor(role.data.name),
+                )}
+              >
                 {displayName.slice(0, 2).toUpperCase()}
               </div>
             ) : (
@@ -143,14 +164,17 @@ function OrganizationRoleContextPage() {
 
           {role.data && canDeleteRole && !role.data.is_builtin ? (
             <AlertDialog>
-              <AlertDialogTrigger render={<Button variant="destructive" disabled={deleteRole.isPending} />}>
+              <AlertDialogTrigger
+                render={<Button variant="destructive" disabled={deleteRole.isPending} />}
+              >
                 Delete
               </AlertDialogTrigger>
               <AlertDialogContent size="sm">
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete role?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This permanently deletes {role.data.name}. Any policies using this role will no longer grant its permissions.
+                    This permanently deletes {role.data.name}. Any policies using this role will no
+                    longer grant its permissions.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -207,14 +231,25 @@ function OrganizationRoleContextPage() {
         </CardHeader>
         <CardContent>
           {effectivePermissions.isLoading || role.isLoading ? <PermissionGroupsSkeleton /> : null}
-          {role.data ? <PermissionGroups permissions={(role.data.permissions ?? []) as Permission[]} permissionDefinitions={permissionDefinitions} /> : null}
+          {role.data ? (
+            <PermissionGroups
+              permissions={(role.data.permissions ?? []) as Permission[]}
+              permissionDefinitions={permissionDefinitions}
+            />
+          ) : null}
         </CardContent>
       </Card>
     </div>
   )
 }
 
-function PermissionGroups({ permissions, permissionDefinitions }: { permissions: Permission[]; permissionDefinitions: ReadonlyMap<string, PermissionDefinition> }) {
+function PermissionGroups({
+  permissions,
+  permissionDefinitions,
+}: {
+  permissions: Permission[]
+  permissionDefinitions: ReadonlyMap<string, PermissionDefinition>
+}) {
   const groupedPermissions = groupPermissions(permissions, permissionDefinitions)
 
   if (permissions.length === 0) {
@@ -225,16 +260,24 @@ function PermissionGroups({ permissions, permissionDefinitions }: { permissions:
     <div className="grid gap-6 sm:grid-cols-2">
       {groupedPermissions.map((group) => (
         <div key={group.name} className="flex flex-col gap-3">
-          <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{group.name}</p>
+          <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+            {group.name}
+          </p>
           <div className="flex flex-col gap-3">
             {group.permissions.map((item) => (
               <div key={item}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-foreground">{permissionDisplayName(item, permissionDefinitions)}</span>
-                  <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">{item}</Badge>
+                  <span className="text-sm font-medium text-foreground">
+                    {permissionDisplayName(item, permissionDefinitions)}
+                  </span>
+                  <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">
+                    {item}
+                  </Badge>
                 </div>
                 {permissionDescription(item, permissionDefinitions) ? (
-                  <p className="mt-0.5 text-xs text-muted-foreground">{permissionDescription(item, permissionDefinitions)}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {permissionDescription(item, permissionDefinitions)}
+                  </p>
                 ) : null}
               </div>
             ))}
@@ -262,7 +305,10 @@ function PermissionGroupsSkeleton() {
   )
 }
 
-function groupPermissions(permissions: readonly Permission[], definitions: ReadonlyMap<string, PermissionDefinition>) {
+function groupPermissions(
+  permissions: readonly Permission[],
+  definitions: ReadonlyMap<string, PermissionDefinition>,
+) {
   const groups = new Map<string, Permission[]>()
   for (const item of permissions) {
     const group = permissionGroupName(item, definitions)
@@ -274,7 +320,9 @@ function groupPermissions(permissions: readonly Permission[], definitions: Reado
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5 border-l-2 border-border pl-3">
-      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{label}</span>
+      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+        {label}
+      </span>
       <span className="text-sm font-medium text-foreground">{value}</span>
     </div>
   )
@@ -288,7 +336,6 @@ function ContextMessage({ message }: { message: string }) {
     </div>
   )
 }
-
 
 const ROLE_COLORS = [
   'bg-violet-500/10 text-violet-600',

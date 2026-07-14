@@ -18,8 +18,16 @@ vi.mock('./exportRetryCache', () => ({ rememberExportRetry: mocks.rememberRetry 
 vi.mock('sonner', () => ({ toast: { success: mocks.toastSuccess } }))
 
 const job: JobRecord = {
-  id: 'job-1', type: 'export', visibility: 'private', status: 'queued', run_at: '',
-  priority: 0, attempts: 0, max_attempts: 3, created_at: '', updated_at: '',
+  id: 'job-1',
+  type: 'export',
+  visibility: 'private',
+  status: 'queued',
+  run_at: '',
+  priority: 0,
+  attempts: 0,
+  max_attempts: 3,
+  created_at: '',
+  updated_at: '',
 }
 
 describe('ExportConfirmDialog', () => {
@@ -36,7 +44,12 @@ describe('ExportConfirmDialog', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
 
     rendered.rerender(
-      <ExportConfirmDialog open onOpenChange={onOpenChange} sql="select 1; select 2" onConfirm={onConfirm} />,
+      <ExportConfirmDialog
+        open
+        onOpenChange={onOpenChange}
+        sql="select 1; select 2"
+        onConfirm={onConfirm}
+      />,
     )
     expect(screen.getByText(/Multiple queries were selected/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled()
@@ -56,8 +69,12 @@ describe('ExportToFilesDialog', () => {
     const getSql = vi.fn(() => 'select * from users')
     const { user } = renderWithProviders(
       <ExportToFilesDialog
-        open onOpenChange={onOpenChange} orgSlug="acme" workspaceId={3}
-        connectionId={7} getSql={getSql}
+        open
+        onOpenChange={onOpenChange}
+        orgSlug="acme"
+        workspaceId={3}
+        connectionId={7}
+        getSql={getSql}
       />,
     )
 
@@ -65,26 +82,38 @@ describe('ExportToFilesDialog', () => {
     await user.type(screen.getByLabelText('Filename'), ' users.csv ')
     await user.click(screen.getByRole('button', { name: 'Export' }))
 
-    await waitFor(() => expect(mocks.createExport).toHaveBeenCalledWith(
-      'acme', 3, 7,
-      { sql: 'select * from users', format: 'csv', filename: 'users.csv' },
-    ))
+    await waitFor(() =>
+      expect(mocks.createExport).toHaveBeenCalledWith('acme', 3, 7, {
+        sql: 'select * from users',
+        format: 'csv',
+        filename: 'users.csv',
+      }),
+    )
     expect(mocks.rememberRetry).toHaveBeenCalledWith('job-1', {
-      connectionId: 7, sql: 'select * from users', filename: 'users.csv', format: 'csv',
+      connectionId: 7,
+      sql: 'select * from users',
+      filename: 'users.csv',
+      format: 'csv',
     })
     expect(mocks.toastSuccess).toHaveBeenCalledWith('Export queued')
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
   it('shows server field errors and rejects multiple statements before submission', async () => {
-    mocks.createExport.mockRejectedValue(new ApiError('Invalid export', 422, {
-      fieldErrors: { filename: 'Filename is invalid.' },
-    }))
+    mocks.createExport.mockRejectedValue(
+      new ApiError('Invalid export', 422, {
+        fieldErrors: { filename: 'Filename is invalid.' },
+      }),
+    )
     const getSql = vi.fn(() => 'select 1')
     const { user, rerender } = renderWithProviders(
       <ExportToFilesDialog
-        open onOpenChange={vi.fn()} orgSlug="acme" workspaceId={3}
-        connectionId={7} getSql={getSql}
+        open
+        onOpenChange={vi.fn()}
+        orgSlug="acme"
+        workspaceId={3}
+        connectionId={7}
+        getSql={getSql}
       />,
     )
     await user.click(screen.getByRole('button', { name: 'Export' }))
@@ -92,14 +121,22 @@ describe('ExportToFilesDialog', () => {
 
     rerender(
       <ExportToFilesDialog
-        open={false} onOpenChange={vi.fn()} orgSlug="acme" workspaceId={3}
-        connectionId={7} getSql={() => 'select 1; select 2'}
+        open={false}
+        onOpenChange={vi.fn()}
+        orgSlug="acme"
+        workspaceId={3}
+        connectionId={7}
+        getSql={() => 'select 1; select 2'}
       />,
     )
     rerender(
       <ExportToFilesDialog
-        open onOpenChange={vi.fn()} orgSlug="acme" workspaceId={3}
-        connectionId={7} getSql={() => 'select 1; select 2'}
+        open
+        onOpenChange={vi.fn()}
+        orgSlug="acme"
+        workspaceId={3}
+        connectionId={7}
+        getSql={() => 'select 1; select 2'}
       />,
     )
     expect(screen.getByText(/Multiple queries were selected/)).toBeInTheDocument()

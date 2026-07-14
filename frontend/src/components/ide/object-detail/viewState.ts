@@ -21,7 +21,11 @@ export interface ResolveInput {
  *  reconnect pane instead of stale content with silently broken sub-queries.
  *  With a live session, cached data renders (`ready`) even while a fresh
  *  refetch is in flight; 403/410/501 collapse to the matching non-data state. */
-export function resolveObjectViewState({ hasSession, error, hasData }: ResolveInput): ObjectViewState {
+export function resolveObjectViewState({
+  hasSession,
+  error,
+  hasData,
+}: ResolveInput): ObjectViewState {
   if (!hasSession) return { kind: 'no-session' }
   if (hasData) return { kind: 'ready' }
   if (error) {

@@ -16,7 +16,13 @@ type EditorLayoutProps = {
 
 /** Recursively renders the editor layout tree: splits → resizable panel groups,
  *  groups → EditorGroup (tab bar + active editor). */
-export function EditorLayout({ orgSlug, workspace, node, onCursorChange, withinSplit = false }: EditorLayoutProps) {
+export function EditorLayout({
+  orgSlug,
+  workspace,
+  node,
+  onCursorChange,
+  withinSplit = false,
+}: EditorLayoutProps) {
   const activeGroupId = useIde((s) => s.activeGroupId[workspace.id])
   const setSplitSizes = useIde((s) => s.setSplitSizes)
 
@@ -37,22 +43,37 @@ export function EditorLayout({ orgSlug, workspace, node, onCursorChange, withinS
     <ResizablePanelGroup
       id={node.id}
       orientation={node.orientation === 'row' ? 'horizontal' : 'vertical'}
-      defaultLayout={Object.fromEntries(node.children.map((child, index) => [
-        child.id,
-        node.sizes?.[index] ?? 100 / node.children.length,
-      ]))}
-      onLayoutChanged={(layout) => setSplitSizes(
-        workspace.id,
-        node.id,
-        node.children.map((child) => layout[child.id] ?? 100 / node.children.length),
+      defaultLayout={Object.fromEntries(
+        node.children.map((child, index) => [
+          child.id,
+          node.sizes?.[index] ?? 100 / node.children.length,
+        ]),
       )}
+      onLayoutChanged={(layout) =>
+        setSplitSizes(
+          workspace.id,
+          node.id,
+          node.children.map((child) => layout[child.id] ?? 100 / node.children.length),
+        )
+      }
       className="min-h-0 flex-1 overflow-hidden"
     >
       {node.children.map((child, i) => (
         <Fragment key={child.id}>
           {i > 0 && <ResizableHandle withHandle />}
-          <ResizablePanel id={child.id} defaultSize={`${node.sizes?.[i] ?? 100 / node.children.length}%`} minSize="15%" className="overflow-hidden">
-            <EditorLayout orgSlug={orgSlug} workspace={workspace} node={child} onCursorChange={onCursorChange} withinSplit />
+          <ResizablePanel
+            id={child.id}
+            defaultSize={`${node.sizes?.[i] ?? 100 / node.children.length}%`}
+            minSize="15%"
+            className="overflow-hidden"
+          >
+            <EditorLayout
+              orgSlug={orgSlug}
+              workspace={workspace}
+              node={child}
+              onCursorChange={onCursorChange}
+              withinSplit
+            />
           </ResizablePanel>
         </Fragment>
       ))}

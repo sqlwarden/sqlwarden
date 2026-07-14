@@ -25,10 +25,10 @@ export function useResultCursorPaging({
   const cursorId = result.data.query_cursor_id
   const canFetchMore = Boolean(
     activeTabId &&
-      connectionId &&
-      cursorId &&
-      result.data.exhausted === false &&
-      !result.isFetchingNextPage,
+    connectionId &&
+    cursorId &&
+    result.data.exhausted === false &&
+    !result.isFetchingNextPage,
   )
 
   async function fetchNextPage() {

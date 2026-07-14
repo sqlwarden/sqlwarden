@@ -11,7 +11,9 @@ afterEach(() => {
 describe('useListPageState', () => {
   it('resets pagination when debounced search changes', () => {
     vi.useFakeTimers()
-    const { result } = renderHook(() => useListPageState({ page: 4, page_size: 25, sort: 'name', order: 'asc' }))
+    const { result } = renderHook(() =>
+      useListPageState({ page: 4, page_size: 25, sort: 'name', order: 'asc' }),
+    )
 
     act(() => result.current.setSearchText('  active  '))
     act(() => vi.advanceTimersByTime(300))

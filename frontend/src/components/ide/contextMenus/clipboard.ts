@@ -9,13 +9,19 @@ export function writeClipboard(text: string): void {
       void navigator.clipboard.writeText(text)
       return
     }
-  } catch { /* fall through to legacy path */ }
+  } catch {
+    /* fall through to legacy path */
+  }
   const el = document.createElement('textarea')
   el.value = text
   el.style.cssText = 'position:fixed;opacity:0'
   document.body.appendChild(el)
   el.select()
-  try { document.execCommand('copy') } catch { /* ignore */ }
+  try {
+    document.execCommand('copy')
+  } catch {
+    /* ignore */
+  }
   document.body.removeChild(el)
 }
 
@@ -43,7 +49,9 @@ export function rowToTsv(cells: string[]): string {
 /** A result row as a pretty-printed JSON object keyed by column name. */
 export function rowToJson(columnNames: string[], cells: string[]): string {
   const obj: Record<string, string> = {}
-  columnNames.forEach((name, i) => { obj[name] = cells[i] ?? '' })
+  columnNames.forEach((name, i) => {
+    obj[name] = cells[i] ?? ''
+  })
   return JSON.stringify(obj, null, 2)
 }
 

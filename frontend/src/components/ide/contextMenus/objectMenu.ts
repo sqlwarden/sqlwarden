@@ -13,17 +13,49 @@ export function buildObjectMenu(ctx: ObjectMenuCtx): ContextMenuItem[] {
   const items: ContextMenuItem[] = [
     { kind: 'action', id: 'open', label: 'Open', icon: 'arrow-up-right-01', onSelect: ctx.onOpen },
     ...(ctx.onViewDiagram
-      ? [{ kind: 'action', id: 'view-diagram', label: 'View diagram', icon: 'flow-connection', onSelect: ctx.onViewDiagram } as ContextMenuItem]
+      ? [
+          {
+            kind: 'action',
+            id: 'view-diagram',
+            label: 'View diagram',
+            icon: 'flow-connection',
+            onSelect: ctx.onViewDiagram,
+          } as ContextMenuItem,
+        ]
       : []),
     { kind: 'separator' },
-    { kind: 'action', id: 'copy-name', label: 'Copy name', icon: 'copy-01', onSelect: ctx.onCopyName },
-    { kind: 'action', id: 'copy-qualified-name', label: 'Copy qualified name', icon: 'copy-01', onSelect: ctx.onCopyQualifiedName },
-    { kind: 'action', id: 'copy-column-list', label: 'Copy column list', icon: 'copy-01', onSelect: ctx.onCopyColumnList },
+    {
+      kind: 'action',
+      id: 'copy-name',
+      label: 'Copy name',
+      icon: 'copy-01',
+      onSelect: ctx.onCopyName,
+    },
+    {
+      kind: 'action',
+      id: 'copy-qualified-name',
+      label: 'Copy qualified name',
+      icon: 'copy-01',
+      onSelect: ctx.onCopyQualifiedName,
+    },
+    {
+      kind: 'action',
+      id: 'copy-column-list',
+      label: 'Copy column list',
+      icon: 'copy-01',
+      onSelect: ctx.onCopyColumnList,
+    },
     { kind: 'separator' },
     { kind: 'action', id: 'drop', label: 'Drop', icon: 'delete-01', soon: true },
   ]
   if (ctx.isView) {
-    items.push({ kind: 'action', id: 'edit-view-definition', label: 'Edit view definition', icon: 'pencil-edit-02', soon: true })
+    items.push({
+      kind: 'action',
+      id: 'edit-view-definition',
+      label: 'Edit view definition',
+      icon: 'pencil-edit-02',
+      soon: true,
+    })
   }
   return items
 }

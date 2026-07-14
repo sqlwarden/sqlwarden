@@ -22,19 +22,25 @@ describe('authenticated shell routes', () => {
     server.use(
       setupStatusHandler(),
       sessionHandler(sessionFixture({ organizations: [], is_instance_admin: false })),
-      http.get('/api/v1/account/orgs', () => HttpResponse.json({ items: [], page: 1, page_size: 50, total: 0 })),
+      http.get('/api/v1/account/orgs', () =>
+        HttpResponse.json({ items: [], page: 1, page_size: 50, total: 0 }),
+      ),
     )
     const { router } = renderRoute('/administration/users')
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
-    expect(await screen.findByRole('heading', { name: 'Choose where to continue' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Choose where to continue' }),
+    ).toBeInTheDocument()
   })
 
   it('routes an instance administrator to the default users page', async () => {
     server.use(
       setupStatusHandler(),
       sessionHandler(sessionFixture({ organizations: [], is_instance_admin: true })),
-      http.get('/api/v1/instance/accounts', () => HttpResponse.json({ items: [], page: 1, page_size: 10, total: 0 })),
+      http.get('/api/v1/instance/accounts', () =>
+        HttpResponse.json({ items: [], page: 1, page_size: 10, total: 0 }),
+      ),
     )
     const { router } = renderRoute('/administration')
 
@@ -48,14 +54,27 @@ describe('authenticated shell routes', () => {
       setupStatusHandler(),
       sessionHandler(sessionFixture({ organizations: [organization] })),
       http.get('/api/v1/orgs/acme', () => HttpResponse.json(organization)),
-      http.get('/api/v1/orgs/acme/workspaces/3', () => HttpResponse.json({
-        id: 3, org_id: 1, owner_type: 'org', owner_id: 1, name: 'Analytics',
-        description: 'Data workspace', environment_count: 2, connection_count: 4,
-        created_at: '', updated_at: '',
-      })),
-      http.get('/api/v1/orgs/acme/permissions/effective', () => HttpResponse.json({
-        resource_type: 'workspace', resource_id: 3, permissions: ['ws:read'],
-      })),
+      http.get('/api/v1/orgs/acme/workspaces/3', () =>
+        HttpResponse.json({
+          id: 3,
+          org_id: 1,
+          owner_type: 'org',
+          owner_id: 1,
+          name: 'Analytics',
+          description: 'Data workspace',
+          environment_count: 2,
+          connection_count: 4,
+          created_at: '',
+          updated_at: '',
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/permissions/effective', () =>
+        HttpResponse.json({
+          resource_type: 'workspace',
+          resource_id: 3,
+          permissions: ['ws:read'],
+        }),
+      ),
     )
     const { router } = renderRoute('/orgs/acme/workspaces/3/connections')
 

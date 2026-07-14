@@ -12,8 +12,13 @@ function action(items: ContextMenuItem[], id: string): ContextMenuActionItem | u
 
 describe('buildTabMenu', () => {
   const base = {
-    onClose: noop, onCloseOthers: noop, onCloseRight: noop, onCloseAll: noop,
-    onSplitRight: noop, onSplitDown: noop, onCopyName: noop,
+    onClose: noop,
+    onCloseOthers: noop,
+    onCloseRight: noop,
+    onCloseAll: noop,
+    onSplitRight: noop,
+    onSplitDown: noop,
+    onCopyName: noop,
   }
   it('has live close + split and live batch-close actions', () => {
     const items = buildTabMenu({ ...base, isConsole: false, hasOthers: true, hasRight: true })
@@ -64,7 +69,11 @@ describe('buildColumnHeaderMenu', () => {
 })
 
 describe('buildWorkspaceMenu', () => {
-  const items = buildWorkspaceMenu({ onOpenSettings: noop, onManageMembers: noop, onManageAccess: noop })
+  const items = buildWorkspaceMenu({
+    onOpenSettings: noop,
+    onManageMembers: noop,
+    onManageAccess: noop,
+  })
   it('has live settings, members, and access actions', () => {
     expect(action(items, 'workspace-settings')?.soon).toBeFalsy()
     expect(action(items, 'manage-members')?.soon).toBeFalsy()

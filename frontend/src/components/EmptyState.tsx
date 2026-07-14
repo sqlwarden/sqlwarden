@@ -27,7 +27,10 @@ type TableEmptyStateProps = EmptyStateProps & {
 export function TableEmptyState({ colSpan, compact = false, icon, message }: TableEmptyStateProps) {
   return (
     <TableRow>
-      <TableCell colSpan={colSpan} className={compact ? 'py-10 text-center text-sm text-muted-foreground' : undefined}>
+      <TableCell
+        colSpan={colSpan}
+        className={compact ? 'py-10 text-center text-sm text-muted-foreground' : undefined}
+      >
         {compact ? message : <EmptyState icon={icon} message={message} />}
       </TableCell>
     </TableRow>

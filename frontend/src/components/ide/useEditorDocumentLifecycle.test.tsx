@@ -77,10 +77,9 @@ describe('editor document lifecycle', () => {
   it('does not seed file documents from stale plain content and destroys closed tabs', () => {
     const { destroy, registry } = fakeRegistry()
     const file = tab({ id: 'file:9', kind: 'file', fileId: 9, content: 'stale' })
-    const { rerender } = renderHook(
-      ({ tabs }) => useEditorDocumentLifecycle(tabs, registry),
-      { initialProps: { tabs: [file] } },
-    )
+    const { rerender } = renderHook(({ tabs }) => useEditorDocumentLifecycle(tabs, registry), {
+      initialProps: { tabs: [file] },
+    })
 
     expect(registry.get(file.id)?.getText('content').toString()).toBe('')
     rerender({ tabs: [] })
@@ -106,11 +105,7 @@ describe('editor document lifecycle', () => {
     act(() => vi.advanceTimersByTime(399))
     expect(updateTabContent).not.toHaveBeenCalled()
     act(() => vi.advanceTimersByTime(1))
-    expect(updateTabContent).toHaveBeenCalledWith(
-      current.id,
-      'server edit',
-      expect.any(Array),
-    )
+    expect(updateTabContent).toHaveBeenCalledWith(current.id, 'server edit', expect.any(Array))
   })
 
   it('cancels pending snapshot writes on unmount', () => {

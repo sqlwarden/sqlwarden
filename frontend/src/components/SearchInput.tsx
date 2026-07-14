@@ -10,10 +10,20 @@ type SearchInputProps = {
   className?: string
 }
 
-export function SearchInput({ value, onValueChange, onClear, placeholder, className = 'max-w-md' }: SearchInputProps) {
+export function SearchInput({
+  value,
+  onValueChange,
+  onClear,
+  placeholder,
+  className = 'max-w-md',
+}: SearchInputProps) {
   return (
     <div className={cn('relative', className)}>
-      <Icon name="search-01" size={20} className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Icon
+        name="search-01"
+        size={20}
+        className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+      />
       <Input
         value={value}
         onChange={(event) => onValueChange(event.target.value)}

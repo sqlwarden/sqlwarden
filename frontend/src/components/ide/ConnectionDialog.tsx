@@ -20,12 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
-import {
-  drivers,
-  driverBrands,
-  type DriverDef,
-  type FieldDef,
-} from './connection-drivers/index'
+import { drivers, driverBrands, type DriverDef, type FieldDef } from './connection-drivers/index'
 import { DriverBadge } from './DriverBadge'
 import { useConnectionForm, type ConnectionTestState } from './useConnectionForm'
 
@@ -43,8 +38,22 @@ type Props = {
   lockedEnvironmentId?: number
 }
 
-export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, environments, lockedEnvironmentId }: Props) {
-  const form = useConnectionForm({ open, onOpenChange, orgSlug, workspaceId, environments, lockedEnvironmentId })
+export function ConnectionDialog({
+  open,
+  onOpenChange,
+  orgSlug,
+  workspaceId,
+  environments,
+  lockedEnvironmentId,
+}: Props) {
+  const form = useConnectionForm({
+    open,
+    onOpenChange,
+    orgSlug,
+    workspaceId,
+    environments,
+    lockedEnvironmentId,
+  })
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -56,7 +65,9 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
     <Dialog open={open} onOpenChange={form.handleOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{form.stage === 'driver' ? 'Choose a database' : 'New Connection'}</DialogTitle>
+          <DialogTitle>
+            {form.stage === 'driver' ? 'Choose a database' : 'New Connection'}
+          </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col">
@@ -69,12 +80,20 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
                 <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 p-3">
                   <DriverBadge driver={form.driverId} size="md" className="size-8 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium text-foreground">{form.currentDriver.label}</div>
+                    <div className="text-xs font-medium text-foreground">
+                      {form.currentDriver.label}
+                    </div>
                     <div className="truncate text-[10px] text-muted-foreground">
                       {driverBrands[form.driverId]?.description}
                     </div>
                   </div>
-                  <Button type="button" variant="ghost" size="sm" disabled={isPending} onClick={() => form.setStage('driver')}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => form.setStage('driver')}
+                  >
                     Change
                   </Button>
                 </div>
@@ -103,7 +122,10 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
                           }}
                           disabled={isPending || !!lockedEnvironmentId}
                         >
-                          <SelectTrigger aria-invalid={form.errors.environmentId ? true : undefined} className="w-full">
+                          <SelectTrigger
+                            aria-invalid={form.errors.environmentId ? true : undefined}
+                            className="w-full"
+                          >
                             <SelectValue>{form.selectedEnvironmentName}</SelectValue>
                           </SelectTrigger>
                           <SelectContent className="min-w-[180px]">
@@ -127,7 +149,9 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
                   />
                 </div>
 
-                {form.errors._form ? <p className="text-xs text-destructive">{form.errors._form}</p> : null}
+                {form.errors._form ? (
+                  <p className="text-xs text-destructive">{form.errors._form}</p>
+                ) : null}
               </>
             )}
           </div>
@@ -139,7 +163,9 @@ export function ConnectionDialog({ open, onOpenChange, orgSlug, workspaceId, env
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={!form.requiredFieldsFilled || form.testConnection.isPending || isPending}
+                  disabled={
+                    !form.requiredFieldsFilled || form.testConnection.isPending || isPending
+                  }
                   onClick={() => void form.testConnection.mutateAsync().catch(() => {})}
                 >
                   {form.testConnection.isPending ? 'Testing…' : 'Test Connection'}
@@ -296,11 +322,14 @@ function DriverFieldControl({
   onChange: (key: string, value: string) => void
 }) {
   if (field.type === 'select') {
-    const selectedLabel = field.options?.find((o) => o.value === (value || field.default))?.label ?? value
+    const selectedLabel =
+      field.options?.find((o) => o.value === (value || field.default))?.label ?? value
     return (
       <Select
         value={value || field.default || ''}
-        onValueChange={(v) => { if (v) onChange(field.key, v) }}
+        onValueChange={(v) => {
+          if (v) onChange(field.key, v)
+        }}
         disabled={disabled}
       >
         <SelectTrigger className="w-full">
@@ -341,7 +370,15 @@ function SectionDivider({ label }: { label: string }) {
   )
 }
 
-function FormField({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+function FormField({
+  label,
+  error,
+  children,
+}: {
+  label: string
+  error?: string
+  children: React.ReactNode
+}) {
   return (
     <div className="flex flex-col gap-1.5">
       <Label>{label}</Label>
@@ -369,7 +406,9 @@ function TestStatusIndicator({ state }: { state: ConnectionTestState }) {
   return (
     <span className="flex min-w-0 items-center gap-1 text-xs text-destructive">
       <Icon name="cancel-01" size={13} className="shrink-0" />
-      <span className="truncate" title={state.message}>{state.message}</span>
+      <span className="truncate" title={state.message}>
+        {state.message}
+      </span>
     </span>
   )
 }

@@ -30,7 +30,15 @@ import {
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
 import { SectionTabNav } from '#/components/SectionTabNav'
 import { entityColor } from '#/lib/entity-colors'
 import { cn } from '#/lib/utils'
@@ -40,30 +48,47 @@ import { SearchInput } from '#/components/SearchInput'
 import { Skeleton } from '#/components/ui/skeleton'
 import { TableEmptyState } from '#/components/EmptyState'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/teams')({
   component: WorkspaceTeamsPage,
   pendingComponent: RoutePending,
 })
 
-
 function WorkspaceTeamsPage() {
   const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
   const queryClient = useQueryClient()
   const [isAddingTeam, setIsAddingTeam] = useState(false)
-  const { searchText: pickerSearchText, setSearchText: setPickerSearchText, debouncedQuery: pickerSearch, clearSearch: clearPickerSearch } = useDebouncedQueryText()
-  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
-    page: 1,
-    page_size: 10,
-    sort: 'name',
-    order: 'asc',
-    q: '',
-  })
+  const {
+    searchText: pickerSearchText,
+    setSearchText: setPickerSearchText,
+    debouncedQuery: pickerSearch,
+    clearSearch: clearPickerSearch,
+  } = useDebouncedQueryText()
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
+    useListPageState({
+      page: 1,
+      page_size: 10,
+      sort: 'name',
+      order: 'asc',
+      q: '',
+    })
 
-  const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId))
+  const effectivePermissions = useQuery(
+    orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId),
+  )
   const canReadTeams = hasPermission(effectivePermissions.data?.permissions, permission.policyRead)
-  const canModifyTeams = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
+  const canModifyTeams = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.policyModify,
+  )
   const teams = useQuery({
     ...orgWorkspaceTeamsQueryOptions(orgSlug, workspaceId, query),
     enabled: canReadTeams,
@@ -104,10 +129,14 @@ function WorkspaceTeamsPage() {
 
   const addTeam = useMutation({
     mutationFn: async (teamId: number) =>
-      api.post<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/teams`, { team_id: teamId }),
+      api.post<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/teams`, {
+        team_id: teamId,
+      }),
     onSuccess: async () => {
       toast.success('Team added')
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceTeamsScope(orgSlug, workspaceId) })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgWorkspaceTeamsScope(orgSlug, workspaceId),
+      })
     },
     onError: (error) => {
       toast.error(errorMessage(error, 'Failed to add team'))
@@ -119,7 +148,9 @@ function WorkspaceTeamsPage() {
       api.delete<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/teams/${teamId}`),
     onSuccess: async () => {
       toast.success('Team removed')
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceTeamsScope(orgSlug, workspaceId) })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgWorkspaceTeamsScope(orgSlug, workspaceId),
+      })
     },
     onError: (error) => {
       toast.error(errorMessage(error, 'Failed to remove team'))
@@ -130,146 +161,199 @@ function WorkspaceTeamsPage() {
     <div className="flex flex-col">
       <SectionTabNav
         tabs={[
-          { label: 'Users', to: '/orgs/$org_slug/workspaces/$workspace_id/users', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: false },
-          { label: 'Teams', to: '/orgs/$org_slug/workspaces/$workspace_id/teams', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: true },
+          {
+            label: 'Users',
+            to: '/orgs/$org_slug/workspaces/$workspace_id/users',
+            params: { org_slug: orgSlug, workspace_id: workspaceId },
+            isActive: false,
+          },
+          {
+            label: 'Teams',
+            to: '/orgs/$org_slug/workspaces/$workspace_id/teams',
+            params: { org_slug: orgSlug, workspace_id: workspaceId },
+            isActive: true,
+          },
         ]}
       />
 
       <div className="flex flex-col gap-6 pt-6">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            {!teams.isLoading && total > 0
-              ? `${total} team${total !== 1 ? 's' : ''} in this workspace`
-              : 'Teams explicitly added to this workspace.'}
-          </p>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              {!teams.isLoading && total > 0
+                ? `${total} team${total !== 1 ? 's' : ''} in this workspace`
+                : 'Teams explicitly added to this workspace.'}
+            </p>
 
-          {canModifyTeams ? (
-            <Dialog
-              open={isAddingTeam}
-              onOpenChange={(open) => {
-                setIsAddingTeam(open)
-                if (!open) clearPickerSearch()
-              }}
-            >
-              <DialogTrigger render={<Button />}>
-                <Icon name="plus-sign" size={20} data-icon="inline-start" />
-                Add Team
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Team</DialogTitle>
-                </DialogHeader>
-                <div className="mt-6 flex flex-col gap-4">
-                  <SearchInput
-                    value={pickerSearchText}
-                    onValueChange={setPickerSearchText}
-                    onClear={clearPickerSearch}
-                    placeholder="Search organization teams"
-                    className="max-w-none"
-                  />
-                  <div className="min-h-64">
-                    <Table>
-                      <TableBody>
-                        {orgTeams.isLoading ? <TeamPickerSkeleton /> : null}
-                        {orgTeams.isError ? <MessageRow colSpan={2} icon="user-group" message="Failed to load teams." /> : null}
-                        {!orgTeams.isLoading && !orgTeams.isError && (orgTeams.data?.items ?? []).length === 0 ? (
-                          <MessageRow colSpan={2} icon="user-group" message="No teams found." />
-                        ) : null}
-                        {!orgTeams.isLoading && !orgTeams.isError
-                          ? (orgTeams.data?.items ?? []).map((team) => (
-                              <TeamPickerRow
-                                key={team.id}
-                                team={team}
-                                isExistingTeam={existingTeamIds.has(team.id)}
-                                isPending={addTeam.isPending}
-                                onAdd={(teamId) => addTeam.mutate(teamId)}
-                              />
-                            ))
-                          : null}
-                      </TableBody>
-                    </Table>
+            {canModifyTeams ? (
+              <Dialog
+                open={isAddingTeam}
+                onOpenChange={(open) => {
+                  setIsAddingTeam(open)
+                  if (!open) clearPickerSearch()
+                }}
+              >
+                <DialogTrigger render={<Button />}>
+                  <Icon name="plus-sign" size={20} data-icon="inline-start" />
+                  Add Team
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Add Team</DialogTitle>
+                  </DialogHeader>
+                  <div className="mt-6 flex flex-col gap-4">
+                    <SearchInput
+                      value={pickerSearchText}
+                      onValueChange={setPickerSearchText}
+                      onClear={clearPickerSearch}
+                      placeholder="Search organization teams"
+                      className="max-w-none"
+                    />
+                    <div className="min-h-64">
+                      <Table>
+                        <TableBody>
+                          {orgTeams.isLoading ? <TeamPickerSkeleton /> : null}
+                          {orgTeams.isError ? (
+                            <MessageRow
+                              colSpan={2}
+                              icon="user-group"
+                              message="Failed to load teams."
+                            />
+                          ) : null}
+                          {!orgTeams.isLoading &&
+                          !orgTeams.isError &&
+                          (orgTeams.data?.items ?? []).length === 0 ? (
+                            <MessageRow colSpan={2} icon="user-group" message="No teams found." />
+                          ) : null}
+                          {!orgTeams.isLoading && !orgTeams.isError
+                            ? (orgTeams.data?.items ?? []).map((team) => (
+                                <TeamPickerRow
+                                  key={team.id}
+                                  team={team}
+                                  isExistingTeam={existingTeamIds.has(team.id)}
+                                  isPending={addTeam.isPending}
+                                  onAdd={(teamId) => addTeam.mutate(teamId)}
+                                />
+                              ))
+                            : null}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </div>
-                </div>
-                <DialogFooter>
-                  <DialogClose render={<Button type="button" variant="ghost" />}>Close</DialogClose>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          ) : null}
+                  <DialogFooter>
+                    <DialogClose render={<Button type="button" variant="ghost" />}>
+                      Close
+                    </DialogClose>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            ) : null}
+          </div>
+
+          <SearchInput
+            value={searchText}
+            onValueChange={setSearchText}
+            onClear={clearSearch}
+            placeholder="Search teams"
+          />
         </div>
 
-        <SearchInput
-          value={searchText}
-          onValueChange={setSearchText}
-          onClear={clearSearch}
-          placeholder="Search teams"
-        />
-      </div>
-
-      <Card>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <TableColumnHeader label="Team" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                </TableHead>
-                <TableHead>
-                  <TableColumnHeader label="Members" />
-                </TableHead>
-                <TableHead>
-                  <TableColumnHeader label="Added" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                </TableHead>
-                {canModifyTeams ? (
-                  <TableHead className="text-end">
-                    <TableColumnHeader label="Actions" />
-                  </TableHead>
-                ) : null}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {effectivePermissions.isLoading || teams.isLoading ? <TeamsTableSkeleton canModifyTeams={canModifyTeams} /> : null}
-              {teams.isError ? <TableEmptyState colSpan={tableColumnCount} icon="user-group" message="Failed to load teams." /> : null}
-              {!effectivePermissions.isLoading && !canReadTeams ? (
-                <TableEmptyState colSpan={tableColumnCount} icon="user-group" message="You do not have permission to view workspace teams." />
-              ) : null}
-              {!effectivePermissions.isLoading && canReadTeams && !teams.isLoading && !teams.isError && items.length === 0 ? (
-                <TableEmptyState
-                  colSpan={tableColumnCount}
-                  icon="user-group"
-                  message={query.q ? 'No teams matched your search.' : 'No workspace teams found.'}
-                />
-              ) : null}
-              {!effectivePermissions.isLoading && canReadTeams && !teams.isLoading && !teams.isError
-                ? items.map((team) => (
-                    <WorkspaceTeamRow
-                      key={team.team_id}
-                      orgSlug={orgSlug}
-                      team={team}
-                      canModifyTeams={canModifyTeams}
-                      isRemoving={removeTeam.isPending}
-                      onRemove={(teamId) => removeTeam.mutate(teamId)}
+        <Card>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <TableColumnHeader
+                      label="Team"
+                      sort="name"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
                     />
-                  ))
-                : null}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                  </TableHead>
+                  <TableHead>
+                    <TableColumnHeader label="Members" />
+                  </TableHead>
+                  <TableHead>
+                    <TableColumnHeader
+                      label="Added"
+                      sort="created_at"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
+                    />
+                  </TableHead>
+                  {canModifyTeams ? (
+                    <TableHead className="text-end">
+                      <TableColumnHeader label="Actions" />
+                    </TableHead>
+                  ) : null}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {effectivePermissions.isLoading || teams.isLoading ? (
+                  <TeamsTableSkeleton canModifyTeams={canModifyTeams} />
+                ) : null}
+                {teams.isError ? (
+                  <TableEmptyState
+                    colSpan={tableColumnCount}
+                    icon="user-group"
+                    message="Failed to load teams."
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading && !canReadTeams ? (
+                  <TableEmptyState
+                    colSpan={tableColumnCount}
+                    icon="user-group"
+                    message="You do not have permission to view workspace teams."
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading &&
+                canReadTeams &&
+                !teams.isLoading &&
+                !teams.isError &&
+                items.length === 0 ? (
+                  <TableEmptyState
+                    colSpan={tableColumnCount}
+                    icon="user-group"
+                    message={
+                      query.q ? 'No teams matched your search.' : 'No workspace teams found.'
+                    }
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading &&
+                canReadTeams &&
+                !teams.isLoading &&
+                !teams.isError
+                  ? items.map((team) => (
+                      <WorkspaceTeamRow
+                        key={team.team_id}
+                        orgSlug={orgSlug}
+                        team={team}
+                        canModifyTeams={canModifyTeams}
+                        isRemoving={removeTeam.isPending}
+                        onRemove={(teamId) => removeTeam.mutate(teamId)}
+                      />
+                    ))
+                  : null}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
-      {canReadTeams && !teams.isLoading && !teams.isError && items.length > 0 ? (
-        <PaginationFooter
-          itemLabel="teams"
-          page={page}
-          pageCount={pageCount}
-          pageSize={pageSize}
-          total={total}
-          isFetching={teams.isFetching}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
-        />
-      ) : null}
+        {canReadTeams && !teams.isLoading && !teams.isError && items.length > 0 ? (
+          <PaginationFooter
+            itemLabel="teams"
+            page={page}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            total={total}
+            isFetching={teams.isFetching}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
       </div>
     </div>
   )
@@ -290,7 +374,12 @@ function TeamPickerRow({
     <TableRow>
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', entityColor(team.name))}>
+          <div
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-md',
+              entityColor(team.name),
+            )}
+          >
             <Icon name="user-group" size={20} className="size-4" />
           </div>
           <div className="min-w-0">
@@ -359,7 +448,12 @@ function WorkspaceTeamRow({
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', entityColor(team.name))}>
+          <div
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-md',
+              entityColor(team.name),
+            )}
+          >
             <Icon name="user-group" size={20} className="size-4" />
           </div>
           <div className="min-w-0">
@@ -382,12 +476,19 @@ function WorkspaceTeamRow({
               <AlertDialogHeader>
                 <AlertDialogTitle>Remove team from workspace?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This removes {team.name} from the workspace. Members will lose permissions granted through this workspace team membership.
+                  This removes {team.name} from the workspace. Members will lose permissions granted
+                  through this workspace team membership.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel variant="ghost" disabled={isRemoving}>Cancel</AlertDialogCancel>
-                <AlertDialogAction variant="destructive" disabled={isRemoving} onClick={() => onRemove(team.team_id)}>
+                <AlertDialogCancel variant="ghost" disabled={isRemoving}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  disabled={isRemoving}
+                  onClick={() => onRemove(team.team_id)}
+                >
                   Remove
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -453,7 +554,15 @@ function TeamsTableSkeleton({ canModifyTeams }: { canModifyTeams: boolean }) {
   )
 }
 
-function MessageRow({ colSpan, icon, message }: { colSpan: number; icon: import('#/lib/icons').AppIcon; message: string }) {
+function MessageRow({
+  colSpan,
+  icon,
+  message,
+}: {
+  colSpan: number
+  icon: import('#/lib/icons').AppIcon
+  message: string
+}) {
   return (
     <TableRow>
       <TableCell colSpan={colSpan}>

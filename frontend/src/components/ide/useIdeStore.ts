@@ -27,7 +27,15 @@ import {
 export type QueryResult =
   | { status: 'idle' }
   | { status: 'running' }
-  | { status: 'ok'; data: ResultSet; durationMs: number; sql: string; connectionId?: number; isFetchingNextPage?: boolean; cursorMessage?: string }
+  | {
+      status: 'ok'
+      data: ResultSet
+      durationMs: number
+      sql: string
+      connectionId?: number
+      isFetchingNextPage?: boolean
+      cursorMessage?: string
+    }
   | { status: 'error'; message: string; sql: string }
   | { status: 'cancelled'; sql: string }
 
@@ -109,7 +117,12 @@ export type IdeActions = {
   /** Focus a group (drives Run/Save/results target). */
   focusGroup: (workspaceId: number, groupId: string) => void
   /** Duplicate a group's tab into a new group beside it in the given direction. */
-  splitActiveTab: (workspaceId: number, groupId: string, tabId: string, direction: SplitDirection) => void
+  splitActiveTab: (
+    workspaceId: number,
+    groupId: string,
+    tabId: string,
+    direction: SplitDirection,
+  ) => void
   /** Duplicate a tab into a new group at the left/right editor edge (edge drop). */
   splitTabToEdge: (workspaceId: number, tabId: string, side: 'left' | 'right') => void
   /** Persist a split node's child sizes after a resize. */
@@ -117,7 +130,10 @@ export type IdeActions = {
   /** Track the tab + source group being dragged (transient drag UI state). */
   setDraggingTab: (drag: { tabId: string; fromGroupId: string } | null) => void
   /** Set (or clear, with null) a connection's transient connect status. */
-  setConnectionStatus: (connectionId: number, status: 'connecting' | { error: string } | null) => void
+  setConnectionStatus: (
+    connectionId: number,
+    status: 'connecting' | { error: string } | null,
+  ) => void
   /** Persist a node's expanded state. */
   setNodeExpanded: (key: string, expanded: boolean) => void
   /** Collapse every remembered explorer node. */
@@ -153,7 +169,10 @@ let _groupSeq = 0
 const newGroupId = () => `grp-${Date.now().toString(36)}-${(_groupSeq++).toString(36)}`
 
 /** Returns a workspace's layout + focused group id, creating an empty group if none exists. */
-function ensureWorkspaceLayout(s: IdeState, workspaceId: number): { layout: LayoutNode; groupId: string } {
+function ensureWorkspaceLayout(
+  s: IdeState,
+  workspaceId: number,
+): { layout: LayoutNode; groupId: string } {
   const existing = s.layout[workspaceId]
   if (existing) {
     const focusedId = s.activeGroupId[workspaceId]
@@ -180,7 +199,11 @@ export type ConnectionState =
   | { kind: 'idle' }
 
 /** A node's expanded state: the stored value, or `fallback` when there's no record. */
-export function isNodeExpanded(nodes: Record<string, boolean>, key: string, fallback: boolean): boolean {
+export function isNodeExpanded(
+  nodes: Record<string, boolean>,
+  key: string,
+  fallback: boolean,
+): boolean {
   return nodes[key] ?? fallback
 }
 
@@ -254,7 +277,10 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             if (!allGroups(layout).some((g) => g.tabIds.length > 0)) {
               return {
                 tabs: nextTabs,
-                layout: { ...s.layout, [tab.workspaceId]: setActive(addTab(layout, groupId, tab.id), tab.id) },
+                layout: {
+                  ...s.layout,
+                  [tab.workspaceId]: setActive(addTab(layout, groupId, tab.id), tab.id),
+                },
                 activeGroupId: { ...s.activeGroupId, [tab.workspaceId]: groupId },
               }
             }
@@ -274,7 +300,10 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             return {
               tabs: [...s.tabs, tab],
               layout: { ...s.layout, [tab.workspaceId]: addTab(layout, groupId, tab.id) },
-              activeGroupId: { ...s.activeGroupId, [tab.workspaceId]: s.activeGroupId[tab.workspaceId] ?? groupId },
+              activeGroupId: {
+                ...s.activeGroupId,
+                [tab.workspaceId]: s.activeGroupId[tab.workspaceId] ?? groupId,
+              },
             }
           }),
 
@@ -304,7 +333,10 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             return {
               ...patch,
               layout: { ...s.layout, [ws]: nextLayout },
-              activeGroupId: { ...s.activeGroupId, [ws]: stillThere ? focused : firstGroup(nextLayout).id },
+              activeGroupId: {
+                ...s.activeGroupId,
+                [ws]: stillThere ? focused : firstGroup(nextLayout).id,
+              },
             }
           }),
 
@@ -320,7 +352,10 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             const focusStillThere = focused && findGroup(nextLayout, focused)
             const base = {
               layout: { ...s.layout, [ws]: nextLayout },
-              activeGroupId: { ...s.activeGroupId, [ws]: focusStillThere ? focused : firstGroup(nextLayout).id },
+              activeGroupId: {
+                ...s.activeGroupId,
+                [ws]: focusStillThere ? focused : firstGroup(nextLayout).id,
+              },
             }
             // Keep the tab and its Y.Doc alive while another pane still shows it.
             if (allGroups(nextLayout).some((g) => g.tabIds.includes(tabId))) return base
@@ -357,7 +392,14 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             const ws = tab.workspaceId
             const layout = s.layout[ws]
             if (!layout) return {}
-            const next = moveTabBetweenGroups(layout, fromGroupId, draggedTabId, toGroupId, targetTabId, position)
+            const next = moveTabBetweenGroups(
+              layout,
+              fromGroupId,
+              draggedTabId,
+              toGroupId,
+              targetTabId,
+              position,
+            )
             if (next === layout) return {}
             // The dragged tab is now active in the target group; focus it if it survived.
             const focusId = findGroup(next, toGroupId) ? toGroupId : firstGroup(next).id
@@ -374,7 +416,13 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
           set((s) => {
             const layout = s.layout[workspaceId]
             if (!layout) return {}
-            const { node, newGroupId: gid } = splitGroup(layout, groupId, tabId, direction, newGroupId())
+            const { node, newGroupId: gid } = splitGroup(
+              layout,
+              groupId,
+              tabId,
+              direction,
+              newGroupId(),
+            )
             if (node === layout) return {}
             // Focus the newly created pane (the tab now lives in both groups) and
             // give its editor keyboard focus once it mounts.
@@ -405,7 +453,11 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             const apply = (n: LayoutNode): LayoutNode =>
               n.type === 'group'
                 ? n
-                : { ...n, sizes: n.id === splitId ? sizes : n.sizes, children: n.children.map(apply) }
+                : {
+                    ...n,
+                    sizes: n.id === splitId ? sizes : n.sizes,
+                    children: n.children.map(apply),
+                  }
             return { layout: { ...s.layout, [workspaceId]: apply(layout) } }
           }),
 
@@ -432,11 +484,11 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             tabs: s.tabs.map((t) =>
               t.id === tabId
                 ? {
-                  ...t,
-                  content,
-                  ...(ySnapshot !== undefined ? { ySnapshot } : {}),
-                  isDirty: t.etag !== undefined && content !== t.content ? true : t.isDirty,
-                }
+                    ...t,
+                    content,
+                    ...(ySnapshot !== undefined ? { ySnapshot } : {}),
+                    isDirty: t.etag !== undefined && content !== t.content ? true : t.isDirty,
+                  }
                 : t,
             ),
           })),
@@ -447,7 +499,11 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
           })),
 
         setTabConnection: (tabId, connectionId, driver?) =>
-          set((s) => ({ tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, connectionId, ...(driver ? { driver } : {}) } : t)) })),
+          set((s) => ({
+            tabs: s.tabs.map((t) =>
+              t.id === tabId ? { ...t, connectionId, ...(driver ? { driver } : {}) } : t,
+            ),
+          })),
 
         setMaximizedPane: (pane) => set({ maximizedPane: pane }),
         setActiveActivity: (activityId) => set({ activeActivityId: activityId }),
@@ -511,7 +567,10 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             const { layout, groupId } = ensureWorkspaceLayout(s, workspace.id)
             return {
               tabs: exists ? s.tabs : [...s.tabs, tab],
-              layout: { ...s.layout, [workspace.id]: setActive(addTab(layout, groupId, tab.id), tab.id) },
+              layout: {
+                ...s.layout,
+                [workspace.id]: setActive(addTab(layout, groupId, tab.id), tab.id),
+              },
               activeGroupId: { ...s.activeGroupId, [workspace.id]: groupId },
             }
           }),
@@ -522,7 +581,8 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         // Migrate v0 state (flat `activeTabIds`) to the v1 layout tree: one group
         // per workspace built from its tabs + the old active tab. Zero data loss.
         migrate: (persisted, version) => {
-          const state = persisted as (IdeState & { activeTabIds?: Record<number, string> }) | undefined
+          const state = persisted as
+            (IdeState & { activeTabIds?: Record<number, string> }) | undefined
           if (!state) return persisted as IdeState
           if (version >= 1 && state.layout) return state as IdeState
           const byWs: Record<number, string[]> = {}
@@ -545,7 +605,15 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         ),
         // Exclude ephemeral query results from IndexedDB — they can be large
         // and are meaningless after a page reload anyway.
-        partialize: ({ results: _r, runningTabs: _rt, abortControllers: _ac, draggingTab: _dt, focusEditorRequest: _fe, connectionStatus: _cs, ...state }) => state,
+        partialize: ({
+          results: _r,
+          runningTabs: _rt,
+          abortControllers: _ac,
+          draggingTab: _dt,
+          focusEditorRequest: _fe,
+          connectionStatus: _cs,
+          ...state
+        }) => state,
       },
     ),
   )
@@ -630,7 +698,7 @@ export function useIde<T>(selector: (state: IdeState & IdeActions) => T): T {
 
 // ─── Tab factory functions ──────────────────────────────────────────────────────
 
-export const DEFAULT_CONSOLE_CONTENT = '';
+export const DEFAULT_CONSOLE_CONTENT = ''
 
 export function newConnectionTab(connection: Connection, workspace: Workspace): EditorTab {
   return {

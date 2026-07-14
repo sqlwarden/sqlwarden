@@ -19,7 +19,15 @@ import { resolveObjectViewState, type ObjectViewState } from './viewState'
 import { Tip } from '../schema-diagram/Tip'
 import { useEvictGoneSession } from '../sessionErrors'
 
-export function ObjectDetailView({ orgSlug, workspace, tab }: { orgSlug: string; workspace: Workspace; tab: EditorTab }) {
+export function ObjectDetailView({
+  orgSlug,
+  workspace,
+  tab,
+}: {
+  orgSlug: string
+  workspace: Workspace
+  tab: EditorTab
+}) {
   const ref = tab.objectRef
   const connectionId = tab.connectionId
   const driver = tab.driver ?? 'postgres'
@@ -31,11 +39,22 @@ export function ObjectDetailView({ orgSlug, workspace, tab }: { orgSlug: string;
   const [activeSection, setActiveSection] = useState<string>('columns')
 
   const detailQuery = useQuery({
-    ...orgConnectionObjectQueryOptions(orgSlug, workspace.id, connectionId ?? 0, sessionId ?? '', ref ?? EMPTY_REF),
+    ...orgConnectionObjectQueryOptions(
+      orgSlug,
+      workspace.id,
+      connectionId ?? 0,
+      sessionId ?? '',
+      ref ?? EMPTY_REF,
+    ),
     enabled: Boolean(sessionId && connectionId && ref),
   })
   const specQuery = useQuery({
-    ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspace.id, connectionId ?? 0, sessionId ?? ''),
+    ...orgConnectionSchemaSpecQueryOptions(
+      orgSlug,
+      workspace.id,
+      connectionId ?? 0,
+      sessionId ?? '',
+    ),
     enabled: Boolean(sessionId && connectionId),
   })
 
@@ -52,15 +71,33 @@ export function ObjectDetailView({ orgSlug, workspace, tab }: { orgSlug: string;
   })
 
   const renderer = getObjectRenderer(driver)
-  const vm: ObjectViewModel | null =
-    detail && connectionId
-      ? { detail, spec: specQuery.data?.spec, dialect: dialectFor(driver), driver, orgSlug, workspaceId: workspace.id, connectionId, sessionId: sessionId ?? '' }
-      : null
+  const vm = useMemo<ObjectViewModel | null>(
+    () =>
+      detail && connectionId
+        ? {
+            detail,
+            spec: specQuery.data?.spec,
+            dialect: dialectFor(driver),
+            driver,
+            orgSlug,
+            workspaceId: workspace.id,
+            connectionId,
+            sessionId: sessionId ?? '',
+          }
+        : null,
+    [connectionId, detail, driver, orgSlug, sessionId, specQuery.data?.spec, workspace.id],
+  )
   const sections = useMemo(() => (vm ? renderer.sections(vm) : []), [vm, renderer])
   const current = sections.find((s) => s.id === activeSection) ?? sections[0]
 
   if (!ref || !connectionId) {
-    return <StatePane state={{ kind: 'error', message: 'This tab is missing its object reference.' }} driver={driver} onReconnect={noop} />
+    return (
+      <StatePane
+        state={{ kind: 'error', message: 'This tab is missing its object reference.' }}
+        driver={driver}
+        onReconnect={noop}
+      />
+    )
   }
 
   async function reconnect() {
@@ -80,7 +117,9 @@ export function ObjectDetailView({ orgSlug, workspace, tab }: { orgSlug: string;
   async function refresh() {
     if (!sessionId || !ref || !connectionId) return
     await refreshConnectionSchema(orgSlug, workspace.id, connectionId, sessionId, ref)
-    await queryClient.invalidateQueries({ queryKey: connectionObjectQueryKey(orgSlug, workspace.id, connectionId, ref) })
+    await queryClient.invalidateQueries({
+      queryKey: connectionObjectQueryKey(orgSlug, workspace.id, connectionId, ref),
+    })
   }
 
   return (
@@ -93,7 +132,13 @@ export function ObjectDetailView({ orgSlug, workspace, tab }: { orgSlug: string;
         canRefresh={state.kind === 'ready'}
         onViewInDiagram={
           ref && connectionId && diagramSupportedForKind(specQuery.data?.spec, ref.kind)
-            ? () => openTab(newDiagramTab({ id: connectionId, driver } as Connection, workspace, { kind: 'object', ref }))
+            ? () =>
+                openTab(
+                  newDiagramTab({ id: connectionId, driver } as Connection, workspace, {
+                    kind: 'object',
+                    ref,
+                  }),
+                )
             : undefined
         }
       />
@@ -108,7 +153,9 @@ export function ObjectDetailView({ orgSlug, workspace, tab }: { orgSlug: string;
                   onClick={() => setActiveSection(s.id)}
                   className={cn(
                     'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors',
-                    s.id === current.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/40',
+                    s.id === current.id
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:bg-accent/40',
                   )}
                 >
                   <Icon name={s.icon} size={13} className="shrink-0" />
@@ -170,7 +217,9 @@ function Header({
           </button>
         </Tip>
       )}
-      <Tip label={canRefresh ? `Refresh ${objectRef.kind || 'object'}` : 'Connect first to refresh'}>
+      <Tip
+        label={canRefresh ? `Refresh ${objectRef.kind || 'object'}` : 'Connect first to refresh'}
+      >
         {/* Span wrapper so the tooltip still fires while the button is disabled
             (disabled buttons swallow pointer events). */}
         <span className={cn('inline-flex', !canRefresh && 'cursor-not-allowed')}>
@@ -190,7 +239,11 @@ function Header({
 }
 
 function Tag({ children }: { children: React.ReactNode }) {
-  return <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{children}</span>
+  return (
+    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+      {children}
+    </span>
+  )
 }
 
 function StatePane({
@@ -216,7 +269,9 @@ function StatePane({
     return <Center>This driver doesn&apos;t support object details.</Center>
   }
   if (state.kind === 'forbidden') {
-    return <Center className="text-destructive">You no longer have access to this connection.</Center>
+    return (
+      <Center className="text-destructive">You no longer have access to this connection.</Center>
+    )
   }
   if (state.kind === 'error') {
     return <Center className="text-destructive">{state.message}</Center>
@@ -243,5 +298,11 @@ function StatePane({
 }
 
 function Center({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`flex h-full items-center justify-center gap-2 text-xs text-muted-foreground ${className}`}>{children}</div>
+  return (
+    <div
+      className={`flex h-full items-center justify-center gap-2 text-xs text-muted-foreground ${className}`}
+    >
+      {children}
+    </div>
+  )
 }

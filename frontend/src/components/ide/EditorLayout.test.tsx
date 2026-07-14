@@ -8,21 +8,43 @@ import { EditorLayout } from './EditorLayout'
 import { createIdeStore, IdeStoreContext } from './useIdeStore'
 
 vi.mock('./EditorGroup', () => ({
-  EditorGroup: ({ group, focused, showFocus }: { group: { id: string }; focused: boolean; showFocus?: boolean }) => (
-    <div data-testid={`group-${group.id}`} data-focused={focused} data-show-focus={showFocus}>{group.id}</div>
+  EditorGroup: ({
+    group,
+    focused,
+    showFocus,
+  }: {
+    group: { id: string }
+    focused: boolean
+    showFocus?: boolean
+  }) => (
+    <div data-testid={`group-${group.id}`} data-focused={focused} data-show-focus={showFocus}>
+      {group.id}
+    </div>
   ),
 }))
 
 vi.mock('#/components/ui/resizable', () => ({
-  ResizablePanelGroup: ({ children, orientation, defaultLayout, onLayoutChanged, id }: PropsWithChildren<{
+  ResizablePanelGroup: ({
+    children,
+    orientation,
+    defaultLayout,
+    onLayoutChanged,
+    id,
+  }: PropsWithChildren<{
     orientation: string
     defaultLayout: Record<string, number>
     onLayoutChanged: (layout: Record<string, number>) => void
     id: string
   }>) => (
-    <div data-testid={`split-${id}`} data-orientation={orientation} data-layout={JSON.stringify(defaultLayout)}>
+    <div
+      data-testid={`split-${id}`}
+      data-orientation={orientation}
+      data-layout={JSON.stringify(defaultLayout)}
+    >
       {children}
-      <button type="button" onClick={() => onLayoutChanged({ left: 40, right: 60 })}>resize {id}</button>
+      <button type="button" onClick={() => onLayoutChanged({ left: 40, right: 60 })}>
+        resize {id}
+      </button>
     </div>
   ),
   ResizablePanel: ({ children }: PropsWithChildren) => <div>{children}</div>,
@@ -30,12 +52,22 @@ vi.mock('#/components/ui/resizable', () => ({
 }))
 
 const workspace: Workspace = {
-  id: 3, org_id: 1, owner_type: 'org', owner_id: 1, name: 'Analytics',
-  environment_count: 0, connection_count: 0, created_at: '', updated_at: '',
+  id: 3,
+  org_id: 1,
+  owner_type: 'org',
+  owner_id: 1,
+  name: 'Analytics',
+  environment_count: 0,
+  connection_count: 0,
+  created_at: '',
+  updated_at: '',
 }
 
 const layout: LayoutNode = {
-  type: 'split', id: 'root', orientation: 'row', sizes: [30, 70],
+  type: 'split',
+  id: 'root',
+  orientation: 'row',
+  sizes: [30, 70],
   children: [
     { type: 'group', id: 'left', tabIds: ['one'], activeTabId: 'one' },
     { type: 'group', id: 'right', tabIds: ['two'], activeTabId: 'two' },
@@ -54,7 +86,10 @@ describe('EditorLayout', () => {
     )
 
     expect(screen.getByTestId('split-root')).toHaveAttribute('data-orientation', 'horizontal')
-    expect(screen.getByTestId('split-root')).toHaveAttribute('data-layout', JSON.stringify({ left: 30, right: 70 }))
+    expect(screen.getByTestId('split-root')).toHaveAttribute(
+      'data-layout',
+      JSON.stringify({ left: 30, right: 70 }),
+    )
     expect(screen.getByTestId('group-left')).toHaveAttribute('data-focused', 'false')
     expect(screen.getByTestId('group-right')).toHaveAttribute('data-focused', 'true')
     expect(screen.getAllByTestId('resize-handle')).toHaveLength(1)

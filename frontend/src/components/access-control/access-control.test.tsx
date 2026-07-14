@@ -13,8 +13,18 @@ import {
 import { SearchComboboxField } from './SearchComboboxField'
 
 const permissionDetails: PermissionDefinition[] = [
-  { key: 'org:read', label: 'Read organization', description: 'View organization details', group: 'Organization' },
-  { key: 'policy:modify', label: 'Modify policies', description: 'Manage role bindings', group: 'Policy' },
+  {
+    key: 'org:read',
+    label: 'Read organization',
+    description: 'View organization details',
+    group: 'Organization',
+  },
+  {
+    key: 'policy:modify',
+    label: 'Modify policies',
+    description: 'Manage role bindings',
+    group: 'Policy',
+  },
 ]
 
 describe('PermissionPicker', () => {
@@ -39,7 +49,9 @@ describe('PermissionPicker', () => {
       />,
     )
 
-    fireEvent.change(screen.getByPlaceholderText('Filter permissions…'), { target: { value: 'bindings' } })
+    fireEvent.change(screen.getByPlaceholderText('Filter permissions…'), {
+      target: { value: 'bindings' },
+    })
     expect(screen.queryByText('Read organization')).toBeNull()
     fireEvent.click(screen.getByText('Modify policies'))
     expect(onPermissionChecked).toHaveBeenCalledWith('policy:modify', true)
@@ -66,12 +78,18 @@ describe('SearchComboboxField', () => {
     )
 
     fireEvent.click(screen.getByText('Select a role'))
-    fireEvent.change(await screen.findByPlaceholderText('Search roles'), { target: { value: 'admin' } })
+    fireEvent.change(await screen.findByPlaceholderText('Search roles'), {
+      target: { value: 'admin' },
+    })
     expect(onSearchChange).not.toHaveBeenCalled()
     await waitFor(() => expect(onSearchChange).toHaveBeenCalledWith('admin'))
 
     fireEvent.click(screen.getByText('Administrator'))
-    expect(onChange).toHaveBeenCalledWith('1', 'Administrator', expect.objectContaining({ value: '1' }))
+    expect(onChange).toHaveBeenCalledWith(
+      '1',
+      'Administrator',
+      expect.objectContaining({ value: '1' }),
+    )
     expect(onSearchChange).toHaveBeenLastCalledWith('')
   })
 })
@@ -93,8 +111,9 @@ const policyBinding: PolicyBinding = {
 describe('policy table primitives', () => {
   it('uses route-specific labels for aggregate subjects', () => {
     expect(policySubjectDisplayName(policyBinding)).toBe('All users')
-    expect(policySubjectDisplayName(policyBinding, { org_members: 'All organization users' }))
-      .toBe('All organization users')
+    expect(policySubjectDisplayName(policyBinding, { org_members: 'All organization users' })).toBe(
+      'All organization users',
+    )
 
     render(<PolicySubjectCell binding={policyBinding} labels={{ org_members: 'All org users' }} />)
     expect(screen.getAllByText('All org users')).toHaveLength(2)
@@ -102,12 +121,20 @@ describe('policy table primitives', () => {
 
   it('adds a resource placeholder only for workspace policy tables', () => {
     const { rerender } = render(
-      <Table><TableBody><PoliciesTableSkeleton canModify={false} /></TableBody></Table>,
+      <Table>
+        <TableBody>
+          <PoliciesTableSkeleton canModify={false} />
+        </TableBody>
+      </Table>,
     )
     expect(document.querySelectorAll('tbody tr')[0]?.children).toHaveLength(3)
 
     rerender(
-      <Table><TableBody><PoliciesTableSkeleton canModify showResource /></TableBody></Table>,
+      <Table>
+        <TableBody>
+          <PoliciesTableSkeleton canModify showResource />
+        </TableBody>
+      </Table>,
     )
     expect(document.querySelectorAll('tbody tr')[0]?.children).toHaveLength(5)
   })

@@ -98,7 +98,9 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
       {dialogState && (
         <CreateItemDialog
           open={true}
-          onOpenChange={(open) => { if (!open) setDialogState(null) }}
+          onOpenChange={(open) => {
+            if (!open) setDialogState(null)
+          }}
           kind={dialogState.kind}
           parentId={dialogState.parentId}
           orgSlug={orgSlug}
@@ -171,7 +173,9 @@ function FilesSection({
               onSaveAs={actions.saveAs}
               onCreateFile={onCreateFile}
               onCreateFolder={onCreateFolder}
-              onDelete={visibility === 'private' ? (id) => actions.deleteFile.mutate(id) : undefined}
+              onDelete={
+                visibility === 'private' ? (id) => actions.deleteFile.mutate(id) : undefined
+              }
             />
           ) : (
             <FileContextMenu
@@ -182,9 +186,16 @@ function FilesSection({
               onOpen={() => actions.open(file)}
               onOpenToSide={() => actions.openToSide(file)}
               onSaveAs={() => actions.saveAs(file)}
-              onDelete={visibility === 'private' ? () => actions.deleteFile.mutate(file.id) : undefined}
+              onDelete={
+                visibility === 'private' ? () => actions.deleteFile.mutate(file.id) : undefined
+              }
             >
-              <FileTreeFile file={file} depth={0} active={file.id === actions.activeFileId} onOpen={actions.open} />
+              <FileTreeFile
+                file={file}
+                depth={0}
+                active={file.id === actions.activeFileId}
+                onOpen={actions.open}
+              />
             </FileContextMenu>
           ),
         )
@@ -282,7 +293,9 @@ function FileTreeFolder({
         size={13}
         className="shrink-0 text-muted-foreground"
       />
-      <span className="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span>
+      <span className="min-w-0 flex-1 truncate" title={file.name}>
+        {file.name}
+      </span>
     </button>
   )
 
@@ -332,7 +345,12 @@ function FileTreeFolder({
               onSaveAs={() => onSaveAs(child)}
               onDelete={onDelete ? () => onDelete(child.id) : undefined}
             >
-              <FileTreeFile file={child} depth={depth + 1} active={child.id === activeFileId} onOpen={onOpenFile} />
+              <FileTreeFile
+                file={child}
+                depth={depth + 1}
+                active={child.id === activeFileId}
+                onOpen={onOpenFile}
+              />
             </FileContextMenu>
           ),
         )}
@@ -364,7 +382,9 @@ function FileTreeFile({
       )}
     >
       <Icon name="file-01" size={13} className="shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span>
+      <span className="min-w-0 flex-1 truncate" title={file.name}>
+        {file.name}
+      </span>
     </button>
   )
 }

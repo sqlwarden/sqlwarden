@@ -11,7 +11,14 @@ import type { Connection } from '#/lib/api/types'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Skeleton } from '#/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 import { DriverBadge } from '#/components/ide/DriverBadge'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
@@ -24,22 +31,28 @@ export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/c
   pendingComponent: RoutePending,
 })
 
-
 function WorkspaceConnectionsPage() {
   const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
-  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
-    page: 1,
-    page_size: 10,
-    sort: 'name',
-    order: 'asc',
-    q: '',
-  })
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
+    useListPageState({
+      page: 1,
+      page_size: 10,
+      sort: 'name',
+      order: 'asc',
+      q: '',
+    })
 
   const connections = useQuery(orgWorkspaceConnectionsQueryOptions(orgSlug, workspaceId, query))
   const environments = useQuery(
-    orgEnvironmentsQueryOptions(orgSlug, workspaceId, { page_size: 100, sort: 'name', order: 'asc' }),
+    orgEnvironmentsQueryOptions(orgSlug, workspaceId, {
+      page_size: 100,
+      sort: 'name',
+      order: 'asc',
+    }),
   )
-  const environmentNames = new Map((environments.data?.items ?? []).map((env) => [env.id, env.name]))
+  const environmentNames = new Map(
+    (environments.data?.items ?? []).map((env) => [env.id, env.name]),
+  )
 
   const items = connections.data?.items ?? []
   const page = connections.data?.page ?? Number(query.page ?? 1)
@@ -92,16 +105,34 @@ function WorkspaceConnectionsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>
-                  <TableColumnHeader label="Name" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  <TableColumnHeader
+                    label="Name"
+                    sort="name"
+                    currentSort={query.sort}
+                    currentOrder={query.order}
+                    onSortChange={toggleSort}
+                  />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Driver" sort="driver" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  <TableColumnHeader
+                    label="Driver"
+                    sort="driver"
+                    currentSort={query.sort}
+                    currentOrder={query.order}
+                    onSortChange={toggleSort}
+                  />
                 </TableHead>
                 <TableHead>
                   <TableColumnHeader label="Environment" />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  <TableColumnHeader
+                    label="Created"
+                    sort="created_at"
+                    currentSort={query.sort}
+                    currentOrder={query.order}
+                    onSortChange={toggleSort}
+                  />
                 </TableHead>
                 <TableHead className="text-end">
                   <TableColumnHeader label="Actions" />
@@ -110,13 +141,21 @@ function WorkspaceConnectionsPage() {
             </TableHeader>
             <TableBody>
               {connections.isLoading ? <ConnectionTableSkeleton /> : null}
-              {connections.isError ? <TableEmptyState colSpan={5} icon="flow-connection" message="Failed to load connections." /> : null}
+              {connections.isError ? (
+                <TableEmptyState
+                  colSpan={5}
+                  icon="flow-connection"
+                  message="Failed to load connections."
+                />
+              ) : null}
               {!connections.isLoading && !connections.isError && items.length === 0 ? (
                 <TableEmptyState
                   colSpan={5}
                   icon="flow-connection"
                   message={query.q ? 'No connections matched your search.' : 'No connections yet'}
-                  description={query.q ? undefined : 'Create your first connection from the IDE explorer.'}
+                  description={
+                    query.q ? undefined : 'Create your first connection from the IDE explorer.'
+                  }
                 />
               ) : null}
               {!connections.isLoading && !connections.isError

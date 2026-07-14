@@ -55,15 +55,15 @@ vi.stubGlobal('ResizeObserver', ResizeObserverMock)
 vi.stubGlobal('IntersectionObserver', IntersectionObserverMock)
 vi.stubGlobal('DOMMatrixReadOnly', DOMMatrixReadOnlyMock)
 vi.stubGlobal('matchMedia', (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addEventListener() {},
-    removeEventListener() {},
-    addListener() {},
-    removeListener() {},
-    dispatchEvent: () => false,
-  }))
+  matches: false,
+  media: query,
+  onchange: null,
+  addEventListener() {},
+  removeEventListener() {},
+  addListener() {},
+  removeListener() {},
+  dispatchEvent: () => false,
+}))
 
 Object.defineProperty(navigator, 'clipboard', {
   configurable: true,

@@ -2,7 +2,12 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '#/components/ui/dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '#/components/ui/dropdown-menu'
 import {
   orgEnvironmentsQueryOptions,
   allOrgWorkspaceConnectionsQueryOptions,
@@ -47,11 +52,11 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
 
   // Export only makes sense for a runnable SQL query — not for a database
   // object/diagram tab or a non-SQL file (e.g. a previously exported CSV).
-  const isSqlTab = !!activeTab && (
-    activeTab.kind === 'scratch' ||
-    activeTab.kind === 'connection' ||
-    (activeTab.kind === 'file' && activeTab.title.toLowerCase().endsWith('.sql'))
-  )
+  const isSqlTab =
+    !!activeTab &&
+    (activeTab.kind === 'scratch' ||
+      activeTab.kind === 'connection' ||
+      (activeTab.kind === 'file' && activeTab.title.toLowerCase().endsWith('.sql')))
 
   const showSave = Boolean(activeTab && (activeTab.kind !== 'file' || activeTab.isDirty))
 
@@ -79,11 +84,13 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   }
 
   const environments = useQuery(
-    orgEnvironmentsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
+    orgEnvironmentsQueryOptions(orgSlug, workspace.id, {
+      page_size: 100,
+      sort: 'name',
+      order: 'asc',
+    }),
   )
-  const connections = useQuery(
-    allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id),
-  )
+  const connections = useQuery(allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id))
 
   const envItems = environments.data?.items ?? []
   const connItems = connections.data?.items ?? []
@@ -120,157 +127,150 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const runDisabled = !activeTab || !activeConnection || queryAction.isRunning
   return (
     <>
-    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-background px-2.5">
-      {/* Run button — combined with quick-export options via the split arrow, when the active tab is a runnable query */}
-      <div className="flex items-stretch">
-        <Button
-          type="button"
-          className={cn('px-2.5', isSqlTab && 'rounded-r-none')}
-          disabled={runDisabled}
-          onClick={() => void queryAction.run()}
-        >
-          <Icon
-            name={queryAction.isRunning ? 'loading-03' : 'play'}
-            size={13}
-            data-icon="inline-start"
-            className={queryAction.isRunning ? 'animate-spin' : undefined}
-          />
-          {queryAction.isRunning ? 'Running…' : 'Run'}
-          {!queryAction.isRunning && (
-            <kbd className="ml-0.5 hidden rounded bg-primary-foreground/20 px-1 font-sans text-[9px] font-medium leading-4 tracking-wide sm:inline">
-              {RUN_SHORTCUT}
-            </kbd>
-          )}
-        </Button>
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-background px-2.5">
+        {/* Run button — combined with quick-export options via the split arrow, when the active tab is a runnable query */}
+        <div className="flex items-stretch">
+          <Button
+            type="button"
+            className={cn('px-2.5', isSqlTab && 'rounded-r-none')}
+            disabled={runDisabled}
+            onClick={() => void queryAction.run()}
+          >
+            <Icon
+              name={queryAction.isRunning ? 'loading-03' : 'play'}
+              size={13}
+              data-icon="inline-start"
+              className={queryAction.isRunning ? 'animate-spin' : undefined}
+            />
+            {queryAction.isRunning ? 'Running…' : 'Run'}
+            {!queryAction.isRunning && (
+              <kbd className="ml-0.5 hidden rounded bg-primary-foreground/20 px-1 font-sans text-[9px] font-medium leading-4 tracking-wide sm:inline">
+                {RUN_SHORTCUT}
+              </kbd>
+            )}
+          </Button>
 
-        {isSqlTab && (
-          downloadNow.isDownloading ? (
-            <Tip label={`Exporting… ${formatBytes(downloadNow.bytesDownloaded)} — click to cancel`}>
-              <Button
-                type="button"
-                className="rounded-l-none border-l border-l-primary-foreground/20 px-2"
-                aria-label="Cancel export"
-                onClick={downloadNow.cancel}
+          {isSqlTab &&
+            (downloadNow.isDownloading ? (
+              <Tip
+                label={`Exporting… ${formatBytes(downloadNow.bytesDownloaded)} — click to cancel`}
               >
-                <Icon name="loading-03" size={13} className="animate-spin" />
-              </Button>
-            </Tip>
-          ) : (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    type="button"
-                    className="rounded-l-none border-l border-l-primary-foreground/20 px-1.5"
-                    aria-label="More run options"
-                    disabled={runDisabled}
-                  />
-                }
-              >
-                <Icon name="chevron-down" size={12} />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={handleExportClick}>
-                  <Icon name="download-01" size={13} data-icon="inline-start" />
-                  Export
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setExportToWorkspaceOpen(true)}>
-                  <Icon name="folder" size={13} data-icon="inline-start" />
-                  Export to workspace
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )
+                <Button
+                  type="button"
+                  className="rounded-l-none border-l border-l-primary-foreground/20 px-2"
+                  aria-label="Cancel export"
+                  onClick={downloadNow.cancel}
+                >
+                  <Icon name="loading-03" size={13} className="animate-spin" />
+                </Button>
+              </Tip>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      type="button"
+                      className="rounded-l-none border-l border-l-primary-foreground/20 px-1.5"
+                      aria-label="More run options"
+                      disabled={runDisabled}
+                    />
+                  }
+                >
+                  <Icon name="chevron-down" size={12} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={handleExportClick}>
+                    <Icon name="download-01" size={13} data-icon="inline-start" />
+                    Export
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setExportToWorkspaceOpen(true)}>
+                    <Icon name="folder" size={13} data-icon="inline-start" />
+                    Export to workspace
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ))}
+        </div>
+
+        {/* Cancel button — appears only while a query is in flight */}
+        {queryAction.isRunning && (
+          <Button type="button" variant="outline" onClick={handleCancel}>
+            <Icon name="cancel-01" size={13} data-icon="inline-start" />
+            Cancel
+          </Button>
         )}
+
+        {/* Save button */}
+        {showSave && (
+          <Button type="button" variant="outline" aria-label="Save file" onClick={handleSave}>
+            <Icon name="floppy-disk" size={13} data-icon="inline-start" />
+            Save
+          </Button>
+        )}
+
+        <div className="flex-1" />
+
+        <ConnectionSelector
+          activeConnection={activeConnection}
+          activeConnectionId={activeTab?.connectionId}
+          connections={connItems}
+          environments={envItems}
+          isLoading={connections.isLoading}
+          tabAvailable={Boolean(activeTab)}
+          onSelect={selectConnection}
+        />
+
+        {/* Maximize toggle */}
+        <Tip label={maximizedPane === 'editor' ? 'Restore layout' : 'Maximize editor'}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Toggle editor maximize"
+            onClick={toggleMaximize}
+          >
+            <Icon name={maximizedPane === 'editor' ? 'minimize' : 'maximize'} size={14} />
+          </Button>
+        </Tip>
       </div>
 
-      {/* Cancel button — appears only while a query is in flight */}
-      {queryAction.isRunning && (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleCancel}
-        >
-          <Icon name="cancel-01" size={13} data-icon="inline-start" />
-          Cancel
-        </Button>
+      {saveAsTab && (
+        <SaveAsDialog
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setSaveAsTab(null)
+          }}
+          tab={saveAsTab}
+          orgSlug={orgSlug}
+          workspaceId={workspace.id}
+          onSuccess={(file, etag) => handleSaveAsSuccess(saveAsTab, file, etag)}
+        />
       )}
 
-      {/* Save button */}
-      {showSave && (
-        <Button
-          type="button"
-          variant="outline"
-          aria-label="Save file"
-          onClick={handleSave}
-        >
-          <Icon name="floppy-disk" size={13} data-icon="inline-start" />
-          Save
-        </Button>
+      {activeConnection && confirmExportSql !== null && (
+        <ExportConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setConfirmExportSql(null)
+          }}
+          sql={confirmExportSql}
+          onConfirm={() => {
+            void downloadNow.download(activeConnection.id, confirmExportSql)
+            setConfirmExportSql(null)
+          }}
+        />
       )}
 
-      <div className="flex-1" />
-
-      <ConnectionSelector
-        activeConnection={activeConnection}
-        activeConnectionId={activeTab?.connectionId}
-        connections={connItems}
-        environments={envItems}
-        isLoading={connections.isLoading}
-        tabAvailable={Boolean(activeTab)}
-        onSelect={selectConnection}
-      />
-
-      {/* Maximize toggle */}
-      <Tip label={maximizedPane === 'editor' ? 'Restore layout' : 'Maximize editor'}>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Toggle editor maximize"
-          onClick={toggleMaximize}
-        >
-          <Icon
-            name={maximizedPane === 'editor' ? 'minimize' : 'maximize'}
-            size={14}
-          />
-        </Button>
-      </Tip>
-    </div>
-
-    {saveAsTab && (
-      <SaveAsDialog
-        open={true}
-        onOpenChange={(open) => { if (!open) setSaveAsTab(null) }}
-        tab={saveAsTab}
-        orgSlug={orgSlug}
-        workspaceId={workspace.id}
-        onSuccess={(file, etag) => handleSaveAsSuccess(saveAsTab, file, etag)}
-      />
-    )}
-
-    {activeConnection && confirmExportSql !== null && (
-      <ExportConfirmDialog
-        open
-        onOpenChange={(open) => { if (!open) setConfirmExportSql(null) }}
-        sql={confirmExportSql}
-        onConfirm={() => {
-          void downloadNow.download(activeConnection.id, confirmExportSql)
-          setConfirmExportSql(null)
-        }}
-      />
-    )}
-
-    {activeConnection && exportToWorkspaceOpen && (
-      <ExportToFilesDialog
-        open
-        onOpenChange={setExportToWorkspaceOpen}
-        orgSlug={orgSlug}
-        workspaceId={workspace.id}
-        connectionId={activeConnection.id}
-        getSql={queryAction.resolveSql}
-      />
-    )}
+      {activeConnection && exportToWorkspaceOpen && (
+        <ExportToFilesDialog
+          open
+          onOpenChange={setExportToWorkspaceOpen}
+          orgSlug={orgSlug}
+          workspaceId={workspace.id}
+          connectionId={activeConnection.id}
+          getSql={queryAction.resolveSql}
+        />
+      )}
     </>
   )
 }

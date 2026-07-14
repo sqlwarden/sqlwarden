@@ -10,11 +10,7 @@ import { newFileTab, useIde } from '../useIdeStore'
 import { dismissExport, getDismissedExportIds } from './dismissedExports'
 import { getExportRetryEntry, rememberExportRetry } from './exportRetryCache'
 
-export function useExportJobActions(
-  orgSlug: string,
-  workspace: Workspace,
-  refresh: () => void,
-) {
+export function useExportJobActions(orgSlug: string, workspace: Workspace, refresh: () => void) {
   const queryClient = useQueryClient()
   const openTab = useIde((state) => state.openTab)
   const setNodeExpanded = useIde((state) => state.setNodeExpanded)

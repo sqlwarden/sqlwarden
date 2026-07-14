@@ -6,7 +6,20 @@ const base = {
   hasTarget: true,
   hasConnection: true,
   hasSession: true,
-  spec: { dialect: 'postgres', kinds: [{ kind: 'table', label: 'Table', plural_label: 'Tables', order: 1, relational: true, supports_diagram: true, listing: 'enumerated' as const }] },
+  spec: {
+    dialect: 'postgres',
+    kinds: [
+      {
+        kind: 'table',
+        label: 'Table',
+        plural_label: 'Tables',
+        order: 1,
+        relational: true,
+        supports_diagram: true,
+        listing: 'enumerated' as const,
+      },
+    ],
+  },
   specError: null,
   catalogError: null,
   relationshipsError: null,
@@ -18,13 +31,25 @@ const base = {
 describe('resolveDiagramViewState', () => {
   it('prioritizes malformed tabs and missing sessions', () => {
     expect(resolveDiagramViewState({ ...base, hasTarget: false })).toBe('missing-target')
-    expect(resolveDiagramViewState({ ...base, hasSession: false, relationshipsError: new ApiError('Forbidden', 403) })).toBe('no-session')
+    expect(
+      resolveDiagramViewState({
+        ...base,
+        hasSession: false,
+        relationshipsError: new ApiError('Forbidden', 403),
+      }),
+    ).toBe('no-session')
   })
 
   it('distinguishes unsupported capabilities and authorization loss', () => {
-    expect(resolveDiagramViewState({ ...base, relationshipsError: new ApiError('Unsupported', 501) })).toBe('unsupported')
-    expect(resolveDiagramViewState({ ...base, spec: { dialect: 'redis', kinds: [] } })).toBe('unsupported')
-    expect(resolveDiagramViewState({ ...base, catalogError: new ApiError('Forbidden', 403) })).toBe('forbidden')
+    expect(
+      resolveDiagramViewState({ ...base, relationshipsError: new ApiError('Unsupported', 501) }),
+    ).toBe('unsupported')
+    expect(resolveDiagramViewState({ ...base, spec: { dialect: 'redis', kinds: [] } })).toBe(
+      'unsupported',
+    )
+    expect(resolveDiagramViewState({ ...base, catalogError: new ApiError('Forbidden', 403) })).toBe(
+      'forbidden',
+    )
   })
 
   it('orders loading and empty states after terminal query states', () => {

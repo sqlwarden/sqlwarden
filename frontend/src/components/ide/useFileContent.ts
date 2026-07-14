@@ -38,7 +38,7 @@ export function useFileContent({
     if (!query.data || !tab?.id) return
 
     hydrateFileTab(tab, query.data, registry, updateTabEtag)
-  }, [query.data, tab?.id, tab?.etag, tab?.isDirty, tab?.ySnapshot, registry, updateTabEtag])
+  }, [query.data, tab, registry, updateTabEtag])
 
   return {
     isLoading: needsLoad && query.isLoading,

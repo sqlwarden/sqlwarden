@@ -4,12 +4,22 @@ import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
+import {
+  Outlet,
+  createFileRoute,
+  useNavigate,
+  useRouter,
+  useRouterState,
+} from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
-import { orgEffectivePermissionsQueryOptions, orgMemberCandidatesQueryOptions, orgMembersQueryOptions } from '#/lib/api/query'
+import {
+  orgEffectivePermissionsQueryOptions,
+  orgMemberCandidatesQueryOptions,
+  orgMembersQueryOptions,
+} from '#/lib/api/query'
 import type { Account, OrgMember } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
 import { entityColor } from '#/lib/entity-colors'
@@ -18,21 +28,35 @@ import { SectionTabNav } from '#/components/SectionTabNav'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { Skeleton } from '#/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 import { cn } from '#/lib/utils'
 
 export const Route = createFileRoute('/orgs/$org_slug/users')({
   component: OrganizationUsersRoute,
   pendingComponent: RoutePending,
 })
-
 
 function OrganizationUsersRoute() {
   const { org_slug: orgSlug } = Route.useParams()
@@ -49,13 +73,14 @@ function OrganizationUsersRoute() {
 function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
   const queryClient = useQueryClient()
   const [isAddingUser, setIsAddingUser] = useState(false)
-  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
-    page: 1,
-    page_size: 10,
-    sort: 'name',
-    order: 'asc',
-    q: '',
-  })
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
+    useListPageState({
+      page: 1,
+      page_size: 10,
+      sort: 'name',
+      order: 'asc',
+      q: '',
+    })
   const {
     query: pickerQuery,
     searchText: pickerSearchText,
@@ -71,7 +96,8 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
 
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
   const canReadUsers = hasPermission(effectivePermissions.data?.permissions, permission.orgRead)
-  const canAddUser = canReadUsers && hasPermission(effectivePermissions.data?.permissions, permission.orgInvite)
+  const canAddUser =
+    canReadUsers && hasPermission(effectivePermissions.data?.permissions, permission.orgInvite)
   const members = useQuery({
     ...orgMembersQueryOptions(orgSlug, query),
     enabled: canReadUsers,
@@ -128,8 +154,18 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
     <div className="flex flex-col">
       <SectionTabNav
         tabs={[
-          { label: 'Users', to: '/orgs/$org_slug/users', params: { org_slug: orgSlug }, isActive: true },
-          { label: 'Teams', to: '/orgs/$org_slug/teams', params: { org_slug: orgSlug }, isActive: false },
+          {
+            label: 'Users',
+            to: '/orgs/$org_slug/users',
+            params: { org_slug: orgSlug },
+            isActive: true,
+          },
+          {
+            label: 'Teams',
+            to: '/orgs/$org_slug/teams',
+            params: { org_slug: orgSlug },
+            isActive: false,
+          },
         ]}
       />
 
@@ -174,12 +210,22 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
                       ) : null}
                       {hasPickerSearch && candidates.isLoading ? <UserPickerSkeleton /> : null}
                       {hasPickerSearch && candidates.isError ? (
-                        <div className="px-4 py-8 text-center text-sm text-muted-foreground">Failed to load users.</div>
+                        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                          Failed to load users.
+                        </div>
                       ) : null}
-                      {hasPickerSearch && !candidates.isLoading && !candidates.isError && candidateItems.length === 0 ? (
-                        <div className="px-4 py-8 text-center text-sm text-muted-foreground">No users matched your search.</div>
+                      {hasPickerSearch &&
+                      !candidates.isLoading &&
+                      !candidates.isError &&
+                      candidateItems.length === 0 ? (
+                        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                          No users matched your search.
+                        </div>
                       ) : null}
-                      {hasPickerSearch && !candidates.isLoading && !candidates.isError && candidateItems.length > 0 ? (
+                      {hasPickerSearch &&
+                      !candidates.isLoading &&
+                      !candidates.isError &&
+                      candidateItems.length > 0 ? (
                         <div className="divide-y">
                           {candidateItems.map((account) => (
                             <UserPickerRow
@@ -194,12 +240,17 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
                     </div>
                     {hasPickerSearch && candidateTotal > candidateItems.length ? (
                       <p className="text-sm text-muted-foreground">
-                        Showing the first {candidateItems.length} matches. Refine your search to narrow results.
+                        Showing the first {candidateItems.length} matches. Refine your search to
+                        narrow results.
                       </p>
                     ) : null}
 
                     <DialogFooter>
-                      <DialogClose render={<Button type="button" variant="ghost" disabled={addUser.isPending} />}>
+                      <DialogClose
+                        render={
+                          <Button type="button" variant="ghost" disabled={addUser.isPending} />
+                        }
+                      >
                         Close
                       </DialogClose>
                     </DialogFooter>
@@ -223,23 +274,58 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>
-                    <TableColumnHeader label="User" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                    <TableColumnHeader
+                      label="User"
+                      sort="name"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
+                    />
                   </TableHead>
                   <TableHead>
-                    <TableColumnHeader label="Joined" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                    <TableColumnHeader
+                      label="Joined"
+                      sort="created_at"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
+                    />
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {effectivePermissions.isLoading || members.isLoading ? <UsersTableSkeleton /> : null}
-                {members.isError ? <TableEmptyState colSpan={2} icon="user-multiple" message="Failed to load users." /> : null}
+                {effectivePermissions.isLoading || members.isLoading ? (
+                  <UsersTableSkeleton />
+                ) : null}
+                {members.isError ? (
+                  <TableEmptyState
+                    colSpan={2}
+                    icon="user-multiple"
+                    message="Failed to load users."
+                  />
+                ) : null}
                 {!effectivePermissions.isLoading && !canReadUsers ? (
-                  <TableEmptyState colSpan={2} icon="user-multiple" message="You do not have permission to view users." />
+                  <TableEmptyState
+                    colSpan={2}
+                    icon="user-multiple"
+                    message="You do not have permission to view users."
+                  />
                 ) : null}
-                {!effectivePermissions.isLoading && canReadUsers && !members.isLoading && !members.isError && items.length === 0 ? (
-                  <TableEmptyState colSpan={2} icon="user-multiple" message={query.q ? 'No users matched your search.' : 'No users found.'} />
+                {!effectivePermissions.isLoading &&
+                canReadUsers &&
+                !members.isLoading &&
+                !members.isError &&
+                items.length === 0 ? (
+                  <TableEmptyState
+                    colSpan={2}
+                    icon="user-multiple"
+                    message={query.q ? 'No users matched your search.' : 'No users found.'}
+                  />
                 ) : null}
-                {!effectivePermissions.isLoading && canReadUsers && !members.isLoading && !members.isError
+                {!effectivePermissions.isLoading &&
+                canReadUsers &&
+                !members.isLoading &&
+                !members.isError
                   ? items.map((member) => <UserRow key={member.account_id} member={member} />)
                   : null}
               </TableBody>
@@ -300,12 +386,19 @@ function UserRow({ member }: { member: OrgMember }) {
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(member.name || member.email))}>
+          <div
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
+              entityColor(member.name || member.email),
+            )}
+          >
             {getInitials(member.name || member.email, '?')}
           </div>
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="truncate font-medium text-foreground">{member.name || member.email}</span>
+              <span className="truncate font-medium text-foreground">
+                {member.name || member.email}
+              </span>
               {member.role ? (
                 <Badge variant="outline" className="h-4 shrink-0 px-1.5 py-0 text-[10px]">
                   {elevationLabel(member.role)}
@@ -338,11 +431,18 @@ function UserPickerRow({
       onClick={() => onAdd(account.id)}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(account.name || account.email))}>
+        <div
+          className={cn(
+            'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
+            entityColor(account.name || account.email),
+          )}
+        >
           {getInitials(account.name || account.email, '?')}
         </div>
         <div className="min-w-0">
-          <div className="truncate font-medium text-foreground">{account.name || account.email}</div>
+          <div className="truncate font-medium text-foreground">
+            {account.name || account.email}
+          </div>
           <div className="truncate text-sm text-muted-foreground">{account.email}</div>
         </div>
       </div>

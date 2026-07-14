@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createIdeStore, activeTabId, connectionState, isNodeExpanded, newConnectionTab, newFileTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
+import {
+  createIdeStore,
+  activeTabId,
+  connectionState,
+  isNodeExpanded,
+  newConnectionTab,
+  newFileTab,
+  DEFAULT_CONSOLE_CONTENT,
+} from './useIdeStore'
 import type { EditorTab, IdeState } from './useIdeStore'
 
 vi.mock('idb-keyval', () => ({
@@ -313,7 +321,9 @@ describe('useIdeStore', () => {
   describe('moveTab', () => {
     function addTabs(ids: string[]) {
       for (const id of ids) {
-        store.getState().openTab({ id, workspaceId: mockWorkspace.id, title: id, kind: 'scratch', content: '' })
+        store
+          .getState()
+          .openTab({ id, workspaceId: mockWorkspace.id, title: id, kind: 'scratch', content: '' })
       }
     }
     const order = () => {
@@ -357,7 +367,13 @@ describe('useIdeStore', () => {
   })
 
   describe('layout actions', () => {
-    const t = (id: string) => ({ id, workspaceId: mockWorkspace.id, title: id, kind: 'scratch' as const, content: '' })
+    const t = (id: string) => ({
+      id,
+      workspaceId: mockWorkspace.id,
+      title: id,
+      kind: 'scratch' as const,
+      content: '',
+    })
     const root = () => store.getState().layout[mockWorkspace.id]
 
     it('splitActiveTab duplicates the active tab into a new adjacent group', () => {
@@ -368,7 +384,10 @@ describe('useIdeStore', () => {
       expect(node.type).toBe('split')
       if (node.type === 'split') {
         // source keeps b; new group also has b (same tab, synced doc)
-        expect(node.children.map((c) => (c.type === 'group' ? c.tabIds : []))).toEqual([['a', 'b'], ['b']])
+        expect(node.children.map((c) => (c.type === 'group' ? c.tabIds : []))).toEqual([
+          ['a', 'b'],
+          ['b'],
+        ])
       }
     })
 
@@ -400,18 +419,22 @@ describe('useIdeStore', () => {
 
 describe('connectionState', () => {
   const base = (over: Partial<IdeState>): IdeState =>
-    ({ sessions: {}, connectionStatus: {}, ...over } as unknown as IdeState)
+    ({ sessions: {}, connectionStatus: {}, ...over }) as unknown as IdeState
 
   it('reports connected when a live session exists (even over a prior error)', () => {
-    expect(connectionState(base({ sessions: { 5: 'sid' }, connectionStatus: { 5: { error: 'x' } } }), 5))
-      .toEqual({ kind: 'connected' })
+    expect(
+      connectionState(base({ sessions: { 5: 'sid' }, connectionStatus: { 5: { error: 'x' } } }), 5),
+    ).toEqual({ kind: 'connected' })
   })
   it('reports connecting', () => {
-    expect(connectionState(base({ connectionStatus: { 5: 'connecting' } }), 5)).toEqual({ kind: 'connecting' })
+    expect(connectionState(base({ connectionStatus: { 5: 'connecting' } }), 5)).toEqual({
+      kind: 'connecting',
+    })
   })
   it('reports error with its message', () => {
-    expect(connectionState(base({ connectionStatus: { 5: { error: 'auth failed' } } }), 5))
-      .toEqual({ kind: 'error', message: 'auth failed' })
+    expect(connectionState(base({ connectionStatus: { 5: { error: 'auth failed' } } }), 5)).toEqual(
+      { kind: 'error', message: 'auth failed' },
+    )
   })
   it('reports idle when nothing is known', () => {
     expect(connectionState(base({}), 5)).toEqual({ kind: 'idle' })

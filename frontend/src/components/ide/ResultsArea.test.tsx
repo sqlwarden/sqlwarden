@@ -13,14 +13,15 @@ import { ContextMenuProvider } from '#/components/ui/context-menu'
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
     getTotalSize: () => count * 29,
-    getVirtualItems: () => Array.from({ length: count }, (_, index) => ({
-      index,
-      start: index * 29,
-      end: (index + 1) * 29,
-      size: 29,
-      key: index,
-      lane: 0,
-    })),
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, index) => ({
+        index,
+        start: index * 29,
+        end: (index + 1) * 29,
+        size: 29,
+        key: index,
+        lane: 0,
+      })),
     scrollToIndex: vi.fn(),
   }),
 }))
@@ -57,24 +58,27 @@ describe('ResultsArea', () => {
       content: 'select 1',
       connectionId: 7,
     })
-    server.use(http.get(
-      '/api/v1/orgs/acme/workspaces/3/connections',
-      () => HttpResponse.json({
-        items: [{
-          id: 7,
-          workspace_id: 3,
-          environment_id: 2,
-          name: 'analytics-pg',
-          driver: 'postgres',
-          access_mode: 'open',
-          created_at: '',
-          updated_at: '',
-        }],
-        page: 1,
-        page_size: 100,
-        total: 1,
-      }),
-    ))
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 7,
+              workspace_id: 3,
+              environment_id: 2,
+              name: 'analytics-pg',
+              driver: 'postgres',
+              access_mode: 'open',
+              created_at: '',
+              updated_at: '',
+            },
+          ],
+          page: 1,
+          page_size: 100,
+          total: 1,
+        }),
+      ),
+    )
   })
 
   function renderResult(result: QueryResult) {
@@ -155,8 +159,14 @@ describe('ResultsArea', () => {
           { name: 'age', type: 'integer', raw_type: 'int4', nullable: false },
         ],
         rows: [
-          [{ type: 'text', text: 'Alice' }, { type: 'integer', integer: 30 }],
-          [{ type: 'text', text: 'Bob' }, { type: 'integer', integer: 41 }],
+          [
+            { type: 'text', text: 'Alice' },
+            { type: 'integer', integer: 30 },
+          ],
+          [
+            { type: 'text', text: 'Bob' },
+            { type: 'integer', integer: 41 },
+          ],
         ],
         duration_ms: 5,
         truncated: false,
@@ -197,7 +207,9 @@ describe('ResultsArea', () => {
     fireEvent.contextMenu(await screen.findByRole('gridcell', { name: 'Alice' }))
 
     await user.click(await screen.findByRole('menuitem', { name: 'Copy' }))
-    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Copy' })).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.queryByRole('menuitem', { name: 'Copy' })).not.toBeInTheDocument(),
+    )
   })
 
   it('maximizes, restores, and hides the results pane', async () => {

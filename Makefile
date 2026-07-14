@@ -65,6 +65,26 @@ frontend/build:
 	cd frontend && bun run build
 	@touch assets/static/.gitkeep
 
+## frontend/lint: lint frontend source files
+.PHONY: frontend/lint
+frontend/lint:
+	cd frontend && bun run lint
+
+## frontend/format: format frontend source files
+.PHONY: frontend/format
+frontend/format:
+	cd frontend && bun run format
+
+## frontend/format/check: verify frontend source formatting
+.PHONY: frontend/format/check
+frontend/format/check:
+	cd frontend && bun run format:check
+
+## frontend/typecheck: type-check frontend source files
+.PHONY: frontend/typecheck
+frontend/typecheck:
+	cd frontend && bun run typecheck
+
 ## frontend/dev: run the frontend dev server with API proxy to the backend
 .PHONY: frontend/dev
 frontend/dev:

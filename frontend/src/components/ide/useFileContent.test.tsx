@@ -11,7 +11,12 @@ import { YDocRegistryContext, type YDocRegistry } from './useYDocRegistry'
 import type { EditorTab } from './useIdeStore'
 
 const tab: EditorTab = {
-  id: 'file:11', workspaceId: 3, title: 'query.sql', kind: 'file', fileId: 11, content: '',
+  id: 'file:11',
+  workspaceId: 3,
+  title: 'query.sql',
+  kind: 'file',
+  fileId: 11,
+  content: '',
 }
 
 describe('useFileContent', () => {
@@ -35,15 +40,24 @@ describe('useFileContent', () => {
   }
 
   it('hydrates server content and records the response ETag', async () => {
-    server.use(http.get(
-      '/api/v1/orgs/acme/workspaces/3/files/private/11/content',
-      () => new HttpResponse('select 42', { headers: { ETag: '"etag-11"' } }),
-    ))
+    server.use(
+      http.get(
+        '/api/v1/orgs/acme/workspaces/3/files/private/11/content',
+        () => new HttpResponse('select 42', { headers: { ETag: '"etag-11"' } }),
+      ),
+    )
     const updateTabEtag = vi.fn()
     const { doc, wrapper } = setup()
-    const { result } = renderHook(() => useFileContent({
-      orgSlug: 'acme', workspaceId: 3, tab, updateTabEtag,
-    }), { wrapper })
+    const { result } = renderHook(
+      () =>
+        useFileContent({
+          orgSlug: 'acme',
+          workspaceId: 3,
+          tab,
+          updateTabEtag,
+        }),
+      { wrapper },
+    )
 
     expect(result.current.isLoading).toBe(true)
     await waitFor(() => expect(doc.getText('content').toString()).toBe('select 42'))
@@ -53,16 +67,23 @@ describe('useFileContent', () => {
 
   it('does not fetch for non-file tabs', async () => {
     const request = vi.fn()
-    server.use(http.get(
-      '/api/v1/orgs/acme/workspaces/3/files/private/:fileId/content',
-      () => { request(); return new HttpResponse('unexpected') },
-    ))
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/files/private/:fileId/content', () => {
+        request()
+        return new HttpResponse('unexpected')
+      }),
+    )
     const { wrapper } = setup()
-    const { result } = renderHook(() => useFileContent({
-      orgSlug: 'acme', workspaceId: 3,
-      tab: { ...tab, kind: 'scratch', fileId: undefined },
-      updateTabEtag: vi.fn(),
-    }), { wrapper })
+    const { result } = renderHook(
+      () =>
+        useFileContent({
+          orgSlug: 'acme',
+          workspaceId: 3,
+          tab: { ...tab, kind: 'scratch', fileId: undefined },
+          updateTabEtag: vi.fn(),
+        }),
+      { wrapper },
+    )
 
     expect(result.current.isLoading).toBe(false)
     await Promise.resolve()
@@ -71,19 +92,25 @@ describe('useFileContent', () => {
 
   it('exposes failed loads and retries them on demand', async () => {
     let attempts = 0
-    server.use(http.get(
-      '/api/v1/orgs/acme/workspaces/3/files/private/11/content',
-      () => {
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/files/private/11/content', () => {
         attempts += 1
         return attempts === 1
           ? HttpResponse.text('Unavailable', { status: 503 })
           : new HttpResponse('select 7', { headers: { ETag: 'etag-7' } })
-      },
-    ))
+      }),
+    )
     const { doc, wrapper } = setup()
-    const { result } = renderHook(() => useFileContent({
-      orgSlug: 'acme', workspaceId: 3, tab, updateTabEtag: vi.fn(),
-    }), { wrapper })
+    const { result } = renderHook(
+      () =>
+        useFileContent({
+          orgSlug: 'acme',
+          workspaceId: 3,
+          tab,
+          updateTabEtag: vi.fn(),
+        }),
+      { wrapper },
+    )
 
     await waitFor(() => expect(result.current.isError).toBe(true))
     result.current.retry()

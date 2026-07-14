@@ -5,9 +5,23 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
-import { orgEffectivePermissionsQueryOptions, orgWorkspaceQueryOptions, queryKeys } from '#/lib/api/query'
+import {
+  orgEffectivePermissionsQueryOptions,
+  orgWorkspaceQueryOptions,
+  queryKeys,
+} from '#/lib/api/query'
 import { hasPermission, permission } from '#/lib/permissions'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '#/components/ui/alert-dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '#/components/ui/alert-dialog'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
@@ -30,7 +44,9 @@ function WorkspaceSettingsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const workspace = useQuery(orgWorkspaceQueryOptions(orgSlug, workspaceId))
-  const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId))
+  const effectivePermissions = useQuery(
+    orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId),
+  )
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [fieldErrors, setFieldErrors] = useState<WorkspaceFieldErrors>({})
@@ -77,7 +93,11 @@ function WorkspaceSettingsPage() {
     onSuccess: async () => {
       toast.success('Workspace deleted')
       await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaces(orgSlug) })
-      await navigate({ to: '/orgs/$org_slug/workspaces', params: { org_slug: orgSlug }, replace: true })
+      await navigate({
+        to: '/orgs/$org_slug/workspaces',
+        params: { org_slug: orgSlug },
+        replace: true,
+      })
     },
     onError: (error) => {
       toast.error(errorMessage(error, 'Failed to delete workspace'))
@@ -97,7 +117,8 @@ function WorkspaceSettingsPage() {
     )
   }
 
-  const hasChanges = name.trim() !== workspace.data.name || description.trim() !== (workspace.data.description ?? '')
+  const hasChanges =
+    name.trim() !== workspace.data.name || description.trim() !== (workspace.data.description ?? '')
   const deleteMatches = deleteConfirmation === workspace.data.name
 
   function submitGeneral(event: React.FormEvent<HTMLFormElement>) {
@@ -109,20 +130,24 @@ function WorkspaceSettingsPage() {
     }
 
     setFieldErrors({})
-    void updateWorkspace.mutateAsync().catch(() => { })
+    void updateWorkspace.mutateAsync().catch(() => {})
   }
 
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Manage workspace details and lifecycle actions.</p>
+        <p className="text-sm text-muted-foreground">
+          Manage workspace details and lifecycle actions.
+        </p>
       </div>
 
       <Card>
         <CardHeader className="border-b border-border">
           <CardTitle>General</CardTitle>
-          <CardDescription>Update the workspace name and description shown across the organization.</CardDescription>
+          <CardDescription>
+            Update the workspace name and description shown across the organization.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="flex flex-col gap-5" onSubmit={submitGeneral}>
@@ -157,11 +182,16 @@ function WorkspaceSettingsPage() {
             </Field>
 
             {!canWrite ? (
-              <p className="text-xs text-muted-foreground">You need workspace write permission to change these settings.</p>
+              <p className="text-xs text-muted-foreground">
+                You need workspace write permission to change these settings.
+              </p>
             ) : null}
 
             <div className="flex justify-end">
-              <Button type="submit" disabled={!canWrite || !hasChanges || updateWorkspace.isPending}>
+              <Button
+                type="submit"
+                disabled={!canWrite || !hasChanges || updateWorkspace.isPending}
+              >
                 {updateWorkspace.isPending ? 'Saving...' : 'Save changes'}
               </Button>
             </div>
@@ -172,7 +202,10 @@ function WorkspaceSettingsPage() {
       <Card>
         <CardHeader className="border-b border-border">
           <CardTitle>Danger Zone</CardTitle>
-          <CardDescription>Delete this workspace and its environments, connections, workspace roles, and policy bindings.</CardDescription>
+          <CardDescription>
+            Delete this workspace and its environments, connections, workspace roles, and policy
+            bindings.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -182,19 +215,29 @@ function WorkspaceSettingsPage() {
                 This action is permanent. Existing workspace resources will no longer be available.
               </p>
               {!canDelete ? (
-                <p className="text-xs text-muted-foreground">You need workspace delete permission to perform this action.</p>
+                <p className="text-xs text-muted-foreground">
+                  You need workspace delete permission to perform this action.
+                </p>
               ) : null}
             </div>
 
             <AlertDialog>
-              <AlertDialogTrigger render={<Button variant="destructive" disabled={!canDelete || deleteWorkspace.isPending} />}>
+              <AlertDialogTrigger
+                render={
+                  <Button
+                    variant="destructive"
+                    disabled={!canDelete || deleteWorkspace.isPending}
+                  />
+                }
+              >
                 Delete workspace
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete workspace?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Type <span className="font-medium text-foreground">{workspace.data.name}</span> to confirm deletion.
+                    Type <span className="font-medium text-foreground">{workspace.data.name}</span>{' '}
+                    to confirm deletion.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <div className="flex flex-col gap-2">
@@ -206,14 +249,18 @@ function WorkspaceSettingsPage() {
                   />
                 </div>
                 <AlertDialogFooter>
-                  <AlertDialogCancel variant="ghost" disabled={deleteWorkspace.isPending} onClick={() => setDeleteConfirmation('')}>
+                  <AlertDialogCancel
+                    variant="ghost"
+                    disabled={deleteWorkspace.isPending}
+                    onClick={() => setDeleteConfirmation('')}
+                  >
                     Cancel
                   </AlertDialogCancel>
                   <AlertDialogAction
                     variant="destructive"
                     disabled={!deleteMatches || deleteWorkspace.isPending}
                     onClick={() => {
-                      void deleteWorkspace.mutateAsync().catch(() => { })
+                      void deleteWorkspace.mutateAsync().catch(() => {})
                     }}
                   >
                     {deleteWorkspace.isPending ? 'Deleting...' : 'Delete workspace'}

@@ -23,8 +23,18 @@ export function isRelational(detail: ObjectDetail): boolean {
 export function buildBaseSections(vm: ObjectViewModel, hooks: DriverHooks): SectionDef[] {
   if (isRelational(vm.detail)) {
     return [
-      { id: 'columns', label: 'Columns', icon: 'table', render: (m) => <ColumnsSection vm={m} extras={hooks.columnExtras?.(m) ?? []} /> },
-      { id: 'keys', label: 'Keys & Indexes', icon: 'key-01', render: (m) => <KeysSection vm={m} /> },
+      {
+        id: 'columns',
+        label: 'Columns',
+        icon: 'table',
+        render: (m) => <ColumnsSection vm={m} extras={hooks.columnExtras?.(m) ?? []} />,
+      },
+      {
+        id: 'keys',
+        label: 'Keys & Indexes',
+        icon: 'key-01',
+        render: (m) => <KeysSection vm={m} />,
+      },
       { id: 'ddl', label: 'DDL', icon: 'terminal', render: (m) => <DdlSection vm={m} /> },
       { id: 'data', label: 'Data', icon: 'database', render: (m) => <ObjectDataPreview vm={m} /> },
     ]
@@ -33,7 +43,12 @@ export function buildBaseSections(vm: ObjectViewModel, hooks: DriverHooks): Sect
   const descriptors = vm.detail.descriptors ?? []
   const sections: SectionDef[] = []
   if (descriptors.some((d) => d.kind !== 'source')) {
-    sections.push({ id: 'overview', label: 'Overview', icon: 'box', render: (m) => <KeysSection vm={m} /> })
+    sections.push({
+      id: 'overview',
+      label: 'Overview',
+      icon: 'box',
+      render: (m) => <KeysSection vm={m} />,
+    })
   }
   descriptors
     .filter((d) => d.kind === 'source')
@@ -51,7 +66,12 @@ export function buildBaseSections(vm: ObjectViewModel, hooks: DriverHooks): Sect
       })
     })
   if (sections.length === 0) {
-    sections.push({ id: 'overview', label: 'Overview', icon: 'box', render: (m) => <KeysSection vm={m} /> })
+    sections.push({
+      id: 'overview',
+      label: 'Overview',
+      icon: 'box',
+      render: (m) => <KeysSection vm={m} />,
+    })
   }
   return sections
 }

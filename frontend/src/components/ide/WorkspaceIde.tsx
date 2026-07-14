@@ -3,13 +3,13 @@ import * as Y from 'yjs'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from '#/components/ui/resizable'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/components/ui/resizable'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { orgWorkspacesQueryOptions, orgEffectivePermissionsQueryOptions, allOrgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
+import {
+  orgWorkspacesQueryOptions,
+  orgEffectivePermissionsQueryOptions,
+  allOrgWorkspaceConnectionsQueryOptions,
+} from '#/lib/api/query'
 import { resolveDeepLink } from './ideDeepLink'
 import { hasAnyPermission, permission } from '#/lib/permissions'
 import { IdeTopBarControls } from './IdeTopBarControls'
@@ -110,7 +110,12 @@ type WorkspaceIdeContentProps = {
   workspaces: Workspace[]
 }
 
-export function WorkspaceIdeContent({ orgSlug, isLoading, isError, workspaces }: WorkspaceIdeContentProps) {
+export function WorkspaceIdeContent({
+  orgSlug,
+  isLoading,
+  isError,
+  workspaces,
+}: WorkspaceIdeContentProps) {
   if (isLoading) {
     return (
       <IdeFrame>
@@ -134,40 +139,40 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
     ...orgEffectivePermissionsQueryOptions(orgSlug, 'org'),
     enabled: Boolean(session),
   })
-  const canAccessOrgSettings = hasAnyPermission(orgPermissions.data?.permissions, [permission.orgRead])
+  const canAccessOrgSettings = hasAnyPermission(orgPermissions.data?.permissions, [
+    permission.orgRead,
+  ])
 
   useIdeDeepLink(orgSlug, workspaces)
 
   return (
     <ContextMenuProvider>
-    <div className="flex h-dvh min-h-0 w-dvw max-w-dvw flex-col overflow-hidden bg-background">
-      {/* Top bar: brand + explorer toggle + workspace tabs + user controls */}
-      <div className="flex h-10 shrink-0 items-stretch border-b border-border bg-sidebar">
-        <IdeBrand />
-        <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {workspaces.map((ws) => (
-            <WorkspaceTab
-              key={ws.id}
+      <div className="flex h-dvh min-h-0 w-dvw max-w-dvw flex-col overflow-hidden bg-background">
+        {/* Top bar: brand + explorer toggle + workspace tabs + user controls */}
+        <div className="flex h-10 shrink-0 items-stretch border-b border-border bg-sidebar">
+          <IdeBrand />
+          <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {workspaces.map((ws) => (
+              <WorkspaceTab
+                key={ws.id}
+                orgSlug={orgSlug}
+                workspace={ws}
+                active={ws.id === activeWorkspace?.id}
+                onActivate={() => setActiveWorkspace(ws.id)}
+              />
+            ))}
+          </div>
+          {session ? (
+            <IdeTopBarControls
               orgSlug={orgSlug}
-              workspace={ws}
-              active={ws.id === activeWorkspace?.id}
-              onActivate={() => setActiveWorkspace(ws.id)}
+              session={session}
+              canAccessOrgSettings={canAccessOrgSettings}
             />
-          ))}
+          ) : null}
         </div>
-        {session ? (
-          <IdeTopBarControls
-            orgSlug={orgSlug}
-            session={session}
-            canAccessOrgSettings={canAccessOrgSettings}
-          />
-        ) : null}
-      </div>
 
-      {activeWorkspace && (
-        <WorkspaceIdeSurface orgSlug={orgSlug} workspace={activeWorkspace} />
-      )}
-    </div>
+        {activeWorkspace && <WorkspaceIdeSurface orgSlug={orgSlug} workspace={activeWorkspace} />}
+      </div>
     </ContextMenuProvider>
   )
 }
@@ -177,13 +182,17 @@ export function useWorkspaceSelection(workspaces: Workspace[]) {
   const setActiveWorkspace = useIde((s) => s.setActiveWorkspace)
 
   useEffect(() => {
-    if (workspaces.length > 0 && !workspaces.some((workspace) => workspace.id === activeWorkspaceId)) {
+    if (
+      workspaces.length > 0 &&
+      !workspaces.some((workspace) => workspace.id === activeWorkspaceId)
+    ) {
       setActiveWorkspace(workspaces[0].id)
     }
   }, [activeWorkspaceId, workspaces, setActiveWorkspace])
 
   return {
-    activeWorkspace: workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0],
+    activeWorkspace:
+      workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0],
     setActiveWorkspace,
   }
 }
@@ -217,7 +226,12 @@ function useIdeDeepLink(orgSlug: string, workspaces: Workspace[]) {
     for (const key of resolution.expandKeys) {
       setNodeExpanded(key, true)
     }
-    void navigate({ to: '/ide/$org_slug', params: { org_slug: orgSlug }, search: {}, replace: true })
+    void navigate({
+      to: '/ide/$org_slug',
+      params: { org_slug: orgSlug },
+      search: {},
+      replace: true,
+    })
   }, [
     hasParams,
     search,
@@ -464,7 +478,9 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   useEditorSnapshotPersistence(tabs, registry, updateTabContent)
 
   // Reset cursor info when the active tab changes.
-  useEffect(() => { setCursorInfo(null) }, [activeTabId])
+  useEffect(() => {
+    setCursorInfo(null)
+  }, [activeTabId])
 
   // No "ensure one tab" guard — users can close all tabs to reach the empty state.
 
@@ -477,62 +493,82 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
 
   return (
     <>
-    <section className="flex h-full min-h-0 flex-col bg-background">
-      <IdeToolbar orgSlug={orgSlug} workspace={workspace} />
-      <div className="relative min-h-0 flex-1">
-        {hasAnyTab && layout ? (
-          <EditorLayout
-            orgSlug={orgSlug}
-            workspace={workspace}
-            node={layout}
-            onCursorChange={(line, col, sel) => setCursorInfo({ line, col, sel })}
-          />
-        ) : (
-          <div className="h-full border-t border-border bg-card">
-            <EmptyEditorState
-              onNewConsole={createConsole}
-              onNewFile={() => setCreateFileOpen(true)}
+      <section className="flex h-full min-h-0 flex-col bg-background">
+        <IdeToolbar orgSlug={orgSlug} workspace={workspace} />
+        <div className="relative min-h-0 flex-1">
+          {hasAnyTab && layout ? (
+            <EditorLayout
+              orgSlug={orgSlug}
+              workspace={workspace}
+              node={layout}
+              onCursorChange={(line, col, sel) => setCursorInfo({ line, col, sel })}
             />
-          </div>
-        )}
-        {/* Drag a tab to the left/right edge to open it in a new split. */}
-        {draggingTab && hasAnyTab && (
-          <>
-            <EdgeDropZone side="left" onDropTab={() => splitTabToEdge(workspace.id, draggingTab.tabId, 'left')} />
-            <EdgeDropZone side="right" onDropTab={() => splitTabToEdge(workspace.id, draggingTab.tabId, 'right')} />
-          </>
-        )}
-      </div>
-      <EditorStatusBar cursorInfo={cursorInfo} hasActiveTab={!!activeTab} />
-    </section>
+          ) : (
+            <div className="h-full border-t border-border bg-card">
+              <EmptyEditorState
+                onNewConsole={createConsole}
+                onNewFile={() => setCreateFileOpen(true)}
+              />
+            </div>
+          )}
+          {/* Drag a tab to the left/right edge to open it in a new split. */}
+          {draggingTab && hasAnyTab && (
+            <>
+              <EdgeDropZone
+                side="left"
+                onDropTab={() => splitTabToEdge(workspace.id, draggingTab.tabId, 'left')}
+              />
+              <EdgeDropZone
+                side="right"
+                onDropTab={() => splitTabToEdge(workspace.id, draggingTab.tabId, 'right')}
+              />
+            </>
+          )}
+        </div>
+        <EditorStatusBar cursorInfo={cursorInfo} hasActiveTab={!!activeTab} />
+      </section>
 
-    <SaveAsDialog
-      open={createFileOpen}
-      onOpenChange={(open) => { if (!open) setCreateFileOpen(false) }}
-      tab={{ id: 'new-empty', workspaceId: workspace.id, title: 'untitled', kind: 'scratch', content: '' }}
-      orgSlug={orgSlug}
-      workspaceId={workspace.id}
-      onSuccess={(file, etag) => {
-        openTab({
-          id: `file:${file.id}`,
+      <SaveAsDialog
+        open={createFileOpen}
+        onOpenChange={(open) => {
+          if (!open) setCreateFileOpen(false)
+        }}
+        tab={{
+          id: 'new-empty',
           workspaceId: workspace.id,
-          title: file.name,
-          kind: 'file',
-          subtitle: file.name,
-          fileId: file.id,
+          title: 'untitled',
+          kind: 'scratch',
           content: '',
-          etag,
-          isDirty: false,
-        })
-      }}
-    />
+        }}
+        orgSlug={orgSlug}
+        workspaceId={workspace.id}
+        onSuccess={(file, etag) => {
+          openTab({
+            id: `file:${file.id}`,
+            workspaceId: workspace.id,
+            title: file.name,
+            kind: 'file',
+            subtitle: file.name,
+            fileId: file.id,
+            content: '',
+            etag,
+            isDirty: false,
+          })
+        }}
+      />
     </>
   )
 }
 
 // ─── Editor status bar ─────────────────────────────────────────────────────────
 
-function EditorStatusBar({ cursorInfo, hasActiveTab }: { cursorInfo: CursorInfo | null; hasActiveTab: boolean }) {
+function EditorStatusBar({
+  cursorInfo,
+  hasActiveTab,
+}: {
+  cursorInfo: CursorInfo | null
+  hasActiveTab: boolean
+}) {
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
   const resultsVisible = maximizedPane !== 'editor'
@@ -541,10 +577,10 @@ function EditorStatusBar({ cursorInfo, hasActiveTab }: { cursorInfo: CursorInfo 
     <div className="flex h-6 shrink-0 items-center gap-3 border-t border-border bg-sidebar pl-3 pr-1 text-[11px] text-muted-foreground">
       {hasActiveTab && cursorInfo && (
         <>
-          <span className="tabular-nums">Ln {cursorInfo.line}, Col {cursorInfo.col}</span>
-          {cursorInfo.sel > 0 && (
-            <span className="tabular-nums">{cursorInfo.sel} selected</span>
-          )}
+          <span className="tabular-nums">
+            Ln {cursorInfo.line}, Col {cursorInfo.col}
+          </span>
+          {cursorInfo.sel > 0 && <span className="tabular-nums">{cursorInfo.sel} selected</span>}
         </>
       )}
       <div className="flex-1" />
@@ -573,9 +609,17 @@ function EdgeDropZone({ side, onDropTab }: { side: 'left' | 'right'; onDropTab: 
   const [over, setOver] = useState(false)
   return (
     <div
-      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOver(true) }}
+      onDragOver={(e) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        setOver(true)
+      }}
       onDragLeave={() => setOver(false)}
-      onDrop={(e) => { e.preventDefault(); setOver(false); onDropTab() }}
+      onDrop={(e) => {
+        e.preventDefault()
+        setOver(false)
+        onDropTab()
+      }}
       // A directional fade (solid at the edge, fading into the editor) signals
       // "drop here to split" without implying the new pane will be this width.
       // Starts below the tab-bar row (h-9) so tabs stay draggable.
@@ -607,7 +651,9 @@ function EmptyEditorState({ onNewConsole, onNewFile }: EmptyEditorStateProps) {
         </div>
         <div>
           <p className="text-sm font-semibold text-foreground">No editors open</p>
-          <p className="mt-1 text-xs text-muted-foreground">Start by opening a console or a file.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Start by opening a console or a file.
+          </p>
         </div>
       </div>
 
@@ -657,11 +703,17 @@ function EmptyStateCard({
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
       )}
     >
-      <div className={cn(
-        'flex size-10 items-center justify-center rounded-lg',
-        'bg-muted transition-colors group-hover:bg-primary/10',
-      )}>
-        <Icon name={icon} size={18} className="text-muted-foreground transition-colors group-hover:text-primary" />
+      <div
+        className={cn(
+          'flex size-10 items-center justify-center rounded-lg',
+          'bg-muted transition-colors group-hover:bg-primary/10',
+        )}
+      >
+        <Icon
+          name={icon}
+          size={18}
+          className="text-muted-foreground transition-colors group-hover:text-primary"
+        />
       </div>
       <div className="flex flex-col gap-1">
         <p className="text-xs font-medium text-foreground">{title}</p>

@@ -58,10 +58,11 @@ describe('useConnectionActions', () => {
   }
 
   it('tracks connecting state and stores the returned session', async () => {
-    server.use(http.post(
-      '/api/v1/orgs/acme/workspaces/3/connections/7/connect',
-      () => HttpResponse.json({ session_id: 'session-7', reused: false }),
-    ))
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/connect', () =>
+        HttpResponse.json({ session_id: 'session-7', reused: false }),
+      ),
+    )
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
     const { result } = renderHook(() => useConnectionActions('acme', workspace), { wrapper })
 
@@ -77,13 +78,12 @@ describe('useConnectionActions', () => {
   it('disconnects with the owning session and clears local state', async () => {
     store.getState().setSession(7, 'session-7')
     let requestSession = ''
-    server.use(http.delete(
-      '/api/v1/orgs/acme/workspaces/3/connections/7/session',
-      ({ request }) => {
+    server.use(
+      http.delete('/api/v1/orgs/acme/workspaces/3/connections/7/session', ({ request }) => {
         requestSession = request.headers.get('X-Warden-Session') ?? ''
         return new HttpResponse(null, { status: 204 })
-      },
-    ))
+      }),
+    )
     const { result } = renderHook(() => useConnectionActions('acme', workspace), { wrapper })
 
     act(() => result.current.disconnect(connection))
@@ -93,13 +93,12 @@ describe('useConnectionActions', () => {
 
   it('does not issue a disconnect without a live session', async () => {
     let requests = 0
-    server.use(http.delete(
-      '/api/v1/orgs/acme/workspaces/3/connections/7/session',
-      () => {
+    server.use(
+      http.delete('/api/v1/orgs/acme/workspaces/3/connections/7/session', () => {
         requests += 1
         return new HttpResponse(null, { status: 204 })
-      },
-    ))
+      }),
+    )
     const { result } = renderHook(() => useConnectionActions('acme', workspace), { wrapper })
 
     act(() => result.current.disconnect(connection))
@@ -111,13 +110,13 @@ describe('useConnectionActions', () => {
     const { result } = renderHook(() => useConnectionActions('acme', workspace), { wrapper })
 
     act(() => result.current.openConnection(connection))
-    expect(store.getState().tabs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'connection:7', connectionId: 7 }),
-    ]))
+    expect(store.getState().tabs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'connection:7', connectionId: 7 })]),
+    )
 
     act(() => result.current.openConnectionConsole(connection))
-    expect(store.getState().tabs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'scratch', connectionId: 7 }),
-    ]))
+    expect(store.getState().tabs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'scratch', connectionId: 7 })]),
+    )
   })
 })

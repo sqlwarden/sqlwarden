@@ -90,9 +90,13 @@ export function useConnectionForm({
     setStage('driver')
     setDriverId(drivers[0].id)
     setName('')
-    setEnvironmentId(lockedEnvironmentId
-      ? String(lockedEnvironmentId)
-      : environments.length > 0 ? String(environments[0].id) : '')
+    setEnvironmentId(
+      lockedEnvironmentId
+        ? String(lockedEnvironmentId)
+        : environments.length > 0
+          ? String(environments[0].id)
+          : '',
+    )
     setFields(defaultFieldValues(drivers[0]))
     setErrors({ fields: {} })
     setTestState({ status: 'idle' })
@@ -117,34 +121,43 @@ export function useConnectionForm({
       }
     }
     setErrors(nextErrors)
-    return !nextErrors.name && !nextErrors.environmentId && Object.keys(nextErrors.fields).length === 0
+    return (
+      !nextErrors.name && !nextErrors.environmentId && Object.keys(nextErrors.fields).length === 0
+    )
   }
 
   const testConnection = useMutation({
-    mutationFn: () => api.post<{ ok: boolean; latency_ms: number; error?: string }>(
-      `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections/test`,
-      { driver: driverId, dsn: buildDSN() },
-    ),
+    mutationFn: () =>
+      api.post<{ ok: boolean; latency_ms: number; error?: string }>(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections/test`,
+        { driver: driverId, dsn: buildDSN() },
+      ),
     onMutate: () => setTestState({ status: 'pending' }),
-    onSuccess: (data) => setTestState(data.ok
-      ? { status: 'ok', latencyMs: data.latency_ms }
-      : { status: 'error', message: data.error ?? 'Connection failed.' }),
+    onSuccess: (data) =>
+      setTestState(
+        data.ok
+          ? { status: 'ok', latencyMs: data.latency_ms }
+          : { status: 'error', message: data.error ?? 'Connection failed.' },
+      ),
     onError: () => setTestState({ status: 'error', message: 'Request failed.' }),
   })
 
   const createConnection = useMutation({
-    mutationFn: () => api.post(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections`, {
-      name: name.trim(),
-      driver: driverId,
-      dsn: buildDSN(),
-      environment_id: Number(environmentId),
-      access_mode: 'open',
-    }),
+    mutationFn: () =>
+      api.post(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections`, {
+        name: name.trim(),
+        driver: driverId,
+        dsn: buildDSN(),
+        environment_id: Number(environmentId),
+        access_mode: 'open',
+      }),
     onSuccess: async () => {
       onOpenChange(false)
       reset()
       toast.success('Connection created')
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceConnectionsScope(orgSlug, workspaceId) })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgWorkspaceConnectionsScope(orgSlug, workspaceId),
+      })
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors) {
@@ -168,7 +181,8 @@ export function useConnectionForm({
   const requiredFieldsFilled = currentDriver.fields
     .filter((field) => field.required)
     .every((field) => fields[field.key]?.trim())
-  const selectedEnvironmentName = environments.find((environment) => String(environment.id) === environmentId)?.name ?? ''
+  const selectedEnvironmentName =
+    environments.find((environment) => String(environment.id) === environmentId)?.name ?? ''
 
   return {
     changeEnvironment,

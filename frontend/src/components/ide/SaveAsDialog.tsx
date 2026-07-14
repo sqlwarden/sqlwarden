@@ -65,9 +65,7 @@ export function SaveAsDialog({
   const rootBrowser = useQuery(
     orgWorkspacePrivateFileBrowserQueryOptions(orgSlug, workspaceId, null),
   )
-  const folders = (rootBrowser.data?.children ?? []).filter(
-    (f) => f.object_type === 'folder',
-  )
+  const folders = (rootBrowser.data?.children ?? []).filter((f) => f.object_type === 'folder')
 
   const filename = buildFilename(basename, fileType)
 
@@ -90,7 +88,8 @@ export function SaveAsDialog({
     },
     onSuccess: ({ file, etag }) => {
       queryClient.invalidateQueries({
-        queryKey: orgWorkspacePrivateFileBrowserQueryOptions(orgSlug, workspaceId, selectedParentId).queryKey,
+        queryKey: orgWorkspacePrivateFileBrowserQueryOptions(orgSlug, workspaceId, selectedParentId)
+          .queryKey,
       })
       onSuccess(file, etag)
       onOpenChange(false)
@@ -118,7 +117,6 @@ export function SaveAsDialog({
           <DialogTitle>Save As</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-
           {/* Name + type row */}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="save-as-name">Name</Label>
@@ -127,14 +125,20 @@ export function SaveAsDialog({
                 id="save-as-name"
                 ref={inputRef}
                 value={basename}
-                onChange={(e) => { setBasename(e.target.value); setFieldError(null) }}
+                onChange={(e) => {
+                  setBasename(e.target.value)
+                  setFieldError(null)
+                }}
                 placeholder="untitled"
                 autoComplete="off"
                 aria-invalid={!!fieldError}
                 className="min-w-0 flex-1"
               />
               <Select
-                items={FILE_TYPES.map((t) => ({ label: `${t.label} (${t.extension})`, value: t.kind }))}
+                items={FILE_TYPES.map((t) => ({
+                  label: `${t.label} (${t.extension})`,
+                  value: t.kind,
+                }))}
                 value={fileType.kind}
                 onValueChange={(kind) => {
                   const t = FILE_TYPES.find((ft) => ft.kind === kind)

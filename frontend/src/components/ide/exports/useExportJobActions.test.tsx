@@ -86,7 +86,11 @@ describe('useExportJobActions', () => {
   }
 
   it('cancels an export and refreshes the job list', async () => {
-    server.use(http.post('/api/v1/orgs/acme/workspaces/3/jobs/job-1/cancel', () => HttpResponse.json(job('job-1', 'cancelled'))))
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/jobs/job-1/cancel', () =>
+        HttpResponse.json(job('job-1', 'cancelled')),
+      ),
+    )
     const { result } = renderActions()
 
     act(() => result.current.cancel.mutate('job-1'))
@@ -95,12 +99,19 @@ describe('useExportJobActions', () => {
   })
 
   it('retries with the cached export request and remembers the replacement job', async () => {
-    rememberExportRetry('failed-job', { connectionId: 7, sql: 'select 1', filename: 'one.csv', format: 'csv' })
+    rememberExportRetry('failed-job', {
+      connectionId: 7,
+      sql: 'select 1',
+      filename: 'one.csv',
+      format: 'csv',
+    })
     let body: unknown
-    server.use(http.post('/api/v1/orgs/acme/workspaces/3/connections/7/exports', async ({ request }) => {
-      body = await request.json()
-      return HttpResponse.json(job('replacement', 'queued'))
-    }))
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/exports', async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(job('replacement', 'queued'))
+      }),
+    )
     const { result } = renderActions()
 
     act(() => result.current.retry.mutate('failed-job'))
@@ -110,9 +121,15 @@ describe('useExportJobActions', () => {
   })
 
   it('downloads the completed export using its output metadata', async () => {
-    server.use(http.get('/api/v1/orgs/acme/workspaces/3/files/private/42/content', () => new HttpResponse('a,b\n1,2', {
-      headers: { ETag: '"v1"' },
-    })))
+    server.use(
+      http.get(
+        '/api/v1/orgs/acme/workspaces/3/files/private/42/content',
+        () =>
+          new HttpResponse('a,b\n1,2', {
+            headers: { ETag: '"v1"' },
+          }),
+      ),
+    )
     const { result } = renderActions()
 
     act(() => result.current.download.mutate(job('job-1')))
@@ -121,11 +138,15 @@ describe('useExportJobActions', () => {
   })
 
   it('opens an exported file and reveals its folder path in Files', async () => {
-    server.use(http.get('/api/v1/orgs/acme/workspaces/3/files/private/browser', () => HttpResponse.json({
-      file: exportedFile,
-      path: [{ id: 9, name: 'Exports', object_type: 'folder' }],
-      children: [],
-    })))
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/files/private/browser', () =>
+        HttpResponse.json({
+          file: exportedFile,
+          path: [{ id: 9, name: 'Exports', object_type: 'folder' }],
+          children: [],
+        }),
+      ),
+    )
     const { result } = renderActions()
 
     act(() => result.current.openInEditor.mutate(job('open-job')))

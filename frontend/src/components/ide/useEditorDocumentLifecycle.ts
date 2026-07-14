@@ -20,11 +20,7 @@ export function useEditorDocumentLifecycle(tabs: EditorTab[], registry: YDocRegi
       const initialContent = initialState || tab.kind === 'file' ? undefined : tab.content
       const doc = registry.getOrCreate(tab.id, initialContent)
       if (initialState && doc.getText('content').length === 0) {
-        Y.applyUpdate(
-          doc,
-          new Uint8Array(initialState),
-          tab.ySnapshot ? 'init' : 'server-load',
-        )
+        Y.applyUpdate(doc, new Uint8Array(initialState), tab.ySnapshot ? 'init' : 'server-load')
       }
     }
 
@@ -62,14 +58,17 @@ export function useEditorSnapshotPersistence(
         if (currentTimer) {
           clearTimeout(currentTimer)
         }
-        timers.set(tab.id, setTimeout(() => {
-          updateTabContent(
-            tab.id,
-            doc.getText('content').toString(),
-            Array.from(Y.encodeStateAsUpdate(doc)),
-          )
-          timers.delete(tab.id)
-        }, 400))
+        timers.set(
+          tab.id,
+          setTimeout(() => {
+            updateTabContent(
+              tab.id,
+              doc.getText('content').toString(),
+              Array.from(Y.encodeStateAsUpdate(doc)),
+            )
+            timers.delete(tab.id)
+          }, 400),
+        )
       }
 
       doc.on('update', observer)

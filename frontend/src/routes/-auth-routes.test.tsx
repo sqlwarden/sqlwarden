@@ -23,7 +23,9 @@ describe('authentication route behavior', () => {
 
     renderRoute('/login')
 
-    expect(await screen.findByRole('heading', { name: 'Create the instance admin' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Create the instance admin' }),
+    ).toBeInTheDocument()
   })
 
   it('validates setup and derives an organization slug', async () => {
@@ -42,13 +44,17 @@ describe('authentication route behavior', () => {
     server.use(
       setupStatusHandler(),
       http.post('/api/v1/auth/login', () => HttpResponse.json({ access_token: 'new-token' })),
-      http.get('/api/v1/session', () => HttpResponse.json({
-        account: { id: 1, email: 'alex@example.com', name: 'Alex Ward', is_active: true },
-        organizations: [],
-        is_instance_admin: false,
-        personal_spaces_enabled: false,
-      })),
-      http.get('/api/v1/account/orgs', () => HttpResponse.json({ items: [], page: 1, page_size: 50, total: 0 })),
+      http.get('/api/v1/session', () =>
+        HttpResponse.json({
+          account: { id: 1, email: 'alex@example.com', name: 'Alex Ward', is_active: true },
+          organizations: [],
+          is_instance_admin: false,
+          personal_spaces_enabled: false,
+        }),
+      ),
+      http.get('/api/v1/account/orgs', () =>
+        HttpResponse.json({ items: [], page: 1, page_size: 50, total: 0 }),
+      ),
     )
     const { router, user } = renderRoute('/login')
 
@@ -73,13 +79,17 @@ describe('authentication route behavior', () => {
     setAccessToken('existing-token')
     server.use(
       setupStatusHandler(),
-      http.get('/api/v1/session', () => HttpResponse.json({
-        account: { id: 1, email: 'alex@example.com', name: 'Alex Ward', is_active: true },
-        organizations: [],
-        is_instance_admin: false,
-        personal_spaces_enabled: false,
-      })),
-      http.get('/api/v1/account/orgs', () => HttpResponse.json({ items: [], page: 1, page_size: 50, total: 0 })),
+      http.get('/api/v1/session', () =>
+        HttpResponse.json({
+          account: { id: 1, email: 'alex@example.com', name: 'Alex Ward', is_active: true },
+          organizations: [],
+          is_instance_admin: false,
+          personal_spaces_enabled: false,
+        }),
+      ),
+      http.get('/api/v1/account/orgs', () =>
+        HttpResponse.json({ items: [], page: 1, page_size: 50, total: 0 }),
+      ),
     )
     const { router } = renderRoute('/login')
 

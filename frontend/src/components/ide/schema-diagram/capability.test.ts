@@ -5,8 +5,24 @@ import type { SchemaSpec } from '#/lib/api/types'
 const spec: SchemaSpec = {
   dialect: 'postgres',
   kinds: [
-    { kind: 'table', label: 'Table', plural_label: 'Tables', order: 1, relational: true, supports_diagram: true, listing: 'enumerated' },
-    { kind: 'function', label: 'Function', plural_label: 'Functions', order: 2, relational: false, supports_diagram: false, listing: 'enumerated' },
+    {
+      kind: 'table',
+      label: 'Table',
+      plural_label: 'Tables',
+      order: 1,
+      relational: true,
+      supports_diagram: true,
+      listing: 'enumerated',
+    },
+    {
+      kind: 'function',
+      label: 'Function',
+      plural_label: 'Functions',
+      order: 2,
+      relational: false,
+      supports_diagram: false,
+      listing: 'enumerated',
+    },
   ],
 }
 

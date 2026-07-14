@@ -2,13 +2,7 @@ import { isApiError } from '#/lib/api/errors'
 import type { SchemaSpec } from '#/lib/api/types'
 
 export type DiagramViewState =
-  | 'missing-target'
-  | 'no-session'
-  | 'unsupported'
-  | 'forbidden'
-  | 'loading'
-  | 'empty'
-  | 'ready'
+  'missing-target' | 'no-session' | 'unsupported' | 'forbidden' | 'loading' | 'empty' | 'ready'
 
 export function resolveDiagramViewState({
   hasTarget,
@@ -38,8 +32,13 @@ export function resolveDiagramViewState({
   if (
     (isApiError(relationshipsError) && relationshipsError.status === 501) ||
     (spec != null && !spec.kinds.some((kind) => kind.supports_diagram))
-  ) return 'unsupported'
-  if ([specError, catalogError, relationshipsError].some((error) => isApiError(error) && error.status === 403)) {
+  )
+    return 'unsupported'
+  if (
+    [specError, catalogError, relationshipsError].some(
+      (error) => isApiError(error) && error.status === 403,
+    )
+  ) {
     return 'forbidden'
   }
   if (catalogLoading || relationshipsLoading) return 'loading'

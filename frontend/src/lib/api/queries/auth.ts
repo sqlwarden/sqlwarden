@@ -1,6 +1,12 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { AccountOrganization, ListQuery, Paginated, SessionResponse, SetupStatusResponse } from '#/lib/api/types'
+import type {
+  AccountOrganization,
+  ListQuery,
+  Paginated,
+  SessionResponse,
+  SetupStatusResponse,
+} from '#/lib/api/types'
 import { queryKeys } from '#/lib/api/query-keys'
 
 export function setupStatusQueryOptions() {
@@ -26,4 +32,3 @@ export function accountOrganizationsQueryOptions(query?: ListQuery) {
     placeholderData: keepPreviousData,
   })
 }
-

@@ -66,21 +66,43 @@ describe('IdeToolbar', () => {
     mocks.isRunning = false
     store = createIdeStore('acme', 1, 'ephemeral')
     server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/environments', () => HttpResponse.json({
-        items: [{ id: 2, workspace_id: 3, name: 'Production', created_at: '', updated_at: '' }],
-        page: 1,
-        page_size: 100,
-        total: 1,
-      })),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections', () => HttpResponse.json({
-        items: [
-          { id: 7, workspace_id: 3, environment_id: 2, name: 'primary-pg', driver: 'postgres', access_mode: 'open', created_at: '', updated_at: '' },
-          { id: 8, workspace_id: 3, environment_id: 2, name: 'warehouse', driver: 'mysql', access_mode: 'open', created_at: '', updated_at: '' },
-        ],
-        page: 1,
-        page_size: 100,
-        total: 2,
-      })),
+      http.get('/api/v1/orgs/acme/workspaces/3/environments', () =>
+        HttpResponse.json({
+          items: [{ id: 2, workspace_id: 3, name: 'Production', created_at: '', updated_at: '' }],
+          page: 1,
+          page_size: 100,
+          total: 1,
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 7,
+              workspace_id: 3,
+              environment_id: 2,
+              name: 'primary-pg',
+              driver: 'postgres',
+              access_mode: 'open',
+              created_at: '',
+              updated_at: '',
+            },
+            {
+              id: 8,
+              workspace_id: 3,
+              environment_id: 2,
+              name: 'warehouse',
+              driver: 'mysql',
+              access_mode: 'open',
+              created_at: '',
+              updated_at: '',
+            },
+          ],
+          page: 1,
+          page_size: 100,
+          total: 2,
+        }),
+      ),
     )
   })
 
@@ -121,8 +143,15 @@ describe('IdeToolbar', () => {
 
   it('hides export for non-SQL files and only offers save when a file is dirty', async () => {
     const csvTab: EditorTab = {
-      id: 'file:11', workspaceId: 3, title: 'report.csv', kind: 'file', fileId: 11,
-      content: 'id,name', etag: 'one', isDirty: false, connectionId: 7,
+      id: 'file:11',
+      workspaceId: 3,
+      title: 'report.csv',
+      kind: 'file',
+      fileId: 11,
+      content: 'id,name',
+      etag: 'one',
+      isDirty: false,
+      connectionId: 7,
     }
     store.getState().openTab(csvTab)
     const view = renderToolbar()
@@ -153,7 +182,9 @@ describe('IdeToolbar', () => {
     await user.click(await screen.findByRole('button', { name: /primary-pg/ }))
     await user.click(screen.getByRole('button', { name: /warehouse/ }))
 
-    expect(store.getState().tabs[0]).toEqual(expect.objectContaining({ connectionId: 8, driver: 'mysql' }))
+    expect(store.getState().tabs[0]).toEqual(
+      expect.objectContaining({ connectionId: 8, driver: 'mysql' }),
+    )
   })
 
   it('toggles editor maximization', async () => {

@@ -27,7 +27,12 @@ describe('ExportButton', () => {
   it('requires a connection and non-empty SQL before downloading', async () => {
     const user = userEvent.setup()
     const rendered = render(
-      <ExportButton orgSlug="acme" workspaceId={3} connectionId={undefined} getSql={() => 'select 1'} />,
+      <ExportButton
+        orgSlug="acme"
+        workspaceId={3}
+        connectionId={undefined}
+        getSql={() => 'select 1'}
+      />,
     )
     expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled()
 

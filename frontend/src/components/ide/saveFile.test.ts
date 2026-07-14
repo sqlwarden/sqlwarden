@@ -34,9 +34,13 @@ describe('saveTextAs', () => {
       return 'blob:mock-url'
     })
     vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL: vi.fn() })
-    const wrapped = document.createElement as unknown as { wrappedMethod?: (tag: string) => HTMLElement }
+    const wrapped = document.createElement as unknown as {
+      wrappedMethod?: (tag: string) => HTMLElement
+    }
     vi.spyOn(document, 'createElement').mockImplementation((tag: string) =>
-      wrapped.wrappedMethod ? wrapped.wrappedMethod(tag) : ({ click: vi.fn(), remove: vi.fn() } as unknown as HTMLElement),
+      wrapped.wrappedMethod
+        ? wrapped.wrappedMethod(tag)
+        : ({ click: vi.fn(), remove: vi.fn() } as unknown as HTMLElement),
     )
 
     saveTextAs('notes.txt', 'hello world')

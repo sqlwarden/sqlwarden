@@ -29,15 +29,26 @@ vi.mock('./SqlEditor', () => ({
   },
 }))
 vi.mock('./object-detail/ObjectDetailView', () => ({
-  ObjectDetailView: ({ tab }: { tab: { id: string } }) => <div data-testid="object-detail">{tab.id}</div>,
+  ObjectDetailView: ({ tab }: { tab: { id: string } }) => (
+    <div data-testid="object-detail">{tab.id}</div>
+  ),
 }))
 vi.mock('./schema-diagram/SchemaDiagramView', () => ({
-  SchemaDiagramView: ({ tab }: { tab: { id: string } }) => <div data-testid="diagram">{tab.id}</div>,
+  SchemaDiagramView: ({ tab }: { tab: { id: string } }) => (
+    <div data-testid="diagram">{tab.id}</div>
+  ),
 }))
 
 const workspace: Workspace = {
-  id: 3, org_id: 1, owner_type: 'org', owner_id: 1, name: 'Analytics',
-  environment_count: 0, connection_count: 0, created_at: '', updated_at: '',
+  id: 3,
+  org_id: 1,
+  owner_type: 'org',
+  owner_id: 1,
+  name: 'Analytics',
+  environment_count: 0,
+  connection_count: 0,
+  created_at: '',
+  updated_at: '',
 }
 const group: GroupNode = { type: 'group', id: 'main', tabIds: [], activeTabId: undefined }
 
@@ -82,7 +93,13 @@ describe('EditorGroup', () => {
 
     const rendered = render(
       <IdeStoreContext.Provider value={store}>
-        <EditorGroup orgSlug="acme" workspace={workspace} group={activeGroup} focused onCursorChange={vi.fn()} />
+        <EditorGroup
+          orgSlug="acme"
+          workspace={workspace}
+          group={activeGroup}
+          focused
+          onCursorChange={vi.fn()}
+        />
       </IdeStoreContext.Provider>,
     )
     expect(screen.getByText('Loading…')).toBeInTheDocument()
@@ -105,9 +122,12 @@ describe('EditorGroup', () => {
       </IdeStoreContext.Provider>,
     )
     expect(screen.getByTestId('sql-editor')).toHaveTextContent(active.id)
-    expect(mocks.sqlEditor).toHaveBeenLastCalledWith(expect.objectContaining({
-      tabId: active.id, groupId: 'main',
-    }))
+    expect(mocks.sqlEditor).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        tabId: active.id,
+        groupId: 'main',
+      }),
+    )
   })
 
   it('routes object and diagram tabs without allocating editor documents', async () => {

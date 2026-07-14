@@ -16,17 +16,55 @@ export type TabMenuCtx = {
 export function buildTabMenu(ctx: TabMenuCtx): ContextMenuItem[] {
   const items: ContextMenuItem[] = [
     { kind: 'action', id: 'close', label: 'Close', icon: 'cancel-01', onSelect: ctx.onClose },
-    { kind: 'action', id: 'close-others', label: 'Close others', icon: 'cancel-01', disabled: !ctx.hasOthers, onSelect: ctx.onCloseOthers },
-    { kind: 'action', id: 'close-to-right', label: 'Close to the right', icon: 'arrow-right-01', disabled: !ctx.hasRight, onSelect: ctx.onCloseRight },
-    { kind: 'action', id: 'close-all', label: 'Close all', icon: 'cancel-01', onSelect: ctx.onCloseAll },
+    {
+      kind: 'action',
+      id: 'close-others',
+      label: 'Close others',
+      icon: 'cancel-01',
+      disabled: !ctx.hasOthers,
+      onSelect: ctx.onCloseOthers,
+    },
+    {
+      kind: 'action',
+      id: 'close-to-right',
+      label: 'Close to the right',
+      icon: 'arrow-right-01',
+      disabled: !ctx.hasRight,
+      onSelect: ctx.onCloseRight,
+    },
+    {
+      kind: 'action',
+      id: 'close-all',
+      label: 'Close all',
+      icon: 'cancel-01',
+      onSelect: ctx.onCloseAll,
+    },
     { kind: 'separator' },
     { kind: 'action', id: 'split', label: 'Split', icon: 'column', onSelect: ctx.onSplitRight },
-    { kind: 'action', id: 'split-down', label: 'Split down', icon: 'layout-bottom', onSelect: ctx.onSplitDown },
+    {
+      kind: 'action',
+      id: 'split-down',
+      label: 'Split down',
+      icon: 'layout-bottom',
+      onSelect: ctx.onSplitDown,
+    },
     { kind: 'separator' },
-    { kind: 'action', id: 'copy-name', label: 'Copy name', icon: 'copy-01', onSelect: ctx.onCopyName },
+    {
+      kind: 'action',
+      id: 'copy-name',
+      label: 'Copy name',
+      icon: 'copy-01',
+      onSelect: ctx.onCopyName,
+    },
   ]
   if (ctx.isConsole) {
-    items.push({ kind: 'action', id: 'rename', label: 'Rename', icon: 'pencil-edit-02', soon: true })
+    items.push({
+      kind: 'action',
+      id: 'rename',
+      label: 'Rename',
+      icon: 'pencil-edit-02',
+      soon: true,
+    })
   }
   return items
 }

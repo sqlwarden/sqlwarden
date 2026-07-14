@@ -11,7 +11,9 @@ import { useFileContent } from './useFileContent'
 import { ObjectDetailView } from './object-detail/ObjectDetailView'
 
 const SchemaDiagramView = lazy(() =>
-  import('./schema-diagram/SchemaDiagramView').then((module) => ({ default: module.SchemaDiagramView })),
+  import('./schema-diagram/SchemaDiagramView').then((module) => ({
+    default: module.SchemaDiagramView,
+  })),
 )
 
 type EditorGroupProps = {
@@ -24,13 +26,23 @@ type EditorGroupProps = {
   onCursorChange?: (line: number, col: number, sel: number) => void
 }
 
-export function EditorGroup({ orgSlug, workspace, group, focused, showFocus, onCursorChange }: EditorGroupProps) {
+export function EditorGroup({
+  orgSlug,
+  workspace,
+  group,
+  focused,
+  showFocus,
+  onCursorChange,
+}: EditorGroupProps) {
   const registry = useYDocRegistry()
   const tabs = useIde((s) => s.tabs)
   const focusGroup = useIde((s) => s.focusGroup)
   const updateTabEtag = useIde((s) => s.updateTabEtag)
 
-  const activeTab = useMemo(() => tabs.find((t) => t.id === group.activeTabId), [tabs, group.activeTabId])
+  const activeTab = useMemo(
+    () => tabs.find((t) => t.id === group.activeTabId),
+    [tabs, group.activeTabId],
+  )
 
   const { isLoading, isError, retry } = useFileContent({
     orgSlug,
@@ -57,7 +69,10 @@ export function EditorGroup({ orgSlug, workspace, group, focused, showFocus, onC
 
   return (
     <div
-      className={cn('flex h-full min-h-0 flex-col', showFocus && focused && 'ring-1 ring-inset ring-primary/25')}
+      className={cn(
+        'flex h-full min-h-0 flex-col',
+        showFocus && focused && 'ring-1 ring-inset ring-primary/25',
+      )}
       onMouseDownCapture={() => focusGroup(workspace.id, group.id)}
     >
       <IdeTabBar
@@ -69,14 +84,32 @@ export function EditorGroup({ orgSlug, workspace, group, focused, showFocus, onC
       />
       <div className="min-h-0 flex-1 border-t border-border bg-card">
         {activeTab && isDiagram ? (
-          <Suspense fallback={<div className="flex h-full items-center justify-center text-xs text-muted-foreground">Loading diagram...</div>}>
-            <SchemaDiagramView key={`${group.id}:${activeTab.id}`} orgSlug={orgSlug} workspace={workspace} tab={activeTab} />
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                Loading diagram...
+              </div>
+            }
+          >
+            <SchemaDiagramView
+              key={`${group.id}:${activeTab.id}`}
+              orgSlug={orgSlug}
+              workspace={workspace}
+              tab={activeTab}
+            />
           </Suspense>
         ) : activeTab && isObject ? (
-          <ObjectDetailView key={`${group.id}:${activeTab.id}`} orgSlug={orgSlug} workspace={workspace} tab={activeTab} />
+          <ObjectDetailView
+            key={`${group.id}:${activeTab.id}`}
+            orgSlug={orgSlug}
+            workspace={workspace}
+            tab={activeTab}
+          />
         ) : activeTab && doc ? (
           isLoading ? (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Loading…</div>
+            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+              Loading…
+            </div>
           ) : isError ? (
             <div className="flex h-full flex-col items-center justify-center gap-2.5 text-xs">
               <span className="text-destructive">Failed to load file content.</span>

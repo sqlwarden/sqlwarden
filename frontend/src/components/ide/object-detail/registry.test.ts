@@ -4,12 +4,24 @@ import { dialectFor } from '../sqlDialect'
 import type { ObjectDetail } from '#/lib/api/types'
 
 function vm(detail: ObjectDetail, driver = 'postgres'): ObjectViewModel {
-  return { detail, dialect: dialectFor(driver), driver, spec: undefined, orgSlug: 'o', workspaceId: 1, connectionId: 1, sessionId: 's' }
+  return {
+    detail,
+    dialect: dialectFor(driver),
+    driver,
+    spec: undefined,
+    orgSlug: 'o',
+    workspaceId: 1,
+    connectionId: 1,
+    sessionId: 's',
+  }
 }
 
 const tableDetail: ObjectDetail = {
   ref: { namespace: 'public', kind: 'table', name: 'users' },
-  relational: { columns: [{ name: 'id', data_type: 'int8', nullable: false, ordinal: 1 }], primary_key: ['id'] },
+  relational: {
+    columns: [{ name: 'id', data_type: 'int8', nullable: false, ordinal: 1 }],
+    primary_key: ['id'],
+  },
 }
 
 describe('getObjectRenderer', () => {
@@ -28,9 +40,15 @@ describe('getObjectRenderer', () => {
   it('renders a single Overview section for non-relational objects without source', () => {
     const fnDetail: ObjectDetail = {
       ref: { namespace: 'public', kind: 'function', name: 'f' },
-      descriptors: [{ kind: 'fields', title: 'Function', fields: [{ name: 'returns', value: 'int' }] }],
+      descriptors: [
+        { kind: 'fields', title: 'Function', fields: [{ name: 'returns', value: 'int' }] },
+      ],
     }
-    expect(getObjectRenderer('postgres').sections(vm(fnDetail)).map((s) => s.id)).toEqual(['overview'])
+    expect(
+      getObjectRenderer('postgres')
+        .sections(vm(fnDetail))
+        .map((s) => s.id),
+    ).toEqual(['overview'])
   })
 
   it('adds a source section (labeled by title) for non-relational objects carrying SQL', () => {
@@ -38,7 +56,11 @@ describe('getObjectRenderer', () => {
       ref: { namespace: 'public', kind: 'function', name: 'f' },
       descriptors: [
         { kind: 'fields', title: 'Signature', fields: [{ name: 'returns', value: 'int' }] },
-        { kind: 'source', title: 'Definition', source: { language: 'plpgsql', body: 'BEGIN RETURN 1; END' } },
+        {
+          kind: 'source',
+          title: 'Definition',
+          source: { language: 'plpgsql', body: 'BEGIN RETURN 1; END' },
+        },
       ],
     }
     const sections = getObjectRenderer('postgres').sections(vm(fnDetail))
@@ -49,27 +71,42 @@ describe('getObjectRenderer', () => {
   it('uses the descriptor title for the source label (e.g. mysql trigger Statement)', () => {
     const trigDetail: ObjectDetail = {
       ref: { namespace: 'db', kind: 'trigger', name: 't' },
-      descriptors: [{ kind: 'source', title: 'Statement', source: { language: 'sql', body: 'BEGIN END' } }],
+      descriptors: [
+        { kind: 'source', title: 'Statement', source: { language: 'sql', body: 'BEGIN END' } },
+      ],
     }
-    expect(getObjectRenderer('mysql').sections(vm(trigDetail, 'mysql')).map((s) => s.label)).toEqual(['Statement'])
+    expect(
+      getObjectRenderer('mysql')
+        .sections(vm(trigDetail, 'mysql'))
+        .map((s) => s.label),
+    ).toEqual(['Statement'])
   })
 
   it('mysql renderer surfaces engine/collation badges but not the approx row estimate', () => {
-    const detail: ObjectDetail = { ...tableDetail, attributes: { engine: 'InnoDB', collation: 'utf8mb4', row_estimate: '42' } }
-    const badges = getObjectRenderer('mysql').headerBadges(vm(detail, 'mysql')).map((b) => `${b.label}=${b.value}`)
+    const detail: ObjectDetail = {
+      ...tableDetail,
+      attributes: { engine: 'InnoDB', collation: 'utf8mb4', row_estimate: '42' },
+    }
+    const badges = getObjectRenderer('mysql')
+      .headerBadges(vm(detail, 'mysql'))
+      .map((b) => `${b.label}=${b.value}`)
     expect(badges).toContain('Engine=InnoDB')
     expect(badges).toContain('Collation=utf8mb4')
     expect(badges.some((b) => b.startsWith('Rows='))).toBe(false)
   })
 
   it('mysql renderer adds Comment and Extra column extras', () => {
-    const headers = getObjectRenderer('mysql').columnExtras(vm(tableDetail, 'mysql')).map((c) => c.header)
+    const headers = getObjectRenderer('mysql')
+      .columnExtras(vm(tableDetail, 'mysql'))
+      .map((c) => c.header)
     expect(headers).toEqual(['Comment', 'Extra'])
   })
 
   it('postgres renderer surfaces a table comment badge', () => {
     const detail: ObjectDetail = { ...tableDetail, attributes: { comment: 'people' } }
-    const badges = getObjectRenderer('postgres').headerBadges(vm(detail, 'postgres')).map((b) => b.value)
+    const badges = getObjectRenderer('postgres')
+      .headerBadges(vm(detail, 'postgres'))
+      .map((b) => b.value)
     expect(badges).toContain('people')
   })
 })

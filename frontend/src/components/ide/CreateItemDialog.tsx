@@ -68,9 +68,7 @@ export function CreateItemDialog({
         name: filename,
         object_type: kind,
         parent_id: parentId,
-        ...(kind === 'file'
-          ? { media_type: fileType.mediaType, file_kind: fileType.kind }
-          : {}),
+        ...(kind === 'file' ? { media_type: fileType.mediaType, file_kind: fileType.kind } : {}),
       })
       if (kind === 'file') {
         await updatePrivateWorkspaceFileContent(orgSlug, workspaceId, file.id, '')
@@ -79,7 +77,8 @@ export function CreateItemDialog({
     },
     onSuccess: (file) => {
       queryClient.invalidateQueries({
-        queryKey: orgWorkspacePrivateFileBrowserQueryOptions(orgSlug, workspaceId, parentId).queryKey,
+        queryKey: orgWorkspacePrivateFileBrowserQueryOptions(orgSlug, workspaceId, parentId)
+          .queryKey,
       })
       onSuccess(file)
       onOpenChange(false)
@@ -116,14 +115,20 @@ export function CreateItemDialog({
                     id="create-item-name"
                     ref={inputRef}
                     value={basename}
-                    onChange={(e) => { setBasename(e.target.value); setFieldError(null) }}
+                    onChange={(e) => {
+                      setBasename(e.target.value)
+                      setFieldError(null)
+                    }}
                     placeholder="untitled"
                     autoComplete="off"
                     aria-invalid={!!fieldError}
                     className="min-w-0 flex-1"
                   />
                   <Select
-                    items={FILE_TYPES.map((t) => ({ label: `${t.label} (${t.extension})`, value: t.kind }))}
+                    items={FILE_TYPES.map((t) => ({
+                      label: `${t.label} (${t.extension})`,
+                      value: t.kind,
+                    }))}
                     value={fileType.kind}
                     onValueChange={(kind) => {
                       const t = FILE_TYPES.find((ft) => ft.kind === kind)
@@ -158,14 +163,15 @@ export function CreateItemDialog({
                   id="create-item-name"
                   ref={inputRef}
                   value={basename}
-                  onChange={(e) => { setBasename(e.target.value); setFieldError(null) }}
+                  onChange={(e) => {
+                    setBasename(e.target.value)
+                    setFieldError(null)
+                  }}
                   placeholder="folder name"
                   autoComplete="off"
                   aria-invalid={!!fieldError}
                 />
-                {fieldError && (
-                  <p className="text-xs text-destructive">{fieldError}</p>
-                )}
+                {fieldError && <p className="text-xs text-destructive">{fieldError}</p>}
               </>
             )}
           </div>

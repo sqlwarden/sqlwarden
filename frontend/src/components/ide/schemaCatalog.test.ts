@@ -5,8 +5,24 @@ import { filterCatalog, kindLabel, sortedGroups } from './schemaCatalog'
 const spec: SchemaSpec = {
   dialect: 'postgres',
   kinds: [
-    { kind: 'table', label: 'Table', plural_label: 'Tables', order: 1, relational: true, supports_diagram: true, listing: 'enumerated' },
-    { kind: 'view', label: 'View', plural_label: 'Views', order: 2, relational: true, supports_diagram: true, listing: 'enumerated' },
+    {
+      kind: 'table',
+      label: 'Table',
+      plural_label: 'Tables',
+      order: 1,
+      relational: true,
+      supports_diagram: true,
+      listing: 'enumerated',
+    },
+    {
+      kind: 'view',
+      label: 'View',
+      plural_label: 'Views',
+      order: 2,
+      relational: true,
+      supports_diagram: true,
+      listing: 'enumerated',
+    },
   ],
 }
 

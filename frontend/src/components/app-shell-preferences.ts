@@ -21,23 +21,24 @@ export const defaultAppShellPreferences: AppShellPreferences = {
 
 export function useAppShellPreferences() {
   const { theme, setTheme } = useTheme()
-  const [preferences, setPreferencesState] = useState<AppShellPreferences>(() => readAppShellPreferences(theme))
+  const [preferences, setPreferencesState] = useState<AppShellPreferences>(() =>
+    readAppShellPreferences(theme),
+  )
 
   useEffect(() => {
     applyAppShellPreferences(preferences)
   }, [preferences])
 
   useEffect(() => {
-    setPreferencesState((current) => (
-      current.themeMode === theme ? current : { ...current, themeMode: theme }
-    ))
+    setPreferencesState((current) =>
+      current.themeMode === theme ? current : { ...current, themeMode: theme },
+    )
   }, [theme])
 
   const setPreferences: Dispatch<SetStateAction<AppShellPreferences>> = (nextPreferences) => {
     setPreferencesState((current) => {
-      const resolvedPreferences = typeof nextPreferences === 'function'
-        ? nextPreferences(current)
-        : nextPreferences
+      const resolvedPreferences =
+        typeof nextPreferences === 'function' ? nextPreferences(current) : nextPreferences
 
       if (resolvedPreferences.themeMode !== current.themeMode) {
         setTheme(resolvedPreferences.themeMode)
@@ -74,5 +75,5 @@ export function applyAppShellPreferences(preferences: AppShellPreferences) {
 
 function readPreference<Value extends string>(key: string, allowed: Value[], fallback: Value) {
   const stored = window.localStorage.getItem(key)
-  return stored && allowed.includes(stored as Value) ? stored as Value : fallback
+  return stored && allowed.includes(stored as Value) ? (stored as Value) : fallback
 }

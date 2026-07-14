@@ -55,11 +55,13 @@ describe('FilesPanel', () => {
         const children = fileId === '9' ? [file(10, 'nested.sql')] : privateChildren
         return HttpResponse.json({ file: null, path: [], children })
       }),
-      http.get('/api/v1/orgs/acme/workspaces/3/files/shared/browser', () => HttpResponse.json({
-        file: null,
-        path: [],
-        children: sharedChildren,
-      })),
+      http.get('/api/v1/orgs/acme/workspaces/3/files/shared/browser', () =>
+        HttpResponse.json({
+          file: null,
+          path: [],
+          children: sharedChildren,
+        }),
+      ),
     )
   }
 
@@ -87,9 +89,11 @@ describe('FilesPanel', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'private.sql' }))
 
-    await waitFor(() => expect(store.getState().tabs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ fileId: 7, title: 'private.sql' }),
-    ])))
+    await waitFor(() =>
+      expect(store.getState().tabs).toEqual(
+        expect.arrayContaining([expect.objectContaining({ fileId: 7, title: 'private.sql' })]),
+      ),
+    )
     expect(screen.getByRole('button', { name: 'team.sql' })).toBeInTheDocument()
   })
 

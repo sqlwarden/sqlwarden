@@ -6,9 +6,7 @@ export type SaveEditorTabDependencies = {
   updateTabEtag: (tabId: string, etag: string) => void
 }
 
-export type SaveEditorTabResult =
-  | { kind: 'saved' }
-  | { kind: 'save-as'; tab: EditorTab }
+export type SaveEditorTabResult = { kind: 'saved' } | { kind: 'save-as'; tab: EditorTab }
 
 /** Saves an existing file or returns a content-current tab for Save As. */
 export async function saveEditorTab(

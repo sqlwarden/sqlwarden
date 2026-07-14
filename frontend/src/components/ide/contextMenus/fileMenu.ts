@@ -12,13 +12,31 @@ export type FileMenuCtx = {
 export function buildFileMenu(ctx: FileMenuCtx): ContextMenuItem[] {
   const items: ContextMenuItem[] = [
     { kind: 'action', id: 'open', label: 'Open', icon: 'folder-open', onSelect: ctx.onOpen },
-    { kind: 'action', id: 'open-to-side', label: 'Open to the side', icon: 'column', onSelect: ctx.onOpenToSide },
+    {
+      kind: 'action',
+      id: 'open-to-side',
+      label: 'Open to the side',
+      icon: 'column',
+      onSelect: ctx.onOpenToSide,
+    },
     { kind: 'separator' },
-    { kind: 'action', id: 'copy-name', label: 'Copy name', icon: 'copy-01', onSelect: ctx.onCopyName },
+    {
+      kind: 'action',
+      id: 'copy-name',
+      label: 'Copy name',
+      icon: 'copy-01',
+      onSelect: ctx.onCopyName,
+    },
     { kind: 'separator' },
     { kind: 'action', id: 'rename', label: 'Rename', icon: 'pencil-edit-02', soon: true },
     { kind: 'action', id: 'duplicate', label: 'Duplicate', icon: 'copy-01', soon: true },
-    { kind: 'action', id: 'save-as', label: 'Save As…', icon: 'download-01', onSelect: ctx.onSaveAs },
+    {
+      kind: 'action',
+      id: 'save-as',
+      label: 'Save As…',
+      icon: 'download-01',
+      onSelect: ctx.onSaveAs,
+    },
   ]
   if (ctx.onDelete) {
     items.push(
@@ -29,7 +47,10 @@ export function buildFileMenu(ctx: FileMenuCtx): ContextMenuItem[] {
         label: 'Delete',
         icon: 'delete-01',
         destructive: true,
-        confirm: { title: 'Delete file?', description: `${ctx.name} will be permanently deleted. This action cannot be undone.` },
+        confirm: {
+          title: 'Delete file?',
+          description: `${ctx.name} will be permanently deleted. This action cannot be undone.`,
+        },
         onSelect: ctx.onDelete,
       },
     )
@@ -47,10 +68,28 @@ export type FolderMenuCtx = {
 
 export function buildFolderMenu(ctx: FolderMenuCtx): ContextMenuItem[] {
   const items: ContextMenuItem[] = [
-    { kind: 'action', id: 'new-file', label: 'New file', icon: 'file-01', onSelect: ctx.onCreateFile },
-    { kind: 'action', id: 'new-folder', label: 'New folder', icon: 'folder-add', onSelect: ctx.onCreateFolder },
+    {
+      kind: 'action',
+      id: 'new-file',
+      label: 'New file',
+      icon: 'file-01',
+      onSelect: ctx.onCreateFile,
+    },
+    {
+      kind: 'action',
+      id: 'new-folder',
+      label: 'New folder',
+      icon: 'folder-add',
+      onSelect: ctx.onCreateFolder,
+    },
     { kind: 'separator' },
-    { kind: 'action', id: 'copy-name', label: 'Copy name', icon: 'copy-01', onSelect: ctx.onCopyName },
+    {
+      kind: 'action',
+      id: 'copy-name',
+      label: 'Copy name',
+      icon: 'copy-01',
+      onSelect: ctx.onCopyName,
+    },
     { kind: 'action', id: 'rename', label: 'Rename', icon: 'pencil-edit-02', soon: true },
   ]
   if (ctx.onDelete) {
@@ -62,7 +101,10 @@ export function buildFolderMenu(ctx: FolderMenuCtx): ContextMenuItem[] {
         label: 'Delete',
         icon: 'delete-01',
         destructive: true,
-        confirm: { title: 'Delete folder?', description: `${ctx.name} and all its contents will be permanently deleted. This action cannot be undone.` },
+        confirm: {
+          title: 'Delete folder?',
+          description: `${ctx.name} and all its contents will be permanently deleted. This action cannot be undone.`,
+        },
         onSelect: ctx.onDelete,
       },
     )
@@ -78,8 +120,20 @@ export type RootMenuCtx = {
 
 export function buildRootMenu(ctx: RootMenuCtx): ContextMenuItem[] {
   return [
-    { kind: 'action', id: 'new-file', label: 'New file', icon: 'file-01', onSelect: ctx.onCreateFile },
-    { kind: 'action', id: 'new-folder', label: 'New folder', icon: 'folder-add', onSelect: ctx.onCreateFolder },
+    {
+      kind: 'action',
+      id: 'new-file',
+      label: 'New file',
+      icon: 'file-01',
+      onSelect: ctx.onCreateFile,
+    },
+    {
+      kind: 'action',
+      id: 'new-folder',
+      label: 'New folder',
+      icon: 'folder-add',
+      onSelect: ctx.onCreateFolder,
+    },
     { kind: 'separator' },
     { kind: 'action', id: 'refresh', label: 'Refresh', icon: 'refresh', onSelect: ctx.onRefresh },
   ]

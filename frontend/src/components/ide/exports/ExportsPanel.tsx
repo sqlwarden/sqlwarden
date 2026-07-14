@@ -39,8 +39,12 @@ export function ExportsPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
               canRetry={!!getExportRetryEntry(job.id)}
               sql={getExportRetryEntry(job.id)?.sql}
               logOpen={expandedLogJobId === job.id}
-              onToggleLog={() => setExpandedLogJobId((current) => (current === job.id ? null : job.id))}
-              isDownloading={actions.download.isPending && actions.download.variables?.id === job.id}
+              onToggleLog={() =>
+                setExpandedLogJobId((current) => (current === job.id ? null : job.id))
+              }
+              isDownloading={
+                actions.download.isPending && actions.download.variables?.id === job.id
+              }
               onDownload={() => actions.download.mutate(job)}
               onOpen={() => actions.openInEditor.mutate(job)}
               onReveal={() => actions.revealInFiles.mutate(job)}
@@ -85,7 +89,11 @@ function statusLabel(status: string): string {
 }
 
 function formatLogTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return new Date(iso).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 }
 
 function ExportJobRow({
@@ -134,7 +142,9 @@ function ExportJobRow({
           size={13}
           className={cn('shrink-0', isRunning && 'animate-spin', statusColorClass(job.status))}
         />
-        <span className="min-w-0 flex-1 truncate text-xs font-medium">{output?.filename ?? 'query-export.csv'}</span>
+        <span className="min-w-0 flex-1 truncate text-xs font-medium">
+          {output?.filename ?? 'query-export.csv'}
+        </span>
         <span className={cn('shrink-0 text-[10px] font-medium', statusColorClass(job.status))}>
           {statusLabel(job.status)}
         </span>
@@ -146,7 +156,9 @@ function ExportJobRow({
         </p>
       )}
 
-      {isRunning && latestEvent && <p className="truncate pl-5 text-[11px] text-muted-foreground">{latestEvent}</p>}
+      {isRunning && latestEvent && (
+        <p className="truncate pl-5 text-[11px] text-muted-foreground">{latestEvent}</p>
+      )}
       {job.status === 'failed' && job.error_message && (
         <p className="truncate pl-5 text-[11px] text-destructive">{job.error_message}</p>
       )}
@@ -156,7 +168,13 @@ function ExportJobRow({
       <div className="flex items-center justify-end gap-1 pl-5">
         {isTerminal && (
           <Tip label={logOpen ? 'Hide log' : 'View log'}>
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Toggle export log" onClick={onToggleLog}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Toggle export log"
+              onClick={onToggleLog}
+            >
               <Icon name="subject" size={12} />
             </Button>
           </Tip>
@@ -164,12 +182,24 @@ function ExportJobRow({
         {job.status === 'succeeded' && (
           <>
             <Tip label="Open">
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="Open exported file" onClick={onOpen}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Open exported file"
+                onClick={onOpen}
+              >
                 <Icon name="file-01" size={12} />
               </Button>
             </Tip>
             <Tip label="Reveal in Files">
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="Reveal exported file in Files" onClick={onReveal}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Reveal exported file in Files"
+                onClick={onReveal}
+              >
                 <Icon name="folder-open" size={12} />
               </Button>
             </Tip>
@@ -182,28 +212,50 @@ function ExportJobRow({
                 disabled={isDownloading}
                 onClick={onDownload}
               >
-                <Icon name={isDownloading ? 'loading-03' : 'download-01'} size={12} className={isDownloading ? 'animate-spin' : undefined} />
+                <Icon
+                  name={isDownloading ? 'loading-03' : 'download-01'}
+                  size={12}
+                  className={isDownloading ? 'animate-spin' : undefined}
+                />
               </Button>
             </Tip>
           </>
         )}
         {job.status === 'failed' && canRetry && (
           <Tip label="Retry">
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Retry export" onClick={onRetry}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Retry export"
+              onClick={onRetry}
+            >
               <Icon name="refresh" size={12} />
             </Button>
           </Tip>
         )}
         {(job.status === 'queued' || job.status === 'running') && (
           <Tip label="Cancel">
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Cancel export" onClick={onCancel}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Cancel export"
+              onClick={onCancel}
+            >
               <Icon name="cancel-01" size={12} />
             </Button>
           </Tip>
         )}
         {isTerminal && (
           <Tip label="Dismiss">
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Dismiss export" onClick={onDismiss}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Dismiss export"
+              onClick={onDismiss}
+            >
               <Icon name="delete-01" size={12} />
             </Button>
           </Tip>
@@ -213,7 +265,15 @@ function ExportJobRow({
   )
 }
 
-function ExportJobLog({ orgSlug, workspaceId, jobId }: { orgSlug: string; workspaceId: number; jobId: string }) {
+function ExportJobLog({
+  orgSlug,
+  workspaceId,
+  jobId,
+}: {
+  orgSlug: string
+  workspaceId: number
+  jobId: string
+}) {
   const { data, isLoading, isError } = useQuery({
     queryKey: queryKeys.exportJobLog(orgSlug, workspaceId, jobId),
     queryFn: () => getJobEvents(orgSlug, workspaceId, jobId),

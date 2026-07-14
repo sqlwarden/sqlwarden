@@ -2,10 +2,23 @@ import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '#/components/ui/button'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '#/components/ui/select'
 import { ApiError } from '#/lib/api/errors'
 import { createExport } from '#/lib/api/exports'
 import { EXPORT_FORMATS } from './exportFormats'
@@ -21,7 +34,14 @@ type ExportToFilesDialogProps = {
   getSql: () => string
 }
 
-export function ExportToFilesDialog({ open, onOpenChange, orgSlug, workspaceId, connectionId, getSql }: ExportToFilesDialogProps) {
+export function ExportToFilesDialog({
+  open,
+  onOpenChange,
+  orgSlug,
+  workspaceId,
+  connectionId,
+  getSql,
+}: ExportToFilesDialogProps) {
   const [filename, setFilename] = useState('')
   const [format, setFormat] = useState(EXPORT_FORMATS[0].value)
   const [fieldError, setFieldError] = useState<string | null>(null)
@@ -45,7 +65,11 @@ export function ExportToFilesDialog({ open, onOpenChange, orgSlug, workspaceId, 
   const submit = useMutation({
     mutationFn: async () => {
       const trimmedFilename = filename.trim()
-      const job = await createExport(orgSlug, workspaceId, connectionId, { sql, format, filename: trimmedFilename || undefined })
+      const job = await createExport(orgSlug, workspaceId, connectionId, {
+        sql,
+        format,
+        filename: trimmedFilename || undefined,
+      })
       return { job, sql, filename: trimmedFilename }
     },
     onSuccess: ({ job, sql, filename: submittedFilename }) => {
@@ -78,7 +102,8 @@ export function ExportToFilesDialog({ open, onOpenChange, orgSlug, workspaceId, 
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <p className="text-xs text-muted-foreground">
-            Runs this query and saves the result as a file in this workspace's Files, so you can pick it up later.
+            Runs this query and saves the result as a file in this workspace's Files, so you can
+            pick it up later.
           </p>
 
           <div className="flex flex-col gap-1.5">
@@ -88,7 +113,8 @@ export function ExportToFilesDialog({ open, onOpenChange, orgSlug, workspaceId, 
             </pre>
             {isMultiStatement && (
               <p className="text-xs text-destructive">
-                Multiple queries were selected. Only a single query can be exported right now — select just the query you want.
+                Multiple queries were selected. Only a single query can be exported right now —
+                select just the query you want.
               </p>
             )}
           </div>
@@ -98,7 +124,10 @@ export function ExportToFilesDialog({ open, onOpenChange, orgSlug, workspaceId, 
             <Input
               id="export-filename"
               value={filename}
-              onChange={(e) => { setFilename(e.target.value); setFieldError(null) }}
+              onChange={(e) => {
+                setFilename(e.target.value)
+                setFieldError(null)
+              }}
               placeholder="query-export-20260705-142233"
               autoComplete="off"
               aria-invalid={!!fieldError}
@@ -108,9 +137,15 @@ export function ExportToFilesDialog({ open, onOpenChange, orgSlug, workspaceId, 
           <div className="flex flex-col gap-1.5">
             <Label>Format</Label>
             <Select
-              items={EXPORT_FORMATS.map((f) => ({ label: f.label, value: f.value, disabled: !f.enabled }))}
+              items={EXPORT_FORMATS.map((f) => ({
+                label: f.label,
+                value: f.value,
+                disabled: !f.enabled,
+              }))}
               value={format}
-              onValueChange={(value) => { if (value) setFormat(value) }}
+              onValueChange={(value) => {
+                if (value) setFormat(value)
+              }}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -119,7 +154,8 @@ export function ExportToFilesDialog({ open, onOpenChange, orgSlug, workspaceId, 
                 <SelectGroup>
                   {EXPORT_FORMATS.map((f) => (
                     <SelectItem key={f.value} value={f.value} disabled={!f.enabled}>
-                      {f.label}{!f.enabled ? ' (coming soon)' : ''}
+                      {f.label}
+                      {!f.enabled ? ' (coming soon)' : ''}
                     </SelectItem>
                   ))}
                 </SelectGroup>

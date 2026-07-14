@@ -13,10 +13,20 @@ export function RolesTableSkeleton({ showActions }: { showActions: boolean }) {
           </div>
         </div>
       </TableCell>
-      <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
-      <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
-      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-      {showActions ? <TableCell className="text-end"><Skeleton className="ms-auto h-8 w-16" /></TableCell> : null}
+      <TableCell>
+        <Skeleton className="h-5 w-20 rounded-full" />
+      </TableCell>
+      <TableCell>
+        <Skeleton className="h-5 w-16 rounded-full" />
+      </TableCell>
+      <TableCell>
+        <Skeleton className="h-4 w-24" />
+      </TableCell>
+      {showActions ? (
+        <TableCell className="text-end">
+          <Skeleton className="ms-auto h-8 w-16" />
+        </TableCell>
+      ) : null}
     </TableRow>
   ))
 }

@@ -10,7 +10,14 @@ describe('SearchInput', () => {
   it('reports input changes and clears a populated search', () => {
     const onValueChange = vi.fn()
     const onClear = vi.fn()
-    render(<SearchInput value="orders" onValueChange={onValueChange} onClear={onClear} placeholder="Search" />)
+    render(
+      <SearchInput
+        value="orders"
+        onValueChange={onValueChange}
+        onClear={onClear}
+        placeholder="Search"
+      />,
+    )
 
     fireEvent.change(screen.getByPlaceholderText('Search'), { target: { value: 'customers' } })
     fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))

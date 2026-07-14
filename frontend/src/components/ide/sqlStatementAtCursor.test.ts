@@ -190,11 +190,7 @@ describe('sqlStatementAtCursor', () => {
     })
 
     it('cursor in blank line between long statements → preceding statement', () => {
-      const text = [
-        'SELECT id FROM accounts;',
-        '',
-        'SELECT name FROM accounts;',
-      ].join('\n')
+      const text = ['SELECT id FROM accounts;', '', 'SELECT name FROM accounts;'].join('\n')
       const blankLine = text.indexOf('\n') + 1 // first blank line char
       expect(sqlStatementAtCursor(text, blankLine)).toBe('SELECT id FROM accounts;')
     })

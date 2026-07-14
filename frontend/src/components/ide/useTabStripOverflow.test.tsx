@@ -10,7 +10,9 @@ function Strip({ active = 'tab-1', count = 2 }: { active?: string; count?: numbe
         <span data-tab-id="tab-1" />
       </div>
       <output data-testid="state">{`${overflow.canScrollLeft}:${overflow.canScrollRight}`}</output>
-      <button type="button" onClick={() => overflow.scroll(1)}>next</button>
+      <button type="button" onClick={() => overflow.scroll(1)}>
+        next
+      </button>
     </>
   )
 }

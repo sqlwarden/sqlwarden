@@ -65,7 +65,9 @@ export function AppShellHeader({
         <SidebarMenuItem>
           <SidebarMenuButton
             tooltip={label}
-            className={description ? 'h-auto items-center py-2 hover:bg-transparent' : 'hover:bg-transparent'}
+            className={
+              description ? 'h-auto items-center py-2 hover:bg-transparent' : 'hover:bg-transparent'
+            }
           >
             <div className="flex size-6 shrink-0 items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-3.5">
               <Icon name={icon} size={14} />
@@ -73,7 +75,9 @@ export function AppShellHeader({
             <span className="grid min-w-0 flex-1 gap-0.5 text-left">
               <span className="truncate font-semibold tracking-tight">{label}</span>
               {description ? (
-                <span className="truncate text-[11px] font-normal leading-none text-sidebar-foreground/50">{description}</span>
+                <span className="truncate text-[11px] font-normal leading-none text-sidebar-foreground/50">
+                  {description}
+                </span>
               ) : null}
             </span>
           </SidebarMenuButton>
@@ -102,7 +106,11 @@ export function AppShellNavSection({
       ) : null}
       <SidebarMenu>
         {items.map((item) => (
-          <AppShellNavMenuItem key={navItemKey(item)} item={item} isActive={isNavItemActive(pathname, item)} />
+          <AppShellNavMenuItem
+            key={navItemKey(item)}
+            item={item}
+            isActive={isNavItemActive(pathname, item)}
+          />
         ))}
       </SidebarMenu>
     </div>
@@ -123,7 +131,10 @@ export function AppShellSidebarFooter({
       <AppShellPreferencesPopover preferences={preferences} setPreferences={setPreferences} />
       <AppShellUserMenu session={session} />
       <div className="flex justify-center px-2 pb-1">
-        <SidebarTrigger className="w-full cursor-pointer group-data-[collapsible=icon]:w-auto" aria-label="Toggle sidebar" />
+        <SidebarTrigger
+          className="w-full cursor-pointer group-data-[collapsible=icon]:w-auto"
+          aria-label="Toggle sidebar"
+        />
       </div>
     </SidebarFooter>
   )
@@ -152,13 +163,7 @@ export function AppShellContent({
   )
 }
 
-function AppShellNavMenuItem({
-  item,
-  isActive,
-}: {
-  item: AppShellNavItem
-  isActive: boolean
-}) {
+function AppShellNavMenuItem({ item, isActive }: { item: AppShellNavItem; isActive: boolean }) {
   if (item.disabled) {
     return (
       <SidebarMenuItem>
@@ -179,7 +184,9 @@ function AppShellNavMenuItem({
     <SidebarMenuItem>
       <div className="pointer-events-none absolute inset-y-0.5 left-0 w-0.5 bg-sidebar-primary opacity-0 transition-opacity peer-data-active/menu-button:opacity-100" />
       <SidebarMenuButton
-        render={<Link to={item.to as never} params={item.params as never} search={item.search as never} />}
+        render={
+          <Link to={item.to as never} params={item.params as never} search={item.search as never} />
+        }
         isActive={isActive}
         tooltip={item.label}
       >
@@ -219,7 +226,9 @@ export function AppShellUserMenu({ session }: { session: SessionResponse }) {
             <InitialsAvatar value={session.account.name} className="rounded-lg" />
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">{session.account.name}</span>
-              <span className="truncate text-xs text-muted-foreground">{session.account.email}</span>
+              <span className="truncate text-xs text-muted-foreground">
+                {session.account.email}
+              </span>
             </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -233,8 +242,12 @@ export function AppShellUserMenu({ session }: { session: SessionResponse }) {
                 <div className="flex items-center gap-2 px-2 py-1.5 text-left text-sm">
                   <InitialsAvatar value={session.account.name} className="rounded-lg" />
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-medium text-foreground">{session.account.name}</span>
-                    <span className="truncate text-xs text-muted-foreground">{session.account.email}</span>
+                    <span className="truncate font-medium text-foreground">
+                      {session.account.name}
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {session.account.email}
+                    </span>
                   </div>
                 </div>
               </DropdownMenuLabel>

@@ -1,7 +1,12 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router'
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router'
 import { delay, http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTestQueryClient } from '#/test/render'
@@ -37,30 +42,41 @@ describe('DatabasePanel', () => {
   function handlers(items: 'empty' | 'populated') {
     server.use(
       http.get('/api/v1/orgs/acme/permissions/effective', () =>
-        HttpResponse.json({ resource_type: 'workspace', resource_id: 3, permissions: [] })),
+        HttpResponse.json({ resource_type: 'workspace', resource_id: 3, permissions: [] }),
+      ),
       http.get('/api/v1/orgs/acme/workspaces/3/environments', () =>
         HttpResponse.json({
-          items: items === 'populated' ? [{ id: 2, workspace_id: 3, name: 'Production', created_at: '', updated_at: '' }] : [],
+          items:
+            items === 'populated'
+              ? [{ id: 2, workspace_id: 3, name: 'Production', created_at: '', updated_at: '' }]
+              : [],
           page: 1,
           page_size: 100,
           total: items === 'populated' ? 1 : 0,
-        })),
+        }),
+      ),
       http.get('/api/v1/orgs/acme/workspaces/3/connections', () =>
         HttpResponse.json({
-          items: items === 'populated' ? [{
-            id: 7,
-            workspace_id: 3,
-            environment_id: 2,
-            name: 'analytics-pg',
-            driver: 'postgres',
-            access_mode: 'open',
-            created_at: '',
-            updated_at: '',
-          }] : [],
+          items:
+            items === 'populated'
+              ? [
+                  {
+                    id: 7,
+                    workspace_id: 3,
+                    environment_id: 2,
+                    name: 'analytics-pg',
+                    driver: 'postgres',
+                    access_mode: 'open',
+                    created_at: '',
+                    updated_at: '',
+                  },
+                ]
+              : [],
           page: 1,
           page_size: 100,
           total: items === 'populated' ? 1 : 0,
-        })),
+        }),
+      ),
     )
   }
 
@@ -115,11 +131,14 @@ describe('DatabasePanel', () => {
   it('offers retry when explorer requests fail', async () => {
     server.use(
       http.get('/api/v1/orgs/acme/permissions/effective', () =>
-        HttpResponse.json({ resource_type: 'workspace', resource_id: 3, permissions: [] })),
+        HttpResponse.json({ resource_type: 'workspace', resource_id: 3, permissions: [] }),
+      ),
       http.get('/api/v1/orgs/acme/workspaces/3/environments', () =>
-        HttpResponse.json({ error: { message: 'Unavailable' } }, { status: 500 })),
+        HttpResponse.json({ error: { message: 'Unavailable' } }, { status: 500 }),
+      ),
       http.get('/api/v1/orgs/acme/workspaces/3/connections', () =>
-        HttpResponse.json({ error: { message: 'Unavailable' } }, { status: 500 })),
+        HttpResponse.json({ error: { message: 'Unavailable' } }, { status: 500 }),
+      ),
     )
 
     renderPanel()

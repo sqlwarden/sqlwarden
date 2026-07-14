@@ -15,7 +15,15 @@ type SidebarPaneProps = {
   children: React.ReactNode
 }
 
-export function SidebarPane({ title, icon, maximized, onMaximizedChange, actions, scroll = true, children }: SidebarPaneProps) {
+export function SidebarPane({
+  title,
+  icon,
+  maximized,
+  onMaximizedChange,
+  actions,
+  scroll = true,
+  children,
+}: SidebarPaneProps) {
   return (
     <section className="flex h-full min-h-0 flex-col">
       <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
@@ -28,7 +36,13 @@ export function SidebarPane({ title, icon, maximized, onMaximizedChange, actions
         <div className="flex items-center gap-0.5">
           {actions}
           {onMaximizedChange ? (
-            <Tip label={maximized ? `Restore ${title.toLowerCase()} panel` : `Maximize ${title.toLowerCase()} panel`}>
+            <Tip
+              label={
+                maximized
+                  ? `Restore ${title.toLowerCase()} panel`
+                  : `Maximize ${title.toLowerCase()} panel`
+              }
+            >
               <Button
                 type="button"
                 variant="ghost"

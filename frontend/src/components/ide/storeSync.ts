@@ -1,9 +1,7 @@
 import type { EditorTab, IdeActions, IdeState } from './useIdeStore'
 
-type StoreSyncState = Pick<IdeState, 'sessions' | 'tabs'> & Pick<
-  IdeActions,
-  'clearSession' | 'closeTab' | 'ensureTab' | 'setSession' | 'updateTabEtag'
->
+type StoreSyncState = Pick<IdeState, 'sessions' | 'tabs'> &
+  Pick<IdeActions, 'clearSession' | 'closeTab' | 'ensureTab' | 'setSession' | 'updateTabEtag'>
 
 export type StoreSyncStore = {
   getState: () => StoreSyncState
@@ -31,13 +29,21 @@ export function createStoreSync(store: StoreSyncStore, channel: StoreSyncChannel
 
     applyingRemote = true
     try {
-      if (message.type === 'etag-update' && typeof message.tabId === 'string' && typeof message.etag === 'string') {
+      if (
+        message.type === 'etag-update' &&
+        typeof message.tabId === 'string' &&
+        typeof message.etag === 'string'
+      ) {
         store.getState().updateTabEtag(message.tabId, message.etag)
       } else if (message.type === 'tab-opened' && message.tab) {
         store.getState().ensureTab(message.tab as EditorTab)
       } else if (message.type === 'tab-closed' && typeof message.tabId === 'string') {
         store.getState().closeTab(message.tabId)
-      } else if (message.type === 'session-set' && typeof message.connectionId === 'number' && typeof message.sessionId === 'string') {
+      } else if (
+        message.type === 'session-set' &&
+        typeof message.connectionId === 'number' &&
+        typeof message.sessionId === 'string'
+      ) {
         store.getState().setSession(message.connectionId, message.sessionId)
       } else if (message.type === 'session-cleared' && typeof message.connectionId === 'number') {
         store.getState().clearSession(message.connectionId)

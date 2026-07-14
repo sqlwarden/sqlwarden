@@ -10,7 +10,16 @@ import { isApiError } from '#/lib/api/errors'
 import { instanceOrganizationsQueryOptions, queryKeys } from '#/lib/api/query'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { getInitials } from '#/components/InitialsAvatar'
 import { SearchInput } from '#/components/SearchInput'
@@ -18,7 +27,14 @@ import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 import { cn } from '#/lib/utils'
 import { slugify } from '#/lib/strings'
 
@@ -34,13 +50,14 @@ function SettingsOrganizationsPage() {
   const [newOrganizationSlug, setNewOrganizationSlug] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
   const [createFieldErrors, setCreateFieldErrors] = useState<{ name?: string; slug?: string }>({})
-  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
-    page: 1,
-    page_size: 10,
-    sort: 'created_at',
-    order: 'desc',
-    q: '',
-  })
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
+    useListPageState({
+      page: 1,
+      page_size: 10,
+      sort: 'created_at',
+      order: 'desc',
+      q: '',
+    })
 
   const organizations = useQuery(instanceOrganizationsQueryOptions(query))
   const data = organizations.data
@@ -67,10 +84,13 @@ function SettingsOrganizationsPage() {
 
   const createOrganization = useMutation({
     mutationFn: async (name: string) =>
-      api.post<{ id: number; slug: string; name: string; created_at: string; updated_at: string }>('/api/v1/orgs', {
-        name,
-        slug: newOrganizationSlug.trim(),
-      }),
+      api.post<{ id: number; slug: string; name: string; created_at: string; updated_at: string }>(
+        '/api/v1/orgs',
+        {
+          name,
+          slug: newOrganizationSlug.trim(),
+        },
+      ),
     onSuccess: async () => {
       setIsCreating(false)
       setNewOrganizationName('')
@@ -162,7 +182,9 @@ function SettingsOrganizationsPage() {
                     aria-invalid={createFieldErrors.name ? true : undefined}
                     disabled={createOrganization.isPending}
                   />
-                  {createFieldErrors.name ? <p className="text-sm text-destructive">{createFieldErrors.name}</p> : null}
+                  {createFieldErrors.name ? (
+                    <p className="text-sm text-destructive">{createFieldErrors.name}</p>
+                  ) : null}
                 </div>
 
                 <div className="flex flex-col gap-2">
@@ -177,11 +199,21 @@ function SettingsOrganizationsPage() {
                     aria-invalid={createFieldErrors.slug ? true : undefined}
                     disabled={createOrganization.isPending}
                   />
-                  {createFieldErrors.slug ? <p className="text-sm text-destructive">{createFieldErrors.slug}</p> : null}
+                  {createFieldErrors.slug ? (
+                    <p className="text-sm text-destructive">{createFieldErrors.slug}</p>
+                  ) : null}
                 </div>
 
                 <DialogFooter>
-                  <DialogClose render={<Button type="button" variant="ghost" disabled={createOrganization.isPending} />}>
+                  <DialogClose
+                    render={
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={createOrganization.isPending}
+                      />
+                    }
+                  >
                     Cancel
                   </DialogClose>
                   <Button type="submit" disabled={createOrganization.isPending}>
@@ -207,10 +239,22 @@ function SettingsOrganizationsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>
-                  <TableColumnHeader label="Organization" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  <TableColumnHeader
+                    label="Organization"
+                    sort="name"
+                    currentSort={query.sort}
+                    currentOrder={query.order}
+                    onSortChange={toggleSort}
+                  />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  <TableColumnHeader
+                    label="Created"
+                    sort="created_at"
+                    currentSort={query.sort}
+                    currentOrder={query.order}
+                    onSortChange={toggleSort}
+                  />
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -222,17 +266,32 @@ function SettingsOrganizationsPage() {
                 <TableEmptyState colSpan={2} compact message="Failed to load organizations." />
               ) : null}
               {!organizations.isLoading && !organizations.isError && items.length === 0 ? (
-                <TableEmptyState colSpan={2} compact message={query.q ? 'No organizations matched your search.' : 'No organizations exist yet.'} />
+                <TableEmptyState
+                  colSpan={2}
+                  compact
+                  message={
+                    query.q
+                      ? 'No organizations matched your search.'
+                      : 'No organizations exist yet.'
+                  }
+                />
               ) : null}
               {items.map((organization) => (
                 <TableRow key={organization.id}>
                   <TableCell>
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className={cn('flex size-8 shrink-0 items-center justify-center text-xs font-semibold', orgColor(organization.name))}>
+                      <div
+                        className={cn(
+                          'flex size-8 shrink-0 items-center justify-center text-xs font-semibold',
+                          orgColor(organization.name),
+                        )}
+                      >
                         {getInitials(organization.name, 'O')}
                       </div>
                       <div className="min-w-0">
-                        <div className="truncate font-medium text-foreground">{organization.name}</div>
+                        <div className="truncate font-medium text-foreground">
+                          {organization.name}
+                        </div>
                         <div className="truncate text-muted-foreground">@{organization.slug}</div>
                       </div>
                     </div>

@@ -16,9 +16,14 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
   const React = await import('react')
   return {
     ...actual,
-    Link: React.forwardRef<HTMLAnchorElement, { to: string; children?: React.ReactNode } & React.AnchorHTMLAttributes<HTMLAnchorElement>>(
-      ({ to, children, ...props }, ref) => <a ref={ref} href={to} {...props}>{children}</a>,
-    ),
+    Link: React.forwardRef<
+      HTMLAnchorElement,
+      { to: string; children?: React.ReactNode } & React.AnchorHTMLAttributes<HTMLAnchorElement>
+    >(({ to, children, ...props }, ref) => (
+      <a ref={ref} href={to} {...props}>
+        {children}
+      </a>
+    )),
     useNavigate: () => router.navigate,
   }
 })
@@ -34,10 +39,11 @@ describe('AppShellUserMenu', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('clears authentication state and redirects even when logout fails', async () => {
-    server.use(http.post('/api/v1/auth/logout', () => HttpResponse.json(
-      { error: { message: 'Unavailable' } },
-      { status: 503 },
-    )))
+    server.use(
+      http.post('/api/v1/auth/logout', () =>
+        HttpResponse.json({ error: { message: 'Unavailable' } }, { status: 503 }),
+      ),
+    )
     setAccessToken('token')
     const queryClient = createTestQueryClient()
     queryClient.setQueryData(['permissions', 'acme'], ['org:read'])
@@ -54,7 +60,9 @@ describe('AppShellUserMenu', () => {
     await user.click(screen.getByRole('button', { name: /Ada Lovelace/ }))
     await user.click(await screen.findByRole('menuitem', { name: 'Sign out' }))
 
-    await waitFor(() => expect(router.navigate).toHaveBeenCalledWith({ to: '/login', replace: true }))
+    await waitFor(() =>
+      expect(router.navigate).toHaveBeenCalledWith({ to: '/login', replace: true }),
+    )
     expect(getAccessToken()).toBeNull()
     expect(queryClient.getQueryData(['permissions', 'acme'])).toBeUndefined()
   })

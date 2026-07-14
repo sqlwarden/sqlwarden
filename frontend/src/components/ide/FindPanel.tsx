@@ -53,7 +53,15 @@ export function FindPanel({ view }: { view: EditorView }) {
   }, [view])
 
   const applyQuery = useCallback(
-    (next: Partial<{ search: string; replace: string; caseSensitive: boolean; regexp: boolean; wholeWord: boolean }>) => {
+    (
+      next: Partial<{
+        search: string
+        replace: string
+        caseSensitive: boolean
+        regexp: boolean
+        wholeWord: boolean
+      }>,
+    ) => {
       const query = new SearchQuery({
         search: next.search ?? search,
         replace: next.replace ?? replace,
@@ -67,7 +75,13 @@ export function FindPanel({ view }: { view: EditorView }) {
     [view, search, replace, caseSensitive, regexp, wholeWord],
   )
 
-  const run = useCallback((cmd: Command) => { cmd(view); recompute() }, [view, recompute])
+  const run = useCallback(
+    (cmd: Command) => {
+      cmd(view)
+      recompute()
+    },
+    [view, recompute],
+  )
 
   function onSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') {
@@ -83,63 +97,128 @@ export function FindPanel({ view }: { view: EditorView }) {
 
   return (
     <TooltipProvider delay={400}>
-    <div className="flex flex-col gap-1 bg-popover px-2 py-1.5 text-xs text-popover-foreground">
-      {/* Find row */}
-      <div className="flex min-w-0 items-center gap-1">
-        <Input
-          ref={searchRef}
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); applyQuery({ search: e.target.value }) }}
-          onKeyDown={onSearchKeyDown}
-          placeholder="Find"
-          className="h-6 min-w-0 flex-1 px-2 text-xs"
-        />
-
-        <div className="flex shrink-0 items-center gap-0.5">
-          <ToggleButton label="Aa" tip="Match case" active={caseSensitive} onClick={() => { const v = !caseSensitive; setCaseSensitive(v); applyQuery({ caseSensitive: v }) }} />
-          <ToggleButton label=".*" tip="Use regular expression" active={regexp} onClick={() => { const v = !regexp; setRegexp(v); applyQuery({ regexp: v }) }} />
-          <ToggleButton label="ab" tip="Match whole word" active={wholeWord} onClick={() => { const v = !wholeWord; setWholeWord(v); applyQuery({ wholeWord: v }) }} />
-        </div>
-
-        <span className="w-12 shrink-0 text-right tabular-nums text-muted-foreground">{counter}</span>
-
-        <div className="flex shrink-0 items-center gap-0.5">
-          <Tip label="Previous match (⇧⏎)">
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Previous match" onClick={() => run(findPrevious)}>
-              <Icon name="chevron-down" size={14} className="rotate-180" />
-            </Button>
-          </Tip>
-          <Tip label="Next match (⏎)">
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Next match" onClick={() => run(findNext)}>
-              <Icon name="chevron-down" size={14} />
-            </Button>
-          </Tip>
-          <Tip label="Close (Esc)">
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Close find" onClick={() => closeSearchPanel(view)}>
-              <Icon name="cancel-01" size={14} />
-            </Button>
-          </Tip>
-        </div>
-      </div>
-
-      {/* Replace row */}
-      {!readOnly && (
+      <div className="flex flex-col gap-1 bg-popover px-2 py-1.5 text-xs text-popover-foreground">
+        {/* Find row */}
         <div className="flex min-w-0 items-center gap-1">
           <Input
-            value={replace}
-            onChange={(e) => { setReplace(e.target.value); applyQuery({ replace: e.target.value }) }}
-            placeholder="Replace"
+            ref={searchRef}
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              applyQuery({ search: e.target.value })
+            }}
+            onKeyDown={onSearchKeyDown}
+            placeholder="Find"
             className="h-6 min-w-0 flex-1 px-2 text-xs"
           />
-          <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => run(replaceNext)}>
-            Replace
-          </Button>
-          <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => run(replaceAll)}>
-            Replace All
-          </Button>
+
+          <div className="flex shrink-0 items-center gap-0.5">
+            <ToggleButton
+              label="Aa"
+              tip="Match case"
+              active={caseSensitive}
+              onClick={() => {
+                const v = !caseSensitive
+                setCaseSensitive(v)
+                applyQuery({ caseSensitive: v })
+              }}
+            />
+            <ToggleButton
+              label=".*"
+              tip="Use regular expression"
+              active={regexp}
+              onClick={() => {
+                const v = !regexp
+                setRegexp(v)
+                applyQuery({ regexp: v })
+              }}
+            />
+            <ToggleButton
+              label="ab"
+              tip="Match whole word"
+              active={wholeWord}
+              onClick={() => {
+                const v = !wholeWord
+                setWholeWord(v)
+                applyQuery({ wholeWord: v })
+              }}
+            />
+          </div>
+
+          <span className="w-12 shrink-0 text-right tabular-nums text-muted-foreground">
+            {counter}
+          </span>
+
+          <div className="flex shrink-0 items-center gap-0.5">
+            <Tip label="Previous match (⇧⏎)">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Previous match"
+                onClick={() => run(findPrevious)}
+              >
+                <Icon name="chevron-down" size={14} className="rotate-180" />
+              </Button>
+            </Tip>
+            <Tip label="Next match (⏎)">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Next match"
+                onClick={() => run(findNext)}
+              >
+                <Icon name="chevron-down" size={14} />
+              </Button>
+            </Tip>
+            <Tip label="Close (Esc)">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Close find"
+                onClick={() => closeSearchPanel(view)}
+              >
+                <Icon name="cancel-01" size={14} />
+              </Button>
+            </Tip>
+          </div>
         </div>
-      )}
-    </div>
+
+        {/* Replace row */}
+        {!readOnly && (
+          <div className="flex min-w-0 items-center gap-1">
+            <Input
+              value={replace}
+              onChange={(e) => {
+                setReplace(e.target.value)
+                applyQuery({ replace: e.target.value })
+              }}
+              placeholder="Replace"
+              className="h-6 min-w-0 flex-1 px-2 text-xs"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => run(replaceNext)}
+            >
+              Replace
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => run(replaceAll)}
+            >
+              Replace All
+            </Button>
+          </div>
+        )}
+      </div>
     </TooltipProvider>
   )
 }

@@ -8,15 +8,15 @@ export type InterfaceFont = {
 
 export const INTERFACE_FONTS: InterfaceFont[] = [
   // Geist is the app default — loaded globally via styles.css.
-  { label: 'Geist',          fontFamily: "'Geist Variable', 'Inter Variable', system-ui, sans-serif" },
+  { label: 'Geist', fontFamily: "'Geist Variable', 'Inter Variable', system-ui, sans-serif" },
   // Inter is also loaded globally (long-time previous default, common fallback).
-  { label: 'Inter',          fontFamily: "'Inter Variable', system-ui, sans-serif" },
+  { label: 'Inter', fontFamily: "'Inter Variable', system-ui, sans-serif" },
   // @fontsource-variable packages register under the "Variable" family name.
-  { label: 'IBM Plex Sans',  fontFamily: "'IBM Plex Sans Variable', system-ui, sans-serif" },
-  { label: 'Manrope',        fontFamily: "'Manrope Variable', system-ui, sans-serif" },
-  { label: 'Space Grotesk',  fontFamily: "'Space Grotesk Variable', system-ui, sans-serif" },
-  { label: 'Epilogue',       fontFamily: "'Epilogue Variable', system-ui, sans-serif" },
-  { label: 'System Font',    fontFamily: 'system-ui, sans-serif' },
+  { label: 'IBM Plex Sans', fontFamily: "'IBM Plex Sans Variable', system-ui, sans-serif" },
+  { label: 'Manrope', fontFamily: "'Manrope Variable', system-ui, sans-serif" },
+  { label: 'Space Grotesk', fontFamily: "'Space Grotesk Variable', system-ui, sans-serif" },
+  { label: 'Epilogue', fontFamily: "'Epilogue Variable', system-ui, sans-serif" },
+  { label: 'System Font', fontFamily: 'system-ui, sans-serif' },
 ]
 
 export const DEFAULT_INTERFACE_FONT = INTERFACE_FONTS[0]
@@ -28,10 +28,18 @@ export async function loadInterfaceFont(font: InterfaceFont): Promise<void> {
   if (_loadedFonts.has(font.fontFamily)) return
   _loadedFonts.add(font.fontFamily)
   switch (font.label) {
-    case 'IBM Plex Sans': await import('@fontsource-variable/ibm-plex-sans'); break
-    case 'Manrope':       await import('@fontsource-variable/manrope');       break
-    case 'Space Grotesk': await import('@fontsource-variable/space-grotesk'); break
-    case 'Epilogue':      await import('@fontsource-variable/epilogue');      break
+    case 'IBM Plex Sans':
+      await import('@fontsource-variable/ibm-plex-sans')
+      break
+    case 'Manrope':
+      await import('@fontsource-variable/manrope')
+      break
+    case 'Space Grotesk':
+      await import('@fontsource-variable/space-grotesk')
+      break
+    case 'Epilogue':
+      await import('@fontsource-variable/epilogue')
+      break
     // Geist, Inter: loaded globally in styles.css. System Font: no web font.
   }
 }
@@ -68,7 +76,9 @@ export function InterfaceFontProvider({ children }: { children: ReactNode }) {
       if (cancelled) return
       document.documentElement.style.setProperty('--font-interface', font.fontFamily)
     })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [font])
 
   function setInterfaceFont(f: InterfaceFont) {

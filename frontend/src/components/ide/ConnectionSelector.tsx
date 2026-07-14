@@ -18,9 +18,10 @@ export function groupConnections(
   const query = search.trim().toLowerCase()
   return environments.flatMap((environment) => {
     const environmentMatches = environment.name.toLowerCase().includes(query)
-    const matching = connections.filter((connection) =>
-      connection.environment_id === environment.id &&
-      (!query || environmentMatches || connection.name.toLowerCase().includes(query)),
+    const matching = connections.filter(
+      (connection) =>
+        connection.environment_id === environment.id &&
+        (!query || environmentMatches || connection.name.toLowerCase().includes(query)),
     )
     return matching.length > 0 ? [{ environment, connections: matching }] : []
   })
@@ -51,16 +52,26 @@ export function ConnectionSelector({
   const disabled = !tabAvailable || !hasConnections || isLoading
   const placeholder = isLoading
     ? 'Loading connections…'
-    : !hasConnections ? 'No connections' : 'Select connection…'
+    : !hasConnections
+      ? 'No connections'
+      : 'Select connection…'
 
   return (
-    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (!next) setSearch('') }}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) setSearch('')
+      }}
+    >
       <Tip
-        label={activeConnection
-          ? sessions[activeConnection.id]
-            ? `Connected to ${activeConnection.name}`
-            : 'Not connected — Run connects automatically'
-          : 'Choose a connection to run queries'}
+        label={
+          activeConnection
+            ? sessions[activeConnection.id]
+              ? `Connected to ${activeConnection.name}`
+              : 'Not connected — Run connects automatically'
+            : 'Choose a connection to run queries'
+        }
       >
         <PopoverTrigger
           render={
@@ -77,10 +88,14 @@ export function ConnectionSelector({
             <>
               <DriverBadge driver={activeConnection.driver} size="sm" className="shrink-0" />
               <span className="min-w-0 flex-1 truncate">{activeConnection.name}</span>
-              <span className={cn(
-                'size-1.5 shrink-0 rounded-full',
-                sessions[activeConnection.id] ? 'bg-green-500' : 'border border-muted-foreground/60',
-              )} />
+              <span
+                className={cn(
+                  'size-1.5 shrink-0 rounded-full',
+                  sessions[activeConnection.id]
+                    ? 'bg-green-500'
+                    : 'border border-muted-foreground/60',
+                )}
+              />
             </>
           ) : (
             <>
@@ -94,7 +109,9 @@ export function ConnectionSelector({
 
       <PopoverContent align="end" className="w-72 overflow-hidden p-0">
         {isLoading ? (
-          <div className="px-3 py-4 text-center text-xs text-muted-foreground">Loading connections…</div>
+          <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+            Loading connections…
+          </div>
         ) : !hasConnections ? (
           <div className="px-3 py-4 text-center text-xs text-muted-foreground">
             <p className="font-medium text-foreground">No connections</p>
@@ -117,7 +134,11 @@ export function ConnectionSelector({
               {groups.map(({ environment, connections: environmentConnections }) => (
                 <div key={environment.id} className="mb-1 last:mb-0">
                   <div className="flex items-center gap-1.5 px-3 pb-1 pt-2">
-                    <Icon name="server-stack-01" size={11} className="shrink-0 text-muted-foreground/70" />
+                    <Icon
+                      name="server-stack-01"
+                      size={11}
+                      className="shrink-0 text-muted-foreground/70"
+                    />
                     <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
                       {environment.name}
                     </span>
@@ -128,7 +149,11 @@ export function ConnectionSelector({
                       <button
                         key={connection.id}
                         type="button"
-                        onClick={() => { onSelect(connection); setOpen(false); setSearch('') }}
+                        onClick={() => {
+                          onSelect(connection)
+                          setOpen(false)
+                          setSearch('')
+                        }}
                         className={cn(
                           'flex h-8 w-full items-center gap-2.5 px-3 text-xs transition-colors',
                           'hover:bg-accent hover:text-accent-foreground',
@@ -137,8 +162,16 @@ export function ConnectionSelector({
                       >
                         <DriverBadge driver={connection.driver} size="sm" className="shrink-0" />
                         <span className="min-w-0 flex-1 truncate text-left">{connection.name}</span>
-                        {sessions[connection.id] && <span className="size-1.5 shrink-0 rounded-full bg-green-500" />}
-                        {active && <Icon name="checkmark-circle-02" size={13} className="shrink-0 text-primary" />}
+                        {sessions[connection.id] && (
+                          <span className="size-1.5 shrink-0 rounded-full bg-green-500" />
+                        )}
+                        {active && (
+                          <Icon
+                            name="checkmark-circle-02"
+                            size={13}
+                            className="shrink-0 text-primary"
+                          />
+                        )}
                       </button>
                     )
                   })}

@@ -23,7 +23,10 @@ export function toElkGraph(nodes: LayoutNode[], edges: LayoutEdge[]): ElkNode {
 const elk = new ELK()
 
 /** Runs elk auto-layout and returns each node id's top-left position. */
-export async function layoutGraph(nodes: LayoutNode[], edges: LayoutEdge[]): Promise<Map<string, { x: number; y: number }>> {
+export async function layoutGraph(
+  nodes: LayoutNode[],
+  edges: LayoutEdge[],
+): Promise<Map<string, { x: number; y: number }>> {
   const laid = await elk.layout(toElkGraph(nodes, edges))
   const positions = new Map<string, { x: number; y: number }>()
   for (const child of laid.children ?? []) {

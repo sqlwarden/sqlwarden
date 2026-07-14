@@ -56,7 +56,9 @@ describe('ConnectionDialog', () => {
     for (const field of drivers[0].fields) {
       expect(screen.getByText(field.label)).toBeInTheDocument()
     }
-    expect(screen.getAllByRole('combobox').some((combobox) => combobox.hasAttribute('disabled'))).toBe(true)
+    expect(
+      screen.getAllByRole('combobox').some((combobox) => combobox.hasAttribute('disabled')),
+    ).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: 'Change' }))
     expect(screen.getByRole('heading', { name: 'Choose a database' })).toBeInTheDocument()

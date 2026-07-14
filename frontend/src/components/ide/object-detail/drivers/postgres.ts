@@ -11,6 +11,8 @@ export const postgresHooks: ObjectDetailHooks = {
     return comment ? [{ id: 'comment', label: 'Comment', value: comment }] : []
   },
   columnExtras(): ColumnExtra[] {
-    return [{ id: 'comment', header: 'Comment', cell: (col) => attr(col.attributes, 'comment') ?? '' }]
+    return [
+      { id: 'comment', header: 'Comment', cell: (col) => attr(col.attributes, 'comment') ?? '' },
+    ]
   },
 }

@@ -8,7 +8,11 @@ import { createIdeStore, IdeStoreContext, type EditorTab } from './useIdeStore'
 import { createYDocRegistry, YDocRegistryContext } from './useYDocRegistry'
 import { resolveEditorSql, useToolbarQueryAction } from './useToolbarQueryAction'
 
-const mocks = vi.hoisted(() => ({ cancel: vi.fn(), run: vi.fn(() => Promise.resolve()), warning: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  cancel: vi.fn(),
+  run: vi.fn(() => Promise.resolve()),
+  warning: vi.fn(),
+}))
 vi.mock('./useQueryExecution', () => ({
   useQueryExecution: () => ({ cancel: mocks.cancel, isRunning: false, run: mocks.run }),
 }))
@@ -55,7 +59,14 @@ describe('resolveEditorSql', () => {
       },
     } as unknown as EditorView
     views.register('group-1:scratch:1', selectedView)
-    expect(resolveEditorSql({ activeGroupId: 'group-1', tab, viewRegistry: views, documentRegistry: docs })).toBe('select 1')
+    expect(
+      resolveEditorSql({
+        activeGroupId: 'group-1',
+        tab,
+        viewRegistry: views,
+        documentRegistry: docs,
+      }),
+    ).toBe('select 1')
 
     views.register('group-1:scratch:1', {
       state: {
@@ -64,7 +75,14 @@ describe('resolveEditorSql', () => {
         doc: { toString: () => tab.content },
       },
     } as unknown as EditorView)
-    expect(resolveEditorSql({ activeGroupId: 'group-1', tab, viewRegistry: views, documentRegistry: docs })).toBe('select 2;')
+    expect(
+      resolveEditorSql({
+        activeGroupId: 'group-1',
+        tab,
+        viewRegistry: views,
+        documentRegistry: docs,
+      }),
+    ).toBe('select 2;')
     docs.disposeAll()
   })
 
@@ -101,11 +119,23 @@ describe('useToolbarQueryAction', () => {
   }
 
   it('runs the current SQL from the keyboard shortcut and restores the results pane', async () => {
-    const { unmount } = renderHook(() => useToolbarQueryAction({
-      orgSlug: 'acme', workspace, activeTab: tab, activeConnection: connection, hasConnections: true,
-    }), { wrapper })
+    const { unmount } = renderHook(
+      () =>
+        useToolbarQueryAction({
+          orgSlug: 'acme',
+          workspace,
+          activeTab: tab,
+          activeConnection: connection,
+          hasConnections: true,
+        }),
+      { wrapper },
+    )
 
-    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })))
+    act(() =>
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }),
+      ),
+    )
 
     await waitFor(() => expect(mocks.run).toHaveBeenCalledWith(tab.content))
     expect(store.getState().maximizedPane).toBeNull()
@@ -114,18 +144,34 @@ describe('useToolbarQueryAction', () => {
   })
 
   it('explains a missing selection or an empty workspace connection list', async () => {
-    const first = renderHook(() => useToolbarQueryAction({
-      orgSlug: 'acme', workspace, activeTab: tab, hasConnections: true,
-    }), { wrapper })
+    const first = renderHook(
+      () =>
+        useToolbarQueryAction({
+          orgSlug: 'acme',
+          workspace,
+          activeTab: tab,
+          hasConnections: true,
+        }),
+      { wrapper },
+    )
     await act(() => first.result.current.run())
     expect(mocks.warning).toHaveBeenCalledWith('Select a connection to run this query.')
     first.unmount()
 
-    const second = renderHook(() => useToolbarQueryAction({
-      orgSlug: 'acme', workspace, activeTab: tab, hasConnections: false,
-    }), { wrapper })
+    const second = renderHook(
+      () =>
+        useToolbarQueryAction({
+          orgSlug: 'acme',
+          workspace,
+          activeTab: tab,
+          hasConnections: false,
+        }),
+      { wrapper },
+    )
     await act(() => second.result.current.run())
-    expect(mocks.warning).toHaveBeenCalledWith('No connection available. Add a connection to run queries.')
+    expect(mocks.warning).toHaveBeenCalledWith(
+      'No connection available. Add a connection to run queries.',
+    )
     second.unmount()
     docs.disposeAll()
   })

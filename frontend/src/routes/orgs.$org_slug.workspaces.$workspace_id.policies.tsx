@@ -19,7 +19,15 @@ import {
   orgWorkspacePoliciesQueryOptions,
   orgWorkspaceRolesQueryOptions,
 } from '#/lib/api/query'
-import type { Connection, Environment, OrgMember, PolicyBinding, ResourceType, Role, Team } from '#/lib/api/types'
+import type {
+  Connection,
+  Environment,
+  OrgMember,
+  PolicyBinding,
+  ResourceType,
+  Role,
+  Team,
+} from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
 import {
   AlertDialog,
@@ -34,7 +42,16 @@ import {
 } from '#/components/ui/alert-dialog'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
 import { Label } from '#/components/ui/label'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
@@ -49,7 +66,14 @@ import {
 } from '#/components/ui/select'
 import { TableEmptyState } from '#/components/EmptyState'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 import { cn } from '#/lib/utils'
 import { entityColor } from '#/lib/entity-colors'
 import { SectionTabNav } from '#/components/SectionTabNav'
@@ -64,7 +88,6 @@ export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/p
   component: WorkspacePoliciesPage,
   pendingComponent: RoutePending,
 })
-
 
 type WorkspaceSubjectType = 'account' | 'team' | 'org_members' | 'workspace_members'
 type WorkspacePolicyResourceType = Extract<ResourceType, 'workspace' | 'environment' | 'connection'>
@@ -88,28 +111,41 @@ function WorkspacePoliciesPage() {
   const [resourceLabel, setResourceLabel] = useState('')
   const [roleId, setRoleId] = useState('')
   const [roleLabel, setRoleLabel] = useState('')
-  const [fieldErrors, setFieldErrors] = useState<{ subject?: string; resource?: string; role?: string }>({})
+  const [fieldErrors, setFieldErrors] = useState<{
+    subject?: string
+    resource?: string
+    role?: string
+  }>({})
   const [memberQ, setMemberQ] = useState('')
   const [teamQ, setTeamQ] = useState('')
   const [roleQ, setRoleQ] = useState('')
   const [environmentQ, setEnvironmentQ] = useState('')
   const [connectionQ, setConnectionQ] = useState('')
 
-  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
-    page: 1,
-    page_size: 10,
-    sort: 'created_at',
-    order: 'desc',
-    q: '',
-  })
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
+    useListPageState({
+      page: 1,
+      page_size: 10,
+      sort: 'created_at',
+      order: 'desc',
+      q: '',
+    })
 
   const org = useQuery({
     ...orgQueryOptions(orgSlug),
     enabled: isCreating && subjectType === 'org_members',
   })
-  const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId))
-  const canReadPolicies = hasPermission(effectivePermissions.data?.permissions, permission.policyRead)
-  const canModifyPolicies = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
+  const effectivePermissions = useQuery(
+    orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId),
+  )
+  const canReadPolicies = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.policyRead,
+  )
+  const canModifyPolicies = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.policyModify,
+  )
   const policies = useQuery({
     ...orgWorkspacePoliciesQueryOptions(orgSlug, workspaceId, query),
     enabled: canReadPolicies,
@@ -174,7 +210,9 @@ function WorkspacePoliciesPage() {
       setIsCreating(false)
       resetForm()
       toast.success('Policy binding created')
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspacePoliciesScope(orgSlug, workspaceId) })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgWorkspacePoliciesScope(orgSlug, workspaceId),
+      })
     },
     onError: (error) => {
       if (isApiError(error)) {
@@ -183,7 +221,13 @@ function WorkspacePoliciesPage() {
           resource: error.fieldErrors?.resource_id ?? error.fieldErrors?.resource_type,
           role: error.fieldErrors?.role_id,
         })
-        if (error.fieldErrors?.subject_id || error.fieldErrors?.subject_type || error.fieldErrors?.resource_id || error.fieldErrors?.resource_type || error.fieldErrors?.role_id) {
+        if (
+          error.fieldErrors?.subject_id ||
+          error.fieldErrors?.subject_type ||
+          error.fieldErrors?.resource_id ||
+          error.fieldErrors?.resource_type ||
+          error.fieldErrors?.role_id
+        ) {
           return
         }
       }
@@ -196,7 +240,9 @@ function WorkspacePoliciesPage() {
       api.delete<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/policies/${bindingId}`),
     onSuccess: async () => {
       toast.success('Policy binding revoked')
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspacePoliciesScope(orgSlug, workspaceId) })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgWorkspacePoliciesScope(orgSlug, workspaceId),
+      })
     },
     onError: (error) => {
       toast.error(errorMessage(error, 'Failed to revoke policy binding'))
@@ -231,15 +277,17 @@ function WorkspacePoliciesPage() {
     const errors: typeof fieldErrors = {}
     if (subjectType === 'account' && !subjectId) errors.subject = 'Select a user.'
     if (subjectType === 'team' && !subjectId) errors.subject = 'Select a team.'
-    if (subjectType === 'org_members' && !org.data?.id) errors.subject = 'Organization is still loading.'
-    if (resourceType !== 'workspace' && !resourceId) errors.resource = `Select a ${resourceLabelFor(resourceType).toLowerCase()}.`
+    if (subjectType === 'org_members' && !org.data?.id)
+      errors.subject = 'Organization is still loading.'
+    if (resourceType !== 'workspace' && !resourceId)
+      errors.resource = `Select a ${resourceLabelFor(resourceType).toLowerCase()}.`
     if (!roleId) errors.role = 'Select a role.'
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)
       return
     }
     setFieldErrors({})
-    void createPolicy.mutateAsync().catch(() => { })
+    void createPolicy.mutateAsync().catch(() => {})
   }
 
   function updateSubjectType(nextSubjectType: WorkspaceSubjectType) {
@@ -290,285 +338,341 @@ function WorkspacePoliciesPage() {
     <div className="flex flex-col">
       <SectionTabNav
         tabs={[
-          { label: 'Policies', to: '/orgs/$org_slug/workspaces/$workspace_id/policies', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: true },
-          { label: 'Roles', to: '/orgs/$org_slug/workspaces/$workspace_id/roles', params: { org_slug: orgSlug, workspace_id: workspaceId }, isActive: false },
+          {
+            label: 'Policies',
+            to: '/orgs/$org_slug/workspaces/$workspace_id/policies',
+            params: { org_slug: orgSlug, workspace_id: workspaceId },
+            isActive: true,
+          },
+          {
+            label: 'Roles',
+            to: '/orgs/$org_slug/workspaces/$workspace_id/roles',
+            params: { org_slug: orgSlug, workspace_id: workspaceId },
+            isActive: false,
+          },
         ]}
       />
 
       <div className="flex flex-col gap-6 pt-6">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            {!policies.isLoading && total > 0
-              ? `${total} policy binding${total !== 1 ? 's' : ''} in this workspace`
-              : 'Assign workspace roles to users, teams, and membership groups.'}
-          </p>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              {!policies.isLoading && total > 0
+                ? `${total} policy binding${total !== 1 ? 's' : ''} in this workspace`
+                : 'Assign workspace roles to users, teams, and membership groups.'}
+            </p>
 
-          {canModifyPolicies ? (
-            <Dialog
-              open={isCreating}
-              onOpenChange={(open) => {
-                setIsCreating(open)
-                if (!open) resetForm()
-              }}
-            >
-              <DialogTrigger render={<Button />}>
-                <Icon name="plus-sign" size={20} data-icon="inline-start" />
-                Assign role
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Assign role</DialogTitle>
-                  <DialogDescription>
-                    Bind a workspace role to a subject for this workspace or one of its child resources.
-                  </DialogDescription>
-                </DialogHeader>
-                <form className="mt-6 flex flex-col gap-6" onSubmit={submitCreatePolicy}>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="subject-type">Subject type</Label>
-                    <Select
-                      value={subjectType}
-                      onValueChange={(value) => {
-                        if (isWorkspaceSubjectType(value)) updateSubjectType(value)
-                      }}
-                      disabled={createPolicy.isPending}
-                    >
-                      <SelectTrigger id="subject-type" className="w-full">
-                        <SelectValue>{SUBJECT_TYPE_LABELS[subjectType]}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="account">User</SelectItem>
-                          <SelectItem value="team">Team</SelectItem>
-                          <SelectItem value="org_members">All organization users</SelectItem>
-                          <SelectItem value="workspace_members">All workspace users</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {subjectType === 'account' ? (
-                    <SearchComboboxField
-                      label="User"
-                      placeholder="Select a user..."
-                      searchPlaceholder="Search users..."
-                      selectedValue={subjectId}
-                      selectedLabel={subjectLabel}
-                      items={memberItems}
-                      isLoading={members.isLoading}
-                      error={fieldErrors.subject}
-                      disabled={createPolicy.isPending}
-                      onChange={(value, label) => {
-                        setSubjectId(value)
-                        setSubjectLabel(label)
-                        setFieldErrors((current) => ({ ...current, subject: undefined }))
-                      }}
-                      onSearchChange={setMemberQ}
-                    />
-                  ) : null}
-
-                  {subjectType === 'team' ? (
-                    <SearchComboboxField
-                      label="Team"
-                      placeholder="Select a team..."
-                      searchPlaceholder="Search teams..."
-                      selectedValue={subjectId}
-                      selectedLabel={subjectLabel}
-                      items={teamItems}
-                      isLoading={teams.isLoading}
-                      error={fieldErrors.subject}
-                      disabled={createPolicy.isPending}
-                      onChange={(value, label) => {
-                        setSubjectId(value)
-                        setSubjectLabel(label)
-                        setFieldErrors((current) => ({ ...current, subject: undefined }))
-                      }}
-                      onSearchChange={setTeamQ}
-                    />
-                  ) : null}
-
-                  {subjectType === 'org_members' || subjectType === 'workspace_members' ? (
-                    <div className="rounded-md border border-border bg-muted/40 px-4 py-3">
-                      <p className="text-sm text-muted-foreground">
-                        The selected role will be granted to{' '}
-                        <span className="font-medium text-foreground">
-                          {subjectType === 'org_members' ? 'all organization users' : 'all direct workspace users'}
-                        </span>
-                        .
-                      </p>
+            {canModifyPolicies ? (
+              <Dialog
+                open={isCreating}
+                onOpenChange={(open) => {
+                  setIsCreating(open)
+                  if (!open) resetForm()
+                }}
+              >
+                <DialogTrigger render={<Button />}>
+                  <Icon name="plus-sign" size={20} data-icon="inline-start" />
+                  Assign role
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Assign role</DialogTitle>
+                    <DialogDescription>
+                      Bind a workspace role to a subject for this workspace or one of its child
+                      resources.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form className="mt-6 flex flex-col gap-6" onSubmit={submitCreatePolicy}>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="subject-type">Subject type</Label>
+                      <Select
+                        value={subjectType}
+                        onValueChange={(value) => {
+                          if (isWorkspaceSubjectType(value)) updateSubjectType(value)
+                        }}
+                        disabled={createPolicy.isPending}
+                      >
+                        <SelectTrigger id="subject-type" className="w-full">
+                          <SelectValue>{SUBJECT_TYPE_LABELS[subjectType]}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="account">User</SelectItem>
+                            <SelectItem value="team">Team</SelectItem>
+                            <SelectItem value="org_members">All organization users</SelectItem>
+                            <SelectItem value="workspace_members">All workspace users</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
                     </div>
-                  ) : null}
 
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="resource-type">Resource type</Label>
-                    <Select
-                      value={resourceType}
-                      onValueChange={(value) => {
-                        if (isWorkspacePolicyResourceType(value)) updateResourceType(value)
-                      }}
-                      disabled={createPolicy.isPending}
-                    >
-                      <SelectTrigger id="resource-type" className="w-full">
-                        <SelectValue>{resourceLabelFor(resourceType)}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="workspace">This workspace</SelectItem>
-                          <SelectItem value="environment">Environment</SelectItem>
-                          <SelectItem value="connection">Connection</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                    {subjectType === 'account' ? (
+                      <SearchComboboxField
+                        label="User"
+                        placeholder="Select a user..."
+                        searchPlaceholder="Search users..."
+                        selectedValue={subjectId}
+                        selectedLabel={subjectLabel}
+                        items={memberItems}
+                        isLoading={members.isLoading}
+                        error={fieldErrors.subject}
+                        disabled={createPolicy.isPending}
+                        onChange={(value, label) => {
+                          setSubjectId(value)
+                          setSubjectLabel(label)
+                          setFieldErrors((current) => ({ ...current, subject: undefined }))
+                        }}
+                        onSearchChange={setMemberQ}
+                      />
+                    ) : null}
 
-                  {resourceType === 'environment' ? (
+                    {subjectType === 'team' ? (
+                      <SearchComboboxField
+                        label="Team"
+                        placeholder="Select a team..."
+                        searchPlaceholder="Search teams..."
+                        selectedValue={subjectId}
+                        selectedLabel={subjectLabel}
+                        items={teamItems}
+                        isLoading={teams.isLoading}
+                        error={fieldErrors.subject}
+                        disabled={createPolicy.isPending}
+                        onChange={(value, label) => {
+                          setSubjectId(value)
+                          setSubjectLabel(label)
+                          setFieldErrors((current) => ({ ...current, subject: undefined }))
+                        }}
+                        onSearchChange={setTeamQ}
+                      />
+                    ) : null}
+
+                    {subjectType === 'org_members' || subjectType === 'workspace_members' ? (
+                      <div className="rounded-md border border-border bg-muted/40 px-4 py-3">
+                        <p className="text-sm text-muted-foreground">
+                          The selected role will be granted to{' '}
+                          <span className="font-medium text-foreground">
+                            {subjectType === 'org_members'
+                              ? 'all organization users'
+                              : 'all direct workspace users'}
+                          </span>
+                          .
+                        </p>
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="resource-type">Resource type</Label>
+                      <Select
+                        value={resourceType}
+                        onValueChange={(value) => {
+                          if (isWorkspacePolicyResourceType(value)) updateResourceType(value)
+                        }}
+                        disabled={createPolicy.isPending}
+                      >
+                        <SelectTrigger id="resource-type" className="w-full">
+                          <SelectValue>{resourceLabelFor(resourceType)}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="workspace">This workspace</SelectItem>
+                            <SelectItem value="environment">Environment</SelectItem>
+                            <SelectItem value="connection">Connection</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {resourceType === 'environment' ? (
+                      <SearchComboboxField
+                        label="Environment"
+                        placeholder="Select an environment..."
+                        searchPlaceholder="Search environments..."
+                        emptyMessage="No environments available in this workspace."
+                        selectedValue={resourceId}
+                        selectedLabel={resourceLabel}
+                        items={environmentItems}
+                        isLoading={environments.isLoading}
+                        error={fieldErrors.resource}
+                        disabled={createPolicy.isPending}
+                        onChange={(value, label) => {
+                          setResourceId(value)
+                          setResourceLabel(label)
+                          setFieldErrors((current) => ({ ...current, resource: undefined }))
+                        }}
+                        onSearchChange={setEnvironmentQ}
+                      />
+                    ) : null}
+
+                    {resourceType === 'connection' ? (
+                      <SearchComboboxField
+                        label="Connection"
+                        placeholder="Select a connection..."
+                        searchPlaceholder="Search connections..."
+                        emptyMessage="No connections available in this workspace."
+                        selectedValue={resourceId}
+                        selectedLabel={resourceLabel}
+                        items={connectionItems}
+                        isLoading={connections.isLoading}
+                        error={fieldErrors.resource}
+                        disabled={createPolicy.isPending}
+                        onChange={(value, label) => {
+                          setResourceId(value)
+                          setResourceLabel(label)
+                          setFieldErrors((current) => ({ ...current, resource: undefined }))
+                        }}
+                        onSearchChange={setConnectionQ}
+                      />
+                    ) : null}
+
                     <SearchComboboxField
-                      label="Environment"
-                      placeholder="Select an environment..."
-                      searchPlaceholder="Search environments..."
-                      emptyMessage="No environments available in this workspace."
-                      selectedValue={resourceId}
-                      selectedLabel={resourceLabel}
-                      items={environmentItems}
-                      isLoading={environments.isLoading}
-                      error={fieldErrors.resource}
+                      label="Role"
+                      placeholder="Select a role..."
+                      searchPlaceholder="Search roles..."
+                      emptyMessage={`No roles scoped to ${resourceLabelFor(resourceType).toLowerCase()} available in this workspace.`}
+                      selectedValue={roleId}
+                      selectedLabel={roleLabel}
+                      items={roleItems}
+                      isLoading={roles.isLoading}
+                      error={fieldErrors.role}
                       disabled={createPolicy.isPending}
                       onChange={(value, label) => {
-                        setResourceId(value)
-                        setResourceLabel(label)
-                        setFieldErrors((current) => ({ ...current, resource: undefined }))
+                        setRoleId(value)
+                        setRoleLabel(label)
+                        setFieldErrors((current) => ({ ...current, role: undefined }))
                       }}
-                      onSearchChange={setEnvironmentQ}
+                      onSearchChange={setRoleQ}
                     />
-                  ) : null}
 
-                  {resourceType === 'connection' ? (
-                    <SearchComboboxField
-                      label="Connection"
-                      placeholder="Select a connection..."
-                      searchPlaceholder="Search connections..."
-                      emptyMessage="No connections available in this workspace."
-                      selectedValue={resourceId}
-                      selectedLabel={resourceLabel}
-                      items={connectionItems}
-                      isLoading={connections.isLoading}
-                      error={fieldErrors.resource}
-                      disabled={createPolicy.isPending}
-                      onChange={(value, label) => {
-                        setResourceId(value)
-                        setResourceLabel(label)
-                        setFieldErrors((current) => ({ ...current, resource: undefined }))
-                      }}
-                      onSearchChange={setConnectionQ}
-                    />
-                  ) : null}
+                    <DialogFooter>
+                      <DialogClose
+                        render={
+                          <Button type="button" variant="ghost" disabled={createPolicy.isPending} />
+                        }
+                      >
+                        Cancel
+                      </DialogClose>
+                      <Button type="submit" disabled={createPolicy.isPending}>
+                        {createPolicy.isPending ? 'Assigning...' : 'Assign'}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            ) : null}
+          </div>
 
-                  <SearchComboboxField
-                    label="Role"
-                    placeholder="Select a role..."
-                    searchPlaceholder="Search roles..."
-                    emptyMessage={`No roles scoped to ${resourceLabelFor(resourceType).toLowerCase()} available in this workspace.`}
-                    selectedValue={roleId}
-                    selectedLabel={roleLabel}
-                    items={roleItems}
-                    isLoading={roles.isLoading}
-                    error={fieldErrors.role}
-                    disabled={createPolicy.isPending}
-                    onChange={(value, label) => {
-                      setRoleId(value)
-                      setRoleLabel(label)
-                      setFieldErrors((current) => ({ ...current, role: undefined }))
-                    }}
-                    onSearchChange={setRoleQ}
-                  />
-
-                  <DialogFooter>
-                    <DialogClose render={<Button type="button" variant="ghost" disabled={createPolicy.isPending} />}>
-                      Cancel
-                    </DialogClose>
-                    <Button type="submit" disabled={createPolicy.isPending}>
-                      {createPolicy.isPending ? 'Assigning...' : 'Assign'}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          ) : null}
+          <SearchInput
+            value={searchText}
+            onValueChange={setSearchText}
+            onClear={clearSearch}
+            placeholder="Search policies"
+          />
         </div>
 
-        <SearchInput
-          value={searchText}
-          onValueChange={setSearchText}
-          onClear={clearSearch}
-          placeholder="Search policies"
-        />
-      </div>
-
-      <Card>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <TableColumnHeader label="Subject" sort="subject_name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                </TableHead>
-                <TableHead>
-                  <TableColumnHeader label="Resource" sort="resource_name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                </TableHead>
-                <TableHead>
-                  <TableColumnHeader label="Role" />
-                </TableHead>
-                <TableHead>
-                  <TableColumnHeader label="Assigned" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                </TableHead>
-                {canModifyPolicies ? (
-                  <TableHead className="text-end">
-                    <TableColumnHeader label="Actions" />
+        <Card>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <TableColumnHeader
+                      label="Subject"
+                      sort="subject_name"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
+                    />
                   </TableHead>
+                  <TableHead>
+                    <TableColumnHeader
+                      label="Resource"
+                      sort="resource_name"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
+                    />
+                  </TableHead>
+                  <TableHead>
+                    <TableColumnHeader label="Role" />
+                  </TableHead>
+                  <TableHead>
+                    <TableColumnHeader
+                      label="Assigned"
+                      sort="created_at"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
+                    />
+                  </TableHead>
+                  {canModifyPolicies ? (
+                    <TableHead className="text-end">
+                      <TableColumnHeader label="Actions" />
+                    </TableHead>
+                  ) : null}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {effectivePermissions.isLoading || policies.isLoading ? (
+                  <PoliciesTableSkeleton canModify={canModifyPolicies} showResource />
                 ) : null}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {effectivePermissions.isLoading || policies.isLoading ? <PoliciesTableSkeleton canModify={canModifyPolicies} showResource /> : null}
-              {policies.isError ? <TableEmptyState colSpan={colSpan} icon="user-shield-01" message="Failed to load policies." /> : null}
-              {!effectivePermissions.isLoading && !canReadPolicies ? (
-                <TableEmptyState colSpan={colSpan} icon="user-shield-01" message="You do not have permission to view workspace policies." />
-              ) : null}
-              {!effectivePermissions.isLoading && canReadPolicies && !policies.isLoading && !policies.isError && items.length === 0 ? (
-                <TableEmptyState
-                  colSpan={colSpan}
-                  icon="user-shield-01"
-                  message={query.q ? 'No policies matched your search.' : 'No policy bindings found.'}
-                />
-              ) : null}
-              {!effectivePermissions.isLoading && canReadPolicies && !policies.isLoading && !policies.isError
-                ? items.map((binding) => (
-                  <PolicyRow
-                    key={binding.binding_id}
-                    binding={binding}
-                    canModify={canModifyPolicies}
-                    isRevoking={revokePolicy.isPending}
-                    onRevoke={(id) => revokePolicy.mutate(id)}
+                {policies.isError ? (
+                  <TableEmptyState
+                    colSpan={colSpan}
+                    icon="user-shield-01"
+                    message="Failed to load policies."
                   />
-                ))
-                : null}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                ) : null}
+                {!effectivePermissions.isLoading && !canReadPolicies ? (
+                  <TableEmptyState
+                    colSpan={colSpan}
+                    icon="user-shield-01"
+                    message="You do not have permission to view workspace policies."
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading &&
+                canReadPolicies &&
+                !policies.isLoading &&
+                !policies.isError &&
+                items.length === 0 ? (
+                  <TableEmptyState
+                    colSpan={colSpan}
+                    icon="user-shield-01"
+                    message={
+                      query.q ? 'No policies matched your search.' : 'No policy bindings found.'
+                    }
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading &&
+                canReadPolicies &&
+                !policies.isLoading &&
+                !policies.isError
+                  ? items.map((binding) => (
+                      <PolicyRow
+                        key={binding.binding_id}
+                        binding={binding}
+                        canModify={canModifyPolicies}
+                        isRevoking={revokePolicy.isPending}
+                        onRevoke={(id) => revokePolicy.mutate(id)}
+                      />
+                    ))
+                  : null}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
-      {canReadPolicies && !policies.isLoading && !policies.isError && items.length > 0 ? (
-        <PaginationFooter
-          itemLabel="bindings"
-          page={page}
-          pageCount={pageCount}
-          pageSize={pageSize}
-          total={total}
-          isFetching={policies.isFetching}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
-        />
-      ) : null}
+        {canReadPolicies && !policies.isLoading && !policies.isError && items.length > 0 ? (
+          <PaginationFooter
+            itemLabel="bindings"
+            page={page}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            total={total}
+            isFetching={policies.isFetching}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
       </div>
     </div>
   )
@@ -595,12 +699,21 @@ function PolicyRow({
       </TableCell>
       <TableCell>
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate font-medium text-foreground">{binding.resource_name || resourceLabelFor(binding.resource_type)}</span>
-          <span className="text-xs text-muted-foreground">{resourceLabelFor(binding.resource_type)}</span>
+          <span className="truncate font-medium text-foreground">
+            {binding.resource_name || resourceLabelFor(binding.resource_type)}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {resourceLabelFor(binding.resource_type)}
+          </span>
         </div>
       </TableCell>
       <TableCell>
-        <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', entityColor(binding.role_name ?? ''))}>
+        <span
+          className={cn(
+            'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium',
+            entityColor(binding.role_name ?? ''),
+          )}
+        >
           {binding.role_name || '—'}
         </span>
       </TableCell>
@@ -608,20 +721,29 @@ function PolicyRow({
       {canModify ? (
         <TableCell className="text-end">
           <AlertDialog>
-            <AlertDialogTrigger render={<Button variant="destructive" size="sm" disabled={isRevoking} />}>
+            <AlertDialogTrigger
+              render={<Button variant="destructive" size="sm" disabled={isRevoking} />}
+            >
               Revoke
             </AlertDialogTrigger>
             <AlertDialogContent size="sm">
               <AlertDialogHeader>
                 <AlertDialogTitle>Revoke policy binding?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This removes the <span className="font-medium">{binding.role_name || 'role'}</span> binding from{' '}
+                  This removes the{' '}
+                  <span className="font-medium">{binding.role_name || 'role'}</span> binding from{' '}
                   <span className="font-medium">{subjectDisplayName(binding)}</span>.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel variant="ghost" disabled={isRevoking}>Cancel</AlertDialogCancel>
-                <AlertDialogAction variant="destructive" disabled={isRevoking} onClick={() => onRevoke(binding.binding_id)}>
+                <AlertDialogCancel variant="ghost" disabled={isRevoking}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  disabled={isRevoking}
+                  onClick={() => onRevoke(binding.binding_id)}
+                >
                   Revoke
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -654,7 +776,12 @@ function resourceLabelFor(value: ResourceType) {
 }
 
 function isWorkspaceSubjectType(value: string | null): value is WorkspaceSubjectType {
-  return value === 'account' || value === 'team' || value === 'org_members' || value === 'workspace_members'
+  return (
+    value === 'account' ||
+    value === 'team' ||
+    value === 'org_members' ||
+    value === 'workspace_members'
+  )
 }
 
 function isWorkspacePolicyResourceType(value: string | null): value is WorkspacePolicyResourceType {

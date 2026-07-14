@@ -33,10 +33,16 @@ export function useExportJobs(orgSlug: string, workspaceId: number) {
   const cursors = useRef(new Map<string, EventCursor>())
 
   const jobsQuery = useQuery({
-    ...orgWorkspaceJobsQueryOptions(orgSlug, workspaceId, { page_size: 50, sort: 'created_at', order: 'desc' }),
+    ...orgWorkspaceJobsQueryOptions(orgSlug, workspaceId, {
+      page_size: 50,
+      sort: 'created_at',
+      order: 'desc',
+    }),
     refetchInterval: (query) => {
       const items = query.state.data?.items ?? []
-      const nonTerminal = items.some((j) => j.type === EXPORT_JOB_TYPE && !isTerminalJobStatus(j.status))
+      const nonTerminal = items.some(
+        (j) => j.type === EXPORT_JOB_TYPE && !isTerminalJobStatus(j.status),
+      )
       return nonTerminal ? POLL_INTERVAL_MS : false
     },
   })
@@ -71,7 +77,9 @@ export function useExportJobs(orgSlug: string, workspaceId: number) {
   })
 
   function refresh() {
-    queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaceJobsScope(orgSlug, workspaceId) })
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.orgWorkspaceJobsScope(orgSlug, workspaceId),
+    })
   }
 
   return {

@@ -25,7 +25,15 @@ import {
 } from '#/components/ui/alert-dialog'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { Textarea } from '#/components/ui/textarea'
@@ -35,13 +43,19 @@ import { SearchInput } from '#/components/SearchInput'
 import { Skeleton } from '#/components/ui/skeleton'
 import { TableEmptyState } from '#/components/EmptyState'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/environments')({
   component: WorkspaceEnvironmentsPage,
   pendingComponent: RoutePending,
 })
-
 
 type EnvironmentFormValues = {
   name: string
@@ -58,22 +72,37 @@ function WorkspaceEnvironmentsPage() {
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
   const [editingEnvironment, setEditingEnvironment] = useState<Environment | null>(null)
-  const [createValues, setCreateValues] = useState<EnvironmentFormValues>({ name: '', description: '' })
+  const [createValues, setCreateValues] = useState<EnvironmentFormValues>({
+    name: '',
+    description: '',
+  })
   const [editValues, setEditValues] = useState<EnvironmentFormValues>({ name: '', description: '' })
   const [createErrors, setCreateErrors] = useState<EnvironmentFieldErrors>({})
   const [editErrors, setEditErrors] = useState<EnvironmentFieldErrors>({})
-  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
-    page: 1,
-    page_size: 10,
-    sort: 'created_at',
-    order: 'asc',
-    q: '',
-  })
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
+    useListPageState({
+      page: 1,
+      page_size: 10,
+      sort: 'created_at',
+      order: 'asc',
+      q: '',
+    })
 
-  const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId))
-  const canCreateEnvironment = hasPermission(effectivePermissions.data?.permissions, permission.envCreate)
-  const canEditEnvironment = hasPermission(effectivePermissions.data?.permissions, permission.envWrite)
-  const canDeleteEnvironment = hasPermission(effectivePermissions.data?.permissions, permission.envDelete)
+  const effectivePermissions = useQuery(
+    orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId),
+  )
+  const canCreateEnvironment = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.envCreate,
+  )
+  const canEditEnvironment = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.envWrite,
+  )
+  const canDeleteEnvironment = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.envDelete,
+  )
   const canManageEnvironment = canEditEnvironment || canDeleteEnvironment
   const environments = useQuery(orgEnvironmentsQueryOptions(orgSlug, workspaceId, query))
 
@@ -105,7 +134,9 @@ function WorkspaceEnvironmentsPage() {
       setCreateValues({ name: '', description: '' })
       setCreateErrors({})
       toast.success('Environment created')
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orgEnvironmentsScope(orgSlug, workspaceId) })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgEnvironmentsScope(orgSlug, workspaceId),
+      })
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors) {
@@ -122,17 +153,22 @@ function WorkspaceEnvironmentsPage() {
   const updateEnvironment = useMutation({
     mutationFn: async () => {
       if (!editingEnvironment) return
-      return api.patch<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/environments/${editingEnvironment.id}`, {
-        name: editValues.name.trim(),
-        description: editValues.description.trim(),
-      })
+      return api.patch<void>(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/environments/${editingEnvironment.id}`,
+        {
+          name: editValues.name.trim(),
+          description: editValues.description.trim(),
+        },
+      )
     },
     onSuccess: async () => {
       setEditingEnvironment(null)
       setEditValues({ name: '', description: '' })
       setEditErrors({})
       toast.success('Environment updated')
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orgEnvironmentsScope(orgSlug, workspaceId) })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgEnvironmentsScope(orgSlug, workspaceId),
+      })
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors) {
@@ -148,10 +184,14 @@ function WorkspaceEnvironmentsPage() {
 
   const deleteEnvironment = useMutation({
     mutationFn: async (environmentId: number) =>
-      api.delete<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/environments/${environmentId}`),
+      api.delete<void>(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/environments/${environmentId}`,
+      ),
     onSuccess: async () => {
       toast.success('Environment deleted')
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orgEnvironmentsScope(orgSlug, workspaceId) })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgEnvironmentsScope(orgSlug, workspaceId),
+      })
     },
     onError: (error) => {
       toast.error(errorMessage(error, 'Failed to delete environment'))
@@ -247,13 +287,25 @@ function WorkspaceEnvironmentsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>
-                  <TableColumnHeader label="Environment" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  <TableColumnHeader
+                    label="Environment"
+                    sort="name"
+                    currentSort={query.sort}
+                    currentOrder={query.order}
+                    onSortChange={toggleSort}
+                  />
                 </TableHead>
                 <TableHead>
                   <TableColumnHeader label="Description" />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                  <TableColumnHeader
+                    label="Created"
+                    sort="created_at"
+                    currentSort={query.sort}
+                    currentOrder={query.order}
+                    onSortChange={toggleSort}
+                  />
                 </TableHead>
                 {canManageEnvironment ? (
                   <TableHead className="text-end">
@@ -263,13 +315,23 @@ function WorkspaceEnvironmentsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {environments.isLoading ? <EnvironmentTableSkeleton canManageEnvironment={canManageEnvironment} /> : null}
-              {environments.isError ? <TableEmptyState colSpan={tableColumnCount} icon="database" message="Failed to load environments." /> : null}
+              {environments.isLoading ? (
+                <EnvironmentTableSkeleton canManageEnvironment={canManageEnvironment} />
+              ) : null}
+              {environments.isError ? (
+                <TableEmptyState
+                  colSpan={tableColumnCount}
+                  icon="database"
+                  message="Failed to load environments."
+                />
+              ) : null}
               {!environments.isLoading && !environments.isError && items.length === 0 ? (
                 <TableEmptyState
                   colSpan={tableColumnCount}
                   icon="database"
-                  message={query.q ? 'No environments matched your search.' : 'No environments found.'}
+                  message={
+                    query.q ? 'No environments matched your search.' : 'No environments found.'
+                  }
                 />
               ) : null}
               {!environments.isLoading && !environments.isError
@@ -375,7 +437,9 @@ function EnvironmentForm({
         />
       </Field>
       <DialogFooter>
-        <DialogClose render={<Button type="button" variant="ghost" disabled={isPending} />}>Cancel</DialogClose>
+        <DialogClose render={<Button type="button" variant="ghost" disabled={isPending} />}>
+          Cancel
+        </DialogClose>
         <Button type="submit" disabled={isPending}>
           {submitLabel}
         </Button>
@@ -427,7 +491,11 @@ function EnvironmentRow({
             ) : null}
             {canDeleteEnvironment ? (
               <AlertDialog>
-                <AlertDialogTrigger render={<Button type="button" variant="destructive" size="sm" disabled={isDeleting} />}>
+                <AlertDialogTrigger
+                  render={
+                    <Button type="button" variant="destructive" size="sm" disabled={isDeleting} />
+                  }
+                >
                   <Icon name="delete-02" size={20} data-icon="inline-start" />
                   Delete
                 </AlertDialogTrigger>
@@ -435,7 +503,9 @@ function EnvironmentRow({
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete environment?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This permanently deletes <span className="font-medium text-foreground">{environment.name}</span>. Environments with connections cannot be deleted.
+                      This permanently deletes{' '}
+                      <span className="font-medium text-foreground">{environment.name}</span>.
+                      Environments with connections cannot be deleted.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

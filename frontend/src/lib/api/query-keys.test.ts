@@ -11,12 +11,7 @@ describe('queryKeys', () => {
   })
 
   it('keeps file content addressing consistent across load and eviction', () => {
-    expect(queryKeys.fileContent('acme', 7, 42)).toEqual([
-      'file-content',
-      'acme',
-      7,
-      42,
-    ])
+    expect(queryKeys.fileContent('acme', 7, 42)).toEqual(['file-content', 'acme', 7, 42])
   })
 
   it('separates workspace-scoped collections', () => {

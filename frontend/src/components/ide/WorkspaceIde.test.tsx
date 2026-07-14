@@ -7,24 +7,42 @@ import { createIdeStore, IdeStoreContext } from './useIdeStore'
 
 const workspaces: Workspace[] = [
   {
-    id: 3, org_id: 1, owner_type: 'org', owner_id: 1, name: 'Analytics',
-    environment_count: 1, connection_count: 1, created_at: '', updated_at: '',
+    id: 3,
+    org_id: 1,
+    owner_type: 'org',
+    owner_id: 1,
+    name: 'Analytics',
+    environment_count: 1,
+    connection_count: 1,
+    created_at: '',
+    updated_at: '',
   },
   {
-    id: 4, org_id: 1, owner_type: 'org', owner_id: 1, name: 'Operations',
-    environment_count: 0, connection_count: 0, created_at: '', updated_at: '',
+    id: 4,
+    org_id: 1,
+    owner_type: 'org',
+    owner_id: 1,
+    name: 'Operations',
+    environment_count: 0,
+    connection_count: 0,
+    created_at: '',
+    updated_at: '',
   },
 ]
 
 describe('WorkspaceIdeContent', () => {
   it('renders stable loading, error, and empty states', () => {
-    const view = render(<WorkspaceIdeContent orgSlug="acme" isLoading isError={false} workspaces={[]} />)
+    const view = render(
+      <WorkspaceIdeContent orgSlug="acme" isLoading isError={false} workspaces={[]} />,
+    )
     expect(screen.getByText('Loading workspaces…')).toBeInTheDocument()
 
     view.rerender(<WorkspaceIdeContent orgSlug="acme" isLoading={false} isError workspaces={[]} />)
     expect(screen.getByText('Unable to load workspaces.')).toBeInTheDocument()
 
-    view.rerender(<WorkspaceIdeContent orgSlug="acme" isLoading={false} isError={false} workspaces={[]} />)
+    view.rerender(
+      <WorkspaceIdeContent orgSlug="acme" isLoading={false} isError={false} workspaces={[]} />,
+    )
     expect(screen.getByText('No accessible workspaces.')).toBeInTheDocument()
   })
 })

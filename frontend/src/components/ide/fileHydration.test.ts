@@ -19,7 +19,12 @@ describe('hydrateFileTab', () => {
     doc.on('update', (_update, origin) => origins.push(origin))
     const updateTabEtag = vi.fn()
 
-    hydrateFileTab(tab, { text: 'select 1', etag: 'etag-1' }, { getOrCreate: () => doc }, updateTabEtag)
+    hydrateFileTab(
+      tab,
+      { text: 'select 1', etag: 'etag-1' },
+      { getOrCreate: () => doc },
+      updateTabEtag,
+    )
 
     expect(doc.getText('content').toString()).toBe('select 1')
     expect(origins).toContain('server-load')
@@ -29,7 +34,12 @@ describe('hydrateFileTab', () => {
   it('does not overwrite a document already hydrated by another window', () => {
     const doc = new Y.Doc()
     doc.getText('content').insert(0, 'peer content')
-    hydrateFileTab(tab, { text: 'server content', etag: 'etag-1' }, { getOrCreate: () => doc }, vi.fn())
+    hydrateFileTab(
+      tab,
+      { text: 'server content', etag: 'etag-1' },
+      { getOrCreate: () => doc },
+      vi.fn(),
+    )
     expect(doc.getText('content').toString()).toBe('peer content')
   })
 

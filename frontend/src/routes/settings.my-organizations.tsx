@@ -94,7 +94,11 @@ function SettingsMyOrganizationsPage() {
       {organizations.isError ? (
         <Card>
           <CardContent>
-            <EmptyState icon="building-04" message="Failed to load organizations" description="Refresh the page and try again." />
+            <EmptyState
+              icon="building-04"
+              message="Failed to load organizations"
+              description="Refresh the page and try again."
+            />
           </CardContent>
         </Card>
       ) : null}
@@ -105,7 +109,11 @@ function SettingsMyOrganizationsPage() {
             <EmptyState
               icon="building-04"
               message={query.q ? 'No organizations matched your search.' : 'No organizations found'}
-              description={query.q ? 'Try a different name or slug.' : 'You do not belong to any organizations yet.'}
+              description={
+                query.q
+                  ? 'Try a different name or slug.'
+                  : 'You do not belong to any organizations yet.'
+              }
             />
           </CardContent>
         </Card>
@@ -123,7 +131,12 @@ function SettingsMyOrganizationsPage() {
               >
                 <div className="flex flex-1 flex-col gap-3 p-5">
                   <div className="flex items-start gap-3">
-                    <div className={cn('flex size-10 shrink-0 items-center justify-center text-sm font-semibold', organizationColor(organization.name))}>
+                    <div
+                      className={cn(
+                        'flex size-10 shrink-0 items-center justify-center text-sm font-semibold',
+                        organizationColor(organization.name),
+                      )}
+                    >
                       {getInitials(organization.name, 'O')}
                     </div>
                     <div className="min-w-0 flex-1 pt-0.5">
@@ -131,7 +144,10 @@ function SettingsMyOrganizationsPage() {
                         <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
                           {organization.name}
                         </p>
-                        <Badge variant="outline" className="shrink-0 capitalize text-[10px] px-1.5 h-4 py-0">
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 capitalize text-[10px] px-1.5 h-4 py-0"
+                        >
                           {organization.role}
                         </Badge>
                       </div>
@@ -142,11 +158,16 @@ function SettingsMyOrganizationsPage() {
                 <div className="flex items-center gap-5 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
                   <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
                     <Icon name="user-multiple" size={20} />
-                    <span>{organization.member_count} {organization.member_count === 1 ? 'member' : 'members'}</span>
+                    <span>
+                      {organization.member_count}{' '}
+                      {organization.member_count === 1 ? 'member' : 'members'}
+                    </span>
                   </div>
                   <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
                     <Icon name="user-group" size={20} />
-                    <span>{organization.team_count} {organization.team_count === 1 ? 'team' : 'teams'}</span>
+                    <span>
+                      {organization.team_count} {organization.team_count === 1 ? 'team' : 'teams'}
+                    </span>
                   </div>
                 </div>
               </Link>

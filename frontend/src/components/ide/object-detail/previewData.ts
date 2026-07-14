@@ -27,7 +27,15 @@ export interface CountDisplay {
 /** Resolves what to show for the total row count. An exact value always wins;
  *  otherwise a bounded count that reached `threshold + 1` is shown as
  *  `<threshold>+` with the option to fetch the exact number. */
-export function rowCountDisplay({ bounded, exact, threshold }: { bounded: number | null; exact: number | null; threshold: number }): CountDisplay {
+export function rowCountDisplay({
+  bounded,
+  exact,
+  threshold,
+}: {
+  bounded: number | null
+  exact: number | null
+  threshold: number
+}): CountDisplay {
   if (exact != null) return { text: String(exact), canShowExact: false }
   if (bounded == null) return { text: '…', canShowExact: false }
   if (bounded > threshold) return { text: `${threshold}+`, canShowExact: true }

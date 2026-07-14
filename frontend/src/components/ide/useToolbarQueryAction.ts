@@ -23,7 +23,8 @@ export function resolveEditorSql({
   const view = viewRegistry.get(activeGroupId ? `${activeGroupId}:${tab.id}` : tab.id)
   if (view) {
     const selection = view.state.selection.main
-    if (selection.from !== selection.to) return view.state.sliceDoc(selection.from, selection.to).trim()
+    if (selection.from !== selection.to)
+      return view.state.sliceDoc(selection.from, selection.to).trim()
     return sqlStatementAtCursor(view.state.doc.toString(), selection.head)
   }
   const document = documentRegistry.get(tab.id)
@@ -49,33 +50,47 @@ export function useToolbarQueryAction({
   const viewRegistry = useEditorViewRegistry()
   const maximizedPane = useIde((state) => state.maximizedPane)
   const setMaximizedPane = useIde((state) => state.setMaximizedPane)
-  const { cancel, isRunning, run: execute } = useQueryExecution(
-    orgSlug,
-    workspace.id,
-    activeTab?.id,
-    activeConnection?.id,
-  )
+  const {
+    cancel,
+    isRunning,
+    run: execute,
+  } = useQueryExecution(orgSlug, workspace.id, activeTab?.id, activeConnection?.id)
 
-  const resolveSql = useCallback(() => resolveEditorSql({
-    activeGroupId,
-    tab: activeTab,
-    viewRegistry,
-    documentRegistry,
-  }), [activeGroupId, activeTab, viewRegistry, documentRegistry])
+  const resolveSql = useCallback(
+    () =>
+      resolveEditorSql({
+        activeGroupId,
+        tab: activeTab,
+        viewRegistry,
+        documentRegistry,
+      }),
+    [activeGroupId, activeTab, viewRegistry, documentRegistry],
+  )
 
   const run = useCallback(async () => {
     if (!activeTab || isRunning) return
     if (!activeConnection) {
-      toast.warning(hasConnections
-        ? 'Select a connection to run this query.'
-        : 'No connection available. Add a connection to run queries.')
+      toast.warning(
+        hasConnections
+          ? 'Select a connection to run this query.'
+          : 'No connection available. Add a connection to run queries.',
+      )
       return
     }
     const sql = resolveSql()
     if (!sql) return
     if (maximizedPane === 'editor') setMaximizedPane(null)
     await execute(sql)
-  }, [activeTab, activeConnection, hasConnections, isRunning, maximizedPane, resolveSql, setMaximizedPane, execute])
+  }, [
+    activeTab,
+    activeConnection,
+    hasConnections,
+    isRunning,
+    maximizedPane,
+    resolveSql,
+    setMaximizedPane,
+    execute,
+  ])
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {

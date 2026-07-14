@@ -1,5 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -36,11 +36,9 @@ function SetupPage() {
 
   const mutation = useMutation({
     mutationFn: async () =>
-      api.post<SetupResponse>(
-        '/api/setup',
-        setupPayload(values, setupStatus.data?.access_mode),
-        { skipAuth: true },
-      ),
+      api.post<SetupResponse>('/api/setup', setupPayload(values, setupStatus.data?.access_mode), {
+        skipAuth: true,
+      }),
     onSuccess: async (payload) => {
       void payload
       clearAccessToken()
@@ -56,11 +54,10 @@ function SetupPage() {
     },
   })
 
-  const serverFieldErrors = isApiError(mutation.error) ? mutation.error.fieldErrors ?? {} : {}
-  const formErrors = useMemo(
-    () => ({ ...serverFieldErrors, ...localErrors }),
-    [localErrors, serverFieldErrors],
-  )
+  const formErrors = {
+    ...(isApiError(mutation.error) ? (mutation.error.fieldErrors ?? {}) : {}),
+    ...localErrors,
+  }
 
   if (setupStatus.isLoading) {
     return (
@@ -108,17 +105,21 @@ function SetupPage() {
     if (!values.name.trim()) nextErrors.name = 'Name is required.'
     if (!values.email.trim()) nextErrors.email = 'Email is required.'
     if (requiresOrganization) {
-      if (!values.organizationName.trim()) nextErrors.organization_name = 'Organization name is required.'
-      if (!values.organizationSlug.trim()) nextErrors.organization_slug = 'Organization slug is required.'
+      if (!values.organizationName.trim())
+        nextErrors.organization_name = 'Organization name is required.'
+      if (!values.organizationSlug.trim())
+        nextErrors.organization_slug = 'Organization slug is required.'
       else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(values.organizationSlug.trim())) {
         nextErrors.organization_slug =
           'Organization slug may only contain lowercase letters, numbers, and hyphens.'
       }
     }
     if (!values.password) nextErrors.password = 'Password is required.'
-    else if (values.password.length < 8) nextErrors.password = 'Password must be at least 8 characters.'
+    else if (values.password.length < 8)
+      nextErrors.password = 'Password must be at least 8 characters.'
     if (!values.confirmPassword) nextErrors.confirmPassword = 'Please confirm the password.'
-    else if (values.password !== values.confirmPassword) nextErrors.confirmPassword = 'Passwords do not match.'
+    else if (values.password !== values.confirmPassword)
+      nextErrors.confirmPassword = 'Passwords do not match.'
 
     setLocalErrors(nextErrors)
     return Object.keys(nextErrors).length === 0
@@ -143,7 +144,9 @@ function SetupPage() {
           <Badge variant="outline">First-time setup</Badge>
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold tracking-tight">Create the instance admin</h1>
-            <p className="text-sm text-muted-foreground">{setupDescription(requiresOrganization)}</p>
+            <p className="text-sm text-muted-foreground">
+              {setupDescription(requiresOrganization)}
+            </p>
           </div>
         </div>
 
@@ -196,7 +199,10 @@ function SetupPage() {
                       value={values.organizationSlug}
                       onChange={(event) => {
                         setSlugTouched(true)
-                        updateField('organizationSlug', slugify(event.target.value, { maxLength: 64 }))
+                        updateField(
+                          'organizationSlug',
+                          slugify(event.target.value, { maxLength: 64 }),
+                        )
                       }}
                     />
                   </Field>

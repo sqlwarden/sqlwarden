@@ -9,7 +9,13 @@ function action(items: ContextMenuItem[], id: string): ContextMenuActionItem | u
 }
 
 describe('buildFileMenu', () => {
-  const base = { name: 'query.sql', onOpen: noop, onOpenToSide: noop, onCopyName: noop, onSaveAs: noop }
+  const base = {
+    name: 'query.sql',
+    onOpen: noop,
+    onOpenToSide: noop,
+    onCopyName: noop,
+    onSaveAs: noop,
+  }
   it('has live open + copy-name and no copy-path', () => {
     const items = buildFileMenu(base)
     expect(action(items, 'open')?.soon).toBeFalsy()

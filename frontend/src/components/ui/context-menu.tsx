@@ -70,7 +70,9 @@ const noopOpener: OpenContextMenu = () => {}
  * which does not scale to large trees/result sets.
  */
 export function ContextMenuProvider({ children }: { children: React.ReactNode }) {
-  const [target, setTarget] = useState<{ items: ContextMenuItem[]; x: number; y: number } | null>(null)
+  const [target, setTarget] = useState<{ items: ContextMenuItem[]; x: number; y: number } | null>(
+    null,
+  )
   const [open, setOpen] = useState(false)
   const [confirmItem, setConfirmItem] = useState<ContextMenuActionItem | null>(null)
 
@@ -99,7 +101,14 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
           nativeButton={false}
           render={
             <span
-              style={{ position: 'fixed', left: target?.x ?? 0, top: target?.y ?? 0, width: 0, height: 0, pointerEvents: 'none' }}
+              style={{
+                position: 'fixed',
+                left: target?.x ?? 0,
+                top: target?.y ?? 0,
+                width: 0,
+                height: 0,
+                pointerEvents: 'none',
+              }}
             />
           }
         />
@@ -108,7 +117,12 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <AlertDialog open={confirmItem !== null} onOpenChange={(o) => { if (!o) setConfirmItem(null) }}>
+      <AlertDialog
+        open={confirmItem !== null}
+        onOpenChange={(o) => {
+          if (!o) setConfirmItem(null)
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{confirmItem?.confirm?.title}</AlertDialogTitle>
@@ -117,7 +131,11 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => { const it = confirmItem; setConfirmItem(null); it?.onSelect?.() }}
+              onClick={() => {
+                const it = confirmItem
+                setConfirmItem(null)
+                it?.onSelect?.()
+              }}
               className="bg-destructive text-white hover:bg-destructive/80"
             >
               Confirm
@@ -164,7 +182,11 @@ function SoonBadge() {
   )
 }
 
-function renderItem(item: ContextMenuItem, index: number, selectAction: (item: ContextMenuActionItem) => void) {
+function renderItem(
+  item: ContextMenuItem,
+  index: number,
+  selectAction: (item: ContextMenuActionItem) => void,
+) {
   if (item.kind === 'separator') return <DropdownMenuSeparator key={`sep-${index}`} />
 
   if (item.kind === 'submenu') {
@@ -191,7 +213,11 @@ function renderItem(item: ContextMenuItem, index: number, selectAction: (item: C
     >
       {item.icon && <Icon name={item.icon} size={13} />}
       <span className={cn(!item.soon && 'flex-1')}>{item.label}</span>
-      {item.soon ? <SoonBadge /> : item.shortcut ? <DropdownMenuShortcut>{item.shortcut}</DropdownMenuShortcut> : null}
+      {item.soon ? (
+        <SoonBadge />
+      ) : item.shortcut ? (
+        <DropdownMenuShortcut>{item.shortcut}</DropdownMenuShortcut>
+      ) : null}
     </DropdownMenuItem>
   )
 }

@@ -25,14 +25,23 @@ describe('requiresCloseConfirmation', () => {
 
   it('guards running queries, dirty files, and non-empty consoles', () => {
     expect(requiresCloseConfirmation(tab(), true, 1)).toBe(true)
-    expect(requiresCloseConfirmation(tab({ kind: 'file', fileId: 7, isDirty: true }), false, 1)).toBe(true)
+    expect(
+      requiresCloseConfirmation(tab({ kind: 'file', fileId: 7, isDirty: true }), false, 1),
+    ).toBe(true)
     expect(requiresCloseConfirmation(tab({ content: 'select 1' }), false, 1)).toBe(true)
   })
 })
 
 const workspace: Workspace = {
-  id: 3, org_id: 1, owner_type: 'org', owner_id: 1, name: 'Analytics',
-  environment_count: 0, connection_count: 0, created_at: '', updated_at: '',
+  id: 3,
+  org_id: 1,
+  owner_type: 'org',
+  owner_id: 1,
+  name: 'Analytics',
+  environment_count: 0,
+  connection_count: 0,
+  created_at: '',
+  updated_at: '',
 }
 
 function TabBarHarness() {
@@ -45,11 +54,22 @@ describe('IdeTabBar', () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
     const consoleTab = tab({ id: 'scratch:3:1', content: '' })
     const fileTab = tab({
-      id: 'file:9', title: 'query.sql', kind: 'file', fileId: 9, isDirty: true,
+      id: 'file:9',
+      title: 'query.sql',
+      kind: 'file',
+      fileId: 9,
+      isDirty: true,
     })
     store.setState({
       tabs: [consoleTab, fileTab],
-      layout: { 3: { type: 'group', id: 'main', tabIds: [consoleTab.id, fileTab.id], activeTabId: consoleTab.id } },
+      layout: {
+        3: {
+          type: 'group',
+          id: 'main',
+          tabIds: [consoleTab.id, fileTab.id],
+          activeTabId: consoleTab.id,
+        },
+      },
       activeGroupId: { 3: 'main' },
     })
     const user = userEvent.setup()

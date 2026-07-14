@@ -6,7 +6,10 @@ export type { DriverDef, FieldDef } from './types'
 export const driverBrands = Object.fromEntries(
   frontendEngines
     .filter((engine) => engine.brand.icon)
-    .map((engine) => [engine.id, { icon: engine.brand.icon!, description: engine.brand.description }]),
+    .map((engine) => [
+      engine.id,
+      { icon: engine.brand.icon!, description: engine.brand.description },
+    ]),
 )
 
 export const drivers: DriverDef[] = connectableEngines.map((engine) => engine.connection)

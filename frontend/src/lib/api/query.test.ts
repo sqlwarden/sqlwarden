@@ -24,9 +24,17 @@ describe('invalidateConnectionSchemaQueries', () => {
 
     await invalidateConnectionSchemaQueries(qc, slug, workspaceId, connectionId)
 
-    expect(qc.getQueryState(connectionCatalogQueryKey(slug, workspaceId, connectionId))?.isInvalidated).toBe(true)
-    expect(qc.getQueryState(connectionObjectQueryKey(slug, workspaceId, connectionId, ref))?.isInvalidated).toBe(true)
-    expect(qc.getQueryState(connectionObjectQueryKey(slug, workspaceId, otherConnId, ref))?.isInvalidated).toBe(false)
+    expect(
+      qc.getQueryState(connectionCatalogQueryKey(slug, workspaceId, connectionId))?.isInvalidated,
+    ).toBe(true)
+    expect(
+      qc.getQueryState(connectionObjectQueryKey(slug, workspaceId, connectionId, ref))
+        ?.isInvalidated,
+    ).toBe(true)
+    expect(
+      qc.getQueryState(connectionObjectQueryKey(slug, workspaceId, otherConnId, ref))
+        ?.isInvalidated,
+    ).toBe(false)
   })
 
   it('refetches an actively-expanded object query when its connection is refreshed', async () => {

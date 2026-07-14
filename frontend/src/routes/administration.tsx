@@ -18,9 +18,7 @@ export const Route = createFileRoute('/administration')({
   component: AdministrationLayout,
 })
 
-const homeItems: AppShellNavItem[] = [
-  { to: '/', label: 'Home', icon: 'arrow-left-01' },
-]
+const homeItems: AppShellNavItem[] = [{ to: '/', label: 'Home', icon: 'arrow-left-01' }]
 
 const adminItems: AppShellNavItem[] = [
   { to: '/administration/users', label: 'Users', icon: 'user-multiple-02' },
@@ -64,9 +62,11 @@ function AdministrationLayout() {
     <SidebarProvider
       defaultOpen={initialOpen}
       defaultWidth={240}
-      style={{
-        '--sidebar-width-icon': '3rem',
-      } as React.CSSProperties}
+      style={
+        {
+          '--sidebar-width-icon': '3rem',
+        } as React.CSSProperties
+      }
     >
       <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
         <AppShellHeader label="Administration" icon="shield-user" />
