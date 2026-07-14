@@ -25,7 +25,8 @@ func DeriveKey(secret string) ([]byte, error) {
 func deriveLegacyKey(secret string) []byte {
 	// CodeQL: this compatibility path cannot be strengthened without making
 	// existing ciphertext unreadable. Its output is never used for encryption.
-	sum := sha256.Sum256([]byte(secret)) // lgtm[go/weak-cryptographic-algorithm]
+	// codeql[go/weak-sensitive-data-hashing]
+	sum := sha256.Sum256([]byte(secret))
 	return sum[:]
 }
 

@@ -153,7 +153,7 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 
 	app.logInfo(r, "account logged in", slog.Int64("account_id", account.ID), slog.String("auth_session_id", authSession.ID))
 	// Local HTTP is supported; refreshTokenCookie enforces Secure for HTTPS and built-in TLS.
-	http.SetCookie(w, app.refreshTokenCookie(r, family, 7*24*3600)) // lgtm[go/cookie-secure-not-set]
+	http.SetCookie(w, app.refreshTokenCookie(r, family, 7*24*3600))
 
 	err = response.JSON(w, http.StatusOK, map[string]string{"access_token": accessToken})
 	if err != nil {
@@ -248,7 +248,7 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 
 	app.logInfo(r, "access token refreshed", slog.Int64("account_id", account.ID), slog.String("auth_session_id", authSession.ID))
 	// Local HTTP is supported; refreshTokenCookie enforces Secure for HTTPS and built-in TLS.
-	http.SetCookie(w, app.refreshTokenCookie(r, family, 7*24*3600)) // lgtm[go/cookie-secure-not-set]
+	http.SetCookie(w, app.refreshTokenCookie(r, family, 7*24*3600))
 
 	err = response.JSON(w, http.StatusOK, map[string]string{"access_token": accessToken})
 	if err != nil {
@@ -269,7 +269,7 @@ func (app *application) logoutAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Local HTTP is supported; refreshTokenCookie enforces Secure for HTTPS and built-in TLS.
-	http.SetCookie(w, app.refreshTokenCookie(r, "", -1)) // lgtm[go/cookie-secure-not-set]
+	http.SetCookie(w, app.refreshTokenCookie(r, "", -1))
 	w.WriteHeader(http.StatusNoContent)
 }
 
