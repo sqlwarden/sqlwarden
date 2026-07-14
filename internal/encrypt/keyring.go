@@ -8,10 +8,10 @@ import (
 	"strings"
 )
 
-// envelopeVersion prefixes every keyring-produced ciphertext. It identifies the
-// tagged envelope format (k1) and lets us evolve the layout later without
-// ambiguity against legacy untagged ciphertext.
-const envelopeVersion = "k1"
+const (
+	legacyEnvelopeVersion  = "k1"
+	currentEnvelopeVersion = "k2"
+)
 
 // Keyring holds the active encryption key plus any retired keys kept around so
 // existing ciphertext stays decryptable through a rotation.
@@ -23,8 +23,9 @@ const envelopeVersion = "k1"
 // with the current primary key.
 type Keyring struct {
 	primaryID string
-	keys      map[string][]byte // key id -> 32-byte key material
-	all       [][]byte          // every key, for legacy untagged fallback
+	keys      map[string][]byte // current key id -> 32-byte key material
+	legacy    map[string][]byte // k1 key id -> legacy key material
+	all       [][]byte          // current and legacy keys for untagged fallback
 }
 
 // NewKeyring builds a keyring from a primary passphrase and zero or more
@@ -36,24 +37,43 @@ func NewKeyring(primary string, previous ...string) (*Keyring, error) {
 		return nil, errors.New("encrypt: primary key must not be empty")
 	}
 
-	kr := &Keyring{keys: make(map[string][]byte)}
+	kr := &Keyring{
+		keys:   make(map[string][]byte),
+		legacy: make(map[string][]byte),
+	}
 
-	add := func(passphrase string) string {
-		key := DeriveKey(passphrase)
+	add := func(passphrase string) (string, error) {
+		key, err := DeriveKey(passphrase)
+		if err != nil {
+			return "", err
+		}
 		id := keyID(key)
 		if _, exists := kr.keys[id]; !exists {
 			kr.keys[id] = key
 			kr.all = append(kr.all, key)
 		}
-		return id
+
+		legacyKey := deriveLegacyKey(passphrase)
+		legacyID := keyID(legacyKey)
+		if _, exists := kr.legacy[legacyID]; !exists {
+			kr.legacy[legacyID] = legacyKey
+			kr.all = append(kr.all, legacyKey)
+		}
+		return id, nil
 	}
 
-	kr.primaryID = add(primary)
+	var err error
+	kr.primaryID, err = add(primary)
+	if err != nil {
+		return nil, fmt.Errorf("encrypt: derive primary key: %w", err)
+	}
 	for _, p := range previous {
 		if p == "" {
 			continue
 		}
-		add(p)
+		if _, err = add(p); err != nil {
+			return nil, fmt.Errorf("encrypt: derive previous key: %w", err)
+		}
 	}
 
 	return kr, nil
@@ -65,22 +85,26 @@ func (k *Keyring) PrimaryKeyID() string {
 }
 
 // Encrypt seals plaintext with the primary key and returns a tagged ciphertext
-// of the form "k1.<keyID>.<base64payload>".
+// of the form "k2.<keyID>.<base64payload>".
 func (k *Keyring) Encrypt(plaintext string) (string, error) {
 	payload, err := Encrypt(k.keys[k.primaryID], plaintext)
 	if err != nil {
 		return "", err
 	}
-	return envelopeVersion + "." + k.primaryID + "." + payload, nil
+	return currentEnvelopeVersion + "." + k.primaryID + "." + payload, nil
 }
 
 // Decrypt decrypts a value produced by Encrypt or by the legacy stateless
 // Encrypt function. Tagged values are routed to the key named in the tag; legacy
 // untagged values are decrypted by trying every key in the ring.
 func (k *Keyring) Decrypt(ciphertext string) (string, error) {
-	id, payload, tagged := parseEnvelope(ciphertext)
+	version, id, payload, tagged := parseEnvelope(ciphertext)
 	if tagged {
-		key, ok := k.keys[id]
+		keys := k.keys
+		if version == legacyEnvelopeVersion {
+			keys = k.legacy
+		}
+		key, ok := keys[id]
 		if !ok {
 			return "", fmt.Errorf("encrypt: no key for id %q", id)
 		}
@@ -106,11 +130,11 @@ func (k *Keyring) Decrypt(ciphertext string) (string, error) {
 // current primary key. It is true for legacy untagged values and for values
 // tagged with any key other than the primary.
 func (k *Keyring) NeedsRotation(ciphertext string) bool {
-	id, _, tagged := parseEnvelope(ciphertext)
+	version, id, _, tagged := parseEnvelope(ciphertext)
 	if !tagged {
 		return true
 	}
-	return id != k.primaryID
+	return version != currentEnvelopeVersion || id != k.primaryID
 }
 
 // keyID derives a short, stable, non-reversible fingerprint of a key. It hashes
@@ -124,10 +148,10 @@ func keyID(key []byte) string {
 // parseEnvelope splits a tagged ciphertext into its key id and payload. It
 // returns tagged=false for anything that is not in the "k1.<id>.<payload>"
 // format, which is treated as legacy untagged ciphertext.
-func parseEnvelope(ciphertext string) (id, payload string, tagged bool) {
+func parseEnvelope(ciphertext string) (version, id, payload string, tagged bool) {
 	parts := strings.SplitN(ciphertext, ".", 3)
-	if len(parts) != 3 || parts[0] != envelopeVersion {
-		return "", "", false
+	if len(parts) != 3 || (parts[0] != legacyEnvelopeVersion && parts[0] != currentEnvelopeVersion) {
+		return "", "", "", false
 	}
-	return parts[1], parts[2], true
+	return parts[0], parts[1], parts[2], true
 }

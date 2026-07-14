@@ -129,3 +129,12 @@ func (db *DB) MigrateUp() error {
 		return err
 	}
 }
+
+// sqlSortDirection converts an API sort direction into one of the only two SQL
+// tokens the database layer is allowed to emit.
+func sqlSortDirection(order string) string {
+	if order == "asc" {
+		return "ASC"
+	}
+	return "DESC"
+}

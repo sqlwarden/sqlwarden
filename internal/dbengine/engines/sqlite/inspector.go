@@ -113,7 +113,8 @@ func (d *sqliteDriver) attachSQLiteDefinitions(ctx context.Context, objs []schem
 			continue
 		}
 		var ddl sql.NullString
-		q := fmt.Sprintf(`SELECT sql FROM %s.sqlite_master WHERE type = ? AND name = ?`, sqliteQuoteIdent(objs[i].Ref.Namespace))
+		// SQLite cannot bind identifiers; sqliteQuoteIdent escapes the namespace.
+		q := fmt.Sprintf(`SELECT sql FROM %s.sqlite_master WHERE type = ? AND name = ?`, sqliteQuoteIdent(objs[i].Ref.Namespace)) // lgtm[go/sql-injection]
 		if err := d.db.QueryRowContext(ctx, q, typ, objs[i].Ref.Name).Scan(&ddl); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				continue
@@ -168,7 +169,8 @@ func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.Rel
 	tableArg := sqliteQuoteIdent(ref.Name)
 	prefix := sqliteQuoteIdent(ref.Namespace)
 
-	colQ := fmt.Sprintf(`PRAGMA %s.table_xinfo(%s)`, prefix, tableArg)
+	// SQLite cannot bind PRAGMA identifiers; both identifiers are escaped above.
+	colQ := fmt.Sprintf(`PRAGMA %s.table_xinfo(%s)`, prefix, tableArg) // lgtm[go/sql-injection]
 	rows, err := d.db.QueryContext(ctx, colQ)
 	if err != nil {
 		return fmt.Errorf("sqlite: object columns: %w", err)
@@ -200,7 +202,7 @@ func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.Rel
 	}
 	rows.Close()
 
-	fkQ := fmt.Sprintf(`PRAGMA %s.foreign_key_list(%s)`, prefix, tableArg)
+	fkQ := fmt.Sprintf(`PRAGMA %s.foreign_key_list(%s)`, prefix, tableArg) // lgtm[go/sql-injection]
 	fkRows, err := d.db.QueryContext(ctx, fkQ)
 	if err != nil {
 		return fmt.Errorf("sqlite: object fk: %w", err)
@@ -221,7 +223,7 @@ func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.Rel
 	}
 	fkRows.Close()
 
-	idxQ := fmt.Sprintf(`PRAGMA %s.index_list(%s)`, prefix, tableArg)
+	idxQ := fmt.Sprintf(`PRAGMA %s.index_list(%s)`, prefix, tableArg) // lgtm[go/sql-injection]
 	idxRows, err := d.db.QueryContext(ctx, idxQ)
 	if err != nil {
 		return fmt.Errorf("sqlite: object indexes: %w", err)
@@ -275,7 +277,8 @@ func (d *sqliteDriver) sqliteIndexColumns(ctx context.Context, _ string, indexNa
 func (d *sqliteDriver) inspectSQLiteTriggers(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
 	var out []schema.Object
 	for _, ref := range refs {
-		q := fmt.Sprintf(`SELECT tbl_name, sql FROM %s.sqlite_master WHERE type = 'trigger' AND name = ?`, sqliteQuoteIdent(ref.Namespace))
+		// SQLite cannot bind identifiers; sqliteQuoteIdent escapes the namespace.
+		q := fmt.Sprintf(`SELECT tbl_name, sql FROM %s.sqlite_master WHERE type = 'trigger' AND name = ?`, sqliteQuoteIdent(ref.Namespace)) // lgtm[go/sql-injection]
 		row := d.db.QueryRowContext(ctx, q, ref.Name)
 		var tableName string
 		var definition sql.NullString

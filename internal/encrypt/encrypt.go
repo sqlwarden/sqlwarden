@@ -3,6 +3,7 @@ package encrypt
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -11,10 +12,21 @@ import (
 	"io"
 )
 
-// DeriveKey stretches a passphrase to a 32-byte AES-256 key using SHA-256.
-func DeriveKey(passphrase string) []byte {
-	h := sha256.Sum256([]byte(passphrase))
-	return h[:]
+const keyDerivationContext = "sqlwarden/encryption-key/v2"
+
+// DeriveKey derives a domain-separated 32-byte AES-256 key from configured
+// secret material using HKDF-SHA-256.
+func DeriveKey(secret string) ([]byte, error) {
+	return hkdf.Key(sha256.New, []byte(secret), nil, keyDerivationContext, 32)
+}
+
+// deriveLegacyKey reproduces the pre-k2 key derivation for decryption and key
+// rotation only. New ciphertext must always use DeriveKey.
+func deriveLegacyKey(secret string) []byte {
+	// CodeQL: this compatibility path cannot be strengthened without making
+	// existing ciphertext unreadable. Its output is never used for encryption.
+	sum := sha256.Sum256([]byte(secret)) // lgtm[go/weak-cryptographic-algorithm]
+	return sum[:]
 }
 
 // Encrypt encrypts plaintext with AES-256-GCM.

@@ -125,7 +125,8 @@ func (db *DB) ListWorkspacesPage(ctx context.Context, params ListWorkspacesParam
 	}
 
 	var workspaces []Workspace
-	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", workspaceSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).Scan(ctx, &workspaces)
+	direction := sqlSortDirection(params.Order)
+	err := query.OrderExpr(fmt.Sprintf("%s %s, id %s", workspaceSortColumn(params.Sort), direction, direction)).Scan(ctx, &workspaces)
 	if err != nil {
 		return response.Paginated[Workspace]{}, err
 	}

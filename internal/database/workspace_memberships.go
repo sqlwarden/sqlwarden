@@ -174,7 +174,8 @@ WHERE wm.workspace_id = ?`
 		query += " AND (LOWER(a.name) LIKE ? OR LOWER(a.email) LIKE ?)"
 		args = append(args, search, search)
 	}
-	query += fmt.Sprintf(" ORDER BY %s %s, wm.account_id %s", workspaceMemberSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))
+	direction := sqlSortDirection(params.Order)
+	query += fmt.Sprintf(" ORDER BY %s %s, wm.account_id %s", workspaceMemberSortColumn(params.Sort), direction, direction)
 
 	var members []WorkspaceMemberListItem
 	if err := db.NewRaw(query, args...).Scan(ctx, &members); err != nil {
@@ -263,7 +264,8 @@ WHERE wt.workspace_id = ?`
 		query += " AND (LOWER(t.name) LIKE ? OR LOWER(t.slug) LIKE ?)"
 		args = append(args, search, search)
 	}
-	query += fmt.Sprintf(" ORDER BY %s %s, wt.team_id %s", workspaceTeamSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))
+	direction := sqlSortDirection(params.Order)
+	query += fmt.Sprintf(" ORDER BY %s %s, wt.team_id %s", workspaceTeamSortColumn(params.Sort), direction, direction)
 
 	var teams []WorkspaceTeamListItem
 	if err := db.NewRaw(query, args...).Scan(ctx, &teams); err != nil {

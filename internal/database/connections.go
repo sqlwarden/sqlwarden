@@ -193,7 +193,7 @@ func (db *DB) ListConnectionsPage(ctx context.Context, params ListConnectionsPar
 
 	var items []Connection
 	err = query.
-		OrderExpr(fmt.Sprintf("%s %s, id %s", connectionSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))).
+		OrderExpr(fmt.Sprintf("%s %s, id %s", connectionSortColumn(params.Sort), sqlSortDirection(params.Order), sqlSortDirection(params.Order))).
 		Limit(params.PageSize).
 		Offset((params.Page-1)*params.PageSize).
 		Scan(ctx, &items)

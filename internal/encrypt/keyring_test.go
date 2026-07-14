@@ -51,8 +51,8 @@ func TestKeyringTaggedFormat(t *testing.T) {
 	if len(parts) != 3 {
 		t.Fatalf("expected 3 dot-separated parts, got %d (%q)", len(parts), ciphertext)
 	}
-	if parts[0] != "k1" {
-		t.Errorf("expected envelope version %q, got %q", "k1", parts[0])
+	if parts[0] != "k2" {
+		t.Errorf("expected envelope version %q, got %q", "k2", parts[0])
 	}
 	if parts[1] != kr.PrimaryKeyID() {
 		t.Errorf("expected key id %q, got %q", kr.PrimaryKeyID(), parts[1])
@@ -85,7 +85,10 @@ func TestKeyringKeyIDDeterministic(t *testing.T) {
 
 func TestKeyringDecryptsLegacyUntagged(t *testing.T) {
 	// A value produced by the old stateless Encrypt (no envelope tag).
-	key := encrypt.DeriveKey("primary-passphrase")
+	key, err := encrypt.DeriveKey("primary-passphrase")
+	if err != nil {
+		t.Fatal(err)
+	}
 	legacy, err := encrypt.Encrypt(key, "legacy-secret")
 	if err != nil {
 		t.Fatalf("legacy Encrypt failed: %v", err)
@@ -180,7 +183,11 @@ func TestKeyringNeedsRotation(t *testing.T) {
 	}
 
 	// Legacy untagged — needs rotation.
-	legacy, err := encrypt.Encrypt(encrypt.DeriveKey("new-passphrase"), "legacy")
+	legacyKey, err := encrypt.DeriveKey("new-passphrase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := encrypt.Encrypt(legacyKey, "legacy")
 	if err != nil {
 		t.Fatalf("legacy Encrypt failed: %v", err)
 	}

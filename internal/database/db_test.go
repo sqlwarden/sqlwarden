@@ -117,3 +117,9 @@ func TestMigrateUp(t *testing.T) {
 		})
 	}
 }
+
+func TestSQLSortDirectionUsesOnlyLiteralTokens(t *testing.T) {
+	assert.Equal(t, "ASC", sqlSortDirection("asc"))
+	assert.Equal(t, "DESC", sqlSortDirection("desc"))
+	assert.Equal(t, "DESC", sqlSortDirection("desc; DROP TABLE accounts"))
+}

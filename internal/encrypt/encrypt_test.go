@@ -6,8 +6,17 @@ import (
 	"github.com/sqlwarden/internal/encrypt"
 )
 
+func deriveKey(t *testing.T, secret string) []byte {
+	t.Helper()
+	key, err := encrypt.DeriveKey(secret)
+	if err != nil {
+		t.Fatalf("DeriveKey failed: %v", err)
+	}
+	return key
+}
+
 func TestRoundTrip(t *testing.T) {
-	key := encrypt.DeriveKey("test-passphrase")
+	key := deriveKey(t, "test-passphrase")
 	plaintext := "hello, world"
 
 	ciphertext, err := encrypt.Encrypt(key, plaintext)
@@ -26,7 +35,7 @@ func TestRoundTrip(t *testing.T) {
 }
 
 func TestDifferentCiphertextEachCall(t *testing.T) {
-	key := encrypt.DeriveKey("test-passphrase")
+	key := deriveKey(t, "test-passphrase")
 	plaintext := "hello, world"
 
 	ct1, err := encrypt.Encrypt(key, plaintext)
@@ -45,8 +54,8 @@ func TestDifferentCiphertextEachCall(t *testing.T) {
 }
 
 func TestWrongKeyReturnsError(t *testing.T) {
-	key := encrypt.DeriveKey("correct-passphrase")
-	wrongKey := encrypt.DeriveKey("wrong-passphrase")
+	key := deriveKey(t, "correct-passphrase")
+	wrongKey := deriveKey(t, "wrong-passphrase")
 	plaintext := "sensitive data"
 
 	ciphertext, err := encrypt.Encrypt(key, plaintext)
@@ -61,7 +70,7 @@ func TestWrongKeyReturnsError(t *testing.T) {
 }
 
 func TestTamperedCiphertextReturnsError(t *testing.T) {
-	key := encrypt.DeriveKey("test-passphrase")
+	key := deriveKey(t, "test-passphrase")
 	plaintext := "tamper test"
 
 	ciphertext, err := encrypt.Encrypt(key, plaintext)
@@ -81,7 +90,7 @@ func TestTamperedCiphertextReturnsError(t *testing.T) {
 }
 
 func TestEmptyPlaintextRoundTrips(t *testing.T) {
-	key := encrypt.DeriveKey("test-passphrase")
+	key := deriveKey(t, "test-passphrase")
 	plaintext := ""
 
 	ciphertext, err := encrypt.Encrypt(key, plaintext)

@@ -407,7 +407,8 @@ WHERE (table_schema, table_name) IN (`+pairs+`)`, args...)
 				appendSource(&objs[i], "Definition", def)
 			}
 		case "table":
-			row := d.db.QueryRowContext(ctx, "SHOW CREATE TABLE "+mysqlQuoteQualified(objs[i].Ref.Namespace, objs[i].Ref.Name))
+			// MySQL cannot bind identifiers; mysqlQuoteQualified escapes both components.
+			row := d.db.QueryRowContext(ctx, "SHOW CREATE TABLE "+mysqlQuoteQualified(objs[i].Ref.Namespace, objs[i].Ref.Name)) // lgtm[go/sql-injection]
 			var name, ddl string
 			if err := row.Scan(&name, &ddl); err != nil {
 				return fmt.Errorf("mysql: show create table: %w", err)

@@ -10,7 +10,8 @@ import (
 var _ cursor.QueryCursorDriver = (*sqliteDriver)(nil)
 
 func (d *sqliteDriver) StartQuery(ctx context.Context, req cursor.QueryRequest) (cursor.QueryCursor, error) {
-	rows, err := d.db.QueryContext(ctx, req.SQL, req.Args...)
+	// SQL is intentionally user-authored IDE input and is permission-gated by the web layer.
+	rows, err := d.db.QueryContext(ctx, req.SQL, req.Args...) // lgtm[go/sql-injection]
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: start query: %w", err)
 	}

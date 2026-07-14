@@ -347,9 +347,10 @@ WHERE om.org_id = ?`
 		args = append(args, params.Role)
 	}
 
+	direction := sqlSortDirection(params.Order)
 	query += fmt.Sprintf(`
 GROUP BY om.org_id, om.account_id, a.email, a.name, om.joined_at
-ORDER BY %s %s, om.account_id %s`, orgMemberSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))
+ORDER BY %s %s, om.account_id %s`, orgMemberSortColumn(params.Sort), direction, direction)
 
 	var items []OrgMemberListItem
 	err := db.NewRaw(query, args...).Scan(ctx, &items)
@@ -447,8 +448,9 @@ WHERE 1 = 1`
 		args = append(args, params.Slug)
 	}
 
+	direction := sqlSortDirection(params.Order)
 	query += fmt.Sprintf(`
-ORDER BY %s %s, o.id %s`, organizationSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))
+ORDER BY %s %s, o.id %s`, organizationSortColumn(params.Sort), direction, direction)
 
 	var orgs []OrganizationListItem
 	err := db.NewRaw(query, args...).Scan(ctx, &orgs)
@@ -492,9 +494,10 @@ WHERE om.account_id = ?`
 		args = append(args, search, search)
 	}
 
+	direction := sqlSortDirection(params.Order)
 	query += fmt.Sprintf(`
 GROUP BY o.id, o.slug, o.name, o.created_at, o.updated_at
-ORDER BY %s %s, o.id %s`, accountOrgSortColumn(params.Sort), strings.ToUpper(params.Order), strings.ToUpper(params.Order))
+ORDER BY %s %s, o.id %s`, accountOrgSortColumn(params.Sort), direction, direction)
 
 	var orgs []AccountOrganizationListItem
 	err := db.NewRaw(query, args...).Scan(ctx, &orgs)

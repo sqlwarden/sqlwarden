@@ -45,7 +45,8 @@ func (d *sqliteDriver) Close() error {
 }
 
 func (d *sqliteDriver) Query(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	// SQL is intentionally user-authored IDE input and is permission-gated by the web layer.
+	rows, err := d.db.QueryContext(ctx, query, args...) // lgtm[go/sql-injection]
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: query: %w", err)
 	}
@@ -53,7 +54,8 @@ func (d *sqliteDriver) Query(ctx context.Context, query string, args ...any) (*r
 }
 
 func (d *sqliteDriver) Execute(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	// SQL is intentionally user-authored IDE input and is permission-gated by the web layer.
+	rows, err := d.db.QueryContext(ctx, query, args...) // lgtm[go/sql-injection]
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: execute: %w", err)
 	}

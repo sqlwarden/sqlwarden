@@ -93,7 +93,11 @@ func TestRotateEncryptionKeys(t *testing.T) {
 
 	// A legacy, untagged DSN encrypted directly with the current primary key.
 	legacyDSN := "mysql://root:secret@db:3306/legacy"
-	legacyCipher, err := encrypt.Encrypt(encrypt.DeriveKey("new-primary-key"), legacyDSN)
+	legacyKey, err := encrypt.DeriveKey("new-primary-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyCipher, err := encrypt.Encrypt(legacyKey, legacyDSN)
 	if err != nil {
 		t.Fatal(err)
 	}
