@@ -51,6 +51,10 @@ make run
 make run/live
 make frontend/install
 make frontend/build
+make frontend/format
+make frontend/format/check
+make frontend/lint
+make frontend/typecheck
 make frontend/dev
 ```
 
@@ -62,6 +66,9 @@ go test ./internal/access -run TestName -v
 go test ./internal/database -run TestName -v
 cd frontend && bun run test
 cd frontend && bun run build
+cd frontend && bun run format:check
+cd frontend && bun run lint
+cd frontend && bun run typecheck
 ```
 
 Migration commands:
@@ -146,12 +153,18 @@ Configuration uses spf13/viper through `internal/web`.
 
 - Use shadcn/ui and Base UI primitives.
 - Use Tailwind and CSS variables from `frontend/src/styles.css`; avoid ad-hoc color tokens.
+- Treat Prettier as the sole formatting authority. Do not hand-format around it or add ESLint formatting rules; run `make frontend/format` after frontend edits.
+- Keep ESLint at zero warnings. Do not add blanket rule suppressions; use a narrow suppression with an adjacent rationale only when a framework API makes the rule inapplicable.
+- Keep the frontend type-safe under `tsc --noEmit`. Prefer explicit domain types and type-only imports over `any`, unchecked assertions, or duplicated response shapes.
 - Centralize API calls/query options in `frontend/src/lib/api`.
+- Define shared query keys in `frontend/src/lib/api/query-keys.ts` and keep domain query options in `frontend/src/lib/api/queries`; do not construct competing cache keys in components.
 - Let API helper/query functions unwrap response envelopes so UI components remain simple.
 - Use backend permission catalog data for permission labels/descriptions/scope maps.
 - Use Sonner for user-visible mutation/error toasts where needed.
 - Avoid adding future-plan/development artifact text into the UI.
 - Keep trivial helpers local when they have one caller. Before adding a helper, search for an existing implementation; move repeated or correctness-critical behavior into a domain-appropriate module with focused tests rather than a catch-all utilities file.
+- Keep route and presentation components focused on composition. Extract stateful workflows and reusable domain behavior into named hooks/modules, and colocate focused Vitest tests with them.
+- Add database-specific IDE behavior through `frontend/src/components/ide/engines` and its registries. Every supported driver is registered at build time; do not add runtime driver-name conditionals or silent fallback implementations in shared UI code.
 
 ## IDE Notes
 
@@ -180,8 +193,9 @@ Backend:
 Frontend:
 
 - Add Vitest coverage for complex state, parsing, and utility behavior.
+- Run `make frontend/format/check`, `make frontend/lint`, and `make frontend/typecheck` after frontend changes.
 - Run `cd frontend && bun run test` after frontend logic changes.
-- Run `cd frontend && bun run build` when API types, routes, or build-sensitive code changes.
+- Run `cd frontend && bun run build` when API types, routes, dependencies, or build-sensitive code change.
 
 Operational note: database tests may require Docker/testcontainers.
 
