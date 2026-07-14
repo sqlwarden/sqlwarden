@@ -83,28 +83,16 @@ func TestKeyringKeyIDDeterministic(t *testing.T) {
 	}
 }
 
-func TestKeyringDecryptsLegacyUntagged(t *testing.T) {
-	// A value produced by the old stateless Encrypt (no envelope tag).
-	key, err := encrypt.DeriveKey("primary-passphrase")
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy, err := encrypt.Encrypt(key, "legacy-secret")
-	if err != nil {
-		t.Fatalf("legacy Encrypt failed: %v", err)
-	}
-
+func TestKeyringRejectsUnsupportedCiphertextFormats(t *testing.T) {
 	kr, err := encrypt.NewKeyring("primary-passphrase")
 	if err != nil {
 		t.Fatalf("NewKeyring failed: %v", err)
 	}
 
-	got, err := kr.Decrypt(legacy)
-	if err != nil {
-		t.Fatalf("Decrypt of legacy value failed: %v", err)
-	}
-	if got != "legacy-secret" {
-		t.Errorf("expected %q, got %q", "legacy-secret", got)
+	for _, ciphertext := range []string{"untagged", "k1.key.payload", "k3.key.payload"} {
+		if _, err := kr.Decrypt(ciphertext); err == nil {
+			t.Errorf("Decrypt(%q) returned nil error", ciphertext)
+		}
 	}
 }
 
@@ -182,17 +170,8 @@ func TestKeyringNeedsRotation(t *testing.T) {
 		t.Error("value tagged with a previous key should need rotation")
 	}
 
-	// Legacy untagged — needs rotation.
-	legacyKey, err := encrypt.DeriveKey("new-passphrase")
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy, err := encrypt.Encrypt(legacyKey, "legacy")
-	if err != nil {
-		t.Fatalf("legacy Encrypt failed: %v", err)
-	}
-	if !kr.NeedsRotation(legacy) {
-		t.Error("legacy untagged value should need rotation")
+	if !kr.NeedsRotation("unsupported") {
+		t.Error("unsupported ciphertext should need rotation")
 	}
 }
 

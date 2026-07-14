@@ -20,16 +20,6 @@ func DeriveKey(secret string) ([]byte, error) {
 	return hkdf.Key(sha256.New, []byte(secret), nil, keyDerivationContext, 32)
 }
 
-// deriveLegacyKey reproduces the pre-k2 key derivation for decryption and key
-// rotation only. New ciphertext must always use DeriveKey.
-func deriveLegacyKey(secret string) []byte {
-	// CodeQL: this compatibility path cannot be strengthened without making
-	// existing ciphertext unreadable. Its output is never used for encryption.
-	// codeql[go/weak-sensitive-data-hashing]
-	sum := sha256.Sum256([]byte(secret))
-	return sum[:]
-}
-
 // Encrypt encrypts plaintext with AES-256-GCM.
 // Returns base64url-encoded ciphertext (nonce prepended to ciphertext).
 // Each call produces a different ciphertext due to a random nonce.
