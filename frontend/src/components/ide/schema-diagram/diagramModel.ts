@@ -112,6 +112,27 @@ export function estimateNodeSize(
 
 export type Cardinality = 'one_to_one' | 'one_to_many'
 
+/** Selects a column-specific React Flow handle only after the node internals
+ * have been refreshed and the rendered column owns that relationship. */
+export function relationshipHandleId({
+  column,
+  direction,
+  handlesReady,
+  availableColumns,
+  connectedColumns,
+}: {
+  column?: string
+  direction: 'in' | 'out'
+  handlesReady: boolean
+  availableColumns: ReadonlySet<string>
+  connectedColumns: ReadonlySet<string>
+}): string {
+  if (!handlesReady || !column || !availableColumns.has(column) || !connectedColumns.has(column)) {
+    return `node:${direction}`
+  }
+  return `col:${column}:${direction}`
+}
+
 /** Cardinality of a foreign key from the child's side: many children may point
  *  at one parent (one_to_many) unless the child's FK columns are unique — i.e.
  *  they are (or match) the child's primary key or a unique index — in which case

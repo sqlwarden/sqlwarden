@@ -1,8 +1,9 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'idb-keyval'
 import type { Workspace } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
@@ -35,6 +36,7 @@ describe('SchemaDiagramView', () => {
   let store: ReturnType<typeof createIdeStore>
 
   beforeEach(() => {
+    vi.mocked(get).mockResolvedValue(null)
     store = createIdeStore('acme', 1, 'ephemeral')
   })
 
@@ -108,5 +110,72 @@ describe('SchemaDiagramView', () => {
     schemaHandlers()
     renderDiagram()
     expect(await screen.findByText('No tables to diagram in this schema.')).toBeInTheDocument()
+  })
+
+  it('restores a persisted relationship diagram without attaching missing handles', async () => {
+    const customer = { namespace: 'public', kind: 'table', name: 'customer' }
+    const storeRef = { namespace: 'public', kind: 'table', name: 'store' }
+    const reactFlowErrors: unknown[][] = []
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      if (args.some((arg) => String(arg).includes("Couldn't create edge"))) reactFlowErrors.push(args)
+    })
+    store.getState().setSession(7, 'session-7')
+    vi.mocked(get).mockResolvedValueOnce(JSON.stringify({
+      present: ['public table customer', 'public table store'],
+      positions: {
+        'public table customer': { x: 0, y: 0 },
+        'public table store': { x: 300, y: 0 },
+      },
+      collapsed: [],
+      keysOnly: true,
+    }))
+    const base = '/api/v1/orgs/acme/workspaces/3/connections/7/schema'
+    server.use(
+      http.get(`${base}/spec`, () => HttpResponse.json({ spec: {
+        dialect: 'postgres',
+        kinds: [{ kind: 'table', label: 'Table', plural_label: 'Tables', order: 1, relational: true, supports_diagram: true, listing: 'enumerated' }],
+      } })),
+      http.get(`${base}/catalog`, () => HttpResponse.json({ catalog: {
+        connection: 'test', dialect: 'postgres', database: 'test', generated_at: '',
+        namespaces: [{ name: 'public', groups: [{ kind: 'table', objects: [customer, storeRef] }] }],
+      } })),
+      http.get(`${base}/relationships`, () => HttpResponse.json({ graph: {
+        namespace: 'public',
+        relationships: [{ name: 'fk_customer_store', source: customer, columns: ['store_id'], references: storeRef, referenced_columns: ['id'] }],
+      } })),
+      http.post(`${base}/objects`, async ({ request }) => {
+        const body = await request.json() as { refs: Array<{ name: string }> }
+        const ref = body.refs[0]
+        const isCustomer = ref.name === 'customer'
+        return HttpResponse.json({ objects: [{
+          ref: isCustomer ? customer : storeRef,
+          relational: {
+            columns: isCustomer
+              ? [{ name: 'store_id', data_type: 'integer', nullable: false, ordinal: 1 }]
+              : [{ name: 'id', data_type: 'integer', nullable: false, ordinal: 1 }],
+            primary_key: isCustomer ? [] : ['id'],
+            foreign_keys: isCustomer
+              ? [{ name: 'fk_customer_store', columns: ['store_id'], references: storeRef, referenced_columns: ['id'] }]
+              : [],
+            indexes: [],
+          },
+        }] })
+      }),
+    )
+
+    try {
+      renderDiagram()
+      expect(await screen.findByRole('status')).toHaveTextContent('Preparing diagram')
+      expect(await screen.findByText('store_id')).toBeInTheDocument()
+      await act(async () => {
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() =>
+          window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())),
+        ))
+      })
+      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+      expect(reactFlowErrors).toEqual([])
+    } finally {
+      errorSpy.mockRestore()
+    }
   })
 })

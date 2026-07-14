@@ -1,4 +1,5 @@
-import { Handle, NodeResizeControl, Position, ResizeControlVariant, type NodeProps } from '@xyflow/react'
+import { useEffect } from 'react'
+import { Handle, NodeResizeControl, Position, ResizeControlVariant, useUpdateNodeInternals, type NodeProps } from '@xyflow/react'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { Button } from '#/components/ui/button'
@@ -45,6 +46,15 @@ export function TableNode({ id, data }: NodeProps & { data: TableNodeData }) {
   const { outgoingByCol, incomingByCol } = data
   const visibleColumns = data.keysOnly ? data.columns.filter((c) => isKeyColumn(c.name, data)) : data.columns
   const hiddenCount = data.columns.length - visibleColumns.length
+  const updateNodeInternals = useUpdateNodeInternals()
+  const handlesSignature = data.collapsed
+    ? 'collapsed'
+    : visibleColumns.map((column) => `${column.name}:${incomingByCol[column.name] ? 'in' : ''}:${outgoingByCol[column.name] ? 'out' : ''}`).join('|')
+
+  useEffect(() => {
+    updateNodeInternals(id)
+  }, [handlesSignature, id, updateNodeInternals])
+
   return (
     <div className="group relative cursor-move rounded border border-border bg-card text-xs shadow-sm" style={{ width: '100%' }}>
       {/* Horizontal-only resizers on the left/right edges: transparent until you

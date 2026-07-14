@@ -45,8 +45,15 @@ class IntersectionObserverMock implements IntersectionObserver {
   }
 }
 
+class DOMMatrixReadOnlyMock {
+  readonly m22 = 1
+
+  constructor(_transform?: string) {}
+}
+
 vi.stubGlobal('ResizeObserver', ResizeObserverMock)
 vi.stubGlobal('IntersectionObserver', IntersectionObserverMock)
+vi.stubGlobal('DOMMatrixReadOnly', DOMMatrixReadOnlyMock)
 vi.stubGlobal('matchMedia', (query: string) => ({
     matches: false,
     media: query,

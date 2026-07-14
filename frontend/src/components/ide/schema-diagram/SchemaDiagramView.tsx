@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background, ControlButton, Controls, getNodesBounds, getViewportForBounds, MiniMap, ReactFlow, ReactFlowProvider,
-  useNodesState, useReactFlow, useUpdateNodeInternals,
+  useNodesState, useReactFlow,
   type Edge, type EdgeTypes, type Node, type NodeTypes, type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -28,7 +28,7 @@ import {
 import { useIde, type EditorTab } from '../useIdeStore'
 import { newObjectTab } from '../object-detail/objectTab'
 import {
-  edgeCardinality, estimateNodeSize, planNamespaceSeed, reachableRefs, refKey,
+  edgeCardinality, estimateNodeSize, planNamespaceSeed, reachableRefs, refKey, relationshipHandleId,
 } from './diagramModel'
 import { FkEdge } from './edges/FkEdge'
 import { layoutGraph } from './layout'
@@ -81,7 +81,6 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   const openTab = useIde((s) => s.openTab)
   const queryClient = useQueryClient()
   const { fitView, screenToFlowPosition, getNodes, getViewport, setViewport } = useReactFlow()
-  const updateNodeInternals = useUpdateNodeInternals()
   const savedViewport = useRef<Viewport | null>(null)
   const viewportRestored = useRef(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -137,6 +136,7 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
   // Keys-only mode: render just PK/FK columns to de-clutter big diagrams.
   // Toggled from the Controls panel; persisted.
   const [keysOnly, setKeysOnly] = useState(false)
+  const [readyEdgeResolution, setReadyEdgeResolution] = useState('')
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([])
   const savedPositions = useRef<Record<string, { x: number; y: number }>>({})
   const seededRef = useRef(false)
@@ -404,14 +404,6 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presentSig, detailSig, collapsedSig, keysOnly])
 
-  // A node's handles change as its columns load, it collapses, or keys-only mode
-  // toggles; tell React Flow to re-scan them so edges re-attach to the per-column
-  // handles (avoids #008).
-  useEffect(() => {
-    for (const r of present) updateNodeInternals(refKey(r))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detailSig, collapsedSig, keysOnly])
-
   // Node emphasis: FK-hover rings the referenced table; click-selection rings
   // the selected table + its neighbors and dims everything else.
   useEffect(() => {
@@ -436,10 +428,10 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
     })
   }, [highlight, activeSelected, selectionRelated, setNodes])
 
-  // Anchor each edge to the specific FK column handles when both nodes are
-  // expanded and loaded; otherwise fall back to the node-level handles.
-  const flowEdges: Edge[] = useMemo(() => {
-    const anchored = (key: string) => detailByKey.get(key)?.detail && !collapsed.has(key)
+  // Resolve the exact handles each relationship needs from current schema and
+  // collapse state. These edges are withheld from React Flow until every
+  // selected handle exists in its internal registry.
+  const resolvedEdges: Edge[] = useMemo(() => {
     return edges
       .filter((e) => presentKeys.has(refKey(e.source)) && presentKeys.has(refKey(e.references)))
       .map((e, i) => {
@@ -447,6 +439,12 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
         const tk = refKey(e.references)
         const srcCol = e.columns[0]
         const tgtCol = e.referenced_columns[0]
+        const sourceRel = detailByKey.get(sk)?.detail?.relational
+        const targetRel = detailByKey.get(tk)?.detail?.relational
+        const sourceColumns = new Set((sourceRel?.columns ?? []).map((column) => column.name))
+        const targetColumns = new Set((targetRel?.columns ?? []).map((column) => column.name))
+        const outgoingColumns = new Set((sourceRel?.foreign_keys ?? []).flatMap((foreignKey) => foreignKey.columns?.slice(0, 1) ?? []))
+        const incomingColumns = new Set(incomingByTable.get(tk)?.keys() ?? [])
         const isHi = Boolean(highlight && sk === highlight.source && tk === highlight.target && srcCol === highlight.column)
         const touchesSel = Boolean(activeSelected && (sk === activeSelected || tk === activeSelected))
         const dimmed = Boolean(activeSelected && !touchesSel)
@@ -459,8 +457,20 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           type: 'fk',
           source: sk,
           target: tk,
-          sourceHandle: anchored(sk) && srcCol ? `col:${srcCol}:out` : 'node:out',
-          targetHandle: anchored(tk) && tgtCol ? `col:${tgtCol}:in` : 'node:in',
+          sourceHandle: relationshipHandleId({
+            column: srcCol,
+            direction: 'out',
+            handlesReady: !collapsed.has(sk),
+            availableColumns: sourceColumns,
+            connectedColumns: outgoingColumns,
+          }),
+          targetHandle: relationshipHandleId({
+            column: tgtCol,
+            direction: 'in',
+            handlesReady: !collapsed.has(tk),
+            availableColumns: targetColumns,
+            connectedColumns: incomingColumns,
+          }),
           data: { sourceMarker: card === 'one_to_one' ? 'one' : 'many', targetMarker: 'one', orthogonal },
           animated: isHi,
           zIndex: isHi ? 1000 : touchesSel ? 500 : undefined,
@@ -475,6 +485,51 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edges, presentSig, collapsedSig, detailSig, highlight, activeSelected, orthogonal])
+
+  const edgeResolution = resolvedEdges
+    .map((edge) => `${edge.id}:${edge.source}:${edge.sourceHandle ?? ''}:${edge.target}:${edge.targetHandle ?? ''}`)
+    .join('|')
+  const requiredEdgeHandles = useMemo(() => resolvedEdges.flatMap((edge) => [
+    `${edge.source}|${edge.sourceHandle}`,
+    `${edge.target}|${edge.targetHandle}`,
+  ]), [edgeResolution]) // eslint-disable-line react-hooks/exhaustive-deps
+  const edgeResolutionSig = `${presentSig}::${collapsedSig}::${detailSig}::${keysOnly ? 1 : 0}::${edgeResolution}`
+  const detailsSettled = present.every((ref) => !detailByKey.get(refKey(ref))?.loading)
+
+  useEffect(() => {
+    if (!detailsSettled) {
+      setReadyEdgeResolution('')
+      return
+    }
+    let cancelled = false
+    let stableFrames = 0
+    let frame = 0
+
+    const verifyHandles = () => {
+      const renderedHandles = new Set(
+        Array.from(containerRef.current?.querySelectorAll<HTMLElement>('[data-nodeid][data-handleid]') ?? []).map((handle) =>
+          `${handle.dataset.nodeid}|${handle.dataset.handleid}`,
+        ),
+      )
+      const allRendered = requiredEdgeHandles.every((handle) => renderedHandles.has(handle))
+
+      stableFrames = allRendered ? stableFrames + 1 : 0
+      if (stableFrames >= 2) {
+        if (!cancelled) setReadyEdgeResolution(edgeResolutionSig)
+        return
+      }
+      frame = window.requestAnimationFrame(verifyHandles)
+    }
+
+    frame = window.requestAnimationFrame(verifyHandles)
+    return () => {
+      cancelled = true
+      window.cancelAnimationFrame(frame)
+    }
+  }, [detailsSettled, edgeResolutionSig, requiredEdgeHandles])
+
+  const graphReady = readyEdgeResolution === edgeResolutionSig
+  const flowEdges = graphReady ? resolvedEdges : []
 
   // Full, consistent elk layout of every node whenever the structure changes
   // (seed / expand / drop / manual re-layout). Applying positions to ALL nodes
@@ -745,8 +800,20 @@ function DiagramCanvas({ orgSlug, workspace, tab }: { orgSlug: string; workspace
           </Button>
         </Tip>
       </div>
-      <div className="min-h-0 flex-1" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
+      <div className="relative min-h-0 flex-1" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
+        {!graphReady ? (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center" role="status" aria-live="polite">
+            <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground shadow-sm">
+              <Icon name="loading-03" size={14} className="animate-spin text-primary" />
+              <span className="flex flex-col">
+                <span className="font-medium text-foreground">Preparing diagram</span>
+                <span>Resolving tables and relationships…</span>
+              </span>
+            </div>
+          </div>
+        ) : null}
         <ReactFlow
+          className={cn('transition-opacity duration-150', graphReady ? 'opacity-100' : 'pointer-events-none opacity-0')}
           nodes={nodes}
           edges={flowEdges}
           nodeTypes={NODE_TYPES}

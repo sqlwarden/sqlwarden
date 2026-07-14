@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  refKey, hiddenNeighbors, rankByDegree, reachableRefs, planNamespaceSeed, estimateNodeSize, edgeCardinality, DIAGRAM_MAX_TABLES,
+  refKey, hiddenNeighbors, rankByDegree, reachableRefs, planNamespaceSeed, estimateNodeSize, edgeCardinality,
+  relationshipHandleId, DIAGRAM_MAX_TABLES,
 } from './diagramModel'
 import type { ObjectRef, Relationship, ObjectDetail } from '#/lib/api/types'
 
@@ -101,5 +102,29 @@ describe('edgeCardinality', () => {
   })
   it('defaults to one_to_many when the child detail is missing', () => {
     expect(edgeCardinality(['parent_id'], undefined)).toBe('one_to_many')
+  })
+})
+
+describe('relationshipHandleId', () => {
+  const availableColumns = new Set(['store_id'])
+  const connectedColumns = new Set(['store_id'])
+
+  it('uses the column handle only after React Flow has indexed it', () => {
+    expect(relationshipHandleId({
+      column: 'store_id', direction: 'in', handlesReady: false, availableColumns, connectedColumns,
+    })).toBe('node:in')
+    expect(relationshipHandleId({
+      column: 'store_id', direction: 'in', handlesReady: true, availableColumns, connectedColumns,
+    })).toBe('col:store_id:in')
+  })
+
+  it('falls back when schema and relationship metadata drift', () => {
+    expect(relationshipHandleId({
+      column: 'missing', direction: 'out', handlesReady: true, availableColumns, connectedColumns,
+    })).toBe('node:out')
+    expect(relationshipHandleId({
+      column: 'store_id', direction: 'out', handlesReady: true,
+      availableColumns, connectedColumns: new Set(),
+    })).toBe('node:out')
   })
 })
