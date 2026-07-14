@@ -11,7 +11,7 @@ export interface SqlDialect {
   boundedCountQuery(ref: ObjectRef, limit: number): string
 }
 
-abstract class BaseDialect implements SqlDialect {
+export abstract class BaseSqlDialect implements SqlDialect {
   abstract formatObject(namespace: string, name: string): string
   abstract formatColumn(name: string): string
 
@@ -28,49 +28,12 @@ abstract class BaseDialect implements SqlDialect {
   }
 }
 
-const BARE = /^[a-z_][a-z0-9_]*$/
+const BARE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/
 
-function makeQuoter(quote: string): (name: string) => string {
-  return (name) => (BARE.test(name) ? name : quote + name.split(quote).join(quote + quote) + quote)
-}
-
-class PostgresDialect extends BaseDialect {
-  private q = makeQuoter('"')
-
-  formatObject(namespace: string, name: string): string {
-    const object = this.q(name)
-    return namespace && namespace !== 'public' ? `${this.q(namespace)}.${object}` : object
-  }
-
-  formatColumn(name: string): string {
-    return this.q(name)
+export function createIdentifierQuoter(openingQuote: string, closingQuote = openingQuote): (name: string) => string {
+  return (name) => {
+    if (BARE_IDENTIFIER.test(name)) return name
+    const escapedName = name.split(closingQuote).join(closingQuote + closingQuote)
+    return openingQuote + escapedName + closingQuote
   }
 }
-
-class MySqlDialect extends BaseDialect {
-  private q = makeQuoter('`')
-
-  formatObject(_namespace: string, name: string): string {
-    return this.q(name)
-  }
-
-  formatColumn(name: string): string {
-    return this.q(name)
-  }
-}
-
-class SqliteDialect extends BaseDialect {
-  private q = makeQuoter('"')
-
-  formatObject(_namespace: string, name: string): string {
-    return this.q(name)
-  }
-
-  formatColumn(name: string): string {
-    return this.q(name)
-  }
-}
-
-export const postgresDialect: SqlDialect = new PostgresDialect()
-export const mysqlDialect: SqlDialect = new MySqlDialect()
-export const sqliteDialect: SqlDialect = new SqliteDialect()

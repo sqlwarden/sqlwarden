@@ -1,7 +1,7 @@
 import postgresIcon from '#/assets/drivers/postgresql.svg'
 import { postgresDriver } from '../connection-drivers/postgres'
-import { postgresDialect } from '../dialect'
 import { postgresHooks } from '../object-detail/drivers/postgres'
+import { postgresDialect } from './postgres/dialect'
 import type { FrontendEngine } from './types'
 
 export const postgresEngine: FrontendEngine = {

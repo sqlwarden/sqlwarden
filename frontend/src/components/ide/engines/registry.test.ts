@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   connectableEngines,
+  dialectFor,
   findFrontendEngine,
   frontendEngines,
   getFrontendEngine,
@@ -24,7 +25,9 @@ describe('frontend engine registry', () => {
 
   it('offers explicit strict and optional lookup APIs', () => {
     expect(findFrontendEngine('postgres')?.label).toBe('PostgreSQL')
+    expect(dialectFor('postgres')).toBe(findFrontendEngine('postgres')?.dialect)
     expect(findFrontendEngine('unknown')).toBeUndefined()
     expect(() => getFrontendEngine('unknown')).toThrow(UnsupportedFrontendEngineError)
+    expect(() => dialectFor('unknown')).toThrow(UnsupportedFrontendEngineError)
   })
 })

@@ -1,5 +1,5 @@
-import { sqliteDialect } from '../dialect'
 import { sqliteHooks } from '../object-detail/drivers/sqlite'
+import { sqliteDialect } from './sqlite/dialect'
 import type { FrontendEngine } from './types'
 
 export const sqliteEngine: FrontendEngine = {
