@@ -1,4 +1,7 @@
+import { errorMessage } from '#/lib/api/errors'
+import { formatDate } from '#/lib/format'
 import { useEffect } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -49,17 +52,11 @@ import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { RoutePending } from '#/components/RoutePending'
 import { Skeleton } from '#/components/ui/skeleton'
 import { cn } from '#/lib/utils'
-import { roleColor, roleDisplayName, subjectDisplayName } from './orgs.$org_slug.policies'
+import { roleColor, subjectDisplayName } from './orgs.$org_slug.policies'
 
 export const Route = createFileRoute('/orgs/$org_slug/policies/$binding_id')({
   component: PolicyContextPage,
   pendingComponent: RoutePending,
-})
-
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
 })
 
 function PolicyContextPage() {
@@ -68,8 +65,14 @@ function PolicyContextPage() {
   const navigate = useNavigate()
 
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
-  const canReadPolicies = hasPermission(effectivePermissions.data?.permissions, permission.policyRead)
-  const canModifyPolicies = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
+  const canReadPolicies = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.policyRead,
+  )
+  const canModifyPolicies = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.policyModify,
+  )
 
   const binding = useQuery({
     ...orgPolicyQueryOptions(orgSlug, bindingId),
@@ -87,22 +90,24 @@ function PolicyContextPage() {
   // Fetch team members when subject is a team
   // We pass subject_id (numeric) as the team identifier — backends that accept either slug or ID will work
   const teamMembers = useQuery({
-    ...orgTeamMembersQueryOptions(orgSlug, String(binding.data?.subject_id ?? ''), { page_size: 100 }),
+    ...orgTeamMembersQueryOptions(orgSlug, String(binding.data?.subject_id ?? ''), {
+      page_size: 100,
+    }),
     enabled: binding.data?.subject_type === 'team' && !!binding.data?.subject_id,
   })
 
   const pageTitle = binding.data
-    ? `${subjectDisplayName(binding.data)} → ${binding.data.role_name ? roleDisplayName(binding.data.role_name) : 'Policy'}`
+    ? `${subjectDisplayName(binding.data)} → ${binding.data.role_name ? binding.data.role_name : 'Policy'}`
     : `Policy #${bindingId}`
 
   useEffect(() => {
     if (!binding.error) return
-    toast.error(binding.error instanceof Error ? binding.error.message : 'Failed to load policy binding')
+    toast.error(errorMessage(binding.error, 'Failed to load policy binding'))
   }, [binding.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) return
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load permissions'))
   }, [effectivePermissions.error])
 
   const revokePolicy = useMutation({
@@ -110,18 +115,21 @@ function PolicyContextPage() {
     onSuccess: async () => {
       toast.success('Policy binding revoked')
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['org-policies', orgSlug] }),
-        queryClient.invalidateQueries({ queryKey: ['org-policy', orgSlug, bindingId] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgPoliciesScope(orgSlug) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgPolicy(orgSlug, bindingId) }),
       ])
       void navigate({ to: '/orgs/$org_slug/policies', params: { org_slug: orgSlug } })
     },
     onError: (error) => {
-      const protectedMessage = protectedOrgPolicyMessage(role.data?.permissions, effectivePermissions.data?.permissions)
+      const protectedMessage = protectedOrgPolicyMessage(
+        role.data?.permissions,
+        effectivePermissions.data?.permissions,
+      )
       if (isApiError(error) && error.status === 403 && protectedMessage) {
         toast.error(protectedMessage)
         return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to revoke policy binding')
+      toast.error(errorMessage(error, 'Failed to revoke policy binding'))
     },
   })
 
@@ -131,7 +139,9 @@ function PolicyContextPage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink render={<Link to="/orgs/$org_slug/policies" params={{ org_slug: orgSlug }} />}>
+              <BreadcrumbLink
+                render={<Link to="/orgs/$org_slug/policies" params={{ org_slug: orgSlug }} />}
+              >
                 Policies
               </BreadcrumbLink>
             </BreadcrumbItem>
@@ -148,7 +158,7 @@ function PolicyContextPage() {
             <p className="text-sm text-muted-foreground">
               Policy binding granting{' '}
               <span className="font-medium text-foreground">
-                {binding.data?.role_name ? roleDisplayName(binding.data.role_name) : 'a role'}
+                {binding.data?.role_name ? binding.data.role_name : 'a role'}
               </span>{' '}
               to{' '}
               <span className="font-medium text-foreground">
@@ -159,7 +169,14 @@ function PolicyContextPage() {
 
           {canModifyPolicies ? (
             <AlertDialog>
-              <AlertDialogTrigger render={<Button variant="destructive" disabled={revokePolicy.isPending || !binding.data} />}>
+              <AlertDialogTrigger
+                render={
+                  <Button
+                    variant="destructive"
+                    disabled={revokePolicy.isPending || !binding.data}
+                  />
+                }
+              >
                 Revoke
               </AlertDialogTrigger>
               <AlertDialogContent size="sm">
@@ -167,14 +184,20 @@ function PolicyContextPage() {
                   <AlertDialogTitle>Revoke policy binding?</AlertDialogTitle>
                   <AlertDialogDescription>
                     This will remove the{' '}
-                    <span className="font-medium">{binding.data?.role_name ? roleDisplayName(binding.data.role_name) : 'role'}</span>{' '}
+                    <span className="font-medium">
+                      {binding.data?.role_name ? binding.data.role_name : 'role'}
+                    </span>{' '}
                     binding from{' '}
-                    <span className="font-medium">{binding.data ? subjectDisplayName(binding.data) : '…'}</span>.
-                    They will lose any permissions granted by this role.
+                    <span className="font-medium">
+                      {binding.data ? subjectDisplayName(binding.data) : '…'}
+                    </span>
+                    . They will lose any permissions granted by this role.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel variant="ghost" disabled={revokePolicy.isPending}>Cancel</AlertDialogCancel>
+                  <AlertDialogCancel variant="ghost" disabled={revokePolicy.isPending}>
+                    Cancel
+                  </AlertDialogCancel>
                   <AlertDialogAction
                     variant="destructive"
                     disabled={revokePolicy.isPending}
@@ -234,7 +257,7 @@ function PolicyContextPage() {
                         roleColor(binding.data.role_name ?? ''),
                       )}
                     >
-                      {binding.data.role_name ? roleDisplayName(binding.data.role_name) : '—'}
+                      {binding.data.role_name ? binding.data.role_name : '—'}
                     </Link>
                   ) : null}
                 </div>
@@ -257,9 +280,7 @@ function PolicyContextPage() {
           </CardHeader>
           <CardContent>
             {teamMembers.isLoading ? <TeamMembersSkeleton /> : null}
-            {teamMembers.isError ? (
-              <ContextMessage message="Could not load team members." />
-            ) : null}
+            {teamMembers.isError ? <ContextMessage message="Could not load team members." /> : null}
             {teamMembers.data && teamMembers.data.items.length === 0 ? (
               <ContextMessage message="This team has no members." />
             ) : null}
@@ -289,7 +310,7 @@ function PolicyContextPage() {
                     roleColor(role.data.name),
                   )}
                 >
-                  {roleDisplayName(role.data.name)}
+                  {role.data.name}
                 </Link>
               </span>
             ) : (
@@ -314,7 +335,11 @@ function PolicyContextPage() {
   )
 }
 
-function SubjectIconLarge({ binding }: { binding: { subject_type: string; subject_name: string } }) {
+function SubjectIconLarge({
+  binding,
+}: {
+  binding: { subject_type: string; subject_name: string }
+}) {
   if (binding.subject_type === 'account') {
     return <InitialsAvatar value={binding.subject_name} size="lg" />
   }
@@ -350,8 +375,12 @@ function TeamMemberRow({ member }: { member: TeamMember }) {
     <div className="flex items-center gap-3 py-3">
       <InitialsAvatar value={member.name || member.email} size="sm" />
       <div className="min-w-0">
-        <div className="truncate text-sm font-medium text-foreground">{member.name || member.email}</div>
-        {member.name ? <div className="truncate text-xs text-muted-foreground">{member.email}</div> : null}
+        <div className="truncate text-sm font-medium text-foreground">
+          {member.name || member.email}
+        </div>
+        {member.name ? (
+          <div className="truncate text-xs text-muted-foreground">{member.email}</div>
+        ) : null}
       </div>
     </div>
   )
@@ -390,16 +419,24 @@ function PermissionGroups({
     <div className="grid gap-6 sm:grid-cols-2">
       {groupedPermissions.map((group) => (
         <div key={group.name} className="flex flex-col gap-3">
-          <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{group.name}</p>
+          <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+            {group.name}
+          </p>
           <div className="flex flex-col gap-3">
             {group.permissions.map((item) => (
               <div key={item}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-foreground">{permissionDisplayName(item, permissionDefinitions)}</span>
-                  <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">{item}</Badge>
+                  <span className="text-sm font-medium text-foreground">
+                    {permissionDisplayName(item, permissionDefinitions)}
+                  </span>
+                  <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">
+                    {item}
+                  </Badge>
                 </div>
                 {permissionDescription(item, permissionDefinitions) ? (
-                  <p className="mt-0.5 text-xs text-muted-foreground">{permissionDescription(item, permissionDefinitions)}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {permissionDescription(item, permissionDefinitions)}
+                  </p>
                 ) : null}
               </div>
             ))}
@@ -439,25 +476,22 @@ function ContextMessage({ message }: { message: string }) {
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5 border-l-2 border-border pl-3">
-      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{label}</span>
+      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+        {label}
+      </span>
       <span className="text-sm font-medium text-foreground">{value}</span>
     </div>
   )
 }
 
-function groupPermissions(permissions: readonly Permission[], definitions: ReadonlyMap<string, PermissionDefinition>) {
+function groupPermissions(
+  permissions: readonly Permission[],
+  definitions: ReadonlyMap<string, PermissionDefinition>,
+) {
   const groups = new Map<string, Permission[]>()
   for (const item of permissions) {
     const group = permissionGroupName(item, definitions)
     groups.set(group, [...(groups.get(group) ?? []), item])
   }
   return Array.from(groups.entries()).map(([name, items]) => ({ name, permissions: items }))
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return 'Unknown'
-  }
-  return dateFormatter.format(date)
 }

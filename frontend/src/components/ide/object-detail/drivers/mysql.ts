@@ -1,11 +1,11 @@
-import type { ColumnExtra, DriverHooks, HeaderBadge, ObjectViewModel } from '../registry'
+import type { ColumnExtra, HeaderBadge, ObjectDetailHooks, ObjectViewModel } from '../types'
 
 function attr(obj: Record<string, unknown> | undefined, key: string): string | undefined {
   const v = obj?.[key]
   return typeof v === 'string' ? v : undefined
 }
 
-export const mysqlHooks: DriverHooks = {
+export const mysqlHooks: ObjectDetailHooks = {
   headerBadges(vm: ObjectViewModel): HeaderBadge[] {
     const a = vm.detail.attributes
     const out: HeaderBadge[] = []

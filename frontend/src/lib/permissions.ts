@@ -53,7 +53,8 @@ export type OrgBuiltinRole =
   | typeof builtinRole.organizationOwner
   | typeof builtinRole.organizationAdmin
   | typeof builtinRole.organizationMember
-export type WorkspaceBuiltinRole = typeof builtinRole.workspaceAdmin | typeof builtinRole.workspaceMember
+export type WorkspaceBuiltinRole =
+  typeof builtinRole.workspaceAdmin | typeof builtinRole.workspaceMember
 
 export const runnableConnectionPermissions = [
   permission.connExecute,
@@ -71,13 +72,20 @@ export function hasPermission(permissions: readonly string[] | undefined, requir
   return permissions?.includes(required) === true
 }
 
-export function hasAnyPermission(permissions: readonly string[] | undefined, required: readonly Permission[]) {
+export function hasAnyPermission(
+  permissions: readonly string[] | undefined,
+  required: readonly Permission[],
+) {
   return required.some((item) => permissions?.includes(item) === true)
 }
 
-export function protectedOrgPolicyMessage(rolePermissions: readonly string[] | undefined, effectivePermissions: readonly string[] | undefined) {
+export function protectedOrgPolicyMessage(
+  rolePermissions: readonly string[] | undefined,
+  effectivePermissions: readonly string[] | undefined,
+) {
   const missingProtectedPermission = protectedOrgPolicyPermissions.some(
-    (item) => rolePermissions?.includes(item) === true && effectivePermissions?.includes(item) !== true,
+    (item) =>
+      rolePermissions?.includes(item) === true && effectivePermissions?.includes(item) !== true,
   )
 
   if (!missingProtectedPermission) {
@@ -91,15 +99,24 @@ export function permissionDefinitionMap(definitions: readonly PermissionDefiniti
   return new Map((definitions ?? []).map((definition) => [definition.key, definition]))
 }
 
-export function permissionDisplayName(value: string, definitions: ReadonlyMap<string, PermissionDefinition>) {
+export function permissionDisplayName(
+  value: string,
+  definitions: ReadonlyMap<string, PermissionDefinition>,
+) {
   return definitions.get(value)?.label ?? value
 }
 
-export function permissionDescription(value: string, definitions: ReadonlyMap<string, PermissionDefinition>) {
+export function permissionDescription(
+  value: string,
+  definitions: ReadonlyMap<string, PermissionDefinition>,
+) {
   return definitions.get(value)?.description
 }
 
-export function permissionGroupName(value: string, definitions: ReadonlyMap<string, PermissionDefinition>) {
+export function permissionGroupName(
+  value: string,
+  definitions: ReadonlyMap<string, PermissionDefinition>,
+) {
   const [prefix] = value.split(':')
   return definitions.get(value)?.group ?? permissionGroupFallback(prefix)
 }

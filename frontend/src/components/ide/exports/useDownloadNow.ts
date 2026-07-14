@@ -35,12 +35,21 @@ export function useDownloadNow(orgSlug: string, workspaceId: number) {
       try {
         const response = await ensureSession(
           connectionId,
-          (sessionId) => downloadExport(orgSlug, workspaceId, connectionId, sessionId, { sql, format: 'csv', filename }, controller.signal),
+          (sessionId) =>
+            downloadExport(
+              orgSlug,
+              workspaceId,
+              connectionId,
+              sessionId,
+              { sql, format: 'csv', filename },
+              controller.signal,
+            ),
           controller.signal,
         )
 
         const disposition = response.headers.get('Content-Disposition') ?? ''
-        const resolvedFilename = FILENAME_FROM_DISPOSITION.exec(disposition)?.[1] ?? 'query-export.csv'
+        const resolvedFilename =
+          FILENAME_FROM_DISPOSITION.exec(disposition)?.[1] ?? 'query-export.csv'
 
         const reader = response.body?.getReader()
         if (!reader) throw new Error('Export response has no body')
@@ -54,7 +63,10 @@ export function useDownloadNow(orgSlug: string, workspaceId: number) {
           setState({ isDownloading: true, bytesDownloaded: total })
         }
 
-        saveBlobAs(resolvedFilename, new Blob(chunks as BlobPart[], { type: 'text/csv;charset=utf-8' }))
+        saveBlobAs(
+          resolvedFilename,
+          new Blob(chunks as BlobPart[], { type: 'text/csv;charset=utf-8' }),
+        )
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
           toast.info('Export cancelled.')

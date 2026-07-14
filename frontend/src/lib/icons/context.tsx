@@ -69,7 +69,9 @@ export function IconPackProvider({ children }: { children: ReactNode }) {
     packLoaders[packName]().then((map) => {
       if (!cancelled) setIconMap(map)
     })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [packName])
 
   return (

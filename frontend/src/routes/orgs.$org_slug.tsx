@@ -1,3 +1,4 @@
+import { trimTrailingSlash } from '#/lib/utils'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Navigate, Outlet, createFileRoute, useRouterState } from '@tanstack/react-router'
@@ -12,7 +13,11 @@ import {
 } from '#/components/app-shell'
 import { useSession } from '#/hooks/use-session'
 import { useSetupStatus } from '#/hooks/use-setup-status'
-import { orgEffectivePermissionsQueryOptions, orgQueryOptions, orgWorkspaceQueryOptions } from '#/lib/api/query'
+import {
+  orgEffectivePermissionsQueryOptions,
+  orgQueryOptions,
+  orgWorkspaceQueryOptions,
+} from '#/lib/api/query'
 import { getAccessToken } from '#/lib/auth/access-token'
 import { hasAnyPermission, permission } from '#/lib/permissions'
 import {
@@ -73,16 +78,31 @@ function OrganizationLayout() {
   }
 
   const workspacePermissions = workspaceEffectivePermissions.data?.permissions
-  const workspacePrimaryNavItems = workspaceId ? workspacePrimaryItems(orgSlug, workspaceId, workspacePermissions) : []
-  const workspaceAccessControlNavItems = workspaceId ? workspaceAccessControlItems(orgSlug, workspaceId, workspacePermissions) : []
-  const workspaceSettingsNavItems = workspaceId ? workspaceSettingsItems(orgSlug, workspaceId, workspacePermissions) : []
-  const orgAccessControlNavItems = !workspaceId ? accessControlItems(orgSlug, orgEffectivePermissions.data?.permissions) : []
-  const orgSettingsNavItems = !workspaceId ? settingsItems(orgSlug, orgEffectivePermissions.data?.permissions) : []
+  const workspacePrimaryNavItems = workspaceId
+    ? workspacePrimaryItems(orgSlug, workspaceId, workspacePermissions)
+    : []
+  const workspaceAccessControlNavItems = workspaceId
+    ? workspaceAccessControlItems(orgSlug, workspaceId, workspacePermissions)
+    : []
+  const workspaceSettingsNavItems = workspaceId
+    ? workspaceSettingsItems(orgSlug, workspaceId, workspacePermissions)
+    : []
+  const orgAccessControlNavItems = !workspaceId
+    ? accessControlItems(orgSlug, orgEffectivePermissions.data?.permissions)
+    : []
+  const orgSettingsNavItems = !workspaceId
+    ? settingsItems(orgSlug, orgEffectivePermissions.data?.permissions)
+    : []
 
   if (
     workspaceId &&
     workspaceEffectivePermissions.data &&
-    !isWorkspacePathAllowed(pathname, orgSlug, workspaceId, workspaceEffectivePermissions.data.permissions)
+    !isWorkspacePathAllowed(
+      pathname,
+      orgSlug,
+      workspaceId,
+      workspaceEffectivePermissions.data.permissions,
+    )
   ) {
     return (
       <Navigate
@@ -97,9 +117,11 @@ function OrganizationLayout() {
     <SidebarProvider
       defaultOpen={initialOpen}
       defaultWidth={240}
-      style={{
-        '--sidebar-width-icon': '3rem',
-      } as React.CSSProperties}
+      style={
+        {
+          '--sidebar-width-icon': '3rem',
+        } as React.CSSProperties
+      }
     >
       <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
         <AppShellHeader
@@ -107,7 +129,7 @@ function OrganizationLayout() {
           description={
             workspaceId
               ? `${organization.data?.name ?? orgSlug} / ${workspace.data?.name ?? `Workspace #${workspaceId}`}`
-              : organization.data?.name ?? orgSlug
+              : (organization.data?.name ?? orgSlug)
           }
           icon="database-lightning"
         />
@@ -116,7 +138,11 @@ function OrganizationLayout() {
             <>
               <AppShellNavSection items={workspacePrimaryNavItems} pathname={pathname} />
               {workspaceAccessControlNavItems.length > 0 ? (
-                <AppShellNavSection label="Access Control" items={workspaceAccessControlNavItems} pathname={pathname} />
+                <AppShellNavSection
+                  label="Access Control"
+                  items={workspaceAccessControlNavItems}
+                  pathname={pathname}
+                />
               ) : null}
               {workspaceSettingsNavItems.length > 0 ? (
                 <AppShellNavSection items={workspaceSettingsNavItems} pathname={pathname} />
@@ -126,10 +152,18 @@ function OrganizationLayout() {
             <>
               <AppShellNavSection items={organizationItems(orgSlug)} pathname={pathname} />
               {orgAccessControlNavItems.length > 0 ? (
-                <AppShellNavSection label="Access Control" items={orgAccessControlNavItems} pathname={pathname} />
+                <AppShellNavSection
+                  label="Access Control"
+                  items={orgAccessControlNavItems}
+                  pathname={pathname}
+                />
               ) : null}
               {orgSettingsNavItems.length > 0 ? (
-                <AppShellNavSection label="Settings" items={orgSettingsNavItems} pathname={pathname} />
+                <AppShellNavSection
+                  label="Settings"
+                  items={orgSettingsNavItems}
+                  pathname={pathname}
+                />
               ) : null}
             </>
           )}
@@ -150,24 +184,58 @@ function OrganizationLayout() {
   )
 }
 
-function workspacePrimaryItems(orgSlug: string, workspaceId: string, permissions: readonly string[] | undefined): AppShellNavItem[] {
+function workspacePrimaryItems(
+  orgSlug: string,
+  workspaceId: string,
+  permissions: readonly string[] | undefined,
+): AppShellNavItem[] {
   const items: AppShellNavItem[] = [
-    { to: '/orgs/$org_slug/workspaces', params: { org_slug: orgSlug }, label: 'All Workspaces', icon: 'arrow-left-01' },
-    { to: '/orgs/$org_slug/workspaces/$workspace_id', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Overview', icon: 'home-04' },
-    { to: '/ide/$org_slug', params: { org_slug: orgSlug }, search: { ws: Number(workspaceId) }, label: 'Open in IDE', icon: 'database-lightning' },
+    {
+      to: '/orgs/$org_slug/workspaces',
+      params: { org_slug: orgSlug },
+      label: 'All Workspaces',
+      icon: 'arrow-left-01',
+    },
+    {
+      to: '/orgs/$org_slug/workspaces/$workspace_id',
+      params: { org_slug: orgSlug, workspace_id: workspaceId },
+      label: 'Overview',
+      icon: 'home-04',
+    },
+    {
+      to: '/ide/$org_slug',
+      params: { org_slug: orgSlug },
+      search: { ws: Number(workspaceId) },
+      label: 'Open in IDE',
+      icon: 'database-lightning',
+    },
   ]
 
   if (hasAnyPermission(permissions, workspaceEnvironmentPagePermissions)) {
-    items.push({ to: '/orgs/$org_slug/workspaces/$workspace_id/environments', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Environments', icon: 'database' })
+    items.push({
+      to: '/orgs/$org_slug/workspaces/$workspace_id/environments',
+      params: { org_slug: orgSlug, workspace_id: workspaceId },
+      label: 'Environments',
+      icon: 'database',
+    })
   }
   if (hasAnyPermission(permissions, workspaceConnectionPagePermissions)) {
-    items.push({ to: '/orgs/$org_slug/workspaces/$workspace_id/connections', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Connections', icon: 'flow-connection' })
+    items.push({
+      to: '/orgs/$org_slug/workspaces/$workspace_id/connections',
+      params: { org_slug: orgSlug, workspace_id: workspaceId },
+      label: 'Connections',
+      icon: 'flow-connection',
+    })
   }
 
   return items
 }
 
-function workspaceAccessControlItems(orgSlug: string, workspaceId: string, permissions: readonly string[] | undefined): AppShellNavItem[] {
+function workspaceAccessControlItems(
+  orgSlug: string,
+  workspaceId: string,
+  permissions: readonly string[] | undefined,
+): AppShellNavItem[] {
   if (!hasAnyPermission(permissions, workspacePolicyPagePermissions)) {
     return []
   }
@@ -196,15 +264,31 @@ function workspaceAccessControlItems(orgSlug: string, workspaceId: string, permi
   ]
 }
 
-function workspaceSettingsItems(orgSlug: string, workspaceId: string, permissions: readonly string[] | undefined): AppShellNavItem[] {
+function workspaceSettingsItems(
+  orgSlug: string,
+  workspaceId: string,
+  permissions: readonly string[] | undefined,
+): AppShellNavItem[] {
   if (!hasAnyPermission(permissions, workspaceSettingsPagePermissions)) {
     return []
   }
 
-  return [{ to: '/orgs/$org_slug/workspaces/$workspace_id/settings', params: { org_slug: orgSlug, workspace_id: workspaceId }, label: 'Settings', icon: 'settings-02' }]
+  return [
+    {
+      to: '/orgs/$org_slug/workspaces/$workspace_id/settings',
+      params: { org_slug: orgSlug, workspace_id: workspaceId },
+      label: 'Settings',
+      icon: 'settings-02',
+    },
+  ]
 }
 
-function isWorkspacePathAllowed(pathname: string, orgSlug: string, workspaceId: string, permissions: readonly string[]) {
+function isWorkspacePathAllowed(
+  pathname: string,
+  orgSlug: string,
+  workspaceId: string,
+  permissions: readonly string[],
+) {
   const basePath = `/orgs/${orgSlug}/workspaces/${workspaceId}`
   const path = trimTrailingSlash(pathname)
 
@@ -217,7 +301,12 @@ function isWorkspacePathAllowed(pathname: string, orgSlug: string, workspaceId: 
   if (isPathInSection(path, basePath, 'connections')) {
     return hasAnyPermission(permissions, workspaceConnectionPagePermissions)
   }
-  if (isPathInSection(path, basePath, 'users') || isPathInSection(path, basePath, 'teams') || isPathInSection(path, basePath, 'roles') || isPathInSection(path, basePath, 'policies')) {
+  if (
+    isPathInSection(path, basePath, 'users') ||
+    isPathInSection(path, basePath, 'teams') ||
+    isPathInSection(path, basePath, 'roles') ||
+    isPathInSection(path, basePath, 'policies')
+  ) {
     return hasAnyPermission(permissions, workspacePolicyPagePermissions)
   }
   if (isPathInSection(path, basePath, 'settings')) {
@@ -234,12 +323,25 @@ function isPathInSection(pathname: string, basePath: string, section: string) {
 
 function organizationItems(orgSlug: string): AppShellNavItem[] {
   return [
-    { to: '/ide/$org_slug', params: { org_slug: orgSlug }, label: 'Open IDE', icon: 'database-lightning' },
-    { to: '/orgs/$org_slug/workspaces', params: { org_slug: orgSlug }, label: 'Workspaces', icon: 'briefcase-01' },
+    {
+      to: '/ide/$org_slug',
+      params: { org_slug: orgSlug },
+      label: 'Open IDE',
+      icon: 'database-lightning',
+    },
+    {
+      to: '/orgs/$org_slug/workspaces',
+      params: { org_slug: orgSlug },
+      label: 'Workspaces',
+      icon: 'briefcase-01',
+    },
   ]
 }
 
-function accessControlItems(orgSlug: string, permissions: readonly string[] | undefined): AppShellNavItem[] {
+function accessControlItems(
+  orgSlug: string,
+  permissions: readonly string[] | undefined,
+): AppShellNavItem[] {
   const items: AppShellNavItem[] = []
 
   if (hasAnyPermission(permissions, [permission.orgRead])) {
@@ -265,13 +367,23 @@ function accessControlItems(orgSlug: string, permissions: readonly string[] | un
   return items
 }
 
-function settingsItems(orgSlug: string, permissions: readonly string[] | undefined): AppShellNavItem[] {
-  if (!hasAnyPermission(permissions, [permission.orgRead, permission.orgWrite, permission.orgDelete])) {
+function settingsItems(
+  orgSlug: string,
+  permissions: readonly string[] | undefined,
+): AppShellNavItem[] {
+  if (
+    !hasAnyPermission(permissions, [permission.orgRead, permission.orgWrite, permission.orgDelete])
+  ) {
     return []
   }
 
   return [
-    { to: '/orgs/$org_slug/settings/general', params: { org_slug: orgSlug }, label: 'General', icon: 'settings-02' },
+    {
+      to: '/orgs/$org_slug/settings/general',
+      params: { org_slug: orgSlug },
+      label: 'General',
+      icon: 'settings-02',
+    },
   ]
 }
 
@@ -279,10 +391,6 @@ function workspaceIdFromPath(pathname: string, orgSlug: string) {
   const pattern = new RegExp(`^/orgs/${escapeRegExp(orgSlug)}/workspaces/([^/]+)(?:/|$)`)
   const match = pathname.match(pattern)
   return match?.[1]
-}
-
-function trimTrailingSlash(path: string) {
-  return path === '/' ? path : path.replace(/\/$/, '')
 }
 
 function escapeRegExp(value: string) {

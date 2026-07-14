@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
+import { useState, type DragEvent } from 'react'
 import * as Y from 'yjs'
 import { Icon, type AppIcon } from '#/lib/icons'
 import {
@@ -18,6 +18,7 @@ import { useIde, DEFAULT_CONSOLE_CONTENT, type EditorTab, type TabKind } from '.
 import { allGroups, tabsToClose, type GroupNode, type SplitDirection } from './ideLayout'
 import { DriverBadge } from './DriverBadge'
 import { Tip } from './schema-diagram/Tip'
+import { useTabStripOverflow } from './useTabStripOverflow'
 
 type IdeTabBarProps = {
   orgSlug: string
@@ -35,7 +36,23 @@ const TAB_ICONS: Record<TabKind, AppIcon> = {
   diagram: 'flow-connection',
 }
 
-export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocus }: IdeTabBarProps) {
+export function requiresCloseConfirmation(
+  tab: EditorTab,
+  running: boolean,
+  instances: number,
+): boolean {
+  if (instances > 1) return false
+  const hasConsoleContent = tab.kind === 'scratch' && tab.content.trim() !== ''
+  return running || (tab.kind === 'file' && Boolean(tab.isDirty)) || hasConsoleContent
+}
+
+export function IdeTabBar({
+  orgSlug: _orgSlug,
+  workspace,
+  group,
+  focused,
+  onFocus,
+}: IdeTabBarProps) {
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null)
 
   const tabs = useIde((s) => s.tabs)
@@ -54,54 +71,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
     .map((id) => tabs.find((t) => t.id === id))
     .filter((t): t is EditorTab => Boolean(t))
 
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const [canScrollLeft, setCanScrollLeft] = useState(false)
-  const [canScrollRight, setCanScrollRight] = useState(false)
-
-  const updateScrollButtons = useCallback(() => {
-    const el = scrollRef.current
-    if (!el) return
-    setCanScrollLeft(el.scrollLeft > 1)
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1)
-  }, [])
-
-  // Track overflow as the strip scrolls or the bar resizes.
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    updateScrollButtons()
-    el.addEventListener('scroll', updateScrollButtons, { passive: true })
-    const ro = new ResizeObserver(updateScrollButtons)
-    ro.observe(el)
-    return () => {
-      el.removeEventListener('scroll', updateScrollButtons)
-      ro.disconnect()
-    }
-  }, [updateScrollButtons])
-
-  // Keep the active tab visible (e.g. after opening a new tab that lands off-screen).
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el && activeTabId) {
-      el.querySelector(`[data-tab-id="${activeTabId}"]`)?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
-    }
-    updateScrollButtons()
-  }, [activeTabId, groupTabs.length, updateScrollButtons])
-
-  function scrollTabs(direction: -1 | 1) {
-    const el = scrollRef.current
-    if (!el) return
-    el.scrollBy({ left: direction * Math.max(160, el.clientWidth * 0.7), behavior: 'smooth' })
-  }
-
-  // Mouse-wheel over the strip pans it horizontally (trackpads already emit
-  // deltaX; this maps the dominant vertical wheel axis onto the strip).
-  function handleWheel(e: React.WheelEvent<HTMLDivElement>) {
-    const el = scrollRef.current
-    if (!el || el.scrollWidth <= el.clientWidth) return
-    const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX
-    el.scrollBy({ left: delta })
-  }
+  const overflow = useTabStripOverflow(activeTabId, groupTabs.length)
 
   function handleNewConsole() {
     onFocus() // open the new console into this group
@@ -115,8 +85,7 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
   function handleCloseRequest(tab: EditorTab) {
     // Closing one pane only loses content when it's the tab's last instance.
     const instances = layout ? allGroups(layout).filter((g) => g.tabIds.includes(tab.id)).length : 1
-    const hasConsoleContent = tab.kind === 'scratch' && tab.content.trim() !== ''
-    if (instances <= 1 && (runningTabs[tab.id] || (tab.kind === 'file' && tab.isDirty) || hasConsoleContent)) {
+    if (requiresCloseConfirmation(tab, Boolean(runningTabs[tab.id]), instances)) {
       setPendingCloseTabId(tab.id)
     } else {
       closeTabInstance(group.id, tab.id)
@@ -152,16 +121,24 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
         className={cn('flex h-9 shrink-0 items-end bg-sidebar', draggingTab && 'bg-accent/30')}
         onDragOver={handleBarDragOver}
       >
-        {(canScrollLeft || canScrollRight) && (
+        {(overflow.canScrollLeft || overflow.canScrollRight) && (
           <div className="flex h-9 shrink-0 items-center border-r border-border">
-            <ScrollChevron direction="left" disabled={!canScrollLeft} onClick={() => scrollTabs(-1)} />
-            <ScrollChevron direction="right" disabled={!canScrollRight} onClick={() => scrollTabs(1)} />
+            <ScrollChevron
+              direction="left"
+              disabled={!overflow.canScrollLeft}
+              onClick={() => overflow.scroll(-1)}
+            />
+            <ScrollChevron
+              direction="right"
+              disabled={!overflow.canScrollRight}
+              onClick={() => overflow.scroll(1)}
+            />
           </div>
         )}
         <div
-          ref={scrollRef}
+          ref={overflow.scrollRef}
           onDragOver={handleBarDragOver}
-          onWheel={handleWheel}
+          onWheel={overflow.handleWheel}
           className="flex min-w-0 items-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {groupTabs.map((tab) => (
@@ -176,9 +153,15 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
               onClose={() => handleCloseRequest(tab)}
               onCloseMany={handleCloseMany}
               onSplit={(direction) => splitActiveTab(workspace.id, group.id, tab.id, direction)}
-              onDragStart={() => { setActiveTab(group.id, tab.id); setDraggingTab({ tabId: tab.id, fromGroupId: group.id }) }}
+              onDragStart={() => {
+                setActiveTab(group.id, tab.id)
+                setDraggingTab({ tabId: tab.id, fromGroupId: group.id })
+              }}
               onDragOverReorder={(position) => {
-                if (draggingTab && !(draggingTab.tabId === tab.id && draggingTab.fromGroupId === group.id)) {
+                if (
+                  draggingTab &&
+                  !(draggingTab.tabId === tab.id && draggingTab.fromGroupId === group.id)
+                ) {
                   moveTab(draggingTab.fromGroupId, draggingTab.tabId, group.id, tab.id, position)
                 }
               }}
@@ -199,23 +182,40 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
       </div>
 
       {pendingCloseTab && (
-        <Dialog open={true} onOpenChange={(open) => { if (!open) setPendingCloseTabId(null) }}>
+        <Dialog
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setPendingCloseTabId(null)
+          }}
+        >
           <DialogContent className="sm:max-w-sm">
             <DialogHeader>
               <DialogTitle>
                 {pendingCloseRunning
                   ? 'Query still running'
                   : pendingCloseIsConsole
-                  ? 'Close console?'
-                  : 'Close without saving?'}
+                    ? 'Close console?'
+                    : 'Close without saving?'}
               </DialogTitle>
             </DialogHeader>
             <p className="text-sm text-muted-foreground">
-              {pendingCloseRunning
-                ? <>A query is still running in <strong className="text-foreground">{pendingCloseTab.title}</strong>. Closing will cancel the request.</>
-                : pendingCloseIsConsole
-                ? <>Content of <strong className="text-foreground">{pendingCloseTab.title}</strong> is not saved and will be permanently lost.</>
-                : <>Unsaved changes to <strong className="text-foreground">{pendingCloseTab.title}</strong> will be lost.</>}
+              {pendingCloseRunning ? (
+                <>
+                  A query is still running in{' '}
+                  <strong className="text-foreground">{pendingCloseTab.title}</strong>. Closing will
+                  cancel the request.
+                </>
+              ) : pendingCloseIsConsole ? (
+                <>
+                  Content of <strong className="text-foreground">{pendingCloseTab.title}</strong> is
+                  not saved and will be permanently lost.
+                </>
+              ) : (
+                <>
+                  Unsaved changes to{' '}
+                  <strong className="text-foreground">{pendingCloseTab.title}</strong> will be lost.
+                </>
+              )}
             </p>
             <DialogFooter>
               <Button variant="outline" onClick={() => setPendingCloseTabId(null)}>
@@ -238,7 +238,15 @@ export function IdeTabBar({ orgSlug: _orgSlug, workspace, group, focused, onFocu
   )
 }
 
-function ScrollChevron({ direction, disabled, onClick }: { direction: 'left' | 'right'; disabled?: boolean; onClick: () => void }) {
+function ScrollChevron({
+  direction,
+  disabled,
+  onClick,
+}: {
+  direction: 'left' | 'right'
+  disabled?: boolean
+  onClick: () => void
+}) {
   return (
     <button
       type="button"
@@ -250,7 +258,11 @@ function ScrollChevron({ direction, disabled, onClick }: { direction: 'left' | '
         disabled ? 'opacity-35' : 'hover:bg-card/50 hover:text-foreground',
       )}
     >
-      <Icon name="chevron-right" size={14} className={direction === 'left' ? 'rotate-180' : undefined} />
+      <Icon
+        name="chevron-right"
+        size={14}
+        className={direction === 'left' ? 'rotate-180' : undefined}
+      />
     </button>
   )
 }
@@ -300,62 +312,65 @@ function TabItem({
 
   return (
     <ContextMenu items={menuItems} className="shrink-0">
-    <div
-      role="tab"
-      data-tab-id={tab.id}
-      aria-selected={active}
-      tabIndex={0}
-      draggable
-      onClick={onActivate}
-      onKeyDown={(e) => e.key === 'Enter' && onActivate()}
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = 'move'
-        e.dataTransfer.setData('text/plain', tab.id)
-        onDragStart()
-      }}
-      onDragOver={(e) => {
-        e.preventDefault()
-        e.dataTransfer.dropEffect = 'move'
-        const rect = e.currentTarget.getBoundingClientRect()
-        onDragOverReorder(e.clientX > rect.left + rect.width / 2 ? 'after' : 'before')
-      }}
-      onDragEnd={onDragEnd}
-      className={cn(
-        'group relative flex h-9 max-w-52 shrink-0 cursor-pointer select-none items-center gap-1 border-r border-border pl-2.5 pr-1',
-        active
-          ? cn(
-              'bg-card text-foreground after:absolute after:left-0 after:right-0 after:top-0 after:h-[2px]',
-              focused ? 'after:bg-primary' : 'after:bg-border',
-            )
-          : 'text-muted-foreground hover:bg-card/50 hover:text-foreground',
-      )}
-    >
-      {isRunning ? (
-        <Icon name="loading-03" size={13} className="shrink-0 animate-spin text-primary" />
-      ) : (tab.kind === 'connection' || tab.kind === 'scratch') && tab.driver ? (
-        <DriverBadge driver={tab.driver} size="sm" className="shrink-0 opacity-70" />
-      ) : (
-        <Icon name={icon} size={13} className="shrink-0 opacity-60" />
-      )}
-      {/* Native title keeps per-tab hover hints cheap — no tooltip component per tab. */}
-      <span className="min-w-0 flex-1 truncate text-xs" title={tab.subtitle ?? tab.title}>
-        {tab.isDirty && <span className="mr-1 text-primary">●</span>}
-        {tab.title}
-      </span>
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); onClose() }}
-        title="Close tab"
-        aria-label={`Close ${tab.title}`}
+      <div
+        role="tab"
+        data-tab-id={tab.id}
+        aria-selected={active}
+        tabIndex={0}
+        draggable
+        onClick={onActivate}
+        onKeyDown={(e) => e.key === 'Enter' && onActivate()}
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', tab.id)
+          onDragStart()
+        }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          const rect = e.currentTarget.getBoundingClientRect()
+          onDragOverReorder(e.clientX > rect.left + rect.width / 2 ? 'after' : 'before')
+        }}
+        onDragEnd={onDragEnd}
         className={cn(
-          'flex size-5 shrink-0 items-center justify-center rounded transition-colors',
-          'hover:bg-muted hover:text-foreground',
-          active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          'group relative flex h-9 max-w-52 shrink-0 cursor-pointer select-none items-center gap-1 border-r border-border pl-2.5 pr-1',
+          active
+            ? cn(
+                'bg-card text-foreground after:absolute after:left-0 after:right-0 after:top-0 after:h-[2px]',
+                focused ? 'after:bg-primary' : 'after:bg-border',
+              )
+            : 'text-muted-foreground hover:bg-card/50 hover:text-foreground',
         )}
       >
-        <Icon name="cancel-01" size={11} />
-      </button>
-    </div>
+        {isRunning ? (
+          <Icon name="loading-03" size={13} className="shrink-0 animate-spin text-primary" />
+        ) : (tab.kind === 'connection' || tab.kind === 'scratch') && tab.driver ? (
+          <DriverBadge driver={tab.driver} size="sm" className="shrink-0 opacity-70" />
+        ) : (
+          <Icon name={icon} size={13} className="shrink-0 opacity-60" />
+        )}
+        {/* Native title keeps per-tab hover hints cheap — no tooltip component per tab. */}
+        <span className="min-w-0 flex-1 truncate text-xs" title={tab.subtitle ?? tab.title}>
+          {tab.isDirty && <span className="mr-1 text-primary">●</span>}
+          {tab.title}
+        </span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onClose()
+          }}
+          title="Close tab"
+          aria-label={`Close ${tab.title}`}
+          className={cn(
+            'flex size-5 shrink-0 items-center justify-center rounded transition-colors',
+            'hover:bg-muted hover:text-foreground',
+            active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          )}
+        >
+          <Icon name="cancel-01" size={11} />
+        </button>
+      </div>
     </ContextMenu>
   )
 }

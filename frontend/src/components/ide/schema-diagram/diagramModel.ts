@@ -9,7 +9,11 @@ export function refKey(ref: ObjectRef): string {
 
 /** Refs on the other end of a FK edge touching `ref`, in either direction,
  *  excluding refs already on the canvas. */
-export function hiddenNeighbors(ref: ObjectRef, edges: Relationship[], present: Set<string>): ObjectRef[] {
+export function hiddenNeighbors(
+  ref: ObjectRef,
+  edges: Relationship[],
+  present: Set<string>,
+): ObjectRef[] {
   const self = refKey(ref)
   const out = new Map<string, ObjectRef>()
   for (const e of edges) {
@@ -80,7 +84,9 @@ export function reachableRefs(
 /** Seed for a namespace diagram: all tables if under the cap, else the most
  *  connected hub tables (progressive mode). */
 export function planNamespaceSeed(
-  tableRefs: ObjectRef[], edges: Relationship[], maxTables: number = DIAGRAM_MAX_TABLES,
+  tableRefs: ObjectRef[],
+  edges: Relationship[],
+  maxTables: number = DIAGRAM_MAX_TABLES,
 ): { seed: ObjectRef[]; progressive: boolean } {
   if (tableRefs.length <= maxTables) return { seed: tableRefs, progressive: false }
   return { seed: rankByDegree(tableRefs, edges).slice(0, maxTables), progressive: true }
@@ -107,17 +113,44 @@ export function estimateNodeSize(
     for (const f of rel.foreign_keys ?? []) if (f.columns?.[0]) keys.add(f.columns[0])
     cols = keys.size + (keys.size < allCols ? 1 : 0)
   }
-  return { width: 240, height: collapsed || cols === 0 ? HEADER : HEADER + Math.min(cols, 40) * ROW }
+  return {
+    width: 240,
+    height: collapsed || cols === 0 ? HEADER : HEADER + Math.min(cols, 40) * ROW,
+  }
 }
 
 export type Cardinality = 'one_to_one' | 'one_to_many'
+
+/** Selects a column-specific React Flow handle only after the node internals
+ * have been refreshed and the rendered column owns that relationship. */
+export function relationshipHandleId({
+  column,
+  direction,
+  handlesReady,
+  availableColumns,
+  connectedColumns,
+}: {
+  column?: string
+  direction: 'in' | 'out'
+  handlesReady: boolean
+  availableColumns: ReadonlySet<string>
+  connectedColumns: ReadonlySet<string>
+}): string {
+  if (!handlesReady || !column || !availableColumns.has(column) || !connectedColumns.has(column)) {
+    return `node:${direction}`
+  }
+  return `col:${column}:${direction}`
+}
 
 /** Cardinality of a foreign key from the child's side: many children may point
  *  at one parent (one_to_many) unless the child's FK columns are unique — i.e.
  *  they are (or match) the child's primary key or a unique index — in which case
  *  each child maps to exactly one parent (one_to_one). Falls back to one_to_many
  *  when the child's detail (keys/indexes) isn't available. */
-export function edgeCardinality(fkColumns: string[], sourceDetail: ObjectDetail | undefined): Cardinality {
+export function edgeCardinality(
+  fkColumns: string[],
+  sourceDetail: ObjectDetail | undefined,
+): Cardinality {
   const rel = sourceDetail?.relational
   if (!rel || fkColumns.length === 0) return 'one_to_many'
   const sameSet = (a: string[], b: string[]) =>

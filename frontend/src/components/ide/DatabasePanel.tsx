@@ -1,5 +1,6 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useState } from 'react'
-import * as Y from 'yjs'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
@@ -7,7 +8,7 @@ import { toast } from 'sonner'
 import {
   orgEffectivePermissionsQueryOptions,
   orgEnvironmentsQueryOptions,
-  orgWorkspaceConnectionsQueryOptions,
+  allOrgWorkspaceConnectionsQueryOptions,
   refreshConnectionSchema,
   invalidateConnectionSchemaQueries,
 } from '#/lib/api/query'
@@ -16,7 +17,12 @@ import { isApiError } from '#/lib/api/errors'
 import type { Connection, Environment, Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { hasPermission, permission } from '#/lib/permissions'
-import { useIde, activeTabId as selectActiveTabId, resolveConnectionState, type ConnectionState, newConnectionTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
+import {
+  useIde,
+  activeTabId as selectActiveTabId,
+  resolveConnectionState,
+  type ConnectionState,
+} from './useIdeStore'
 import { useConnectionLayout } from './useConnectionLayout'
 import { ContextMenu } from '#/components/ui/context-menu'
 import { copyWithToast } from './contextMenus/clipboard'
@@ -24,7 +30,6 @@ import { buildConnectionMenu } from './contextMenus/connectionMenu'
 import { buildEnvironmentMenu } from './contextMenus/environmentMenu'
 import { SidebarPane } from './SidebarPane'
 import { SchemaTree } from './SchemaTree'
-import { workspaceSessionsQueryKey } from './useSessionSync'
 import { ConnectionDialog } from './ConnectionDialog'
 import { DriverBadge } from './DriverBadge'
 import { Button } from '#/components/ui/button'
@@ -47,6 +52,7 @@ import { Tip } from './schema-diagram/Tip'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { Textarea } from '#/components/ui/textarea'
+import { useConnectionActions } from './useConnectionActions'
 
 type DatabasePanelProps = {
   orgSlug: string
@@ -55,14 +61,14 @@ type DatabasePanelProps = {
   onMaximizedChange?: (maximized: boolean) => void
 }
 
-export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange }: DatabasePanelProps) {
-  const openTab = useIde((s) => s.openTab)
-  const openConsole = useIde((s) => s.openConsole)
-  const sessions = useIde((s) => s.sessions)
-  const setSession = useIde((s) => s.setSession)
-  const clearSession = useIde((s) => s.clearSession)
-  const setConnectionStatus = useIde((s) => s.setConnectionStatus)
+export function DatabasePanel({
+  orgSlug,
+  workspace,
+  maximized,
+  onMaximizedChange,
+}: DatabasePanelProps) {
   const queryClient = useQueryClient()
+  const connectionActions = useConnectionActions(orgSlug, workspace)
 
   const [filter, setFilter] = useState('')
   const { connectionLayout: connLayout } = useConnectionLayout()
@@ -77,82 +83,23 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   const effectivePermissions = useQuery(
     orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspace.id),
   )
-  const canCreateEnvironment = hasPermission(effectivePermissions.data?.permissions, permission.envCreate)
+  const canCreateEnvironment = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.envCreate,
+  )
 
   const environments = useQuery(
-    orgEnvironmentsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
+    orgEnvironmentsQueryOptions(orgSlug, workspace.id, {
+      page_size: 100,
+      sort: 'name',
+      order: 'asc',
+    }),
   )
-  const connections = useQuery(
-    orgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
-  )
+  const connections = useQuery(allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id))
 
   const envItems = environments.data?.items ?? []
   const connItems = connections.data?.items ?? []
   const envNameById = (id: number) => envItems.find((e) => e.id === id)?.name ?? ''
-
-  const connectedIds = new Set(Object.keys(sessions).map(Number))
-
-  // Session reconciliation itself runs IDE-wide (useSessionSync in the shell);
-  // this panel only invalidates it after explicit connect/disconnect.
-  const sessionsQueryKey = workspaceSessionsQueryKey(orgSlug, workspace.id)
-
-  const connectMutation = useMutation({
-    mutationFn: (conn: Connection) =>
-      api.post<{ session_id: string; reused: boolean }>(
-        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${conn.id}/connect`,
-      ),
-    onMutate: (conn) => {
-      setConnectionStatus(conn.id, 'connecting')
-    },
-    onSuccess: (data, conn) => {
-      setConnectionStatus(conn.id, null)
-      setSession(conn.id, data.session_id)
-      void queryClient.invalidateQueries({ queryKey: sessionsQueryKey })
-    },
-    onError: (error, conn) => {
-      const message = error instanceof Error ? error.message : 'Failed to connect'
-      setConnectionStatus(conn.id, { error: message })
-      toast.error(message)
-    },
-  })
-
-  const disconnectMutation = useMutation({
-    mutationFn: ({ conn, sessionId }: { conn: Connection; sessionId: string }) =>
-      api.delete(
-        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${conn.id}/session`,
-        { headers: { 'X-Warden-Session': sessionId } },
-      ),
-    onSuccess: (_, { conn }) => {
-      clearSession(conn.id)
-      setConnectionStatus(conn.id, null)
-      void queryClient.invalidateQueries({ queryKey: sessionsQueryKey })
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to disconnect')
-    },
-  })
-
-  function handleOpenConnection(conn: Connection) {
-    openTab(newConnectionTab(conn, workspace))
-  }
-
-  function handleOpenConsole(conn: Connection) {
-    const tmpDoc = new Y.Doc()
-    tmpDoc.getText('content').insert(0, DEFAULT_CONSOLE_CONTENT)
-    const yState = Array.from(Y.encodeStateAsUpdate(tmpDoc))
-    tmpDoc.destroy()
-    openConsole(workspace, yState, conn.id)
-  }
-
-  function handleConnect(conn: Connection) {
-    void connectMutation.mutateAsync(conn).catch(() => {})
-  }
-
-  function handleDisconnect(conn: Connection) {
-    const sessionId = sessions[conn.id]
-    if (!sessionId) return
-    void disconnectMutation.mutateAsync({ conn, sessionId }).catch(() => {})
-  }
 
   const createEnvironment = useMutation({
     mutationFn: async () =>
@@ -166,14 +113,14 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
       setEnvDescription('')
       setEnvNameError(undefined)
       toast.success('Environment created')
-      await queryClient.invalidateQueries({ queryKey: ['org-environments', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgEnvironmentsScope(orgSlug) })
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors) {
         setEnvNameError(error.fieldErrors.name)
         if (error.fieldErrors.name) return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to create environment')
+      toast.error(errorMessage(error, 'Failed to create environment'))
     },
   })
 
@@ -190,35 +137,41 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
   // Connection creation is available from the panel header regardless of the
   // grouped/flat layout; per-environment permissions are enforced server-side.
   const canAddConnection = envItems.length > 0
-  const actions = canAddConnection || canCreateEnvironment ? (
-    <DropdownMenu>
-      <Tip label="New connection or environment">
-        <DropdownMenuTrigger
-          render={
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Add connection or environment">
-              <Icon name="plus-sign" size={14} />
-            </Button>
-          }
-        />
-      </Tip>
-      <DropdownMenuContent align="end" className="min-w-48">
-        <DropdownMenuGroup>
-          {canAddConnection && (
-            <DropdownMenuItem onClick={() => setAddConnOpen(true)}>
-              <Icon name="database" size={16} />
-              New Connection…
-            </DropdownMenuItem>
-          )}
-          {canCreateEnvironment && (
-            <DropdownMenuItem onClick={() => setAddEnvOpen(true)}>
-              <Icon name="server-stack-01" size={16} />
-              New Environment…
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  ) : undefined
+  const actions =
+    canAddConnection || canCreateEnvironment ? (
+      <DropdownMenu>
+        <Tip label="New connection or environment">
+          <DropdownMenuTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Add connection or environment"
+              >
+                <Icon name="plus-sign" size={14} />
+              </Button>
+            }
+          />
+        </Tip>
+        <DropdownMenuContent align="end" className="min-w-48">
+          <DropdownMenuGroup>
+            {canAddConnection && (
+              <DropdownMenuItem onClick={() => setAddConnOpen(true)}>
+                <Icon name="database" size={16} />
+                New Connection…
+              </DropdownMenuItem>
+            )}
+            {canCreateEnvironment && (
+              <DropdownMenuItem onClick={() => setAddEnvOpen(true)}>
+                <Icon name="server-stack-01" size={16} />
+                New Environment…
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ) : undefined
 
   return (
     <>
@@ -258,7 +211,13 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
           </div>
           {connLayout === 'flat' && envItems.length > 0 && (
             <DropdownMenu>
-              <Tip label={envFilter === 'all' ? 'Filter by environment' : `Environment: ${envNameById(envFilter)}`}>
+              <Tip
+                label={
+                  envFilter === 'all'
+                    ? 'Filter by environment'
+                    : `Environment: ${envNameById(envFilter)}`
+                }
+              >
                 <DropdownMenuTrigger
                   render={
                     <Button
@@ -268,7 +227,8 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
                       aria-label="Filter by environment"
                       className={cn(
                         'size-7',
-                        envFilter !== 'all' && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
+                        envFilter !== 'all' &&
+                          'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
                       )}
                     >
                       <Icon name="server-stack-01" size={14} />
@@ -280,12 +240,16 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
                 <DropdownMenuGroup>
                   <DropdownMenuItem onClick={() => setEnvFilter('all')}>
                     <span className="min-w-0 flex-1 truncate">All environments</span>
-                    {envFilter === 'all' && <Icon name="tick-02" size={14} className="text-primary" />}
+                    {envFilter === 'all' && (
+                      <Icon name="tick-02" size={14} className="text-primary" />
+                    )}
                   </DropdownMenuItem>
                   {envItems.map((env) => (
                     <DropdownMenuItem key={env.id} onClick={() => setEnvFilter(env.id)}>
                       <span className="min-w-0 flex-1 truncate">{env.name}</span>
-                      {envFilter === env.id && <Icon name="tick-02" size={14} className="text-primary" />}
+                      {envFilter === env.id && (
+                        <Icon name="tick-02" size={14} className="text-primary" />
+                      )}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuGroup>
@@ -319,33 +283,35 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
                   key={env.id}
                   environment={env}
                   connections={connItems.filter((c) => c.environment_id === env.id)}
-                  connectedIds={connectedIds}
+                  connectedIds={connectionActions.connectedIds}
                   orgSlug={orgSlug}
                   filter={filter}
-                  onOpen={handleOpenConnection}
-                  onOpenConsole={handleOpenConsole}
-                  onConnect={handleConnect}
-                  onDisconnect={handleDisconnect}
+                  onOpen={connectionActions.openConnection}
+                  onOpenConsole={connectionActions.openConnectionConsole}
+                  onConnect={connectionActions.connect}
+                  onDisconnect={connectionActions.disconnect}
                   onAddConnection={() => setAddConnEnvironmentId(env.id)}
                 />
               ))
             ) : (
               (() => {
-                const list = connItems.filter((c) => envFilter === 'all' || c.environment_id === envFilter)
+                const list = connItems.filter(
+                  (c) => envFilter === 'all' || c.environment_id === envFilter,
+                )
                 if (list.length === 0) return <SidebarMessage>No connections.</SidebarMessage>
                 return list.map((conn) => (
                   <ConnectionRow
                     key={conn.id}
                     connection={conn}
-                    isConnected={connectedIds.has(conn.id)}
+                    isConnected={connectionActions.connectedIds.has(conn.id)}
                     connIndent={0}
                     envLabel={envFilter === 'all' ? envNameById(conn.environment_id) : undefined}
                     orgSlug={orgSlug}
                     filter={filter}
-                    onOpen={() => handleOpenConnection(conn)}
-                    onOpenConsole={() => handleOpenConsole(conn)}
-                    onConnect={() => handleConnect(conn)}
-                    onDisconnect={() => handleDisconnect(conn)}
+                    onOpen={() => connectionActions.openConnection(conn)}
+                    onOpenConsole={() => connectionActions.openConnectionConsole(conn)}
+                    onConnect={() => connectionActions.connect(conn)}
+                    onDisconnect={() => connectionActions.disconnect(conn)}
                   />
                 ))
               })()
@@ -393,7 +359,11 @@ export function DatabasePanel({ orgSlug, workspace, maximized, onMaximizedChange
               />
             </div>
             <DialogFooter>
-              <DialogClose render={<Button type="button" variant="ghost" disabled={createEnvironment.isPending} />}>
+              <DialogClose
+                render={
+                  <Button type="button" variant="ghost" disabled={createEnvironment.isPending} />
+                }
+              >
                 Cancel
               </DialogClose>
               <Button type="submit" disabled={createEnvironment.isPending}>
@@ -478,12 +448,10 @@ function EnvironmentRow({
               size={11}
               className="shrink-0 text-muted-foreground"
             />
-            <Icon
-              name="box"
-              size={13}
-              className="shrink-0 text-muted-foreground"
-            />
-            <span className="min-w-0 flex-1 truncate font-medium" title={environment.name}>{environment.name}</span>
+            <Icon name="box" size={13} className="shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate font-medium" title={environment.name}>
+              {environment.name}
+            </span>
           </button>
           {canCreateConnection && (
             <Tip label={`New connection in ${environment.name}`}>
@@ -503,7 +471,9 @@ function EnvironmentRow({
       {expanded && (
         <div>
           {connections.length === 0 ? (
-            <div className="py-1.5 pl-[18px] pr-2 text-xs text-muted-foreground">No connections.</div>
+            <div className="py-1.5 pl-[18px] pr-2 text-xs text-muted-foreground">
+              No connections.
+            </div>
           ) : (
             connections.map((conn) => (
               <ConnectionRow
@@ -564,9 +534,15 @@ function ConnectionRow({
   })
   const queryClient = useQueryClient()
   const refresh = useMutation({
-    mutationFn: () => refreshConnectionSchema(orgSlug, connection.workspace_id, connection.id, sessionId ?? ''),
+    mutationFn: () =>
+      refreshConnectionSchema(orgSlug, connection.workspace_id, connection.id, sessionId ?? ''),
     onSuccess: () => {
-      void invalidateConnectionSchemaQueries(queryClient, orgSlug, connection.workspace_id, connection.id)
+      void invalidateConnectionSchemaQueries(
+        queryClient,
+        orgSlug,
+        connection.workspace_id,
+        connection.id,
+      )
     },
   })
 
@@ -597,54 +573,63 @@ function ConnectionRow({
               : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
           )}
         >
-        {isConnected || expanded ? (
-          <button
-            type="button"
-            aria-label={expanded ? 'Collapse schema' : 'Expand schema'}
-            onClick={() => setNodeExpanded(nodeKey, !expanded)}
-            className="flex h-6 w-5 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
-          >
-            <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
-          </button>
-        ) : (
-          <span className="w-5 shrink-0" />
-        )}
-
-        <button
-          type="button"
-          onClick={onOpen}
-          className="flex h-6 min-w-0 items-center gap-2 text-left text-xs"
-        >
-          <span className="relative shrink-0">
-            <DriverBadge driver={connection.driver} size="sm" />
-            <ConnectionStatusDot state={connState} />
-          </span>
-          <span className="truncate" title={connection.name}>{connection.name}</span>
-        </button>
-
-        {isConnected && (
-          <Tip label="Refresh schema">
+          {isConnected || expanded ? (
             <button
               type="button"
-              aria-label="Refresh schema"
-              disabled={refresh.isPending}
-              onClick={(e) => {
-                e.stopPropagation()
-                refresh.mutate()
-              }}
-              className="ml-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              aria-label={expanded ? 'Collapse schema' : 'Expand schema'}
+              onClick={() => setNodeExpanded(nodeKey, !expanded)}
+              className="flex h-6 w-5 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
             >
-              <Icon name="refresh" size={11} className={refresh.isPending ? 'animate-spin' : undefined} />
+              <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
             </button>
-          </Tip>
-        )}
-        <div className="flex h-6 min-w-0 flex-1 items-center justify-end">
-          {envLabel && (
-            <span className="min-w-0 truncate pr-1 text-[10px] text-muted-foreground" title={envLabel}>
-              {envLabel}
-            </span>
+          ) : (
+            <span className="w-5 shrink-0" />
           )}
-        </div>
+
+          <button
+            type="button"
+            onClick={onOpen}
+            className="flex h-6 min-w-0 items-center gap-2 text-left text-xs"
+          >
+            <span className="relative shrink-0">
+              <DriverBadge driver={connection.driver} size="sm" />
+              <ConnectionStatusDot state={connState} />
+            </span>
+            <span className="truncate" title={connection.name}>
+              {connection.name}
+            </span>
+          </button>
+
+          {isConnected && (
+            <Tip label="Refresh schema">
+              <button
+                type="button"
+                aria-label="Refresh schema"
+                disabled={refresh.isPending}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  refresh.mutate()
+                }}
+                className="ml-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              >
+                <Icon
+                  name="refresh"
+                  size={11}
+                  className={refresh.isPending ? 'animate-spin' : undefined}
+                />
+              </button>
+            </Tip>
+          )}
+          <div className="flex h-6 min-w-0 flex-1 items-center justify-end">
+            {envLabel && (
+              <span
+                className="min-w-0 truncate pr-1 text-[10px] text-muted-foreground"
+                title={envLabel}
+              >
+                {envLabel}
+              </span>
+            )}
+          </div>
         </div>
       </ContextMenu>
 
@@ -682,11 +667,18 @@ function ConnectionStatusDot({ state }: { state: ConnectionState }) {
   return (
     <span
       title={state.kind === 'error' ? state.message : undefined}
-      className={cn('absolute -bottom-0.5 -right-0.5 size-1.5 rounded-full ring-1 ring-sidebar', color)}
+      className={cn(
+        'absolute -bottom-0.5 -right-0.5 size-1.5 rounded-full ring-1 ring-sidebar',
+        color,
+      )}
     />
   )
 }
 
 function SidebarMessage({ children }: { children: React.ReactNode }) {
-  return <div className="flex items-center gap-2 px-3 py-3 text-xs text-muted-foreground">{children}</div>
+  return (
+    <div className="flex items-center gap-2 px-3 py-3 text-xs text-muted-foreground">
+      {children}
+    </div>
+  )
 }

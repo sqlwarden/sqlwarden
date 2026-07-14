@@ -56,9 +56,14 @@ export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: Sq
   const { editorThemeDark, editorThemeLight } = useEditorTheme()
   const activeThemeName = resolvedTheme === 'dark' ? editorThemeDark : editorThemeLight
   const { editorFont, editorFontSize } = useEditorFont()
+  const initialAppearance = useRef({
+    fontFamily: editorFont.fontFamily,
+    fontSize: editorFontSize,
+    themeName: activeThemeName,
+  })
 
   const themeCompartment = useRef(new Compartment())
-  const fontCompartment  = useRef(new Compartment())
+  const fontCompartment = useRef(new Compartment())
   const viewRef = useRef<EditorView | null>(null)
   const [findHost, setFindHost] = useState<FindPanelHost | null>(null)
 
@@ -74,8 +79,10 @@ export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: Sq
         extensions: [
           sqlwardenBasicSetup,
           sql(),
-          fontCompartment.current.of(makeBaseTheme(editorFont.fontFamily, editorFontSize)),
-          themeCompartment.current.of(getCachedTheme(activeThemeName) ?? []),
+          fontCompartment.current.of(
+            makeBaseTheme(initialAppearance.current.fontFamily, initialAppearance.current.fontSize),
+          ),
+          themeCompartment.current.of(getCachedTheme(initialAppearance.current.themeName) ?? []),
           findPanelHost.of(setFindHost),
           EditorView.lineWrapping,
           yCollab(yText, null), // handles all CodeMirror ↔ Y.js sync
@@ -85,7 +92,11 @@ export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: Sq
             if (!cb) return
             const head = update.state.selection.main.head
             const line = update.state.doc.lineAt(head)
-            cb(line.number, head - line.from + 1, update.state.selection.main.to - update.state.selection.main.from)
+            cb(
+              line.number,
+              head - line.from + 1,
+              update.state.selection.main.to - update.state.selection.main.from,
+            )
           }),
         ],
       }),
@@ -133,10 +144,14 @@ export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: Sq
     loadEditorFont(editorFont).then(() => {
       if (cancelled || !viewRef.current) return
       viewRef.current.dispatch({
-        effects: fontCompartment.current.reconfigure(makeBaseTheme(editorFont.fontFamily, editorFontSize)),
+        effects: fontCompartment.current.reconfigure(
+          makeBaseTheme(editorFont.fontFamily, editorFontSize),
+        ),
       })
     })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [editorFont, editorFontSize])
 
   return (

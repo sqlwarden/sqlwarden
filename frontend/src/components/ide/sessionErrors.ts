@@ -34,7 +34,10 @@ export interface EnsureSessionDeps {
   getSession: (connectionId: number) => string | undefined
   setSession: (connectionId: number, sessionId: string) => void
   clearSession: (connectionId: number) => void
-  setConnectionStatus: (connectionId: number, status: 'connecting' | { error: string } | null) => void
+  setConnectionStatus: (
+    connectionId: number,
+    status: 'connecting' | { error: string } | null,
+  ) => void
   connect: (connectionId: number, signal?: AbortSignal) => Promise<string>
 }
 
@@ -83,7 +86,7 @@ export function useEnsureSession(orgSlug: string, workspaceId: number) {
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
 
   return useCallback(
-    <T,>(connectionId: number, run: (sessionId: string) => Promise<T>, signal?: AbortSignal) =>
+    <T>(connectionId: number, run: (sessionId: string) => Promise<T>, signal?: AbortSignal) =>
       ensureSession(
         {
           getSession: (id) => sessions[id],

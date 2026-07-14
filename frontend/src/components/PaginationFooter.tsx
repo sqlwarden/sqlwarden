@@ -40,7 +40,9 @@ export function PaginationFooter({
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-sm text-muted-foreground">
-        {total === 0 ? `0 ${itemLabel}` : `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} of ${total} ${itemLabel}`}
+        {total === 0
+          ? `0 ${itemLabel}`
+          : `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} of ${total} ${itemLabel}`}
       </p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex items-center gap-2">

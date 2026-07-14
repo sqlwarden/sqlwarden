@@ -63,7 +63,12 @@ export function normalize(node: LayoutNode): LayoutNode {
   return { ...node, children }
 }
 
-export function addTab(node: LayoutNode, groupId: string, tabId: string, index?: number): LayoutNode {
+export function addTab(
+  node: LayoutNode,
+  groupId: string,
+  tabId: string,
+  index?: number,
+): LayoutNode {
   return mapGroups(node, (g) => {
     if (g.id !== groupId || g.tabIds.includes(tabId)) return g
     const tabIds = [...g.tabIds]
@@ -103,7 +108,9 @@ export function setActive(node: LayoutNode, tabId: string): LayoutNode {
 
 /** Set the active tab on one specific group only (other panes of the same tab unaffected). */
 export function setActiveInGroup(node: LayoutNode, groupId: string, tabId: string): LayoutNode {
-  return mapGroups(node, (g) => (g.id === groupId && g.tabIds.includes(tabId) ? { ...g, activeTabId: tabId } : g))
+  return mapGroups(node, (g) =>
+    g.id === groupId && g.tabIds.includes(tabId) ? { ...g, activeTabId: tabId } : g,
+  )
 }
 
 /**
@@ -125,7 +132,8 @@ export function moveTabBetweenGroups(
   let next = mapGroups(node, (g) => {
     if (g.id !== fromGroupId || !g.tabIds.includes(draggedTabId)) return g
     const tabIds = g.tabIds.filter((t) => t !== draggedTabId)
-    const activeTabId = g.activeTabId === draggedTabId ? g.tabIds.find((t) => t !== draggedTabId) : g.activeTabId
+    const activeTabId =
+      g.activeTabId === draggedTabId ? g.tabIds.find((t) => t !== draggedTabId) : g.activeTabId
     return { ...g, tabIds, activeTabId }
   })
   // 2) insert into the target group relative to the target tab; make it active there
@@ -154,10 +162,14 @@ export function moveTabBetweenGroups(
 
 function directionToSplit(dir: SplitDirection): { orientation: 'row' | 'column'; before: boolean } {
   switch (dir) {
-    case 'left': return { orientation: 'row', before: true }
-    case 'right': return { orientation: 'row', before: false }
-    case 'up': return { orientation: 'column', before: true }
-    case 'down': return { orientation: 'column', before: false }
+    case 'left':
+      return { orientation: 'row', before: true }
+    case 'right':
+      return { orientation: 'row', before: false }
+    case 'up':
+      return { orientation: 'column', before: true }
+    case 'down':
+      return { orientation: 'column', before: false }
   }
 }
 
@@ -222,7 +234,10 @@ export function placeTabAtEdge(
   const newGroup = createGroup(newGroupId, [tabId], tabId)
   if (node.type === 'split' && node.orientation === 'row') {
     return {
-      node: { ...node, children: side === 'right' ? [...node.children, newGroup] : [newGroup, ...node.children] },
+      node: {
+        ...node,
+        children: side === 'right' ? [...node.children, newGroup] : [newGroup, ...node.children],
+      },
       newGroupId,
     }
   }
@@ -249,7 +264,11 @@ export function splitToEdge(
 }
 
 /** Build a default single-group layout for a workspace (used by migration). */
-export function migrateToLayout(groupId: string, tabIds: string[], activeTabId?: string): LayoutNode {
+export function migrateToLayout(
+  groupId: string,
+  tabIds: string[],
+  activeTabId?: string,
+): LayoutNode {
   return createGroup(groupId, tabIds, activeTabId)
 }
 

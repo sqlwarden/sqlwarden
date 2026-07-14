@@ -1,105 +1,24 @@
-import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
+import { useState } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '#/components/ui/button'
 import { Icon, type AppIcon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
-import { getPrivateWorkspaceFileContent } from '#/lib/api/files'
-import { cancelExportJob, createExport, getJobEvents } from '#/lib/api/exports'
-import { orgWorkspacePrivateFileBrowserQueryOptions } from '#/lib/api/query'
+import { getJobEvents } from '#/lib/api/exports'
 import type { ExportJobOutput, JobRecord } from '#/lib/api/types'
-import { saveTextAs } from '../saveFile'
 import { Tip } from '../schema-diagram/Tip'
 import { SidebarPane } from '../SidebarPane'
 import type { IdeSidebarPanelProps } from '../ideActivities'
-import { newFileTab, useIde } from '../useIdeStore'
-import { dismissExport, getDismissedExportIds } from './dismissedExports'
-import { getExportRetryEntry, rememberExportRetry } from './exportRetryCache'
+import { getExportRetryEntry } from './exportRetryCache'
+import { useExportJobActions } from './useExportJobActions'
 import { useExportJobs } from './useExportJobs'
 
 export function ExportsPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
   const { jobs, isLoading, latestEventByJobId, refresh } = useExportJobs(orgSlug, workspace.id)
-  const queryClient = useQueryClient()
-  const openTab = useIde((s) => s.openTab)
-  const setNodeExpanded = useIde((s) => s.setNodeExpanded)
-  const setActiveActivity = useIde((s) => s.setActiveActivity)
-
-  const [dismissed, setDismissed] = useState(() => getDismissedExportIds(workspace.id))
-  useEffect(() => {
-    setDismissed(getDismissedExportIds(workspace.id))
-  }, [workspace.id])
-
   const [expandedLogJobId, setExpandedLogJobId] = useState<string | null>(null)
+  const actions = useExportJobActions(orgSlug, workspace, refresh)
 
-  const cancel = useMutation({
-    mutationFn: (jobId: string) => cancelExportJob(orgSlug, workspace.id, jobId),
-    onSuccess: refresh,
-    onError: () => toast.error('Failed to cancel export.'),
-  })
-
-  const retry = useMutation({
-    mutationFn: async (jobId: string) => {
-      const entry = getExportRetryEntry(jobId)
-      if (!entry) throw new Error('missing_retry_entry')
-      const job = await createExport(orgSlug, workspace.id, entry.connectionId, {
-        sql: entry.sql,
-        format: entry.format,
-        filename: entry.filename || undefined,
-      })
-      rememberExportRetry(job.id, entry)
-      return job
-    },
-    onSuccess: () => {
-      toast.success('Export queued')
-      refresh()
-    },
-    onError: () => toast.error('Failed to retry export.'),
-  })
-
-  const download = useMutation({
-    mutationFn: async (job: JobRecord) => {
-      const output = job.output as ExportJobOutput
-      const { text } = await getPrivateWorkspaceFileContent(orgSlug, workspace.id, output.file_id)
-      saveTextAs(output.filename, text)
-    },
-    onError: () => toast.error('Failed to save file.'),
-  })
-
-  async function resolveExportFile(job: JobRecord) {
-    const output = job.output as ExportJobOutput
-    const result = await queryClient.fetchQuery(
-      orgWorkspacePrivateFileBrowserQueryOptions(orgSlug, workspace.id, output.file_id),
-    )
-    if (!result.file) throw new Error('export_file_not_found')
-    return result
-  }
-
-  const openInEditor = useMutation({
-    mutationFn: async (job: JobRecord) => {
-      const result = await resolveExportFile(job)
-      openTab(newFileTab(result.file!, workspace))
-    },
-    onError: () => toast.error('Failed to open file — it may have been deleted from Files.'),
-  })
-
-  const revealInFiles = useMutation({
-    mutationFn: async (job: JobRecord) => {
-      const result = await resolveExportFile(job)
-      for (const segment of result.path) {
-        if (segment.object_type === 'folder') setNodeExpanded(`folder:${segment.id}`, true)
-      }
-      setActiveActivity('files')
-      openTab(newFileTab(result.file!, workspace))
-    },
-    onError: () => toast.error('Failed to open file — it may have been deleted from Files.'),
-  })
-
-  function handleDismiss(jobId: string) {
-    dismissExport(workspace.id, jobId)
-    setDismissed((prev) => new Set(prev).add(jobId))
-  }
-
-  const visibleJobs = jobs.filter((job) => !dismissed.has(job.id))
+  const visibleJobs = jobs.filter((job) => !actions.dismissed.has(job.id))
 
   return (
     <SidebarPane title="Exports" icon="download-01">
@@ -120,14 +39,18 @@ export function ExportsPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
               canRetry={!!getExportRetryEntry(job.id)}
               sql={getExportRetryEntry(job.id)?.sql}
               logOpen={expandedLogJobId === job.id}
-              onToggleLog={() => setExpandedLogJobId((current) => (current === job.id ? null : job.id))}
-              isDownloading={download.isPending && download.variables?.id === job.id}
-              onDownload={() => download.mutate(job)}
-              onOpen={() => openInEditor.mutate(job)}
-              onReveal={() => revealInFiles.mutate(job)}
-              onRetry={() => retry.mutate(job.id)}
-              onCancel={() => cancel.mutate(job.id)}
-              onDismiss={() => handleDismiss(job.id)}
+              onToggleLog={() =>
+                setExpandedLogJobId((current) => (current === job.id ? null : job.id))
+              }
+              isDownloading={
+                actions.download.isPending && actions.download.variables?.id === job.id
+              }
+              onDownload={() => actions.download.mutate(job)}
+              onOpen={() => actions.openInEditor.mutate(job)}
+              onReveal={() => actions.revealInFiles.mutate(job)}
+              onRetry={() => actions.retry.mutate(job.id)}
+              onCancel={() => actions.cancel.mutate(job.id)}
+              onDismiss={() => actions.dismiss(job.id)}
               orgSlug={orgSlug}
               workspaceId={workspace.id}
             />
@@ -166,7 +89,11 @@ function statusLabel(status: string): string {
 }
 
 function formatLogTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return new Date(iso).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 }
 
 function ExportJobRow({
@@ -215,7 +142,9 @@ function ExportJobRow({
           size={13}
           className={cn('shrink-0', isRunning && 'animate-spin', statusColorClass(job.status))}
         />
-        <span className="min-w-0 flex-1 truncate text-xs font-medium">{output?.filename ?? 'query-export.csv'}</span>
+        <span className="min-w-0 flex-1 truncate text-xs font-medium">
+          {output?.filename ?? 'query-export.csv'}
+        </span>
         <span className={cn('shrink-0 text-[10px] font-medium', statusColorClass(job.status))}>
           {statusLabel(job.status)}
         </span>
@@ -227,7 +156,9 @@ function ExportJobRow({
         </p>
       )}
 
-      {isRunning && latestEvent && <p className="truncate pl-5 text-[11px] text-muted-foreground">{latestEvent}</p>}
+      {isRunning && latestEvent && (
+        <p className="truncate pl-5 text-[11px] text-muted-foreground">{latestEvent}</p>
+      )}
       {job.status === 'failed' && job.error_message && (
         <p className="truncate pl-5 text-[11px] text-destructive">{job.error_message}</p>
       )}
@@ -237,7 +168,13 @@ function ExportJobRow({
       <div className="flex items-center justify-end gap-1 pl-5">
         {isTerminal && (
           <Tip label={logOpen ? 'Hide log' : 'View log'}>
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Toggle export log" onClick={onToggleLog}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Toggle export log"
+              onClick={onToggleLog}
+            >
               <Icon name="subject" size={12} />
             </Button>
           </Tip>
@@ -245,12 +182,24 @@ function ExportJobRow({
         {job.status === 'succeeded' && (
           <>
             <Tip label="Open">
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="Open exported file" onClick={onOpen}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Open exported file"
+                onClick={onOpen}
+              >
                 <Icon name="file-01" size={12} />
               </Button>
             </Tip>
             <Tip label="Reveal in Files">
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="Reveal exported file in Files" onClick={onReveal}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Reveal exported file in Files"
+                onClick={onReveal}
+              >
                 <Icon name="folder-open" size={12} />
               </Button>
             </Tip>
@@ -263,28 +212,50 @@ function ExportJobRow({
                 disabled={isDownloading}
                 onClick={onDownload}
               >
-                <Icon name={isDownloading ? 'loading-03' : 'download-01'} size={12} className={isDownloading ? 'animate-spin' : undefined} />
+                <Icon
+                  name={isDownloading ? 'loading-03' : 'download-01'}
+                  size={12}
+                  className={isDownloading ? 'animate-spin' : undefined}
+                />
               </Button>
             </Tip>
           </>
         )}
         {job.status === 'failed' && canRetry && (
           <Tip label="Retry">
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Retry export" onClick={onRetry}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Retry export"
+              onClick={onRetry}
+            >
               <Icon name="refresh" size={12} />
             </Button>
           </Tip>
         )}
         {(job.status === 'queued' || job.status === 'running') && (
           <Tip label="Cancel">
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Cancel export" onClick={onCancel}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Cancel export"
+              onClick={onCancel}
+            >
               <Icon name="cancel-01" size={12} />
             </Button>
           </Tip>
         )}
         {isTerminal && (
           <Tip label="Dismiss">
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Dismiss export" onClick={onDismiss}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Dismiss export"
+              onClick={onDismiss}
+            >
               <Icon name="delete-01" size={12} />
             </Button>
           </Tip>
@@ -294,9 +265,17 @@ function ExportJobRow({
   )
 }
 
-function ExportJobLog({ orgSlug, workspaceId, jobId }: { orgSlug: string; workspaceId: number; jobId: string }) {
+function ExportJobLog({
+  orgSlug,
+  workspaceId,
+  jobId,
+}: {
+  orgSlug: string
+  workspaceId: number
+  jobId: string
+}) {
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['export-job-log', orgSlug, workspaceId, jobId],
+    queryKey: queryKeys.exportJobLog(orgSlug, workspaceId, jobId),
     queryFn: () => getJobEvents(orgSlug, workspaceId, jobId),
   })
 

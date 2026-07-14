@@ -8,21 +8,21 @@ export type EditorFont = {
 
 export const EDITOR_FONTS: EditorFont[] = [
   // Geist Mono is the app default — already loaded globally via styles.css
-  { label: 'Geist Mono',       fontFamily: "'Geist Mono', ui-monospace, monospace" },
-  { label: 'System Font',      fontFamily: 'ui-monospace, monospace' },
+  { label: 'Geist Mono', fontFamily: "'Geist Mono', ui-monospace, monospace" },
+  { label: 'System Font', fontFamily: 'ui-monospace, monospace' },
   // @fontsource-variable packages register under the "Variable" family name
-  { label: 'JetBrains Mono',   fontFamily: "'JetBrains Mono Variable', ui-monospace, monospace" },
-  { label: 'Fira Code',        fontFamily: "'Fira Code Variable', ui-monospace, monospace" },
-  { label: 'Cascadia Code',    fontFamily: "'Cascadia Code', ui-monospace, monospace" },
-  { label: 'Source Code Pro',  fontFamily: "'Source Code Pro Variable', ui-monospace, monospace" },
-  { label: 'Roboto Mono',      fontFamily: "'Roboto Mono Variable', ui-monospace, monospace" },
-  { label: 'Courier New',      fontFamily: "'Courier New', monospace" },
+  { label: 'JetBrains Mono', fontFamily: "'JetBrains Mono Variable', ui-monospace, monospace" },
+  { label: 'Fira Code', fontFamily: "'Fira Code Variable', ui-monospace, monospace" },
+  { label: 'Cascadia Code', fontFamily: "'Cascadia Code', ui-monospace, monospace" },
+  { label: 'Source Code Pro', fontFamily: "'Source Code Pro Variable', ui-monospace, monospace" },
+  { label: 'Roboto Mono', fontFamily: "'Roboto Mono Variable', ui-monospace, monospace" },
+  { label: 'Courier New', fontFamily: "'Courier New', monospace" },
 ]
 
 export const EDITOR_FONT_SIZES = [11, 12, 13, 14, 15, 16] as const
 export type EditorFontSize = (typeof EDITOR_FONT_SIZES)[number]
 
-export const DEFAULT_EDITOR_FONT      = EDITOR_FONTS[0]
+export const DEFAULT_EDITOR_FONT = EDITOR_FONTS[0]
 export const DEFAULT_EDITOR_FONT_SIZE: EditorFontSize = 13
 
 // Module-level cache — once a font's CSS is injected it persists in the document.
@@ -32,17 +32,27 @@ export async function loadEditorFont(font: EditorFont): Promise<void> {
   if (_loadedFonts.has(font.fontFamily)) return
   _loadedFonts.add(font.fontFamily)
   switch (font.label) {
-    case 'JetBrains Mono':  await import('@fontsource-variable/jetbrains-mono'); break
-    case 'Fira Code':       await import('@fontsource-variable/fira-code');       break
-    case 'Cascadia Code':   await import('@fontsource/cascadia-code');            break
-    case 'Source Code Pro': await import('@fontsource-variable/source-code-pro'); break
-    case 'Roboto Mono':     await import('@fontsource-variable/roboto-mono');     break
+    case 'JetBrains Mono':
+      await import('@fontsource-variable/jetbrains-mono')
+      break
+    case 'Fira Code':
+      await import('@fontsource-variable/fira-code')
+      break
+    case 'Cascadia Code':
+      await import('@fontsource/cascadia-code')
+      break
+    case 'Source Code Pro':
+      await import('@fontsource-variable/source-code-pro')
+      break
+    case 'Roboto Mono':
+      await import('@fontsource-variable/roboto-mono')
+      break
     // Geist Mono: loaded globally in styles.css — no lazy load needed.
     // System Font, Courier New: no web font required.
   }
 }
 
-const FONT_KEY      = 'sqlwarden.preference.editor_font'
+const FONT_KEY = 'sqlwarden.preference.editor_font'
 const FONT_SIZE_KEY = 'sqlwarden.preference.editor_font_size'
 
 function readFont(): EditorFont {
@@ -64,16 +74,16 @@ function readFontSize(): EditorFontSize {
 }
 
 type EditorFontContextValue = {
-  editorFont:        EditorFont
-  editorFontSize:    EditorFontSize
-  setEditorFont:     (font: EditorFont) => void
+  editorFont: EditorFont
+  editorFontSize: EditorFontSize
+  setEditorFont: (font: EditorFont) => void
   setEditorFontSize: (size: EditorFontSize) => void
 }
 
 const EditorFontContext = createContext<EditorFontContextValue>({
-  editorFont:        DEFAULT_EDITOR_FONT,
-  editorFontSize:    DEFAULT_EDITOR_FONT_SIZE,
-  setEditorFont:     () => {},
+  editorFont: DEFAULT_EDITOR_FONT,
+  editorFontSize: DEFAULT_EDITOR_FONT_SIZE,
+  setEditorFont: () => {},
   setEditorFontSize: () => {},
 })
 
@@ -90,7 +100,9 @@ export function EditorFontProvider({ children }: { children: ReactNode }) {
       if (cancelled) return
       document.documentElement.style.setProperty('--font-data', font.fontFamily)
     })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [font])
 
   function setEditorFont(f: EditorFont) {
@@ -104,7 +116,9 @@ export function EditorFontProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <EditorFontContext.Provider value={{ editorFont: font, editorFontSize: size, setEditorFont, setEditorFontSize }}>
+    <EditorFontContext.Provider
+      value={{ editorFont: font, editorFontSize: size, setEditorFont, setEditorFontSize }}
+    >
       {children}
     </EditorFontContext.Provider>
   )

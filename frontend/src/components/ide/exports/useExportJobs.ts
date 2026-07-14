@@ -1,4 +1,5 @@
 import { useMemo, useRef } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { orgWorkspaceJobsQueryOptions } from '#/lib/api/query'
 import { getJobEvents } from '#/lib/api/exports'
@@ -32,10 +33,16 @@ export function useExportJobs(orgSlug: string, workspaceId: number) {
   const cursors = useRef(new Map<string, EventCursor>())
 
   const jobsQuery = useQuery({
-    ...orgWorkspaceJobsQueryOptions(orgSlug, workspaceId, { page_size: 50, sort: 'created_at', order: 'desc' }),
+    ...orgWorkspaceJobsQueryOptions(orgSlug, workspaceId, {
+      page_size: 50,
+      sort: 'created_at',
+      order: 'desc',
+    }),
     refetchInterval: (query) => {
       const items = query.state.data?.items ?? []
-      const nonTerminal = items.some((j) => j.type === EXPORT_JOB_TYPE && !isTerminalJobStatus(j.status))
+      const nonTerminal = items.some(
+        (j) => j.type === EXPORT_JOB_TYPE && !isTerminalJobStatus(j.status),
+      )
       return nonTerminal ? POLL_INTERVAL_MS : false
     },
   })
@@ -51,7 +58,7 @@ export function useExportJobs(orgSlug: string, workspaceId: number) {
 
   const eventQueries = useQueries({
     queries: runningJobIds.map((jobId) => ({
-      queryKey: ['export-job-latest-event', orgSlug, workspaceId, jobId],
+      queryKey: queryKeys.exportJobLatestEvent(orgSlug, workspaceId, jobId),
       queryFn: async () => {
         const prev = cursors.current.get(jobId) ?? {}
         const page = await getJobEvents(orgSlug, workspaceId, jobId, prev.afterId)
@@ -70,7 +77,9 @@ export function useExportJobs(orgSlug: string, workspaceId: number) {
   })
 
   function refresh() {
-    queryClient.invalidateQueries({ queryKey: ['org-workspace-jobs', orgSlug, workspaceId] })
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.orgWorkspaceJobsScope(orgSlug, workspaceId),
+    })
   }
 
   return {

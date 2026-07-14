@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { Button } from '#/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '#/components/ui/dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '#/components/ui/dropdown-menu'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { Tip } from '../schema-diagram/Tip'
@@ -16,7 +21,13 @@ type ExportButtonProps = {
   className?: string
 }
 
-export function ExportButton({ orgSlug, workspaceId, connectionId, getSql, className }: ExportButtonProps) {
+export function ExportButton({
+  orgSlug,
+  workspaceId,
+  connectionId,
+  getSql,
+  className,
+}: ExportButtonProps) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const downloadNow = useDownloadNow(orgSlug, workspaceId)
 
@@ -49,7 +60,9 @@ export function ExportButton({ orgSlug, workspaceId, connectionId, getSql, class
               data-icon="inline-start"
               className={downloadNow.isDownloading ? 'animate-spin' : undefined}
             />
-            {downloadNow.isDownloading ? `Exporting… ${formatBytes(downloadNow.bytesDownloaded)}` : 'Export'}
+            {downloadNow.isDownloading
+              ? `Exporting… ${formatBytes(downloadNow.bytesDownloaded)}`
+              : 'Export'}
           </Button>
         </Tip>
 

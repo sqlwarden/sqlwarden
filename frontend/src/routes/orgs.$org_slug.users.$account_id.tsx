@@ -1,4 +1,7 @@
+import { errorMessage } from '#/lib/api/errors'
+import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -6,7 +9,12 @@ import { toast } from 'sonner'
 import { useDebouncedQueryText } from '#/hooks/use-debounced-query-text'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
-import { orgEffectivePermissionsQueryOptions, orgMemberQueryOptions, orgMemberTeamsQueryOptions, orgTeamsQueryOptions } from '#/lib/api/query'
+import {
+  orgEffectivePermissionsQueryOptions,
+  orgMemberQueryOptions,
+  orgMemberTeamsQueryOptions,
+  orgTeamsQueryOptions,
+} from '#/lib/api/query'
 import type { Team } from '#/lib/api/types'
 import { builtinRole, hasPermission, permission } from '#/lib/permissions'
 import {
@@ -31,30 +39,44 @@ import {
   BreadcrumbSeparator,
 } from '#/components/ui/breadcrumb'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
 import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { Skeleton } from '#/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 
 export const Route = createFileRoute('/orgs/$org_slug/users/$account_id')({
   component: OrganizationUserContextPage,
   pendingComponent: RoutePending,
 })
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
-
 function OrganizationUserContextPage() {
   const { org_slug: orgSlug, account_id: accountId } = Route.useParams()
   const queryClient = useQueryClient()
   const [isAddingTeam, setIsAddingTeam] = useState(false)
-  const { searchText, setSearchText, debouncedQuery: teamSearch, clearSearch } = useDebouncedQueryText()
+  const {
+    searchText,
+    setSearchText,
+    debouncedQuery: teamSearch,
+    clearSearch,
+  } = useDebouncedQueryText()
   const { query: teamsQuery, toggleSort: toggleTeamsSort } = useListPageState({
     page: 1,
     page_size: 25,
@@ -84,34 +106,35 @@ function OrganizationUserContextPage() {
   const teamItems = teams.data?.items ?? []
   const existingTeamSlugs = new Set(teamItems.map((team) => team.slug))
   const displayName = member.data?.name || member.data?.email || `User #${accountId}`
-  const canManageTeams = canReadUser && hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
+  const canManageTeams =
+    canReadUser && hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
 
   useEffect(() => {
     if (!canReadUser || !member.error) {
       return
     }
-    toast.error(member.error instanceof Error ? member.error.message : 'Failed to load user')
+    toast.error(errorMessage(member.error, 'Failed to load user'))
   }, [canReadUser, member.error])
 
   useEffect(() => {
     if (!canReadUser || !teams.error) {
       return
     }
-    toast.error(teams.error instanceof Error ? teams.error.message : 'Failed to load user teams')
+    toast.error(errorMessage(teams.error, 'Failed to load user teams'))
   }, [canReadUser, teams.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) {
       return
     }
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load user permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load user permissions'))
   }, [effectivePermissions.error])
 
   useEffect(() => {
     if (!canReadUser || !orgTeams.error) {
       return
     }
-    toast.error(orgTeams.error instanceof Error ? orgTeams.error.message : 'Failed to load teams')
+    toast.error(errorMessage(orgTeams.error, 'Failed to load teams'))
   }, [canReadUser, orgTeams.error])
 
   const addTeam = useMutation({
@@ -122,12 +145,16 @@ function OrganizationUserContextPage() {
     onSuccess: async (_, teamSlug) => {
       toast.success('Done')
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['org-member-teams', orgSlug, accountId] }),
-        queryClient.invalidateQueries({ queryKey: ['org-team-members', orgSlug, teamSlug] }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.orgMemberTeamsScope(orgSlug, accountId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.orgTeamMembersScope(orgSlug, teamSlug),
+        }),
       ])
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to add team')
+      toast.error(errorMessage(error, 'Failed to add team'))
     },
   })
 
@@ -137,12 +164,16 @@ function OrganizationUserContextPage() {
     onSuccess: async (_, teamSlug) => {
       toast.success('Done')
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['org-member-teams', orgSlug, accountId] }),
-        queryClient.invalidateQueries({ queryKey: ['org-team-members', orgSlug, teamSlug] }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.orgMemberTeamsScope(orgSlug, accountId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.orgTeamMembersScope(orgSlug, teamSlug),
+        }),
       ])
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to remove team')
+      toast.error(errorMessage(error, 'Failed to remove team'))
     },
   })
 
@@ -156,7 +187,9 @@ function OrganizationUserContextPage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink render={<Link to="/orgs/$org_slug/users" params={{ org_slug: orgSlug }} />}>
+              <BreadcrumbLink
+                render={<Link to="/orgs/$org_slug/users" params={{ org_slug: orgSlug }} />}
+              >
                 Users
               </BreadcrumbLink>
             </BreadcrumbItem>
@@ -177,7 +210,9 @@ function OrganizationUserContextPage() {
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
               {member.data?.role ? (
-                <Badge variant={roleBadgeVariant(member.data.role)}>{roleLabel(member.data.role)}</Badge>
+                <Badge variant={roleBadgeVariant(member.data.role)}>
+                  {roleLabel(member.data.role)}
+                </Badge>
               ) : null}
             </div>
             {member.data ? (
@@ -195,7 +230,10 @@ function OrganizationUserContextPage() {
         ) : null}
         {!effectivePermissions.isLoading && !canReadUser ? (
           <CardContent>
-            <ContextMessage icon="user-multiple" message="You do not have permission to view this user." />
+            <ContextMessage
+              icon="user-multiple"
+              message="You do not have permission to view this user."
+            />
           </CardContent>
         ) : null}
         {effectivePermissions.isLoading || member.isLoading ? (
@@ -250,8 +288,16 @@ function OrganizationUserContextPage() {
                     <Table>
                       <TableBody>
                         {orgTeams.isLoading ? <TeamsPickerSkeleton /> : null}
-                        {orgTeams.isError ? <MessageRow colSpan={2} icon="user-group" message="Failed to load teams." /> : null}
-                        {!orgTeams.isLoading && !orgTeams.isError && (orgTeams.data?.items ?? []).length === 0 ? (
+                        {orgTeams.isError ? (
+                          <MessageRow
+                            colSpan={2}
+                            icon="user-group"
+                            message="Failed to load teams."
+                          />
+                        ) : null}
+                        {!orgTeams.isLoading &&
+                        !orgTeams.isError &&
+                        (orgTeams.data?.items ?? []).length === 0 ? (
                           <MessageRow colSpan={2} icon="user-group" message="No teams found." />
                         ) : null}
                         {!orgTeams.isLoading && !orgTeams.isError
@@ -270,9 +316,7 @@ function OrganizationUserContextPage() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <DialogClose render={<Button type="button" variant="ghost" />}>
-                    Close
-                  </DialogClose>
+                  <DialogClose render={<Button type="button" variant="ghost" />}>Close</DialogClose>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -283,10 +327,22 @@ function OrganizationUserContextPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>
-                  <TableColumnHeader label="Team" sort="name" currentSort={teamsQuery.sort} currentOrder={teamsQuery.order} onSortChange={toggleTeamsSort} />
+                  <TableColumnHeader
+                    label="Team"
+                    sort="name"
+                    currentSort={teamsQuery.sort}
+                    currentOrder={teamsQuery.order}
+                    onSortChange={toggleTeamsSort}
+                  />
                 </TableHead>
                 <TableHead>
-                  <TableColumnHeader label="Created" sort="created_at" currentSort={teamsQuery.sort} currentOrder={teamsQuery.order} onSortChange={toggleTeamsSort} />
+                  <TableColumnHeader
+                    label="Created"
+                    sort="created_at"
+                    currentSort={teamsQuery.sort}
+                    currentOrder={teamsQuery.order}
+                    onSortChange={toggleTeamsSort}
+                  />
                 </TableHead>
                 {canManageTeams ? (
                   <TableHead className="text-end">
@@ -297,12 +353,30 @@ function OrganizationUserContextPage() {
             </TableHeader>
             <TableBody>
               {effectivePermissions.isLoading || teams.isLoading ? <TeamsTableSkeleton /> : null}
-              {teams.isError ? <MessageRow colSpan={canManageTeams ? 3 : 2} icon="user-group" message="Failed to load teams." /> : null}
-              {!effectivePermissions.isLoading && !canReadUser ? (
-                <MessageRow colSpan={canManageTeams ? 3 : 2} icon="user-group" message="You do not have permission to view this user's teams." />
+              {teams.isError ? (
+                <MessageRow
+                  colSpan={canManageTeams ? 3 : 2}
+                  icon="user-group"
+                  message="Failed to load teams."
+                />
               ) : null}
-              {!effectivePermissions.isLoading && canReadUser && !teams.isLoading && !teams.isError && teamItems.length === 0 ? (
-                <MessageRow colSpan={canManageTeams ? 3 : 2} icon="user-group" message="This user does not belong to any teams." />
+              {!effectivePermissions.isLoading && !canReadUser ? (
+                <MessageRow
+                  colSpan={canManageTeams ? 3 : 2}
+                  icon="user-group"
+                  message="You do not have permission to view this user's teams."
+                />
+              ) : null}
+              {!effectivePermissions.isLoading &&
+              canReadUser &&
+              !teams.isLoading &&
+              !teams.isError &&
+              teamItems.length === 0 ? (
+                <MessageRow
+                  colSpan={canManageTeams ? 3 : 2}
+                  icon="user-group"
+                  message="This user does not belong to any teams."
+                />
               ) : null}
               {!effectivePermissions.isLoading && canReadUser && !teams.isLoading && !teams.isError
                 ? teamItems.map((team) => (
@@ -421,7 +495,8 @@ function TeamRow({
               <AlertDialogHeader>
                 <AlertDialogTitle>Remove team from user?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will remove the user from {team.name}. Access granted through this team will no longer apply.
+                  This will remove the user from {team.name}. Access granted through this team will
+                  no longer apply.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -470,13 +545,21 @@ function TeamsTableSkeleton() {
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5 border-l-2 border-border pl-3">
-      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{label}</span>
+      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+        {label}
+      </span>
       <span className="text-sm font-medium text-foreground">{value}</span>
     </div>
   )
 }
 
-function ContextMessage({ icon, message }: { icon: import('#/lib/icons').AppIcon; message: string }) {
+function ContextMessage({
+  icon,
+  message,
+}: {
+  icon: import('#/lib/icons').AppIcon
+  message: string
+}) {
   return (
     <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
       <Icon name={icon} size={20} className="size-10 text-muted-foreground" />
@@ -485,7 +568,15 @@ function ContextMessage({ icon, message }: { icon: import('#/lib/icons').AppIcon
   )
 }
 
-function MessageRow({ colSpan, icon, message }: { colSpan: number; icon: import('#/lib/icons').AppIcon; message: string }) {
+function MessageRow({
+  colSpan,
+  icon,
+  message,
+}: {
+  colSpan: number
+  icon: import('#/lib/icons').AppIcon
+  message: string
+}) {
   return (
     <TableRow>
       <TableCell colSpan={colSpan}>
@@ -507,12 +598,4 @@ function roleBadgeVariant(role: string): 'default' | 'secondary' | 'outline' {
 
 function roleLabel(role: string) {
   return role
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return 'Unknown'
-  }
-  return dateFormatter.format(date)
 }

@@ -1,6 +1,16 @@
+import { errorMessage } from '#/lib/api/errors'
+import { trimTrailingSlash } from '#/lib/utils'
+import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
+import {
+  Outlet,
+  createFileRoute,
+  useNavigate,
+  useRouter,
+  useRouterState,
+} from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
@@ -10,10 +20,19 @@ import { orgEffectivePermissionsQueryOptions, orgTeamsQueryOptions } from '#/lib
 import type { Team } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
 import { entityColor } from '#/lib/entity-colors'
+import { slugify } from '#/lib/strings'
 import { SectionTabNav } from '#/components/SectionTabNav'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
@@ -21,18 +40,19 @@ import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { Skeleton } from '#/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 import { cn } from '#/lib/utils'
 
 export const Route = createFileRoute('/orgs/$org_slug/teams')({
   component: OrganizationTeamsRoute,
   pendingComponent: RoutePending,
-})
-
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
 })
 
 function OrganizationTeamsRoute() {
@@ -54,13 +74,14 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
   const [teamSlug, setTeamSlug] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<{ name?: string; slug?: string }>({})
-  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
-    page: 1,
-    page_size: 10,
-    sort: 'name',
-    order: 'asc',
-    q: '',
-  })
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
+    useListPageState({
+      page: 1,
+      page_size: 10,
+      sort: 'name',
+      order: 'asc',
+      q: '',
+    })
 
   useEffect(() => {
     if (slugTouched) return
@@ -69,7 +90,8 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
 
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
   const canReadTeams = hasPermission(effectivePermissions.data?.permissions, permission.orgRead)
-  const canCreateTeam = canReadTeams && hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
+  const canCreateTeam =
+    canReadTeams && hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
   const teams = useQuery({
     ...orgTeamsQueryOptions(orgSlug, query),
     enabled: canReadTeams,
@@ -83,12 +105,12 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
 
   useEffect(() => {
     if (!canReadTeams || !teams.error) return
-    toast.error(teams.error instanceof Error ? teams.error.message : 'Failed to load teams')
+    toast.error(errorMessage(teams.error, 'Failed to load teams'))
   }, [canReadTeams, teams.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) return
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load team permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load team permissions'))
   }, [effectivePermissions.error])
 
   const createTeam = useMutation({
@@ -101,7 +123,7 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
       setIsCreating(false)
       resetCreateTeam()
       toast.success('Team created')
-      await queryClient.invalidateQueries({ queryKey: ['org-teams', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgTeamsScope(orgSlug) })
     },
     onError: (error) => {
       if (isApiError(error)) {
@@ -111,7 +133,7 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
         })
         if (error.fieldErrors?.name || error.fieldErrors?.slug) return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to create team')
+      toast.error(errorMessage(error, 'Failed to create team'))
     },
   })
 
@@ -139,8 +161,18 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
     <div className="flex flex-col">
       <SectionTabNav
         tabs={[
-          { label: 'Users', to: '/orgs/$org_slug/users', params: { org_slug: orgSlug }, isActive: false },
-          { label: 'Teams', to: '/orgs/$org_slug/teams', params: { org_slug: orgSlug }, isActive: true },
+          {
+            label: 'Users',
+            to: '/orgs/$org_slug/users',
+            params: { org_slug: orgSlug },
+            isActive: false,
+          },
+          {
+            label: 'Teams',
+            to: '/orgs/$org_slug/teams',
+            params: { org_slug: orgSlug },
+            isActive: true,
+          },
         ]}
       />
 
@@ -181,7 +213,9 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
                         aria-invalid={fieldErrors.name ? true : undefined}
                         disabled={createTeam.isPending}
                       />
-                      {fieldErrors.name ? <p className="text-sm text-destructive">{fieldErrors.name}</p> : null}
+                      {fieldErrors.name ? (
+                        <p className="text-sm text-destructive">{fieldErrors.name}</p>
+                      ) : null}
                     </div>
 
                     <div className="flex flex-col gap-2">
@@ -196,11 +230,17 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
                         aria-invalid={fieldErrors.slug ? true : undefined}
                         disabled={createTeam.isPending}
                       />
-                      {fieldErrors.slug ? <p className="text-sm text-destructive">{fieldErrors.slug}</p> : null}
+                      {fieldErrors.slug ? (
+                        <p className="text-sm text-destructive">{fieldErrors.slug}</p>
+                      ) : null}
                     </div>
 
                     <DialogFooter>
-                      <DialogClose render={<Button type="button" variant="ghost" disabled={createTeam.isPending} />}>
+                      <DialogClose
+                        render={
+                          <Button type="button" variant="ghost" disabled={createTeam.isPending} />
+                        }
+                      >
                         Cancel
                       </DialogClose>
                       <Button type="submit" disabled={createTeam.isPending}>
@@ -227,23 +267,52 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>
-                    <TableColumnHeader label="Team" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                    <TableColumnHeader
+                      label="Team"
+                      sort="name"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
+                    />
                   </TableHead>
                   <TableHead>
-                    <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
+                    <TableColumnHeader
+                      label="Created"
+                      sort="created_at"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
+                    />
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {effectivePermissions.isLoading || teams.isLoading ? <TeamsTableSkeleton /> : null}
-                {teams.isError ? <TableEmptyState colSpan={2} icon="user-group" message="Failed to load teams." /> : null}
+                {teams.isError ? (
+                  <TableEmptyState colSpan={2} icon="user-group" message="Failed to load teams." />
+                ) : null}
                 {!effectivePermissions.isLoading && !canReadTeams ? (
-                  <TableEmptyState colSpan={2} icon="user-group" message="You do not have permission to view teams." />
+                  <TableEmptyState
+                    colSpan={2}
+                    icon="user-group"
+                    message="You do not have permission to view teams."
+                  />
                 ) : null}
-                {!effectivePermissions.isLoading && canReadTeams && !teams.isLoading && !teams.isError && items.length === 0 ? (
-                  <TableEmptyState colSpan={2} icon="user-group" message={query.q ? 'No teams matched your search.' : 'No teams found.'} />
+                {!effectivePermissions.isLoading &&
+                canReadTeams &&
+                !teams.isLoading &&
+                !teams.isError &&
+                items.length === 0 ? (
+                  <TableEmptyState
+                    colSpan={2}
+                    icon="user-group"
+                    message={query.q ? 'No teams matched your search.' : 'No teams found.'}
+                  />
                 ) : null}
-                {!effectivePermissions.isLoading && canReadTeams && !teams.isLoading && !teams.isError
+                {!effectivePermissions.isLoading &&
+                canReadTeams &&
+                !teams.isLoading &&
+                !teams.isError
                   ? items.map((team) => <TeamRow key={team.id} team={team} />)
                   : null}
               </TableBody>
@@ -304,7 +373,12 @@ function TeamRow({ team }: { team: Team }) {
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', entityColor(team.name))}>
+          <div
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-md',
+              entityColor(team.name),
+            )}
+          >
             <Icon name="user-group" size={20} className="size-4" />
           </div>
           <div className="min-w-0">
@@ -339,22 +413,4 @@ function TeamsTableSkeleton() {
       ))}
     </>
   )
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return dateFormatter.format(date)
-}
-
-function slugify(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
-function trimTrailingSlash(path: string) {
-  return path === '/' ? path : path.replace(/\/$/, '')
 }

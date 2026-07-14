@@ -14,19 +14,57 @@ export type AccentPreset = {
 }
 
 export const ACCENT_PRESETS: AccentPreset[] = [
-  { id: 'steel-teal', label: 'Steel Teal', light: { l: 0.545, c: 0.115, h: 210 }, dark: { l: 0.72, c: 0.115, h: 200 } },
-  { id: 'blue',       label: 'Blue',       light: { l: 0.55, c: 0.19, h: 255 },  dark: { l: 0.68, c: 0.15, h: 250 } },
-  { id: 'indigo',     label: 'Indigo',     light: { l: 0.545, c: 0.2, h: 272 },  dark: { l: 0.68, c: 0.16, h: 270 } },
-  { id: 'violet',     label: 'Violet',     light: { l: 0.545, c: 0.22, h: 292 }, dark: { l: 0.68, c: 0.18, h: 292 } },
-  { id: 'emerald',    label: 'Emerald',    light: { l: 0.55, c: 0.135, h: 160 }, dark: { l: 0.72, c: 0.14, h: 160 } },
-  { id: 'amber',      label: 'Amber',      light: { l: 0.66, c: 0.13, h: 65 },   dark: { l: 0.78, c: 0.13, h: 70 } },
-  { id: 'rose',       label: 'Rose',       light: { l: 0.59, c: 0.19, h: 15 },   dark: { l: 0.70, c: 0.17, h: 15 } },
-  { id: 'graphite',   label: 'Graphite',   light: { l: 0.35, c: 0.012, h: 240 }, dark: { l: 0.80, c: 0.012, h: 240 } },
+  {
+    id: 'steel-teal',
+    label: 'Steel Teal',
+    light: { l: 0.545, c: 0.115, h: 210 },
+    dark: { l: 0.72, c: 0.115, h: 200 },
+  },
+  {
+    id: 'blue',
+    label: 'Blue',
+    light: { l: 0.55, c: 0.19, h: 255 },
+    dark: { l: 0.68, c: 0.15, h: 250 },
+  },
+  {
+    id: 'indigo',
+    label: 'Indigo',
+    light: { l: 0.545, c: 0.2, h: 272 },
+    dark: { l: 0.68, c: 0.16, h: 270 },
+  },
+  {
+    id: 'violet',
+    label: 'Violet',
+    light: { l: 0.545, c: 0.22, h: 292 },
+    dark: { l: 0.68, c: 0.18, h: 292 },
+  },
+  {
+    id: 'emerald',
+    label: 'Emerald',
+    light: { l: 0.55, c: 0.135, h: 160 },
+    dark: { l: 0.72, c: 0.14, h: 160 },
+  },
+  {
+    id: 'amber',
+    label: 'Amber',
+    light: { l: 0.66, c: 0.13, h: 65 },
+    dark: { l: 0.78, c: 0.13, h: 70 },
+  },
+  {
+    id: 'rose',
+    label: 'Rose',
+    light: { l: 0.59, c: 0.19, h: 15 },
+    dark: { l: 0.7, c: 0.17, h: 15 },
+  },
+  {
+    id: 'graphite',
+    label: 'Graphite',
+    light: { l: 0.35, c: 0.012, h: 240 },
+    dark: { l: 0.8, c: 0.012, h: 240 },
+  },
 ]
 
-export type Accent =
-  | { kind: 'preset'; id: string }
-  | { kind: 'custom'; hex: string }
+export type Accent = { kind: 'preset'; id: string } | { kind: 'custom'; hex: string }
 
 const DEFAULT_ACCENT_ID = 'steel-teal'
 export const DEFAULT_ACCENT: Accent = { kind: 'preset', id: DEFAULT_ACCENT_ID }
@@ -62,7 +100,13 @@ function accentColors(accent: Accent, isDark: boolean): { color: string; foregro
   return { color: oklchStr(value), foreground: accentForeground(value.l) }
 }
 
-const ACCENT_VAR_TARGETS = ['--primary', '--ring', '--sidebar-primary', '--sidebar-ring', '--chart-1'] as const
+const ACCENT_VAR_TARGETS = [
+  '--primary',
+  '--ring',
+  '--sidebar-primary',
+  '--sidebar-ring',
+  '--chart-1',
+] as const
 
 // ─── Surface ───────────────────────────────────────────────────────────────────
 
@@ -76,11 +120,11 @@ export type SurfacePreset = {
 
 export const SURFACE_PRESETS: SurfacePreset[] = [
   { id: 'graphite', label: 'Graphite', hue: 240, tint: 1 },
-  { id: 'neutral',  label: 'Neutral',  hue: 240, tint: 0 },
-  { id: 'slate',    label: 'Slate',    hue: 255, tint: 3 },
-  { id: 'mist',     label: 'Mist',     hue: 210, tint: 2 },
-  { id: 'warm',     label: 'Warm',     hue: 75,  tint: 1.5 },
-  { id: 'dusk',     label: 'Dusk',     hue: 285, tint: 3 },
+  { id: 'neutral', label: 'Neutral', hue: 240, tint: 0 },
+  { id: 'slate', label: 'Slate', hue: 255, tint: 3 },
+  { id: 'mist', label: 'Mist', hue: 210, tint: 2 },
+  { id: 'warm', label: 'Warm', hue: 75, tint: 1.5 },
+  { id: 'dusk', label: 'Dusk', hue: 285, tint: 3 },
 ]
 
 export const DEFAULT_SURFACE = 'graphite'
@@ -103,7 +147,7 @@ function surfaceTokens(preset: SurfacePreset, isDark: boolean): Record<string, s
       '--secondary': t(0.252, 0.01),
       '--secondary-foreground': t(0.94, 0.006),
       '--muted': t(0.252, 0.01),
-      '--muted-foreground': t(0.70, 0.014),
+      '--muted-foreground': t(0.7, 0.014),
       '--accent': t(0.29, 0.018),
       '--accent-foreground': t(0.955, 0.008),
       '--border': `oklch(0.85 ${c(0.015)} ${h} / 12%)`,
@@ -164,7 +208,9 @@ function readAccent(): Accent {
     const parsed = JSON.parse(stored) as Accent
     if (parsed.kind === 'preset' && ACCENT_PRESETS.some((p) => p.id === parsed.id)) return parsed
     if (parsed.kind === 'custom' && /^#[0-9a-f]{6}$/i.test(parsed.hex)) return parsed
-  } catch { /* fall through */ }
+  } catch {
+    /* fall through */
+  }
   return DEFAULT_ACCENT
 }
 
@@ -215,9 +261,11 @@ export function ThemeLabProvider({ children }: { children: ReactNode }) {
   const [accent, setAccentState] = useState<Accent>(() => readAccent())
   const [surface, setSurfaceState] = useState<string>(() => readSurface())
   const [radius, setRadiusState] = useState<number>(() =>
-    readNumber(KEYS.radius, DEFAULT_RADIUS, RADIUS_RANGE.min, RADIUS_RANGE.max))
+    readNumber(KEYS.radius, DEFAULT_RADIUS, RADIUS_RANGE.min, RADIUS_RANGE.max),
+  )
   const [uiScale, setUiScaleState] = useState<number>(() =>
-    readNumber(KEYS.uiScale, DEFAULT_UI_SCALE, UI_SCALE_RANGE.min, UI_SCALE_RANGE.max))
+    readNumber(KEYS.uiScale, DEFAULT_UI_SCALE, UI_SCALE_RANGE.min, UI_SCALE_RANGE.max),
+  )
 
   // Accent → primary/ring/chart-1 (defaults come from styles.css; only override
   // when the user has moved off the default so stylesheet updates keep winning).
@@ -286,7 +334,17 @@ export function ThemeLabProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeLabContext.Provider
-      value={{ accent, surface, radius, uiScale, setAccent, setSurface, setRadius, setUiScale, resetThemeLab }}
+      value={{
+        accent,
+        surface,
+        radius,
+        uiScale,
+        setAccent,
+        setSurface,
+        setRadius,
+        setUiScale,
+        resetThemeLab,
+      }}
     >
       {children}
     </ThemeLabContext.Provider>

@@ -8,7 +8,16 @@ import {
   orgConnectionSchemaSpecQueryOptions,
   orgConnectionObjectQueryOptions,
 } from '#/lib/api/query'
-import type { CatalogNamespace, CatalogObjectGroup, Connection, ObjectDescriptor, ObjectDetail, ObjectRef, SchemaSpec, Workspace } from '#/lib/api/types'
+import type {
+  CatalogNamespace,
+  CatalogObjectGroup,
+  Connection,
+  ObjectDescriptor,
+  ObjectDetail,
+  ObjectRef,
+  SchemaSpec,
+  Workspace,
+} from '#/lib/api/types'
 import { useIde } from './useIdeStore'
 import { newObjectTab } from './object-detail/objectTab'
 import { newDiagramTab, type DiagramTarget } from './schema-diagram/diagramTab'
@@ -46,7 +55,11 @@ type InsertableProps = {
   onDoubleClick: () => void
 }
 
-function dragPropsFor(ctx: { insert: (text: string) => void } | null, text: string | undefined, objectRef?: ObjectRef): InsertableProps | undefined {
+function dragPropsFor(
+  ctx: { insert: (text: string) => void } | null,
+  text: string | undefined,
+  objectRef?: ObjectRef,
+): InsertableProps | undefined {
   if (!ctx || text === undefined) return undefined
   return {
     draggable: true,
@@ -93,7 +106,8 @@ const KIND_STYLE: Record<string, { icon: AppIcon; className: string }> = {
   trigger: { icon: 'flow-connection', className: 'text-chart-5' },
 }
 
-const kindStyle = (kind: string) => KIND_STYLE[kind] ?? { icon: 'box' as AppIcon, className: 'text-muted-foreground' }
+const kindStyle = (kind: string) =>
+  KIND_STYLE[kind] ?? { icon: 'box' as AppIcon, className: 'text-muted-foreground' }
 
 export function SchemaTree({
   orgSlug,
@@ -118,10 +132,22 @@ export function SchemaTree({
   const dialect = dialectFor(driver)
 
   const openObject = (ref: ObjectRef) =>
-    openTab(newObjectTab({ id: connectionId, driver } as Connection, { id: workspaceId } as Workspace, ref))
+    openTab(
+      newObjectTab(
+        { id: connectionId, driver } as Connection,
+        { id: workspaceId } as Workspace,
+        ref,
+      ),
+    )
 
   const openDiagram = (target: DiagramTarget) =>
-    openTab(newDiagramTab({ id: connectionId, driver } as Connection, { id: workspaceId } as Workspace, target))
+    openTab(
+      newDiagramTab(
+        { id: connectionId, driver } as Connection,
+        { id: workspaceId } as Workspace,
+        target,
+      ),
+    )
 
   const catalogQuery = useQuery({
     ...orgConnectionCatalogQueryOptions(orgSlug, workspaceId, connectionId, sessionId ?? ''),
@@ -150,7 +176,11 @@ export function SchemaTree({
       <SchemaMessage>
         <span>Not connected.</span>
         {onConnect && (
-          <button type="button" className="font-medium text-primary hover:underline" onClick={onConnect}>
+          <button
+            type="button"
+            className="font-medium text-primary hover:underline"
+            onClick={onConnect}
+          >
             Connect
           </button>
         )}
@@ -172,7 +202,11 @@ export function SchemaTree({
     return (
       <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
         <span>Failed to load schema.</span>
-        <button type="button" className="underline hover:text-foreground" onClick={() => catalogQuery.refetch()}>
+        <button
+          type="button"
+          className="underline hover:text-foreground"
+          onClick={() => catalogQuery.refetch()}
+        >
           Retry
         </button>
       </div>
@@ -213,7 +247,9 @@ export function SchemaTree({
           ? sortedGroups(single, spec).map((g) => (
               <SchemaGroupNode key={g.kind} group={g} forceOpen={filtering} />
             ))
-          : namespaces.map((ns) => <SchemaNamespaceNode key={ns.name} namespace={ns} forceOpen={filtering} />)}
+          : namespaces.map((ns) => (
+              <SchemaNamespaceNode key={ns.name} namespace={ns} forceOpen={filtering} />
+            ))}
       </div>
     </SchemaTreeContext.Provider>
   )
@@ -228,7 +264,9 @@ function SchemaMessage({ children }: { children: React.ReactNode }) {
 }
 
 function SchemaSpinner({ size = 12 }: { size?: number }) {
-  return <Icon name="loading-03" size={size} className="shrink-0 animate-spin text-muted-foreground" />
+  return (
+    <Icon name="loading-03" size={size} className="shrink-0 animate-spin text-muted-foreground" />
+  )
 }
 
 /** Indent guide: children of an expanded node nest inside this container, which
@@ -237,7 +275,13 @@ function GuideChildren({ children }: { children: React.ReactNode }) {
   return <div className="ml-[13px] border-l border-border/60">{children}</div>
 }
 
-function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: CatalogNamespace; forceOpen: boolean }) {
+function SchemaNamespaceNode({
+  namespace,
+  forceOpen,
+}: {
+  namespace: CatalogNamespace
+  forceOpen: boolean
+}) {
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
   const { refresh, spec, openDiagram } = useTreeCtx()
@@ -245,9 +289,10 @@ function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: CatalogNames
   const menuItems = buildNamespaceMenu({
     onCopyName: () => copyWithToast(namespace.name),
     onRefresh: refresh,
-    onViewDiagram: diagramSupported(spec) && openDiagram
-      ? () => openDiagram({ kind: 'namespace', namespace: namespace.name })
-      : undefined,
+    onViewDiagram:
+      diagramSupported(spec) && openDiagram
+        ? () => openDiagram({ kind: 'namespace', namespace: namespace.name })
+        : undefined,
   })
 
   return (
@@ -263,7 +308,9 @@ function SchemaNamespaceNode({ namespace, forceOpen }: { namespace: CatalogNames
       </ContextMenu>
       {expanded && (
         <GuideChildren>
-          {groups.map((g) => <SchemaGroupNode key={g.kind} group={g} forceOpen={forceOpen} />)}
+          {groups.map((g) => (
+            <SchemaGroupNode key={g.kind} group={g} forceOpen={forceOpen} />
+          ))}
         </GuideChildren>
       )}
     </div>
@@ -295,7 +342,11 @@ function SchemaGroupNode({ group, forceOpen }: { group: CatalogObjectGroup; forc
       {expanded && (
         <GuideChildren>
           {objects.map((ref) => (
-            <SchemaObjectNode key={`${ref.kind}:${ref.name}`} objectRef={ref} forceOpen={forceOpen} />
+            <SchemaObjectNode
+              key={`${ref.kind}:${ref.name}`}
+              objectRef={ref}
+              forceOpen={forceOpen}
+            />
           ))}
         </GuideChildren>
       )}
@@ -308,7 +359,13 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
   const detailQuery = useQuery({
-    ...orgConnectionObjectQueryOptions(ctx!.orgSlug, ctx!.workspaceId, ctx!.connectionId, ctx!.sessionId, objectRef),
+    ...orgConnectionObjectQueryOptions(
+      ctx!.orgSlug,
+      ctx!.workspaceId,
+      ctx!.connectionId,
+      ctx!.sessionId,
+      objectRef,
+    ),
     enabled: Boolean(ctx) && expanded,
   })
   useEvictGoneSession(ctx?.connectionId, [detailQuery.error])
@@ -321,12 +378,19 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
   const objectMenu = buildObjectMenu({
     isView,
     onOpen: () => ctx?.openObject(objectRef),
-    onViewDiagram: diagramSupportedForKind(spec, objectRef.kind) && openDiagram
-      ? () => openDiagram({ kind: 'object', ref: objectRef })
-      : undefined,
+    onViewDiagram:
+      diagramSupportedForKind(spec, objectRef.kind) && openDiagram
+        ? () => openDiagram({ kind: 'object', ref: objectRef })
+        : undefined,
     onCopyName: () => copyWithToast(objectRef.name),
-    onCopyQualifiedName: () => copyWithToast(dialect ? dialect.formatObject(objectRef.namespace, objectRef.name) : objectRef.name),
-    onCopyColumnList: () => copyWithToast(columnList(columns.map((c) => (dialect ? dialect.formatColumn(c.name) : c.name)))),
+    onCopyQualifiedName: () =>
+      copyWithToast(
+        dialect ? dialect.formatObject(objectRef.namespace, objectRef.name) : objectRef.name,
+      ),
+    onCopyColumnList: () =>
+      copyWithToast(
+        columnList(columns.map((c) => (dialect ? dialect.formatColumn(c.name) : c.name))),
+      ),
   })
 
   return (
@@ -344,7 +408,11 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
       </ContextMenu>
       {expanded && (
         <GuideChildren>
-          <SchemaObjectDetail detail={detail} loading={detailQuery.isLoading} objectName={objectRef.name} />
+          <SchemaObjectDetail
+            detail={detail}
+            loading={detailQuery.isLoading}
+            objectName={objectRef.name}
+          />
         </GuideChildren>
       )}
     </div>
@@ -385,7 +453,12 @@ function SchemaObjectDetail({
             key={c.name}
             items={buildColumnMenu({
               onCopyName: () => copyWithToast(dialect ? dialect.formatColumn(c.name) : c.name),
-              onCopyQualifiedName: () => copyWithToast(dialect ? qualifiedColumn(dialect, objectName, c.name) : `${objectName}.${c.name}`),
+              onCopyQualifiedName: () =>
+                copyWithToast(
+                  dialect
+                    ? qualifiedColumn(dialect, objectName, c.name)
+                    : `${objectName}.${c.name}`,
+                ),
               onCopyType: () => copyWithToast(c.data_type),
             })}
           >
@@ -401,8 +474,16 @@ function SchemaObjectDetail({
       {indexes.length > 0 && (
         <DetailGroup label="Indexes" count={indexes.length}>
           {indexes.map((ix) => (
-            <ContextMenu key={`ix:${ix.name}`} items={buildIndexMenu({ onCopyName: () => copyWithToast(ix.name) })}>
-              <LeafRow icon="key-01" iconClass="text-chart-4" label={ix.name} meta={ix.unique ? 'unique' : 'index'} />
+            <ContextMenu
+              key={`ix:${ix.name}`}
+              items={buildIndexMenu({ onCopyName: () => copyWithToast(ix.name) })}
+            >
+              <LeafRow
+                icon="key-01"
+                iconClass="text-chart-4"
+                label={ix.name}
+                meta={ix.unique ? 'unique' : 'index'}
+              />
             </ContextMenu>
           ))}
         </DetailGroup>
@@ -435,7 +516,11 @@ function DetailGroup({
           'transition-colors hover:bg-sidebar-accent hover:text-foreground',
         )}
       >
-        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={10} className="shrink-0 text-muted-foreground/60" />
+        <Icon
+          name={open ? 'chevron-down' : 'chevron-right'}
+          size={10}
+          className="shrink-0 text-muted-foreground/60"
+        />
         <span className="truncate">{label}</span>
         <span className="font-normal tabular-nums text-muted-foreground/60">{count}</span>
       </button>
@@ -467,7 +552,11 @@ function ColumnRow({
       onDragStart={insertable?.onDragStart}
       onDoubleClick={insertable?.onDoubleClick}
     >
-      <Icon name={icon} size={12} className={cn('shrink-0', columnTypeIconColor[icon] ?? 'text-muted-foreground')} />
+      <Icon
+        name={icon}
+        size={12}
+        className={cn('shrink-0', columnTypeIconColor[icon] ?? 'text-muted-foreground')}
+      />
       <span className={cn('min-w-0 flex-1 truncate', !insertable && 'select-text')} title={name}>
         {name}
       </span>
@@ -494,10 +583,19 @@ function SchemaDescriptors({ descriptors }: { descriptors: ObjectDescriptor[] })
           <DetailMessage>{descriptor.title}</DetailMessage>
           <GuideChildren>
             {(descriptor.fields ?? []).map((field) => (
-              <LeafRow key={`${descriptor.title}:${field.name}`} icon="box" label={field.name} meta={field.value} />
+              <LeafRow
+                key={`${descriptor.title}:${field.name}`}
+                icon="box"
+                label={field.name}
+                meta={field.value}
+              />
             ))}
             {descriptor.source ? (
-              <LeafRow icon="terminal" label={descriptor.source.language.toUpperCase()} meta={descriptor.source.body} />
+              <LeafRow
+                icon="terminal"
+                label={descriptor.source.language.toUpperCase()}
+                meta={descriptor.source.body}
+              />
             ) : null}
             {descriptor.rows ? (
               <DetailMessage>{`${descriptor.rows.rows.length} rows`}</DetailMessage>
@@ -530,11 +628,18 @@ function LeafRow({
 }) {
   return (
     <div className="mx-1 flex h-[22px] items-center gap-1.5 rounded-md pl-1 pr-2 text-[11px] transition-colors hover:bg-sidebar-accent/60">
-      <Icon name={icon} size={12} className={cn('shrink-0', iconClass ?? 'text-muted-foreground')} />
+      <Icon
+        name={icon}
+        size={12}
+        className={cn('shrink-0', iconClass ?? 'text-muted-foreground')}
+      />
       <span className="min-w-0 flex-1 select-text truncate" title={label}>
         {label}
       </span>
-      <span className="min-w-0 max-w-[55%] shrink truncate pl-3 text-right font-mono text-[10px] text-muted-foreground/80" title={meta}>
+      <span
+        className="min-w-0 max-w-[55%] shrink truncate pl-3 text-right font-mono text-[10px] text-muted-foreground/80"
+        title={meta}
+      >
         {meta}
       </span>
     </div>
@@ -586,9 +691,24 @@ function TreeRow({
       }}
       className="mx-1 flex h-6 cursor-pointer items-center gap-1.5 rounded-md pl-1 pr-2 text-left text-xs transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
     >
-      <Icon name={chevron ? 'chevron-down' : 'chevron-right'} size={11} className="shrink-0 text-muted-foreground/70" />
-      <Icon name={typeIcon} size={13} className={cn('shrink-0', typeIconClass ?? 'text-muted-foreground')} />
-      <span className={cn('min-w-0 flex-1 truncate', !insertable && 'select-text', bold && 'font-medium')} title={label}>
+      <Icon
+        name={chevron ? 'chevron-down' : 'chevron-right'}
+        size={11}
+        className="shrink-0 text-muted-foreground/70"
+      />
+      <Icon
+        name={typeIcon}
+        size={13}
+        className={cn('shrink-0', typeIconClass ?? 'text-muted-foreground')}
+      />
+      <span
+        className={cn(
+          'min-w-0 flex-1 truncate',
+          !insertable && 'select-text',
+          bold && 'font-medium',
+        )}
+        title={label}
+      >
         {label}
       </span>
       {count !== undefined && (

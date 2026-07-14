@@ -33,7 +33,9 @@ export async function getPrivateWorkspaceFileContent(
 
   const response = await fetch(url, { headers })
   if (!response.ok) {
-    const err = new Error(`Failed to load file: ${response.statusText}`) as Error & { status: number }
+    const err = new Error(`Failed to load file: ${response.statusText}`) as Error & {
+      status: number
+    }
     err.status = response.status
     throw err
   }
@@ -64,7 +66,7 @@ export async function updatePrivateWorkspaceFileContent(
   const token = getAccessToken()
   const headers: Record<string, string> = {
     'Content-Type': 'text/plain',
-    'Accept': 'application/json',
+    Accept: 'application/json',
   }
   if (token) headers['Authorization'] = `Bearer ${token}`
   if (etag) headers['If-Match'] = `"${etag}"`

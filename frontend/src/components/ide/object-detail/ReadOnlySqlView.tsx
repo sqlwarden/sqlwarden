@@ -74,7 +74,9 @@ export function ReadOnlySqlView({ value, className }: { value: string; className
       if (cancelled || !viewRef.current) return
       viewRef.current.dispatch({ effects: themeCompartment.current.reconfigure(ext) })
     })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [activeThemeName])
 
   // Hot-swap font / size.
@@ -82,9 +84,15 @@ export function ReadOnlySqlView({ value, className }: { value: string; className
     let cancelled = false
     loadEditorFont(editorFont).then(() => {
       if (cancelled || !viewRef.current) return
-      viewRef.current.dispatch({ effects: fontCompartment.current.reconfigure(baseTheme(editorFont.fontFamily, editorFontSize)) })
+      viewRef.current.dispatch({
+        effects: fontCompartment.current.reconfigure(
+          baseTheme(editorFont.fontFamily, editorFontSize),
+        ),
+      })
     })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [editorFont, editorFontSize])
 
   return <div ref={containerRef} className={cn('h-full overflow-hidden', className)} />

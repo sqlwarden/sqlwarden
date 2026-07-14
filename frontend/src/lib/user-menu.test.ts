@@ -65,11 +65,21 @@ describe('buildUserMenuItems', () => {
   })
 
   it('includes org settings first, only when orgSlug and permission are present', () => {
-    expect(ids(buildUserMenuItems({ session: makeSession(), orgSlug: 'acme' }))).not.toContain('org-settings')
+    expect(ids(buildUserMenuItems({ session: makeSession(), orgSlug: 'acme' }))).not.toContain(
+      'org-settings',
+    )
     expect(
       ids(buildUserMenuItems({ session: makeSession(), canAccessOrgSettings: true })),
     ).not.toContain('org-settings')
-    const items = buildUserMenuItems({ session: makeSession(), orgSlug: 'acme', canAccessOrgSettings: true })
-    expect(items[0]).toMatchObject({ id: 'org-settings', to: '/orgs/$org_slug', params: { org_slug: 'acme' } })
+    const items = buildUserMenuItems({
+      session: makeSession(),
+      orgSlug: 'acme',
+      canAccessOrgSettings: true,
+    })
+    expect(items[0]).toMatchObject({
+      id: 'org-settings',
+      to: '/orgs/$org_slug',
+      params: { org_slug: 'acme' },
+    })
   })
 })

@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { isApiError } from '#/lib/api/errors'
 
 export type ObjectViewState =
@@ -20,7 +21,11 @@ export interface ResolveInput {
  *  reconnect pane instead of stale content with silently broken sub-queries.
  *  With a live session, cached data renders (`ready`) even while a fresh
  *  refetch is in flight; 403/410/501 collapse to the matching non-data state. */
-export function resolveObjectViewState({ hasSession, error, hasData }: ResolveInput): ObjectViewState {
+export function resolveObjectViewState({
+  hasSession,
+  error,
+  hasData,
+}: ResolveInput): ObjectViewState {
   if (!hasSession) return { kind: 'no-session' }
   if (hasData) return { kind: 'ready' }
   if (error) {
@@ -29,7 +34,7 @@ export function resolveObjectViewState({ hasSession, error, hasData }: ResolveIn
       if (error.status === 403) return { kind: 'forbidden' }
       if (error.status === 410) return { kind: 'no-session' }
     }
-    return { kind: 'error', message: error instanceof Error ? error.message : 'Failed to load object details.' }
+    return { kind: 'error', message: errorMessage(error, 'Failed to load object details.') }
   }
   return { kind: 'loading' }
 }

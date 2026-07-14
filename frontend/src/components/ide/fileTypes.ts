@@ -1,8 +1,8 @@
 export type FileType = {
-  kind: string       // file_kind value sent to the API
-  mediaType: string  // media_type value sent to the API
-  extension: string  // filename extension including the dot, e.g. '.sql'
-  label: string      // display label shown in the UI
+  kind: string // file_kind value sent to the API
+  mediaType: string // media_type value sent to the API
+  extension: string // filename extension including the dot, e.g. '.sql'
+  label: string // display label shown in the UI
 }
 
 export const FILE_TYPES: readonly FileType[] = [

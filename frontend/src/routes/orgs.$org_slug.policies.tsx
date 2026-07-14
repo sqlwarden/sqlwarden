@@ -1,4 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { errorMessage } from '#/lib/api/errors'
+import { trimTrailingSlash } from '#/lib/utils'
+import { formatDate } from '#/lib/format'
+import { useEffect, useState, type FormEvent } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
@@ -26,7 +30,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '#/components/ui/alert-dialog'
-import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import {
@@ -48,29 +51,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
-import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover'
-import { ScrollArea } from '#/components/ui/scroll-area'
+import { SearchComboboxField } from '#/components/access-control/SearchComboboxField'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
-import { Skeleton } from '#/components/ui/skeleton'
 import { TableEmptyState } from '#/components/EmptyState'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 import { cn } from '#/lib/utils'
-import { getInitials } from '#/components/InitialsAvatar'
-import { entityColor, GROUP_COLOR } from '#/lib/entity-colors'
+import { entityColor } from '#/lib/entity-colors'
 import { SectionTabNav } from '#/components/SectionTabNav'
+import {
+  PoliciesTableSkeleton,
+  PolicySubjectCell,
+  policySubjectDisplayName,
+} from '#/components/access-control/PolicyTablePrimitives'
 
 export const Route = createFileRoute('/orgs/$org_slug/policies')({
   component: OrganizationPoliciesRoute,
   pendingComponent: RoutePending,
-})
-
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
 })
 
 type SubjectType = 'account' | 'team' | 'org_members'
@@ -109,19 +115,26 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
   const [teamQ, setTeamQ] = useState('')
   const [roleQ, setRoleQ] = useState('')
 
-  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
-    page: 1,
-    page_size: 10,
-    sort: 'created_at',
-    order: 'desc',
-    q: '',
-  })
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
+    useListPageState({
+      page: 1,
+      page_size: 10,
+      sort: 'created_at',
+      order: 'desc',
+      q: '',
+    })
 
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
   const orgId = effectivePermissions.data?.resource_id
 
-  const canReadPolicies = hasPermission(effectivePermissions.data?.permissions, permission.policyRead)
-  const canModifyPolicies = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
+  const canReadPolicies = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.policyRead,
+  )
+  const canModifyPolicies = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.policyModify,
+  )
 
   const policies = useQuery({
     ...orgPoliciesQueryOptions(orgSlug, query),
@@ -143,18 +156,20 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
     enabled: isCreating && subjectType === 'team',
   })
   const roles = useQuery({
-    ...orgRolesQueryOptions(orgSlug, { page_size: 20, q: roleQ, scope: 'org' } as Parameters<typeof orgRolesQueryOptions>[1]),
+    ...orgRolesQueryOptions(orgSlug, { page_size: 20, q: roleQ, scope: 'org' } as Parameters<
+      typeof orgRolesQueryOptions
+    >[1]),
     enabled: isCreating,
   })
 
   useEffect(() => {
     if (!policies.error) return
-    toast.error(policies.error instanceof Error ? policies.error.message : 'Failed to load policies')
+    toast.error(errorMessage(policies.error, 'Failed to load policies'))
   }, [policies.error])
 
   useEffect(() => {
     if (!effectivePermissions.error) return
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load permissions'))
   }, [effectivePermissions.error])
 
   const createPolicy = useMutation({
@@ -174,10 +189,13 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
       setIsCreating(false)
       resetForm()
       toast.success('Policy binding created')
-      await queryClient.invalidateQueries({ queryKey: ['org-policies', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgPoliciesScope(orgSlug) })
     },
     onError: (error) => {
-      const protectedMessage = protectedOrgPolicyMessage(rolePermissions, effectivePermissions.data?.permissions)
+      const protectedMessage = protectedOrgPolicyMessage(
+        rolePermissions,
+        effectivePermissions.data?.permissions,
+      )
       if (isApiError(error) && error.status === 403 && protectedMessage) {
         setFieldErrors((current) => ({ ...current, role: protectedMessage }))
         toast.error(protectedMessage)
@@ -188,11 +206,15 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
           subject: error.fieldErrors?.subject_id ?? error.fieldErrors?.subject_type,
           role: error.fieldErrors?.role_id,
         })
-        if (error.fieldErrors?.subject_id || error.fieldErrors?.role_id || error.fieldErrors?.subject_type) {
+        if (
+          error.fieldErrors?.subject_id ||
+          error.fieldErrors?.role_id ||
+          error.fieldErrors?.subject_type
+        ) {
           return
         }
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to create policy binding')
+      toast.error(errorMessage(error, 'Failed to create policy binding'))
     },
   })
 
@@ -201,10 +223,10 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
       api.delete<void>(`/api/v1/orgs/${orgSlug}/policies/${bindingId}`),
     onSuccess: async () => {
       toast.success('Policy binding revoked')
-      await queryClient.invalidateQueries({ queryKey: ['org-policies', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgPoliciesScope(orgSlug) })
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to revoke policy binding')
+      toast.error(errorMessage(error, 'Failed to revoke policy binding'))
     },
   })
 
@@ -230,7 +252,10 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
     if (!roleId) {
       errors.role = 'Select a role.'
     }
-    const protectedMessage = protectedOrgPolicyMessage(rolePermissions, effectivePermissions.data?.permissions)
+    const protectedMessage = protectedOrgPolicyMessage(
+      rolePermissions,
+      effectivePermissions.data?.permissions,
+    )
     if (protectedMessage) {
       errors.role = protectedMessage
     }
@@ -261,7 +286,7 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
 
   const roleItems = (roles.data?.items ?? []).map((r: Role) => ({
     value: String(r.id),
-    label: roleDisplayName(r.name),
+    label: r.name,
     sublabel: r.description,
     permissions: r.permissions ?? [],
   }))
@@ -270,375 +295,273 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
     <div className="flex flex-col">
       <SectionTabNav
         tabs={[
-          { label: 'Policies', to: '/orgs/$org_slug/policies', params: { org_slug: orgSlug }, isActive: true },
-          { label: 'Roles', to: '/orgs/$org_slug/roles', params: { org_slug: orgSlug }, isActive: false },
+          {
+            label: 'Policies',
+            to: '/orgs/$org_slug/policies',
+            params: { org_slug: orgSlug },
+            isActive: true,
+          },
+          {
+            label: 'Roles',
+            to: '/orgs/$org_slug/roles',
+            params: { org_slug: orgSlug },
+            isActive: false,
+          },
         ]}
       />
 
       <div className="flex flex-col gap-6 pt-6">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            {!policies.isLoading && total > 0
-              ? `${total} policy binding${total !== 1 ? 's' : ''}`
-              : 'Assign organization roles to users, teams, or all members.'}
-          </p>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              {!policies.isLoading && total > 0
+                ? `${total} policy binding${total !== 1 ? 's' : ''}`
+                : 'Assign organization roles to users, teams, or all members.'}
+            </p>
 
-          {canModifyPolicies ? (
-            <Dialog
-              open={isCreating}
-              onOpenChange={(open) => {
-                setIsCreating(open)
-                if (!open) resetForm()
-              }}
-            >
-              <DialogTrigger render={<Button />}>
-                <Icon name="plus-sign" size={20} data-icon="inline-start" />
-                Assign role
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Assign role</DialogTitle>
-                  <DialogDescription>
-                    Bind an organization role to a user, team, or all members.
-                  </DialogDescription>
-                </DialogHeader>
-                <form className="mt-6 flex flex-col gap-6" onSubmit={submitCreatePolicy}>
-                  {/* Subject type */}
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="subject-type">Subject type</Label>
-                    <Select
-                      value={subjectType}
-                      onValueChange={(value) => {
-                        if (value) {
-                          setSubjectType(value as SubjectType)
-                          setSubjectId('')
-                          setSubjectLabel('')
-                          setFieldErrors((c) => ({ ...c, subject: undefined }))
-                        }
-                      }}
-                      disabled={createPolicy.isPending}
-                    >
-                      <SelectTrigger id="subject-type" className="w-full">
-                        <SelectValue>{SUBJECT_TYPE_LABELS[subjectType]}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="account">User</SelectItem>
-                          <SelectItem value="team">Team</SelectItem>
-                          <SelectItem value="org_members">All users</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Subject picker */}
-                  {subjectType === 'account' ? (
-                    <ComboboxField
-                      label="User"
-                      placeholder="Select a user…"
-                      searchPlaceholder="Search users…"
-                      selectedValue={subjectId}
-                      selectedLabel={subjectLabel}
-                      items={memberItems}
-                      isLoading={members.isLoading}
-                      error={fieldErrors.subject}
-                      disabled={createPolicy.isPending}
-                      onChange={(value, label) => {
-                        setSubjectId(value)
-                        setSubjectLabel(label)
-                        setFieldErrors((c) => ({ ...c, subject: undefined }))
-                      }}
-                      onSearchChange={setMemberQ}
-                    />
-                  ) : null}
-
-                  {subjectType === 'team' ? (
-                    <ComboboxField
-                      label="Team"
-                      placeholder="Select a team…"
-                      searchPlaceholder="Search teams…"
-                      selectedValue={subjectId}
-                      selectedLabel={subjectLabel}
-                      items={teamItems}
-                      isLoading={teams.isLoading}
-                      error={fieldErrors.subject}
-                      disabled={createPolicy.isPending}
-                      onChange={(value, label) => {
-                        setSubjectId(value)
-                        setSubjectLabel(label)
-                        setFieldErrors((c) => ({ ...c, subject: undefined }))
-                      }}
-                      onSearchChange={setTeamQ}
-                    />
-                  ) : null}
-
-                  {subjectType === 'org_members' ? (
-                    <div className="rounded-md border border-border bg-muted/40 px-4 py-3">
-                      <p className="text-sm text-muted-foreground">
-                        The selected role will be granted to{' '}
-                        <span className="font-medium text-foreground">all current and future users</span> of this organization.
-                      </p>
+            {canModifyPolicies ? (
+              <Dialog
+                open={isCreating}
+                onOpenChange={(open) => {
+                  setIsCreating(open)
+                  if (!open) resetForm()
+                }}
+              >
+                <DialogTrigger render={<Button />}>
+                  <Icon name="plus-sign" size={20} data-icon="inline-start" />
+                  Assign role
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Assign role</DialogTitle>
+                    <DialogDescription>
+                      Bind an organization role to a user, team, or all members.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form className="mt-6 flex flex-col gap-6" onSubmit={submitCreatePolicy}>
+                    {/* Subject type */}
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="subject-type">Subject type</Label>
+                      <Select
+                        value={subjectType}
+                        onValueChange={(value) => {
+                          if (value) {
+                            setSubjectType(value as SubjectType)
+                            setSubjectId('')
+                            setSubjectLabel('')
+                            setFieldErrors((c) => ({ ...c, subject: undefined }))
+                          }
+                        }}
+                        disabled={createPolicy.isPending}
+                      >
+                        <SelectTrigger id="subject-type" className="w-full">
+                          <SelectValue>{SUBJECT_TYPE_LABELS[subjectType]}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="account">User</SelectItem>
+                            <SelectItem value="team">Team</SelectItem>
+                            <SelectItem value="org_members">All users</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
                     </div>
-                  ) : null}
 
-                  {/* Role picker */}
-                  <ComboboxField
-                    label="Role"
-                    placeholder="Select a role…"
-                    searchPlaceholder="Search roles…"
-                    selectedValue={roleId}
-                    selectedLabel={roleLabel}
-                    items={roleItems}
-                    isLoading={roles.isLoading}
-                    error={fieldErrors.role}
-                    disabled={createPolicy.isPending}
-                    onChange={(value, label, item) => {
-                      setRoleId(value)
-                      setRoleLabel(label)
-                      setRolePermissions(item.permissions ?? [])
-                      setFieldErrors((c) => ({ ...c, role: undefined }))
-                    }}
-                    onSearchChange={setRoleQ}
-                  />
+                    {/* Subject picker */}
+                    {subjectType === 'account' ? (
+                      <SearchComboboxField
+                        label="User"
+                        placeholder="Select a user…"
+                        searchPlaceholder="Search users…"
+                        selectedValue={subjectId}
+                        selectedLabel={subjectLabel}
+                        items={memberItems}
+                        isLoading={members.isLoading}
+                        error={fieldErrors.subject}
+                        disabled={createPolicy.isPending}
+                        onChange={(value, label) => {
+                          setSubjectId(value)
+                          setSubjectLabel(label)
+                          setFieldErrors((c) => ({ ...c, subject: undefined }))
+                        }}
+                        onSearchChange={setMemberQ}
+                      />
+                    ) : null}
 
-                  <DialogFooter>
-                    <DialogClose render={<Button type="button" variant="ghost" disabled={createPolicy.isPending} />}>
-                      Cancel
-                    </DialogClose>
-                    <Button type="submit" disabled={createPolicy.isPending}>
-                      {createPolicy.isPending ? 'Assigning…' : 'Assign'}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          ) : null}
+                    {subjectType === 'team' ? (
+                      <SearchComboboxField
+                        label="Team"
+                        placeholder="Select a team…"
+                        searchPlaceholder="Search teams…"
+                        selectedValue={subjectId}
+                        selectedLabel={subjectLabel}
+                        items={teamItems}
+                        isLoading={teams.isLoading}
+                        error={fieldErrors.subject}
+                        disabled={createPolicy.isPending}
+                        onChange={(value, label) => {
+                          setSubjectId(value)
+                          setSubjectLabel(label)
+                          setFieldErrors((c) => ({ ...c, subject: undefined }))
+                        }}
+                        onSearchChange={setTeamQ}
+                      />
+                    ) : null}
+
+                    {subjectType === 'org_members' ? (
+                      <div className="rounded-md border border-border bg-muted/40 px-4 py-3">
+                        <p className="text-sm text-muted-foreground">
+                          The selected role will be granted to{' '}
+                          <span className="font-medium text-foreground">
+                            all current and future users
+                          </span>{' '}
+                          of this organization.
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {/* Role picker */}
+                    <SearchComboboxField
+                      label="Role"
+                      placeholder="Select a role…"
+                      searchPlaceholder="Search roles…"
+                      selectedValue={roleId}
+                      selectedLabel={roleLabel}
+                      items={roleItems}
+                      isLoading={roles.isLoading}
+                      error={fieldErrors.role}
+                      disabled={createPolicy.isPending}
+                      onChange={(value, label, item) => {
+                        setRoleId(value)
+                        setRoleLabel(label)
+                        setRolePermissions(item.permissions ?? [])
+                        setFieldErrors((c) => ({ ...c, role: undefined }))
+                      }}
+                      onSearchChange={setRoleQ}
+                    />
+
+                    <DialogFooter>
+                      <DialogClose
+                        render={
+                          <Button type="button" variant="ghost" disabled={createPolicy.isPending} />
+                        }
+                      >
+                        Cancel
+                      </DialogClose>
+                      <Button type="submit" disabled={createPolicy.isPending}>
+                        {createPolicy.isPending ? 'Assigning…' : 'Assign'}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            ) : null}
+          </div>
+
+          <SearchInput
+            value={searchText}
+            onValueChange={setSearchText}
+            onClear={clearSearch}
+            placeholder="Search policies"
+          />
         </div>
 
-        <SearchInput
-          value={searchText}
-          onValueChange={setSearchText}
-          onClear={clearSearch}
-          placeholder="Search policies"
-        />
-      </div>
-
-      <Card>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <TableColumnHeader label="Subject" />
-                </TableHead>
-                <TableHead>
-                  <TableColumnHeader label="Role" />
-                </TableHead>
-                <TableHead>
-                  <TableColumnHeader
-                    label="Assigned"
-                    sort="created_at"
-                    currentSort={query.sort}
-                    currentOrder={query.order}
-                    onSortChange={toggleSort}
-                  />
-                </TableHead>
-                {canModifyPolicies ? (
-                  <TableHead className="text-end">
-                    <TableColumnHeader label="Actions" />
+        <Card>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <TableColumnHeader label="Subject" />
                   </TableHead>
-                ) : null}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {effectivePermissions.isLoading || policies.isLoading ? (
-                <PoliciesTableSkeleton canModify={canModifyPolicies} />
-              ) : null}
-              {policies.isError ? (
-                <TableEmptyState colSpan={colSpan} icon="user-shield-01" message="Failed to load policies." />
-              ) : null}
-              {!effectivePermissions.isLoading && !canReadPolicies ? (
-                <TableEmptyState colSpan={colSpan} icon="user-shield-01" message="You do not have permission to view policies." />
-              ) : null}
-              {!effectivePermissions.isLoading && canReadPolicies && !policies.isLoading && !policies.isError && items.length === 0 ? (
-                <TableEmptyState
-                  colSpan={colSpan}
-                  icon="user-shield-01"
-                  message={query.q ? 'No policies matched your search.' : 'No policy bindings found.'}
-                />
-              ) : null}
-              {!effectivePermissions.isLoading && canReadPolicies && !policies.isLoading && !policies.isError
-                ? items.map((binding) => (
-                    <PolicyRow
-                      key={binding.binding_id}
-                      binding={binding}
-                      orgSlug={orgSlug}
-                      canModify={canModifyPolicies}
-                      isRevoking={revokePolicy.isPending}
-                      onRevoke={(id) => revokePolicy.mutate(id)}
+                  <TableHead>
+                    <TableColumnHeader label="Role" />
+                  </TableHead>
+                  <TableHead>
+                    <TableColumnHeader
+                      label="Assigned"
+                      sort="created_at"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
                     />
-                  ))
-                : null}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                  </TableHead>
+                  {canModifyPolicies ? (
+                    <TableHead className="text-end">
+                      <TableColumnHeader label="Actions" />
+                    </TableHead>
+                  ) : null}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {effectivePermissions.isLoading || policies.isLoading ? (
+                  <PoliciesTableSkeleton canModify={canModifyPolicies} />
+                ) : null}
+                {policies.isError ? (
+                  <TableEmptyState
+                    colSpan={colSpan}
+                    icon="user-shield-01"
+                    message="Failed to load policies."
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading && !canReadPolicies ? (
+                  <TableEmptyState
+                    colSpan={colSpan}
+                    icon="user-shield-01"
+                    message="You do not have permission to view policies."
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading &&
+                canReadPolicies &&
+                !policies.isLoading &&
+                !policies.isError &&
+                items.length === 0 ? (
+                  <TableEmptyState
+                    colSpan={colSpan}
+                    icon="user-shield-01"
+                    message={
+                      query.q ? 'No policies matched your search.' : 'No policy bindings found.'
+                    }
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading &&
+                canReadPolicies &&
+                !policies.isLoading &&
+                !policies.isError
+                  ? items.map((binding) => (
+                      <PolicyRow
+                        key={binding.binding_id}
+                        binding={binding}
+                        orgSlug={orgSlug}
+                        canModify={canModifyPolicies}
+                        isRevoking={revokePolicy.isPending}
+                        onRevoke={(id) => revokePolicy.mutate(id)}
+                      />
+                    ))
+                  : null}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
-      {canReadPolicies && !policies.isLoading && !policies.isError && items.length > 0 ? (
-        <PaginationFooter
-          itemLabel="bindings"
-          page={page}
-          pageCount={pageCount}
-          pageSize={pageSize}
-          total={total}
-          isFetching={policies.isFetching}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
-        />
-      ) : null}
+        {canReadPolicies && !policies.isLoading && !policies.isError && items.length > 0 ? (
+          <PaginationFooter
+            itemLabel="bindings"
+            page={page}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            total={total}
+            isFetching={policies.isFetching}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
       </div>
     </div>
   )
 }
 
 // ─── Combobox field ────────────────────────────────────────────────────────────
-
-type PickerItem = { value: string; label: string; sublabel?: string; permissions?: string[] }
-
-function ComboboxField({
-  label,
-  placeholder,
-  searchPlaceholder,
-  selectedValue,
-  selectedLabel,
-  items,
-  isLoading,
-  error,
-  disabled,
-  onChange,
-  onSearchChange,
-}: {
-  label: string
-  placeholder: string
-  searchPlaceholder: string
-  selectedValue: string
-  selectedLabel: string
-  items: PickerItem[]
-  isLoading: boolean
-  error?: string
-  disabled: boolean
-  onChange: (value: string, label: string, item: PickerItem) => void
-  onSearchChange: (q: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  function handleSearchChange(value: string) {
-    setSearch(value)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => onSearchChange(value), 300)
-  }
-
-  function handleSelect(item: PickerItem) {
-    onChange(item.value, item.label, item)
-    setOpen(false)
-    setSearch('')
-    onSearchChange('')
-  }
-
-  function handleOpenChange(nextOpen: boolean) {
-    setOpen(nextOpen)
-    if (!nextOpen) {
-      setSearch('')
-      onSearchChange('')
-    } else {
-      setTimeout(() => inputRef.current?.focus(), 0)
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      <Label>{label}</Label>
-      <Popover open={open} onOpenChange={handleOpenChange}>
-        <PopoverTrigger
-          disabled={disabled}
-          className={cn(
-            'flex h-7 w-full items-center justify-between gap-1.5 rounded-md border border-input bg-input/20 px-2 py-1.5 text-xs/relaxed whitespace-nowrap transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50',
-            error && 'border-destructive ring-2 ring-destructive/20',
-            !selectedValue && 'text-muted-foreground',
-          )}
-        >
-          <span className="truncate">{selectedValue ? selectedLabel : placeholder}</span>
-          <svg className="size-3.5 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        </PopoverTrigger>
-        <PopoverContent
-          className="w-(--anchor-width) p-0"
-          align="start"
-          sideOffset={4}
-        >
-          {/* Search input */}
-          <div className="flex items-center gap-2 border-b border-border px-2">
-            <Icon name="search-01" size={20} className="size-3.5 shrink-0 text-muted-foreground" />
-            <input
-              ref={inputRef}
-              type="text"
-              value={search}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder={searchPlaceholder}
-              className="h-8 w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
-            />
-            {search ? (
-              <button
-                type="button"
-                onClick={() => { setSearch(''); onSearchChange('') }}
-                className="shrink-0 text-muted-foreground hover:text-foreground"
-              >
-                <Icon name="cancel-01" size={20} className="size-3" />
-              </button>
-            ) : null}
-          </div>
-          {/* Options list */}
-          <ScrollArea className="max-h-52">
-            <div className="flex flex-col p-1">
-              {isLoading ? (
-                <div className="flex flex-col gap-1 p-1">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <Skeleton key={i} className="h-7 w-full rounded-md" />
-                  ))}
-                </div>
-              ) : items.length === 0 ? (
-                <p className="py-5 text-center text-xs text-muted-foreground">
-                  {search ? 'No matches found.' : `No ${label.toLowerCase()}s available.`}
-                </p>
-              ) : (
-                items.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    onClick={() => handleSelect(item)}
-                    className={cn(
-                      'flex flex-col items-start rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent hover:text-accent-foreground',
-                      item.value === selectedValue && 'bg-accent text-accent-foreground',
-                    )}
-                  >
-                    <span className="text-xs font-medium">{item.label}</span>
-                    {item.sublabel ? <span className="text-[10px] text-muted-foreground">{item.sublabel}</span> : null}
-                  </button>
-                ))
-              )}
-            </div>
-          </ScrollArea>
-        </PopoverContent>
-      </Popover>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-    </div>
-  )
-}
 
 // ─── Table row ─────────────────────────────────────────────────────────────────
 
@@ -678,15 +601,7 @@ function PolicyRow({
       }}
     >
       <TableCell>
-        <div className="flex min-w-0 items-center gap-3">
-          <SubjectIcon binding={binding} />
-          <div className="min-w-0">
-            <div className="truncate font-medium text-foreground">{subjectDisplayName(binding)}</div>
-            <div className="mt-0.5 flex items-center gap-1.5">
-              <SubjectTypeBadge subjectType={binding.subject_type} />
-            </div>
-          </div>
-        </div>
+        <PolicySubjectCell binding={binding} />
       </TableCell>
       <TableCell>
         {binding.role_id ? (
@@ -699,11 +614,16 @@ function PolicyRow({
               entityColor(binding.role_name ?? ''),
             )}
           >
-            {binding.role_name ? roleDisplayName(binding.role_name) : '—'}
+            {binding.role_name ? binding.role_name : '—'}
           </Link>
         ) : (
-          <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium', entityColor(binding.role_name ?? ''))}>
-            {binding.role_name ? roleDisplayName(binding.role_name) : '—'}
+          <span
+            className={cn(
+              'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium',
+              entityColor(binding.role_name ?? ''),
+            )}
+          >
+            {binding.role_name ? binding.role_name : '—'}
           </span>
         )}
       </TableCell>
@@ -728,12 +648,17 @@ function PolicyRow({
                 <AlertDialogTitle>Revoke policy binding?</AlertDialogTitle>
                 <AlertDialogDescription>
                   This will remove the{' '}
-                  <span className="font-medium">{binding.role_name ? roleDisplayName(binding.role_name) : 'role'}</span>{' '}
-                  binding from <span className="font-medium">{subjectDisplayName(binding)}</span>. They will lose any permissions granted by this role.
+                  <span className="font-medium">
+                    {binding.role_name ? binding.role_name : 'role'}
+                  </span>{' '}
+                  binding from <span className="font-medium">{subjectDisplayName(binding)}</span>.
+                  They will lose any permissions granted by this role.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel variant="ghost" disabled={isRevoking}>Cancel</AlertDialogCancel>
+                <AlertDialogCancel variant="ghost" disabled={isRevoking}>
+                  Cancel
+                </AlertDialogCancel>
                 <AlertDialogAction
                   variant="destructive"
                   disabled={isRevoking}
@@ -750,89 +675,10 @@ function PolicyRow({
   )
 }
 
-function SubjectIcon({ binding }: { binding: PolicyBinding }) {
-  if (binding.subject_type === 'account') {
-    return (
-      <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(binding.subject_name))}>
-        {getInitials(binding.subject_name, '?')}
-      </div>
-    )
-  }
-  if (binding.subject_type === 'team') {
-    return (
-      <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', entityColor(binding.subject_name))}>
-        <Icon name="user-group" size={20} className="size-4" />
-      </div>
-    )
-  }
-  return (
-    <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', GROUP_COLOR)}>
-      <Icon name="user-multiple-02" size={20} className="size-4" />
-    </div>
-  )
-}
-
-function SubjectTypeBadge({ subjectType }: { subjectType: PolicyBinding['subject_type'] }) {
-  switch (subjectType) {
-    case 'account':
-      return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">User</Badge>
-    case 'team':
-      return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">Team</Badge>
-    case 'org_members':
-      return <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">All users</Badge>
-  }
-}
-
-function PoliciesTableSkeleton({ canModify }: { canModify: boolean }) {
-  return (
-    <>
-      {Array.from({ length: 5 }).map((_, index) => (
-        <TableRow key={index}>
-          <TableCell>
-            <div className="flex items-center gap-3">
-              <Skeleton className="size-8 rounded-md" />
-              <div className="flex flex-col gap-2">
-                <Skeleton className="h-4 w-36" />
-                <Skeleton className="h-3 w-16" />
-              </div>
-            </div>
-          </TableCell>
-          <TableCell>
-            <Skeleton className="h-5 w-24 rounded-md" />
-          </TableCell>
-          <TableCell>
-            <Skeleton className="h-4 w-24" />
-          </TableCell>
-          {canModify ? (
-            <TableCell className="text-end">
-              <Skeleton className="ms-auto h-8 w-16" />
-            </TableCell>
-          ) : null}
-        </TableRow>
-      ))}
-    </>
-  )
-}
-
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 export function subjectDisplayName(binding: PolicyBinding): string {
-  if (binding.subject_type === 'org_members') return 'All users'
-  return binding.subject_name || String(binding.subject_id)
-}
-
-export function roleDisplayName(name: string): string {
-  return name
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
-  return dateFormatter.format(date)
-}
-
-function trimTrailingSlash(path: string) {
-  return path === '/' ? path : path.replace(/\/$/, '')
+  return policySubjectDisplayName(binding)
 }
 
 export { entityColor as roleColor, entityColor as subjectColor }

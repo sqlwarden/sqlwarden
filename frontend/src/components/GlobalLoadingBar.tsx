@@ -11,7 +11,10 @@ export function GlobalLoadingBar() {
       aria-hidden={!isLoading}
       data-loading={isLoading}
     >
-      <div className="h-full w-full origin-left scale-x-0 bg-primary opacity-0 transition-[opacity,transform] duration-150 data-[loading=true]:scale-x-100 data-[loading=true]:opacity-100" data-loading={isLoading}>
+      <div
+        className="h-full w-full origin-left scale-x-0 bg-primary opacity-0 transition-[opacity,transform] duration-150 data-[loading=true]:scale-x-100 data-[loading=true]:opacity-100"
+        data-loading={isLoading}
+      >
         <div className="h-full w-1/2 animate-[global-loading-bar_1s_ease-in-out_infinite] bg-primary" />
       </div>
     </div>

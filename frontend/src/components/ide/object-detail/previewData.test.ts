@@ -1,9 +1,21 @@
 import { describe, it, expect } from 'vitest'
-import { nextCursorParam, previewColumns, previewRows, extractRowCount, rowCountDisplay } from './previewData'
+import {
+  nextCursorParam,
+  previewColumns,
+  previewRows,
+  extractRowCount,
+  rowCountDisplay,
+} from './previewData'
 import type { ResultSet } from '#/lib/api/types'
 
 const page = (over: Partial<ResultSet>): ResultSet => ({
-  columns: null, rows: null, duration_ms: 0, truncated: false, rows_returned: 0, bytes_returned: 0, ...over,
+  columns: null,
+  rows: null,
+  duration_ms: 0,
+  truncated: false,
+  rows_returned: 0,
+  bytes_returned: 0,
+  ...over,
 })
 
 describe('nextCursorParam', () => {
@@ -24,8 +36,14 @@ describe('nextCursorParam', () => {
 describe('previewColumns / previewRows', () => {
   it('takes columns from the first page and concatenates rows across pages', () => {
     const pages: ResultSet[] = [
-      page({ columns: [{ name: 'id', type: 'integer', raw_type: 'int', nullable: false }], rows: [[{ type: 'integer', integer: 1 }]] }),
-      page({ columns: [{ name: 'id', type: 'integer', raw_type: 'int', nullable: false }], rows: [[{ type: 'integer', integer: 2 }]] }),
+      page({
+        columns: [{ name: 'id', type: 'integer', raw_type: 'int', nullable: false }],
+        rows: [[{ type: 'integer', integer: 1 }]],
+      }),
+      page({
+        columns: [{ name: 'id', type: 'integer', raw_type: 'int', nullable: false }],
+        rows: [[{ type: 'integer', integer: 2 }]],
+      }),
     ]
     expect(previewColumns(pages).map((c) => c.name)).toEqual(['id'])
     expect(previewRows(pages)).toHaveLength(2)
@@ -35,16 +53,28 @@ describe('previewColumns / previewRows', () => {
 describe('rowCountDisplay', () => {
   const threshold = 1000
   it('shows … while the bounded count is loading', () => {
-    expect(rowCountDisplay({ bounded: null, exact: null, threshold })).toEqual({ text: '…', canShowExact: false })
+    expect(rowCountDisplay({ bounded: null, exact: null, threshold })).toEqual({
+      text: '…',
+      canShowExact: false,
+    })
   })
   it('shows the exact bounded count when under the threshold', () => {
-    expect(rowCountDisplay({ bounded: 42, exact: null, threshold })).toEqual({ text: '42', canShowExact: false })
+    expect(rowCountDisplay({ bounded: 42, exact: null, threshold })).toEqual({
+      text: '42',
+      canShowExact: false,
+    })
   })
   it('shows <threshold>+ and offers exact when the cap is hit', () => {
-    expect(rowCountDisplay({ bounded: 1001, exact: null, threshold })).toEqual({ text: '1000+', canShowExact: true })
+    expect(rowCountDisplay({ bounded: 1001, exact: null, threshold })).toEqual({
+      text: '1000+',
+      canShowExact: true,
+    })
   })
   it('prefers an available exact count over the bounded one', () => {
-    expect(rowCountDisplay({ bounded: 1001, exact: 5123, threshold })).toEqual({ text: '5123', canShowExact: false })
+    expect(rowCountDisplay({ bounded: 1001, exact: 5123, threshold })).toEqual({
+      text: '5123',
+      canShowExact: false,
+    })
   })
 })
 

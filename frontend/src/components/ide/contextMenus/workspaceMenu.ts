@@ -8,8 +8,26 @@ export type WorkspaceMenuCtx = {
 
 export function buildWorkspaceMenu(ctx: WorkspaceMenuCtx): ContextMenuItem[] {
   return [
-    { kind: 'action', id: 'workspace-settings', label: 'Workspace settings', icon: 'settings-02', onSelect: ctx.onOpenSettings },
-    { kind: 'action', id: 'manage-members', label: 'Manage members', icon: 'user-multiple', onSelect: ctx.onManageMembers },
-    { kind: 'action', id: 'manage-access', label: 'Manage access', icon: 'shield-user', onSelect: ctx.onManageAccess },
+    {
+      kind: 'action',
+      id: 'workspace-settings',
+      label: 'Workspace settings',
+      icon: 'settings-02',
+      onSelect: ctx.onOpenSettings,
+    },
+    {
+      kind: 'action',
+      id: 'manage-members',
+      label: 'Manage members',
+      icon: 'user-multiple',
+      onSelect: ctx.onManageMembers,
+    },
+    {
+      kind: 'action',
+      id: 'manage-access',
+      label: 'Manage access',
+      icon: 'shield-user',
+      onSelect: ctx.onManageAccess,
+    },
   ]
 }

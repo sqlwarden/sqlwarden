@@ -27,19 +27,45 @@ describe('nextEventCursor', () => {
     const current: EventCursor = {}
     const page: JobEventPage = {
       items: [
-        { id: 'evt-1', job_id: 'job-1', level: 'info', code: 'target_connected', message: 'Connected', created_at: '2026-07-05T00:00:00Z' },
-        { id: 'evt-2', job_id: 'job-1', level: 'info', code: 'rows_streamed', message: '10,000 rows streamed', created_at: '2026-07-05T00:00:01Z' },
+        {
+          id: 'evt-1',
+          job_id: 'job-1',
+          level: 'info',
+          code: 'target_connected',
+          message: 'Connected',
+          created_at: '2026-07-05T00:00:00Z',
+        },
+        {
+          id: 'evt-2',
+          job_id: 'job-1',
+          level: 'info',
+          code: 'rows_streamed',
+          message: '10,000 rows streamed',
+          created_at: '2026-07-05T00:00:01Z',
+        },
       ],
       next_after_id: 'evt-2',
     }
 
-    expect(nextEventCursor(current, page)).toEqual({ afterId: 'evt-2', lastMessage: '10,000 rows streamed' })
+    expect(nextEventCursor(current, page)).toEqual({
+      afterId: 'evt-2',
+      lastMessage: '10,000 rows streamed',
+    })
   })
 
   it('falls back to the current afterId when the page omits next_after_id', () => {
     const current: EventCursor = { afterId: 'evt-2' }
     const page: JobEventPage = {
-      items: [{ id: 'evt-3', job_id: 'job-1', level: 'info', code: 'export_succeeded', message: 'Done', created_at: '2026-07-05T00:00:02Z' }],
+      items: [
+        {
+          id: 'evt-3',
+          job_id: 'job-1',
+          level: 'info',
+          code: 'export_succeeded',
+          message: 'Done',
+          created_at: '2026-07-05T00:00:02Z',
+        },
+      ],
     }
 
     expect(nextEventCursor(current, page)).toEqual({ afterId: 'evt-2', lastMessage: 'Done' })

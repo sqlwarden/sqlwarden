@@ -12,7 +12,8 @@ export function columnTypeIcon(dataType: string): AppIcon {
   if (!t) return 'column'
 
   // Boolean — before number so `bit`/`tinyint(1)` aren't read as numeric.
-  if (t === 'bool' || t === 'boolean' || t === 'bit' || t.startsWith('tinyint(1)')) return 'type-boolean'
+  if (t === 'bool' || t === 'boolean' || t === 'bit' || t.startsWith('tinyint(1)'))
+    return 'type-boolean'
 
   // Date / time — before number, and timestamp/datetime before plain "time".
   if (t.includes('timestamp') || t.includes('datetime')) return 'type-timestamp'
@@ -21,7 +22,8 @@ export function columnTypeIcon(dataType: string): AppIcon {
 
   // Binary — before string so `varbinary` isn't caught by the "var" string rule.
   // `bytes` is the normalized result-column type from the query API.
-  if (t.includes('binary') || t === 'bytea' || t === 'bytes' || t.includes('blob')) return 'type-binary'
+  if (t.includes('binary') || t === 'bytea' || t === 'bytes' || t.includes('blob'))
+    return 'type-binary'
 
   if (t === 'uuid' || t.includes('uniqueidentifier')) return 'type-uuid'
   if (t.includes('json')) return 'type-json'
@@ -31,15 +33,20 @@ export function columnTypeIcon(dataType: string): AppIcon {
   // The integer pattern is anchored so `point` (ends in "int") is NOT matched.
   if (
     /^(tiny|small|medium|big)?int(eger)?(\b|\d|\()/.test(t) ||
-    /^(numeric|decimal|dec\b|number|real|double|float|money|smallmoney|fixed|(big|small)?serial)/.test(t)
+    /^(numeric|decimal|dec\b|number|real|double|float|money|smallmoney|fixed|(big|small)?serial)/.test(
+      t,
+    )
   ) {
     return 'type-number'
   }
 
   // Strings — char/text families.
   if (
-    t.includes('char') || t.includes('text') || t === 'name' ||
-    t.startsWith('string') || t.startsWith('clob')
+    t.includes('char') ||
+    t.includes('text') ||
+    t === 'name' ||
+    t.startsWith('string') ||
+    t.startsWith('clob')
   ) {
     return 'type-string'
   }

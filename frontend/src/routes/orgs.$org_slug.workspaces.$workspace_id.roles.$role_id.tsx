@@ -1,12 +1,27 @@
+import { errorMessage } from '#/lib/api/errors'
+import { formatDate } from '#/lib/format'
 import { useEffect } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
-import { orgEffectivePermissionsQueryOptions, orgPermissionsQueryOptions, orgWorkspaceRoleQueryOptions } from '#/lib/api/query'
-import type { PermissionDefinition, RoleScope } from '#/lib/api/types'
-import { hasPermission, permission, permissionDefinitionMap, permissionDescription, permissionDisplayName, permissionGroupName, type Permission } from '#/lib/permissions'
+import {
+  orgEffectivePermissionsQueryOptions,
+  orgPermissionsQueryOptions,
+  orgWorkspaceRoleQueryOptions,
+} from '#/lib/api/query'
+import type { PermissionDefinition } from '#/lib/api/types'
+import {
+  hasPermission,
+  permission,
+  permissionDefinitionMap,
+  permissionDescription,
+  permissionDisplayName,
+  permissionGroupName,
+  type Permission,
+} from '#/lib/permissions'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,39 +47,39 @@ import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import { RoutePending } from '#/components/RoutePending'
 import { Skeleton } from '#/components/ui/skeleton'
 import { cn } from '#/lib/utils'
+import { roleScopeLabel } from '#/components/access-control/roleScope'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/roles/$role_id')({
   component: WorkspaceRoleContextPage,
   pendingComponent: RoutePending,
 })
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
-
 function WorkspaceRoleContextPage() {
   const { org_slug: orgSlug, workspace_id: workspaceId, role_id: roleId } = Route.useParams()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId))
+  const effectivePermissions = useQuery(
+    orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId),
+  )
   const canReadRole = hasPermission(effectivePermissions.data?.permissions, permission.policyRead)
-  const canDeleteRole = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
+  const canDeleteRole = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.policyModify,
+  )
   const permissionsCatalog = useQuery(orgPermissionsQueryOptions(orgSlug))
   const permissionDefinitions = permissionDefinitionMap(permissionsCatalog.data?.permission_details)
   const role = useQuery({
     ...orgWorkspaceRoleQueryOptions(orgSlug, workspaceId, roleId),
     enabled: canReadRole,
   })
-  const displayName = role.data ? roleDisplayName(role.data.name) : `Role #${roleId}`
+  const displayName = role.data ? role.data.name : `Role #${roleId}`
 
   useEffect(() => {
     if (!role.error) {
       return
     }
 
-    toast.error(role.error instanceof Error ? role.error.message : 'Failed to load role')
+    toast.error(errorMessage(role.error, 'Failed to load role'))
   }, [role.error])
 
   useEffect(() => {
@@ -72,7 +87,7 @@ function WorkspaceRoleContextPage() {
       return
     }
 
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load role permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load role permissions'))
   }, [effectivePermissions.error])
 
   useEffect(() => {
@@ -80,16 +95,21 @@ function WorkspaceRoleContextPage() {
       return
     }
 
-    toast.error(permissionsCatalog.error instanceof Error ? permissionsCatalog.error.message : 'Failed to load permission catalog')
+    toast.error(errorMessage(permissionsCatalog.error, 'Failed to load permission catalog'))
   }, [permissionsCatalog.error])
 
   const deleteRole = useMutation({
-    mutationFn: async () => api.delete<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/roles/${roleId}`),
+    mutationFn: async () =>
+      api.delete<void>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/roles/${roleId}`),
     onSuccess: async () => {
       toast.success('Role deleted')
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['org-workspace-roles', orgSlug, workspaceId] }),
-        queryClient.invalidateQueries({ queryKey: ['org-workspace-role', orgSlug, workspaceId, roleId] }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.orgWorkspaceRolesScope(orgSlug, workspaceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.orgWorkspaceRole(orgSlug, workspaceId, roleId),
+        }),
       ])
       void navigate({
         to: '/orgs/$org_slug/workspaces/$workspace_id/roles',
@@ -97,7 +117,7 @@ function WorkspaceRoleContextPage() {
       })
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to delete role')
+      toast.error(errorMessage(error, 'Failed to delete role'))
     },
   })
 
@@ -108,7 +128,12 @@ function WorkspaceRoleContextPage() {
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink
-                render={<Link to="/orgs/$org_slug/workspaces/$workspace_id/roles" params={{ org_slug: orgSlug, workspace_id: workspaceId }} />}
+                render={
+                  <Link
+                    to="/orgs/$org_slug/workspaces/$workspace_id/roles"
+                    params={{ org_slug: orgSlug, workspace_id: workspaceId }}
+                  />
+                }
               >
                 Roles
               </BreadcrumbLink>
@@ -123,7 +148,12 @@ function WorkspaceRoleContextPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             {role.data ? (
-              <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold', roleColor(role.data.name))}>
+              <div
+                className={cn(
+                  'flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold',
+                  roleColor(role.data.name),
+                )}
+              >
                 {displayName.slice(0, 2).toUpperCase()}
               </div>
             ) : (
@@ -137,7 +167,7 @@ function WorkspaceRoleContextPage() {
                     <Badge variant={role.data.is_builtin ? 'secondary' : 'outline'}>
                       {role.data.is_builtin ? 'System' : 'Custom'}
                     </Badge>
-                    <Badge variant="outline">{scopeLabel(role.data.scope_type)}</Badge>
+                    <Badge variant="outline">{roleScopeLabel(role.data.scope_type)}</Badge>
                   </>
                 ) : null}
               </div>
@@ -149,14 +179,17 @@ function WorkspaceRoleContextPage() {
 
           {role.data && canDeleteRole && !role.data.is_builtin ? (
             <AlertDialog>
-              <AlertDialogTrigger render={<Button variant="destructive" disabled={deleteRole.isPending} />}>
+              <AlertDialogTrigger
+                render={<Button variant="destructive" disabled={deleteRole.isPending} />}
+              >
                 Delete
               </AlertDialogTrigger>
               <AlertDialogContent size="sm">
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete role?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This permanently deletes {roleDisplayName(role.data.name)}. Any policies using this role will no longer grant its permissions.
+                    This permanently deletes {role.data.name}. Any policies using this role will no
+                    longer grant its permissions.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -213,14 +246,25 @@ function WorkspaceRoleContextPage() {
         </CardHeader>
         <CardContent>
           {effectivePermissions.isLoading || role.isLoading ? <PermissionGroupsSkeleton /> : null}
-          {role.data ? <PermissionGroups permissions={(role.data.permissions ?? []) as Permission[]} permissionDefinitions={permissionDefinitions} /> : null}
+          {role.data ? (
+            <PermissionGroups
+              permissions={(role.data.permissions ?? []) as Permission[]}
+              permissionDefinitions={permissionDefinitions}
+            />
+          ) : null}
         </CardContent>
       </Card>
     </div>
   )
 }
 
-function PermissionGroups({ permissions, permissionDefinitions }: { permissions: Permission[]; permissionDefinitions: ReadonlyMap<string, PermissionDefinition> }) {
+function PermissionGroups({
+  permissions,
+  permissionDefinitions,
+}: {
+  permissions: Permission[]
+  permissionDefinitions: ReadonlyMap<string, PermissionDefinition>
+}) {
   const groupedPermissions = groupPermissions(permissions, permissionDefinitions)
 
   if (permissions.length === 0) {
@@ -231,16 +275,24 @@ function PermissionGroups({ permissions, permissionDefinitions }: { permissions:
     <div className="grid gap-6 sm:grid-cols-2">
       {groupedPermissions.map((group) => (
         <div key={group.name} className="flex flex-col gap-3">
-          <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{group.name}</p>
+          <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+            {group.name}
+          </p>
           <div className="flex flex-col gap-3">
             {group.permissions.map((item) => (
               <div key={item}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-foreground">{permissionDisplayName(item, permissionDefinitions)}</span>
-                  <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">{item}</Badge>
+                  <span className="text-sm font-medium text-foreground">
+                    {permissionDisplayName(item, permissionDefinitions)}
+                  </span>
+                  <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px]">
+                    {item}
+                  </Badge>
                 </div>
                 {permissionDescription(item, permissionDefinitions) ? (
-                  <p className="mt-0.5 text-xs text-muted-foreground">{permissionDescription(item, permissionDefinitions)}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {permissionDescription(item, permissionDefinitions)}
+                  </p>
                 ) : null}
               </div>
             ))}
@@ -268,7 +320,10 @@ function PermissionGroupsSkeleton() {
   )
 }
 
-function groupPermissions(permissions: readonly Permission[], definitions: ReadonlyMap<string, PermissionDefinition>) {
+function groupPermissions(
+  permissions: readonly Permission[],
+  definitions: ReadonlyMap<string, PermissionDefinition>,
+) {
   const groups = new Map<string, Permission[]>()
   for (const item of permissions) {
     const group = permissionGroupName(item, definitions)
@@ -277,27 +332,12 @@ function groupPermissions(permissions: readonly Permission[], definitions: Reado
   return Array.from(groups.entries()).map(([name, items]) => ({ name, permissions: items }))
 }
 
-function scopeLabel(value: RoleScope) {
-  switch (value) {
-    case 'org':
-      return 'Organization'
-    case 'workspace':
-      return 'Workspace'
-    case 'environment':
-      return 'Environment'
-    case 'connection':
-      return 'Connection'
-  }
-}
-
-function roleDisplayName(value: string) {
-  return value
-}
-
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5 border-l-2 border-border pl-3">
-      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{label}</span>
+      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+        {label}
+      </span>
       <span className="text-sm font-medium text-foreground">{value}</span>
     </div>
   )
@@ -310,14 +350,6 @@ function ContextMessage({ message }: { message: string }) {
       <p className="font-medium text-foreground">{message}</p>
     </div>
   )
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return 'Unknown'
-  }
-  return dateFormatter.format(date)
 }
 
 const ROLE_COLORS = [

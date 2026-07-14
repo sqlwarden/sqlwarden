@@ -4,7 +4,9 @@ import { useDebouncedQueryText } from '#/hooks/use-debounced-query-text'
 
 export function useListPageState(initialQuery: ListQuery) {
   const [query, setQuery] = useState<ListQuery>(initialQuery)
-  const { searchText, setSearchText, debouncedQuery, clearSearch } = useDebouncedQueryText(String(initialQuery.q ?? ''))
+  const { searchText, setSearchText, debouncedQuery, clearSearch } = useDebouncedQueryText(
+    String(initialQuery.q ?? ''),
+  )
 
   useEffect(() => {
     setQuery((current) => {

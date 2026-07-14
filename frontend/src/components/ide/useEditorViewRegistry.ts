@@ -20,6 +20,9 @@ export const EditorViewRegistryContext = createContext<EditorViewRegistry | null
 
 export function useEditorViewRegistry(): EditorViewRegistry {
   const ctx = useContext(EditorViewRegistryContext)
-  if (!ctx) throw new Error('useEditorViewRegistry must be used within an EditorViewRegistryContext.Provider')
+  if (!ctx)
+    throw new Error(
+      'useEditorViewRegistry must be used within an EditorViewRegistryContext.Provider',
+    )
   return ctx
 }

@@ -22,7 +22,12 @@ import {
   type SplitNode,
 } from './ideLayout'
 
-const row = (children: LayoutNode[]): LayoutNode => ({ type: 'split', id: 's', orientation: 'row', children })
+const row = (children: LayoutNode[]): LayoutNode => ({
+  type: 'split',
+  id: 's',
+  orientation: 'row',
+  children,
+})
 
 describe('layout read helpers', () => {
   it('lists groups left-to-right', () => {
@@ -89,7 +94,9 @@ describe('tab mutations', () => {
   })
   it('moveTabBetweenGroups reorders within a group (before/after)', () => {
     const tree = createGroup('g1', ['a', 'b', 'c'], 'a')
-    expect(findGroup(moveTabBetweenGroups(tree, 'g1', 'a', 'g1', 'c', 'after'), 'g1')!.tabIds).toEqual(['b', 'c', 'a'])
+    expect(
+      findGroup(moveTabBetweenGroups(tree, 'g1', 'a', 'g1', 'c', 'after'), 'g1')!.tabIds,
+    ).toEqual(['b', 'c', 'a'])
   })
   it('moveTabBetweenGroups moves the source instance only, keeping duplicates elsewhere', () => {
     const tree = row([createGroup('g1', ['a', 'b'], 'a'), createGroup('g2', ['a', 'c'], 'a')])
@@ -120,9 +127,18 @@ describe('splitGroup (duplicate beside a specific group)', () => {
     expect(findGroup(node, 'g3')!.tabIds).toEqual(['a'])
   })
   it('inserts the new group immediately left of the source group', () => {
-    const tree = row([createGroup('g1', ['a', 'b'], 'a'), createGroup('g2', ['c', 'd'], 'c'), createGroup('g3', ['e', 'f'], 'e')])
+    const tree = row([
+      createGroup('g1', ['a', 'b'], 'a'),
+      createGroup('g2', ['c', 'd'], 'c'),
+      createGroup('g3', ['e', 'f'], 'e'),
+    ])
     const { node } = splitGroup(tree, 'g2', 'c', 'left', 'g4')
-    expect((node as SplitNode).children.map((c) => (c as GroupNode).id)).toEqual(['g1', 'g4', 'g2', 'g3'])
+    expect((node as SplitNode).children.map((c) => (c as GroupNode).id)).toEqual([
+      'g1',
+      'g4',
+      'g2',
+      'g3',
+    ])
     expect(findGroup(node, 'g2')!.tabIds).toEqual(['c', 'd']) // source unchanged (duplicated)
   })
   it('can duplicate a lone tab for a same-file side-by-side view', () => {
@@ -203,7 +219,9 @@ describe('removeTabFromGroup', () => {
 
 describe('migrateToLayout', () => {
   it('builds a single group from a workspace tab list + active tab', () => {
-    expect(migrateToLayout('g1', ['a', 'b', 'c'], 'b')).toEqual(createGroup('g1', ['a', 'b', 'c'], 'b'))
+    expect(migrateToLayout('g1', ['a', 'b', 'c'], 'b')).toEqual(
+      createGroup('g1', ['a', 'b', 'c'], 'b'),
+    )
   })
 })
 

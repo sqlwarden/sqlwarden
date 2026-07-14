@@ -1,3 +1,5 @@
+import { errorMessage } from '#/lib/api/errors'
+import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
@@ -7,7 +9,17 @@ import { isApiError } from '#/lib/api/errors'
 import { orgEffectivePermissionsQueryOptions, orgQueryOptions, queryKeys } from '#/lib/api/query'
 import type { Organization } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '#/components/ui/alert-dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '#/components/ui/alert-dialog'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
@@ -52,8 +64,8 @@ function OrganizationGeneralSettingsPage() {
       toast.success('Organization updated')
       queryClient.setQueryData(queryKeys.org(orgSlug), updated)
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['account-organizations'] }),
-        queryClient.invalidateQueries({ queryKey: ['instance-organizations'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.accountOrganizationsScope() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.instanceOrganizationsScope() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.session() }),
       ])
     },
@@ -64,7 +76,7 @@ function OrganizationGeneralSettingsPage() {
         })
         if (error.fieldErrors.name) return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to update organization')
+      toast.error(errorMessage(error, 'Failed to update organization'))
     },
   })
 
@@ -74,13 +86,13 @@ function OrganizationGeneralSettingsPage() {
       toast.success('Organization deleted')
       queryClient.removeQueries({ queryKey: queryKeys.org(orgSlug) })
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['account-organizations'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.accountOrganizationsScope() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.session() }),
       ])
       await navigate({ to: '/', replace: true })
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to delete organization')
+      toast.error(errorMessage(error, 'Failed to delete organization'))
     },
   })
 
@@ -116,7 +128,9 @@ function OrganizationGeneralSettingsPage() {
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">General</h1>
-        <p className="text-sm text-muted-foreground">Manage organization identity and lifecycle actions.</p>
+        <p className="text-sm text-muted-foreground">
+          Manage organization identity and lifecycle actions.
+        </p>
       </div>
 
       <Card>
@@ -140,7 +154,9 @@ function OrganizationGeneralSettingsPage() {
               </Field>
               <Field label="Slug">
                 <Input value={org.data.slug} disabled />
-                <p className="text-xs text-muted-foreground">Slug changes are intentionally disabled because they affect URLs and integrations.</p>
+                <p className="text-xs text-muted-foreground">
+                  Slug changes are intentionally disabled because they affect URLs and integrations.
+                </p>
               </Field>
             </div>
 
@@ -154,7 +170,9 @@ function OrganizationGeneralSettingsPage() {
             </div>
 
             {!canWrite ? (
-              <p className="text-xs text-muted-foreground">You need organization write permission to change these settings.</p>
+              <p className="text-xs text-muted-foreground">
+                You need organization write permission to change these settings.
+              </p>
             ) : null}
 
             <div className="flex justify-end">
@@ -176,22 +194,30 @@ function OrganizationGeneralSettingsPage() {
             <div className="flex flex-col gap-1">
               <div className="text-sm font-medium">Delete organization</div>
               <p className="text-muted-foreground">
-                This permanently deletes workspaces, environments, connections, teams, roles, and policy bindings in this organization.
+                This permanently deletes workspaces, environments, connections, teams, roles, and
+                policy bindings in this organization.
               </p>
               {!canDelete ? (
-                <p className="text-xs text-muted-foreground">You need organization delete permission to perform this action.</p>
+                <p className="text-xs text-muted-foreground">
+                  You need organization delete permission to perform this action.
+                </p>
               ) : null}
             </div>
 
             <AlertDialog>
-              <AlertDialogTrigger render={<Button variant="destructive" disabled={!canDelete || deleteOrg.isPending} />}>
+              <AlertDialogTrigger
+                render={
+                  <Button variant="destructive" disabled={!canDelete || deleteOrg.isPending} />
+                }
+              >
                 Delete organization
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete organization?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Type <span className="font-medium text-foreground">{org.data.slug}</span> to confirm deletion.
+                    Type <span className="font-medium text-foreground">{org.data.slug}</span> to
+                    confirm deletion.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <div className="flex flex-col gap-2">
@@ -203,7 +229,11 @@ function OrganizationGeneralSettingsPage() {
                   />
                 </div>
                 <AlertDialogFooter>
-                  <AlertDialogCancel variant="ghost" disabled={deleteOrg.isPending} onClick={() => setDeleteConfirmation('')}>
+                  <AlertDialogCancel
+                    variant="ghost"
+                    disabled={deleteOrg.isPending}
+                    onClick={() => setDeleteConfirmation('')}
+                  >
                     Cancel
                   </AlertDialogCancel>
                   <AlertDialogAction
@@ -241,16 +271,4 @@ function Field({
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   )
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return 'Unknown'
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(date)
 }

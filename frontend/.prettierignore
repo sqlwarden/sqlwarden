@@ -1,0 +1,4 @@
+coverage/
+dist/
+src/routeTree.gen.ts
+src/lib/icons/packs/*.subset.json

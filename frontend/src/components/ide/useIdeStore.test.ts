@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createIdeStore, activeTabId, connectionState, isNodeExpanded, newScratchTab, newConnectionTab, newFileTab, DEFAULT_CONSOLE_CONTENT } from './useIdeStore'
-import type { IdeState } from './useIdeStore'
+import {
+  createIdeStore,
+  activeTabId,
+  connectionState,
+  isNodeExpanded,
+  newConnectionTab,
+  newFileTab,
+  DEFAULT_CONSOLE_CONTENT,
+} from './useIdeStore'
+import type { EditorTab, IdeState } from './useIdeStore'
 
 vi.mock('idb-keyval', () => ({
   get: vi.fn(() => Promise.resolve(null)),
@@ -41,10 +49,23 @@ const mockFile = {
   updated_at: '',
 }
 
+let scratchFixtureId = 0
+
+function scratchTabFixture(workspace: typeof mockWorkspace): EditorTab {
+  return {
+    id: `scratch:${workspace.id}:fixture-${scratchFixtureId++}`,
+    workspaceId: workspace.id,
+    title: 'Console',
+    kind: 'scratch',
+    content: DEFAULT_CONSOLE_CONTENT,
+  }
+}
+
 describe('useIdeStore', () => {
   let store: ReturnType<typeof createIdeStore>
 
   beforeEach(() => {
+    scratchFixtureId = 0
     store = createIdeStore('test-org', 1)
   })
 
@@ -59,7 +80,7 @@ describe('useIdeStore', () => {
   })
 
   it('openTab adds a tab and sets it active for its workspace', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     expect(store.getState().tabs).toHaveLength(1)
     expect(active(mockWorkspace.id)).toBe(tab.id)
@@ -73,7 +94,7 @@ describe('useIdeStore', () => {
   })
 
   it('closeTab removes the tab and clears activeTabId for its workspace', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     store.getState().closeTab(tab.id)
     expect(store.getState().tabs).toHaveLength(0)
@@ -82,7 +103,7 @@ describe('useIdeStore', () => {
 
   it('closeTab focuses another tab in same workspace when closed tab was active', () => {
     store.getState().setActiveWorkspace(1)
-    const tab1 = newScratchTab(mockWorkspace)
+    const tab1 = scratchTabFixture(mockWorkspace)
     const tab2 = newFileTab(mockFile, mockWorkspace)
     store.getState().openTab(tab1)
     store.getState().openTab(tab2)
@@ -92,8 +113,8 @@ describe('useIdeStore', () => {
 
   it('tabs from different workspaces do not share active tab state', () => {
     const ws2 = { ...mockWorkspace, id: 2, name: 'Analytics' }
-    const tab1 = newScratchTab(mockWorkspace)
-    const tab2 = newScratchTab(ws2)
+    const tab1 = scratchTabFixture(mockWorkspace)
+    const tab2 = scratchTabFixture(ws2)
     store.getState().openTab(tab1)
     store.getState().openTab(tab2)
     expect(active(mockWorkspace.id)).toBe(tab1.id)
@@ -104,7 +125,7 @@ describe('useIdeStore', () => {
   })
 
   it('updateTabContent updates only the target tab', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     store.getState().updateTabContent(tab.id, 'SELECT 1;')
     expect(store.getState().tabs[0].content).toBe('SELECT 1;')
@@ -116,7 +137,7 @@ describe('useIdeStore', () => {
   // and all console edits were silently discarded.
 
   it('updateTabContent persists ySnapshot when provided', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     const snapshot = [1, 2, 3, 4]
     store.getState().updateTabContent(tab.id, 'SELECT 1;', snapshot)
@@ -125,7 +146,7 @@ describe('useIdeStore', () => {
   })
 
   it('updateTabContent without ySnapshot does not clear an existing snapshot', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     store.getState().updateTabContent(tab.id, 'SELECT 1;', [1, 2, 3])
     store.getState().updateTabContent(tab.id, 'SELECT 2;')
@@ -148,7 +169,7 @@ describe('useIdeStore', () => {
   // Switching to workspace 2 left workspace 1's tab rendered in the editor.
 
   it('setActiveTab is a no-op for an unknown tabId', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     const before = active(mockWorkspace.id)
     store.getState().setActiveTab(groupId(mockWorkspace.id), 'nonexistent:id')
@@ -157,8 +178,8 @@ describe('useIdeStore', () => {
 
   it('setActiveTab updates only the owning workspace entry', () => {
     const ws2 = { ...mockWorkspace, id: 2, name: 'Analytics' }
-    const tab1 = newScratchTab(mockWorkspace)
-    const tab2a = newScratchTab(ws2)
+    const tab1 = scratchTabFixture(mockWorkspace)
+    const tab2a = scratchTabFixture(ws2)
     const tab2b = newFileTab(mockFile, ws2)
     store.getState().openTab(tab1)
     store.getState().openTab(tab2a)
@@ -172,8 +193,8 @@ describe('useIdeStore', () => {
 
   it('closeTab on the active tab of workspace 2 does not change workspace 1 active tab', () => {
     const ws2 = { ...mockWorkspace, id: 2, name: 'Analytics' }
-    const tab1 = newScratchTab(mockWorkspace)
-    const tab2 = newScratchTab(ws2)
+    const tab1 = scratchTabFixture(mockWorkspace)
+    const tab2 = scratchTabFixture(ws2)
     store.getState().openTab(tab1)
     store.getState().openTab(tab2)
     store.getState().closeTab(tab2.id)
@@ -182,7 +203,7 @@ describe('useIdeStore', () => {
   })
 
   it('setTabConnection persists connectionId on the tab', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     store.getState().setTabConnection(tab.id, 42)
     expect(store.getState().tabs[0].connectionId).toBe(42)
@@ -225,7 +246,7 @@ describe('useIdeStore', () => {
   })
 
   it('updateTabContent does not mark scratch tab dirty', () => {
-    const tab = newScratchTab(mockWorkspace)
+    const tab = scratchTabFixture(mockWorkspace)
     store.getState().openTab(tab)
     store.getState().updateTabContent(tab.id, 'SELECT 2;')
     expect(store.getState().tabs[0].isDirty).toBeUndefined()
@@ -300,7 +321,9 @@ describe('useIdeStore', () => {
   describe('moveTab', () => {
     function addTabs(ids: string[]) {
       for (const id of ids) {
-        store.getState().openTab({ id, workspaceId: mockWorkspace.id, title: id, kind: 'scratch', content: '' })
+        store
+          .getState()
+          .openTab({ id, workspaceId: mockWorkspace.id, title: id, kind: 'scratch', content: '' })
       }
     }
     const order = () => {
@@ -344,7 +367,13 @@ describe('useIdeStore', () => {
   })
 
   describe('layout actions', () => {
-    const t = (id: string) => ({ id, workspaceId: mockWorkspace.id, title: id, kind: 'scratch' as const, content: '' })
+    const t = (id: string) => ({
+      id,
+      workspaceId: mockWorkspace.id,
+      title: id,
+      kind: 'scratch' as const,
+      content: '',
+    })
     const root = () => store.getState().layout[mockWorkspace.id]
 
     it('splitActiveTab duplicates the active tab into a new adjacent group', () => {
@@ -355,7 +384,10 @@ describe('useIdeStore', () => {
       expect(node.type).toBe('split')
       if (node.type === 'split') {
         // source keeps b; new group also has b (same tab, synced doc)
-        expect(node.children.map((c) => (c.type === 'group' ? c.tabIds : []))).toEqual([['a', 'b'], ['b']])
+        expect(node.children.map((c) => (c.type === 'group' ? c.tabIds : []))).toEqual([
+          ['a', 'b'],
+          ['b'],
+        ])
       }
     })
 
@@ -387,18 +419,22 @@ describe('useIdeStore', () => {
 
 describe('connectionState', () => {
   const base = (over: Partial<IdeState>): IdeState =>
-    ({ sessions: {}, connectionStatus: {}, ...over } as unknown as IdeState)
+    ({ sessions: {}, connectionStatus: {}, ...over }) as unknown as IdeState
 
   it('reports connected when a live session exists (even over a prior error)', () => {
-    expect(connectionState(base({ sessions: { 5: 'sid' }, connectionStatus: { 5: { error: 'x' } } }), 5))
-      .toEqual({ kind: 'connected' })
+    expect(
+      connectionState(base({ sessions: { 5: 'sid' }, connectionStatus: { 5: { error: 'x' } } }), 5),
+    ).toEqual({ kind: 'connected' })
   })
   it('reports connecting', () => {
-    expect(connectionState(base({ connectionStatus: { 5: 'connecting' } }), 5)).toEqual({ kind: 'connecting' })
+    expect(connectionState(base({ connectionStatus: { 5: 'connecting' } }), 5)).toEqual({
+      kind: 'connecting',
+    })
   })
   it('reports error with its message', () => {
-    expect(connectionState(base({ connectionStatus: { 5: { error: 'auth failed' } } }), 5))
-      .toEqual({ kind: 'error', message: 'auth failed' })
+    expect(connectionState(base({ connectionStatus: { 5: { error: 'auth failed' } } }), 5)).toEqual(
+      { kind: 'error', message: 'auth failed' },
+    )
   })
   it('reports idle when nothing is known', () => {
     expect(connectionState(base({}), 5)).toEqual({ kind: 'idle' })

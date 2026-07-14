@@ -22,6 +22,8 @@ describe('resolveMenuAction', () => {
     expect(resolveMenuAction(action())).toBe('run')
   })
   it('prefers noop over confirm when a confirm item is also disabled', () => {
-    expect(resolveMenuAction(action({ disabled: true, confirm: { title: 'T', description: 'D' } }))).toBe('noop')
+    expect(
+      resolveMenuAction(action({ disabled: true, confirm: { title: 'T', description: 'D' } })),
+    ).toBe('noop')
   })
 })

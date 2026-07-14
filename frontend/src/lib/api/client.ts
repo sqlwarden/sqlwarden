@@ -92,7 +92,9 @@ export function parseAPIErrorPayload(payload: unknown, fallback: string) {
     const fieldErrors = fieldErrorsFrom(error)
     const message =
       firstValidationMessage(error) ??
-      (typeof error.message === 'string' && error.message.trim() !== '' ? error.message : undefined) ??
+      (typeof error.message === 'string' && error.message.trim() !== ''
+        ? error.message
+        : undefined) ??
       fallback
 
     return {

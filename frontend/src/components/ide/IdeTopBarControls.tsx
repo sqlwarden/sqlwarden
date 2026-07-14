@@ -53,16 +53,27 @@ export function IdeTopBarControls({
 
       <DropdownMenu>
         <Tip label={session.account.name}>
-          <DropdownMenuTrigger className="inline-flex cursor-pointer items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <InitialsAvatar value={session.account.name} fallback="U" className="size-7 rounded-full" />
+          <DropdownMenuTrigger
+            aria-label={session.account.name}
+            className="inline-flex cursor-pointer items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <InitialsAvatar
+              value={session.account.name}
+              fallback="U"
+              className="size-7 rounded-full"
+            />
           </DropdownMenuTrigger>
         </Tip>
         <DropdownMenuContent align="end" className="w-64 min-w-64">
           <DropdownMenuGroup>
             <DropdownMenuLabel className="px-2 py-2">
               <div className="flex flex-col gap-0.5 normal-case tracking-normal">
-                <span className="truncate text-sm font-medium text-foreground">{session.account.name}</span>
-                <span className="truncate text-xs font-normal text-muted-foreground">{session.account.email}</span>
+                <span className="truncate text-sm font-medium text-foreground">
+                  {session.account.name}
+                </span>
+                <span className="truncate text-xs font-normal text-muted-foreground">
+                  {session.account.email}
+                </span>
               </div>
             </DropdownMenuLabel>
           </DropdownMenuGroup>
@@ -83,7 +94,7 @@ export function IdeTopBarControls({
             variant="destructive"
             disabled={logout.isPending}
             onClick={() => {
-              void logout.mutateAsync()
+              logout.mutate()
             }}
           >
             <Icon name="logout-03" size={20} />

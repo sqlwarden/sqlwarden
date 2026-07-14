@@ -1,13 +1,10 @@
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import { orgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
+import { allOrgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
+import { queryKeys } from '#/lib/api/query-keys'
 import type { Workspace } from '#/lib/api/types'
 import { useIde } from './useIdeStore'
-
-export function workspaceSessionsQueryKey(orgSlug: string, workspaceId: number) {
-  return ['org-workspace-sessions', orgSlug, workspaceId] as const
-}
 
 /**
  * Keeps the persisted sessions map honest for one workspace. The map survives
@@ -20,12 +17,10 @@ export function workspaceSessionsQueryKey(orgSlug: string, workspaceId: number) 
 export function useSessionSync(orgSlug: string, workspace: Workspace) {
   const syncSessions = useIde((s) => s.syncSessions)
 
-  const connections = useQuery(
-    orgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id, { page_size: 100, sort: 'name', order: 'asc' }),
-  )
+  const connections = useQuery(allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id))
 
   const sessionsQuery = useQuery({
-    queryKey: workspaceSessionsQueryKey(orgSlug, workspace.id),
+    queryKey: queryKeys.workspaceSessions(orgSlug, workspace.id),
     queryFn: () =>
       api.get<{ sessions: { connection_id: number; session_id: string }[] }>(
         `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/sessions`,
@@ -41,6 +36,9 @@ export function useSessionSync(orgSlug: string, workspace: Workspace) {
     for (const s of sessionsQuery.data.sessions) {
       map[s.connection_id] = s.session_id
     }
-    syncSessions(map, connections.data.items.map((c) => c.id))
+    syncSessions(
+      map,
+      connections.data.items.map((c) => c.id),
+    )
   }, [sessionsQuery.data, connections.data, syncSessions])
 }

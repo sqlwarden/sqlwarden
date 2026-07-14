@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
@@ -59,7 +60,7 @@ function SettingsAccountPage() {
         setProfileErrors({ name: error.fieldErrors.name })
         return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to update profile')
+      toast.error(errorMessage(error, 'Failed to update profile'))
     },
   })
 
@@ -89,7 +90,7 @@ function SettingsAccountPage() {
           return
         }
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to change password')
+      toast.error(errorMessage(error, 'Failed to change password'))
     },
   })
 
@@ -124,11 +125,14 @@ function SettingsAccountPage() {
     event.preventDefault()
 
     const nextErrors: PasswordErrors = {}
-    if (!passwordValues.currentPassword) nextErrors.current_password = 'Current password is required.'
+    if (!passwordValues.currentPassword)
+      nextErrors.current_password = 'Current password is required.'
     if (!passwordValues.newPassword) nextErrors.new_password = 'New password is required.'
-    else if (passwordValues.newPassword.length < 8) nextErrors.new_password = 'New password must be at least 8 characters.'
+    else if (passwordValues.newPassword.length < 8)
+      nextErrors.new_password = 'New password must be at least 8 characters.'
     if (!passwordValues.confirmPassword) nextErrors.confirm_password = 'Confirm the new password.'
-    else if (passwordValues.newPassword !== passwordValues.confirmPassword) nextErrors.confirm_password = 'Passwords do not match.'
+    else if (passwordValues.newPassword !== passwordValues.confirmPassword)
+      nextErrors.confirm_password = 'Passwords do not match.'
 
     if (Object.keys(nextErrors).length > 0) {
       setPasswordErrors(nextErrors)
@@ -149,7 +153,10 @@ function SettingsAccountPage() {
       <Card>
         <CardHeader className="border-b border-border">
           <CardTitle>Profile</CardTitle>
-          <CardDescription>Your profile is visible to administrators and organization members where you have access.</CardDescription>
+          <CardDescription>
+            Your profile is visible to administrators and organization members where you have
+            access.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="flex flex-col gap-5" onSubmit={submitProfile}>
@@ -170,7 +177,10 @@ function SettingsAccountPage() {
               </Field>
             </div>
             <div className="flex justify-end">
-              <Button type="submit" disabled={updateProfile.isPending || name.trim() === account.name}>
+              <Button
+                type="submit"
+                disabled={updateProfile.isPending || name.trim() === account.name}
+              >
                 {updateProfile.isPending ? 'Saving...' : 'Save profile'}
               </Button>
             </div>

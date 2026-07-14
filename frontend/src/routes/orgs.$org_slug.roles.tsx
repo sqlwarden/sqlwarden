@@ -1,14 +1,33 @@
+import { errorMessage } from '#/lib/api/errors'
+import { trimTrailingSlash } from '#/lib/utils'
+import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
+import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Outlet, createFileRoute, useNavigate, useRouter, useRouterState } from '@tanstack/react-router'
+import {
+  Outlet,
+  createFileRoute,
+  useNavigate,
+  useRouter,
+  useRouterState,
+} from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
-import { orgEffectivePermissionsQueryOptions, orgPermissionsQueryOptions, orgRolesQueryOptions } from '#/lib/api/query'
-import type { PermissionDefinition, Role, RoleScope } from '#/lib/api/types'
-import { hasPermission, permission, permissionDefinitionMap, permissionDescription, permissionDisplayName, type Permission } from '#/lib/permissions'
+import {
+  orgEffectivePermissionsQueryOptions,
+  orgPermissionsQueryOptions,
+  orgRolesQueryOptions,
+} from '#/lib/api/query'
+import type { Role } from '#/lib/api/types'
+import {
+  hasPermission,
+  permission,
+  permissionDefinitionMap,
+  type Permission,
+} from '#/lib/permissions'
 import { entityColor } from '#/lib/entity-colors'
 import { SectionTabNav } from '#/components/SectionTabNav'
 import {
@@ -25,31 +44,41 @@ import {
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
-import { Checkbox } from '#/components/ui/checkbox'
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '#/components/ui/tooltip'
-import { Skeleton } from '#/components/ui/skeleton'
 import { TableEmptyState } from '#/components/EmptyState'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 import { Textarea } from '#/components/ui/textarea'
-import { ScrollArea } from '#/components/ui/scroll-area'
+import { PermissionPicker } from '#/components/access-control/PermissionPicker'
+import { RolesTableSkeleton } from '#/components/access-control/RolesTableSkeleton'
+import { roleScopeLabel } from '#/components/access-control/roleScope'
 import { cn } from '#/lib/utils'
 
 export const Route = createFileRoute('/orgs/$org_slug/roles')({
   component: OrganizationRolesRoute,
   pendingComponent: RoutePending,
-})
-
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
 })
 
 function OrganizationRolesRoute() {
@@ -70,21 +99,30 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
   const [roleName, setRoleName] = useState('')
   const [description, setDescription] = useState('')
   const [selectedPermissions, setSelectedPermissions] = useState<Set<Permission>>(new Set())
-  const [fieldErrors, setFieldErrors] = useState<{ name?: string; description?: string; scope_type?: string; permissions?: string }>({})
-  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } = useListPageState({
-    page: 1,
-    page_size: 10,
-    sort: 'name',
-    order: 'asc',
-    q: '',
-  })
+  const [fieldErrors, setFieldErrors] = useState<{
+    name?: string
+    description?: string
+    scope_type?: string
+    permissions?: string
+  }>({})
+  const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
+    useListPageState({
+      page: 1,
+      page_size: 10,
+      sort: 'name',
+      order: 'asc',
+      q: '',
+    })
 
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
   const permissionsCatalog = useQuery(orgPermissionsQueryOptions(orgSlug))
   const permissionDefinitions = permissionDefinitionMap(permissionsCatalog.data?.permission_details)
   const orgScopePermissions = permissionsCatalog.data?.scope_details.org ?? []
   const canReadRoles = hasPermission(effectivePermissions.data?.permissions, permission.policyRead)
-  const canCreateRole = hasPermission(effectivePermissions.data?.permissions, permission.policyModify)
+  const canCreateRole = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.policyModify,
+  )
   const canDeleteRole = canCreateRole
   const roles = useQuery({
     ...orgRolesQueryOptions(orgSlug, { ...query, scope: 'org' }),
@@ -102,7 +140,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
       return
     }
 
-    toast.error(roles.error instanceof Error ? roles.error.message : 'Failed to load roles')
+    toast.error(errorMessage(roles.error, 'Failed to load roles'))
   }, [roles.error])
 
   useEffect(() => {
@@ -110,7 +148,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
       return
     }
 
-    toast.error(effectivePermissions.error instanceof Error ? effectivePermissions.error.message : 'Failed to load role permissions')
+    toast.error(errorMessage(effectivePermissions.error, 'Failed to load role permissions'))
   }, [effectivePermissions.error])
 
   useEffect(() => {
@@ -118,7 +156,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
       return
     }
 
-    toast.error(permissionsCatalog.error instanceof Error ? permissionsCatalog.error.message : 'Failed to load permission catalog')
+    toast.error(errorMessage(permissionsCatalog.error, 'Failed to load permission catalog'))
   }, [permissionsCatalog.error])
 
   const createRole = useMutation({
@@ -133,7 +171,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
       setIsCreating(false)
       resetCreateRole()
       toast.success('Role created')
-      await queryClient.invalidateQueries({ queryKey: ['org-roles', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgRolesScope(orgSlug) })
     },
     onError: (error) => {
       if (isApiError(error)) {
@@ -143,20 +181,26 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
           scope_type: error.fieldErrors?.scope_type,
           permissions: error.fieldErrors?.permissions,
         })
-        if (error.fieldErrors?.name || error.fieldErrors?.description || error.fieldErrors?.scope_type || error.fieldErrors?.permissions) {
+        if (
+          error.fieldErrors?.name ||
+          error.fieldErrors?.description ||
+          error.fieldErrors?.scope_type ||
+          error.fieldErrors?.permissions
+        ) {
           return
         }
       }
 
-      toast.error(error instanceof Error ? error.message : 'Failed to create role')
+      toast.error(errorMessage(error, 'Failed to create role'))
     },
   })
 
   const deleteRole = useMutation({
-    mutationFn: async (roleId: number) => api.delete<void>(`/api/v1/orgs/${orgSlug}/roles/${roleId}`),
+    mutationFn: async (roleId: number) =>
+      api.delete<void>(`/api/v1/orgs/${orgSlug}/roles/${roleId}`),
     onSuccess: async () => {
       toast.success('Role deleted')
-      await queryClient.invalidateQueries({ queryKey: ['org-roles', orgSlug] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgRolesScope(orgSlug) })
     },
     onError: (error) => {
       if (isApiError(error) && error.status === 409) {
@@ -168,7 +212,7 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
         )
         return
       }
-      toast.error(error instanceof Error ? error.message : 'Failed to delete role')
+      toast.error(errorMessage(error, 'Failed to delete role'))
     },
   })
 
@@ -215,164 +259,224 @@ function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
     <div className="flex flex-col">
       <SectionTabNav
         tabs={[
-          { label: 'Policies', to: '/orgs/$org_slug/policies', params: { org_slug: orgSlug }, isActive: false },
-          { label: 'Roles', to: '/orgs/$org_slug/roles', params: { org_slug: orgSlug }, isActive: true },
+          {
+            label: 'Policies',
+            to: '/orgs/$org_slug/policies',
+            params: { org_slug: orgSlug },
+            isActive: false,
+          },
+          {
+            label: 'Roles',
+            to: '/orgs/$org_slug/roles',
+            params: { org_slug: orgSlug },
+            isActive: true,
+          },
         ]}
       />
 
       <div className="flex flex-col gap-6 pt-6">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            {!roles.isLoading && total > 0
-              ? `${total} organization role${total !== 1 ? 's' : ''}`
-              : 'Organization-scoped permission sets available for policies.'}
-          </p>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              {!roles.isLoading && total > 0
+                ? `${total} organization role${total !== 1 ? 's' : ''}`
+                : 'Organization-scoped permission sets available for policies.'}
+            </p>
 
-          {canCreateRole ? (
-            <Dialog
-              open={isCreating}
-              onOpenChange={(open) => {
-                setIsCreating(open)
-                if (!open) {
-                  resetCreateRole()
-                }
-              }}
-            >
-              <DialogTrigger render={<Button />}>
-                <Icon name="plus-sign" size={20} data-icon="inline-start" />
-                Create
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>Create role</DialogTitle>
-                  <DialogDescription>Define a permission set that can be assigned via organization policies.</DialogDescription>
-                </DialogHeader>
-                <form className="mt-6 flex flex-col gap-6" onSubmit={submitCreateRole}>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="role-name">Name</Label>
-                    <Input
-                      id="role-name"
-                      value={roleName}
-                      onChange={(event) => {
-                        setRoleName(event.target.value)
-                        setFieldErrors((current) => ({ ...current, name: undefined }))
-                      }}
-                      placeholder="database-reader"
-                      aria-invalid={fieldErrors.name ? true : undefined}
+            {canCreateRole ? (
+              <Dialog
+                open={isCreating}
+                onOpenChange={(open) => {
+                  setIsCreating(open)
+                  if (!open) {
+                    resetCreateRole()
+                  }
+                }}
+              >
+                <DialogTrigger render={<Button />}>
+                  <Icon name="plus-sign" size={20} data-icon="inline-start" />
+                  Create
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Create role</DialogTitle>
+                    <DialogDescription>
+                      Define a permission set that can be assigned via organization policies.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form className="mt-6 flex flex-col gap-6" onSubmit={submitCreateRole}>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="role-name">Name</Label>
+                      <Input
+                        id="role-name"
+                        value={roleName}
+                        onChange={(event) => {
+                          setRoleName(event.target.value)
+                          setFieldErrors((current) => ({ ...current, name: undefined }))
+                        }}
+                        placeholder="database-reader"
+                        aria-invalid={fieldErrors.name ? true : undefined}
+                        disabled={createRole.isPending}
+                      />
+                      {fieldErrors.name ? (
+                        <p className="text-sm text-destructive">{fieldErrors.name}</p>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="role-description">
+                        Description{' '}
+                        <span className="font-normal text-muted-foreground">(optional)</span>
+                      </Label>
+                      <Textarea
+                        id="role-description"
+                        value={description}
+                        onChange={(event) => {
+                          setDescription(event.target.value)
+                          setFieldErrors((current) => ({ ...current, description: undefined }))
+                        }}
+                        placeholder="Describe when this role should be used"
+                        aria-invalid={fieldErrors.description ? true : undefined}
+                        disabled={createRole.isPending}
+                      />
+                      {fieldErrors.description ? (
+                        <p className="text-sm text-destructive">{fieldErrors.description}</p>
+                      ) : null}
+                    </div>
+
+                    <PermissionPicker
+                      description="Select the capabilities this role should grant."
+                      idPrefix="permission"
+                      selectedPermissions={selectedPermissions}
+                      permissionDetails={orgScopePermissions}
+                      permissionDefinitions={permissionDefinitions}
                       disabled={createRole.isPending}
+                      error={fieldErrors.permissions}
+                      onPermissionChecked={setPermissionChecked}
                     />
-                    {fieldErrors.name ? <p className="text-sm text-destructive">{fieldErrors.name}</p> : null}
-                  </div>
 
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="role-description">Description <span className="font-normal text-muted-foreground">(optional)</span></Label>
-                    <Textarea
-                      id="role-description"
-                      value={description}
-                      onChange={(event) => {
-                        setDescription(event.target.value)
-                        setFieldErrors((current) => ({ ...current, description: undefined }))
-                      }}
-                      placeholder="Describe when this role should be used"
-                      aria-invalid={fieldErrors.description ? true : undefined}
-                      disabled={createRole.isPending}
-                    />
-                    {fieldErrors.description ? <p className="text-sm text-destructive">{fieldErrors.description}</p> : null}
-                  </div>
+                    <DialogFooter>
+                      <DialogClose
+                        render={
+                          <Button type="button" variant="ghost" disabled={createRole.isPending} />
+                        }
+                      >
+                        Cancel
+                      </DialogClose>
+                      <Button type="submit" disabled={createRole.isPending}>
+                        {createRole.isPending ? 'Creating...' : 'Create'}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            ) : null}
+          </div>
 
-                  <PermissionPicker
-                    selectedPermissions={selectedPermissions}
-                    permissionDetails={orgScopePermissions}
-                    permissionDefinitions={permissionDefinitions}
-                    disabled={createRole.isPending}
-                    error={fieldErrors.permissions}
-                    onPermissionChecked={setPermissionChecked}
-                  />
-
-                  <DialogFooter>
-                    <DialogClose render={<Button type="button" variant="ghost" disabled={createRole.isPending} />}>
-                      Cancel
-                    </DialogClose>
-                    <Button type="submit" disabled={createRole.isPending}>
-                      {createRole.isPending ? 'Creating...' : 'Create'}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          ) : null}
+          <SearchInput
+            value={searchText}
+            onValueChange={setSearchText}
+            onClear={clearSearch}
+            placeholder="Search roles"
+          />
         </div>
 
-        <SearchInput
-          value={searchText}
-          onValueChange={setSearchText}
-          onClear={clearSearch}
-          placeholder="Search roles"
-        />
-      </div>
-
-      <Card>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <TableColumnHeader label="Role" sort="name" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                </TableHead>
-                <TableHead>
-                  <TableColumnHeader label="Scope" />
-                </TableHead>
-                <TableHead>
-                  <TableColumnHeader label="Type" />
-                </TableHead>
-                <TableHead>
-                  <TableColumnHeader label="Created" sort="created_at" currentSort={query.sort} currentOrder={query.order} onSortChange={toggleSort} />
-                </TableHead>
-                {canDeleteRole ? (
-                  <TableHead className="text-end">
-                    <TableColumnHeader label="Actions" />
-                  </TableHead>
-                ) : null}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {effectivePermissions.isLoading || roles.isLoading ? <RolesTableSkeleton canDeleteRole={canDeleteRole} /> : null}
-              {roles.isError ? <TableEmptyState colSpan={canDeleteRole ? 5 : 4} icon="user-shield-01" message="Failed to load roles." /> : null}
-              {!effectivePermissions.isLoading && !canReadRoles ? (
-                <TableEmptyState colSpan={canDeleteRole ? 5 : 4} icon="user-shield-01" message="You do not have permission to view roles." />
-              ) : null}
-              {!effectivePermissions.isLoading && canReadRoles && !roles.isLoading && !roles.isError && items.length === 0 ? (
-                <TableEmptyState colSpan={canDeleteRole ? 5 : 4} icon="user-shield-01" message={query.q ? 'No roles matched your search.' : 'No roles found.'} />
-              ) : null}
-              {!effectivePermissions.isLoading && canReadRoles && !roles.isLoading && !roles.isError
-                ? items.map((role) => (
-                    <RoleRow
-                      key={role.id}
-                      role={role}
-                      canDeleteRole={canDeleteRole}
-                      isDeleting={deleteRole.isPending}
-                      onDelete={(roleId) => deleteRole.mutate(roleId)}
+        <Card>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <TableColumnHeader
+                      label="Role"
+                      sort="name"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
                     />
-                  ))
-                : null}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                  </TableHead>
+                  <TableHead>
+                    <TableColumnHeader label="Scope" />
+                  </TableHead>
+                  <TableHead>
+                    <TableColumnHeader label="Type" />
+                  </TableHead>
+                  <TableHead>
+                    <TableColumnHeader
+                      label="Created"
+                      sort="created_at"
+                      currentSort={query.sort}
+                      currentOrder={query.order}
+                      onSortChange={toggleSort}
+                    />
+                  </TableHead>
+                  {canDeleteRole ? (
+                    <TableHead className="text-end">
+                      <TableColumnHeader label="Actions" />
+                    </TableHead>
+                  ) : null}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {effectivePermissions.isLoading || roles.isLoading ? (
+                  <RolesTableSkeleton showActions={canDeleteRole} />
+                ) : null}
+                {roles.isError ? (
+                  <TableEmptyState
+                    colSpan={canDeleteRole ? 5 : 4}
+                    icon="user-shield-01"
+                    message="Failed to load roles."
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading && !canReadRoles ? (
+                  <TableEmptyState
+                    colSpan={canDeleteRole ? 5 : 4}
+                    icon="user-shield-01"
+                    message="You do not have permission to view roles."
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading &&
+                canReadRoles &&
+                !roles.isLoading &&
+                !roles.isError &&
+                items.length === 0 ? (
+                  <TableEmptyState
+                    colSpan={canDeleteRole ? 5 : 4}
+                    icon="user-shield-01"
+                    message={query.q ? 'No roles matched your search.' : 'No roles found.'}
+                  />
+                ) : null}
+                {!effectivePermissions.isLoading &&
+                canReadRoles &&
+                !roles.isLoading &&
+                !roles.isError
+                  ? items.map((role) => (
+                      <RoleRow
+                        key={role.id}
+                        role={role}
+                        canDeleteRole={canDeleteRole}
+                        isDeleting={deleteRole.isPending}
+                        onDelete={(roleId) => deleteRole.mutate(roleId)}
+                      />
+                    ))
+                  : null}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
-      {canReadRoles && !roles.isLoading && !roles.isError && items.length > 0 ? (
-        <PaginationFooter
-          itemLabel="roles"
-          page={page}
-          pageCount={pageCount}
-          pageSize={pageSize}
-          total={total}
-          isFetching={roles.isFetching}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
-        />
-      ) : null}
+        {canReadRoles && !roles.isLoading && !roles.isError && items.length > 0 ? (
+          <PaginationFooter
+            itemLabel="roles"
+            page={page}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            total={total}
+            isFetching={roles.isFetching}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
       </div>
     </div>
   )
@@ -424,20 +528,29 @@ function RoleRow({
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold', entityColor(role.name))}>
-            {roleDisplayName(role).slice(0, 2).toUpperCase()}
+          <div
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
+              entityColor(role.name),
+            )}
+          >
+            {role.name.slice(0, 2).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <div className="truncate font-medium text-foreground">{roleDisplayName(role)}</div>
-            {role.description ? <div className="truncate text-sm text-muted-foreground">{role.description}</div> : null}
+            <div className="truncate font-medium text-foreground">{role.name}</div>
+            {role.description ? (
+              <div className="truncate text-sm text-muted-foreground">{role.description}</div>
+            ) : null}
           </div>
         </div>
       </TableCell>
       <TableCell>
-        <Badge variant="outline">{scopeLabel(role.scope_type)}</Badge>
+        <Badge variant="outline">{roleScopeLabel(role.scope_type)}</Badge>
       </TableCell>
       <TableCell>
-        <Badge variant={role.is_builtin ? 'secondary' : 'outline'}>{role.is_builtin ? 'System' : 'Custom'}</Badge>
+        <Badge variant={role.is_builtin ? 'secondary' : 'outline'}>
+          {role.is_builtin ? 'System' : 'Custom'}
+        </Badge>
       </TableCell>
       <TableCell className="text-muted-foreground">{formatDate(role.created_at)}</TableCell>
       {canDeleteRole ? (
@@ -445,7 +558,9 @@ function RoleRow({
           {role.is_builtin ? (
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger render={<span className="inline-flex" onClick={(e) => e.stopPropagation()} />}>
+                <TooltipTrigger
+                  render={<span className="inline-flex" onClick={(e) => e.stopPropagation()} />}
+                >
                   <Button
                     variant="ghost"
                     size="sm"
@@ -475,7 +590,8 @@ function RoleRow({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete role?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This permanently deletes <strong>{roleDisplayName(role)}</strong>. Deletion will fail if any policy bindings still reference this role — remove those bindings first.
+                    This permanently deletes <strong>{role.name}</strong>. Deletion will fail if any
+                    policy bindings still reference this role — remove those bindings first.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -501,176 +617,3 @@ function RoleRow({
     </TableRow>
   )
 }
-
-function PermissionPicker({
-  selectedPermissions,
-  permissionDetails,
-  permissionDefinitions,
-  disabled,
-  error,
-  onPermissionChecked,
-}: {
-  selectedPermissions: Set<Permission>
-  permissionDetails: readonly PermissionDefinition[]
-  permissionDefinitions: ReadonlyMap<string, PermissionDefinition>
-  disabled: boolean
-  error?: string
-  onPermissionChecked: (value: Permission, checked: boolean) => void
-}) {
-  const [search, setSearch] = useState('')
-  const totalPermissions = permissionDetails.length
-  const groupedPermissions = groupPermissionDetails(permissionDetails)
-
-  const filteredGroups = search
-    ? groupedPermissions
-        .map((group) => ({
-          ...group,
-          permissions: group.permissions.filter((item) => {
-            const q = search.toLowerCase()
-            return (
-              item.label.toLowerCase().includes(q) ||
-              item.description.toLowerCase().includes(q) ||
-              item.key.toLowerCase().includes(q)
-            )
-          }),
-        }))
-        .filter((group) => group.permissions.length > 0)
-    : groupedPermissions
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-end justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <Label>Permissions</Label>
-          <p className="text-sm text-muted-foreground">Select the capabilities this role should grant.</p>
-        </div>
-        {selectedPermissions.size > 0 ? (
-          <span className="shrink-0 text-xs text-muted-foreground">{selectedPermissions.size} of {totalPermissions} selected</span>
-        ) : null}
-      </div>
-      <div className="rounded-md border border-border">
-        <div className="flex items-center gap-2 border-b border-border px-3">
-          <Icon name="search-01" size={20} className="size-4 shrink-0 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Filter permissions…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-9 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          />
-          {search ? (
-            <button type="button" onClick={() => setSearch('')} className="shrink-0 text-muted-foreground hover:text-foreground">
-              <Icon name="cancel-01" size={20} className="size-3.5" />
-            </button>
-          ) : null}
-        </div>
-        <ScrollArea className="h-60">
-          <div className="flex flex-col gap-5 p-4">
-            {filteredGroups.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No permissions match your search.</p>
-            ) : null}
-            {filteredGroups.map((group) => (
-              <div key={group.name} className="flex flex-col gap-3">
-                <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">{group.name}</p>
-                <div className="flex flex-col gap-3">
-                  {group.permissions.map((item) => {
-                    const id = `permission-${item.key.replace(/[^a-z0-9]+/g, '-')}`
-                    const description = permissionDescription(item.key, permissionDefinitions)
-                    return (
-                      <label key={item.key} htmlFor={id} className="flex cursor-pointer items-start gap-2.5">
-                        <Checkbox
-                          id={id}
-                          className="mt-0.5"
-                          checked={selectedPermissions.has(item.key)}
-                          disabled={disabled}
-                          onCheckedChange={(checked) => onPermissionChecked(item.key, checked === true)}
-                        />
-                        <span className="flex flex-col gap-0.5">
-                          <span className="text-sm font-medium text-foreground">{permissionDisplayName(item.key, permissionDefinitions)}</span>
-                          {description ? <span className="text-xs text-muted-foreground">{description}</span> : null}
-                        </span>
-                      </label>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-      </div>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-    </div>
-  )
-}
-
-function RolesTableSkeleton({ canDeleteRole }: { canDeleteRole: boolean }) {
-  return (
-    <>
-      {Array.from({ length: 5 }).map((_, index) => (
-        <TableRow key={index}>
-          <TableCell>
-            <div className="flex items-center gap-3">
-              <Skeleton className="size-8 rounded-md" />
-              <div className="flex flex-col gap-2">
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="h-3 w-48" />
-              </div>
-            </div>
-          </TableCell>
-          <TableCell>
-            <Skeleton className="h-5 w-20 rounded-full" />
-          </TableCell>
-          <TableCell>
-            <Skeleton className="h-5 w-16 rounded-full" />
-          </TableCell>
-          <TableCell>
-            <Skeleton className="h-4 w-24" />
-          </TableCell>
-          {canDeleteRole ? (
-            <TableCell className="text-end">
-              <Skeleton className="ms-auto h-8 w-16" />
-            </TableCell>
-          ) : null}
-        </TableRow>
-      ))}
-    </>
-  )
-}
-
-function groupPermissionDetails(permissions: readonly PermissionDefinition[]) {
-  const groups = new Map<string, PermissionDefinition[]>()
-  for (const item of permissions) {
-    groups.set(item.group, [...(groups.get(item.group) ?? []), item])
-  }
-  return Array.from(groups.entries()).map(([name, items]) => ({ name, permissions: items }))
-}
-
-function scopeLabel(value: RoleScope) {
-  switch (value) {
-    case 'org':
-      return 'Organization'
-    case 'workspace':
-      return 'Workspace'
-    case 'environment':
-      return 'Environment'
-    case 'connection':
-      return 'Connection'
-  }
-}
-
-function roleDisplayName(role: Role) {
-  return role.name
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return 'Unknown'
-  }
-  return dateFormatter.format(date)
-}
-
-function trimTrailingSlash(path: string) {
-  return path === '/' ? path : path.replace(/\/$/, '')
-}
-

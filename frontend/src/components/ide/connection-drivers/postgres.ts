@@ -1,4 +1,4 @@
-import type { DriverDef } from './index'
+import type { DriverDef } from './types'
 
 export const postgresDriver: DriverDef = {
   id: 'postgres',

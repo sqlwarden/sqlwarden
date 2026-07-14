@@ -137,6 +137,21 @@ jobs:
         working-directory: frontend
         run: bun install --frozen-lockfile
 
+      - name: Check frontend formatting
+        if: steps.changes.outputs.frontend == 'true'
+        working-directory: frontend
+        run: bun run format:check
+
+      - name: Lint frontend
+        if: steps.changes.outputs.frontend == 'true'
+        working-directory: frontend
+        run: bun run lint
+
+      - name: Type-check frontend
+        if: steps.changes.outputs.frontend == 'true'
+        working-directory: frontend
+        run: bun run typecheck
+
       - name: Run frontend tests
         if: steps.changes.outputs.frontend == 'true'
         working-directory: frontend

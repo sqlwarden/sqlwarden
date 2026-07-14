@@ -8,7 +8,9 @@ describe('isSessionGone', () => {
   })
 
   it('does not match cursor-expiry 410s', () => {
-    expect(isSessionGone(new ApiError('Cursor gone.', 410, { code: 'query_cursor_unavailable' }))).toBe(false)
+    expect(
+      isSessionGone(new ApiError('Cursor gone.', 410, { code: 'query_cursor_unavailable' })),
+    ).toBe(false)
   })
 
   it('does not match other statuses or non-API errors', () => {
@@ -57,9 +59,7 @@ describe('ensureSession', () => {
   it('clears the session and retries once when run fails with a gone session', async () => {
     const deps = makeDeps({ getSession: vi.fn(() => 'dead-session') })
     const goneError = new ApiError('gone', 410)
-    const run = vi.fn()
-      .mockRejectedValueOnce(goneError)
-      .mockResolvedValueOnce('ok-after-retry')
+    const run = vi.fn().mockRejectedValueOnce(goneError).mockResolvedValueOnce('ok-after-retry')
 
     const result = await ensureSession(deps, 7, run)
 

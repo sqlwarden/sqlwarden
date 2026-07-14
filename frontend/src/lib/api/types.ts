@@ -81,7 +81,8 @@ export interface Environment {
 
 // ─── Query result types ─────────────────────────────────────────────────────
 
-export type ColumnType = 'text' | 'integer' | 'decimal' | 'boolean' | 'datetime' | 'json' | 'uuid' | 'bytes'
+export type ColumnType =
+  'text' | 'integer' | 'decimal' | 'boolean' | 'datetime' | 'json' | 'uuid' | 'bytes'
 
 export interface ResultColumn {
   name: string
@@ -90,7 +91,8 @@ export interface ResultColumn {
   nullable: boolean
 }
 
-export type ValueType = 'null' | 'text' | 'integer' | 'float' | 'decimal' | 'bool' | 'time' | 'bytes'
+export type ValueType =
+  'null' | 'text' | 'integer' | 'float' | 'decimal' | 'bool' | 'time' | 'bytes'
 
 export interface ResultValue {
   type: ValueType

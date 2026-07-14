@@ -3,13 +3,35 @@ import { columnTypeIcon } from './columnTypeIcon'
 
 describe('columnTypeIcon', () => {
   it('maps numeric types', () => {
-    for (const t of ['int', 'int4', 'int8', 'bigint', 'smallint', 'serial', 'decimal', 'numeric(10,2)', 'double precision', 'real', 'float8', 'money', 'tinyint']) {
+    for (const t of [
+      'int',
+      'int4',
+      'int8',
+      'bigint',
+      'smallint',
+      'serial',
+      'decimal',
+      'numeric(10,2)',
+      'double precision',
+      'real',
+      'float8',
+      'money',
+      'tinyint',
+    ]) {
       expect(columnTypeIcon(t)).toBe('type-number')
     }
   })
 
   it('maps MySQL display-width and unsigned integer forms (PK/FK columns)', () => {
-    for (const t of ['bigint(20)', 'int(11)', 'int(11) unsigned', 'bigint unsigned', 'smallint(6)', 'mediumint', 'integer']) {
+    for (const t of [
+      'bigint(20)',
+      'int(11)',
+      'int(11) unsigned',
+      'bigint unsigned',
+      'smallint(6)',
+      'mediumint',
+      'integer',
+    ]) {
       expect(columnTypeIcon(t)).toBe('type-number')
     }
   })
@@ -25,7 +47,16 @@ describe('columnTypeIcon', () => {
   })
 
   it('maps string types', () => {
-    for (const t of ['varchar', 'varchar(255)', 'character varying', 'char', 'text', 'citext', 'name', 'nvarchar']) {
+    for (const t of [
+      'varchar',
+      'varchar(255)',
+      'character varying',
+      'char',
+      'text',
+      'citext',
+      'name',
+      'nvarchar',
+    ]) {
       expect(columnTypeIcon(t)).toBe('type-string')
     }
   })

@@ -1,3 +1,4 @@
+import { errorMessage } from '#/lib/api/errors'
 import { useRef, useState, type UIEvent } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
@@ -8,7 +9,13 @@ import {
   fetchConnectionCursorPage,
   runConnectionQuery,
 } from '#/lib/api/query'
-import { extractRowCount, nextCursorParam, previewColumns, previewRows, rowCountDisplay } from './previewData'
+import {
+  extractRowCount,
+  nextCursorParam,
+  previewColumns,
+  previewRows,
+  rowCountDisplay,
+} from './previewData'
 import type { ObjectViewModel } from './registry'
 import { useEvictGoneSession } from '../sessionErrors'
 
@@ -19,15 +26,24 @@ const COUNT_THRESHOLD = 10_000
 
 function cellText(v: ResultValue): string {
   switch (v.type) {
-    case 'null': return 'NULL'
-    case 'text': return v.text ?? ''
-    case 'integer': return String(v.integer ?? 0)
-    case 'float': return String(v.float ?? 0)
-    case 'decimal': return v.decimal ?? ''
-    case 'bool': return v.bool ? 'true' : 'false'
-    case 'time': return v.time ?? ''
-    case 'bytes': return '(binary)'
-    default: return ''
+    case 'null':
+      return 'NULL'
+    case 'text':
+      return v.text ?? ''
+    case 'integer':
+      return String(v.integer ?? 0)
+    case 'float':
+      return String(v.float ?? 0)
+    case 'decimal':
+      return v.decimal ?? ''
+    case 'bool':
+      return v.bool ? 'true' : 'false'
+    case 'time':
+      return v.time ?? ''
+    case 'bytes':
+      return '(binary)'
+    default:
+      return ''
   }
 }
 
@@ -40,8 +56,24 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
     queryKey: connectionPreviewQueryKey(orgSlug, workspaceId, connectionId, ref),
     queryFn: ({ pageParam }) =>
       pageParam === null
-        ? runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, dialect.previewQuery(ref), true, PREVIEW_PAGE_SIZE)
-        : fetchConnectionCursorPage(orgSlug, workspaceId, connectionId, pageParam, PREVIEW_PAGE_SIZE),
+        ? runConnectionQuery(
+            orgSlug,
+            workspaceId,
+            connectionId,
+            sessionId,
+            dialect.previewQuery(ref),
+            {
+              useCursor: true,
+              pageSize: PREVIEW_PAGE_SIZE,
+            },
+          )
+        : fetchConnectionCursorPage(
+            orgSlug,
+            workspaceId,
+            connectionId,
+            pageParam,
+            PREVIEW_PAGE_SIZE,
+          ),
     initialPageParam: null as string | null,
     getNextPageParam: (last, _all, lastParam) => nextCursorParam(last, lastParam),
     enabled,
@@ -51,7 +83,16 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
   const boundedCount = useQuery({
     queryKey: connectionPreviewCountQueryKey(orgSlug, workspaceId, connectionId, ref),
     queryFn: () =>
-      runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, dialect.boundedCountQuery(ref, COUNT_THRESHOLD + 1), false),
+      runConnectionQuery(
+        orgSlug,
+        workspaceId,
+        connectionId,
+        sessionId,
+        dialect.boundedCountQuery(ref, COUNT_THRESHOLD + 1),
+        {
+          useCursor: false,
+        },
+      ),
     enabled,
     staleTime: 60_000,
   })
@@ -61,7 +102,17 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
   const [wantExact, setWantExact] = useState(false)
   const exactCount = useQuery({
     queryKey: [...connectionPreviewCountQueryKey(orgSlug, workspaceId, connectionId, ref), 'exact'],
-    queryFn: () => runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, dialect.exactCountQuery(ref), false),
+    queryFn: () =>
+      runConnectionQuery(
+        orgSlug,
+        workspaceId,
+        connectionId,
+        sessionId,
+        dialect.exactCountQuery(ref),
+        {
+          useCursor: false,
+        },
+      ),
     enabled: enabled && wantExact,
     staleTime: 60_000,
   })
@@ -77,10 +128,16 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
   }
 
   if (data.isLoading) {
-    return <Pane><Icon name="loading-03" size={14} className="animate-spin" /> Loading data…</Pane>
+    return (
+      <Pane>
+        <Icon name="loading-03" size={14} className="animate-spin" /> Loading data…
+      </Pane>
+    )
   }
   if (data.isError) {
-    return <Pane className="text-destructive">{data.error instanceof Error ? data.error.message : 'Failed to load data.'}</Pane>
+    return (
+      <Pane className="text-destructive">{errorMessage(data.error, 'Failed to load data.')}</Pane>
+    )
   }
 
   const pages = data.data?.pages ?? []
@@ -103,7 +160,12 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
           <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
             <tr>
               {cols.map((c) => (
-                <th key={c.name} className="border-b border-r border-border px-3 py-1.5 text-left font-medium">{c.name}</th>
+                <th
+                  key={c.name}
+                  className="border-b border-r border-border px-3 py-1.5 text-left font-medium"
+                >
+                  {c.name}
+                </th>
               ))}
             </tr>
           </thead>
@@ -111,7 +173,9 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
             {rows.map((row, ri) => (
               <tr key={ri} className="hover:bg-accent/30">
                 {row.map((v, ci) => (
-                  <td key={ci} className="border-b border-r border-border px-3 py-1 font-mono">{cellText(v)}</td>
+                  <td key={ci} className="border-b border-r border-border px-3 py-1 font-mono">
+                    {cellText(v)}
+                  </td>
                 ))}
               </tr>
             ))}
@@ -148,5 +212,11 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
 }
 
 function Pane({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`flex h-full items-center justify-center gap-2 text-xs text-muted-foreground ${className}`}>{children}</div>
+  return (
+    <div
+      className={`flex h-full items-center justify-center gap-2 text-xs text-muted-foreground ${className}`}
+    >
+      {children}
+    </div>
+  )
 }

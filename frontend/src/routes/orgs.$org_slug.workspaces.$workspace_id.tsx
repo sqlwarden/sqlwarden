@@ -1,3 +1,4 @@
+import { trimTrailingSlash } from '#/lib/utils'
 import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useRouterState } from '@tanstack/react-router'
 import { Icon, type AppIcon } from '#/lib/icons'
@@ -39,7 +40,9 @@ type OverviewCard = {
 
 function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; workspaceId: string }) {
   const workspace = useQuery(orgWorkspaceQueryOptions(orgSlug, workspaceId))
-  const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId))
+  const effectivePermissions = useQuery(
+    orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId),
+  )
   const permissions = effectivePermissions.data?.permissions
 
   const allCards: OverviewCard[] = [
@@ -100,12 +103,15 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-1.5">
-          <h1 className="text-2xl font-semibold tracking-tight">{workspace.data?.name ?? 'Workspace'}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {workspace.data?.name ?? 'Workspace'}
+          </h1>
           {workspace.data?.description ? (
             <p className="text-sm text-muted-foreground">{workspace.data.description}</p>
           ) : null}
         </div>
         <Button
+          nativeButton={false}
           render={
             <Link
               to="/ide/$org_slug"
@@ -140,7 +146,9 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
                     <span className="text-xs tabular-nums text-muted-foreground">{card.count}</span>
                   ) : null}
                 </div>
-                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{card.description}</p>
+                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                  {card.description}
+                </p>
               </div>
             </div>
           </Link>
@@ -148,8 +156,4 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
       </div>
     </div>
   )
-}
-
-function trimTrailingSlash(path: string) {
-  return path === '/' ? path : path.replace(/\/$/, '')
 }

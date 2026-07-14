@@ -48,11 +48,14 @@ export function electPrimary(lockName: string, onBecamePrimary: () => void): () 
   const abort = new AbortController()
   let release: (() => void) | undefined
   nav.locks
-    .request(lockName, { signal: abort.signal }, () =>
-      new Promise<void>((resolve) => {
-        release = resolve
-        onBecamePrimary()
-      }),
+    .request(
+      lockName,
+      { signal: abort.signal },
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve
+          onBecamePrimary()
+        }),
     )
     .catch(() => {}) // AbortError when we cancel a still-waiting request
 

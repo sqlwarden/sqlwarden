@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { errorMessage } from '#/lib/api/errors'
+import { useState } from 'react'
 import { Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -47,15 +48,14 @@ function LoginPage() {
         return
       }
 
-      toast.error(error instanceof Error ? error.message : 'Failed to sign in')
+      toast.error(errorMessage(error, 'Failed to sign in'))
     },
   })
 
-  const serverFieldErrors = isApiError(mutation.error) ? mutation.error.fieldErrors ?? {} : {}
-  const formErrors = useMemo(
-    () => ({ ...serverFieldErrors, ...localErrors }),
-    [localErrors, serverFieldErrors],
-  )
+  const formErrors = {
+    ...(isApiError(mutation.error) ? (mutation.error.fieldErrors ?? {}) : {}),
+    ...localErrors,
+  }
 
   if (setupStatus.isLoading || (hasToken && session.isLoading)) {
     return (
@@ -109,9 +109,7 @@ function LoginPage() {
         <Card className="py-0">
           <CardHeader className="px-6 pt-6">
             <CardTitle>Account login</CardTitle>
-            <CardDescription>
-              Enter your credentials to continue.
-            </CardDescription>
+            <CardDescription>Enter your credentials to continue.</CardDescription>
           </CardHeader>
           <CardContent className="px-6 pb-6">
             <form className="space-y-5" onSubmit={onSubmit}>

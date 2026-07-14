@@ -8,9 +8,27 @@ export type ColumnMenuCtx = {
 
 export function buildColumnMenu(ctx: ColumnMenuCtx): ContextMenuItem[] {
   return [
-    { kind: 'action', id: 'copy-column-name', label: 'Copy column name', icon: 'copy-01', onSelect: ctx.onCopyName },
-    { kind: 'action', id: 'copy-qualified-name', label: 'Copy qualified name', icon: 'copy-01', onSelect: ctx.onCopyQualifiedName },
-    { kind: 'action', id: 'copy-type', label: 'Copy type', icon: 'copy-01', onSelect: ctx.onCopyType },
+    {
+      kind: 'action',
+      id: 'copy-column-name',
+      label: 'Copy column name',
+      icon: 'copy-01',
+      onSelect: ctx.onCopyName,
+    },
+    {
+      kind: 'action',
+      id: 'copy-qualified-name',
+      label: 'Copy qualified name',
+      icon: 'copy-01',
+      onSelect: ctx.onCopyQualifiedName,
+    },
+    {
+      kind: 'action',
+      id: 'copy-type',
+      label: 'Copy type',
+      icon: 'copy-01',
+      onSelect: ctx.onCopyType,
+    },
     { kind: 'separator' },
     { kind: 'action', id: 'rename', label: 'Rename', icon: 'pencil-edit-02', soon: true },
     { kind: 'action', id: 'drop-column', label: 'Drop column', icon: 'delete-01', soon: true },
@@ -23,7 +41,13 @@ export type IndexMenuCtx = {
 
 export function buildIndexMenu(ctx: IndexMenuCtx): ContextMenuItem[] {
   return [
-    { kind: 'action', id: 'copy-index-name', label: 'Copy index name', icon: 'copy-01', onSelect: ctx.onCopyName },
+    {
+      kind: 'action',
+      id: 'copy-index-name',
+      label: 'Copy index name',
+      icon: 'copy-01',
+      onSelect: ctx.onCopyName,
+    },
     { kind: 'separator' },
     { kind: 'action', id: 'drop-index', label: 'Drop index', icon: 'delete-01', soon: true },
   ]

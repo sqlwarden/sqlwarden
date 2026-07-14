@@ -31,8 +31,13 @@ describe('buildEnvironmentMenu', () => {
 
 describe('buildConnectionMenu', () => {
   const base = {
-    onOpen: noop, onOpenConsole: noop, onConnect: noop, onDisconnect: noop,
-    onRefreshSchema: noop, onCopyName: noop, onManageConnections: noop,
+    onOpen: noop,
+    onOpenConsole: noop,
+    onConnect: noop,
+    onDisconnect: noop,
+    onRefreshSchema: noop,
+    onCopyName: noop,
+    onManageConnections: noop,
   }
   it('shows connect (not disconnect) and disables refresh when not connected', () => {
     const items = buildConnectionMenu({ ...base, isConnected: false })

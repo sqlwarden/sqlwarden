@@ -1,42 +1,22 @@
-import { postgresDriver } from './postgres'
-import { mysqlDriver } from './mysql'
-import postgresIcon from '#/assets/drivers/postgresql.svg'
-import mysqlIcon from '#/assets/drivers/mysql.svg'
+import { connectableEngines, frontendEngines } from '../engines/registry'
+import type { DriverDef } from './types'
 
-export const driverBrands: Record<string, { icon: string; description: string }> = {
-  postgres: { icon: postgresIcon, description: 'Open-source relational database' },
-  mysql: { icon: mysqlIcon, description: 'MySQL / MariaDB database' },
-}
+export type { DriverDef, FieldDef } from './types'
 
-export type FieldDef = {
-  key: string
-  label: string
-  type: 'text' | 'password' | 'number' | 'select'
-  placeholder?: string
-  default?: string
-  required?: boolean
-  options?: { label: string; value: string }[]
-  /** Width on the form grid (defaults to 'full'): full · wide · half · compact. */
-  span?: 'full' | 'wide' | 'half' | 'compact'
-  /** Section heading; a divider renders whenever it differs from the previous field's. */
-  section?: string
-}
+export const driverBrands = Object.fromEntries(
+  frontendEngines
+    .filter((engine) => engine.brand.icon)
+    .map((engine) => [
+      engine.id,
+      { icon: engine.brand.icon!, description: engine.brand.description },
+    ]),
+)
 
-export type DriverDef = {
-  id: string
-  label: string
-  defaultPort: number
-  fields: FieldDef[]
-  buildDSN: (values: Record<string, string>) => string
-}
-
-export const drivers: DriverDef[] = [postgresDriver, mysqlDriver]
-export const driverMap = new Map(drivers.map((d) => [d.id, d]))
+export const drivers: DriverDef[] = connectableEngines.map((engine) => engine.connection)
+export const driverMap = new Map(drivers.map((driver) => [driver.id, driver]))
 
 export function defaultFieldValues(driver: DriverDef): Record<string, string> {
   const values: Record<string, string> = {}
-  for (const field of driver.fields) {
-    values[field.key] = field.default ?? ''
-  }
+  for (const field of driver.fields) values[field.key] = field.default ?? ''
   return values
 }

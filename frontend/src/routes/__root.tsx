@@ -17,9 +17,10 @@ import '../styles.css'
 
 // Dev-only. The import.meta.env.DEV guard lets Rollup drop the devtools
 // (and their dependencies) from production bundles entirely.
-const Devtools = import.meta.env.DEV
-  ? lazy(() => import('#/components/devtools'))
-  : () => null
+const Devtools =
+  import.meta.env.DEV && import.meta.env.MODE !== 'test'
+    ? lazy(() => import('#/components/devtools'))
+    : () => null
 
 export const Route = createRootRoute({
   component: RootComponent,
@@ -42,28 +43,28 @@ function RootComponent() {
   return (
     <ThemeProvider defaultTheme="system" storageKey="theme">
       <ThemeLabProvider>
-      <IconPackProvider>
-      <EditorThemeProvider>
-      <EditorFontProvider>
-      <InterfaceFontProvider>
-      <ConnectionLayoutProvider>
-      <TooltipProvider>
-        <GlobalLoadingBar />
-        <div className="flex min-h-screen flex-col">
-          <div className="flex-1">
-            <Outlet />
-          </div>
-        </div>
-      </TooltipProvider>
-      </ConnectionLayoutProvider>
-      </InterfaceFontProvider>
-      </EditorFontProvider>
-      <Toaster closeButton position="top-center" theme="system" />
-      <Suspense fallback={null}>
-        <Devtools />
-      </Suspense>
-      </EditorThemeProvider>
-      </IconPackProvider>
+        <IconPackProvider>
+          <EditorThemeProvider>
+            <EditorFontProvider>
+              <InterfaceFontProvider>
+                <ConnectionLayoutProvider>
+                  <TooltipProvider>
+                    <GlobalLoadingBar />
+                    <div className="flex min-h-screen flex-col">
+                      <div className="flex-1">
+                        <Outlet />
+                      </div>
+                    </div>
+                  </TooltipProvider>
+                </ConnectionLayoutProvider>
+              </InterfaceFontProvider>
+            </EditorFontProvider>
+            <Toaster closeButton position="top-center" theme="system" />
+            <Suspense fallback={null}>
+              <Devtools />
+            </Suspense>
+          </EditorThemeProvider>
+        </IconPackProvider>
       </ThemeLabProvider>
     </ThemeProvider>
   )
