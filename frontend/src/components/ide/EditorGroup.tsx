@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import * as Y from 'yjs'
 import { cn } from '#/lib/utils'
 import type { Workspace } from '#/lib/api/types'
@@ -9,7 +9,10 @@ import { SqlEditor } from './SqlEditor'
 import { useYDocRegistry } from './useYDocRegistry'
 import { useFileContent } from './useFileContent'
 import { ObjectDetailView } from './object-detail/ObjectDetailView'
-import { SchemaDiagramView } from './schema-diagram/SchemaDiagramView'
+
+const SchemaDiagramView = lazy(() =>
+  import('./schema-diagram/SchemaDiagramView').then((module) => ({ default: module.SchemaDiagramView })),
+)
 
 type EditorGroupProps = {
   orgSlug: string
@@ -66,7 +69,9 @@ export function EditorGroup({ orgSlug, workspace, group, focused, showFocus, onC
       />
       <div className="min-h-0 flex-1 border-t border-border bg-card">
         {activeTab && isDiagram ? (
-          <SchemaDiagramView key={`${group.id}:${activeTab.id}`} orgSlug={orgSlug} workspace={workspace} tab={activeTab} />
+          <Suspense fallback={<div className="flex h-full items-center justify-center text-xs text-muted-foreground">Loading diagram...</div>}>
+            <SchemaDiagramView key={`${group.id}:${activeTab.id}`} orgSlug={orgSlug} workspace={workspace} tab={activeTab} />
+          </Suspense>
         ) : activeTab && isObject ? (
           <ObjectDetailView key={`${group.id}:${activeTab.id}`} orgSlug={orgSlug} workspace={workspace} tab={activeTab} />
         ) : activeTab && doc ? (

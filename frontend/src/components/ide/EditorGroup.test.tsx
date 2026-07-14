@@ -110,7 +110,7 @@ describe('EditorGroup', () => {
     }))
   })
 
-  it('routes object and diagram tabs without allocating editor documents', () => {
+  it('routes object and diagram tabs without allocating editor documents', async () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
     const objectTab = tab('object')
     const diagramTab = tab('diagram')
@@ -137,7 +137,7 @@ describe('EditorGroup', () => {
         />
       </IdeStoreContext.Provider>,
     )
-    expect(screen.getByTestId('diagram')).toHaveTextContent(diagramTab.id)
+    expect(await screen.findByTestId('diagram')).toHaveTextContent(diagramTab.id)
     expect(mocks.getOrCreate).not.toHaveBeenCalled()
   })
 })
