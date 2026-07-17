@@ -1,0 +1,77 @@
+version: 2
+
+# Enterprise release config. Runs as a second goreleaser invocation after
+# .goreleaser.yml so the enterprise frontend embed never races the community
+# one; release.mode append attaches artifacts to the release the community
+# run created.
+dist: dist-ee
+
+before:
+  hooks:
+    - sh -c "cd frontend && bun install --frozen-lockfile"
+    # Embed the enterprise frontend bundle before compiling.
+    - sh -c "cd frontend && bun run build:enterprise"
+    - touch assets/static/.gitkeep
+    - go mod tidy
+
+builds:
+  - main: ./cmd/api
+    id: enterprise
+    binary: sqlwarden-ee
+    flags:
+      - -tags=enterprise
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/sqlwarden/internal/version.version={{.Version}}
+      - -X github.com/sqlwarden/internal/version.commit={{.Commit}}
+      - -X github.com/sqlwarden/internal/version.date={{.Date}}
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      sqlwarden-ee_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE*
+      - LICENSING.md
+      - enterprise/LICENSE
+
+checksum:
+  name_template: 'checksums-ee.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: sqlwarden
+    name: sqlwarden
+  draft: false
+  prerelease: auto
+  mode: append
+  footer: |
+    ## SQLWarden Enterprise
+
+    `sqlwarden-ee` binaries include enterprise features and require a license
+    key in production. See LICENSING.md.

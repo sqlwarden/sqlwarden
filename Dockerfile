@@ -9,7 +9,12 @@ RUN go mod download
 
 COPY . .
 
+# GO_BUILD_TAGS=enterprise produces the sqlwarden-ee image from the same
+# Dockerfile; empty (default) produces the community image.
+ARG GO_BUILD_TAGS=""
+
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -tags "${GO_BUILD_TAGS}" \
     -ldflags="-s -w" \
     -o sqlwarden \
     ./cmd/api

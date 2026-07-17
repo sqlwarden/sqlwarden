@@ -65,6 +65,12 @@ frontend/build:
 	cd frontend && bun run build
 	@touch assets/static/.gitkeep
 
+## frontend/build/enterprise: build the enterprise frontend bundle to assets/static
+.PHONY: frontend/build/enterprise
+frontend/build/enterprise:
+	cd frontend && bun run build:enterprise
+	@touch assets/static/.gitkeep
+
 ## frontend/lint: lint frontend source files
 .PHONY: frontend/lint
 frontend/lint:
@@ -102,6 +108,13 @@ build: frontend/build
 	@mkdir -p dist
 	go build -ldflags="-s -w -X github.com/sqlwarden/internal/version.version=dev -X github.com/sqlwarden/internal/version.commit=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown) -X github.com/sqlwarden/internal/version.date=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o=dist/sqlwarden ./cmd/api
 
+## build/enterprise: build the enterprise edition binary (builds enterprise frontend first)
+.PHONY: build/enterprise
+build/enterprise: frontend/build/enterprise
+	@echo "Building sqlwarden-ee..."
+	@mkdir -p dist
+	go build -tags enterprise -ldflags="-s -w -X github.com/sqlwarden/internal/version.version=dev -X github.com/sqlwarden/internal/version.commit=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown) -X github.com/sqlwarden/internal/version.date=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o=dist/sqlwarden-ee ./cmd/api
+
 ## build/release: build the application for release (requires goreleaser)
 .PHONY: build/release
 build/release:
@@ -115,6 +128,11 @@ build/release:
 .PHONY: run
 run: build
 	DB_LOG_QUERIES=true LOG_FORMAT=text ./dist/sqlwarden
+
+## run/enterprise: build and run the enterprise edition
+.PHONY: run/enterprise
+run/enterprise: build/enterprise
+	DB_LOG_QUERIES=true LOG_FORMAT=text ./dist/sqlwarden-ee
 
 ## run/live: run the application with reloading on file changes
 .PHONY: run/live
