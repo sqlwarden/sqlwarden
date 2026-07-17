@@ -27,6 +27,7 @@ import {
   workspaceSettingsPagePermissions,
 } from '#/lib/workspace-page-permissions'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
+import { DistributionNavigationSections } from '#/distribution/composition'
 
 export const Route = createFileRoute('/orgs/$org_slug')({
   component: OrganizationLayout,
@@ -147,6 +148,13 @@ function OrganizationLayout() {
               {workspaceSettingsNavItems.length > 0 ? (
                 <AppShellNavSection items={workspaceSettingsNavItems} pathname={pathname} />
               ) : null}
+              <DistributionNavigationSections
+                scope="workspace"
+                pathname={pathname}
+                orgSlug={orgSlug}
+                workspaceId={workspaceId}
+                permissions={workspacePermissions}
+              />
             </>
           ) : (
             <>
@@ -165,6 +173,12 @@ function OrganizationLayout() {
                   pathname={pathname}
                 />
               ) : null}
+              <DistributionNavigationSections
+                scope="organization"
+                pathname={pathname}
+                orgSlug={orgSlug}
+                permissions={orgEffectivePermissions.data?.permissions}
+              />
             </>
           )}
         </SidebarContent>

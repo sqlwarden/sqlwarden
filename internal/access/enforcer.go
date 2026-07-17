@@ -12,13 +12,21 @@ import (
 
 // Enforcer evaluates permissions using domain tables (no Casbin).
 type Enforcer struct {
-	db    *bun.DB
-	cache AuthorizationCache
+	db          *bun.DB
+	cache       AuthorizationCache
+	permissions *Registry
 }
 
 // New creates an Enforcer backed by the given database.
 func New(db *bun.DB) (*Enforcer, error) {
-	return &Enforcer{db: db, cache: NewMemoryAuthorizationCache()}, nil
+	return NewWithRegistry(db, NewRegistry())
+}
+
+func NewWithRegistry(db *bun.DB, permissions *Registry) (*Enforcer, error) {
+	if permissions == nil {
+		permissions = NewRegistry()
+	}
+	return &Enforcer{db: db, cache: NewMemoryAuthorizationCache(), permissions: permissions}, nil
 }
 
 // Can returns true if accountID holds permission on the given resource within orgID.
@@ -58,7 +66,7 @@ func (e *Enforcer) EffectivePermissions(ctx context.Context,
 	ownerType, resourceType string, resourceID int64,
 ) ([]string, error) {
 	if ownerType == "space" {
-		permissions := append([]string(nil), ResourcePermissions[resourceType]...)
+		permissions := e.permissions.ResourcePermissions(resourceType)
 		sort.Strings(permissions)
 		return permissions, nil
 	}
@@ -302,10 +310,10 @@ func (e *Enforcer) effectivePolicyPermissions(policy *OrgPolicy, accountID int64
 			}
 			roleScopeType := policy.roleScopeTypes[rb.roleID]
 			for permission := range policy.rolePermissions[rb.roleID] {
-				if !ValidForScope(permission, roleScopeType) {
+				if !e.permissions.ValidForScope(permission, roleScopeType) {
 					continue
 				}
-				if !ValidForResource(permission, targetResourceType) {
+				if !e.permissions.ValidForResource(permission, targetResourceType) {
 					continue
 				}
 				seen[permission] = true
@@ -361,8 +369,9 @@ func (e *Enforcer) SeedOrg(ctx context.Context, orgID, ownerAccountID int64) err
 // SeedOrgWithExecutor seeds organization builtin authorization data using exec.
 // Callers that pass a transaction are responsible for cache invalidation after commit.
 func (e *Enforcer) SeedOrgWithExecutor(ctx context.Context, exec bun.IDB, orgID, ownerAccountID int64) error {
-	for roleName, permissions := range OrgBuiltinRoles {
-		roleID, err := e.insertRoleWithExecutor(ctx, exec, orgID, nil, roleName, OrgBuiltinRoleDescriptions[roleName], "org", true)
+	descriptions := e.permissions.OrgDescriptions()
+	for roleName, permissions := range e.permissions.OrgRoles() {
+		roleID, err := e.insertRoleWithExecutor(ctx, exec, orgID, nil, roleName, descriptions[roleName], "org", true)
 		if err != nil {
 			return fmt.Errorf("seed role %s: %w", roleName, err)
 		}
@@ -406,8 +415,9 @@ func (e *Enforcer) SeedWorkspace(ctx context.Context, orgID, workspaceID, creato
 // SeedWorkspaceWithExecutor seeds workspace builtin authorization data using exec.
 // Callers that pass a transaction are responsible for cache invalidation after commit.
 func (e *Enforcer) SeedWorkspaceWithExecutor(ctx context.Context, exec bun.IDB, orgID, workspaceID, creatorAccountID int64) error {
-	for roleName, permissions := range WorkspaceBuiltinRoles {
-		roleID, err := e.insertRoleWithExecutor(ctx, exec, orgID, &workspaceID, roleName, WorkspaceBuiltinRoleDescriptions[roleName], "workspace", true)
+	descriptions := e.permissions.WorkspaceDescriptions()
+	for roleName, permissions := range e.permissions.WorkspaceRoles() {
+		roleID, err := e.insertRoleWithExecutor(ctx, exec, orgID, &workspaceID, roleName, descriptions[roleName], "workspace", true)
 		if err != nil {
 			return fmt.Errorf("seed workspace role %s: %w", roleName, err)
 		}
@@ -447,11 +457,38 @@ func (e *Enforcer) SeedWorkspaceWithExecutor(ctx context.Context, exec bun.IDB, 
 	return nil
 }
 
+// ReconcileBuiltinRolePermissions additively installs configured defaults into
+// builtin roles that predate the current distribution.
+func (e *Enforcer) ReconcileBuiltinRolePermissions(ctx context.Context) error {
+	groups := []struct {
+		scope string
+		roles map[string][]string
+	}{
+		{scope: "org", roles: e.permissions.AddedOrgDefaults()},
+		{scope: "workspace", roles: e.permissions.AddedWorkspaceDefaults()},
+	}
+	for _, group := range groups {
+		for role, permissions := range group.roles {
+			for _, permission := range permissions {
+				_, err := e.db.ExecContext(ctx, `
+INSERT INTO role_permissions (role_id, permission)
+SELECT id, ? FROM roles
+WHERE is_builtin = ? AND scope_type = ? AND name = ?
+ON CONFLICT (role_id, permission) DO NOTHING`, permission, true, group.scope, role)
+				if err != nil {
+					return fmt.Errorf("reconcile %s builtin role %q permission %q: %w", group.scope, role, permission, err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // CreateRole creates a custom (non-builtin) role. Pass workspaceID=nil for an org-level role or
 // a non-nil pointer for a workspace-scoped custom role. Returns the new role ID.
 func (e *Enforcer) CreateRole(ctx context.Context, orgID int64, workspaceID *int64, name, description, scopeType string, permissions []string) (int64, error) {
 	for _, p := range permissions {
-		if !ValidForScope(p, scopeType) {
+		if !e.permissions.ValidForScope(p, scopeType) {
 			return 0, fmt.Errorf("%w: permission %q is not valid for scope %q", ErrInvalidScopePermission, p, scopeType)
 		}
 	}

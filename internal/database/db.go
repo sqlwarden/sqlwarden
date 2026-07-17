@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -100,8 +102,12 @@ func (db *DB) MigrateUp() error {
 	if db.driver == "sqlite" {
 		migrationPath = "migrations_sqlite"
 	}
+	return db.MigrateFS(assets.EmbeddedFiles, migrationPath, "schema_migrations")
+}
 
-	iofsDriver, err := iofs.New(assets.EmbeddedFiles, migrationPath)
+// MigrateFS applies one embedded migration stream using an independent ledger.
+func (db *DB) MigrateFS(migrations fs.FS, migrationPath, ledger string) error {
+	iofsDriver, err := iofs.New(migrations, migrationPath)
 	if err != nil {
 		return err
 	}
@@ -109,17 +115,28 @@ func (db *DB) MigrateUp() error {
 	var databaseURL string
 	switch db.driver {
 	case "postgres":
-		databaseURL = "postgres://" + db.dsn
+		databaseURL = db.dsn
+		if !strings.HasPrefix(databaseURL, "postgres://") && !strings.HasPrefix(databaseURL, "postgresql://") {
+			databaseURL = "postgres://" + databaseURL
+		}
 	case "sqlite":
 		databaseURL = "sqlite://" + db.dsn
 	default:
 		return fmt.Errorf("unsupported database driver for migrations: %s", db.driver)
 	}
+	parsed, err := url.Parse(databaseURL)
+	if err != nil {
+		return fmt.Errorf("parse migration database URL: %w", err)
+	}
+	query := parsed.Query()
+	query.Set("x-migrations-table", ledger)
+	parsed.RawQuery = query.Encode()
 
-	migrator, err := migrate.NewWithSourceInstance("iofs", iofsDriver, databaseURL)
+	migrator, err := migrate.NewWithSourceInstance("iofs", iofsDriver, parsed.String())
 	if err != nil {
 		return err
 	}
+	defer func() { _, _ = migrator.Close() }()
 
 	err = migrator.Up()
 	switch {

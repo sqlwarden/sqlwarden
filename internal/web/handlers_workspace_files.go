@@ -307,7 +307,7 @@ func (app *application) workspaceFileService() *files.Service {
 	if app.config.Files.Revisions.Enabled {
 		revisionPolicy = files.RevisionPolicyVersioned
 	}
-	return files.NewWithStoreResolver(app.db, app.fileStores, app.enforcer, files.Config{
+	return files.NewWithStoreResolver(app.db, app.fileStores, authorizerCanAdapter{authorizer: app.authorizer}, files.Config{
 		StorageMode:            app.config.Files.StorageMode,
 		ActiveStorageBackendID: app.config.Files.ActiveStorageBackend,
 		RevisionPolicy:         revisionPolicy,

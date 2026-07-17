@@ -9,8 +9,8 @@ import (
 	"runtime/debug"
 	"syscall"
 
+	"github.com/sqlwarden/app"
 	"github.com/sqlwarden/internal/version"
-	"github.com/sqlwarden/internal/web"
 )
 
 func main() {
@@ -31,7 +31,7 @@ func run(args []string) error {
 		return runRotateKeys(args[1:])
 	}
 
-	cfg, showVersion, err := web.LoadConfig(args)
+	cfg, showVersion, err := app.LoadConfig(args)
 	if err != nil {
 		return err
 	}
@@ -41,21 +41,21 @@ func run(args []string) error {
 		return nil
 	}
 
-	logger, err := web.NewLogger(cfg, os.Stdout)
+	logger, err := app.NewLogger(cfg, os.Stdout)
 	if err != nil {
 		return err
 	}
 
-	app, err := web.New(cfg, logger)
+	application, err := app.New(cfg, logger)
 	if err != nil {
 		return err
 	}
-	defer app.Close()
+	defer application.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	return app.ServeHTTP(ctx)
+	return application.ServeHTTP(ctx)
 }
 
 // runRotateKeys re-encrypts all application-encrypted data (connection DSNs and
@@ -67,23 +67,23 @@ func run(args []string) error {
 // application-level authorization is applied. It is the CLI equivalent of the
 // instance-admin HTTP rotate endpoint.
 func runRotateKeys(args []string) error {
-	cfg, _, err := web.LoadConfig(args)
+	cfg, _, err := app.LoadConfig(args)
 	if err != nil {
 		return err
 	}
 
-	logger, err := web.NewLogger(cfg, os.Stdout)
+	logger, err := app.NewLogger(cfg, os.Stdout)
 	if err != nil {
 		return err
 	}
 
-	app, err := web.New(cfg, logger)
+	application, err := app.New(cfg, logger)
 	if err != nil {
 		return err
 	}
-	defer app.Close()
+	defer application.Close()
 
-	report, err := app.RotateEncryptionKeys(context.Background())
+	report, err := application.RotateEncryptionKeys(context.Background())
 	if err != nil {
 		return err
 	}

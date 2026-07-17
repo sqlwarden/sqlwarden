@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,6 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sqlwarden/authorization"
+	"github.com/sqlwarden/buildinfo"
+	"github.com/sqlwarden/distribution"
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/cache"
 	"github.com/sqlwarden/internal/connection"
@@ -45,12 +49,18 @@ type application struct {
 	schemaService    *schemaapp.Service
 	keyring          *encrypt.Keyring
 	enforcer         *access.Enforcer
+	authorizer       authorization.Authorizer
+	permissions      *access.Registry
 	fileStores       *fileStoreRegistry
 	fileLocks        sync.Map
 	fileReaperCancel context.CancelFunc
 	jobStore         *jobs.Store
 	jobRegistry      *jobs.Registry
 	jobRunnerCancel  context.CancelFunc
+	distribution     distribution.Dependencies
+	frontendFS       fs.FS
+	buildInfo        buildinfo.Info
+	handler          http.Handler
 }
 
 type fileStoreRegistry struct {
@@ -74,6 +84,12 @@ func (r *fileStoreRegistry) Store(_ context.Context, backendID string) (filestor
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
+	return NewWithConfigure(cfg, logger, nil)
+}
+
+// NewWithConfigure constructs the Community application with optional trusted
+// distribution dependencies supplied at build time.
+func NewWithConfigure(cfg Config, logger *slog.Logger, configure distribution.Configure) (*App, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -137,7 +153,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
-	enforcer, err := access.New(db.DB)
+	permissions := access.NewRegistry()
+	enforcer, err := access.NewWithRegistry(db.DB, permissions)
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("enforcer init: %w", err)
@@ -170,18 +187,47 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		schemaService: schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
 		keyring:       keyring,
 		enforcer:      enforcer,
+		permissions:   permissions,
 		fileStores:    fileStores,
 		jobStore:      jobs.NewStore(db),
 	}
 	app.jobRegistry = app.defaultJobRegistry()
+	baseAuthorizer := enforcerAuthorizer{enforcer: enforcer}
+	app.authorizer = baseAuthorizer
+	if configure != nil {
+		resolved, configureErr := configure(app.hostServices(baseAuthorizer))
+		if configureErr != nil {
+			_ = app.Close()
+			return nil, fmt.Errorf("configure distribution: %w", configureErr)
+		}
+		app.distribution = resolved
+		app.frontendFS = resolved.Frontend
+		app.buildInfo = resolved.Build
+		if err := app.installDistributionDependencies(context.Background()); err != nil {
+			_ = app.Close()
+			return nil, err
+		}
+	}
+	app.handler = app.routes()
+	if app.distribution.Lifecycle != nil {
+		if err := app.distribution.Lifecycle.Start(context.Background()); err != nil {
+			_ = app.Close()
+			return nil, fmt.Errorf("start distribution lifecycle: %w", err)
+		}
+	}
 	app.startJobRunner()
 	app.startFileContentDeletionReaper()
 	return app, nil
 }
 
 func (app *application) Handler() http.Handler {
+	if app.handler != nil {
+		return app.handler
+	}
 	return app.routes()
 }
+
+func (app *application) BuildInfo() buildinfo.Info { return app.buildInfo }
 
 func (app *application) Close() error {
 	startedAt := time.Now()
@@ -193,6 +239,11 @@ func (app *application) Close() error {
 		app.jobRunnerCancel()
 	}
 	app.wg.Wait()
+	if app.distribution.Lifecycle != nil {
+		if err := app.distribution.Lifecycle.Shutdown(context.Background()); err != nil {
+			app.logger.Warn("distribution lifecycle shutdown failed", "error", err)
+		}
+	}
 	app.logger.Info("background workers stopped", "duration_ms", time.Since(startedAt).Milliseconds())
 
 	if app.queryCursors != nil {

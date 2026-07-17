@@ -30,6 +30,8 @@ func newTestApp(t *testing.T) *application {
 		t.Fatal(err)
 	}
 	app.enforcer = enforcer
+	app.permissions = access.NewRegistry()
+	app.authorizer = enforcerAuthorizer{enforcer: enforcer}
 	app.connManager = connection.New(30 * time.Minute)
 	app.schemaService = schemaapp.NewService(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL)
 	t.Cleanup(func() { app.connManager.Close() })

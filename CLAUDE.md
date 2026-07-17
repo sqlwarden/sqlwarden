@@ -8,6 +8,8 @@ This file gives AI coding agents working guidance for this repository. For archi
 - Use grep/read only for literal text search, docs, or files already identified.
 - Never commit unless the user explicitly asks.
 - Do not revert user changes unless explicitly requested.
+- Preserve the open-core dependency direction: paid distributions import Community public packages; Community must never import enterprise code. Compose paid features through `app.WithDistribution` and narrow typed interfaces in `distribution`/`authorization`, not runtime plugin discovery, generic hook maps, feature manifests, or package-global registries.
+- Community RBAC is always the base authorization decision. An injected authorization constraint may only restrict a Community-approved request and must never elevate a Community denial.
 - Per-driver behavior must use the abstraction+implementation pattern: define a capability interface and implement it per driver, so adding a new database means writing one implementation, not editing a shared `switch`/conditional. Never inline driver-specific logic (SQL shape, quoting, dialect quirks, schema introspection) into shared components or handlers. Examples: backend `internal/dbengine` engine interfaces (`Driver`, `SchemaInspector`) and per-engine inspectors; frontend `SqlDialect` (`sqlDialect.ts`) and the object-detail `DriverHooks` renderer registry. Provide a sensible default (e.g. a base class) only as an override point, not as a place to branch on driver name.
 - Keep `frontend/src/routeTree.gen.ts` generated; do not hand-edit it.
 - Use Conventional Commits when committing.
@@ -19,12 +21,14 @@ SQLWarden is a Go API plus embedded React SPA.
 
 - `cmd/api` is a thin server entrypoint.
 - `internal/web` owns config loading, app wiring, routes, middleware, handlers, and static frontend serving.
+- `app`, `distribution`, `authorization`, and `buildinfo` are the public compile-time distribution boundary. Keep implementation details under `internal/` and verify downstream composition through `make distribution/contract`.
 - `internal/database` stores SQLWarden metadata through Bun against SQLite/PostgreSQL.
 - `internal/access` is the custom RBAC enforcer and permissions catalog.
 - `internal/connection` manages live target database sessions.
 - `internal/dbengine` contains target database engines and capabilities for PostgreSQL, MySQL, and SQLite.
 - `internal/files` and `internal/filestore` implement workspace file metadata/content storage.
 - `frontend/` is the React app using TanStack Router, TanStack Query, Tailwind CSS, shadcn/ui, Base UI, CodeMirror, Zustand, IndexedDB, Y.js, and BroadcastChannel.
+- `frontend/src/distribution` composes optional build-time providers, routes, and navigation. Community's dependency object must remain a no-op default; external distributions are verified with `make frontend/distribution/contract`.
 
 Future Wails desktop work should reuse `internal/web`; do not put reusable web logic in `cmd/api`.
 
@@ -94,6 +98,7 @@ Configuration uses spf13/viper through `internal/web`.
 ## Backend Conventions
 
 - Keep `cmd/api` thin.
+- Pass `distribution.HostServices` only through the distribution composition root. Paid feature constructors should receive the smallest account, organization, session, job, authorization, or database interface they need rather than retaining the full host object.
 - Put reusable HTTP behavior in `internal/web`.
 - Prefer concrete resource permission middleware:
   - `requireOrgPermission`

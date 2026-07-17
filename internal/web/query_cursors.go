@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/authorization"
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/dbengine/classifier"
@@ -369,13 +370,13 @@ func (app *application) resolveQueryRuntimeSession(w http.ResponseWriter, r *htt
 	account := contextGetAccount(r)
 	conn := contextGetConnection(r)
 
-	_, allowed, err := app.requiredConnectionRuntimePermission(r, sql)
+	_, decision, err := app.requiredConnectionRuntimePermission(r, sql)
 	if err != nil {
 		app.serverError(w, r, err)
 		return nil, false
 	}
-	if !allowed {
-		app.notPermitted(w, r)
+	if !decision.Allowed {
+		app.authorizationDenied(w, r, decision)
 		return nil, false
 	}
 
@@ -396,34 +397,37 @@ func (app *application) resolveQueryRuntimeSession(w http.ResponseWriter, r *htt
 	return session, true
 }
 
-func (app *application) requiredConnectionRuntimePermission(r *http.Request, sql string) (string, bool, error) {
+func (app *application) requiredConnectionRuntimePermission(r *http.Request, sql string) (string, authorization.Decision, error) {
+	account := contextGetAccount(r)
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 	conn := contextGetConnection(r)
 
-	if app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnExecute) {
-		return access.PermConnExecute, true, nil
+	broadDecision := app.authorize(r.Context(), account.ID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnExecute)
+	if broadDecision.Allowed {
+		return access.PermConnExecute, broadDecision, nil
 	}
 
 	classification, err := app.classifyConnectionSQL(r, conn, sql)
 	if err != nil {
-		return "", false, err
+		return "", authorization.Decision{}, err
 	}
 
+	var permission string
 	switch classification.Kind {
 	case classifier.KindDQL:
-		if app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnDQL) {
-			return access.PermConnDQL, true, nil
-		}
+		permission = access.PermConnDQL
 	case classifier.KindDML:
-		if app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnDML) {
-			return access.PermConnDML, true, nil
-		}
+		permission = access.PermConnDML
 	case classifier.KindDDL:
-		if app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnDDL) {
-			return access.PermConnDDL, true, nil
-		}
+		permission = access.PermConnDDL
 	}
-
-	return "", false, nil
+	if permission == "" {
+		return "", broadDecision, nil
+	}
+	specificDecision := app.authorize(r.Context(), account.ID, org.ID, ws.OwnerType, "connection", conn.ID, permission)
+	if specificDecision.Allowed {
+		return permission, specificDecision, nil
+	}
+	return "", preferredAuthorizationDenial(specificDecision, broadDecision), nil
 }

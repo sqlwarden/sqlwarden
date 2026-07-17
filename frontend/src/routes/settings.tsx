@@ -13,6 +13,7 @@ import { useSession } from '#/hooks/use-session'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { getAccessToken } from '#/lib/auth/access-token'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
+import { DistributionNavigationSections } from '#/distribution/composition'
 
 export const Route = createFileRoute('/settings')({
   component: SettingsLayout,
@@ -68,6 +69,7 @@ function SettingsLayout() {
         <SidebarContent>
           <AppShellNavSection items={homeItems} pathname={pathname} />
           <AppShellNavSection label="Account" items={accountItems} pathname={pathname} />
+          <DistributionNavigationSections scope="account" pathname={pathname} />
         </SidebarContent>
         <AppShellSidebarFooter
           session={session.data}

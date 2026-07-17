@@ -92,7 +92,7 @@ func (app *application) createWorkspaceRole(w http.ResponseWriter, r *http.Reque
 	validScopes := map[string]bool{"workspace": true, "environment": true, "connection": true}
 	input.V.CheckField(validScopes[input.ScopeType], "scope_type", "Scope type must be workspace, environment, or connection.")
 	for _, p := range input.Permissions {
-		input.V.CheckField(access.ValidForScope(p, input.ScopeType), "permissions", "Permission "+p+" is not valid for "+input.ScopeType+" scope.")
+		input.V.CheckField(app.permissions.ValidForScope(p, input.ScopeType), "permissions", "Permission "+p+" is not valid for "+input.ScopeType+" scope.")
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -206,8 +206,8 @@ func (app *application) deleteWorkspaceRole(w http.ResponseWriter, r *http.Reque
 
 func (app *application) listWorkspacePermissions(w http.ResponseWriter, r *http.Request) {
 	err := response.JSON(w, http.StatusOK, map[string]any{
-		"permissions":        access.ScopePermissions["workspace"],
-		"permission_details": access.ScopePermissionDefinitions("workspace"),
+		"permissions":        app.permissions.ScopePermissions("workspace"),
+		"permission_details": app.permissions.ScopeDefinitions("workspace"),
 	})
 	if err != nil {
 		app.serverError(w, r, err)

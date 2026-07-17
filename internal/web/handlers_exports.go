@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sqlwarden/authorization"
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/dbengine"
@@ -65,8 +66,9 @@ func (app *application) createConnectionExport(w http.ResponseWriter, r *http.Re
 	if !app.validateExportSQL(w, r, conn, input.SQL) {
 		return
 	}
-	if !app.hasExportPermission(r, org.ID, ws.OwnerType, conn.ID) {
-		app.notPermitted(w, r)
+	decision := app.exportAuthorization(r, org.ID, ws.OwnerType, conn.ID)
+	if !decision.Allowed {
+		app.authorizationDenied(w, r, decision)
 		return
 	}
 	job, err := app.workspaceJobStore().Enqueue(r.Context(), jobs.EnqueueInput{
@@ -109,8 +111,9 @@ func (app *application) downloadConnectionExport(w http.ResponseWriter, r *http.
 	if !app.validateExportSQL(w, r, conn, input.SQL) {
 		return
 	}
-	if !app.hasExportPermission(r, org.ID, ws.OwnerType, conn.ID) {
-		app.notPermitted(w, r)
+	decision := app.exportAuthorization(r, org.ID, ws.OwnerType, conn.ID)
+	if !decision.Allowed {
+		app.authorizationDenied(w, r, decision)
 		return
 	}
 	sessionID := r.Header.Get("X-Warden-Session")
@@ -185,9 +188,8 @@ func (app *application) validateExportSQL(w http.ResponseWriter, r *http.Request
 	return true
 }
 
-func (app *application) hasExportPermission(r *http.Request, orgID int64, ownerType string, connectionID int64) bool {
-	return app.hasConnectionPermission(r, orgID, ownerType, connectionID, access.PermConnDQL) ||
-		app.hasConnectionPermission(r, orgID, ownerType, connectionID, access.PermConnExecute)
+func (app *application) exportAuthorization(r *http.Request, orgID int64, ownerType string, connectionID int64) authorization.Decision {
+	return app.connectionRuntimeAuthorization(r, orgID, ownerType, connectionID, access.PermConnDQL, access.PermConnExecute)
 }
 
 func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtime) (any, error) {
@@ -224,9 +226,18 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 	if !found || conn.WorkspaceID != ws.ID {
 		return nil, jobs.Permanent("connection_not_found", "Connection was not found.")
 	}
-	if !app.enforcer.Can(ctx, input.AccountID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnDQL) &&
-		!app.enforcer.Can(ctx, input.AccountID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnExecute) {
-		return nil, jobs.Permanent("export_not_permitted", "You no longer have permission to export this query.")
+	dqlDecision := app.authorize(ctx, input.AccountID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnDQL)
+	executeDecision := app.authorize(ctx, input.AccountID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnExecute)
+	if !dqlDecision.Allowed && !executeDecision.Allowed {
+		denial := preferredAuthorizationDenial(dqlDecision, executeDecision)
+		code, message := denial.Code, denial.Message
+		if code == "" {
+			code = "export_not_permitted"
+		}
+		if message == "" {
+			message = "You no longer have permission to export this query."
+		}
+		return nil, jobs.Permanent(code, message)
 	}
 	classification, err := connectionClassifier(conn.Driver).Classify(ctx, classifier.Request{SQL: input.SQL})
 	if err != nil {

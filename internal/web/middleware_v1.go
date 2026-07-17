@@ -397,13 +397,9 @@ func (app *application) requireResourcePermission(permission string, resource fu
 				app.notFound(w, r)
 				return
 			}
-			allowed := app.enforcer.Can(r.Context(),
-				account.ID, org.ID,
-				ownerType, resourceType, resourceID,
-				permission,
-			)
-			if !allowed {
-				app.notPermitted(w, r)
+			decision := app.authorize(r.Context(), account.ID, org.ID, ownerType, resourceType, resourceID, permission)
+			if !decision.Allowed {
+				app.authorizationDenied(w, r, decision)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -447,13 +443,9 @@ func (app *application) requireOrgRole(roleName string) func(http.Handler) http.
 				return
 			}
 
-			allowed := app.enforcer.Can(r.Context(),
-				account.ID, org.ID,
-				"org", "org", org.ID,
-				permission,
-			)
-			if !allowed {
-				app.notPermitted(w, r)
+			decision := app.authorize(r.Context(), account.ID, org.ID, "org", "org", org.ID, permission)
+			if !decision.Allowed {
+				app.authorizationDenied(w, r, decision)
 				return
 			}
 			next.ServeHTTP(w, r)

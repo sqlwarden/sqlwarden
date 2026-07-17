@@ -9,9 +9,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sqlwarden/authorization"
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/validator"
 )
+
+func TestPreferredAuthorizationDenialSelectsActionableConstraint(t *testing.T) {
+	decision := preferredAuthorizationDenial(
+		authorization.Decision{Code: apiErrorNotPermitted},
+		authorization.Decision{Code: "approval_required", Message: "Approval is required."},
+	)
+	assert.Equal(t, decision.Code, "approval_required")
+	assert.Equal(t, decision.Message, "Approval is required.")
+}
 
 func TestReportServerError(t *testing.T) {
 	t.Run("Logs error with correct details", func(t *testing.T) {

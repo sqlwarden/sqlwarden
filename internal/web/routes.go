@@ -8,11 +8,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/sqlwarden/assets"
+	"github.com/sqlwarden/distribution"
 	"github.com/sqlwarden/internal/access"
 )
 
 func (app *application) routes() http.Handler {
 	mux := chi.NewRouter()
+	var mounts distribution.RouteMounts
 
 	mux.NotFound(app.notFound)
 	mux.MethodNotAllowed(app.methodNotAllowed)
@@ -26,6 +28,7 @@ func (app *application) routes() http.Handler {
 	mux.With(app.noStoreCache).Get("/api/setup/status", app.setupStatus)
 
 	mux.Route("/api/v1", func(r chi.Router) {
+		mounts.Public = r
 		// API responses must never be HTTP-cached by the browser; see noStoreCache.
 		r.Use(app.noStoreCache)
 		r.Use(app.authenticateV1)
@@ -38,6 +41,7 @@ func (app *application) routes() http.Handler {
 		r.With(app.requireAccount, app.requireInstanceAdmin).Post("/orgs", app.createOrg)
 
 		r.Route("/instance", func(r chi.Router) {
+			mounts.Instance = r
 			r.Use(app.requireAccount, app.requireInstanceAdmin)
 			r.Get("/admins", app.listInstanceAdmins)
 			r.Get("/accounts", app.listInstanceAccounts)
@@ -54,6 +58,7 @@ func (app *application) routes() http.Handler {
 		})
 
 		r.Group(func(r chi.Router) {
+			mounts.Account = r
 			r.Use(app.requireAccount)
 			r.Get("/account", app.getAccount)
 			r.Patch("/account", app.updateAccount)
@@ -164,6 +169,7 @@ func (app *application) routes() http.Handler {
 		})
 
 		r.Route("/orgs/{org_slug}", func(r chi.Router) {
+			mounts.Organization = r
 			r.Use(app.requireAccount, app.orgCtx)
 
 			r.Get("/", app.getOrg)
@@ -215,6 +221,7 @@ func (app *application) routes() http.Handler {
 				r.Get("/", app.listWorkspaces)
 				r.With(app.requireOrgPermission("ws:create")).Post("/", app.createWorkspace)
 				r.Route("/{ws_id}", func(r chi.Router) {
+					mounts.Workspace = r
 					r.Use(app.wsCtx)
 					r.Get("/", app.getWorkspace)
 					r.With(app.requireWorkspacePermission("ws:write")).Patch("/", app.updateWorkspace)
@@ -288,6 +295,7 @@ func (app *application) routes() http.Handler {
 						r.Get("/", app.listEnvironments)
 						r.With(app.requireWorkspacePermission("env:create")).Post("/", app.createEnvironment)
 						r.Route("/{env_id}", func(r chi.Router) {
+							mounts.Environment = r
 							r.Use(app.envCtx)
 							r.Get("/", app.getEnvironment)
 							r.With(app.requireEnvironmentPermission("env:write")).Patch("/", app.updateEnvironment)
@@ -298,6 +306,7 @@ func (app *application) routes() http.Handler {
 								r.Get("/", app.listConnections)
 								r.With(app.requireEnvironmentPermission("conn:create")).Post("/", app.createConnection)
 								r.Route("/{conn_id}", func(r chi.Router) {
+									mounts.Connection = r
 									r.Use(app.connCtx)
 									r.Get("/", app.getConnection)
 									r.With(app.requireConnectionPermission("conn:write")).Patch("/", app.updateConnection)
@@ -325,6 +334,7 @@ func (app *application) routes() http.Handler {
 						r.Get("/", app.listConnections)
 						r.With(app.requireWorkspacePermission("conn:create")).Post("/", app.createConnection)
 						r.Route("/{conn_id}", func(r chi.Router) {
+							mounts.Connection = r
 							r.Use(app.connCtx)
 							r.Get("/", app.getConnection)
 							r.With(app.requireConnectionPermission("conn:write")).Patch("/", app.updateConnection)
@@ -347,11 +357,18 @@ func (app *application) routes() http.Handler {
 				})
 			})
 		})
+		if app.distribution.InstallRoutes != nil {
+			app.distribution.InstallRoutes(mounts)
+		}
 	})
 
-	staticFS, err := fs.Sub(assets.EmbeddedFiles, "static")
-	if err != nil {
-		panic(err)
+	staticFS := app.frontendFS
+	if staticFS == nil {
+		var err error
+		staticFS, err = fs.Sub(assets.EmbeddedFiles, "static")
+		if err != nil {
+			panic(err)
+		}
 	}
 	mux.Get("/*", app.spaHandler(staticFS))
 

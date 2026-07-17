@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sqlwarden/authorization"
 	"github.com/sqlwarden/internal/response"
 )
 
@@ -29,10 +30,9 @@ func (app *application) getEffectivePermissions(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	permissions, err := app.enforcer.EffectivePermissions(r.Context(),
-		account.ID, org.ID,
-		"org", resourceType, resourceID,
-	)
+	permissions, err := app.authorizer.EffectivePermissions(r.Context(), authorization.Request{
+		AccountID: account.ID, OrgID: org.ID, OwnerType: "org", ResourceType: resourceType, ResourceID: resourceID,
+	})
 	if err != nil {
 		app.serverError(w, r, err)
 		return

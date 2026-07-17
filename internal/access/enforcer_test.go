@@ -137,6 +137,51 @@ func TestSeedOrgCreatesBuiltinRoles(t *testing.T) {
 	}
 }
 
+func TestReconcileBuiltinRolePermissionsUpdatesExistingRoles(t *testing.T) {
+	db := newTestDB(t)
+	registry := access.NewRegistry()
+	enforcer, err := access.NewWithRegistry(db.DB, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orgID, _ := seedOrg(t, db, enforcer, "reconcile-distribution")
+
+	const permission = "approval:review"
+	if err = registry.Add(access.PermissionRegistration{
+		ID: permission, Label: "Review approvals", Scopes: []string{"org"}, Resources: []string{"org"},
+		DefaultOrgRoles: []string{access.BuiltinOrgAdminRole},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = enforcer.ReconcileBuiltinRolePermissions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	roles, err := db.ListOrgRoles(context.Background(), orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range roles {
+		if role.Name != access.BuiltinOrgAdminRole {
+			continue
+		}
+		stored, found, getErr := db.GetRole(context.Background(), role.ID, orgID)
+		if getErr != nil {
+			t.Fatal(getErr)
+		}
+		if !found {
+			t.Fatal("administrator role not found")
+		}
+		for _, candidate := range stored.Permissions {
+			if candidate == permission {
+				return
+			}
+		}
+		t.Fatalf("administrator permissions do not contain %q: %v", permission, stored.Permissions)
+	}
+	t.Fatal("administrator role not found")
+}
+
 func TestSeedWorkspaceCreatesBuiltinRoleDescriptions(t *testing.T) {
 	e, db := newTestEnforcer(t)
 	orgID, ownerID := seedOrg(t, db, e, "workspace-descriptions")

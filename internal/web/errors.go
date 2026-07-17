@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/sqlwarden/authorization"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/uptrace/bun/driver/pgdriver"
@@ -119,6 +120,32 @@ func (app *application) invalidAuthenticationToken(w http.ResponseWriter, r *htt
 func (app *application) notPermitted(w http.ResponseWriter, r *http.Request) {
 	message := "You do not have permission to perform this action."
 	app.apiError(w, r, http.StatusForbidden, apiErrorNotPermitted, message, response.APIError{}, nil)
+}
+
+func (app *application) authorizationDenied(w http.ResponseWriter, r *http.Request, decision authorization.Decision) {
+	code := decision.Code
+	if code == "" {
+		code = apiErrorNotPermitted
+	}
+	message := decision.Message
+	if message == "" {
+		message = "You do not have permission to perform this action."
+	}
+	app.apiError(w, r, http.StatusForbidden, code, message, response.APIError{}, nil)
+}
+
+func preferredAuthorizationDenial(decisions ...authorization.Decision) authorization.Decision {
+	for _, decision := range decisions {
+		if !decision.Allowed && decision.Code != "" && decision.Code != apiErrorNotPermitted {
+			return decision
+		}
+	}
+	for _, decision := range decisions {
+		if !decision.Allowed {
+			return decision
+		}
+	}
+	return authorization.Decision{}
 }
 
 // isUniqueViolation returns true if err is a unique-constraint violation from

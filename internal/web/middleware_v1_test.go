@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/authorization"
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/token"
 )
@@ -21,6 +23,8 @@ func newTestApplicationWithEnforcer(t *testing.T) *application {
 		t.Fatal(err)
 	}
 	app.enforcer = enforcer
+	app.permissions = access.NewRegistry()
+	app.authorizer = enforcerAuthorizer{enforcer: enforcer}
 	return app
 }
 
@@ -683,6 +687,41 @@ func TestRequireConcreteResourcePermissionMissingContext(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("%s: expected 404, got %d", tt.name, rec.Code)
 		}
+	}
+}
+
+func TestRequireResourcePermissionAppliesInjectedConstraint(t *testing.T) {
+	app := newTestApplicationWithEnforcer(t)
+	ctx := context.Background()
+	account, err := app.db.InsertAccount(ctx, "constraint@example.com", "Constraint", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := app.db.InsertOrg(ctx, "constraint-org", "Constraint Org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.db.AddOrgMember(ctx, org.ID, account.ID); err != nil {
+		t.Fatal(err)
+	}
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgRead)
+	if err := app.enforcer.BindRole(ctx, org.ID, roleID, access.SubjectTypeAccount, account.ID, "org", org.ID, account.ID); err != nil {
+		t.Fatal(err)
+	}
+	app.authorizer = authorization.Constrained{
+		Base: enforcerAuthorizer{enforcer: app.enforcer},
+		Constraint: authorization.ConstraintFunc(func(context.Context, authorization.Request) authorization.Decision {
+			return authorization.Decision{Code: "approval_required"}
+		}),
+	}
+	req := contextSetOrg(contextSetAccount(httptest.NewRequest(http.MethodGet, "/", nil), account), org)
+	recorder := httptest.NewRecorder()
+	app.requireOrgPermission(access.PermOrgRead)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })).ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", recorder.Code)
+	}
+	if !strings.Contains(recorder.Body.String(), `"approval_required"`) {
+		t.Fatalf("expected constraint error code, got %s", recorder.Body.String())
 	}
 }
 

@@ -105,7 +105,7 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 		input.V.AddFieldError("workspace_id", "Organization roles cannot set workspace_id.")
 	}
 	for _, p := range input.Permissions {
-		input.V.CheckField(access.ValidForScope(p, input.ScopeType), "permissions", "Permission "+p+" is not valid for scope "+input.ScopeType+".")
+		input.V.CheckField(app.permissions.ValidForScope(p, input.ScopeType), "permissions", "Permission "+p+" is not valid for scope "+input.ScopeType+".")
 	}
 
 	if input.V.HasErrors() {
@@ -374,12 +374,12 @@ func (app *application) revokeOrgPolicy(w http.ResponseWriter, r *http.Request) 
 
 func (app *application) listPermissions(w http.ResponseWriter, r *http.Request) {
 	err := response.JSON(w, http.StatusOK, map[string]any{
-		"permissions":        access.AllPermissions(),
-		"permission_details": access.AllPermissionDefinitions(),
-		"scope_map":          access.ScopePermissions,
-		"scope_details":      access.ScopePermissionDefinitionMap(),
-		"resource_map":       access.ResourcePermissions,
-		"resource_details":   access.ResourcePermissionDefinitionMap(),
+		"permissions":        app.permissions.All(),
+		"permission_details": app.permissions.AllDefinitions(),
+		"scope_map":          app.permissions.ScopeMap(),
+		"scope_details":      app.permissions.ScopeDefinitionMap(),
+		"resource_map":       app.permissions.ResourceMap(),
+		"resource_details":   app.permissions.ResourceDefinitionMap(),
 	})
 	if err != nil {
 		app.serverError(w, r, err)
@@ -388,7 +388,7 @@ func (app *application) listPermissions(w http.ResponseWriter, r *http.Request) 
 
 func (app *application) canManageProtectedOrgPolicy(r *http.Request, orgID, grantorID int64, role database.Role) bool {
 	for _, permission := range protectedOrgPolicyPermissions(role) {
-		if !app.enforcer.Can(r.Context(), grantorID, orgID, "org", "org", orgID, permission) {
+		if !app.authorize(r.Context(), grantorID, orgID, "org", "org", orgID, permission).Allowed {
 			return false
 		}
 	}

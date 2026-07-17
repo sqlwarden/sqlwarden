@@ -13,6 +13,7 @@ import { useSession } from '#/hooks/use-session'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { getAccessToken } from '#/lib/auth/access-token'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
+import { DistributionNavigationSections } from '#/distribution/composition'
 
 export const Route = createFileRoute('/administration')({
   component: AdministrationLayout,
@@ -73,6 +74,7 @@ function AdministrationLayout() {
         <SidebarContent>
           <AppShellNavSection items={homeItems} pathname={pathname} />
           <AppShellNavSection label="Instance" items={adminItems} pathname={pathname} />
+          <DistributionNavigationSections scope="instance" pathname={pathname} />
         </SidebarContent>
         <AppShellSidebarFooter
           session={session.data}

@@ -50,14 +50,15 @@ func (app *application) resolveSchemaSession(w http.ResponseWriter, r *http.Requ
 	conn := contextGetConnection(r)
 	ws := contextGetWorkspace(r)
 
-	if !app.hasAnyConnectionRuntimePermission(r, org.ID, ws.OwnerType, conn.ID,
-		access.PermConnExecute, access.PermConnDQL, access.PermConnDML, access.PermConnDDL) {
+	decision := app.connectionRuntimeAuthorization(r, org.ID, ws.OwnerType, conn.ID,
+		access.PermConnExecute, access.PermConnDQL, access.PermConnDML, access.PermConnDDL)
+	if !decision.Allowed {
 		app.logWarn(r, "schema access denied",
 			slog.Int64("connection_id", conn.ID),
 			slog.Int64("workspace_id", ws.ID),
 			slog.String("reason", "missing_runtime_permission"),
 		)
-		app.notPermitted(w, r)
+		app.authorizationDenied(w, r, decision)
 		return nil, false
 	}
 

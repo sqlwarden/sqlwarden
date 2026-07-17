@@ -23,6 +23,20 @@ audit: test
 	go run honnef.co/go/tools/cmd/staticcheck@latest -checks=all,-ST1000,-U1000 ./...
 	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
+## distribution/contract: verify a separate Go distribution can compose Community through public APIs
+.PHONY: distribution/contract
+distribution/contract:
+	go test ./contracttest -run TestDownstreamDistributionBuildsOutsideTheCommunityModule -count=1
+
+## frontend/distribution/contract: build Community with an external frontend dependency object
+.PHONY: frontend/distribution/contract
+frontend/distribution/contract:
+	@output=$$(mktemp -d); \
+	trap 'rm -rf "$$output"' EXIT; \
+	cd frontend && \
+	SQLWARDEN_FRONTEND_DISTRIBUTION="$$(cd .. && pwd)/contracttest/frontend-distribution.tsx" \
+	SQLWARDEN_FRONTEND_OUT_DIR="$$output" bun run build
+
 ## test: run all tests (use VERBOSE=1 for verbose output)
 .PHONY: test
 test:

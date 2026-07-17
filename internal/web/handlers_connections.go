@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/authorization"
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
@@ -175,18 +176,17 @@ func queryLogAttrs(account database.Account, org database.Organization, ws datab
 	}
 }
 
-func (app *application) hasAnyConnectionRuntimePermission(r *http.Request, orgID int64, ownerType string, connectionID int64, permissions ...string) bool {
-	for _, permission := range permissions {
-		if app.hasConnectionPermission(r, orgID, ownerType, connectionID, permission) {
-			return true
-		}
-	}
-	return false
-}
-
-func (app *application) hasConnectionPermission(r *http.Request, orgID int64, ownerType string, connectionID int64, permission string) bool {
+func (app *application) connectionRuntimeAuthorization(r *http.Request, orgID int64, ownerType string, connectionID int64, permissions ...string) authorization.Decision {
 	account := contextGetAccount(r)
-	return app.enforcer.Can(r.Context(), account.ID, orgID, ownerType, "connection", connectionID, permission)
+	decisions := make([]authorization.Decision, 0, len(permissions))
+	for _, permission := range permissions {
+		decision := app.authorize(r.Context(), account.ID, orgID, ownerType, "connection", connectionID, permission)
+		if decision.Allowed {
+			return decision
+		}
+		decisions = append(decisions, decision)
+	}
+	return preferredAuthorizationDenial(decisions...)
 }
 
 func (app *application) classifyConnectionSQL(r *http.Request, conn database.Connection, sql string) (classifier.Result, error) {
@@ -488,14 +488,14 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 	conn := contextGetConnection(r)
 	ws := contextGetWorkspace(r)
 
-	allowed := app.hasAnyConnectionRuntimePermission(r, org.ID, ws.OwnerType, conn.ID,
+	decision := app.connectionRuntimeAuthorization(r, org.ID, ws.OwnerType, conn.ID,
 		access.PermConnExecute,
 		access.PermConnDQL,
 		access.PermConnDML,
 		access.PermConnDDL,
 	)
-	if !allowed {
-		app.notPermitted(w, r)
+	if !decision.Allowed {
+		app.authorizationDenied(w, r, decision)
 		return
 	}
 
@@ -573,7 +573,7 @@ func (app *application) listActiveSessions(w http.ResponseWriter, r *http.Reques
 	result := make([]sessionInfo, 0)
 
 	refs := app.connManager.AllForAccount(accountID)
-	if org.ID != 0 && app.enforcer.Can(r.Context(), account.ID, org.ID, ws.OwnerType, "workspace", ws.ID, access.PermPolicyRead) {
+	if org.ID != 0 && app.authorize(r.Context(), account.ID, org.ID, ws.OwnerType, "workspace", ws.ID, access.PermPolicyRead).Allowed {
 		refs = app.connManager.AllForWorkspace(workspaceID)
 	}
 
@@ -660,8 +660,13 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 
 	accountID := strconv.FormatInt(account.ID, 10)
 	if session.AccountID != accountID {
-		if org.ID == 0 || !app.enforcer.Can(r.Context(), account.ID, org.ID, ws.OwnerType, "workspace", ws.ID, access.PermPolicyModify) {
+		if org.ID == 0 {
 			app.notPermitted(w, r)
+			return
+		}
+		decision := app.authorize(r.Context(), account.ID, org.ID, ws.OwnerType, "workspace", ws.ID, access.PermPolicyModify)
+		if !decision.Allowed {
+			app.authorizationDenied(w, r, decision)
 			return
 		}
 	}
@@ -729,7 +734,8 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hasBroadExecute := app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnExecute)
+	broadExecuteDecision := app.authorize(r.Context(), account.ID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnExecute)
+	hasBroadExecute := broadExecuteDecision.Allowed
 	classification, err := app.classifyConnectionSQL(r, conn, input.SQL)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -748,42 +754,33 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 
 	switch classification.Kind {
 	case classifier.KindDQL:
-		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
-			account.ID, org.ID,
-			ws.OwnerType, "connection", conn.ID,
-			access.PermConnDQL,
-		) {
+		decision := app.authorize(r.Context(), account.ID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnDQL)
+		if !hasBroadExecute && !decision.Allowed {
 			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnDQL)...)
-			app.notPermitted(w, r)
+			app.authorizationDenied(w, r, preferredAuthorizationDenial(decision, broadExecuteDecision))
 			return
 		}
 		rs, execErr = app.executeDQLQuery(r, session, input.SQL, input.UseCursor, input.PageSize, start)
 	case classifier.KindDML:
-		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
-			account.ID, org.ID,
-			ws.OwnerType, "connection", conn.ID,
-			access.PermConnDML,
-		) {
+		decision := app.authorize(r.Context(), account.ID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnDML)
+		if !hasBroadExecute && !decision.Allowed {
 			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnDML)...)
-			app.notPermitted(w, r)
+			app.authorizationDenied(w, r, preferredAuthorizationDenial(decision, broadExecuteDecision))
 			return
 		}
 		rs, execErr = session.Execute(r.Context(), input.SQL)
 	case classifier.KindDDL:
-		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
-			account.ID, org.ID,
-			ws.OwnerType, "connection", conn.ID,
-			access.PermConnDDL,
-		) {
+		decision := app.authorize(r.Context(), account.ID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnDDL)
+		if !hasBroadExecute && !decision.Allowed {
 			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnDDL)...)
-			app.notPermitted(w, r)
+			app.authorizationDenied(w, r, preferredAuthorizationDenial(decision, broadExecuteDecision))
 			return
 		}
 		rs, execErr = session.Execute(r.Context(), input.SQL)
 	default:
 		if !hasBroadExecute {
 			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnExecute)...)
-			app.notPermitted(w, r)
+			app.authorizationDenied(w, r, broadExecuteDecision)
 			return
 		}
 		rs, execErr = session.Execute(r.Context(), input.SQL)
