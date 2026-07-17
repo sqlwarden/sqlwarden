@@ -13,6 +13,7 @@ import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { EnterpriseSlot } from '#/components/enterprise/enterprise-slot'
+import { LegalNotice } from '#/components/legal-notice'
 import { ENTERPRISE_FEATURES } from '#/lib/enterprise/features'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
@@ -153,6 +154,7 @@ function LoginPage() {
             <EnterpriseSlot slot="login-sso-providers" feature={ENTERPRISE_FEATURES.sso} />
           </CardContent>
         </Card>
+        <LegalNotice className="text-center" />
       </div>
     </main>
   )

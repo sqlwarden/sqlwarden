@@ -118,19 +118,20 @@ Releases are automated using release-please:
 
 If you have questions about contributing, please open an issue for discussion.
 
-## Contributor License
+## Contributor Agreement
 
-By contributing to SQLWarden you agree that:
+External contributions require both of the following:
 
-1. Your contribution is your original work and you sign off each commit
-   under the [Developer Certificate of Origin](https://developercertificate.org)
-   (`git commit -s`).
-2. You grant the SQLWarden project owner a perpetual, worldwide,
-   royalty-free right to use, modify, sublicense, and relicense your
-   contribution. This is required because SQLWarden ships combined
-   community/enterprise builds under a commercial license; contributions
-   that cannot be relicensed cannot be merged.
+1. Sign off every commit with `git commit -s` to certify the
+   [Developer Certificate of Origin](https://developercertificate.org).
+2. Read and accept the [SQLWarden Contributor License Agreement](CLA.md) using
+   the checkbox in the pull request template.
 
-Contributions touching `enterprise/` or `frontend/src/enterprise/` are
-accepted under the same terms and become part of the commercially licensed
-code.
+The DCO confirms that you are entitled to submit the work. The CLA grants the
+project the rights required to publish the same contribution in AGPL community
+releases and commercially licensed combined products. Pull-request acceptance
+is retained in the repository's review history. A maintainer must not merge an
+external contribution without both records.
+
+Contributions to `enterprise/` or `frontend/src/enterprise/` use the same
+process and are distributed under the enterprise terms.

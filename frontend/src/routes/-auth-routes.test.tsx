@@ -16,6 +16,10 @@ describe('authentication route behavior', () => {
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
     expect(screen.getByRole('textbox')).toHaveAttribute('type', 'email')
     expect(document.querySelector('input[type="password"]')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Source code' })).toHaveAttribute(
+      'href',
+      'https://github.com/sqlwarden/sqlwarden',
+    )
   })
 
   it('redirects an unconfigured instance from login to setup', async () => {

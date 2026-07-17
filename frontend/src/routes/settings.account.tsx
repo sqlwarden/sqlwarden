@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/com
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { RoutePending } from '#/components/RoutePending'
+import { LegalNotice } from '#/components/legal-notice'
 
 export const Route = createFileRoute('/settings/account')({
   component: SettingsAccountPage,
@@ -234,6 +235,7 @@ function SettingsAccountPage() {
           </form>
         </CardContent>
       </Card>
+      <LegalNotice />
     </div>
   )
 }

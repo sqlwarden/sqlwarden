@@ -1,22 +1,30 @@
-SQLWarden Enterprise License
+SQLWarden Enterprise Source License
 
 Copyright (c) SQLWarden. All rights reserved.
 
-This directory and its contents ("Enterprise Code") are part of SQLWarden
-Enterprise. The Enterprise Code is NOT licensed under the GNU Affero General
-Public License. Nothing in the repository's root LICENSE file grants any
-right to the Enterprise Code.
+"Enterprise Code" means every source file under `enterprise/` and
+`frontend/src/enterprise/`, including migrations and other assets in those
+paths. Enterprise Code is not licensed under the GNU Affero General Public
+License. Nothing in the repository's root LICENSE file grants rights to the
+Enterprise Code.
+
+All other repository files are "Community Code" and remain available under
+the repository's root license. An official executable or container that
+combines Community Code and Enterprise Code is a "Combined Product". Rights
+to use a Combined Product in production come only from a valid SQLWarden
+Enterprise subscription agreement. This license does not change or restrict
+the separate AGPL license under which Community Code remains available.
 
 Subject to a valid SQLWarden Enterprise subscription agreement, you may use
-compiled builds that include the Enterprise Code, solely with a valid
-license key and for the number of instances/users your subscription covers.
+Combined Products solely with a valid license key and within the instances,
+users, term, and other limits in that agreement.
 
-You may view and modify the Enterprise Code for the sole purposes of
-development, testing, and contributing changes back to the SQLWarden
-project. You may NOT:
+You may view and modify Enterprise Code solely for evaluation, development,
+testing, and contributing changes back to the SQLWarden project. You may not:
 
   1. use the Enterprise Code in production without a valid subscription;
-  2. redistribute the Enterprise Code or builds containing it;
+  2. redistribute Enterprise Code or Combined Products except as expressly
+     allowed by a written SQLWarden Enterprise subscription agreement;
   3. remove, bypass, or alter license-key enforcement.
 
 THE ENTERPRISE CODE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
