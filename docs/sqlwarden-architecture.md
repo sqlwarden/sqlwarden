@@ -812,21 +812,46 @@ Recommended model:
 
 Future desktop may support multiple remote SQLWarden backends, such as separate prod and non-prod enterprise instances. That should be modeled as a client-side backend registry, not as a change to the server authorization model.
 
-## Open-Core / Enterprise Direction
+## Open-Core / Enterprise Model
 
-The current repository has no `enterprise/` tree. If SQLWarden later adopts an open-core model, keep the core platform in Apache-licensed packages and isolate proprietary add-ons.
+SQLWarden is open core, built from one repository:
 
-Likely enterprise-only features:
+- Community edition: AGPLv3 (`LICENSE`), everything outside `enterprise/`
+  and `frontend/src/enterprise/`. Built without the `enterprise` Go build
+  tag and without `SQLWARDEN_EDITION=enterprise`; contains zero enterprise
+  code (CI enforces this).
+- Enterprise edition: the same tree plus `enterprise/` and
+  `frontend/src/enterprise/` under the SQLWarden Enterprise License
+  (`enterprise/LICENSE`), unlocked at runtime by a license key. An
+  unlicensed enterprise binary behaves exactly like community.
 
-- SAML/OIDC/LDAP SSO.
-- SCIM provisioning.
-- Tamper-evident audit logs.
-- SIEM forwarding.
-- Advanced compliance packaging.
-- License enforcement.
-- Air-gapped enterprise packaging.
+Seams:
 
-The core RBAC engine, local auth, SQL IDE, database engine layer, and self-hosted server should remain usable in the community distribution.
+- `internal/edition` is the only compile-time seam: its `enterprise`-tagged
+  file imports `enterprise/register`; the untagged file returns an empty
+  registry.
+- `internal/extension` defines the registry, `Deps`, and capability
+  interfaces (`MigrationSource`, `RouteRegistrar`, `JobProvider`,
+  `EventSinkProvider`, `LicenseProvider`).
+- `internal/license` defines the license service; the community
+  implementation licenses nothing.
+- `internal/events` is the domain event bus; community builds have no
+  sinks. Events must never contain SQL text, DSNs, bind parameters, row
+  values, or credentials.
+- Enterprise migrations are a separate stream tracked in
+  `schema_migrations_ee` and may only create/alter `ee_*` tables.
+- Frontend: the `@enterprise` Vite alias resolves to
+  `src/enterprise-stub/` (community) or `src/enterprise/` (enterprise).
+  Route files are edition-stable; enterprise pages resolve through the
+  enterprise module's page registry, falling back to core upsell pages.
+- `GET /api/v1/instance/edition` reports `{edition, licensed_features}`.
+
+Enterprise-only feature line: SSO (SAML/OIDC/LDAP), SCIM, audit logging,
+tamper-evident logs, SIEM/event streaming, advanced observability, license
+management. JIT/approval workflows, binding expiry, and all current product
+surfaces remain community.
+
+Design details: `docs/superpowers/specs/2026-07-17-open-core-enterprise-design.md`.
 
 ## Implementation Invariants
 
