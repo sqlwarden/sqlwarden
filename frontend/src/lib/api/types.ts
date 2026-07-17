@@ -1,5 +1,3 @@
-import type { EnterpriseFeature } from '#/lib/enterprise/features'
-
 export type SortOrder = 'asc' | 'desc'
 
 export interface Paginated<T> {
@@ -480,7 +478,6 @@ export interface ExportJobOutput {
   byte_count: number
 }
 
-export interface InstanceEdition {
-  edition: 'community' | 'enterprise'
-  licensed_features: EnterpriseFeature[]
+export interface InstanceCapabilities {
+  capabilities: string[]
 }

@@ -3,7 +3,7 @@ import { api } from '#/lib/api/client'
 import type {
   Account,
   InstanceAdmin,
-  InstanceEdition,
+  InstanceCapabilities,
   InstanceSettings,
   ListQuery,
   Organization,
@@ -43,10 +43,10 @@ export function instanceSettingsQueryOptions() {
   })
 }
 
-export function instanceEditionQueryOptions() {
+export function instanceCapabilitiesQueryOptions() {
   return queryOptions({
-    queryKey: queryKeys.instanceEdition(),
-    queryFn: () => api.get<InstanceEdition>('/api/v1/instance/edition'),
+    queryKey: queryKeys.instanceCapabilities(),
+    queryFn: () => api.get<InstanceCapabilities>('/api/v1/instance/capabilities'),
     staleTime: 30_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: 'always',

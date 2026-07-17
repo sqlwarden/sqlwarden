@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from '#/lib/api/client'
 import { setupStatusQueryOptions } from './auth'
-import { instanceAccountsQueryOptions, instanceEditionQueryOptions } from './instance'
+import { instanceAccountsQueryOptions, instanceCapabilitiesQueryOptions } from './instance'
 import { orgMembersQueryOptions } from './organization'
 import { orgWorkspaceQueryOptions } from './workspace'
 import { orgWorkspacePrivateFilesQueryOptions } from './files'
@@ -35,8 +35,8 @@ describe('API query domains', () => {
     expect(get).toHaveBeenNthCalledWith(2, '/api/v1/orgs/acme/members', { query })
   })
 
-  it('refreshes edition capabilities instead of caching license state forever', () => {
-    const options = instanceEditionQueryOptions()
+  it('periodically refreshes deployment capabilities', () => {
+    const options = instanceCapabilitiesQueryOptions()
 
     expect(options.staleTime).toBe(30_000)
     expect(options.refetchInterval).toBe(60_000)

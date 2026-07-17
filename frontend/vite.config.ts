@@ -8,17 +8,17 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-// The '@enterprise' alias is the frontend edition seam: community builds
-// resolve it to the stub module (no enterprise code in the bundle),
-// enterprise builds to the real module under the commercial license.
+// The '@extensions' alias is the build-time composition seam. The default
+// build resolves to an empty registry; optional distributions provide their
+// own implementation without changing shared pages.
 const enterpriseEdition = process.env.SQLWARDEN_EDITION === 'enterprise'
 
 const config = defineConfig({
   resolve: {
     alias: {
-      '@enterprise': path.resolve(
+      '@extensions': path.resolve(
         import.meta.dirname,
-        enterpriseEdition ? 'src/enterprise' : 'src/enterprise-stub',
+        enterpriseEdition ? 'src/enterprise' : 'src/extension-stub',
       ),
     },
   },

@@ -1,76 +1,70 @@
-import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
+import { describe, expect, it, vi } from 'vitest'
+import type { ExtensionModule } from '#/lib/extensions/module'
+import { OPTIONAL_FEATURES } from '#/lib/product/optional-features'
 import { queryKeys } from '#/lib/api/query-keys'
-import type { InstanceEdition } from '#/lib/api/types'
-import { ENTERPRISE_FEATURES } from '#/lib/enterprise/features'
-import type { EnterpriseModule } from '#/lib/enterprise/module'
 import { server } from '#/test/server'
-import userEvent from '@testing-library/user-event'
-import { EnterpriseSlot } from './enterprise-slot'
+import { ExtensionSlot } from './extension-slot'
 
-const mockModule: EnterpriseModule = {
+const mockModule: ExtensionModule = {
   pages: {},
   slots: {},
 }
 
-vi.mock('@enterprise', () => ({
-  get enterpriseModule() {
+vi.mock('@extensions', () => ({
+  get extensionModule() {
     return mockModule
   },
 }))
 
-function renderSlot(edition?: InstanceEdition, fallback?: ReactNode, enabled = false) {
+function renderSlot(capabilities?: string[], fallback?: ReactNode, enabled = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, enabled } } })
-  if (edition) client.setQueryData(queryKeys.instanceEdition(), edition)
+  if (capabilities) {
+    client.setQueryData(queryKeys.instanceCapabilities(), { capabilities })
+  }
   return render(
     <QueryClientProvider client={client}>
-      <EnterpriseSlot
+      <ExtensionSlot
         slot="login-sso-providers"
-        feature={ENTERPRISE_FEATURES.enterpriseSso}
+        feature={OPTIONAL_FEATURES.enterpriseSso}
         fallback={fallback}
       />
     </QueryClientProvider>,
   )
 }
 
-describe('EnterpriseSlot', () => {
-  it('renders the registered implementation only when the feature is licensed', () => {
+describe('ExtensionSlot', () => {
+  it('renders the implementation when its capability is available', () => {
     mockModule.slots = { 'login-sso-providers': () => <div>SSO buttons</div> }
 
-    renderSlot({ edition: 'enterprise', licensed_features: ['enterprise_sso'] })
+    renderSlot([OPTIONAL_FEATURES.enterpriseSso.id])
     expect(screen.getByText('SSO buttons')).toBeInTheDocument()
   })
 
-  it('renders the fallback on an unlicensed enterprise server even when registered', () => {
+  it('renders the fallback when a compiled slot is locked', () => {
     mockModule.slots = { 'login-sso-providers': () => <div>SSO buttons</div> }
 
-    renderSlot({ edition: 'enterprise', licensed_features: [] }, <div>locked</div>)
+    renderSlot([], <div>locked</div>)
     expect(screen.queryByText('SSO buttons')).not.toBeInTheDocument()
     expect(screen.getByText('locked')).toBeInTheDocument()
   })
 
-  it('renders nothing by default when no implementation is registered', () => {
-    mockModule.slots = {}
-
-    const { container } = renderSlot({ edition: 'community', licensed_features: [] })
-    expect(container).toBeEmptyDOMElement()
-  })
-
-  it('does not fetch edition data when this build has no slot implementation', () => {
+  it('does not fetch capabilities when this build has no slot implementation', () => {
     mockModule.slots = {}
 
     renderSlot(undefined, <div>fallback</div>, true)
     expect(screen.getByText('fallback')).toBeInTheDocument()
   })
 
-  it('shows loading and recovers from an edition endpoint failure', async () => {
+  it('shows loading and recovers from a capability endpoint failure', async () => {
     mockModule.slots = { 'login-sso-providers': () => <div>SSO buttons</div> }
     let attempts = 0
     server.use(
-      http.get('/api/v1/instance/edition', () => {
+      http.get('/api/v1/instance/capabilities', () => {
         attempts++
         if (attempts === 1) {
           return HttpResponse.json(
@@ -78,10 +72,7 @@ describe('EnterpriseSlot', () => {
             { status: 503 },
           )
         }
-        return HttpResponse.json({
-          edition: 'enterprise',
-          licensed_features: [ENTERPRISE_FEATURES.enterpriseSso],
-        })
+        return HttpResponse.json({ capabilities: [OPTIONAL_FEATURES.enterpriseSso.id] })
       }),
     )
 

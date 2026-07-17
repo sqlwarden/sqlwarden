@@ -1,12 +1,14 @@
 // Copyright (c) SQLWarden. All rights reserved.
 // Licensed under the SQLWarden Enterprise Source License. See enterprise/LICENSE.
 
-import type { EnterpriseModule } from '#/lib/enterprise/module'
+import type { ExtensionModule } from '#/lib/extensions/module'
+import { EnterpriseLockedFeature } from './locked-feature'
 import { EnterpriseOverviewPage } from './overview-page'
 
-export const enterpriseModule: EnterpriseModule = {
+export const extensionModule: ExtensionModule = {
   pages: {
-    'enterprise-overview': EnterpriseOverviewPage,
+    'platform-overview': EnterpriseOverviewPage,
   },
   slots: {},
+  LockedFeature: EnterpriseLockedFeature,
 }

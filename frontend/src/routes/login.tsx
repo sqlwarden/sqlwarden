@@ -12,9 +12,9 @@ import { getAccessToken, setAccessToken } from '#/lib/auth/access-token'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
-import { EnterpriseSlot } from '#/components/enterprise/enterprise-slot'
+import { ExtensionSlot } from '#/components/extensions/extension-slot'
 import { LegalNotice } from '#/components/legal-notice'
-import { ENTERPRISE_FEATURES } from '#/lib/enterprise/features'
+import { OPTIONAL_FEATURES } from '#/lib/product/optional-features'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
 
@@ -151,10 +151,7 @@ function LoginPage() {
                 {mutation.isPending ? 'Signing in…' : 'Sign in'}
               </Button>
             </form>
-            <EnterpriseSlot
-              slot="login-sso-providers"
-              feature={ENTERPRISE_FEATURES.enterpriseSso}
-            />
+            <ExtensionSlot slot="login-sso-providers" feature={OPTIONAL_FEATURES.enterpriseSso} />
           </CardContent>
         </Card>
         <LegalNotice className="text-center" />
