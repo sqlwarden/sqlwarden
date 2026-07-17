@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/sqlwarden/assets"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/extension"
 )
 
 func (app *application) routes() http.Handler {
@@ -38,19 +39,23 @@ func (app *application) routes() http.Handler {
 		r.With(app.requireAccount, app.requireInstanceAdmin).Post("/orgs", app.createOrg)
 
 		r.Route("/instance", func(r chi.Router) {
-			r.Use(app.requireAccount, app.requireInstanceAdmin)
-			r.Get("/admins", app.listInstanceAdmins)
-			r.Get("/accounts", app.listInstanceAccounts)
-			r.Get("/orgs", app.listOrganizations)
-			r.Get("/settings", app.getInstanceSettings)
-			r.Patch("/settings", app.updateInstanceSettings)
-			r.Post("/admins", app.addInstanceAdmin)
-			r.Post("/accounts", app.createInstanceAccount)
-			r.Get("/accounts/{account_id}/sessions", app.listInstanceAccountSessions)
-			r.Delete("/accounts/{account_id}/sessions", app.revokeInstanceAccountSessions)
-			r.Delete("/accounts/{account_id}/sessions/{session_id}", app.revokeInstanceAccountSession)
-			r.Delete("/admins/{account_id}", app.removeInstanceAdmin)
-			r.Post("/encryption/rotate", app.rotateEncryptionKeysHandler)
+			r.Get("/edition", app.getInstanceEdition)
+
+			r.Group(func(r chi.Router) {
+				r.Use(app.requireAccount, app.requireInstanceAdmin)
+				r.Get("/admins", app.listInstanceAdmins)
+				r.Get("/accounts", app.listInstanceAccounts)
+				r.Get("/orgs", app.listOrganizations)
+				r.Get("/settings", app.getInstanceSettings)
+				r.Patch("/settings", app.updateInstanceSettings)
+				r.Post("/admins", app.addInstanceAdmin)
+				r.Post("/accounts", app.createInstanceAccount)
+				r.Get("/accounts/{account_id}/sessions", app.listInstanceAccountSessions)
+				r.Delete("/accounts/{account_id}/sessions", app.revokeInstanceAccountSessions)
+				r.Delete("/accounts/{account_id}/sessions/{session_id}", app.revokeInstanceAccountSession)
+				r.Delete("/admins/{account_id}", app.removeInstanceAdmin)
+				r.Post("/encryption/rotate", app.rotateEncryptionKeysHandler)
+			})
 		})
 
 		r.Group(func(r chi.Router) {
@@ -349,6 +354,8 @@ func (app *application) routes() http.Handler {
 		})
 	})
 
+	app.mountExtensionRoutes(mux)
+
 	staticFS, err := fs.Sub(assets.EmbeddedFiles, "static")
 	if err != nil {
 		panic(err)
@@ -356,6 +363,16 @@ func (app *application) routes() http.Handler {
 	mux.Get("/*", app.spaHandler(staticFS))
 
 	return mux
+}
+
+func (app *application) mountExtensionRoutes(mux chi.Router) {
+	deps := app.extensionDeps()
+	for _, ext := range app.extensions.All() {
+		if rr, ok := ext.(extension.RouteRegistrar); ok {
+			app.logger.Info("mounting extension routes", "extension", ext.Name())
+			rr.RegisterRoutes(mux, deps)
+		}
+	}
 }
 
 func (app *application) spaHandler(staticFS fs.FS) http.HandlerFunc {

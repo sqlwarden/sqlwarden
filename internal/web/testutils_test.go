@@ -18,7 +18,9 @@ import (
 
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/events"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
 
@@ -71,6 +73,9 @@ func newTestApplication(t *testing.T) *application {
 	app.config.Files.Revisions.Enabled = false
 
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	app.extensions = edition.Registry()
+	app.licenseService = licenseServiceFor(app.extensions)
+	app.eventBus = events.NewBus()
 	app.db = newTestDB(t)
 	app.mailer = smtp.NewMockMailer("test@example.com")
 	app.queryCursors = connection.NewQueryCursorManager(30 * time.Minute)

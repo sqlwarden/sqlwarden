@@ -17,10 +17,14 @@ import (
 	"github.com/sqlwarden/internal/cache"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/events"
+	"github.com/sqlwarden/internal/extension"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/jobs"
+	"github.com/sqlwarden/internal/license"
 	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/smtp"
 )
@@ -51,6 +55,9 @@ type application struct {
 	jobStore         *jobs.Store
 	jobRegistry      *jobs.Registry
 	jobRunnerCancel  context.CancelFunc
+	extensions       *extension.Registry
+	licenseService   license.Service
+	eventBus         *events.Bus
 }
 
 type fileStoreRegistry struct {
@@ -74,6 +81,10 @@ func (r *fileStoreRegistry) Store(_ context.Context, backendID string) (filestor
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
+	return newWithRegistry(cfg, logger, edition.Registry())
+}
+
+func newWithRegistry(cfg Config, logger *slog.Logger, registry *extension.Registry) (*App, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -129,6 +140,10 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			return nil, err
 		}
 		logger.Info("database migrations complete")
+		if err := runExtensionMigrations(db, registry, cfg.DB.Driver, logger); err != nil {
+			db.Close()
+			return nil, err
+		}
 	}
 
 	mailer, err := smtp.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.Username, cfg.SMTP.Password, cfg.SMTP.From)
@@ -161,19 +176,35 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 
 	app := &application{
-		config:        cfg,
-		db:            db,
-		logger:        logger,
-		mailer:        mailer,
-		connManager:   connection.New(30 * time.Minute),
-		queryCursors:  connection.NewQueryCursorManager(30 * time.Minute),
-		schemaService: schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
-		keyring:       keyring,
-		enforcer:      enforcer,
-		fileStores:    fileStores,
-		jobStore:      jobs.NewStore(db),
+		config:         cfg,
+		db:             db,
+		logger:         logger,
+		mailer:         mailer,
+		connManager:    connection.New(30 * time.Minute),
+		queryCursors:   connection.NewQueryCursorManager(30 * time.Minute),
+		schemaService:  schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
+		keyring:        keyring,
+		enforcer:       enforcer,
+		fileStores:     fileStores,
+		jobStore:       jobs.NewStore(db),
+		extensions:     registry,
+		licenseService: licenseServiceFor(registry),
+		eventBus:       events.NewBus(),
+	}
+	deps := app.extensionDeps()
+	for _, ext := range registry.All() {
+		if sp, ok := ext.(extension.EventSinkProvider); ok {
+			app.eventBus.Subscribe(sp.EventSink(deps))
+		}
 	}
 	app.jobRegistry = app.defaultJobRegistry()
+	for _, ext := range registry.All() {
+		if jp, ok := ext.(extension.JobProvider); ok {
+			for _, def := range jp.Jobs(deps) {
+				app.jobRegistry.Register(def)
+			}
+		}
+	}
 	app.startJobRunner()
 	app.startFileContentDeletionReaper()
 	return app, nil
@@ -327,6 +358,43 @@ func (app *application) enqueueFileContentReapJob(ctx context.Context) error {
 		}
 	}
 	return err
+}
+
+func (app *application) extensionDeps() *extension.Deps {
+	return &extension.Deps{
+		DB:      app.db,
+		Logger:  app.logger,
+		License: app.licenseService,
+		Events:  app.eventBus,
+	}
+}
+
+func licenseServiceFor(registry *extension.Registry) license.Service {
+	svc := license.Community()
+	for _, ext := range registry.All() {
+		if lp, ok := ext.(extension.LicenseProvider); ok {
+			svc = lp.LicenseService()
+		}
+	}
+	return svc
+}
+
+func runExtensionMigrations(db *database.DB, registry *extension.Registry, driver string, logger *slog.Logger) error {
+	for _, ext := range registry.All() {
+		src, ok := ext.(extension.MigrationSource)
+		if !ok {
+			continue
+		}
+		mfs, ok := src.Migrations(driver)
+		if !ok {
+			continue
+		}
+		logger.Info("running extension migrations", "extension", ext.Name())
+		if err := db.MigrateExtensionUp(mfs, "schema_migrations_"+ext.Name()); err != nil {
+			return fmt.Errorf("extension %s migrations: %w", ext.Name(), err)
+		}
+	}
+	return nil
 }
 
 func ensureSQLiteParentDir(cfg Config) error {
