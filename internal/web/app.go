@@ -208,7 +208,7 @@ func newWithRegistry(cfg Config, logger *slog.Logger, registry *extension.Regist
 		jobStore:       jobs.NewStore(db),
 		extensions:     registry,
 		licenseService: licenseService,
-		eventBus:       events.NewBus(),
+		eventBus:       events.NewBus(logger),
 	}
 	contrib, err := registry.Start(context.Background(), extension.RuntimeDeps{
 		DB:      db,
@@ -223,7 +223,11 @@ func newWithRegistry(cfg Config, logger *slog.Logger, registry *extension.Regist
 	app.extensionRoutes = contrib.Routes
 	app.extensionClosers = contrib.Closers
 	for _, sink := range contrib.EventSinks {
-		app.eventBus.Subscribe(app.licensedEventSink(sink.Feature, sink.Sink))
+		if err := app.eventBus.Subscribe(app.licensedEventSink(sink.Feature, sink.Sink)); err != nil {
+			app.closeExtensionResources()
+			db.Close()
+			return nil, fmt.Errorf("register extension event sink: %w", err)
+		}
 	}
 	app.jobRegistry = app.defaultJobRegistry()
 	for _, job := range contrib.Jobs {
@@ -263,6 +267,9 @@ func (app *application) Close() error {
 		connCloseStartedAt := time.Now()
 		app.connManager.Close()
 		app.logger.Info("database connection sessions closed", "duration_ms", time.Since(connCloseStartedAt).Milliseconds())
+	}
+	if app.eventBus != nil {
+		app.eventBus.Close()
 	}
 	app.closeExtensionResources()
 

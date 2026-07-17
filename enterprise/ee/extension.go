@@ -92,7 +92,8 @@ type debugLogSink struct {
 	logger *slog.Logger
 }
 
-func (s *debugLogSink) HandleEvent(ctx context.Context, ev events.Event) {
+func (s *debugLogSink) HandleEvent(ctx context.Context, ev events.Event) error {
 	s.logger.DebugContext(ctx, "enterprise event sink received event",
 		"event.action", ev.Action, "event.outcome", ev.Outcome)
+	return nil
 }

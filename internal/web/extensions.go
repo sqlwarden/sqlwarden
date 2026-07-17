@@ -62,9 +62,9 @@ func (app *application) licensedEventSink(feature string, sink events.Sink) even
 	return licenseGatedEventSink{service: app.licenseService, feature: feature, next: sink}
 }
 
-func (s licenseGatedEventSink) HandleEvent(ctx context.Context, event events.Event) {
+func (s licenseGatedEventSink) HandleEvent(ctx context.Context, event events.Event) error {
 	if s.service.Require(s.feature) != nil {
-		return
+		return nil
 	}
-	s.next.HandleEvent(ctx, event)
+	return s.next.HandleEvent(ctx, event)
 }

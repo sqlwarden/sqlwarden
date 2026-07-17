@@ -93,8 +93,11 @@ func newTestApplication(t *testing.T) *application {
 	app.extensionRoutes = contrib.Routes
 	app.extensionClosers = contrib.Closers
 	for _, sink := range contrib.EventSinks {
-		app.eventBus.Subscribe(app.licensedEventSink(sink.Feature, sink.Sink))
+		if err := app.eventBus.Subscribe(app.licensedEventSink(sink.Feature, sink.Sink)); err != nil {
+			t.Fatal(err)
+		}
 	}
+	t.Cleanup(app.eventBus.Close)
 	t.Cleanup(app.closeExtensionResources)
 	app.mailer = smtp.NewMockMailer("test@example.com")
 	app.queryCursors = connection.NewQueryCursorManager(30 * time.Minute)

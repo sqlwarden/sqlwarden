@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/events"
@@ -16,10 +17,22 @@ type testCaptureSink struct {
 	events []events.Event
 }
 
-func (s *testCaptureSink) HandleEvent(_ context.Context, ev events.Event) {
+func (s *testCaptureSink) HandleEvent(_ context.Context, ev events.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, ev)
+	return nil
+}
+
+func (s *testCaptureSink) waitFor(action, outcome string) (events.Event, bool) {
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if ev, found := s.find(action, outcome); found {
+			return ev, true
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return events.Event{}, false
 }
 
 func (s *testCaptureSink) find(action, outcome string) (events.Event, bool) {
@@ -37,7 +50,9 @@ func TestLoginEmitsDomainEvents(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	sink := &testCaptureSink{}
-	app.eventBus.Subscribe(sink)
+	if err := app.eventBus.Subscribe(sink); err != nil {
+		t.Fatal(err)
+	}
 
 	alice := testUsers["alice"]
 	email := uniqueEmail(t, "login-events")
@@ -53,7 +68,7 @@ func TestLoginEmitsDomainEvents(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("login status = %d, want 200", res.StatusCode)
 	}
-	ev, ok := sink.find("auth.login", "success")
+	ev, ok := sink.waitFor("auth.login", "success")
 	if !ok {
 		t.Fatal("expected auth.login success event")
 	}
@@ -68,7 +83,7 @@ func TestLoginEmitsDomainEvents(t *testing.T) {
 	if res.StatusCode == http.StatusOK {
 		t.Fatal("expected login failure")
 	}
-	if _, ok := sink.find("auth.login", "failure"); !ok {
+	if _, ok := sink.waitFor("auth.login", "failure"); !ok {
 		t.Fatal("expected auth.login failure event")
 	}
 }
@@ -77,7 +92,9 @@ func TestOrgPolicyChangesEmitDomainEvents(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	sink := &testCaptureSink{}
-	app.eventBus.Subscribe(sink)
+	if err := app.eventBus.Subscribe(sink); err != nil {
+		t.Fatal(err)
+	}
 
 	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "policy-events-owner"), "Policy Events Owner", "Policy Events Org")
 	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "policy-events-member"), "Policy Member")
@@ -97,7 +114,7 @@ func TestOrgPolicyChangesEmitDomainEvents(t *testing.T) {
 		t.Fatalf("grant status = %d, want 204", res.StatusCode)
 	}
 
-	grantEv, ok := sink.find("policy.binding.grant", "success")
+	grantEv, ok := sink.waitFor("policy.binding.grant", "success")
 	if !ok {
 		t.Fatal("expected policy.binding.grant event")
 	}
@@ -137,7 +154,7 @@ func TestOrgPolicyChangesEmitDomainEvents(t *testing.T) {
 		t.Fatalf("revoke status = %d, want 204", res.StatusCode)
 	}
 
-	revokeEv, ok := sink.find("policy.binding.revoke", "success")
+	revokeEv, ok := sink.waitFor("policy.binding.revoke", "success")
 	if !ok {
 		t.Fatal("expected policy.binding.revoke event")
 	}
