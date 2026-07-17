@@ -9,6 +9,7 @@ function EnterpriseAdministrationPage() {
   return (
     <EnterpriseFeaturePage
       pageKey="enterprise-overview"
+      feature="enterprise"
       title="Enterprise"
       description="Audit logging, SSO (SAML/OIDC/LDAP), SCIM provisioning, and SIEM streaming are part of SQLWarden Enterprise."
     />

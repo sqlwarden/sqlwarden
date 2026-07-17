@@ -9,4 +9,5 @@ export const enterpriseModule: EnterpriseModule = {
   pages: {
     'enterprise-overview': EnterpriseOverviewPage,
   },
+  slots: {},
 }
