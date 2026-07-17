@@ -18,7 +18,7 @@ func (c *trackingCloser) Close() error {
 	return nil
 }
 
-func TestRegistryValidatesModuleIdentityAndLicenseProvider(t *testing.T) {
+func TestRegistryValidatesModuleIdentityAndLicenseFactory(t *testing.T) {
 	tests := []struct {
 		name    string
 		modules []Module

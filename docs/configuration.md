@@ -100,20 +100,38 @@ docker run --rm \
 
 The default image runs as the `sqlwarden` user. The volume path above persists the SQLite database and file storage directory.
 
+## Edition Selection
+
+Edition is an artifact property, not a runtime server setting. A running
+Community binary cannot be switched to Enterprise through configuration.
+
+The Dockerfile accepts one build argument that selects both the embedded
+frontend and the Go backend:
+
+```sh
+docker build --build-arg EDITION=community .
+docker build --build-arg EDITION=enterprise .
+```
+
+Accepted values are only `community` and `enterprise`; an unknown value fails
+the build. Published Community images use the default. Official Enterprise
+artifacts are distributed under the terms described in
+[enterprise/LICENSE](../enterprise/LICENSE).
+
 ## Server
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `base_url` | `BASE_URL` | `--base-url` | `http://localhost:6020` | Public base URL used for generated links and JWT claims. |
-| `http_port` | `HTTP_PORT` | `--http-port` | `6020` | HTTP server port. |
-| `personal_spaces_enabled` | `PERSONAL_SPACES_ENABLED` | `--personal-spaces-enabled` | `true` | Enables account-owned personal spaces under `/api/v1/me`. |
+| Config key                | Environment               | CLI flag                    | Default                 | Notes                                                     |
+| ------------------------- | ------------------------- | --------------------------- | ----------------------- | --------------------------------------------------------- |
+| `base_url`                | `BASE_URL`                | `--base-url`                | `http://localhost:6020` | Public base URL used for generated links and JWT claims.  |
+| `http_port`               | `HTTP_PORT`               | `--http-port`               | `6020`                  | HTTP server port.                                         |
+| `personal_spaces_enabled` | `PERSONAL_SPACES_ENABLED` | `--personal-spaces-enabled` | `true`                  | Enables account-owned personal spaces under `/api/v1/me`. |
 
 ## Logging
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `log.level` | `LOG_LEVEL` | `--log-level` | `info` | Server log level. Supported values: `debug`, `info`, `warn`, `error`. |
-| `log.format` | `LOG_FORMAT` | `--log-format` | `json` | Server log format. Supported values: `json`, `text`. |
+| Config key   | Environment  | CLI flag       | Default | Notes                                                                 |
+| ------------ | ------------ | -------------- | ------- | --------------------------------------------------------------------- |
+| `log.level`  | `LOG_LEVEL`  | `--log-level`  | `info`  | Server log level. Supported values: `debug`, `info`, `warn`, `error`. |
+| `log.format` | `LOG_FORMAT` | `--log-format` | `json`  | Server log format. Supported values: `json`, `text`.                  |
 
 JSON logs are the default for production and log aggregation systems. Text logs are intended for local development.
 
@@ -121,16 +139,20 @@ Every HTTP response includes `X-Request-ID`. If the request provides a valid bou
 
 Server logs include request-aware operational events for authentication, authorization failures, resource mutation, database engine capability lookup, schema inspection, live database sessions, and query cursor lifecycle. `debug` enables lower-level diagnostics such as capability resolution and schema response summaries.
 
+Best-effort extension event delivery logs queue overflows, sink failures, and
+sink panics. These operational events are not compliance audit records and
+must not be treated as a durable audit trail.
+
 Server logs do not include request bodies, authorization headers, DSNs, SQL text, bind parameters, raw query strings, or row values by default.
 
 ## Database
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `db.driver` | `DB_DRIVER` | `--db-driver` | `sqlite` | Application database driver. Supported values: `sqlite`, `postgres`. |
-| `db.dsn` | `DB_DSN` | `--db-dsn` | `~/.sqlwarden/sqlwarden.db` | SQLite path or PostgreSQL DSN. `~` is expanded for SQLite. |
-| `db.automigrate` | `DB_AUTOMIGRATE` | `--db-automigrate` | `true` | Runs embedded migrations at startup. |
-| `db.log_queries` | `DB_LOG_QUERIES` | `--db-log-queries` | `false` | Logs application database SQL text. Use only for short-lived debugging. |
+| Config key       | Environment      | CLI flag           | Default                     | Notes                                                                   |
+| ---------------- | ---------------- | ------------------ | --------------------------- | ----------------------------------------------------------------------- |
+| `db.driver`      | `DB_DRIVER`      | `--db-driver`      | `sqlite`                    | Application database driver. Supported values: `sqlite`, `postgres`.    |
+| `db.dsn`         | `DB_DSN`         | `--db-dsn`         | `~/.sqlwarden/sqlwarden.db` | SQLite path or PostgreSQL DSN. `~` is expanded for SQLite.              |
+| `db.automigrate` | `DB_AUTOMIGRATE` | `--db-automigrate` | `true`                      | Runs embedded migrations at startup.                                    |
+| `db.log_queries` | `DB_LOG_QUERIES` | `--db-log-queries` | `false`                     | Logs application database SQL text. Use only for short-lived debugging. |
 
 PostgreSQL DSNs are passed without a `postgres://` prefix in the existing compose setup:
 
@@ -150,14 +172,14 @@ Use PostgreSQL for larger deployments, environments with multiple server replica
 
 ## Secrets And Sessions
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `cookie.secret_key` | `COOKIE_SECRET_KEY` | `--cookie-secret-key` | Development-only secret | Cookie signing secret. Replace in every real deployment. |
-| `jwt.secret_key` | `JWT_SECRET_KEY` | `--jwt-secret-key` | Development-only secret | JWT signing secret. Replace in every real deployment. |
-| `jwt.access_token_ttl` | `JWT_ACCESS_TOKEN_TTL` | `--jwt-access-token-ttl` | `24h` | Access token lifetime. Examples: `8h`, `30m`. |
-| `encryption.key` | `ENCRYPTION_KEY` | `--encryption-key` | Development-only secret | Application encryption key for encrypted values such as DSNs. Replace in every real deployment. |
-| `encryption.previous_keys` | `ENCRYPTION_PREVIOUS_KEYS` | `--encryption-previous-keys` | Empty | Comma-separated retired encryption keys retained for decrypting old ciphertext during rotation. |
-| `sessions.revocation_enabled` | `SESSIONS_REVOCATION_ENABLED` | `--sessions-revocation-enabled` | `true` | Enables database-backed auth session and org access-session revocation checks. |
+| Config key                    | Environment                   | CLI flag                        | Default                 | Notes                                                                                           |
+| ----------------------------- | ----------------------------- | ------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------- |
+| `cookie.secret_key`           | `COOKIE_SECRET_KEY`           | `--cookie-secret-key`           | Development-only secret | Cookie signing secret. Replace in every real deployment.                                        |
+| `jwt.secret_key`              | `JWT_SECRET_KEY`              | `--jwt-secret-key`              | Development-only secret | JWT signing secret. Replace in every real deployment.                                           |
+| `jwt.access_token_ttl`        | `JWT_ACCESS_TOKEN_TTL`        | `--jwt-access-token-ttl`        | `24h`                   | Access token lifetime. Examples: `8h`, `30m`.                                                   |
+| `encryption.key`              | `ENCRYPTION_KEY`              | `--encryption-key`              | Development-only secret | Application encryption key for encrypted values such as DSNs. Replace in every real deployment. |
+| `encryption.previous_keys`    | `ENCRYPTION_PREVIOUS_KEYS`    | `--encryption-previous-keys`    | Empty                   | Comma-separated retired encryption keys retained for decrypting old ciphertext during rotation. |
+| `sessions.revocation_enabled` | `SESSIONS_REVOCATION_ENABLED` | `--sessions-revocation-enabled` | `true`                  | Enables database-backed auth session and org access-session revocation checks.                  |
 
 Do not use the default secrets outside local development.
 
@@ -169,9 +191,9 @@ SESSIONS_REVOCATION_ENABLED=false
 
 ## Interactive Queries
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `query.max_result_rows` | `QUERY_MAX_RESULT_ROWS` | `--query-max-result-rows` | `10000` | Maximum rows returned by an interactive query result. |
+| Config key               | Environment              | CLI flag                   | Default    | Notes                                                                          |
+| ------------------------ | ------------------------ | -------------------------- | ---------- | ------------------------------------------------------------------------------ |
+| `query.max_result_rows`  | `QUERY_MAX_RESULT_ROWS`  | `--query-max-result-rows`  | `10000`    | Maximum rows returned by an interactive query result.                          |
 | `query.max_result_bytes` | `QUERY_MAX_RESULT_BYTES` | `--query-max-result-bytes` | `26214400` | Approximate maximum row payload bytes returned by an interactive query result. |
 
 These limits apply to interactive IDE query responses. Future export workflows should use dedicated streaming/export limits instead of relying on interactive query caps.
@@ -182,21 +204,21 @@ For DQL/select-style queries, the IDE can request cursor-backed results through 
 
 ## Exports
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `exports.sync_max_bytes` | `EXPORTS_SYNC_MAX_BYTES` | `--exports-sync-max-bytes` | `104857600` | Maximum bytes streamed by synchronous HTTP exports. |
-| `exports.background_max_bytes` | `EXPORTS_BACKGROUND_MAX_BYTES` | `--exports-background-max-bytes` | `0` | Maximum bytes written by background export jobs. `0` disables the background cap. |
+| Config key                     | Environment                    | CLI flag                         | Default     | Notes                                                                             |
+| ------------------------------ | ------------------------------ | -------------------------------- | ----------- | --------------------------------------------------------------------------------- |
+| `exports.sync_max_bytes`       | `EXPORTS_SYNC_MAX_BYTES`       | `--exports-sync-max-bytes`       | `104857600` | Maximum bytes streamed by synchronous HTTP exports.                               |
+| `exports.background_max_bytes` | `EXPORTS_BACKGROUND_MAX_BYTES` | `--exports-background-max-bytes` | `0`         | Maximum bytes written by background export jobs. `0` disables the background cap. |
 
 Synchronous exports use the caller's existing live database session and stop if the HTTP request is cancelled. Background exports run as user-visible jobs, open their own short-lived target database connection, and write output to private workspace files.
 
 ## Background Jobs
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `jobs.worker_count` | `JOBS_WORKER_COUNT` | `--jobs-worker-count` | `16` | Number of in-process background job workers. |
-| `jobs.poll_interval` | `JOBS_POLL_INTERVAL` | `--jobs-poll-interval` | `1s` | How often workers poll for due queued jobs. |
-| `jobs.claim_lease` | `JOBS_CLAIM_LEASE` | `--jobs-claim-lease` | `5m` | Lease duration for a claimed running job before another worker may recover it. |
-| `jobs.completed_retention` | `JOBS_COMPLETED_RETENTION` | `--jobs-completed-retention` | `168h` | How long succeeded, failed, and cancelled job records are retained. |
+| Config key                 | Environment                | CLI flag                     | Default | Notes                                                                          |
+| -------------------------- | -------------------------- | ---------------------------- | ------- | ------------------------------------------------------------------------------ |
+| `jobs.worker_count`        | `JOBS_WORKER_COUNT`        | `--jobs-worker-count`        | `16`    | Number of in-process background job workers.                                   |
+| `jobs.poll_interval`       | `JOBS_POLL_INTERVAL`       | `--jobs-poll-interval`       | `1s`    | How often workers poll for due queued jobs.                                    |
+| `jobs.claim_lease`         | `JOBS_CLAIM_LEASE`         | `--jobs-claim-lease`         | `5m`    | Lease duration for a claimed running job before another worker may recover it. |
+| `jobs.completed_retention` | `JOBS_COMPLETED_RETENTION` | `--jobs-completed-retention` | `168h`  | How long succeeded, failed, and cancelled job records are retained.            |
 
 Jobs are persisted in the application database. Workers always run inside the API process and use database claim leases so a future separate worker binary can use the same job table safely. Job scheduling is best effort: due jobs run when a worker is available, with higher-priority due jobs claimed before lower-priority due jobs. Internal maintenance such as stale file-content cleanup uses this framework.
 
@@ -208,21 +230,21 @@ The claim lease is stale-worker recovery time, not a maximum job runtime. Runnin
 
 ## TLS
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `tls.enabled` | `TLS_ENABLED` | `--tls-enabled` | `false` | Serves HTTPS directly from SQLWarden. |
-| `tls.cert_file` | `TLS_CERT_FILE` | `--tls-cert-file` | Empty | PEM certificate path. Required when TLS is enabled. |
-| `tls.key_file` | `TLS_KEY_FILE` | `--tls-key-file` | Empty | PEM private key path. Required when TLS is enabled. |
+| Config key      | Environment     | CLI flag          | Default | Notes                                               |
+| --------------- | --------------- | ----------------- | ------- | --------------------------------------------------- |
+| `tls.enabled`   | `TLS_ENABLED`   | `--tls-enabled`   | `false` | Serves HTTPS directly from SQLWarden.               |
+| `tls.cert_file` | `TLS_CERT_FILE` | `--tls-cert-file` | Empty   | PEM certificate path. Required when TLS is enabled. |
+| `tls.key_file`  | `TLS_KEY_FILE`  | `--tls-key-file`  | Empty   | PEM private key path. Required when TLS is enabled. |
 
 Many deployments should terminate TLS at a reverse proxy. Built-in TLS is available when direct HTTPS serving is preferred.
 
 ## Files
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `files.root_dir` | `FILES_ROOT_DIR` | `--files-root-dir` | `~/.sqlwarden/files` | Filesystem root directory for file content. `~` is expanded. |
-| `files.revisions.enabled` | `FILES_REVISIONS_ENABLED` | `--files-revisions-enabled` | `true` | Enables saved-file revisions. |
-| `files.revisions.keep_latest` | `FILES_REVISIONS_KEEP_LATEST` | `--files-revisions-keep-latest` | `50` | Number of old saved-file revisions retained per file when revisions are enabled. |
+| Config key                    | Environment                   | CLI flag                        | Default              | Notes                                                                            |
+| ----------------------------- | ----------------------------- | ------------------------------- | -------------------- | -------------------------------------------------------------------------------- |
+| `files.root_dir`              | `FILES_ROOT_DIR`              | `--files-root-dir`              | `~/.sqlwarden/files` | Filesystem root directory for file content. `~` is expanded.                     |
+| `files.revisions.enabled`     | `FILES_REVISIONS_ENABLED`     | `--files-revisions-enabled`     | `true`               | Enables saved-file revisions.                                                    |
+| `files.revisions.keep_latest` | `FILES_REVISIONS_KEEP_LATEST` | `--files-revisions-keep-latest` | `50`                 | Number of old saved-file revisions retained per file when revisions are enabled. |
 
 The server stores workspace file content on the local filesystem by default. The storage implementation has internal backend plumbing for future expansion, but the server-facing configuration should normally only need the root directory and revision settings.
 
@@ -234,9 +256,9 @@ FILES_REVISIONS_ENABLED=false
 
 ## Target SQLite Connections
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `drivers.sqlite.allowed_sources` | `DRIVERS_SQLITE_ALLOWED_SOURCES` | `--drivers-sqlite-allowed-sources` | Empty | Comma-separated SQLite target sources to allow. Currently supports only `local`. |
+| Config key                       | Environment                      | CLI flag                           | Default | Notes                                                                            |
+| -------------------------------- | -------------------------------- | ---------------------------------- | ------- | -------------------------------------------------------------------------------- |
+| `drivers.sqlite.allowed_sources` | `DRIVERS_SQLITE_ALLOWED_SOURCES` | `--drivers-sqlite-allowed-sources` | Empty   | Comma-separated SQLite target sources to allow. Currently supports only `local`. |
 
 PostgreSQL and MySQL target connections are available through the normal connection flow.
 
@@ -250,14 +272,14 @@ DRIVERS_SQLITE_ALLOWED_SOURCES=local
 
 ## Email
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `notifications.email` | `NOTIFICATIONS_EMAIL` | `--notifications-email` | Empty | Email address that receives error notifications. |
-| `smtp.host` | `SMTP_HOST` | `--smtp-host` | `example.smtp.host` | SMTP server host. |
-| `smtp.port` | `SMTP_PORT` | `--smtp-port` | `25` | SMTP server port. |
-| `smtp.username` | `SMTP_USERNAME` | `--smtp-username` | `example_username` | SMTP username. |
-| `smtp.password` | `SMTP_PASSWORD` | `--smtp-password` | `pa55word` | SMTP password. |
-| `smtp.from` | `SMTP_FROM` | `--smtp-from` | `Example Name <no_reply@example.org>` | Default SMTP sender. |
+| Config key            | Environment           | CLI flag                | Default                               | Notes                                            |
+| --------------------- | --------------------- | ----------------------- | ------------------------------------- | ------------------------------------------------ |
+| `notifications.email` | `NOTIFICATIONS_EMAIL` | `--notifications-email` | Empty                                 | Email address that receives error notifications. |
+| `smtp.host`           | `SMTP_HOST`           | `--smtp-host`           | `example.smtp.host`                   | SMTP server host.                                |
+| `smtp.port`           | `SMTP_PORT`           | `--smtp-port`           | `25`                                  | SMTP server port.                                |
+| `smtp.username`       | `SMTP_USERNAME`       | `--smtp-username`       | `example_username`                    | SMTP username.                                   |
+| `smtp.password`       | `SMTP_PASSWORD`       | `--smtp-password`       | `pa55word`                            | SMTP password.                                   |
+| `smtp.from`           | `SMTP_FROM`           | `--smtp-from`           | `Example Name <no_reply@example.org>` | Default SMTP sender.                             |
 
 Email is optional today. Configure it when error notification delivery is needed.
 

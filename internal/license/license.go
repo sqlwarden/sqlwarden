@@ -1,7 +1,7 @@
 // Package license defines the edition/licensing seam. The community
 // implementation reports no licensed features and handles no keys;
-// enterprise builds substitute their own Service through the extension
-// registry's LicenseProvider capability.
+// enterprise builds provide their own Service through the extension
+// registry's single validated license factory.
 package license
 
 import (

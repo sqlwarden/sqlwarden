@@ -1,5 +1,5 @@
 // Copyright (c) SQLWarden. All rights reserved.
-// Licensed under the SQLWarden Enterprise License. See enterprise/LICENSE.
+// Licensed under the SQLWarden Enterprise Source License. See enterprise/LICENSE.
 
 // Package ee is the SQLWarden Enterprise root extension. In phase 1 it is a
 // stub that exercises every extension seam end-to-end; real enterprise

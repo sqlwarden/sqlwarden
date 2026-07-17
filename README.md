@@ -132,9 +132,15 @@ internal/access/              RBAC permissions, roles, policies, and enforcer
 internal/connection/          Live target database sessions
 internal/database/            Bun models and database setup
 internal/driver/              Target database driver abstraction
+internal/edition/             Compile-time Community/Enterprise composition seam
+internal/events/              Best-effort integration event delivery
+internal/extension/           Validated extension module manifests and runtime contributions
 internal/files/               Workspace file service
 internal/filestore/           File content storage backend
+internal/license/             Central runtime feature-license enforcement
 internal/web/                 HTTP app, config, routes, middleware, handlers
+enterprise/                   Commercial backend modules and migrations
+frontend/src/enterprise/      Commercial frontend implementations
 pkg/result/                   Normalized target query result types
 ```
 
@@ -173,10 +179,13 @@ SQLWarden is open core:
 - **SQLWarden (community edition)** — everything outside `enterprise/` and
   `frontend/src/enterprise/` — is free and open source under the
   [AGPLv3](LICENSE). It is the full governance product, not a crippled demo.
-- **SQLWarden Enterprise** adds SSO (SAML/OIDC/LDAP), SCIM provisioning,
+- **SQLWarden Enterprise** adds SAML/LDAP SSO, SCIM provisioning,
   audit logging, tamper-evident logs, and SIEM streaming. Enterprise source
-  lives in this repository under a [commercial license](enterprise/LICENSE)
-  and requires a license key in production.
+  lives in this repository under the
+  [SQLWarden Enterprise Source License](enterprise/LICENSE) and requires a
+  subscription and license key in production. OIDC authentication remains a
+  Community feature when implemented.
 
-See [LICENSING.md](LICENSING.md) for details. "SQLWarden" and the SQLWarden
-logo are trademarks and are excluded from the open-source license grant.
+See [LICENSING.md](LICENSING.md) for distribution details and
+[CLA.md](CLA.md) for contribution terms. "SQLWarden" and the SQLWarden logo
+are trademarks and are excluded from the open-source license grant.

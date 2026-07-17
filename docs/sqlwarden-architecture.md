@@ -817,29 +817,66 @@ Future desktop may support multiple remote SQLWarden backends, such as separate 
 SQLWarden is open core, built from one repository:
 
 - Community edition: AGPLv3 (`LICENSE`), everything outside `enterprise/`
-  and `frontend/src/enterprise/`. Built without the `enterprise` Go build
-  tag and without `SQLWARDEN_EDITION=enterprise`; contains zero enterprise
-  code (CI enforces this).
+  and `frontend/src/enterprise/`. It contains zero enterprise code.
 - Enterprise edition: the same tree plus `enterprise/` and
-  `frontend/src/enterprise/` under the SQLWarden Enterprise License
-  (`enterprise/LICENSE`), unlocked at runtime by a license key. An
-  unlicensed enterprise binary behaves exactly like community.
+  `frontend/src/enterprise/` under the SQLWarden Enterprise Source License
+  (`enterprise/LICENSE`). Production use of a combined build is governed by
+  an Enterprise subscription agreement. An unlicensed Enterprise binary
+  behaves like Community except for edition reporting, dormant enterprise
+  migration tables, and license-management affordances.
 
-Seams:
+### Backend Composition
 
 - `internal/edition` is the only compile-time seam: its `enterprise`-tagged
   file imports `enterprise/register`; the untagged file returns an empty
   registry.
-- `internal/extension` defines the registry, `Deps`, and capability
-  interfaces (`MigrationSource`, `RouteRegistrar`, `JobProvider`,
-  `EventSinkProvider`, `LicenseProvider`).
+- `internal/extension` defines an explicit module manifest rather than a set
+  of optional type assertions. A module has a validated name and may declare
+  a migration source, one process-wide license-service factory, and a runtime
+  `Start` factory.
+- Runtime factories receive only shared dependencies (`database`, logger,
+  license service, and event bus) and return declared route, job, event-sink,
+  and closer contributions. Startup validates route namespaces, concrete
+  security scopes, permissions, license features, duplicate routes, duplicate
+  job types, and nil implementations before workers or HTTP serving begin.
+- Startup failures close already-created module resources. Normal shutdown
+  closes module resources in reverse registration order.
 - `internal/license` defines the license service; the community
   implementation licenses nothing.
-- `internal/events` is the domain event bus; community builds have no
-  sinks. Events must never contain SQL text, DSNs, bind parameters, row
-  values, or credentials.
-- Enterprise migrations are a separate stream tracked in
-  `schema_migrations_ee` and may only create/alter `ee_*` tables.
+- Core mounts extension routes inside fixed security scopes:
+  - public routes under `/api/v1`;
+  - account routes under `/api/v1` after account authentication;
+  - instance-administrator routes under `/api/v1/instance` after account and
+    instance-administrator checks;
+  - organization routes under `/api/v1/orgs/{org_slug}` after account,
+    organization-context, membership, and declared permission checks.
+- Core, not extension code, applies the license gate to every contributed
+  route, job execution, and event delivery. This prevents a module from
+  accidentally omitting enforcement and makes runtime license changes take
+  effect without rebuilding route trees or job registries.
+- Enterprise migrations use one validated, independent version table per
+  module (`schema_migrations_<module>`), cannot collide with core migration
+  numbering, preserve qualified PostgreSQL URLs, and close migration source
+  and database resources on every path. Enterprise migrations may only
+  create or alter tables owned by that module.
+
+### Domain Events Versus Audit Records
+
+`internal/events` is a best-effort integration event bus, not a compliance
+audit log. Each sink has an isolated bounded queue and worker. Request paths
+never wait for sink I/O; a full queue drops that sink's event and emits an
+operator warning. Sink errors and panics are isolated and logged. Shutdown
+stops new emission and drains queued deliveries.
+
+Events must never contain SQL text, DSNs, bind parameters, row values,
+credentials, authorization headers, or other secrets. A future compliance
+audit subsystem must write immutable audit records transactionally with the
+business mutation, normally through a durable outbox, and deliver/export them
+independently. The best-effort event bus must not be reused as proof that an
+auditable action was durably recorded.
+
+### Frontend Composition
+
 - Frontend: the `@enterprise` Vite alias resolves to
   `src/enterprise-stub/` (community) or `src/enterprise/` (enterprise).
   Route files are edition-stable; enterprise pages resolve through the
@@ -848,19 +885,36 @@ Seams:
   (`EnterpriseFeaturePage` + the module page registry), sections inside
   shared core pages (`EnterpriseSlot` + the module slot registry; slot keys
   and the seam shape are core, implementations are enterprise), and inline
-  affordances (`useFeature()` directly in core components). Registered
-  pages and slots render only when the feature is licensed (`active`);
-  an unlicensed enterprise server shows the same upsell/fallback surfaces
-  as community, plus an apply-key prompt. UI gating is advisory — the
-  backend enforces licensing per handler.
+  affordances (`useFeature()` directly in core components). Feature names are
+  a typed core catalog. `useFeature()` distinguishes `loading`, `error`,
+  `active`, `locked`, and `unavailable`; it refreshes license state on an
+  interval, focus, and reconnect instead of caching it forever. Transient
+  refresh errors preserve the last known state, while initial failures are
+  visible and retryable. UI gating remains advisory; the backend is
+  authoritative.
+- A Community build with no registered implementation does not fetch edition
+  data for that slot. This avoids unnecessary public requests and prevents a
+  network failure from being misrepresented as Community capability state.
 - `GET /api/v1/instance/edition` reports `{edition, licensed_features}`.
 
-Enterprise-only feature line: SSO (SAML/OIDC/LDAP), SCIM, audit logging,
-tamper-evident logs, SIEM/event streaming, advanced observability, license
-management. JIT/approval workflows, binding expiry, and all current product
-surfaces remain community.
+### Artifact Invariants
 
-Design details: `docs/superpowers/specs/2026-07-17-open-core-enterprise-design.md`.
+- Docker accepts one `EDITION=community|enterprise` build argument. That
+  argument selects both the Vite alias and Go build tags, so mismatched
+  frontend/backend artifacts cannot be produced through the Dockerfile.
+- GoReleaser has separate Community and Enterprise configurations because it
+  emits both artifact families in one release. Each configuration builds its
+  matching frontend immediately before Go compilation.
+- CI runs Go tests under both build tags, builds both frontend editions,
+  checks bundle markers, checks linked Go package paths, and verifies both
+  halves again inside the built Docker images.
+
+Community includes OIDC authentication when implemented. Enterprise-only
+features are SAML and LDAP SSO, SCIM provisioning, durable audit logging,
+tamper-evident audit storage, SIEM/event streaming, advanced observability,
+and license management. JIT/approval workflows, binding expiry, the RBAC
+engine, and current product surfaces remain Community unless that product
+line is intentionally revised.
 
 ## Implementation Invariants
 
@@ -884,4 +938,4 @@ Do not violate these without intentionally changing the architecture:
 - Deleting resources must invalidate ancestry cache when relevant.
 - Removing memberships should revoke affected live DB sessions where implemented.
 - RBAC cache is process-local; multi-node deployments require an explicit invalidation strategy.
-- An unlicensed enterprise binary must behave exactly like community. Every enterprise surface checks the license service: routes start with `Require` and refuse with the `enterprise_license_required` envelope (`extension.WriteLicenseRequired`), job handlers re-check at execution time, event sinks check per event, and frontend pages/slots render only when the feature is `active`. The only sanctioned differences are the edition endpoint reporting `enterprise`, dormant `ee_*` tables, and apply-key upsell copy. Core parity is enforced by running the full test suite under both build tags.
+- An unlicensed enterprise binary must behave like community except for the sanctioned edition, migration-table, and license-management differences. Core centrally gates contributed routes, jobs, and event sinks and returns `enterprise_license_required` when a route is locked. Extension implementations must not duplicate or bypass this policy. Core parity is enforced by running the full test suite under both build tags.

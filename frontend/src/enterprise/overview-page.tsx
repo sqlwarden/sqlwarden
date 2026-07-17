@@ -1,5 +1,5 @@
 // Copyright (c) SQLWarden. All rights reserved.
-// Licensed under the SQLWarden Enterprise License. See enterprise/LICENSE.
+// Licensed under the SQLWarden Enterprise Source License. See enterprise/LICENSE.
 
 export const ENTERPRISE_BUNDLE_MARKER = 'sqlwarden-enterprise-bundle'
 
