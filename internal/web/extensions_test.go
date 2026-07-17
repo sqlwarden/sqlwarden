@@ -53,9 +53,30 @@ func fakeModule(scope extension.RouteScope) extension.Module {
 			r := chi.NewRouter()
 			r.Get("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 			return extension.Contributions{Routes: []extension.Route{{
-				Scope: scope, Prefix: "/faketest/ping", Capability: "faketest", Handler: r,
+				Scope: scope, Prefix: "/faketest/ping", Access: extension.RouteAccessCapability, Capability: "faketest", Handler: r,
 			}}}, nil
 		},
+	}
+}
+
+func TestAlwaysAvailableExtensionRouteSkipsOnlyCapabilityGate(t *testing.T) {
+	app := newTestApplication(t)
+	app.capabilityGate = testCapabilityGate{enabled: false}
+	module := extension.Module{
+		Name: "faketest",
+		Start: func(context.Context, extension.RuntimeDeps) (extension.Contributions, error) {
+			r := chi.NewRouter()
+			r.Get("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+			return extension.Contributions{Routes: []extension.Route{{
+				Scope: extension.RoutePublic, Prefix: "/faketest/manage", Access: extension.RouteAccessAlways, Handler: r,
+			}}}, nil
+		},
+	}
+	attachTestModule(t, app, module)
+
+	res := send(t, newTestRequest(t, http.MethodGet, "/api/v1/faketest/manage", nil), app.routes())
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("always-available route status = %d, want 200", res.StatusCode)
 	}
 }
 

@@ -47,8 +47,8 @@ func TestRegistryRejectsRoutesThatCollideAfterMounting(t *testing.T) {
 	r := NewRegistry()
 	r.Add(Module{Name: "one", Start: func(context.Context, RuntimeDeps) (Contributions, error) {
 		return Contributions{Routes: []Route{
-			{Scope: RoutePublic, Prefix: "/one/callback", Capability: "feature", Handler: handler},
-			{Scope: RouteAccount, Prefix: "/one/callback", Capability: "feature", Handler: handler},
+			{Scope: RoutePublic, Prefix: "/one/callback", Access: RouteAccessCapability, Capability: "feature", Handler: handler},
+			{Scope: RouteAccount, Prefix: "/one/callback", Access: RouteAccessCapability, Capability: "feature", Handler: handler},
 		}}, nil
 	}})
 	if _, err := r.Start(context.Background(), RuntimeDeps{}); err == nil {
@@ -81,11 +81,30 @@ func TestRegistryRejectsUnsafeContributions(t *testing.T) {
 		return Contributions{Routes: []Route{{
 			Scope:      RoutePublic,
 			Prefix:     "/other/path",
+			Access:     RouteAccessCapability,
 			Capability: "feature",
 			Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
 		}}}, nil
 	}})
 	if _, err := r.Start(context.Background(), RuntimeDeps{}); err == nil {
 		t.Fatal("expected unsafe route namespace to be rejected")
+	}
+}
+
+func TestRegistryValidatesRouteAccessPolicy(t *testing.T) {
+	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	tests := []Route{
+		{Scope: RoutePublic, Prefix: "/one/missing", Handler: handler},
+		{Scope: RoutePublic, Prefix: "/one/capability", Access: RouteAccessCapability, Handler: handler},
+		{Scope: RoutePublic, Prefix: "/one/always", Access: RouteAccessAlways, Capability: "feature", Handler: handler},
+	}
+	for _, route := range tests {
+		r := NewRegistry()
+		r.Add(Module{Name: "one", Start: func(context.Context, RuntimeDeps) (Contributions, error) {
+			return Contributions{Routes: []Route{route}}, nil
+		}})
+		if _, err := r.Start(context.Background(), RuntimeDeps{}); err == nil {
+			t.Fatalf("expected route %+v to be rejected", route)
+		}
 	}
 }

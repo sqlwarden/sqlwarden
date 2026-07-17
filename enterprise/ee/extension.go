@@ -63,6 +63,7 @@ func start(_ context.Context, deps extension.RuntimeDeps) (extension.Contributio
 		Routes: []extension.Route{{
 			Scope:      extension.RouteInstanceAdmin,
 			Prefix:     "/ee/stub",
+			Access:     extension.RouteAccessCapability,
 			Capability: "stub",
 			Handler:    r,
 		}},

@@ -35,12 +35,23 @@ const (
 	RouteOrganization  RouteScope = "organization"
 )
 
+// RouteAccess controls whether core applies the deployment capability gate.
+// RouteAccessAlways is intended for extension management endpoints that must
+// remain reachable before their optional capabilities are enabled.
+type RouteAccess string
+
+const (
+	RouteAccessCapability RouteAccess = "capability"
+	RouteAccessAlways     RouteAccess = "always"
+)
+
 // Route is mounted beneath the API root for its Scope. Prefix must be an
-// absolute path relative to that scope. Capability is always enforced by core.
-// Organization routes must also declare the required organization permission.
+// absolute path relative to that scope. Access explicitly selects whether core
+// enforces Capability. Organization routes must also declare a permission.
 type Route struct {
 	Scope      RouteScope
 	Prefix     string
+	Access     RouteAccess
 	Capability string
 	Permission string
 	Handler    http.Handler
@@ -242,8 +253,17 @@ func validateContributions(module string, contrib Contributions) error {
 		if !strings.HasPrefix(route.Prefix, "/") || route.Prefix == "/" {
 			return fmt.Errorf("extension %s route %d has invalid prefix %q", module, i, route.Prefix)
 		}
-		if strings.TrimSpace(route.Capability) == "" {
-			return fmt.Errorf("extension %s route %q has no required capability", module, route.Prefix)
+		switch route.Access {
+		case RouteAccessCapability:
+			if strings.TrimSpace(route.Capability) == "" {
+				return fmt.Errorf("extension %s route %q has no required capability", module, route.Prefix)
+			}
+		case RouteAccessAlways:
+			if strings.TrimSpace(route.Capability) != "" {
+				return fmt.Errorf("extension %s always-available route %q declares a capability", module, route.Prefix)
+			}
+		default:
+			return fmt.Errorf("extension %s route %q has unknown access policy %q", module, route.Prefix, route.Access)
 		}
 		modulePrefix := "/" + module
 		if route.Prefix != modulePrefix && !strings.HasPrefix(route.Prefix, modulePrefix+"/") {

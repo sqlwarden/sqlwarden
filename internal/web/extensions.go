@@ -17,13 +17,17 @@ func (app *application) mountExtensionRoutes(r chi.Router, scope extension.Route
 		if route.Scope != scope {
 			continue
 		}
-		handler := app.requireCapability(route.Capability)(route.Handler)
+		handler := route.Handler
+		if route.Access == extension.RouteAccessCapability {
+			handler = app.requireCapability(route.Capability)(handler)
+		}
 		if scope == extension.RouteOrganization {
 			handler = app.requireOrgPermission(route.Permission)(handler)
 		}
 		app.logger.Info("mounting extension route",
 			"scope", route.Scope,
 			"prefix", route.Prefix,
+			"access", route.Access,
 			"capability", route.Capability,
 		)
 		r.Mount(route.Prefix, handler)
