@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS ee_stub;

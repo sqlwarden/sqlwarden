@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS ee_stub (
+    id BIGSERIAL PRIMARY KEY,
+    note TEXT NOT NULL
+);
