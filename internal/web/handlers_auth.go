@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/events"
 	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -114,6 +115,7 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !found || account.Password == nil || !account.IsActive {
+		app.eventBus.Emit(r.Context(), events.Event{Action: "auth.login", Outcome: "failure"})
 		app.invalidAuthenticationToken(w, r)
 		return
 	}
@@ -124,6 +126,7 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !match {
+		app.eventBus.Emit(r.Context(), events.Event{Action: "auth.login", Outcome: "failure"})
 		app.invalidAuthenticationToken(w, r)
 		return
 	}
@@ -151,6 +154,7 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	app.eventBus.Emit(r.Context(), events.Event{Action: "auth.login", Outcome: "success", ActorID: account.ID})
 	app.logInfo(r, "account logged in", slog.Int64("account_id", account.ID), slog.String("auth_session_id", authSession.ID))
 	// Local HTTP is supported; refreshTokenCookie enforces Secure for HTTPS and built-in TLS.
 	http.SetCookie(w, app.refreshTokenCookie(r, family, 7*24*3600))

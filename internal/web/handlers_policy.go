@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/events"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -315,6 +316,17 @@ func (app *application) grantOrgPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	app.eventBus.Emit(r.Context(), events.Event{
+		Action:   "policy.binding.grant",
+		Outcome:  "success",
+		ActorID:  grantor.ID,
+		OrgID:    org.ID,
+		Resource: "role_binding",
+		Metadata: map[string]string{
+			"role_id":      strconv.FormatInt(input.RoleID, 10),
+			"subject_type": input.SubjectType,
+		},
+	})
 	app.logInfo(r, "organization policy granted", slog.Int64("role_id", input.RoleID), slog.String("subject_type", input.SubjectType), slog.Int64("subject_id", input.SubjectID), slog.String("resource_type", "org"), slog.Int64("resource_id", org.ID))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -368,6 +380,18 @@ func (app *application) revokeOrgPolicy(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	app.eventBus.Emit(r.Context(), events.Event{
+		Action:     "policy.binding.revoke",
+		Outcome:    "success",
+		ActorID:    grantor.ID,
+		OrgID:      org.ID,
+		Resource:   "role_binding",
+		ResourceID: bindingID,
+		Metadata: map[string]string{
+			"role_id":      strconv.FormatInt(rb.RoleID, 10),
+			"subject_type": rb.SubjectType,
+		},
+	})
 	app.logInfo(r, "organization policy revoked", slog.Int64("binding_id", bindingID), slog.Int64("role_id", rb.RoleID), slog.String("subject_type", rb.SubjectType), slog.Int64("subject_id", rb.SubjectID), slog.String("resource_type", rb.ResourceType), slog.Int64("resource_id", rb.ResourceID))
 	w.WriteHeader(http.StatusNoContent)
 }
