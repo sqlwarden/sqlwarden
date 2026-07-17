@@ -844,6 +844,15 @@ Seams:
   `src/enterprise-stub/` (community) or `src/enterprise/` (enterprise).
   Route files are edition-stable; enterprise pages resolve through the
   enterprise module's page registry, falling back to core upsell pages.
+- Frontend enterprise surfaces have three altitudes: whole pages
+  (`EnterpriseFeaturePage` + the module page registry), sections inside
+  shared core pages (`EnterpriseSlot` + the module slot registry; slot keys
+  and the seam shape are core, implementations are enterprise), and inline
+  affordances (`useFeature()` directly in core components). Registered
+  pages and slots render only when the feature is licensed (`active`);
+  an unlicensed enterprise server shows the same upsell/fallback surfaces
+  as community, plus an apply-key prompt. UI gating is advisory — the
+  backend enforces licensing per handler.
 - `GET /api/v1/instance/edition` reports `{edition, licensed_features}`.
 
 Enterprise-only feature line: SSO (SAML/OIDC/LDAP), SCIM, audit logging,
@@ -875,3 +884,4 @@ Do not violate these without intentionally changing the architecture:
 - Deleting resources must invalidate ancestry cache when relevant.
 - Removing memberships should revoke affected live DB sessions where implemented.
 - RBAC cache is process-local; multi-node deployments require an explicit invalidation strategy.
+- An unlicensed enterprise binary must behave exactly like community. Every enterprise surface checks the license service: routes start with `Require` and refuse with the `enterprise_license_required` envelope (`extension.WriteLicenseRequired`), job handlers re-check at execution time, event sinks check per event, and frontend pages/slots render only when the feature is `active`. The only sanctioned differences are the edition endpoint reporting `enterprise`, dormant `ee_*` tables, and apply-key upsell copy. Core parity is enforced by running the full test suite under both build tags.

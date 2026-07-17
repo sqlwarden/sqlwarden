@@ -11,6 +11,10 @@ import (
 
 var ErrNotLicensed = errors.New("feature requires an enterprise license")
 
+// CodeRequired is the API error envelope code every license-gated endpoint
+// returns when the feature is not licensed.
+const CodeRequired = "enterprise_license_required"
+
 type Service interface {
 	Edition() string
 	IsLicensed(feature string) bool

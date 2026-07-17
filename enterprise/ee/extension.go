@@ -42,10 +42,14 @@ func (Extension) Migrations(driver string) (fs.FS, bool) {
 
 func (Extension) RegisterRoutes(r chi.Router, deps *extension.Deps) {
 	r.Get("/api/v1/ee/stub", func(w http.ResponseWriter, req *http.Request) {
+		if err := deps.License.Require("stub"); err != nil {
+			deps.Logger.InfoContext(req.Context(), "ee route denied without license", "route", "/api/v1/ee/stub")
+			_ = extension.WriteLicenseRequired(w, "stub")
+			return
+		}
 		err := response.JSON(w, http.StatusOK, map[string]any{
-			"extension":     "ee",
-			"edition":       deps.License.Edition(),
-			"stub_licensed": deps.License.IsLicensed("stub"),
+			"extension": "ee",
+			"edition":   deps.License.Edition(),
 		})
 		if err != nil {
 			deps.Logger.ErrorContext(req.Context(), "ee stub response failed", "error", err)
@@ -53,29 +57,40 @@ func (Extension) RegisterRoutes(r chi.Router, deps *extension.Deps) {
 	})
 }
 
-func (Extension) Jobs(*extension.Deps) []jobs.Definition {
+func (Extension) Jobs(deps *extension.Deps) []jobs.Definition {
 	return []jobs.Definition{{
 		Type:        "ee_stub_noop",
 		MaxAttempts: 1,
 		Handler: jobs.HandlerFunc(func(context.Context, jobs.Runtime) (any, error) {
+			// Jobs re-check the license at execution time: a job enqueued
+			// while licensed must not run after the license lapses.
+			if err := deps.License.Require("stub"); err != nil {
+				return nil, err
+			}
 			return map[string]any{"ok": true}, nil
 		}),
 	}}
 }
 
 func (Extension) EventSink(deps *extension.Deps) events.Sink {
-	return &debugLogSink{logger: deps.Logger}
+	return &debugLogSink{logger: deps.Logger, license: deps.License}
 }
 
 func (Extension) LicenseService() license.Service { return placeholderLicense{} }
 
 // debugLogSink proves event delivery into the enterprise edition. It logs
-// only event shape fields, never payload data.
+// only event shape fields, never payload data. Sinks check the license per
+// event so an unlicensed binary processes nothing and a key applied at
+// runtime takes effect without restart.
 type debugLogSink struct {
-	logger *slog.Logger
+	logger  *slog.Logger
+	license license.Service
 }
 
 func (s *debugLogSink) HandleEvent(ctx context.Context, ev events.Event) {
+	if !s.license.IsLicensed("stub") {
+		return
+	}
 	s.logger.DebugContext(ctx, "enterprise event sink received event",
 		"event.action", ev.Action, "event.outcome", ev.Outcome)
 }
