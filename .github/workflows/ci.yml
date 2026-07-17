@@ -299,5 +299,5 @@ jobs:
           context: .
           push: false
           build-args: |
-            GO_BUILD_TAGS=enterprise
+            EDITION=enterprise
           tags: sqlwarden/sqlwarden-ee:ci

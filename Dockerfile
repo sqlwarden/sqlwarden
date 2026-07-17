@@ -1,3 +1,21 @@
+FROM oven/bun:1.3.10-alpine AS frontend-builder
+
+WORKDIR /build
+
+COPY frontend/package.json frontend/bun.lock ./frontend/
+RUN cd frontend && bun install --frozen-lockfile
+
+COPY frontend ./frontend
+
+# One argument selects both halves of the artifact. This prevents an
+# enterprise backend from accidentally embedding a community frontend.
+ARG EDITION=community
+RUN case "$EDITION" in \
+      community) cd frontend && bun run build ;; \
+      enterprise) cd frontend && bun run build:enterprise ;; \
+      *) echo "unsupported EDITION: $EDITION" >&2; exit 1 ;; \
+    esac
+
 FROM golang:1.26.5-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates tzdata
@@ -8,16 +26,19 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+COPY --from=frontend-builder /build/assets/static ./assets/static
 
-# GO_BUILD_TAGS=enterprise produces the sqlwarden-ee image from the same
-# Dockerfile; empty (default) produces the community image.
-ARG GO_BUILD_TAGS=""
-
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -tags "${GO_BUILD_TAGS}" \
-    -ldflags="-s -w" \
-    -o sqlwarden \
-    ./cmd/api
+ARG EDITION=community
+RUN case "$EDITION" in \
+      community) build_tags="" ;; \
+      enterprise) build_tags="enterprise" ;; \
+      *) echo "unsupported EDITION: $EDITION" >&2; exit 1 ;; \
+    esac && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+      -tags "$build_tags" \
+      -ldflags="-s -w" \
+      -o sqlwarden \
+      ./cmd/api
 
 FROM alpine:3.19
 

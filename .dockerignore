@@ -15,6 +15,9 @@ testdata
 # Build artifacts
 dist/
 /tmp/
+assets/static/
+frontend/node_modules/
+frontend/coverage/
 *.out
 *.test
 

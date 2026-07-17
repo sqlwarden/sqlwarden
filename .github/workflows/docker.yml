@@ -27,19 +27,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.10
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: bun install --frozen-lockfile
-
-      - name: Build community frontend
-        working-directory: frontend
-        run: bun run build
-
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -59,10 +46,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Build enterprise frontend
-        working-directory: frontend
-        run: bun run build:enterprise
-
       - name: Extract metadata (enterprise)
         id: meta-ee
         uses: docker/metadata-action@v5
@@ -80,6 +63,6 @@ jobs:
           context: .
           push: true
           build-args: |
-            GO_BUILD_TAGS=enterprise
+            EDITION=enterprise
           tags: ${{ steps.meta-ee.outputs.tags }}
           labels: ${{ steps.meta-ee.outputs.labels }}
