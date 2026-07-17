@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/sqlwarden/assets"
 	"github.com/uptrace/bun"
@@ -24,6 +26,8 @@ import (
 )
 
 const defaultTimeout = 3 * time.Second
+
+var validMigrationTable = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
 type DB struct {
 	logger *slog.Logger
@@ -107,47 +111,30 @@ func (db *DB) MigrateUp() error {
 		return err
 	}
 
-	var databaseURL string
-	switch db.driver {
-	case "postgres":
-		databaseURL = "postgres://" + db.dsn
-	case "sqlite":
-		databaseURL = "sqlite://" + db.dsn
-	default:
-		return fmt.Errorf("unsupported database driver for migrations: %s", db.driver)
-	}
-
-	migrator, err := migrate.NewWithSourceInstance("iofs", iofsDriver, databaseURL)
+	databaseURL, err := migrationDatabaseURL(db.driver, db.dsn)
 	if err != nil {
-		return err
+		return errors.Join(err, iofsDriver.Close())
 	}
 
-	err = migrator.Up()
-	switch {
-	case errors.Is(err, migrate.ErrNoChange):
-		return nil
-	default:
-		return err
-	}
+	return migrateUp(iofsDriver, databaseURL)
 }
 
 // MigrateExtensionUp applies an extension's migration stream from src,
 // tracking versions in the given table so extension streams can never
 // collide with core migration numbering in schema_migrations.
 func (db *DB) MigrateExtensionUp(src fs.FS, table string) error {
+	if !validMigrationTable.MatchString(table) {
+		return fmt.Errorf("invalid extension migration table %q", table)
+	}
+
 	iofsDriver, err := iofs.New(src, ".")
 	if err != nil {
 		return err
 	}
 
-	var databaseURL string
-	switch db.driver {
-	case "postgres":
-		databaseURL = "postgres://" + db.dsn
-	case "sqlite":
-		databaseURL = "sqlite://" + db.dsn
-	default:
-		return fmt.Errorf("unsupported database driver for migrations: %s", db.driver)
+	databaseURL, err := migrationDatabaseURL(db.driver, db.dsn)
+	if err != nil {
+		return errors.Join(err, iofsDriver.Close())
 	}
 	sep := "?"
 	if strings.Contains(databaseURL, "?") {
@@ -155,10 +142,35 @@ func (db *DB) MigrateExtensionUp(src fs.FS, table string) error {
 	}
 	databaseURL += sep + "x-migrations-table=" + table
 
+	return migrateUp(iofsDriver, databaseURL)
+}
+
+func migrationDatabaseURL(driver, dsn string) (string, error) {
+	switch driver {
+	case "postgres":
+		if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+			return dsn, nil
+		}
+		return "postgres://" + dsn, nil
+	case "sqlite":
+		if strings.HasPrefix(dsn, "sqlite://") {
+			return dsn, nil
+		}
+		return "sqlite://" + dsn, nil
+	default:
+		return "", fmt.Errorf("unsupported database driver for migrations: %s", driver)
+	}
+}
+
+func migrateUp(iofsDriver source.Driver, databaseURL string) (retErr error) {
 	migrator, err := migrate.NewWithSourceInstance("iofs", iofsDriver, databaseURL)
 	if err != nil {
-		return err
+		return errors.Join(err, iofsDriver.Close())
 	}
+	defer func() {
+		sourceErr, databaseErr := migrator.Close()
+		retErr = errors.Join(retErr, sourceErr, databaseErr)
+	}()
 
 	err = migrator.Up()
 	if errors.Is(err, migrate.ErrNoChange) {

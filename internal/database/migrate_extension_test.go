@@ -5,9 +5,20 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
+
+type closableMigrationFS struct {
+	fstest.MapFS
+	closed bool
+}
+
+func (f *closableMigrationFS) Close() error {
+	f.closed = true
+	return nil
+}
 
 func extTestMigrations() fstest.MapFS {
 	return fstest.MapFS{
@@ -65,5 +76,51 @@ func TestMigrateExtensionUpUsesSeparateVersionTable(t *testing.T) {
 	// Re-running must be a no-op, not an error.
 	if err := db.MigrateExtensionUp(extTestMigrations(), "schema_migrations_ee"); err != nil {
 		t.Fatalf("second MigrateExtensionUp: %v", err)
+	}
+}
+
+func TestMigrateExtensionUpRejectsUnsafeVersionTables(t *testing.T) {
+	db := &DB{}
+	for _, table := range []string{
+		"",
+		"SchemaMigrationsEE",
+		"schema-migrations-ee",
+		"schema_migrations_ee; DROP TABLE accounts",
+		"1_schema_migrations",
+		strings.Repeat("a", 64),
+	} {
+		t.Run(table, func(t *testing.T) {
+			if err := db.MigrateExtensionUp(extTestMigrations(), table); err == nil {
+				t.Fatalf("MigrateExtensionUp accepted unsafe table %q", table)
+			}
+		})
+	}
+}
+
+func TestMigrateExtensionUpClosesMigrationSource(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "close.db")
+	db, err := New("sqlite", dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	src := &closableMigrationFS{MapFS: extTestMigrations()}
+	if err := db.MigrateExtensionUp(src, "schema_migrations_close_test"); err != nil {
+		t.Fatal(err)
+	}
+	if !src.closed {
+		t.Fatal("migration source was not closed")
+	}
+}
+
+func TestMigrateExtensionUpClosesMigrationSourceOnSetupFailure(t *testing.T) {
+	db := &DB{driver: "unsupported"}
+	src := &closableMigrationFS{MapFS: extTestMigrations()}
+	if err := db.MigrateExtensionUp(src, "schema_migrations_close_test"); err == nil {
+		t.Fatal("expected unsupported driver error")
+	}
+	if !src.closed {
+		t.Fatal("migration source was not closed after setup failure")
 	}
 }

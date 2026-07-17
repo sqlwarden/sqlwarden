@@ -86,11 +86,14 @@ func TestNew(t *testing.T) {
 
 func TestMigrateUp(t *testing.T) {
 	drivers := []struct {
-		name   string
-		driver string
+		name      string
+		driver    string
+		urlPrefix string
 	}{
-		{"PostgreSQL", "postgres"},
-		{"SQLite", "sqlite"},
+		{name: "PostgreSQL raw DSN", driver: "postgres"},
+		{name: "PostgreSQL URL", driver: "postgres", urlPrefix: "postgres://"},
+		{name: "PostgreSQL alternate URL", driver: "postgres", urlPrefix: "postgresql://"},
+		{name: "SQLite", driver: "sqlite"},
 	}
 
 	for _, tc := range drivers {
@@ -99,7 +102,7 @@ func TestMigrateUp(t *testing.T) {
 			if tc.driver == "sqlite" {
 				defer os.Remove(dsn)
 			} else {
-				dsn = newRawPostgresTestDSN(t)
+				dsn = tc.urlPrefix + newRawPostgresTestDSN(t)
 			}
 
 			db, err := New(tc.driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
@@ -116,6 +119,31 @@ func TestMigrateUp(t *testing.T) {
 			assert.True(t, version > 0)
 		})
 	}
+}
+
+func TestMigrationDatabaseURL(t *testing.T) {
+	tests := []struct {
+		name   string
+		driver string
+		dsn    string
+		want   string
+	}{
+		{name: "raw PostgreSQL DSN", driver: "postgres", dsn: "user:pass@host/db", want: "postgres://user:pass@host/db"},
+		{name: "PostgreSQL URL", driver: "postgres", dsn: "postgres://user:pass@host/db", want: "postgres://user:pass@host/db"},
+		{name: "alternate PostgreSQL URL", driver: "postgres", dsn: "postgresql://user:pass@host/db", want: "postgresql://user:pass@host/db"},
+		{name: "SQLite path", driver: "sqlite", dsn: "/tmp/sqlwarden.db", want: "sqlite:///tmp/sqlwarden.db"},
+		{name: "SQLite URL", driver: "sqlite", dsn: "sqlite:///tmp/sqlwarden.db", want: "sqlite:///tmp/sqlwarden.db"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := migrationDatabaseURL(tc.driver, tc.dsn)
+			assert.Nil(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+
+	_, err := migrationDatabaseURL("mysql", "ignored")
+	assert.NotNil(t, err)
 }
 
 func TestSQLSortDirectionUsesOnlyLiteralTokens(t *testing.T) {
