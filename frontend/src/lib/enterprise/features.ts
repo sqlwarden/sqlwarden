@@ -1,7 +1,7 @@
 export const ENTERPRISE_FEATURES = {
   platform: 'enterprise',
   auditLog: 'audit_log',
-  sso: 'sso',
+  enterpriseSso: 'enterprise_sso',
   scim: 'scim',
   siem: 'siem',
 } as const

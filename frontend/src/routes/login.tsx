@@ -151,7 +151,10 @@ function LoginPage() {
                 {mutation.isPending ? 'Signing in…' : 'Sign in'}
               </Button>
             </form>
-            <EnterpriseSlot slot="login-sso-providers" feature={ENTERPRISE_FEATURES.sso} />
+            <EnterpriseSlot
+              slot="login-sso-providers"
+              feature={ENTERPRISE_FEATURES.enterpriseSso}
+            />
           </CardContent>
         </Card>
         <LegalNotice className="text-center" />

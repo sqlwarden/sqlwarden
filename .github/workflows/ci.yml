@@ -163,6 +163,13 @@ jobs:
         working-directory: frontend
         run: bun run test
 
+      - name: Run frontend tests (enterprise)
+        if: steps.changes.outputs.frontend == 'true'
+        working-directory: frontend
+        env:
+          SQLWARDEN_EDITION: enterprise
+        run: bun run test
+
       - name: Build frontend
         if: steps.changes.outputs.frontend == 'true'
         working-directory: frontend

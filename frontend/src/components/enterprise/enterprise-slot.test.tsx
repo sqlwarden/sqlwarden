@@ -29,7 +29,7 @@ function renderSlot(edition?: InstanceEdition, fallback?: ReactNode, enabled = f
     <QueryClientProvider client={client}>
       <EnterpriseSlot
         slot="login-sso-providers"
-        feature={ENTERPRISE_FEATURES.sso}
+        feature={ENTERPRISE_FEATURES.enterpriseSso}
         fallback={fallback}
       />
     </QueryClientProvider>,
@@ -40,7 +40,7 @@ describe('EnterpriseSlot', () => {
   it('renders the registered implementation only when the feature is licensed', () => {
     mockModule.slots = { 'login-sso-providers': () => <div>SSO buttons</div> }
 
-    renderSlot({ edition: 'enterprise', licensed_features: ['sso'] })
+    renderSlot({ edition: 'enterprise', licensed_features: ['enterprise_sso'] })
     expect(screen.getByText('SSO buttons')).toBeInTheDocument()
   })
 
@@ -80,7 +80,7 @@ describe('EnterpriseSlot', () => {
         }
         return HttpResponse.json({
           edition: 'enterprise',
-          licensed_features: [ENTERPRISE_FEATURES.sso],
+          licensed_features: [ENTERPRISE_FEATURES.enterpriseSso],
         })
       }),
     )
