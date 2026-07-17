@@ -22,6 +22,8 @@ import (
 
 var validModuleName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
+const maxModuleNameLength = 63 - len("schema_migrations_")
+
 // RouteScope identifies the core security boundary applied before an
 // extension handler is reached.
 type RouteScope string
@@ -125,6 +127,9 @@ func (r *Registry) Validate() error {
 		if !validModuleName.MatchString(module.Name) {
 			return fmt.Errorf("extension module name %q must match %s", module.Name, validModuleName)
 		}
+		if len(module.Name) > maxModuleNameLength {
+			return fmt.Errorf("extension module name %q exceeds %d characters", module.Name, maxModuleNameLength)
+		}
 		if _, exists := seen[module.Name]; exists {
 			return fmt.Errorf("extension module name %q is registered more than once", module.Name)
 		}
@@ -167,6 +172,9 @@ func (r *Registry) LicenseService(ctx context.Context, deps BootstrapDeps) (lice
 // Start initializes modules in registration order and validates every runtime
 // contribution before any background worker or HTTP listener can use it.
 func (r *Registry) Start(ctx context.Context, deps RuntimeDeps) (Contributions, error) {
+	if err := r.Validate(); err != nil {
+		return Contributions{}, err
+	}
 	var all Contributions
 	for _, module := range r.Modules() {
 		if module.Start == nil {
@@ -197,7 +205,7 @@ func (r *Registry) Start(ctx context.Context, deps RuntimeDeps) (Contributions, 
 func validateAggregateContributions(contrib Contributions) error {
 	routes := make(map[string]struct{}, len(contrib.Routes))
 	for _, route := range contrib.Routes {
-		key := string(route.Scope) + ":" + route.Prefix
+		key := mountedRouteKey(route)
 		if _, exists := routes[key]; exists {
 			return fmt.Errorf("extension route %s is registered more than once", key)
 		}
@@ -211,6 +219,19 @@ func validateAggregateContributions(contrib Contributions) error {
 		jobTypes[job.Definition.Type] = struct{}{}
 	}
 	return nil
+}
+
+func mountedRouteKey(route Route) string {
+	switch route.Scope {
+	case RoutePublic, RouteAccount:
+		return "api:" + route.Prefix
+	case RouteInstanceAdmin:
+		return "instance:" + route.Prefix
+	case RouteOrganization:
+		return "organization:" + route.Prefix
+	default:
+		return string(route.Scope) + ":" + route.Prefix
+	}
 }
 
 func validateContributions(module string, contrib Contributions) error {

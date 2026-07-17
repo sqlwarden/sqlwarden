@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/sqlwarden/internal/license"
@@ -23,6 +24,7 @@ func TestRegistryValidatesModuleIdentityAndLicenseProvider(t *testing.T) {
 		modules []Module
 	}{
 		{name: "invalid name", modules: []Module{{Name: "Bad Name"}}},
+		{name: "name too long for migration table", modules: []Module{{Name: "a" + strings.Repeat("b", maxModuleNameLength)}}},
 		{name: "duplicate name", modules: []Module{{Name: "one"}, {Name: "one"}}},
 		{name: "multiple license providers", modules: []Module{
 			{Name: "one", LicenseFactory: func(context.Context, BootstrapDeps) (license.Service, error) { return nil, nil }},
@@ -37,6 +39,20 @@ func TestRegistryValidatesModuleIdentityAndLicenseProvider(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+func TestRegistryRejectsRoutesThatCollideAfterMounting(t *testing.T) {
+	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	r := NewRegistry()
+	r.Add(Module{Name: "one", Start: func(context.Context, RuntimeDeps) (Contributions, error) {
+		return Contributions{Routes: []Route{
+			{Scope: RoutePublic, Prefix: "/one/callback", Feature: "feature", Handler: handler},
+			{Scope: RouteAccount, Prefix: "/one/callback", Feature: "feature", Handler: handler},
+		}}, nil
+	}})
+	if _, err := r.Start(context.Background(), RuntimeDeps{}); err == nil {
+		t.Fatal("expected routes sharing the API mount point to be rejected")
 	}
 }
 
