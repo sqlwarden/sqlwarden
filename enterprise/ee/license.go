@@ -4,8 +4,10 @@
 package ee
 
 import (
+	"context"
 	"fmt"
 
+	"github.com/sqlwarden/internal/extension"
 	"github.com/sqlwarden/internal/license"
 )
 
@@ -13,6 +15,10 @@ import (
 // Real Ed25519 license-key verification replaces this in a later phase; an
 // unlicensed enterprise binary must behave exactly like community.
 type placeholderLicense struct{}
+
+func newLicenseService(context.Context, extension.BootstrapDeps) (license.Service, error) {
+	return placeholderLicense{}, nil
+}
 
 func (placeholderLicense) Edition() string            { return "enterprise" }
 func (placeholderLicense) IsLicensed(string) bool     { return false }

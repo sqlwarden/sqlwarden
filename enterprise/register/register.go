@@ -12,6 +12,6 @@ import (
 
 func Registry() *extension.Registry {
 	r := extension.NewRegistry()
-	r.Add(ee.Extension{})
+	r.Add(ee.NewModule())
 	return r
 }

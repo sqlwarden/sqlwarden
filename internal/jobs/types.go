@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -157,7 +158,19 @@ func NewRegistry() *Registry {
 	return &Registry{defs: map[string]Definition{}}
 }
 
-func (r *Registry) Register(def Definition) {
+func (r *Registry) Register(def Definition) error {
+	if r == nil {
+		return errors.New("job registry is nil")
+	}
+	if def.Type == "" {
+		return errors.New("job type is required")
+	}
+	if def.Handler == nil {
+		return fmt.Errorf("job %q has no handler", def.Type)
+	}
+	if _, exists := r.defs[def.Type]; exists {
+		return fmt.Errorf("job type %q is already registered", def.Type)
+	}
 	if def.MaxAttempts <= 0 {
 		def.MaxAttempts = 1
 	}
@@ -165,6 +178,7 @@ func (r *Registry) Register(def Definition) {
 		def.Backoff = func(int) time.Duration { return time.Minute }
 	}
 	r.defs[def.Type] = def
+	return nil
 }
 
 func (r *Registry) Definition(jobType string) (Definition, bool) {

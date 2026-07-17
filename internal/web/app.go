@@ -56,6 +56,8 @@ type application struct {
 	jobRegistry      *jobs.Registry
 	jobRunnerCancel  context.CancelFunc
 	extensions       *extension.Registry
+	extensionRoutes  []extension.Route
+	extensionClosers []io.Closer
 	licenseService   license.Service
 	eventBus         *events.Bus
 }
@@ -93,6 +95,12 @@ func newWithRegistry(cfg Config, logger *slog.Logger, registry *extension.Regist
 	}
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
+	}
+	if registry == nil {
+		registry = extension.NewRegistry()
+	}
+	if err := registry.Validate(); err != nil {
+		return nil, fmt.Errorf("extension registry: %w", err)
 	}
 	if err := ensureSQLiteParentDir(cfg); err != nil {
 		return nil, err
@@ -146,6 +154,17 @@ func newWithRegistry(cfg Config, logger *slog.Logger, registry *extension.Regist
 		}
 	}
 
+	licenseService, err := registry.LicenseService(context.Background(), extension.BootstrapDeps{
+		DB:        db,
+		Logger:    logger,
+		LookupEnv: os.LookupEnv,
+		Now:       time.Now,
+	})
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+
 	mailer, err := smtp.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.Username, cfg.SMTP.Password, cfg.SMTP.From)
 	if err != nil {
 		db.Close()
@@ -188,21 +207,32 @@ func newWithRegistry(cfg Config, logger *slog.Logger, registry *extension.Regist
 		fileStores:     fileStores,
 		jobStore:       jobs.NewStore(db),
 		extensions:     registry,
-		licenseService: licenseServiceFor(registry),
+		licenseService: licenseService,
 		eventBus:       events.NewBus(),
 	}
-	deps := app.extensionDeps()
-	for _, ext := range registry.All() {
-		if sp, ok := ext.(extension.EventSinkProvider); ok {
-			app.eventBus.Subscribe(sp.EventSink(deps))
-		}
+	contrib, err := registry.Start(context.Background(), extension.RuntimeDeps{
+		DB:      db,
+		Logger:  logger,
+		License: licenseService,
+		Events:  app.eventBus,
+	})
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	app.extensionRoutes = contrib.Routes
+	app.extensionClosers = contrib.Closers
+	for _, sink := range contrib.EventSinks {
+		app.eventBus.Subscribe(app.licensedEventSink(sink.Feature, sink.Sink))
 	}
 	app.jobRegistry = app.defaultJobRegistry()
-	for _, ext := range registry.All() {
-		if jp, ok := ext.(extension.JobProvider); ok {
-			for _, def := range jp.Jobs(deps) {
-				app.jobRegistry.Register(def)
-			}
+	for _, job := range contrib.Jobs {
+		def := job.Definition
+		def.Handler = app.licensedJobHandler(job.Feature, def.Handler)
+		if err := app.jobRegistry.Register(def); err != nil {
+			app.closeExtensionResources()
+			db.Close()
+			return nil, fmt.Errorf("register extension job: %w", err)
 		}
 	}
 	app.startJobRunner()
@@ -234,6 +264,7 @@ func (app *application) Close() error {
 		app.connManager.Close()
 		app.logger.Info("database connection sessions closed", "duration_ms", time.Since(connCloseStartedAt).Milliseconds())
 	}
+	app.closeExtensionResources()
 
 	if app.db != nil {
 		dbCloseStartedAt := time.Now()
@@ -360,41 +391,30 @@ func (app *application) enqueueFileContentReapJob(ctx context.Context) error {
 	return err
 }
 
-func (app *application) extensionDeps() *extension.Deps {
-	return &extension.Deps{
-		DB:      app.db,
-		Logger:  app.logger,
-		License: app.licenseService,
-		Events:  app.eventBus,
-	}
-}
-
-func licenseServiceFor(registry *extension.Registry) license.Service {
-	svc := license.Community()
-	for _, ext := range registry.All() {
-		if lp, ok := ext.(extension.LicenseProvider); ok {
-			svc = lp.LicenseService()
-		}
-	}
-	return svc
-}
-
 func runExtensionMigrations(db *database.DB, registry *extension.Registry, driver string, logger *slog.Logger) error {
-	for _, ext := range registry.All() {
-		src, ok := ext.(extension.MigrationSource)
+	for _, module := range registry.Modules() {
+		if module.Migrations == nil {
+			continue
+		}
+		mfs, ok := module.Migrations(driver)
 		if !ok {
 			continue
 		}
-		mfs, ok := src.Migrations(driver)
-		if !ok {
-			continue
-		}
-		logger.Info("running extension migrations", "extension", ext.Name())
-		if err := db.MigrateExtensionUp(mfs, "schema_migrations_"+ext.Name()); err != nil {
-			return fmt.Errorf("extension %s migrations: %w", ext.Name(), err)
+		logger.Info("running extension migrations", "extension", module.Name)
+		if err := db.MigrateExtensionUp(mfs, "schema_migrations_"+module.Name); err != nil {
+			return fmt.Errorf("extension %s migrations: %w", module.Name, err)
 		}
 	}
 	return nil
+}
+
+func (app *application) closeExtensionResources() {
+	for i := len(app.extensionClosers) - 1; i >= 0; i-- {
+		if err := app.extensionClosers[i].Close(); err != nil {
+			app.logger.Error("extension resource close failed", "error", err)
+		}
+	}
+	app.extensionClosers = nil
 }
 
 func ensureSQLiteParentDir(cfg Config) error {

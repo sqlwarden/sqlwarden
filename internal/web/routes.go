@@ -35,6 +35,7 @@ func (app *application) routes() http.Handler {
 		r.Post("/auth/login", app.loginAccount)
 		r.Post("/auth/refresh", app.refreshToken)
 		r.Post("/auth/logout", app.logoutAccount)
+		app.mountExtensionRoutes(r, extension.RoutePublic)
 
 		r.With(app.requireAccount, app.requireInstanceAdmin).Post("/orgs", app.createOrg)
 
@@ -55,6 +56,7 @@ func (app *application) routes() http.Handler {
 				r.Delete("/accounts/{account_id}/sessions/{session_id}", app.revokeInstanceAccountSession)
 				r.Delete("/admins/{account_id}", app.removeInstanceAdmin)
 				r.Post("/encryption/rotate", app.rotateEncryptionKeysHandler)
+				app.mountExtensionRoutes(r, extension.RouteInstanceAdmin)
 			})
 		})
 
@@ -71,6 +73,7 @@ func (app *application) routes() http.Handler {
 
 			r.Get("/engines", app.listEngines)
 			r.Get("/engines/{engine_id}", app.getEngine)
+			app.mountExtensionRoutes(r, extension.RouteAccount)
 		})
 
 		r.Route("/me", func(r chi.Router) {
@@ -170,6 +173,7 @@ func (app *application) routes() http.Handler {
 
 		r.Route("/orgs/{org_slug}", func(r chi.Router) {
 			r.Use(app.requireAccount, app.orgCtx)
+			app.mountExtensionRoutes(r, extension.RouteOrganization)
 
 			r.Get("/", app.getOrg)
 			r.With(app.requireOrgPermission("org:write")).Patch("/", app.updateOrg)
@@ -354,8 +358,6 @@ func (app *application) routes() http.Handler {
 		})
 	})
 
-	app.mountExtensionRoutes(mux)
-
 	staticFS, err := fs.Sub(assets.EmbeddedFiles, "static")
 	if err != nil {
 		panic(err)
@@ -363,16 +365,6 @@ func (app *application) routes() http.Handler {
 	mux.Get("/*", app.spaHandler(staticFS))
 
 	return mux
-}
-
-func (app *application) mountExtensionRoutes(mux chi.Router) {
-	deps := app.extensionDeps()
-	for _, ext := range app.extensions.All() {
-		if rr, ok := ext.(extension.RouteRegistrar); ok {
-			app.logger.Info("mounting extension routes", "extension", ext.Name())
-			rr.RegisterRoutes(mux, deps)
-		}
-	}
 }
 
 func (app *application) spaHandler(staticFS fs.FS) http.HandlerFunc {

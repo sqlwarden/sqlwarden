@@ -13,18 +13,19 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/extension"
 	"github.com/sqlwarden/internal/license"
 )
 
 func TestExtensionName(t *testing.T) {
-	if got := (Extension{}).Name(); got != "ee" {
-		t.Fatalf("Name() = %q, want ee", got)
+	if got := NewModule().Name; got != "ee" {
+		t.Fatalf("module name = %q, want ee", got)
 	}
 }
 
 func TestMigrationsExistPerDriver(t *testing.T) {
 	for _, driver := range []string{"sqlite", "postgres"} {
-		src, ok := Extension{}.Migrations(driver)
+		src, ok := NewModule().Migrations(driver)
 		if !ok {
 			t.Fatalf("expected migrations for %s", driver)
 		}
@@ -35,6 +36,9 @@ func TestMigrationsExistPerDriver(t *testing.T) {
 		if len(entries) == 0 {
 			t.Fatalf("no migration files for %s", driver)
 		}
+	}
+	if _, ok := NewModule().Migrations("unknown"); ok {
+		t.Fatal("unknown database drivers must not receive PostgreSQL migrations")
 	}
 }
 
@@ -50,7 +54,7 @@ func TestMigrationsApplyToSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	src, _ := Extension{}.Migrations("sqlite")
+	src, _ := NewModule().Migrations("sqlite")
 	if err := db.MigrateExtensionUp(src, "schema_migrations_ee"); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +74,10 @@ func TestMigrationsApplyToSQLite(t *testing.T) {
 }
 
 func TestPlaceholderLicenseService(t *testing.T) {
-	svc := Extension{}.LicenseService()
+	svc, err := newLicenseService(context.Background(), extension.BootstrapDeps{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if svc.Edition() != "enterprise" {
 		t.Fatalf("Edition() = %q, want enterprise", svc.Edition())
 	}

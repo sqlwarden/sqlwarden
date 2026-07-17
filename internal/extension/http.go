@@ -7,10 +7,8 @@ import (
 	"github.com/sqlwarden/internal/response"
 )
 
-// WriteLicenseRequired writes the standard refusal for a license-gated
-// route. Every enterprise handler must start with a license check and call
-// this on failure, so an unlicensed enterprise binary behaves exactly like
-// community for that surface.
+// WriteLicenseRequired writes the standard refusal for a license-gated route.
+// Core route composition calls it before dispatching to extension handlers.
 func WriteLicenseRequired(w http.ResponseWriter, feature string) error {
 	return response.JSON(w, http.StatusForbidden, response.APIErrorEnvelope{
 		Error: response.APIError{

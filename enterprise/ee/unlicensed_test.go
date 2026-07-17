@@ -5,42 +5,30 @@ package ee
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"testing"
 
 	"github.com/sqlwarden/internal/events"
 	"github.com/sqlwarden/internal/extension"
-	"github.com/sqlwarden/internal/jobs"
-	"github.com/sqlwarden/internal/license"
 )
 
-func unlicensedDeps() *extension.Deps {
-	return &extension.Deps{
+func TestModuleDeclaresCentralLicenseGates(t *testing.T) {
+	contrib, err := start(context.Background(), extension.RuntimeDeps{
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-		License: Extension{}.LicenseService(),
+		License: placeholderLicense{},
 		Events:  events.NewBus(),
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestStubJobRefusesWithoutLicense(t *testing.T) {
-	deps := unlicensedDeps()
-	defs := Extension{}.Jobs(deps)
-	if len(defs) != 1 {
-		t.Fatalf("expected 1 job definition, got %d", len(defs))
+	if len(contrib.Routes) != 1 || contrib.Routes[0].Feature != "stub" {
+		t.Fatalf("route license declaration = %+v", contrib.Routes)
 	}
-
-	_, err := defs[0].Handler.Handle(context.Background(), jobs.Runtime{})
-	if !errors.Is(err, license.ErrNotLicensed) {
-		t.Fatalf("unlicensed job error = %v, want ErrNotLicensed", err)
+	if len(contrib.Jobs) != 1 || contrib.Jobs[0].Feature != "stub" {
+		t.Fatalf("job license declaration = %+v", contrib.Jobs)
 	}
-}
-
-func TestStubEventSinkIsInertWithoutLicense(t *testing.T) {
-	deps := unlicensedDeps()
-	sink := Extension{}.EventSink(deps)
-
-	// Must be a no-op, never a panic or side effect, when unlicensed.
-	sink.HandleEvent(context.Background(), events.Event{Action: "auth.login", Outcome: "success"})
+	if len(contrib.EventSinks) != 1 || contrib.EventSinks[0].Feature != "stub" {
+		t.Fatalf("sink license declaration = %+v", contrib.EventSinks)
+	}
 }

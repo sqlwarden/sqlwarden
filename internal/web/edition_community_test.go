@@ -36,7 +36,7 @@ func TestCommunityBinaryHasNoEnterpriseRoutes(t *testing.T) {
 	srv := httptest.NewServer(app.routes())
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/api/v1/ee/stub")
+	resp, err := http.Get(srv.URL + "/api/v1/instance/ee/stub")
 	if err != nil {
 		t.Fatal(err)
 	}

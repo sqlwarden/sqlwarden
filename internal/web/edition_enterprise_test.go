@@ -42,27 +42,16 @@ func TestEnterpriseBinaryUnlicensedActsAsCommunity(t *testing.T) {
 		t.Fatalf("licensed_features = %v, want empty without a key", edition.LicensedFeatures)
 	}
 
-	resp2, err := http.Get(srv.URL + "/api/v1/ee/stub")
-	if err != nil {
-		t.Fatal(err)
+	_, token := seedInstanceAdminAccount(t, app, uniqueEmail(t, "edition-admin"), "Edition Admin")
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/ee/stub", nil, token), app.routes())
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("unlicensed stub route status = %d, want 403", res.StatusCode)
 	}
-	defer resp2.Body.Close()
-	if resp2.StatusCode != http.StatusForbidden {
-		t.Fatalf("unlicensed stub route status = %d, want 403", resp2.StatusCode)
+	errorBody, _ := res.BodyFields["error"].(map[string]any)
+	if code, _ := errorBody["code"].(string); code != license.CodeRequired {
+		t.Fatalf("error code = %q, want %q", code, license.CodeRequired)
 	}
-	var envelope struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.NewDecoder(resp2.Body).Decode(&envelope); err != nil {
-		t.Fatal(err)
-	}
-	if envelope.Error.Code != license.CodeRequired {
-		t.Fatalf("error code = %q, want %q", envelope.Error.Code, license.CodeRequired)
-	}
-	if envelope.Error.Message == "" {
+	if message, _ := errorBody["message"].(string); message == "" {
 		t.Fatal("expected a user-facing error message")
 	}
 }

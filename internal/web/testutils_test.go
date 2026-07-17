@@ -21,6 +21,7 @@ import (
 	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/events"
+	"github.com/sqlwarden/internal/extension"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
 
@@ -74,9 +75,27 @@ func newTestApplication(t *testing.T) *application {
 
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.extensions = edition.Registry()
-	app.licenseService = licenseServiceFor(app.extensions)
-	app.eventBus = events.NewBus()
 	app.db = newTestDB(t)
+	var err error
+	app.licenseService, err = app.extensions.LicenseService(context.Background(), extension.BootstrapDeps{
+		DB: app.db, Logger: app.logger, LookupEnv: os.LookupEnv, Now: time.Now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.eventBus = events.NewBus()
+	contrib, err := app.extensions.Start(context.Background(), extension.RuntimeDeps{
+		DB: app.db, Logger: app.logger, License: app.licenseService, Events: app.eventBus,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.extensionRoutes = contrib.Routes
+	app.extensionClosers = contrib.Closers
+	for _, sink := range contrib.EventSinks {
+		app.eventBus.Subscribe(app.licensedEventSink(sink.Feature, sink.Sink))
+	}
+	t.Cleanup(app.closeExtensionResources)
 	app.mailer = smtp.NewMockMailer("test@example.com")
 	app.queryCursors = connection.NewQueryCursorManager(30 * time.Minute)
 	t.Cleanup(func() { app.queryCursors.Close() })

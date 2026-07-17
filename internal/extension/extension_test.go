@@ -1,42 +1,75 @@
 package extension
 
 import (
-	"io/fs"
+	"context"
+	"errors"
+	"io"
+	"net/http"
 	"testing"
-	"testing/fstest"
+
+	"github.com/sqlwarden/internal/license"
 )
 
-type bareExt struct{ name string }
+type trackingCloser struct{ closed bool }
 
-func (e bareExt) Name() string { return e.name }
+func (c *trackingCloser) Close() error {
+	c.closed = true
+	return nil
+}
 
-type migExt struct{ bareExt }
-
-func (migExt) Migrations(string) (fs.FS, bool) { return fstest.MapFS{}, true }
-
-func TestRegistryAddAndAll(t *testing.T) {
-	r := NewRegistry()
-	if got := r.All(); len(got) != 0 {
-		t.Fatalf("new registry not empty: %d", len(got))
+func TestRegistryValidatesModuleIdentityAndLicenseProvider(t *testing.T) {
+	tests := []struct {
+		name    string
+		modules []Module
+	}{
+		{name: "invalid name", modules: []Module{{Name: "Bad Name"}}},
+		{name: "duplicate name", modules: []Module{{Name: "one"}, {Name: "one"}}},
+		{name: "multiple license providers", modules: []Module{
+			{Name: "one", LicenseFactory: func(context.Context, BootstrapDeps) (license.Service, error) { return nil, nil }},
+			{Name: "two", LicenseFactory: func(context.Context, BootstrapDeps) (license.Service, error) { return nil, nil }},
+		}},
 	}
-	r.Add(bareExt{name: "a"}, migExt{bareExt{name: "b"}})
-	all := r.All()
-	if len(all) != 2 || all[0].Name() != "a" || all[1].Name() != "b" {
-		t.Fatalf("unexpected registry contents: %+v", all)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := NewRegistry()
+			r.Add(tt.modules...)
+			if err := r.Validate(); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
 	}
 }
 
-func TestCapabilityDiscoveryByTypeAssertion(t *testing.T) {
+func TestRegistryStartClosesEarlierModulesWhenLaterModuleFails(t *testing.T) {
+	closer := &trackingCloser{}
 	r := NewRegistry()
-	r.Add(bareExt{name: "a"}, migExt{bareExt{name: "b"}})
-
-	var sources []string
-	for _, ext := range r.All() {
-		if _, ok := ext.(MigrationSource); ok {
-			sources = append(sources, ext.Name())
-		}
+	r.Add(
+		Module{Name: "one", Start: func(context.Context, RuntimeDeps) (Contributions, error) {
+			return Contributions{Closers: []io.Closer{closer}}, nil
+		}},
+		Module{Name: "two", Start: func(context.Context, RuntimeDeps) (Contributions, error) {
+			return Contributions{}, errors.New("boom")
+		}},
+	)
+	if _, err := r.Start(context.Background(), RuntimeDeps{}); err == nil {
+		t.Fatal("expected startup error")
 	}
-	if len(sources) != 1 || sources[0] != "b" {
-		t.Fatalf("expected only b to be a MigrationSource, got %v", sources)
+	if !closer.closed {
+		t.Fatal("expected previously started module to be closed")
+	}
+}
+
+func TestRegistryRejectsUnsafeContributions(t *testing.T) {
+	r := NewRegistry()
+	r.Add(Module{Name: "one", Start: func(context.Context, RuntimeDeps) (Contributions, error) {
+		return Contributions{Routes: []Route{{
+			Scope:   RoutePublic,
+			Prefix:  "/other/path",
+			Feature: "feature",
+			Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+		}}}, nil
+	}})
+	if _, err := r.Start(context.Background(), RuntimeDeps{}); err == nil {
+		t.Fatal("expected unsafe route namespace to be rejected")
 	}
 }
