@@ -117,3 +117,20 @@ Releases are automated using release-please:
 ## Questions?
 
 If you have questions about contributing, please open an issue for discussion.
+
+## Contributor License
+
+By contributing to SQLWarden you agree that:
+
+1. Your contribution is your original work and you sign off each commit
+   under the [Developer Certificate of Origin](https://developercertificate.org)
+   (`git commit -s`).
+2. You grant the SQLWarden project owner a perpetual, worldwide,
+   royalty-free right to use, modify, sublicense, and relicense your
+   contribution. This is required because SQLWarden ships combined
+   community/enterprise builds under a commercial license; contributions
+   that cannot be relicensed cannot be merged.
+
+Contributions touching `enterprise/` or `frontend/src/enterprise/` are
+accepted under the same terms and become part of the commercially licensed
+code.

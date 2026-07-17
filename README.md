@@ -165,3 +165,18 @@ Security-sensitive defaults are intended to make local development easy, not to 
 The project uses conventional commits, Release Please, and GoReleaser. Release builds publish server binaries and container images from version tags.
 
 Use squash or rebase workflows that keep `main` linear and preserve clear conventional commit messages for user-facing changes.
+
+## Licensing
+
+SQLWarden is open core:
+
+- **SQLWarden (community edition)** — everything outside `enterprise/` and
+  `frontend/src/enterprise/` — is free and open source under the
+  [AGPLv3](LICENSE). It is the full governance product, not a crippled demo.
+- **SQLWarden Enterprise** adds SSO (SAML/OIDC/LDAP), SCIM provisioning,
+  audit logging, tamper-evident logs, and SIEM streaming. Enterprise source
+  lives in this repository under a [commercial license](enterprise/LICENSE)
+  and requires a license key in production.
+
+See [LICENSING.md](LICENSING.md) for details. "SQLWarden" and the SQLWarden
+logo are trademarks and are excluded from the open-source license grant.

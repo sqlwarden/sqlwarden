@@ -1,0 +1,22 @@
+SQLWarden Enterprise License
+
+Copyright (c) SQLWarden. All rights reserved.
+
+This directory and its contents ("Enterprise Code") are part of SQLWarden
+Enterprise. The Enterprise Code is NOT licensed under the GNU Affero General
+Public License. Nothing in the repository's root LICENSE file grants any
+right to the Enterprise Code.
+
+Subject to a valid SQLWarden Enterprise subscription agreement, you may use
+compiled builds that include the Enterprise Code, solely with a valid
+license key and for the number of instances/users your subscription covers.
+
+You may view and modify the Enterprise Code for the sole purposes of
+development, testing, and contributing changes back to the SQLWarden
+project. You may NOT:
+
+  1. use the Enterprise Code in production without a valid subscription;
+  2. redistribute the Enterprise Code or builds containing it;
+  3. remove, bypass, or alter license-key enforcement.
+
+THE ENTERPRISE CODE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
