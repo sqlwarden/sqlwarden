@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"strings"
 	"time"
@@ -128,6 +129,42 @@ func (db *DB) MigrateUp() error {
 	default:
 		return err
 	}
+}
+
+// MigrateExtensionUp applies an extension's migration stream from src,
+// tracking versions in the given table so extension streams can never
+// collide with core migration numbering in schema_migrations.
+func (db *DB) MigrateExtensionUp(src fs.FS, table string) error {
+	iofsDriver, err := iofs.New(src, ".")
+	if err != nil {
+		return err
+	}
+
+	var databaseURL string
+	switch db.driver {
+	case "postgres":
+		databaseURL = "postgres://" + db.dsn
+	case "sqlite":
+		databaseURL = "sqlite://" + db.dsn
+	default:
+		return fmt.Errorf("unsupported database driver for migrations: %s", db.driver)
+	}
+	sep := "?"
+	if strings.Contains(databaseURL, "?") {
+		sep = "&"
+	}
+	databaseURL += sep + "x-migrations-table=" + table
+
+	migrator, err := migrate.NewWithSourceInstance("iofs", iofsDriver, databaseURL)
+	if err != nil {
+		return err
+	}
+
+	err = migrator.Up()
+	if errors.Is(err, migrate.ErrNoChange) {
+		return nil
+	}
+	return err
 }
 
 // sqlSortDirection converts an API sort direction into one of the only two SQL
