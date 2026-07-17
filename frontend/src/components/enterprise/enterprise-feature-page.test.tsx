@@ -3,11 +3,11 @@ import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { queryKeys } from '#/lib/api/query-keys'
 import type { InstanceEdition } from '#/lib/api/types'
+import { ENTERPRISE_FEATURES } from '#/lib/enterprise/features'
 import type { EnterpriseModule } from '#/lib/enterprise/module'
 import { EnterpriseFeaturePage } from './enterprise-feature-page'
 
 const mockModule: EnterpriseModule = {
-  edition: 'enterprise',
   pages: {},
   slots: {},
 }
@@ -27,7 +27,7 @@ function renderPage(edition?: InstanceEdition) {
     <QueryClientProvider client={client}>
       <EnterpriseFeaturePage
         pageKey="enterprise-overview"
-        feature="audit_log"
+        feature={ENTERPRISE_FEATURES.auditLog}
         title="Audit logs"
         description="Every security-relevant action, recorded."
       />
@@ -57,8 +57,19 @@ describe('EnterpriseFeaturePage', () => {
   it('renders the real page when registered and licensed', () => {
     mockModule.pages = { 'enterprise-overview': () => <div>real audit viewer</div> }
 
-    renderPage({ edition: 'enterprise', licensed_features: ['audit_log'] })
+    renderPage({
+      edition: 'enterprise',
+      licensed_features: [ENTERPRISE_FEATURES.auditLog],
+    })
     expect(screen.getByText('real audit viewer')).toBeInTheDocument()
     expect(screen.queryByText(/Apply a license key/)).not.toBeInTheDocument()
+  })
+
+  it('shows a loading state rather than an upsell before the edition loads', () => {
+    mockModule.pages = { 'enterprise-overview': () => <div>real audit viewer</div> }
+
+    renderPage()
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.queryByText(/part of SQLWarden Enterprise/)).not.toBeInTheDocument()
   })
 })

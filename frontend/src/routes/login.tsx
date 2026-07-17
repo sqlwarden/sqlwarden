@@ -13,6 +13,7 @@ import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { EnterpriseSlot } from '#/components/enterprise/enterprise-slot'
+import { ENTERPRISE_FEATURES } from '#/lib/enterprise/features'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
 
@@ -149,7 +150,7 @@ function LoginPage() {
                 {mutation.isPending ? 'Signing in…' : 'Sign in'}
               </Button>
             </form>
-            <EnterpriseSlot slot="login-sso-providers" feature="sso" />
+            <EnterpriseSlot slot="login-sso-providers" feature={ENTERPRISE_FEATURES.sso} />
           </CardContent>
         </Card>
       </div>

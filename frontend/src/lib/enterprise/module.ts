@@ -13,7 +13,6 @@ export type EnterprisePageKey = 'enterprise-overview'
 export type EnterpriseSlotKey = 'login-sso-providers'
 
 export interface EnterpriseModule {
-  edition: 'community' | 'enterprise'
   pages: Partial<Record<EnterprisePageKey, ComponentType>>
   slots: Partial<Record<EnterpriseSlotKey, ComponentType>>
 }

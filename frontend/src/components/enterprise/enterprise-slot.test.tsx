@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import type { InstanceEdition } from '#/lib/api/types'
+import { ENTERPRISE_FEATURES } from '#/lib/enterprise/features'
 import type { EnterpriseModule } from '#/lib/enterprise/module'
+import { server } from '#/test/server'
+import userEvent from '@testing-library/user-event'
 import { EnterpriseSlot } from './enterprise-slot'
 
 const mockModule: EnterpriseModule = {
-  edition: 'enterprise',
   pages: {},
   slots: {},
 }
@@ -19,12 +22,16 @@ vi.mock('@enterprise', () => ({
   },
 }))
 
-function renderSlot(edition: InstanceEdition, fallback?: ReactNode) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, enabled: false } } })
-  client.setQueryData(queryKeys.instanceEdition(), edition)
+function renderSlot(edition?: InstanceEdition, fallback?: ReactNode, enabled = false) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, enabled } } })
+  if (edition) client.setQueryData(queryKeys.instanceEdition(), edition)
   return render(
     <QueryClientProvider client={client}>
-      <EnterpriseSlot slot="login-sso-providers" feature="sso" fallback={fallback} />
+      <EnterpriseSlot
+        slot="login-sso-providers"
+        feature={ENTERPRISE_FEATURES.sso}
+        fallback={fallback}
+      />
     </QueryClientProvider>,
   )
 }
@@ -50,5 +57,40 @@ describe('EnterpriseSlot', () => {
 
     const { container } = renderSlot({ edition: 'community', licensed_features: [] })
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('does not fetch edition data when this build has no slot implementation', () => {
+    mockModule.slots = {}
+
+    renderSlot(undefined, <div>fallback</div>, true)
+    expect(screen.getByText('fallback')).toBeInTheDocument()
+  })
+
+  it('shows loading and recovers from an edition endpoint failure', async () => {
+    mockModule.slots = { 'login-sso-providers': () => <div>SSO buttons</div> }
+    let attempts = 0
+    server.use(
+      http.get('/api/v1/instance/edition', () => {
+        attempts++
+        if (attempts === 1) {
+          return HttpResponse.json(
+            { error: { code: 'unavailable', message: 'Unavailable' } },
+            { status: 503 },
+          )
+        }
+        return HttpResponse.json({
+          edition: 'enterprise',
+          licensed_features: [ENTERPRISE_FEATURES.sso],
+        })
+      }),
+    )
+
+    renderSlot(undefined, undefined, true)
+    expect(screen.getByText('Loading additional sign-in options…')).toBeInTheDocument()
+    const retry = await screen.findByRole('button', {
+      name: 'Unable to load additional sign-in options. Retry',
+    })
+    await userEvent.click(retry)
+    expect(await screen.findByText('SSO buttons')).toBeInTheDocument()
   })
 })

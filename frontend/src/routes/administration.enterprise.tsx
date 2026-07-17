@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { EnterpriseFeaturePage } from '#/components/enterprise/enterprise-feature-page'
+import { ENTERPRISE_FEATURES } from '#/lib/enterprise/features'
 
 export const Route = createFileRoute('/administration/enterprise')({
   component: EnterpriseAdministrationPage,
@@ -9,7 +10,7 @@ function EnterpriseAdministrationPage() {
   return (
     <EnterpriseFeaturePage
       pageKey="enterprise-overview"
-      feature="enterprise"
+      feature={ENTERPRISE_FEATURES.platform}
       title="Enterprise"
       description="Audit logging, SSO (SAML/OIDC/LDAP), SCIM provisioning, and SIEM streaming are part of SQLWarden Enterprise."
     />

@@ -5,7 +5,6 @@ import type { EnterpriseModule } from '#/lib/enterprise/module'
 import { EnterpriseOverviewPage } from './overview-page'
 
 export const enterpriseModule: EnterpriseModule = {
-  edition: 'enterprise',
   pages: {
     'enterprise-overview': EnterpriseOverviewPage,
   },

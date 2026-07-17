@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from '#/lib/api/client'
 import { setupStatusQueryOptions } from './auth'
-import { instanceAccountsQueryOptions } from './instance'
+import { instanceAccountsQueryOptions, instanceEditionQueryOptions } from './instance'
 import { orgMembersQueryOptions } from './organization'
 import { orgWorkspaceQueryOptions } from './workspace'
 import { orgWorkspacePrivateFilesQueryOptions } from './files'
@@ -33,6 +33,15 @@ describe('API query domains', () => {
     await runQuery(orgMembersQueryOptions('acme', query))
     expect(get).toHaveBeenNthCalledWith(1, '/api/v1/instance/accounts', { query })
     expect(get).toHaveBeenNthCalledWith(2, '/api/v1/orgs/acme/members', { query })
+  })
+
+  it('refreshes edition capabilities instead of caching license state forever', () => {
+    const options = instanceEditionQueryOptions()
+
+    expect(options.staleTime).toBe(30_000)
+    expect(options.refetchInterval).toBe(60_000)
+    expect(options.refetchOnWindowFocus).toBe('always')
+    expect(options.refetchOnReconnect).toBe('always')
   })
 
   it('builds workspace and file paths from explicit scope', async () => {

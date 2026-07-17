@@ -47,6 +47,9 @@ export function instanceEditionQueryOptions() {
   return queryOptions({
     queryKey: queryKeys.instanceEdition(),
     queryFn: () => api.get<InstanceEdition>('/api/v1/instance/edition'),
-    staleTime: Infinity,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: 'always',
+    refetchOnReconnect: 'always',
   })
 }

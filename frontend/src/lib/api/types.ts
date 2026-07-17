@@ -1,3 +1,5 @@
+import type { EnterpriseFeature } from '#/lib/enterprise/features'
+
 export type SortOrder = 'asc' | 'desc'
 
 export interface Paginated<T> {
@@ -480,5 +482,5 @@ export interface ExportJobOutput {
 
 export interface InstanceEdition {
   edition: 'community' | 'enterprise'
-  licensed_features: string[]
+  licensed_features: EnterpriseFeature[]
 }
