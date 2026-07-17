@@ -289,6 +289,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          load: true
           push: false
           tags: sqlwarden/sqlwarden:ci
 
@@ -297,7 +298,18 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          load: true
           push: false
           build-args: |
             EDITION=enterprise
           tags: sqlwarden/sqlwarden-ee:ci
+
+      - name: Verify image editions
+        if: steps.changes.outputs.docker == 'true'
+        run: |
+          docker run --rm --entrypoint sh sqlwarden/sqlwarden:ci -c \
+            "! grep -aq 'github.com/sqlwarden/enterprise' /app/sqlwarden && \
+             ! grep -aq 'sqlwarden-enterprise-bundle' /app/sqlwarden"
+          docker run --rm --entrypoint sh sqlwarden/sqlwarden-ee:ci -c \
+            "grep -aq 'github.com/sqlwarden/enterprise' /app/sqlwarden && \
+             grep -aq 'sqlwarden-enterprise-bundle' /app/sqlwarden"
