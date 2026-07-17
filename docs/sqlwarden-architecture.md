@@ -821,28 +821,29 @@ SQLWarden is open core, built from one repository:
 - Enterprise edition: the same tree plus `enterprise/` and
   `frontend/src/enterprise/` under the SQLWarden Enterprise Source License
   (`enterprise/LICENSE`). Production use of a combined build is governed by
-  an Enterprise subscription agreement. An unlicensed Enterprise binary
-  behaves like Community except for edition reporting, dormant enterprise
-  migration tables, and license-management affordances.
+  an Enterprise subscription agreement. Community code does not interpret
+  licenses or entitlement state.
 
 ### Backend Composition
 
-- `internal/edition` is the only compile-time seam: its `enterprise`-tagged
-  file imports `enterprise/register`; the untagged file returns an empty
-  registry.
+- `cmd/api` is the compile-time composition root. Its `enterprise`-tagged
+  file imports `enterprise/register`; the default file returns an empty
+  extension registry. Core packages do not import Enterprise packages.
 - `internal/extension` defines an explicit module manifest rather than a set
   of optional type assertions. A module has a validated name and may declare
-  a migration source, one process-wide license-service factory, and a runtime
+  a migration source, one process-wide capability-gate factory, and a runtime
   `Start` factory.
 - Runtime factories receive only shared dependencies (`database`, logger,
-  license service, and event bus) and return declared route, job, event-sink,
+  capability gate, and event bus) and return declared route, job, event-sink,
   and closer contributions. Startup validates route namespaces, concrete
-  security scopes, permissions, license features, duplicate routes, duplicate
+  security scopes, permissions, capabilities, duplicate routes, duplicate
   job types, and nil implementations before workers or HTTP serving begin.
 - Startup failures close already-created module resources. Normal shutdown
   closes module resources in reverse registration order.
-- `internal/license` defines the license service; the community
-  implementation licenses nothing.
+- `internal/capability` defines the generic runtime availability contract.
+  The default gate enables no optional capabilities. Enterprise supplies its
+  own implementation and may derive availability from licenses, configuration,
+  deployment state, or another private policy.
 - Core mounts extension routes inside fixed security scopes:
   - public routes under `/api/v1`;
   - account routes under `/api/v1` after account authentication;
@@ -850,10 +851,15 @@ SQLWarden is open core, built from one repository:
     instance-administrator checks;
   - organization routes under `/api/v1/orgs/{org_slug}` after account,
     organization-context, membership, and declared permission checks.
-- Core, not extension code, applies the license gate to every contributed
-  route, job execution, and event delivery. This prevents a module from
+- Core, not extension code, applies the capability gate to contributed feature
+  routes, job execution, and event delivery. This prevents a module from
   accidentally omitting enforcement and makes runtime license changes take
   effect without rebuilding route trees or job registries.
+- Routes declare an explicit access policy. Capability-gated routes require a
+  named capability. Always-available routes skip only the capability gate and
+  are intended for extension management, such as activating an entitlement;
+  authentication, instance-admin checks, organization context, and declared
+  RBAC permissions still come from the route scope and remain mandatory.
 - Enterprise migrations use one validated, independent version table per
   module (`schema_migrations_<module>`), cannot collide with core migration
   numbering, preserve qualified PostgreSQL URLs, and close migration source
@@ -877,25 +883,22 @@ auditable action was durably recorded.
 
 ### Frontend Composition
 
-- Frontend: the `@enterprise` Vite alias resolves to
-  `src/enterprise-stub/` (community) or `src/enterprise/` (enterprise).
-  Route files are edition-stable; enterprise pages resolve through the
-  enterprise module's page registry, falling back to core upsell pages.
-- Frontend enterprise surfaces have three altitudes: whole pages
-  (`EnterpriseFeaturePage` + the module page registry), sections inside
-  shared core pages (`EnterpriseSlot` + the module slot registry; slot keys
-  and the seam shape are core, implementations are enterprise), and inline
-  affordances (`useFeature()` directly in core components). Feature names are
-  a typed core catalog. `useFeature()` distinguishes `loading`, `error`,
-  `active`, `locked`, and `unavailable`; it refreshes license state on an
-  interval, focus, and reconnect instead of caching it forever. Transient
+- The `@extensions` Vite alias resolves to `src/extension-stub/` in the default
+  build and `src/enterprise/` in an Enterprise build. Route files are stable;
+  optional pages and slots resolve through a generic extension module.
+- Core owns a public optional-feature catalog and `UpgradePrompt`. This is
+  product marketing metadata used for Community upsells, not entitlement or
+  license logic. Missing build-time implementations render this static prompt
+  without making a capability request.
+- A compiled implementation uses `useCapability()` to distinguish `loading`,
+  `error`, `active`, and `locked`. It refreshes generic capability state on an
+  interval, focus, and reconnect. Transient
   refresh errors preserve the last known state, while initial failures are
-  visible and retryable. UI gating remains advisory; the backend is
-  authoritative.
-- A Community build with no registered implementation does not fetch edition
-  data for that slot. This avoids unnecessary public requests and prevents a
-  network failure from being misrepresented as Community capability state.
-- `GET /api/v1/instance/edition` reports `{edition, licensed_features}`.
+  visible and retryable. The Enterprise module owns license-specific locked
+  presentation and any license-management UI. UI gating remains advisory.
+- `GET /api/v1/instance/capabilities` reports only
+  `{ "capabilities": [...] }`. It does not expose an edition or licensing
+  vocabulary; the backend capability gate remains authoritative.
 
 ### Artifact Invariants
 

@@ -130,17 +130,17 @@ docs/                         Architecture and operator documentation
 frontend/                     React application
 internal/access/              RBAC permissions, roles, policies, and enforcer
 internal/connection/          Live target database sessions
+internal/capability/          Generic optional-capability gate
 internal/database/            Bun models and database setup
 internal/driver/              Target database driver abstraction
-internal/edition/             Compile-time Community/Enterprise composition seam
 internal/events/              Best-effort integration event delivery
 internal/extension/           Validated extension module manifests and runtime contributions
 internal/files/               Workspace file service
 internal/filestore/           File content storage backend
-internal/license/             Central runtime feature-license enforcement
 internal/web/                 HTTP app, config, routes, middleware, handlers
 enterprise/                   Commercial backend modules and migrations
 frontend/src/enterprise/      Commercial frontend implementations
+frontend/src/extension-stub/  Empty open-source frontend composition
 pkg/result/                   Normalized target query result types
 ```
 
