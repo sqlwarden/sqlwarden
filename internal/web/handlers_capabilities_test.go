@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-func TestGetInstanceEditionIsPublic(t *testing.T) {
+func TestGetInstanceCapabilitiesIsPublic(t *testing.T) {
 	app := newTestApplication(t)
 	srv := httptest.NewServer(app.routes())
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/api/v1/instance/edition")
+	resp, err := http.Get(srv.URL + "/api/v1/instance/capabilities")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,16 +22,15 @@ func TestGetInstanceEditionIsPublic(t *testing.T) {
 	}
 
 	var body struct {
-		Edition          string   `json:"edition"`
-		LicensedFeatures []string `json:"licensed_features"`
+		Capabilities []string `json:"capabilities"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Edition == "" {
-		t.Fatal("edition must not be empty")
+	if body.Capabilities == nil {
+		t.Fatal("capabilities must be [] not null")
 	}
-	if body.LicensedFeatures == nil {
-		t.Fatal("licensed_features must be [] not null")
+	if len(body.Capabilities) != 0 {
+		t.Fatalf("capabilities = %v, want empty", body.Capabilities)
 	}
 }

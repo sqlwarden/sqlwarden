@@ -40,7 +40,7 @@ func (app *application) routes() http.Handler {
 		r.With(app.requireAccount, app.requireInstanceAdmin).Post("/orgs", app.createOrg)
 
 		r.Route("/instance", func(r chi.Router) {
-			r.Get("/edition", app.getInstanceEdition)
+			r.Get("/capabilities", app.getInstanceCapabilities)
 
 			r.Group(func(r chi.Router) {
 				r.Use(app.requireAccount, app.requireInstanceAdmin)

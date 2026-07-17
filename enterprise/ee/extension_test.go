@@ -12,9 +12,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sqlwarden/internal/capability"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/extension"
-	"github.com/sqlwarden/internal/license"
 )
 
 func TestExtensionName(t *testing.T) {
@@ -73,18 +73,15 @@ func TestMigrationsApplyToSQLite(t *testing.T) {
 	}
 }
 
-func TestPlaceholderLicenseService(t *testing.T) {
-	svc, err := newLicenseService(context.Background(), extension.BootstrapDeps{})
+func TestPlaceholderCapabilityGate(t *testing.T) {
+	gate, err := newCapabilityGate(context.Background(), extension.BootstrapDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if svc.Edition() != "enterprise" {
-		t.Fatalf("Edition() = %q, want enterprise", svc.Edition())
-	}
-	if svc.IsLicensed("stub") {
+	if gate.Enabled("stub") {
 		t.Fatal("placeholder must not license features")
 	}
-	if !errors.Is(svc.Require("stub"), license.ErrNotLicensed) {
-		t.Fatal("Require must wrap ErrNotLicensed")
+	if !errors.Is(gate.Require("stub"), capability.ErrUnavailable) {
+		t.Fatal("Require must wrap ErrUnavailable")
 	}
 }

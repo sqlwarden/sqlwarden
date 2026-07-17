@@ -1,5 +1,5 @@
 // Package extension defines the explicit composition seam through which
-// edition-specific modules contribute behavior to the core application.
+// optional build-time modules contribute behavior to the application.
 package extension
 
 import (
@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sqlwarden/internal/capability"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/events"
 	"github.com/sqlwarden/internal/jobs"
-	"github.com/sqlwarden/internal/license"
 )
 
 var validModuleName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
@@ -36,26 +36,26 @@ const (
 )
 
 // Route is mounted beneath the API root for its Scope. Prefix must be an
-// absolute path relative to that scope. Feature is always enforced by core.
+// absolute path relative to that scope. Capability is always enforced by core.
 // Organization routes must also declare the required organization permission.
 type Route struct {
 	Scope      RouteScope
 	Prefix     string
-	Feature    string
+	Capability string
 	Permission string
 	Handler    http.Handler
 }
 
-// Job is a centrally license-gated job definition.
+// Job is a centrally capability-gated job definition.
 type Job struct {
-	Feature    string
+	Capability string
 	Definition jobs.Definition
 }
 
-// EventSink is a centrally license-gated best-effort event consumer.
+// EventSink is a centrally capability-gated best-effort event consumer.
 type EventSink struct {
-	Feature string
-	Sink    events.Sink
+	Capability string
+	Sink       events.Sink
 }
 
 // Contributions are created after core runtime dependencies are ready.
@@ -67,9 +67,9 @@ type Contributions struct {
 	Closers    []io.Closer
 }
 
-// BootstrapDeps are available while constructing the active license service.
-// LookupEnv and Now make environment-backed license configuration and expiry
-// checks deterministic in tests without coupling enterprise code to web.Config.
+// BootstrapDeps are available while constructing the active capability gate.
+// LookupEnv and Now make environment-backed configuration and expiry checks
+// deterministic in tests without coupling extensions to web.Config.
 type BootstrapDeps struct {
 	DB        *database.DB
 	Logger    *slog.Logger
@@ -79,23 +79,23 @@ type BootstrapDeps struct {
 
 // RuntimeDeps are available when a module creates its runtime contributions.
 type RuntimeDeps struct {
-	DB      *database.DB
-	Logger  *slog.Logger
-	License license.Service
-	Events  *events.Bus
+	DB           *database.DB
+	Logger       *slog.Logger
+	Capabilities capability.Gate
+	Events       *events.Bus
 }
 
 type MigrationSource func(driver string) (fs.FS, bool)
-type LicenseFactory func(context.Context, BootstrapDeps) (license.Service, error)
+type CapabilityFactory func(context.Context, BootstrapDeps) (capability.Gate, error)
 type StartFunc func(context.Context, RuntimeDeps) (Contributions, error)
 
-// Module is an explicit edition module manifest. Optional functions may be
+// Module is an explicit extension manifest. Optional functions may be
 // nil, but names are unique and all returned contributions are validated.
 type Module struct {
-	Name           string
-	Migrations     MigrationSource
-	LicenseFactory LicenseFactory
-	Start          StartFunc
+	Name              string
+	Migrations        MigrationSource
+	CapabilityFactory CapabilityFactory
+	Start             StartFunc
 }
 
 // Registry is immutable after application startup. Validation turns all
@@ -122,7 +122,7 @@ func (r *Registry) Validate() error {
 		return nil
 	}
 	seen := make(map[string]struct{}, len(r.modules))
-	licenseProviders := 0
+	capabilityProviders := 0
 	for _, module := range r.modules {
 		if !validModuleName.MatchString(module.Name) {
 			return fmt.Errorf("extension module name %q must match %s", module.Name, validModuleName)
@@ -134,19 +134,19 @@ func (r *Registry) Validate() error {
 			return fmt.Errorf("extension module name %q is registered more than once", module.Name)
 		}
 		seen[module.Name] = struct{}{}
-		if module.LicenseFactory != nil {
-			licenseProviders++
+		if module.CapabilityFactory != nil {
+			capabilityProviders++
 		}
 	}
-	if licenseProviders > 1 {
-		return fmt.Errorf("extension registry has %d license providers; exactly one is allowed", licenseProviders)
+	if capabilityProviders > 1 {
+		return fmt.Errorf("extension registry has %d capability providers; exactly one is allowed", capabilityProviders)
 	}
 	return nil
 }
 
-// LicenseService constructs the registry's license service after the database
-// is initialized. Community registries use the deny-all community service.
-func (r *Registry) LicenseService(ctx context.Context, deps BootstrapDeps) (license.Service, error) {
+// CapabilityGate constructs the registry's capability gate after the database
+// is initialized. A registry without a provider enables no optional features.
+func (r *Registry) CapabilityGate(ctx context.Context, deps BootstrapDeps) (capability.Gate, error) {
 	if deps.LookupEnv == nil {
 		deps.LookupEnv = os.LookupEnv
 	}
@@ -154,19 +154,19 @@ func (r *Registry) LicenseService(ctx context.Context, deps BootstrapDeps) (lice
 		deps.Now = time.Now
 	}
 	for _, module := range r.Modules() {
-		if module.LicenseFactory == nil {
+		if module.CapabilityFactory == nil {
 			continue
 		}
-		svc, err := module.LicenseFactory(ctx, deps)
+		gate, err := module.CapabilityFactory(ctx, deps)
 		if err != nil {
-			return nil, fmt.Errorf("extension %s license service: %w", module.Name, err)
+			return nil, fmt.Errorf("extension %s capability gate: %w", module.Name, err)
 		}
-		if svc == nil {
-			return nil, fmt.Errorf("extension %s returned a nil license service", module.Name)
+		if gate == nil {
+			return nil, fmt.Errorf("extension %s returned a nil capability gate", module.Name)
 		}
-		return svc, nil
+		return gate, nil
 	}
-	return license.Community(), nil
+	return capability.None(), nil
 }
 
 // Start initializes modules in registration order and validates every runtime
@@ -242,8 +242,8 @@ func validateContributions(module string, contrib Contributions) error {
 		if !strings.HasPrefix(route.Prefix, "/") || route.Prefix == "/" {
 			return fmt.Errorf("extension %s route %d has invalid prefix %q", module, i, route.Prefix)
 		}
-		if strings.TrimSpace(route.Feature) == "" {
-			return fmt.Errorf("extension %s route %q has no license feature", module, route.Prefix)
+		if strings.TrimSpace(route.Capability) == "" {
+			return fmt.Errorf("extension %s route %q has no required capability", module, route.Prefix)
 		}
 		modulePrefix := "/" + module
 		if route.Prefix != modulePrefix && !strings.HasPrefix(route.Prefix, modulePrefix+"/") {
@@ -263,15 +263,15 @@ func validateContributions(module string, contrib Contributions) error {
 		}
 	}
 	for i, job := range contrib.Jobs {
-		if strings.TrimSpace(job.Feature) == "" {
-			return fmt.Errorf("extension %s job %d has no license feature", module, i)
+		if strings.TrimSpace(job.Capability) == "" {
+			return fmt.Errorf("extension %s job %d has no required capability", module, i)
 		}
 		if strings.TrimSpace(job.Definition.Type) == "" || job.Definition.Handler == nil {
 			return fmt.Errorf("extension %s job %d is incomplete", module, i)
 		}
 	}
 	for i, sink := range contrib.EventSinks {
-		if strings.TrimSpace(sink.Feature) == "" || sink.Sink == nil {
+		if strings.TrimSpace(sink.Capability) == "" || sink.Sink == nil {
 			return fmt.Errorf("extension %s event sink %d is incomplete", module, i)
 		}
 	}

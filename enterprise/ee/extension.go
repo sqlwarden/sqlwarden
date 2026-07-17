@@ -25,10 +25,10 @@ var migrationFiles embed.FS
 
 func NewModule() extension.Module {
 	return extension.Module{
-		Name:           "ee",
-		Migrations:     migrations,
-		LicenseFactory: newLicenseService,
-		Start:          start,
+		Name:              "ee",
+		Migrations:        migrations,
+		CapabilityFactory: newCapabilityGate,
+		Start:             start,
 	}
 }
 
@@ -53,7 +53,6 @@ func start(_ context.Context, deps extension.RuntimeDeps) (extension.Contributio
 	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
 		err := response.JSON(w, http.StatusOK, map[string]any{
 			"extension": "ee",
-			"edition":   deps.License.Edition(),
 		})
 		if err != nil {
 			deps.Logger.ErrorContext(req.Context(), "ee stub response failed", "error", err)
@@ -62,13 +61,13 @@ func start(_ context.Context, deps extension.RuntimeDeps) (extension.Contributio
 
 	return extension.Contributions{
 		Routes: []extension.Route{{
-			Scope:   extension.RouteInstanceAdmin,
-			Prefix:  "/ee/stub",
-			Feature: "stub",
-			Handler: r,
+			Scope:      extension.RouteInstanceAdmin,
+			Prefix:     "/ee/stub",
+			Capability: "stub",
+			Handler:    r,
 		}},
 		Jobs: []extension.Job{{
-			Feature: "stub",
+			Capability: "stub",
 			Definition: jobs.Definition{
 				Type:        "ee_stub_noop",
 				MaxAttempts: 1,
@@ -78,16 +77,15 @@ func start(_ context.Context, deps extension.RuntimeDeps) (extension.Contributio
 			},
 		}},
 		EventSinks: []extension.EventSink{{
-			Feature: "stub",
-			Sink:    &debugLogSink{logger: deps.Logger},
+			Capability: "stub",
+			Sink:       &debugLogSink{logger: deps.Logger},
 		}},
 	}, nil
 }
 
 // debugLogSink proves event delivery into the enterprise edition. It logs
-// only event shape fields, never payload data. Sinks check the license per
-// event so an unlicensed binary processes nothing and a key applied at
-// runtime takes effect without restart.
+// only event shape fields, never payload data. Core checks capability state
+// per event so runtime availability changes take effect without restart.
 type debugLogSink struct {
 	logger *slog.Logger
 }

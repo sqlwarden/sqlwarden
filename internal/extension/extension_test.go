@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sqlwarden/internal/license"
+	"github.com/sqlwarden/internal/capability"
 )
 
 type trackingCloser struct{ closed bool }
@@ -18,7 +18,7 @@ func (c *trackingCloser) Close() error {
 	return nil
 }
 
-func TestRegistryValidatesModuleIdentityAndLicenseFactory(t *testing.T) {
+func TestRegistryValidatesModuleIdentityAndCapabilityFactory(t *testing.T) {
 	tests := []struct {
 		name    string
 		modules []Module
@@ -26,9 +26,9 @@ func TestRegistryValidatesModuleIdentityAndLicenseFactory(t *testing.T) {
 		{name: "invalid name", modules: []Module{{Name: "Bad Name"}}},
 		{name: "name too long for migration table", modules: []Module{{Name: "a" + strings.Repeat("b", maxModuleNameLength)}}},
 		{name: "duplicate name", modules: []Module{{Name: "one"}, {Name: "one"}}},
-		{name: "multiple license providers", modules: []Module{
-			{Name: "one", LicenseFactory: func(context.Context, BootstrapDeps) (license.Service, error) { return nil, nil }},
-			{Name: "two", LicenseFactory: func(context.Context, BootstrapDeps) (license.Service, error) { return nil, nil }},
+		{name: "multiple capability providers", modules: []Module{
+			{Name: "one", CapabilityFactory: func(context.Context, BootstrapDeps) (capability.Gate, error) { return nil, nil }},
+			{Name: "two", CapabilityFactory: func(context.Context, BootstrapDeps) (capability.Gate, error) { return nil, nil }},
 		}},
 	}
 	for _, tt := range tests {
@@ -47,8 +47,8 @@ func TestRegistryRejectsRoutesThatCollideAfterMounting(t *testing.T) {
 	r := NewRegistry()
 	r.Add(Module{Name: "one", Start: func(context.Context, RuntimeDeps) (Contributions, error) {
 		return Contributions{Routes: []Route{
-			{Scope: RoutePublic, Prefix: "/one/callback", Feature: "feature", Handler: handler},
-			{Scope: RouteAccount, Prefix: "/one/callback", Feature: "feature", Handler: handler},
+			{Scope: RoutePublic, Prefix: "/one/callback", Capability: "feature", Handler: handler},
+			{Scope: RouteAccount, Prefix: "/one/callback", Capability: "feature", Handler: handler},
 		}}, nil
 	}})
 	if _, err := r.Start(context.Background(), RuntimeDeps{}); err == nil {
@@ -79,10 +79,10 @@ func TestRegistryRejectsUnsafeContributions(t *testing.T) {
 	r := NewRegistry()
 	r.Add(Module{Name: "one", Start: func(context.Context, RuntimeDeps) (Contributions, error) {
 		return Contributions{Routes: []Route{{
-			Scope:   RoutePublic,
-			Prefix:  "/other/path",
-			Feature: "feature",
-			Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+			Scope:      RoutePublic,
+			Prefix:     "/other/path",
+			Capability: "feature",
+			Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
 		}}}, nil
 	}})
 	if _, err := r.Start(context.Background(), RuntimeDeps{}); err == nil {

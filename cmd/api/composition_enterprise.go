@@ -1,10 +1,12 @@
 //go:build enterprise
 
-package edition
+package main
 
 import (
 	"github.com/sqlwarden/enterprise/register"
 	"github.com/sqlwarden/internal/extension"
 )
 
-func Registry() *extension.Registry { return register.Registry() }
+func extensionRegistry() *extension.Registry {
+	return register.Registry()
+}

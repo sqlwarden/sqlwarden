@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/sqlwarden/internal/capability"
 	"github.com/sqlwarden/internal/extension"
-	"github.com/sqlwarden/internal/license"
 )
 
 // placeholderLicense reports the enterprise edition with nothing licensed.
@@ -16,14 +16,13 @@ import (
 // unlicensed enterprise binary must behave exactly like community.
 type placeholderLicense struct{}
 
-func newLicenseService(context.Context, extension.BootstrapDeps) (license.Service, error) {
+func newCapabilityGate(context.Context, extension.BootstrapDeps) (capability.Gate, error) {
 	return placeholderLicense{}, nil
 }
 
-func (placeholderLicense) Edition() string            { return "enterprise" }
-func (placeholderLicense) IsLicensed(string) bool     { return false }
-func (placeholderLicense) LicensedFeatures() []string { return nil }
+func (placeholderLicense) Enabled(string) bool           { return false }
+func (placeholderLicense) EnabledCapabilities() []string { return nil }
 
-func (placeholderLicense) Require(feature string) error {
-	return fmt.Errorf("%s: %w", feature, license.ErrNotLicensed)
+func (placeholderLicense) Require(name string) error {
+	return fmt.Errorf("%s: %w", name, capability.ErrUnavailable)
 }

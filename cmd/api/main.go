@@ -46,7 +46,7 @@ func run(args []string) error {
 		return err
 	}
 
-	app, err := web.New(cfg, logger)
+	app, err := web.NewWithExtensions(cfg, logger, extensionRegistry())
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func runRotateKeys(args []string) error {
 		return err
 	}
 
-	app, err := web.New(cfg, logger)
+	app, err := web.NewWithExtensions(cfg, logger, extensionRegistry())
 	if err != nil {
 		return err
 	}

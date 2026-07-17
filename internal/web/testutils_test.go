@@ -18,7 +18,6 @@ import (
 
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/events"
 	"github.com/sqlwarden/internal/extension"
@@ -52,6 +51,10 @@ func newTestClaims() jwt.Claims {
 }
 
 func newTestApplication(t *testing.T) *application {
+	return newTestApplicationWithExtensions(t, extension.NewRegistry())
+}
+
+func newTestApplicationWithExtensions(t *testing.T, registry *extension.Registry) *application {
 	app := new(application)
 
 	app.config.JWT.SecretKey = "k7mp29rf4qxhwn8vbtaj6pgucmve53y9"
@@ -74,10 +77,10 @@ func newTestApplication(t *testing.T) *application {
 	app.config.Files.Revisions.Enabled = false
 
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
-	app.extensions = edition.Registry()
+	app.extensions = registry
 	app.db = newTestDB(t)
 	var err error
-	app.licenseService, err = app.extensions.LicenseService(context.Background(), extension.BootstrapDeps{
+	app.capabilityGate, err = app.extensions.CapabilityGate(context.Background(), extension.BootstrapDeps{
 		DB: app.db, Logger: app.logger, LookupEnv: os.LookupEnv, Now: time.Now,
 	})
 	if err != nil {
@@ -85,7 +88,7 @@ func newTestApplication(t *testing.T) *application {
 	}
 	app.eventBus = events.NewBus()
 	contrib, err := app.extensions.Start(context.Background(), extension.RuntimeDeps{
-		DB: app.db, Logger: app.logger, License: app.licenseService, Events: app.eventBus,
+		DB: app.db, Logger: app.logger, Capabilities: app.capabilityGate, Events: app.eventBus,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +96,7 @@ func newTestApplication(t *testing.T) *application {
 	app.extensionRoutes = contrib.Routes
 	app.extensionClosers = contrib.Closers
 	for _, sink := range contrib.EventSinks {
-		if err := app.eventBus.Subscribe(app.licensedEventSink(sink.Feature, sink.Sink)); err != nil {
+		if err := app.eventBus.Subscribe(app.capabilityGatedEventSink(sink.Capability, sink.Sink)); err != nil {
 			t.Fatal(err)
 		}
 	}

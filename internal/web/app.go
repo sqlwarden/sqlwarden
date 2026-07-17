@@ -15,16 +15,15 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/cache"
+	"github.com/sqlwarden/internal/capability"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/events"
 	"github.com/sqlwarden/internal/extension"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/jobs"
-	"github.com/sqlwarden/internal/license"
 	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/smtp"
 )
@@ -58,7 +57,7 @@ type application struct {
 	extensions       *extension.Registry
 	extensionRoutes  []extension.Route
 	extensionClosers []io.Closer
-	licenseService   license.Service
+	capabilityGate   capability.Gate
 	eventBus         *events.Bus
 }
 
@@ -83,10 +82,13 @@ func (r *fileStoreRegistry) Store(_ context.Context, backendID string) (filestor
 }
 
 func New(cfg Config, logger *slog.Logger) (*App, error) {
-	return newWithRegistry(cfg, logger, edition.Registry())
+	return NewWithExtensions(cfg, logger, extension.NewRegistry())
 }
 
-func newWithRegistry(cfg Config, logger *slog.Logger, registry *extension.Registry) (*App, error) {
+// NewWithExtensions constructs the application with optional build-time
+// contributions. The Community entrypoint calls New and receives an empty
+// registry; other distributions inject their composition explicitly.
+func NewWithExtensions(cfg Config, logger *slog.Logger, registry *extension.Registry) (*App, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -154,7 +156,7 @@ func newWithRegistry(cfg Config, logger *slog.Logger, registry *extension.Regist
 		}
 	}
 
-	licenseService, err := registry.LicenseService(context.Background(), extension.BootstrapDeps{
+	capabilityGate, err := registry.CapabilityGate(context.Background(), extension.BootstrapDeps{
 		DB:        db,
 		Logger:    logger,
 		LookupEnv: os.LookupEnv,
@@ -207,14 +209,14 @@ func newWithRegistry(cfg Config, logger *slog.Logger, registry *extension.Regist
 		fileStores:     fileStores,
 		jobStore:       jobs.NewStore(db),
 		extensions:     registry,
-		licenseService: licenseService,
+		capabilityGate: capabilityGate,
 		eventBus:       events.NewBus(logger),
 	}
 	contrib, err := registry.Start(context.Background(), extension.RuntimeDeps{
-		DB:      db,
-		Logger:  logger,
-		License: licenseService,
-		Events:  app.eventBus,
+		DB:           db,
+		Logger:       logger,
+		Capabilities: capabilityGate,
+		Events:       app.eventBus,
 	})
 	if err != nil {
 		db.Close()
@@ -223,7 +225,7 @@ func newWithRegistry(cfg Config, logger *slog.Logger, registry *extension.Regist
 	app.extensionRoutes = contrib.Routes
 	app.extensionClosers = contrib.Closers
 	for _, sink := range contrib.EventSinks {
-		if err := app.eventBus.Subscribe(app.licensedEventSink(sink.Feature, sink.Sink)); err != nil {
+		if err := app.eventBus.Subscribe(app.capabilityGatedEventSink(sink.Capability, sink.Sink)); err != nil {
 			app.closeExtensionResources()
 			db.Close()
 			return nil, fmt.Errorf("register extension event sink: %w", err)
@@ -232,7 +234,7 @@ func newWithRegistry(cfg Config, logger *slog.Logger, registry *extension.Regist
 	app.jobRegistry = app.defaultJobRegistry()
 	for _, job := range contrib.Jobs {
 		def := job.Definition
-		def.Handler = app.licensedJobHandler(job.Feature, def.Handler)
+		def.Handler = app.capabilityGatedJobHandler(job.Capability, def.Handler)
 		if err := app.jobRegistry.Register(def); err != nil {
 			app.closeExtensionResources()
 			db.Close()

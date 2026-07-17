@@ -10,13 +10,13 @@ import (
 	"testing/fstest"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/capability"
 	"github.com/sqlwarden/internal/events"
 	"github.com/sqlwarden/internal/extension"
 	"github.com/sqlwarden/internal/jobs"
-	"github.com/sqlwarden/internal/license"
 )
 
-type testLicense struct{ licensed bool }
+type testCapabilityGate struct{ enabled bool }
 
 func testDBDriver() string {
 	driver := os.Getenv("TEST_DB_DRIVER")
@@ -26,17 +26,16 @@ func testDBDriver() string {
 	return driver
 }
 
-func (s testLicense) Edition() string        { return "enterprise" }
-func (s testLicense) IsLicensed(string) bool { return s.licensed }
-func (s testLicense) LicensedFeatures() []string {
-	if s.licensed {
+func (s testCapabilityGate) Enabled(string) bool { return s.enabled }
+func (s testCapabilityGate) EnabledCapabilities() []string {
+	if s.enabled {
 		return []string{"faketest"}
 	}
 	return nil
 }
-func (s testLicense) Require(string) error {
-	if !s.licensed {
-		return license.ErrNotLicensed
+func (s testCapabilityGate) Require(string) error {
+	if !s.enabled {
+		return capability.ErrUnavailable
 	}
 	return nil
 }
@@ -54,7 +53,7 @@ func fakeModule(scope extension.RouteScope) extension.Module {
 			r := chi.NewRouter()
 			r.Get("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 			return extension.Contributions{Routes: []extension.Route{{
-				Scope: scope, Prefix: "/faketest/ping", Feature: "faketest", Handler: r,
+				Scope: scope, Prefix: "/faketest/ping", Capability: "faketest", Handler: r,
 			}}}, nil
 		},
 	}
@@ -68,7 +67,7 @@ func attachTestModule(t *testing.T, app *application, module extension.Module) {
 		t.Fatal(err)
 	}
 	contrib, err := reg.Start(context.Background(), extension.RuntimeDeps{
-		DB: app.db, Logger: app.logger, License: app.licenseService, Events: app.eventBus,
+		DB: app.db, Logger: app.logger, Capabilities: app.capabilityGate, Events: app.eventBus,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +77,7 @@ func attachTestModule(t *testing.T, app *application, module extension.Module) {
 
 func TestExtensionAccountRouteRequiresAuthentication(t *testing.T) {
 	app := newTestApplication(t)
-	app.licenseService = testLicense{licensed: true}
+	app.capabilityGate = testCapabilityGate{enabled: true}
 	attachTestModule(t, app, fakeModule(extension.RouteAccount))
 
 	res := send(t, newTestRequest(t, http.MethodGet, "/api/v1/faketest/ping", nil), app.routes())
@@ -87,18 +86,18 @@ func TestExtensionAccountRouteRequiresAuthentication(t *testing.T) {
 	}
 }
 
-func TestExtensionRouteIsCentrallyLicenseGated(t *testing.T) {
+func TestExtensionRouteIsCentrallyCapabilityGated(t *testing.T) {
 	app := newTestApplication(t)
-	app.licenseService = testLicense{licensed: false}
+	app.capabilityGate = testCapabilityGate{enabled: false}
 	attachTestModule(t, app, fakeModule(extension.RoutePublic))
 
 	res := send(t, newTestRequest(t, http.MethodGet, "/api/v1/faketest/ping", nil), app.routes())
 	if res.StatusCode != http.StatusForbidden {
-		t.Fatalf("unlicensed route status = %d, want 403", res.StatusCode)
+		t.Fatalf("unavailable route status = %d, want 403", res.StatusCode)
 	}
 	errorBody, _ := res.BodyFields["error"].(map[string]any)
-	if code, _ := errorBody["code"].(string); code != license.CodeRequired {
-		t.Fatalf("error code = %q, want %q", code, license.CodeRequired)
+	if code, _ := errorBody["code"].(string); code != capability.CodeUnavailable {
+		t.Fatalf("error code = %q, want %q", code, capability.CodeUnavailable)
 	}
 }
 
@@ -118,21 +117,21 @@ func TestRunExtensionMigrations(t *testing.T) {
 	}
 }
 
-func TestRegistryLicenseServiceDefaultsToCommunity(t *testing.T) {
-	svc, err := extension.NewRegistry().LicenseService(context.Background(), extension.BootstrapDeps{
+func TestRegistryCapabilityGateDefaultsToNone(t *testing.T) {
+	gate, err := extension.NewRegistry().CapabilityGate(context.Background(), extension.BootstrapDeps{
 		LookupEnv: os.LookupEnv,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if svc.Edition() != "community" {
-		t.Fatalf("Edition() = %q, want community", svc.Edition())
+	if gate.Enabled("faketest") {
+		t.Fatal("empty extension registry must not enable optional capabilities")
 	}
 }
 
 func TestExtensionRoutesDoNotBypassInstanceAdmin(t *testing.T) {
 	app := newTestApplication(t)
-	app.licenseService = testLicense{licensed: true}
+	app.capabilityGate = testCapabilityGate{enabled: true}
 	attachTestModule(t, app, fakeModule(extension.RouteInstanceAdmin))
 
 	srv := httptest.NewServer(app.routes())
@@ -147,26 +146,26 @@ func TestExtensionRoutesDoNotBypassInstanceAdmin(t *testing.T) {
 	}
 }
 
-func TestExtensionJobsAndSinksAreCentrallyLicenseGated(t *testing.T) {
+func TestExtensionJobsAndSinksAreCentrallyCapabilityGated(t *testing.T) {
 	app := newTestApplication(t)
-	app.licenseService = testLicense{licensed: false}
+	app.capabilityGate = testCapabilityGate{enabled: false}
 
 	jobRan := false
-	handler := app.licensedJobHandler("faketest", jobs.HandlerFunc(func(context.Context, jobs.Runtime) (any, error) {
+	handler := app.capabilityGatedJobHandler("faketest", jobs.HandlerFunc(func(context.Context, jobs.Runtime) (any, error) {
 		jobRan = true
 		return nil, nil
 	}))
 	if _, err := handler.Handle(context.Background(), jobs.Runtime{}); err == nil {
-		t.Fatal("expected unlicensed job to be rejected")
+		t.Fatal("expected unavailable job to be rejected")
 	}
 	if jobRan {
-		t.Fatal("unlicensed job handler ran")
+		t.Fatal("unavailable job handler ran")
 	}
 
 	capture := &testCaptureSink{}
-	sink := app.licensedEventSink("faketest", capture)
+	sink := app.capabilityGatedEventSink("faketest", capture)
 	sink.HandleEvent(context.Background(), events.Event{Action: "test", Outcome: "success"})
 	if _, found := capture.find("test", "success"); found {
-		t.Fatal("unlicensed event sink received an event")
+		t.Fatal("unavailable event sink received an event")
 	}
 }
