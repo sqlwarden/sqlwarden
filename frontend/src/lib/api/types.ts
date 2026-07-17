@@ -477,3 +477,8 @@ export interface ExportJobOutput {
   row_count: number
   byte_count: number
 }
+
+export interface InstanceEdition {
+  edition: 'community' | 'enterprise'
+  licensed_features: string[]
+}

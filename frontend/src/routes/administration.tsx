@@ -25,6 +25,7 @@ const adminItems: AppShellNavItem[] = [
   { to: '/administration/administrators', label: 'Administrators', icon: 'shield-user' },
   { to: '/administration/organizations', label: 'Organizations', icon: 'building-04' },
   { to: '/administration/instance', label: 'Instance', icon: 'settings-02' },
+  { to: '/administration/enterprise', label: 'Enterprise', icon: 'sparkles' },
 ]
 
 function AdministrationLayout() {

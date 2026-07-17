@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { defineConfig } from 'vite'
 import { devtools } from '@tanstack/devtools-vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
@@ -7,7 +8,20 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+// The '@enterprise' alias is the frontend edition seam: community builds
+// resolve it to the stub module (no enterprise code in the bundle),
+// enterprise builds to the real module under the commercial license.
+const enterpriseEdition = process.env.SQLWARDEN_EDITION === 'enterprise'
+
 const config = defineConfig({
+  resolve: {
+    alias: {
+      '@enterprise': path.resolve(
+        import.meta.dirname,
+        enterpriseEdition ? 'src/enterprise' : 'src/enterprise-stub',
+      ),
+    },
+  },
   plugins: [
     devtools(),
     tsconfigPaths({ projects: ['./tsconfig.json'] }),

@@ -28,6 +28,7 @@ import { Route as IdeOrg_slugRouteImport } from './routes/ide.$org_slug'
 import { Route as AdministrationUsersRouteImport } from './routes/administration.users'
 import { Route as AdministrationOrganizationsRouteImport } from './routes/administration.organizations'
 import { Route as AdministrationInstanceRouteImport } from './routes/administration.instance'
+import { Route as AdministrationEnterpriseRouteImport } from './routes/administration.enterprise'
 import { Route as AdministrationAdministratorsRouteImport } from './routes/administration.administrators'
 import { Route as OrgsOrg_slugIndexRouteImport } from './routes/orgs.$org_slug.index'
 import { Route as OrgsOrg_slugWorkspacesRouteImport } from './routes/orgs.$org_slug.workspaces'
@@ -147,6 +148,12 @@ const AdministrationInstanceRoute = AdministrationInstanceRouteImport.update({
   path: '/instance',
   getParentRoute: () => AdministrationRoute,
 } as any)
+const AdministrationEnterpriseRoute =
+  AdministrationEnterpriseRouteImport.update({
+    id: '/enterprise',
+    path: '/enterprise',
+    getParentRoute: () => AdministrationRoute,
+  } as any)
 const AdministrationAdministratorsRoute =
   AdministrationAdministratorsRouteImport.update({
     id: '/administrators',
@@ -280,6 +287,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRouteWithChildren
   '/setup': typeof SetupRoute
   '/administration/administrators': typeof AdministrationAdministratorsRoute
+  '/administration/enterprise': typeof AdministrationEnterpriseRoute
   '/administration/instance': typeof AdministrationInstanceRoute
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/users': typeof AdministrationUsersRoute
@@ -321,6 +329,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/administration/administrators': typeof AdministrationAdministratorsRoute
+  '/administration/enterprise': typeof AdministrationEnterpriseRoute
   '/administration/instance': typeof AdministrationInstanceRoute
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/users': typeof AdministrationUsersRoute
@@ -364,6 +373,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRouteWithChildren
   '/setup': typeof SetupRoute
   '/administration/administrators': typeof AdministrationAdministratorsRoute
+  '/administration/enterprise': typeof AdministrationEnterpriseRoute
   '/administration/instance': typeof AdministrationInstanceRoute
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/users': typeof AdministrationUsersRoute
@@ -409,6 +419,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/administration/administrators'
+    | '/administration/enterprise'
     | '/administration/instance'
     | '/administration/organizations'
     | '/administration/users'
@@ -450,6 +461,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/administration/administrators'
+    | '/administration/enterprise'
     | '/administration/instance'
     | '/administration/organizations'
     | '/administration/users'
@@ -492,6 +504,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/administration/administrators'
+    | '/administration/enterprise'
     | '/administration/instance'
     | '/administration/organizations'
     | '/administration/users'
@@ -674,6 +687,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdministrationInstanceRouteImport
       parentRoute: typeof AdministrationRoute
     }
+    '/administration/enterprise': {
+      id: '/administration/enterprise'
+      path: '/enterprise'
+      fullPath: '/administration/enterprise'
+      preLoaderRoute: typeof AdministrationEnterpriseRouteImport
+      parentRoute: typeof AdministrationRoute
+    }
     '/administration/administrators': {
       id: '/administration/administrators'
       path: '/administrators'
@@ -833,6 +853,7 @@ declare module '@tanstack/react-router' {
 
 interface AdministrationRouteChildren {
   AdministrationAdministratorsRoute: typeof AdministrationAdministratorsRoute
+  AdministrationEnterpriseRoute: typeof AdministrationEnterpriseRoute
   AdministrationInstanceRoute: typeof AdministrationInstanceRoute
   AdministrationOrganizationsRoute: typeof AdministrationOrganizationsRoute
   AdministrationUsersRoute: typeof AdministrationUsersRoute
@@ -841,6 +862,7 @@ interface AdministrationRouteChildren {
 
 const AdministrationRouteChildren: AdministrationRouteChildren = {
   AdministrationAdministratorsRoute: AdministrationAdministratorsRoute,
+  AdministrationEnterpriseRoute: AdministrationEnterpriseRoute,
   AdministrationInstanceRoute: AdministrationInstanceRoute,
   AdministrationOrganizationsRoute: AdministrationOrganizationsRoute,
   AdministrationUsersRoute: AdministrationUsersRoute,

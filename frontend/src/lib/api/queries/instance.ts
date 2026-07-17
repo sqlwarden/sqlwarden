@@ -3,6 +3,7 @@ import { api } from '#/lib/api/client'
 import type {
   Account,
   InstanceAdmin,
+  InstanceEdition,
   InstanceSettings,
   ListQuery,
   Organization,
@@ -39,5 +40,13 @@ export function instanceSettingsQueryOptions() {
     queryKey: queryKeys.instanceSettings(),
     queryFn: () => api.get<InstanceSettings>('/api/v1/instance/settings'),
     staleTime: 60_000,
+  })
+}
+
+export function instanceEditionQueryOptions() {
+  return queryOptions({
+    queryKey: queryKeys.instanceEdition(),
+    queryFn: () => api.get<InstanceEdition>('/api/v1/instance/edition'),
+    staleTime: Infinity,
   })
 }

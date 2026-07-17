@@ -9,6 +9,7 @@
     "dev": "vite dev --port 3000",
     "dev-expose": "vite dev --port 3000 --host 0.0.0.0",
     "build": "vite build",
+    "build:enterprise": "SQLWARDEN_EDITION=enterprise vite build",
     "preview": "vite preview",
     "icons:generate": "bun run scripts/generate-icon-subsets.mjs",
     "format": "prettier . --write",
