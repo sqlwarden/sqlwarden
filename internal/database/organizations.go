@@ -16,11 +16,12 @@ import (
 type Organization struct {
 	bun.BaseModel `bun:"table:organizations"`
 
-	ID        int64     `bun:",pk,autoincrement" json:"id"`
-	Slug      string    `bun:",notnull,unique"   json:"slug"`
-	Name      string    `bun:",notnull"          json:"name"`
-	CreatedAt time.Time `bun:",notnull"          json:"created_at"`
-	UpdatedAt time.Time `bun:",notnull"          json:"updated_at"`
+	ID                     int64     `bun:",pk,autoincrement" json:"id"`
+	Slug                   string    `bun:",notnull,unique"   json:"slug"`
+	Name                   string    `bun:",notnull"          json:"name"`
+	SchemaSnapshotsEnabled bool      `bun:",notnull,default:true" json:"schema_snapshots_enabled"`
+	CreatedAt              time.Time `bun:",notnull"          json:"created_at"`
+	UpdatedAt              time.Time `bun:",notnull"          json:"updated_at"`
 }
 
 type OrganizationListItem struct {
@@ -114,10 +115,11 @@ func (db *DB) InsertOrg(ctx context.Context, slug, name string) (Organization, e
 // organization bootstrap in a larger transaction.
 func (db *DB) InsertOrgWithExecutor(ctx context.Context, exec bun.IDB, slug, name string) (Organization, error) {
 	org := Organization{
-		Slug:      slug,
-		Name:      name,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		Slug:                   slug,
+		Name:                   name,
+		SchemaSnapshotsEnabled: true,
+		CreatedAt:              time.Now(),
+		UpdatedAt:              time.Now(),
 	}
 	_, err := exec.NewInsert().Model(&org).Returning("id").Exec(ctx)
 	if err != nil {
@@ -166,6 +168,21 @@ func (db *DB) UpdateOrg(ctx context.Context, id int64, name string) error {
 		Set("updated_at = ?", time.Now()).
 		Where("id = ?", id).
 		Exec(ctx)
+	return err
+}
+
+func (db *DB) UpdateOrgSettings(ctx context.Context, id int64, name *string, snapshotsEnabled *bool) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	q := db.NewUpdate().Model((*Organization)(nil)).Set("updated_at = ?", time.Now()).Where("id = ?", id)
+	if name != nil {
+		q = q.Set("name = ?", *name)
+	}
+	if snapshotsEnabled != nil {
+		q = q.Set("schema_snapshots_enabled = ?", *snapshotsEnabled)
+	}
+	_, err := q.Exec(ctx)
 	return err
 }
 

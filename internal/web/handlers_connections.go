@@ -16,6 +16,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/classifier"
+	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -320,12 +321,13 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) updateConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name       string              `json:"name"`
-		Driver     *string             `json:"driver"`
-		DSN        string              `json:"dsn"`
-		AccessMode string              `json:"access_mode"`
-		Force      bool                `json:"force"`
-		V          validator.Validator `json:"-"`
+		Name                 *string             `json:"name"`
+		Driver               *string             `json:"driver"`
+		DSN                  *string             `json:"dsn"`
+		AccessMode           *string             `json:"access_mode"`
+		SchemaSnapshotPolicy *string             `json:"schema_snapshot_policy"`
+		Force                bool                `json:"force"`
+		V                    validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -334,23 +336,42 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
 	input.V.CheckField(input.Driver == nil, "driver", "Driver cannot be changed.")
-	if input.AccessMode == "" {
-		input.AccessMode = "open"
+	if input.Name != nil {
+		name := strings.TrimSpace(*input.Name)
+		input.Name = &name
+		input.V.CheckField(name != "", "name", "Name must not be empty.")
 	}
-	input.V.CheckField(
-		input.AccessMode == "open" || input.AccessMode == "restricted",
-		"access_mode", "Access mode must be open or restricted.",
-	)
+	if input.DSN != nil {
+		input.V.CheckField(strings.TrimSpace(*input.DSN) != "", "dsn", "DSN must not be empty.")
+	}
+	if input.AccessMode != nil {
+		input.V.CheckField(*input.AccessMode == "open" || *input.AccessMode == "restricted",
+			"access_mode", "Access mode must be open or restricted.")
+	}
+	if input.SchemaSnapshotPolicy != nil {
+		input.V.CheckField(*input.SchemaSnapshotPolicy == database.SchemaSnapshotPolicyInherit ||
+			*input.SchemaSnapshotPolicy == database.SchemaSnapshotPolicyDisabled,
+			"schema_snapshot_policy", "Schema snapshot policy must be inherit or disabled.")
+	}
+	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil,
+		"request", "At least one setting is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
 	}
 
 	conn := contextGetConnection(r)
-	if err := app.validateTargetConnection(conn.Driver, input.DSN); err != nil {
+	currentDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	nextDSN := currentDSN
+	if input.DSN != nil {
+		nextDSN = *input.DSN
+	}
+	if err := app.validateTargetConnection(conn.Driver, nextDSN); err != nil {
 		if errors.Is(err, errSQLiteTargetDisabled) {
 			app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "update_connection"), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver))
 		}
@@ -360,18 +381,16 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	dsnEncrypted, err := app.keyring.Encrypt(input.DSN)
+	dsnEncrypted := conn.DSNEncrypted
+	if input.DSN != nil {
+		dsnEncrypted, err = app.keyring.Encrypt(nextDSN)
+	}
 	if err != nil {
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 		return
 	}
 
-	currentDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	dsnChanged := currentDSN != input.DSN
+	dsnChanged := currentDSN != nextDSN
 	if dsnChanged {
 		activeSessions := app.connManager.CountForConnection(strconv.FormatInt(conn.ID, 10))
 		if activeSessions > 0 && !input.Force {
@@ -383,12 +402,34 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			app.logInfo(r, "connection sessions dropped for dsn rotation", slog.Int64("connection_id", conn.ID), slog.Int("dropped_sessions", activeSessions))
 		}
 	}
-	err = app.db.UpdateConnection(r.Context(), conn.ID, input.Name, dsnEncrypted, input.AccessMode)
+	nextName := conn.Name
+	if input.Name != nil {
+		nextName = *input.Name
+	}
+	nextAccessMode := conn.AccessMode
+	if input.AccessMode != nil {
+		nextAccessMode = *input.AccessMode
+	}
+	nextSnapshotPolicy := conn.SchemaSnapshotPolicy
+	if nextSnapshotPolicy == "" {
+		nextSnapshotPolicy = database.SchemaSnapshotPolicyInherit
+	}
+	if input.SchemaSnapshotPolicy != nil {
+		nextSnapshotPolicy = *input.SchemaSnapshotPolicy
+	}
+	err = app.db.UpdateConnectionWithPolicy(r.Context(), conn.ID, nextName, dsnEncrypted, nextAccessMode, nextSnapshotPolicy)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.String("access_mode", input.AccessMode))
+	if conn.SchemaSnapshotPolicy != database.SchemaSnapshotPolicyDisabled &&
+		nextSnapshotPolicy == database.SchemaSnapshotPolicyDisabled {
+		if err := app.disableConnectionSnapshots(r.Context(), conn.ID); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
+	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.String("access_mode", nextAccessMode), slog.String("schema_snapshot_policy", nextSnapshotPolicy))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -543,6 +584,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 	}
 
 	app.logInfo(r, "database session opened", slog.Int64("connection_id", conn.ID), slog.String("session_id", session.ID), slog.Bool("reused", !created))
+	app.maybeEnqueueSchemaSync(context.WithoutCancel(r.Context()), conn, ws.OrgID)
 	err = response.JSON(w, http.StatusOK, map[string]any{
 		"session_id": session.ID,
 		"reused":     !created,
@@ -642,6 +684,11 @@ func (app *application) disconnectFromDatabase(w http.ResponseWriter, r *http.Re
 	}
 
 	app.connManager.Remove(sessionID)
+	if app.connManager.CountForConnection(connID) == 0 {
+		if persistent, policyErr := app.db.SchemaSnapshotsEnabled(r.Context(), conn.ID); policyErr == nil && !persistent {
+			app.schemaService.RefreshConnection(connID)
+		}
+	}
 	app.logInfo(r, "database session disconnected", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -817,6 +864,12 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		slog.Group("result", "rows", len(rs.Rows), "columns", len(rs.Columns)),
 		slog.String("query_cursor_id", rs.QueryCursorID),
 	)...)
+	if classification.Kind == classifier.KindDDL {
+		if _, _, syncErr := app.enqueueSchemaSync(context.WithoutCancel(r.Context()), conn.ID, ws.OrgID); syncErr != nil &&
+			!errors.Is(syncErr, jobs.ErrActiveExists) {
+			app.logger.Warn("post-ddl schema snapshot enqueue failed", append(logAttrs, "error", syncErr)...)
+		}
+	}
 
 	err = response.JSON(w, http.StatusOK, rs)
 	if err != nil {

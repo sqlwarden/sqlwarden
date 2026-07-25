@@ -8,6 +8,7 @@ import (
 
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/pkg/result"
@@ -139,6 +140,7 @@ func TestGetConnectionCatalog_RequiresSession(t *testing.T) {
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	disableSchemaSnapshots(t, app, conn.ID)
 
 	req := newAuthRequest(t, http.MethodGet,
 		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/catalog", nil, tok)
@@ -260,6 +262,7 @@ func TestGetConnectionCatalog_SessionExpired(t *testing.T) {
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	disableSchemaSnapshots(t, app, conn.ID)
 
 	req := newAuthRequest(t, http.MethodGet,
 		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/catalog", nil, tok)
@@ -276,6 +279,7 @@ func TestGetConnectionCatalog_SessionConnectionMismatch(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	connA := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Conn A", "open")
 	connB := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Conn B", "open")
+	disableSchemaSnapshots(t, app, connA.ID)
 	sess := openSchemaSession(t, app, owner.ID, connB.ID, schemaFakeDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
@@ -319,6 +323,7 @@ func TestGetConnectionCatalog_UnsupportedDriver(t *testing.T) {
 
 func openSchemaSession(t *testing.T, app *application, accountID, connectionID int64, drv dbengine.Driver) *connection.Session {
 	t.Helper()
+	disableSchemaSnapshots(t, app, connectionID)
 	sess, _, err := app.connManager.GetOrCreate(
 		strconv.FormatInt(accountID, 10),
 		strconv.FormatInt(connectionID, 10),
@@ -328,4 +333,15 @@ func openSchemaSession(t *testing.T, app *application, accountID, connectionID i
 		t.Fatal(err)
 	}
 	return sess
+}
+
+func disableSchemaSnapshots(t *testing.T, app *application, connectionID int64) {
+	t.Helper()
+	conn, found, err := app.db.GetConnection(context.Background(), connectionID)
+	if err != nil || !found {
+		t.Fatalf("get schema test connection: found=%v err=%v", found, err)
+	}
+	if err := app.db.UpdateConnectionWithPolicy(context.Background(), conn.ID, conn.Name, conn.DSNEncrypted, conn.AccessMode, database.SchemaSnapshotPolicyDisabled); err != nil {
+		t.Fatalf("disable snapshots for ephemeral schema test: %v", err)
+	}
 }

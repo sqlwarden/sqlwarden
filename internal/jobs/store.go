@@ -118,6 +118,35 @@ func (s *Store) HasActiveJobType(ctx context.Context, visibility, jobType string
 	return exists, err
 }
 
+func (s *Store) ActiveBySingletonKey(ctx context.Context, singletonKey string) (Record, bool, error) {
+	var job Record
+	err := s.db.NewSelect().Model(&job).
+		Where("singleton_key = ?", singletonKey).
+		Where("status IN (?)", bun.List([]string{StatusQueued, StatusRunning})).
+		OrderExpr("created_at DESC").
+		Limit(1).
+		Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Record{}, false, nil
+	}
+	return job, err == nil, err
+}
+
+// RequestCancelSingleton cancels a queued singleton immediately or requests
+// cooperative cancellation of a running singleton.
+func (s *Store) RequestCancelSingleton(ctx context.Context, singletonKey string) error {
+	now := time.Now()
+	_, err := s.db.NewUpdate().Model((*Record)(nil)).
+		Set("status = CASE WHEN status = ? THEN ? ELSE status END", StatusQueued, StatusCancelled).
+		Set("finished_at = CASE WHEN status = ? THEN ? ELSE finished_at END", StatusQueued, now).
+		Set("cancel_requested_at = ?", now).
+		Set("updated_at = ?", now).
+		Where("singleton_key = ?", singletonKey).
+		Where("status IN (?)", bun.List([]string{StatusQueued, StatusRunning})).
+		Exec(ctx)
+	return err
+}
+
 func (s *Store) ListUserWorkspaceJobs(ctx context.Context, orgID, workspaceID, accountID int64, page, pageSize int) (response.Paginated[Record], error) {
 	if page < 1 {
 		page = 1

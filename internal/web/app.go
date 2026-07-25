@@ -43,6 +43,7 @@ type application struct {
 	connManager      *connection.Manager
 	queryCursors     *connection.QueryCursorManager
 	schemaService    *schemaapp.Service
+	schemaSnapshots  *schemaapp.SnapshotStore
 	keyring          *encrypt.Keyring
 	enforcer         *access.Enforcer
 	fileStores       *fileStoreRegistry
@@ -160,18 +161,20 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("encryption keyring init: %w", err)
 	}
 
+	snapshotStore := schemaapp.NewSnapshotStore(db)
 	app := &application{
-		config:        cfg,
-		db:            db,
-		logger:        logger,
-		mailer:        mailer,
-		connManager:   connection.New(30 * time.Minute),
-		queryCursors:  connection.NewQueryCursorManager(30 * time.Minute),
-		schemaService: schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
-		keyring:       keyring,
-		enforcer:      enforcer,
-		fileStores:    fileStores,
-		jobStore:      jobs.NewStore(db),
+		config:          cfg,
+		db:              db,
+		logger:          logger,
+		mailer:          mailer,
+		connManager:     connection.New(30 * time.Minute),
+		queryCursors:    connection.NewQueryCursorManager(30 * time.Minute),
+		schemaService:   schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
+		schemaSnapshots: snapshotStore,
+		keyring:         keyring,
+		enforcer:        enforcer,
+		fileStores:      fileStores,
+		jobStore:        jobs.NewStore(db),
 	}
 	app.jobRegistry = app.defaultJobRegistry()
 	app.startJobRunner()
@@ -247,6 +250,16 @@ func (app *application) defaultJobRegistry() *jobs.Registry {
 		MaxAttempts: 1,
 		Handler: jobs.HandlerFunc(func(ctx context.Context, runtime jobs.Runtime) (any, error) {
 			return app.handleExportJob(ctx, runtime)
+		}),
+	})
+	registry.Register(jobs.Definition{
+		Type:        jobs.TypeSchemaSync,
+		MaxAttempts: 3,
+		Backoff: func(attempt int) time.Duration {
+			return time.Duration(attempt) * time.Minute
+		},
+		Handler: jobs.HandlerFunc(func(ctx context.Context, runtime jobs.Runtime) (any, error) {
+			return app.handleSchemaSyncJob(ctx, runtime)
 		}),
 	})
 	return registry

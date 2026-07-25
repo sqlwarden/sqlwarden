@@ -36,6 +36,7 @@ const (
 	defaultJobsPollInterval          = time.Second
 	defaultJobsClaimLease            = 5 * time.Minute
 	defaultJobsCompletedRetention    = 7 * 24 * time.Hour
+	defaultSchemaSnapshotFreshness   = 24 * time.Hour
 	defaultTLSEnabled                = false
 	defaultTLSCertFile               = ""
 	defaultTLSKeyFile                = ""
@@ -141,6 +142,9 @@ type Config struct {
 		ClaimLease         time.Duration
 		CompletedRetention time.Duration
 	}
+	Schema struct {
+		SnapshotFreshness time.Duration
+	}
 	TLS struct {
 		Enabled  bool
 		CertFile string
@@ -219,6 +223,7 @@ func DefaultConfig() Config {
 	cfg.Jobs.PollInterval = defaultJobsPollInterval
 	cfg.Jobs.ClaimLease = defaultJobsClaimLease
 	cfg.Jobs.CompletedRetention = defaultJobsCompletedRetention
+	cfg.Schema.SnapshotFreshness = defaultSchemaSnapshotFreshness
 	cfg.TLS.Enabled = defaultTLSEnabled
 	cfg.TLS.CertFile = defaultTLSCertFile
 	cfg.TLS.KeyFile = defaultTLSKeyFile
@@ -293,6 +298,7 @@ var configOptions = []configOption{
 	{key: "jobs.poll_interval", env: "JOBS_POLL_INTERVAL", flagName: "jobs-poll-interval", defaultValue: defaultJobsPollInterval, usage: "Background job polling interval"},
 	{key: "jobs.claim_lease", env: "JOBS_CLAIM_LEASE", flagName: "jobs-claim-lease", defaultValue: defaultJobsClaimLease, usage: "Background job claim lease duration"},
 	{key: "jobs.completed_retention", env: "JOBS_COMPLETED_RETENTION", flagName: "jobs-completed-retention", defaultValue: defaultJobsCompletedRetention, usage: "How long completed background job records are retained"},
+	{key: "schema.snapshot_freshness", env: "SCHEMA_SNAPSHOT_FRESHNESS", flagName: "schema-snapshot-freshness", defaultValue: defaultSchemaSnapshotFreshness, usage: "Age after which connecting schedules a schema snapshot refresh"},
 	{key: "tls.enabled", env: "TLS_ENABLED", flagName: "tls-enabled", defaultValue: defaultTLSEnabled, usage: "Serve HTTPS using configured TLS certificate and key files"},
 	{key: "tls.cert_file", env: "TLS_CERT_FILE", flagName: "tls-cert-file", defaultValue: defaultTLSCertFile, usage: "Path to PEM encoded TLS certificate file"},
 	{key: "tls.key_file", env: "TLS_KEY_FILE", flagName: "tls-key-file", defaultValue: defaultTLSKeyFile, usage: "Path to PEM encoded TLS private key file"},
@@ -400,6 +406,7 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.Jobs.PollInterval = v.GetDuration("jobs.poll_interval")
 	cfg.Jobs.ClaimLease = v.GetDuration("jobs.claim_lease")
 	cfg.Jobs.CompletedRetention = v.GetDuration("jobs.completed_retention")
+	cfg.Schema.SnapshotFreshness = v.GetDuration("schema.snapshot_freshness")
 	cfg.TLS.Enabled = v.GetBool("tls.enabled")
 	cfg.TLS.CertFile = v.GetString("tls.cert_file")
 	cfg.TLS.KeyFile = v.GetString("tls.key_file")
@@ -466,6 +473,9 @@ func validateConfig(cfg Config) error {
 	}
 	if cfg.Jobs.CompletedRetention <= 0 {
 		return fmt.Errorf("jobs.completed_retention must be greater than 0")
+	}
+	if cfg.Schema.SnapshotFreshness <= 0 {
+		return fmt.Errorf("schema.snapshot_freshness must be greater than 0")
 	}
 	if cfg.TLS.Enabled {
 		if strings.TrimSpace(cfg.TLS.CertFile) == "" {

@@ -22,6 +22,7 @@ import {
 } from '#/components/ui/alert-dialog'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
+import { Checkbox } from '#/components/ui/checkbox'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { RoutePending } from '#/components/RoutePending'
@@ -42,6 +43,7 @@ function OrganizationGeneralSettingsPage() {
   const org = useQuery(orgQueryOptions(orgSlug))
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
   const [name, setName] = useState('')
+  const [schemaSnapshotsEnabled, setSchemaSnapshotsEnabled] = useState(true)
   const [fieldErrors, setFieldErrors] = useState<OrgFieldErrors>({})
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
 
@@ -52,12 +54,14 @@ function OrganizationGeneralSettingsPage() {
   useEffect(() => {
     if (!org.data) return
     setName(org.data.name)
+    setSchemaSnapshotsEnabled(org.data.schema_snapshots_enabled ?? true)
   }, [org.data])
 
   const updateOrg = useMutation({
     mutationFn: async () =>
       api.patch<Organization>(`/api/v1/orgs/${orgSlug}`, {
         name: name.trim(),
+        schema_snapshots_enabled: schemaSnapshotsEnabled,
       }),
     onSuccess: async (updated) => {
       setFieldErrors({})
@@ -109,7 +113,9 @@ function OrganizationGeneralSettingsPage() {
     )
   }
 
-  const hasChanges = name.trim() !== org.data.name
+  const hasChanges =
+    name.trim() !== org.data.name ||
+    schemaSnapshotsEnabled !== (org.data.schema_snapshots_enabled ?? true)
   const deleteMatches = deleteConfirmation === org.data.slug
 
   function submitGeneral(event: React.FormEvent<HTMLFormElement>) {
@@ -159,6 +165,22 @@ function OrganizationGeneralSettingsPage() {
                 </p>
               </Field>
             </div>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-4">
+              <Checkbox
+                checked={schemaSnapshotsEnabled}
+                disabled={!canWrite || updateOrg.isPending}
+                onCheckedChange={(checked) => setSchemaSnapshotsEnabled(checked === true)}
+              />
+              <span className="flex flex-col gap-1">
+                <span className="font-medium text-foreground">Persist schema snapshots</span>
+                <span className="text-muted-foreground">
+                  Store database structure metadata for disconnected schema browsing and future
+                  autocomplete. Disabling this immediately deletes stored snapshots; schema metadata
+                  is then held only in memory while a connection session is active.
+                </span>
+              </span>
+            </label>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Organization ID">

@@ -1,13 +1,17 @@
 package web
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 )
@@ -37,7 +41,39 @@ type relationshipsResponse struct {
 }
 
 type schemaStatusResponse struct {
-	Status string `json:"status"`
+	Status      string     `json:"status"`
+	Mode        string     `json:"mode"`
+	SnapshotID  string     `json:"snapshot_id,omitempty"`
+	GeneratedAt *time.Time `json:"generated_at,omitempty"`
+	Stale       bool       `json:"stale,omitempty"`
+	JobID       string     `json:"job_id,omitempty"`
+}
+
+func (app *application) authorizeSchemaAccess(w http.ResponseWriter, r *http.Request) bool {
+	org := contextGetOrg(r)
+	conn := contextGetConnection(r)
+	ws := contextGetWorkspace(r)
+	if app.hasAnyConnectionRuntimePermission(r, org.ID, ws.OwnerType, conn.ID,
+		access.PermConnExecute, access.PermConnDQL, access.PermConnDML, access.PermConnDDL) {
+		return true
+	}
+	app.notPermitted(w, r)
+	return false
+}
+
+func (app *application) persistentSchemaMode(r *http.Request) (bool, error) {
+	return app.db.SchemaSnapshotsEnabled(r.Context(), contextGetConnection(r).ID)
+}
+
+func (app *application) writeSnapshotPending(w http.ResponseWriter, r *http.Request) {
+	conn := contextGetConnection(r)
+	status := schemaStatusResponse{Status: "pending", Mode: "persistent"}
+	if job, found, err := app.workspaceJobStore().ActiveBySingletonKey(r.Context(), schemaSyncSingletonKey(conn.ID)); err == nil && found {
+		status.JobID = job.ID
+	}
+	if err := response.JSON(w, http.StatusAccepted, status); err != nil {
+		app.serverError(w, r, err)
+	}
 }
 
 // resolveSchemaSession applies the same preconditions as executeQuery: a valid
@@ -130,6 +166,38 @@ func (app *application) resolveRelationshipInspector(w http.ResponseWriter, r *h
 }
 
 func (app *application) getConnectionSchemaRelationships(w http.ResponseWriter, r *http.Request) {
+	persistent, err := app.persistentSchemaMode(r)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if persistent {
+		if !app.authorizeSchemaAccess(w, r) {
+			return
+		}
+		snapshot, _, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !found {
+			app.writeSnapshotPending(w, r)
+			return
+		}
+		graph, found, err := app.schemaSnapshots.Relationship(r.Context(), snapshot.ID, r.URL.Query().Get("namespace"))
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !found {
+			app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema relationships.", nil)
+			return
+		}
+		if err := response.JSON(w, http.StatusOK, relationshipsResponse{Graph: graph}); err != nil {
+			app.serverError(w, r, err)
+		}
+		return
+	}
 	session, inspector, ok := app.resolveRelationshipInspector(w, r)
 	if !ok {
 		return
@@ -151,13 +219,21 @@ func (app *application) getConnectionSchemaRelationships(w http.ResponseWriter, 
 }
 
 func (app *application) getConnectionSchemaSpec(w http.ResponseWriter, r *http.Request) {
-	session, inspector, ok := app.resolveSchemaInspector(w, r)
+	if !app.authorizeSchemaAccess(w, r) {
+		return
+	}
+	driver, err := dbengine.New(contextGetConnection(r).Driver)
+	if err != nil {
+		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
+		return
+	}
+	inspector, ok := driver.(schema.SchemaInspector)
 	if !ok {
+		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
 		return
 	}
 	spec := app.schemaService.Spec(inspector)
 	app.logDebug(r, "schema spec returned",
-		slog.String("session_id", session.ID),
 		slog.String("dialect", spec.Dialect),
 		slog.Int("kind_count", len(spec.Kinds)),
 	)
@@ -167,6 +243,29 @@ func (app *application) getConnectionSchemaSpec(w http.ResponseWriter, r *http.R
 }
 
 func (app *application) getConnectionSchemaCatalog(w http.ResponseWriter, r *http.Request) {
+	persistent, err := app.persistentSchemaMode(r)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if persistent {
+		if !app.authorizeSchemaAccess(w, r) {
+			return
+		}
+		_, catalog, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !found {
+			app.writeSnapshotPending(w, r)
+			return
+		}
+		if err := response.JSON(w, http.StatusOK, catalogResponse{Catalog: catalog}); err != nil {
+			app.serverError(w, r, err)
+		}
+		return
+	}
 	session, inspector, ok := app.resolveSchemaInspector(w, r)
 	if !ok {
 		return
@@ -187,13 +286,41 @@ func (app *application) getConnectionSchemaCatalog(w http.ResponseWriter, r *htt
 }
 
 func (app *application) getConnectionSchemaObjects(w http.ResponseWriter, r *http.Request) {
-	session, inspector, ok := app.resolveSchemaInspector(w, r)
-	if !ok {
-		return
-	}
 	var input objectsRequest
 	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
+		return
+	}
+	persistent, err := app.persistentSchemaMode(r)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if persistent {
+		if !app.authorizeSchemaAccess(w, r) {
+			return
+		}
+		snapshot, _, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if !found {
+			app.writeSnapshotPending(w, r)
+			return
+		}
+		objects, err := app.schemaSnapshots.Objects(r.Context(), snapshot.ID, input.Refs)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if err := response.JSON(w, http.StatusOK, objectsResponse{Objects: objects}); err != nil {
+			app.serverError(w, r, err)
+		}
+		return
+	}
+	session, inspector, ok := app.resolveSchemaInspector(w, r)
+	if !ok {
 		return
 	}
 	objects, err := app.schemaService.Objects(r.Context(), session.ConnectionID, input.Refs, inspector)
@@ -212,6 +339,34 @@ func (app *application) getConnectionSchemaObjects(w http.ResponseWriter, r *htt
 }
 
 func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.Request) {
+	persistent, err := app.persistentSchemaMode(r)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if persistent {
+		if !app.authorizeSchemaAccess(w, r) {
+			return
+		}
+		conn := contextGetConnection(r)
+		ws := contextGetWorkspace(r)
+		job, created, err := app.enqueueSchemaSync(r.Context(), conn.ID, ws.OrgID)
+		if err != nil && !errors.Is(err, jobs.ErrActiveExists) {
+			app.serverError(w, r, err)
+			return
+		}
+		if !created {
+			if active, found, lookupErr := app.workspaceJobStore().ActiveBySingletonKey(r.Context(), schemaSyncSingletonKey(conn.ID)); lookupErr == nil && found {
+				job = active
+			}
+		}
+		if err := response.JSON(w, http.StatusAccepted, schemaStatusResponse{
+			Status: "pending", Mode: "persistent", JobID: job.ID,
+		}); err != nil {
+			app.serverError(w, r, err)
+		}
+		return
+	}
 	session, _, ok := app.resolveSchemaInspector(w, r)
 	if !ok {
 		return
@@ -239,7 +394,46 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 			slog.String("connection_id", session.ConnectionID),
 		)
 	}
-	if err := response.JSON(w, http.StatusOK, schemaStatusResponse{Status: "ok"}); err != nil {
+	if err := response.JSON(w, http.StatusOK, schemaStatusResponse{Status: "ok", Mode: "ephemeral"}); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) getConnectionSchemaSnapshot(w http.ResponseWriter, r *http.Request) {
+	if !app.authorizeSchemaAccess(w, r) {
+		return
+	}
+	conn := contextGetConnection(r)
+	persistent, err := app.persistentSchemaMode(r)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !persistent {
+		if err := response.JSON(w, http.StatusOK, schemaStatusResponse{Status: "available", Mode: "ephemeral"}); err != nil {
+			app.serverError(w, r, err)
+		}
+		return
+	}
+	snapshot, _, found, err := app.schemaSnapshots.Active(r.Context(), conn.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.writeSnapshotPending(w, r)
+		return
+	}
+	status := schemaStatusResponse{
+		Status: "available", Mode: "persistent", SnapshotID: snapshot.ID,
+		GeneratedAt: &snapshot.GeneratedAt,
+		Stale:       time.Since(snapshot.GeneratedAt) >= app.config.Schema.SnapshotFreshness,
+	}
+	if job, active, lookupErr := app.workspaceJobStore().ActiveBySingletonKey(r.Context(), schemaSyncSingletonKey(conn.ID)); lookupErr == nil && active {
+		status.Status = "refreshing"
+		status.JobID = job.ID
+	}
+	if err := response.JSON(w, http.StatusOK, status); err != nil {
 		app.serverError(w, r, err)
 	}
 }

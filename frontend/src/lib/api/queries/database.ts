@@ -30,18 +30,23 @@ function schemaBase(slug: string, workspaceId: string | number, connectionId: st
   return `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/schema`
 }
 
+function schemaRequestOptions(sessionId?: string) {
+  return sessionId ? { headers: { 'X-Warden-Session': sessionId } } : undefined
+}
+
 export function orgConnectionCatalogQueryOptions(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-  sessionId: string,
+  sessionId?: string,
 ) {
   return queryOptions({
     queryKey: connectionCatalogQueryKey(slug, workspaceId, connectionId),
     queryFn: () =>
-      api.get<CatalogResponse>(`${schemaBase(slug, workspaceId, connectionId)}/catalog`, {
-        headers: { 'X-Warden-Session': sessionId },
-      }),
+      api.get<CatalogResponse>(
+        `${schemaBase(slug, workspaceId, connectionId)}/catalog`,
+        schemaRequestOptions(sessionId),
+      ),
     staleTime: 60_000,
   })
 }
@@ -50,14 +55,15 @@ export function orgConnectionSchemaSpecQueryOptions(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-  sessionId: string,
+  sessionId?: string,
 ) {
   return queryOptions({
     queryKey: connectionSchemaSpecQueryKey(slug, workspaceId, connectionId),
     queryFn: () =>
-      api.get<SchemaSpecResponse>(`${schemaBase(slug, workspaceId, connectionId)}/spec`, {
-        headers: { 'X-Warden-Session': sessionId },
-      }),
+      api.get<SchemaSpecResponse>(
+        `${schemaBase(slug, workspaceId, connectionId)}/spec`,
+        schemaRequestOptions(sessionId),
+      ),
     staleTime: 5 * 60_000,
   })
 }
@@ -81,7 +87,7 @@ export function orgConnectionRelationshipsQueryOptions(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-  sessionId: string,
+  sessionId: string | undefined,
   namespace: string,
 ) {
   return queryOptions({
@@ -89,7 +95,7 @@ export function orgConnectionRelationshipsQueryOptions(
     queryFn: async () => {
       const res = await api.get<RelationshipsResponse>(
         `${schemaBase(slug, workspaceId, connectionId)}/relationships?namespace=${encodeURIComponent(namespace)}`,
-        { headers: { 'X-Warden-Session': sessionId } },
+        schemaRequestOptions(sessionId),
       )
       return res.graph
     },
@@ -123,7 +129,7 @@ export function orgConnectionObjectQueryOptions(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-  sessionId: string,
+  sessionId: string | undefined,
   ref: ObjectRef,
 ) {
   return queryOptions({
@@ -132,7 +138,7 @@ export function orgConnectionObjectQueryOptions(
       const res = await api.post<ObjectsResponse>(
         `${schemaBase(slug, workspaceId, connectionId)}/objects`,
         { refs: [ref] },
-        { headers: { 'X-Warden-Session': sessionId } },
+        schemaRequestOptions(sessionId),
       )
       return res.objects[0] ?? null
     },
@@ -222,13 +228,13 @@ export function refreshConnectionSchema(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-  sessionId: string,
+  sessionId?: string,
   ref?: ObjectRef,
 ) {
   return api.post<{ status: string }>(
     `${schemaBase(slug, workspaceId, connectionId)}/refresh`,
     ref ? { ref } : undefined,
-    { headers: { 'X-Warden-Session': sessionId } },
+    schemaRequestOptions(sessionId),
   )
 }
 
