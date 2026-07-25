@@ -44,7 +44,7 @@ type TreeCtx = {
   orgSlug: string
   workspaceId: number
   connectionId: number
-  sessionId: string
+  sessionId?: string
 }
 
 const SchemaTreeContext = createContext<TreeCtx | null>(null)
@@ -150,12 +150,10 @@ export function SchemaTree({
     )
 
   const catalogQuery = useQuery({
-    ...orgConnectionCatalogQueryOptions(orgSlug, workspaceId, connectionId, sessionId ?? ''),
-    enabled: Boolean(sessionId),
+    ...orgConnectionCatalogQueryOptions(orgSlug, workspaceId, connectionId, sessionId),
   })
   const specQuery = useQuery({
-    ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspaceId, connectionId, sessionId ?? ''),
-    enabled: Boolean(sessionId),
+    ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspaceId, connectionId, sessionId),
   })
 
   // A 410 from any schema endpoint means the server-side session died (idle
@@ -163,30 +161,6 @@ export function SchemaTree({
   // of erroring forever against a dead session id.
   useEvictGoneSession(connectionId, [catalogQuery.error, specQuery.error])
 
-  if (!sessionId) {
-    if (connStatus === 'connecting') {
-      return (
-        <SchemaMessage>
-          <SchemaSpinner />
-          Connecting…
-        </SchemaMessage>
-      )
-    }
-    return (
-      <SchemaMessage>
-        <span>Not connected.</span>
-        {onConnect && (
-          <button
-            type="button"
-            className="font-medium text-primary hover:underline"
-            onClick={onConnect}
-          >
-            Connect
-          </button>
-        )}
-      </SchemaMessage>
-    )
-  }
   if (catalogQuery.isLoading) {
     return (
       <SchemaMessage>
@@ -196,6 +170,30 @@ export function SchemaTree({
     )
   }
   if (catalogQuery.isError) {
+    if (!sessionId) {
+      if (connStatus === 'connecting') {
+        return (
+          <SchemaMessage>
+            <SchemaSpinner />
+            Connecting…
+          </SchemaMessage>
+        )
+      }
+      return (
+        <SchemaMessage>
+          <span>Not connected.</span>
+          {onConnect && (
+            <button
+              type="button"
+              className="font-medium text-primary hover:underline"
+              onClick={onConnect}
+            >
+              Connect
+            </button>
+          )}
+        </SchemaMessage>
+      )
+    }
     if (isApiError(catalogQuery.error) && catalogQuery.error.status === 501) {
       return <SchemaMessage>This driver doesn&apos;t support schema inspection.</SchemaMessage>
     }
@@ -214,7 +212,17 @@ export function SchemaTree({
   }
 
   const raw = catalogQuery.data?.catalog
-  if (!raw) return <SchemaMessage>No schema.</SchemaMessage>
+  if (!raw) {
+    if (catalogQuery.data?.status === 'pending') {
+      return (
+        <SchemaMessage>
+          <SchemaSpinner />
+          Preparing schema snapshot…
+        </SchemaMessage>
+      )
+    }
+    return <SchemaMessage>No schema.</SchemaMessage>
+  }
 
   const filtering = filter.trim() !== ''
   const namespaces = filterCatalog(raw, filter).namespaces ?? []

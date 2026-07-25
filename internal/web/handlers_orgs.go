@@ -63,8 +63,9 @@ func (app *application) updateOrg(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 
 	var input struct {
-		Name string              `json:"name"`
-		V    validator.Validator `json:"-"`
+		Name                   *string             `json:"name"`
+		SchemaSnapshotsEnabled *bool               `json:"schema_snapshots_enabled"`
+		V                      validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -73,18 +74,29 @@ func (app *application) updateOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.Name = strings.TrimSpace(input.Name)
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	if input.Name != nil {
+		name := strings.TrimSpace(*input.Name)
+		input.Name = &name
+		input.V.CheckField(name != "", "name", "Name must not be empty.")
+	}
+	input.V.CheckField(input.Name != nil || input.SchemaSnapshotsEnabled != nil, "request", "At least one setting is required.")
 
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
 	}
 
-	err = app.db.UpdateOrg(r.Context(), org.ID, input.Name)
+	wasEnabled := org.SchemaSnapshotsEnabled
+	err = app.db.UpdateOrgSettings(r.Context(), org.ID, input.Name, input.SchemaSnapshotsEnabled)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
+	}
+	if wasEnabled && input.SchemaSnapshotsEnabled != nil && !*input.SchemaSnapshotsEnabled {
+		if err := app.disableOrganizationSnapshots(r.Context(), org.ID); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
 	}
 	app.logInfo(r, "organization updated", slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
 

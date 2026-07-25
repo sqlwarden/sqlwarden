@@ -32,6 +32,8 @@ func newTestApp(t *testing.T) *application {
 	app.enforcer = enforcer
 	app.connManager = connection.New(30 * time.Minute)
 	app.schemaService = schemaapp.NewService(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL)
+	app.schemaSnapshots = schemaapp.NewSnapshotStore(app.db)
+	app.config.Schema.SnapshotFreshness = defaultSchemaSnapshotFreshness
 	t.Cleanup(func() { app.connManager.Close() })
 	return app
 }

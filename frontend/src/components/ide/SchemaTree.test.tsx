@@ -94,12 +94,30 @@ describe('SchemaTree', () => {
     )
   }
 
-  it('offers connection recovery without issuing schema calls', () => {
+  it('offers connection recovery when ephemeral schema access requires a session', async () => {
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/catalog', () =>
+        HttpResponse.json(
+          { error: { code: 'bad_request', message: 'X-Warden-Session header is required.' } },
+          { status: 400 },
+        ),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({ spec: { dialect: 'postgres', kinds: [] } }),
+      ),
+    )
     const onConnect = vi.fn()
     renderTree('', onConnect)
-    expect(screen.getByText('Not connected.')).toBeInTheDocument()
+    expect(await screen.findByText('Not connected.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }))
     expect(onConnect).toHaveBeenCalledOnce()
+  })
+
+  it('loads a persisted schema snapshot without a live session', async () => {
+    respondReady()
+    renderTree()
+    fireEvent.click(await screen.findByText('Tables'))
+    expect(await screen.findByText('orders')).toBeInTheDocument()
   })
 
   it('distinguishes unsupported inspection from a generic failure', async () => {

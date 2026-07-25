@@ -43,19 +43,14 @@ export function ObjectDetailView({
       orgSlug,
       workspace.id,
       connectionId ?? 0,
-      sessionId ?? '',
+      sessionId,
       ref ?? EMPTY_REF,
     ),
-    enabled: Boolean(sessionId && connectionId && ref),
+    enabled: Boolean(connectionId && ref),
   })
   const specQuery = useQuery({
-    ...orgConnectionSchemaSpecQueryOptions(
-      orgSlug,
-      workspace.id,
-      connectionId ?? 0,
-      sessionId ?? '',
-    ),
-    enabled: Boolean(sessionId && connectionId),
+    ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspace.id, connectionId ?? 0, sessionId),
+    enabled: Boolean(connectionId && ref),
   })
 
   // A 410 means the server-side session died while this tab was open — drop it
@@ -64,7 +59,7 @@ export function ObjectDetailView({
 
   const detail = detailQuery.data ?? null
   const state = resolveObjectViewState({
-    hasSession: Boolean(sessionId),
+    hasSession: Boolean(sessionId) || Boolean(detail),
     isLoading: detailQuery.isLoading,
     error: detailQuery.error,
     hasData: Boolean(detail),
@@ -115,7 +110,7 @@ export function ObjectDetailView({
   }
 
   async function refresh() {
-    if (!sessionId || !ref || !connectionId) return
+    if (!ref || !connectionId) return
     await refreshConnectionSchema(orgSlug, workspace.id, connectionId, sessionId, ref)
     await queryClient.invalidateQueries({
       queryKey: connectionObjectQueryKey(orgSlug, workspace.id, connectionId, ref),

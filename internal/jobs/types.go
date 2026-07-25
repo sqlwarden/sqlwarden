@@ -12,6 +12,7 @@ import (
 const (
 	TypeFileContentReap = "file_content_reap"
 	TypeExportQueryCSV  = "export_query_csv"
+	TypeSchemaSync      = "schema_sync"
 
 	EventLevelInfo  = "info"
 	EventLevelWarn  = "warn"

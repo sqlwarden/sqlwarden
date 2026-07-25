@@ -270,7 +270,9 @@ Important tables:
 - `auth_sessions`
 - `org_access_sessions`
 - `refresh_tokens`
-- `schema_introspection_cache`
+- `schema_snapshots`
+- `schema_snapshot_objects`
+- `schema_snapshot_relationships`
 
 Entity IDs are database integer IDs for relational resources. Refresh tokens and live database session IDs use ULIDs.
 
@@ -698,11 +700,22 @@ Future:
 Implemented schema introspection includes:
 
 - Engine-level schema capability for cheap catalog listing and on-demand object detail.
-- Cache in SQLWarden metadata DB.
-- API surface for schema explorer use.
-- Request-aware logs for schema session validation, unsupported engine capability, cache refresh requests, and response summaries. The schema service logs cache hit/miss, inspection failures, successful inspection, and cache invalidation.
+- Immutable, compressed schema generations in the SQLWarden metadata database. Publication atomically swaps the active generation and retains the immediately previous generation.
+- Organization policy enabled by default, with a connection-level `inherit|disabled` override that can only tighten the organization policy.
+- Immediate snapshot deletion and queued/running refresh cancellation when persistence is disabled.
+- A singleton background `schema_sync` job scheduled after a successful connection when metadata is missing or older than the configured freshness interval, and after successful DDL.
+- API access to persisted catalog, object, and relationship metadata without a live target-database session.
+- A compliance fallback that stores metadata only in the bounded process-local cache while a live session exists. Disconnected schema browsing and semantic autocomplete are unavailable in this mode; syntax-only completion remains possible.
+- Request-aware logs for schema session validation, unsupported engine capability, refresh requests, and response summaries. Snapshot jobs log only operational counts and dialect information, never DSNs or object contents.
 
-This should become the foundation for IDE explorer expansion, autocomplete, and metadata refresh policies. Cache invalidation and deep per-database metadata behavior should remain driver-specific behind the shared abstraction.
+The metadata database is the synchronization boundary for multiple SQLWarden
+replicas: singleton job keys deduplicate refresh work and immutable snapshot IDs
+avoid partial reads. Redis is not required. Live database sessions and query
+cursors remain process-local and therefore still require sticky routing until a
+separate distributed session design is introduced. Completion should consume
+the same snapshot reader through a transport-neutral service; WebSocket/LSP
+transport can be added later for collaboration without changing snapshot
+storage.
 
 ## Frontend Architecture
 

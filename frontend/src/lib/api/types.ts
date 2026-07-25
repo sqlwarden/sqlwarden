@@ -20,6 +20,7 @@ export interface Organization {
   id: number
   slug: string
   name: string
+  schema_snapshots_enabled?: boolean
   member_count?: number
   team_count?: number
   created_at: string
@@ -127,6 +128,7 @@ export interface Connection {
   name: string
   driver: string
   access_mode: 'open' | 'restricted'
+  schema_snapshot_policy?: 'inherit' | 'disabled'
   created_at: string
   updated_at: string
 }
@@ -403,7 +405,19 @@ export interface ObjectDetail {
 }
 
 export interface CatalogResponse {
-  catalog: SchemaCatalog
+  catalog?: SchemaCatalog
+  status?: 'pending'
+  mode?: 'persistent' | 'ephemeral'
+  job_id?: string
+}
+
+export interface SchemaSnapshotStatus {
+  status: 'ready' | 'pending' | 'disabled'
+  mode: 'persistent' | 'ephemeral'
+  snapshot_id?: string
+  generated_at?: string
+  stale?: boolean
+  job_id?: string
 }
 
 export interface SchemaSpecResponse {

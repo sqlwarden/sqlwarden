@@ -78,6 +78,9 @@ jobs:
   poll_interval: 1s
   claim_lease: 5m
   completed_retention: 168h
+
+schema:
+  snapshot_freshness: 24h
 ```
 
 ## Docker Example
@@ -177,6 +180,19 @@ SESSIONS_REVOCATION_ENABLED=false
 These limits apply to interactive IDE query responses. Future export workflows should use dedicated streaming/export limits instead of relying on interactive query caps.
 
 The same limits apply to HTTP query cursors. Direct `/query` responses are capped once per response. Query-cursor start and fetch responses are capped per page; clients can continue fetching while the response has `exhausted=false`.
+
+## Schema Snapshots
+
+| Config key | Environment | CLI flag | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `schema.snapshot_freshness` | `SCHEMA_SNAPSHOT_FRESHNESS` | `--schema-snapshot-freshness` | `24h` | Age after which connecting schedules a background schema snapshot refresh. |
+
+Persistent schema snapshots are enabled by default per organization and can be
+disabled in organization settings. A connection may inherit that setting or
+tighten it to `disabled`; a connection cannot override a disabled organization.
+Disabling snapshots immediately deletes stored schema metadata. In that mode,
+schema inspection uses only the process-local cache associated with a live
+database session.
 
 For DQL/select-style queries, the IDE can request cursor-backed results through `/query`. When the selected target engine supports cursor-backed results, the first response includes the first page plus cursor metadata. Engines that do not support cursor-backed results fall back to the bounded direct query path. Cursor state is process-local and tied to the authenticated live database session; it is not durable query history.
 

@@ -13,16 +13,22 @@ import (
 )
 
 type Connection struct {
-	ID            int64     `bun:",pk,autoincrement" json:"id"`
-	WorkspaceID   int64     `bun:",notnull"          json:"workspace_id"`
-	EnvironmentID int64     `bun:",notnull"          json:"environment_id"`
-	Name          string    `bun:",notnull"          json:"name"`
-	Driver        string    `bun:",notnull"          json:"driver"`
-	DSNEncrypted  string    `bun:",notnull"          json:"-"`
-	AccessMode    string    `bun:",notnull,default:'open'" json:"access_mode"`
-	CreatedAt     time.Time `bun:",notnull"          json:"created_at"`
-	UpdatedAt     time.Time `bun:",notnull"          json:"updated_at"`
+	ID                   int64     `bun:",pk,autoincrement" json:"id"`
+	WorkspaceID          int64     `bun:",notnull"          json:"workspace_id"`
+	EnvironmentID        int64     `bun:",notnull"          json:"environment_id"`
+	Name                 string    `bun:",notnull"          json:"name"`
+	Driver               string    `bun:",notnull"          json:"driver"`
+	DSNEncrypted         string    `bun:",notnull"          json:"-"`
+	AccessMode           string    `bun:",notnull,default:'open'" json:"access_mode"`
+	SchemaSnapshotPolicy string    `bun:",notnull,default:'inherit'" json:"schema_snapshot_policy"`
+	CreatedAt            time.Time `bun:",notnull"          json:"created_at"`
+	UpdatedAt            time.Time `bun:",notnull"          json:"updated_at"`
 }
+
+const (
+	SchemaSnapshotPolicyInherit  = "inherit"
+	SchemaSnapshotPolicyDisabled = "disabled"
+)
 
 type ListConnectionsParams struct {
 	WorkspaceID   int64
@@ -67,14 +73,15 @@ func (db *DB) InsertConnectionWithExecutor(ctx context.Context, exec bun.IDB, wo
 	}
 
 	conn := Connection{
-		WorkspaceID:   workspaceID,
-		EnvironmentID: resolvedEnvID,
-		Name:          name,
-		Driver:        driver,
-		DSNEncrypted:  dsnEncrypted,
-		AccessMode:    accessMode,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		WorkspaceID:          workspaceID,
+		EnvironmentID:        resolvedEnvID,
+		Name:                 name,
+		Driver:               driver,
+		DSNEncrypted:         dsnEncrypted,
+		AccessMode:           accessMode,
+		SchemaSnapshotPolicy: SchemaSnapshotPolicyInherit,
+		CreatedAt:            time.Now(),
+		UpdatedAt:            time.Now(),
 	}
 	_, err := exec.NewInsert().Model(&conn).Returning("id").Exec(ctx)
 	if err != nil {
@@ -120,6 +127,10 @@ func (db *DB) GetConnection(ctx context.Context, id int64) (Connection, bool, er
 // UpdateConnection updates only mutable connection fields.
 // Workspace, environment, ownership, and driver are intentionally immutable.
 func (db *DB) UpdateConnection(ctx context.Context, id int64, name, dsnEncrypted, accessMode string) error {
+	return db.UpdateConnectionWithPolicy(ctx, id, name, dsnEncrypted, accessMode, SchemaSnapshotPolicyInherit)
+}
+
+func (db *DB) UpdateConnectionWithPolicy(ctx context.Context, id int64, name, dsnEncrypted, accessMode, snapshotPolicy string) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -127,10 +138,51 @@ func (db *DB) UpdateConnection(ctx context.Context, id int64, name, dsnEncrypted
 		Set("name = ?", name).
 		Set("dsn_encrypted = ?", dsnEncrypted).
 		Set("access_mode = ?", accessMode).
+		Set("schema_snapshot_policy = ?", snapshotPolicy).
 		Set("updated_at = ?", time.Now()).
 		Where("id = ?", id).
 		Exec(ctx)
 	return err
+}
+
+// SchemaSnapshotsEnabled resolves the organization policy and connection
+// override. Personal-space connections have no organization and default to
+// enabled unless the connection explicitly disables snapshots.
+func (db *DB) SchemaSnapshotsEnabled(ctx context.Context, connectionID int64) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var row struct {
+		Policy     string `bun:"schema_snapshot_policy"`
+		OrgEnabled *bool  `bun:"schema_snapshots_enabled"`
+	}
+	err := db.NewSelect().
+		TableExpr("connections AS c").
+		ColumnExpr("c.schema_snapshot_policy").
+		ColumnExpr("o.schema_snapshots_enabled").
+		Join("JOIN workspaces AS w ON w.id = c.workspace_id").
+		Join("LEFT JOIN organizations AS o ON o.id = w.org_id").
+		Where("c.id = ?", connectionID).
+		Scan(ctx, &row)
+	if err != nil {
+		return false, err
+	}
+	if row.Policy == SchemaSnapshotPolicyDisabled {
+		return false, nil
+	}
+	return row.OrgEnabled == nil || *row.OrgEnabled, nil
+}
+
+func (db *DB) ListOrgConnections(ctx context.Context, orgID int64) ([]Connection, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+	var conns []Connection
+	err := db.NewSelect().Model(&conns).
+		Join("JOIN workspaces AS w ON w.id = connection.workspace_id").
+		Where("w.org_id = ?", orgID).
+		OrderExpr("connection.id ASC").
+		Scan(ctx)
+	return conns, err
 }
 
 // ListAllConnections returns every connection across all workspaces. It is used
