@@ -21,10 +21,14 @@ func TestSQLiteEngineRegisteredAndConforms(t *testing.T) {
 	if !caps[dbengine.CapabilitySchemaCatalog] || !caps[dbengine.CapabilityQueryCursor] {
 		t.Errorf("sqlite should report schema.catalog + query.cursor: %+v", caps)
 	}
-	if !caps[dbengine.CapabilitySQLParse] || !caps[dbengine.CapabilitySQLClassify] || !caps[dbengine.CapabilitySQLRewrite] {
-		t.Errorf("sqlite should report gosqlx parse/classify/rewrite: %+v", caps)
-	}
-	if caps[dbengine.CapabilitySQLComplete] {
-		t.Errorf("sql.complete must be false until completion is implemented")
+	for _, capability := range []dbengine.Capability{
+		dbengine.CapabilitySQLParse,
+		dbengine.CapabilitySQLClassify,
+		dbengine.CapabilitySQLRewrite,
+		dbengine.CapabilitySQLComplete,
+	} {
+		if caps[capability] {
+			t.Errorf("%s must be false until implemented", capability)
+		}
 	}
 }

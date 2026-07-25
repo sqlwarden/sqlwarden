@@ -51,7 +51,7 @@ Explicitly future or incomplete:
 - Distributed RBAC cache invalidation.
 - Shared-file collaborative editing through WebSockets.
 - File uploads, revision browsing UX, S3-compatible file storage, and storage migration tooling.
-- Full SQL parser/AST-based query classification.
+- SQLite SQL parsing/classification and SQL autocomplete.
 - PWA service worker setup.
 
 ## Repository Layout
@@ -355,7 +355,12 @@ Query permissions:
 - `conn:ddl` for schema mutation queries.
 - `conn:execute` allows all query classes.
 
-Current query classification is intentionally simple and should be replaced by SQL parser/AST classification later.
+PostgreSQL and MySQL use strict Omni parsing and fail-closed AST classification.
+Only proven read-only statements receive `conn:dql`; ambiguous constructs
+require `conn:execute`. Engines without a registered dialect classifier, which
+currently means SQLite, use the conservative keyword heuristic for runtime
+authorization. SQL export never uses that fallback and is unavailable for such
+engines.
 
 ### Roles
 
@@ -569,12 +574,17 @@ Each engine registers through the `dbengine` registry and advertises implemented
 
 - `schema`: cheap catalog listing and on-demand object detail.
 - `classifier`: query kind classification used for RBAC decisions.
-- `parser`: SQL parse surface for future AST-backed IDE behavior.
+- `parser`: strict SQL parsing with opaque ASTs and normalized statement spans.
 - `rewriter`: query rewrite surface for future pagination/export behavior.
 - `completer`: autocomplete surface.
 - `cursor`: forward-only query result paging over a live database session.
 
-Each concrete engine keeps capability implementations in separate files such as `driver.go`, `inspector.go`, `classifier.go`, `parser.go`, `rewriter.go`, and `cursor.go`. Shared helpers such as the GoSQLX-backed SQL provider live behind those interfaces; engines remain the source of truth for which capabilities they expose.
+Each concrete engine keeps optional capability implementations in separate
+files alongside its driver. PostgreSQL and MySQL implement strict parsing and
+AST classification with Omni. SQLite intentionally implements neither and uses
+the runtime heuristic fallback. Capabilities are derived from the interfaces
+the engine actually implements, so rewriting and completion remain false
+instead of being backed by placeholder methods.
 
 `internal/connection` manages live target database sessions:
 
@@ -790,7 +800,7 @@ Important open gaps:
 - Tamper-evident audit logs.
 - SSO/SCIM identity lifecycle.
 - SSRF-safe cloud deployment model.
-- Strong SQL parser for DQL/DML/DDL classification.
+- SQLite dialect parsing/classification and SQL autocomplete.
 - Distributed cache invalidation.
 - Binding expiry enforcement.
 - Service accounts/API tokens.

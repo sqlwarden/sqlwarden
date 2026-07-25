@@ -20,10 +20,37 @@ import (
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/dbengine"
+	"github.com/sqlwarden/internal/dbengine/classifier"
 	"github.com/sqlwarden/internal/dbengine/cursor"
 	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/pkg/result"
 )
+
+func TestConnectionClassifierFallsBackToHeuristic(t *testing.T) {
+	if _, ok := registeredConnectionClassifier("sqlite"); ok {
+		t.Fatal("sqlite must not advertise a registered classifier")
+	}
+
+	c := connectionClassifier("sqlite")
+	tests := []struct {
+		sql  string
+		want classifier.Kind
+	}{
+		{sql: "SELECT 1", want: classifier.KindDQL},
+		{sql: "UPDATE widgets SET active = false", want: classifier.KindDML},
+		{sql: "DROP TABLE widgets", want: classifier.KindDDL},
+		{sql: "VACUUM", want: classifier.KindUnknown},
+	}
+	for _, test := range tests {
+		got, err := c.Classify(context.Background(), classifier.Request{SQL: test.sql})
+		if err != nil {
+			t.Fatalf("Classify(%q): %v", test.sql, err)
+		}
+		if got.Kind != test.want || got.Source != "heuristic" {
+			t.Errorf("Classify(%q) = %+v, want kind=%q source=heuristic", test.sql, got, test.want)
+		}
+	}
+}
 
 func TestTestConnectionUnknownDriver(t *testing.T) {
 	t.Parallel()

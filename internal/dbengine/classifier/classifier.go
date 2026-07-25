@@ -33,13 +33,15 @@ type Request struct {
 	SQL string
 }
 
-// Result is the classification outcome. A multi-statement script reports the
-// most privileged class found (e.g. a SELECT followed by a DROP is KindDDL).
+// Result is the classification outcome. A multi-statement script reports a
+// mutation class when all mutations have that class. Unknown statements or a
+// mixture of DML and DDL are KindUnknown so callers require broad execute
+// permission.
 type Result struct {
 	Kind   Kind   `json:"kind"`
-	Source string `json:"source,omitempty"` // which classifier produced it: "gosqlx" | "heuristic"
+	Source string `json:"source,omitempty"` // which classifier produced the result
 	// StatementCount is the number of statements found in the input, when the
-	// classifier is able to determine it (gosqlx-backed classifiers only). It
-	// is 0 when unknown, so callers must not treat 0 as "single statement".
+	// classifier is able to determine it. It is 0 when unknown, so callers must
+	// not treat 0 as "single statement".
 	StatementCount int `json:"statement_count,omitempty"`
 }
