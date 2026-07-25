@@ -193,15 +193,25 @@ func (app *application) classifyConnectionSQL(r *http.Request, conn database.Con
 	return connectionClassifier(conn.Driver).Classify(r.Context(), classifier.Request{SQL: sql})
 }
 
+// registeredConnectionClassifier resolves only a classifier implemented by the
+// registered engine. Callers that must prove SQL properties, such as exports,
+// must not fall back to a heuristic.
+func registeredConnectionClassifier(driverName string) (classifier.Classifier, bool) {
+	d, err := dbengine.New(driverName)
+	if err != nil {
+		return nil, false
+	}
+	c, ok := d.(classifier.Classifier)
+	return c, ok
+}
+
 // connectionClassifier resolves a stateless classifier for a connection's
 // driver by type-asserting a fresh (unconnected) driver instance — the same
 // pattern as schema/cursor capabilities — and falls back to the conservative
 // heuristic when the driver does not implement classification.
 func connectionClassifier(driverName string) classifier.Classifier {
-	if d, err := dbengine.New(driverName); err == nil {
-		if c, ok := d.(classifier.Classifier); ok {
-			return c
-		}
+	if c, ok := registeredConnectionClassifier(driverName); ok {
+		return c
 	}
 	return classifier.NewHeuristic()
 }

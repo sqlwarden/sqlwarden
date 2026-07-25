@@ -169,7 +169,12 @@ func (app *application) decodeExportRequest(w http.ResponseWriter, r *http.Reque
 }
 
 func (app *application) validateExportSQL(w http.ResponseWriter, r *http.Request, conn database.Connection, sql string) bool {
-	classification, err := app.classifyConnectionSQL(r, conn, sql)
+	c, ok := registeredConnectionClassifier(conn.Driver)
+	if !ok {
+		app.errorMessage(w, r, http.StatusNotImplemented, "SQL export is unavailable for this driver because reliable SQL classification is not implemented.", nil)
+		return false
+	}
+	classification, err := c.Classify(r.Context(), classifier.Request{SQL: sql})
 	if err != nil {
 		app.serverError(w, r, err)
 		return false
@@ -178,7 +183,7 @@ func (app *application) validateExportSQL(w http.ResponseWriter, r *http.Request
 		app.failedValidation(w, r, fieldErrors(map[string]string{"sql": "Only read queries can be exported."}))
 		return false
 	}
-	if classification.StatementCount > 1 {
+	if classification.StatementCount != 1 {
 		app.failedValidation(w, r, fieldErrors(map[string]string{"sql": "Only a single query can be exported. Multi-query export isn't supported yet."}))
 		return false
 	}
@@ -228,14 +233,18 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 		!app.enforcer.Can(ctx, input.AccountID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnExecute) {
 		return nil, jobs.Permanent("export_not_permitted", "You no longer have permission to export this query.")
 	}
-	classification, err := connectionClassifier(conn.Driver).Classify(ctx, classifier.Request{SQL: input.SQL})
+	c, ok := registeredConnectionClassifier(conn.Driver)
+	if !ok {
+		return nil, jobs.Permanent("export_classifier_unavailable", "SQL export is unavailable for this driver because reliable SQL classification is not implemented.")
+	}
+	classification, err := c.Classify(ctx, classifier.Request{SQL: input.SQL})
 	if err != nil {
 		return nil, err
 	}
 	if classification.Kind != classifier.KindDQL {
 		return nil, jobs.Permanent("export_not_read_query", "Only read queries can be exported.")
 	}
-	if classification.StatementCount > 1 {
+	if classification.StatementCount != 1 {
 		return nil, jobs.Permanent("export_multi_statement", "Only a single query can be exported. Multi-query export isn't supported yet.")
 	}
 
