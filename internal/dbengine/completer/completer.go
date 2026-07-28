@@ -17,13 +17,38 @@ type Completer interface {
 	Complete(ctx context.Context, req Request) (Result, error)
 }
 
+// VocabularyProvider exposes connection-independent lexical completions for a
+// dialect. Vocabulary never contains customer schema metadata.
+type VocabularyProvider interface {
+	CompletionVocabulary() Vocabulary
+}
+
+// CatalogInvalidator is implemented by completers that cache a prepared
+// dialect-native catalog. Connection lifecycle and schema refresh paths call it
+// so stale or compliance-sensitive metadata is not retained.
+type CatalogInvalidator interface {
+	InvalidateCompletionCatalog(connectionID string)
+}
+
 // Request is the editor state to complete: the SQL, the cursor offset into it,
 // and optional schema metadata for name-aware suggestions.
 type Request struct {
-	SQL          string
-	CursorOffset int
-	Catalog      *schema.Catalog
+	SQL            string
+	CursorOffset   int
+	Catalog        *schema.Catalog
+	Objects        []schema.Object
+	ConnectionID   string
+	CatalogVersion string
+	TriggerKind    TriggerKind
+	TriggerChar    string
 }
+
+type TriggerKind string
+
+const (
+	TriggerInvoked   TriggerKind = "invoked"
+	TriggerAutomatic TriggerKind = "automatic"
+)
 
 // Result is the ranked list of suggestions for the cursor position.
 type Result struct {
@@ -34,10 +59,19 @@ type Result struct {
 // the span the editor should replace with InsertText; Score orders candidates.
 type Suggestion struct {
 	Label        string `json:"label"`
+	DisplayLabel string `json:"display_label,omitempty"`
 	Kind         string `json:"kind"`
 	Detail       string `json:"detail,omitempty"`
 	InsertText   string `json:"insert_text,omitempty"`
-	ReplaceStart int    `json:"replace_start,omitempty"`
-	ReplaceEnd   int    `json:"replace_end,omitempty"`
+	ReplaceStart int    `json:"replace_start"`
+	ReplaceEnd   int    `json:"replace_end"`
 	Score        int    `json:"score,omitempty"`
+}
+
+// Vocabulary is immutable for a SQLWarden build. Version is a deterministic
+// content hash so clients can identify identical payloads across engines.
+type Vocabulary struct {
+	Dialect     string       `json:"dialect"`
+	Version     string       `json:"version"`
+	Suggestions []Suggestion `json:"suggestions"`
 }

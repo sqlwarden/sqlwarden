@@ -172,6 +172,7 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 	}
 	published = true
 	app.schemaService.RefreshConnection(strconv.FormatInt(conn.ID, 10))
+	app.completionService.InvalidateConnection(strconv.FormatInt(conn.ID, 10))
 	app.logger.InfoContext(ctx, "schema snapshot published",
 		"connection_id", conn.ID,
 		"dialect", catalog.Dialect,
@@ -204,6 +205,7 @@ func (app *application) disableConnectionSnapshots(ctx context.Context, connecti
 		}
 	}
 	app.schemaService.RefreshConnection(strconv.FormatInt(connectionID, 10))
+	app.completionService.InvalidateConnection(strconv.FormatInt(connectionID, 10))
 	return nil
 }
 
@@ -217,6 +219,7 @@ func (app *application) disableOrganizationSnapshots(ctx context.Context, orgID 
 			return err
 		}
 		app.schemaService.RefreshConnection(strconv.FormatInt(conn.ID, 10))
+		app.completionService.InvalidateConnection(strconv.FormatInt(conn.ID, 10))
 	}
 	if app.schemaSnapshots != nil {
 		return app.schemaSnapshots.PurgeOrganization(ctx, orgID)

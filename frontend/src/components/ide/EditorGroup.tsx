@@ -43,6 +43,9 @@ export function EditorGroup({
     () => tabs.find((t) => t.id === group.activeTabId),
     [tabs, group.activeTabId],
   )
+  const sessionId = useIde((s) =>
+    activeTab?.connectionId === undefined ? undefined : s.sessions[activeTab.connectionId],
+  )
 
   const { isLoading, isError, retry } = useFileContent({
     orgSlug,
@@ -129,6 +132,13 @@ export function EditorGroup({
               doc={doc}
               className="h-full"
               onCursorChange={focused ? onCursorChange : undefined}
+              completion={{
+                orgSlug,
+                workspaceId: workspace.id,
+                connectionId: activeTab.connectionId,
+                driver: activeTab.driver,
+                sessionId,
+              }}
             />
           )
         ) : (

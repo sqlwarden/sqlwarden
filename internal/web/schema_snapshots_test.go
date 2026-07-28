@@ -77,6 +77,12 @@ func TestSchemaSnapshotStorePublishesAndRetainsTwoGenerations(t *testing.T) {
 	}
 	assert.Equal(t, len(objects), 1)
 	assert.Equal(t, objects[0].Ref.Name, "widgets_3")
+	allObjects, err := app.schemaSnapshots.AllObjects(context.Background(), active.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, len(allObjects), 1)
+	assert.Equal(t, allObjects[0].Ref.Name, "widgets_3")
 
 	graph, found, err := app.schemaSnapshots.Relationship(context.Background(), active.ID, "main")
 	if err != nil {

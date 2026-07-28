@@ -407,6 +407,33 @@ func TestRemoveClosesActiveCursorsBeforeDriver(t *testing.T) {
 	}
 }
 
+func TestConnectionEmptyHookRunsOnlyAfterLastSession(t *testing.T) {
+	m := New(5 * time.Minute)
+	defer m.Close()
+	var notified []string
+	m.SetOnConnectionEmpty(func(connectionID string) { notified = append(notified, connectionID) })
+	first, _, err := m.GetOrCreate("alice", "conn1", func() (dbengine.Driver, error) {
+		return &mockDriver{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := m.GetOrCreate("bob", "conn1", func() (dbengine.Driver, error) {
+		return &mockDriver{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Remove(first.ID)
+	if len(notified) != 0 {
+		t.Fatalf("hook ran while another session remained: %v", notified)
+	}
+	m.Remove(second.ID)
+	if len(notified) != 1 || notified[0] != "conn1" {
+		t.Fatalf("hook notifications = %v", notified)
+	}
+}
+
 func TestQueryCursorManagerRemoveClosesSessionCursor(t *testing.T) {
 	md := &mockCursorDriver{}
 	sess := &Session{Conn: md}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/cache"
+	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
@@ -35,23 +36,24 @@ const (
 type App = application
 
 type application struct {
-	config           Config
-	db               *database.DB
-	logger           *slog.Logger
-	mailer           *smtp.Mailer
-	wg               sync.WaitGroup
-	connManager      *connection.Manager
-	queryCursors     *connection.QueryCursorManager
-	schemaService    *schemaapp.Service
-	schemaSnapshots  *schemaapp.SnapshotStore
-	keyring          *encrypt.Keyring
-	enforcer         *access.Enforcer
-	fileStores       *fileStoreRegistry
-	fileLocks        sync.Map
-	fileReaperCancel context.CancelFunc
-	jobStore         *jobs.Store
-	jobRegistry      *jobs.Registry
-	jobRunnerCancel  context.CancelFunc
+	config            Config
+	db                *database.DB
+	logger            *slog.Logger
+	mailer            *smtp.Mailer
+	wg                sync.WaitGroup
+	connManager       *connection.Manager
+	queryCursors      *connection.QueryCursorManager
+	schemaService     *schemaapp.Service
+	schemaSnapshots   *schemaapp.SnapshotStore
+	completionService *completionapp.Service
+	keyring           *encrypt.Keyring
+	enforcer          *access.Enforcer
+	fileStores        *fileStoreRegistry
+	fileLocks         sync.Map
+	fileReaperCancel  context.CancelFunc
+	jobStore          *jobs.Store
+	jobRegistry       *jobs.Registry
+	jobRunnerCancel   context.CancelFunc
 }
 
 type fileStoreRegistry struct {
@@ -163,23 +165,39 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 
 	snapshotStore := schemaapp.NewSnapshotStore(db)
 	app := &application{
-		config:          cfg,
-		db:              db,
-		logger:          logger,
-		mailer:          mailer,
-		connManager:     connection.New(30 * time.Minute),
-		queryCursors:    connection.NewQueryCursorManager(30 * time.Minute),
-		schemaService:   schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
-		schemaSnapshots: snapshotStore,
-		keyring:         keyring,
-		enforcer:        enforcer,
-		fileStores:      fileStores,
-		jobStore:        jobs.NewStore(db),
+		config:            cfg,
+		db:                db,
+		logger:            logger,
+		mailer:            mailer,
+		connManager:       connection.New(30 * time.Minute),
+		queryCursors:      connection.NewQueryCursorManager(30 * time.Minute),
+		schemaService:     schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
+		schemaSnapshots:   snapshotStore,
+		completionService: completionapp.NewService(),
+		keyring:           keyring,
+		enforcer:          enforcer,
+		fileStores:        fileStores,
+		jobStore:          jobs.NewStore(db),
 	}
+	app.configureConnectionCacheInvalidation()
 	app.jobRegistry = app.defaultJobRegistry()
 	app.startJobRunner()
 	app.startFileContentDeletionReaper()
 	return app, nil
+}
+
+func (app *application) configureConnectionCacheInvalidation() {
+	if app.connManager == nil {
+		return
+	}
+	app.connManager.SetOnConnectionEmpty(func(connectionID string) {
+		if app.schemaService != nil {
+			app.schemaService.RefreshConnection(connectionID)
+		}
+		if app.completionService != nil {
+			app.completionService.InvalidateConnection(connectionID)
+		}
+	})
 }
 
 func (app *application) Handler() http.Handler {
