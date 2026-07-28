@@ -16,6 +16,7 @@ func TestMySQLEngineContract(t *testing.T) {
 	for _, capability := range []dbengine.Capability{
 		dbengine.CapabilitySQLParse,
 		dbengine.CapabilitySQLClassify,
+		dbengine.CapabilitySQLComplete,
 	} {
 		if !set.Capabilities[capability] {
 			t.Errorf("%s must be true", capability)
@@ -23,7 +24,6 @@ func TestMySQLEngineContract(t *testing.T) {
 	}
 	for _, capability := range []dbengine.Capability{
 		dbengine.CapabilitySQLRewrite,
-		dbengine.CapabilitySQLComplete,
 	} {
 		if set.Capabilities[capability] {
 			t.Errorf("%s must remain false", capability)

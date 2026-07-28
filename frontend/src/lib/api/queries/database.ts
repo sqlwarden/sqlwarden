@@ -34,6 +34,72 @@ function schemaRequestOptions(sessionId?: string) {
   return sessionId ? { headers: { 'X-Warden-Session': sessionId } } : undefined
 }
 
+export type SQLCompletionSuggestion = {
+  label: string
+  display_label?: string
+  kind: string
+  detail?: string
+  insert_text?: string
+  replace_start: number
+  replace_end: number
+  score?: number
+}
+
+export type SQLCompletionVocabulary = {
+  dialect: string
+  version: string
+  suggestions: SQLCompletionSuggestion[]
+}
+
+export type SQLCompletionResponse = {
+  suggestions: SQLCompletionSuggestion[]
+  mode: 'persistent' | 'ephemeral'
+  metadata_available: boolean
+  metadata_status: string
+  snapshot_id?: string
+}
+
+export function completeConnectionSQL(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sql: string,
+  cursorOffset: number,
+  sessionId: string | undefined,
+  signal: AbortSignal,
+  triggerKind: 'invoked' | 'automatic' = 'invoked',
+  triggerCharacter?: string,
+) {
+  return api.post<SQLCompletionResponse>(
+    `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/completion`,
+    {
+      sql,
+      cursor_offset: cursorOffset,
+      trigger_kind: triggerKind,
+      ...(triggerCharacter ? { trigger_character: triggerCharacter } : {}),
+    },
+    {
+      signal,
+      ...(sessionId ? { headers: { 'X-Warden-Session': sessionId } } : {}),
+    },
+  )
+}
+
+export function getSQLCompletionVocabulary(driver: string, signal?: AbortSignal) {
+  const normalized =
+    driver === 'postgresql'
+      ? 'postgres'
+      : driver === 'mariadb'
+        ? 'mysql'
+        : driver === 'sqlite3'
+          ? 'sqlite'
+          : driver
+  return api.get<SQLCompletionVocabulary>(
+    `/api/v1/engines/${normalized}/completion-vocabulary`,
+    signal ? { signal } : undefined,
+  )
+}
+
 export function orgConnectionCatalogQueryOptions(
   slug: string,
   workspaceId: string | number,

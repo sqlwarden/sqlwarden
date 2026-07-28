@@ -380,6 +380,7 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 	}
 	if input.Ref != nil {
 		app.schemaService.RefreshObject(session.ConnectionID, *input.Ref)
+		app.completionService.InvalidateConnection(session.ConnectionID)
 		app.logInfo(r, "schema object cache refresh requested",
 			slog.String("session_id", session.ID),
 			slog.String("connection_id", session.ConnectionID),
@@ -389,6 +390,7 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 		)
 	} else {
 		app.schemaService.RefreshConnection(session.ConnectionID)
+		app.completionService.InvalidateConnection(session.ConnectionID)
 		app.logInfo(r, "schema connection cache refresh requested",
 			slog.String("session_id", session.ID),
 			slog.String("connection_id", session.ConnectionID),

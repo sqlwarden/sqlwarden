@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { EditorView } from '@codemirror/view'
 import { EditorState, Compartment } from '@codemirror/state'
 import type { Extension } from '@codemirror/state'
-import { sql } from '@codemirror/lang-sql'
 import { yCollab } from 'y-codemirror.next'
 import type * as Y from 'yjs'
 import { cn } from '#/lib/utils'
@@ -16,6 +15,8 @@ import { findPanelHost, type FindPanelHost } from './findPanelBridge'
 import { FindPanel } from './FindPanel'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { useIde } from './useIdeStore'
+import { sqlCompletionExtension, type SQLCompletionConfig } from './sqlCompletion'
+import { useIconPack } from '#/lib/icons'
 
 function makeBaseTheme(fontFamily: string, fontSize: number): Extension {
   return EditorView.theme({
@@ -29,7 +30,7 @@ function makeBaseTheme(fontFamily: string, fontSize: number): Extension {
     '.cm-content': { padding: '8px 0' },
     '.cm-lineNumbers .cm-gutterElement': { minWidth: '3.5ch', textAlign: 'right' },
     '.cm-foldGutter': { display: 'none' },
-    '.cm-tooltip': { borderRadius: '0' },
+    '.cm-tooltip:not(.cm-tooltip-autocomplete)': { borderRadius: '0' },
   })
 }
 
@@ -43,9 +44,17 @@ type SqlEditorProps = {
   doc: Y.Doc
   className?: string
   onCursorChange?: (line: number, col: number, selSize: number) => void
+  completion?: SQLCompletionConfig
 }
 
-export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: SqlEditorProps) {
+export function SqlEditor({
+  tabId,
+  groupId,
+  doc,
+  className,
+  onCursorChange,
+  completion,
+}: SqlEditorProps) {
   const viewKey = groupId ? `${groupId}:${tabId}` : tabId
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRegistry = useEditorViewRegistry()
@@ -56,6 +65,7 @@ export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: Sq
   const { editorThemeDark, editorThemeLight } = useEditorTheme()
   const activeThemeName = resolvedTheme === 'dark' ? editorThemeDark : editorThemeLight
   const { editorFont, editorFontSize } = useEditorFont()
+  const { iconMap } = useIconPack()
   const initialAppearance = useRef({
     fontFamily: editorFont.fontFamily,
     fontSize: editorFontSize,
@@ -64,6 +74,26 @@ export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: Sq
 
   const themeCompartment = useRef(new Compartment())
   const fontCompartment = useRef(new Compartment())
+  const completionCompartment = useRef(new Compartment())
+  const completionConfig = useMemo(
+    () => ({
+      orgSlug: completion?.orgSlug,
+      workspaceId: completion?.workspaceId,
+      connectionId: completion?.connectionId,
+      driver: completion?.driver,
+      sessionId: completion?.sessionId,
+      iconMap,
+    }),
+    [
+      completion?.orgSlug,
+      completion?.workspaceId,
+      completion?.connectionId,
+      completion?.driver,
+      completion?.sessionId,
+      iconMap,
+    ],
+  )
+  const initialCompletionConfig = useRef(completionConfig)
   const viewRef = useRef<EditorView | null>(null)
   const [findHost, setFindHost] = useState<FindPanelHost | null>(null)
 
@@ -78,7 +108,7 @@ export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: Sq
         doc: yText.toString(),
         extensions: [
           sqlwardenBasicSetup,
-          sql(),
+          completionCompartment.current.of(sqlCompletionExtension(initialCompletionConfig.current)),
           fontCompartment.current.of(
             makeBaseTheme(initialAppearance.current.fontFamily, initialAppearance.current.fontSize),
           ),
@@ -112,6 +142,13 @@ export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: Sq
       view.destroy()
     }
   }, [doc, viewKey, viewRegistry])
+
+  useEffect(() => {
+    if (!viewRef.current) return
+    viewRef.current.dispatch({
+      effects: completionCompartment.current.reconfigure(sqlCompletionExtension(completionConfig)),
+    })
+  }, [completionConfig])
 
   // Grab keyboard focus when this pane is the target of a split, so the new
   // split is ready to type in. requestAnimationFrame waits for layout.

@@ -241,6 +241,27 @@ func (s *SnapshotStore) Objects(ctx context.Context, snapshotID string, refs []s
 	return out, nil
 }
 
+// AllObjects returns every object in an immutable snapshot in stable order.
+// Completion uses this bulk path to prepare a dialect-native catalog once.
+func (s *SnapshotStore) AllObjects(ctx context.Context, snapshotID string) ([]schemameta.Object, error) {
+	var rows []snapshotObject
+	if err := s.db.NewSelect().Model(&rows).
+		Where("snapshot_id = ?", snapshotID).
+		OrderExpr("namespace ASC, kind ASC, name ASC").
+		Scan(ctx); err != nil {
+		return nil, err
+	}
+	objects := make([]schemameta.Object, 0, len(rows))
+	for _, row := range rows {
+		var object schemameta.Object
+		if err := decodeSnapshotValue(row.ObjectData, &object); err != nil {
+			return nil, err
+		}
+		objects = append(objects, object)
+	}
+	return objects, nil
+}
+
 func (s *SnapshotStore) Relationship(ctx context.Context, snapshotID, namespace string) (*schemameta.RelationshipGraph, bool, error) {
 	var row snapshotRelationship
 	err := s.db.NewSelect().Model(&row).

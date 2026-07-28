@@ -1,10 +1,12 @@
 package web
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/response"
 )
@@ -67,6 +69,26 @@ func (app *application) getEngine(w http.ResponseWriter, r *http.Request) {
 		slog.Int("capability_count", len(set.Capabilities)),
 	)
 	if err := response.JSON(w, http.StatusOK, engineToView(set)); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) getEngineCompletionVocabulary(w http.ResponseWriter, r *http.Request) {
+	engineID := chi.URLParam(r, "engine_id")
+	if _, ok := dbengine.Describe(engineID); !ok {
+		app.errorMessage(w, r, http.StatusNotFound, "Unknown engine.", nil)
+		return
+	}
+	vocabulary, err := app.completionService.Vocabulary(engineID)
+	if errors.Is(err, completionapp.ErrUnsupported) {
+		app.errorMessage(w, r, http.StatusNotImplemented, "This engine does not provide a completion vocabulary.", nil)
+		return
+	}
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, vocabulary); err != nil {
 		app.serverError(w, r, err)
 	}
 }

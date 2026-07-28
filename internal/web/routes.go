@@ -66,6 +66,7 @@ func (app *application) routes() http.Handler {
 
 			r.Get("/engines", app.listEngines)
 			r.Get("/engines/{engine_id}", app.getEngine)
+			r.Get("/engines/{engine_id}/completion-vocabulary", app.getEngineCompletionVocabulary)
 		})
 
 		r.Route("/me", func(r chi.Router) {
@@ -123,6 +124,7 @@ func (app *application) routes() http.Handler {
 									r.Post("/query-cursors/{query_cursor_id}/fetch", app.fetchQueryCursor)
 									r.Delete("/query-cursors/{query_cursor_id}", app.closeQueryCursor)
 									r.Post("/query", app.executeQuery)
+									r.Post("/completion", app.completeConnectionSQL)
 									r.Post("/exports", app.createConnectionExport)
 									r.Post("/exports/download", app.downloadConnectionExport)
 									r.Get("/schema/spec", app.getConnectionSchemaSpec)
@@ -151,6 +153,7 @@ func (app *application) routes() http.Handler {
 							r.Post("/query-cursors/{query_cursor_id}/fetch", app.fetchQueryCursor)
 							r.Delete("/query-cursors/{query_cursor_id}", app.closeQueryCursor)
 							r.Post("/query", app.executeQuery)
+							r.Post("/completion", app.completeConnectionSQL)
 							r.Post("/exports", app.createConnectionExport)
 							r.Post("/exports/download", app.downloadConnectionExport)
 							r.Get("/schema/spec", app.getConnectionSchemaSpec)
@@ -310,6 +313,7 @@ func (app *application) routes() http.Handler {
 									r.Post("/query-cursors/{query_cursor_id}/fetch", app.fetchQueryCursor)
 									r.Delete("/query-cursors/{query_cursor_id}", app.closeQueryCursor)
 									r.Post("/query", app.executeQuery)
+									r.Post("/completion", app.completeConnectionSQL)
 									r.Post("/exports", app.createConnectionExport)
 									r.Post("/exports/download", app.downloadConnectionExport)
 									r.Get("/schema/spec", app.getConnectionSchemaSpec)
@@ -338,6 +342,7 @@ func (app *application) routes() http.Handler {
 							r.Post("/query-cursors/{query_cursor_id}/fetch", app.fetchQueryCursor)
 							r.Delete("/query-cursors/{query_cursor_id}", app.closeQueryCursor)
 							r.Post("/query", app.executeQuery)
+							r.Post("/completion", app.completeConnectionSQL)
 							r.Post("/exports", app.createConnectionExport)
 							r.Post("/exports/download", app.downloadConnectionExport)
 							r.Get("/schema/spec", app.getConnectionSchemaSpec)
