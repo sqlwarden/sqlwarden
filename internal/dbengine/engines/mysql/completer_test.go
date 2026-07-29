@@ -22,8 +22,9 @@ func TestMySQLCompleteKeywordsAndSchema(t *testing.T) {
 	objects := mysqlCompletionTestObjects()
 	sql := "SELECT  FROM users"
 	result, err := driver.Complete(context.Background(), completer.Request{
-		SQL: sql, CursorOffset: len("SELECT "), Catalog: catalog, Objects: objects,
-		ConnectionID: "8", CatalogVersion: "snapshot-1",
+		SQL: sql, CursorOffset: len("SELECT "),
+		Schema:       &schema.MetadataSet{Catalog: catalog, Objects: objects, Version: "snapshot-1"},
+		ConnectionID: "8",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +33,8 @@ func TestMySQLCompleteKeywordsAndSchema(t *testing.T) {
 
 	fromSQL := "SELECT * FROM "
 	result, err = driver.Complete(context.Background(), completer.Request{
-		SQL: fromSQL, CursorOffset: len(fromSQL), Catalog: catalog, Objects: objects,
+		SQL: fromSQL, CursorOffset: len(fromSQL),
+		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -59,6 +61,9 @@ func TestMySQLCompletionQuotesReservedIdentifier(t *testing.T) {
 	if got := mysqlQuoteCompletionIdentifier("order"); got != "`order`" {
 		t.Fatalf("reserved identifier insertion = %q", got)
 	}
+	if got := mysqlQuoteCompletionIdentifier("item"); got != "item" {
+		t.Fatalf("safe identifier insertion = %q", got)
+	}
 }
 
 func TestMySQLCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
@@ -82,7 +87,8 @@ func TestMySQLCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 
 	qualifiedSQL := "SELECT * FROM inventory i JOIN store s ON i.id = s.id WHERE s."
 	qualified, err := driver.Complete(context.Background(), completer.Request{
-		SQL: qualifiedSQL, CursorOffset: len(qualifiedSQL), Catalog: catalog, Objects: objects,
+		SQL: qualifiedSQL, CursorOffset: len(qualifiedSQL),
+		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +98,8 @@ func TestMySQLCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 
 	unqualifiedSQL := "SELECT * FROM inventory i JOIN store s ON i.id = s.id WHERE "
 	unqualified, err := driver.Complete(context.Background(), completer.Request{
-		SQL: unqualifiedSQL, CursorOffset: len(unqualifiedSQL), Catalog: catalog, Objects: objects,
+		SQL: unqualifiedSQL, CursorOffset: len(unqualifiedSQL),
+		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -124,8 +131,10 @@ func TestMySQLCompleteUsesFinalAliasAfterEarlierQualifiedColumn(t *testing.T) {
 
 	sql := "select * from film f\njoin film_actor fa\nwhere f.`description` = fa."
 	result, err := driver.Complete(context.Background(), completer.Request{
-		SQL: sql, CursorOffset: len(sql), Catalog: catalog, Objects: objects,
-		TriggerKind: completer.TriggerAutomatic, TriggerChar: ".",
+		SQL: sql, CursorOffset: len(sql),
+		Schema:      &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		TriggerKind: completer.TriggerAutomatic,
+		TriggerChar: ".",
 	})
 	if err != nil {
 		t.Fatal(err)

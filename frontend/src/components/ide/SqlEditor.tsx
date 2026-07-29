@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { toast } from 'sonner'
 import { EditorView } from '@codemirror/view'
 import { EditorState, Compartment } from '@codemirror/state'
 import type { Extension } from '@codemirror/state'
@@ -66,6 +67,12 @@ export function SqlEditor({
   const activeThemeName = resolvedTheme === 'dark' ? editorThemeDark : editorThemeLight
   const { editorFont, editorFontSize } = useEditorFont()
   const { iconMap } = useIconPack()
+  const notifyConnectionRequired = useCallback(() => {
+    toast.info('Select a connection for schema-aware autocomplete.', {
+      id: 'sql-completion-connection-required',
+      description: 'SQL keywords are still available without a connection.',
+    })
+  }, [])
   const initialAppearance = useRef({
     fontFamily: editorFont.fontFamily,
     fontSize: editorFontSize,
@@ -83,6 +90,7 @@ export function SqlEditor({
       driver: completion?.driver,
       sessionId: completion?.sessionId,
       iconMap,
+      onConnectionRequired: completion?.onConnectionRequired ?? notifyConnectionRequired,
     }),
     [
       completion?.orgSlug,
@@ -90,7 +98,9 @@ export function SqlEditor({
       completion?.connectionId,
       completion?.driver,
       completion?.sessionId,
+      completion?.onConnectionRequired,
       iconMap,
+      notifyConnectionRequired,
     ],
   )
   const initialCompletionConfig = useRef(completionConfig)

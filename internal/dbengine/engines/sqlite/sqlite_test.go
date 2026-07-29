@@ -396,7 +396,7 @@ func catalogHasRef(catalog *schema.Catalog, ref schema.ObjectRef) bool {
 	return false
 }
 
-func hasIndex(indexes []schema.Index, name, column string) bool {
+func hasIndex(indexes []schema.SecondaryIndex, name, column string) bool {
 	for _, ix := range indexes {
 		if ix.Name == name && slices.Contains(ix.Columns, column) {
 			return true

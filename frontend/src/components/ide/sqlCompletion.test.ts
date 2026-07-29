@@ -140,6 +140,98 @@ describe('SQL completion', () => {
     parent.remove()
   })
 
+  it('indents with Tab when no completion is active instead of moving browser focus', () => {
+    const parent = document.createElement('div')
+    document.body.append(parent)
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc: 'SELECT 1',
+        selection: { anchor: 8 },
+        extensions: [sqlCompletionExtension({})],
+      }),
+    })
+    const event = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      code: 'Tab',
+      bubbles: true,
+      cancelable: true,
+    })
+    Object.defineProperty(event, 'keyCode', { value: 9 })
+
+    view.contentDOM.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(view.state.doc.toString()).toMatch(/^\s+SELECT 1$/)
+
+    view.destroy()
+    parent.remove()
+  })
+
+  it('shows connection guidance and local SQL keywords on explicit completion without a connection', async () => {
+    const onConnectionRequired = vi.fn()
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const parent = document.createElement('div')
+    document.body.append(parent)
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc: 'SEL',
+        selection: { anchor: 3 },
+        extensions: [sqlCompletionExtension({ onConnectionRequired })],
+      }),
+    })
+    view.focus()
+    startCompletion(view)
+    await vi.waitFor(() => {
+      expect(onConnectionRequired).toHaveBeenCalledOnce()
+      const labels = [...parent.querySelectorAll('.cm-completionLabel')].map(
+        (element) => element.textContent,
+      )
+      expect(labels).toContain('SELECT')
+    })
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    view.destroy()
+    parent.remove()
+  })
+
+  it('preserves MySQL server insertion text for safe and quoted identifiers', async () => {
+    const insertions = [
+      { label: 'item', insert_text: 'item' },
+      { label: 'order', insert_text: '`order`' },
+    ]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).includes('completion-vocabulary')
+          ? vocabularyResponse()
+          : semanticCompletionResponse(
+              insertions.map(({ label, insert_text }) => ({
+                label,
+                kind: 'column',
+                insert_text,
+                replace_start: 7,
+                replace_end: 7,
+                score: 100,
+              })),
+            ),
+      ),
+    )
+    const state = EditorState.create({ doc: 'SELECT ' })
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'mysql',
+    })
+
+    const result = await source(new CompletionContext(state, state.doc.length, true))
+
+    expect(result?.options.find((option) => option.label === 'item')?.apply).toBe('item')
+    expect(result?.options.find((option) => option.label === 'order')?.apply).toBe('`order`')
+  })
+
   it('falls back to local keywords when the request fails', async () => {
     vi.stubGlobal(
       'fetch',

@@ -22,8 +22,9 @@ func TestPostgresCompleteKeywordsAndSchema(t *testing.T) {
 	objects := completionTestObjects("public")
 	sql := "SELECT  FROM public.users"
 	result, err := driver.Complete(context.Background(), completer.Request{
-		SQL: sql, CursorOffset: len("SELECT "), Catalog: catalog, Objects: objects,
-		ConnectionID: "7", CatalogVersion: "snapshot-1",
+		SQL: sql, CursorOffset: len("SELECT "),
+		Schema:       &schema.MetadataSet{Catalog: catalog, Objects: objects, Version: "snapshot-1"},
+		ConnectionID: "7",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +33,8 @@ func TestPostgresCompleteKeywordsAndSchema(t *testing.T) {
 
 	fromSQL := "SELECT * FROM "
 	result, err = driver.Complete(context.Background(), completer.Request{
-		SQL: fromSQL, CursorOffset: len(fromSQL), Catalog: catalog, Objects: objects,
+		SQL: fromSQL, CursorOffset: len(fromSQL),
+		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +63,24 @@ func TestPostgresCompletionQuotesReservedIdentifier(t *testing.T) {
 	}
 }
 
+func TestPostgresCompletionDefaultSchema(t *testing.T) {
+	catalog := &schema.Catalog{
+		DefaultNamespace: "tenant",
+		Namespaces:       []schema.NamespaceCatalog{{Name: "public"}, {Name: "tenant"}},
+	}
+	if got := postgresCompletionDefaultSchema(catalog); got != "tenant" {
+		t.Fatalf("default schema = %q", got)
+	}
+	catalog.DefaultNamespace = ""
+	if got := postgresCompletionDefaultSchema(catalog); got != "public" {
+		t.Fatalf("public fallback = %q", got)
+	}
+	catalog.Namespaces = []schema.NamespaceCatalog{{Name: "only_schema"}}
+	if got := postgresCompletionDefaultSchema(catalog); got != "only_schema" {
+		t.Fatalf("single-schema fallback = %q", got)
+	}
+}
+
 func TestPostgresCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 	driver := &postgresDriver{}
 	catalog := completionTestCatalog("postgres", "public")
@@ -82,7 +102,8 @@ func TestPostgresCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) 
 
 	qualifiedSQL := "SELECT * FROM inventory i JOIN store s ON i.id = s.id WHERE s."
 	qualified, err := driver.Complete(context.Background(), completer.Request{
-		SQL: qualifiedSQL, CursorOffset: len(qualifiedSQL), Catalog: catalog, Objects: objects,
+		SQL: qualifiedSQL, CursorOffset: len(qualifiedSQL),
+		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +113,8 @@ func TestPostgresCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) 
 
 	unqualifiedSQL := "SELECT * FROM inventory i JOIN store s ON i.id = s.id WHERE "
 	unqualified, err := driver.Complete(context.Background(), completer.Request{
-		SQL: unqualifiedSQL, CursorOffset: len(unqualifiedSQL), Catalog: catalog, Objects: objects,
+		SQL: unqualifiedSQL, CursorOffset: len(unqualifiedSQL),
+		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -126,8 +148,10 @@ func TestPostgresCompleteUsesFinalAliasAfterEarlierQualifiedColumn(t *testing.T)
 
 	sql := "select * from film f\njoin film_actor fa\nwhere f.\"description\" = fa."
 	result, err := driver.Complete(context.Background(), completer.Request{
-		SQL: sql, CursorOffset: len(sql), Catalog: catalog, Objects: objects,
-		TriggerKind: completer.TriggerAutomatic, TriggerChar: ".",
+		SQL: sql, CursorOffset: len(sql),
+		Schema:      &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		TriggerKind: completer.TriggerAutomatic,
+		TriggerChar: ".",
 	})
 	if err != nil {
 		t.Fatal(err)

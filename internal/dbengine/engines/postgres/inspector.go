@@ -77,10 +77,13 @@ ORDER BY sequence_schema, sequence_name`
 	}
 
 	var dbName string
-	if err := d.db.QueryRowContext(ctx, `SELECT current_database()`).Scan(&dbName); err != nil {
-		return nil, fmt.Errorf("postgres: catalog database name: %w", err)
+	var defaultNamespace sql.NullString
+	if err := d.db.QueryRowContext(ctx, `SELECT current_database(), current_schema()`).Scan(&dbName, &defaultNamespace); err != nil {
+		return nil, fmt.Errorf("postgres: catalog database context: %w", err)
 	}
-	return b.Build("", "postgres", dbName), nil
+	catalog := b.Build("", "postgres", dbName)
+	catalog.DefaultNamespace = defaultNamespace.String
+	return catalog, nil
 }
 
 // queryRefs runs a 2- or 3-column query (schema, name[, type]) and calls fn per
@@ -297,7 +300,7 @@ ORDER BY ns.nspname, t.relname, i.relname, g.n`
 		return nil, fmt.Errorf("postgres: object indexes: %w", err)
 	}
 	type idxKey struct{ ns, tbl, name string }
-	indexes := map[idxKey]*schema.Index{}
+	indexes := map[idxKey]*schema.SecondaryIndex{}
 	var indexOrder []idxKey
 	for irows.Next() {
 		var ns, tbl, name, def, col string
@@ -309,7 +312,7 @@ ORDER BY ns.nspname, t.relname, i.relname, g.n`
 		key := idxKey{ns: ns, tbl: tbl, name: name}
 		ix, ok := indexes[key]
 		if !ok {
-			ix = &schema.Index{Name: name, Unique: unique, Attributes: map[string]any{"definition": def}}
+			ix = &schema.SecondaryIndex{Name: name, Unique: unique, Attributes: map[string]any{"definition": def}}
 			indexes[key] = ix
 			indexOrder = append(indexOrder, key)
 		}

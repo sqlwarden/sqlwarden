@@ -29,10 +29,10 @@ type Object struct {
 // RelationalDetail is the typed structure of a relational object (table or
 // view): its columns, primary key, foreign keys, and indexes.
 type RelationalDetail struct {
-	Columns     []Column     `json:"columns"`
-	PrimaryKey  []string     `json:"primary_key,omitempty"`
-	ForeignKeys []ForeignKey `json:"foreign_keys,omitempty"`
-	Indexes     []Index      `json:"indexes,omitempty"`
+	Columns     []Column         `json:"columns"`
+	PrimaryKey  []string         `json:"primary_key,omitempty"`
+	ForeignKeys []ForeignKey     `json:"foreign_keys,omitempty"`
+	Indexes     []SecondaryIndex `json:"indexes,omitempty"`
 }
 
 // Column is one column of a relational object. Ordinal is its position; engine-
@@ -57,8 +57,9 @@ type ForeignKey struct {
 	Attributes        map[string]any `json:"attributes,omitempty"`
 }
 
-// Index is a secondary index on a relational object.
-type Index struct {
+// SecondaryIndex is a database index on a relational object. The explicit
+// name distinguishes it from Index, the prepared schema metadata lookup.
+type SecondaryIndex struct {
 	Name       string         `json:"name"`
 	Columns    []string       `json:"columns"`
 	Unique     bool           `json:"unique"`

@@ -542,7 +542,7 @@ func TestPostgresIndexColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)
 	}
-	var found *schema.Index
+	var found *schema.SecondaryIndex
 	for i := range objs[0].Relational.Indexes {
 		if objs[0].Relational.Indexes[i].Name == "idx_cols_ab" {
 			found = &objs[0].Relational.Indexes[i]
