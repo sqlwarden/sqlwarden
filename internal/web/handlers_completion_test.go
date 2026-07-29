@@ -99,6 +99,31 @@ func TestCompleteConnectionSQLKeywordOnlyWithoutEphemeralSession(t *testing.T) {
 	}
 }
 
+func TestCompleteConnectionSQLFromEphemeralSessionMetadata(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-ephemeral-ready"), "Completion", "Completion Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Completion WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Completion DB", "open")
+	session := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
+
+	sql := "SELECT * FROM wid"
+	req := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/completion",
+		map[string]any{"sql": sql, "cursor_offset": len(sql)}, token)
+	req.Header.Set("X-Warden-Session", session.ID)
+	res := send(t, req, app.routes())
+
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["mode"], "ephemeral")
+	assert.Equal(t, res.BodyFields["metadata_available"], true)
+	assert.Equal(t, res.BodyFields["metadata_status"], "ready")
+	if !responseHasCompletionLabel(res.BodyFields, "widgets") {
+		t.Fatalf("expected widgets completion from ephemeral metadata, got %s", res.BodyBytes)
+	}
+}
+
 func TestCompleteConnectionSQLRejectsInvalidOffsetsAndUnsupportedSQLite(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

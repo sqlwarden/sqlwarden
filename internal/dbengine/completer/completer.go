@@ -23,9 +23,9 @@ type VocabularyProvider interface {
 	CompletionVocabulary() Vocabulary
 }
 
-// CatalogInvalidator is implemented by completers that cache a prepared
-// dialect-native catalog. Connection lifecycle and schema refresh paths call it
-// so stale or compliance-sensitive metadata is not retained.
+// CatalogInvalidator is implemented by completers that cache prepared native
+// catalogs or schema indexes. Connection lifecycle and schema refresh paths
+// call it so stale or compliance-sensitive metadata is not retained.
 type CatalogInvalidator interface {
 	InvalidateCompletionCatalog(connectionID string)
 }
@@ -33,14 +33,12 @@ type CatalogInvalidator interface {
 // Request is the editor state to complete: the SQL, the cursor offset into it,
 // and optional schema metadata for name-aware suggestions.
 type Request struct {
-	SQL            string
-	CursorOffset   int
-	Catalog        *schema.Catalog
-	Objects        []schema.Object
-	ConnectionID   string
-	CatalogVersion string
-	TriggerKind    TriggerKind
-	TriggerChar    string
+	SQL          string
+	CursorOffset int
+	Schema       *schema.MetadataSet
+	ConnectionID string
+	TriggerKind  TriggerKind
+	TriggerChar  string
 }
 
 type TriggerKind string

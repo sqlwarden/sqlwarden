@@ -286,7 +286,7 @@ ORDER BY table_schema, table_name, index_name, seq_in_index`
 		return nil, fmt.Errorf("mysql: object indexes: %w", err)
 	}
 	type idxKey struct{ ns, tbl, name string }
-	indexes := map[idxKey]*schema.Index{}
+	indexes := map[idxKey]*schema.SecondaryIndex{}
 	var indexOrder []idxKey
 	for irows.Next() {
 		var ns, tbl, name, col string
@@ -299,7 +299,7 @@ ORDER BY table_schema, table_name, index_name, seq_in_index`
 		key := idxKey{ns: ns, tbl: tbl, name: name}
 		ix, ok := indexes[key]
 		if !ok {
-			ix = &schema.Index{Name: name, Unique: nonUnique == 0}
+			ix = &schema.SecondaryIndex{Name: name, Unique: nonUnique == 0}
 			indexes[key] = ix
 			indexOrder = append(indexOrder, key)
 		}

@@ -232,7 +232,7 @@ func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.Rel
 	if err != nil {
 		return fmt.Errorf("sqlite: object indexes: %w", err)
 	}
-	var indexes []schema.Index
+	var indexes []schema.SecondaryIndex
 	for idxRows.Next() {
 		var seq, partial int
 		var name, origin string
@@ -241,7 +241,7 @@ func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.Rel
 			idxRows.Close()
 			return fmt.Errorf("sqlite: object index scan: %w", err)
 		}
-		indexes = append(indexes, schema.Index{Name: name, Unique: unique == 1})
+		indexes = append(indexes, schema.SecondaryIndex{Name: name, Unique: unique == 1})
 	}
 	if err := idxRows.Err(); err != nil {
 		idxRows.Close()

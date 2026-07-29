@@ -137,7 +137,7 @@ func (b *RelationalBuilder) AddForeignKeyColumn(ref schema.ObjectRef, fkName, co
 }
 
 // AddIndex appends an index to the object's relational facet.
-func (b *RelationalBuilder) AddIndex(ref schema.ObjectRef, ix schema.Index) {
+func (b *RelationalBuilder) AddIndex(ref schema.ObjectRef, ix schema.SecondaryIndex) {
 	o := b.object(ref)
 	o.Relational.Indexes = append(o.Relational.Indexes, ix)
 }

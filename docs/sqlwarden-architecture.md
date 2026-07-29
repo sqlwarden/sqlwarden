@@ -588,6 +588,22 @@ the runtime heuristic fallback. Capabilities are derived from the interfaces
 the engine actually implements, so rewriting and completion remain false
 instead of being backed by placeholder methods.
 
+PostgreSQL and MySQL completion use the SQLWarden-owned
+`internal/dbengine/completioncore` boundary, adapted from Bytebase's
+MIT-licensed completion design. Omni supplies grammar candidates and
+PostgreSQL parser-native scope snapshots. Until Omni exposes the equivalent
+MySQL scope API, the MySQL adapter owns its isolated reference collector.
+Both dialects resolve semantic candidates through the reusable immutable
+`schema.Index`, adapted by completioncore's `SchemaResolver`; no completer
+opens or queries a live connection. `schema.MetadataSet` keeps a lightweight
+catalog, independently inspected object details, optional relationship graphs,
+and their version together without conflating their storage tiers. The same
+index provides object and FK adjacency lookups for schema-graph consumers such
+as ER diagrams. Engine adapters map completion candidates into the stable
+`completer.Suggestion` API and cache prepared Omni catalogs and schema indexes
+by connection and metadata version. This boundary allows more resolution to
+move into Omni later without changing schema storage or the editor protocol.
+
 `internal/connection` manages live target database sessions:
 
 - Sessions are keyed by account and connection.

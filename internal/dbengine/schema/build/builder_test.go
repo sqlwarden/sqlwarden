@@ -37,7 +37,7 @@ func TestRelationalBuilderQualifiedFK(t *testing.T) {
 	b.AddPrimaryKeyColumn(users, "id")
 	b.AddForeignKeyColumn(users, "users_org_fkey", "org_id",
 		schema.ObjectRef{Namespace: "billing", Kind: "table", Name: "orgs"}, "id")
-	b.AddIndex(users, schema.Index{Name: "users_pkey", Unique: true})
+	b.AddIndex(users, schema.SecondaryIndex{Name: "users_pkey", Unique: true})
 
 	objs := b.Build()
 	if len(objs) != 1 {

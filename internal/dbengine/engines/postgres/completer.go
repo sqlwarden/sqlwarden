@@ -9,10 +9,11 @@ import (
 	"sync"
 
 	pgcatalog "github.com/bytebase/omni/pg/catalog"
-	pgcompletion "github.com/bytebase/omni/pg/completion"
 	pgparser "github.com/bytebase/omni/pg/parser"
 
 	"github.com/sqlwarden/internal/dbengine/completer"
+	"github.com/sqlwarden/internal/dbengine/completioncore"
+	corepostgres "github.com/sqlwarden/internal/dbengine/completioncore/postgres"
 	"github.com/sqlwarden/internal/dbengine/schema"
 )
 
@@ -23,6 +24,7 @@ var (
 	_                               completer.CatalogInvalidator = (*postgresDriver)(nil)
 	_                               completer.VocabularyProvider = (*postgresDriver)(nil)
 	pgCompletionCatalogCache                                     = completer.NewPreparedCache[*pgcatalog.Catalog](preparedCompletionCatalogs)
+	pgSchemaIndexCache                                           = completer.NewPreparedCache[*schema.Index](preparedCompletionCatalogs)
 	pgVocabularyOnce                sync.Once
 	pgVocabulary                    completer.Vocabulary
 	pgSafeType                      = regexp.MustCompile(`^[A-Za-z0-9_ ."(),\[\]]+$`)
@@ -54,32 +56,46 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 	}
 
 	var catalog *pgcatalog.Catalog
-	if req.Catalog != nil {
-		key := completionCatalogKey(req.ConnectionID, req.CatalogVersion)
+	var metadata completioncore.MetadataResolver
+	if req.Schema != nil && req.Schema.Catalog != nil {
+		key := completionCatalogKey(req.ConnectionID, req.Schema.Version)
 		var err error
+		defaultSchema := postgresCompletionDefaultSchema(req.Schema.Catalog)
+		var index *schema.Index
 		if key == "" {
-			catalog, err = buildPostgresCompletionCatalog(req.Catalog, req.Objects)
+			catalog, err = buildPostgresCompletionCatalog(req.Schema.Catalog, req.Schema.Objects)
+			index = schema.NewIndex(*req.Schema)
 		} else {
 			catalog, err = pgCompletionCatalogCache.GetOrBuild(ctx, key, func() (*pgcatalog.Catalog, error) {
-				return buildPostgresCompletionCatalog(req.Catalog, req.Objects)
+				return buildPostgresCompletionCatalog(req.Schema.Catalog, req.Schema.Objects)
 			})
+			if err == nil {
+				index, err = pgSchemaIndexCache.GetOrBuild(ctx, key, func() (*schema.Index, error) {
+					return schema.NewIndex(*req.Schema), nil
+				})
+			}
 		}
 		if err != nil {
 			return completer.Result{}, err
 		}
+		metadata = completioncore.NewSchemaResolver(index, defaultSchema)
 	}
 
-	candidates := pgcompletion.Complete(req.SQL, req.CursorOffset, catalog)
+	candidates, err := corepostgres.Complete(ctx, req.SQL, req.CursorOffset, catalog, metadata)
+	if err != nil {
+		return completer.Result{}, err
+	}
 	start := completionReplaceStart(req.SQL, req.CursorOffset, '"')
 	suggestions := make([]completer.Suggestion, 0, len(candidates))
 	for _, candidate := range candidates {
 		kind, score := postgresCandidateKind(candidate.Type)
 		insertText := candidate.Text
 		if kind != "keyword" && kind != "type" {
-			insertText = postgresQuoteCompletionIdentifier(candidate.Text)
+			insertText = postgresQuoteCompletionPath(candidate.Text)
 		}
 		suggestions = append(suggestions, completer.Suggestion{
 			Label:        candidate.Text,
+			DisplayLabel: candidate.DisplayText,
 			Kind:         kind,
 			Detail:       firstNonEmpty(candidate.Definition, candidate.Comment),
 			InsertText:   insertText,
@@ -88,7 +104,6 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 			Score:        score,
 		})
 	}
-	suggestions = postgresScopedSuggestions(req, suggestions, start)
 	if req.TriggerKind == completer.TriggerAutomatic && isBareSelect(req.SQL, req.CursorOffset) {
 		suggestions = curatedSelectSuggestions(start, req.CursorOffset)
 	}
@@ -97,6 +112,24 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 		return completer.Result{}, err
 	}
 	return completer.Result{Suggestions: suggestions}, nil
+}
+
+func postgresCompletionDefaultSchema(catalog *schema.Catalog) string {
+	if catalog == nil {
+		return "public"
+	}
+	if catalog.DefaultNamespace != "" {
+		return catalog.DefaultNamespace
+	}
+	for _, namespace := range catalog.Namespaces {
+		if namespace.Name == "public" {
+			return "public"
+		}
+	}
+	if len(catalog.Namespaces) == 1 {
+		return catalog.Namespaces[0].Name
+	}
+	return "public"
 }
 
 func (d *postgresDriver) CompletionVocabulary() completer.Vocabulary {
@@ -114,36 +147,6 @@ func (d *postgresDriver) CompletionVocabulary() completer.Vocabulary {
 		pgVocabulary = completer.NewVocabulary("postgres", items)
 	})
 	return pgVocabulary
-}
-
-func postgresScopedSuggestions(req completer.Request, suggestions []completer.Suggestion, start int) []completer.Suggestion {
-	columns, handled := completer.ScopedColumns(req.SQL, req.CursorOffset, req.Objects, "postgres")
-	if !handled {
-		return suggestions
-	}
-	result := make([]completer.Suggestion, 0, len(suggestions)+len(columns))
-	for _, suggestion := range suggestions {
-		if suggestion.Kind != "column" {
-			result = append(result, suggestion)
-		}
-	}
-	for _, column := range columns {
-		label := column.Name
-		insertText := postgresQuoteCompletionIdentifier(column.Name)
-		if column.Qualified {
-			label = column.Owner + "." + column.Name
-			insertText = postgresQuoteCompletionIdentifier(column.Owner) + "." + insertText
-		}
-		detail := column.DataType
-		if column.Owner != "" {
-			detail = column.Owner + " · " + detail
-		}
-		result = append(result, completer.Suggestion{
-			Label: label, DisplayLabel: column.DisplayLabel, Kind: "column", Detail: strings.TrimSuffix(detail, " · "),
-			InsertText: insertText, ReplaceStart: start, ReplaceEnd: req.CursorOffset, Score: 100,
-		})
-	}
-	return result
 }
 
 func isBareSelect(sqlText string, cursor int) bool {
@@ -172,6 +175,7 @@ func curatedSelectSuggestions(start, end int) []completer.Suggestion {
 
 func (d *postgresDriver) InvalidateCompletionCatalog(connectionID string) {
 	pgCompletionCatalogCache.InvalidatePrefix(connectionID + ":")
+	pgSchemaIndexCache.InvalidatePrefix(connectionID + ":")
 }
 
 func buildPostgresCompletionCatalog(catalog *schema.Catalog, objects []schema.Object) (*pgcatalog.Catalog, error) {
@@ -256,25 +260,25 @@ func postgresCompletionSelectColumns(object schema.Object) string {
 	return strings.Join(columns, ", ")
 }
 
-func postgresCandidateKind(candidateType pgcompletion.CandidateType) (string, int) {
+func postgresCandidateKind(candidateType completioncore.CandidateType) (string, int) {
 	switch candidateType {
-	case pgcompletion.CandidateColumn:
+	case completioncore.CandidateColumn:
 		return "column", 100
-	case pgcompletion.CandidateSchema:
+	case completioncore.CandidateSchema:
 		return "schema", 90
-	case pgcompletion.CandidateTable:
+	case completioncore.CandidateTable:
 		return "table", 80
-	case pgcompletion.CandidateView:
+	case completioncore.CandidateView:
 		return "view", 75
-	case pgcompletion.CandidateMaterializedView:
+	case completioncore.CandidateMaterializedView:
 		return "materialized_view", 74
-	case pgcompletion.CandidateSequence:
+	case completioncore.CandidateSequence:
 		return "sequence", 70
-	case pgcompletion.CandidateFunction:
+	case completioncore.CandidateFunction:
 		return "function", 60
-	case pgcompletion.CandidateType_:
+	case completioncore.CandidateTypeName:
 		return "type", 35
-	case pgcompletion.CandidateKeyword:
+	case completioncore.CandidateKeyword:
 		return "keyword", 40
 	default:
 		return "text", 20
@@ -290,6 +294,14 @@ func postgresQuoteCompletionIdentifier(identifier string) string {
 		return identifier
 	}
 	return pgQuoteIdent(identifier)
+}
+
+func postgresQuoteCompletionPath(identifier string) string {
+	parts := strings.Split(identifier, ".")
+	for i, part := range parts {
+		parts[i] = postgresQuoteCompletionIdentifier(part)
+	}
+	return strings.Join(parts, ".")
 }
 
 func isSafePostgresIdentifier(identifier string) bool {

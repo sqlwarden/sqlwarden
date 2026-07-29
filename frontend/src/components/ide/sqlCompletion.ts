@@ -1,11 +1,13 @@
 import {
   acceptCompletion,
   autocompletion,
+  completionStatus,
   type Completion,
   type CompletionContext,
   type CompletionResult,
   type CompletionSource,
 } from '@codemirror/autocomplete'
+import { indentLess, indentMore } from '@codemirror/commands'
 import {
   MySQL,
   PostgreSQL,
@@ -34,6 +36,7 @@ export type SQLCompletionConfig = {
   driver?: string
   sessionId?: string
   iconMap?: IconMap | null
+  onConnectionRequired?: () => void
 }
 
 export function dialectForDriver(driver?: string): SQLDialect {
@@ -186,13 +189,20 @@ const completionTheme = EditorView.theme({
   },
 })
 
-// CodeMirror deliberately leaves Tab unbound so it can move focus out of the
-// editor. Consume it only while a highlighted completion can be accepted.
+// Keep Tab inside the SQL editor: accept a highlighted completion when one is
+// active, otherwise apply CodeMirror's standard line indentation.
 export function acceptCompletionOnTab(view: EditorView, event: KeyboardEvent): boolean {
-  if (event.key !== 'Tab' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+  if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey) {
     return false
   }
-  return acceptCompletion(view)
+  if (event.shiftKey) return indentLess(view)
+  if (completionStatus(view.state) === 'active') {
+    // Consume the key even during CodeMirror's brief interaction guard so it
+    // can never escape into browser focus navigation.
+    acceptCompletion(view)
+    return true
+  }
+  return indentMore(view)
 }
 
 const completionTabHandler = EditorView.domEventHandlers({
@@ -270,17 +280,24 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
     const previous = context.pos > 0 ? context.state.sliceDoc(context.pos - 1, context.pos) : ''
     const structural = STRUCTURAL_TRIGGERS.has(previous)
     const shouldCompleteLexically = context.explicit || prefix.length >= 2
+    const driver = normalizedDriver(config.driver)
+    const supportsSemanticCompletion = driver !== 'sqlite' && driver !== 'standard'
     const hasRemote =
+      supportsSemanticCompletion &&
       config.orgSlug !== undefined &&
       config.workspaceId !== undefined &&
       config.connectionId !== undefined &&
       config.driver !== undefined
     const shouldCompleteRemotely = hasRemote && (context.explicit || structural)
 
+    if (context.explicit && config.connectionId === undefined) {
+      config.onConnectionRequired?.()
+    }
+
     let lexical: Completion[] = []
-    if (shouldCompleteLexically && config.driver) {
+    if (shouldCompleteLexically) {
       try {
-        const vocabulary = await loadVocabulary(config.driver)
+        const vocabulary = config.driver ? await loadVocabulary(config.driver) : []
         if (vocabulary.length === 0) {
           const fallback = await localKeywords(context)
           lexical = [...(fallback?.options ?? [])]
@@ -362,8 +379,6 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
 
 export function sqlCompletionExtension(config: SQLCompletionConfig): Extension {
   const dialect = dialectForDriver(config.driver)
-  const remote =
-    config.driver !== 'sqlite' && config.driver !== 'sqlite3' && config.connectionId !== undefined
   return [
     sql({ dialect, upperCaseKeywords: true }),
     autocompletion({
@@ -375,7 +390,7 @@ export function sqlCompletionExtension(config: SQLCompletionConfig): Extension {
           render: (completion) => renderCompletionIcon(completion, config.iconMap),
         },
       ],
-      ...(remote ? { override: [remoteSQLCompletionSource(config)] } : {}),
+      override: [remoteSQLCompletionSource(config)],
     }),
     completionTheme,
     completionTabHandler,

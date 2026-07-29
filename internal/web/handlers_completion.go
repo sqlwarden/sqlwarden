@@ -101,7 +101,7 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 				app.serverError(w, r, objectErr)
 				return
 			}
-			req.Catalog, req.Objects, req.CatalogVersion = catalog, objects, snapshot.ID
+			req.Schema = &schemameta.MetadataSet{Catalog: catalog, Objects: objects, Version: snapshot.ID}
 			out.MetadataAvailable, out.MetadataStatus, out.SnapshotID = true, "ready", snapshot.ID
 		}
 	} else {
@@ -116,14 +116,14 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support SQL completion.", nil)
 		return
 	}
-	if err != nil && req.Catalog != nil {
+	if err != nil && req.Schema != nil {
 		app.logWarn(r, "schema-aware SQL completion failed; retrying without metadata",
 			slog.Int64("connection_id", conn.ID),
 			slog.String("driver", conn.Driver),
 			slog.String("mode", out.Mode),
 			slog.String("error", err.Error()),
 		)
-		req.Catalog, req.Objects, req.CatalogVersion = nil, nil, ""
+		req.Schema = nil
 		out.MetadataAvailable, out.MetadataStatus, out.SnapshotID = false, "degraded", ""
 		result, err = app.completionService.Complete(r.Context(), conn.Driver, req)
 	}
@@ -183,8 +183,11 @@ func (app *application) addEphemeralCompletionMetadata(r *http.Request, connID s
 		app.logWarn(r, "completion object inspection failed", slog.String("connection_id", connID), slog.String("error", err.Error()))
 		return false
 	}
-	req.Catalog, req.Objects = catalog, objects
-	req.CatalogVersion = catalog.GeneratedAt.UTC().Format(time.RFC3339Nano)
+	req.Schema = &schemameta.MetadataSet{
+		Catalog: catalog,
+		Objects: objects,
+		Version: catalog.GeneratedAt.UTC().Format(time.RFC3339Nano),
+	}
 	out.MetadataAvailable, out.MetadataStatus = true, "ready"
 	return false
 }

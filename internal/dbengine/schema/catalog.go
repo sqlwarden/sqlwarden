@@ -6,11 +6,14 @@ import "time"
 // kinds grouped by namespace, with no columns/keys/indexes. It stays small even
 // on databases with thousands of objects.
 type Catalog struct {
-	Connection  string             `json:"connection"`
-	Dialect     string             `json:"dialect"`
-	Database    string             `json:"database"`
-	GeneratedAt time.Time          `json:"generated_at"`
-	Namespaces  []NamespaceCatalog `json:"namespaces"`
+	Connection string `json:"connection"`
+	Dialect    string `json:"dialect"`
+	Database   string `json:"database"`
+	// DefaultNamespace is the engine's active schema/search-path head when it
+	// can be determined. Completion uses it for unqualified relation names.
+	DefaultNamespace string             `json:"default_namespace,omitempty"`
+	GeneratedAt      time.Time          `json:"generated_at"`
+	Namespaces       []NamespaceCatalog `json:"namespaces"`
 }
 
 // NamespaceCatalog lists a single namespace's objects, grouped by kind.

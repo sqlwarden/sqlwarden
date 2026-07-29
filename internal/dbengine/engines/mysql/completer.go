@@ -13,6 +13,8 @@ import (
 	mysqlparser "github.com/bytebase/omni/mysql/parser"
 
 	"github.com/sqlwarden/internal/dbengine/completer"
+	"github.com/sqlwarden/internal/dbengine/completioncore"
+	coremysql "github.com/sqlwarden/internal/dbengine/completioncore/mysql"
 	"github.com/sqlwarden/internal/dbengine/schema"
 )
 
@@ -23,6 +25,7 @@ var (
 	_                           completer.CatalogInvalidator = (*mysqlDriver)(nil)
 	_                           completer.VocabularyProvider = (*mysqlDriver)(nil)
 	mysqlCompletionCatalogCache                              = completer.NewPreparedCache[*mysqlcatalog.Catalog](preparedCompletionCatalogs)
+	mysqlSchemaIndexCache                                    = completer.NewPreparedCache[*schema.Index](preparedCompletionCatalogs)
 	mysqlVocabularyOnce         sync.Once
 	mysqlVocabulary             completer.Vocabulary
 	mysqlSafeType               = regexp.MustCompile(`^[A-Za-z0-9_ (),.'"]+$`)
@@ -37,32 +40,45 @@ func (d *mysqlDriver) Complete(ctx context.Context, req completer.Request) (comp
 	}
 
 	var catalog *mysqlcatalog.Catalog
-	if req.Catalog != nil {
-		key := mysqlCompletionCatalogKey(req.ConnectionID, req.CatalogVersion)
+	var metadata completioncore.MetadataResolver
+	if req.Schema != nil && req.Schema.Catalog != nil {
+		key := mysqlCompletionCatalogKey(req.ConnectionID, req.Schema.Version)
 		var err error
+		var index *schema.Index
 		if key == "" {
-			catalog, err = buildMySQLCompletionCatalog(req.Catalog, req.Objects)
+			catalog, err = buildMySQLCompletionCatalog(req.Schema.Catalog, req.Schema.Objects)
+			index = schema.NewIndex(*req.Schema)
 		} else {
 			catalog, err = mysqlCompletionCatalogCache.GetOrBuild(ctx, key, func() (*mysqlcatalog.Catalog, error) {
-				return buildMySQLCompletionCatalog(req.Catalog, req.Objects)
+				return buildMySQLCompletionCatalog(req.Schema.Catalog, req.Schema.Objects)
 			})
+			if err == nil {
+				index, err = mysqlSchemaIndexCache.GetOrBuild(ctx, key, func() (*schema.Index, error) {
+					return schema.NewIndex(*req.Schema), nil
+				})
+			}
 		}
 		if err != nil {
 			return completer.Result{}, err
 		}
+		metadata = completioncore.NewSchemaResolver(index, "")
 	}
 
-	candidates := mysqlcompletion.Complete(req.SQL, req.CursorOffset, catalog)
+	candidates, err := coremysql.Complete(ctx, req.SQL, req.CursorOffset, catalog, metadata)
+	if err != nil {
+		return completer.Result{}, err
+	}
 	start := mysqlCompletionReplaceStart(req.SQL, req.CursorOffset)
 	suggestions := make([]completer.Suggestion, 0, len(candidates))
 	for _, candidate := range candidates {
-		kind, score := mysqlCandidateKind(candidate.Type)
+		kind, score := mysqlCoreCandidateKind(candidate.Type)
 		insertText := candidate.Text
 		if kind != "keyword" && kind != "type" && kind != "engine" && kind != "charset" {
-			insertText = mysqlQuoteCompletionIdentifier(candidate.Text)
+			insertText = mysqlQuoteCompletionPath(candidate.Text)
 		}
 		suggestions = append(suggestions, completer.Suggestion{
 			Label:        candidate.Text,
+			DisplayLabel: candidate.DisplayText,
 			Kind:         kind,
 			Detail:       mysqlFirstNonEmpty(candidate.Definition, candidate.Comment),
 			InsertText:   insertText,
@@ -71,7 +87,6 @@ func (d *mysqlDriver) Complete(ctx context.Context, req completer.Request) (comp
 			Score:        score,
 		})
 	}
-	suggestions = mysqlScopedSuggestions(req, suggestions, start)
 	if req.TriggerKind == completer.TriggerAutomatic && isMySQLBareSelect(req.SQL, req.CursorOffset) {
 		suggestions = mysqlCuratedSelectSuggestions(start, req.CursorOffset)
 	}
@@ -104,36 +119,6 @@ func (d *mysqlDriver) CompletionVocabulary() completer.Vocabulary {
 	return mysqlVocabulary
 }
 
-func mysqlScopedSuggestions(req completer.Request, suggestions []completer.Suggestion, start int) []completer.Suggestion {
-	columns, handled := completer.ScopedColumns(req.SQL, req.CursorOffset, req.Objects, "mysql")
-	if !handled {
-		return suggestions
-	}
-	result := make([]completer.Suggestion, 0, len(suggestions)+len(columns))
-	for _, suggestion := range suggestions {
-		if suggestion.Kind != "column" {
-			result = append(result, suggestion)
-		}
-	}
-	for _, column := range columns {
-		label := column.Name
-		insertText := mysqlQuoteCompletionIdentifier(column.Name)
-		if column.Qualified {
-			label = column.Owner + "." + column.Name
-			insertText = mysqlQuoteCompletionIdentifier(column.Owner) + "." + insertText
-		}
-		detail := column.DataType
-		if column.Owner != "" {
-			detail = column.Owner + " · " + detail
-		}
-		result = append(result, completer.Suggestion{
-			Label: label, DisplayLabel: column.DisplayLabel, Kind: "column", Detail: strings.TrimSuffix(detail, " · "),
-			InsertText: insertText, ReplaceStart: start, ReplaceEnd: req.CursorOffset, Score: 100,
-		})
-	}
-	return result
-}
-
 func isMySQLBareSelect(sqlText string, cursor int) bool {
 	if cursor < 0 || cursor > len(sqlText) {
 		return false
@@ -159,6 +144,7 @@ func mysqlCuratedSelectSuggestions(start, end int) []completer.Suggestion {
 
 func (d *mysqlDriver) InvalidateCompletionCatalog(connectionID string) {
 	mysqlCompletionCatalogCache.InvalidatePrefix(connectionID + ":")
+	mysqlSchemaIndexCache.InvalidatePrefix(connectionID + ":")
 }
 
 func buildMySQLCompletionCatalog(catalog *schema.Catalog, objects []schema.Object) (*mysqlcatalog.Catalog, error) {
@@ -295,6 +281,39 @@ func mysqlCandidateKind(candidateType mysqlcompletion.CandidateType) (string, in
 	}
 }
 
+func mysqlCoreCandidateKind(candidateType completioncore.CandidateType) (string, int) {
+	switch candidateType {
+	case completioncore.CandidateColumn:
+		return "column", 100
+	case completioncore.CandidateDatabase:
+		return "database", 90
+	case completioncore.CandidateTable:
+		return "table", 80
+	case completioncore.CandidateView:
+		return "view", 75
+	case completioncore.CandidateFunction:
+		return "function", 60
+	case completioncore.CandidateProcedure:
+		return "procedure", 58
+	case completioncore.CandidateIndex:
+		return "index", 55
+	case completioncore.CandidateTrigger:
+		return "trigger", 54
+	case completioncore.CandidateEvent:
+		return "event", 53
+	case completioncore.CandidateEngine:
+		return "engine", 45
+	case completioncore.CandidateCharset:
+		return "charset", 45
+	case completioncore.CandidateTypeName:
+		return "type", 35
+	case completioncore.CandidateKeyword:
+		return "keyword", 40
+	default:
+		return "text", 20
+	}
+}
+
 func mysqlCompletionQuoteIdent(identifier string) string {
 	return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
 }
@@ -304,6 +323,14 @@ func mysqlQuoteCompletionIdentifier(identifier string) string {
 		return identifier
 	}
 	return mysqlCompletionQuoteIdent(identifier)
+}
+
+func mysqlQuoteCompletionPath(identifier string) string {
+	parts := strings.Split(identifier, ".")
+	for i, part := range parts {
+		parts[i] = mysqlQuoteCompletionIdentifier(part)
+	}
+	return strings.Join(parts, ".")
 }
 
 func isSafeMySQLIdentifier(identifier string) bool {

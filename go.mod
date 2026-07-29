@@ -3,7 +3,7 @@ module github.com/sqlwarden
 go 1.26.5
 
 require (
-	github.com/bytebase/omni v0.0.0-20260716044319-2538875143b8
+	github.com/bytebase/omni v0.0.0-20260727045020-25af7ffb855f
 	github.com/docker/go-connections v0.6.0
 	github.com/go-chi/chi/v5 v5.2.4
 	github.com/go-sql-driver/mysql v1.9.3
