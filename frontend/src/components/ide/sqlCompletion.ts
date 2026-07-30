@@ -530,8 +530,7 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
     // Vocabulary is a last-resort prefix lookup, not a context-free menu.
     // In particular, Ctrl+Space at an empty prefix must not dump every dialect
     // keyword and function into an otherwise precise semantic result.
-    const shouldCompleteLexically =
-      prefix.length >= 2 || (context.explicit && prefix.length > 0)
+    const shouldCompleteLexically = prefix.length >= 2 || (context.explicit && prefix.length > 0)
     // CodeMirror can invalidate a pending request from a semantic boundary
     // (for example "FROM ") as the user immediately continues typing. Once
     // the prefix has settled for the normal activation delay, retry against
@@ -557,9 +556,7 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
         } else {
           const foldedPrefix = prefix.toLocaleLowerCase()
           lexical = vocabulary
-            .filter((suggestion) =>
-              suggestion.label.toLocaleLowerCase().startsWith(foldedPrefix),
-            )
+            .filter((suggestion) => suggestion.label.toLocaleLowerCase().startsWith(foldedPrefix))
             .map(suggestionToCompletion)
         }
       } catch (_error) {

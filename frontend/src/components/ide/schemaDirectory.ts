@@ -1,9 +1,4 @@
-import type {
-  ObjectGroup,
-  SchemaDirectory,
-  SchemaSpec,
-  ScopeNode,
-} from '#/lib/api/types'
+import type { ObjectGroup, SchemaDirectory, SchemaSpec, ScopeNode } from '#/lib/api/types'
 
 export function kindLabel(spec: SchemaSpec | undefined, kind: string): string {
   return spec?.kinds.find((k) => k.kind === kind)?.plural_label ?? fallbackKindLabel(kind)
@@ -22,10 +17,7 @@ function kindOrder(spec: SchemaSpec | undefined, kind: string): number {
   return spec?.kinds.find((k) => k.kind === kind)?.order ?? Number.MAX_SAFE_INTEGER
 }
 
-export function sortedGroups(
-  node: ScopeNode,
-  spec: SchemaSpec | undefined,
-): ObjectGroup[] {
+export function sortedGroups(node: ScopeNode, spec: SchemaSpec | undefined): ObjectGroup[] {
   return [...node.groups].sort(
     (a, b) => kindOrder(spec, a.kind) - kindOrder(spec, b.kind) || a.kind.localeCompare(b.kind),
   )

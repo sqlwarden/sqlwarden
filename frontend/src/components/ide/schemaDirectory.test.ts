@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SchemaDirectory, SchemaSpec } from '#/lib/api/types'
-import {
-  filterDirectory,
-  hasDirectoryObjects,
-  kindLabel,
-  sortedGroups,
-} from './schemaDirectory'
+import { filterDirectory, hasDirectoryObjects, kindLabel, sortedGroups } from './schemaDirectory'
 
 const spec: SchemaSpec = {
   dialect: 'postgres',

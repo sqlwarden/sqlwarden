@@ -500,10 +500,7 @@ describe('SQL completion', () => {
       const finalSQL = 'SELECT * FROM ver'
       let initialRequestAborted = false
       const fetchMock = vi.fn(
-        async (
-          input: RequestInfo | URL,
-          init?: RequestInit,
-        ): Promise<Response> => {
+        async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
           if (String(input).includes('completion-vocabulary')) return vocabularyResponse()
           const body = JSON.parse(String(init?.body)) as {
             sql: string
@@ -556,9 +553,7 @@ describe('SQL completion', () => {
 
       expect(initialRequestAborted).toBe(true)
       expect(await initialResult).toBeNull()
-      expect(finalResult?.options.map((option) => option.label)).toEqual([
-        'very_long_table_name',
-      ])
+      expect(finalResult?.options.map((option) => option.label)).toEqual(['very_long_table_name'])
       expect(fetchMock).toHaveBeenCalledTimes(3)
     },
   )
@@ -603,9 +598,7 @@ SELECT * FROM customer_total_spent`
       const result = await source(new CompletionContext(state, cursor, false))
 
       expect(result?.options).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ label: 'customer_id', type: 'column' }),
-        ]),
+        expect.arrayContaining([expect.objectContaining({ label: 'customer_id', type: 'column' })]),
       )
       expect(fetchMock).toHaveBeenCalledTimes(2)
     },

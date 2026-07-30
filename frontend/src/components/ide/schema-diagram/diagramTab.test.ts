@@ -10,9 +10,7 @@ const ref: ObjectRef = { scope, kind: 'table', name: 'users' }
 describe('diagramTab', () => {
   it('builds distinct stable ids for scope vs object targets', () => {
     expect(diagramTabId(4, { kind: 'scope', scope })).toBe('diagram:4:scope:schema=public')
-    expect(diagramTabId(4, { kind: 'object', ref })).toBe(
-      'diagram:4:obj:schema=public:table:users',
-    )
+    expect(diagramTabId(4, { kind: 'object', ref })).toBe('diagram:4:obj:schema=public:table:users')
   })
   it('creates a scope diagram tab', () => {
     const tab = newDiagramTab(conn, ws, { kind: 'scope', scope })

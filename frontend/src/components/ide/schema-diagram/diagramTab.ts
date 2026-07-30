@@ -2,8 +2,7 @@ import type { Connection, ObjectRef, ScopePath, Workspace } from '#/lib/api/type
 import { scopeKey, scopeLabel } from '#/lib/api/scope'
 import type { EditorTab } from '../useIdeStore'
 
-export type DiagramTarget =
-  { kind: 'scope'; scope: ScopePath } | { kind: 'object'; ref: ObjectRef }
+export type DiagramTarget = { kind: 'scope'; scope: ScopePath } | { kind: 'object'; ref: ObjectRef }
 
 /** Stable id for a diagram tab. Re-opening the same target focuses the existing
  *  tab instead of creating a duplicate. */
