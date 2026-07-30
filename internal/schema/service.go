@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/cache"
-	metadata "github.com/sqlwarden/internal/dbengine/metadata"
+	metadata "github.com/sqlwarden/internal/engine/metadata"
 	"golang.org/x/sync/singleflight"
 )
 

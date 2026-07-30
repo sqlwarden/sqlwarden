@@ -11,7 +11,7 @@ import (
 	"github.com/sqlwarden/internal/response"
 	"github.com/uptrace/bun"
 
-	"github.com/sqlwarden/internal/dbengine/metadata"
+	"github.com/sqlwarden/internal/engine/metadata"
 )
 
 type Connection struct {

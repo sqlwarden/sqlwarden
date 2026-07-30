@@ -9,8 +9,8 @@ import (
 	"unicode/utf8"
 
 	completionapp "github.com/sqlwarden/internal/completion"
-	"github.com/sqlwarden/internal/dbengine/completer"
-	metadata "github.com/sqlwarden/internal/dbengine/metadata"
+	"github.com/sqlwarden/internal/engine/completer"
+	metadata "github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 )

@@ -9,7 +9,7 @@ import (
 
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/dbengine/metadata"
+	"github.com/sqlwarden/internal/engine/metadata"
 )
 
 func TestCompleteConnectionSQLFromPersistentSnapshot(t *testing.T) {

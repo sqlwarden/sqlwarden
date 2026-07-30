@@ -8,7 +8,7 @@ This file gives AI coding agents working guidance for this repository. For archi
 - Use grep/read only for literal text search, docs, or files already identified.
 - Never commit unless the user explicitly asks.
 - Do not revert user changes unless explicitly requested.
-- Per-driver behavior must use the abstraction+implementation pattern: define a capability interface and implement it per driver, so adding a new database means writing one implementation, not editing a shared `switch`/conditional. Never inline driver-specific logic (SQL shape, quoting, dialect quirks, schema introspection) into shared components or handlers. Examples: backend `internal/dbengine` engine interfaces (`Driver`, `SchemaInspector`) and per-engine inspectors; frontend `SqlDialect` (`sqlDialect.ts`) and the object-detail `DriverHooks` renderer registry. Provide a sensible default (e.g. a base class) only as an override point, not as a place to branch on driver name.
+- Per-driver behavior must use the abstraction+implementation pattern: define a capability interface and implement it per driver, so adding a new database means writing one implementation, not editing a shared `switch`/conditional. Never inline driver-specific logic (SQL shape, quoting, dialect quirks, schema introspection) into shared components or handlers. Examples: backend `internal/engine` engine interfaces (`Driver`, `SchemaInspector`) and per-engine inspectors; frontend `SqlDialect` (`sqlDialect.ts`) and the object-detail `DriverHooks` renderer registry. Provide a sensible default (e.g. a base class) only as an override point, not as a place to branch on driver name.
 - Keep `frontend/src/routeTree.gen.ts` generated; do not hand-edit it.
 - Use Conventional Commits when committing.
 - Write code comments only for context that lives in the code itself (non-obvious rationale, invariants, gotchas a future reader needs). Never write comments that narrate the change, the conversation, or the decision history — a maintainer reading the file has none of that context. If a comment only makes sense to someone who saw the original request or PR discussion, omit it or let the code speak for itself.
@@ -22,7 +22,7 @@ SQLWarden is a Go API plus embedded React SPA.
 - `internal/database` stores SQLWarden metadata through Bun against SQLite/PostgreSQL.
 - `internal/access` is the custom RBAC enforcer and permissions catalog.
 - `internal/connection` manages live target database sessions.
-- `internal/dbengine` contains target database engines and capabilities for PostgreSQL, MySQL, and SQLite.
+- `internal/engine` contains external data-system integrations and capabilities; current engines support PostgreSQL, MySQL, and SQLite.
 - `internal/files` and `internal/filestore` implement workspace file metadata/content storage.
 - `frontend/` is the React app using TanStack Router, TanStack Query, Tailwind CSS, shadcn/ui, Base UI, CodeMirror, Zustand, IndexedDB, Y.js, and BroadcastChannel.
 

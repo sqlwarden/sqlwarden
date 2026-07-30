@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/dbengine"
-	metadata "github.com/sqlwarden/internal/dbengine/metadata"
+	"github.com/sqlwarden/internal/engine"
+	metadata "github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/jobs"
 	schemaapp "github.com/sqlwarden/internal/schema"
 )
@@ -102,7 +102,7 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 	if err := app.validateTargetConnection(conn.Driver, plainDSN); err != nil {
 		return nil, jobs.Permanent("schema_sync_target_blocked", "The target database is blocked by policy.")
 	}
-	driver, err := dbengine.New(conn.Driver)
+	driver, err := engine.New(conn.Driver)
 	if err != nil {
 		return nil, jobs.Permanent("schema_sync_driver_unavailable", "The target driver is unavailable.")
 	}

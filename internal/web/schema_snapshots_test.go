@@ -11,7 +11,7 @@ import (
 
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
-	metadata "github.com/sqlwarden/internal/dbengine/metadata"
+	metadata "github.com/sqlwarden/internal/engine/metadata"
 	schemaapp "github.com/sqlwarden/internal/schema"
 )
 

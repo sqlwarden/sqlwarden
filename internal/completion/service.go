@@ -6,8 +6,8 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/completer"
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/completer"
 )
 
 var ErrUnsupported = errors.New("SQL completion is not supported for this driver")
@@ -58,13 +58,13 @@ func (s *Service) InvalidateConnection(connectionID string) {
 }
 
 func (s *Service) engine(driver string) (completer.Completer, error) {
-	normalized := dbengine.NormalizeName(driver)
+	normalized := engine.NormalizeName(driver)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if engine, ok := s.engines[normalized]; ok {
 		return engine, nil
 	}
-	raw, err := dbengine.New(normalized)
+	raw, err := engine.New(normalized)
 	if err != nil {
 		return nil, err
 	}

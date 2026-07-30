@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/database"
-	metadata "github.com/sqlwarden/internal/dbengine/metadata"
+	metadata "github.com/sqlwarden/internal/engine/metadata"
 	"github.com/uptrace/bun"
 )
 

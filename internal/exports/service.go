@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/cursor"
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/cursor"
 )
 
 const (
@@ -43,7 +43,7 @@ func NewService() *Service {
 	return &Service{}
 }
 
-func (s *Service) Stream(ctx context.Context, driver dbengine.Driver, writer io.Writer, opts StreamOptions) (StreamResult, error) {
+func (s *Service) Stream(ctx context.Context, driver engine.Driver, writer io.Writer, opts StreamOptions) (StreamResult, error) {
 	if opts.Format == "" {
 		opts.Format = FormatCSV
 	}
