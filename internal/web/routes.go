@@ -307,7 +307,7 @@ func (app *application) routes() http.Handler {
 								r.Route("/{conn_id}", func(r chi.Router) {
 									r.Use(app.connCtx)
 									r.Get("/", app.getConnection)
-									r.With(app.requireConnectionPermission("conn:write")).Patch("/", app.updateConnection)
+									r.With(app.requireConnectionPermission("conn:update")).Patch("/", app.updateConnection)
 									r.With(app.requireConnectionPermission("conn:delete")).Delete("/", app.deleteConnection)
 									r.Post("/connect", app.connectToDatabase)
 									r.Delete("/session", app.disconnectFromDatabase)
@@ -336,7 +336,7 @@ func (app *application) routes() http.Handler {
 						r.Route("/{conn_id}", func(r chi.Router) {
 							r.Use(app.connCtx)
 							r.Get("/", app.getConnection)
-							r.With(app.requireConnectionPermission("conn:write")).Patch("/", app.updateConnection)
+							r.With(app.requireConnectionPermission("conn:update")).Patch("/", app.updateConnection)
 							r.With(app.requireConnectionPermission("conn:delete")).Delete("/", app.deleteConnection)
 							r.Post("/connect", app.connectToDatabase)
 							r.Delete("/session", app.disconnectFromDatabase)

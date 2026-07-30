@@ -574,7 +574,7 @@ func TestRequireConcreteResourcePermissions(t *testing.T) {
 	orgRoleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgWrite)
 	workspaceRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "workspace", access.PermWsWrite)
 	envRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "environment", access.PermEnvWrite)
-	connRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "connection", access.PermConnWrite)
+	connRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "connection", access.PermConnUpdate)
 
 	for _, binding := range []struct {
 		roleID       int64
@@ -628,7 +628,7 @@ func TestRequireConcreteResourcePermissions(t *testing.T) {
 		},
 		{
 			name:       "connection",
-			middleware: app.requireConnectionPermission(access.PermConnWrite),
+			middleware: app.requireConnectionPermission(access.PermConnUpdate),
 			request: func() *http.Request {
 				req := httptest.NewRequest(http.MethodPatch, "/api/v1/orgs/resource-perms-org/workspaces/1/environments/1/connections/1", nil)
 				req = contextSetAccount(req, account)
