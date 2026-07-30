@@ -31,6 +31,8 @@ describe('buildEnvironmentMenu', () => {
 
 describe('buildConnectionMenu', () => {
   const base = {
+    canEditConnection: true,
+    canDeleteConnection: true,
     onOpen: noop,
     onOpenConsole: noop,
     onConnect: noop,
@@ -70,6 +72,24 @@ describe('buildConnectionMenu', () => {
     const item = action(items, 'manage-connections')
     expect(item?.soon).toBeFalsy()
     expect(typeof item?.onSelect).toBe('function')
+  })
+  it('omits edit-connection when canEditConnection is false', () => {
+    const items = buildConnectionMenu({ ...base, isConnected: true, canEditConnection: false })
+    expect(action(items, 'edit-connection')).toBeUndefined()
+  })
+  it('omits delete-connection when canDeleteConnection is false', () => {
+    const items = buildConnectionMenu({ ...base, isConnected: true, canDeleteConnection: false })
+    expect(action(items, 'delete-connection')).toBeUndefined()
+  })
+  it('omits both when neither permission is held', () => {
+    const items = buildConnectionMenu({
+      ...base,
+      isConnected: true,
+      canEditConnection: false,
+      canDeleteConnection: false,
+    })
+    expect(action(items, 'edit-connection')).toBeUndefined()
+    expect(action(items, 'delete-connection')).toBeUndefined()
   })
 })
 

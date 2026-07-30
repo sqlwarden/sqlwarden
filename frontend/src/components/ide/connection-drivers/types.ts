@@ -18,4 +18,5 @@ export type DriverDef = {
   defaultPort: number
   fields: FieldDef[]
   buildDSN: (values: Record<string, string>) => string
+  parseDSN: (dsn: string) => Record<string, string>
 }

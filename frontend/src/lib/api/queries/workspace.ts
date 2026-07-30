@@ -169,6 +169,22 @@ export function allOrgWorkspaceConnectionsQueryOptions(slug: string, workspaceId
   return orgWorkspaceConnectionsQueryOptions(slug, workspaceId, allWorkspaceConnectionsQuery)
 }
 
+export function connectionDsnQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+) {
+  return queryOptions({
+    queryKey: queryKeys.connectionDsn(slug, workspaceId, connectionId),
+    queryFn: () =>
+      api.get<{ dsn: string }>(
+        `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/dsn`,
+      ),
+    staleTime: 0,
+    gcTime: 0,
+  })
+}
+
 export function orgWorkspaceJobsQueryOptions(
   slug: string,
   workspaceId: string | number,

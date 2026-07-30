@@ -52,4 +52,16 @@ export const mysqlDriver: DriverDef = {
     const userPart = password ? `${username}:${password}` : username
     return `${userPart}@tcp(${host}:${port})/${database}`
   },
+  parseDSN: (dsn): Record<string, string> => {
+    const match = /^(?:([^:@]*)(?::(.*))?@)?tcp\(([^:]+):(\d+)\)\/(.*)$/.exec(dsn)
+    if (!match) return {}
+    const [, username, password, host, port, database] = match
+    return {
+      host,
+      port,
+      database,
+      username: username ?? '',
+      password: password ?? '',
+    }
+  },
 }

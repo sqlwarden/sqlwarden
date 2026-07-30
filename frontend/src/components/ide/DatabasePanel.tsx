@@ -98,6 +98,18 @@ export function DatabasePanel({
     effectivePermissions.data?.permissions,
     permission.envCreate,
   )
+  const canCreateConnectionInWorkspace = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.connCreate,
+  )
+  const canEditConnection = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.connUpdate,
+  )
+  const canDeleteConnection = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.connDelete,
+  )
 
   const environments = useQuery(
     orgEnvironmentsQueryOptions(orgSlug, workspace.id, {
@@ -147,7 +159,7 @@ export function DatabasePanel({
 
   // Connection creation is available from the panel header regardless of the
   // grouped/flat layout; per-environment permissions are enforced server-side.
-  const canAddConnection = envItems.length > 0
+  const canAddConnection = envItems.length > 0 && canCreateConnectionInWorkspace
   const actions =
     canAddConnection || canCreateEnvironment ? (
       <DropdownMenu>
@@ -297,6 +309,8 @@ export function DatabasePanel({
                   connectedIds={connectionActions.connectedIds}
                   orgSlug={orgSlug}
                   filter={filter}
+                  canEditConnection={canEditConnection}
+                  canDeleteConnection={canDeleteConnection}
                   onOpen={connectionActions.openConnection}
                   onOpenConsole={connectionActions.openConnectionConsole}
                   onConnect={connectionActions.connect}
@@ -319,6 +333,8 @@ export function DatabasePanel({
                     envLabel={envFilter === 'all' ? envNameById(conn.environment_id) : undefined}
                     orgSlug={orgSlug}
                     filter={filter}
+                    canEditConnection={canEditConnection}
+                    canDeleteConnection={canDeleteConnection}
                     onOpen={() => connectionActions.openConnection(conn)}
                     onOpenConsole={() => connectionActions.openConnectionConsole(conn)}
                     onConnect={() => connectionActions.connect(conn)}
@@ -408,6 +424,8 @@ function EnvironmentRow({
   connectedIds,
   orgSlug,
   filter,
+  canEditConnection,
+  canDeleteConnection,
   onOpen,
   onOpenConsole,
   onConnect,
@@ -419,6 +437,8 @@ function EnvironmentRow({
   connectedIds: Set<number>
   orgSlug: string
   filter: string
+  canEditConnection: boolean
+  canDeleteConnection: boolean
   onOpen: (conn: Connection) => void
   onOpenConsole: (conn: Connection) => void
   onConnect: (conn: Connection) => void
@@ -494,6 +514,8 @@ function EnvironmentRow({
                 connIndent={18}
                 orgSlug={orgSlug}
                 filter={filter}
+                canEditConnection={canEditConnection}
+                canDeleteConnection={canDeleteConnection}
                 onOpen={() => onOpen(conn)}
                 onOpenConsole={() => onOpenConsole(conn)}
                 onConnect={() => onConnect(conn)}
@@ -514,6 +536,8 @@ function ConnectionRow({
   envLabel,
   orgSlug,
   filter,
+  canEditConnection,
+  canDeleteConnection,
   onOpen,
   onOpenConsole,
   onConnect,
@@ -525,6 +549,8 @@ function ConnectionRow({
   envLabel?: string
   orgSlug: string
   filter: string
+  canEditConnection: boolean
+  canDeleteConnection: boolean
   onOpen: () => void
   onOpenConsole: () => void
   onConnect: () => void
@@ -577,6 +603,8 @@ function ConnectionRow({
 
   const menuItems = buildConnectionMenu({
     isConnected,
+    canEditConnection,
+    canDeleteConnection,
     onOpen,
     onOpenConsole,
     onConnect,
@@ -686,6 +714,7 @@ function ConnectionRow({
         orgSlug={orgSlug}
         workspaceId={connection.workspace_id}
         connection={connection}
+        canRevealDsn={canEditConnection}
       />
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>

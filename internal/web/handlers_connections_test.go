@@ -474,6 +474,42 @@ func TestUpdateConnection(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("%v", getRes.BodyFields["environment_id"]), envID)
 }
 
+func TestGetConnectionDSN(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, org := seedOrgOwner(t, app, "conn-dsn-owner@example.com", "Conn DSN Owner", "Conn DSN Org")
+	member, memberTok := seedAccountWithToken(t, app, "conn-dsn-member@example.com", "Conn DSN Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Conn DSN WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	dsn := "host=localhost port=5432 user=test dbname=test sslmode=disable"
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{
+			"name":   "Primary",
+			"driver": "postgres",
+			"dsn":    dsn,
+		}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	// The member lacks conn:update and must be forbidden from revealing the DSN.
+	memberRes := send(t, newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/dsn", nil, memberTok), app.routes())
+	assert.Equal(t, memberRes.StatusCode, http.StatusForbidden)
+
+	// The owner holds conn:update and must see the decrypted DSN.
+	ownerRes := send(t, newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/dsn", nil, ownerTok), app.routes())
+	assert.Equal(t, ownerRes.StatusCode, http.StatusOK)
+	assert.Equal(t, ownerRes.BodyFields["dsn"].(string), dsn)
+}
+
 func TestUpdateConnectionRejectsSQLiteFileTargetInServerMode(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

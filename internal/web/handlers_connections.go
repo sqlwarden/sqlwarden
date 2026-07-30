@@ -321,6 +321,23 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// getConnectionDSN reveals the decrypted DSN so it can be pre-filled when editing a
+// connection. The route requires conn:update, since holding conn:update is what makes
+// re-entering the DSN unnecessary.
+func (app *application) getConnectionDSN(w http.ResponseWriter, r *http.Request) {
+	conn := contextGetConnection(r)
+	dsn, err := app.keyring.Decrypt(conn.DSNEncrypted)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	app.logInfo(r, "connection dsn revealed", slog.Int64("connection_id", conn.ID))
+	err = response.JSON(w, http.StatusOK, map[string]string{"dsn": dsn})
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 func (app *application) updateConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name                 *string             `json:"name"`
