@@ -66,6 +66,42 @@ func TestMySQLCompletionQuotesReservedIdentifier(t *testing.T) {
 	}
 }
 
+func TestMySQLCompleteCuratesCompletedRelationContext(t *testing.T) {
+	driver := &mysqlDriver{}
+	catalog := mysqlCompletionTestCatalog()
+	objects := mysqlCompletionTestObjects()
+
+	sql := "SELECT * FROM users "
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql),
+		Schema:      &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		TriggerKind: completer.TriggerInvoked,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, label := range []string{"AS", "JOIN", "STRAIGHT_JOIN", "WHERE", "GROUP", "ORDER", "LIMIT"} {
+		requireMySQLCompletion(t, result, label, "keyword")
+	}
+	for _, label := range []string{"ALTER", "CREATE", "DATABASE", "ON", "USING"} {
+		requireNoMySQLCompletion(t, result, label, "keyword")
+	}
+
+	joinedSQL := "SELECT * FROM users u JOIN `Order Items` oi "
+	result, err = driver.Complete(context.Background(), completer.Request{
+		SQL: joinedSQL, CursorOffset: len(joinedSQL),
+		Schema:      &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		TriggerKind: completer.TriggerInvoked,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireMySQLCompletion(t, result, "ON", "keyword")
+	requireMySQLCompletion(t, result, "USING", "keyword")
+	requireNoMySQLCompletion(t, result, "AS", "keyword")
+	requireNoMySQLCompletion(t, result, "ALTER", "keyword")
+}
+
 func TestMySQLCompleteUsesStatementAtCursor(t *testing.T) {
 	driver := &mysqlDriver{}
 	catalog := mysqlCompletionTestCatalog()

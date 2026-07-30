@@ -58,7 +58,67 @@ func Complete(
 	if columnContext && metadata != nil {
 		result = append(result, resolveColumns(sql, cursor, qualifier, metadata)...)
 	}
+	if continuation, ok := relationContinuationAt(sql, cursor); ok {
+		result = relationContinuationCandidates(continuation)
+	}
 	return filterByPrefix(deduplicate(result), prefixAt(sql, cursor)), completioncore.CheckContext(ctx)
+}
+
+type relationContinuation struct {
+	afterJoin bool
+	hasAlias  bool
+}
+
+func relationContinuationAt(sql string, cursor int) (relationContinuation, bool) {
+	if cursor <= 0 || cursor > len(sql) || !unicode.IsSpace(rune(sql[cursor-1])) {
+		return relationContinuation{}, false
+	}
+	tokens := completionTokens(parser.Tokenize(sql[:cursor]))
+	if len(tokens) == 0 || tokens[len(tokens)-1].Type == parser.AS {
+		return relationContinuation{}, false
+	}
+
+	start, end := statementBounds(tokens, cursor)
+	cursorDepth := depthAt(tokens, cursor)
+	ctes := collectCTEs(tokens, start, end)
+	for i := end - 1; i >= start; i-- {
+		if tokens[i].depth != cursorDepth ||
+			(tokens[i].Type != parser.FROM && tokens[i].Type != parser.JOIN) {
+			continue
+		}
+		ref, consumed, ok := parseReference(tokens, i+1, end, cursorDepth, ctes)
+		if !ok || consumed != end {
+			return relationContinuation{}, false
+		}
+		return relationContinuation{
+			afterJoin: tokens[i].Type == parser.JOIN,
+			hasAlias:  ref.alias != "",
+		}, true
+	}
+	return relationContinuation{}, false
+}
+
+func relationContinuationCandidates(context relationContinuation) []completioncore.Candidate {
+	labels := make([]string, 0, 20)
+	if !context.hasAlias {
+		labels = append(labels, "AS")
+	}
+	if context.afterJoin {
+		labels = append(labels, "ON", "USING")
+	}
+	labels = append(labels,
+		"JOIN", "INNER", "LEFT", "RIGHT", "CROSS", "NATURAL", "STRAIGHT_JOIN",
+		"WHERE", "GROUP", "HAVING", "WINDOW",
+		"UNION", "ORDER", "LIMIT", "FOR",
+	)
+	result := make([]completioncore.Candidate, 0, len(labels))
+	for _, label := range labels {
+		result = append(result, completioncore.Candidate{
+			Text: label,
+			Type: completioncore.CandidateKeyword,
+		})
+	}
+	return result
 }
 
 func convertNative(candidate omnicompletion.Candidate) completioncore.Candidate {

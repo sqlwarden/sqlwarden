@@ -1,7 +1,12 @@
 import {
   acceptCompletion,
   autocompletion,
+  closeCompletion,
   completionStatus,
+  moveCompletionSelection,
+  selectedCompletionIndex,
+  setSelectedCompletion,
+  startCompletion,
   type Completion,
   type CompletionContext,
   type CompletionResult,
@@ -17,8 +22,8 @@ import {
   sql,
   type SQLDialect,
 } from '@codemirror/lang-sql'
-import type { Extension } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
+import { Prec, type Extension } from '@codemirror/state'
+import { EditorView, keymap } from '@codemirror/view'
 import { buildIcon, getIcon } from '@iconify/react'
 import {
   completeConnectionSQL,
@@ -197,23 +202,262 @@ export function acceptCompletionOnTab(view: EditorView, event: KeyboardEvent): b
   }
   if (event.shiftKey) return indentLess(view)
   if (completionStatus(view.state) === 'active') {
-    // Consume the key even during CodeMirror's brief interaction guard so it
-    // can never escape into browser focus navigation.
+    if (selectedCompletionIndex(view.state) === null) {
+      view.dispatch({ effects: setSelectedCompletion(0) })
+    }
     acceptCompletion(view)
     return true
   }
   return indentMore(view)
 }
 
-const completionTabHandler = EditorView.domEventHandlers({
+function closeCompletionAndKeepFocus(view: EditorView): boolean {
+  if (completionStatus(view.state) === null) return false
+  closeCompletion(view)
+  view.focus()
+  return true
+}
+
+const completionKeyboardHandler = EditorView.domEventHandlers({
   keydown(event, view) {
+    if (event.key === 'Escape' && closeCompletionAndKeepFocus(view)) {
+      event.preventDefault()
+      event.stopPropagation()
+      return true
+    }
     return acceptCompletionOnTab(view, event)
   },
 })
 
+const completionNavigationKeymap = Prec.highest(
+  keymap.of([
+    { key: 'Ctrl-Space', run: startCompletion },
+    { mac: 'Alt-`', run: startCompletion },
+    { mac: 'Alt-i', run: startCompletion },
+    { key: 'ArrowDown', run: moveCompletionSelection(true) },
+    { key: 'ArrowUp', run: moveCompletionSelection(false) },
+    { key: 'PageDown', run: moveCompletionSelection(true, 'page') },
+    { key: 'PageUp', run: moveCompletionSelection(false, 'page') },
+    // With selectOnOpen disabled this returns false for an untouched menu,
+    // allowing CodeMirror's normal Enter binding to insert a newline.
+    { key: 'Enter', run: acceptCompletion },
+  ]),
+)
+
 const vocabularyCache = new Map<string, Promise<SQLCompletionSuggestion[]>>()
-const STRUCTURAL_TRIGGERS = new Set(['.', ' ', ',', '('])
 const IDENTIFIER_VALID_FOR = /^[\w$]*$/
+const SEMANTIC_SPACE_KEYWORDS = new Set([
+  'SELECT',
+  'DISTINCT',
+  'FROM',
+  'JOIN',
+  'UPDATE',
+  'INTO',
+  'USING',
+  'LATERAL',
+  'WHERE',
+  'ON',
+  'HAVING',
+  'SET',
+  'RETURNING',
+  'AND',
+  'OR',
+  'WHEN',
+  'THEN',
+  'ELSE',
+])
+
+type SQLTriggerToken = {
+  text: string
+  kind: 'word' | 'identifier' | 'number' | 'symbol' | 'value'
+  depth: number
+}
+
+type SQLTriggerScan = {
+  tokens: SQLTriggerToken[]
+  protectedRegion: boolean
+}
+
+function scanSQLTriggerPrefix(source: string): SQLTriggerScan {
+  let tokens: SQLTriggerToken[] = []
+  let depth = 0
+  let i = 0
+
+  const push = (text: string, kind: SQLTriggerToken['kind']) => {
+    tokens.push({ text, kind, depth })
+  }
+
+  while (i < source.length) {
+    const char = source[i]
+    const next = source[i + 1]
+
+    if (/\s/.test(char)) {
+      i++
+      continue
+    }
+    if (char === '-' && next === '-') {
+      const newline = source.indexOf('\n', i + 2)
+      if (newline === -1) return { tokens, protectedRegion: true }
+      i = newline + 1
+      continue
+    }
+    if (char === '/' && next === '*') {
+      const end = source.indexOf('*/', i + 2)
+      if (end === -1) return { tokens, protectedRegion: true }
+      i = end + 2
+      continue
+    }
+    if (char === "'") {
+      i++
+      let closed = false
+      while (i < source.length) {
+        if (source[i] !== "'") {
+          i++
+          continue
+        }
+        if (source[i + 1] === "'") {
+          i += 2
+          continue
+        }
+        i++
+        closed = true
+        break
+      }
+      if (!closed) return { tokens, protectedRegion: true }
+      push('', 'value')
+      continue
+    }
+    if (char === '"' || char === '`' || char === '[') {
+      const closing = char === '[' ? ']' : char
+      i++
+      let closed = false
+      while (i < source.length) {
+        if (source[i] !== closing) {
+          i++
+          continue
+        }
+        if (closing !== ']' && source[i + 1] === closing) {
+          i += 2
+          continue
+        }
+        i++
+        closed = true
+        break
+      }
+      if (!closed) return { tokens, protectedRegion: true }
+      push('', 'identifier')
+      continue
+    }
+    if (char === '$') {
+      const tag = source.slice(i).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/)?.[0]
+      if (tag) {
+        const end = source.indexOf(tag, i + tag.length)
+        if (end === -1) return { tokens, protectedRegion: true }
+        i = end + tag.length
+        push('', 'value')
+        continue
+      }
+    }
+    if (/[A-Za-z_]/.test(char)) {
+      const start = i++
+      while (i < source.length && /[A-Za-z0-9_$]/.test(source[i])) i++
+      push(source.slice(start, i), 'word')
+      continue
+    }
+    if (/[0-9]/.test(char)) {
+      const start = i++
+      while (i < source.length && /[0-9.eE+-]/.test(source[i])) i++
+      push(source.slice(start, i), 'number')
+      continue
+    }
+    if (char === ';') {
+      tokens = []
+      depth = 0
+      i++
+      continue
+    }
+    if (char === '(') {
+      push(char, 'symbol')
+      depth++
+      i++
+      continue
+    }
+    if (char === ')') {
+      depth = Math.max(0, depth - 1)
+      push(char, 'symbol')
+      i++
+      continue
+    }
+    push(char, 'symbol')
+    i++
+  }
+
+  return { tokens, protectedRegion: false }
+}
+
+function previousWord(
+  tokens: SQLTriggerToken[],
+  before = tokens.length,
+): SQLTriggerToken | undefined {
+  for (let i = before - 1; i >= 0; i--) {
+    if (tokens[i].kind === 'word') return tokens[i]
+  }
+  return undefined
+}
+
+function hasDMLContext(tokens: SQLTriggerToken[]): boolean {
+  return tokens.some(
+    (token) =>
+      token.kind === 'word' &&
+      ['SELECT', 'INSERT', 'UPDATE', 'DELETE'].includes(token.text.toLocaleUpperCase()),
+  )
+}
+
+export function automaticSQLCompletionTrigger(source: string, cursor: number): string | undefined {
+  if (cursor <= 0 || cursor > source.length) return undefined
+  const trigger = source[cursor - 1]
+  if (!['.', ' ', ',', '('].includes(trigger)) return undefined
+  if (trigger === ' ' && (cursor < 2 || /\s/.test(source[cursor - 2]))) return undefined
+
+  const scan = scanSQLTriggerPrefix(source.slice(0, cursor))
+  if (scan.protectedRegion || scan.tokens.length === 0) return undefined
+  const last = scan.tokens[scan.tokens.length - 1]
+
+  if (trigger === '.') {
+    const owner = scan.tokens[scan.tokens.length - 2]
+    return last.text === '.' &&
+      owner !== undefined &&
+      (owner.kind === 'word' || owner.kind === 'identifier')
+      ? trigger
+      : undefined
+  }
+
+  if (trigger === ' ') {
+    if (last.kind !== 'word') return undefined
+    const lastWord = last
+    const keyword = lastWord.text.toLocaleUpperCase()
+    if (keyword === 'BY') {
+      const byIndex = scan.tokens.lastIndexOf(lastWord)
+      const clause = previousWord(scan.tokens, byIndex)
+      return clause && ['GROUP', 'ORDER', 'PARTITION'].includes(clause.text.toLocaleUpperCase())
+        ? trigger
+        : undefined
+    }
+    return SEMANTIC_SPACE_KEYWORDS.has(keyword) ? trigger : undefined
+  }
+
+  if (!hasDMLContext(scan.tokens)) return undefined
+  if (trigger === ',') return last.text === ',' ? trigger : undefined
+  if (trigger === '(') {
+    const owner = scan.tokens[scan.tokens.length - 2]
+    return last.text === '(' &&
+      owner !== undefined &&
+      (owner.kind === 'word' || owner.kind === 'identifier')
+      ? trigger
+      : undefined
+  }
+  return undefined
+}
 
 function normalizedDriver(driver?: string): string {
   switch (driver?.toLowerCase()) {
@@ -277,8 +521,10 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
   return async (context: CompletionContext): Promise<CompletionResult | null> => {
     const word = context.matchBefore(/[A-Za-z_$][\w$]*$/)
     const prefix = word?.text ?? ''
-    const previous = context.pos > 0 ? context.state.sliceDoc(context.pos - 1, context.pos) : ''
-    const structural = STRUCTURAL_TRIGGERS.has(previous)
+    const source = context.state.doc.toString()
+    const automaticTrigger = context.explicit
+      ? undefined
+      : automaticSQLCompletionTrigger(source, context.pos)
     const shouldCompleteLexically = context.explicit || prefix.length >= 2
     const driver = normalizedDriver(config.driver)
     const supportsSemanticCompletion = driver !== 'sqlite' && driver !== 'standard'
@@ -288,7 +534,7 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
       config.workspaceId !== undefined &&
       config.connectionId !== undefined &&
       config.driver !== undefined
-    const shouldCompleteRemotely = hasRemote && (context.explicit || structural)
+    const shouldCompleteRemotely = hasRemote && (context.explicit || automaticTrigger !== undefined)
 
     if (context.explicit && config.connectionId === undefined) {
       config.onConnectionRequired?.()
@@ -336,12 +582,12 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
         config.orgSlug!,
         config.workspaceId!,
         config.connectionId!,
-        context.state.doc.toString(),
+        source,
         context.pos,
         config.sessionId,
         controller.signal,
         context.explicit ? 'invoked' : 'automatic',
-        structural ? previous : undefined,
+        automaticTrigger,
       )
       if (context.aborted || controller.signal.aborted || generation !== remoteGeneration)
         return null
@@ -383,7 +629,10 @@ export function sqlCompletionExtension(config: SQLCompletionConfig): Extension {
     sql({ dialect, upperCaseKeywords: true }),
     autocompletion({
       activateOnTypingDelay: 150,
+      defaultKeymap: false,
       icons: false,
+      interactionDelay: 0,
+      selectOnOpen: false,
       addToOptions: [
         {
           position: 20,
@@ -393,6 +642,7 @@ export function sqlCompletionExtension(config: SQLCompletionConfig): Extension {
       override: [remoteSQLCompletionSource(config)],
     }),
     completionTheme,
-    completionTabHandler,
+    completionKeyboardHandler,
+    completionNavigationKeymap,
   ]
 }
