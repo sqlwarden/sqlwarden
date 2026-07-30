@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -20,9 +21,8 @@ type schemaSpecResponse struct {
 	Spec schema.SchemaSpec `json:"spec"`
 }
 
-type catalogResponse struct {
-	Catalog   *schema.Catalog   `json:"catalog"`
-	Directory *schema.Directory `json:"directory,omitempty"`
+type directoryResponse struct {
+	Directory *schema.Directory `json:"directory"`
 }
 
 type objectsRequest struct {
@@ -167,6 +167,11 @@ func (app *application) resolveRelationshipInspector(w http.ResponseWriter, r *h
 }
 
 func (app *application) getConnectionSchemaRelationships(w http.ResponseWriter, r *http.Request) {
+	scope, err := schemaScopeQuery(r)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
 	persistent, err := app.persistentSchemaMode(r)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -185,7 +190,7 @@ func (app *application) getConnectionSchemaRelationships(w http.ResponseWriter, 
 			app.writeSnapshotPending(w, r)
 			return
 		}
-		graph, found, err := app.schemaSnapshots.Relationship(r.Context(), snapshot.ID, r.URL.Query().Get("namespace"))
+		graph, found, err := app.schemaSnapshots.Relationship(r.Context(), snapshot.ID, scope)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -203,15 +208,14 @@ func (app *application) getConnectionSchemaRelationships(w http.ResponseWriter, 
 	if !ok {
 		return
 	}
-	namespace := r.URL.Query().Get("namespace")
-	graph, err := app.schemaService.Relationships(r.Context(), session.ConnectionID, namespace, inspector)
+	graph, err := app.schemaService.Relationships(r.Context(), session.ConnectionID, scope, inspector)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 	app.logDebug(r, "schema relationships returned",
 		slog.String("session_id", session.ID),
-		slog.String("namespace", namespace),
+		slog.String("scope", string(scope)),
 		slog.Int("edge_count", len(graph.Relationships)),
 	)
 	if err := response.JSON(w, http.StatusOK, relationshipsResponse{Graph: graph}); err != nil {
@@ -243,7 +247,7 @@ func (app *application) getConnectionSchemaSpec(w http.ResponseWriter, r *http.R
 	}
 }
 
-func (app *application) getConnectionSchemaCatalog(w http.ResponseWriter, r *http.Request) {
+func (app *application) getConnectionSchemaDirectory(w http.ResponseWriter, r *http.Request) {
 	persistent, err := app.persistentSchemaMode(r)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -253,7 +257,7 @@ func (app *application) getConnectionSchemaCatalog(w http.ResponseWriter, r *htt
 		if !app.authorizeSchemaAccess(w, r) {
 			return
 		}
-		_, catalog, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
+		_, directory, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -262,9 +266,7 @@ func (app *application) getConnectionSchemaCatalog(w http.ResponseWriter, r *htt
 			app.writeSnapshotPending(w, r)
 			return
 		}
-		if err := response.JSON(w, http.StatusOK, catalogResponse{
-			Catalog: catalog, Directory: schema.DirectoryFromCatalog(catalog),
-		}); err != nil {
+		if err := response.JSON(w, http.StatusOK, directoryResponse{Directory: directory}); err != nil {
 			app.serverError(w, r, err)
 		}
 		return
@@ -273,19 +275,16 @@ func (app *application) getConnectionSchemaCatalog(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
-	cat, err := app.schemaService.Catalog(r.Context(), session.ConnectionID, inspector)
+	directory, err := app.schemaService.Directory(r.Context(), session.ConnectionID, inspector)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	app.logDebug(r, "schema catalog returned",
+	app.logDebug(r, "schema directory returned",
 		slog.String("session_id", session.ID),
-		slog.String("dialect", cat.Dialect),
-		slog.Int("namespace_count", len(cat.Namespaces)),
+		slog.String("engine", directory.Engine),
 	)
-	if err := response.JSON(w, http.StatusOK, catalogResponse{
-		Catalog: cat, Directory: schema.DirectoryFromCatalog(cat),
-	}); err != nil {
+	if err := response.JSON(w, http.StatusOK, directoryResponse{Directory: directory}); err != nil {
 		app.serverError(w, r, err)
 	}
 }
@@ -390,7 +389,7 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 			slog.String("session_id", session.ID),
 			slog.String("connection_id", session.ConnectionID),
 			slog.String("kind", input.Ref.Kind),
-			slog.String("namespace", input.Ref.Namespace),
+			slog.String("scope", string(input.Ref.Scope)),
 			slog.String("name", input.Ref.Name),
 		)
 	} else {
@@ -404,6 +403,21 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 	if err := response.JSON(w, http.StatusOK, schemaStatusResponse{Status: "ok", Mode: "ephemeral"}); err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func schemaScopeQuery(r *http.Request) (schema.ScopePath, error) {
+	raw := r.URL.Query().Get("scope")
+	if raw == "" {
+		return "", errors.New("scope query parameter is required")
+	}
+	var scope schema.ScopePath
+	if err := json.Unmarshal([]byte(raw), &scope); err != nil {
+		return "", err
+	}
+	if scope == "" {
+		return "", errors.New("scope query parameter must not be empty")
+	}
+	return scope, nil
 }
 
 func (app *application) getConnectionSchemaSnapshot(w http.ResponseWriter, r *http.Request) {

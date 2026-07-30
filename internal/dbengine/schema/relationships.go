@@ -3,7 +3,6 @@ package schema
 // RelationshipGraph is the cheap topology of a single scope.
 type RelationshipGraph struct {
 	Scope         ScopePath      `json:"scope,omitempty"`
-	Namespace     string         `json:"namespace,omitempty"`
 	Relationships []Relationship `json:"relationships"`
 }
 

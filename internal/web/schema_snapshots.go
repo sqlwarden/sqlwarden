@@ -54,12 +54,12 @@ func (app *application) maybeEnqueueSchemaSync(ctx context.Context, conn databas
 	if err != nil || !enabled {
 		return
 	}
-	_, catalog, found, err := app.schemaSnapshots.Active(ctx, conn.ID)
+	_, directory, found, err := app.schemaSnapshots.Active(ctx, conn.ID)
 	if err != nil {
 		app.logger.WarnContext(ctx, "schema snapshot freshness check failed", "connection_id", conn.ID, "error", err)
 		return
 	}
-	if found && time.Since(catalog.GeneratedAt) < app.config.Schema.SnapshotFreshness {
+	if found && time.Since(directory.GeneratedAt) < app.config.Schema.SnapshotFreshness {
 		return
 	}
 	if _, _, err := app.enqueueSchemaSync(ctx, conn.ID, orgID); err != nil && !errors.Is(err, jobs.ErrActiveExists) {
@@ -115,16 +115,16 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 	if !ok {
 		return nil, jobs.Permanent("schema_sync_unsupported", "Schema inspection is not supported for this driver.")
 	}
-	catalog, err := inspector.InspectCatalog(ctx, schemameta.CatalogOptions{})
+	directory, err := inspector.InspectDirectory(ctx, schemameta.DirectoryOptions{Root: conn.DefaultScope})
 	if err != nil {
-		return nil, jobs.Retryable("schema_catalog_failed", "Could not inspect the schema catalog.")
+		return nil, jobs.Retryable("schema_directory_failed", "Could not inspect the schema directory.")
 	}
-	catalog.Connection = strconv.FormatInt(conn.ID, 10)
-	if catalog.GeneratedAt.IsZero() {
-		catalog.GeneratedAt = time.Now()
+	directory.Connection = strconv.FormatInt(conn.ID, 10)
+	if directory.GeneratedAt.IsZero() {
+		directory.GeneratedAt = time.Now()
 	}
 
-	snapshot, err := app.schemaSnapshots.Begin(ctx, conn.ID, ws.OrgID, catalog)
+	snapshot, err := app.schemaSnapshots.Begin(ctx, conn.ID, ws.OrgID, directory)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 		}
 	}()
 
-	refs := catalogObjectRefs(catalog)
+	refs := directoryObjectRefs(directory)
 	objectCount := 0
 	for start := 0; start < len(refs); start += schemaObjectBatchSize {
 		end := start + schemaObjectBatchSize
@@ -153,8 +153,8 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 	}
 
 	if relationshipInspector, ok := driver.(schemameta.RelationshipInspector); ok {
-		for _, namespace := range catalog.Namespaces {
-			graph, inspectErr := relationshipInspector.InspectRelationships(ctx, namespace.Name)
+		for _, scope := range directoryObjectScopes(directory) {
+			graph, inspectErr := relationshipInspector.InspectRelationshipsInScope(ctx, scope)
 			if inspectErr != nil {
 				return nil, jobs.Retryable("schema_relationships_failed", "Could not inspect schema relationships.")
 			}
@@ -175,24 +175,44 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 	app.completionService.InvalidateConnection(strconv.FormatInt(conn.ID, 10))
 	app.logger.InfoContext(ctx, "schema snapshot published",
 		"connection_id", conn.ID,
-		"dialect", catalog.Dialect,
-		"namespaces", len(catalog.Namespaces),
+		"engine", directory.Engine,
+		"scopes", len(directoryObjectScopes(directory)),
 		"objects", objectCount,
 	)
 	return schemaSyncOutput{SnapshotID: snapshot.ID, Objects: objectCount}, nil
 }
 
-func catalogObjectRefs(catalog *schemameta.Catalog) []schemameta.ObjectRef {
-	if catalog == nil {
+func directoryObjectRefs(directory *schemameta.Directory) []schemameta.ObjectRef {
+	if directory == nil {
 		return nil
 	}
 	var refs []schemameta.ObjectRef
-	for _, namespace := range catalog.Namespaces {
-		for _, group := range namespace.Groups {
+	walkDirectoryNodes(directory.Roots, func(node schemameta.ScopeNode) {
+		for _, group := range node.Groups {
 			refs = append(refs, group.Objects...)
 		}
-	}
+	})
 	return refs
+}
+
+func directoryObjectScopes(directory *schemameta.Directory) []schemameta.ScopePath {
+	if directory == nil {
+		return nil
+	}
+	var scopes []schemameta.ScopePath
+	walkDirectoryNodes(directory.Roots, func(node schemameta.ScopeNode) {
+		if len(node.Groups) > 0 {
+			scopes = append(scopes, node.Path)
+		}
+	})
+	return scopes
+}
+
+func walkDirectoryNodes(nodes []schemameta.ScopeNode, visit func(schemameta.ScopeNode)) {
+	for _, node := range nodes {
+		visit(node)
+		walkDirectoryNodes(node.Children, visit)
+	}
 }
 
 func (app *application) disableConnectionSnapshots(ctx context.Context, connectionID int64) error {

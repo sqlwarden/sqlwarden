@@ -4,17 +4,17 @@ import { Icon, type AppIcon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { isApiError } from '#/lib/api/errors'
 import {
-  orgConnectionCatalogQueryOptions,
+  orgConnectionDirectoryQueryOptions,
   orgConnectionSchemaSpecQueryOptions,
   orgConnectionObjectQueryOptions,
 } from '#/lib/api/query'
 import type {
-  CatalogNamespace,
-  CatalogObjectGroup,
   Connection,
+  ObjectGroup,
   ObjectDescriptor,
   ObjectDetail,
   ObjectRef,
+  ScopeNode,
   SchemaSpec,
   Workspace,
 } from '#/lib/api/types'
@@ -23,7 +23,13 @@ import { newObjectTab } from './object-detail/objectTab'
 import { newDiagramTab, type DiagramTarget } from './schema-diagram/diagramTab'
 import { diagramSupported, diagramSupportedForKind } from './schema-diagram/capability'
 import { OBJECT_REF_DND_MIME } from './schema-diagram/dnd'
-import { filterCatalog, kindLabel, sortedGroups } from './schemaCatalog'
+import {
+  filterDirectory,
+  hasDirectoryObjects,
+  kindLabel,
+  sortedGroups,
+} from './schemaDirectory'
+import { scopeLabel } from '#/lib/api/scope'
 import { columnTypeIcon, columnTypeIconColor } from './columnTypeIcon'
 import { dialectFor, IDENTIFIER_DND_MIME, type SqlDialect } from './sqlDialect'
 import { useInsertIntoEditor } from './useInsertIntoEditor'
@@ -81,7 +87,7 @@ function dragPropsFor(
 
 function useObjectInsert(ref: ObjectRef): InsertableProps | undefined {
   const ctx = useContext(SchemaTreeContext)
-  return dragPropsFor(ctx, ctx ? ctx.dialect.formatObject(ref.namespace, ref.name) : undefined, ref)
+  return dragPropsFor(ctx, ctx ? ctx.dialect.formatObject(ref.scope, ref.name) : undefined, ref)
 }
 
 function useColumnInsert(name: string): InsertableProps | undefined {
@@ -153,8 +159,8 @@ export function SchemaTree({
       ),
     )
 
-  const catalogQuery = useQuery({
-    ...orgConnectionCatalogQueryOptions(orgSlug, workspaceId, connectionId, sessionId),
+  const directoryQuery = useQuery({
+    ...orgConnectionDirectoryQueryOptions(orgSlug, workspaceId, connectionId, sessionId),
   })
   const specQuery = useQuery({
     ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspaceId, connectionId, sessionId),
@@ -169,9 +175,9 @@ export function SchemaTree({
   // A 410 from any schema endpoint means the server-side session died (idle
   // timeout, restart). Drop it so the tree flips to the reconnect hint instead
   // of erroring forever against a dead session id.
-  useEvictGoneSession(connectionId, [catalogQuery.error, specQuery.error])
+  useEvictGoneSession(connectionId, [directoryQuery.error, specQuery.error])
 
-  if (catalogQuery.isLoading) {
+  if (directoryQuery.isLoading) {
     return (
       <SchemaMessage>
         <SchemaSpinner />
@@ -179,7 +185,7 @@ export function SchemaTree({
       </SchemaMessage>
     )
   }
-  if (catalogQuery.isError) {
+  if (directoryQuery.isError) {
     if (!sessionId) {
       if (connStatus === 'connecting') {
         return (
@@ -204,7 +210,7 @@ export function SchemaTree({
         </SchemaMessage>
       )
     }
-    if (isApiError(catalogQuery.error) && catalogQuery.error.status === 501) {
+    if (isApiError(directoryQuery.error) && directoryQuery.error.status === 501) {
       return <SchemaMessage>This driver doesn&apos;t support schema inspection.</SchemaMessage>
     }
     return (
@@ -213,7 +219,7 @@ export function SchemaTree({
         <button
           type="button"
           className="underline hover:text-foreground"
-          onClick={() => catalogQuery.refetch()}
+          onClick={() => directoryQuery.refetch()}
         >
           Retry
         </button>
@@ -221,9 +227,9 @@ export function SchemaTree({
     )
   }
 
-  const raw = catalogQuery.data?.catalog
+  const raw = directoryQuery.data?.directory
   if (!raw) {
-    if (catalogQuery.data?.status === 'pending') {
+    if (directoryQuery.data?.status === 'pending') {
       return (
         <SchemaMessage>
           <SchemaSpinner />
@@ -235,14 +241,14 @@ export function SchemaTree({
   }
 
   const filtering = filter.trim() !== ''
-  const namespaces = filterCatalog(raw, filter).namespaces ?? []
+  const roots = filterDirectory(raw, filter).roots
 
-  if (namespaces.length === 0) {
+  if (roots.length === 0 || !hasDirectoryObjects(roots)) {
     return <SchemaMessage>{filtering ? 'No matches.' : 'No objects.'}</SchemaMessage>
   }
 
   const spec = specQuery.data?.spec
-  const single = namespaces.length === 1 ? namespaces[0] : null
+  const single = roots.length === 1 ? roots[0] : null
   const ctx: TreeCtx = {
     dialect,
     insert,
@@ -259,13 +265,17 @@ export function SchemaTree({
   return (
     <SchemaTreeContext.Provider value={ctx}>
       <div className="py-0.5">
-        {single
+        {single && (single.children?.length ?? 0) === 0
           ? sortedGroups(single, spec).map((g) => (
               <SchemaGroupNode key={g.kind} group={g} forceOpen={filtering} />
             ))
-          : namespaces.map((ns) => (
-              <SchemaNamespaceNode key={ns.name} namespace={ns} forceOpen={filtering} />
-            ))}
+          : single && single.groups.length === 0
+            ? (single.children ?? []).map((node) => (
+                <SchemaScopeNode key={JSON.stringify(node.path)} node={node} forceOpen={filtering} />
+              ))
+            : roots.map((node) => (
+                <SchemaScopeNode key={JSON.stringify(node.path)} node={node} forceOpen={filtering} />
+              ))}
       </div>
     </SchemaTreeContext.Provider>
   )
@@ -291,23 +301,24 @@ function GuideChildren({ children }: { children: React.ReactNode }) {
   return <div className="ml-[13px] border-l border-border/60">{children}</div>
 }
 
-function SchemaNamespaceNode({
-  namespace,
+function SchemaScopeNode({
+  node,
   forceOpen,
 }: {
-  namespace: CatalogNamespace
+  node: ScopeNode
   forceOpen: boolean
 }) {
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
   const { refresh, spec, openDiagram } = useTreeCtx()
-  const groups = sortedGroups(namespace, spec)
+  const groups = sortedGroups(node, spec)
+  const label = node.path[node.path.length - 1]?.name ?? scopeLabel(node.path)
   const menuItems = buildNamespaceMenu({
-    onCopyName: () => copyWithToast(namespace.name),
+    onCopyName: () => copyWithToast(label),
     onRefresh: refresh,
     onViewDiagram:
       diagramSupported(spec) && openDiagram
-        ? () => openDiagram({ kind: 'namespace', namespace: namespace.name })
+        ? () => openDiagram({ kind: 'scope', scope: node.path })
         : undefined,
   })
 
@@ -318,7 +329,7 @@ function SchemaNamespaceNode({
           typeIcon="database"
           chevron={expanded}
           bold
-          label={namespace.name}
+          label={label}
           onClick={() => setOpen(!expanded)}
         />
       </ContextMenu>
@@ -327,13 +338,16 @@ function SchemaNamespaceNode({
           {groups.map((g) => (
             <SchemaGroupNode key={g.kind} group={g} forceOpen={forceOpen} />
           ))}
+          {(node.children ?? []).map((child) => (
+            <SchemaScopeNode key={JSON.stringify(child.path)} node={child} forceOpen={forceOpen} />
+          ))}
         </GuideChildren>
       )}
     </div>
   )
 }
 
-function SchemaGroupNode({ group, forceOpen }: { group: CatalogObjectGroup; forceOpen: boolean }) {
+function SchemaGroupNode({ group, forceOpen }: { group: ObjectGroup; forceOpen: boolean }) {
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
   const objects = group.objects ?? []
@@ -401,7 +415,7 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
     onCopyName: () => copyWithToast(objectRef.name),
     onCopyQualifiedName: () =>
       copyWithToast(
-        dialect ? dialect.formatObject(objectRef.namespace, objectRef.name) : objectRef.name,
+        dialect ? dialect.formatObject(objectRef.scope, objectRef.name) : objectRef.name,
       ),
     onCopyColumnList: () =>
       copyWithToast(

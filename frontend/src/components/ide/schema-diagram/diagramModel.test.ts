@@ -4,7 +4,7 @@ import {
   hiddenNeighbors,
   rankByDegree,
   reachableRefs,
-  planNamespaceSeed,
+  planScopeSeed,
   estimateNodeSize,
   edgeCardinality,
   relationshipHandleId,
@@ -12,7 +12,11 @@ import {
 } from './diagramModel'
 import type { ObjectRef, Relationship, ObjectDetail } from '#/lib/api/types'
 
-const t = (name: string): ObjectRef => ({ namespace: 'public', kind: 'table', name })
+const t = (name: string): ObjectRef => ({
+  scope: [{ kind: 'schema', name: 'public' }],
+  kind: 'table',
+  name,
+})
 const edge = (from: string, to: string): Relationship => ({
   name: `${from}_${to}_fk`,
   source: t(from),
@@ -27,8 +31,8 @@ const edges: Relationship[] = [
 ]
 
 describe('diagramModel', () => {
-  it('refKey is stable and namespace+kind+name scoped', () => {
-    expect(refKey(t('users'))).toBe('public table users')
+  it('refKey is stable and scope+kind+name scoped', () => {
+    expect(refKey(t('users'))).toBe('schema=public table users')
   })
 
   it('hiddenNeighbors returns both directions excluding those already present', () => {
@@ -76,14 +80,14 @@ describe('diagramModel', () => {
     expect(twoHop).toEqual(['orders', 'products', 'reviews', 'users'])
   })
 
-  it('planNamespaceSeed returns all tables when under the cap', () => {
+  it('planScopeSeed returns all tables when under the cap', () => {
     const refs = [t('users'), t('orders'), t('products')]
-    expect(planNamespaceSeed(refs, edges, 60)).toEqual({ seed: refs, progressive: false })
+    expect(planScopeSeed(refs, edges, 60)).toEqual({ seed: refs, progressive: false })
   })
 
-  it('planNamespaceSeed returns hub tables and progressive=true when over the cap', () => {
+  it('planScopeSeed returns hub tables and progressive=true when over the cap', () => {
     const refs = [t('users'), t('orders'), t('products'), t('reviews')]
-    const { seed, progressive } = planNamespaceSeed(refs, edges, 2)
+    const { seed, progressive } = planScopeSeed(refs, edges, 2)
     expect(progressive).toBe(true)
     expect(seed).toHaveLength(2)
     expect(seed.map((r) => r.name).sort()).toEqual(['orders', 'products'])

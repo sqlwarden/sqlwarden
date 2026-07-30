@@ -6,41 +6,42 @@ import (
 )
 
 func TestIndexObjectLookupAndIsolation(t *testing.T) {
-	catalog := &Catalog{
-		Dialect: "postgres", Database: "app", DefaultNamespace: "public",
-		Namespaces: []NamespaceCatalog{{
-			Name: "public",
-			Groups: []ObjectGroupCatalog{{
+	scope := NewScopePath(ScopeSegment{Kind: "database", Name: "app"}, ScopeSegment{Kind: "schema", Name: "public"})
+	directory := &Directory{
+		Engine: "postgres", DefaultScope: scope,
+		Roots: []ScopeNode{{
+			Path: scope,
+			Groups: []ObjectGroup{{
 				Kind: "table",
 				Objects: []ObjectRef{
-					{Namespace: "public", Kind: "table", Name: "Accounts"},
-					{Namespace: "public", Kind: "table", Name: "PendingDetails"},
+					{Scope: scope, Kind: "table", Name: "Accounts"},
+					{Scope: scope, Kind: "table", Name: "PendingDetails"},
 				},
 			}},
 		}},
 	}
 	objects := []Object{{
-		Ref: ObjectRef{Namespace: "public", Kind: "table", Name: "Accounts"},
+		Ref: ObjectRef{Scope: scope, Kind: "table", Name: "Accounts"},
 		Relational: &RelationalDetail{
 			Columns: []Column{{Name: "id", DataType: "bigint", Attributes: map[string]any{"comment": "key"}}},
 			Indexes: []SecondaryIndex{{Name: "accounts_pkey", Columns: []string{"id"}, Unique: true}},
 		},
 	}}
-	index := NewIndex(MetadataSet{Catalog: catalog, Objects: objects, Version: "snapshot-7"})
+	index := NewIndex(MetadataSet{Directory: directory, Objects: objects, Version: "snapshot-7"})
 
 	// Mutating constructor inputs must not mutate the prepared index.
-	catalog.Database = "mutated"
+	directory.Engine = "mutated"
 	objects[0].Relational.Columns[0].Name = "mutated"
-	if index.Database() != "app" || index.DefaultNamespace() != "public" || index.Version() != "snapshot-7" {
-		t.Fatalf("unexpected index identity: database=%q namespace=%q version=%q", index.Database(), index.DefaultNamespace(), index.Version())
+	if index.DefaultScope() != scope || index.Version() != "snapshot-7" {
+		t.Fatalf("unexpected index identity: scope=%q version=%q", index.DefaultScope(), index.Version())
 	}
-	if ref, ok := index.FindRef("public", "table", "pendingdetails"); !ok || ref.Name != "PendingDetails" {
-		t.Fatalf("catalog-only ref lookup = %+v, %v", ref, ok)
+	if ref, ok := index.FindRefInScope(scope, "table", "pendingdetails"); !ok || ref.Name != "PendingDetails" {
+		t.Fatalf("directory-only ref lookup = %+v, %v", ref, ok)
 	}
-	if _, ok := index.FindObject("public", "table", "PendingDetails"); ok {
-		t.Fatal("catalog-only ref unexpectedly had object detail")
+	if _, ok := index.FindObjectInScope(scope, "table", "PendingDetails"); ok {
+		t.Fatal("directory-only ref unexpectedly had object detail")
 	}
-	object, ok := index.FindObject("PUBLIC", "TABLE", "accounts")
+	object, ok := index.FindObjectInScope(scope, "TABLE", "accounts")
 	if !ok || object.Ref.Name != "Accounts" || object.Relational.Columns[0].Name != "id" {
 		t.Fatalf("case-folded object lookup = %+v, %v", object, ok)
 	}
@@ -48,7 +49,7 @@ func TestIndexObjectLookupAndIsolation(t *testing.T) {
 	// Mutating returned values must not mutate subsequent reads.
 	object.Relational.Columns[0].Name = "changed"
 	object.Relational.Indexes[0].Columns[0] = "changed"
-	again, ok := index.Object(ObjectRef{Namespace: "public", Kind: "table", Name: "Accounts"})
+	again, ok := index.Object(ObjectRef{Scope: scope, Kind: "table", Name: "Accounts"})
 	if !ok || again.Relational.Columns[0].Name != "id" || again.Relational.Indexes[0].Columns[0] != "id" {
 		t.Fatalf("index leaked mutable state: %+v", again)
 	}
@@ -67,7 +68,7 @@ func TestIndexDirectoryLookupSupportsNonSQLScopes(t *testing.T) {
 			Path: NewScopePath(ScopeSegment{Kind: "cluster", Name: "cache-prod"}),
 			Children: []ScopeNode{{
 				Path: scope,
-				Groups: []ObjectGroupCatalog{{
+				Groups: []ObjectGroup{{
 					Kind: "key", Objects: []ObjectRef{ref},
 				}},
 			}},
@@ -88,18 +89,16 @@ func TestIndexDirectoryLookupSupportsNonSQLScopes(t *testing.T) {
 	if got, ok := index.FindObjectInScope(scope, "key", "session:42"); !ok || got.Ref != ref {
 		t.Fatalf("FindObjectInScope = %+v, %v", got, ok)
 	}
-	if _, ok := index.Catalog(); ok {
-		t.Fatal("directory-only index unexpectedly synthesized a legacy catalog")
-	}
 }
 
 func TestIndexRelationshipGraphLookups(t *testing.T) {
-	users := ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
-	orders := ObjectRef{Namespace: "public", Kind: "table", Name: "orders"}
-	items := ObjectRef{Namespace: "public", Kind: "table", Name: "order_items"}
+	scope := NewScopePath(ScopeSegment{Kind: "schema", Name: "public"})
+	users := ObjectRef{Scope: scope, Kind: "table", Name: "users"}
+	orders := ObjectRef{Scope: scope, Kind: "table", Name: "orders"}
+	items := ObjectRef{Scope: scope, Kind: "table", Name: "order_items"}
 	objects := []Object{{Ref: orders}}
 	graph := &RelationshipGraph{
-		Namespace: "public",
+		Scope: scope,
 		Relationships: []Relationship{
 			{Name: "orders_user_fk", Source: orders, Columns: []string{"user_id"}, References: users, ReferencedColumns: []string{"id"}},
 			{Name: "items_order_fk", Source: items, Columns: []string{"order_id"}, References: orders, ReferencedColumns: []string{"id"}},
@@ -122,9 +121,9 @@ func TestIndexRelationshipGraphLookups(t *testing.T) {
 		t.Fatalf("neighbors with uninspected details = %+v", got)
 	}
 
-	relationships := index.Relationships("PUBLIC")
+	relationships := index.RelationshipsInScope(scope)
 	relationships[0].Columns[0] = "mutated"
-	if got := index.Relationships("public"); got[0].Columns[0] != "user_id" {
+	if got := index.RelationshipsInScope(scope); got[0].Columns[0] != "user_id" {
 		t.Fatalf("relationships leaked mutable state: %+v", got)
 	}
 }

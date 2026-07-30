@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import {
-  connectionCatalogQueryKey,
+  connectionDirectoryQueryKey,
   connectionObjectQueryKey,
   invalidateConnectionSchemaQueries,
 } from './query'
@@ -10,13 +10,17 @@ import type { ObjectRef } from '#/lib/api/types'
 const slug = 'acme'
 const workspaceId = 1
 const connectionId = 2
-const ref: ObjectRef = { namespace: 'public', kind: 'table', name: 'users' }
+const ref: ObjectRef = {
+  scope: [{ kind: 'schema', name: 'public' }],
+  kind: 'table',
+  name: 'users',
+}
 
 describe('invalidateConnectionSchemaQueries', () => {
-  it('invalidates the catalog and an expanded object detail, leaving other connections untouched', async () => {
+  it('invalidates the directory and an expanded object detail, leaving other connections untouched', async () => {
     const qc = new QueryClient()
 
-    qc.setQueryData(connectionCatalogQueryKey(slug, workspaceId, connectionId), { catalog: {} })
+    qc.setQueryData(connectionDirectoryQueryKey(slug, workspaceId, connectionId), { directory: {} })
     qc.setQueryData(connectionObjectQueryKey(slug, workspaceId, connectionId, ref), { ref })
     // A second connection's object detail must survive a refresh of the first.
     const otherConnId = 99
@@ -25,7 +29,7 @@ describe('invalidateConnectionSchemaQueries', () => {
     await invalidateConnectionSchemaQueries(qc, slug, workspaceId, connectionId)
 
     expect(
-      qc.getQueryState(connectionCatalogQueryKey(slug, workspaceId, connectionId))?.isInvalidated,
+      qc.getQueryState(connectionDirectoryQueryKey(slug, workspaceId, connectionId))?.isInvalidated,
     ).toBe(true)
     expect(
       qc.getQueryState(connectionObjectQueryKey(slug, workspaceId, connectionId, ref))
@@ -55,7 +59,7 @@ describe('invalidateConnectionSchemaQueries', () => {
     await invalidateConnectionSchemaQueries(qc, slug, workspaceId, connectionId)
 
     // invalidateQueries refetches active observers, so the expanded object is
-    // re-fetched alongside the catalog.
+    // re-fetched alongside the directory.
     expect(objectFn).toHaveBeenCalledTimes(2)
     unsubscribe()
   })

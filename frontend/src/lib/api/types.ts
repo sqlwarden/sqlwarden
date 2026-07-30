@@ -315,46 +315,20 @@ export interface ListQuery {
 }
 
 export interface ObjectRef {
-  namespace: string
-  scope?: ScopePath
+  scope: ScopePath
   kind: string
   name: string
-}
-
-export interface CatalogObjectGroup {
-  kind: string
-  objects: ObjectRef[]
-}
-
-export interface CatalogNamespace {
-  name: string
-  groups: CatalogObjectGroup[] | null
-}
-
-export interface SchemaCatalog {
-  connection: string
-  dialect: string
-  database: string
-  generated_at: string
-  namespaces: CatalogNamespace[] | null
 }
 
 export interface ScopeNode {
   path: ScopePath
-  groups: DirectoryObjectGroup[]
+  groups: ObjectGroup[]
   children?: ScopeNode[]
 }
 
-export interface DirectoryObjectRef {
-  scope: ScopePath
-  namespace?: string
+export interface ObjectGroup {
   kind: string
-  name: string
-}
-
-export interface DirectoryObjectGroup {
-  kind: string
-  objects: DirectoryObjectRef[]
+  objects: ObjectRef[]
 }
 
 export interface SchemaDirectory {
@@ -439,8 +413,7 @@ export interface ObjectDetail {
   attributes?: Record<string, unknown>
 }
 
-export interface CatalogResponse {
-  catalog?: SchemaCatalog
+export interface DirectoryResponse {
   directory?: SchemaDirectory
   status?: 'pending'
   mode?: 'persistent' | 'ephemeral'
@@ -473,7 +446,7 @@ export interface Relationship {
 }
 
 export interface RelationshipGraph {
-  namespace: string
+  scope: ScopePath
   relationships: Relationship[] | null
 }
 

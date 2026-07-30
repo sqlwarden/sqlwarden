@@ -50,67 +50,17 @@ func TestScopePathRejectsInvalidJSONSegments(t *testing.T) {
 	}
 }
 
-func TestDirectoryFromCatalogPreservesCheapReferences(t *testing.T) {
-	catalog := &Catalog{
-		Dialect: "postgres", Database: "app", DefaultNamespace: "public",
-		Namespaces: []NamespaceCatalog{{
-			Name: "public",
-			Groups: []ObjectGroupCatalog{{
-				Kind:    "table",
-				Objects: []ObjectRef{{Namespace: "public", Kind: "table", Name: "users"}},
-			}},
-		}},
-	}
-	directory := DirectoryFromCatalog(catalog)
-	if got := directory.DefaultScope.Name("schema"); got != "public" {
-		t.Fatalf("default schema = %q", got)
-	}
-	ref := directory.Roots[0].Children[0].Groups[0].Objects[0]
-	if ref.Scope.Name("database") != "app" || ref.Scope.Name("schema") != "public" {
-		t.Fatalf("scope = %v", ref.Scope)
-	}
-}
-
-func TestDirectoryFromCatalogUsesDatabaseLevelForMySQLAndSQLite(t *testing.T) {
-	for _, dialect := range []string{"mysql", "sqlite"} {
-		t.Run(dialect, func(t *testing.T) {
-			catalog := &Catalog{
-				Dialect: dialect, Database: "main", DefaultNamespace: "tenant",
-				Namespaces: []NamespaceCatalog{{
-					Name: "tenant",
-					Groups: []ObjectGroupCatalog{{
-						Kind:    "table",
-						Objects: []ObjectRef{{Namespace: "tenant", Kind: "table", Name: "orders"}},
-					}},
-				}},
-			}
-			directory := DirectoryFromCatalog(catalog)
-			if len(directory.Roots) != 1 || len(directory.Roots[0].Children) != 0 {
-				t.Fatalf("database-level directory = %+v", directory.Roots)
-			}
-			if got := directory.Roots[0].Path.Name("database"); got != "tenant" {
-				t.Fatalf("root database = %q", got)
-			}
-			if got := directory.Roots[0].Groups[0].Objects[0].Scope; got != directory.Roots[0].Path {
-				t.Fatalf("object scope = %q, want %q", got, directory.Roots[0].Path)
-			}
-			if directory.DefaultScope != directory.Roots[0].Path {
-				t.Fatalf("default scope = %q, want %q", directory.DefaultScope, directory.Roots[0].Path)
-			}
-		})
-	}
-}
-
 func TestObjectMarshalsRelationalOnly(t *testing.T) {
+	public := NewScopePath(ScopeSegment{Kind: "database", Name: "app"}, ScopeSegment{Kind: "schema", Name: "public"})
 	o := Object{
-		Ref: ObjectRef{Namespace: "public", Kind: "table", Name: "users"},
+		Ref: ObjectRef{Scope: public, Kind: "table", Name: "users"},
 		Relational: &RelationalDetail{
 			Columns:    []Column{{Name: "id", DataType: "int8", Ordinal: 1}},
 			PrimaryKey: []string{"id"},
 			ForeignKeys: []ForeignKey{{
 				Name:              "users_org_fkey",
 				Columns:           []string{"org_id"},
-				References:        ObjectRef{Namespace: "billing", Kind: "table", Name: "orgs"},
+				References:        ObjectRef{Scope: public.With("schema", "billing"), Kind: "table", Name: "orgs"},
 				ReferencedColumns: []string{"id"},
 			}},
 		},
@@ -126,14 +76,14 @@ func TestObjectMarshalsRelationalOnly(t *testing.T) {
 	if strings.Contains(s, `"descriptors"`) {
 		t.Errorf("descriptors should be omitted when empty: %s", s)
 	}
-	if !strings.Contains(s, `"references":{"namespace":"billing","kind":"table","name":"orgs"}`) {
+	if !strings.Contains(s, `"scope":[{"kind":"database","name":"app"},{"kind":"schema","name":"billing"}]`) {
 		t.Errorf("FK reference must be a qualified ObjectRef: %s", s)
 	}
 }
 
 func TestObjectMarshalsDescriptorsOnly(t *testing.T) {
 	o := Object{
-		Ref: ObjectRef{Namespace: "public", Kind: "function", Name: "f"},
+		Ref: ObjectRef{Scope: NewScopePath(ScopeSegment{Kind: "schema", Name: "public"}), Kind: "function", Name: "f"},
 		Descriptors: []Descriptor{
 			{Kind: "fields", Title: "Signature", Fields: []Field{{Name: "language", Value: "sql"}}},
 			{Kind: "source", Title: "Definition", Source: &Source{Language: "sql", Body: "SELECT 1"}},

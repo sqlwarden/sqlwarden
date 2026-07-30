@@ -25,7 +25,11 @@ const workspace: Workspace = {
   created_at: '',
   updated_at: '',
 }
-const ref: ObjectRef = { namespace: 'public', kind: 'table', name: 'orders' }
+const ref: ObjectRef = {
+  scope: [{ kind: 'schema', name: 'public' }],
+  kind: 'table',
+  name: 'orders',
+}
 const tab: EditorTab = {
   id: 'object:7:public:table:orders',
   workspaceId: 3,

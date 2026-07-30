@@ -24,17 +24,17 @@ const (
 type Snapshot struct {
 	bun.BaseModel `bun:"table:schema_snapshots"`
 
-	ID           string     `bun:",pk" json:"id"`
-	ConnectionID int64      `bun:",notnull" json:"connection_id"`
-	OrgID        *int64     `bun:",nullzero" json:"org_id,omitempty"`
-	Dialect      string     `bun:",notnull" json:"dialect"`
-	DatabaseName string     `bun:",notnull" json:"database"`
-	Status       string     `bun:",notnull" json:"status"`
-	IsActive     bool       `bun:",notnull" json:"is_active"`
-	CatalogData  []byte     `bun:",notnull" json:"-"`
-	GeneratedAt  time.Time  `bun:",notnull" json:"generated_at"`
-	CreatedAt    time.Time  `bun:",notnull" json:"created_at"`
-	CompletedAt  *time.Time `bun:",nullzero" json:"completed_at,omitempty"`
+	ID            string     `bun:",pk" json:"id"`
+	ConnectionID  int64      `bun:",notnull" json:"connection_id"`
+	OrgID         *int64     `bun:",nullzero" json:"org_id,omitempty"`
+	Dialect       string     `bun:",notnull" json:"dialect"`
+	DatabaseName  string     `bun:",notnull" json:"database"`
+	Status        string     `bun:",notnull" json:"status"`
+	IsActive      bool       `bun:",notnull" json:"is_active"`
+	DirectoryData []byte     `bun:",notnull" json:"-"`
+	GeneratedAt   time.Time  `bun:",notnull" json:"generated_at"`
+	CreatedAt     time.Time  `bun:",notnull" json:"created_at"`
+	CompletedAt   *time.Time `bun:",nullzero" json:"completed_at,omitempty"`
 }
 
 type SnapshotStatus struct {
@@ -48,7 +48,7 @@ type snapshotObject struct {
 	bun.BaseModel `bun:"table:schema_snapshot_objects"`
 
 	SnapshotID string `bun:",pk"`
-	Namespace  string `bun:",pk"`
+	Scope      string `bun:",pk"`
 	Kind       string `bun:",pk"`
 	Name       string `bun:",pk"`
 	ObjectData []byte `bun:",notnull"`
@@ -58,7 +58,7 @@ type snapshotRelationship struct {
 	bun.BaseModel `bun:"table:schema_snapshot_relationships"`
 
 	SnapshotID       string `bun:",pk"`
-	Namespace        string `bun:",pk"`
+	Scope            string `bun:",pk"`
 	RelationshipData []byte `bun:",notnull"`
 }
 
@@ -72,28 +72,28 @@ func NewSnapshotStore(db *database.DB) *SnapshotStore {
 	return &SnapshotStore{db: db}
 }
 
-func (s *SnapshotStore) Begin(ctx context.Context, connectionID int64, orgID *int64, catalog *schemameta.Catalog) (Snapshot, error) {
-	if catalog == nil {
-		return Snapshot{}, errors.New("schema snapshot catalog is required")
+func (s *SnapshotStore) Begin(ctx context.Context, connectionID int64, orgID *int64, directory *schemameta.Directory) (Snapshot, error) {
+	if directory == nil {
+		return Snapshot{}, errors.New("schema snapshot directory is required")
 	}
-	data, err := encodeSnapshotValue(catalog)
+	data, err := encodeSnapshotValue(directory)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	generatedAt := catalog.GeneratedAt
+	generatedAt := directory.GeneratedAt
 	if generatedAt.IsZero() {
 		generatedAt = time.Now()
 	}
 	snapshot := Snapshot{
-		ID:           database.NewID(),
-		ConnectionID: connectionID,
-		OrgID:        orgID,
-		Dialect:      catalog.Dialect,
-		DatabaseName: catalog.Database,
-		Status:       SnapshotStatusBuilding,
-		CatalogData:  data,
-		GeneratedAt:  generatedAt,
-		CreatedAt:    time.Now(),
+		ID:            database.NewID(),
+		ConnectionID:  connectionID,
+		OrgID:         orgID,
+		Dialect:       directory.Engine,
+		DatabaseName:  directory.DefaultScope.Name("database"),
+		Status:        SnapshotStatusBuilding,
+		DirectoryData: data,
+		GeneratedAt:   generatedAt,
+		CreatedAt:     time.Now(),
 	}
 	_, err = s.db.NewInsert().Model(&snapshot).Exec(ctx)
 	return snapshot, err
@@ -111,7 +111,7 @@ func (s *SnapshotStore) PutObjects(ctx context.Context, snapshotID string, objec
 		}
 		rows = append(rows, snapshotObject{
 			SnapshotID: snapshotID,
-			Namespace:  object.Ref.Namespace,
+			Scope:      string(object.Ref.Scope),
 			Kind:       object.Ref.Kind,
 			Name:       object.Ref.Name,
 			ObjectData: data,
@@ -131,7 +131,7 @@ func (s *SnapshotStore) PutRelationship(ctx context.Context, snapshotID string, 
 	}
 	row := snapshotRelationship{
 		SnapshotID:       snapshotID,
-		Namespace:        graph.Namespace,
+		Scope:            string(graph.Scope),
 		RelationshipData: data,
 	}
 	_, err = s.db.NewInsert().Model(&row).Exec(ctx)
@@ -201,7 +201,7 @@ func (s *SnapshotStore) Abort(ctx context.Context, snapshotID string) error {
 	return err
 }
 
-func (s *SnapshotStore) Active(ctx context.Context, connectionID int64) (Snapshot, *schemameta.Catalog, bool, error) {
+func (s *SnapshotStore) Active(ctx context.Context, connectionID int64) (Snapshot, *schemameta.Directory, bool, error) {
 	var snapshot Snapshot
 	err := s.db.NewSelect().Model(&snapshot).
 		Where("connection_id = ? AND is_active = ?", connectionID, true).
@@ -212,11 +212,11 @@ func (s *SnapshotStore) Active(ctx context.Context, connectionID int64) (Snapsho
 	if err != nil {
 		return Snapshot{}, nil, false, err
 	}
-	var catalog schemameta.Catalog
-	if err := decodeSnapshotValue(snapshot.CatalogData, &catalog); err != nil {
+	var directory schemameta.Directory
+	if err := decodeSnapshotValue(snapshot.DirectoryData, &directory); err != nil {
 		return Snapshot{}, nil, false, err
 	}
-	return snapshot, &catalog, true, nil
+	return snapshot, &directory, true, nil
 }
 
 func (s *SnapshotStore) Objects(ctx context.Context, snapshotID string, refs []schemameta.ObjectRef) ([]schemameta.Object, error) {
@@ -224,7 +224,7 @@ func (s *SnapshotStore) Objects(ctx context.Context, snapshotID string, refs []s
 	for _, ref := range refs {
 		var row snapshotObject
 		err := s.db.NewSelect().Model(&row).
-			Where("snapshot_id = ? AND namespace = ? AND kind = ? AND name = ?", snapshotID, ref.Namespace, ref.Kind, ref.Name).
+			Where("snapshot_id = ? AND scope = ? AND kind = ? AND name = ?", snapshotID, string(ref.Scope), ref.Kind, ref.Name).
 			Scan(ctx)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
@@ -242,12 +242,12 @@ func (s *SnapshotStore) Objects(ctx context.Context, snapshotID string, refs []s
 }
 
 // AllObjects returns every object in an immutable snapshot in stable order.
-// Completion uses this bulk path to prepare a dialect-native catalog once.
+// Completion uses this bulk path to prepare a dialect-native completion model once.
 func (s *SnapshotStore) AllObjects(ctx context.Context, snapshotID string) ([]schemameta.Object, error) {
 	var rows []snapshotObject
 	if err := s.db.NewSelect().Model(&rows).
 		Where("snapshot_id = ?", snapshotID).
-		OrderExpr("namespace ASC, kind ASC, name ASC").
+		OrderExpr("scope ASC, kind ASC, name ASC").
 		Scan(ctx); err != nil {
 		return nil, err
 	}
@@ -262,10 +262,10 @@ func (s *SnapshotStore) AllObjects(ctx context.Context, snapshotID string) ([]sc
 	return objects, nil
 }
 
-func (s *SnapshotStore) Relationship(ctx context.Context, snapshotID, namespace string) (*schemameta.RelationshipGraph, bool, error) {
+func (s *SnapshotStore) Relationship(ctx context.Context, snapshotID string, scope schemameta.ScopePath) (*schemameta.RelationshipGraph, bool, error) {
 	var row snapshotRelationship
 	err := s.db.NewSelect().Model(&row).
-		Where("snapshot_id = ? AND namespace = ?", snapshotID, namespace).
+		Where("snapshot_id = ? AND scope = ?", snapshotID, string(scope)).
 		Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil

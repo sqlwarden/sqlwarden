@@ -29,14 +29,14 @@ const workspace: Workspace = {
 }
 
 const tab: EditorTab = {
-  id: 'diagram:7:ns:public',
+  id: 'diagram:7:scope:public',
   workspaceId: 3,
   title: 'public diagram',
   kind: 'diagram',
   content: '',
   connectionId: 7,
   driver: 'postgres',
-  diagramTarget: { kind: 'namespace', namespace: 'public' },
+  diagramTarget: { kind: 'scope', scope: [{ kind: 'schema', name: 'public' }] },
 }
 
 describe('SchemaDiagramView', () => {
@@ -86,14 +86,23 @@ describe('SchemaDiagramView', () => {
               },
             }),
       ),
-      http.get(`${base}/catalog`, () =>
+      http.get(`${base}/directory`, () =>
         HttpResponse.json({
-          catalog: { generated_at: '', namespaces: [{ name: 'public', groups: [] }] },
+          directory: {
+            generated_at: '',
+            roots: [
+              {
+                segment: { kind: 'schema', name: 'public' },
+                path: [{ kind: 'schema', name: 'public' }],
+                groups: [],
+              },
+            ],
+          },
         }),
       ),
       http.get(`${base}/relationships`, () =>
         HttpResponse.json({
-          graph: { namespace: 'public', relationships: [] },
+          graph: { scope: [{ kind: 'schema', name: 'public' }], relationships: [] },
         }),
       ),
     )
@@ -145,8 +154,9 @@ describe('SchemaDiagramView', () => {
   })
 
   it('restores a persisted relationship diagram without attaching missing handles', async () => {
-    const customer = { namespace: 'public', kind: 'table', name: 'customer' }
-    const storeRef = { namespace: 'public', kind: 'table', name: 'store' }
+    const scope = [{ kind: 'schema', name: 'public' }]
+    const customer = { scope, kind: 'table', name: 'customer' }
+    const storeRef = { scope, kind: 'table', name: 'store' }
     const reactFlowErrors: unknown[][] = []
     const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => {
       if (args.some((arg) => String(arg).includes("Couldn't create edge")))
@@ -155,10 +165,13 @@ describe('SchemaDiagramView', () => {
     store.getState().setSession(7, 'session-7')
     vi.mocked(get).mockResolvedValueOnce(
       JSON.stringify({
-        present: ['public table customer', 'public table store'],
+        present: [
+          'schema=public table customer',
+          'schema=public table store',
+        ],
         positions: {
-          'public table customer': { x: 0, y: 0 },
-          'public table store': { x: 300, y: 0 },
+          'schema=public table customer': { x: 0, y: 0 },
+          'schema=public table store': { x: 300, y: 0 },
         },
         collapsed: [],
         keysOnly: true,
@@ -184,15 +197,19 @@ describe('SchemaDiagramView', () => {
           },
         }),
       ),
-      http.get(`${base}/catalog`, () =>
+      http.get(`${base}/directory`, () =>
         HttpResponse.json({
-          catalog: {
+          directory: {
             connection: 'test',
             dialect: 'postgres',
             database: 'test',
             generated_at: '',
-            namespaces: [
-              { name: 'public', groups: [{ kind: 'table', objects: [customer, storeRef] }] },
+            roots: [
+              {
+                segment: scope[0],
+                path: scope,
+                groups: [{ kind: 'table', objects: [customer, storeRef] }],
+              },
             ],
           },
         }),
@@ -200,7 +217,7 @@ describe('SchemaDiagramView', () => {
       http.get(`${base}/relationships`, () =>
         HttpResponse.json({
           graph: {
-            namespace: 'public',
+            scope,
             relationships: [
               {
                 name: 'fk_customer_store',

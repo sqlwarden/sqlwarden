@@ -16,7 +16,8 @@ vi.mock('idb-keyval', () => ({
   del: vi.fn(() => Promise.resolve()),
 }))
 
-const ref: ObjectRef = { namespace: 'public', kind: 'table', name: 'orders' }
+const scope = [{ kind: 'schema', name: 'public' }]
+const ref: ObjectRef = { scope, kind: 'table', name: 'orders' }
 
 describe('SchemaTree', () => {
   let store: ReturnType<typeof createIdeStore>
@@ -50,14 +51,20 @@ describe('SchemaTree', () => {
 
   function respondReady() {
     server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/catalog', () =>
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
         HttpResponse.json({
-          catalog: {
+          directory: {
             connection: 'warehouse',
             dialect: 'postgres',
             database: 'analytics',
             generated_at: '',
-            namespaces: [{ name: 'public', groups: [{ kind: 'table', objects: [ref] }] }],
+            roots: [
+              {
+                segment: scope[0],
+                path: scope,
+                groups: [{ kind: 'table', objects: [ref] }],
+              },
+            ],
           },
         }),
       ),
@@ -99,7 +106,7 @@ describe('SchemaTree', () => {
 
   it('offers connection recovery when ephemeral schema access requires a session', async () => {
     server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/catalog', () =>
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
         HttpResponse.json(
           { error: { code: 'bad_request', message: 'X-Warden-Session header is required.' } },
           { status: 400 },
@@ -123,22 +130,73 @@ describe('SchemaTree', () => {
     expect(await screen.findByText('orders')).toBeInTheDocument()
   })
 
-  it('automatically reloads a catalog while its snapshot is being prepared', async () => {
-    let catalogRequests = 0
+  it('renders an empty state when an empty snapshot contains null roots', async () => {
     server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/catalog', () => {
-        catalogRequests++
-        if (catalogRequests === 1) {
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+        HttpResponse.json({
+          directory: {
+            connection: 'warehouse',
+            engine: 'postgres',
+            default_scope: scope,
+            generated_at: '',
+            roots: null,
+          },
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({ spec: { dialect: 'postgres', kinds: [] } }),
+      ),
+    )
+
+    renderTree()
+    expect(await screen.findByText('No objects.')).toBeInTheDocument()
+  })
+
+  it('renders an empty state for a PostgreSQL database scope with no schemas or objects', async () => {
+    const databaseScope = [{ kind: 'database', name: 'postgres' }]
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+        HttpResponse.json({
+          directory: {
+            connection: 'warehouse',
+            engine: 'postgres',
+            default_scope: databaseScope,
+            generated_at: '',
+            roots: [{ path: databaseScope, groups: [] }],
+          },
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({ spec: { dialect: 'postgres', kinds: [] } }),
+      ),
+    )
+
+    renderTree()
+    expect(await screen.findByText('No objects.')).toBeInTheDocument()
+  })
+
+  it('automatically reloads a directory while its snapshot is being prepared', async () => {
+    let directoryRequests = 0
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () => {
+        directoryRequests++
+        if (directoryRequests === 1) {
           return HttpResponse.json({ status: 'pending' }, { status: 202 })
         }
         return HttpResponse.json({
           status: 'ready',
-          catalog: {
+          directory: {
             connection: 'warehouse',
             dialect: 'postgres',
             database: 'analytics',
             generated_at: '',
-            namespaces: [{ name: 'public', groups: [{ kind: 'table', objects: [ref] }] }],
+            roots: [
+              {
+                segment: scope[0],
+                path: scope,
+                groups: [{ kind: 'table', objects: [ref] }],
+              },
+            ],
           },
         })
       }),
@@ -166,13 +224,13 @@ describe('SchemaTree', () => {
 
     expect(await screen.findByText('Preparing schema snapshot…')).toBeInTheDocument()
     expect(await screen.findByText('Tables', {}, { timeout: 2_500 })).toBeInTheDocument()
-    expect(catalogRequests).toBe(2)
+    expect(directoryRequests).toBe(2)
   })
 
   it('distinguishes unsupported inspection from a generic failure', async () => {
     store.getState().setSession(7, 'session-7')
     server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/catalog', () =>
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
         HttpResponse.json(
           {
             error: { code: 'not_implemented', message: 'Unsupported' },

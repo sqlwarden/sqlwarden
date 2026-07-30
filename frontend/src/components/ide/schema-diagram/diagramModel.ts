@@ -1,10 +1,11 @@
 import type { ObjectDetail, ObjectRef, Relationship } from '#/lib/api/types'
+import { scopeKey } from '#/lib/api/scope'
 
 export const DIAGRAM_MAX_TABLES = 60
 export const DIAGRAM_MAX_COLUMNS = 1500
 
 export function refKey(ref: ObjectRef): string {
-  return `${ref.namespace} ${ref.kind} ${ref.name}`
+  return `${scopeKey(ref.scope)} ${ref.kind} ${ref.name}`
 }
 
 /** Refs on the other end of a FK edge touching `ref`, in either direction,
@@ -81,9 +82,9 @@ export function reachableRefs(
   return [...result.values()]
 }
 
-/** Seed for a namespace diagram: all tables if under the cap, else the most
+/** Seed for a scope diagram: all tables if under the cap, else the most
  *  connected hub tables (progressive mode). */
-export function planNamespaceSeed(
+export function planScopeSeed(
   tableRefs: ObjectRef[],
   edges: Relationship[],
   maxTables: number = DIAGRAM_MAX_TABLES,

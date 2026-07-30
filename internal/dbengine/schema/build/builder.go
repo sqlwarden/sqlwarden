@@ -1,57 +1,54 @@
 // Package build assembles the two-tier schema models from the flat rows that a
-// driver's inspection queries return: a CatalogBuilder for the cheap listing,
+// driver's inspection queries return: a DirectoryBuilder for the cheap listing,
 // and a RelationalBuilder for typed object detail with qualified foreign keys.
 // Neither is safe for concurrent use; each inspection uses its own builder.
 package build
 
 import "github.com/sqlwarden/internal/dbengine/schema"
 
-// CatalogBuilder accumulates object refs per namespace and emits them grouped by
+// DirectoryBuilder accumulates object refs per scope and emits them grouped by
 // kind, in the order kinds were declared (undeclared kinds sort last, first-seen).
-type CatalogBuilder struct {
+type DirectoryBuilder struct {
 	kindOrder  []string
 	kindSeen   map[string]bool
 	scopeOrder []schema.ScopePath
-	scopes     map[schema.ScopePath]*nsCat
+	scopes     map[schema.ScopePath]*scopeGroup
 }
 
-type nsCat struct {
+type scopeGroup struct {
 	path       schema.ScopePath
 	groupSeen  map[string]bool
 	groupOrder []string
 	groups     map[string][]schema.ObjectRef
 }
 
-// NewCatalog returns an empty CatalogBuilder.
-func NewCatalog() *CatalogBuilder {
-	return &CatalogBuilder{kindSeen: map[string]bool{}, scopes: map[schema.ScopePath]*nsCat{}}
+// NewDirectory returns an empty DirectoryBuilder.
+func NewDirectory() *DirectoryBuilder {
+	return &DirectoryBuilder{kindSeen: map[string]bool{}, scopes: map[schema.ScopePath]*scopeGroup{}}
 }
 
-// DeclareKind fixes a kind's position in every namespace's group ordering.
-func (b *CatalogBuilder) DeclareKind(kind string) {
+// DeclareKind fixes a kind's position in every scope's group ordering.
+func (b *DirectoryBuilder) DeclareKind(kind string) {
 	if !b.kindSeen[kind] {
 		b.kindSeen[kind] = true
 		b.kindOrder = append(b.kindOrder, kind)
 	}
 }
 
-// AddRef records an object of the given kind in the given scope.
-func (b *CatalogBuilder) AddRef(rawScope any, kind, name string) {
-	var scope schema.ScopePath
-	switch value := rawScope.(type) {
-	case schema.ScopePath:
-		scope = value
-	case string:
-		scope = schema.NewScopePath(schema.ScopeSegment{Kind: "schema", Name: value})
-	default:
+// AddScope records an empty scope so hierarchy roots remain visible even when
+// they contain objects only in child scopes.
+func (b *DirectoryBuilder) AddScope(scope schema.ScopePath) {
+	if _, ok := b.scopes[scope]; ok {
 		return
 	}
-	n, ok := b.scopes[scope]
-	if !ok {
-		n = &nsCat{path: scope, groupSeen: map[string]bool{}, groups: map[string][]schema.ObjectRef{}}
-		b.scopes[scope] = n
-		b.scopeOrder = append(b.scopeOrder, scope)
-	}
+	b.scopes[scope] = &scopeGroup{path: scope, groupSeen: map[string]bool{}, groups: map[string][]schema.ObjectRef{}}
+	b.scopeOrder = append(b.scopeOrder, scope)
+}
+
+// AddRef records an object of the given kind in the given scope.
+func (b *DirectoryBuilder) AddRef(scope schema.ScopePath, kind, name string) {
+	b.AddScope(scope)
+	n := b.scopes[scope]
 	if !n.groupSeen[kind] {
 		n.groupSeen[kind] = true
 		n.groupOrder = append(n.groupOrder, kind)
@@ -59,50 +56,15 @@ func (b *CatalogBuilder) AddRef(rawScope any, kind, name string) {
 	n.groups[kind] = append(n.groups[kind], schema.ObjectRef{Scope: scope, Kind: kind, Name: name})
 }
 
-// Build retains the current one-database catalog contract during migration.
-func (b *CatalogBuilder) Build(connection, engine, database string) *schema.Catalog {
-	catalog := &schema.Catalog{Connection: connection, Dialect: engine, Database: database}
-	for _, scope := range b.scopeOrder {
-		n := b.scopes[scope]
-		segments, _ := scope.Segments()
-		name := ""
-		if len(segments) > 0 {
-			name = segments[len(segments)-1].Name
-		}
-		namespace := schema.NamespaceCatalog{Name: name}
-		emitted := map[string]bool{}
-		emit := func(kind string) {
-			refs := n.groups[kind]
-			if len(refs) == 0 || emitted[kind] {
-				return
-			}
-			emitted[kind] = true
-			for index := range refs {
-				refs[index].Namespace = name
-				refs[index].Scope = ""
-			}
-			namespace.Groups = append(namespace.Groups, schema.ObjectGroupCatalog{Kind: kind, Objects: refs})
-		}
-		for _, kind := range b.kindOrder {
-			emit(kind)
-		}
-		for _, kind := range n.groupOrder {
-			emit(kind)
-		}
-		catalog.Namespaces = append(catalog.Namespaces, namespace)
-	}
-	return catalog
-}
-
-// BuildDirectory finalizes the directory with the given header fields. Scope nodes are
+// Build finalizes the directory with the given header fields. Scope nodes are
 // assembled from their complete paths, so engines may expose arbitrary depth.
-func (b *CatalogBuilder) BuildDirectory(connection, engine string, defaultScope schema.ScopePath) *schema.Directory {
+func (b *DirectoryBuilder) Build(connection, engine string, defaultScope schema.ScopePath) *schema.Directory {
 	directory := &schema.Directory{Connection: connection, Engine: engine, DefaultScope: defaultScope}
 	nodes := make(map[schema.ScopePath]*schema.ScopeNode)
-	var roots []schema.ScopeNode
+	roots := make([]schema.ScopeNode, 0, len(b.scopeOrder))
 	for _, scope := range b.scopeOrder {
 		n := b.scopes[scope]
-		node := schema.ScopeNode{Path: scope}
+		node := schema.ScopeNode{Path: scope, Groups: []schema.ObjectGroup{}}
 		emitted := map[string]bool{}
 		emit := func(kind string) {
 			refs := n.groups[kind]
@@ -110,7 +72,7 @@ func (b *CatalogBuilder) BuildDirectory(connection, engine string, defaultScope 
 				return
 			}
 			emitted[kind] = true
-			node.Groups = append(node.Groups, schema.ObjectGroupCatalog{Kind: kind, Objects: refs})
+			node.Groups = append(node.Groups, schema.ObjectGroup{Kind: kind, Objects: refs})
 		}
 		for _, kind := range b.kindOrder {
 			emit(kind)

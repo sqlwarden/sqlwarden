@@ -8,26 +8,11 @@ import (
 )
 
 var _ schema.RelationshipInspector = (*sqliteDriver)(nil)
-var _ schema.ScopedRelationshipInspector = (*sqliteDriver)(nil)
 
 func (d *sqliteDriver) InspectRelationshipsInScope(ctx context.Context, scope schema.ScopePath) (*schema.RelationshipGraph, error) {
-	graph, err := d.InspectRelationships(ctx, scope.Name("database"))
-	if err != nil {
-		return nil, err
-	}
-	graph.Scope = scope
-	for index := range graph.Relationships {
-		graph.Relationships[index].Kind = "foreign_key"
-		graph.Relationships[index].Source.Scope = scope
-		graph.Relationships[index].References.Scope = scope
-	}
-	return graph, nil
-}
-
-// InspectRelationships returns every foreign-key edge in a namespace. SQLite has
-// no namespace-wide FK view, so it lists the namespace's tables and runs
-// PRAGMA foreign_key_list per table, grouping rows by fk id.
-func (d *sqliteDriver) InspectRelationships(ctx context.Context, namespace string) (*schema.RelationshipGraph, error) {
+	namespace := scope.Name("database")
+	// SQLite has no scope-wide FK view, so list the database's tables and run
+	// PRAGMA foreign_key_list per table, grouping rows by fk id.
 	prefix := sqliteQuoteIdent(namespace)
 	// SQLite cannot bind identifiers; sqliteQuoteIdent escapes the namespace.
 	tableRows, err := d.db.QueryContext(ctx,
@@ -51,7 +36,7 @@ func (d *sqliteDriver) InspectRelationships(ctx context.Context, namespace strin
 	}
 	tableRows.Close()
 
-	graph := &schema.RelationshipGraph{Namespace: namespace}
+	graph := &schema.RelationshipGraph{Scope: scope}
 	for _, tbl := range tables {
 		// codeql[go/sql-injection]
 		fkRows, err := d.db.QueryContext(ctx, fmt.Sprintf(`PRAGMA %s.foreign_key_list(%s)`, prefix, sqliteQuoteIdent(tbl)))
@@ -69,9 +54,10 @@ func (d *sqliteDriver) InspectRelationships(ctx context.Context, namespace strin
 			pos, ok := perID[id]
 			if !ok {
 				graph.Relationships = append(graph.Relationships, schema.Relationship{
+					Kind:       "foreign_key",
 					Name:       fmt.Sprintf("%s_fk_%d", tbl, id),
-					Source:     schema.ObjectRef{Namespace: namespace, Kind: "table", Name: tbl},
-					References: schema.ObjectRef{Namespace: namespace, Kind: "table", Name: refTbl},
+					Source:     schema.ObjectRef{Scope: scope, Kind: "table", Name: tbl},
+					References: schema.ObjectRef{Scope: scope, Kind: "table", Name: refTbl},
 				})
 				pos = len(graph.Relationships) - 1
 				perID[id] = pos

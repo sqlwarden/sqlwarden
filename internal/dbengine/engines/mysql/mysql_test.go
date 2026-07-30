@@ -122,7 +122,7 @@ func TestConnect(t *testing.T) {
 		}
 	})
 
-	t.Run("no database still supports an empty catalog", func(t *testing.T) {
+	t.Run("no database still supports an empty directory", func(t *testing.T) {
 		config, err := mysqlconfig.ParseDSN(testDSN)
 		if err != nil {
 			t.Fatal(err)
@@ -135,12 +135,12 @@ func TestConnect(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = d.Close() })
-		catalog, err := d.InspectCatalog(context.Background(), schema.CatalogOptions{})
+		directory, err := d.InspectDirectory(context.Background(), schema.DirectoryOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if catalog.Database != "" || len(catalog.Namespaces) != 0 {
-			t.Fatalf("catalog without a selected database = %+v", catalog)
+		if directory.DefaultScope != "" || len(directory.Roots) != 0 {
+			t.Fatalf("directory without a selected database = %+v", directory)
 		}
 	})
 
@@ -349,7 +349,7 @@ func TestExecute_DML(t *testing.T) {
 	}
 }
 
-func TestInspectCatalogAndObjects(t *testing.T) {
+func TestInspectDirectoryAndObjects(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
 
@@ -405,30 +405,31 @@ func TestInspectCatalogAndObjects(t *testing.T) {
 		t.Fatalf("unexpected schema spec: %+v", spec)
 	}
 
-	catalog, err := d.InspectCatalog(ctx, schema.CatalogOptions{})
+	directory, err := d.InspectDirectory(ctx, schema.DirectoryOptions{})
 	if err != nil {
-		t.Fatalf("InspectCatalog: %v", err)
+		t.Fatalf("InspectDirectory: %v", err)
 	}
-	if catalog.Dialect != "mysql" || catalog.Database != "testdb" {
-		t.Fatalf("unexpected catalog header: %+v", catalog)
+	scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "testdb"})
+	if directory.Engine != "mysql" || directory.DefaultScope != scope {
+		t.Fatalf("unexpected directory header: %+v", directory)
 	}
-	if !catalogHasRef(catalog, schema.ObjectRef{Namespace: "testdb", Kind: "table", Name: "introspect_child"}) {
-		t.Fatalf("catalog missing child table: %+v", catalog.Namespaces)
+	if !directoryHasRef(directory, schema.ObjectRef{Scope: scope, Kind: "table", Name: "introspect_child"}) {
+		t.Fatalf("directory missing child table: %+v", directory.Roots)
 	}
-	if !catalogHasRef(catalog, schema.ObjectRef{Namespace: "testdb", Kind: "view", Name: "introspect_child_view"}) {
-		t.Fatalf("catalog missing child view: %+v", catalog.Namespaces)
+	if !directoryHasRef(directory, schema.ObjectRef{Scope: scope, Kind: "view", Name: "introspect_child_view"}) {
+		t.Fatalf("directory missing child view: %+v", directory.Roots)
 	}
 	for _, ref := range []schema.ObjectRef{
-		{Namespace: "testdb", Kind: "function", Name: "introspect_double"},
-		{Namespace: "testdb", Kind: "procedure", Name: "introspect_noop"},
-		{Namespace: "testdb", Kind: "trigger", Name: "introspect_child_bi"},
+		{Scope: scope, Kind: "function", Name: "introspect_double"},
+		{Scope: scope, Kind: "procedure", Name: "introspect_noop"},
+		{Scope: scope, Kind: "trigger", Name: "introspect_child_bi"},
 	} {
-		if !catalogHasRef(catalog, ref) {
-			t.Fatalf("catalog missing %s %s: %+v", ref.Kind, ref.Name, catalog.Namespaces)
+		if !directoryHasRef(directory, ref) {
+			t.Fatalf("directory missing %s %s: %+v", ref.Kind, ref.Name, directory.Roots)
 		}
 	}
 
-	objects, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "testdb", Kind: "table", Name: "introspect_child"}})
+	objects, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: scope, Kind: "table", Name: "introspect_child"}})
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)
 	}
@@ -450,9 +451,9 @@ func TestInspectCatalogAndObjects(t *testing.T) {
 	}
 
 	objects, err = d.InspectObjects(ctx, []schema.ObjectRef{
-		{Namespace: "testdb", Kind: "function", Name: "introspect_double"},
-		{Namespace: "testdb", Kind: "procedure", Name: "introspect_noop"},
-		{Namespace: "testdb", Kind: "trigger", Name: "introspect_child_bi"},
+		{Scope: scope, Kind: "function", Name: "introspect_double"},
+		{Scope: scope, Kind: "procedure", Name: "introspect_noop"},
+		{Scope: scope, Kind: "trigger", Name: "introspect_child_bi"},
 	})
 	if err != nil {
 		t.Fatalf("InspectObjects descriptors: %v", err)
@@ -585,7 +586,7 @@ func TestMySQLObjectDefinitionsAndAttributes(t *testing.T) {
 		t.Fatalf("create view: %v", err)
 	}
 
-	tbl, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "testdb", Kind: "table", Name: "defs_t"}})
+	tbl, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "testdb"}), Kind: "table", Name: "defs_t"}})
 	if err != nil {
 		t.Fatalf("InspectObjects table: %v", err)
 	}
@@ -607,7 +608,7 @@ func TestMySQLObjectDefinitionsAndAttributes(t *testing.T) {
 		t.Fatalf("table DDL descriptor missing/blank: %+v", tbl[0].Descriptors)
 	}
 
-	view, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "testdb", Kind: "view", Name: "defs_v"}})
+	view, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "testdb"}), Kind: "view", Name: "defs_v"}})
 	if err != nil {
 		t.Fatalf("InspectObjects view: %v", err)
 	}
@@ -633,7 +634,7 @@ func TestMySQLInspectRelationships(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	graph, err := d.InspectRelationships(ctx, "testdb")
+	graph, err := d.InspectRelationshipsInScope(ctx, schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "testdb"}))
 	if err != nil {
 		t.Fatalf("InspectRelationships: %v", err)
 	}
@@ -675,14 +676,10 @@ func descriptorByTitle(ds []schema.Descriptor, title string) *schema.Source {
 	return nil
 }
 
-func catalogHasRef(catalog *schema.Catalog, ref schema.ObjectRef) bool {
-	for _, ns := range catalog.Namespaces {
-		for _, group := range ns.Groups {
-			for _, got := range group.Objects {
-				if got == ref {
-					return true
-				}
-			}
+func directoryHasRef(directory *schema.Directory, ref schema.ObjectRef) bool {
+	for _, got := range directory.ObjectRefs() {
+		if got == ref {
+			return true
 		}
 	}
 	return false

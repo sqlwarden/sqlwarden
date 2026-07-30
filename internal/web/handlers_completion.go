@@ -90,7 +90,7 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 	if persistent {
 		out.Mode = "persistent"
 		out.MetadataStatus = "pending"
-		snapshot, catalog, found, lookupErr := app.schemaSnapshots.Active(r.Context(), conn.ID)
+		snapshot, directory, found, lookupErr := app.schemaSnapshots.Active(r.Context(), conn.ID)
 		if lookupErr != nil {
 			app.serverError(w, r, lookupErr)
 			return
@@ -101,7 +101,7 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 				app.serverError(w, r, objectErr)
 				return
 			}
-			req.Schema = &schemameta.MetadataSet{Catalog: catalog, Objects: objects, Version: snapshot.ID}
+			req.Schema = &schemameta.MetadataSet{Directory: directory, Objects: objects, Version: snapshot.ID}
 			out.MetadataAvailable, out.MetadataStatus, out.SnapshotID = true, "ready", snapshot.ID
 		}
 	} else {
@@ -173,20 +173,20 @@ func (app *application) addEphemeralCompletionMetadata(r *http.Request, connID s
 	if !ok {
 		return false
 	}
-	catalog, err := app.schemaService.Catalog(r.Context(), connID, inspector)
+	directory, err := app.schemaService.Directory(r.Context(), connID, inspector)
 	if err != nil {
-		app.logWarn(r, "completion catalog inspection failed", slog.String("connection_id", connID), slog.String("error", err.Error()))
+		app.logWarn(r, "completion directory inspection failed", slog.String("connection_id", connID), slog.String("error", err.Error()))
 		return false
 	}
-	objects, err := app.schemaService.Objects(r.Context(), connID, catalogObjectRefs(catalog), inspector)
+	objects, err := app.schemaService.Objects(r.Context(), connID, directoryObjectRefs(directory), inspector)
 	if err != nil {
 		app.logWarn(r, "completion object inspection failed", slog.String("connection_id", connID), slog.String("error", err.Error()))
 		return false
 	}
 	req.Schema = &schemameta.MetadataSet{
-		Catalog: catalog,
-		Objects: objects,
-		Version: catalog.GeneratedAt.UTC().Format(time.RFC3339Nano),
+		Directory: directory,
+		Objects:   objects,
+		Version:   directory.GeneratedAt.UTC().Format(time.RFC3339Nano),
 	}
 	out.MetadataAvailable, out.MetadataStatus = true, "ready"
 	return false

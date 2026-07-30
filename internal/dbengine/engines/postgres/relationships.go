@@ -8,19 +8,9 @@ import (
 )
 
 var _ schema.RelationshipInspector = (*postgresDriver)(nil)
-var _ schema.ScopedRelationshipInspector = (*postgresDriver)(nil)
 
 func (d *postgresDriver) InspectRelationshipsInScope(ctx context.Context, scope schema.ScopePath) (*schema.RelationshipGraph, error) {
-	graph, err := d.InspectRelationships(ctx, scope.Name("schema"))
-	if err != nil {
-		return nil, err
-	}
-	return schema.ScopeRelationshipGraph(graph, scope), nil
-}
-
-// InspectRelationships returns every foreign-key edge in a namespace without
-// loading column/index detail — the cheap topology tier behind the ER diagram.
-func (d *postgresDriver) InspectRelationships(ctx context.Context, namespace string) (*schema.RelationshipGraph, error) {
+	namespace := scope.Name("schema")
 	q := `
 SELECT tc.table_schema, tc.table_name, tc.constraint_name, kcu.column_name,
        ccu.table_schema, ccu.table_name, ccu.column_name
@@ -37,7 +27,7 @@ ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_positio
 	}
 	defer rows.Close()
 
-	graph := &schema.RelationshipGraph{Namespace: namespace}
+	graph := &schema.RelationshipGraph{Scope: scope}
 	index := map[string]int{} // constraint key -> position in graph.Relationships
 	for rows.Next() {
 		var ns, tbl, name, col, refNs, refTbl, refCol string
@@ -48,9 +38,10 @@ ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_positio
 		pos, ok := index[key]
 		if !ok {
 			graph.Relationships = append(graph.Relationships, schema.Relationship{
+				Kind:       "foreign_key",
 				Name:       name,
-				Source:     schema.ObjectRef{Namespace: ns, Kind: "table", Name: tbl},
-				References: schema.ObjectRef{Namespace: refNs, Kind: "table", Name: refTbl},
+				Source:     schema.ObjectRef{Scope: scope.With("schema", ns), Kind: "table", Name: tbl},
+				References: schema.ObjectRef{Scope: scope.With("schema", refNs), Kind: "table", Name: refTbl},
 			})
 			pos = len(graph.Relationships) - 1
 			index[key] = pos

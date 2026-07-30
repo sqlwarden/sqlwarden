@@ -26,13 +26,13 @@ func TestSchemaSnapshotStorePublishesAndRetainsTwoGenerations(t *testing.T) {
 	var last schemaapp.Snapshot
 	for generation := 1; generation <= 3; generation++ {
 		objectName := fmt.Sprintf("widgets_%d", generation)
-		catalog := snapshotCatalog(objectName, time.Now().Add(time.Duration(generation)*time.Second))
-		snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, catalog)
+		directory := snapshotDirectory(objectName, time.Now().Add(time.Duration(generation)*time.Second))
+		snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, directory)
 		if err != nil {
 			t.Fatal(err)
 		}
 		object := schemameta.Object{
-			Ref: schemameta.ObjectRef{Namespace: "main", Kind: "table", Name: objectName},
+			Ref: schemameta.ObjectRef{Scope: directory.DefaultScope, Kind: "table", Name: objectName},
 			Relational: &schemameta.RelationalDetail{
 				Columns: []schemameta.Column{{Name: "id", DataType: "INTEGER", Ordinal: 1}},
 			},
@@ -41,7 +41,7 @@ func TestSchemaSnapshotStorePublishesAndRetainsTwoGenerations(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := app.schemaSnapshots.PutRelationship(context.Background(), snapshot.ID, &schemameta.RelationshipGraph{
-			Namespace: "main",
+			Scope: directory.DefaultScope,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -51,13 +51,13 @@ func TestSchemaSnapshotStorePublishesAndRetainsTwoGenerations(t *testing.T) {
 		last = snapshot
 	}
 
-	active, catalog, found, err := app.schemaSnapshots.Active(context.Background(), conn.ID)
+	active, directory, found, err := app.schemaSnapshots.Active(context.Background(), conn.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assert.Equal(t, found, true)
 	assert.Equal(t, active.ID, last.ID)
-	assert.Equal(t, catalog.Namespaces[0].Groups[0].Objects[0].Name, "widgets_3")
+	assert.Equal(t, directory.Roots[0].Groups[0].Objects[0].Name, "widgets_3")
 
 	if err := app.schemaSnapshots.Publish(context.Background(), last.ID); err == nil {
 		t.Fatal("expected an already-ready snapshot to reject publication")
@@ -70,7 +70,7 @@ func TestSchemaSnapshotStorePublishesAndRetainsTwoGenerations(t *testing.T) {
 	assert.Equal(t, activeAfterRetry.ID, last.ID)
 
 	objects, err := app.schemaSnapshots.Objects(context.Background(), active.ID, []schemameta.ObjectRef{
-		{Namespace: "main", Kind: "table", Name: "widgets_3"},
+		{Scope: directory.DefaultScope, Kind: "table", Name: "widgets_3"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -84,12 +84,12 @@ func TestSchemaSnapshotStorePublishesAndRetainsTwoGenerations(t *testing.T) {
 	assert.Equal(t, len(allObjects), 1)
 	assert.Equal(t, allObjects[0].Ref.Name, "widgets_3")
 
-	graph, found, err := app.schemaSnapshots.Relationship(context.Background(), active.ID, "main")
+	graph, found, err := app.schemaSnapshots.Relationship(context.Background(), active.ID, directory.DefaultScope)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assert.Equal(t, found, true)
-	assert.Equal(t, graph.Namespace, "main")
+	assert.Equal(t, graph.Scope, directory.DefaultScope)
 
 	count, err := app.db.NewSelect().Model((*schemaapp.Snapshot)(nil)).
 		Where("connection_id = ?", conn.ID).
@@ -108,7 +108,7 @@ func TestSchemaSnapshotPublishRechecksPolicy(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn", "open")
 
-	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotCatalog("widgets", time.Now()))
+	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotDirectory("widgets", time.Now()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestSchemaSnapshotPublishRechecksPolicy(t *testing.T) {
 	assert.Equal(t, found, false)
 }
 
-func TestPersistentSchemaCatalogDoesNotRequireSession(t *testing.T) {
+func TestPersistentSchemaDirectoryDoesNotRequireSession(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-http"), "Snapshot HTTP", "Snapshot HTTP Org")
@@ -133,7 +133,7 @@ func TestPersistentSchemaCatalogDoesNotRequireSession(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn", "open")
 
-	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotCatalog("widgets", time.Now()))
+	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotDirectory("widgets", time.Now()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,13 +142,13 @@ func TestPersistentSchemaCatalogDoesNotRequireSession(t *testing.T) {
 	}
 
 	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/catalog", nil, tok)
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/directory", nil, tok)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	catalog := res.BodyFields["catalog"].(map[string]any)
-	namespaces := catalog["namespaces"].([]any)
-	groups := namespaces[0].(map[string]any)["groups"].([]any)
+	directory := res.BodyFields["directory"].(map[string]any)
+	roots := directory["roots"].([]any)
+	groups := roots[0].(map[string]any)["groups"].([]any)
 	objects := groups[0].(map[string]any)["objects"].([]any)
 	assert.Equal(t, objects[0].(map[string]any)["name"], "widgets")
 }
@@ -168,7 +168,7 @@ func TestDisablingConnectionSnapshotsPurgesStoredMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotCatalog("widgets", time.Now()))
+	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotDirectory("widgets", time.Now()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestDisablingOrganizationSnapshotsPurgesStoredMetadata(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn", "open")
 
-	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotCatalog("widgets", time.Now()))
+	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotDirectory("widgets", time.Now()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,19 +231,18 @@ func TestDisablingOrganizationSnapshotsPurgesStoredMetadata(t *testing.T) {
 	assert.Equal(t, enabled, false)
 }
 
-func snapshotCatalog(objectName string, generatedAt time.Time) *schemameta.Catalog {
-	return &schemameta.Catalog{
-		Dialect:     "sqlite",
-		Database:    "test",
-		GeneratedAt: generatedAt,
-		Namespaces: []schemameta.NamespaceCatalog{{
-			Name: "main",
-			Groups: []schemameta.ObjectGroupCatalog{{
+func snapshotDirectory(objectName string, generatedAt time.Time) *schemameta.Directory {
+	scope := schemameta.NewScopePath(schemameta.ScopeSegment{Kind: "database", Name: "main"})
+	return &schemameta.Directory{
+		Engine: "sqlite", DefaultScope: scope, GeneratedAt: generatedAt,
+		Roots: []schemameta.ScopeNode{{
+			Path: scope,
+			Groups: []schemameta.ObjectGroup{{
 				Kind: "table",
 				Objects: []schemameta.ObjectRef{{
-					Namespace: "main",
-					Kind:      "table",
-					Name:      objectName,
+					Scope: scope,
+					Kind:  "table",
+					Name:  objectName,
 				}},
 			}},
 		}},

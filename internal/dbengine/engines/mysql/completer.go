@@ -41,16 +41,16 @@ func (d *mysqlDriver) Complete(ctx context.Context, req completer.Request) (comp
 
 	var catalog *mysqlcatalog.Catalog
 	var metadata completioncore.MetadataResolver
-	if req.Schema != nil && req.Schema.Catalog != nil {
+	if req.Schema != nil && req.Schema.Directory != nil {
 		key := mysqlCompletionCatalogKey(req.ConnectionID, req.Schema.Version)
 		var err error
 		var index *schema.Index
 		if key == "" {
-			catalog, err = buildMySQLCompletionCatalog(req.Schema.Catalog, req.Schema.Objects)
+			catalog, err = buildMySQLCompletionCatalog(req.Schema.Directory, req.Schema.Objects)
 			index = schema.NewIndex(*req.Schema)
 		} else {
 			catalog, err = mysqlCompletionCatalogCache.GetOrBuild(ctx, key, func() (*mysqlcatalog.Catalog, error) {
-				return buildMySQLCompletionCatalog(req.Schema.Catalog, req.Schema.Objects)
+				return buildMySQLCompletionCatalog(req.Schema.Directory, req.Schema.Objects)
 			})
 			if err == nil {
 				index, err = mysqlSchemaIndexCache.GetOrBuild(ctx, key, func() (*schema.Index, error) {
@@ -147,29 +147,21 @@ func (d *mysqlDriver) InvalidateCompletionCatalog(connectionID string) {
 	mysqlSchemaIndexCache.InvalidatePrefix(connectionID + ":")
 }
 
-func buildMySQLCompletionCatalog(catalog *schema.Catalog, objects []schema.Object) (*mysqlcatalog.Catalog, error) {
+func buildMySQLCompletionCatalog(directory *schema.Directory, objects []schema.Object) (*mysqlcatalog.Catalog, error) {
 	native := mysqlcatalog.New()
 	created := make(map[string]bool)
-	for _, namespace := range catalog.Namespaces {
-		if namespace.Name == "" {
+	for _, node := range directory.ScopeNodes() {
+		database := node.Path.Name("database")
+		if database == "" || created[database] {
 			continue
 		}
-		if err := execMySQLCatalog(native, "CREATE DATABASE "+mysqlCompletionQuoteIdent(namespace.Name)); err != nil {
-			return nil, fmt.Errorf("prepare mysql database %q: %w", namespace.Name, err)
+		if err := execMySQLCatalog(native, "CREATE DATABASE "+mysqlCompletionQuoteIdent(database)); err != nil {
+			return nil, fmt.Errorf("prepare mysql database %q: %w", database, err)
 		}
-		created[namespace.Name] = true
-	}
-	if catalog.Database != "" && !created[catalog.Database] {
-		if err := execMySQLCatalog(native, "CREATE DATABASE "+mysqlCompletionQuoteIdent(catalog.Database)); err != nil {
-			return nil, fmt.Errorf("prepare mysql database %q: %w", catalog.Database, err)
-		}
-		created[catalog.Database] = true
+		created[database] = true
 	}
 	for _, object := range objects {
-		databaseName := object.Ref.Namespace
-		if databaseName == "" {
-			databaseName = catalog.Database
-		}
+		databaseName := object.Ref.Scope.Name("database")
 		if databaseName == "" {
 			continue
 		}
@@ -186,13 +178,16 @@ func buildMySQLCompletionCatalog(catalog *schema.Catalog, objects []schema.Objec
 		}
 		if err := execMySQLCatalog(native, statement); err != nil && object.Relational != nil {
 			if fallbackErr := execMySQLCatalog(native, mysqlCompletionDDL(databaseName, object, true)); fallbackErr != nil {
-				return nil, fmt.Errorf("prepare mysql completion object %s.%s: %w", object.Ref.Namespace, object.Ref.Name, fallbackErr)
+				return nil, fmt.Errorf("prepare mysql completion object %s.%s: %w", databaseName, object.Ref.Name, fallbackErr)
 			}
 		}
 	}
-	current := catalog.Database
-	if current == "" && len(catalog.Namespaces) > 0 {
-		current = catalog.Namespaces[0].Name
+	current := directory.DefaultScope.Name("database")
+	if current == "" {
+		for database := range created {
+			current = database
+			break
+		}
 	}
 	native.SetCurrentDatabase(current)
 	return native, nil
@@ -285,12 +280,14 @@ func mysqlCoreCandidateKind(candidateType completioncore.CandidateType) (string,
 	switch candidateType {
 	case completioncore.CandidateColumn:
 		return "column", 100
-	case completioncore.CandidateDatabase:
-		return "database", 90
 	case completioncore.CandidateTable:
-		return "table", 80
+		return "table", 90
 	case completioncore.CandidateView:
-		return "view", 75
+		return "view", 85
+	case completioncore.CandidateDatabase:
+		// Prefer relations in ordinary unqualified slots. Database names remain
+		// available for explicit qualification and prefix matching.
+		return "database", 70
 	case completioncore.CandidateFunction:
 		return "function", 60
 	case completioncore.CandidateProcedure:

@@ -12,7 +12,6 @@ import (
 )
 
 var _ schema.SchemaInspector = (*sqliteDriver)(nil)
-var _ schema.DirectoryInspector = (*sqliteDriver)(nil)
 var _ schema.ScopeDiscoverer = (*sqliteDriver)(nil)
 
 func (d *sqliteDriver) SchemaSpec() schema.SchemaSpec {
@@ -26,8 +25,8 @@ func (d *sqliteDriver) SchemaSpec() schema.SchemaSpec {
 	}
 }
 
-func (d *sqliteDriver) InspectCatalog(ctx context.Context, opts schema.CatalogOptions) (*schema.Catalog, error) {
-	b := build.NewCatalog()
+func (d *sqliteDriver) InspectDirectory(ctx context.Context, opts schema.DirectoryOptions) (*schema.Directory, error) {
+	b := build.NewDirectory()
 	b.DeclareKind("table")
 	b.DeclareKind("view")
 	b.DeclareKind("trigger")
@@ -37,7 +36,8 @@ func (d *sqliteDriver) InspectCatalog(ctx context.Context, opts schema.CatalogOp
 		return nil, err
 	}
 	for _, ns := range namespaces {
-		if opts.Namespace != "" && ns != opts.Namespace {
+		scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: ns})
+		if opts.Root != "" && scope != opts.Root {
 			continue
 		}
 		q := fmt.Sprintf(`SELECT type, name FROM %s.sqlite_master WHERE type IN ('table','view','trigger') AND name NOT LIKE 'sqlite_%%' ORDER BY type, name`, sqliteQuoteIdent(ns))
@@ -51,7 +51,7 @@ func (d *sqliteDriver) InspectCatalog(ctx context.Context, opts schema.CatalogOp
 				rows.Close()
 				return nil, fmt.Errorf("sqlite: catalog objects scan: %w", err)
 			}
-			b.AddRef(ns, typ, name)
+			b.AddRef(scope, typ, name)
 		}
 		if err := rows.Err(); err != nil {
 			rows.Close()
@@ -60,45 +60,14 @@ func (d *sqliteDriver) InspectCatalog(ctx context.Context, opts schema.CatalogOp
 		rows.Close()
 	}
 
-	database := opts.Database
-	if database == "" {
-		database = "main"
-	}
-	catalog := b.Build("", "sqlite", database)
-	catalog.DefaultNamespace = d.defaultScope.Name("database")
-	if catalog.DefaultNamespace == "" {
-		catalog.DefaultNamespace = "main"
-	}
-	return catalog, nil
-}
-
-func (d *sqliteDriver) InspectDirectory(ctx context.Context, opts schema.DirectoryOptions) (*schema.Directory, error) {
 	root := opts.Root
 	if root == "" {
 		root = d.defaultScope
 	}
-	catalog, err := d.InspectCatalog(ctx, schema.CatalogOptions{})
-	if err != nil {
-		return nil, err
-	}
-	directory := &schema.Directory{Connection: catalog.Connection, Engine: "sqlite", GeneratedAt: catalog.GeneratedAt}
-	for _, namespace := range catalog.Namespaces {
-		scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: namespace.Name})
-		node := schema.ScopeNode{Path: scope, Groups: namespace.Groups}
-		for groupIndex := range node.Groups {
-			for refIndex := range node.Groups[groupIndex].Objects {
-				node.Groups[groupIndex].Objects[refIndex].Scope = scope
-			}
-		}
-		directory.Roots = append(directory.Roots, node)
-	}
-	if len(directory.Roots) > 0 {
-		directory.DefaultScope = directory.Roots[0].Path
-	}
 	if root != "" {
-		directory.DefaultScope = root
+		return b.Build("", "sqlite", root), nil
 	}
-	return directory, nil
+	return b.Build("", "sqlite", schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "main"})), nil
 }
 
 func (d *sqliteDriver) DiscoverScopes(ctx context.Context, request schema.ScopeDiscoveryRequest) (*schema.ScopeDiscovery, error) {
@@ -125,7 +94,7 @@ func (d *sqliteDriver) InspectObjects(ctx context.Context, refs []schema.ObjectR
 	b := build.NewRelational()
 	var triggerRefs []schema.ObjectRef
 	for _, ref := range refs {
-		if !allowed[ref.Namespace] {
+		if !allowed[ref.Scope.Name("database")] {
 			continue
 		}
 		switch ref.Kind {
@@ -167,7 +136,7 @@ func (d *sqliteDriver) attachSQLiteDefinitions(ctx context.Context, objs []schem
 		var ddl sql.NullString
 		// SQLite cannot bind identifiers; sqliteQuoteIdent escapes the namespace.
 		// codeql[go/sql-injection]
-		q := fmt.Sprintf(`SELECT sql FROM %s.sqlite_master WHERE type = ? AND name = ?`, sqliteQuoteIdent(objs[i].Ref.Namespace))
+		q := fmt.Sprintf(`SELECT sql FROM %s.sqlite_master WHERE type = ? AND name = ?`, sqliteQuoteIdent(objs[i].Ref.Scope.Name("database")))
 		if err := d.db.QueryRowContext(ctx, q, typ, objs[i].Ref.Name).Scan(&ddl); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				continue
@@ -220,7 +189,7 @@ func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.Rel
 	b.Ensure(ref)
 
 	tableArg := sqliteQuoteIdent(ref.Name)
-	prefix := sqliteQuoteIdent(ref.Namespace)
+	prefix := sqliteQuoteIdent(ref.Scope.Name("database"))
 
 	// SQLite cannot bind PRAGMA identifiers; both identifiers are escaped above.
 	// codeql[go/sql-injection]
@@ -270,7 +239,7 @@ func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.Rel
 			return fmt.Errorf("sqlite: object fk scan: %w", err)
 		}
 		b.AddForeignKeyColumn(ref, fmt.Sprintf("fk_%d", id), fromCol,
-			schema.ObjectRef{Namespace: ref.Namespace, Kind: "table", Name: refTbl}, toCol)
+			schema.ObjectRef{Scope: ref.Scope, Kind: "table", Name: refTbl}, toCol)
 	}
 	if err := fkRows.Err(); err != nil {
 		fkRows.Close()
@@ -301,7 +270,7 @@ func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.Rel
 	}
 	idxRows.Close()
 	for _, ix := range indexes {
-		columns, err := d.sqliteIndexColumns(ctx, ref.Namespace, ix.Name)
+		columns, err := d.sqliteIndexColumns(ctx, ref.Scope.Name("database"), ix.Name)
 		if err != nil {
 			return err
 		}
@@ -335,7 +304,7 @@ func (d *sqliteDriver) inspectSQLiteTriggers(ctx context.Context, refs []schema.
 	for _, ref := range refs {
 		// SQLite cannot bind identifiers; sqliteQuoteIdent escapes the namespace.
 		// codeql[go/sql-injection]
-		q := fmt.Sprintf(`SELECT tbl_name, sql FROM %s.sqlite_master WHERE type = 'trigger' AND name = ?`, sqliteQuoteIdent(ref.Namespace))
+		q := fmt.Sprintf(`SELECT tbl_name, sql FROM %s.sqlite_master WHERE type = 'trigger' AND name = ?`, sqliteQuoteIdent(ref.Scope.Name("database")))
 		row := d.db.QueryRowContext(ctx, q, ref.Name)
 		var tableName string
 		var definition sql.NullString
@@ -346,7 +315,7 @@ func (d *sqliteDriver) inspectSQLiteTriggers(ctx context.Context, refs []schema.
 			return nil, fmt.Errorf("sqlite: trigger detail: %w", err)
 		}
 		obj := schema.Object{
-			Ref: schema.ObjectRef{Namespace: ref.Namespace, Kind: "trigger", Name: ref.Name},
+			Ref: ref,
 			Descriptors: []schema.Descriptor{
 				{Kind: "fields", Title: "Trigger", Fields: []schema.Field{{Name: "Table", Value: tableName}}},
 			},

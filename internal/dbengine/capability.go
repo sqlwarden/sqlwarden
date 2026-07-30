@@ -16,13 +16,13 @@ type Capability string
 // The capability keys an engine may report. Each corresponds to an optional
 // interface the engine type implements (see CapabilitySet and capabilitiesOf).
 const (
-	CapabilitySchemaCatalog Capability = "schema.catalog"
-	CapabilitySchemaObjects Capability = "schema.objects"
-	CapabilityQueryCursor   Capability = "query.cursor"
-	CapabilitySQLParse      Capability = "sql.parse"
-	CapabilitySQLClassify   Capability = "sql.classify"
-	CapabilitySQLRewrite    Capability = "sql.rewrite"
-	CapabilitySQLComplete   Capability = "sql.complete"
+	CapabilitySchemaDirectory Capability = "schema.directory"
+	CapabilitySchemaObjects   Capability = "schema.objects"
+	CapabilityQueryCursor     Capability = "query.cursor"
+	CapabilitySQLParse        Capability = "sql.parse"
+	CapabilitySQLClassify     Capability = "sql.classify"
+	CapabilitySQLRewrite      Capability = "sql.rewrite"
+	CapabilitySQLComplete     Capability = "sql.complete"
 )
 
 // CapabilitySet is an engine's static capability report. Safe to compute and
@@ -41,13 +41,13 @@ type CapabilitySet struct {
 func capabilitiesOf(reg Registration) (map[Capability]bool, *schema.SchemaSpec) {
 	probe := reg.New()
 	caps := map[Capability]bool{
-		CapabilitySchemaCatalog: false,
-		CapabilitySchemaObjects: false,
-		CapabilityQueryCursor:   false,
+		CapabilitySchemaDirectory: false,
+		CapabilitySchemaObjects:   false,
+		CapabilityQueryCursor:     false,
 	}
 	var spec *schema.SchemaSpec
 	if si, ok := probe.(schema.SchemaInspector); ok {
-		caps[CapabilitySchemaCatalog] = true
+		caps[CapabilitySchemaDirectory] = true
 		caps[CapabilitySchemaObjects] = true
 		s := si.SchemaSpec()
 		spec = &s

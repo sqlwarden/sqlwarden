@@ -13,7 +13,7 @@ import (
 )
 
 func TestScopeScenarios(t *testing.T) {
-	catalog := completiontest.Catalog("mysql", "sakila", "sakila")
+	catalog := completiontest.Metadata("mysql", "sakila", "sakila")
 	column := completioncore.CandidateColumn
 	completiontest.Run(t, func(ctx context.Context, sql string, cursor int, metadata completioncore.MetadataResolver) ([]completioncore.Candidate, error) {
 		return coremysql.Complete(ctx, sql, cursor, nil, metadata)
@@ -173,7 +173,7 @@ func TestScopeScenarios(t *testing.T) {
 }
 
 func TestCompletionWithBrokenTrailingStatementScalesLinearly(t *testing.T) {
-	catalog := completiontest.Catalog("mysql", "sakila", "sakila")
+	catalog := completiontest.Metadata("mysql", "sakila", "sakila")
 	var sheet strings.Builder
 	sheet.WriteString("SELECT s. FROM inventory i JOIN store s ON i.id = s.id;\n")
 	sheet.WriteString("SELEC broken FROM oops;\n")

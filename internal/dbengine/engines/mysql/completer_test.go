@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/sqlwarden/internal/dbengine/completer"
@@ -23,7 +24,7 @@ func TestMySQLCompleteKeywordsAndSchema(t *testing.T) {
 	sql := "SELECT  FROM users"
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len("SELECT "),
-		Schema:       &schema.MetadataSet{Catalog: catalog, Objects: objects, Version: "snapshot-1"},
+		Schema:       &schema.MetadataSet{Directory: catalog, Objects: objects, Version: "snapshot-1"},
 		ConnectionID: "8",
 	})
 	if err != nil {
@@ -34,7 +35,7 @@ func TestMySQLCompleteKeywordsAndSchema(t *testing.T) {
 	fromSQL := "SELECT * FROM "
 	result, err = driver.Complete(context.Background(), completer.Request{
 		SQL: fromSQL, CursorOffset: len(fromSQL),
-		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		Schema: &schema.MetadataSet{Directory: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +75,7 @@ func TestMySQLCompleteCuratesCompletedRelationContext(t *testing.T) {
 	sql := "SELECT * FROM users "
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema:      &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		Schema:      &schema.MetadataSet{Directory: catalog, Objects: objects},
 		TriggerKind: completer.TriggerInvoked,
 	})
 	if err != nil {
@@ -90,7 +91,7 @@ func TestMySQLCompleteCuratesCompletedRelationContext(t *testing.T) {
 	joinedSQL := "SELECT * FROM users u JOIN `Order Items` oi "
 	result, err = driver.Complete(context.Background(), completer.Request{
 		SQL: joinedSQL, CursorOffset: len(joinedSQL),
-		Schema:      &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		Schema:      &schema.MetadataSet{Directory: catalog, Objects: objects},
 		TriggerKind: completer.TriggerInvoked,
 	})
 	if err != nil {
@@ -115,7 +116,7 @@ on a.address_id = s.address_id;
 select * from `
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema:      &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		Schema:      &schema.MetadataSet{Directory: catalog, Objects: objects},
 		TriggerKind: completer.TriggerAutomatic,
 		TriggerChar: " ",
 	})
@@ -140,7 +141,7 @@ select * from actor
 select * from `
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema:      &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		Schema:      &schema.MetadataSet{Directory: catalog, Objects: objects},
 		TriggerKind: completer.TriggerAutomatic,
 		TriggerChar: " ",
 	})
@@ -155,24 +156,24 @@ func TestMySQLCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 	catalog := mysqlCompletionTestCatalog()
 	objects := []schema.Object{
 		{
-			Ref: schema.ObjectRef{Namespace: "app", Kind: "table", Name: "inventory"},
+			Ref: schema.ObjectRef{Scope: mysqlCompletionTestScope(), Kind: "table", Name: "inventory"},
 			Relational: &schema.RelationalDetail{Columns: []schema.Column{
 				{Name: "id", DataType: "BIGINT"}, {Name: "inventory_name", DataType: "TEXT"},
 			}},
 		},
 		{
-			Ref: schema.ObjectRef{Namespace: "app", Kind: "table", Name: "store"},
+			Ref: schema.ObjectRef{Scope: mysqlCompletionTestScope(), Kind: "table", Name: "store"},
 			Relational: &schema.RelationalDetail{Columns: []schema.Column{
 				{Name: "id", DataType: "BIGINT"}, {Name: "store_name", DataType: "TEXT"},
 			}},
 		},
 	}
-	catalog.Namespaces[0].Groups[0].Objects = []schema.ObjectRef{objects[0].Ref, objects[1].Ref}
+	catalog.Roots[0].Groups[0].Objects = []schema.ObjectRef{objects[0].Ref, objects[1].Ref}
 
 	qualifiedSQL := "SELECT * FROM inventory i JOIN store s ON i.id = s.id WHERE s."
 	qualified, err := driver.Complete(context.Background(), completer.Request{
 		SQL: qualifiedSQL, CursorOffset: len(qualifiedSQL),
-		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		Schema: &schema.MetadataSet{Directory: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +184,7 @@ func TestMySQLCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 	unqualifiedSQL := "SELECT * FROM inventory i JOIN store s ON i.id = s.id WHERE "
 	unqualified, err := driver.Complete(context.Background(), completer.Request{
 		SQL: unqualifiedSQL, CursorOffset: len(unqualifiedSQL),
-		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		Schema: &schema.MetadataSet{Directory: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -197,26 +198,26 @@ func TestMySQLCompleteUsesFinalAliasAfterEarlierQualifiedColumn(t *testing.T) {
 	catalog := mysqlCompletionTestCatalog()
 	objects := []schema.Object{
 		{
-			Ref: schema.ObjectRef{Namespace: "app", Kind: "table", Name: "film"},
+			Ref: schema.ObjectRef{Scope: mysqlCompletionTestScope(), Kind: "table", Name: "film"},
 			Relational: &schema.RelationalDetail{Columns: []schema.Column{
 				{Name: "film_id", DataType: "SMALLINT"},
 				{Name: "description", DataType: "TEXT"},
 			}},
 		},
 		{
-			Ref: schema.ObjectRef{Namespace: "app", Kind: "table", Name: "film_actor"},
+			Ref: schema.ObjectRef{Scope: mysqlCompletionTestScope(), Kind: "table", Name: "film_actor"},
 			Relational: &schema.RelationalDetail{Columns: []schema.Column{
 				{Name: "actor_id", DataType: "SMALLINT"},
 				{Name: "film_id", DataType: "SMALLINT"},
 			}},
 		},
 	}
-	catalog.Namespaces[0].Groups[0].Objects = []schema.ObjectRef{objects[0].Ref, objects[1].Ref}
+	catalog.Roots[0].Groups[0].Objects = []schema.ObjectRef{objects[0].Ref, objects[1].Ref}
 
 	sql := "select * from film f\njoin film_actor fa\nwhere f.`description` = fa."
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema:      &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		Schema:      &schema.MetadataSet{Directory: catalog, Objects: objects},
 		TriggerKind: completer.TriggerAutomatic,
 		TriggerChar: ".",
 	})
@@ -254,16 +255,74 @@ func TestMySQLCompletionVocabulary(t *testing.T) {
 	requireMySQLCompletion(t, completer.Result{Suggestions: vocabulary.Suggestions}, "COUNT", "function")
 }
 
-func mysqlCompletionTestCatalog() *schema.Catalog {
-	return &schema.Catalog{
-		Dialect: "mysql", Database: "app",
-		Namespaces: []schema.NamespaceCatalog{{
-			Name: "app",
-			Groups: []schema.ObjectGroupCatalog{{
+func TestMySQLCompletionContextMatrix(t *testing.T) {
+	driver := &mysqlDriver{}
+	directory := mysqlCompletionTestCatalog()
+	metadata := &schema.MetadataSet{Directory: directory, Objects: mysqlCompletionTestObjects()}
+	tests := []struct {
+		name           string
+		sql            string
+		requireLabel   string
+		requireKind    string
+		firstKind      string
+		excludeRoutine bool
+	}{
+		{name: "select list", sql: "SELECT | FROM users", requireLabel: "id", requireKind: "column", firstKind: "column"},
+		{name: "select relation", sql: "SELECT * FROM |", requireLabel: "users", requireKind: "table", firstKind: "table", excludeRoutine: true},
+		{name: "join relation", sql: "SELECT * FROM users u JOIN |", requireLabel: "Order Items", requireKind: "table", firstKind: "table", excludeRoutine: true},
+		{name: "where expression", sql: "SELECT * FROM users WHERE |", requireLabel: "id", requireKind: "column", firstKind: "column"},
+		{name: "order expression", sql: "SELECT * FROM users ORDER BY |", requireLabel: "id", requireKind: "column", firstKind: "column"},
+		{name: "insert relation", sql: "INSERT INTO |", requireLabel: "users", requireKind: "table", firstKind: "table", excludeRoutine: true},
+		{name: "insert columns", sql: "INSERT INTO users (|)", requireLabel: "id", requireKind: "column", firstKind: "column"},
+		{name: "update relation", sql: "UPDATE | SET id = 1", requireLabel: "users", requireKind: "table", firstKind: "table", excludeRoutine: true},
+		{name: "update columns", sql: "UPDATE users SET |", requireLabel: "id", requireKind: "column", firstKind: "column"},
+		{name: "update predicate", sql: "UPDATE users SET id = 1 WHERE |", requireLabel: "id", requireKind: "column", firstKind: "column"},
+		{name: "delete relation", sql: "DELETE FROM |", requireLabel: "users", requireKind: "table", firstKind: "table", excludeRoutine: true},
+		{name: "delete predicate", sql: "DELETE FROM users WHERE |", requireLabel: "id", requireKind: "column", firstKind: "column"},
+		{name: "alter relation", sql: "ALTER TABLE |", requireLabel: "users", requireKind: "table", firstKind: "table", excludeRoutine: true},
+		{name: "alter action", sql: "ALTER TABLE users |", requireLabel: "ADD", requireKind: "keyword", excludeRoutine: true},
+		{name: "alter add", sql: "ALTER TABLE users ADD |", requireLabel: "COLUMN", requireKind: "keyword", excludeRoutine: true},
+		{name: "alter column name", sql: "ALTER TABLE users ADD COLUMN |", excludeRoutine: true},
+		{name: "create table name", sql: "CREATE TABLE |", excludeRoutine: true},
+		{name: "create index relation", sql: "CREATE INDEX users_idx ON |", requireLabel: "users", requireKind: "table", firstKind: "table", excludeRoutine: true},
+		{name: "drop relation", sql: "DROP TABLE |", requireLabel: "users", requireKind: "table", firstKind: "table", excludeRoutine: true},
+		{name: "truncate relation", sql: "TRUNCATE TABLE |", requireLabel: "users", requireKind: "table", firstKind: "table", excludeRoutine: true},
+		{name: "rename relation", sql: "RENAME TABLE |", requireLabel: "users", requireKind: "table", firstKind: "table", excludeRoutine: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cursor := strings.IndexByte(test.sql, '|')
+			sql := strings.Replace(test.sql, "|", "", 1)
+			result, err := driver.Complete(context.Background(), completer.Request{
+				SQL: sql, CursorOffset: cursor, Schema: metadata,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.requireLabel != "" {
+				requireMySQLCompletion(t, result, test.requireLabel, test.requireKind)
+			}
+			if test.firstKind != "" && (len(result.Suggestions) == 0 || result.Suggestions[0].Kind != test.firstKind) {
+				t.Fatalf("first completion kind = %q, want %q: %+v", firstMySQLSuggestionKind(result), test.firstKind, result.Suggestions)
+			}
+			if test.excludeRoutine {
+				requireNoMySQLSuggestionKinds(t, result, "function", "procedure")
+			}
+		})
+	}
+}
+
+func mysqlCompletionTestCatalog() *schema.Directory {
+	scope := mysqlCompletionTestScope()
+	return &schema.Directory{
+		Engine: "mysql", DefaultScope: scope,
+		Roots: []schema.ScopeNode{{
+			Path: scope,
+			Groups: []schema.ObjectGroup{{
 				Kind: "table",
 				Objects: []schema.ObjectRef{
-					{Namespace: "app", Kind: "table", Name: "users"},
-					{Namespace: "app", Kind: "table", Name: "Order Items"},
+					{Scope: scope, Kind: "table", Name: "users"},
+					{Scope: scope, Kind: "table", Name: "Order Items"},
 				},
 			}},
 		}},
@@ -271,19 +330,24 @@ func mysqlCompletionTestCatalog() *schema.Catalog {
 }
 
 func mysqlCompletionTestObjects() []schema.Object {
+	scope := mysqlCompletionTestScope()
 	return []schema.Object{
 		{
-			Ref: schema.ObjectRef{Namespace: "app", Kind: "table", Name: "users"},
+			Ref: schema.ObjectRef{Scope: scope, Kind: "table", Name: "users"},
 			Relational: &schema.RelationalDetail{Columns: []schema.Column{
 				{Name: "id", DataType: "BIGINT"},
 				{Name: "display name", DataType: "unsupported;type"},
 			}},
 		},
 		{
-			Ref:        schema.ObjectRef{Namespace: "app", Kind: "table", Name: "Order Items"},
+			Ref:        schema.ObjectRef{Scope: scope, Kind: "table", Name: "Order Items"},
 			Relational: &schema.RelationalDetail{Columns: []schema.Column{{Name: "id", DataType: "BIGINT"}}},
 		},
 	}
+}
+
+func mysqlCompletionTestScope() schema.ScopePath {
+	return schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "app"})
 }
 
 func requireMySQLCompletion(t *testing.T, result completer.Result, label, kind string) completer.Suggestion {
@@ -302,6 +366,26 @@ func requireNoMySQLCompletion(t *testing.T, result completer.Result, label, kind
 	for _, suggestion := range result.Suggestions {
 		if suggestion.Label == label && suggestion.Kind == kind {
 			t.Fatalf("unexpected completion %q (%s) in %+v", label, kind, result.Suggestions)
+		}
+	}
+}
+
+func firstMySQLSuggestionKind(result completer.Result) string {
+	if len(result.Suggestions) == 0 {
+		return ""
+	}
+	return result.Suggestions[0].Kind
+}
+
+func requireNoMySQLSuggestionKinds(t *testing.T, result completer.Result, kinds ...string) {
+	t.Helper()
+	excluded := make(map[string]bool, len(kinds))
+	for _, kind := range kinds {
+		excluded[kind] = true
+	}
+	for _, suggestion := range result.Suggestions {
+		if excluded[suggestion.Kind] {
+			t.Fatalf("unexpected %s completion %q in %+v", suggestion.Kind, suggestion.Label, result.Suggestions)
 		}
 	}
 }

@@ -8,26 +8,9 @@ import (
 )
 
 var _ schema.RelationshipInspector = (*mysqlDriver)(nil)
-var _ schema.ScopedRelationshipInspector = (*mysqlDriver)(nil)
 
 func (d *mysqlDriver) InspectRelationshipsInScope(ctx context.Context, scope schema.ScopePath) (*schema.RelationshipGraph, error) {
-	graph, err := d.InspectRelationships(ctx, scope.Name("database"))
-	if err != nil {
-		return nil, err
-	}
-	graph.Scope = scope
-	for index := range graph.Relationships {
-		graph.Relationships[index].Kind = "foreign_key"
-		graph.Relationships[index].Source.Scope = scope
-		graph.Relationships[index].References.Scope = scope
-	}
-	return graph, nil
-}
-
-// InspectRelationships returns every foreign-key edge in a namespace (database)
-// without loading column/index detail — the cheap topology tier for the ER
-// diagram.
-func (d *mysqlDriver) InspectRelationships(ctx context.Context, namespace string) (*schema.RelationshipGraph, error) {
+	namespace := scope.Name("database")
 	q := `
 SELECT table_schema, table_name, constraint_name, column_name,
        referenced_table_schema, referenced_table_name, referenced_column_name
@@ -40,7 +23,7 @@ ORDER BY table_schema, table_name, constraint_name, ordinal_position`
 	}
 	defer rows.Close()
 
-	graph := &schema.RelationshipGraph{Namespace: namespace}
+	graph := &schema.RelationshipGraph{Scope: scope}
 	index := map[string]int{}
 	for rows.Next() {
 		var ns, tbl, name, col, refNs, refTbl, refCol string
@@ -51,9 +34,10 @@ ORDER BY table_schema, table_name, constraint_name, ordinal_position`
 		pos, ok := index[key]
 		if !ok {
 			graph.Relationships = append(graph.Relationships, schema.Relationship{
+				Kind:       "foreign_key",
 				Name:       name,
-				Source:     schema.ObjectRef{Namespace: ns, Kind: "table", Name: tbl},
-				References: schema.ObjectRef{Namespace: refNs, Kind: "table", Name: refTbl},
+				Source:     schema.ObjectRef{Scope: scope, Kind: "table", Name: tbl},
+				References: schema.ObjectRef{Scope: schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: refNs}), Kind: "table", Name: refTbl},
 			})
 			pos = len(graph.Relationships) - 1
 			index[key] = pos

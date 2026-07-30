@@ -18,10 +18,10 @@ describe('exportDimensions', () => {
 })
 
 describe('diagramFileName', () => {
-  it('names an object diagram with namespace and table', () => {
+  it('names an object diagram with scope and table', () => {
     expect(diagramFileName('public', 'users', 'png')).toBe('public-users-diagram.png')
   })
-  it('names a namespace diagram with just the namespace', () => {
+  it('names a scope diagram with just the scope', () => {
     expect(diagramFileName('sales', undefined, 'svg')).toBe('sales-diagram.svg')
   })
   it('sanitizes filename-unsafe characters', () => {
