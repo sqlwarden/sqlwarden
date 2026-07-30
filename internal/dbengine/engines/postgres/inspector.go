@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sqlwarden/internal/dbengine/schema"
-	build "github.com/sqlwarden/internal/dbengine/schema/build"
+	"github.com/sqlwarden/internal/dbengine/metadata"
+	build "github.com/sqlwarden/internal/dbengine/metadata/build"
 )
 
-var _ schema.SchemaInspector = (*postgresDriver)(nil)
-var _ schema.ScopeDiscoverer = (*postgresDriver)(nil)
+var _ metadata.SchemaInspector = (*postgresDriver)(nil)
+var _ metadata.ScopeDiscoverer = (*postgresDriver)(nil)
 
-func (d *postgresDriver) SchemaSpec() schema.SchemaSpec {
-	return schema.SchemaSpec{
+func (d *postgresDriver) SchemaSpec() metadata.SchemaSpec {
+	return metadata.SchemaSpec{
 		Dialect: "postgres",
-		Kinds: []schema.SchemaObjectKind{
+		Kinds: []metadata.SchemaObjectKind{
 			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
 			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
 			{Kind: "materialized_view", Label: "Materialized View", PluralLabel: "Materialized Views", Order: 3, Relational: true, SupportsDiagram: false, Listing: "enumerated"},
@@ -26,16 +26,16 @@ func (d *postgresDriver) SchemaSpec() schema.SchemaSpec {
 	}
 }
 
-func (d *postgresDriver) InspectDirectory(ctx context.Context, opts schema.DirectoryOptions) (*schema.Directory, error) {
+func (d *postgresDriver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOptions) (*metadata.Directory, error) {
 	var database string
 	var currentSchema sql.NullString
 	if err := d.db.QueryRowContext(ctx, `SELECT current_database(), current_schema()`).Scan(&database, &currentSchema); err != nil {
 		return nil, fmt.Errorf("postgres: directory database context: %w", err)
 	}
-	root := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: database})
+	root := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: database})
 	defaultScope := root
 	if currentSchema.Valid {
-		defaultScope = root.Child(schema.ScopeSegment{Kind: "schema", Name: currentSchema.String})
+		defaultScope = root.Child(metadata.ScopeSegment{Kind: "schema", Name: currentSchema.String})
 	}
 	if d.defaultScope != "" {
 		defaultScope = d.defaultScope
@@ -43,8 +43,8 @@ func (d *postgresDriver) InspectDirectory(ctx context.Context, opts schema.Direc
 	if opts.Root != "" {
 		defaultScope = opts.Root
 	}
-	scope := func(namespace string) schema.ScopePath {
-		return root.Child(schema.ScopeSegment{Kind: "schema", Name: namespace})
+	scope := func(namespace string) metadata.ScopePath {
+		return root.Child(metadata.ScopeSegment{Kind: "schema", Name: namespace})
 	}
 
 	b := build.NewDirectory()
@@ -101,18 +101,18 @@ ORDER BY sequence_schema, sequence_name`
 	return b.Build("", "postgres", defaultScope), nil
 }
 
-func (d *postgresDriver) DiscoverScopes(ctx context.Context, request schema.ScopeDiscoveryRequest) (*schema.ScopeDiscovery, error) {
+func (d *postgresDriver) DiscoverScopes(ctx context.Context, request metadata.ScopeDiscoveryRequest) (*metadata.ScopeDiscovery, error) {
 	var currentDatabase string
 	var currentSchema sql.NullString
 	if err := d.db.QueryRowContext(ctx, `SELECT current_database(), current_schema()`).Scan(&currentDatabase, &currentSchema); err != nil {
 		return nil, fmt.Errorf("postgres: discover current scope: %w", err)
 	}
-	currentRoot := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: currentDatabase})
+	currentRoot := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: currentDatabase})
 	current := currentRoot
 	if currentSchema.Valid {
-		current = current.Child(schema.ScopeSegment{Kind: "schema", Name: currentSchema.String})
+		current = current.Child(metadata.ScopeSegment{Kind: "schema", Name: currentSchema.String})
 	}
-	result := &schema.ScopeDiscovery{Current: current, Scopes: []schema.ScopePath{}}
+	result := &metadata.ScopeDiscovery{Current: current, Scopes: []metadata.ScopePath{}}
 	parentDatabase := request.Parent.Name("database")
 	if parentDatabase != "" {
 		if parentDatabase != currentDatabase {
@@ -152,7 +152,7 @@ ORDER BY datname`)
 		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		result.Scopes = append(result.Scopes, schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: name}))
+		result.Scopes = append(result.Scopes, metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: name}))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -211,8 +211,8 @@ func (d *postgresDriver) queryRefs(ctx context.Context, q string, fn func(ns, na
 	return rows.Err()
 }
 
-func (d *postgresDriver) InspectObjects(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
-	var relRefs, mvRefs, fnRefs, seqRefs []schema.ObjectRef
+func (d *postgresDriver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	var relRefs, mvRefs, fnRefs, seqRefs []metadata.ObjectRef
 	for _, r := range refs {
 		switch r.Kind {
 		case "table", "view":
@@ -226,7 +226,7 @@ func (d *postgresDriver) InspectObjects(ctx context.Context, refs []schema.Objec
 		}
 	}
 
-	var out []schema.Object
+	var out []metadata.Object
 	if len(relRefs) > 0 {
 		objs, err := d.inspectRelational(ctx, relRefs)
 		if err != nil {
@@ -260,7 +260,7 @@ func (d *postgresDriver) InspectObjects(ctx context.Context, refs []schema.Objec
 
 // pairFilter builds a "($n,$n+1),($n+2,$n+3),…" tuple list plus the flattened
 // (namespace, name) args, for a "(schema, name) IN (...)" predicate.
-func pairFilter(refs []schema.ObjectRef, start int) (string, []any) {
+func pairFilter(refs []metadata.ObjectRef, start int) (string, []any) {
 	var sb strings.Builder
 	args := make([]any, 0, len(refs)*2)
 	for i, r := range refs {
@@ -273,12 +273,12 @@ func pairFilter(refs []schema.ObjectRef, start int) (string, []any) {
 	return sb.String(), args
 }
 
-func (d *postgresDriver) inspectRelational(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
-	refByName := make(map[string]schema.ObjectRef, len(refs))
+func (d *postgresDriver) inspectRelational(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	refByName := make(map[string]metadata.ObjectRef, len(refs))
 	for _, r := range refs {
 		refByName[r.Scope.Name("schema")+"\x00"+r.Name] = r
 	}
-	refFor := func(ns, name string) schema.ObjectRef {
+	refFor := func(ns, name string) metadata.ObjectRef {
 		return refByName[ns+"\x00"+name]
 	}
 
@@ -307,7 +307,7 @@ ORDER BY table_schema, table_name, ordinal_position`
 			crows.Close()
 			return nil, fmt.Errorf("postgres: object columns scan: %w", err)
 		}
-		c := schema.Column{Name: col, DataType: dtype, Nullable: nullable == "YES", Ordinal: ord}
+		c := metadata.Column{Name: col, DataType: dtype, Nullable: nullable == "YES", Ordinal: ord}
 		if def.Valid {
 			v := def.String
 			c.Default = &v
@@ -370,7 +370,7 @@ ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_positio
 		}
 		source := refFor(ns, tbl)
 		b.AddForeignKeyColumn(source, name, col,
-			schema.ObjectRef{Scope: source.Scope.With("schema", refNs), Kind: "table", Name: refTbl}, refCol)
+			metadata.ObjectRef{Scope: source.Scope.With("schema", refNs), Kind: "table", Name: refTbl}, refCol)
 	}
 	if err := frows.Err(); err != nil {
 		frows.Close()
@@ -397,7 +397,7 @@ ORDER BY ns.nspname, t.relname, i.relname, g.n`
 		return nil, fmt.Errorf("postgres: object indexes: %w", err)
 	}
 	type idxKey struct{ ns, tbl, name string }
-	indexes := map[idxKey]*schema.SecondaryIndex{}
+	indexes := map[idxKey]*metadata.SecondaryIndex{}
 	var indexOrder []idxKey
 	for irows.Next() {
 		var ns, tbl, name, def, col string
@@ -409,7 +409,7 @@ ORDER BY ns.nspname, t.relname, i.relname, g.n`
 		key := idxKey{ns: ns, tbl: tbl, name: name}
 		ix, ok := indexes[key]
 		if !ok {
-			ix = &schema.SecondaryIndex{Name: name, Unique: unique, Attributes: map[string]any{"definition": def}}
+			ix = &metadata.SecondaryIndex{Name: name, Unique: unique, Attributes: map[string]any{"definition": def}}
 			indexes[key] = ix
 			indexOrder = append(indexOrder, key)
 		}
@@ -447,7 +447,7 @@ ORDER BY ns.nspname, t.relname, i.relname, g.n`
 // (START/INCREMENT), generated/stored columns, partitioning, inheritance,
 // storage/WITH params, collations, EXCLUDE constraints, or comments. Output
 // stays valid SQL, but is not a full pg_dump-fidelity reproduction.
-func (d *postgresDriver) attachPostgresTableDDL(ctx context.Context, objs []schema.Object) error {
+func (d *postgresDriver) attachPostgresTableDDL(ctx context.Context, objs []metadata.Object) error {
 	for i := range objs {
 		if objs[i].Ref.Kind != "table" {
 			continue
@@ -457,17 +457,17 @@ func (d *postgresDriver) attachPostgresTableDDL(ctx context.Context, objs []sche
 			return err
 		}
 		if ddl != "" {
-			objs[i].Descriptors = append(objs[i].Descriptors, schema.Descriptor{
+			objs[i].Descriptors = append(objs[i].Descriptors, metadata.Descriptor{
 				Kind:   "source",
 				Title:  "DDL",
-				Source: &schema.Source{Language: "sql", Body: ddl},
+				Source: &metadata.Source{Language: "sql", Body: ddl},
 			})
 		}
 	}
 	return nil
 }
 
-func (d *postgresDriver) buildPostgresTableDDL(ctx context.Context, ref schema.ObjectRef) (string, error) {
+func (d *postgresDriver) buildPostgresTableDDL(ctx context.Context, ref metadata.ObjectRef) (string, error) {
 	args := []any{ref.Scope.Name("schema"), ref.Name}
 	relArg := `format('%I.%I', $1::text, $2::text)::regclass`
 
@@ -575,7 +575,7 @@ ORDER BY i.indexrelid::regclass::text`, args...)
 
 // attachPostgresComments populates table and column "comment" attributes from
 // obj_description / col_description.
-func (d *postgresDriver) attachPostgresComments(ctx context.Context, objs []schema.Object, pairs string, args []any) error {
+func (d *postgresDriver) attachPostgresComments(ctx context.Context, objs []metadata.Object, pairs string, args []any) error {
 	tableComments := map[string]string{}
 	trows, err := d.db.QueryContext(ctx, `
 SELECT n.nspname, c.relname, obj_description(c.oid)
@@ -649,7 +649,7 @@ WHERE (n.nspname, c.relname) IN (`+pairs+`)`, args...)
 
 // attachPostgresViewDefinitions appends each view's definition as a "source"
 // descriptor via pg_get_viewdef.
-func (d *postgresDriver) attachPostgresViewDefinitions(ctx context.Context, objs []schema.Object) error {
+func (d *postgresDriver) attachPostgresViewDefinitions(ctx context.Context, objs []metadata.Object) error {
 	for i := range objs {
 		if objs[i].Ref.Kind != "view" {
 			continue
@@ -662,17 +662,17 @@ func (d *postgresDriver) attachPostgresViewDefinitions(ctx context.Context, objs
 			return fmt.Errorf("postgres: view definition: %w", err)
 		}
 		if def.Valid && def.String != "" {
-			objs[i].Descriptors = append(objs[i].Descriptors, schema.Descriptor{
+			objs[i].Descriptors = append(objs[i].Descriptors, metadata.Descriptor{
 				Kind:   "source",
 				Title:  "Definition",
-				Source: &schema.Source{Language: "sql", Body: def.String},
+				Source: &metadata.Source{Language: "sql", Body: def.String},
 			})
 		}
 	}
 	return nil
 }
 
-func setObjectAttr(o *schema.Object, key, value string) {
+func setObjectAttr(o *metadata.Object, key, value string) {
 	if value == "" {
 		return
 	}
@@ -682,7 +682,7 @@ func setObjectAttr(o *schema.Object, key, value string) {
 	o.Attributes[key] = value
 }
 
-func setColumnAttr(c *schema.Column, key, value string) {
+func setColumnAttr(c *metadata.Column, key, value string) {
 	if value == "" {
 		return
 	}
@@ -692,12 +692,12 @@ func setColumnAttr(c *schema.Column, key, value string) {
 	c.Attributes[key] = value
 }
 
-func (d *postgresDriver) inspectMatviews(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+func (d *postgresDriver) inspectMatviews(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	b := build.NewRelational()
 	for _, r := range refs {
 		b.Ensure(r)
 	}
-	refFor := func(ns, name string) schema.ObjectRef {
+	refFor := func(ns, name string) metadata.ObjectRef {
 		return postgresRequestedRef(refs, ns, name, "materialized_view")
 	}
 	pairs, args := pairFilter(refs, 1)
@@ -720,7 +720,7 @@ ORDER BY n.nspname, c.relname, a.attnum`
 			rows.Close()
 			return nil, fmt.Errorf("postgres: matview columns scan: %w", err)
 		}
-		b.AddColumn(refFor(ns, mv), schema.Column{Name: col, DataType: dtype, Ordinal: attnum})
+		b.AddColumn(refFor(ns, mv), metadata.Column{Name: col, DataType: dtype, Ordinal: attnum})
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -730,7 +730,7 @@ ORDER BY n.nspname, c.relname, a.attnum`
 	return b.Build(), nil
 }
 
-func (d *postgresDriver) inspectFunctions(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+func (d *postgresDriver) inspectFunctions(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	pairs, args := pairFilter(refs, 1)
 	q := `
 SELECT n.nspname, p.proname,
@@ -748,32 +748,32 @@ ORDER BY n.nspname, p.proname`
 		return nil, fmt.Errorf("postgres: function detail: %w", err)
 	}
 	defer rows.Close()
-	var out []schema.Object
+	var out []metadata.Object
 	for rows.Next() {
 		var ns, name, fnArgs, lang, def string
 		var ret sql.NullString
 		if err := rows.Scan(&ns, &name, &fnArgs, &ret, &lang, &def); err != nil {
 			return nil, fmt.Errorf("postgres: function detail scan: %w", err)
 		}
-		fields := []schema.Field{
+		fields := []metadata.Field{
 			{Name: "Arguments", Value: fnArgs},
 			{Name: "Language", Value: lang},
 		}
 		if ret.Valid {
-			fields = append(fields, schema.Field{Name: "Returns", Value: ret.String})
+			fields = append(fields, metadata.Field{Name: "Returns", Value: ret.String})
 		}
-		out = append(out, schema.Object{
+		out = append(out, metadata.Object{
 			Ref: postgresRequestedRef(refs, ns, name, "function"),
-			Descriptors: []schema.Descriptor{
+			Descriptors: []metadata.Descriptor{
 				{Kind: "fields", Title: "Signature", Fields: fields},
-				{Kind: "source", Title: "Definition", Source: &schema.Source{Language: lang, Body: def}},
+				{Kind: "source", Title: "Definition", Source: &metadata.Source{Language: lang, Body: def}},
 			},
 		})
 	}
 	return out, rows.Err()
 }
 
-func (d *postgresDriver) inspectSequences(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+func (d *postgresDriver) inspectSequences(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	pairs, args := pairFilter(refs, 1)
 	q := `
 SELECT sequence_schema, sequence_name, data_type
@@ -785,31 +785,31 @@ ORDER BY sequence_schema, sequence_name`
 		return nil, fmt.Errorf("postgres: sequence detail: %w", err)
 	}
 	defer rows.Close()
-	var out []schema.Object
+	var out []metadata.Object
 	for rows.Next() {
 		var ns, name, dtype string
 		if err := rows.Scan(&ns, &name, &dtype); err != nil {
 			return nil, fmt.Errorf("postgres: sequence detail scan: %w", err)
 		}
-		out = append(out, schema.Object{
+		out = append(out, metadata.Object{
 			Ref: postgresRequestedRef(refs, ns, name, "sequence"),
-			Descriptors: []schema.Descriptor{
-				{Kind: "fields", Title: "Sequence", Fields: []schema.Field{{Name: "Data type", Value: dtype}}},
+			Descriptors: []metadata.Descriptor{
+				{Kind: "fields", Title: "Sequence", Fields: []metadata.Field{{Name: "Data type", Value: dtype}}},
 			},
 		})
 	}
 	return out, rows.Err()
 }
 
-func postgresRequestedRef(refs []schema.ObjectRef, namespace, name, kind string) schema.ObjectRef {
+func postgresRequestedRef(refs []metadata.ObjectRef, namespace, name, kind string) metadata.ObjectRef {
 	for _, ref := range refs {
 		if ref.Scope.Name("schema") == namespace && ref.Name == name {
 			return ref
 		}
 	}
-	var scope schema.ScopePath
+	var scope metadata.ScopePath
 	if len(refs) > 0 {
 		scope = refs[0].Scope.With("schema", namespace)
 	}
-	return schema.ObjectRef{Scope: scope, Kind: kind, Name: name}
+	return metadata.ObjectRef{Scope: scope, Kind: kind, Name: name}
 }

@@ -16,7 +16,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/classifier"
-	schemameta "github.com/sqlwarden/internal/dbengine/schema"
+	metadata "github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -220,13 +220,13 @@ func connectionClassifier(driverName string) classifier.Classifier {
 
 func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name          string               `json:"name"`
-		Driver        string               `json:"driver"`
-		DSN           string               `json:"dsn"`
-		EnvironmentID *int64               `json:"environment_id"`
-		AccessMode    string               `json:"access_mode"`
-		DefaultScope  schemameta.ScopePath `json:"default_scope,omitempty"`
-		V             validator.Validator  `json:"-"`
+		Name          string              `json:"name"`
+		Driver        string              `json:"driver"`
+		DSN           string              `json:"dsn"`
+		EnvironmentID *int64              `json:"environment_id"`
+		AccessMode    string              `json:"access_mode"`
+		DefaultScope  metadata.ScopePath  `json:"default_scope,omitempty"`
+		V             validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -323,14 +323,14 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) updateConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name                 *string               `json:"name"`
-		Driver               *string               `json:"driver"`
-		DSN                  *string               `json:"dsn"`
-		AccessMode           *string               `json:"access_mode"`
-		SchemaSnapshotPolicy *string               `json:"schema_snapshot_policy"`
-		DefaultScope         *schemameta.ScopePath `json:"default_scope"`
-		Force                bool                  `json:"force"`
-		V                    validator.Validator   `json:"-"`
+		Name                 *string             `json:"name"`
+		Driver               *string             `json:"driver"`
+		DSN                  *string             `json:"dsn"`
+		AccessMode           *string             `json:"access_mode"`
+		SchemaSnapshotPolicy *string             `json:"schema_snapshot_policy"`
+		DefaultScope         *metadata.ScopePath `json:"default_scope"`
+		Force                bool                `json:"force"`
+		V                    validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -479,10 +479,10 @@ func (app *application) deleteConnection(w http.ResponseWriter, r *http.Request)
 
 func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Driver      string               `json:"driver"`
-		DSN         string               `json:"dsn"`
-		ParentScope schemameta.ScopePath `json:"parent_scope,omitempty"`
-		V           validator.Validator  `json:"-"`
+		Driver      string              `json:"driver"`
+		DSN         string              `json:"dsn"`
+		ParentScope metadata.ScopePath  `json:"parent_scope,omitempty"`
+		V           validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -560,8 +560,8 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		"ok":         true,
 		"latency_ms": latency,
 	}
-	if discoverer, ok := d.(schemameta.ScopeDiscoverer); ok {
-		discovery, discoveryErr := discoverer.DiscoverScopes(ctx, schemameta.ScopeDiscoveryRequest{Parent: input.ParentScope})
+	if discoverer, ok := d.(metadata.ScopeDiscoverer); ok {
+		discovery, discoveryErr := discoverer.DiscoverScopes(ctx, metadata.ScopeDiscoveryRequest{Parent: input.ParentScope})
 		if discoveryErr == nil {
 			payload["scope_discovery"] = discovery
 		} else {
@@ -770,7 +770,7 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) driverConnectionConfig(driverName, dsn string, defaultScopes ...schemameta.ScopePath) dbengine.ConnectionConfig {
+func (app *application) driverConnectionConfig(driverName, dsn string, defaultScopes ...metadata.ScopePath) dbengine.ConnectionConfig {
 	config := dbengine.ConnectionConfig{
 		DSN:            dsn,
 		Driver:         driverName,

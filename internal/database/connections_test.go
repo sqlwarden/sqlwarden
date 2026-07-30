@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/uptrace/bun"
 )
 
@@ -111,9 +111,9 @@ func TestConnectionDefaultScopeRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	initial := schema.NewScopePath(
-		schema.ScopeSegment{Kind: "database", Name: "analytics"},
-		schema.ScopeSegment{Kind: "schema", Name: "reporting"},
+	initial := metadata.NewScopePath(
+		metadata.ScopeSegment{Kind: "database", Name: "analytics"},
+		metadata.ScopeSegment{Kind: "schema", Name: "reporting"},
 	)
 	conn, err := db.InsertConnectionWithScope(
 		ctx, ws.ID, nil, "analytics", "postgres", "encrypted", "open", initial,
@@ -141,7 +141,7 @@ func TestConnectionDefaultScopeRoundTrips(t *testing.T) {
 		t.Fatalf("compatibility update erased scope: got %q", stored.DefaultScope)
 	}
 
-	replacement := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "warehouse"})
+	replacement := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "warehouse"})
 	if err := db.UpdateConnectionWithScopeAndPolicy(
 		ctx, conn.ID, "renamed", "encrypted-2", "restricted",
 		SchemaSnapshotPolicyInherit, replacement,

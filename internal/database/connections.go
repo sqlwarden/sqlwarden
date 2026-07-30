@@ -11,21 +11,21 @@ import (
 	"github.com/sqlwarden/internal/response"
 	"github.com/uptrace/bun"
 
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
 type Connection struct {
-	ID                   int64            `bun:",pk,autoincrement" json:"id"`
-	WorkspaceID          int64            `bun:",notnull"          json:"workspace_id"`
-	EnvironmentID        int64            `bun:",notnull"          json:"environment_id"`
-	Name                 string           `bun:",notnull"          json:"name"`
-	Driver               string           `bun:",notnull"          json:"driver"`
-	DSNEncrypted         string           `bun:",notnull"          json:"-"`
-	AccessMode           string           `bun:",notnull,default:'open'" json:"access_mode"`
-	SchemaSnapshotPolicy string           `bun:",notnull,default:'inherit'" json:"schema_snapshot_policy"`
-	DefaultScope         schema.ScopePath `bun:",notnull,default:''" json:"default_scope,omitempty"`
-	CreatedAt            time.Time        `bun:",notnull"          json:"created_at"`
-	UpdatedAt            time.Time        `bun:",notnull"          json:"updated_at"`
+	ID                   int64              `bun:",pk,autoincrement" json:"id"`
+	WorkspaceID          int64              `bun:",notnull"          json:"workspace_id"`
+	EnvironmentID        int64              `bun:",notnull"          json:"environment_id"`
+	Name                 string             `bun:",notnull"          json:"name"`
+	Driver               string             `bun:",notnull"          json:"driver"`
+	DSNEncrypted         string             `bun:",notnull"          json:"-"`
+	AccessMode           string             `bun:",notnull,default:'open'" json:"access_mode"`
+	SchemaSnapshotPolicy string             `bun:",notnull,default:'inherit'" json:"schema_snapshot_policy"`
+	DefaultScope         metadata.ScopePath `bun:",notnull,default:''" json:"default_scope,omitempty"`
+	CreatedAt            time.Time          `bun:",notnull"          json:"created_at"`
+	UpdatedAt            time.Time          `bun:",notnull"          json:"updated_at"`
 }
 
 const (
@@ -49,7 +49,7 @@ func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID *in
 	return db.InsertConnectionWithScope(ctx, workspaceID, envID, name, driver, dsnEncrypted, accessMode, "")
 }
 
-func (db *DB) InsertConnectionWithScope(ctx context.Context, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string, defaultScope schema.ScopePath) (Connection, error) {
+func (db *DB) InsertConnectionWithScope(ctx context.Context, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string, defaultScope metadata.ScopePath) (Connection, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -71,7 +71,7 @@ func (db *DB) InsertConnectionWithExecutor(ctx context.Context, exec bun.IDB, wo
 	return db.InsertConnectionWithScopeAndExecutor(ctx, exec, workspaceID, envID, name, driver, dsnEncrypted, accessMode, "")
 }
 
-func (db *DB) InsertConnectionWithScopeAndExecutor(ctx context.Context, exec bun.IDB, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string, defaultScope schema.ScopePath) (Connection, error) {
+func (db *DB) InsertConnectionWithScopeAndExecutor(ctx context.Context, exec bun.IDB, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string, defaultScope metadata.ScopePath) (Connection, error) {
 	resolvedEnvID := int64(0)
 	if envID == nil {
 		var err error
@@ -156,7 +156,7 @@ func (db *DB) UpdateConnectionWithPolicy(ctx context.Context, id int64, name, ds
 	return err
 }
 
-func (db *DB) UpdateConnectionWithScopeAndPolicy(ctx context.Context, id int64, name, dsnEncrypted, accessMode, snapshotPolicy string, defaultScope schema.ScopePath) error {
+func (db *DB) UpdateConnectionWithScopeAndPolicy(ctx context.Context, id int64, name, dsnEncrypted, accessMode, snapshotPolicy string, defaultScope metadata.ScopePath) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 

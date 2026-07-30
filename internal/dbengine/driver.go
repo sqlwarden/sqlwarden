@@ -3,14 +3,14 @@ package dbengine
 import (
 	"context"
 
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/sqlwarden/pkg/result"
 )
 
 // Driver is the connection capability every engine must implement. An engine
 // type also implements whichever optional capability interfaces it supports
 // (classifier.Classifier, parser.Parser, rewriter.Rewriter, completer.Completer,
-// schema.SchemaInspector, cursor.QueryCursorDriver), resolved by type assertion.
+// metadata.SchemaInspector, cursor.QueryCursorDriver), resolved by type assertion.
 type Driver interface {
 	Connect(ctx context.Context, cfg ConnectionConfig) error
 	Ping(ctx context.Context) error
@@ -37,7 +37,7 @@ type ConnectionConfig struct {
 	Driver         string
 	MaxResultRows  int
 	MaxResultBytes int64
-	DefaultScope   schema.ScopePath
+	DefaultScope   metadata.ScopePath
 }
 
 // NormalizeName returns the canonical engine name for a user-facing name or

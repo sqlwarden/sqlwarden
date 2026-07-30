@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
 // CandidateType classifies a semantic completion item independently of a
@@ -86,14 +86,14 @@ type MetadataResolver interface {
 	FindRelation(database, schema, name string) (Relation, bool)
 }
 
-// SchemaResolver adapts schema.Index to the completion metadata boundary.
+// SchemaResolver adapts metadata.Index to the completion metadata boundary.
 // The underlying index may represent persistent or ephemeral metadata.
 type SchemaResolver struct {
-	index         *schema.Index
+	index         *metadata.Index
 	defaultSchema string
 }
 
-func NewSchemaResolver(index *schema.Index, defaultSchema string) *SchemaResolver {
+func NewSchemaResolver(index *metadata.Index, defaultSchema string) *SchemaResolver {
 	return &SchemaResolver{index: index, defaultSchema: defaultSchema}
 }
 
@@ -188,7 +188,7 @@ func (r *SchemaResolver) FindRelation(database, namespace, name string) (Relatio
 	return Relation{}, false
 }
 
-func (r *SchemaResolver) resolveScope(database, namespace string) (schema.ScopePath, bool) {
+func (r *SchemaResolver) resolveScope(database, namespace string) (metadata.ScopePath, bool) {
 	defaultScope := r.index.DefaultScope()
 	for _, scope := range r.index.Scopes() {
 		if !matchesDatabase(database, scope.Name("database")) {
@@ -220,7 +220,7 @@ func CheckContext(ctx context.Context) error {
 
 var relationKinds = []string{"table", "foreign_table", "view", "materialized_view"}
 
-func relationFromObject(object schema.Object) (Relation, bool) {
+func relationFromObject(object metadata.Object) (Relation, bool) {
 	kind, ok := relationCandidateType(object.Ref.Kind)
 	if !ok {
 		return Relation{}, false
@@ -259,7 +259,7 @@ func relationCandidateType(kind string) (CandidateType, bool) {
 	}
 }
 
-func objectSource(object schema.Object) string {
+func objectSource(object metadata.Object) string {
 	for _, descriptor := range object.Descriptors {
 		if descriptor.Source != nil && descriptor.Source.Language == "sql" {
 			return descriptor.Source.Body

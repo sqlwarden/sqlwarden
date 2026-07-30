@@ -9,7 +9,7 @@ import (
 
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
 func TestCompleteConnectionSQLFromPersistentSnapshot(t *testing.T) {
@@ -20,14 +20,14 @@ func TestCompleteConnectionSQLFromPersistentSnapshot(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Completion DB", "open")
 
-	scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "app"}, schema.ScopeSegment{Kind: "schema", Name: "public"})
-	directory := &schema.Directory{
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"}, metadata.ScopeSegment{Kind: "schema", Name: "public"})
+	directory := &metadata.Directory{
 		Engine: "postgres", DefaultScope: scope, GeneratedAt: time.Now(),
-		Roots: []schema.ScopeNode{{
+		Roots: []metadata.ScopeNode{{
 			Path: scope,
-			Groups: []schema.ObjectGroup{{
+			Groups: []metadata.ObjectGroup{{
 				Kind: "table",
-				Objects: []schema.ObjectRef{
+				Objects: []metadata.ObjectRef{
 					{Scope: scope, Kind: "table", Name: "widgets"},
 				},
 			}},
@@ -37,9 +37,9 @@ func TestCompleteConnectionSQLFromPersistentSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.schemaSnapshots.PutObjects(context.Background(), snapshot.ID, []schema.Object{{
-		Ref: schema.ObjectRef{Scope: scope, Kind: "table", Name: "widgets"},
-		Relational: &schema.RelationalDetail{Columns: []schema.Column{
+	if err := app.schemaSnapshots.PutObjects(context.Background(), snapshot.ID, []metadata.Object{{
+		Ref: metadata.ObjectRef{Scope: scope, Kind: "table", Name: "widgets"},
+		Relational: &metadata.RelationalDetail{Columns: []metadata.Column{
 			{Name: "widget_name", DataType: "text", Ordinal: 1},
 		}},
 	}}); err != nil {

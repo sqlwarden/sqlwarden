@@ -11,7 +11,7 @@ import (
 
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
-	schemameta "github.com/sqlwarden/internal/dbengine/schema"
+	metadata "github.com/sqlwarden/internal/dbengine/metadata"
 	schemaapp "github.com/sqlwarden/internal/schema"
 )
 
@@ -31,16 +31,16 @@ func TestSchemaSnapshotStorePublishesAndRetainsTwoGenerations(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		object := schemameta.Object{
-			Ref: schemameta.ObjectRef{Scope: directory.DefaultScope, Kind: "table", Name: objectName},
-			Relational: &schemameta.RelationalDetail{
-				Columns: []schemameta.Column{{Name: "id", DataType: "INTEGER", Ordinal: 1}},
+		object := metadata.Object{
+			Ref: metadata.ObjectRef{Scope: directory.DefaultScope, Kind: "table", Name: objectName},
+			Relational: &metadata.RelationalDetail{
+				Columns: []metadata.Column{{Name: "id", DataType: "INTEGER", Ordinal: 1}},
 			},
 		}
-		if err := app.schemaSnapshots.PutObjects(context.Background(), snapshot.ID, []schemameta.Object{object}); err != nil {
+		if err := app.schemaSnapshots.PutObjects(context.Background(), snapshot.ID, []metadata.Object{object}); err != nil {
 			t.Fatal(err)
 		}
-		if err := app.schemaSnapshots.PutRelationship(context.Background(), snapshot.ID, &schemameta.RelationshipGraph{
+		if err := app.schemaSnapshots.PutRelationship(context.Background(), snapshot.ID, &metadata.RelationshipGraph{
 			Scope: directory.DefaultScope,
 		}); err != nil {
 			t.Fatal(err)
@@ -69,7 +69,7 @@ func TestSchemaSnapshotStorePublishesAndRetainsTwoGenerations(t *testing.T) {
 	assert.Equal(t, found, true)
 	assert.Equal(t, activeAfterRetry.ID, last.ID)
 
-	objects, err := app.schemaSnapshots.Objects(context.Background(), active.ID, []schemameta.ObjectRef{
+	objects, err := app.schemaSnapshots.Objects(context.Background(), active.ID, []metadata.ObjectRef{
 		{Scope: directory.DefaultScope, Kind: "table", Name: "widgets_3"},
 	})
 	if err != nil {
@@ -231,15 +231,15 @@ func TestDisablingOrganizationSnapshotsPurgesStoredMetadata(t *testing.T) {
 	assert.Equal(t, enabled, false)
 }
 
-func snapshotDirectory(objectName string, generatedAt time.Time) *schemameta.Directory {
-	scope := schemameta.NewScopePath(schemameta.ScopeSegment{Kind: "database", Name: "main"})
-	return &schemameta.Directory{
+func snapshotDirectory(objectName string, generatedAt time.Time) *metadata.Directory {
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	return &metadata.Directory{
 		Engine: "sqlite", DefaultScope: scope, GeneratedAt: generatedAt,
-		Roots: []schemameta.ScopeNode{{
+		Roots: []metadata.ScopeNode{{
 			Path: scope,
-			Groups: []schemameta.ObjectGroup{{
+			Groups: []metadata.ObjectGroup{{
 				Kind: "table",
-				Objects: []schemameta.ObjectRef{{
+				Objects: []metadata.ObjectRef{{
 					Scope: scope,
 					Kind:  "table",
 					Name:  objectName,

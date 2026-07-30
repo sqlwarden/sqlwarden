@@ -14,7 +14,7 @@ import (
 	"github.com/sqlwarden/internal/dbengine/completer"
 	"github.com/sqlwarden/internal/dbengine/completioncore"
 	corepostgres "github.com/sqlwarden/internal/dbengine/completioncore/postgres"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
 const preparedCompletionCatalogs = 32
@@ -24,7 +24,7 @@ var (
 	_                               completer.CatalogInvalidator = (*postgresDriver)(nil)
 	_                               completer.VocabularyProvider = (*postgresDriver)(nil)
 	pgCompletionCatalogCache                                     = completer.NewPreparedCache[*pgcatalog.Catalog](preparedCompletionCatalogs)
-	pgSchemaIndexCache                                           = completer.NewPreparedCache[*schema.Index](preparedCompletionCatalogs)
+	pgSchemaIndexCache                                           = completer.NewPreparedCache[*metadata.Index](preparedCompletionCatalogs)
 	pgVocabularyOnce                sync.Once
 	pgVocabulary                    completer.Vocabulary
 	pgSafeType                      = regexp.MustCompile(`^[A-Za-z0-9_ ."(),\[\]]+$`)
@@ -56,29 +56,29 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 	}
 
 	var catalog *pgcatalog.Catalog
-	var metadata completioncore.MetadataResolver
+	var resolver completioncore.MetadataResolver
 	if req.Schema != nil && req.Schema.Directory != nil {
 		key := completionCatalogKey(req.ConnectionID, req.Schema.Version)
 		var err error
 		defaultSchema := postgresCompletionDefaultSchema(req.Schema.Directory)
-		var index *schema.Index
+		var index *metadata.Index
 		if key == "" {
 			catalog, err = buildPostgresCompletionCatalog(req.Schema.Directory, req.Schema.Objects)
-			index = schema.NewIndex(*req.Schema)
+			index = metadata.NewIndex(*req.Schema)
 		} else {
 			catalog, err = pgCompletionCatalogCache.GetOrBuild(ctx, key, func() (*pgcatalog.Catalog, error) {
 				return buildPostgresCompletionCatalog(req.Schema.Directory, req.Schema.Objects)
 			})
 			if err == nil {
-				index, err = pgSchemaIndexCache.GetOrBuild(ctx, key, func() (*schema.Index, error) {
-					return schema.NewIndex(*req.Schema), nil
+				index, err = pgSchemaIndexCache.GetOrBuild(ctx, key, func() (*metadata.Index, error) {
+					return metadata.NewIndex(*req.Schema), nil
 				})
 			}
 		}
 		if err != nil {
 			return completer.Result{}, err
 		}
-		metadata = completioncore.NewSchemaResolver(index, defaultSchema)
+		resolver = completioncore.NewSchemaResolver(index, defaultSchema)
 	}
 
 	completionSQL, completionCursor := postgresCompletionStatement(req.SQL, req.CursorOffset)
@@ -87,7 +87,7 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 		completionSQL,
 		completionCursor,
 		catalog,
-		metadata,
+		resolver,
 	)
 	if err != nil {
 		return completer.Result{}, err
@@ -102,7 +102,7 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 				recoverySQL,
 				recoveryCursor,
 				catalog,
-				metadata,
+				resolver,
 			)
 			if err != nil {
 				return completer.Result{}, err
@@ -220,7 +220,7 @@ func postgresTokenStartsLine(sql string, offset int) bool {
 	return strings.TrimSpace(sql[lineStart:offset]) == ""
 }
 
-func postgresCompletionDefaultSchema(directory *schema.Directory) string {
+func postgresCompletionDefaultSchema(directory *metadata.Directory) string {
 	if directory == nil {
 		return "public"
 	}
@@ -246,7 +246,7 @@ func postgresCompletionDefaultSchema(directory *schema.Directory) string {
 
 func filterPostgresUnqualifiedRelations(
 	candidates []completioncore.Candidate,
-	directory *schema.Directory,
+	directory *metadata.Directory,
 	sql string,
 	cursor int,
 ) []completioncore.Candidate {
@@ -390,7 +390,7 @@ func (d *postgresDriver) InvalidateCompletionCatalog(connectionID string) {
 	pgSchemaIndexCache.InvalidatePrefix(connectionID + ":")
 }
 
-func buildPostgresCompletionCatalog(directory *schema.Directory, objects []schema.Object) (*pgcatalog.Catalog, error) {
+func buildPostgresCompletionCatalog(directory *metadata.Directory, objects []metadata.Object) (*pgcatalog.Catalog, error) {
 	native := pgcatalog.New()
 	created := map[string]bool{"public": true, "pg_catalog": true}
 	for _, node := range directory.ScopeNodes() {
@@ -431,7 +431,7 @@ func execPostgresCatalog(catalog *pgcatalog.Catalog, sql string) error {
 	return nil
 }
 
-func postgresCompletionDDL(object schema.Object, fallbackTypes bool) string {
+func postgresCompletionDDL(object metadata.Object, fallbackTypes bool) string {
 	namespace := object.Ref.Scope.Name("schema")
 	if namespace == "" {
 		namespace = "public"
@@ -450,7 +450,7 @@ func postgresCompletionDDL(object schema.Object, fallbackTypes bool) string {
 	return ""
 }
 
-func postgresCompletionColumns(object schema.Object, fallbackTypes bool) string {
+func postgresCompletionColumns(object metadata.Object, fallbackTypes bool) string {
 	if object.Relational == nil || len(object.Relational.Columns) == 0 {
 		return pgQuoteIdent("__sqlwarden_placeholder") + " text"
 	}
@@ -465,7 +465,7 @@ func postgresCompletionColumns(object schema.Object, fallbackTypes bool) string 
 	return strings.Join(columns, ", ")
 }
 
-func postgresCompletionSelectColumns(object schema.Object) string {
+func postgresCompletionSelectColumns(object metadata.Object) string {
 	if object.Relational == nil || len(object.Relational.Columns) == 0 {
 		return "NULL::text AS " + pgQuoteIdent("__sqlwarden_placeholder")
 	}
@@ -488,7 +488,7 @@ func postgresCandidateKind(candidateType completioncore.CandidateType) (string, 
 		return "materialized_view", 84
 	case completioncore.CandidateSchema:
 		// In unqualified relation slots, the current schema is useful but less
-		// likely than one of its tables. A typed "schema." prefix still wins
+		// likely than one of its tables. A typed "metadata." prefix still wins
 		// through CodeMirror's prefix matching.
 		return "schema", 70
 	case completioncore.CandidateSequence:

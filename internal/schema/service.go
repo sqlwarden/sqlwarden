@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/cache"
-	schemameta "github.com/sqlwarden/internal/dbengine/schema"
+	metadata "github.com/sqlwarden/internal/dbengine/metadata"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -26,13 +26,13 @@ const (
 
 func directoryKey(connID string) string { return directoryPrefix + connID }
 
-func relationshipsKey(connID string, scope schemameta.ScopePath) string {
+func relationshipsKey(connID string, scope metadata.ScopePath) string {
 	return relationshipsPrefix + connID + sep + string(scope)
 }
 
 func connRelationshipsPrefix(connID string) string { return relationshipsPrefix + connID + sep }
 
-func objectKey(connID string, ref schemameta.ObjectRef) string {
+func objectKey(connID string, ref metadata.ObjectRef) string {
 	return objectPrefix + connID + sep + string(ref.Scope) + sep + ref.Kind + sep + ref.Name
 }
 
@@ -64,7 +64,7 @@ func NewServiceWithLogger(c cache.Cache, ttl time.Duration, logger *slog.Logger)
 
 // Spec reports the driver's static schema object vocabulary. It does not touch
 // the target database, so it works even when the directory cannot be inspected.
-func (s *Service) Spec(inspector schemameta.SchemaInspector) schemameta.SchemaSpec {
+func (s *Service) Spec(inspector metadata.SchemaInspector) metadata.SchemaSpec {
 	spec := inspector.SchemaSpec()
 	s.logger.Debug("schema spec resolved",
 		slog.Group("schema",
@@ -77,11 +77,11 @@ func (s *Service) Spec(inspector schemameta.SchemaInspector) schemameta.SchemaSp
 }
 
 // Directory returns the cached directory for connID, or inspects on a miss.
-func (s *Service) Directory(ctx context.Context, connID string, inspector schemameta.SchemaInspector) (*schemameta.Directory, error) {
+func (s *Service) Directory(ctx context.Context, connID string, inspector metadata.SchemaInspector) (*metadata.Directory, error) {
 	key := directoryKey(connID)
 	start := time.Now()
 	if data, ok := s.cache.Get(key); ok {
-		var directory schemameta.Directory
+		var directory metadata.Directory
 		decodeErr := gunzipJSON(data, &directory)
 		if decodeErr == nil {
 			s.logger.Debug("schema directory cache hit",
@@ -117,7 +117,7 @@ func (s *Service) Directory(ctx context.Context, connID string, inspector schema
 
 	v, err, shared := s.group.Do(key, func() (any, error) {
 		inspectStart := time.Now()
-		directory, err := inspector.InspectDirectory(ctx, schemameta.DirectoryOptions{})
+		directory, err := inspector.InspectDirectory(ctx, metadata.DirectoryOptions{})
 		if err != nil {
 			s.logger.Warn("schema directory inspection failed",
 				slog.Group("schema",
@@ -160,7 +160,7 @@ func (s *Service) Directory(ctx context.Context, connID string, inspector schema
 		return nil, err
 	}
 	if shared {
-		directory := v.(*schemameta.Directory)
+		directory := v.(*metadata.Directory)
 		s.logger.Debug("schema directory singleflight shared",
 			slog.Group("schema",
 				"operation", "directory",
@@ -170,19 +170,19 @@ func (s *Service) Directory(ctx context.Context, connID string, inspector schema
 			),
 		)
 	}
-	return v.(*schemameta.Directory), nil
+	return v.(*metadata.Directory), nil
 }
 
 // Objects returns detail for refs in request order, serving cached entries and
 // inspecting only the missing refs in one driver call. Refs the driver does not
 // return are omitted (partial success).
-func (s *Service) Objects(ctx context.Context, connID string, refs []schemameta.ObjectRef, inspector schemameta.SchemaInspector) ([]schemameta.Object, error) {
+func (s *Service) Objects(ctx context.Context, connID string, refs []metadata.ObjectRef, inspector metadata.SchemaInspector) ([]metadata.Object, error) {
 	start := time.Now()
-	found := make(map[schemameta.ObjectRef]schemameta.Object, len(refs))
-	var missing []schemameta.ObjectRef
+	found := make(map[metadata.ObjectRef]metadata.Object, len(refs))
+	var missing []metadata.ObjectRef
 	for _, ref := range refs {
 		if data, ok := s.cache.Get(objectKey(connID, ref)); ok {
-			var o schemameta.Object
+			var o metadata.Object
 			decodeErr := gunzipJSON(data, &o)
 			if decodeErr == nil {
 				found[ref] = o
@@ -254,7 +254,7 @@ func (s *Service) Objects(ctx context.Context, connID string, refs []schemameta.
 			"kinds", objectRefKindCounts(missing),
 		)
 	}
-	out := make([]schemameta.Object, 0, len(refs))
+	out := make([]metadata.Object, 0, len(refs))
 	for _, ref := range refs {
 		if o, ok := found[ref]; ok {
 			out = append(out, o)
@@ -274,10 +274,10 @@ func (s *Service) Objects(ctx context.Context, connID string, refs []schemameta.
 
 // Relationships returns the cached FK topology for (connID, scope), or
 // inspects on a miss.
-func (s *Service) Relationships(ctx context.Context, connID string, scope schemameta.ScopePath, inspector schemameta.RelationshipInspector) (*schemameta.RelationshipGraph, error) {
+func (s *Service) Relationships(ctx context.Context, connID string, scope metadata.ScopePath, inspector metadata.RelationshipInspector) (*metadata.RelationshipGraph, error) {
 	key := relationshipsKey(connID, scope)
 	if data, ok := s.cache.Get(key); ok {
-		var g schemameta.RelationshipGraph
+		var g metadata.RelationshipGraph
 		if err := gunzipJSON(data, &g); err == nil {
 			s.logger.Debug("schema relationships cache hit",
 				slog.Group("schema", "operation", "relationships", "conn_id", connID,
@@ -301,11 +301,11 @@ func (s *Service) Relationships(ctx context.Context, connID string, scope schema
 	if err != nil {
 		return nil, err
 	}
-	return v.(*schemameta.RelationshipGraph), nil
+	return v.(*metadata.RelationshipGraph), nil
 }
 
 // RefreshObject drops one object's cached detail.
-func (s *Service) RefreshObject(connID string, ref schemameta.ObjectRef) {
+func (s *Service) RefreshObject(connID string, ref metadata.ObjectRef) {
 	s.cache.Invalidate(objectKey(connID, ref))
 	s.logger.Info("schema object cache invalidated",
 		slog.Group("schema",
@@ -329,12 +329,12 @@ func (s *Service) RefreshConnection(connID string) {
 	)
 }
 
-func countDirectoryObjects(directory *schemameta.Directory) int {
+func countDirectoryObjects(directory *metadata.Directory) int {
 	if directory == nil {
 		return 0
 	}
 	total := 0
-	walkDirectory(directory.Roots, func(node schemameta.ScopeNode) {
+	walkDirectory(directory.Roots, func(node metadata.ScopeNode) {
 		for _, group := range node.Groups {
 			total += len(group.Objects)
 		}
@@ -342,22 +342,22 @@ func countDirectoryObjects(directory *schemameta.Directory) int {
 	return total
 }
 
-func countDirectoryScopes(directory *schemameta.Directory) int {
+func countDirectoryScopes(directory *metadata.Directory) int {
 	total := 0
 	if directory != nil {
-		walkDirectory(directory.Roots, func(schemameta.ScopeNode) { total++ })
+		walkDirectory(directory.Roots, func(metadata.ScopeNode) { total++ })
 	}
 	return total
 }
 
-func walkDirectory(nodes []schemameta.ScopeNode, visit func(schemameta.ScopeNode)) {
+func walkDirectory(nodes []metadata.ScopeNode, visit func(metadata.ScopeNode)) {
 	for _, node := range nodes {
 		visit(node)
 		walkDirectory(node.Children, visit)
 	}
 }
 
-func objectRefKindCounts(refs []schemameta.ObjectRef) map[string]int {
+func objectRefKindCounts(refs []metadata.ObjectRef) map[string]int {
 	counts := make(map[string]int)
 	for _, ref := range refs {
 		counts[ref.Kind]++

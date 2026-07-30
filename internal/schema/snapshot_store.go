@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/database"
-	schemameta "github.com/sqlwarden/internal/dbengine/schema"
+	metadata "github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/uptrace/bun"
 )
 
@@ -72,7 +72,7 @@ func NewSnapshotStore(db *database.DB) *SnapshotStore {
 	return &SnapshotStore{db: db}
 }
 
-func (s *SnapshotStore) Begin(ctx context.Context, connectionID int64, orgID *int64, directory *schemameta.Directory) (Snapshot, error) {
+func (s *SnapshotStore) Begin(ctx context.Context, connectionID int64, orgID *int64, directory *metadata.Directory) (Snapshot, error) {
 	if directory == nil {
 		return Snapshot{}, errors.New("schema snapshot directory is required")
 	}
@@ -99,7 +99,7 @@ func (s *SnapshotStore) Begin(ctx context.Context, connectionID int64, orgID *in
 	return snapshot, err
 }
 
-func (s *SnapshotStore) PutObjects(ctx context.Context, snapshotID string, objects []schemameta.Object) error {
+func (s *SnapshotStore) PutObjects(ctx context.Context, snapshotID string, objects []metadata.Object) error {
 	if len(objects) == 0 {
 		return nil
 	}
@@ -121,7 +121,7 @@ func (s *SnapshotStore) PutObjects(ctx context.Context, snapshotID string, objec
 	return err
 }
 
-func (s *SnapshotStore) PutRelationship(ctx context.Context, snapshotID string, graph *schemameta.RelationshipGraph) error {
+func (s *SnapshotStore) PutRelationship(ctx context.Context, snapshotID string, graph *metadata.RelationshipGraph) error {
 	if graph == nil {
 		return nil
 	}
@@ -201,7 +201,7 @@ func (s *SnapshotStore) Abort(ctx context.Context, snapshotID string) error {
 	return err
 }
 
-func (s *SnapshotStore) Active(ctx context.Context, connectionID int64) (Snapshot, *schemameta.Directory, bool, error) {
+func (s *SnapshotStore) Active(ctx context.Context, connectionID int64) (Snapshot, *metadata.Directory, bool, error) {
 	var snapshot Snapshot
 	err := s.db.NewSelect().Model(&snapshot).
 		Where("connection_id = ? AND is_active = ?", connectionID, true).
@@ -212,15 +212,15 @@ func (s *SnapshotStore) Active(ctx context.Context, connectionID int64) (Snapsho
 	if err != nil {
 		return Snapshot{}, nil, false, err
 	}
-	var directory schemameta.Directory
+	var directory metadata.Directory
 	if err := decodeSnapshotValue(snapshot.DirectoryData, &directory); err != nil {
 		return Snapshot{}, nil, false, err
 	}
 	return snapshot, &directory, true, nil
 }
 
-func (s *SnapshotStore) Objects(ctx context.Context, snapshotID string, refs []schemameta.ObjectRef) ([]schemameta.Object, error) {
-	out := make([]schemameta.Object, 0, len(refs))
+func (s *SnapshotStore) Objects(ctx context.Context, snapshotID string, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	out := make([]metadata.Object, 0, len(refs))
 	for _, ref := range refs {
 		var row snapshotObject
 		err := s.db.NewSelect().Model(&row).
@@ -232,7 +232,7 @@ func (s *SnapshotStore) Objects(ctx context.Context, snapshotID string, refs []s
 		if err != nil {
 			return nil, err
 		}
-		var object schemameta.Object
+		var object metadata.Object
 		if err := decodeSnapshotValue(row.ObjectData, &object); err != nil {
 			return nil, err
 		}
@@ -243,7 +243,7 @@ func (s *SnapshotStore) Objects(ctx context.Context, snapshotID string, refs []s
 
 // AllObjects returns every object in an immutable snapshot in stable order.
 // Completion uses this bulk path to prepare a dialect-native completion model once.
-func (s *SnapshotStore) AllObjects(ctx context.Context, snapshotID string) ([]schemameta.Object, error) {
+func (s *SnapshotStore) AllObjects(ctx context.Context, snapshotID string) ([]metadata.Object, error) {
 	var rows []snapshotObject
 	if err := s.db.NewSelect().Model(&rows).
 		Where("snapshot_id = ?", snapshotID).
@@ -251,9 +251,9 @@ func (s *SnapshotStore) AllObjects(ctx context.Context, snapshotID string) ([]sc
 		Scan(ctx); err != nil {
 		return nil, err
 	}
-	objects := make([]schemameta.Object, 0, len(rows))
+	objects := make([]metadata.Object, 0, len(rows))
 	for _, row := range rows {
-		var object schemameta.Object
+		var object metadata.Object
 		if err := decodeSnapshotValue(row.ObjectData, &object); err != nil {
 			return nil, err
 		}
@@ -262,7 +262,7 @@ func (s *SnapshotStore) AllObjects(ctx context.Context, snapshotID string) ([]sc
 	return objects, nil
 }
 
-func (s *SnapshotStore) Relationship(ctx context.Context, snapshotID string, scope schemameta.ScopePath) (*schemameta.RelationshipGraph, bool, error) {
+func (s *SnapshotStore) Relationship(ctx context.Context, snapshotID string, scope metadata.ScopePath) (*metadata.RelationshipGraph, bool, error) {
 	var row snapshotRelationship
 	err := s.db.NewSelect().Model(&row).
 		Where("snapshot_id = ? AND scope = ?", snapshotID, string(scope)).
@@ -273,7 +273,7 @@ func (s *SnapshotStore) Relationship(ctx context.Context, snapshotID string, sco
 	if err != nil {
 		return nil, false, err
 	}
-	var graph schemameta.RelationshipGraph
+	var graph metadata.RelationshipGraph
 	if err := decodeSnapshotValue(row.RelationshipData, &graph); err != nil {
 		return nil, false, err
 	}

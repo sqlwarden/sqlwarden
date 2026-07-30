@@ -10,7 +10,7 @@ import (
 
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/dbengine/completer"
-	schemameta "github.com/sqlwarden/internal/dbengine/schema"
+	metadata "github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 )
@@ -101,7 +101,7 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 				app.serverError(w, r, objectErr)
 				return
 			}
-			req.Schema = &schemameta.MetadataSet{Directory: directory, Objects: objects, Version: snapshot.ID}
+			req.Schema = &metadata.MetadataSet{Directory: directory, Objects: objects, Version: snapshot.ID}
 			out.MetadataAvailable, out.MetadataStatus, out.SnapshotID = true, "ready", snapshot.ID
 		}
 	} else {
@@ -169,7 +169,7 @@ func (app *application) addEphemeralCompletionMetadata(r *http.Request, connID s
 	if session.AccountID != strconv.FormatInt(account.ID, 10) || session.ConnectionID != connID {
 		return true
 	}
-	inspector, ok := session.Conn.(schemameta.SchemaInspector)
+	inspector, ok := session.Conn.(metadata.SchemaInspector)
 	if !ok {
 		return false
 	}
@@ -183,7 +183,7 @@ func (app *application) addEphemeralCompletionMetadata(r *http.Request, connID s
 		app.logWarn(r, "completion object inspection failed", slog.String("connection_id", connID), slog.String("error", err.Error()))
 		return false
 	}
-	req.Schema = &schemameta.MetadataSet{
+	req.Schema = &metadata.MetadataSet{
 		Directory: directory,
 		Objects:   objects,
 		Version:   directory.GeneratedAt.UTC().Format(time.RFC3339Nano),

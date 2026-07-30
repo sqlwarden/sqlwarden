@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
-var _ schema.RelationshipInspector = (*mysqlDriver)(nil)
+var _ metadata.RelationshipInspector = (*mysqlDriver)(nil)
 
-func (d *mysqlDriver) InspectRelationshipsInScope(ctx context.Context, scope schema.ScopePath) (*schema.RelationshipGraph, error) {
+func (d *mysqlDriver) InspectRelationshipsInScope(ctx context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
 	namespace := scope.Name("database")
 	q := `
 SELECT table_schema, table_name, constraint_name, column_name,
@@ -23,7 +23,7 @@ ORDER BY table_schema, table_name, constraint_name, ordinal_position`
 	}
 	defer rows.Close()
 
-	graph := &schema.RelationshipGraph{Scope: scope}
+	graph := &metadata.RelationshipGraph{Scope: scope}
 	index := map[string]int{}
 	for rows.Next() {
 		var ns, tbl, name, col, refNs, refTbl, refCol string
@@ -33,11 +33,11 @@ ORDER BY table_schema, table_name, constraint_name, ordinal_position`
 		key := ns + "\x00" + tbl + "\x00" + name
 		pos, ok := index[key]
 		if !ok {
-			graph.Relationships = append(graph.Relationships, schema.Relationship{
+			graph.Relationships = append(graph.Relationships, metadata.Relationship{
 				Kind:       "foreign_key",
 				Name:       name,
-				Source:     schema.ObjectRef{Scope: scope, Kind: "table", Name: tbl},
-				References: schema.ObjectRef{Scope: schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: refNs}), Kind: "table", Name: refTbl},
+				Source:     metadata.ObjectRef{Scope: scope, Kind: "table", Name: tbl},
+				References: metadata.ObjectRef{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: refNs}), Kind: "table", Name: refTbl},
 			})
 			pos = len(graph.Relationships) - 1
 			index[key] = pos

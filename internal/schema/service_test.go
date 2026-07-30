@@ -11,44 +11,44 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/cache"
-	schemameta "github.com/sqlwarden/internal/dbengine/schema"
+	metadata "github.com/sqlwarden/internal/dbengine/metadata"
 )
 
 type fakeSchemaInspector struct {
 	mu            sync.Mutex
 	directoryHits int32
 	objectCalls   int32
-	objectRefs    [][]schemameta.ObjectRef
+	objectRefs    [][]metadata.ObjectRef
 	delay         time.Duration
 }
 
-func (f *fakeSchemaInspector) SchemaSpec() schemameta.SchemaSpec {
-	return schemameta.SchemaSpec{Dialect: "fake", Kinds: []schemameta.SchemaObjectKind{{Kind: "table"}}}
+func (f *fakeSchemaInspector) SchemaSpec() metadata.SchemaSpec {
+	return metadata.SchemaSpec{Dialect: "fake", Kinds: []metadata.SchemaObjectKind{{Kind: "table"}}}
 }
 
-func (f *fakeSchemaInspector) InspectDirectory(ctx context.Context, opts schemameta.DirectoryOptions) (*schemameta.Directory, error) {
+func (f *fakeSchemaInspector) InspectDirectory(ctx context.Context, opts metadata.DirectoryOptions) (*metadata.Directory, error) {
 	atomic.AddInt32(&f.directoryHits, 1)
 	if f.delay > 0 {
 		time.Sleep(f.delay)
 	}
-	scope := schemameta.NewScopePath(schemameta.ScopeSegment{Kind: "schema", Name: "public"})
-	return &schemameta.Directory{
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"})
+	return &metadata.Directory{
 		Engine: "fake", DefaultScope: scope,
-		Roots: []schemameta.ScopeNode{{Path: scope, Groups: []schemameta.ObjectGroup{{
+		Roots: []metadata.ScopeNode{{Path: scope, Groups: []metadata.ObjectGroup{{
 			Kind:    "table",
-			Objects: []schemameta.ObjectRef{{Scope: scope, Kind: "table", Name: "users"}},
+			Objects: []metadata.ObjectRef{{Scope: scope, Kind: "table", Name: "users"}},
 		}}}},
 	}, nil
 }
 
-func (f *fakeSchemaInspector) InspectObjects(ctx context.Context, refs []schemameta.ObjectRef) ([]schemameta.Object, error) {
+func (f *fakeSchemaInspector) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	atomic.AddInt32(&f.objectCalls, 1)
 	f.mu.Lock()
 	f.objectRefs = append(f.objectRefs, refs)
 	f.mu.Unlock()
-	out := make([]schemameta.Object, 0, len(refs))
+	out := make([]metadata.Object, 0, len(refs))
 	for _, r := range refs {
-		out = append(out, schemameta.Object{Ref: r, Relational: &schemameta.RelationalDetail{Columns: []schemameta.Column{{Name: "id"}}}})
+		out = append(out, metadata.Object{Ref: r, Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{Name: "id"}}}})
 	}
 	return out, nil
 }
@@ -87,15 +87,15 @@ func TestServiceObjectsFetchesOnlyMissing(t *testing.T) {
 	s := newService()
 	intr := &fakeSchemaInspector{}
 	ctx := context.Background()
-	scope := schemameta.NewScopePath(schemameta.ScopeSegment{Kind: "schema", Name: "public"})
-	users := schemameta.ObjectRef{Scope: scope, Kind: "table", Name: "users"}
-	orders := schemameta.ObjectRef{Scope: scope, Kind: "table", Name: "orders"}
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"})
+	users := metadata.ObjectRef{Scope: scope, Kind: "table", Name: "users"}
+	orders := metadata.ObjectRef{Scope: scope, Kind: "table", Name: "orders"}
 
-	if _, err := s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr); err != nil {
+	if _, err := s.Objects(ctx, "c1", []metadata.ObjectRef{users}, intr); err != nil {
 		t.Fatal(err)
 	}
 	// users now cached; requesting users+orders must fetch only orders.
-	got, err := s.Objects(ctx, "c1", []schemameta.ObjectRef{users, orders}, intr)
+	got, err := s.Objects(ctx, "c1", []metadata.ObjectRef{users, orders}, intr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,14 +116,14 @@ func TestServiceRefreshObjectVsConnection(t *testing.T) {
 	s := newService()
 	intr := &fakeSchemaInspector{}
 	ctx := context.Background()
-	users := schemameta.ObjectRef{Scope: schemameta.NewScopePath(schemameta.ScopeSegment{Kind: "schema", Name: "public"}), Kind: "table", Name: "users"}
+	users := metadata.ObjectRef{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"}), Kind: "table", Name: "users"}
 
 	_, _ = s.Directory(ctx, "c1", intr)
-	_, _ = s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr)
+	_, _ = s.Objects(ctx, "c1", []metadata.ObjectRef{users}, intr)
 
 	// RefreshObject drops only the object; the directory stays cached.
 	s.RefreshObject("c1", users)
-	_, _ = s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr)
+	_, _ = s.Objects(ctx, "c1", []metadata.ObjectRef{users}, intr)
 	_, _ = s.Directory(ctx, "c1", intr)
 	if got := atomic.LoadInt32(&intr.objectCalls); got != 2 {
 		t.Fatalf("want 2 object fetches after RefreshObject, got %d", got)
@@ -135,7 +135,7 @@ func TestServiceRefreshObjectVsConnection(t *testing.T) {
 	// RefreshConnection drops the directory and all object detail.
 	s.RefreshConnection("c1")
 	_, _ = s.Directory(ctx, "c1", intr)
-	_, _ = s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr)
+	_, _ = s.Objects(ctx, "c1", []metadata.ObjectRef{users}, intr)
 	if got := atomic.LoadInt32(&intr.directoryHits); got != 2 {
 		t.Fatalf("directory should re-inspect after RefreshConnection, got %d", got)
 	}
@@ -146,7 +146,7 @@ func TestServiceRefreshObjectVsConnection(t *testing.T) {
 
 type erroringSchemaInspector struct{ fakeSchemaInspector }
 
-func (e *erroringSchemaInspector) InspectDirectory(ctx context.Context, opts schemameta.DirectoryOptions) (*schemameta.Directory, error) {
+func (e *erroringSchemaInspector) InspectDirectory(ctx context.Context, opts metadata.DirectoryOptions) (*metadata.Directory, error) {
 	return nil, context.DeadlineExceeded
 }
 
@@ -167,12 +167,12 @@ func TestServiceLogsInspectionWithoutObjectNames(t *testing.T) {
 	s := NewServiceWithLogger(cache.NewMemCache(64), time.Minute, logger)
 	intr := &fakeSchemaInspector{}
 	ctx := context.Background()
-	users := schemameta.ObjectRef{Scope: schemameta.NewScopePath(schemameta.ScopeSegment{Kind: "schema", Name: "public"}), Kind: "table", Name: "users"}
+	users := metadata.ObjectRef{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"}), Kind: "table", Name: "users"}
 
 	if _, err := s.Directory(ctx, "c1", intr); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr); err != nil {
+	if _, err := s.Objects(ctx, "c1", []metadata.ObjectRef{users}, intr); err != nil {
 		t.Fatal(err)
 	}
 	s.RefreshObject("c1", users)

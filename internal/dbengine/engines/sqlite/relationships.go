@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
-var _ schema.RelationshipInspector = (*sqliteDriver)(nil)
+var _ metadata.RelationshipInspector = (*sqliteDriver)(nil)
 
-func (d *sqliteDriver) InspectRelationshipsInScope(ctx context.Context, scope schema.ScopePath) (*schema.RelationshipGraph, error) {
+func (d *sqliteDriver) InspectRelationshipsInScope(ctx context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
 	namespace := scope.Name("database")
 	// SQLite has no scope-wide FK view, so list the database's tables and run
 	// PRAGMA foreign_key_list per table, grouping rows by fk id.
@@ -36,7 +36,7 @@ func (d *sqliteDriver) InspectRelationshipsInScope(ctx context.Context, scope sc
 	}
 	tableRows.Close()
 
-	graph := &schema.RelationshipGraph{Scope: scope}
+	graph := &metadata.RelationshipGraph{Scope: scope}
 	for _, tbl := range tables {
 		// codeql[go/sql-injection]
 		fkRows, err := d.db.QueryContext(ctx, fmt.Sprintf(`PRAGMA %s.foreign_key_list(%s)`, prefix, sqliteQuoteIdent(tbl)))
@@ -53,11 +53,11 @@ func (d *sqliteDriver) InspectRelationshipsInScope(ctx context.Context, scope sc
 			}
 			pos, ok := perID[id]
 			if !ok {
-				graph.Relationships = append(graph.Relationships, schema.Relationship{
+				graph.Relationships = append(graph.Relationships, metadata.Relationship{
 					Kind:       "foreign_key",
 					Name:       fmt.Sprintf("%s_fk_%d", tbl, id),
-					Source:     schema.ObjectRef{Scope: scope, Kind: "table", Name: tbl},
-					References: schema.ObjectRef{Scope: scope, Kind: "table", Name: refTbl},
+					Source:     metadata.ObjectRef{Scope: scope, Kind: "table", Name: tbl},
+					References: metadata.ObjectRef{Scope: scope, Kind: "table", Name: refTbl},
 				})
 				pos = len(graph.Relationships) - 1
 				perID[id] = pos

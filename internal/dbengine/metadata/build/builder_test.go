@@ -3,12 +3,12 @@ package build
 import (
 	"testing"
 
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
 func TestDirectoryBuilderOrdersGroupsByDeclaration(t *testing.T) {
 	b := NewDirectory()
-	scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "app"}, schema.ScopeSegment{Kind: "schema", Name: "public"})
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"}, metadata.ScopeSegment{Kind: "schema", Name: "public"})
 	b.DeclareKind("table")
 	b.DeclareKind("view")
 	b.AddRef(scope, "view", "v1")
@@ -33,9 +33,9 @@ func TestDirectoryBuilderOrdersGroupsByDeclaration(t *testing.T) {
 
 func TestDirectoryBuilderBuildsArbitraryScopeDepth(t *testing.T) {
 	b := NewDirectory()
-	root := schema.NewScopePath(schema.ScopeSegment{Kind: "cluster", Name: "primary"})
-	database := root.Child(schema.ScopeSegment{Kind: "database", Name: "analytics"})
-	nested := database.Child(schema.ScopeSegment{Kind: "schema", Name: "reporting"})
+	root := metadata.NewScopePath(metadata.ScopeSegment{Kind: "cluster", Name: "primary"})
+	database := root.Child(metadata.ScopeSegment{Kind: "database", Name: "analytics"})
+	nested := database.Child(metadata.ScopeSegment{Kind: "schema", Name: "reporting"})
 	b.AddRef(root, "cluster", "primary")
 	b.AddRef(database, "database", "analytics")
 	b.AddRef(nested, "table", "orders")
@@ -61,7 +61,7 @@ func TestDirectoryBuilderUsesEmptyCollections(t *testing.T) {
 	}
 
 	builder := NewDirectory()
-	scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "app"})
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"})
 	builder.AddScope(scope)
 	directory = builder.Build("connection", "mysql", scope)
 	if directory.Roots[0].Groups == nil {
@@ -71,13 +71,13 @@ func TestDirectoryBuilderUsesEmptyCollections(t *testing.T) {
 
 func TestRelationalBuilderQualifiedFK(t *testing.T) {
 	b := NewRelational()
-	public := schema.NewScopePath(schema.ScopeSegment{Kind: "schema", Name: "public"})
-	users := schema.ObjectRef{Scope: public, Kind: "table", Name: "users"}
-	b.AddColumn(users, schema.Column{Name: "id", DataType: "int8", Ordinal: 1})
+	public := metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"})
+	users := metadata.ObjectRef{Scope: public, Kind: "table", Name: "users"}
+	b.AddColumn(users, metadata.Column{Name: "id", DataType: "int8", Ordinal: 1})
 	b.AddPrimaryKeyColumn(users, "id")
 	b.AddForeignKeyColumn(users, "users_org_fkey", "org_id",
-		schema.ObjectRef{Scope: public.With("schema", "billing"), Kind: "table", Name: "orgs"}, "id")
-	b.AddIndex(users, schema.SecondaryIndex{Name: "users_pkey", Unique: true})
+		metadata.ObjectRef{Scope: public.With("schema", "billing"), Kind: "table", Name: "orgs"}, "id")
+	b.AddIndex(users, metadata.SecondaryIndex{Name: "users_pkey", Unique: true})
 
 	objs := b.Build()
 	if len(objs) != 1 {

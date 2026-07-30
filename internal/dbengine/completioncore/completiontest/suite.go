@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/dbengine/completioncore"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
 // CompleteFunc is the stable dialect-neutral shape exercised by the suite.
@@ -64,12 +64,12 @@ func Caret(t *testing.T, marked string) (string, int) {
 }
 
 func Metadata(engine, database, namespace string) completioncore.MetadataResolver {
-	root := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: database})
+	root := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: database})
 	scope := root
 	if engine == "postgres" {
-		scope = root.Child(schema.ScopeSegment{Kind: "schema", Name: namespace})
+		scope = root.Child(metadata.ScopeSegment{Kind: "schema", Name: namespace})
 	}
-	objects := []schema.Object{
+	objects := []metadata.Object{
 		relation(scope, "inventory",
 			column("id", "bigint"), column("inventory_name", "text")),
 		relation(scope, "store",
@@ -81,27 +81,27 @@ func Metadata(engine, database, namespace string) completioncore.MetadataResolve
 		relation(scope, "customer",
 			column("customer_id", "bigint"), column("email", "text")),
 	}
-	refs := make([]schema.ObjectRef, 0, len(objects))
+	refs := make([]metadata.ObjectRef, 0, len(objects))
 	for _, object := range objects {
 		refs = append(refs, object.Ref)
 	}
-	directory := &schema.Directory{
+	directory := &metadata.Directory{
 		Engine: engine, DefaultScope: scope,
-		Roots: []schema.ScopeNode{{Path: scope, Groups: []schema.ObjectGroup{{Kind: "table", Objects: refs}}}},
+		Roots: []metadata.ScopeNode{{Path: scope, Groups: []metadata.ObjectGroup{{Kind: "table", Objects: refs}}}},
 	}
-	index := schema.NewIndex(schema.MetadataSet{Directory: directory, Objects: objects, Version: "test"})
+	index := metadata.NewIndex(metadata.MetadataSet{Directory: directory, Objects: objects, Version: "test"})
 	return completioncore.NewSchemaResolver(index, namespace)
 }
 
-func relation(scope schema.ScopePath, name string, columns ...schema.Column) schema.Object {
-	return schema.Object{
-		Ref:        schema.ObjectRef{Scope: scope, Kind: "table", Name: name},
-		Relational: &schema.RelationalDetail{Columns: columns},
+func relation(scope metadata.ScopePath, name string, columns ...metadata.Column) metadata.Object {
+	return metadata.Object{
+		Ref:        metadata.ObjectRef{Scope: scope, Kind: "table", Name: name},
+		Relational: &metadata.RelationalDetail{Columns: columns},
 	}
 }
 
-func column(name, dataType string) schema.Column {
-	return schema.Column{Name: name, DataType: dataType, Nullable: true}
+func column(name, dataType string) metadata.Column {
+	return metadata.Column{Name: name, DataType: dataType, Nullable: true}
 }
 
 func contains(candidates []completioncore.Candidate, expected Expected) bool {

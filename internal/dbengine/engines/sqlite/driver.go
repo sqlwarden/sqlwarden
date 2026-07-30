@@ -7,7 +7,7 @@ import (
 
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/cursor"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/sqlwarden/pkg/result"
 
 	_ "modernc.org/sqlite"
@@ -16,7 +16,7 @@ import (
 type sqliteDriver struct {
 	db           *sql.DB
 	scanOptions  cursor.ScanOptions
-	defaultScope schema.ScopePath
+	defaultScope metadata.ScopePath
 }
 
 func (d *sqliteDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfig) error {

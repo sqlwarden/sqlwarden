@@ -10,7 +10,7 @@ import (
 
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/dbengine"
-	schemameta "github.com/sqlwarden/internal/dbengine/schema"
+	metadata "github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/sqlwarden/internal/jobs"
 	schemaapp "github.com/sqlwarden/internal/schema"
 )
@@ -111,11 +111,11 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 	}
 	defer driver.Close()
 
-	inspector, ok := driver.(schemameta.SchemaInspector)
+	inspector, ok := driver.(metadata.SchemaInspector)
 	if !ok {
 		return nil, jobs.Permanent("schema_sync_unsupported", "Schema inspection is not supported for this driver.")
 	}
-	directory, err := inspector.InspectDirectory(ctx, schemameta.DirectoryOptions{Root: conn.DefaultScope})
+	directory, err := inspector.InspectDirectory(ctx, metadata.DirectoryOptions{Root: conn.DefaultScope})
 	if err != nil {
 		return nil, jobs.Retryable("schema_directory_failed", "Could not inspect the schema directory.")
 	}
@@ -152,7 +152,7 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 		objectCount += len(objects)
 	}
 
-	if relationshipInspector, ok := driver.(schemameta.RelationshipInspector); ok {
+	if relationshipInspector, ok := driver.(metadata.RelationshipInspector); ok {
 		for _, scope := range directoryObjectScopes(directory) {
 			graph, inspectErr := relationshipInspector.InspectRelationshipsInScope(ctx, scope)
 			if inspectErr != nil {
@@ -182,12 +182,12 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 	return schemaSyncOutput{SnapshotID: snapshot.ID, Objects: objectCount}, nil
 }
 
-func directoryObjectRefs(directory *schemameta.Directory) []schemameta.ObjectRef {
+func directoryObjectRefs(directory *metadata.Directory) []metadata.ObjectRef {
 	if directory == nil {
 		return nil
 	}
-	var refs []schemameta.ObjectRef
-	walkDirectoryNodes(directory.Roots, func(node schemameta.ScopeNode) {
+	var refs []metadata.ObjectRef
+	walkDirectoryNodes(directory.Roots, func(node metadata.ScopeNode) {
 		for _, group := range node.Groups {
 			refs = append(refs, group.Objects...)
 		}
@@ -195,12 +195,12 @@ func directoryObjectRefs(directory *schemameta.Directory) []schemameta.ObjectRef
 	return refs
 }
 
-func directoryObjectScopes(directory *schemameta.Directory) []schemameta.ScopePath {
+func directoryObjectScopes(directory *metadata.Directory) []metadata.ScopePath {
 	if directory == nil {
 		return nil
 	}
-	var scopes []schemameta.ScopePath
-	walkDirectoryNodes(directory.Roots, func(node schemameta.ScopeNode) {
+	var scopes []metadata.ScopePath
+	walkDirectoryNodes(directory.Roots, func(node metadata.ScopeNode) {
 		if len(node.Groups) > 0 {
 			scopes = append(scopes, node.Path)
 		}
@@ -208,7 +208,7 @@ func directoryObjectScopes(directory *schemameta.Directory) []schemameta.ScopePa
 	return scopes
 }
 
-func walkDirectoryNodes(nodes []schemameta.ScopeNode, visit func(schemameta.ScopeNode)) {
+func walkDirectoryNodes(nodes []metadata.ScopeNode, visit func(metadata.ScopeNode)) {
 	for _, node := range nodes {
 		visit(node)
 		walkDirectoryNodes(node.Children, visit)

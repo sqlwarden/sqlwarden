@@ -1,11 +1,11 @@
-package schema
+package metadata
 
 import "context"
 
-// SchemaInspector is the schema-domain interface a driver implements to report
+// SchemaInspector is the metadata-domain interface a driver implements to report
 // its objects in two tiers: a cheap Directory listing, and on-demand detail for
 // specific objects. It is satisfied implicitly (Go structural typing); drivers
-// need not import this interface, only the schema types they return.
+// need not import this interface, only the metadata types they return.
 type SchemaInspector interface {
 	// SchemaSpec is pure/static and must not touch the target database.
 	SchemaSpec() SchemaSpec

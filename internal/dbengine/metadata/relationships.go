@@ -1,4 +1,4 @@
-package schema
+package metadata
 
 // RelationshipGraph is the cheap topology of a single scope.
 type RelationshipGraph struct {

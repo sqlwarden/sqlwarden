@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
-var _ schema.RelationshipInspector = (*postgresDriver)(nil)
+var _ metadata.RelationshipInspector = (*postgresDriver)(nil)
 
-func (d *postgresDriver) InspectRelationshipsInScope(ctx context.Context, scope schema.ScopePath) (*schema.RelationshipGraph, error) {
+func (d *postgresDriver) InspectRelationshipsInScope(ctx context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
 	namespace := scope.Name("schema")
 	q := `
 SELECT tc.table_schema, tc.table_name, tc.constraint_name, kcu.column_name,
@@ -27,7 +27,7 @@ ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_positio
 	}
 	defer rows.Close()
 
-	graph := &schema.RelationshipGraph{Scope: scope}
+	graph := &metadata.RelationshipGraph{Scope: scope}
 	index := map[string]int{} // constraint key -> position in graph.Relationships
 	for rows.Next() {
 		var ns, tbl, name, col, refNs, refTbl, refCol string
@@ -37,11 +37,11 @@ ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_positio
 		key := ns + "\x00" + tbl + "\x00" + name
 		pos, ok := index[key]
 		if !ok {
-			graph.Relationships = append(graph.Relationships, schema.Relationship{
+			graph.Relationships = append(graph.Relationships, metadata.Relationship{
 				Kind:       "foreign_key",
 				Name:       name,
-				Source:     schema.ObjectRef{Scope: scope.With("schema", ns), Kind: "table", Name: tbl},
-				References: schema.ObjectRef{Scope: scope.With("schema", refNs), Kind: "table", Name: refTbl},
+				Source:     metadata.ObjectRef{Scope: scope.With("schema", ns), Kind: "table", Name: tbl},
+				References: metadata.ObjectRef{Scope: scope.With("schema", refNs), Kind: "table", Name: refTbl},
 			})
 			pos = len(graph.Relationships) - 1
 			index[key] = pos
