@@ -15,27 +15,28 @@ import (
 )
 
 type fakeSchemaInspector struct {
-	mu          sync.Mutex
-	catalogHits int32
-	objectCalls int32
-	objectRefs  [][]schemameta.ObjectRef
-	delay       time.Duration
+	mu            sync.Mutex
+	directoryHits int32
+	objectCalls   int32
+	objectRefs    [][]schemameta.ObjectRef
+	delay         time.Duration
 }
 
 func (f *fakeSchemaInspector) SchemaSpec() schemameta.SchemaSpec {
 	return schemameta.SchemaSpec{Dialect: "fake", Kinds: []schemameta.SchemaObjectKind{{Kind: "table"}}}
 }
 
-func (f *fakeSchemaInspector) InspectCatalog(ctx context.Context, opts schemameta.CatalogOptions) (*schemameta.Catalog, error) {
-	atomic.AddInt32(&f.catalogHits, 1)
+func (f *fakeSchemaInspector) InspectDirectory(ctx context.Context, opts schemameta.DirectoryOptions) (*schemameta.Directory, error) {
+	atomic.AddInt32(&f.directoryHits, 1)
 	if f.delay > 0 {
 		time.Sleep(f.delay)
 	}
-	return &schemameta.Catalog{
-		Dialect: "fake",
-		Namespaces: []schemameta.NamespaceCatalog{{Name: "public", Groups: []schemameta.ObjectGroupCatalog{{
+	scope := schemameta.NewScopePath(schemameta.ScopeSegment{Kind: "schema", Name: "public"})
+	return &schemameta.Directory{
+		Engine: "fake", DefaultScope: scope,
+		Roots: []schemameta.ScopeNode{{Path: scope, Groups: []schemameta.ObjectGroup{{
 			Kind:    "table",
-			Objects: []schemameta.ObjectRef{{Namespace: "public", Kind: "table", Name: "users"}},
+			Objects: []schemameta.ObjectRef{{Scope: scope, Kind: "table", Name: "users"}},
 		}}}},
 	}, nil
 }
@@ -54,30 +55,30 @@ func (f *fakeSchemaInspector) InspectObjects(ctx context.Context, refs []schemam
 
 func newService() *Service { return NewService(cache.NewMemCache(64), time.Minute) }
 
-func TestServiceCatalogCachesAfterMiss(t *testing.T) {
+func TestServiceDirectoryCachesAfterMiss(t *testing.T) {
 	s := newService()
 	intr := &fakeSchemaInspector{}
-	if _, err := s.Catalog(context.Background(), "c1", intr); err != nil {
+	if _, err := s.Directory(context.Background(), "c1", intr); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Catalog(context.Background(), "c1", intr); err != nil {
+	if _, err := s.Directory(context.Background(), "c1", intr); err != nil {
 		t.Fatal(err)
 	}
-	if got := atomic.LoadInt32(&intr.catalogHits); got != 1 {
+	if got := atomic.LoadInt32(&intr.directoryHits); got != 1 {
 		t.Fatalf("want 1 inspection, got %d", got)
 	}
 }
 
-func TestServiceCatalogSingleflight(t *testing.T) {
+func TestServiceDirectorySingleflight(t *testing.T) {
 	s := newService()
 	intr := &fakeSchemaInspector{delay: 50 * time.Millisecond}
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
-		go func() { defer wg.Done(); _, _ = s.Catalog(context.Background(), "c1", intr) }()
+		go func() { defer wg.Done(); _, _ = s.Directory(context.Background(), "c1", intr) }()
 	}
 	wg.Wait()
-	if got := atomic.LoadInt32(&intr.catalogHits); got != 1 {
+	if got := atomic.LoadInt32(&intr.directoryHits); got != 1 {
 		t.Fatalf("singleflight should collapse to 1, got %d", got)
 	}
 }
@@ -86,8 +87,9 @@ func TestServiceObjectsFetchesOnlyMissing(t *testing.T) {
 	s := newService()
 	intr := &fakeSchemaInspector{}
 	ctx := context.Background()
-	users := schemameta.ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
-	orders := schemameta.ObjectRef{Namespace: "public", Kind: "table", Name: "orders"}
+	scope := schemameta.NewScopePath(schemameta.ScopeSegment{Kind: "schema", Name: "public"})
+	users := schemameta.ObjectRef{Scope: scope, Kind: "table", Name: "users"}
+	orders := schemameta.ObjectRef{Scope: scope, Kind: "table", Name: "orders"}
 
 	if _, err := s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr); err != nil {
 		t.Fatal(err)
@@ -114,28 +116,28 @@ func TestServiceRefreshObjectVsConnection(t *testing.T) {
 	s := newService()
 	intr := &fakeSchemaInspector{}
 	ctx := context.Background()
-	users := schemameta.ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
+	users := schemameta.ObjectRef{Scope: schemameta.NewScopePath(schemameta.ScopeSegment{Kind: "schema", Name: "public"}), Kind: "table", Name: "users"}
 
-	_, _ = s.Catalog(ctx, "c1", intr)
+	_, _ = s.Directory(ctx, "c1", intr)
 	_, _ = s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr)
 
-	// RefreshObject drops only the object; catalog stays cached.
+	// RefreshObject drops only the object; the directory stays cached.
 	s.RefreshObject("c1", users)
 	_, _ = s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr)
-	_, _ = s.Catalog(ctx, "c1", intr)
+	_, _ = s.Directory(ctx, "c1", intr)
 	if got := atomic.LoadInt32(&intr.objectCalls); got != 2 {
 		t.Fatalf("want 2 object fetches after RefreshObject, got %d", got)
 	}
-	if got := atomic.LoadInt32(&intr.catalogHits); got != 1 {
-		t.Fatalf("catalog should still be cached, got %d hits", got)
+	if got := atomic.LoadInt32(&intr.directoryHits); got != 1 {
+		t.Fatalf("directory should still be cached, got %d hits", got)
 	}
 
-	// RefreshConnection drops catalog + all object detail.
+	// RefreshConnection drops the directory and all object detail.
 	s.RefreshConnection("c1")
-	_, _ = s.Catalog(ctx, "c1", intr)
+	_, _ = s.Directory(ctx, "c1", intr)
 	_, _ = s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr)
-	if got := atomic.LoadInt32(&intr.catalogHits); got != 2 {
-		t.Fatalf("catalog should re-inspect after RefreshConnection, got %d", got)
+	if got := atomic.LoadInt32(&intr.directoryHits); got != 2 {
+		t.Fatalf("directory should re-inspect after RefreshConnection, got %d", got)
 	}
 	if got := atomic.LoadInt32(&intr.objectCalls); got != 3 {
 		t.Fatalf("object should re-fetch after RefreshConnection, got %d", got)
@@ -144,18 +146,18 @@ func TestServiceRefreshObjectVsConnection(t *testing.T) {
 
 type erroringSchemaInspector struct{ fakeSchemaInspector }
 
-func (e *erroringSchemaInspector) InspectCatalog(ctx context.Context, opts schemameta.CatalogOptions) (*schemameta.Catalog, error) {
+func (e *erroringSchemaInspector) InspectDirectory(ctx context.Context, opts schemameta.DirectoryOptions) (*schemameta.Directory, error) {
 	return nil, context.DeadlineExceeded
 }
 
-func TestServiceDoesNotCacheCatalogError(t *testing.T) {
+func TestServiceDoesNotCacheDirectoryError(t *testing.T) {
 	s := newService()
 	intr := &erroringSchemaInspector{}
-	if _, err := s.Catalog(context.Background(), "c1", intr); err == nil {
+	if _, err := s.Directory(context.Background(), "c1", intr); err == nil {
 		t.Fatal("expected error")
 	}
-	if _, ok := s.cache.Get(catalogKey("c1")); ok {
-		t.Fatal("failed catalog must not be cached")
+	if _, ok := s.cache.Get(directoryKey("c1")); ok {
+		t.Fatal("failed directory must not be cached")
 	}
 }
 
@@ -165,9 +167,9 @@ func TestServiceLogsInspectionWithoutObjectNames(t *testing.T) {
 	s := NewServiceWithLogger(cache.NewMemCache(64), time.Minute, logger)
 	intr := &fakeSchemaInspector{}
 	ctx := context.Background()
-	users := schemameta.ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
+	users := schemameta.ObjectRef{Scope: schemameta.NewScopePath(schemameta.ScopeSegment{Kind: "schema", Name: "public"}), Kind: "table", Name: "users"}
 
-	if _, err := s.Catalog(ctx, "c1", intr); err != nil {
+	if _, err := s.Directory(ctx, "c1", intr); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Objects(ctx, "c1", []schemameta.ObjectRef{users}, intr); err != nil {
@@ -178,8 +180,8 @@ func TestServiceLogsInspectionWithoutObjectNames(t *testing.T) {
 
 	logs := buf.String()
 	for _, want := range []string{
-		"schema catalog cache miss",
-		"schema catalog inspected",
+		"schema directory cache miss",
+		"schema directory inspected",
 		"schema object detail cache checked",
 		"schema object details inspected",
 		"schema object cache invalidated",
@@ -193,7 +195,7 @@ func TestServiceLogsInspectionWithoutObjectNames(t *testing.T) {
 	}
 	for _, sensitive := range []string{"users", "public"} {
 		if strings.Contains(logs, sensitive) {
-			t.Fatalf("logs should not contain object name/namespace %q:\n%s", sensitive, logs)
+			t.Fatalf("logs should not contain object name/scope %q:\n%s", sensitive, logs)
 		}
 	}
 }

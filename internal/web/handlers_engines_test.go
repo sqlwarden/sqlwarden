@@ -32,7 +32,7 @@ func TestListEngines(t *testing.T) {
 	}
 	assert.Equal(t, pg["display_name"], "PostgreSQL")
 	caps := pg["capabilities"].(map[string]any)
-	assert.Equal(t, caps["schema.catalog"], true)
+	assert.Equal(t, caps["schema.directory"], true)
 	assert.Equal(t, caps["query.cursor"], true)
 	assert.Equal(t, caps["sql.complete"], true)
 	assert.Equal(t, byID["mysql"]["capabilities"].(map[string]any)["sql.complete"], true)

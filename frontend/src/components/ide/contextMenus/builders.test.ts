@@ -64,14 +64,14 @@ describe('buildConnectionMenu', () => {
 })
 
 describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
-  it('namespace copy + refresh are live', () => {
+  it('scope copy + refresh are live', () => {
     const items = buildNamespaceMenu({ onCopyName: noop, onRefresh: noop })
     expect(action(items, 'copy-schema-name')?.soon).toBeFalsy()
     expect(action(items, 'refresh')?.soon).toBeFalsy()
     expect(action(items, 'drop-schema')?.soon).toBe(true)
     expect(action(items, 'view-schema-diagram')).toBeUndefined()
   })
-  it('namespace shows View schema diagram when the callback is provided', () => {
+  it('scope shows View schema diagram when the callback is provided', () => {
     const items = buildNamespaceMenu({ onCopyName: noop, onRefresh: noop, onViewDiagram: noop })
     expect(action(items, 'view-schema-diagram')?.label).toBe('View schema diagram')
     expect(action(items, 'view-schema-diagram')?.soon).toBeFalsy()

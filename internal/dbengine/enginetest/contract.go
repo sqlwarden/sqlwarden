@@ -12,13 +12,13 @@ import (
 
 // knownCapabilities is the closed set of capability keys an engine may report.
 var knownCapabilities = map[dbengine.Capability]bool{
-	dbengine.CapabilitySchemaCatalog: true,
-	dbengine.CapabilitySchemaObjects: true,
-	dbengine.CapabilityQueryCursor:   true,
-	dbengine.CapabilitySQLParse:      true,
-	dbengine.CapabilitySQLClassify:   true,
-	dbengine.CapabilitySQLRewrite:    true,
-	dbengine.CapabilitySQLComplete:   true,
+	dbengine.CapabilitySchemaDirectory: true,
+	dbengine.CapabilitySchemaObjects:   true,
+	dbengine.CapabilityQueryCursor:     true,
+	dbengine.CapabilitySQLParse:        true,
+	dbengine.CapabilitySQLClassify:     true,
+	dbengine.CapabilitySQLRewrite:      true,
+	dbengine.CapabilitySQLComplete:     true,
 }
 
 // RunCapabilityContract asserts the static-capability invariants every engine
@@ -40,11 +40,11 @@ func RunCapabilityContract(t *testing.T, name string) {
 			t.Fatalf("engine reports unknown capability key %q", capability)
 		}
 	}
-	if set.Capabilities[dbengine.CapabilitySchemaCatalog] && set.Schema == nil {
-		t.Fatal("schema.catalog capability set but Schema spec is nil")
+	if set.Capabilities[dbengine.CapabilitySchemaDirectory] && set.Schema == nil {
+		t.Fatal("schema.directory capability set but Schema spec is nil")
 	}
-	if !set.Capabilities[dbengine.CapabilitySchemaCatalog] && set.Schema != nil {
-		t.Fatal("Schema spec present but schema.catalog capability is false")
+	if !set.Capabilities[dbengine.CapabilitySchemaDirectory] && set.Schema != nil {
+		t.Fatal("Schema spec present but schema.directory capability is false")
 	}
 }
 

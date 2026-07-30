@@ -20,24 +20,25 @@ func TestCompleteConnectionSQLFromPersistentSnapshot(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Completion DB", "open")
 
-	catalog := &schema.Catalog{
-		Dialect: "postgres", Database: "app", GeneratedAt: time.Now(),
-		Namespaces: []schema.NamespaceCatalog{{
-			Name: "public",
-			Groups: []schema.ObjectGroupCatalog{{
+	scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "app"}, schema.ScopeSegment{Kind: "schema", Name: "public"})
+	directory := &schema.Directory{
+		Engine: "postgres", DefaultScope: scope, GeneratedAt: time.Now(),
+		Roots: []schema.ScopeNode{{
+			Path: scope,
+			Groups: []schema.ObjectGroup{{
 				Kind: "table",
 				Objects: []schema.ObjectRef{
-					{Namespace: "public", Kind: "table", Name: "widgets"},
+					{Scope: scope, Kind: "table", Name: "widgets"},
 				},
 			}},
 		}},
 	}
-	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, catalog)
+	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, directory)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := app.schemaSnapshots.PutObjects(context.Background(), snapshot.ID, []schema.Object{{
-		Ref: schema.ObjectRef{Namespace: "public", Kind: "table", Name: "widgets"},
+		Ref: schema.ObjectRef{Scope: scope, Kind: "table", Name: "widgets"},
 		Relational: &schema.RelationalDetail{Columns: []schema.Column{
 			{Name: "widget_name", DataType: "text", Ordinal: 1},
 		}},

@@ -1,4 +1,5 @@
 import type { ObjectViewModel } from '../registry'
+import { scopeLabel } from '#/lib/api/scope'
 
 export function KeysSection({ vm }: { vm: ObjectViewModel }) {
   const rel = vm.detail.relational
@@ -25,7 +26,7 @@ export function KeysSection({ vm }: { vm: ObjectViewModel }) {
           {fks.map((f) => (
             <div key={f.name} className="font-mono text-muted-foreground">
               <span className="text-foreground">{f.name}</span>: ({(f.columns ?? []).join(', ')}) →{' '}
-              {f.references.namespace ? `${f.references.namespace}.` : ''}
+              {f.references.scope.length > 0 ? `${scopeLabel(f.references.scope)}.` : ''}
               {f.references.name} ({(f.referenced_columns ?? []).join(', ')})
             </div>
           ))}

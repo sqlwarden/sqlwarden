@@ -1,6 +1,6 @@
 // Package schema is the schema inspection domain. It defines the
 // SchemaInspector capability an engine implements to report its objects in two
-// tiers (a cheap Catalog listing and on-demand Object detail), the data model
+// tiers (a cheap Directory listing and on-demand Object detail), the data model
 // those reports use (objects, columns, keys, descriptors), the static SchemaSpec
 // describing which object kinds an engine exposes.
 package schema
@@ -129,47 +129,14 @@ func (p ScopePath) With(kind, name string) ScopePath {
 	return NewScopePath(append(segments, ScopeSegment{Kind: kind, Name: name})...)
 }
 
-// ScopeRelationshipGraph upgrades a legacy namespace graph to fully scoped
-// endpoints without loading any additional metadata.
-func ScopeRelationshipGraph(graph *RelationshipGraph, scope ScopePath) *RelationshipGraph {
-	if graph == nil {
-		return nil
-	}
-	result := *graph
-	result.Scope = scope
-	result.Relationships = append([]Relationship(nil), graph.Relationships...)
-	for index := range result.Relationships {
-		relationship := &result.Relationships[index]
-		relationship.Kind = "foreign_key"
-		relationship.Source.Scope = scope.With("schema", relationship.Source.Namespace)
-		relationship.References.Scope = scope.With("schema", relationship.References.Namespace)
-	}
-	return &result
-}
-
 // ObjectRef is the qualified, addressable identity of a database object. It
 // replaces bare name strings wherever an object is referenced (including
 // foreign-key targets), which is what makes cross-schema references and
 // click-to-navigate possible.
 type ObjectRef struct {
-	Scope ScopePath `json:"scope,omitempty"`
-	// Namespace is retained while current engines migrate to Scope. New engine
-	// implementations must use Scope.
-	Namespace string `json:"namespace,omitempty"`
-	Kind      string `json:"kind"` // table, view, collection, key, function, …
-	Name      string `json:"name"`
-}
-
-// EffectiveScope returns Scope when present and maps a legacy namespace to a
-// single schema segment otherwise.
-func (r ObjectRef) EffectiveScope() ScopePath {
-	if r.Scope != "" {
-		return r.Scope
-	}
-	if r.Namespace != "" {
-		return NewScopePath(ScopeSegment{Kind: "schema", Name: r.Namespace})
-	}
-	return ""
+	Scope ScopePath `json:"scope"`
+	Kind  string    `json:"kind"` // table, view, collection, key, function, …
+	Name  string    `json:"name"`
 }
 
 // Object is the on-demand detail for a single database object. Known relational
@@ -204,7 +171,7 @@ type Column struct {
 }
 
 // ForeignKey is a foreign-key constraint. References is the qualified target
-// object (carrying its namespace), which is what enables cross-schema
+// object (carrying its scope), which is what enables cross-schema
 // click-to-navigate.
 type ForeignKey struct {
 	Name              string         `json:"name"`

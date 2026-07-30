@@ -167,7 +167,7 @@ export const queryKeys = {
       slug,
       workspaceId,
       connectionId,
-      ref.namespace,
+      JSON.stringify(ref.scope),
       ref.kind,
       ref.name,
     ] as const,

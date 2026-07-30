@@ -63,37 +63,39 @@ func Caret(t *testing.T, marked string) (string, int) {
 	return marked[:cursor] + marked[cursor+1:], cursor
 }
 
-func Catalog(dialect, database, namespace string) completioncore.MetadataResolver {
+func Metadata(engine, database, namespace string) completioncore.MetadataResolver {
+	root := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: database})
+	scope := root
+	if engine == "postgres" {
+		scope = root.Child(schema.ScopeSegment{Kind: "schema", Name: namespace})
+	}
 	objects := []schema.Object{
-		relation(namespace, "inventory",
+		relation(scope, "inventory",
 			column("id", "bigint"), column("inventory_name", "text")),
-		relation(namespace, "store",
+		relation(scope, "store",
 			column("id", "bigint"), column("store_name", "text")),
-		relation(namespace, "film",
+		relation(scope, "film",
 			column("film_id", "smallint"), column("description", "text"), column("title", "text")),
-		relation(namespace, "film_actor",
+		relation(scope, "film_actor",
 			column("actor_id", "smallint"), column("film_id", "smallint")),
-		relation(namespace, "customer",
+		relation(scope, "customer",
 			column("customer_id", "bigint"), column("email", "text")),
 	}
 	refs := make([]schema.ObjectRef, 0, len(objects))
 	for _, object := range objects {
 		refs = append(refs, object.Ref)
 	}
-	catalog := &schema.Catalog{
-		Dialect: dialect, Database: database,
-		Namespaces: []schema.NamespaceCatalog{{
-			Name:   namespace,
-			Groups: []schema.ObjectGroupCatalog{{Kind: "table", Objects: refs}},
-		}},
+	directory := &schema.Directory{
+		Engine: engine, DefaultScope: scope,
+		Roots: []schema.ScopeNode{{Path: scope, Groups: []schema.ObjectGroup{{Kind: "table", Objects: refs}}}},
 	}
-	index := schema.NewIndex(schema.MetadataSet{Catalog: catalog, Objects: objects, Version: "test"})
+	index := schema.NewIndex(schema.MetadataSet{Directory: directory, Objects: objects, Version: "test"})
 	return completioncore.NewSchemaResolver(index, namespace)
 }
 
-func relation(namespace, name string, columns ...schema.Column) schema.Object {
+func relation(scope schema.ScopePath, name string, columns ...schema.Column) schema.Object {
 	return schema.Object{
-		Ref:        schema.ObjectRef{Namespace: namespace, Kind: "table", Name: name},
+		Ref:        schema.ObjectRef{Scope: scope, Kind: "table", Name: name},
 		Relational: &schema.RelationalDetail{Columns: columns},
 	}
 }

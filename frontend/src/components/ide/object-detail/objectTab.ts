@@ -1,10 +1,11 @@
 import type { Connection, ObjectRef, Workspace } from '#/lib/api/types'
+import { scopeKey, scopeLabel } from '#/lib/api/scope'
 import type { EditorTab } from '../useIdeStore'
 
 /** Stable id for an object detail tab. Re-opening the same object focuses the
  *  existing tab instead of creating a duplicate. */
 export function objectTabId(connectionId: number, ref: ObjectRef): string {
-  return `object:${connectionId}:${ref.namespace}:${ref.kind}:${ref.name}`
+  return `object:${connectionId}:${scopeKey(ref.scope)}:${ref.kind}:${ref.name}`
 }
 
 export function newObjectTab(
@@ -17,7 +18,7 @@ export function newObjectTab(
     workspaceId: workspace.id,
     title: ref.name,
     kind: 'object',
-    subtitle: ref.namespace,
+    subtitle: scopeLabel(ref.scope),
     connectionId: connection.id,
     driver: connection.driver,
     objectRef: ref,

@@ -4,6 +4,7 @@ import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { api } from '#/lib/api/client'
 import type { Connection, ObjectRef, Workspace } from '#/lib/api/types'
+import { scopeLabel } from '#/lib/api/scope'
 import {
   orgConnectionObjectQueryOptions,
   orgConnectionSchemaSpecQueryOptions,
@@ -168,7 +169,7 @@ export function ObjectDetailView({
   )
 }
 
-const EMPTY_REF: ObjectRef = { namespace: '', kind: '', name: '' }
+const EMPTY_REF: ObjectRef = { scope: [], kind: '', name: '' }
 function noop() {}
 
 function Header({
@@ -189,7 +190,7 @@ function Header({
   return (
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
       <span className="truncate text-sm font-medium text-foreground">
-        {objectRef.namespace ? `${objectRef.namespace}.` : ''}
+        {objectRef.scope.length > 0 ? `${scopeLabel(objectRef.scope)}.` : ''}
         {objectRef.name}
       </span>
       <Tag>{objectRef.kind}</Tag>
@@ -276,7 +277,7 @@ function StatePane({
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
       <div className="flex flex-col gap-1">
         <div className="text-sm font-medium text-foreground">
-          {objectRef?.namespace ? `${objectRef.namespace}.` : ''}
+          {objectRef?.scope?.length ? `${scopeLabel(objectRef.scope)}.` : ''}
           {objectRef?.name}
         </div>
         <div className="text-xs text-muted-foreground">{driver} · connection not available</div>

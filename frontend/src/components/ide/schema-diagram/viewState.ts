@@ -10,9 +10,9 @@ export function resolveDiagramViewState({
   hasSession,
   spec,
   specError,
-  catalogError,
+  directoryError,
   relationshipsError,
-  catalogLoading,
+  directoryLoading,
   relationshipsLoading,
   presentCount,
 }: {
@@ -21,9 +21,9 @@ export function resolveDiagramViewState({
   hasSession: boolean
   spec?: SchemaSpec
   specError: unknown
-  catalogError: unknown
+  directoryError: unknown
   relationshipsError: unknown
-  catalogLoading: boolean
+  directoryLoading: boolean
   relationshipsLoading: boolean
   presentCount: number
 }): DiagramViewState {
@@ -35,13 +35,13 @@ export function resolveDiagramViewState({
   )
     return 'unsupported'
   if (
-    [specError, catalogError, relationshipsError].some(
+    [specError, directoryError, relationshipsError].some(
       (error) => isApiError(error) && error.status === 403,
     )
   ) {
     return 'forbidden'
   }
-  if (catalogLoading || relationshipsLoading) return 'loading'
+  if (directoryLoading || relationshipsLoading) return 'loading'
   if (presentCount === 0) return 'empty'
   return 'ready'
 }

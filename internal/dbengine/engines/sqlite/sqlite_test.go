@@ -57,7 +57,7 @@ func TestSQLiteDriver(t *testing.T) {
 	}
 }
 
-func TestInspectCatalogAndObjects(t *testing.T) {
+func TestInspectDirectoryAndObjects(t *testing.T) {
 	d := &sqliteDriver{}
 	ctx := context.Background()
 
@@ -96,21 +96,22 @@ func TestInspectCatalogAndObjects(t *testing.T) {
 		t.Fatalf("unexpected schema spec: %+v", spec)
 	}
 
-	catalog, err := d.InspectCatalog(ctx, schema.CatalogOptions{})
+	directory, err := d.InspectDirectory(ctx, schema.DirectoryOptions{})
 	if err != nil {
-		t.Fatalf("InspectCatalog: %v", err)
+		t.Fatalf("InspectDirectory: %v", err)
 	}
-	if !catalogHasRef(catalog, schema.ObjectRef{Namespace: "main", Kind: "table", Name: "introspect_child"}) {
-		t.Fatalf("catalog missing child table: %+v", catalog.Namespaces)
+	scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "main"})
+	if !directoryHasRef(directory, schema.ObjectRef{Scope: scope, Kind: "table", Name: "introspect_child"}) {
+		t.Fatalf("directory missing child table: %+v", directory.Roots)
 	}
-	if !catalogHasRef(catalog, schema.ObjectRef{Namespace: "main", Kind: "view", Name: "introspect_child_view"}) {
-		t.Fatalf("catalog missing child view: %+v", catalog.Namespaces)
+	if !directoryHasRef(directory, schema.ObjectRef{Scope: scope, Kind: "view", Name: "introspect_child_view"}) {
+		t.Fatalf("directory missing child view: %+v", directory.Roots)
 	}
-	if !catalogHasRef(catalog, schema.ObjectRef{Namespace: "main", Kind: "trigger", Name: "introspect_child_ai"}) {
-		t.Fatalf("catalog missing child trigger: %+v", catalog.Namespaces)
+	if !directoryHasRef(directory, schema.ObjectRef{Scope: scope, Kind: "trigger", Name: "introspect_child_ai"}) {
+		t.Fatalf("directory missing child trigger: %+v", directory.Roots)
 	}
 
-	objects, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "main", Kind: "table", Name: "introspect_child"}})
+	objects, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: scope, Kind: "table", Name: "introspect_child"}})
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)
 	}
@@ -131,7 +132,7 @@ func TestInspectCatalogAndObjects(t *testing.T) {
 		t.Fatalf("expected idx_child_label index, got %+v", child.Relational.Indexes)
 	}
 
-	objects, err = d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "main", Kind: "trigger", Name: "introspect_child_ai"}})
+	objects, err = d.InspectObjects(ctx, []schema.ObjectRef{{Scope: scope, Kind: "trigger", Name: "introspect_child_ai"}})
 	if err != nil {
 		t.Fatalf("InspectObjects trigger: %v", err)
 	}
@@ -324,7 +325,7 @@ func TestSQLiteObjectDefinitions(t *testing.T) {
 		t.Fatalf("create view: %v", err)
 	}
 
-	tbl, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "main", Kind: "table", Name: "defs_t"}})
+	tbl, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "main"}), Kind: "table", Name: "defs_t"}})
 	if err != nil {
 		t.Fatalf("InspectObjects table: %v", err)
 	}
@@ -333,7 +334,7 @@ func TestSQLiteObjectDefinitions(t *testing.T) {
 		t.Fatalf("table DDL descriptor missing/blank: %+v", tbl[0].Descriptors)
 	}
 
-	view, err := d.InspectObjects(ctx, []schema.ObjectRef{{Namespace: "main", Kind: "view", Name: "defs_v"}})
+	view, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "main"}), Kind: "view", Name: "defs_v"}})
 	if err != nil {
 		t.Fatalf("InspectObjects view: %v", err)
 	}
@@ -358,7 +359,7 @@ func TestSQLiteInspectRelationships(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	graph, err := d.InspectRelationships(ctx, "main")
+	graph, err := d.InspectRelationshipsInScope(ctx, schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "main"}))
 	if err != nil {
 		t.Fatalf("InspectRelationships: %v", err)
 	}
@@ -383,14 +384,10 @@ func descriptorByTitle(ds []schema.Descriptor, title string) *schema.Source {
 	return nil
 }
 
-func catalogHasRef(catalog *schema.Catalog, ref schema.ObjectRef) bool {
-	for _, ns := range catalog.Namespaces {
-		for _, group := range ns.Groups {
-			for _, got := range group.Objects {
-				if got == ref {
-					return true
-				}
-			}
+func directoryHasRef(directory *schema.Directory, ref schema.ObjectRef) bool {
+	for _, got := range directory.ObjectRefs() {
+		if got == ref {
+			return true
 		}
 	}
 	return false

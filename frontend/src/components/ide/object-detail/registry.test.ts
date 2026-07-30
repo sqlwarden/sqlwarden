@@ -17,7 +17,7 @@ function vm(detail: ObjectDetail, driver = 'postgres'): ObjectViewModel {
 }
 
 const tableDetail: ObjectDetail = {
-  ref: { namespace: 'public', kind: 'table', name: 'users' },
+  ref: { scope: [{ kind: 'schema', name: 'public' }], kind: 'table', name: 'users' },
   relational: {
     columns: [{ name: 'id', data_type: 'int8', nullable: false, ordinal: 1 }],
     primary_key: ['id'],
@@ -39,7 +39,7 @@ describe('getObjectRenderer', () => {
 
   it('renders a single Overview section for non-relational objects without source', () => {
     const fnDetail: ObjectDetail = {
-      ref: { namespace: 'public', kind: 'function', name: 'f' },
+      ref: { scope: [{ kind: 'schema', name: 'public' }], kind: 'function', name: 'f' },
       descriptors: [
         { kind: 'fields', title: 'Function', fields: [{ name: 'returns', value: 'int' }] },
       ],
@@ -53,7 +53,7 @@ describe('getObjectRenderer', () => {
 
   it('adds a source section (labeled by title) for non-relational objects carrying SQL', () => {
     const fnDetail: ObjectDetail = {
-      ref: { namespace: 'public', kind: 'function', name: 'f' },
+      ref: { scope: [{ kind: 'schema', name: 'public' }], kind: 'function', name: 'f' },
       descriptors: [
         { kind: 'fields', title: 'Signature', fields: [{ name: 'returns', value: 'int' }] },
         {
@@ -70,7 +70,7 @@ describe('getObjectRenderer', () => {
 
   it('uses the descriptor title for the source label (e.g. mysql trigger Statement)', () => {
     const trigDetail: ObjectDetail = {
-      ref: { namespace: 'db', kind: 'trigger', name: 't' },
+      ref: { scope: [{ kind: 'database', name: 'db' }], kind: 'trigger', name: 't' },
       descriptors: [
         { kind: 'source', title: 'Statement', source: { language: 'sql', body: 'BEGIN END' } },
       ],

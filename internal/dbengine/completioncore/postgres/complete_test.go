@@ -13,7 +13,7 @@ import (
 )
 
 func TestScopeScenarios(t *testing.T) {
-	catalog := completiontest.Catalog("postgres", "app", "public")
+	catalog := completiontest.Metadata("postgres", "app", "public")
 	column := completioncore.CandidateColumn
 	completiontest.Run(t, func(ctx context.Context, sql string, cursor int, metadata completioncore.MetadataResolver) ([]completioncore.Candidate, error) {
 		return corepostgres.Complete(ctx, sql, cursor, nil, metadata)
@@ -175,7 +175,7 @@ func TestScopeScenarios(t *testing.T) {
 }
 
 func TestCompletionWithBrokenTrailingStatementScalesLinearly(t *testing.T) {
-	catalog := completiontest.Catalog("postgres", "app", "public")
+	catalog := completiontest.Metadata("postgres", "app", "public")
 	var sheet strings.Builder
 	sheet.WriteString("SELECT  FROM inventory i JOIN store s ON i.id = s.id;\n")
 	sheet.WriteString("SELEC broken FROM oops;\n")

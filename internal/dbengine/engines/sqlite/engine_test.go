@@ -18,8 +18,8 @@ func TestSQLiteEngineRegisteredAndConforms(t *testing.T) {
 	enginetest.RunCapabilityContract(t, "sqlite")
 
 	caps := set.Capabilities
-	if !caps[dbengine.CapabilitySchemaCatalog] || !caps[dbengine.CapabilityQueryCursor] {
-		t.Errorf("sqlite should report schema.catalog + query.cursor: %+v", caps)
+	if !caps[dbengine.CapabilitySchemaDirectory] || !caps[dbengine.CapabilityQueryCursor] {
+		t.Errorf("sqlite should report schema.directory + query.cursor: %+v", caps)
 	}
 	for _, capability := range []dbengine.Capability{
 		dbengine.CapabilitySQLParse,

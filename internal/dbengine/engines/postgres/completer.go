@@ -57,17 +57,17 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 
 	var catalog *pgcatalog.Catalog
 	var metadata completioncore.MetadataResolver
-	if req.Schema != nil && req.Schema.Catalog != nil {
+	if req.Schema != nil && req.Schema.Directory != nil {
 		key := completionCatalogKey(req.ConnectionID, req.Schema.Version)
 		var err error
-		defaultSchema := postgresCompletionDefaultSchema(req.Schema.Catalog)
+		defaultSchema := postgresCompletionDefaultSchema(req.Schema.Directory)
 		var index *schema.Index
 		if key == "" {
-			catalog, err = buildPostgresCompletionCatalog(req.Schema.Catalog, req.Schema.Objects)
+			catalog, err = buildPostgresCompletionCatalog(req.Schema.Directory, req.Schema.Objects)
 			index = schema.NewIndex(*req.Schema)
 		} else {
 			catalog, err = pgCompletionCatalogCache.GetOrBuild(ctx, key, func() (*pgcatalog.Catalog, error) {
-				return buildPostgresCompletionCatalog(req.Schema.Catalog, req.Schema.Objects)
+				return buildPostgresCompletionCatalog(req.Schema.Directory, req.Schema.Objects)
 			})
 			if err == nil {
 				index, err = pgSchemaIndexCache.GetOrBuild(ctx, key, func() (*schema.Index, error) {
@@ -112,10 +112,10 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 			}
 		}
 	}
-	if req.Schema != nil && req.Schema.Catalog != nil {
+	if req.Schema != nil && req.Schema.Directory != nil {
 		candidates = filterPostgresUnqualifiedRelations(
 			candidates,
-			req.Schema.Catalog,
+			req.Schema.Directory,
 			completionSQL,
 			completionCursor,
 		)
@@ -220,44 +220,54 @@ func postgresTokenStartsLine(sql string, offset int) bool {
 	return strings.TrimSpace(sql[lineStart:offset]) == ""
 }
 
-func postgresCompletionDefaultSchema(catalog *schema.Catalog) string {
-	if catalog == nil {
+func postgresCompletionDefaultSchema(directory *schema.Directory) string {
+	if directory == nil {
 		return "public"
 	}
-	if catalog.DefaultNamespace != "" {
-		return catalog.DefaultNamespace
+	if selected := directory.DefaultScope.Name("schema"); selected != "" {
+		return selected
 	}
-	for _, namespace := range catalog.Namespaces {
-		if namespace.Name == "public" {
+	var schemas []string
+	for _, node := range directory.ScopeNodes() {
+		name := node.Path.Name("schema")
+		if name == "" {
+			continue
+		}
+		schemas = append(schemas, name)
+		if name == "public" {
 			return "public"
 		}
 	}
-	if len(catalog.Namespaces) == 1 {
-		return catalog.Namespaces[0].Name
+	if len(schemas) == 1 {
+		return schemas[0]
 	}
 	return "public"
 }
 
 func filterPostgresUnqualifiedRelations(
 	candidates []completioncore.Candidate,
-	catalog *schema.Catalog,
+	directory *schema.Directory,
 	sql string,
 	cursor int,
 ) []completioncore.Candidate {
-	if catalog == nil || completionHasQualifier(sql, cursor) {
+	if directory == nil || completionHasQualifier(sql, cursor) {
 		return candidates
 	}
-	defaultSchema := postgresCompletionDefaultSchema(catalog)
+	defaultSchema := postgresCompletionDefaultSchema(directory)
 	if defaultSchema == "" {
 		return candidates
 	}
 	allRelations := make(map[string]struct{})
 	defaultRelations := make(map[string]struct{})
 	foundDefaultSchema := false
-	for _, namespace := range catalog.Namespaces {
-		isDefault := strings.EqualFold(namespace.Name, defaultSchema)
+	for _, node := range directory.ScopeNodes() {
+		namespace := node.Path.Name("schema")
+		if namespace == "" {
+			continue
+		}
+		isDefault := strings.EqualFold(namespace, defaultSchema)
 		foundDefaultSchema = foundDefaultSchema || isDefault
-		for _, group := range namespace.Groups {
+		for _, group := range node.Groups {
 			if !postgresRelationKind(group.Kind) {
 				continue
 			}
@@ -380,15 +390,18 @@ func (d *postgresDriver) InvalidateCompletionCatalog(connectionID string) {
 	pgSchemaIndexCache.InvalidatePrefix(connectionID + ":")
 }
 
-func buildPostgresCompletionCatalog(catalog *schema.Catalog, objects []schema.Object) (*pgcatalog.Catalog, error) {
+func buildPostgresCompletionCatalog(directory *schema.Directory, objects []schema.Object) (*pgcatalog.Catalog, error) {
 	native := pgcatalog.New()
-	for _, namespace := range catalog.Namespaces {
-		if namespace.Name == "" || namespace.Name == "public" || namespace.Name == "pg_catalog" {
+	created := map[string]bool{"public": true, "pg_catalog": true}
+	for _, node := range directory.ScopeNodes() {
+		namespace := node.Path.Name("schema")
+		if namespace == "" || created[namespace] {
 			continue
 		}
-		if err := execPostgresCatalog(native, "CREATE SCHEMA "+pgQuoteIdent(namespace.Name)); err != nil {
-			return nil, fmt.Errorf("prepare postgres schema %q: %w", namespace.Name, err)
+		if err := execPostgresCatalog(native, "CREATE SCHEMA "+pgQuoteIdent(namespace)); err != nil {
+			return nil, fmt.Errorf("prepare postgres schema %q: %w", namespace, err)
 		}
+		created[namespace] = true
 	}
 	for _, object := range objects {
 		statement := postgresCompletionDDL(object, false)
@@ -397,11 +410,11 @@ func buildPostgresCompletionCatalog(catalog *schema.Catalog, objects []schema.Ob
 		}
 		if err := execPostgresCatalog(native, statement); err != nil && object.Relational != nil {
 			if fallbackErr := execPostgresCatalog(native, postgresCompletionDDL(object, true)); fallbackErr != nil {
-				return nil, fmt.Errorf("prepare postgres completion object %s.%s: %w", object.Ref.Namespace, object.Ref.Name, fallbackErr)
+				return nil, fmt.Errorf("prepare postgres completion object %s.%s: %w", object.Ref.Scope.Name("schema"), object.Ref.Name, fallbackErr)
 			}
 		}
 	}
-	native.SetSearchPath([]string{postgresCompletionDefaultSchema(catalog)})
+	native.SetSearchPath([]string{postgresCompletionDefaultSchema(directory)})
 	return native, nil
 }
 
@@ -419,7 +432,7 @@ func execPostgresCatalog(catalog *pgcatalog.Catalog, sql string) error {
 }
 
 func postgresCompletionDDL(object schema.Object, fallbackTypes bool) string {
-	namespace := object.Ref.Namespace
+	namespace := object.Ref.Scope.Name("schema")
 	if namespace == "" {
 		namespace = "public"
 	}
@@ -467,14 +480,17 @@ func postgresCandidateKind(candidateType completioncore.CandidateType) (string, 
 	switch candidateType {
 	case completioncore.CandidateColumn:
 		return "column", 100
-	case completioncore.CandidateSchema:
-		return "schema", 90
 	case completioncore.CandidateTable:
-		return "table", 80
+		return "table", 90
 	case completioncore.CandidateView:
-		return "view", 75
+		return "view", 85
 	case completioncore.CandidateMaterializedView:
-		return "materialized_view", 74
+		return "materialized_view", 84
+	case completioncore.CandidateSchema:
+		// In unqualified relation slots, the current schema is useful but less
+		// likely than one of its tables. A typed "schema." prefix still wins
+		// through CodeMirror's prefix matching.
+		return "schema", 70
 	case completioncore.CandidateSequence:
 		return "sequence", 70
 	case completioncore.CandidateFunction:

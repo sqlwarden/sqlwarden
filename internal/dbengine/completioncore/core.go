@@ -11,6 +11,7 @@ package completioncore
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/sqlwarden/internal/dbengine/schema"
@@ -100,7 +101,7 @@ func (r *SchemaResolver) DefaultDatabase() string {
 	if r == nil || r.index == nil {
 		return ""
 	}
-	return r.index.Database()
+	return r.index.DefaultScope().Name("database")
 }
 
 func (r *SchemaResolver) DefaultSchema() string {
@@ -111,27 +112,52 @@ func (r *SchemaResolver) DefaultSchema() string {
 }
 
 func (r *SchemaResolver) DatabaseNames() []string {
-	if database := r.DefaultDatabase(); database != "" {
-		return []string{database}
+	if r == nil || r.index == nil {
+		return nil
 	}
-	return nil
+	seen := map[string]bool{}
+	var names []string
+	for _, scope := range r.index.Scopes() {
+		if name := scope.Name("database"); name != "" && !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (r *SchemaResolver) SchemaNames(database string) []string {
-	if r == nil || r.index == nil || !matchesDatabase(database, r.index.Database()) {
+	if r == nil || r.index == nil {
 		return nil
 	}
-	return r.index.NamespaceNames()
+	seen := map[string]bool{}
+	var names []string
+	for _, scope := range r.index.Scopes() {
+		if !matchesDatabase(database, scope.Name("database")) {
+			continue
+		}
+		if name := scope.Name("schema"); name != "" && !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (r *SchemaResolver) Relations(database, namespace string) []Relation {
-	if r == nil || r.index == nil || !matchesDatabase(database, r.index.Database()) {
+	if r == nil || r.index == nil {
 		return nil
 	}
-	objects := r.index.Objects(namespace, "")
+	scope, ok := r.resolveScope(database, namespace)
+	if !ok {
+		return nil
+	}
+	objects := r.index.ObjectsInScope(scope, "")
 	result := make([]Relation, 0, len(objects))
 	for _, object := range objects {
-		if relation, ok := relationFromObject(r.index.Database(), object); ok {
+		if relation, ok := relationFromObject(object); ok {
 			result = append(result, relation)
 		}
 	}
@@ -139,27 +165,45 @@ func (r *SchemaResolver) Relations(database, namespace string) []Relation {
 }
 
 func (r *SchemaResolver) FindRelation(database, namespace, name string) (Relation, bool) {
-	if r == nil || r.index == nil || !matchesDatabase(database, r.index.Database()) {
+	if r == nil || r.index == nil {
 		return Relation{}, false
 	}
 	namespaces := []string{namespace}
 	if namespace == "" && r.defaultSchema != "" {
 		namespaces = append(namespaces, r.defaultSchema)
 	}
-	// MySQL metadata commonly represents the current database as a namespace.
-	if namespace == "" && r.index.Database() != "" && r.index.Database() != r.defaultSchema {
-		namespaces = append(namespaces, r.index.Database())
-	}
 	for _, candidateNamespace := range namespaces {
+		scope, ok := r.resolveScope(database, candidateNamespace)
+		if !ok {
+			continue
+		}
 		for _, kind := range relationKinds {
-			object, ok := r.index.FindObject(candidateNamespace, kind, name)
+			object, ok := r.index.FindObjectInScope(scope, kind, name)
 			if !ok {
 				continue
 			}
-			return relationFromObject(r.index.Database(), object)
+			return relationFromObject(object)
 		}
 	}
 	return Relation{}, false
+}
+
+func (r *SchemaResolver) resolveScope(database, namespace string) (schema.ScopePath, bool) {
+	defaultScope := r.index.DefaultScope()
+	for _, scope := range r.index.Scopes() {
+		if !matchesDatabase(database, scope.Name("database")) {
+			continue
+		}
+		if namespace != "" && !strings.EqualFold(namespace, scope.Name("schema")) &&
+			!strings.EqualFold(namespace, scope.Name("database")) {
+			continue
+		}
+		if namespace == "" && defaultScope != "" && scope != defaultScope {
+			continue
+		}
+		return scope, true
+	}
+	return "", false
 }
 
 func matchesDatabase(requested, current string) bool {
@@ -176,14 +220,14 @@ func CheckContext(ctx context.Context) error {
 
 var relationKinds = []string{"table", "foreign_table", "view", "materialized_view"}
 
-func relationFromObject(database string, object schema.Object) (Relation, bool) {
+func relationFromObject(object schema.Object) (Relation, bool) {
 	kind, ok := relationCandidateType(object.Ref.Kind)
 	if !ok {
 		return Relation{}, false
 	}
 	relation := Relation{
-		Database:   database,
-		Schema:     object.Ref.Namespace,
+		Database:   object.Ref.Scope.Name("database"),
+		Schema:     object.Ref.Scope.Name("schema"),
 		Name:       object.Ref.Name,
 		Kind:       kind,
 		Definition: objectSource(object),

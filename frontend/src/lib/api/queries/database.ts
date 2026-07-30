@@ -1,7 +1,7 @@
 import { queryOptions, type QueryClient } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
 import type {
-  CatalogResponse,
+  DirectoryResponse,
   ObjectRef,
   ObjectsResponse,
   RelationshipsResponse,
@@ -10,12 +10,12 @@ import type {
 } from '#/lib/api/types'
 import { queryKeys } from '#/lib/api/query-keys'
 
-export function connectionCatalogQueryKey(
+export function connectionDirectoryQueryKey(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
 ) {
-  return ['connection-catalog', slug, String(workspaceId), String(connectionId)] as const
+  return ['connection-directory', slug, String(workspaceId), String(connectionId)] as const
 }
 
 export function connectionSchemaSpecQueryKey(
@@ -100,23 +100,23 @@ export function getSQLCompletionVocabulary(driver: string, signal?: AbortSignal)
   )
 }
 
-export function orgConnectionCatalogQueryOptions(
+export function orgConnectionDirectoryQueryOptions(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
   sessionId?: string,
 ) {
   return queryOptions({
-    queryKey: connectionCatalogQueryKey(slug, workspaceId, connectionId),
+    queryKey: connectionDirectoryQueryKey(slug, workspaceId, connectionId),
     queryFn: () =>
-      api.get<CatalogResponse>(
-        `${schemaBase(slug, workspaceId, connectionId)}/catalog`,
+      api.get<DirectoryResponse>(
+        `${schemaBase(slug, workspaceId, connectionId)}/directory`,
         schemaRequestOptions(sessionId),
       ),
     staleTime: 60_000,
     // Persistent snapshots are prepared asynchronously. Keep checking only
     // while the server reports that work is still in progress, then stop as
-    // soon as a catalog (or any terminal response) is available.
+    // soon as a directory (or any terminal response) is available.
     refetchInterval: (query) => (query.state.data?.status === 'pending' ? 1_000 : false),
   })
 }
@@ -142,14 +142,14 @@ export function connectionRelationshipsQueryKey(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-  namespace: string,
+  scope: ObjectRef['scope'],
 ) {
   return [
     'connection-relationships',
     slug,
     String(workspaceId),
     String(connectionId),
-    namespace,
+    JSON.stringify(scope),
   ] as const
 }
 
@@ -158,13 +158,13 @@ export function orgConnectionRelationshipsQueryOptions(
   workspaceId: string | number,
   connectionId: string | number,
   sessionId: string | undefined,
-  namespace: string,
+  scope: ObjectRef['scope'],
 ) {
   return queryOptions({
-    queryKey: connectionRelationshipsQueryKey(slug, workspaceId, connectionId, namespace),
+    queryKey: connectionRelationshipsQueryKey(slug, workspaceId, connectionId, scope),
     queryFn: async () => {
       const res = await api.get<RelationshipsResponse>(
-        `${schemaBase(slug, workspaceId, connectionId)}/relationships?namespace=${encodeURIComponent(namespace)}`,
+        `${schemaBase(slug, workspaceId, connectionId)}/relationships?scope=${encodeURIComponent(JSON.stringify(scope))}`,
         schemaRequestOptions(sessionId),
       )
       return res.graph
@@ -189,7 +189,7 @@ export function connectionObjectQueryKey(
 ) {
   return [
     ...connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId),
-    ref.namespace,
+    JSON.stringify(ref.scope),
     ref.kind,
     ref.name,
   ] as const
@@ -227,7 +227,7 @@ export function connectionPreviewQueryKey(
     slug,
     String(workspaceId),
     String(connectionId),
-    ref.namespace,
+    JSON.stringify(ref.scope),
     ref.kind,
     ref.name,
   ] as const
@@ -310,8 +310,8 @@ export function refreshConnectionSchema(
 
 /**
  * Invalidates a connection's cached schema after a whole-connection refresh:
- * the catalog and every lazily-fetched object detail. The server drops both on
- * refresh, so expanded object nodes must refetch — not just the catalog.
+ * the directory and every lazily-fetched object detail. The server drops both on
+ * refresh, so expanded object nodes must refetch — not just the directory.
  */
 export function invalidateConnectionSchemaQueries(
   queryClient: QueryClient,
@@ -321,7 +321,7 @@ export function invalidateConnectionSchemaQueries(
 ) {
   return Promise.all([
     queryClient.invalidateQueries({
-      queryKey: connectionCatalogQueryKey(slug, workspaceId, connectionId),
+      queryKey: connectionDirectoryQueryKey(slug, workspaceId, connectionId),
     }),
     queryClient.invalidateQueries({
       queryKey: connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId),

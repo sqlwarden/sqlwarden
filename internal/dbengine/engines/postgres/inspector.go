@@ -11,7 +11,6 @@ import (
 )
 
 var _ schema.SchemaInspector = (*postgresDriver)(nil)
-var _ schema.DirectoryInspector = (*postgresDriver)(nil)
 var _ schema.ScopeDiscoverer = (*postgresDriver)(nil)
 
 func (d *postgresDriver) SchemaSpec() schema.SchemaSpec {
@@ -27,8 +26,29 @@ func (d *postgresDriver) SchemaSpec() schema.SchemaSpec {
 	}
 }
 
-func (d *postgresDriver) InspectCatalog(ctx context.Context, opts schema.CatalogOptions) (*schema.Catalog, error) {
-	b := build.NewCatalog()
+func (d *postgresDriver) InspectDirectory(ctx context.Context, opts schema.DirectoryOptions) (*schema.Directory, error) {
+	var database string
+	var currentSchema sql.NullString
+	if err := d.db.QueryRowContext(ctx, `SELECT current_database(), current_schema()`).Scan(&database, &currentSchema); err != nil {
+		return nil, fmt.Errorf("postgres: directory database context: %w", err)
+	}
+	root := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: database})
+	defaultScope := root
+	if currentSchema.Valid {
+		defaultScope = root.Child(schema.ScopeSegment{Kind: "schema", Name: currentSchema.String})
+	}
+	if d.defaultScope != "" {
+		defaultScope = d.defaultScope
+	}
+	if opts.Root != "" {
+		defaultScope = opts.Root
+	}
+	scope := func(namespace string) schema.ScopePath {
+		return root.Child(schema.ScopeSegment{Kind: "schema", Name: namespace})
+	}
+
+	b := build.NewDirectory()
+	b.AddScope(root)
 	b.DeclareKind("table")
 	b.DeclareKind("view")
 	b.DeclareKind("materialized_view")
@@ -46,7 +66,7 @@ ORDER BY table_schema, table_name`
 		if t == "VIEW" {
 			kind = "view"
 		}
-		b.AddRef(ns, kind, name)
+		b.AddRef(scope(ns), kind, name)
 	}); err != nil {
 		return nil, fmt.Errorf("postgres: catalog tables: %w", err)
 	}
@@ -56,7 +76,7 @@ SELECT n.nspname, c.relname
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind = 'm' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
 ORDER BY n.nspname, c.relname`
-	if err := d.queryRefs(ctx, mvQ, func(ns, name, _ string) { b.AddRef(ns, "materialized_view", name) }); err != nil {
+	if err := d.queryRefs(ctx, mvQ, func(ns, name, _ string) { b.AddRef(scope(ns), "materialized_view", name) }); err != nil {
 		return nil, fmt.Errorf("postgres: catalog matviews: %w", err)
 	}
 
@@ -65,7 +85,7 @@ SELECT n.nspname, p.proname
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE p.prokind = 'f' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
 ORDER BY n.nspname, p.proname`
-	if err := d.queryRefs(ctx, fnQ, func(ns, name, _ string) { b.AddRef(ns, "function", name) }); err != nil {
+	if err := d.queryRefs(ctx, fnQ, func(ns, name, _ string) { b.AddRef(scope(ns), "function", name) }); err != nil {
 		return nil, fmt.Errorf("postgres: catalog functions: %w", err)
 	}
 
@@ -74,37 +94,11 @@ SELECT sequence_schema, sequence_name
 FROM information_schema.sequences
 WHERE sequence_schema NOT IN ('pg_catalog', 'information_schema')
 ORDER BY sequence_schema, sequence_name`
-	if err := d.queryRefs(ctx, seqQ, func(ns, name, _ string) { b.AddRef(ns, "sequence", name) }); err != nil {
+	if err := d.queryRefs(ctx, seqQ, func(ns, name, _ string) { b.AddRef(scope(ns), "sequence", name) }); err != nil {
 		return nil, fmt.Errorf("postgres: catalog sequences: %w", err)
 	}
 
-	var dbName string
-	var defaultNamespace sql.NullString
-	if err := d.db.QueryRowContext(ctx, `SELECT current_database(), current_schema()`).Scan(&dbName, &defaultNamespace); err != nil {
-		return nil, fmt.Errorf("postgres: catalog database context: %w", err)
-	}
-	catalog := b.Build("", "postgres", dbName)
-	catalog.DefaultNamespace = defaultNamespace.String
-	if selectedSchema := d.defaultScope.Name("schema"); selectedSchema != "" {
-		catalog.DefaultNamespace = selectedSchema
-	}
-	return catalog, nil
-}
-
-func (d *postgresDriver) InspectDirectory(ctx context.Context, opts schema.DirectoryOptions) (*schema.Directory, error) {
-	root := opts.Root
-	if root == "" {
-		root = d.defaultScope
-	}
-	catalog, err := d.InspectCatalog(ctx, schema.CatalogOptions{Database: root.Name("database")})
-	if err != nil {
-		return nil, err
-	}
-	directory := schema.DirectoryFromCatalog(catalog)
-	if root != "" {
-		directory.DefaultScope = root
-	}
-	return directory, nil
+	return b.Build("", "postgres", defaultScope), nil
 }
 
 func (d *postgresDriver) DiscoverScopes(ctx context.Context, request schema.ScopeDiscoveryRequest) (*schema.ScopeDiscovery, error) {
@@ -274,18 +268,18 @@ func pairFilter(refs []schema.ObjectRef, start int) (string, []any) {
 			sb.WriteString(",")
 		}
 		fmt.Fprintf(&sb, "($%d,$%d)", start+i*2, start+i*2+1)
-		args = append(args, r.Namespace, r.Name)
+		args = append(args, r.Scope.Name("schema"), r.Name)
 	}
 	return sb.String(), args
 }
 
 func (d *postgresDriver) inspectRelational(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
-	kindOf := make(map[string]string, len(refs))
+	refByName := make(map[string]schema.ObjectRef, len(refs))
 	for _, r := range refs {
-		kindOf[r.Namespace+"\x00"+r.Name] = r.Kind
+		refByName[r.Scope.Name("schema")+"\x00"+r.Name] = r
 	}
 	refFor := func(ns, name string) schema.ObjectRef {
-		return schema.ObjectRef{Namespace: ns, Kind: kindOf[ns+"\x00"+name], Name: name}
+		return refByName[ns+"\x00"+name]
 	}
 
 	b := build.NewRelational()
@@ -374,8 +368,9 @@ ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_positio
 			frows.Close()
 			return nil, fmt.Errorf("postgres: object fk scan: %w", err)
 		}
-		b.AddForeignKeyColumn(refFor(ns, tbl), name, col,
-			schema.ObjectRef{Namespace: refNs, Kind: "table", Name: refTbl}, refCol)
+		source := refFor(ns, tbl)
+		b.AddForeignKeyColumn(source, name, col,
+			schema.ObjectRef{Scope: source.Scope.With("schema", refNs), Kind: "table", Name: refTbl}, refCol)
 	}
 	if err := frows.Err(); err != nil {
 		frows.Close()
@@ -473,7 +468,7 @@ func (d *postgresDriver) attachPostgresTableDDL(ctx context.Context, objs []sche
 }
 
 func (d *postgresDriver) buildPostgresTableDDL(ctx context.Context, ref schema.ObjectRef) (string, error) {
-	args := []any{ref.Namespace, ref.Name}
+	args := []any{ref.Scope.Name("schema"), ref.Name}
 	relArg := `format('%I.%I', $1::text, $2::text)::regclass`
 
 	var qualified string
@@ -635,7 +630,7 @@ WHERE (n.nspname, c.relname) IN (`+pairs+`)`, args...)
 	crows.Close()
 
 	for i := range objs {
-		ns, name := objs[i].Ref.Namespace, objs[i].Ref.Name
+		ns, name := objs[i].Ref.Scope.Name("schema"), objs[i].Ref.Name
 		if c := tableComments[ns+"\x00"+name]; c != "" {
 			setObjectAttr(&objs[i], "comment", c)
 		}
@@ -662,7 +657,7 @@ func (d *postgresDriver) attachPostgresViewDefinitions(ctx context.Context, objs
 		var def sql.NullString
 		err := d.db.QueryRowContext(ctx,
 			`SELECT pg_get_viewdef(format('%I.%I', $1::text, $2::text)::regclass, true)`,
-			objs[i].Ref.Namespace, objs[i].Ref.Name).Scan(&def)
+			objs[i].Ref.Scope.Name("schema"), objs[i].Ref.Name).Scan(&def)
 		if err != nil {
 			return fmt.Errorf("postgres: view definition: %w", err)
 		}
@@ -703,7 +698,7 @@ func (d *postgresDriver) inspectMatviews(ctx context.Context, refs []schema.Obje
 		b.Ensure(r)
 	}
 	refFor := func(ns, name string) schema.ObjectRef {
-		return schema.ObjectRef{Namespace: ns, Kind: "materialized_view", Name: name}
+		return postgresRequestedRef(refs, ns, name, "materialized_view")
 	}
 	pairs, args := pairFilter(refs, 1)
 
@@ -768,7 +763,7 @@ ORDER BY n.nspname, p.proname`
 			fields = append(fields, schema.Field{Name: "Returns", Value: ret.String})
 		}
 		out = append(out, schema.Object{
-			Ref: schema.ObjectRef{Namespace: ns, Kind: "function", Name: name},
+			Ref: postgresRequestedRef(refs, ns, name, "function"),
 			Descriptors: []schema.Descriptor{
 				{Kind: "fields", Title: "Signature", Fields: fields},
 				{Kind: "source", Title: "Definition", Source: &schema.Source{Language: lang, Body: def}},
@@ -797,11 +792,24 @@ ORDER BY sequence_schema, sequence_name`
 			return nil, fmt.Errorf("postgres: sequence detail scan: %w", err)
 		}
 		out = append(out, schema.Object{
-			Ref: schema.ObjectRef{Namespace: ns, Kind: "sequence", Name: name},
+			Ref: postgresRequestedRef(refs, ns, name, "sequence"),
 			Descriptors: []schema.Descriptor{
 				{Kind: "fields", Title: "Sequence", Fields: []schema.Field{{Name: "Data type", Value: dtype}}},
 			},
 		})
 	}
 	return out, rows.Err()
+}
+
+func postgresRequestedRef(refs []schema.ObjectRef, namespace, name, kind string) schema.ObjectRef {
+	for _, ref := range refs {
+		if ref.Scope.Name("schema") == namespace && ref.Name == name {
+			return ref
+		}
+	}
+	var scope schema.ScopePath
+	if len(refs) > 0 {
+		scope = refs[0].Scope.With("schema", namespace)
+	}
+	return schema.ObjectRef{Scope: scope, Kind: kind, Name: name}
 }

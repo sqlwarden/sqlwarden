@@ -9,12 +9,15 @@ import (
 )
 
 func TestSchemaResolverAdaptsIndexMetadata(t *testing.T) {
-	catalog := &schema.Catalog{
-		Dialect: "postgres", Database: "app",
-		Namespaces: []schema.NamespaceCatalog{{Name: "public"}, {Name: "reporting"}},
+	root := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "app"})
+	public := root.Child(schema.ScopeSegment{Kind: "schema", Name: "public"})
+	reporting := root.Child(schema.ScopeSegment{Kind: "schema", Name: "reporting"})
+	directory := &schema.Directory{
+		Engine: "postgres", DefaultScope: reporting,
+		Roots: []schema.ScopeNode{{Path: root, Children: []schema.ScopeNode{{Path: public}, {Path: reporting}}}},
 	}
 	objects := []schema.Object{{
-		Ref: schema.ObjectRef{Namespace: "reporting", Kind: "view", Name: "Daily Sales"},
+		Ref: schema.ObjectRef{Scope: reporting, Kind: "view", Name: "Daily Sales"},
 		Relational: &schema.RelationalDetail{Columns: []schema.Column{{
 			Name: "Total", DataType: "numeric", Nullable: false,
 			Attributes: map[string]any{"comment": "daily total"},
@@ -24,7 +27,7 @@ func TestSchemaResolverAdaptsIndexMetadata(t *testing.T) {
 		}},
 	}}
 
-	index := schema.NewIndex(schema.MetadataSet{Catalog: catalog, Objects: objects, Version: "v1"})
+	index := schema.NewIndex(schema.MetadataSet{Directory: directory, Objects: objects, Version: "v1"})
 	resolver := NewSchemaResolver(index, "reporting")
 	if resolver.DefaultDatabase() != "app" || resolver.DefaultSchema() != "reporting" {
 		t.Fatalf("unexpected defaults: %q %q", resolver.DefaultDatabase(), resolver.DefaultSchema())
@@ -48,17 +51,15 @@ func TestSchemaResolverAdaptsIndexMetadata(t *testing.T) {
 }
 
 func TestSchemaResolverDefaultAndMySQLNamespaceFallbacks(t *testing.T) {
-	catalog := &schema.Catalog{
-		Dialect: "mysql", Database: "sakila",
-		Namespaces: []schema.NamespaceCatalog{{Name: "sakila"}},
-	}
+	scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "sakila"})
+	directory := &schema.Directory{Engine: "mysql", DefaultScope: scope, Roots: []schema.ScopeNode{{Path: scope}}}
 	objects := []schema.Object{{
-		Ref: schema.ObjectRef{Namespace: "sakila", Kind: "table", Name: "film"},
+		Ref: schema.ObjectRef{Scope: scope, Kind: "table", Name: "film"},
 		Relational: &schema.RelationalDetail{Columns: []schema.Column{{
 			Name: "film_id", DataType: "smallint",
 		}}},
 	}}
-	index := schema.NewIndex(schema.MetadataSet{Catalog: catalog, Objects: objects})
+	index := schema.NewIndex(schema.MetadataSet{Directory: directory, Objects: objects})
 	resolver := NewSchemaResolver(index, "")
 	if _, ok := resolver.FindRelation("", "", "film"); !ok {
 		t.Fatal("MySQL database-as-namespace fallback did not resolve film")
