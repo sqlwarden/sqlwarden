@@ -138,8 +138,8 @@ func TestWorkspaceRoleBindingFlowsToConnection(t *testing.T) {
 		t.Error("workspace role binding should flow to connection inside that workspace")
 	}
 	// But not permissions the role doesn't include.
-	if e.Can(ctx, memberID, orgID, "org", "connection", conn.ID, access.PermConnWrite) {
-		t.Error("member should NOT have conn:write — it is not in the role")
+	if e.Can(ctx, memberID, orgID, "org", "connection", conn.ID, access.PermConnUpdate) {
+		t.Error("member should NOT have conn:update — it is not in the role")
 	}
 }
 
@@ -970,7 +970,7 @@ func TestWsMemberRoleBasicPermissions(t *testing.T) {
 	denied := []string{
 		access.PermOrgWrite, access.PermOrgInvite, access.PermWsWrite, access.PermWsDelete,
 		access.PermEnvRead, access.PermConnRead, access.PermConnDQL,
-		access.PermConnWrite, access.PermConnDelete, access.PermPolicyModify,
+		access.PermConnUpdate, access.PermConnDelete, access.PermPolicyModify,
 	}
 	for _, p := range denied {
 		if e.Can(ctx, memberID, orgID, "org", "workspace", ws.ID, p) {

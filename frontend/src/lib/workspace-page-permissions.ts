@@ -10,7 +10,7 @@ export const workspaceEnvironmentPagePermissions = [
   permission.envDelete,
   permission.envDeploy,
   permission.connRead,
-  permission.connWrite,
+  permission.connUpdate,
   permission.connCreate,
   permission.connDelete,
   permission.connExecute,
@@ -21,7 +21,7 @@ export const workspaceEnvironmentPagePermissions = [
 
 export const workspaceConnectionPagePermissions = [
   permission.connRead,
-  permission.connWrite,
+  permission.connUpdate,
   permission.connCreate,
   permission.connDelete,
   permission.connExecute,

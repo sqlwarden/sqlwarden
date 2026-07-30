@@ -30,7 +30,7 @@ const (
 	PermEnvDeploy = "env:deploy"
 
 	PermConnRead    = "conn:read"
-	PermConnWrite   = "conn:write"
+	PermConnUpdate  = "conn:update"
 	PermConnCreate  = "conn:create"
 	PermConnDelete  = "conn:delete"
 	PermConnExecute = "conn:execute"
@@ -80,7 +80,7 @@ var PermissionCatalog = []PermissionDefinition{
 	{Key: PermEnvDeploy, Label: "Deploy to environments", Description: "Run deployment-oriented environment actions.", Group: "Environment"},
 
 	{Key: PermConnRead, Label: "View connections", Description: "View connection metadata without exposing the DSN.", Group: "Connection"},
-	{Key: PermConnWrite, Label: "Manage connections", Description: "Update connection configuration, including sensitive DSN changes where allowed.", Group: "Connection"},
+	{Key: PermConnUpdate, Label: "Manage connections", Description: "Update connection configuration, including sensitive DSN changes where allowed.", Group: "Connection"},
 	{Key: PermConnCreate, Label: "Create connections", Description: "Create and test new database connections.", Group: "Connection"},
 	{Key: PermConnDelete, Label: "Delete connections", Description: "Delete database connections.", Group: "Connection"},
 	{Key: PermConnExecute, Label: "Execute all queries", Description: "Run DQL, DML, and DDL queries through accessible connections.", Group: "Connection"},
@@ -102,7 +102,7 @@ var ScopePermissions = map[string][]string{
 		PermWsRead, PermWsWrite, PermWsCreate, PermWsDelete,
 		PermWsFileRead, PermWsFileCreate, PermWsFileWrite, PermWsFileDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
-		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnRead, PermConnUpdate, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
 		PermPolicyRead, PermPolicyModify,
 	},
@@ -110,17 +110,17 @@ var ScopePermissions = map[string][]string{
 		PermWsRead, PermWsWrite,
 		PermWsFileRead, PermWsFileCreate, PermWsFileWrite, PermWsFileDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
-		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnRead, PermConnUpdate, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
 		PermPolicyRead, PermPolicyModify,
 	},
 	"environment": {
 		PermEnvRead, PermEnvWrite, PermEnvDelete, PermEnvDeploy,
-		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnRead, PermConnUpdate, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
 	},
 	"connection": {
-		PermConnRead, PermConnWrite, PermConnDelete, PermConnExecute,
+		PermConnRead, PermConnUpdate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
 	},
 }
@@ -137,17 +137,17 @@ var ResourcePermissions = map[string][]string{
 		PermWsRead, PermWsWrite, PermWsDelete,
 		PermWsFileRead, PermWsFileCreate, PermWsFileWrite, PermWsFileDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
-		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnRead, PermConnUpdate, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
 		PermPolicyRead, PermPolicyModify,
 	},
 	"environment": {
 		PermEnvRead, PermEnvWrite, PermEnvDelete, PermEnvDeploy,
-		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnRead, PermConnUpdate, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
 	},
 	"connection": {
-		PermConnRead, PermConnWrite, PermConnDelete, PermConnExecute,
+		PermConnRead, PermConnUpdate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
 	},
 }
@@ -162,7 +162,7 @@ var OrgBuiltinRoles = map[string][]string{
 		PermWsCreate, PermWsDelete, PermWsRead, PermWsWrite,
 		PermWsFileRead, PermWsFileCreate, PermWsFileWrite, PermWsFileDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
-		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnRead, PermConnUpdate, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
 		PermPolicyRead, PermPolicyModify,
 	},
@@ -184,7 +184,7 @@ var WorkspaceBuiltinRoles = map[string][]string{
 		PermWsRead, PermWsWrite,
 		PermWsFileRead, PermWsFileCreate, PermWsFileWrite, PermWsFileDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
-		PermConnRead, PermConnWrite, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnRead, PermConnUpdate, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
 		PermPolicyRead, PermPolicyModify,
 	},

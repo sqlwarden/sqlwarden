@@ -160,7 +160,7 @@ func TestEffectivePermissionsConnectionFiltersToConnectionPermissionsOnly(t *tes
 	wsID := strconv.FormatInt(ws.ID, 10)
 	envID := createWorkspaceEnvironment(t, app, ownerTok, org.Slug, wsID, "staging")
 	connID := createWorkspaceConnection(t, app, ownerTok, org.Slug, wsID, "primary", &envID)
-	orgRoleID := createRoleForTest(t, app, org.ID, nil, "org", "ws:write", "conn:write")
+	orgRoleID := createRoleForTest(t, app, org.ID, nil, "org", "ws:write", "conn:update")
 	envRoleID := createRoleForTest(t, app, org.ID, nil, "environment", "env:read", "conn:read")
 	connRoleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:execute")
 
@@ -170,7 +170,7 @@ func TestEffectivePermissionsConnectionFiltersToConnectionPermissionsOnly(t *tes
 
 	permissions := effectivePermissions(t, app, memberTok, org.Slug, "connection", connID)
 
-	assertHasPermissions(t, permissions, "conn:write", "conn:read", "conn:execute")
+	assertHasPermissions(t, permissions, "conn:update", "conn:read", "conn:execute")
 	assertMissingPermissions(t, permissions, "ws:write", "env:read")
 }
 

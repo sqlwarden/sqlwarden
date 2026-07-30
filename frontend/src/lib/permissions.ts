@@ -25,7 +25,7 @@ export const permission = {
   envDeploy: 'env:deploy',
 
   connRead: 'conn:read',
-  connWrite: 'conn:write',
+  connUpdate: 'conn:update',
   connCreate: 'conn:create',
   connDelete: 'conn:delete',
   connExecute: 'conn:execute',
