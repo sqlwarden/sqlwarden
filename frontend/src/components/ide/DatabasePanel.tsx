@@ -31,8 +31,19 @@ import { buildEnvironmentMenu } from './contextMenus/environmentMenu'
 import { SidebarPane } from './SidebarPane'
 import { SchemaTree } from './SchemaTree'
 import { ConnectionDialog } from './ConnectionDialog'
+import { EditConnectionDialog } from './EditConnectionDialog'
 import { DriverBadge } from './DriverBadge'
 import { Button } from '#/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '#/components/ui/alert-dialog'
 import {
   Dialog,
   DialogClose,
@@ -533,6 +544,8 @@ function ConnectionRow({
     return s.tabs.find((t) => t.id === id)?.connectionId === connection.id
   })
   const queryClient = useQueryClient()
+  const [editOpen, setEditOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const refresh = useMutation({
     mutationFn: () =>
       refreshConnectionSchema(orgSlug, connection.workspace_id, connection.id, sessionId ?? ''),
@@ -543,6 +556,22 @@ function ConnectionRow({
         connection.workspace_id,
         connection.id,
       )
+    },
+  })
+  const deleteConnection = useMutation({
+    mutationFn: () =>
+      api.delete<void>(
+        `/api/v1/orgs/${orgSlug}/workspaces/${connection.workspace_id}/connections/${connection.id}`,
+      ),
+    onSuccess: async () => {
+      setDeleteOpen(false)
+      toast.success('Connection deleted')
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgWorkspaceConnectionsScope(orgSlug, connection.workspace_id),
+      })
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Failed to delete connection'))
     },
   })
 
@@ -559,6 +588,8 @@ function ConnectionRow({
         to: '/orgs/$org_slug/workspaces/$workspace_id/connections',
         params: { org_slug: orgSlug, workspace_id: String(connection.workspace_id) },
       }),
+    onEditConnection: () => setEditOpen(true),
+    onDeleteConnection: () => setDeleteOpen(true),
   })
 
   return (
@@ -648,6 +679,39 @@ function ConnectionRow({
           />
         </div>
       )}
+
+      <EditConnectionDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        orgSlug={orgSlug}
+        workspaceId={connection.workspace_id}
+        connection={connection}
+      />
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete connection?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes{' '}
+              <span className="font-medium text-foreground">{connection.name}</span> and drops any
+              active sessions.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel variant="ghost" disabled={deleteConnection.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deleteConnection.isPending}
+              onClick={() => deleteConnection.mutate()}
+            >
+              {deleteConnection.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

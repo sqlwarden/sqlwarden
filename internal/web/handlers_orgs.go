@@ -419,7 +419,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 	}
 
 	input.V.CheckField(input.Role != "", "role", "Role is required.")
-	input.V.CheckField(input.Role == access.BuiltinOrgOwnerRole || input.Role == access.BuiltinOrgAdminRole, "role", "Role must be Owner or Administrator.")
+	input.V.CheckField(input.Role == access.BuiltinOrgOwnerRole || input.Role == access.BuiltinOrgAdminRole || input.Role == access.BuiltinOrgMemberRole, "role", "Role must be Owner, Administrator, or Baseline Access.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -476,7 +476,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 
 	var builtinRoleIDs []int64
 	for _, role := range roles {
-		if role.IsBuiltin && (role.Name == access.BuiltinOrgOwnerRole || role.Name == access.BuiltinOrgAdminRole) {
+		if role.IsBuiltin && (role.Name == access.BuiltinOrgOwnerRole || role.Name == access.BuiltinOrgAdminRole || role.Name == access.BuiltinOrgMemberRole) {
 			builtinRoleIDs = append(builtinRoleIDs, role.ID)
 		}
 	}

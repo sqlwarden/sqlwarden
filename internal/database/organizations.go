@@ -392,7 +392,7 @@ SELECT
 	om.account_id,
 	a.email,
 	a.name,
-	COALESCE(MAX(CASE WHEN ro.name IN (?, ?) THEN ro.name END), '') AS role,
+	COALESCE(MAX(CASE WHEN ro.name IN (?, ?, ?) THEN ro.name END), '') AS role,
 	om.joined_at
 FROM org_members AS om
 JOIN accounts AS a ON a.id = om.account_id
@@ -407,7 +407,7 @@ WHERE om.org_id = ? AND om.account_id = ?
 GROUP BY om.org_id, om.account_id, a.email, a.name, om.joined_at`
 
 	var item OrgMemberListItem
-	err := db.NewRaw(query, access.BuiltinOrgOwnerRole, access.BuiltinOrgAdminRole, orgID, accountID).Scan(ctx, &item)
+	err := db.NewRaw(query, access.BuiltinOrgOwnerRole, access.BuiltinOrgAdminRole, access.BuiltinOrgMemberRole, orgID, accountID).Scan(ctx, &item)
 	if errors.Is(err, sql.ErrNoRows) {
 		return OrgMemberListItem{}, false, nil
 	}

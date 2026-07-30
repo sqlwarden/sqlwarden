@@ -309,6 +309,22 @@ func TestUpdateOrgMemberRole(t *testing.T) {
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNoContent)
 
+	// Demote admin back to baseline member access.
+	demoteReq := newTestRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+memberID, map[string]any{
+		"role": access.BuiltinOrgMemberRole,
+	})
+	demoteReq.Header.Set("Authorization", "Bearer "+ownerTok)
+	demoteRes := send(t, demoteReq, app.routes())
+	assert.Equal(t, demoteRes.StatusCode, http.StatusNoContent)
+
+	getReq := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members/"+memberID, nil)
+	getReq.Header.Set("Authorization", "Bearer "+ownerTok)
+	getRes := send(t, getReq, app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	var member database.OrgMemberListItem
+	decodeJSONResponse(t, getRes.BodyBytes, &member)
+	assert.Equal(t, member.Role, access.BuiltinOrgMemberRole)
+
 	// Demoting last owner should fail with 422.
 	req2 := newTestRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+ownerID, map[string]any{
 		"role": access.BuiltinOrgMemberRole,
