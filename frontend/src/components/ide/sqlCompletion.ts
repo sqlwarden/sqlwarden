@@ -413,6 +413,12 @@ function hasDMLContext(tokens: SQLTriggerToken[]): boolean {
   )
 }
 
+function hasSemanticIdentifierContext(source: string, cursor: number, prefix: string): boolean {
+  if (prefix.length < 2) return false
+  const scan = scanSQLTriggerPrefix(source.slice(0, cursor))
+  return !scan.protectedRegion && hasDMLContext(scan.tokens)
+}
+
 export function automaticSQLCompletionTrigger(source: string, cursor: number): string | undefined {
   if (cursor <= 0 || cursor > source.length) return undefined
   const trigger = source[cursor - 1]
@@ -500,18 +506,6 @@ function suggestionToCompletion(suggestion: SQLCompletionSuggestion): Completion
   }
 }
 
-function mergeCompletions(primary: Completion[], secondary: Completion[]): Completion[] {
-  const result: Completion[] = []
-  const seen = new Set<string>()
-  for (const completion of [...primary, ...secondary]) {
-    const key = `${completion.type || ''}\0${completion.label.toLocaleLowerCase()}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    result.push(completion)
-  }
-  return result
-}
-
 export function remoteSQLCompletionSource(config: SQLCompletionConfig): CompletionSource {
   const dialect = dialectForDriver(config.driver)
   const localKeywords = keywordCompletionSource(dialect, true)
@@ -525,7 +519,6 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
     const automaticTrigger = context.explicit
       ? undefined
       : automaticSQLCompletionTrigger(source, context.pos)
-    const shouldCompleteLexically = context.explicit || prefix.length >= 2
     const driver = normalizedDriver(config.driver)
     const supportsSemanticCompletion = driver !== 'sqlite' && driver !== 'standard'
     const hasRemote =
@@ -534,7 +527,21 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
       config.workspaceId !== undefined &&
       config.connectionId !== undefined &&
       config.driver !== undefined
-    const shouldCompleteRemotely = hasRemote && (context.explicit || automaticTrigger !== undefined)
+    // Vocabulary is a last-resort prefix lookup, not a context-free menu.
+    // In particular, Ctrl+Space at an empty prefix must not dump every dialect
+    // keyword and function into an otherwise precise semantic result.
+    const shouldCompleteLexically =
+      prefix.length >= 2 || (context.explicit && prefix.length > 0)
+    // CodeMirror can invalidate a pending request from a semantic boundary
+    // (for example "FROM ") as the user immediately continues typing. Once
+    // the prefix has settled for the normal activation delay, retry against
+    // the current document. A completed result remains locally filterable via
+    // validFor, so this does not turn every subsequent keystroke into a fetch.
+    const shouldRetrySemanticIdentifier =
+      !context.explicit && hasSemanticIdentifierContext(source, context.pos, prefix)
+    const shouldCompleteRemotely =
+      hasRemote &&
+      (context.explicit || automaticTrigger !== undefined || shouldRetrySemanticIdentifier)
 
     if (context.explicit && config.connectionId === undefined) {
       config.onConnectionRequired?.()
@@ -550,9 +557,8 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
         } else {
           const foldedPrefix = prefix.toLocaleLowerCase()
           lexical = vocabulary
-            .filter(
-              (suggestion) =>
-                context.explicit || suggestion.label.toLocaleLowerCase().startsWith(foldedPrefix),
+            .filter((suggestion) =>
+              suggestion.label.toLocaleLowerCase().startsWith(foldedPrefix),
             )
             .map(suggestionToCompletion)
         }
@@ -595,7 +601,10 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
       const semantic = result.suggestions
         .filter((suggestion) => suggestion.replace_start === from)
         .map(suggestionToCompletion)
-      const options = mergeCompletions(semantic, lexical)
+      // The backend has statement grammar and schema metadata; its contextual
+      // result is authoritative. Lexical vocabulary is used only when semantic
+      // completion has no answer.
+      const options = semantic.length > 0 ? semantic : lexical
       if (options.length === 0) return null
       return {
         from: Math.max(0, Math.min(from, context.pos)),
