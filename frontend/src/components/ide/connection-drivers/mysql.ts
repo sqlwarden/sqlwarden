@@ -25,10 +25,9 @@ export const mysqlDriver: DriverDef = {
     },
     {
       key: 'database',
-      label: 'Database',
+      label: 'Database (optional)',
       type: 'text',
-      placeholder: 'mydb',
-      required: true,
+      placeholder: 'Optional',
       section: 'Server',
     },
     {

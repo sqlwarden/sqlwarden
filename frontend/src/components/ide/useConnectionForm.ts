@@ -4,14 +4,18 @@ import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
 import { errorMessage, isApiError } from '#/lib/api/errors'
 import { queryKeys } from '#/lib/api/query-keys'
-import type { Environment } from '#/lib/api/types'
+import type { Environment, ScopePath } from '#/lib/api/types'
 import { defaultFieldValues, driverMap, drivers } from './connection-drivers'
 
 export type ConnectionFormStage = 'driver' | 'form'
+export type ScopeDiscovery = {
+  current?: ScopePath
+  scopes: ScopePath[]
+}
 export type ConnectionTestState =
   | { status: 'idle' }
   | { status: 'pending' }
-  | { status: 'ok'; latencyMs: number }
+  | { status: 'ok'; latencyMs: number; discoveryError?: string }
   | { status: 'error'; message: string }
 
 export type ConnectionFormErrors = {
@@ -44,6 +48,8 @@ export function useConnectionForm({
   const [fields, setFields] = useState<Record<string, string>>(() => defaultFieldValues(drivers[0]))
   const [errors, setErrors] = useState<ConnectionFormErrors>({ fields: {} })
   const [testState, setTestState] = useState<ConnectionTestState>({ status: 'idle' })
+  const [scopeDiscovery, setScopeDiscovery] = useState<ScopeDiscovery>()
+  const [defaultScope, setDefaultScope] = useState<ScopePath>([])
   const currentDriver = driverMap.get(driverId) ?? drivers[0]
 
   useEffect(() => {
@@ -62,6 +68,8 @@ export function useConnectionForm({
       setFields(defaultFieldValues(definition))
       setErrors({ fields: {} })
       setTestState({ status: 'idle' })
+      setScopeDiscovery(undefined)
+      setDefaultScope([])
     }
     setDriverId(nextDriverId)
     setStage('form')
@@ -74,6 +82,10 @@ export function useConnectionForm({
       return { ...current, fields: remaining }
     })
     setTestState({ status: 'idle' })
+    setScopeDiscovery(undefined)
+    if (key === 'database') {
+      setDefaultScope(value ? [{ kind: 'database', name: value }] : [])
+    }
   }
 
   function changeName(value: string) {
@@ -100,6 +112,8 @@ export function useConnectionForm({
     setFields(defaultFieldValues(drivers[0]))
     setErrors({ fields: {} })
     setTestState({ status: 'idle' })
+    setScopeDiscovery(undefined)
+    setDefaultScope([])
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -128,19 +142,82 @@ export function useConnectionForm({
 
   const testConnection = useMutation({
     mutationFn: () =>
-      api.post<{ ok: boolean; latency_ms: number; error?: string }>(
-        `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections/test`,
-        { driver: driverId, dsn: buildDSN() },
-      ),
+      api.post<{
+        ok: boolean
+        latency_ms: number
+        error?: string
+        scope_discovery?: ScopeDiscovery
+        scope_discovery_error?: string
+      }>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections/test`, {
+        driver: driverId,
+        dsn: buildDSN(),
+      }),
     onMutate: () => setTestState({ status: 'pending' }),
-    onSuccess: (data) =>
+    onSuccess: (data) => {
+      if (data.ok && data.scope_discovery) {
+        setScopeDiscovery(data.scope_discovery)
+        if (data.scope_discovery.current?.length) {
+          const current = data.scope_discovery.current
+          setDefaultScope(current)
+          const database = scopeSegmentName(current, 'database')
+          if (database) {
+            setFields((values) => ({ ...values, database }))
+          }
+        }
+      } else {
+        setScopeDiscovery(undefined)
+      }
       setTestState(
         data.ok
-          ? { status: 'ok', latencyMs: data.latency_ms }
+          ? {
+              status: 'ok',
+              latencyMs: data.latency_ms,
+              discoveryError: data.scope_discovery_error,
+            }
           : { status: 'error', message: data.error ?? 'Connection failed.' },
-      ),
+      )
+    },
     onError: () => setTestState({ status: 'error', message: 'Request failed.' }),
   })
+
+  function selectDatabase(database: string) {
+    if (!database) {
+      setFields((values) => ({ ...values, database: '' }))
+      setDefaultScope([])
+      setTestState({ status: 'idle' })
+      return
+    }
+    const databaseScope = scopeDiscovery?.scopes.find(
+      (scope) => scope.length === 1 && scopeSegmentName(scope, 'database') === database,
+    ) ?? [{ kind: 'database', name: database }]
+    setFields((values) => ({ ...values, database }))
+    const current = scopeDiscovery?.current
+    if (current && scopeSegmentName(current, 'database') !== database) {
+      setTestState({ status: 'idle' })
+    }
+    setDefaultScope(
+      current && scopeSegmentName(current, 'database') === database ? current : databaseScope,
+    )
+  }
+
+  function selectSchema(schema: string) {
+    const database = scopeSegmentName(defaultScope, 'database') ?? fields.database
+    if (!schema) {
+      setDefaultScope(database ? [{ kind: 'database', name: database }] : [])
+      return
+    }
+    const discovered = scopeDiscovery?.scopes.find(
+      (scope) =>
+        scopeSegmentName(scope, 'database') === database &&
+        scopeSegmentName(scope, 'schema') === schema,
+    )
+    setDefaultScope(
+      discovered ?? [
+        { kind: 'database', name: database },
+        { kind: 'schema', name: schema },
+      ],
+    )
+  }
 
   const createConnection = useMutation({
     mutationFn: () =>
@@ -150,6 +227,7 @@ export function useConnectionForm({
         dsn: buildDSN(),
         environment_id: Number(environmentId),
         access_mode: 'open',
+        default_scope: defaultScope,
       }),
     onSuccess: async () => {
       onOpenChange(false)
@@ -190,6 +268,7 @@ export function useConnectionForm({
     changeName,
     createConnection,
     currentDriver,
+    defaultScope,
     driverId,
     environmentId,
     errors,
@@ -198,6 +277,9 @@ export function useConnectionForm({
     name,
     pickDriver,
     requiredFieldsFilled,
+    scopeDiscovery,
+    selectDatabase,
+    selectSchema,
     selectedEnvironmentName,
     setStage,
     stage,
@@ -205,4 +287,8 @@ export function useConnectionForm({
     testConnection,
     testState,
   }
+}
+
+export function scopeSegmentName(scope: ScopePath | undefined, kind: string): string | undefined {
+  return scope?.find((segment) => segment.kind === kind)?.name
 }

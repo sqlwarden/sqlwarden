@@ -114,6 +114,10 @@ export function orgConnectionCatalogQueryOptions(
         schemaRequestOptions(sessionId),
       ),
     staleTime: 60_000,
+    // Persistent snapshots are prepared asynchronously. Keep checking only
+    // while the server reports that work is still in progress, then stop as
+    // soon as a catalog (or any terminal response) is available.
+    refetchInterval: (query) => (query.state.data?.status === 'pending' ? 1_000 : false),
   })
 }
 

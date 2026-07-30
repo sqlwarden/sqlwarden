@@ -8,6 +8,21 @@ import (
 )
 
 var _ schema.RelationshipInspector = (*mysqlDriver)(nil)
+var _ schema.ScopedRelationshipInspector = (*mysqlDriver)(nil)
+
+func (d *mysqlDriver) InspectRelationshipsInScope(ctx context.Context, scope schema.ScopePath) (*schema.RelationshipGraph, error) {
+	graph, err := d.InspectRelationships(ctx, scope.Name("database"))
+	if err != nil {
+		return nil, err
+	}
+	graph.Scope = scope
+	for index := range graph.Relationships {
+		graph.Relationships[index].Kind = "foreign_key"
+		graph.Relationships[index].Source.Scope = scope
+		graph.Relationships[index].References.Scope = scope
+	}
+	return graph, nil
+}
 
 // InspectRelationships returns every foreign-key edge in a namespace (database)
 // without loading column/index detail — the cheap topology tier for the ER

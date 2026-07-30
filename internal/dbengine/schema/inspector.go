@@ -25,8 +25,37 @@ type RelationshipInspector interface {
 	InspectRelationships(ctx context.Context, namespace string) (*RelationshipGraph, error)
 }
 
-// CatalogOptions scopes a catalog request. Empty fields mean the driver's
-// current/default database and all namespaces.
+// DirectoryInspector is the generalized listing capability new engines should
+// implement. Legacy SchemaInspector remains available during migration.
+type DirectoryInspector interface {
+	SchemaSpec() SchemaSpec
+	InspectDirectory(ctx context.Context, opts DirectoryOptions) (*Directory, error)
+	InspectObjects(ctx context.Context, refs []ObjectRef) ([]Object, error)
+}
+
+type ScopedRelationshipInspector interface {
+	InspectRelationshipsInScope(ctx context.Context, scope ScopePath) (*RelationshipGraph, error)
+}
+
+type DirectoryOptions struct {
+	Root ScopePath
+}
+
+// ScopeDiscoverer is the optional cheap connection-time hierarchy capability.
+// It lists scopes only and must not inspect database objects.
+type ScopeDiscoverer interface {
+	DiscoverScopes(ctx context.Context, request ScopeDiscoveryRequest) (*ScopeDiscovery, error)
+}
+
+type ScopeDiscoveryRequest struct {
+	Parent ScopePath `json:"parent,omitempty"`
+}
+
+type ScopeDiscovery struct {
+	Current ScopePath   `json:"current,omitempty"`
+	Scopes  []ScopePath `json:"scopes"`
+}
+
 type CatalogOptions struct {
 	Database  string
 	Namespace string

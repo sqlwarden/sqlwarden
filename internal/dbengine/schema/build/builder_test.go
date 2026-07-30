@@ -30,6 +30,29 @@ func TestCatalogBuilderOrdersGroupsByDeclaration(t *testing.T) {
 	}
 }
 
+func TestCatalogBuilderBuildsArbitraryScopeDepth(t *testing.T) {
+	b := NewCatalog()
+	root := schema.NewScopePath(schema.ScopeSegment{Kind: "cluster", Name: "primary"})
+	database := root.Child(schema.ScopeSegment{Kind: "database", Name: "analytics"})
+	nested := database.Child(schema.ScopeSegment{Kind: "schema", Name: "reporting"})
+	b.AddRef(root, "cluster", "primary")
+	b.AddRef(database, "database", "analytics")
+	b.AddRef(nested, "table", "orders")
+
+	directory := b.BuildDirectory("conn", "future-engine", nested)
+	if directory.DefaultScope != nested || len(directory.Roots) != 1 {
+		t.Fatalf("directory header/roots = %+v", directory)
+	}
+	databaseNode := directory.Roots[0].Children
+	if len(databaseNode) != 1 || len(databaseNode[0].Children) != 1 {
+		t.Fatalf("nested hierarchy = %+v", directory.Roots)
+	}
+	tableNode := databaseNode[0].Children[0]
+	if tableNode.Path != nested || tableNode.Groups[0].Objects[0].Scope != nested {
+		t.Fatalf("nested object scope = %+v", tableNode)
+	}
+}
+
 func TestRelationalBuilderQualifiedFK(t *testing.T) {
 	b := NewRelational()
 	users := schema.ObjectRef{Namespace: "public", Kind: "table", Name: "users"}

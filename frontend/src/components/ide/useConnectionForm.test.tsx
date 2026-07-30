@@ -152,4 +152,32 @@ describe('useConnectionForm', () => {
     )
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['org-workspace-connections', 'acme', 3] })
   })
+
+  it('allows an explicitly unscoped connection after discovery', async () => {
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/test', () =>
+        HttpResponse.json({
+          ok: true,
+          latency_ms: 7,
+          scope_discovery: {
+            current: [
+              { kind: 'database', name: 'analytics' },
+              { kind: 'schema', name: 'public' },
+            ],
+            scopes: [[{ kind: 'database', name: 'analytics' }]],
+          },
+        }),
+      ),
+    )
+    const { result } = renderForm()
+    act(() => result.current.pickDriver(drivers[0].id))
+    fillRequiredFields(result)
+    await act(() => result.current.testConnection.mutateAsync())
+    expect(result.current.defaultScope).toHaveLength(2)
+
+    act(() => result.current.selectDatabase(''))
+
+    expect(result.current.defaultScope).toEqual([])
+    expect(result.current.fields.database).toBe('')
+  })
 })

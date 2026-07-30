@@ -81,6 +81,144 @@ func TestPostgresCompletionDefaultSchema(t *testing.T) {
 	}
 }
 
+func TestPostgresCompleteUsesCatalogDefaultSchemaForUnqualifiedTables(t *testing.T) {
+	driver := &postgresDriver{}
+	catalog := &schema.Catalog{
+		Dialect:          "postgres",
+		Database:         "analytics",
+		DefaultNamespace: "tenant",
+		Namespaces: []schema.NamespaceCatalog{
+			{
+				Name: "public",
+				Groups: []schema.ObjectGroupCatalog{{
+					Kind: "table",
+					Objects: []schema.ObjectRef{{
+						Namespace: "public", Kind: "table", Name: "public_orders",
+					}},
+				}},
+			},
+			{
+				Name: "tenant",
+				Groups: []schema.ObjectGroupCatalog{{
+					Kind: "table",
+					Objects: []schema.ObjectRef{{
+						Namespace: "tenant", Kind: "table", Name: "tenant_orders",
+					}},
+				}},
+			},
+		},
+	}
+	objects := []schema.Object{
+		{
+			Ref: schema.ObjectRef{Namespace: "public", Kind: "table", Name: "public_orders"},
+			Relational: &schema.RelationalDetail{Columns: []schema.Column{{
+				Name: "id", DataType: "bigint",
+			}}},
+		},
+		{
+			Ref: schema.ObjectRef{Namespace: "tenant", Kind: "table", Name: "tenant_orders"},
+			Relational: &schema.RelationalDetail{Columns: []schema.Column{{
+				Name: "id", DataType: "bigint",
+			}}},
+		},
+	}
+	sql := "SELECT * FROM "
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql),
+		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireCompletion(t, result, "tenant_orders", "table")
+	requireNoCompletion(t, result, "public_orders", "table")
+}
+
+func TestPostgresCompleteHidesNativeParserArtifacts(t *testing.T) {
+	driver := &postgresDriver{}
+	catalog := completionTestCatalog("postgres", "public")
+	objects := completionTestObjects("public")
+
+	afterSelectList := "SELECT * "
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: afterSelectList, CursorOffset: len(afterSelectList),
+		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireCompletion(t, result, "FROM", "keyword")
+	requireNoCompletion(t, result, ",", "keyword")
+	requireNoCompletion(t, result, ";", "keyword")
+
+	afterFrom := "SELECT * FROM "
+	result, err = driver.Complete(context.Background(), completer.Request{
+		SQL: afterFrom, CursorOffset: len(afterFrom),
+		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireCompletion(t, result, "users", "table")
+	requireNoCompletion(t, result, "_x", "table")
+	requireNoCompletion(t, result, "(", "keyword")
+}
+
+func TestPostgresCompleteUsesStatementAtCursor(t *testing.T) {
+	driver := &postgresDriver{}
+	catalog := completionTestCatalog("postgres", "public")
+	objects := completionTestObjects("public")
+	sql := `select s.first_name, s.last_name, a.address from staff s
+join store st
+on s.staff_id = st.manager_staff_id
+join address a
+on a.address_id = s.address_id;
+
+select * from `
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql),
+		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireCompletion(t, result, "users", "table")
+}
+
+func TestPostgresCompleteRecoversNewSelectWithoutSemicolon(t *testing.T) {
+	driver := &postgresDriver{}
+	catalog := completionTestCatalog("postgres", "public")
+	objects := completionTestObjects("public")
+	sql := `select s.first_name, s.last_name, a.address from staff s
+join store st
+on s.staff_id = st.manager_staff_id
+join address a
+on a.address_id = s.address_id;
+
+select * from actor
+
+select * from `
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql),
+		Schema: &schema.MetadataSet{Catalog: catalog, Objects: objects},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireCompletion(t, result, "users", "table")
+}
+
+func TestPostgresCompletionRecoveryDoesNotSplitNestedSelects(t *testing.T) {
+	for _, sql := range []string{
+		"WITH recent AS (\n  SELECT * FROM users\n)\nSELECT * FROM ",
+		"SELECT * FROM (\n  SELECT * FROM users\n) nested WHERE ",
+	} {
+		if recovered, _, ok := postgresCompletionRecoveryStatement(sql, len(sql)); ok {
+			t.Fatalf("unexpected recovery statement %q for %q", recovered, sql)
+		}
+	}
+}
+
 func TestPostgresCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 	driver := &postgresDriver{}
 	catalog := completionTestCatalog("postgres", "public")

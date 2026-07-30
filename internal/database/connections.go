@@ -10,19 +10,22 @@ import (
 
 	"github.com/sqlwarden/internal/response"
 	"github.com/uptrace/bun"
+
+	"github.com/sqlwarden/internal/dbengine/schema"
 )
 
 type Connection struct {
-	ID                   int64     `bun:",pk,autoincrement" json:"id"`
-	WorkspaceID          int64     `bun:",notnull"          json:"workspace_id"`
-	EnvironmentID        int64     `bun:",notnull"          json:"environment_id"`
-	Name                 string    `bun:",notnull"          json:"name"`
-	Driver               string    `bun:",notnull"          json:"driver"`
-	DSNEncrypted         string    `bun:",notnull"          json:"-"`
-	AccessMode           string    `bun:",notnull,default:'open'" json:"access_mode"`
-	SchemaSnapshotPolicy string    `bun:",notnull,default:'inherit'" json:"schema_snapshot_policy"`
-	CreatedAt            time.Time `bun:",notnull"          json:"created_at"`
-	UpdatedAt            time.Time `bun:",notnull"          json:"updated_at"`
+	ID                   int64            `bun:",pk,autoincrement" json:"id"`
+	WorkspaceID          int64            `bun:",notnull"          json:"workspace_id"`
+	EnvironmentID        int64            `bun:",notnull"          json:"environment_id"`
+	Name                 string           `bun:",notnull"          json:"name"`
+	Driver               string           `bun:",notnull"          json:"driver"`
+	DSNEncrypted         string           `bun:",notnull"          json:"-"`
+	AccessMode           string           `bun:",notnull,default:'open'" json:"access_mode"`
+	SchemaSnapshotPolicy string           `bun:",notnull,default:'inherit'" json:"schema_snapshot_policy"`
+	DefaultScope         schema.ScopePath `bun:",notnull,default:''" json:"default_scope,omitempty"`
+	CreatedAt            time.Time        `bun:",notnull"          json:"created_at"`
+	UpdatedAt            time.Time        `bun:",notnull"          json:"updated_at"`
 }
 
 const (
@@ -43,13 +46,17 @@ type ListConnectionsParams struct {
 }
 
 func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string) (Connection, error) {
+	return db.InsertConnectionWithScope(ctx, workspaceID, envID, name, driver, dsnEncrypted, accessMode, "")
+}
+
+func (db *DB) InsertConnectionWithScope(ctx context.Context, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string, defaultScope schema.ScopePath) (Connection, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var conn Connection
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		var err error
-		conn, err = db.InsertConnectionWithExecutor(ctx, tx, workspaceID, envID, name, driver, dsnEncrypted, accessMode)
+		conn, err = db.InsertConnectionWithScopeAndExecutor(ctx, tx, workspaceID, envID, name, driver, dsnEncrypted, accessMode, defaultScope)
 		return err
 	})
 	if err != nil {
@@ -61,6 +68,10 @@ func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID *in
 // InsertConnectionWithExecutor inserts a connection and its hierarchy row using
 // exec so callers can compose connection creation in a larger transaction.
 func (db *DB) InsertConnectionWithExecutor(ctx context.Context, exec bun.IDB, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string) (Connection, error) {
+	return db.InsertConnectionWithScopeAndExecutor(ctx, exec, workspaceID, envID, name, driver, dsnEncrypted, accessMode, "")
+}
+
+func (db *DB) InsertConnectionWithScopeAndExecutor(ctx context.Context, exec bun.IDB, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string, defaultScope schema.ScopePath) (Connection, error) {
 	resolvedEnvID := int64(0)
 	if envID == nil {
 		var err error
@@ -80,6 +91,7 @@ func (db *DB) InsertConnectionWithExecutor(ctx context.Context, exec bun.IDB, wo
 		DSNEncrypted:         dsnEncrypted,
 		AccessMode:           accessMode,
 		SchemaSnapshotPolicy: SchemaSnapshotPolicyInherit,
+		DefaultScope:         defaultScope,
 		CreatedAt:            time.Now(),
 		UpdatedAt:            time.Now(),
 	}
@@ -133,12 +145,27 @@ func (db *DB) UpdateConnection(ctx context.Context, id int64, name, dsnEncrypted
 func (db *DB) UpdateConnectionWithPolicy(ctx context.Context, id int64, name, dsnEncrypted, accessMode, snapshotPolicy string) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
+	_, err := db.NewUpdate().Model((*Connection)(nil)).
+		Set("name = ?", name).
+		Set("dsn_encrypted = ?", dsnEncrypted).
+		Set("access_mode = ?", accessMode).
+		Set("schema_snapshot_policy = ?", snapshotPolicy).
+		Set("updated_at = ?", time.Now()).
+		Where("id = ?", id).
+		Exec(ctx)
+	return err
+}
+
+func (db *DB) UpdateConnectionWithScopeAndPolicy(ctx context.Context, id int64, name, dsnEncrypted, accessMode, snapshotPolicy string, defaultScope schema.ScopePath) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
 
 	_, err := db.NewUpdate().Model((*Connection)(nil)).
 		Set("name = ?", name).
 		Set("dsn_encrypted = ?", dsnEncrypted).
 		Set("access_mode = ?", accessMode).
 		Set("schema_snapshot_policy = ?", snapshotPolicy).
+		Set("default_scope = ?", defaultScope).
 		Set("updated_at = ?", time.Now()).
 		Where("id = ?", id).
 		Exec(ctx)

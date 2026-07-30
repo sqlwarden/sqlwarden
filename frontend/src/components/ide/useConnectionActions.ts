@@ -58,7 +58,7 @@ export function useConnectionActions(orgSlug: string, workspace: Workspace) {
     doc.getText('content').insert(0, DEFAULT_CONSOLE_CONTENT)
     const initialState = Array.from(Y.encodeStateAsUpdate(doc))
     doc.destroy()
-    openConsole(workspace, initialState, connection.id)
+    openConsole(workspace, initialState, connection.id, connection.driver)
   }
 
   function connect(connection: Connection) {

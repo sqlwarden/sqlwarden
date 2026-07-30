@@ -106,7 +106,7 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 	if err != nil {
 		return nil, jobs.Permanent("schema_sync_driver_unavailable", "The target driver is unavailable.")
 	}
-	if err := driver.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN)); err != nil {
+	if err := driver.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, conn.DefaultScope)); err != nil {
 		return nil, jobs.Retryable("schema_sync_connect_failed", "Could not connect to the target database.")
 	}
 	defer driver.Close()

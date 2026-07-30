@@ -116,7 +116,13 @@ describe('useConnectionActions', () => {
 
     act(() => result.current.openConnectionConsole(connection))
     expect(store.getState().tabs).toEqual(
-      expect.arrayContaining([expect.objectContaining({ kind: 'scratch', connectionId: 7 })]),
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'scratch',
+          connectionId: 7,
+          driver: 'postgres',
+        }),
+      ]),
     )
   })
 })

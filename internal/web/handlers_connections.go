@@ -16,6 +16,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/classifier"
+	schemameta "github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -219,12 +220,13 @@ func connectionClassifier(driverName string) classifier.Classifier {
 
 func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name          string              `json:"name"`
-		Driver        string              `json:"driver"`
-		DSN           string              `json:"dsn"`
-		EnvironmentID *int64              `json:"environment_id"`
-		AccessMode    string              `json:"access_mode"`
-		V             validator.Validator `json:"-"`
+		Name          string               `json:"name"`
+		Driver        string               `json:"driver"`
+		DSN           string               `json:"dsn"`
+		EnvironmentID *int64               `json:"environment_id"`
+		AccessMode    string               `json:"access_mode"`
+		DefaultScope  schemameta.ScopePath `json:"default_scope,omitempty"`
+		V             validator.Validator  `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -281,9 +283,9 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	conn, err := app.db.InsertConnection(context.Background(),
+	conn, err := app.db.InsertConnectionWithScope(context.Background(),
 		ws.ID, targetEnvID,
-		input.Name, input.Driver, dsnEncrypted, input.AccessMode,
+		input.Name, input.Driver, dsnEncrypted, input.AccessMode, input.DefaultScope,
 	)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -321,13 +323,14 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) updateConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name                 *string             `json:"name"`
-		Driver               *string             `json:"driver"`
-		DSN                  *string             `json:"dsn"`
-		AccessMode           *string             `json:"access_mode"`
-		SchemaSnapshotPolicy *string             `json:"schema_snapshot_policy"`
-		Force                bool                `json:"force"`
-		V                    validator.Validator `json:"-"`
+		Name                 *string               `json:"name"`
+		Driver               *string               `json:"driver"`
+		DSN                  *string               `json:"dsn"`
+		AccessMode           *string               `json:"access_mode"`
+		SchemaSnapshotPolicy *string               `json:"schema_snapshot_policy"`
+		DefaultScope         *schemameta.ScopePath `json:"default_scope"`
+		Force                bool                  `json:"force"`
+		V                    validator.Validator   `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -354,7 +357,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			*input.SchemaSnapshotPolicy == database.SchemaSnapshotPolicyDisabled,
 			"schema_snapshot_policy", "Schema snapshot policy must be inherit or disabled.")
 	}
-	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil,
+	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil || input.DefaultScope != nil,
 		"request", "At least one setting is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -417,7 +420,22 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	if input.SchemaSnapshotPolicy != nil {
 		nextSnapshotPolicy = *input.SchemaSnapshotPolicy
 	}
-	err = app.db.UpdateConnectionWithPolicy(r.Context(), conn.ID, nextName, dsnEncrypted, nextAccessMode, nextSnapshotPolicy)
+	nextDefaultScope := conn.DefaultScope
+	if input.DefaultScope != nil {
+		nextDefaultScope = *input.DefaultScope
+	}
+	scopeChanged := nextDefaultScope != conn.DefaultScope
+	if scopeChanged && !dsnChanged {
+		activeSessions := app.connManager.CountForConnection(strconv.FormatInt(conn.ID, 10))
+		if activeSessions > 0 && !input.Force {
+			app.errorMessage(w, r, http.StatusConflict, "Connection has active sessions. Retry with force=true to change its default scope and drop them.", nil)
+			return
+		}
+		if input.Force && activeSessions > 0 {
+			app.connManager.RemoveForConnection(strconv.FormatInt(conn.ID, 10))
+		}
+	}
+	err = app.db.UpdateConnectionWithScopeAndPolicy(r.Context(), conn.ID, nextName, dsnEncrypted, nextAccessMode, nextSnapshotPolicy, nextDefaultScope)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -429,7 +447,21 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.String("access_mode", nextAccessMode), slog.String("schema_snapshot_policy", nextSnapshotPolicy))
+	if scopeChanged {
+		app.schemaService.RefreshConnection(strconv.FormatInt(conn.ID, 10))
+		app.completionService.InvalidateConnection(strconv.FormatInt(conn.ID, 10))
+		if snapshotsEnabled, enabledErr := app.db.SchemaSnapshotsEnabled(r.Context(), conn.ID); enabledErr != nil {
+			app.logWarn(r, "schema snapshot policy lookup failed after scope change",
+				slog.Int64("connection_id", conn.ID), slog.String("error", enabledErr.Error()))
+		} else if snapshotsEnabled {
+			if _, _, enqueueErr := app.enqueueSchemaSync(r.Context(), conn.ID, contextGetWorkspace(r).OrgID); enqueueErr != nil &&
+				!errors.Is(enqueueErr, jobs.ErrActiveExists) {
+				app.logWarn(r, "schema sync enqueue failed after scope change",
+					slog.Int64("connection_id", conn.ID), slog.String("error", enqueueErr.Error()))
+			}
+		}
+	}
+	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.Bool("scope_changed", scopeChanged), slog.String("access_mode", nextAccessMode), slog.String("schema_snapshot_policy", nextSnapshotPolicy))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -447,9 +479,10 @@ func (app *application) deleteConnection(w http.ResponseWriter, r *http.Request)
 
 func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Driver string              `json:"driver"`
-		DSN    string              `json:"dsn"`
-		V      validator.Validator `json:"-"`
+		Driver      string               `json:"driver"`
+		DSN         string               `json:"dsn"`
+		ParentScope schemameta.ScopePath `json:"parent_scope,omitempty"`
+		V           validator.Validator  `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -523,11 +556,20 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	app.logInfo(r, "connection test completed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.Bool("ok", true))
-	err = response.JSON(w, http.StatusOK, map[string]any{
+	payload := map[string]any{
 		"ok":         true,
 		"latency_ms": latency,
-	})
+	}
+	if discoverer, ok := d.(schemameta.ScopeDiscoverer); ok {
+		discovery, discoveryErr := discoverer.DiscoverScopes(ctx, schemameta.ScopeDiscoveryRequest{Parent: input.ParentScope})
+		if discoveryErr == nil {
+			payload["scope_discovery"] = discovery
+		} else {
+			payload["scope_discovery_error"] = discoveryErr.Error()
+		}
+	}
+	app.logInfo(r, "connection test completed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.Bool("ok", true))
+	err = response.JSON(w, http.StatusOK, payload)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
@@ -573,7 +615,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		if err := d.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN)); err != nil {
+		if err := d.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, conn.DefaultScope)); err != nil {
 			return nil, err
 		}
 		return d, nil
@@ -728,13 +770,17 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) driverConnectionConfig(driverName, dsn string) dbengine.ConnectionConfig {
-	return dbengine.ConnectionConfig{
+func (app *application) driverConnectionConfig(driverName, dsn string, defaultScopes ...schemameta.ScopePath) dbengine.ConnectionConfig {
+	config := dbengine.ConnectionConfig{
 		DSN:            dsn,
 		Driver:         driverName,
 		MaxResultRows:  app.config.Query.MaxResultRows,
 		MaxResultBytes: int64(app.config.Query.MaxResultBytes),
 	}
+	if len(defaultScopes) > 0 {
+		config.DefaultScope = defaultScopes[0]
+	}
+	return config
 }
 
 func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {

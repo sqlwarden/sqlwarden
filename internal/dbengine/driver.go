@@ -3,6 +3,7 @@ package dbengine
 import (
 	"context"
 
+	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -36,6 +37,7 @@ type ConnectionConfig struct {
 	Driver         string
 	MaxResultRows  int
 	MaxResultBytes int64
+	DefaultScope   schema.ScopePath
 }
 
 // NormalizeName returns the canonical engine name for a user-facing name or

@@ -8,6 +8,7 @@ import { server } from '#/test/server'
 import { SchemaTree } from './SchemaTree'
 import { createIdeStore, IdeStoreContext } from './useIdeStore'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
+import { ContextMenuProvider } from '#/components/ui/context-menu'
 
 vi.mock('idb-keyval', () => ({
   get: vi.fn(() => Promise.resolve(null)),
@@ -31,14 +32,16 @@ describe('SchemaTree', () => {
       <QueryClientProvider client={createTestQueryClient()}>
         <IdeStoreContext.Provider value={store}>
           <EditorViewRegistryContext.Provider value={editorViews}>
-            <SchemaTree
-              orgSlug="acme"
-              workspaceId={3}
-              connectionId={7}
-              driver="postgres"
-              filter={filter}
-              onConnect={onConnect}
-            />
+            <ContextMenuProvider>
+              <SchemaTree
+                orgSlug="acme"
+                workspaceId={3}
+                connectionId={7}
+                driver="postgres"
+                filter={filter}
+                onConnect={onConnect}
+              />
+            </ContextMenuProvider>
           </EditorViewRegistryContext.Provider>
         </IdeStoreContext.Provider>
       </QueryClientProvider>,
@@ -120,6 +123,52 @@ describe('SchemaTree', () => {
     expect(await screen.findByText('orders')).toBeInTheDocument()
   })
 
+  it('automatically reloads a catalog while its snapshot is being prepared', async () => {
+    let catalogRequests = 0
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/catalog', () => {
+        catalogRequests++
+        if (catalogRequests === 1) {
+          return HttpResponse.json({ status: 'pending' }, { status: 202 })
+        }
+        return HttpResponse.json({
+          status: 'ready',
+          catalog: {
+            connection: 'warehouse',
+            dialect: 'postgres',
+            database: 'analytics',
+            generated_at: '',
+            namespaces: [{ name: 'public', groups: [{ kind: 'table', objects: [ref] }] }],
+          },
+        })
+      }),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({
+          spec: {
+            dialect: 'postgres',
+            kinds: [
+              {
+                kind: 'table',
+                label: 'Table',
+                plural_label: 'Tables',
+                order: 1,
+                relational: true,
+                supports_diagram: true,
+                listing: 'enumerated',
+              },
+            ],
+          },
+        }),
+      ),
+    )
+
+    renderTree()
+
+    expect(await screen.findByText('Preparing schema snapshot…')).toBeInTheDocument()
+    expect(await screen.findByText('Tables', {}, { timeout: 2_500 })).toBeInTheDocument()
+    expect(catalogRequests).toBe(2)
+  })
+
   it('distinguishes unsupported inspection from a generic failure', async () => {
     store.getState().setSession(7, 'session-7')
     server.use(
@@ -182,5 +231,22 @@ describe('SchemaTree', () => {
       </QueryClientProvider>,
     )
     expect(await screen.findByText('No matches.')).toBeInTheDocument()
+  })
+
+  it('uses the backend refresh endpoint from schema group menus', async () => {
+    store.getState().setSession(7, 'session-7')
+    respondReady()
+    let refreshes = 0
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', () => {
+        refreshes++
+        return HttpResponse.json({ status: 'ok', mode: 'ephemeral' })
+      }),
+    )
+    renderTree()
+
+    fireEvent.contextMenu(await screen.findByRole('button', { name: /Tables/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Refresh' }))
+    await waitFor(() => expect(refreshes).toBe(1))
   })
 })

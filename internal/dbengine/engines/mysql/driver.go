@@ -8,14 +8,16 @@ import (
 
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/cursor"
+	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/pkg/result"
 
-	_ "github.com/go-sql-driver/mysql"
+	mysqlconfig "github.com/go-sql-driver/mysql"
 )
 
 type mysqlDriver struct {
-	db          *sql.DB
-	scanOptions cursor.ScanOptions
+	db           *sql.DB
+	scanOptions  cursor.ScanOptions
+	defaultScope schema.ScopePath
 }
 
 // ensureParams ensures parseTime=true is in the DSN.
@@ -65,6 +67,14 @@ func ensureParams(dsn string) string {
 
 func (d *mysqlDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfig) error {
 	dsn := ensureParams(cfg.DSN)
+	if selectedDatabase := cfg.DefaultScope.Name("database"); selectedDatabase != "" {
+		config, err := mysqlconfig.ParseDSN(dsn)
+		if err != nil {
+			return fmt.Errorf("mysql: parse config: %w", err)
+		}
+		config.DBName = selectedDatabase
+		dsn = config.FormatDSN()
+	}
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return fmt.Errorf("mysql: open: %w", err)
@@ -75,6 +85,7 @@ func (d *mysqlDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfig
 	}
 	d.db = db
 	d.scanOptions = cursor.ScanOptions{MaxRows: cfg.MaxResultRows, MaxBytes: cfg.MaxResultBytes}
+	d.defaultScope = cfg.DefaultScope
 	return nil
 }
 
