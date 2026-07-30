@@ -204,6 +204,7 @@ func (app *application) routes() http.Handler {
 				r.With(app.requireOrgPermission("policy:read")).Get("/", app.listRoles)
 				r.With(app.requireOrgPermission("policy:modify")).Post("/", app.createRole)
 				r.With(app.requireOrgPermission("policy:read")).Get("/{role_id}", app.getRole)
+				r.With(app.requireOrgPermission("policy:modify")).Patch("/{role_id}", app.updateRole)
 				r.With(app.requireOrgPermission("policy:modify")).Delete("/{role_id}", app.deleteRole)
 			})
 
@@ -280,6 +281,7 @@ func (app *application) routes() http.Handler {
 						r.With(app.requireWorkspacePermission("policy:read")).Get("/", app.listWorkspaceRoles)
 						r.With(app.requireWorkspacePermission("policy:modify")).Post("/", app.createWorkspaceRole)
 						r.With(app.requireWorkspacePermission("policy:read")).Get("/{role_id}", app.getWorkspaceRole)
+						r.With(app.requireWorkspacePermission("policy:modify")).Patch("/{role_id}", app.updateWorkspaceRole)
 						r.With(app.requireWorkspacePermission("policy:modify")).Delete("/{role_id}", app.deleteWorkspaceRole)
 					})
 

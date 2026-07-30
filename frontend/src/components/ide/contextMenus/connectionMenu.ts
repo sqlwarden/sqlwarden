@@ -9,6 +9,8 @@ export type ConnectionMenuCtx = {
   onRefreshSchema: () => void
   onCopyName: () => void
   onManageConnections: () => void
+  onEditConnection: () => void
+  onDeleteConnection: () => void
 }
 
 export function buildConnectionMenu(ctx: ConnectionMenuCtx): ContextMenuItem[] {
@@ -68,7 +70,7 @@ export function buildConnectionMenu(ctx: ConnectionMenuCtx): ContextMenuItem[] {
       id: 'edit-connection',
       label: 'Edit connection',
       icon: 'pencil-edit-02',
-      soon: true,
+      onSelect: ctx.onEditConnection,
     },
     { kind: 'separator' },
     {
@@ -76,7 +78,8 @@ export function buildConnectionMenu(ctx: ConnectionMenuCtx): ContextMenuItem[] {
       id: 'delete-connection',
       label: 'Delete connection',
       icon: 'delete-01',
-      soon: true,
+      destructive: true,
+      onSelect: ctx.onDeleteConnection,
     },
   ]
 }

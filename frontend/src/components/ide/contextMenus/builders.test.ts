@@ -38,6 +38,8 @@ describe('buildConnectionMenu', () => {
     onRefreshSchema: noop,
     onCopyName: noop,
     onManageConnections: noop,
+    onEditConnection: noop,
+    onDeleteConnection: noop,
   }
   it('shows connect (not disconnect) and disables refresh when not connected', () => {
     const items = buildConnectionMenu({ ...base, isConnected: false })
@@ -51,9 +53,17 @@ describe('buildConnectionMenu', () => {
     expect(action(items, 'connect')).toBeUndefined()
     expect(action(items, 'refresh-schema')?.disabled).toBeFalsy()
   })
-  it('keeps edit-connection as soon', () => {
+  it('has a live edit-connection action', () => {
     const items = buildConnectionMenu({ ...base, isConnected: true })
-    expect(action(items, 'edit-connection')?.soon).toBe(true)
+    const item = action(items, 'edit-connection')
+    expect(item?.soon).toBeFalsy()
+    expect(typeof item?.onSelect).toBe('function')
+  })
+  it('has a live delete-connection action', () => {
+    const items = buildConnectionMenu({ ...base, isConnected: true })
+    const item = action(items, 'delete-connection')
+    expect(item?.soon).toBeFalsy()
+    expect(typeof item?.onSelect).toBe('function')
   })
   it('has a live manage-connections action', () => {
     const items = buildConnectionMenu({ ...base, isConnected: true })

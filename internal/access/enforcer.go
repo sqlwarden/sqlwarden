@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/uptrace/bun"
 )
@@ -500,6 +501,63 @@ func (e *Enforcer) insertRolePermissionsWithExecutor(ctx context.Context, exec b
 	}
 	_, err := query.Exec(ctx)
 	return err
+}
+
+// UpdateRole renames, redescribes, and/or replaces the permission set of a custom
+// role. Scope type and workspace assignment are fixed at creation and cannot be
+// changed here, so permissions are validated against the role's existing scope.
+func (e *Enforcer) UpdateRole(ctx context.Context, roleID, orgID int64, name, description string, permissions []string) error {
+	err := e.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var role struct {
+			ScopeType string `bun:"scope_type"`
+			IsBuiltin bool   `bun:"is_builtin"`
+		}
+		err := tx.NewSelect().
+			TableExpr("roles").
+			ColumnExpr("scope_type, is_builtin").
+			Where("id = ? AND org_id = ?", roleID, orgID).
+			Scan(ctx, &role)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrRoleNotFound
+			}
+			return err
+		}
+		if role.IsBuiltin {
+			return ErrBuiltinRole
+		}
+
+		for _, p := range permissions {
+			if !ValidForScope(p, role.ScopeType) {
+				return fmt.Errorf("%w: permission %q is not valid for scope %q", ErrInvalidScopePermission, p, role.ScopeType)
+			}
+		}
+
+		_, err = tx.NewUpdate().
+			TableExpr("roles").
+			Set("name = ?", name).
+			Set("description = ?", description).
+			Set("updated_at = ?", time.Now()).
+			Where("id = ?", roleID).
+			Exec(ctx)
+		if err != nil {
+			return err
+		}
+
+		if _, err = tx.NewDelete().TableExpr("role_permissions").Where("role_id = ?", roleID).Exec(ctx); err != nil {
+			return fmt.Errorf("clear permissions: %w", err)
+		}
+		if err = e.insertRolePermissionsWithExecutor(ctx, tx, roleID, permissions, false); err != nil {
+			return fmt.Errorf("insert permissions: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	e.cache.InvalidateOrgPolicy(orgID)
+	return nil
 }
 
 // DeleteRole deletes an unbound custom role. Policy bindings must be explicitly

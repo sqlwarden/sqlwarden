@@ -161,6 +161,86 @@ func (app *application) getWorkspaceRole(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+func (app *application) updateWorkspaceRole(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Name        string              `json:"name"`
+		Description string              `json:"description"`
+		Permissions []string            `json:"permissions"`
+		V           validator.Validator `json:"-"`
+	}
+
+	err := request.DecodeJSON(w, r, &input)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+
+	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
+	}
+
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
+
+	roleIDStr := chi.URLParam(r, "role_id")
+	roleID, err := strconv.ParseInt(roleIDStr, 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
+	}
+
+	existing, found, err := app.db.GetRole(r.Context(), roleID, org.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found || existing.WorkspaceID == nil || *existing.WorkspaceID != ws.ID {
+		app.notFound(w, r)
+		return
+	}
+
+	err = app.enforcer.UpdateRole(r.Context(), roleID, org.ID, input.Name, input.Description, input.Permissions)
+	if err != nil {
+		if errors.Is(err, access.ErrBuiltinRole) {
+			app.notPermitted(w, r)
+			return
+		}
+		if errors.Is(err, access.ErrRoleNotFound) {
+			app.notFound(w, r)
+			return
+		}
+		if errors.Is(err, access.ErrInvalidScopePermission) || errors.Is(err, access.ErrUnknownPermission) {
+			input.V.AddFieldError("permissions", "Permissions include a permission that is not valid for this scope.")
+			app.failedValidation(w, r, input.V)
+			return
+		}
+		if isUniqueViolation(err) {
+			app.failedDuplicateField(w, r, "name", "A role with this name already exists in this workspace.")
+			return
+		}
+		app.serverError(w, r, err)
+		return
+	}
+
+	role, found, err := app.db.GetRole(r.Context(), roleID, org.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.notFound(w, r)
+		return
+	}
+
+	app.logInfo(r, "workspace role updated", slog.Int64("workspace_id", ws.ID), slog.Int64("role_id", role.ID), slog.Int("permission_count", len(input.Permissions)))
+	err = response.JSON(w, http.StatusOK, role)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 func (app *application) deleteWorkspaceRole(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
