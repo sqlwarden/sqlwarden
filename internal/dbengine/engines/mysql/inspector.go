@@ -12,6 +12,8 @@ import (
 )
 
 var _ schema.SchemaInspector = (*mysqlDriver)(nil)
+var _ schema.DirectoryInspector = (*mysqlDriver)(nil)
+var _ schema.ScopeDiscoverer = (*mysqlDriver)(nil)
 
 func (d *mysqlDriver) SchemaSpec() schema.SchemaSpec {
 	return schema.SchemaSpec{
@@ -29,9 +31,14 @@ func (d *mysqlDriver) SchemaSpec() schema.SchemaSpec {
 func (d *mysqlDriver) InspectCatalog(ctx context.Context, opts schema.CatalogOptions) (*schema.Catalog, error) {
 	database := opts.Database
 	if database == "" {
-		if err := d.db.QueryRowContext(ctx, `SELECT DATABASE()`).Scan(&database); err != nil {
+		database = d.defaultScope.Name("database")
+	}
+	if database == "" {
+		var current sql.NullString
+		if err := d.db.QueryRowContext(ctx, `SELECT DATABASE()`).Scan(&current); err != nil {
 			return nil, fmt.Errorf("mysql: catalog database name: %w", err)
 		}
+		database = current.String
 	}
 
 	b := build.NewCatalog()
@@ -119,6 +126,65 @@ ORDER BY trigger_name`
 	triggerRows.Close()
 
 	return b.Build("", "mysql", database), nil
+}
+
+func (d *mysqlDriver) InspectDirectory(ctx context.Context, opts schema.DirectoryOptions) (*schema.Directory, error) {
+	root := opts.Root
+	if root == "" {
+		root = d.defaultScope
+	}
+	catalog, err := d.InspectCatalog(ctx, schema.CatalogOptions{Database: root.Name("database")})
+	if err != nil {
+		return nil, err
+	}
+	directory := schema.DirectoryFromCatalog(catalog)
+	// MySQL database is a single scope level; it has no child schema level.
+	if len(directory.Roots) == 1 && len(directory.Roots[0].Children) == 1 {
+		child := directory.Roots[0].Children[0]
+		directory.Roots[0].Groups = child.Groups
+		directory.Roots[0].Children = nil
+		for groupIndex := range directory.Roots[0].Groups {
+			for refIndex := range directory.Roots[0].Groups[groupIndex].Objects {
+				directory.Roots[0].Groups[groupIndex].Objects[refIndex].Scope = directory.Roots[0].Path
+			}
+		}
+		directory.DefaultScope = directory.Roots[0].Path
+	}
+	if root != "" {
+		directory.DefaultScope = root
+	}
+	return directory, nil
+}
+
+func (d *mysqlDriver) DiscoverScopes(ctx context.Context, request schema.ScopeDiscoveryRequest) (*schema.ScopeDiscovery, error) {
+	var current sql.NullString
+	if err := d.db.QueryRowContext(ctx, `SELECT DATABASE()`).Scan(&current); err != nil {
+		return nil, fmt.Errorf("mysql: discover current database: %w", err)
+	}
+	result := &schema.ScopeDiscovery{Scopes: []schema.ScopePath{}}
+	if current.Valid {
+		result.Current = schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: current.String})
+	}
+	if request.Parent != "" {
+		return result, nil
+	}
+	rows, err := d.db.QueryContext(ctx, `
+SELECT schema_name
+FROM information_schema.schemata
+WHERE schema_name NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+ORDER BY schema_name`)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: discover databases: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		result.Scopes = append(result.Scopes, schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: name}))
+	}
+	return result, rows.Err()
 }
 
 func (d *mysqlDriver) InspectObjects(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {

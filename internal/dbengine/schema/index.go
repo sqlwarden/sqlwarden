@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// MetadataSet is one coherent, versioned schema metadata input. Catalog remains
+// MetadataSet is one coherent, versioned schema metadata input. Directory remains
 // the lightweight object directory and Objects remains the independently
 // inspectable detail tier; grouping them makes their shared generation
 // explicit at consumer boundaries.
@@ -13,6 +13,7 @@ import (
 // Relationships is optional because consumers such as SQL completion do not
 // need graph topology.
 type MetadataSet struct {
+	Directory     *Directory
 	Catalog       *Catalog
 	Objects       []Object
 	Relationships []*RelationshipGraph
@@ -24,6 +25,7 @@ type MetadataSet struct {
 // nor persists metadata; callers decide whether MetadataSet came from a
 // persistent snapshot or an ephemeral inspection.
 type Index struct {
+	directory     *Directory
 	catalog       *Catalog
 	version       string
 	refs          map[ObjectRef]struct{}
@@ -49,9 +51,23 @@ func NewIndex(metadata MetadataSet) *Index {
 		outgoing:      make(map[ObjectRef][]Relationship),
 		incoming:      make(map[ObjectRef][]Relationship),
 	}
+	if metadata.Directory != nil {
+		directory := cloneDirectory(*metadata.Directory)
+		index.directory = &directory
+		walkScopeNodes(directory.Roots, func(node ScopeNode) {
+			for _, group := range node.Groups {
+				for _, ref := range group.Objects {
+					index.addRef(ref)
+				}
+			}
+		})
+	}
 	if metadata.Catalog != nil {
 		catalog := cloneCatalog(*metadata.Catalog)
 		index.catalog = &catalog
+		if index.directory == nil {
+			index.directory = DirectoryFromCatalog(&catalog)
+		}
 		for _, namespace := range catalog.Namespaces {
 			for _, group := range namespace.Groups {
 				for _, ref := range group.Objects {
@@ -70,10 +86,14 @@ func NewIndex(metadata MetadataSet) *Index {
 		if graph == nil {
 			continue
 		}
-		namespace := strings.ToLower(graph.Namespace)
+		graphScope := graph.Scope
+		if graphScope == "" && graph.Namespace != "" {
+			graphScope = NewScopePath(ScopeSegment{Kind: "schema", Name: graph.Namespace})
+		}
+		scope := foldedPath(graphScope)
 		for _, raw := range graph.Relationships {
 			relationship := cloneRelationship(raw)
-			index.relationships[namespace] = append(index.relationships[namespace], relationship)
+			index.relationships[scope] = append(index.relationships[scope], relationship)
 			index.addRef(relationship.Source)
 			index.addRef(relationship.References)
 			source := index.canonicalRef(relationship.Source)
@@ -102,7 +122,16 @@ func (i *Index) Version() string {
 	return i.version
 }
 
-// Catalog returns an isolated copy of the lightweight catalog.
+// Directory returns an isolated copy of the lightweight directory.
+func (i *Index) Directory() (*Directory, bool) {
+	if i == nil || i.directory == nil {
+		return nil, false
+	}
+	directory := cloneDirectory(*i.directory)
+	return &directory, true
+}
+
+// Catalog returns the compatibility one-database listing.
 func (i *Index) Catalog() (*Catalog, bool) {
 	if i == nil || i.catalog == nil {
 		return nil, false
@@ -125,7 +154,6 @@ func (i *Index) DefaultNamespace() string {
 	return i.catalog.DefaultNamespace
 }
 
-// NamespaceNames returns sorted namespace names from the catalog.
 func (i *Index) NamespaceNames() []string {
 	if i == nil || i.catalog == nil {
 		return nil
@@ -138,27 +166,47 @@ func (i *Index) NamespaceNames() []string {
 	return result
 }
 
+func (i *Index) DefaultScope() ScopePath {
+	if i == nil || i.directory == nil {
+		return ""
+	}
+	return i.directory.DefaultScope
+}
+
+// Scopes returns all directory scope paths in stable order.
+func (i *Index) Scopes() []ScopePath {
+	if i == nil || i.directory == nil {
+		return nil
+	}
+	var result []ScopePath
+	walkScopeNodes(i.directory.Roots, func(node ScopeNode) {
+		result = append(result, node.Path)
+	})
+	sort.Slice(result, func(a, b int) bool { return result[a] < result[b] })
+	return result
+}
+
 // FindRef resolves an exact qualified reference first, then
 // case-insensitively. Unlike FindObject, it also finds catalog entries whose
 // detailed metadata has not been inspected yet.
-func (i *Index) FindRef(namespace, kind, name string) (ObjectRef, bool) {
+func (i *Index) FindRefInScope(scope ScopePath, kind, name string) (ObjectRef, bool) {
 	if i == nil {
 		return ObjectRef{}, false
 	}
 	if kind != "" {
-		ref := ObjectRef{Namespace: namespace, Kind: kind, Name: name}
+		ref := ObjectRef{Scope: scope, Kind: kind, Name: name}
 		if _, ok := i.refs[ref]; ok {
 			return ref, true
 		}
 		canonical, ok := i.foldedRefs[foldedRefKey(ref)]
 		return canonical, ok
 	}
-	for _, ref := range i.refsByScope[foldedScopeKey(namespace, "")] {
+	for _, ref := range i.refsByScope[foldedScopeKey(scope, "")] {
 		if ref.Name == name {
 			return ref, true
 		}
 	}
-	for _, ref := range i.refsByScope[foldedScopeKey(namespace, "")] {
+	for _, ref := range i.refsByScope[foldedScopeKey(scope, "")] {
 		if strings.EqualFold(ref.Name, name) {
 			return ref, true
 		}
@@ -166,13 +214,21 @@ func (i *Index) FindRef(namespace, kind, name string) (ObjectRef, bool) {
 	return ObjectRef{}, false
 }
 
+func (i *Index) FindRef(namespace, kind, name string) (ObjectRef, bool) {
+	return i.FindRefInScope(NewScopePath(ScopeSegment{Kind: "schema", Name: namespace}), kind, name)
+}
+
 // ObjectRefs returns lightweight catalog references in a namespace, optionally
 // restricted to one kind. Detailed inspection is not required.
-func (i *Index) ObjectRefs(namespace, kind string) []ObjectRef {
+func (i *Index) ObjectRefsInScope(scope ScopePath, kind string) []ObjectRef {
 	if i == nil {
 		return nil
 	}
-	return append([]ObjectRef(nil), i.refsByScope[foldedScopeKey(namespace, kind)]...)
+	return append([]ObjectRef(nil), i.refsByScope[foldedScopeKey(scope, kind)]...)
+}
+
+func (i *Index) ObjectRefs(namespace, kind string) []ObjectRef {
+	return i.ObjectRefsInScope(NewScopePath(ScopeSegment{Kind: "schema", Name: namespace}), kind)
 }
 
 // Object resolves an exact qualified object reference.
@@ -190,27 +246,27 @@ func (i *Index) Object(ref ObjectRef) (Object, bool) {
 // FindObject resolves a qualified name exactly first, then case-insensitively.
 // An empty kind matches any kind; when names collide the catalog ordering is
 // used, making the result deterministic.
-func (i *Index) FindObject(namespace, kind, name string) (Object, bool) {
+func (i *Index) FindObjectInScope(scope ScopePath, kind, name string) (Object, bool) {
 	if i == nil {
 		return Object{}, false
 	}
 	if kind != "" {
-		if object, ok := i.Object(ObjectRef{Namespace: namespace, Kind: kind, Name: name}); ok {
+		if object, ok := i.Object(ObjectRef{Scope: scope, Kind: kind, Name: name}); ok {
 			return object, true
 		}
-		if ref, ok := i.foldedObjects[foldedRefKey(ObjectRef{Namespace: namespace, Kind: kind, Name: name})]; ok {
+		if ref, ok := i.foldedObjects[foldedRefKey(ObjectRef{Scope: scope, Kind: kind, Name: name})]; ok {
 			return i.Object(ref)
 		}
 		return Object{}, false
 	}
-	for _, ref := range i.refsByScope[foldedScopeKey(namespace, "")] {
+	for _, ref := range i.refsByScope[foldedScopeKey(scope, "")] {
 		if ref.Name == name {
 			if object, ok := i.Object(ref); ok {
 				return object, true
 			}
 		}
 	}
-	for _, ref := range i.refsByScope[foldedScopeKey(namespace, "")] {
+	for _, ref := range i.refsByScope[foldedScopeKey(scope, "")] {
 		if strings.EqualFold(ref.Name, name) {
 			if object, ok := i.Object(ref); ok {
 				return object, true
@@ -220,12 +276,16 @@ func (i *Index) FindObject(namespace, kind, name string) (Object, bool) {
 	return Object{}, false
 }
 
+func (i *Index) FindObject(namespace, kind, name string) (Object, bool) {
+	return i.FindObjectInScope(NewScopePath(ScopeSegment{Kind: "schema", Name: namespace}), kind, name)
+}
+
 // Objects returns objects in a namespace, optionally restricted to one kind.
-func (i *Index) Objects(namespace, kind string) []Object {
+func (i *Index) ObjectsInScope(scope ScopePath, kind string) []Object {
 	if i == nil {
 		return nil
 	}
-	refs := i.refsByScope[foldedScopeKey(namespace, kind)]
+	refs := i.refsByScope[foldedScopeKey(scope, kind)]
 	result := make([]Object, 0, len(refs))
 	for _, ref := range refs {
 		result = append(result, cloneObject(i.objects[ref]))
@@ -233,12 +293,20 @@ func (i *Index) Objects(namespace, kind string) []Object {
 	return result
 }
 
-// Relationships returns the immutable FK topology for a namespace.
-func (i *Index) Relationships(namespace string) []Relationship {
+func (i *Index) Objects(namespace, kind string) []Object {
+	return i.ObjectsInScope(NewScopePath(ScopeSegment{Kind: "schema", Name: namespace}), kind)
+}
+
+// Relationships returns the immutable topology for a scope.
+func (i *Index) RelationshipsInScope(scope ScopePath) []Relationship {
 	if i == nil {
 		return nil
 	}
-	return cloneRelationships(i.relationships[strings.ToLower(namespace)])
+	return cloneRelationships(i.relationships[foldedPath(scope)])
+}
+
+func (i *Index) Relationships(namespace string) []Relationship {
+	return i.RelationshipsInScope(NewScopePath(ScopeSegment{Kind: "schema", Name: namespace}))
 }
 
 func (i *Index) Outgoing(ref ObjectRef) []Relationship {
@@ -290,8 +358,9 @@ func (i *Index) NeighborRefs(ref ObjectRef) []ObjectRef {
 		}
 	}
 	sort.Slice(refs, func(a, b int) bool {
-		if refs[a].Namespace != refs[b].Namespace {
-			return refs[a].Namespace < refs[b].Namespace
+		leftScope, rightScope := refs[a].EffectiveScope(), refs[b].EffectiveScope()
+		if leftScope != rightScope {
+			return leftScope < rightScope
 		}
 		if refs[a].Name != refs[b].Name {
 			return refs[a].Name < refs[b].Name
@@ -317,20 +386,32 @@ func (i *Index) addRef(ref ObjectRef) {
 	}
 	i.refs[ref] = struct{}{}
 	i.foldedRefs[foldedRefKey(ref)] = ref
-	scope := foldedScopeKey(ref.Namespace, ref.Kind)
+	scope := foldedScopeKey(ref.EffectiveScope(), ref.Kind)
 	i.refsByScope[scope] = append(i.refsByScope[scope], ref)
-	i.refsByScope[foldedScopeKey(ref.Namespace, "")] = append(
-		i.refsByScope[foldedScopeKey(ref.Namespace, "")],
+	i.refsByScope[foldedScopeKey(ref.EffectiveScope(), "")] = append(
+		i.refsByScope[foldedScopeKey(ref.EffectiveScope(), "")],
 		ref,
 	)
 }
 
-func foldedScopeKey(namespace, kind string) string {
-	return strings.ToLower(namespace) + "\x00" + strings.ToLower(kind)
+func foldedPath(scope ScopePath) string {
+	segments, err := scope.Segments()
+	if err != nil {
+		return strings.ToLower(string(scope))
+	}
+	for index := range segments {
+		segments[index].Kind = strings.ToLower(segments[index].Kind)
+		segments[index].Name = strings.ToLower(segments[index].Name)
+	}
+	return string(NewScopePath(segments...))
+}
+
+func foldedScopeKey(scope ScopePath, kind string) string {
+	return foldedPath(scope) + "\x00" + strings.ToLower(kind)
 }
 
 func foldedRefKey(ref ObjectRef) string {
-	return foldedScopeKey(ref.Namespace, ref.Kind) + "\x00" + strings.ToLower(ref.Name)
+	return foldedScopeKey(ref.EffectiveScope(), ref.Kind) + "\x00" + strings.ToLower(ref.Name)
 }
 
 func cloneCatalog(catalog Catalog) Catalog {
@@ -344,6 +425,33 @@ func cloneCatalog(catalog Catalog) Catalog {
 			result.Namespaces[i].Groups[j].Objects = append([]ObjectRef(nil), group.Objects...)
 		}
 	}
+	return result
+}
+
+func walkScopeNodes(nodes []ScopeNode, visit func(ScopeNode)) {
+	for _, node := range nodes {
+		visit(node)
+		walkScopeNodes(node.Children, visit)
+	}
+}
+
+func cloneDirectory(directory Directory) Directory {
+	result := directory
+	var cloneNodes func([]ScopeNode) []ScopeNode
+	cloneNodes = func(nodes []ScopeNode) []ScopeNode {
+		cloned := make([]ScopeNode, len(nodes))
+		for i, node := range nodes {
+			cloned[i] = node
+			cloned[i].Groups = make([]ObjectGroupCatalog, len(node.Groups))
+			for j, group := range node.Groups {
+				cloned[i].Groups[j] = group
+				cloned[i].Groups[j].Objects = append([]ObjectRef(nil), group.Objects...)
+			}
+			cloned[i].Children = cloneNodes(node.Children)
+		}
+		return cloned
+	}
+	result.Roots = cloneNodes(directory.Roots)
 	return result
 }
 
@@ -422,6 +530,7 @@ func cloneRelationship(relationship Relationship) Relationship {
 	result := relationship
 	result.Columns = append([]string(nil), relationship.Columns...)
 	result.ReferencedColumns = append([]string(nil), relationship.ReferencedColumns...)
+	result.Attributes = cloneAttributes(relationship.Attributes)
 	return result
 }
 

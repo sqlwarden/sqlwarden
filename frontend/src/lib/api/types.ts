@@ -80,6 +80,13 @@ export interface Environment {
   updated_at: string
 }
 
+export interface ScopeSegment {
+  kind: string
+  name: string
+}
+
+export type ScopePath = ScopeSegment[]
+
 // ─── Query result types ─────────────────────────────────────────────────────
 
 export type ColumnType =
@@ -128,6 +135,7 @@ export interface Connection {
   name: string
   driver: string
   access_mode: 'open' | 'restricted'
+  default_scope?: ScopePath
   schema_snapshot_policy?: 'inherit' | 'disabled'
   created_at: string
   updated_at: string
@@ -308,6 +316,7 @@ export interface ListQuery {
 
 export interface ObjectRef {
   namespace: string
+  scope?: ScopePath
   kind: string
   name: string
 }
@@ -328,6 +337,32 @@ export interface SchemaCatalog {
   database: string
   generated_at: string
   namespaces: CatalogNamespace[] | null
+}
+
+export interface ScopeNode {
+  path: ScopePath
+  groups: DirectoryObjectGroup[]
+  children?: ScopeNode[]
+}
+
+export interface DirectoryObjectRef {
+  scope: ScopePath
+  namespace?: string
+  kind: string
+  name: string
+}
+
+export interface DirectoryObjectGroup {
+  kind: string
+  objects: DirectoryObjectRef[]
+}
+
+export interface SchemaDirectory {
+  connection: string
+  engine: string
+  default_scope: ScopePath
+  generated_at: string
+  roots: ScopeNode[]
 }
 
 export interface SchemaObjectKind {
@@ -406,6 +441,7 @@ export interface ObjectDetail {
 
 export interface CatalogResponse {
   catalog?: SchemaCatalog
+  directory?: SchemaDirectory
   status?: 'pending'
   mode?: 'persistent' | 'ephemeral'
   job_id?: string

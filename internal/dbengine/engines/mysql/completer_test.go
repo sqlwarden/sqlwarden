@@ -66,6 +66,54 @@ func TestMySQLCompletionQuotesReservedIdentifier(t *testing.T) {
 	}
 }
 
+func TestMySQLCompleteUsesStatementAtCursor(t *testing.T) {
+	driver := &mysqlDriver{}
+	catalog := mysqlCompletionTestCatalog()
+	objects := mysqlCompletionTestObjects()
+	sql := `select s.first_name, s.last_name, a.address from staff s
+join store st
+on s.staff_id = st.manager_staff_id
+join address a
+on a.address_id = s.address_id;
+
+select * from `
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql),
+		Schema:      &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		TriggerKind: completer.TriggerAutomatic,
+		TriggerChar: " ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireMySQLCompletion(t, result, "users", "table")
+}
+
+func TestMySQLCompleteRecoversNewSelectWithoutSemicolon(t *testing.T) {
+	driver := &mysqlDriver{}
+	catalog := mysqlCompletionTestCatalog()
+	objects := mysqlCompletionTestObjects()
+	sql := `select s.first_name, s.last_name, a.address from staff s
+join store st
+on s.staff_id = st.manager_staff_id
+join address a
+on a.address_id = s.address_id;
+
+select * from actor
+
+select * from `
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql),
+		Schema:      &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		TriggerKind: completer.TriggerAutomatic,
+		TriggerChar: " ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireMySQLCompletion(t, result, "users", "table")
+}
+
 func TestMySQLCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 	driver := &mysqlDriver{}
 	catalog := mysqlCompletionTestCatalog()

@@ -12,6 +12,8 @@ import (
 )
 
 var _ schema.SchemaInspector = (*sqliteDriver)(nil)
+var _ schema.DirectoryInspector = (*sqliteDriver)(nil)
+var _ schema.ScopeDiscoverer = (*sqliteDriver)(nil)
 
 func (d *sqliteDriver) SchemaSpec() schema.SchemaSpec {
 	return schema.SchemaSpec{
@@ -62,7 +64,57 @@ func (d *sqliteDriver) InspectCatalog(ctx context.Context, opts schema.CatalogOp
 	if database == "" {
 		database = "main"
 	}
-	return b.Build("", "sqlite", database), nil
+	catalog := b.Build("", "sqlite", database)
+	catalog.DefaultNamespace = d.defaultScope.Name("database")
+	if catalog.DefaultNamespace == "" {
+		catalog.DefaultNamespace = "main"
+	}
+	return catalog, nil
+}
+
+func (d *sqliteDriver) InspectDirectory(ctx context.Context, opts schema.DirectoryOptions) (*schema.Directory, error) {
+	root := opts.Root
+	if root == "" {
+		root = d.defaultScope
+	}
+	catalog, err := d.InspectCatalog(ctx, schema.CatalogOptions{})
+	if err != nil {
+		return nil, err
+	}
+	directory := &schema.Directory{Connection: catalog.Connection, Engine: "sqlite", GeneratedAt: catalog.GeneratedAt}
+	for _, namespace := range catalog.Namespaces {
+		scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: namespace.Name})
+		node := schema.ScopeNode{Path: scope, Groups: namespace.Groups}
+		for groupIndex := range node.Groups {
+			for refIndex := range node.Groups[groupIndex].Objects {
+				node.Groups[groupIndex].Objects[refIndex].Scope = scope
+			}
+		}
+		directory.Roots = append(directory.Roots, node)
+	}
+	if len(directory.Roots) > 0 {
+		directory.DefaultScope = directory.Roots[0].Path
+	}
+	if root != "" {
+		directory.DefaultScope = root
+	}
+	return directory, nil
+}
+
+func (d *sqliteDriver) DiscoverScopes(ctx context.Context, request schema.ScopeDiscoveryRequest) (*schema.ScopeDiscovery, error) {
+	names, err := d.sqliteNamespaces(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := &schema.ScopeDiscovery{Scopes: make([]schema.ScopePath, 0, len(names))}
+	for _, name := range names {
+		path := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: name})
+		result.Scopes = append(result.Scopes, path)
+		if name == "main" {
+			result.Current = path
+		}
+	}
+	return result, nil
 }
 
 func (d *sqliteDriver) InspectObjects(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {

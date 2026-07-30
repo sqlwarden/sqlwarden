@@ -4,30 +4,40 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/cursor"
+	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/pkg/result"
-
-	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 type postgresDriver struct {
-	db          *sql.DB
-	scanOptions cursor.ScanOptions
+	db           *sql.DB
+	scanOptions  cursor.ScanOptions
+	defaultScope schema.ScopePath
 }
 
 func (d *postgresDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfig) error {
-	db, err := sql.Open("pgx", cfg.DSN)
+	config, err := pgx.ParseConfig(cfg.DSN)
 	if err != nil {
-		return fmt.Errorf("postgres: open: %w", err)
+		return fmt.Errorf("postgres: parse config: %w", err)
 	}
+	if selectedSchema := cfg.DefaultScope.Name("schema"); selectedSchema != "" {
+		// search_path is a PostgreSQL identifier list, not a query parameter.
+		// Quote it as one identifier so punctuation cannot alter the path.
+		config.RuntimeParams["search_path"] = `"` + strings.ReplaceAll(selectedSchema, `"`, `""`) + `"`
+	}
+	db := stdlib.OpenDB(*config)
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
 		return fmt.Errorf("postgres: ping: %w", err)
 	}
 	d.db = db
 	d.scanOptions = cursor.ScanOptions{MaxRows: cfg.MaxResultRows, MaxBytes: cfg.MaxResultBytes}
+	d.defaultScope = cfg.DefaultScope
 	return nil
 }
 

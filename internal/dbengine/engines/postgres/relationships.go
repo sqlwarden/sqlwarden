@@ -8,6 +8,15 @@ import (
 )
 
 var _ schema.RelationshipInspector = (*postgresDriver)(nil)
+var _ schema.ScopedRelationshipInspector = (*postgresDriver)(nil)
+
+func (d *postgresDriver) InspectRelationshipsInScope(ctx context.Context, scope schema.ScopePath) (*schema.RelationshipGraph, error) {
+	graph, err := d.InspectRelationships(ctx, scope.Name("schema"))
+	if err != nil {
+		return nil, err
+	}
+	return schema.ScopeRelationshipGraph(graph, scope), nil
+}
 
 // InspectRelationships returns every foreign-key edge in a namespace without
 // loading column/index detail — the cheap topology tier behind the ER diagram.

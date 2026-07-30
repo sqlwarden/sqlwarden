@@ -259,7 +259,7 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 	if err != nil {
 		return nil, err
 	}
-	if err := driver.Connect(ctx, dbengine.ConnectionConfig{DSN: plainDSN, Driver: conn.Driver}); err != nil {
+	if err := driver.Connect(ctx, dbengine.ConnectionConfig{DSN: plainDSN, Driver: conn.Driver, DefaultScope: conn.DefaultScope}); err != nil {
 		return nil, jobs.Retryable("export_connect_failed", "Could not connect to the target database.")
 	}
 	defer driver.Close()

@@ -86,6 +86,31 @@ func TestConnect(t *testing.T) {
 		_ = d.Close()
 	})
 
+	t.Run("selected schema becomes search path", func(t *testing.T) {
+		setup := newConnectedDriver(t)
+		if _, err := setup.db.ExecContext(context.Background(), `CREATE SCHEMA IF NOT EXISTS selected_scope`); err != nil {
+			t.Fatal(err)
+		}
+		d := &postgresDriver{}
+		scope := schema.NewScopePath(
+			schema.ScopeSegment{Kind: "database", Name: "testdb"},
+			schema.ScopeSegment{Kind: "schema", Name: "selected_scope"},
+		)
+		if err := d.Connect(context.Background(), dbengine.ConnectionConfig{
+			DSN: testDSN, Driver: "postgres", DefaultScope: scope,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = d.Close() })
+		var current string
+		if err := d.db.QueryRowContext(context.Background(), `SELECT current_schema()`).Scan(&current); err != nil {
+			t.Fatal(err)
+		}
+		if current != "selected_scope" {
+			t.Fatalf("current schema = %q, want selected_scope", current)
+		}
+	})
+
 	t.Run("invalid DSN", func(t *testing.T) {
 		d := &postgresDriver{}
 		ctx := context.Background()

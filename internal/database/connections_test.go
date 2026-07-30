@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/uptrace/bun"
 )
 
@@ -96,6 +97,63 @@ func TestConnectionCRUD(t *testing.T) {
 	err = db.DeleteConnection(context.Background(), connInEnv.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestConnectionDefaultScopeRoundTrips(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	org, err := db.InsertOrg(ctx, "conn-scope-org", "Connection Scope Org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := schema.NewScopePath(
+		schema.ScopeSegment{Kind: "database", Name: "analytics"},
+		schema.ScopeSegment{Kind: "schema", Name: "reporting"},
+	)
+	conn, err := db.InsertConnectionWithScope(
+		ctx, ws.ID, nil, "analytics", "postgres", "encrypted", "open", initial,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, found, err := db.GetConnection(ctx, conn.ID)
+	if err != nil || !found {
+		t.Fatalf("GetConnection: found=%v err=%v", found, err)
+	}
+	if stored.DefaultScope != initial {
+		t.Fatalf("default scope = %q, want %q", stored.DefaultScope, initial)
+	}
+
+	// The compatibility update path must not silently erase the selected scope.
+	if err := db.UpdateConnection(ctx, conn.ID, "renamed", "encrypted-2", "restricted"); err != nil {
+		t.Fatal(err)
+	}
+	stored, _, err = db.GetConnection(ctx, conn.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.DefaultScope != initial {
+		t.Fatalf("compatibility update erased scope: got %q", stored.DefaultScope)
+	}
+
+	replacement := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "warehouse"})
+	if err := db.UpdateConnectionWithScopeAndPolicy(
+		ctx, conn.ID, "renamed", "encrypted-2", "restricted",
+		SchemaSnapshotPolicyInherit, replacement,
+	); err != nil {
+		t.Fatal(err)
+	}
+	stored, _, err = db.GetConnection(ctx, conn.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.DefaultScope != replacement {
+		t.Fatalf("updated scope = %q, want %q", stored.DefaultScope, replacement)
 	}
 }
 

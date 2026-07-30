@@ -7,14 +7,16 @@ import (
 
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/cursor"
+	"github.com/sqlwarden/internal/dbengine/schema"
 	"github.com/sqlwarden/pkg/result"
 
 	_ "modernc.org/sqlite"
 )
 
 type sqliteDriver struct {
-	db          *sql.DB
-	scanOptions cursor.ScanOptions
+	db           *sql.DB
+	scanOptions  cursor.ScanOptions
+	defaultScope schema.ScopePath
 }
 
 func (d *sqliteDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfig) error {
@@ -33,6 +35,7 @@ func (d *sqliteDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfi
 	}
 	d.db = db
 	d.scanOptions = cursor.ScanOptions{MaxRows: cfg.MaxResultRows, MaxBytes: cfg.MaxResultBytes}
+	d.defaultScope = cfg.DefaultScope
 	return nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/docker/go-connections/nat"
+	mysqlconfig "github.com/go-sql-driver/mysql"
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/cursor"
 	"github.com/sqlwarden/internal/dbengine/schema"
@@ -96,6 +97,51 @@ func TestConnect(t *testing.T) {
 			t.Fatalf("expected connect to succeed, got: %v", err)
 		}
 		t.Cleanup(func() { _ = d.Close() })
+	})
+
+	t.Run("selected database overrides DSN default", func(t *testing.T) {
+		config, err := mysqlconfig.ParseDSN(testDSN)
+		if err != nil {
+			t.Fatal(err)
+		}
+		config.DBName = ""
+		d := &mysqlDriver{}
+		scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "testdb"})
+		if err := d.Connect(context.Background(), dbengine.ConnectionConfig{
+			DSN: config.FormatDSN(), Driver: "mysql", DefaultScope: scope,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = d.Close() })
+		var current string
+		if err := d.db.QueryRowContext(context.Background(), `SELECT DATABASE()`).Scan(&current); err != nil {
+			t.Fatal(err)
+		}
+		if current != "testdb" {
+			t.Fatalf("current database = %q, want testdb", current)
+		}
+	})
+
+	t.Run("no database still supports an empty catalog", func(t *testing.T) {
+		config, err := mysqlconfig.ParseDSN(testDSN)
+		if err != nil {
+			t.Fatal(err)
+		}
+		config.DBName = ""
+		d := &mysqlDriver{}
+		if err := d.Connect(context.Background(), dbengine.ConnectionConfig{
+			DSN: config.FormatDSN(), Driver: "mysql",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = d.Close() })
+		catalog, err := d.InspectCatalog(context.Background(), schema.CatalogOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if catalog.Database != "" || len(catalog.Namespaces) != 0 {
+			t.Fatalf("catalog without a selected database = %+v", catalog)
+		}
 	})
 
 	t.Run("invalid DSN", func(t *testing.T) {

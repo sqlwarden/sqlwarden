@@ -16,13 +16,19 @@ import { Label } from '#/components/ui/label'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
 import { drivers, driverBrands, type DriverDef, type FieldDef } from './connection-drivers/index'
 import { DriverBadge } from './DriverBadge'
-import { useConnectionForm, type ConnectionTestState } from './useConnectionForm'
+import {
+  scopeSegmentName,
+  useConnectionForm,
+  type ConnectionTestState,
+  type ScopeDiscovery,
+} from './useConnectionForm'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,6 +43,8 @@ type Props = {
   /** When set, the environment is pre-selected and the dropdown is locked. */
   lockedEnvironmentId?: number
 }
+
+const NO_DEFAULT_SCOPE = '__sqlwarden_no_default_scope__'
 
 export function ConnectionDialog({
   open,
@@ -129,11 +137,13 @@ export function ConnectionDialog({
                             <SelectValue>{form.selectedEnvironmentName}</SelectValue>
                           </SelectTrigger>
                           <SelectContent className="min-w-[180px]">
-                            {environments.map((env) => (
-                              <SelectItem key={env.id} value={String(env.id)}>
-                                {env.name}
-                              </SelectItem>
-                            ))}
+                            <SelectGroup>
+                              {environments.map((env) => (
+                                <SelectItem key={env.id} value={String(env.id)}>
+                                  {env.name}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
                           </SelectContent>
                         </Select>
                       </FormField>
@@ -146,6 +156,10 @@ export function ConnectionDialog({
                     errors={form.errors.fields}
                     disabled={isPending}
                     onChange={form.changeField}
+                    scopeDiscovery={form.scopeDiscovery}
+                    defaultScope={form.defaultScope}
+                    onDatabaseChange={form.selectDatabase}
+                    onSchemaChange={form.selectSchema}
                   />
                 </div>
 
@@ -271,12 +285,20 @@ function DriverFields({
   errors,
   disabled,
   onChange,
+  scopeDiscovery,
+  defaultScope,
+  onDatabaseChange,
+  onSchemaChange,
 }: {
   driver: DriverDef
   values: Record<string, string>
   errors: Record<string, string>
   disabled: boolean
   onChange: (key: string, value: string) => void
+  scopeDiscovery?: ScopeDiscovery
+  defaultScope: { kind: string; name: string }[]
+  onDatabaseChange: (database: string) => void
+  onSchemaChange: (schema: string) => void
 }) {
   const nodes: React.ReactNode[] = []
   let lastSection: string | undefined
@@ -289,6 +311,19 @@ function DriverFields({
           <SectionDivider label={field.section} />
         </div>,
       )
+    }
+    if (field.key === 'database' && scopeDiscovery && discoveredDatabases(scopeDiscovery).length) {
+      nodes.push(
+        <ScopeFields
+          key="database"
+          discovery={scopeDiscovery}
+          defaultScope={defaultScope}
+          disabled={disabled}
+          onDatabaseChange={onDatabaseChange}
+          onSchemaChange={onSchemaChange}
+        />,
+      )
+      continue
     }
     nodes.push(
       <div key={field.key} className={SPAN_CLASS[field.span ?? 'full']}>
@@ -306,6 +341,101 @@ function DriverFields({
   }
 
   return <>{nodes}</>
+}
+
+function ScopeFields({
+  discovery,
+  defaultScope,
+  disabled,
+  onDatabaseChange,
+  onSchemaChange,
+}: {
+  discovery: ScopeDiscovery
+  defaultScope: { kind: string; name: string }[]
+  disabled: boolean
+  onDatabaseChange: (database: string) => void
+  onSchemaChange: (schema: string) => void
+}) {
+  const database = scopeSegmentName(defaultScope, 'database') ?? ''
+  const schema = scopeSegmentName(defaultScope, 'schema') ?? ''
+  const databases = discoveredDatabases(discovery)
+  const schemas = uniqueNames(
+    discovery.scopes
+      .filter((scope) => scopeSegmentName(scope, 'database') === database)
+      .map((scope) => scopeSegmentName(scope, 'schema')),
+  )
+
+  return (
+    <>
+      <div className={cn('col-span-6', schemas.length > 0 && 'sm:col-span-3')}>
+        <FormField label="Database">
+          <Select
+            value={database || NO_DEFAULT_SCOPE}
+            onValueChange={(value) => {
+              if (value) onDatabaseChange(value === NO_DEFAULT_SCOPE ? '' : value)
+            }}
+            disabled={disabled}
+          >
+            <SelectTrigger className="w-full" aria-label="Default database">
+              <SelectValue>{database || 'No default database'}</SelectValue>
+            </SelectTrigger>
+            <SelectContent className="min-w-[180px]">
+              <SelectGroup>
+                <SelectItem value={NO_DEFAULT_SCOPE}>No default database</SelectItem>
+                {databases.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </FormField>
+      </div>
+      {schemas.length > 0 ? (
+        <div className="col-span-6 sm:col-span-3">
+          <FormField label="Schema">
+            <Select
+              value={schema || NO_DEFAULT_SCOPE}
+              onValueChange={(value) => {
+                if (value) onSchemaChange(value === NO_DEFAULT_SCOPE ? '' : value)
+              }}
+              disabled={disabled}
+            >
+              <SelectTrigger className="w-full" aria-label="Default schema">
+                <SelectValue>{schema || 'Use database default'}</SelectValue>
+              </SelectTrigger>
+              <SelectContent className="min-w-[180px]">
+                <SelectGroup>
+                  <SelectItem value={NO_DEFAULT_SCOPE}>Use database default</SelectItem>
+                  {schemas.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </FormField>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
+function discoveredDatabases(discovery: ScopeDiscovery): string[] {
+  return uniqueNames([
+    ...discovery.scopes
+      .filter((scope) => scope.length === 1)
+      .map((scope) => scopeSegmentName(scope, 'database')),
+    scopeSegmentName(discovery.current, 'database'),
+  ])
+}
+
+function uniqueNames(names: (string | undefined)[]): string[] {
+  return [...new Set(names.filter((name): name is string => Boolean(name)))].sort((a, b) =>
+    a.localeCompare(b),
+  )
 }
 
 function DriverFieldControl({
@@ -336,11 +466,13 @@ function DriverFieldControl({
           <SelectValue>{selectedLabel}</SelectValue>
         </SelectTrigger>
         <SelectContent className="min-w-[120px]">
-          {(field.options ?? []).map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
+          <SelectGroup>
+            {(field.options ?? []).map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
         </SelectContent>
       </Select>
     )

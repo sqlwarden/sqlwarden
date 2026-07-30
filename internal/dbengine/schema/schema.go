@@ -5,14 +5,171 @@
 // describing which object kinds an engine exposes.
 package schema
 
+import (
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"strings"
+)
+
+// ScopeSegment is one typed level in an engine-defined object hierarchy.
+// Examples include database, schema, keyspace, and logical_database.
+type ScopeSegment struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+// ScopePath is the canonical, comparable representation of a hierarchical
+// object scope. Its JSON representation is []ScopeSegment, while the underlying
+// string is safe to use as a map, cache, and persistence key.
+type ScopePath string
+
+// NewScopePath builds a canonical path from typed segments.
+func NewScopePath(segments ...ScopeSegment) ScopePath {
+	parts := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		parts = append(parts, url.PathEscape(segment.Kind)+"="+url.PathEscape(segment.Name))
+	}
+	return ScopePath(strings.Join(parts, "/"))
+}
+
+// Segments decodes the path into its typed hierarchy.
+func (p ScopePath) Segments() ([]ScopeSegment, error) {
+	if p == "" {
+		return []ScopeSegment{}, nil
+	}
+	parts := strings.Split(string(p), "/")
+	segments := make([]ScopeSegment, 0, len(parts))
+	for _, part := range parts {
+		pair := strings.SplitN(part, "=", 2)
+		if len(pair) != 2 {
+			return nil, fmt.Errorf("invalid scope path segment %q", part)
+		}
+		kind, err := url.PathUnescape(pair[0])
+		if err != nil {
+			return nil, fmt.Errorf("decode scope kind: %w", err)
+		}
+		name, err := url.PathUnescape(pair[1])
+		if err != nil {
+			return nil, fmt.Errorf("decode scope name: %w", err)
+		}
+		if kind == "" || name == "" {
+			return nil, fmt.Errorf("scope kind and name must not be empty")
+		}
+		segments = append(segments, ScopeSegment{Kind: kind, Name: name})
+	}
+	return segments, nil
+}
+
+func (p ScopePath) MarshalJSON() ([]byte, error) {
+	segments, err := p.Segments()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(segments)
+}
+
+func (p *ScopePath) UnmarshalJSON(data []byte) error {
+	var segments []ScopeSegment
+	if err := json.Unmarshal(data, &segments); err != nil {
+		return err
+	}
+	path := NewScopePath(segments...)
+	if _, err := path.Segments(); err != nil {
+		return err
+	}
+	*p = path
+	return nil
+}
+
+// Child returns a new scope path with segment appended.
+func (p ScopePath) Child(segment ScopeSegment) ScopePath {
+	segments, err := p.Segments()
+	if err != nil {
+		return NewScopePath(segment)
+	}
+	return NewScopePath(append(segments, segment)...)
+}
+
+// Name returns the last segment name of kind, or an empty string.
+func (p ScopePath) Name(kind string) string {
+	segments, err := p.Segments()
+	if err != nil {
+		return ""
+	}
+	for index := len(segments) - 1; index >= 0; index-- {
+		if segments[index].Kind == kind {
+			return segments[index].Name
+		}
+	}
+	return ""
+}
+
+// Last returns the final segment.
+func (p ScopePath) Last() (ScopeSegment, bool) {
+	segments, err := p.Segments()
+	if err != nil || len(segments) == 0 {
+		return ScopeSegment{}, false
+	}
+	return segments[len(segments)-1], true
+}
+
+// With replaces the last segment of kind, or appends it when absent.
+func (p ScopePath) With(kind, name string) ScopePath {
+	segments, err := p.Segments()
+	if err != nil {
+		return NewScopePath(ScopeSegment{Kind: kind, Name: name})
+	}
+	for index := len(segments) - 1; index >= 0; index-- {
+		if segments[index].Kind == kind {
+			segments[index].Name = name
+			return NewScopePath(segments...)
+		}
+	}
+	return NewScopePath(append(segments, ScopeSegment{Kind: kind, Name: name})...)
+}
+
+// ScopeRelationshipGraph upgrades a legacy namespace graph to fully scoped
+// endpoints without loading any additional metadata.
+func ScopeRelationshipGraph(graph *RelationshipGraph, scope ScopePath) *RelationshipGraph {
+	if graph == nil {
+		return nil
+	}
+	result := *graph
+	result.Scope = scope
+	result.Relationships = append([]Relationship(nil), graph.Relationships...)
+	for index := range result.Relationships {
+		relationship := &result.Relationships[index]
+		relationship.Kind = "foreign_key"
+		relationship.Source.Scope = scope.With("schema", relationship.Source.Namespace)
+		relationship.References.Scope = scope.With("schema", relationship.References.Namespace)
+	}
+	return &result
+}
+
 // ObjectRef is the qualified, addressable identity of a database object. It
 // replaces bare name strings wherever an object is referenced (including
 // foreign-key targets), which is what makes cross-schema references and
 // click-to-navigate possible.
 type ObjectRef struct {
-	Namespace string `json:"namespace"`
-	Kind      string `json:"kind"` // table, view, function, …
+	Scope ScopePath `json:"scope,omitempty"`
+	// Namespace is retained while current engines migrate to Scope. New engine
+	// implementations must use Scope.
+	Namespace string `json:"namespace,omitempty"`
+	Kind      string `json:"kind"` // table, view, collection, key, function, …
 	Name      string `json:"name"`
+}
+
+// EffectiveScope returns Scope when present and maps a legacy namespace to a
+// single schema segment otherwise.
+func (r ObjectRef) EffectiveScope() ScopePath {
+	if r.Scope != "" {
+		return r.Scope
+	}
+	if r.Namespace != "" {
+		return NewScopePath(ScopeSegment{Kind: "schema", Name: r.Namespace})
+	}
+	return ""
 }
 
 // Object is the on-demand detail for a single database object. Known relational

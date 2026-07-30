@@ -40,6 +40,9 @@ func Complete(
 
 	result := make([]completioncore.Candidate, 0, len(native)+32)
 	for _, candidate := range native {
+		if !presentableNativeCandidate(candidate) {
+			continue
+		}
 		if suppressNativeColumns && candidate.Type == omnicompletion.CandidateColumn {
 			continue
 		}
@@ -49,6 +52,26 @@ func Complete(
 		result = append(result, resolveColumns(sql, cursor, completion, metadata)...)
 	}
 	return filterByPrefix(deduplicate(result), prefixAt(sql, cursor)), completioncore.CheckContext(ctx)
+}
+
+func presentableNativeCandidate(candidate omnicompletion.Candidate) bool {
+	// Omni patches incomplete relation references with this internal sentinel.
+	// It can be returned as a table candidate even though it is not in the catalog.
+	if candidate.Text == "_x" {
+		return false
+	}
+	if candidate.Type != omnicompletion.CandidateKeyword {
+		return true
+	}
+
+	// Grammar punctuation is useful to the parser but noisy in an IDE menu.
+	// Keep words (including one-character word-like tokens), while leaving
+	// punctuation such as ",", ";", and "(" for the user to type directly.
+	runes := []rune(candidate.Text)
+	return len(runes) != 1 ||
+		unicode.IsLetter(runes[0]) ||
+		unicode.IsDigit(runes[0]) ||
+		runes[0] == '_'
 }
 
 func convertNative(candidate omnicompletion.Candidate) completioncore.Candidate {

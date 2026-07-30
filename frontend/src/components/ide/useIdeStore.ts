@@ -160,7 +160,12 @@ export type IdeActions = {
   /** Opens a new numbered console tab. Pass yState (encoded Y.Doc) so all windows
    *  that receive this tab share the same canonical Y.js initial history.
    *  Pass connectionId to pre-select a connection on the new tab. */
-  openConsole: (workspace: Workspace, yState: number[], connectionId?: number) => void
+  openConsole: (
+    workspace: Workspace,
+    yState: number[],
+    connectionId?: number,
+    driver?: string,
+  ) => void
 }
 
 // ─── Layout selectors ───────────────────────────────────────────────────────────
@@ -544,7 +549,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             return { abortControllers: { ...s.abortControllers, [tabId]: controller } }
           }),
 
-        openConsole: (workspace, yState, connectionId) =>
+        openConsole: (workspace, yState, connectionId, driver) =>
           set((s) => {
             const wsConsoleTabs = s.tabs.filter(
               (t) => t.workspaceId === workspace.id && t.kind === 'scratch',
@@ -562,6 +567,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
               content: DEFAULT_CONSOLE_CONTENT,
               yState,
               ...(connectionId !== undefined ? { connectionId } : {}),
+              ...(driver ? { driver } : {}),
             }
             const exists = s.tabs.some((t) => t.id === tab.id)
             const { layout, groupId } = ensureWorkspaceLayout(s, workspace.id)

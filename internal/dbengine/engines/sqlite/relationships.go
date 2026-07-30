@@ -8,6 +8,21 @@ import (
 )
 
 var _ schema.RelationshipInspector = (*sqliteDriver)(nil)
+var _ schema.ScopedRelationshipInspector = (*sqliteDriver)(nil)
+
+func (d *sqliteDriver) InspectRelationshipsInScope(ctx context.Context, scope schema.ScopePath) (*schema.RelationshipGraph, error) {
+	graph, err := d.InspectRelationships(ctx, scope.Name("database"))
+	if err != nil {
+		return nil, err
+	}
+	graph.Scope = scope
+	for index := range graph.Relationships {
+		graph.Relationships[index].Kind = "foreign_key"
+		graph.Relationships[index].Source.Scope = scope
+		graph.Relationships[index].References.Scope = scope
+	}
+	return graph, nil
+}
 
 // InspectRelationships returns every foreign-key edge in a namespace. SQLite has
 // no namespace-wide FK view, so it lists the namespace's tables and runs

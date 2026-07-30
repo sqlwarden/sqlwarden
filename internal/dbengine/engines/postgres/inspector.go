@@ -11,6 +11,8 @@ import (
 )
 
 var _ schema.SchemaInspector = (*postgresDriver)(nil)
+var _ schema.DirectoryInspector = (*postgresDriver)(nil)
+var _ schema.ScopeDiscoverer = (*postgresDriver)(nil)
 
 func (d *postgresDriver) SchemaSpec() schema.SchemaSpec {
 	return schema.SchemaSpec{
@@ -83,7 +85,107 @@ ORDER BY sequence_schema, sequence_name`
 	}
 	catalog := b.Build("", "postgres", dbName)
 	catalog.DefaultNamespace = defaultNamespace.String
+	if selectedSchema := d.defaultScope.Name("schema"); selectedSchema != "" {
+		catalog.DefaultNamespace = selectedSchema
+	}
 	return catalog, nil
+}
+
+func (d *postgresDriver) InspectDirectory(ctx context.Context, opts schema.DirectoryOptions) (*schema.Directory, error) {
+	root := opts.Root
+	if root == "" {
+		root = d.defaultScope
+	}
+	catalog, err := d.InspectCatalog(ctx, schema.CatalogOptions{Database: root.Name("database")})
+	if err != nil {
+		return nil, err
+	}
+	directory := schema.DirectoryFromCatalog(catalog)
+	if root != "" {
+		directory.DefaultScope = root
+	}
+	return directory, nil
+}
+
+func (d *postgresDriver) DiscoverScopes(ctx context.Context, request schema.ScopeDiscoveryRequest) (*schema.ScopeDiscovery, error) {
+	var currentDatabase string
+	var currentSchema sql.NullString
+	if err := d.db.QueryRowContext(ctx, `SELECT current_database(), current_schema()`).Scan(&currentDatabase, &currentSchema); err != nil {
+		return nil, fmt.Errorf("postgres: discover current scope: %w", err)
+	}
+	currentRoot := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: currentDatabase})
+	current := currentRoot
+	if currentSchema.Valid {
+		current = current.Child(schema.ScopeSegment{Kind: "schema", Name: currentSchema.String})
+	}
+	result := &schema.ScopeDiscovery{Current: current, Scopes: []schema.ScopePath{}}
+	parentDatabase := request.Parent.Name("database")
+	if parentDatabase != "" {
+		if parentDatabase != currentDatabase {
+			return result, nil
+		}
+		rows, err := d.db.QueryContext(ctx, `
+SELECT schema_name
+FROM information_schema.schemata
+WHERE schema_name NOT IN ('pg_catalog', 'information_schema')
+  AND schema_name NOT LIKE 'pg_toast%'
+  AND schema_name NOT LIKE 'pg_temp_%'
+ORDER BY schema_name`)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: discover schemas: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				return nil, err
+			}
+			result.Scopes = append(result.Scopes, request.Parent.With("schema", name))
+		}
+		return result, rows.Err()
+	}
+	rows, err := d.db.QueryContext(ctx, `
+SELECT datname
+FROM pg_database
+WHERE datallowconn AND NOT datistemplate AND has_database_privilege(datname, 'CONNECT')
+ORDER BY datname`)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: discover databases: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		result.Scopes = append(result.Scopes, schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: name}))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	schemaRows, err := d.db.QueryContext(ctx, `
+SELECT schema_name
+FROM information_schema.schemata
+WHERE schema_name NOT IN ('pg_catalog', 'information_schema')
+  AND schema_name NOT LIKE 'pg_toast%'
+  AND schema_name NOT LIKE 'pg_temp_%'
+ORDER BY schema_name`)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: discover schemas: %w", err)
+	}
+	defer schemaRows.Close()
+	for schemaRows.Next() {
+		var name string
+		if err := schemaRows.Scan(&name); err != nil {
+			return nil, err
+		}
+		result.Scopes = append(result.Scopes, currentRoot.With("schema", name))
+	}
+	return result, schemaRows.Err()
 }
 
 // queryRefs runs a 2- or 3-column query (schema, name[, type]) and calls fn per

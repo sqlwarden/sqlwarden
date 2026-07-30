@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
@@ -96,6 +96,14 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const connItems = connections.data?.items ?? []
   const activeConnection = connItems.find((c) => c.id === activeTab?.connectionId)
   const hasConnections = connItems.length > 0
+  useEffect(() => {
+    if (activeTab && activeConnection && activeTab.driver !== activeConnection.driver) {
+      // Console tabs created before driver-aware completion retained only the
+      // connection id. Repair those persisted tabs once connection metadata is
+      // available so CodeMirror can register the correct dialect completer.
+      setTabConnection(activeTab.id, activeConnection.id, activeConnection.driver)
+    }
+  }, [activeConnection, activeTab, setTabConnection])
   const queryAction = useToolbarQueryAction({
     orgSlug,
     workspace,

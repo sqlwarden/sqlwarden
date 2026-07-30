@@ -21,7 +21,8 @@ type schemaSpecResponse struct {
 }
 
 type catalogResponse struct {
-	Catalog *schema.Catalog `json:"catalog"`
+	Catalog   *schema.Catalog   `json:"catalog"`
+	Directory *schema.Directory `json:"directory,omitempty"`
 }
 
 type objectsRequest struct {
@@ -261,7 +262,9 @@ func (app *application) getConnectionSchemaCatalog(w http.ResponseWriter, r *htt
 			app.writeSnapshotPending(w, r)
 			return
 		}
-		if err := response.JSON(w, http.StatusOK, catalogResponse{Catalog: catalog}); err != nil {
+		if err := response.JSON(w, http.StatusOK, catalogResponse{
+			Catalog: catalog, Directory: schema.DirectoryFromCatalog(catalog),
+		}); err != nil {
 			app.serverError(w, r, err)
 		}
 		return
@@ -280,7 +283,9 @@ func (app *application) getConnectionSchemaCatalog(w http.ResponseWriter, r *htt
 		slog.String("dialect", cat.Dialect),
 		slog.Int("namespace_count", len(cat.Namespaces)),
 	)
-	if err := response.JSON(w, http.StatusOK, catalogResponse{Catalog: cat}); err != nil {
+	if err := response.JSON(w, http.StatusOK, catalogResponse{
+		Catalog: cat, Directory: schema.DirectoryFromCatalog(cat),
+	}); err != nil {
 		app.serverError(w, r, err)
 	}
 }

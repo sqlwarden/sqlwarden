@@ -137,6 +137,11 @@ func TestTestConnectionValidationAndSuccess(t *testing.T) {
 		map[string]any{"driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
 	assert.Equal(t, successRes.StatusCode, http.StatusOK)
 	assert.Equal(t, successRes.BodyFields["ok"], true)
+	discovery, ok := successRes.BodyFields["scope_discovery"].(map[string]any)
+	if !ok {
+		t.Fatalf("scope_discovery = %#v, want object", successRes.BodyFields["scope_discovery"])
+	}
+	assert.Equal[any](t, discovery["current"], []any{map[string]any{"kind": "database", "name": "main"}})
 }
 
 func TestTestConnectionSuccessLogsOutcome(t *testing.T) {

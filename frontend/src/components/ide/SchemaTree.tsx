@@ -1,5 +1,5 @@
 import { createContext, useContext, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon, type AppIcon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { isApiError } from '#/lib/api/errors'
@@ -33,6 +33,10 @@ import { buildNamespaceMenu, buildObjectGroupMenu } from './contextMenus/schemaM
 import { buildObjectMenu } from './contextMenus/objectMenu'
 import { buildColumnMenu, buildIndexMenu } from './contextMenus/columnMenu'
 import { useEvictGoneSession } from './sessionErrors'
+import {
+  invalidateConnectionSchemaQueries,
+  refreshConnectionSchema,
+} from '#/lib/api/queries/database'
 
 type TreeCtx = {
   dialect: SqlDialect
@@ -155,6 +159,12 @@ export function SchemaTree({
   const specQuery = useQuery({
     ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspaceId, connectionId, sessionId),
   })
+  const queryClient = useQueryClient()
+  const refreshSchema = useMutation({
+    mutationFn: () => refreshConnectionSchema(orgSlug, workspaceId, connectionId, sessionId ?? ''),
+    onSuccess: () =>
+      invalidateConnectionSchemaQueries(queryClient, orgSlug, workspaceId, connectionId),
+  })
 
   // A 410 from any schema endpoint means the server-side session died (idle
   // timeout, restart). Drop it so the tree flips to the reconnect hint instead
@@ -236,9 +246,7 @@ export function SchemaTree({
   const ctx: TreeCtx = {
     dialect,
     insert,
-    refresh: () => {
-      void catalogQuery.refetch()
-    },
+    refresh: () => refreshSchema.mutate(),
     openObject,
     openDiagram,
     spec,

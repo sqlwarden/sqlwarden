@@ -81,9 +81,44 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 		metadata = completioncore.NewSchemaResolver(index, defaultSchema)
 	}
 
-	candidates, err := corepostgres.Complete(ctx, req.SQL, req.CursorOffset, catalog, metadata)
+	completionSQL, completionCursor := postgresCompletionStatement(req.SQL, req.CursorOffset)
+	candidates, err := corepostgres.Complete(
+		ctx,
+		completionSQL,
+		completionCursor,
+		catalog,
+		metadata,
+	)
 	if err != nil {
 		return completer.Result{}, err
+	}
+	if len(candidates) == 0 {
+		if recoverySQL, recoveryCursor, ok := postgresCompletionRecoveryStatement(
+			completionSQL,
+			completionCursor,
+		); ok {
+			candidates, err = corepostgres.Complete(
+				ctx,
+				recoverySQL,
+				recoveryCursor,
+				catalog,
+				metadata,
+			)
+			if err != nil {
+				return completer.Result{}, err
+			}
+			if len(candidates) > 0 {
+				completionSQL, completionCursor = recoverySQL, recoveryCursor
+			}
+		}
+	}
+	if req.Schema != nil && req.Schema.Catalog != nil {
+		candidates = filterPostgresUnqualifiedRelations(
+			candidates,
+			req.Schema.Catalog,
+			completionSQL,
+			completionCursor,
+		)
 	}
 	start := completionReplaceStart(req.SQL, req.CursorOffset, '"')
 	suggestions := make([]completer.Suggestion, 0, len(candidates))
@@ -114,6 +149,77 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 	return completer.Result{Suggestions: suggestions}, nil
 }
 
+func postgresCompletionStatement(sql string, cursor int) (string, int) {
+	if cursor < 0 || cursor > len(sql) {
+		return sql, cursor
+	}
+	start, end := 0, len(sql)
+	lexer := pgparser.NewLexer(sql)
+	for {
+		token := lexer.NextToken()
+		if token.Type == 0 {
+			break
+		}
+		if token.Type != ';' {
+			continue
+		}
+		if token.End <= cursor {
+			start = token.End
+			continue
+		}
+		if token.Loc >= cursor {
+			end = token.End
+			break
+		}
+	}
+	return sql[start:end], cursor - start
+}
+
+func postgresCompletionRecoveryStatement(sql string, cursor int) (string, int, bool) {
+	if cursor < 0 || cursor > len(sql) {
+		return "", 0, false
+	}
+	lexer := pgparser.NewLexer(sql)
+	depth := 0
+	firstTopLevelSelect := -1
+	latestTopLevelSelect := -1
+	for {
+		token := lexer.NextToken()
+		if token.Type == 0 || token.Loc >= cursor {
+			break
+		}
+		switch token.Type {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case pgparser.SELECT:
+			if depth != 0 || !postgresTokenStartsLine(sql, token.Loc) {
+				continue
+			}
+			if firstTopLevelSelect == -1 {
+				firstTopLevelSelect = token.Loc
+			} else {
+				latestTopLevelSelect = token.Loc
+			}
+		}
+	}
+	if firstTopLevelSelect == -1 || latestTopLevelSelect == -1 {
+		return "", 0, false
+	}
+	return sql[latestTopLevelSelect:], cursor - latestTopLevelSelect, true
+}
+
+func postgresTokenStartsLine(sql string, offset int) bool {
+	if offset < 0 || offset > len(sql) {
+		return false
+	}
+	lineStart := strings.LastIndexByte(sql[:offset], '\n') + 1
+	return strings.TrimSpace(sql[lineStart:offset]) == ""
+}
+
 func postgresCompletionDefaultSchema(catalog *schema.Catalog) string {
 	if catalog == nil {
 		return "public"
@@ -130,6 +236,102 @@ func postgresCompletionDefaultSchema(catalog *schema.Catalog) string {
 		return catalog.Namespaces[0].Name
 	}
 	return "public"
+}
+
+func filterPostgresUnqualifiedRelations(
+	candidates []completioncore.Candidate,
+	catalog *schema.Catalog,
+	sql string,
+	cursor int,
+) []completioncore.Candidate {
+	if catalog == nil || completionHasQualifier(sql, cursor) {
+		return candidates
+	}
+	defaultSchema := postgresCompletionDefaultSchema(catalog)
+	if defaultSchema == "" {
+		return candidates
+	}
+	allRelations := make(map[string]struct{})
+	defaultRelations := make(map[string]struct{})
+	foundDefaultSchema := false
+	for _, namespace := range catalog.Namespaces {
+		isDefault := strings.EqualFold(namespace.Name, defaultSchema)
+		foundDefaultSchema = foundDefaultSchema || isDefault
+		for _, group := range namespace.Groups {
+			if !postgresRelationKind(group.Kind) {
+				continue
+			}
+			for _, ref := range group.Objects {
+				name := strings.ToLower(ref.Name)
+				allRelations[name] = struct{}{}
+				if isDefault {
+					defaultRelations[name] = struct{}{}
+				}
+			}
+		}
+	}
+	if !foundDefaultSchema {
+		return candidates
+	}
+	result := make([]completioncore.Candidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if !postgresRelationCandidate(candidate.Type) {
+			result = append(result, candidate)
+			continue
+		}
+		name := strings.ToLower(candidate.Text)
+		if _, catalogRelation := allRelations[name]; !catalogRelation {
+			// Preserve CTEs and parser-derived relations that are not catalog
+			// objects. Only cross-schema catalog leakage is filtered here.
+			result = append(result, candidate)
+			continue
+		}
+		if _, visible := defaultRelations[name]; visible {
+			result = append(result, candidate)
+		}
+	}
+	return result
+}
+
+func postgresRelationKind(kind string) bool {
+	switch kind {
+	case "table", "foreign_table", "view", "materialized_view", "sequence":
+		return true
+	default:
+		return false
+	}
+}
+
+func postgresRelationCandidate(kind completioncore.CandidateType) bool {
+	switch kind {
+	case completioncore.CandidateTable,
+		completioncore.CandidateForeignTable,
+		completioncore.CandidateView,
+		completioncore.CandidateMaterializedView,
+		completioncore.CandidateSequence:
+		return true
+	default:
+		return false
+	}
+}
+
+func completionHasQualifier(sql string, cursor int) bool {
+	if cursor < 0 || cursor > len(sql) {
+		return false
+	}
+	index := cursor
+	for index > 0 {
+		character := sql[index-1]
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '_' || character == '$' {
+			index--
+			continue
+		}
+		break
+	}
+	return index > 0 && sql[index-1] == '.'
 }
 
 func (d *postgresDriver) CompletionVocabulary() completer.Vocabulary {
@@ -199,6 +401,7 @@ func buildPostgresCompletionCatalog(catalog *schema.Catalog, objects []schema.Ob
 			}
 		}
 	}
+	native.SetSearchPath([]string{postgresCompletionDefaultSchema(catalog)})
 	return native, nil
 }
 

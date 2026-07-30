@@ -54,6 +54,45 @@ func TestIndexObjectLookupAndIsolation(t *testing.T) {
 	}
 }
 
+func TestIndexDirectoryLookupSupportsNonSQLScopes(t *testing.T) {
+	scope := NewScopePath(
+		ScopeSegment{Kind: "cluster", Name: "cache-prod"},
+		ScopeSegment{Kind: "logical_database", Name: "2"},
+	)
+	ref := ObjectRef{Scope: scope, Kind: "key", Name: "session:42"}
+	directory := &Directory{
+		Engine:       "redis",
+		DefaultScope: scope,
+		Roots: []ScopeNode{{
+			Path: NewScopePath(ScopeSegment{Kind: "cluster", Name: "cache-prod"}),
+			Children: []ScopeNode{{
+				Path: scope,
+				Groups: []ObjectGroupCatalog{{
+					Kind: "key", Objects: []ObjectRef{ref},
+				}},
+			}},
+		}},
+	}
+	index := NewIndex(MetadataSet{
+		Directory: directory,
+		Objects:   []Object{{Ref: ref, Attributes: map[string]any{"type": "hash"}}},
+		Version:   "ephemeral-1",
+	})
+
+	if index.DefaultScope() != scope {
+		t.Fatalf("default scope = %q, want %q", index.DefaultScope(), scope)
+	}
+	if got, ok := index.FindRefInScope(scope, "key", "SESSION:42"); !ok || got != ref {
+		t.Fatalf("FindRefInScope = %+v, %v", got, ok)
+	}
+	if got, ok := index.FindObjectInScope(scope, "key", "session:42"); !ok || got.Ref != ref {
+		t.Fatalf("FindObjectInScope = %+v, %v", got, ok)
+	}
+	if _, ok := index.Catalog(); ok {
+		t.Fatal("directory-only index unexpectedly synthesized a legacy catalog")
+	}
+}
+
 func TestIndexRelationshipGraphLookups(t *testing.T) {
 	users := ObjectRef{Namespace: "public", Kind: "table", Name: "users"}
 	orders := ObjectRef{Namespace: "public", Kind: "table", Name: "orders"}

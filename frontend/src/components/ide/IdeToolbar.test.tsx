@@ -56,6 +56,7 @@ const scratchTab: EditorTab = {
   kind: 'scratch',
   content: 'select 1',
   connectionId: 7,
+  driver: 'postgres',
 }
 
 describe('IdeToolbar', () => {
@@ -184,6 +185,18 @@ describe('IdeToolbar', () => {
 
     expect(store.getState().tabs[0]).toEqual(
       expect.objectContaining({ connectionId: 8, driver: 'mysql' }),
+    )
+  })
+
+  it('repairs a persisted console that has a connection but no driver', async () => {
+    store.getState().openTab({ ...scratchTab, driver: undefined })
+    renderToolbar()
+
+    await waitFor(() =>
+      expect(store.getState().tabs.find((tab) => tab.id === scratchTab.id)).toMatchObject({
+        connectionId: 7,
+        driver: 'postgres',
+      }),
     )
   })
 
