@@ -1,4 +1,4 @@
-import { closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
+import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import {
   bracketMatching,
@@ -86,7 +86,6 @@ export const sqlwardenBasicSetup: Extension = [
     ...searchKeymap,
     ...historyKeymap,
     ...foldKeymap,
-    ...completionKeymap,
     ...lintKeymap,
   ]),
 ]

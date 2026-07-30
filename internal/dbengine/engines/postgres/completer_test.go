@@ -164,6 +164,42 @@ func TestPostgresCompleteHidesNativeParserArtifacts(t *testing.T) {
 	requireNoCompletion(t, result, "(", "keyword")
 }
 
+func TestPostgresCompleteCuratesCompletedRelationContext(t *testing.T) {
+	driver := &postgresDriver{}
+	catalog := completionTestCatalog("postgres", "public")
+	objects := completionTestObjects("public")
+
+	sql := "SELECT * FROM users "
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql),
+		Schema:      &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		TriggerKind: completer.TriggerInvoked,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, label := range []string{"AS", "JOIN", "WHERE", "GROUP", "ORDER", "LIMIT"} {
+		requireCompletion(t, result, label, "keyword")
+	}
+	for _, label := range []string{"ABORT", "ALTER", "DATABASE", "ON", "USING"} {
+		requireNoCompletion(t, result, label, "keyword")
+	}
+
+	joinedSQL := "SELECT * FROM users u JOIN \"Order Items\" oi "
+	result, err = driver.Complete(context.Background(), completer.Request{
+		SQL: joinedSQL, CursorOffset: len(joinedSQL),
+		Schema:      &schema.MetadataSet{Catalog: catalog, Objects: objects},
+		TriggerKind: completer.TriggerInvoked,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireCompletion(t, result, "ON", "keyword")
+	requireCompletion(t, result, "USING", "keyword")
+	requireNoCompletion(t, result, "AS", "keyword")
+	requireNoCompletion(t, result, "ALTER", "keyword")
+}
+
 func TestPostgresCompleteUsesStatementAtCursor(t *testing.T) {
 	driver := &postgresDriver{}
 	catalog := completionTestCatalog("postgres", "public")

@@ -1,9 +1,16 @@
-import { CompletionContext, startCompletion } from '@codemirror/autocomplete'
-import { EditorState } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
+import {
+  CompletionContext,
+  completionStatus,
+  selectedCompletionIndex,
+  startCompletion,
+} from '@codemirror/autocomplete'
+import { defaultKeymap } from '@codemirror/commands'
+import { EditorState, type Extension } from '@codemirror/state'
+import { EditorView, keymap } from '@codemirror/view'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   acceptCompletionOnTab,
+  automaticSQLCompletionTrigger,
   clearSQLCompletionVocabularyCache,
   dialectForDriver,
   remoteSQLCompletionSource,
@@ -72,32 +79,8 @@ describe('SQL completion', () => {
     })
   })
 
-  it('renders a semantic kind icon and accepts the highlighted item with Tab', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) =>
-        String(input).includes('completion-vocabulary')
-          ? vocabularyResponse()
-          : new Response(
-              JSON.stringify({
-                suggestions: [
-                  {
-                    label: 'widgets',
-                    kind: 'table',
-                    insert_text: 'widgets',
-                    replace_start: 0,
-                    replace_end: 3,
-                    score: 80,
-                  },
-                ],
-                mode: 'persistent',
-                metadata_available: true,
-                metadata_status: 'ready',
-              }),
-              { status: 200, headers: { 'Content-Type': 'application/json' } },
-            ),
-      ),
-    )
+  it('renders a semantic kind icon and accepts the first soft item with Tab', async () => {
+    stubSingleCompletionFetch()
     const parent = document.createElement('div')
     document.body.append(parent)
     const view = new EditorView({
@@ -120,11 +103,11 @@ describe('SQL completion', () => {
     startCompletion(view)
     await vi.waitFor(() => {
       expect(parent.querySelector('.cm-completionKindIcon-table')).not.toBeNull()
-      expect(parent.querySelector('[role="option"][aria-selected="true"]')).not.toBeNull()
+      expect(parent.querySelector('[role="option"]')).not.toBeNull()
     })
+    expect(parent.querySelector('[role="option"][aria-selected="true"]')).toBeNull()
+    expect(selectedCompletionIndex(view.state)).toBeNull()
     expect(parent.querySelector('.cm-completionIcon')).toBeNull()
-    // CodeMirror ignores accidental selection for a short interaction window.
-    await new Promise((resolve) => setTimeout(resolve, 100))
 
     const event = new KeyboardEvent('keydown', {
       key: 'Tab',
@@ -138,6 +121,72 @@ describe('SQL completion', () => {
 
     view.destroy()
     parent.remove()
+  })
+
+  it('uses Enter for a newline until the user focuses a completion with arrows', async () => {
+    stubSingleCompletionFetch()
+    const first = createCompletionEditor('wid', [keymap.of(defaultKeymap)])
+
+    startCompletion(first.view)
+    await waitForCompletion(first.parent)
+    expect(selectedCompletionIndex(first.view.state)).toBeNull()
+
+    const softEnter = dispatchEditorKey(first.view, 'Enter', 13)
+    expect(softEnter.defaultPrevented).toBe(true)
+    expect(first.view.state.doc.toString()).toBe('wid\n')
+    first.destroy()
+
+    stubSingleCompletionFetch()
+    const second = createCompletionEditor('wid', [keymap.of(defaultKeymap)])
+    startCompletion(second.view)
+    await waitForCompletion(second.parent)
+
+    dispatchEditorKey(second.view, 'ArrowDown', 40)
+    expect(selectedCompletionIndex(second.view.state)).toBe(0)
+    dispatchEditorKey(second.view, 'Enter', 13)
+    expect(second.view.state.doc.toString()).toBe('widgets')
+    second.destroy()
+  })
+
+  it('closes completion with Escape without moving focus out of the editor', async () => {
+    stubSingleCompletionFetch()
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    const rendered = createCompletionEditor('wid')
+    const bubbled = vi.fn()
+    document.addEventListener('keydown', bubbled)
+
+    rendered.view.focus()
+    startCompletion(rendered.view)
+    await waitForCompletion(rendered.parent)
+    expect(rendered.view.hasFocus).toBe(true)
+
+    const escape = dispatchEditorKey(rendered.view, 'Escape', 27)
+    expect(escape.defaultPrevented).toBe(true)
+    expect(completionStatus(rendered.view.state)).toBeNull()
+    expect(rendered.view.hasFocus).toBe(true)
+    expect(document.activeElement).toBe(rendered.view.contentDOM)
+    expect(bubbled).not.toHaveBeenCalled()
+
+    document.removeEventListener('keydown', bubbled)
+    rendered.destroy()
+    outside.remove()
+  })
+
+  it('keeps Ctrl+Space as an explicit completion shortcut', async () => {
+    const fetchMock = stubSingleCompletionFetch()
+    const rendered = createCompletionEditor('wid')
+
+    const shortcut = dispatchEditorKey(rendered.view, ' ', 32, {
+      code: 'Space',
+      ctrlKey: true,
+    })
+    await waitForCompletion(rendered.parent)
+
+    expect(shortcut.defaultPrevented).toBe(true)
+    expect(fetchMock).toHaveBeenCalled()
+    expect(selectedCompletionIndex(rendered.view.state)).toBeNull()
+    rendered.destroy()
   })
 
   it('indents with Tab when no completion is active instead of moving browser focus', () => {
@@ -265,6 +314,67 @@ describe('SQL completion', () => {
     })
     const result = await source(new CompletionContext(state, 2, false))
     expect(result?.options.map((option) => option.label)).toEqual(['SELECT'])
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['SELECT ', ' '],
+    ['SELECT * FROM ', ' '],
+    ['SELECT * FROM actor a JOIN ', ' '],
+    ['SELECT * FROM actor WHERE ', ' '],
+    ['SELECT * FROM actor ORDER BY ', ' '],
+    ['SELECT * FROM actor a WHERE a.', '.'],
+    ['SELECT first_name,', ','],
+    ['SELECT COALESCE(', '('],
+  ])('recognizes useful automatic semantic context in %j', (source, trigger) => {
+    expect(automaticSQLCompletionTrigger(source, source.length)).toBe(trigger)
+  })
+
+  it.each([
+    'SELECT * FROM actor ',
+    'SELECT * ',
+    'SELECT * FROM  ',
+    "SELECT 'unfinished value ",
+    'SELECT "unfinished identifier ',
+    'SELECT * FROM actor -- comment ',
+    'SELECT * FROM actor /* comment ',
+    'SELECT 1.',
+  ])('does not treat ordinary or protected typing as a semantic trigger in %j', (source) => {
+    expect(automaticSQLCompletionTrigger(source, source.length)).toBeUndefined()
+  })
+
+  it('avoids a connection request after a completed relation but requests after FROM', async () => {
+    const fetchMock = vi.fn(async () =>
+      semanticCompletionResponse([
+        {
+          label: 'actor',
+          kind: 'table',
+          insert_text: 'actor',
+          replace_start: 14,
+          replace_end: 14,
+          score: 80,
+        },
+      ]),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'postgres',
+    })
+
+    const completedRelation = EditorState.create({ doc: 'SELECT * FROM actor ' })
+    expect(
+      await source(new CompletionContext(completedRelation, completedRelation.doc.length, false)),
+    ).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    const relationPosition = EditorState.create({ doc: 'SELECT * FROM ' })
+    const result = await source(
+      new CompletionContext(relationPosition, relationPosition.doc.length, false),
+    )
+    expect(result?.options.map((option) => option.label)).toContain('actor')
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
@@ -396,6 +506,79 @@ function vocabularyResponse() {
     }),
     { status: 200, headers: { 'Content-Type': 'application/json' } },
   )
+}
+
+function stubSingleCompletionFetch() {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+    String(input).includes('completion-vocabulary')
+      ? vocabularyResponse()
+      : semanticCompletionResponse([
+          {
+            label: 'widgets',
+            kind: 'table',
+            insert_text: 'widgets',
+            replace_start: 0,
+            replace_end: 3,
+            score: 80,
+          },
+        ]),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+function createCompletionEditor(doc: string, extensions: Extension[] = []) {
+  const parent = document.createElement('div')
+  document.body.append(parent)
+  const view = new EditorView({
+    parent,
+    state: EditorState.create({
+      doc,
+      selection: { anchor: doc.length },
+      extensions: [
+        ...extensions,
+        sqlCompletionExtension({
+          orgSlug: 'acme',
+          workspaceId: 1,
+          connectionId: 2,
+          driver: 'postgres',
+        }),
+      ],
+    }),
+  })
+  view.focus()
+  return {
+    parent,
+    view,
+    destroy() {
+      view.destroy()
+      parent.remove()
+    },
+  }
+}
+
+async function waitForCompletion(parent: HTMLElement): Promise<void> {
+  await vi.waitFor(() => {
+    expect(parent.querySelector('[role="option"]')).not.toBeNull()
+  })
+}
+
+function dispatchEditorKey(
+  view: EditorView,
+  key: string,
+  keyCode: number,
+  init: KeyboardEventInit = {},
+): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', {
+    key,
+    code: init.code ?? key,
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  })
+  Object.defineProperty(event, 'keyCode', { value: keyCode })
+  view.contentDOM.dispatchEvent(event)
+  return event
 }
 
 function semanticCompletionResponse(

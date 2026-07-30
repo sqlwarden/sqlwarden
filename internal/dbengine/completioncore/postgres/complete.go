@@ -51,7 +51,82 @@ func Complete(
 	if columnContext && metadata != nil {
 		result = append(result, resolveColumns(sql, cursor, completion, metadata)...)
 	}
+	if continuation, ok := relationContinuationAt(sql, cursor); ok {
+		result = relationContinuationCandidates(continuation)
+	}
 	return filterByPrefix(deduplicate(result), prefixAt(sql, cursor)), completioncore.CheckContext(ctx)
+}
+
+type relationContinuation struct {
+	afterJoin bool
+	hasAlias  bool
+}
+
+func relationContinuationAt(sql string, cursor int) (relationContinuation, bool) {
+	if cursor <= 0 || cursor > len(sql) || !unicode.IsSpace(rune(sql[cursor-1])) {
+		return relationContinuation{}, false
+	}
+	tokens := parser.Tokenize(sql[:cursor])
+	if len(tokens) == 0 || tokens[len(tokens)-1].Type == parser.AS {
+		return relationContinuation{}, false
+	}
+
+	start := 0
+	depth := 0
+	depths := make([]int, len(tokens))
+	for i, token := range tokens {
+		if token.Type == ')' && depth > 0 {
+			depth--
+		}
+		depths[i] = depth
+		switch token.Type {
+		case '(':
+			depth++
+		case ';':
+			if depth == 0 {
+				start = i + 1
+			}
+		}
+	}
+	cursorDepth := depth
+	for i := len(tokens) - 1; i >= start; i-- {
+		if depths[i] != cursorDepth || (tokens[i].Type != parser.FROM && tokens[i].Type != parser.JOIN) {
+			continue
+		}
+		ref, consumed, ok := parsePhysicalReference(tokens, i+1, len(tokens))
+		if !ok || consumed != len(tokens) {
+			return relationContinuation{}, false
+		}
+		return relationContinuation{
+			afterJoin: tokens[i].Type == parser.JOIN,
+			hasAlias:  ref.Alias != "",
+		}, true
+	}
+	return relationContinuation{}, false
+}
+
+func relationContinuationCandidates(context relationContinuation) []completioncore.Candidate {
+	labels := make([]string, 0, 24)
+	if !context.hasAlias {
+		labels = append(labels, "AS", "TABLESAMPLE")
+	}
+	if context.afterJoin {
+		labels = append(labels, "ON", "USING")
+	}
+	labels = append(labels,
+		"JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "NATURAL",
+		"WHERE", "GROUP", "HAVING", "WINDOW",
+		"UNION", "INTERSECT", "EXCEPT",
+		"ORDER", "LIMIT", "OFFSET", "FETCH", "FOR",
+	)
+	result := make([]completioncore.Candidate, 0, len(labels))
+	for _, label := range labels {
+		result = append(result, completioncore.Candidate{
+			Text: label,
+			Type: completioncore.CandidateKeyword,
+		})
+	}
+	return result
 }
 
 func presentableNativeCandidate(candidate omnicompletion.Candidate) bool {
