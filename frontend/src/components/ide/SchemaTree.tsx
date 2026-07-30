@@ -23,12 +23,7 @@ import { newObjectTab } from './object-detail/objectTab'
 import { newDiagramTab, type DiagramTarget } from './schema-diagram/diagramTab'
 import { diagramSupported, diagramSupportedForKind } from './schema-diagram/capability'
 import { OBJECT_REF_DND_MIME } from './schema-diagram/dnd'
-import {
-  filterDirectory,
-  hasDirectoryObjects,
-  kindLabel,
-  sortedGroups,
-} from './schemaDirectory'
+import { filterDirectory, hasDirectoryObjects, kindLabel, sortedGroups } from './schemaDirectory'
 import { scopeLabel } from '#/lib/api/scope'
 import { columnTypeIcon, columnTypeIconColor } from './columnTypeIcon'
 import { dialectFor, IDENTIFIER_DND_MIME, type SqlDialect } from './sqlDialect'
@@ -271,10 +266,18 @@ export function SchemaTree({
             ))
           : single && single.groups.length === 0
             ? (single.children ?? []).map((node) => (
-                <SchemaScopeNode key={JSON.stringify(node.path)} node={node} forceOpen={filtering} />
+                <SchemaScopeNode
+                  key={JSON.stringify(node.path)}
+                  node={node}
+                  forceOpen={filtering}
+                />
               ))
             : roots.map((node) => (
-                <SchemaScopeNode key={JSON.stringify(node.path)} node={node} forceOpen={filtering} />
+                <SchemaScopeNode
+                  key={JSON.stringify(node.path)}
+                  node={node}
+                  forceOpen={filtering}
+                />
               ))}
       </div>
     </SchemaTreeContext.Provider>
@@ -301,13 +304,7 @@ function GuideChildren({ children }: { children: React.ReactNode }) {
   return <div className="ml-[13px] border-l border-border/60">{children}</div>
 }
 
-function SchemaScopeNode({
-  node,
-  forceOpen,
-}: {
-  node: ScopeNode
-  forceOpen: boolean
-}) {
+function SchemaScopeNode({ node, forceOpen }: { node: ScopeNode; forceOpen: boolean }) {
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
   const { refresh, spec, openDiagram } = useTreeCtx()

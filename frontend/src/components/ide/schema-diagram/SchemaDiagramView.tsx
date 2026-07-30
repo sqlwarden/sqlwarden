@@ -147,7 +147,12 @@ function DiagramCanvas({
     enabled,
   })
   const directoryQuery = useQuery({
-    ...orgConnectionDirectoryQueryOptions(orgSlug, workspace.id, connectionId ?? 0, sessionId ?? ''),
+    ...orgConnectionDirectoryQueryOptions(
+      orgSlug,
+      workspace.id,
+      connectionId ?? 0,
+      sessionId ?? '',
+    ),
     enabled,
   })
   const relQuery = useQuery({
@@ -765,12 +770,7 @@ function DiagramCanvas({
   }
   function refresh() {
     void queryClient.invalidateQueries({
-      queryKey: connectionRelationshipsQueryKey(
-        orgSlug,
-        workspace.id,
-        connectionId ?? 0,
-        scope,
-      ),
+      queryKey: connectionRelationshipsQueryKey(orgSlug, workspace.id, connectionId ?? 0, scope),
     })
     void queryClient.invalidateQueries({
       queryKey: connectionObjectsQueryKeyPrefix(orgSlug, workspace.id, connectionId ?? 0),
@@ -884,9 +884,7 @@ function DiagramCanvas({
     <div ref={containerRef} className="flex h-full min-h-0 flex-col">
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
         <span className="truncate text-xs font-medium text-foreground">
-          {target.kind === 'scope'
-            ? currentScopeLabel
-            : `${currentScopeLabel}.${target.ref.name}`}
+          {target.kind === 'scope' ? currentScopeLabel : `${currentScopeLabel}.${target.ref.name}`}
         </span>
         <span className="text-[10px] text-muted-foreground">{driver}</span>
         <div className="flex-1" />

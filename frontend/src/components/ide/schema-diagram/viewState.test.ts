@@ -47,9 +47,9 @@ describe('resolveDiagramViewState', () => {
     expect(resolveDiagramViewState({ ...base, spec: { dialect: 'redis', kinds: [] } })).toBe(
       'unsupported',
     )
-    expect(resolveDiagramViewState({ ...base, directoryError: new ApiError('Forbidden', 403) })).toBe(
-      'forbidden',
-    )
+    expect(
+      resolveDiagramViewState({ ...base, directoryError: new ApiError('Forbidden', 403) }),
+    ).toBe('forbidden')
   })
 
   it('orders loading and empty states after terminal query states', () => {

@@ -11,11 +11,14 @@ describe('mysql dialect', () => {
 
   it('builds bounded count queries with dialect formatting', () => {
     expect(
-      mysqlDialect.boundedCountQuery({
-        scope: [{ kind: 'database', name: 'appdb' }],
-        kind: 'table',
-        name: 'Orders',
-      }, 5),
+      mysqlDialect.boundedCountQuery(
+        {
+          scope: [{ kind: 'database', name: 'appdb' }],
+          kind: 'table',
+          name: 'Orders',
+        },
+        5,
+      ),
     ).toBe('SELECT COUNT(*) FROM (SELECT 1 FROM `Orders` LIMIT 5) AS _warden_count')
   })
 })

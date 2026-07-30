@@ -165,10 +165,7 @@ describe('SchemaDiagramView', () => {
     store.getState().setSession(7, 'session-7')
     vi.mocked(get).mockResolvedValueOnce(
       JSON.stringify({
-        present: [
-          'schema=public table customer',
-          'schema=public table store',
-        ],
+        present: ['schema=public table customer', 'schema=public table store'],
         positions: {
           'schema=public table customer': { x: 0, y: 0 },
           'schema=public table store': { x: 300, y: 0 },
