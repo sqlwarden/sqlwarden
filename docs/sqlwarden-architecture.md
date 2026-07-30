@@ -81,7 +81,7 @@ sqlwarden/
 │   ├── access/                       # custom RBAC enforcer and permissions catalog
 │   ├── connection/                   # live target DB sessions
 │   ├── database/                     # Bun models and query helpers
-│   ├── dbengine/                     # target database engines and capabilities
+│   ├── engine/                       # external data-system engines and capabilities
 │   ├── encrypt/                      # AES-GCM/keyring helpers
 │   ├── files/                        # workspace file service
 │   ├── filestore/                    # filesystem object storage
@@ -564,7 +564,10 @@ Cross-org and cross-workspace boundaries must be enforced when creating workspac
 
 ## Query Execution And Live Sessions
 
-`internal/dbengine` is for target databases. It is separate from `internal/database`, which stores SQLWarden metadata.
+`internal/engine` is for external data-system integrations. It is separate from
+`internal/database`, which stores SQLWarden application metadata. Current
+engines target SQL databases, but the package name does not constrain future
+integrations to relational systems.
 
 Implemented target drivers:
 
@@ -572,9 +575,9 @@ Implemented target drivers:
 - MySQL
 - SQLite
 
-Each engine registers through the `dbengine` registry and advertises implemented capabilities. Current capability packages include:
+Each engine registers through the `engine` registry and advertises implemented capabilities. Current capability packages include:
 
-- `schema`: cheap catalog listing and on-demand object detail.
+- `metadata`: cheap catalog listing and on-demand object detail.
 - `classifier`: query kind classification used for RBAC decisions.
 - `parser`: strict SQL parsing with opaque ASTs and normalized statement spans.
 - `rewriter`: query rewrite surface for future pagination/export behavior.
@@ -589,20 +592,20 @@ the engine actually implements, so rewriting and completion remain false
 instead of being backed by placeholder methods.
 
 PostgreSQL and MySQL completion use the SQLWarden-owned
-`internal/dbengine/completioncore` boundary, adapted from Bytebase's
+`internal/engine/completioncore` boundary, adapted from Bytebase's
 MIT-licensed completion design. Omni supplies grammar candidates and
 PostgreSQL parser-native scope snapshots. Until Omni exposes the equivalent
 MySQL scope API, the MySQL adapter owns its isolated reference collector.
 Both dialects resolve semantic candidates through the reusable immutable
 `metadata.Index`, adapted by completioncore's `SchemaResolver`; no completer
-opens or queries a live connection. `schema.MetadataSet` keeps a lightweight
+opens or queries a live connection. `metadata.MetadataSet` keeps a lightweight
 catalog, independently inspected object details, optional relationship graphs,
 and their version together without conflating their storage tiers. The same
 index provides object and FK adjacency lookups for schema-graph consumers such
 as ER diagrams. Engine adapters map completion candidates into the stable
 `completer.Suggestion` API and cache prepared Omni catalogs and schema indexes
 by connection and metadata version. This boundary allows more resolution to
-move into Omni later without changing schema storage or the editor protocol.
+move into Omni later without changing metadata storage or the editor protocol.
 
 `internal/connection` manages live target database sessions:
 

@@ -10,8 +10,8 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
-	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/metadata"
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -227,7 +227,7 @@ func (app *application) getConnectionSchemaSpec(w http.ResponseWriter, r *http.R
 	if !app.authorizeSchemaAccess(w, r) {
 		return
 	}
-	driver, err := dbengine.New(contextGetConnection(r).Driver)
+	driver, err := engine.New(contextGetConnection(r).Driver)
 	if err != nil {
 		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
 		return

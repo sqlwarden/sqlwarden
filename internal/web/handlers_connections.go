@@ -14,9 +14,9 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/classifier"
-	metadata "github.com/sqlwarden/internal/dbengine/metadata"
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/classifier"
+	metadata "github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -199,7 +199,7 @@ func (app *application) classifyConnectionSQL(r *http.Request, conn database.Con
 // registered engine. Callers that must prove SQL properties, such as exports,
 // must not fall back to a heuristic.
 func registeredConnectionClassifier(driverName string) (classifier.Classifier, bool) {
-	d, err := dbengine.New(driverName)
+	d, err := engine.New(driverName)
 	if err != nil {
 		return nil, false
 	}
@@ -512,7 +512,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 
-	d, err := dbengine.New(input.Driver)
+	d, err := engine.New(input.Driver)
 	if err != nil {
 		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", time.Since(start).Milliseconds()), slog.String("stage", "driver_init"), slog.String("error_category", connectionTestErrorCategory(err)))
 		err = response.JSON(w, http.StatusUnprocessableEntity, map[string]any{
@@ -608,8 +608,8 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 	session, created, err := app.connManager.GetOrCreateWithMetadata(accountID, connID, connection.SessionMetadata{
 		OrgID:       strconv.FormatInt(org.ID, 10),
 		WorkspaceID: strconv.FormatInt(ws.ID, 10),
-	}, func() (dbengine.Driver, error) {
-		d, err := dbengine.New(conn.Driver)
+	}, func() (engine.Driver, error) {
+		d, err := engine.New(conn.Driver)
 		if err != nil {
 			return nil, err
 		}
@@ -770,8 +770,8 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) driverConnectionConfig(driverName, dsn string, defaultScopes ...metadata.ScopePath) dbengine.ConnectionConfig {
-	config := dbengine.ConnectionConfig{
+func (app *application) driverConnectionConfig(driverName, dsn string, defaultScopes ...metadata.ScopePath) engine.ConnectionConfig {
+	config := engine.ConnectionConfig{
 		DSN:            dsn,
 		Driver:         driverName,
 		MaxResultRows:  app.config.Query.MaxResultRows,

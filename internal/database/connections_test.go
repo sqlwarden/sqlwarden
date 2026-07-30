@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sqlwarden/internal/dbengine/metadata"
+	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/uptrace/bun"
 )
 

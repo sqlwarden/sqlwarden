@@ -16,8 +16,8 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/classifier"
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/classifier"
 	"github.com/sqlwarden/internal/exports"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/jobs"
@@ -255,11 +255,11 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 	if err := app.validateTargetConnection(conn.Driver, plainDSN); err != nil {
 		return nil, jobs.Permanent("export_target_blocked", targetConnectionFieldError(err))
 	}
-	driver, err := dbengine.New(conn.Driver)
+	driver, err := engine.New(conn.Driver)
 	if err != nil {
 		return nil, err
 	}
-	if err := driver.Connect(ctx, dbengine.ConnectionConfig{DSN: plainDSN, Driver: conn.Driver, DefaultScope: conn.DefaultScope}); err != nil {
+	if err := driver.Connect(ctx, engine.ConnectionConfig{DSN: plainDSN, Driver: conn.Driver, DefaultScope: conn.DefaultScope}); err != nil {
 		return nil, jobs.Retryable("export_connect_failed", "Could not connect to the target database.")
 	}
 	defer driver.Close()
