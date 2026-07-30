@@ -68,7 +68,7 @@ function WorkspaceConnectionsPage() {
   )
   const canEditConnection = hasPermission(
     effectivePermissions.data?.permissions,
-    permission.connWrite,
+    permission.connUpdate,
   )
   const canDeleteConnection = hasPermission(
     effectivePermissions.data?.permissions,
@@ -251,6 +251,7 @@ function WorkspaceConnectionsPage() {
           orgSlug={orgSlug}
           workspaceId={Number(workspaceId)}
           connection={editingConnection ?? undefined}
+          canRevealDsn={canEditConnection}
         />
       ) : null}
     </div>

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
 import { errorMessage, isApiError } from '#/lib/api/errors'
 import { queryKeys } from '#/lib/api/query-keys'
+import { connectionDsnQueryOptions } from '#/lib/api/query'
 import type { Connection } from '#/lib/api/types'
 import { defaultFieldValues, driverMap, drivers } from './connection-drivers'
 import type { ConnectionTestState } from './useConnectionForm'
@@ -20,12 +21,14 @@ export function useEditConnectionForm({
   orgSlug,
   workspaceId,
   connection,
+  canRevealDsn,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   orgSlug: string
   workspaceId: number
   connection: Connection | undefined
+  canRevealDsn: boolean
 }) {
   const queryClient = useQueryClient()
   const driver = driverMap.get(connection?.driver ?? '') ?? drivers[0]
@@ -34,6 +37,11 @@ export function useEditConnectionForm({
   const [errors, setErrors] = useState<EditConnectionFormErrors>({ fields: {} })
   const [testState, setTestState] = useState<ConnectionTestState>({ status: 'idle' })
   const [conflict, setConflict] = useState(false)
+
+  const revealDsn = useQuery({
+    ...connectionDsnQueryOptions(orgSlug, workspaceId, connection?.id ?? ''),
+    enabled: open && canRevealDsn && connection !== undefined,
+  })
 
   useEffect(() => {
     if (!open || !connection) return
@@ -44,6 +52,12 @@ export function useEditConnectionForm({
     setConflict(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when the dialog opens for a given connection
   }, [open, connection?.id])
+
+  useEffect(() => {
+    if (!revealDsn.data) return
+    setFields((current) => ({ ...current, ...driver.parseDSN(revealDsn.data.dsn) }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-apply when the fetched DSN itself changes
+  }, [revealDsn.data])
 
   function changeField(key: string, value: string) {
     setFields((current) => ({ ...current, [key]: value }))
@@ -156,6 +170,7 @@ export function useEditConnectionForm({
     handleOpenChange,
     name,
     requiredFieldsFilled,
+    revealDsnPending: revealDsn.isFetching,
     submit,
     testConnection,
     testState,

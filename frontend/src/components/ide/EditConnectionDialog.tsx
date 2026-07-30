@@ -21,6 +21,7 @@ type Props = {
   orgSlug: string
   workspaceId: number
   connection: Connection | undefined
+  canRevealDsn: boolean
 }
 
 export function EditConnectionDialog({
@@ -29,14 +30,23 @@ export function EditConnectionDialog({
   orgSlug,
   workspaceId,
   connection,
+  canRevealDsn,
 }: Props) {
-  const form = useEditConnectionForm({ open, onOpenChange, orgSlug, workspaceId, connection })
+  const form = useEditConnectionForm({
+    open,
+    onOpenChange,
+    orgSlug,
+    workspaceId,
+    connection,
+    canRevealDsn,
+  })
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     form.submit()
   }
   const isPending = form.updateConnection.isPending
+  const fieldsDisabled = isPending || form.revealDsnPending
 
   return (
     <Dialog open={open} onOpenChange={form.handleOpenChange}>
@@ -58,8 +68,9 @@ export function EditConnectionDialog({
             </div>
 
             <p className="text-xs text-muted-foreground">
-              For security, connection credentials are never shown after they&apos;re saved.
-              Re-enter the full connection details below to update this connection.
+              {canRevealDsn
+                ? 'Connection credentials are shown below because you can manage this connection.'
+                : "For security, connection credentials are never shown after they're saved. Re-enter the full connection details below to update this connection."}
             </p>
 
             <div className="grid grid-cols-6 gap-3">
@@ -79,7 +90,7 @@ export function EditConnectionDialog({
                 driver={form.driver}
                 values={form.fields}
                 errors={form.errors.fields}
-                disabled={isPending}
+                disabled={fieldsDisabled}
                 onChange={form.changeField}
               />
             </div>

@@ -156,6 +156,8 @@ export const queryKeys = {
     ['export-job-log', slug, workspaceId, jobId] as const,
   exportJobLatestEvent: (slug: string, workspaceId: string | number, jobId: string) =>
     ['export-job-latest-event', slug, workspaceId, jobId] as const,
+  connectionDsn: (slug: string, workspaceId: string | number, connectionId: string | number) =>
+    ['connection-dsn', slug, workspaceId, connectionId] as const,
   connectionPreviewCount: (
     slug: string,
     workspaceId: string | number,
