@@ -5,20 +5,20 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/dbengine/cursor"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
 // schemaCursorDriver implements the optional schema + cursor interfaces so we
 // can assert derivation turns them into capabilities.
 type schemaCursorDriver struct{ fakeDriver }
 
-func (schemaCursorDriver) SchemaSpec() schema.SchemaSpec {
-	return schema.SchemaSpec{Dialect: "postgres", Kinds: []schema.SchemaObjectKind{{Kind: "table"}}}
+func (schemaCursorDriver) SchemaSpec() metadata.SchemaSpec {
+	return metadata.SchemaSpec{Dialect: "postgres", Kinds: []metadata.SchemaObjectKind{{Kind: "table"}}}
 }
-func (schemaCursorDriver) InspectDirectory(context.Context, schema.DirectoryOptions) (*schema.Directory, error) {
-	return &schema.Directory{}, nil
+func (schemaCursorDriver) InspectDirectory(context.Context, metadata.DirectoryOptions) (*metadata.Directory, error) {
+	return &metadata.Directory{}, nil
 }
-func (schemaCursorDriver) InspectObjects(context.Context, []schema.ObjectRef) ([]schema.Object, error) {
+func (schemaCursorDriver) InspectObjects(context.Context, []metadata.ObjectRef) ([]metadata.Object, error) {
 	return nil, nil
 }
 func (schemaCursorDriver) StartQuery(context.Context, cursor.QueryRequest) (cursor.QueryCursor, error) {

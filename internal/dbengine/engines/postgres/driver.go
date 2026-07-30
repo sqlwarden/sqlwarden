@@ -10,14 +10,14 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/cursor"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/sqlwarden/pkg/result"
 )
 
 type postgresDriver struct {
 	db           *sql.DB
 	scanOptions  cursor.ScanOptions
-	defaultScope schema.ScopePath
+	defaultScope metadata.ScopePath
 }
 
 func (d *postgresDriver) Connect(ctx context.Context, cfg dbengine.ConnectionConfig) error {

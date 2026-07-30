@@ -12,11 +12,11 @@ import (
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/sqlwarden/pkg/result"
 )
 
-// schemaFakeDriver implements schema.SchemaInspector without requiring a live
+// schemaFakeDriver implements metadata.SchemaInspector without requiring a live
 // target database, keeping schema handler tests focused on HTTP behavior.
 type schemaFakeDriver struct{}
 
@@ -31,10 +31,10 @@ func (schemaFakeDriver) Execute(context.Context, string, ...any) (*result.Result
 }
 func (schemaFakeDriver) Dialect() dbengine.Dialect { return dbengine.DialectSQLite }
 
-func (schemaFakeDriver) SchemaSpec() schema.SchemaSpec {
-	return schema.SchemaSpec{
+func (schemaFakeDriver) SchemaSpec() metadata.SchemaSpec {
+	return metadata.SchemaSpec{
 		Dialect: "sqlite",
-		Kinds: []schema.SchemaObjectKind{{
+		Kinds: []metadata.SchemaObjectKind{{
 			Kind:            "table",
 			Label:           "Table",
 			PluralLabel:     "Tables",
@@ -46,27 +46,27 @@ func (schemaFakeDriver) SchemaSpec() schema.SchemaSpec {
 	}
 }
 
-func (schemaFakeDriver) InspectDirectory(context.Context, schema.DirectoryOptions) (*schema.Directory, error) {
-	scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "main"})
-	return &schema.Directory{
+func (schemaFakeDriver) InspectDirectory(context.Context, metadata.DirectoryOptions) (*metadata.Directory, error) {
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	return &metadata.Directory{
 		Engine: "sqlite", DefaultScope: scope,
-		Roots: []schema.ScopeNode{{
+		Roots: []metadata.ScopeNode{{
 			Path: scope,
-			Groups: []schema.ObjectGroup{{
+			Groups: []metadata.ObjectGroup{{
 				Kind:    "table",
-				Objects: []schema.ObjectRef{{Scope: scope, Kind: "table", Name: "widgets"}},
+				Objects: []metadata.ObjectRef{{Scope: scope, Kind: "table", Name: "widgets"}},
 			}},
 		}},
 	}, nil
 }
 
-func (schemaFakeDriver) InspectObjects(_ context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
-	out := make([]schema.Object, 0, len(refs))
+func (schemaFakeDriver) InspectObjects(_ context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	out := make([]metadata.Object, 0, len(refs))
 	for _, ref := range refs {
-		out = append(out, schema.Object{
+		out = append(out, metadata.Object{
 			Ref: ref,
-			Relational: &schema.RelationalDetail{
-				Columns: []schema.Column{{Name: "id", DataType: "INTEGER", Ordinal: 1}},
+			Relational: &metadata.RelationalDetail{
+				Columns: []metadata.Column{{Name: "id", DataType: "INTEGER", Ordinal: 1}},
 			},
 		})
 	}
@@ -78,14 +78,14 @@ func (schemaFakeDriver) InspectObjects(_ context.Context, refs []schema.ObjectRe
 // deliberately does NOT implement it, so it drives the 501 path.
 type schemaRelDriver struct{ schemaFakeDriver }
 
-func (schemaRelDriver) InspectRelationshipsInScope(_ context.Context, scope schema.ScopePath) (*schema.RelationshipGraph, error) {
-	return &schema.RelationshipGraph{
+func (schemaRelDriver) InspectRelationshipsInScope(_ context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
+	return &metadata.RelationshipGraph{
 		Scope: scope,
-		Relationships: []schema.Relationship{{
+		Relationships: []metadata.Relationship{{
 			Name:              "orders_user_fk",
-			Source:            schema.ObjectRef{Scope: scope, Kind: "table", Name: "orders"},
+			Source:            metadata.ObjectRef{Scope: scope, Kind: "table", Name: "orders"},
 			Columns:           []string{"user_id"},
-			References:        schema.ObjectRef{Scope: scope, Kind: "table", Name: "users"},
+			References:        metadata.ObjectRef{Scope: scope, Kind: "table", Name: "users"},
 			ReferencedColumns: []string{"id"},
 		}},
 	}, nil
@@ -101,7 +101,7 @@ func TestGetConnectionSchemaRelationships(t *testing.T) {
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaRelDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/relationships?scope="+schemaScopeParam(schema.NewScopePath(schema.ScopeSegment{Kind: "schema", Name: "public"})), nil, tok)
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/relationships?scope="+schemaScopeParam(metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"})), nil, tok)
 	req.Header.Set("X-Warden-Session", sess.ID)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
@@ -129,7 +129,7 @@ func TestGetConnectionSchemaRelationships_Unsupported(t *testing.T) {
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/relationships?scope="+schemaScopeParam(schema.NewScopePath(schema.ScopeSegment{Kind: "schema", Name: "public"})), nil, tok)
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/relationships?scope="+schemaScopeParam(metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"})), nil, tok)
 	req.Header.Set("X-Warden-Session", sess.ID)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNotImplemented)
@@ -323,7 +323,7 @@ func TestGetConnectionDirectory_UnsupportedDriver(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusNotImplemented)
 }
 
-func schemaScopeParam(scope schema.ScopePath) string {
+func schemaScopeParam(scope metadata.ScopePath) string {
 	data, _ := json.Marshal(scope)
 	return url.QueryEscape(string(data))
 }

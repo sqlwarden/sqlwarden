@@ -7,7 +7,7 @@ package completer
 import (
 	"context"
 
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
 // Completer returns suggestions for the text at a cursor position, optionally
@@ -35,7 +35,7 @@ type CatalogInvalidator interface {
 type Request struct {
 	SQL          string
 	CursorOffset int
-	Schema       *schema.MetadataSet
+	Schema       *metadata.MetadataSet
 	ConnectionID string
 	TriggerKind  TriggerKind
 	TriggerChar  string

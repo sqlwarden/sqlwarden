@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/dbengine/completer"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
 func TestPostgresCompleteKeywordsAndSchema(t *testing.T) {
@@ -24,7 +24,7 @@ func TestPostgresCompleteKeywordsAndSchema(t *testing.T) {
 	sql := "SELECT  FROM public.users"
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len("SELECT "),
-		Schema:       &schema.MetadataSet{Directory: catalog, Objects: objects, Version: "snapshot-1"},
+		Schema:       &metadata.MetadataSet{Directory: catalog, Objects: objects, Version: "snapshot-1"},
 		ConnectionID: "7",
 	})
 	if err != nil {
@@ -35,7 +35,7 @@ func TestPostgresCompleteKeywordsAndSchema(t *testing.T) {
 	fromSQL := "SELECT * FROM "
 	result, err = driver.Complete(context.Background(), completer.Request{
 		SQL: fromSQL, CursorOffset: len(fromSQL),
-		Schema: &schema.MetadataSet{Directory: catalog, Objects: objects},
+		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -65,12 +65,12 @@ func TestPostgresCompletionQuotesReservedIdentifier(t *testing.T) {
 }
 
 func TestPostgresCompletionDefaultSchema(t *testing.T) {
-	root := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "app"})
-	public := root.Child(schema.ScopeSegment{Kind: "schema", Name: "public"})
-	tenant := root.Child(schema.ScopeSegment{Kind: "schema", Name: "tenant"})
-	directory := &schema.Directory{
+	root := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"})
+	public := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "public"})
+	tenant := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "tenant"})
+	directory := &metadata.Directory{
 		DefaultScope: tenant,
-		Roots: []schema.ScopeNode{{Path: root, Children: []schema.ScopeNode{
+		Roots: []metadata.ScopeNode{{Path: root, Children: []metadata.ScopeNode{
 			{Path: public}, {Path: tenant},
 		}}},
 	}
@@ -81,8 +81,8 @@ func TestPostgresCompletionDefaultSchema(t *testing.T) {
 	if got := postgresCompletionDefaultSchema(directory); got != "public" {
 		t.Fatalf("public fallback = %q", got)
 	}
-	only := root.Child(schema.ScopeSegment{Kind: "schema", Name: "only_schema"})
-	directory.Roots[0].Children = []schema.ScopeNode{{Path: only}}
+	only := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "only_schema"})
+	directory.Roots[0].Children = []metadata.ScopeNode{{Path: only}}
 	if got := postgresCompletionDefaultSchema(directory); got != "only_schema" {
 		t.Fatalf("single-schema fallback = %q", got)
 	}
@@ -90,42 +90,42 @@ func TestPostgresCompletionDefaultSchema(t *testing.T) {
 
 func TestPostgresCompleteUsesDirectoryDefaultSchemaForUnqualifiedTables(t *testing.T) {
 	driver := &postgresDriver{}
-	root := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "analytics"})
-	public := root.Child(schema.ScopeSegment{Kind: "schema", Name: "public"})
-	tenant := root.Child(schema.ScopeSegment{Kind: "schema", Name: "tenant"})
-	directory := &schema.Directory{
+	root := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "analytics"})
+	public := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "public"})
+	tenant := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "tenant"})
+	directory := &metadata.Directory{
 		Engine: "postgres", DefaultScope: tenant,
-		Roots: []schema.ScopeNode{{Path: root, Children: []schema.ScopeNode{
+		Roots: []metadata.ScopeNode{{Path: root, Children: []metadata.ScopeNode{
 			{
 				Path: public,
-				Groups: []schema.ObjectGroup{{
+				Groups: []metadata.ObjectGroup{{
 					Kind: "table",
-					Objects: []schema.ObjectRef{{
+					Objects: []metadata.ObjectRef{{
 						Scope: public, Kind: "table", Name: "public_orders",
 					}},
 				}},
 			},
 			{
 				Path: tenant,
-				Groups: []schema.ObjectGroup{{
+				Groups: []metadata.ObjectGroup{{
 					Kind: "table",
-					Objects: []schema.ObjectRef{{
+					Objects: []metadata.ObjectRef{{
 						Scope: tenant, Kind: "table", Name: "tenant_orders",
 					}},
 				}},
 			},
 		}}},
 	}
-	objects := []schema.Object{
+	objects := []metadata.Object{
 		{
-			Ref: schema.ObjectRef{Scope: public, Kind: "table", Name: "public_orders"},
-			Relational: &schema.RelationalDetail{Columns: []schema.Column{{
+			Ref: metadata.ObjectRef{Scope: public, Kind: "table", Name: "public_orders"},
+			Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{
 				Name: "id", DataType: "bigint",
 			}}},
 		},
 		{
-			Ref: schema.ObjectRef{Scope: tenant, Kind: "table", Name: "tenant_orders"},
-			Relational: &schema.RelationalDetail{Columns: []schema.Column{{
+			Ref: metadata.ObjectRef{Scope: tenant, Kind: "table", Name: "tenant_orders"},
+			Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{
 				Name: "id", DataType: "bigint",
 			}}},
 		},
@@ -133,7 +133,7 @@ func TestPostgresCompleteUsesDirectoryDefaultSchemaForUnqualifiedTables(t *testi
 	sql := "SELECT * FROM "
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema: &schema.MetadataSet{Directory: directory, Objects: objects},
+		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestPostgresCompleteHidesNativeParserArtifacts(t *testing.T) {
 	afterSelectList := "SELECT * "
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: afterSelectList, CursorOffset: len(afterSelectList),
-		Schema: &schema.MetadataSet{Directory: catalog, Objects: objects},
+		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestPostgresCompleteHidesNativeParserArtifacts(t *testing.T) {
 	afterFrom := "SELECT * FROM "
 	result, err = driver.Complete(context.Background(), completer.Request{
 		SQL: afterFrom, CursorOffset: len(afterFrom),
-		Schema: &schema.MetadataSet{Directory: catalog, Objects: objects},
+		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +180,7 @@ func TestPostgresCompleteCuratesCompletedRelationContext(t *testing.T) {
 	sql := "SELECT * FROM users "
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema:      &schema.MetadataSet{Directory: catalog, Objects: objects},
+		Schema:      &metadata.MetadataSet{Directory: catalog, Objects: objects},
 		TriggerKind: completer.TriggerInvoked,
 	})
 	if err != nil {
@@ -196,7 +196,7 @@ func TestPostgresCompleteCuratesCompletedRelationContext(t *testing.T) {
 	joinedSQL := "SELECT * FROM users u JOIN \"Order Items\" oi "
 	result, err = driver.Complete(context.Background(), completer.Request{
 		SQL: joinedSQL, CursorOffset: len(joinedSQL),
-		Schema:      &schema.MetadataSet{Directory: catalog, Objects: objects},
+		Schema:      &metadata.MetadataSet{Directory: catalog, Objects: objects},
 		TriggerKind: completer.TriggerInvoked,
 	})
 	if err != nil {
@@ -221,7 +221,7 @@ on a.address_id = s.address_id;
 select * from `
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema: &schema.MetadataSet{Directory: catalog, Objects: objects},
+		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -244,7 +244,7 @@ select * from actor
 select * from `
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema: &schema.MetadataSet{Directory: catalog, Objects: objects},
+		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -266,26 +266,26 @@ func TestPostgresCompletionRecoveryDoesNotSplitNestedSelects(t *testing.T) {
 func TestPostgresCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 	driver := &postgresDriver{}
 	catalog := completionTestCatalog("postgres", "public")
-	objects := []schema.Object{
+	objects := []metadata.Object{
 		{
-			Ref: schema.ObjectRef{Scope: completionTestScope("public"), Kind: "table", Name: "inventory"},
-			Relational: &schema.RelationalDetail{Columns: []schema.Column{
+			Ref: metadata.ObjectRef{Scope: completionTestScope("public"), Kind: "table", Name: "inventory"},
+			Relational: &metadata.RelationalDetail{Columns: []metadata.Column{
 				{Name: "id", DataType: "bigint"}, {Name: "inventory_name", DataType: "text"},
 			}},
 		},
 		{
-			Ref: schema.ObjectRef{Scope: completionTestScope("public"), Kind: "table", Name: "store"},
-			Relational: &schema.RelationalDetail{Columns: []schema.Column{
+			Ref: metadata.ObjectRef{Scope: completionTestScope("public"), Kind: "table", Name: "store"},
+			Relational: &metadata.RelationalDetail{Columns: []metadata.Column{
 				{Name: "id", DataType: "bigint"}, {Name: "store_name", DataType: "text"},
 			}},
 		},
 	}
-	catalog.Roots[0].Groups[0].Objects = []schema.ObjectRef{objects[0].Ref, objects[1].Ref}
+	catalog.Roots[0].Groups[0].Objects = []metadata.ObjectRef{objects[0].Ref, objects[1].Ref}
 
 	qualifiedSQL := "SELECT * FROM inventory i JOIN store s ON i.id = s.id WHERE s."
 	qualified, err := driver.Complete(context.Background(), completer.Request{
 		SQL: qualifiedSQL, CursorOffset: len(qualifiedSQL),
-		Schema: &schema.MetadataSet{Directory: catalog, Objects: objects},
+		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -296,7 +296,7 @@ func TestPostgresCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) 
 	unqualifiedSQL := "SELECT * FROM inventory i JOIN store s ON i.id = s.id WHERE "
 	unqualified, err := driver.Complete(context.Background(), completer.Request{
 		SQL: unqualifiedSQL, CursorOffset: len(unqualifiedSQL),
-		Schema: &schema.MetadataSet{Directory: catalog, Objects: objects},
+		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -310,28 +310,28 @@ func TestPostgresCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) 
 func TestPostgresCompleteUsesFinalAliasAfterEarlierQualifiedColumn(t *testing.T) {
 	driver := &postgresDriver{}
 	catalog := completionTestCatalog("postgres", "public")
-	objects := []schema.Object{
+	objects := []metadata.Object{
 		{
-			Ref: schema.ObjectRef{Scope: completionTestScope("public"), Kind: "table", Name: "film"},
-			Relational: &schema.RelationalDetail{Columns: []schema.Column{
+			Ref: metadata.ObjectRef{Scope: completionTestScope("public"), Kind: "table", Name: "film"},
+			Relational: &metadata.RelationalDetail{Columns: []metadata.Column{
 				{Name: "film_id", DataType: "smallint"},
 				{Name: "description", DataType: "text"},
 			}},
 		},
 		{
-			Ref: schema.ObjectRef{Scope: completionTestScope("public"), Kind: "table", Name: "film_actor"},
-			Relational: &schema.RelationalDetail{Columns: []schema.Column{
+			Ref: metadata.ObjectRef{Scope: completionTestScope("public"), Kind: "table", Name: "film_actor"},
+			Relational: &metadata.RelationalDetail{Columns: []metadata.Column{
 				{Name: "actor_id", DataType: "smallint"},
 				{Name: "film_id", DataType: "smallint"},
 			}},
 		},
 	}
-	catalog.Roots[0].Groups[0].Objects = []schema.ObjectRef{objects[0].Ref, objects[1].Ref}
+	catalog.Roots[0].Groups[0].Objects = []metadata.ObjectRef{objects[0].Ref, objects[1].Ref}
 
 	sql := "select * from film f\njoin film_actor fa\nwhere f.\"description\" = fa."
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema:      &schema.MetadataSet{Directory: catalog, Objects: objects},
+		Schema:      &metadata.MetadataSet{Directory: catalog, Objects: objects},
 		TriggerKind: completer.TriggerAutomatic,
 		TriggerChar: ".",
 	})
@@ -372,7 +372,7 @@ func TestPostgresCompletionVocabulary(t *testing.T) {
 func TestPostgresCompletionContextMatrix(t *testing.T) {
 	driver := &postgresDriver{}
 	directory := completionTestCatalog("postgres", "public")
-	metadata := &schema.MetadataSet{Directory: directory, Objects: completionTestObjects("public")}
+	metadata := &metadata.MetadataSet{Directory: directory, Objects: completionTestObjects("public")}
 	tests := []struct {
 		name           string
 		sql            string
@@ -426,15 +426,15 @@ func TestPostgresCompletionContextMatrix(t *testing.T) {
 	}
 }
 
-func completionTestCatalog(dialect, namespace string) *schema.Directory {
+func completionTestCatalog(dialect, namespace string) *metadata.Directory {
 	scope := completionTestScope(namespace)
-	return &schema.Directory{
+	return &metadata.Directory{
 		Engine: dialect, DefaultScope: scope,
-		Roots: []schema.ScopeNode{{
+		Roots: []metadata.ScopeNode{{
 			Path: scope,
-			Groups: []schema.ObjectGroup{{
+			Groups: []metadata.ObjectGroup{{
 				Kind: "table",
-				Objects: []schema.ObjectRef{
+				Objects: []metadata.ObjectRef{
 					{Scope: scope, Kind: "table", Name: "users"},
 					{Scope: scope, Kind: "table", Name: "Order Items"},
 				},
@@ -443,27 +443,27 @@ func completionTestCatalog(dialect, namespace string) *schema.Directory {
 	}
 }
 
-func completionTestObjects(namespace string) []schema.Object {
+func completionTestObjects(namespace string) []metadata.Object {
 	scope := completionTestScope(namespace)
-	return []schema.Object{
+	return []metadata.Object{
 		{
-			Ref: schema.ObjectRef{Scope: scope, Kind: "table", Name: "users"},
-			Relational: &schema.RelationalDetail{Columns: []schema.Column{
+			Ref: metadata.ObjectRef{Scope: scope, Kind: "table", Name: "users"},
+			Relational: &metadata.RelationalDetail{Columns: []metadata.Column{
 				{Name: "id", DataType: "bigint"},
 				{Name: "display name", DataType: "unsupported;type"},
 			}},
 		},
 		{
-			Ref:        schema.ObjectRef{Scope: scope, Kind: "table", Name: "Order Items"},
-			Relational: &schema.RelationalDetail{Columns: []schema.Column{{Name: "id", DataType: "bigint"}}},
+			Ref:        metadata.ObjectRef{Scope: scope, Kind: "table", Name: "Order Items"},
+			Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{Name: "id", DataType: "bigint"}}},
 		},
 	}
 }
 
-func completionTestScope(namespace string) schema.ScopePath {
-	return schema.NewScopePath(
-		schema.ScopeSegment{Kind: "database", Name: "app"},
-		schema.ScopeSegment{Kind: "schema", Name: namespace},
+func completionTestScope(namespace string) metadata.ScopePath {
+	return metadata.NewScopePath(
+		metadata.ScopeSegment{Kind: "database", Name: "app"},
+		metadata.ScopeSegment{Kind: "schema", Name: namespace},
 	)
 }
 

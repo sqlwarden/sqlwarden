@@ -11,34 +11,34 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 )
 
 type schemaSpecResponse struct {
-	Spec schema.SchemaSpec `json:"spec"`
+	Spec metadata.SchemaSpec `json:"spec"`
 }
 
 type directoryResponse struct {
-	Directory *schema.Directory `json:"directory"`
+	Directory *metadata.Directory `json:"directory"`
 }
 
 type objectsRequest struct {
-	Refs []schema.ObjectRef `json:"refs"`
+	Refs []metadata.ObjectRef `json:"refs"`
 }
 
 type objectsResponse struct {
-	Objects []schema.Object `json:"objects"`
+	Objects []metadata.Object `json:"objects"`
 }
 
 type refreshRequest struct {
-	Ref *schema.ObjectRef `json:"ref"`
+	Ref *metadata.ObjectRef `json:"ref"`
 }
 
 type relationshipsResponse struct {
-	Graph *schema.RelationshipGraph `json:"graph"`
+	Graph *metadata.RelationshipGraph `json:"graph"`
 }
 
 type schemaStatusResponse struct {
@@ -130,12 +130,12 @@ func (app *application) resolveSchemaSession(w http.ResponseWriter, r *http.Requ
 
 // resolveSchemaInspector resolves the active database session and checks whether
 // the concrete driver supports schema inspection.
-func (app *application) resolveSchemaInspector(w http.ResponseWriter, r *http.Request) (*connection.Session, schema.SchemaInspector, bool) {
+func (app *application) resolveSchemaInspector(w http.ResponseWriter, r *http.Request) (*connection.Session, metadata.SchemaInspector, bool) {
 	session, ok := app.resolveSchemaSession(w, r)
 	if !ok {
 		return nil, nil, false
 	}
-	inspector, ok := session.Conn.(schema.SchemaInspector)
+	inspector, ok := session.Conn.(metadata.SchemaInspector)
 	if !ok {
 		app.logWarn(r, "schema inspection unsupported",
 			slog.String("session_id", session.ID),
@@ -149,12 +149,12 @@ func (app *application) resolveSchemaInspector(w http.ResponseWriter, r *http.Re
 
 // resolveRelationshipInspector resolves the session and asserts the optional
 // relationship capability, returning 501 when the driver lacks it.
-func (app *application) resolveRelationshipInspector(w http.ResponseWriter, r *http.Request) (*connection.Session, schema.RelationshipInspector, bool) {
+func (app *application) resolveRelationshipInspector(w http.ResponseWriter, r *http.Request) (*connection.Session, metadata.RelationshipInspector, bool) {
 	session, ok := app.resolveSchemaSession(w, r)
 	if !ok {
 		return nil, nil, false
 	}
-	inspector, ok := session.Conn.(schema.RelationshipInspector)
+	inspector, ok := session.Conn.(metadata.RelationshipInspector)
 	if !ok {
 		app.logWarn(r, "schema relationships unsupported",
 			slog.String("session_id", session.ID),
@@ -232,7 +232,7 @@ func (app *application) getConnectionSchemaSpec(w http.ResponseWriter, r *http.R
 		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
 		return
 	}
-	inspector, ok := driver.(schema.SchemaInspector)
+	inspector, ok := driver.(metadata.SchemaInspector)
 	if !ok {
 		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
 		return
@@ -405,12 +405,12 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 	}
 }
 
-func schemaScopeQuery(r *http.Request) (schema.ScopePath, error) {
+func schemaScopeQuery(r *http.Request) (metadata.ScopePath, error) {
 	raw := r.URL.Query().Get("scope")
 	if raw == "" {
 		return "", errors.New("scope query parameter is required")
 	}
-	var scope schema.ScopePath
+	var scope metadata.ScopePath
 	if err := json.Unmarshal([]byte(raw), &scope); err != nil {
 		return "", err
 	}

@@ -15,7 +15,7 @@ Omni owns:
 
 SQLWarden owns:
 
-- canonical schema metadata and its reusable immutable `schema.Index`;
+- canonical engine metadata and its reusable immutable `metadata.Index`;
 - the thin `SchemaResolver` adapter from schema objects to completion relations;
 - candidate types and mapping to the editor API;
 - exact alias/qualifier resolution;

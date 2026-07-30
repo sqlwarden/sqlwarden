@@ -1,11 +1,11 @@
-package schema
+package metadata
 
 import (
 	"sort"
 	"strings"
 )
 
-// MetadataSet is one coherent, versioned schema metadata input. Directory remains
+// MetadataSet is one coherent, versioned engine metadata input. Directory remains
 // the lightweight object directory and Objects remains the independently
 // inspectable detail tier; grouping them makes their shared generation
 // explicit at consumer boundaries.

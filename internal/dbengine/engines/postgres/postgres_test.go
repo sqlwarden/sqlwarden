@@ -11,7 +11,7 @@ import (
 
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/cursor"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/sqlwarden/pkg/result"
 
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -92,9 +92,9 @@ func TestConnect(t *testing.T) {
 			t.Fatal(err)
 		}
 		d := &postgresDriver{}
-		scope := schema.NewScopePath(
-			schema.ScopeSegment{Kind: "database", Name: "testdb"},
-			schema.ScopeSegment{Kind: "schema", Name: "selected_scope"},
+		scope := metadata.NewScopePath(
+			metadata.ScopeSegment{Kind: "database", Name: "testdb"},
+			metadata.ScopeSegment{Kind: "schema", Name: "selected_scope"},
 		)
 		if err := d.Connect(context.Background(), dbengine.ConnectionConfig{
 			DSN: testDSN, Driver: "postgres", DefaultScope: scope,
@@ -439,7 +439,7 @@ func TestPostgresViewDefinitionAndComments(t *testing.T) {
 	mustExec(t, d, `COMMENT ON COLUMN defs_t.n IS 'the name'`)
 	mustExec(t, d, `CREATE VIEW defs_v AS SELECT id FROM defs_t`)
 
-	tbl, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: pgTestScope("public"), Kind: "table", Name: "defs_t"}})
+	tbl, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: pgTestScope("public"), Kind: "table", Name: "defs_t"}})
 	if err != nil {
 		t.Fatalf("InspectObjects table: %v", err)
 	}
@@ -451,7 +451,7 @@ func TestPostgresViewDefinitionAndComments(t *testing.T) {
 		t.Fatalf("column comment = %q, want 'the name'", got)
 	}
 
-	view, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: pgTestScope("public"), Kind: "view", Name: "defs_v"}})
+	view, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: pgTestScope("public"), Kind: "view", Name: "defs_v"}})
 	if err != nil {
 		t.Fatalf("InspectObjects view: %v", err)
 	}
@@ -475,7 +475,7 @@ func TestPostgresTableDDL(t *testing.T) {
 	)`)
 	mustExec(t, d, `CREATE INDEX ddl_child_parent_idx ON ddl_child(parent_id)`)
 
-	objs, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: pgTestScope("public"), Kind: "table", Name: "ddl_child"}})
+	objs, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: pgTestScope("public"), Kind: "table", Name: "ddl_child"}})
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)
 	}
@@ -517,11 +517,11 @@ func TestPostgresTableDDLRoundTrips(t *testing.T) {
 	)`)
 	mustExec(t, d, `CREATE INDEX child_parent_idx ON ddl_rt.child(parent_id)`)
 
-	parentRef := schema.ObjectRef{Scope: pgTestScope("ddl_rt"), Kind: "table", Name: "parent"}
-	childRef := schema.ObjectRef{Scope: pgTestScope("ddl_rt"), Kind: "table", Name: "child"}
+	parentRef := metadata.ObjectRef{Scope: pgTestScope("ddl_rt"), Kind: "table", Name: "parent"}
+	childRef := metadata.ObjectRef{Scope: pgTestScope("ddl_rt"), Kind: "table", Name: "child"}
 
-	genDDL := func(ref schema.ObjectRef) string {
-		objs, err := d.InspectObjects(ctx, []schema.ObjectRef{ref})
+	genDDL := func(ref metadata.ObjectRef) string {
+		objs, err := d.InspectObjects(ctx, []metadata.ObjectRef{ref})
 		if err != nil {
 			t.Fatalf("InspectObjects %s: %v", ref.Name, err)
 		}
@@ -563,11 +563,11 @@ func TestPostgresIndexColumns(t *testing.T) {
 	mustExec(t, d, `CREATE TABLE idx_cols (id bigint PRIMARY KEY, a text, b text)`)
 	mustExec(t, d, `CREATE INDEX idx_cols_ab ON idx_cols (a, b)`)
 
-	objs, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: pgTestScope("public"), Kind: "table", Name: "idx_cols"}})
+	objs, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: pgTestScope("public"), Kind: "table", Name: "idx_cols"}})
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)
 	}
-	var found *schema.SecondaryIndex
+	var found *metadata.SecondaryIndex
 	for i := range objs[0].Relational.Indexes {
 		if objs[0].Relational.Indexes[i].Name == "idx_cols_ab" {
 			found = &objs[0].Relational.Indexes[i]
@@ -594,7 +594,7 @@ func TestPostgresInspectRelationships(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InspectRelationships: %v", err)
 	}
-	var found *schema.Relationship
+	var found *metadata.Relationship
 	for i := range graph.Relationships {
 		r := &graph.Relationships[i]
 		if r.Source.Name == "rel_child" && r.References.Name == "rel_parent" {
@@ -620,16 +620,16 @@ func attrString(m map[string]any, key string) string {
 	return s
 }
 
-func findColumn(cols []schema.Column, name string) schema.Column {
+func findColumn(cols []metadata.Column, name string) metadata.Column {
 	for _, c := range cols {
 		if c.Name == name {
 			return c
 		}
 	}
-	return schema.Column{}
+	return metadata.Column{}
 }
 
-func descriptorByTitle(ds []schema.Descriptor, title string) *schema.Source {
+func descriptorByTitle(ds []metadata.Descriptor, title string) *metadata.Source {
 	for _, d := range ds {
 		if d.Title == title && d.Source != nil {
 			return d.Source
@@ -652,7 +652,7 @@ func TestPostgresSchemaSpec(t *testing.T) {
 	if spec.Dialect != "postgres" {
 		t.Fatalf("dialect: %s", spec.Dialect)
 	}
-	byKind := map[string]schema.SchemaObjectKind{}
+	byKind := map[string]metadata.SchemaObjectKind{}
 	for _, k := range spec.Kinds {
 		byKind[k.Kind] = k
 		if k.Listing != "enumerated" {
@@ -684,14 +684,14 @@ func TestPostgresInspectDirectory(t *testing.T) {
 	mustExec(t, d, `CREATE TABLE intro_users (id bigint PRIMARY KEY, org_id bigint REFERENCES intro_orgs(id))`)
 	mustExec(t, d, `CREATE VIEW intro_v AS SELECT id FROM intro_users`)
 
-	directory, err := d.InspectDirectory(ctx, schema.DirectoryOptions{})
+	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if directory.Engine != "postgres" {
 		t.Fatalf("engine: %s", directory.Engine)
 	}
-	var public *schema.ScopeNode
+	var public *metadata.ScopeNode
 	for _, node := range directory.ScopeNodes() {
 		if node.Path.Name("schema") == "public" {
 			copy := node
@@ -725,7 +725,7 @@ func TestPostgresInspectObjectsRelational(t *testing.T) {
 	mustExec(t, d, `CREATE TABLE intro_orgs (id bigint PRIMARY KEY)`)
 	mustExec(t, d, `CREATE TABLE intro_users (id bigint PRIMARY KEY, org_id bigint REFERENCES intro_orgs(id))`)
 
-	refs := []schema.ObjectRef{
+	refs := []metadata.ObjectRef{
 		{Scope: pgTestScope("public"), Kind: "table", Name: "intro_users"},
 		{Scope: pgTestScope("public"), Kind: "table", Name: "intro_orgs"},
 	}
@@ -733,7 +733,7 @@ func TestPostgresInspectObjectsRelational(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	byName := map[string]schema.Object{}
+	byName := map[string]metadata.Object{}
 	for _, o := range objs {
 		byName[o.Ref.Name] = o
 	}
@@ -763,7 +763,7 @@ func TestPostgresInspectObjectsHonorsFilter(t *testing.T) {
 	mustExec(t, d, `CREATE TABLE intro_a (id bigint)`)
 	mustExec(t, d, `CREATE TABLE intro_b (id bigint)`)
 
-	objs, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: pgTestScope("public"), Kind: "table", Name: "intro_a"}})
+	objs, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: pgTestScope("public"), Kind: "table", Name: "intro_a"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -780,7 +780,7 @@ func TestPostgresInspectObjectsFunctionDescriptors(t *testing.T) {
 	})
 	mustExec(t, d, `CREATE FUNCTION intro_add(a int, b int) RETURNS int LANGUAGE sql AS 'SELECT a + b'`)
 
-	objs, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: pgTestScope("public"), Kind: "function", Name: "intro_add"}})
+	objs, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: pgTestScope("public"), Kind: "function", Name: "intro_add"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -808,6 +808,6 @@ func TestPostgresInspectObjectsFunctionDescriptors(t *testing.T) {
 	}
 }
 
-func pgTestScope(namespace string) schema.ScopePath {
-	return schema.NewScopePath(schema.ScopeSegment{Kind: "schema", Name: namespace})
+func pgTestScope(namespace string) metadata.ScopePath {
+	return metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: namespace})
 }

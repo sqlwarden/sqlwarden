@@ -10,7 +10,7 @@ import (
 
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/cursor"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -96,22 +96,22 @@ func TestInspectDirectoryAndObjects(t *testing.T) {
 		t.Fatalf("unexpected schema spec: %+v", spec)
 	}
 
-	directory, err := d.InspectDirectory(ctx, schema.DirectoryOptions{})
+	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
 	if err != nil {
 		t.Fatalf("InspectDirectory: %v", err)
 	}
-	scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "main"})
-	if !directoryHasRef(directory, schema.ObjectRef{Scope: scope, Kind: "table", Name: "introspect_child"}) {
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "table", Name: "introspect_child"}) {
 		t.Fatalf("directory missing child table: %+v", directory.Roots)
 	}
-	if !directoryHasRef(directory, schema.ObjectRef{Scope: scope, Kind: "view", Name: "introspect_child_view"}) {
+	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "view", Name: "introspect_child_view"}) {
 		t.Fatalf("directory missing child view: %+v", directory.Roots)
 	}
-	if !directoryHasRef(directory, schema.ObjectRef{Scope: scope, Kind: "trigger", Name: "introspect_child_ai"}) {
+	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "trigger", Name: "introspect_child_ai"}) {
 		t.Fatalf("directory missing child trigger: %+v", directory.Roots)
 	}
 
-	objects, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: scope, Kind: "table", Name: "introspect_child"}})
+	objects, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: scope, Kind: "table", Name: "introspect_child"}})
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestInspectDirectoryAndObjects(t *testing.T) {
 		t.Fatalf("expected idx_child_label index, got %+v", child.Relational.Indexes)
 	}
 
-	objects, err = d.InspectObjects(ctx, []schema.ObjectRef{{Scope: scope, Kind: "trigger", Name: "introspect_child_ai"}})
+	objects, err = d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: scope, Kind: "trigger", Name: "introspect_child_ai"}})
 	if err != nil {
 		t.Fatalf("InspectObjects trigger: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestSQLiteObjectDefinitions(t *testing.T) {
 		t.Fatalf("create view: %v", err)
 	}
 
-	tbl, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "main"}), Kind: "table", Name: "defs_t"}})
+	tbl, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"}), Kind: "table", Name: "defs_t"}})
 	if err != nil {
 		t.Fatalf("InspectObjects table: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestSQLiteObjectDefinitions(t *testing.T) {
 		t.Fatalf("table DDL descriptor missing/blank: %+v", tbl[0].Descriptors)
 	}
 
-	view, err := d.InspectObjects(ctx, []schema.ObjectRef{{Scope: schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "main"}), Kind: "view", Name: "defs_v"}})
+	view, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"}), Kind: "view", Name: "defs_v"}})
 	if err != nil {
 		t.Fatalf("InspectObjects view: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestSQLiteInspectRelationships(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	graph, err := d.InspectRelationshipsInScope(ctx, schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "main"}))
+	graph, err := d.InspectRelationshipsInScope(ctx, metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"}))
 	if err != nil {
 		t.Fatalf("InspectRelationships: %v", err)
 	}
@@ -375,7 +375,7 @@ func TestSQLiteInspectRelationships(t *testing.T) {
 	}
 }
 
-func descriptorByTitle(ds []schema.Descriptor, title string) *schema.Source {
+func descriptorByTitle(ds []metadata.Descriptor, title string) *metadata.Source {
 	for _, d := range ds {
 		if d.Title == title && d.Source != nil {
 			return d.Source
@@ -384,7 +384,7 @@ func descriptorByTitle(ds []schema.Descriptor, title string) *schema.Source {
 	return nil
 }
 
-func directoryHasRef(directory *schema.Directory, ref schema.ObjectRef) bool {
+func directoryHasRef(directory *metadata.Directory, ref metadata.ObjectRef) bool {
 	for _, got := range directory.ObjectRefs() {
 		if got == ref {
 			return true
@@ -393,7 +393,7 @@ func directoryHasRef(directory *schema.Directory, ref schema.ObjectRef) bool {
 	return false
 }
 
-func hasIndex(indexes []schema.SecondaryIndex, name, column string) bool {
+func hasIndex(indexes []metadata.SecondaryIndex, name, column string) bool {
 	for _, ix := range indexes {
 		if ix.Name == name && slices.Contains(ix.Columns, column) {
 			return true

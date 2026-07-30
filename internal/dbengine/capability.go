@@ -4,9 +4,9 @@ import (
 	"github.com/sqlwarden/internal/dbengine/classifier"
 	"github.com/sqlwarden/internal/dbengine/completer"
 	"github.com/sqlwarden/internal/dbengine/cursor"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/sqlwarden/internal/dbengine/parser"
 	"github.com/sqlwarden/internal/dbengine/rewriter"
-	"github.com/sqlwarden/internal/dbengine/schema"
 )
 
 // Capability is a stable, serializable identifier for an engine feature,
@@ -28,9 +28,9 @@ const (
 // CapabilitySet is an engine's static capability report. Safe to compute and
 // serialize without opening a target connection.
 type CapabilitySet struct {
-	Engine       EngineDescriptor    `json:"engine"`
-	Capabilities map[Capability]bool `json:"capabilities"`
-	Schema       *schema.SchemaSpec  `json:"schema,omitempty"`
+	Engine       EngineDescriptor     `json:"engine"`
+	Capabilities map[Capability]bool  `json:"capabilities"`
+	Schema       *metadata.SchemaSpec `json:"schema,omitempty"`
 }
 
 // capabilitiesOf derives an engine's capabilities by type-asserting a fresh,
@@ -38,15 +38,15 @@ type CapabilitySet struct {
 // DERIVED, never hand-declared, so a reported capability can never disagree with
 // what the engine actually implements. The probe is created but never connected,
 // which is why this works for the static /engines report.
-func capabilitiesOf(reg Registration) (map[Capability]bool, *schema.SchemaSpec) {
+func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec) {
 	probe := reg.New()
 	caps := map[Capability]bool{
 		CapabilitySchemaDirectory: false,
 		CapabilitySchemaObjects:   false,
 		CapabilityQueryCursor:     false,
 	}
-	var spec *schema.SchemaSpec
-	if si, ok := probe.(schema.SchemaInspector); ok {
+	var spec *metadata.SchemaSpec
+	if si, ok := probe.(metadata.SchemaInspector); ok {
 		caps[CapabilitySchemaDirectory] = true
 		caps[CapabilitySchemaObjects] = true
 		s := si.SchemaSpec()

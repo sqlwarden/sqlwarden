@@ -15,7 +15,7 @@ import (
 	"github.com/sqlwarden/internal/dbengine/completer"
 	"github.com/sqlwarden/internal/dbengine/completioncore"
 	coremysql "github.com/sqlwarden/internal/dbengine/completioncore/mysql"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
 const preparedCompletionCatalogs = 32
@@ -25,7 +25,7 @@ var (
 	_                           completer.CatalogInvalidator = (*mysqlDriver)(nil)
 	_                           completer.VocabularyProvider = (*mysqlDriver)(nil)
 	mysqlCompletionCatalogCache                              = completer.NewPreparedCache[*mysqlcatalog.Catalog](preparedCompletionCatalogs)
-	mysqlSchemaIndexCache                                    = completer.NewPreparedCache[*schema.Index](preparedCompletionCatalogs)
+	mysqlSchemaIndexCache                                    = completer.NewPreparedCache[*metadata.Index](preparedCompletionCatalogs)
 	mysqlVocabularyOnce         sync.Once
 	mysqlVocabulary             completer.Vocabulary
 	mysqlSafeType               = regexp.MustCompile(`^[A-Za-z0-9_ (),.'"]+$`)
@@ -40,31 +40,31 @@ func (d *mysqlDriver) Complete(ctx context.Context, req completer.Request) (comp
 	}
 
 	var catalog *mysqlcatalog.Catalog
-	var metadata completioncore.MetadataResolver
+	var resolver completioncore.MetadataResolver
 	if req.Schema != nil && req.Schema.Directory != nil {
 		key := mysqlCompletionCatalogKey(req.ConnectionID, req.Schema.Version)
 		var err error
-		var index *schema.Index
+		var index *metadata.Index
 		if key == "" {
 			catalog, err = buildMySQLCompletionCatalog(req.Schema.Directory, req.Schema.Objects)
-			index = schema.NewIndex(*req.Schema)
+			index = metadata.NewIndex(*req.Schema)
 		} else {
 			catalog, err = mysqlCompletionCatalogCache.GetOrBuild(ctx, key, func() (*mysqlcatalog.Catalog, error) {
 				return buildMySQLCompletionCatalog(req.Schema.Directory, req.Schema.Objects)
 			})
 			if err == nil {
-				index, err = mysqlSchemaIndexCache.GetOrBuild(ctx, key, func() (*schema.Index, error) {
-					return schema.NewIndex(*req.Schema), nil
+				index, err = mysqlSchemaIndexCache.GetOrBuild(ctx, key, func() (*metadata.Index, error) {
+					return metadata.NewIndex(*req.Schema), nil
 				})
 			}
 		}
 		if err != nil {
 			return completer.Result{}, err
 		}
-		metadata = completioncore.NewSchemaResolver(index, "")
+		resolver = completioncore.NewSchemaResolver(index, "")
 	}
 
-	candidates, err := coremysql.Complete(ctx, req.SQL, req.CursorOffset, catalog, metadata)
+	candidates, err := coremysql.Complete(ctx, req.SQL, req.CursorOffset, catalog, resolver)
 	if err != nil {
 		return completer.Result{}, err
 	}
@@ -147,7 +147,7 @@ func (d *mysqlDriver) InvalidateCompletionCatalog(connectionID string) {
 	mysqlSchemaIndexCache.InvalidatePrefix(connectionID + ":")
 }
 
-func buildMySQLCompletionCatalog(directory *schema.Directory, objects []schema.Object) (*mysqlcatalog.Catalog, error) {
+func buildMySQLCompletionCatalog(directory *metadata.Directory, objects []metadata.Object) (*mysqlcatalog.Catalog, error) {
 	native := mysqlcatalog.New()
 	created := make(map[string]bool)
 	for _, node := range directory.ScopeNodes() {
@@ -206,7 +206,7 @@ func execMySQLCatalog(catalog *mysqlcatalog.Catalog, sql string) error {
 	return nil
 }
 
-func mysqlCompletionDDL(databaseName string, object schema.Object, fallbackTypes bool) string {
+func mysqlCompletionDDL(databaseName string, object metadata.Object, fallbackTypes bool) string {
 	qualified := mysqlCompletionQuoteIdent(databaseName) + "." + mysqlCompletionQuoteIdent(object.Ref.Name)
 	switch object.Ref.Kind {
 	case "table":
@@ -217,7 +217,7 @@ func mysqlCompletionDDL(databaseName string, object schema.Object, fallbackTypes
 	return ""
 }
 
-func mysqlCompletionColumns(object schema.Object, fallbackTypes bool) string {
+func mysqlCompletionColumns(object metadata.Object, fallbackTypes bool) string {
 	if object.Relational == nil || len(object.Relational.Columns) == 0 {
 		return mysqlCompletionQuoteIdent("__sqlwarden_placeholder") + " TEXT"
 	}
@@ -232,7 +232,7 @@ func mysqlCompletionColumns(object schema.Object, fallbackTypes bool) string {
 	return strings.Join(columns, ", ")
 }
 
-func mysqlCompletionSelectColumns(object schema.Object) string {
+func mysqlCompletionSelectColumns(object metadata.Object) string {
 	if object.Relational == nil || len(object.Relational.Columns) == 0 {
 		return "NULL AS " + mysqlCompletionQuoteIdent("__sqlwarden_placeholder")
 	}

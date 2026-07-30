@@ -7,17 +7,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sqlwarden/internal/dbengine/schema"
-	build "github.com/sqlwarden/internal/dbengine/schema/build"
+	"github.com/sqlwarden/internal/dbengine/metadata"
+	build "github.com/sqlwarden/internal/dbengine/metadata/build"
 )
 
-var _ schema.SchemaInspector = (*sqliteDriver)(nil)
-var _ schema.ScopeDiscoverer = (*sqliteDriver)(nil)
+var _ metadata.SchemaInspector = (*sqliteDriver)(nil)
+var _ metadata.ScopeDiscoverer = (*sqliteDriver)(nil)
 
-func (d *sqliteDriver) SchemaSpec() schema.SchemaSpec {
-	return schema.SchemaSpec{
+func (d *sqliteDriver) SchemaSpec() metadata.SchemaSpec {
+	return metadata.SchemaSpec{
 		Dialect: "sqlite",
-		Kinds: []schema.SchemaObjectKind{
+		Kinds: []metadata.SchemaObjectKind{
 			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
 			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
 			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
@@ -25,7 +25,7 @@ func (d *sqliteDriver) SchemaSpec() schema.SchemaSpec {
 	}
 }
 
-func (d *sqliteDriver) InspectDirectory(ctx context.Context, opts schema.DirectoryOptions) (*schema.Directory, error) {
+func (d *sqliteDriver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOptions) (*metadata.Directory, error) {
 	b := build.NewDirectory()
 	b.DeclareKind("table")
 	b.DeclareKind("view")
@@ -36,7 +36,7 @@ func (d *sqliteDriver) InspectDirectory(ctx context.Context, opts schema.Directo
 		return nil, err
 	}
 	for _, ns := range namespaces {
-		scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: ns})
+		scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: ns})
 		if opts.Root != "" && scope != opts.Root {
 			continue
 		}
@@ -67,17 +67,17 @@ func (d *sqliteDriver) InspectDirectory(ctx context.Context, opts schema.Directo
 	if root != "" {
 		return b.Build("", "sqlite", root), nil
 	}
-	return b.Build("", "sqlite", schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "main"})), nil
+	return b.Build("", "sqlite", metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})), nil
 }
 
-func (d *sqliteDriver) DiscoverScopes(ctx context.Context, request schema.ScopeDiscoveryRequest) (*schema.ScopeDiscovery, error) {
+func (d *sqliteDriver) DiscoverScopes(ctx context.Context, request metadata.ScopeDiscoveryRequest) (*metadata.ScopeDiscovery, error) {
 	names, err := d.sqliteNamespaces(ctx)
 	if err != nil {
 		return nil, err
 	}
-	result := &schema.ScopeDiscovery{Scopes: make([]schema.ScopePath, 0, len(names))}
+	result := &metadata.ScopeDiscovery{Scopes: make([]metadata.ScopePath, 0, len(names))}
 	for _, name := range names {
-		path := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: name})
+		path := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: name})
 		result.Scopes = append(result.Scopes, path)
 		if name == "main" {
 			result.Current = path
@@ -86,13 +86,13 @@ func (d *sqliteDriver) DiscoverScopes(ctx context.Context, request schema.ScopeD
 	return result, nil
 }
 
-func (d *sqliteDriver) InspectObjects(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
+func (d *sqliteDriver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	allowed, err := d.sqliteNamespaceSet(ctx)
 	if err != nil {
 		return nil, err
 	}
 	b := build.NewRelational()
-	var triggerRefs []schema.ObjectRef
+	var triggerRefs []metadata.ObjectRef
 	for _, ref := range refs {
 		if !allowed[ref.Scope.Name("database")] {
 			continue
@@ -122,7 +122,7 @@ func (d *sqliteDriver) InspectObjects(ctx context.Context, refs []schema.ObjectR
 
 // attachSQLiteDefinitions appends the stored CREATE statement from sqlite_master
 // as a "source" descriptor: tables get their DDL, views get their definition.
-func (d *sqliteDriver) attachSQLiteDefinitions(ctx context.Context, objs []schema.Object) error {
+func (d *sqliteDriver) attachSQLiteDefinitions(ctx context.Context, objs []metadata.Object) error {
 	for i := range objs {
 		var typ, title string
 		switch objs[i].Ref.Kind {
@@ -144,10 +144,10 @@ func (d *sqliteDriver) attachSQLiteDefinitions(ctx context.Context, objs []schem
 			return fmt.Errorf("sqlite: object definition: %w", err)
 		}
 		if ddl.Valid && ddl.String != "" {
-			objs[i].Descriptors = append(objs[i].Descriptors, schema.Descriptor{
+			objs[i].Descriptors = append(objs[i].Descriptors, metadata.Descriptor{
 				Kind:   "source",
 				Title:  title,
-				Source: &schema.Source{Language: "sql", Body: ddl.String},
+				Source: &metadata.Source{Language: "sql", Body: ddl.String},
 			})
 		}
 	}
@@ -185,7 +185,7 @@ func (d *sqliteDriver) sqliteNamespaceSet(ctx context.Context) (map[string]bool,
 	return out, nil
 }
 
-func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.RelationalBuilder, ref schema.ObjectRef) error {
+func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.RelationalBuilder, ref metadata.ObjectRef) error {
 	b.Ensure(ref)
 
 	tableArg := sqliteQuoteIdent(ref.Name)
@@ -209,7 +209,7 @@ func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.Rel
 		if hidden != 0 {
 			continue
 		}
-		col := schema.Column{Name: name, DataType: dtype, Nullable: notNull == 0 && pk == 0, Ordinal: cid + 1}
+		col := metadata.Column{Name: name, DataType: dtype, Nullable: notNull == 0 && pk == 0, Ordinal: cid + 1}
 		if def.Valid {
 			v := def.String
 			col.Default = &v
@@ -239,7 +239,7 @@ func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.Rel
 			return fmt.Errorf("sqlite: object fk scan: %w", err)
 		}
 		b.AddForeignKeyColumn(ref, fmt.Sprintf("fk_%d", id), fromCol,
-			schema.ObjectRef{Scope: ref.Scope, Kind: "table", Name: refTbl}, toCol)
+			metadata.ObjectRef{Scope: ref.Scope, Kind: "table", Name: refTbl}, toCol)
 	}
 	if err := fkRows.Err(); err != nil {
 		fkRows.Close()
@@ -253,7 +253,7 @@ func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.Rel
 	if err != nil {
 		return fmt.Errorf("sqlite: object indexes: %w", err)
 	}
-	var indexes []schema.SecondaryIndex
+	var indexes []metadata.SecondaryIndex
 	for idxRows.Next() {
 		var seq, partial int
 		var name, origin string
@@ -262,7 +262,7 @@ func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.Rel
 			idxRows.Close()
 			return fmt.Errorf("sqlite: object index scan: %w", err)
 		}
-		indexes = append(indexes, schema.SecondaryIndex{Name: name, Unique: unique == 1})
+		indexes = append(indexes, metadata.SecondaryIndex{Name: name, Unique: unique == 1})
 	}
 	if err := idxRows.Err(); err != nil {
 		idxRows.Close()
@@ -299,8 +299,8 @@ func (d *sqliteDriver) sqliteIndexColumns(ctx context.Context, _ string, indexNa
 	return columns, rows.Err()
 }
 
-func (d *sqliteDriver) inspectSQLiteTriggers(ctx context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
-	var out []schema.Object
+func (d *sqliteDriver) inspectSQLiteTriggers(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	var out []metadata.Object
 	for _, ref := range refs {
 		// SQLite cannot bind identifiers; sqliteQuoteIdent escapes the namespace.
 		// codeql[go/sql-injection]
@@ -314,17 +314,17 @@ func (d *sqliteDriver) inspectSQLiteTriggers(ctx context.Context, refs []schema.
 			}
 			return nil, fmt.Errorf("sqlite: trigger detail: %w", err)
 		}
-		obj := schema.Object{
+		obj := metadata.Object{
 			Ref: ref,
-			Descriptors: []schema.Descriptor{
-				{Kind: "fields", Title: "Trigger", Fields: []schema.Field{{Name: "Table", Value: tableName}}},
+			Descriptors: []metadata.Descriptor{
+				{Kind: "fields", Title: "Trigger", Fields: []metadata.Field{{Name: "Table", Value: tableName}}},
 			},
 		}
 		if definition.Valid && definition.String != "" {
-			obj.Descriptors = append(obj.Descriptors, schema.Descriptor{
+			obj.Descriptors = append(obj.Descriptors, metadata.Descriptor{
 				Kind:   "source",
 				Title:  "Definition",
-				Source: &schema.Source{Language: "sql", Body: definition.String},
+				Source: &metadata.Source{Language: "sql", Body: definition.String},
 			})
 		}
 		out = append(out, obj)

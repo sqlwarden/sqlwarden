@@ -594,7 +594,7 @@ MIT-licensed completion design. Omni supplies grammar candidates and
 PostgreSQL parser-native scope snapshots. Until Omni exposes the equivalent
 MySQL scope API, the MySQL adapter owns its isolated reference collector.
 Both dialects resolve semantic candidates through the reusable immutable
-`schema.Index`, adapted by completioncore's `SchemaResolver`; no completer
+`metadata.Index`, adapted by completioncore's `SchemaResolver`; no completer
 opens or queries a live connection. `schema.MetadataSet` keeps a lightweight
 catalog, independently inspected object details, optional relationship graphs,
 and their version together without conflating their storage tiers. The same

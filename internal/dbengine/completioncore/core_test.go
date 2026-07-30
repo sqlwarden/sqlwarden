@@ -5,29 +5,29 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 )
 
 func TestSchemaResolverAdaptsIndexMetadata(t *testing.T) {
-	root := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "app"})
-	public := root.Child(schema.ScopeSegment{Kind: "schema", Name: "public"})
-	reporting := root.Child(schema.ScopeSegment{Kind: "schema", Name: "reporting"})
-	directory := &schema.Directory{
+	root := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"})
+	public := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "public"})
+	reporting := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "reporting"})
+	directory := &metadata.Directory{
 		Engine: "postgres", DefaultScope: reporting,
-		Roots: []schema.ScopeNode{{Path: root, Children: []schema.ScopeNode{{Path: public}, {Path: reporting}}}},
+		Roots: []metadata.ScopeNode{{Path: root, Children: []metadata.ScopeNode{{Path: public}, {Path: reporting}}}},
 	}
-	objects := []schema.Object{{
-		Ref: schema.ObjectRef{Scope: reporting, Kind: "view", Name: "Daily Sales"},
-		Relational: &schema.RelationalDetail{Columns: []schema.Column{{
+	objects := []metadata.Object{{
+		Ref: metadata.ObjectRef{Scope: reporting, Kind: "view", Name: "Daily Sales"},
+		Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{
 			Name: "Total", DataType: "numeric", Nullable: false,
 			Attributes: map[string]any{"comment": "daily total"},
 		}}},
-		Descriptors: []schema.Descriptor{{
-			Kind: "source", Source: &schema.Source{Language: "sql", Body: "SELECT 1 AS Total"},
+		Descriptors: []metadata.Descriptor{{
+			Kind: "source", Source: &metadata.Source{Language: "sql", Body: "SELECT 1 AS Total"},
 		}},
 	}}
 
-	index := schema.NewIndex(schema.MetadataSet{Directory: directory, Objects: objects, Version: "v1"})
+	index := metadata.NewIndex(metadata.MetadataSet{Directory: directory, Objects: objects, Version: "v1"})
 	resolver := NewSchemaResolver(index, "reporting")
 	if resolver.DefaultDatabase() != "app" || resolver.DefaultSchema() != "reporting" {
 		t.Fatalf("unexpected defaults: %q %q", resolver.DefaultDatabase(), resolver.DefaultSchema())
@@ -51,15 +51,15 @@ func TestSchemaResolverAdaptsIndexMetadata(t *testing.T) {
 }
 
 func TestSchemaResolverDefaultAndMySQLNamespaceFallbacks(t *testing.T) {
-	scope := schema.NewScopePath(schema.ScopeSegment{Kind: "database", Name: "sakila"})
-	directory := &schema.Directory{Engine: "mysql", DefaultScope: scope, Roots: []schema.ScopeNode{{Path: scope}}}
-	objects := []schema.Object{{
-		Ref: schema.ObjectRef{Scope: scope, Kind: "table", Name: "film"},
-		Relational: &schema.RelationalDetail{Columns: []schema.Column{{
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "sakila"})
+	directory := &metadata.Directory{Engine: "mysql", DefaultScope: scope, Roots: []metadata.ScopeNode{{Path: scope}}}
+	objects := []metadata.Object{{
+		Ref: metadata.ObjectRef{Scope: scope, Kind: "table", Name: "film"},
+		Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{
 			Name: "film_id", DataType: "smallint",
 		}}},
 	}}
-	index := schema.NewIndex(schema.MetadataSet{Directory: directory, Objects: objects})
+	index := metadata.NewIndex(metadata.MetadataSet{Directory: directory, Objects: objects})
 	resolver := NewSchemaResolver(index, "")
 	if _, ok := resolver.FindRelation("", "", "film"); !ok {
 		t.Fatal("MySQL database-as-namespace fallback did not resolve film")

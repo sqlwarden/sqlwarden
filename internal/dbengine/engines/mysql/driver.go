@@ -8,7 +8,7 @@ import (
 
 	"github.com/sqlwarden/internal/dbengine"
 	"github.com/sqlwarden/internal/dbengine/cursor"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/dbengine/metadata"
 	"github.com/sqlwarden/pkg/result"
 
 	mysqlconfig "github.com/go-sql-driver/mysql"
@@ -17,7 +17,7 @@ import (
 type mysqlDriver struct {
 	db           *sql.DB
 	scanOptions  cursor.ScanOptions
-	defaultScope schema.ScopePath
+	defaultScope metadata.ScopePath
 }
 
 // ensureParams ensures parseTime=true is in the DSN.
