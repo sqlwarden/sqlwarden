@@ -144,4 +144,21 @@ describe('ConnectionDialog', () => {
     )
     expect(createBody?.dsn).toContain('/analytics?')
   })
+
+  it('toggles password field visibility', async () => {
+    const user = userEvent.setup()
+    renderDialog()
+    await user.click(screen.getByRole('button', { name: /PostgreSQL/ }))
+
+    expect(document.querySelector('input[type="password"]')).not.toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Show password' }))
+
+    expect(document.querySelector('input[type="password"]')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Hide password' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Hide password' }))
+
+    expect(document.querySelector('input[type="password"]')).not.toBeNull()
+  })
 })

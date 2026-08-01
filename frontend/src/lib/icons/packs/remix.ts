@@ -28,6 +28,7 @@ const icons: Record<AppIcon, string> = {
   'database-lightning': 'ri:flashlight-line',
   column: 'ri:layout-column-line',
   eye: 'ri:eye-line',
+  'eye-off': 'ri:eye-off-line',
   refresh: 'ri:refresh-line',
   'delete-01': 'ri:delete-bin-line',
   'delete-02': 'ri:delete-bin-2-line',

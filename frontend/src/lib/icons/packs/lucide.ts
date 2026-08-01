@@ -28,6 +28,7 @@ const icons: Record<AppIcon, string> = {
   'database-lightning': 'lucide:database-zap',
   column: 'lucide:columns-3',
   eye: 'lucide:eye',
+  'eye-off': 'lucide:eye-off',
   refresh: 'lucide:refresh-cw',
   'delete-01': 'lucide:trash',
   'delete-02': 'lucide:trash-2',

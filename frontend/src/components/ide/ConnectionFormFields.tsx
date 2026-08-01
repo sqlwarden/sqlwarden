@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { Icon } from '#/lib/icons'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import {
@@ -227,15 +229,64 @@ function DriverFieldControl({
       </Select>
     )
   }
+  if (field.type === 'password') {
+    return (
+      <PasswordFieldControl
+        field={field}
+        value={value}
+        invalid={invalid}
+        disabled={disabled}
+        onChange={onChange}
+      />
+    )
+  }
   return (
     <Input
-      type={field.type === 'number' ? 'number' : field.type === 'password' ? 'password' : 'text'}
+      type={field.type === 'number' ? 'number' : 'text'}
       value={value}
       placeholder={field.placeholder}
       disabled={disabled}
       aria-invalid={invalid ? true : undefined}
       onChange={(e) => onChange(field.key, e.target.value)}
     />
+  )
+}
+
+function PasswordFieldControl({
+  field,
+  value,
+  invalid,
+  disabled,
+  onChange,
+}: {
+  field: FieldDef
+  value: string
+  invalid: boolean
+  disabled: boolean
+  onChange: (key: string, value: string) => void
+}) {
+  const [visible, setVisible] = useState(false)
+
+  return (
+    <div className="relative">
+      <Input
+        type={visible ? 'text' : 'password'}
+        value={value}
+        placeholder={field.placeholder}
+        disabled={disabled}
+        aria-invalid={invalid ? true : undefined}
+        className="pe-9"
+        onChange={(e) => onChange(field.key, e.target.value)}
+      />
+      <button
+        type="button"
+        aria-label={visible ? 'Hide password' : 'Show password'}
+        className="absolute end-3 top-1/2 inline-flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+        onClick={() => setVisible((current) => !current)}
+      >
+        <Icon name={visible ? 'eye-off' : 'eye'} size={20} className="size-4" />
+      </button>
+    </div>
   )
 }
 

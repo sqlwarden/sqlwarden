@@ -21,6 +21,7 @@ export interface Organization {
   slug: string
   name: string
   schema_snapshots_enabled?: boolean
+  mask_connection_credentials_on_edit?: boolean
   member_count?: number
   team_count?: number
   created_at: string

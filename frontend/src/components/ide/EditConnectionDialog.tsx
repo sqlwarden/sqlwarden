@@ -68,7 +68,7 @@ export function EditConnectionDialog({
             </div>
 
             <p className="text-xs text-muted-foreground">
-              {canRevealDsn
+              {form.revealDsnAllowed
                 ? 'Connection credentials are shown below because you can manage this connection.'
                 : "For security, connection credentials are never shown after they're saved. Re-enter the full connection details below to update this connection."}
             </p>
@@ -92,6 +92,10 @@ export function EditConnectionDialog({
                 errors={form.errors.fields}
                 disabled={fieldsDisabled}
                 onChange={form.changeField}
+                scopeDiscovery={form.scopeDiscovery}
+                defaultScope={form.defaultScope}
+                onDatabaseChange={form.selectDatabase}
+                onSchemaChange={form.selectSchema}
               />
             </div>
 
