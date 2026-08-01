@@ -28,6 +28,7 @@ const icons: Record<AppIcon, string> = {
   'database-lightning': 'hugeicons:database-lightning',
   column: 'hugeicons:table-columns-split',
   eye: 'hugeicons:eye',
+  'eye-off': 'hugeicons:view-off-slash',
   refresh: 'hugeicons:refresh',
   'delete-01': 'hugeicons:delete-01',
   'delete-02': 'hugeicons:delete-02',

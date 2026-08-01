@@ -510,6 +510,37 @@ func TestGetConnectionDSN(t *testing.T) {
 	assert.Equal(t, ownerRes.BodyFields["dsn"].(string), dsn)
 }
 
+func TestGetConnectionDSNMaskedByOrgSetting(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, org := seedOrgOwner(t, app, "conn-dsn-masked-owner@example.com", "Conn DSN Masked Owner", "Conn DSN Masked Org")
+
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Conn DSN Masked WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	dsn := "host=localhost port=5432 user=test dbname=test sslmode=disable"
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{
+			"name":   "Primary",
+			"driver": "postgres",
+			"dsn":    dsn,
+		}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	masked := true
+	if err := app.db.UpdateOrgSettings(context.Background(), org.ID, nil, nil, &masked); err != nil {
+		t.Fatal(err)
+	}
+
+	// Even the owner, who holds conn:update, must be forbidden once the org masks credentials on edit.
+	ownerRes := send(t, newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/dsn", nil, ownerTok), app.routes())
+	assert.Equal(t, ownerRes.StatusCode, http.StatusForbidden)
+}
+
 func TestUpdateConnectionRejectsSQLiteFileTargetInServerMode(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

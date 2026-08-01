@@ -1,0 +1,1 @@
+ALTER TABLE organizations DROP COLUMN mask_connection_credentials_on_edit;

@@ -26,6 +26,7 @@ export type AppIcon =
   | 'database-lightning'
   | 'column'
   | 'eye'
+  | 'eye-off'
   | 'refresh'
   | 'delete-01'
   | 'delete-02'

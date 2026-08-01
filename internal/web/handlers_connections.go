@@ -325,6 +325,12 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 // connection. The route requires conn:update, since holding conn:update is what makes
 // re-entering the DSN unnecessary.
 func (app *application) getConnectionDSN(w http.ResponseWriter, r *http.Request) {
+	org := contextGetOrg(r)
+	if org.MaskConnectionCredentialsOnEdit {
+		app.notPermitted(w, r)
+		return
+	}
+
 	conn := contextGetConnection(r)
 	dsn, err := app.keyring.Decrypt(conn.DSNEncrypted)
 	if err != nil {

@@ -44,6 +44,7 @@ function OrganizationGeneralSettingsPage() {
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
   const [name, setName] = useState('')
   const [schemaSnapshotsEnabled, setSchemaSnapshotsEnabled] = useState(true)
+  const [maskConnectionCredentialsOnEdit, setMaskConnectionCredentialsOnEdit] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<OrgFieldErrors>({})
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
 
@@ -55,6 +56,7 @@ function OrganizationGeneralSettingsPage() {
     if (!org.data) return
     setName(org.data.name)
     setSchemaSnapshotsEnabled(org.data.schema_snapshots_enabled ?? true)
+    setMaskConnectionCredentialsOnEdit(org.data.mask_connection_credentials_on_edit ?? false)
   }, [org.data])
 
   const updateOrg = useMutation({
@@ -62,6 +64,7 @@ function OrganizationGeneralSettingsPage() {
       api.patch<Organization>(`/api/v1/orgs/${orgSlug}`, {
         name: name.trim(),
         schema_snapshots_enabled: schemaSnapshotsEnabled,
+        mask_connection_credentials_on_edit: maskConnectionCredentialsOnEdit,
       }),
     onSuccess: async (updated) => {
       setFieldErrors({})
@@ -115,7 +118,8 @@ function OrganizationGeneralSettingsPage() {
 
   const hasChanges =
     name.trim() !== org.data.name ||
-    schemaSnapshotsEnabled !== (org.data.schema_snapshots_enabled ?? true)
+    schemaSnapshotsEnabled !== (org.data.schema_snapshots_enabled ?? true) ||
+    maskConnectionCredentialsOnEdit !== (org.data.mask_connection_credentials_on_edit ?? false)
   const deleteMatches = deleteConfirmation === org.data.slug
 
   function submitGeneral(event: React.FormEvent<HTMLFormElement>) {
@@ -178,6 +182,23 @@ function OrganizationGeneralSettingsPage() {
                   Store database structure metadata for disconnected schema browsing and future
                   autocomplete. Disabling this immediately deletes stored snapshots; schema metadata
                   is then held only in memory while a connection session is active.
+                </span>
+              </span>
+            </label>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-4">
+              <Checkbox
+                checked={maskConnectionCredentialsOnEdit}
+                disabled={!canWrite || updateOrg.isPending}
+                onCheckedChange={(checked) => setMaskConnectionCredentialsOnEdit(checked === true)}
+              />
+              <span className="flex flex-col gap-1">
+                <span className="font-medium text-foreground">
+                  Mask connection credentials on edit
+                </span>
+                <span className="text-muted-foreground">
+                  Never pre-fill the saved password when editing a connection, even for members who
+                  can update it. Members must re-enter credentials to change them.
                 </span>
               </span>
             </label>
