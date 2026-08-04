@@ -252,13 +252,10 @@ function IdeBrand() {
     <Tip label="Back to dashboard" side="bottom">
       <Link
         to="/"
-        className="flex shrink-0 items-center gap-2.5 border-r border-border px-4 text-foreground transition-colors hover:bg-sidebar-accent/50"
+        className="flex w-11 shrink-0 items-center justify-center text-foreground transition-colors hover:bg-sidebar-accent/50"
         aria-label={`${brand.productName} home`}
       >
-        <brand.LogoMark size={22} className="shrink-0 text-primary" />
-        <span className="hidden text-sm font-semibold tracking-tight sm:inline">
-          {brand.productName}
-        </span>
+        <brand.LogoMark size={20} className="shrink-0" />
       </Link>
     </Tip>
   )
