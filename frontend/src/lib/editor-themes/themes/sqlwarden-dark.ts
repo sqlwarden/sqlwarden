@@ -49,29 +49,18 @@ const ideThemeDark = EditorView.theme(
   { dark: true },
 )
 
-// All syntax colors derived from the primary hue via CSS relative color syntax.
-// Hue rotations give semantically distinct colors while staying visually linked
-// to the app's primary: +120° → strings, +240° → numbers, +185° → type names.
-// L=0.78 gives brightness readable on a dark background.
+// Keyword stays tied to the brand primary; every other token gets its own
+// fixed, genuinely distinct hue (Nord-inspired: soft green/amber/lavender/teal)
+// rather than a rotation of the primary, which read as monochromatic blue.
 const sqlHighlightStyleDark = HighlightStyle.define([
   { tag: tags.keyword, color: 'var(--color-primary)', fontWeight: '600' },
-  {
-    tag: [tags.string, tags.special(tags.string)],
-    color: 'oklch(from var(--color-primary) 0.78 0.14 calc(h + 120))',
-  },
-  {
-    tag: [tags.number, tags.bool],
-    color: 'oklch(from var(--color-primary) 0.78 0.12 calc(h + 240))',
-  },
+  { tag: [tags.string, tags.special(tags.string)], color: 'oklch(0.75 0.13 145)' },
+  { tag: [tags.number, tags.bool], color: 'oklch(0.78 0.13 55)' },
   { tag: tags.comment, color: 'var(--color-muted-foreground)', fontStyle: 'italic' },
   { tag: [tags.operator, tags.punctuation], color: 'oklch(from var(--color-foreground) 0.97 c h)' },
-  {
-    tag: tags.null,
-    color: 'oklch(from var(--color-primary) 0.68 0.10 calc(h + 240))',
-    fontStyle: 'italic',
-  },
+  { tag: tags.null, color: 'oklch(0.72 0.11 300)', fontStyle: 'italic' },
   { tag: tags.variableName, color: 'oklch(from var(--color-foreground) 0.97 c h)' },
-  { tag: tags.typeName, color: 'oklch(from var(--color-primary) 0.72 0.12 calc(h + 185))' },
+  { tag: tags.typeName, color: 'oklch(0.78 0.10 195)' },
 ])
 
 const sqlwardenDark: Extension = [ideThemeDark, syntaxHighlighting(sqlHighlightStyleDark)]

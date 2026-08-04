@@ -45,28 +45,18 @@ const ideThemeLight = EditorView.theme(
   { dark: false },
 )
 
-// Same hue-rotation strategy as sqlwarden-dark but with L=0.42 for readability
-// on a light background. Comments use var(--color-muted-foreground) which
+// Same fixed-hue palette as sqlwarden-dark, darkened for readability on a
+// light background. Comments use var(--color-muted-foreground) which
 // already adapts to the mode.
 const sqlHighlightStyleLight = HighlightStyle.define([
   { tag: tags.keyword, color: 'var(--color-primary)', fontWeight: '600' },
-  {
-    tag: [tags.string, tags.special(tags.string)],
-    color: 'oklch(from var(--color-primary) 0.42 0.14 calc(h + 120))',
-  },
-  {
-    tag: [tags.number, tags.bool],
-    color: 'oklch(from var(--color-primary) 0.42 0.12 calc(h + 240))',
-  },
+  { tag: [tags.string, tags.special(tags.string)], color: 'oklch(0.46 0.13 145)' },
+  { tag: [tags.number, tags.bool], color: 'oklch(0.52 0.13 50)' },
   { tag: tags.comment, color: 'var(--color-muted-foreground)', fontStyle: 'italic' },
   { tag: [tags.operator, tags.punctuation], color: 'var(--color-foreground)' },
-  {
-    tag: tags.null,
-    color: 'oklch(from var(--color-primary) 0.45 0.10 calc(h + 240))',
-    fontStyle: 'italic',
-  },
+  { tag: tags.null, color: 'oklch(0.48 0.14 300)', fontStyle: 'italic' },
   { tag: tags.variableName, color: 'var(--color-foreground)' },
-  { tag: tags.typeName, color: 'oklch(from var(--color-primary) 0.40 0.12 calc(h + 185))' },
+  { tag: tags.typeName, color: 'oklch(0.46 0.07 195)' },
 ])
 
 const sqlwardenLight: Extension = [ideThemeLight, syntaxHighlighting(sqlHighlightStyleLight)]
