@@ -5,6 +5,28 @@
 @import '@fontsource-variable/inter';
 @import '@fontsource/geist-mono';
 
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/satoshi/Satoshi-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/satoshi/Satoshi-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/satoshi/Satoshi-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -48,7 +70,7 @@
   --accent-link: #38bdf8;
   --accent-datatype: #6366f1;
   /* Runtime font slots — overridden from the interface/editor font pickers. */
-  --font-interface: 'Geist Variable', 'Inter Variable', system-ui, sans-serif;
+  --font-interface: 'Satoshi', 'Geist Variable', system-ui, sans-serif;
   --font-data: 'Geist Mono', ui-monospace, monospace;
 }
 
