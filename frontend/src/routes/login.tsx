@@ -9,8 +9,8 @@ import { api } from '#/lib/api/client'
 import type { AccessTokenResponse } from '#/lib/api/types'
 import { isApiError } from '#/lib/api/errors'
 import { getAccessToken, setAccessToken } from '#/lib/auth/access-token'
+import { useBrand } from '#/lib/brand/brand'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
-import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
@@ -22,6 +22,7 @@ export const Route = createFileRoute('/login')({
 function LoginPage() {
   const navigate = useNavigate()
   const redirect = safeRedirect(new URLSearchParams(window.location.search).get('redirect'))
+  const brand = useBrand()
   const queryClient = useQueryClient()
   const setupStatus = useSetupStatus()
   const [values, setValues] = useState({ email: '', password: '' })
@@ -106,7 +107,7 @@ function LoginPage() {
     <main className="flex min-h-screen items-center justify-center px-4 py-12">
       <div className="w-full max-w-md space-y-6">
         <div className="space-y-3 text-center">
-          <Badge variant="outline">SQLWarden</Badge>
+          <brand.LogoLockup size={20} />
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
             <p className="text-sm text-muted-foreground">
