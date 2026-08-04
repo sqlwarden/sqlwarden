@@ -8,27 +8,27 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* "Warden steel": true graphite neutrals (barely-cool, hue 240 at whisper
-       chroma) with one deep steel-teal accent. Restrained and technical —
-       identity comes from the accent + type pairing, not tinted surfaces. */
-  --background: oklch(0.99 0.002 240);
-  --foreground: oklch(0.21 0.012 240);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.012 240);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.012 240);
-  --primary: oklch(0.545 0.115 210);
-  --primary-foreground: oklch(0.985 0.006 210);
+  /* SQLWarden brand palette — literal brand hex values, not oklch, to
+       preserve exact brand compliance. Secondary/accent/chart/sidebar
+       surface tokens are unspecified by the brand deck and stay neutral. */
+  --background: #f1f4f9;
+  --foreground: #111827;
+  --card: #ffffff;
+  --card-foreground: #111827;
+  --popover: #ffffff;
+  --popover-foreground: #111827;
+  --primary: #006edc;
+  --primary-foreground: #ffffff;
   --secondary: oklch(0.966 0.004 240);
   --secondary-foreground: oklch(0.26 0.012 240);
   --muted: oklch(0.966 0.004 240);
-  --muted-foreground: oklch(0.545 0.014 240);
+  --muted-foreground: #6b7280;
   --accent: oklch(0.955 0.008 225);
   --accent-foreground: oklch(0.26 0.016 225);
-  --destructive: oklch(0.585 0.22 27);
-  --border: oklch(0.916 0.006 240);
-  --input: oklch(0.916 0.006 240);
-  --ring: oklch(0.545 0.115 210);
+  --destructive: #ef4444;
+  --border: #e5e7eb;
+  --input: #e5e7eb;
+  --ring: #006edc;
   --chart-1: oklch(0.545 0.115 210);
   --chart-2: oklch(0.55 0.17 255);
   --chart-3: oklch(0.62 0.15 155);
@@ -37,39 +37,44 @@
   --radius: 0.5rem;
   --sidebar: oklch(0.974 0.004 240);
   --sidebar-foreground: oklch(0.21 0.012 240);
-  --sidebar-primary: oklch(0.545 0.115 210);
-  --sidebar-primary-foreground: oklch(0.985 0.006 210);
+  --sidebar-primary: #006edc;
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: oklch(0.948 0.009 225);
   --sidebar-accent-foreground: oklch(0.26 0.016 225);
   --sidebar-border: oklch(0.916 0.006 240);
-  --sidebar-ring: oklch(0.545 0.115 210);
+  --sidebar-ring: #006edc;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --accent-link: #38bdf8;
+  --accent-datatype: #6366f1;
   /* Runtime font slots — overridden from the interface/editor font pickers. */
   --font-interface: 'Geist Variable', 'Inter Variable', system-ui, sans-serif;
   --font-data: 'Geist Mono', ui-monospace, monospace;
 }
 
 .dark {
-  /* Dark graphite: true charcoal surfaces layered for depth (sidebar darkest <
-       editor bg < elevated cards) with a luminous teal accent. Hairline borders
-       are alpha-white so edges read as machined seams, not colored glow. */
-  --background: oklch(0.165 0.008 240);
-  --foreground: oklch(0.94 0.006 240);
-  --card: oklch(0.205 0.01 240);
-  --card-foreground: oklch(0.94 0.006 240);
-  --popover: oklch(0.205 0.01 240);
-  --popover-foreground: oklch(0.94 0.006 240);
-  --primary: oklch(0.72 0.115 200);
-  --primary-foreground: oklch(0.16 0.02 210);
+  /* SQLWarden brand palette, dark mode. --primary is lightened from the
+       brand's single blue value to reach WCAG AA (4.5:1) against
+       --background; the semantic/IDE accent tokens are brand-specified as
+       identical in both modes and inherit from :root unchanged. */
+  --background: #111827;
+  --foreground: #f1f4f9;
+  --card: #1f2937;
+  --card-foreground: #f1f4f9;
+  --popover: #1f2937;
+  --popover-foreground: #f1f4f9;
+  --primary: #007ffe;
+  --primary-foreground: #111827;
   --secondary: oklch(0.252 0.01 240);
   --secondary-foreground: oklch(0.94 0.006 240);
   --muted: oklch(0.252 0.01 240);
-  --muted-foreground: oklch(0.7 0.014 240);
+  --muted-foreground: #9ca3af;
   --accent: oklch(0.29 0.018 230);
   --accent-foreground: oklch(0.955 0.008 230);
-  --destructive: oklch(0.665 0.2 22);
-  --border: oklch(0.85 0.015 240 / 12%);
-  --input: oklch(0.85 0.015 240 / 15%);
-  --ring: oklch(0.72 0.115 200);
+  --destructive: #ef4444;
+  --border: #374151;
+  --input: #374151;
+  --ring: #007ffe;
   --chart-1: oklch(0.72 0.115 200);
   --chart-2: oklch(0.68 0.15 255);
   --chart-3: oklch(0.72 0.14 155);
@@ -77,12 +82,12 @@
   --chart-5: oklch(0.68 0.17 20);
   --sidebar: oklch(0.14 0.008 240);
   --sidebar-foreground: oklch(0.94 0.006 240);
-  --sidebar-primary: oklch(0.72 0.115 200);
-  --sidebar-primary-foreground: oklch(0.16 0.02 210);
+  --sidebar-primary: #007ffe;
+  --sidebar-primary-foreground: #111827;
   --sidebar-accent: oklch(0.29 0.018 230);
   --sidebar-accent-foreground: oklch(0.955 0.008 230);
   --sidebar-border: oklch(0.85 0.015 240 / 12%);
-  --sidebar-ring: oklch(0.72 0.115 200);
+  --sidebar-ring: #007ffe;
 }
 
 @theme inline {
@@ -120,6 +125,10 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-accent-link: var(--accent-link);
+  --color-accent-datatype: var(--accent-datatype);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
