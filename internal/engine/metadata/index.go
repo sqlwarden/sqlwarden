@@ -131,7 +131,7 @@ func (i *Index) Scopes() []ScopePath {
 	return result
 }
 
-// FindRef resolves an exact qualified reference first, then
+// FindRefInScope resolves an exact qualified reference first, then
 // case-insensitively. Unlike FindObject, it also finds directory entries whose
 // detailed metadata has not been inspected yet.
 func (i *Index) FindRefInScope(scope ScopePath, kind, name string) (ObjectRef, bool) {
@@ -180,7 +180,7 @@ func (i *Index) Object(ref ObjectRef) (Object, bool) {
 	return cloneObject(object), true
 }
 
-// FindObject resolves a qualified name exactly first, then case-insensitively.
+// FindObjectInScope resolves a qualified name exactly first, then case-insensitively.
 // An empty kind matches any kind; when names collide the directory ordering is
 // used, making the result deterministic.
 func (i *Index) FindObjectInScope(scope ScopePath, kind, name string) (Object, bool) {
@@ -226,7 +226,7 @@ func (i *Index) ObjectsInScope(scope ScopePath, kind string) []Object {
 	return result
 }
 
-// Relationships returns the immutable topology for a scope.
+// RelationshipsInScope returns the immutable topology for a scope.
 func (i *Index) RelationshipsInScope(scope ScopePath) []Relationship {
 	if i == nil {
 		return nil
