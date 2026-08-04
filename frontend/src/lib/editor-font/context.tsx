@@ -24,7 +24,7 @@ export const EDITOR_FONT_SIZES = [11, 12, 13, 14, 15, 16] as const
 export type EditorFontSize = (typeof EDITOR_FONT_SIZES)[number]
 
 export const DEFAULT_EDITOR_FONT = EDITOR_FONTS[0]
-export const DEFAULT_EDITOR_FONT_SIZE: EditorFontSize = 13
+export const DEFAULT_EDITOR_FONT_SIZE: EditorFontSize = 12
 
 // Module-level cache — once a font's CSS is injected it persists in the document.
 const _loadedFonts = new Set<string>()

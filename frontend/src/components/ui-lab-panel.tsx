@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Dispatch, SetStateAction } from 'react'
-import { Icon, useIconPack } from '#/lib/icons'
+import { Icon, useIconPack, DEFAULT_ICON_PACK } from '#/lib/icons'
 import type { IconPackName } from '#/lib/icons'
 import { useTheme } from '#/components/theme-provider'
 import { Button } from '#/components/ui/button'
@@ -15,7 +15,11 @@ import {
   SelectValue,
 } from '#/components/ui/select'
 import { Slider } from '#/components/ui/slider'
-import { useEditorTheme } from '#/lib/editor-themes/context'
+import {
+  useEditorTheme,
+  DEFAULT_EDITOR_THEME_DARK,
+  DEFAULT_EDITOR_THEME_LIGHT,
+} from '#/lib/editor-themes/context'
 import { EDITOR_THEME_LABELS, VALID_EDITOR_THEMES } from '#/lib/editor-themes'
 import type { EditorThemeName } from '#/lib/editor-themes'
 import { useConnectionLayout } from '#/components/ide/useConnectionLayout'
@@ -135,9 +139,9 @@ export function UiLabPanel({
       window.localStorage.setItem(storageKey, defaultAppShellPreferences[typedKey])
     })
     setPreferences(defaultAppShellPreferences)
-    setPackName('hugeicons')
-    setEditorThemeDark('vscode-dark')
-    setEditorThemeLight('vscode-light')
+    setPackName(DEFAULT_ICON_PACK)
+    setEditorThemeDark(DEFAULT_EDITOR_THEME_DARK)
+    setEditorThemeLight(DEFAULT_EDITOR_THEME_LIGHT)
     setEditorFont(DEFAULT_EDITOR_FONT)
     setEditorFontSize(DEFAULT_EDITOR_FONT_SIZE)
     setInterfaceFont(DEFAULT_INTERFACE_FONT)

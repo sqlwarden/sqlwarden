@@ -6,6 +6,9 @@ import type { EditorThemeName } from './index'
 const DARK_KEY = 'sqlwarden.preference.editor_theme_dark'
 const LIGHT_KEY = 'sqlwarden.preference.editor_theme_light'
 
+export const DEFAULT_EDITOR_THEME_DARK: EditorThemeName = 'sqlwarden-dark'
+export const DEFAULT_EDITOR_THEME_LIGHT: EditorThemeName = 'sqlwarden-light'
+
 function readPref(key: string, fallback: EditorThemeName): EditorThemeName {
   const stored = localStorage.getItem(key)
   return stored && VALID_EDITOR_THEMES.includes(stored as EditorThemeName)
@@ -21,16 +24,18 @@ type EditorThemeContextValue = {
 }
 
 const EditorThemeContext = createContext<EditorThemeContextValue>({
-  editorThemeDark: 'sqlwarden-dark',
-  editorThemeLight: 'sqlwarden-light',
+  editorThemeDark: DEFAULT_EDITOR_THEME_DARK,
+  editorThemeLight: DEFAULT_EDITOR_THEME_LIGHT,
   setEditorThemeDark: () => {},
   setEditorThemeLight: () => {},
 })
 
 export function EditorThemeProvider({ children }: { children: ReactNode }) {
-  const [dark, setDarkState] = useState<EditorThemeName>(() => readPref(DARK_KEY, 'sqlwarden-dark'))
+  const [dark, setDarkState] = useState<EditorThemeName>(() =>
+    readPref(DARK_KEY, DEFAULT_EDITOR_THEME_DARK),
+  )
   const [light, setLightState] = useState<EditorThemeName>(() =>
-    readPref(LIGHT_KEY, 'sqlwarden-light'),
+    readPref(LIGHT_KEY, DEFAULT_EDITOR_THEME_LIGHT),
   )
 
   function setEditorThemeDark(name: EditorThemeName) {

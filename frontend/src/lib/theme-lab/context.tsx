@@ -15,10 +15,14 @@ export type AccentPreset = {
 
 export const ACCENT_PRESETS: AccentPreset[] = [
   {
+    // id kept stable for localStorage compatibility; label reflects that
+    // this is the brand default — values match styles.css's baked-in
+    // --primary (#006edc light / #007ffe dark) so the swatch and the
+    // applied color agree when this preset is the active default.
     id: 'steel-teal',
-    label: 'Steel Teal',
-    light: { l: 0.545, c: 0.115, h: 210 },
-    dark: { l: 0.72, c: 0.115, h: 200 },
+    label: 'Default',
+    light: { l: 0.551, c: 0.188, h: 256 },
+    dark: { l: 0.612, c: 0.211, h: 256 },
   },
   {
     id: 'blue',
@@ -119,6 +123,9 @@ export type SurfacePreset = {
 }
 
 export const SURFACE_PRESETS: SurfacePreset[] = [
+  // Hue matches the brand primary (#006edc/#007ffe); styles.css bakes this
+  // preset's formula in directly so the swatch and applied surface agree.
+  { id: 'default', label: 'Default', hue: 256, tint: 2.5 },
   { id: 'graphite', label: 'Graphite', hue: 240, tint: 1 },
   { id: 'neutral', label: 'Neutral', hue: 240, tint: 0 },
   { id: 'slate', label: 'Slate', hue: 255, tint: 3 },
@@ -127,7 +134,7 @@ export const SURFACE_PRESETS: SurfacePreset[] = [
   { id: 'dusk', label: 'Dusk', hue: 285, tint: 3 },
 ]
 
-export const DEFAULT_SURFACE = 'graphite'
+export const DEFAULT_SURFACE = 'default'
 
 /** Neutral lightness/chroma ramps matching the styles.css defaults; chroma is
  *  scaled by the preset tint and re-hued. Foregrounds follow at low chroma. */
