@@ -211,7 +211,7 @@ function OrganizationChoiceCard({
           nativeButton={false}
           render={<Link to="/ide/$org_slug" params={{ org_slug: organization.slug }} />}
         >
-          <Icon name="database-lightning" size={20} />
+          <Icon name="terminal" size={20} />
           IDE
         </Button>
       </div>

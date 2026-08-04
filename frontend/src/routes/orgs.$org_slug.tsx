@@ -209,7 +209,7 @@ function workspacePrimaryItems(
       params: { org_slug: orgSlug },
       search: { ws: Number(workspaceId) },
       label: 'Open in IDE',
-      icon: 'database-lightning',
+      icon: 'terminal',
     },
   ]
 
@@ -329,7 +329,7 @@ function organizationItems(orgSlug: string): AppShellNavItem[] {
       to: '/ide/$org_slug',
       params: { org_slug: orgSlug },
       label: 'Open IDE',
-      icon: 'database-lightning',
+      icon: 'terminal',
     },
     {
       to: '/orgs/$org_slug/workspaces',

@@ -25,7 +25,6 @@ const icons: Record<AppIcon, string> = {
   'credit-card': 'lucide:credit-card',
   crop: 'lucide:crop',
   database: 'lucide:database',
-  'database-lightning': 'lucide:database-zap',
   column: 'lucide:columns-3',
   eye: 'lucide:eye',
   'eye-off': 'lucide:eye-off',

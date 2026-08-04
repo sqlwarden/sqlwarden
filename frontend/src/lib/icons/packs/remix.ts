@@ -25,7 +25,6 @@ const icons: Record<AppIcon, string> = {
   'credit-card': 'ri:bank-card-line',
   crop: 'ri:crop-line',
   database: 'ri:database-line',
-  'database-lightning': 'ri:flashlight-line',
   column: 'ri:layout-column-line',
   eye: 'ri:eye-line',
   'eye-off': 'ri:eye-off-line',
