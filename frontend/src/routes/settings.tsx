@@ -12,6 +12,7 @@ import {
 import { useSession } from '#/hooks/use-session'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { getAccessToken } from '#/lib/auth/access-token'
+import { useBrand } from '#/lib/brand/brand'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 
 export const Route = createFileRoute('/settings')({
@@ -27,6 +28,7 @@ const accountItems: AppShellNavItem[] = [
 ]
 
 function SettingsLayout() {
+  const brand = useBrand()
   const setupStatus = useSetupStatus()
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
@@ -64,7 +66,11 @@ function SettingsLayout() {
       }
     >
       <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
-        <AppShellHeader label="Settings" icon="settings-02" />
+        <AppShellHeader
+          label={brand.productName}
+          description="Settings"
+          icon={<brand.LogoMark size={18} />}
+        />
         <SidebarContent>
           <AppShellNavSection items={homeItems} pathname={pathname} />
           <AppShellNavSection label="Account" items={accountItems} pathname={pathname} />

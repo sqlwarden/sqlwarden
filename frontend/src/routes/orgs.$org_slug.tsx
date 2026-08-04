@@ -133,7 +133,7 @@ function OrganizationLayout() {
               ? `${organization.data?.name ?? orgSlug} / ${workspace.data?.name ?? `Workspace #${workspaceId}`}`
               : (organization.data?.name ?? orgSlug)
           }
-          icon={<brand.LogoMark size={16} />}
+          icon={<brand.LogoMark size={18} />}
         />
         <SidebarContent>
           {workspaceId ? (

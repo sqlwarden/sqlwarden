@@ -155,12 +155,12 @@ function OrganizationChoiceCard({
   const canAccessSettings = hasAnyPermission(orgPermissions.data?.permissions, [permission.orgRead])
 
   return (
-    <div className="flex h-full flex-col border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:shadow-sm">
+    <div className="flex h-full flex-col rounded-lg border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:shadow-sm">
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex min-w-0 items-start gap-3">
           <div
             className={cn(
-              'flex size-10 shrink-0 items-center justify-center text-sm font-semibold',
+              'flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold',
               organizationColor(organization.name),
             )}
           >
@@ -221,7 +221,7 @@ function OrganizationChoiceCard({
 
 function PersonalSpaceCard() {
   return (
-    <div className="flex h-full flex-col border border-border bg-card text-card-foreground">
+    <div className="flex h-full flex-col rounded-lg border border-border bg-card text-card-foreground">
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex min-w-0 items-start gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted">
@@ -246,10 +246,10 @@ function AdministrationChoiceCard() {
       to="/administration"
       className="group block h-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <div className="flex h-full flex-col border border-border bg-card text-card-foreground transition-all group-hover:border-foreground/20 group-hover:bg-muted/20 group-hover:shadow-sm">
+      <div className="flex h-full flex-col rounded-lg border border-border bg-card text-card-foreground transition-all group-hover:border-foreground/20 group-hover:bg-muted/20 group-hover:shadow-sm">
         <div className="flex flex-1 flex-col gap-3 p-5">
           <div className="flex min-w-0 items-start gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center bg-muted text-muted-foreground">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
               <Icon name="shield-user" size={20} />
             </div>
             <div className="min-w-0 flex-1 pt-0.5">
@@ -343,7 +343,7 @@ function LandingCardsSkeleton() {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {Array.from({ length: 3 }).map((_, index) => (
-        <div key={index} className="flex flex-col border border-border bg-card">
+        <div key={index} className="flex flex-col rounded-lg border border-border bg-card">
           <div className="flex flex-col gap-3 p-5">
             <div className="flex items-start gap-3">
               <Skeleton className="size-10 shrink-0" />
