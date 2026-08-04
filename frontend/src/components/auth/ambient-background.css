@@ -1,0 +1,127 @@
+/* Scoped to AmbientBackground only — kept out of styles.css so a future
+   shadcn theme paste can't clobber it. */
+
+.auth-mesh-field-a {
+  --auth-ambient-min: 0.12;
+  --auth-ambient-max: 0.18;
+  opacity: var(--auth-ambient-min);
+}
+
+.dark .auth-mesh-field-a {
+  --auth-ambient-min: 0.18;
+  --auth-ambient-max: 0.26;
+}
+
+.auth-mesh-field-b {
+  --auth-ambient-min: 0.08;
+  --auth-ambient-max: 0.13;
+  opacity: var(--auth-ambient-min);
+}
+
+.dark .auth-mesh-field-b {
+  --auth-ambient-min: 0.13;
+  --auth-ambient-max: 0.19;
+}
+
+.auth-mesh-field-c {
+  --auth-ambient-min: 0.07;
+  --auth-ambient-max: 0.11;
+  opacity: var(--auth-ambient-min);
+}
+
+.dark .auth-mesh-field-c {
+  --auth-ambient-min: 0.12;
+  --auth-ambient-max: 0.17;
+}
+
+.auth-ambient-bottom-fade {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--primary) 5%, transparent)
+  );
+}
+
+.dark .auth-ambient-bottom-fade {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--primary) 9%, transparent)
+  );
+}
+
+@keyframes auth-mesh-drift-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+    opacity: var(--auth-ambient-min);
+  }
+  25% {
+    transform: translate3d(55px, 35px, 0) scale(1.08) rotate(3deg);
+    opacity: var(--auth-ambient-max);
+  }
+  50% {
+    transform: translate3d(-25px, 65px, 0) scale(0.95) rotate(-2deg);
+    opacity: var(--auth-ambient-min);
+  }
+  75% {
+    transform: translate3d(-65px, 15px, 0) scale(1.05) rotate(2deg);
+    opacity: var(--auth-ambient-max);
+  }
+}
+
+@keyframes auth-mesh-drift-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+    opacity: var(--auth-ambient-min);
+  }
+  30% {
+    transform: translate3d(50px, -35px, 0) scale(1.1) rotate(-3deg);
+    opacity: var(--auth-ambient-max);
+  }
+  60% {
+    transform: translate3d(85px, 25px, 0) scale(0.94) rotate(2deg);
+    opacity: var(--auth-ambient-min);
+  }
+  85% {
+    transform: translate3d(20px, 45px, 0) scale(1.04) rotate(-2deg);
+    opacity: var(--auth-ambient-max);
+  }
+}
+
+@keyframes auth-mesh-drift-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+    opacity: var(--auth-ambient-min);
+  }
+  20% {
+    transform: translate3d(-55px, 25px, 0) scale(1.06) rotate(3deg);
+    opacity: var(--auth-ambient-max);
+  }
+  55% {
+    transform: translate3d(-30px, -55px, 0) scale(0.95) rotate(-3deg);
+    opacity: var(--auth-ambient-min);
+  }
+  80% {
+    transform: translate3d(35px, -15px, 0) scale(1.08) rotate(2deg);
+    opacity: var(--auth-ambient-max);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .auth-mesh-field-a {
+    animation: auth-mesh-drift-a 10s ease-in-out infinite;
+  }
+
+  .auth-mesh-field-b {
+    animation: auth-mesh-drift-b 12s ease-in-out infinite;
+    animation-delay: -4s;
+  }
+
+  .auth-mesh-field-c {
+    animation: auth-mesh-drift-c 14s ease-in-out infinite;
+    animation-delay: -6s;
+  }
+}

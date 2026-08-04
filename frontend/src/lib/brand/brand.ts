@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { BrandLockup } from './BrandLockup'
+import { BrandFullLogo } from './BrandFullLogo'
 import { BrandMark } from './BrandMark'
 
 export type BrandLogoProps = { size?: number; className?: string }
@@ -15,7 +15,7 @@ export type BrandConfig = {
 export const defaultBrand: BrandConfig = {
   productName: 'SQLWarden',
   LogoMark: BrandMark,
-  LogoLockup: BrandLockup,
+  LogoLockup: BrandFullLogo,
   faviconPath: '/favicon.ico',
   manifestPath: '/manifest.json',
 }
