@@ -25,7 +25,6 @@ const icons: Record<AppIcon, string> = {
   'credit-card': 'hugeicons:credit-card',
   crop: 'hugeicons:crop',
   database: 'hugeicons:database',
-  'database-lightning': 'hugeicons:database-lightning',
   column: 'hugeicons:table-columns-split',
   eye: 'hugeicons:eye',
   'eye-off': 'hugeicons:view-off-slash',

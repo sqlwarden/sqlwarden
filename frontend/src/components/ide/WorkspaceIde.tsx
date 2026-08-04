@@ -649,7 +649,7 @@ function EmptyEditorState({ onNewConsole, onNewFile }: EmptyEditorStateProps) {
     <div className="flex h-full flex-col items-center justify-center gap-8 p-8">
       <div className="flex flex-col items-center gap-3 text-center">
         <div className="flex size-11 items-center justify-center rounded-xl border border-border bg-muted/50">
-          <Icon name="database-lightning" size={20} className="text-muted-foreground" />
+          <Icon name="terminal" size={20} className="text-muted-foreground" />
         </div>
         <div>
           <p className="text-sm font-semibold text-foreground">No editors open</p>

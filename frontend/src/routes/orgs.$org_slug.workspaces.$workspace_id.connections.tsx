@@ -136,7 +136,7 @@ function WorkspaceConnectionsPage() {
               />
             }
           >
-            <Icon name="database-lightning" size={20} data-icon="inline-start" />
+            <Icon name="terminal" size={20} data-icon="inline-start" />
             Open in IDE
           </Button>
         </div>
@@ -310,7 +310,7 @@ function ConnectionRow({
               />
             }
           >
-            <Icon name="database-lightning" size={20} data-icon="inline-start" />
+            <Icon name="terminal" size={20} data-icon="inline-start" />
             Open in IDE
           </Button>
           {canEditConnection ? (

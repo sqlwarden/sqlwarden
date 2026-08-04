@@ -23,7 +23,6 @@ export type AppIcon =
   | 'credit-card'
   | 'crop'
   | 'database'
-  | 'database-lightning'
   | 'column'
   | 'eye'
   | 'eye-off'

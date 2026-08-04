@@ -120,7 +120,7 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
             />
           }
         >
-          <Icon name="database-lightning" size={20} data-icon="inline-start" />
+          <Icon name="terminal" size={20} data-icon="inline-start" />
           Open in IDE
         </Button>
       </div>
