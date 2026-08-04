@@ -10,10 +10,12 @@ import type { SetupResponse } from '#/lib/api/types'
 import { clearAccessToken } from '#/lib/auth/access-token'
 import { queryKeys } from '#/lib/api/query'
 import { slugify } from '#/lib/strings'
+import { AuthField } from '#/components/auth/AuthField'
+import { AuthLayout } from '#/components/auth/AuthLayout'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
+import { PasswordInput } from '#/components/ui/password-input'
 
 export const Route = createFileRoute('/setup')({
   component: SetupPage,
@@ -138,120 +140,100 @@ function SetupPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-12">
-      <div className="w-full max-w-lg space-y-6">
-        <div className="space-y-3 text-center">
-          <Badge variant="outline">First-time setup</Badge>
-          <div className="space-y-2">
-            <h1 className="text-2xl font-semibold tracking-tight">Create the instance admin</h1>
-            <p className="text-sm text-muted-foreground">
-              {setupDescription(requiresOrganization)}
-            </p>
-          </div>
-        </div>
-
-        <Card className="py-0">
-          <CardHeader className="px-6 pt-6">
-            <CardTitle>Instance Setup</CardTitle>
-            <CardDescription>
-              {requiresOrganization
-                ? 'Configure the primary administrative identity and default organization.'
-                : 'Configure the primary administrative identity for this deployment.'}
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent className="px-6 pb-6">
-            <form className="space-y-5" onSubmit={onSubmit}>
-              <Field label="Full name" error={formErrors.name}>
-                <Input
-                  autoComplete="name"
-                  placeholder="Alex Ward"
-                  value={values.name}
-                  onChange={(event) => updateField('name', event.target.value)}
-                />
-              </Field>
-
-              <Field label="Email address" error={formErrors.email}>
-                <Input
-                  autoComplete="email"
-                  type="email"
-                  placeholder="admin@organization.com"
-                  value={values.email}
-                  onChange={(event) => updateField('email', event.target.value)}
-                />
-              </Field>
-
-              {requiresOrganization ? (
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Organization name" error={formErrors.organization_name}>
-                    <Input
-                      autoComplete="organization"
-                      placeholder="Acme Cloud"
-                      value={values.organizationName}
-                      onChange={(event) => updateField('organizationName', event.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Organization slug" error={formErrors.organization_slug}>
-                    <Input
-                      autoComplete="off"
-                      placeholder="acme-cloud"
-                      value={values.organizationSlug}
-                      onChange={(event) => {
-                        setSlugTouched(true)
-                        updateField(
-                          'organizationSlug',
-                          slugify(event.target.value, { maxLength: 64 }),
-                        )
-                      }}
-                    />
-                  </Field>
-                </div>
-              ) : null}
-
-              <div className="grid gap-5 sm:grid-cols-2">
-                <Field label="Password" error={formErrors.password}>
-                  <Input
-                    autoComplete="new-password"
-                    type="password"
-                    placeholder="Minimum 8 characters"
-                    value={values.password}
-                    onChange={(event) => updateField('password', event.target.value)}
-                  />
-                </Field>
-
-                <Field label="Confirm password" error={formErrors.confirmPassword}>
-                  <Input
-                    autoComplete="new-password"
-                    type="password"
-                    placeholder="Repeat password"
-                    value={values.confirmPassword}
-                    onChange={(event) => updateField('confirmPassword', event.target.value)}
-                  />
-                </Field>
-              </div>
-
-              <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-                {requiresOrganization
-                  ? 'This account gets instance admin access and becomes the owner of the first organization.'
-                  : 'This account gets instance admin access. A local organization will be created automatically.'}
-              </div>
-              <Button className="h-10 w-full" disabled={mutation.isPending} size="lg" type="submit">
-                {mutation.isPending
-                  ? 'Creating setup…'
-                  : requiresOrganization
-                    ? 'Create admin and organization'
-                    : 'Create admin account'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
+    <AuthLayout
+      eyebrow={
+        <Badge variant="outline" className="mb-1">
+          First-time setup
+        </Badge>
+      }
+      title="Create the instance admin"
+      description={setupDescription(requiresOrganization)}
+      contentClassName="max-w-lg"
+      footer={
         <p className="text-center text-xs text-muted-foreground">
           No users exist yet. Complete this step to bootstrap the instance.
         </p>
-      </div>
-    </main>
+      }
+    >
+      <form className="space-y-5" onSubmit={onSubmit}>
+        <AuthField label="Full name" error={formErrors.name}>
+          <Input
+            autoComplete="name"
+            placeholder="Alex Ward"
+            value={values.name}
+            onChange={(event) => updateField('name', event.target.value)}
+          />
+        </AuthField>
+
+        <AuthField label="Email address" error={formErrors.email}>
+          <Input
+            autoComplete="email"
+            type="email"
+            placeholder="admin@organization.com"
+            value={values.email}
+            onChange={(event) => updateField('email', event.target.value)}
+          />
+        </AuthField>
+
+        {requiresOrganization ? (
+          <div className="grid gap-5 sm:grid-cols-2">
+            <AuthField label="Organization name" error={formErrors.organization_name}>
+              <Input
+                autoComplete="organization"
+                placeholder="Acme Cloud"
+                value={values.organizationName}
+                onChange={(event) => updateField('organizationName', event.target.value)}
+              />
+            </AuthField>
+
+            <AuthField label="Organization slug" error={formErrors.organization_slug}>
+              <Input
+                autoComplete="off"
+                placeholder="acme-cloud"
+                value={values.organizationSlug}
+                onChange={(event) => {
+                  setSlugTouched(true)
+                  updateField('organizationSlug', slugify(event.target.value, { maxLength: 64 }))
+                }}
+              />
+            </AuthField>
+          </div>
+        ) : null}
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <AuthField label="Password" error={formErrors.password}>
+            <PasswordInput
+              autoComplete="new-password"
+              placeholder="Minimum 8 characters"
+              value={values.password}
+              onChange={(event) => updateField('password', event.target.value)}
+            />
+          </AuthField>
+
+          <AuthField label="Confirm password" error={formErrors.confirmPassword}>
+            <PasswordInput
+              autoComplete="new-password"
+              placeholder="Repeat password"
+              value={values.confirmPassword}
+              onChange={(event) => updateField('confirmPassword', event.target.value)}
+            />
+          </AuthField>
+        </div>
+
+        <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+          {requiresOrganization
+            ? 'This account gets instance admin access and becomes the owner of the first organization.'
+            : 'This account gets instance admin access. A local organization will be created automatically.'}
+        </div>
+        <Button className="h-10 w-full" disabled={mutation.isPending} size="lg" type="submit">
+          {mutation.isPending
+            ? 'Creating setup…'
+            : requiresOrganization
+              ? 'Create admin and organization'
+              : 'Create admin account'}
+        </Button>
+      </form>
+    </AuthLayout>
   )
 }
 
@@ -284,22 +266,4 @@ function setupDescription(requiresOrganization: boolean) {
     return 'Create the first administrator and organization for this SQLWarden deployment.'
   }
   return 'Create the first administrator for this SQLWarden deployment.'
-}
-
-function Field({
-  children,
-  error,
-  label,
-}: {
-  children: React.ReactNode
-  error?: string
-  label: string
-}) {
-  return (
-    <div className="space-y-2">
-      <label className="text-sm font-medium">{label}</label>
-      {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
-  )
 }
