@@ -5,6 +5,8 @@ import type { AppIcon } from './registry'
 
 export type IconPackName = 'hugeicons' | 'lucide' | 'remix'
 
+export const DEFAULT_ICON_PACK: IconPackName = 'lucide'
+
 type IconMap = Record<AppIcon, string>
 
 type IconPackContextValue = {
@@ -15,7 +17,7 @@ type IconPackContextValue = {
 
 const IconPackContext = createContext<IconPackContextValue>({
   iconMap: null,
-  packName: 'hugeicons',
+  packName: DEFAULT_ICON_PACK,
   setPackName: () => {},
 })
 
@@ -50,8 +52,8 @@ const packLoaders: Record<IconPackName, () => Promise<IconMap>> = {
 
 function readStoredPack(): IconPackName {
   const stored = localStorage.getItem(STORAGE_KEY)
-  if (stored === 'lucide' || stored === 'remix') return stored
-  return 'hugeicons'
+  if (stored === 'hugeicons' || stored === 'remix') return stored
+  return DEFAULT_ICON_PACK
 }
 
 export function IconPackProvider({ children }: { children: ReactNode }) {

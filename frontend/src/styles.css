@@ -30,40 +30,42 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* SQLWarden brand palette — literal brand hex values, not oklch, to
-       preserve exact brand compliance. Secondary/accent/chart/sidebar
-       surface tokens are unspecified by the brand deck and stay neutral. */
-  --background: #f1f4f9;
-  --foreground: #111827;
-  --card: #ffffff;
-  --card-foreground: #111827;
-  --popover: #ffffff;
-  --popover-foreground: #111827;
+  /* SQLWarden brand palette. --primary/--ring/--sidebar-* are the literal
+       brand blue hex. Surface neutrals and --chart-1 match the Theme Lab's
+       "Default" accent/surface preset formulas (hue 256) exactly, so the
+       Theme Lab swatches agree with what's actually applied when a
+       preference equals its default and no inline override is set. */
+  --background: oklch(0.99 0.005 256);
+  --foreground: oklch(0.21 0.03 256);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.03 256);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.03 256);
   --primary: #006edc;
   --primary-foreground: #ffffff;
-  --secondary: oklch(0.966 0.004 240);
-  --secondary-foreground: oklch(0.26 0.012 240);
-  --muted: oklch(0.966 0.004 240);
-  --muted-foreground: #6b7280;
-  --accent: oklch(0.955 0.008 225);
-  --accent-foreground: oklch(0.26 0.016 225);
+  --secondary: oklch(0.966 0.01 256);
+  --secondary-foreground: oklch(0.26 0.03 256);
+  --muted: oklch(0.966 0.01 256);
+  --muted-foreground: oklch(0.545 0.035 256);
+  --accent: oklch(0.955 0.02 256);
+  --accent-foreground: oklch(0.26 0.04 256);
   --destructive: #ef4444;
-  --border: #e5e7eb;
-  --input: #e5e7eb;
+  --border: oklch(0.916 0.015 256);
+  --input: oklch(0.916 0.015 256);
   --ring: #006edc;
-  --chart-1: oklch(0.545 0.115 210);
+  --chart-1: oklch(0.551 0.188 256);
   --chart-2: oklch(0.55 0.17 255);
   --chart-3: oklch(0.62 0.15 155);
   --chart-4: oklch(0.72 0.14 75);
   --chart-5: oklch(0.62 0.19 25);
   --radius: 0.5rem;
-  --sidebar: oklch(0.974 0.004 240);
-  --sidebar-foreground: oklch(0.21 0.012 240);
+  --sidebar: oklch(0.974 0.01 256);
+  --sidebar-foreground: oklch(0.21 0.03 256);
   --sidebar-primary: #006edc;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: oklch(0.948 0.009 225);
-  --sidebar-accent-foreground: oklch(0.26 0.016 225);
-  --sidebar-border: oklch(0.916 0.006 240);
+  --sidebar-accent: oklch(0.948 0.0225 256);
+  --sidebar-accent-foreground: oklch(0.26 0.04 256);
+  --sidebar-border: oklch(0.916 0.015 256);
   --sidebar-ring: #006edc;
   --success: #10b981;
   --warning: #f59e0b;
@@ -77,38 +79,39 @@
 .dark {
   /* SQLWarden brand palette, dark mode. --primary is lightened from the
        brand's single blue value to reach WCAG AA (4.5:1) against
-       --background; the semantic/IDE accent tokens are brand-specified as
-       identical in both modes and inherit from :root unchanged. */
-  --background: #111827;
-  --foreground: #f1f4f9;
-  --card: #1f2937;
-  --card-foreground: #f1f4f9;
-  --popover: #1f2937;
-  --popover-foreground: #f1f4f9;
+       --background. Surface neutrals and --chart-1 match the Theme Lab's
+       "Default" accent/surface preset formulas (hue 256), same rationale
+       as :root above. */
+  --background: oklch(0.165 0.02 256);
+  --foreground: oklch(0.94 0.015 256);
+  --card: oklch(0.205 0.025 256);
+  --card-foreground: oklch(0.94 0.015 256);
+  --popover: oklch(0.205 0.025 256);
+  --popover-foreground: oklch(0.94 0.015 256);
   --primary: #007ffe;
   --primary-foreground: #111827;
-  --secondary: oklch(0.252 0.01 240);
-  --secondary-foreground: oklch(0.94 0.006 240);
-  --muted: oklch(0.252 0.01 240);
-  --muted-foreground: #9ca3af;
-  --accent: oklch(0.29 0.018 230);
-  --accent-foreground: oklch(0.955 0.008 230);
+  --secondary: oklch(0.252 0.025 256);
+  --secondary-foreground: oklch(0.94 0.015 256);
+  --muted: oklch(0.252 0.025 256);
+  --muted-foreground: oklch(0.7 0.035 256);
+  --accent: oklch(0.29 0.045 256);
+  --accent-foreground: oklch(0.955 0.02 256);
   --destructive: #ef4444;
-  --border: #374151;
-  --input: #374151;
+  --border: oklch(0.85 0.0375 256 / 12%);
+  --input: oklch(0.85 0.0375 256 / 15%);
   --ring: #007ffe;
-  --chart-1: oklch(0.72 0.115 200);
+  --chart-1: oklch(0.612 0.211 256);
   --chart-2: oklch(0.68 0.15 255);
   --chart-3: oklch(0.72 0.14 155);
   --chart-4: oklch(0.8 0.13 78);
   --chart-5: oklch(0.68 0.17 20);
-  --sidebar: oklch(0.14 0.008 240);
-  --sidebar-foreground: oklch(0.94 0.006 240);
+  --sidebar: oklch(0.14 0.02 256);
+  --sidebar-foreground: oklch(0.94 0.015 256);
   --sidebar-primary: #007ffe;
   --sidebar-primary-foreground: #111827;
-  --sidebar-accent: oklch(0.29 0.018 230);
-  --sidebar-accent-foreground: oklch(0.955 0.008 230);
-  --sidebar-border: oklch(0.85 0.015 240 / 12%);
+  --sidebar-accent: oklch(0.29 0.045 256);
+  --sidebar-accent-foreground: oklch(0.955 0.02 256);
+  --sidebar-border: oklch(0.85 0.0375 256 / 12%);
   --sidebar-ring: #007ffe;
 }
 
