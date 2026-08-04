@@ -9,11 +9,13 @@ import { api } from '#/lib/api/client'
 import type { AccessTokenResponse } from '#/lib/api/types'
 import { isApiError } from '#/lib/api/errors'
 import { getAccessToken, setAccessToken } from '#/lib/auth/access-token'
-import { useBrand } from '#/lib/brand/brand'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
+import { AuthField } from '#/components/auth/AuthField'
+import { AuthLayout } from '#/components/auth/AuthLayout'
+import { AuthProviderList } from '#/components/auth/AuthProviderList'
 import { Button } from '#/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
+import { PasswordInput } from '#/components/ui/password-input'
 
 export const Route = createFileRoute('/login')({
   component: LoginPage,
@@ -22,7 +24,6 @@ export const Route = createFileRoute('/login')({
 function LoginPage() {
   const navigate = useNavigate()
   const redirect = safeRedirect(new URLSearchParams(window.location.search).get('redirect'))
-  const brand = useBrand()
   const queryClient = useQueryClient()
   const setupStatus = useSetupStatus()
   const [values, setValues] = useState({ email: '', password: '' })
@@ -104,82 +105,53 @@ function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md space-y-6">
-        <div className="space-y-3 text-center">
-          <brand.LogoLockup size={20} />
-          <div className="space-y-2">
-            <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
-            <p className="text-sm text-muted-foreground">
-              Use the instance admin account you just created.
-            </p>
-          </div>
-        </div>
+    <AuthLayout
+      title="Sign in"
+      description="Enter your credentials to access your organizations."
+      footer={
+        <p className="text-center text-xs text-muted-foreground">
+          Trouble signing in? Contact your instance administrator.
+        </p>
+      }
+    >
+      <form className="space-y-5" onSubmit={onSubmit}>
+        <AuthField label="Email address" error={formErrors.email}>
+          <Input
+            autoComplete="email"
+            type="email"
+            value={values.email}
+            onChange={(event) => {
+              setValues((current) => ({ ...current, email: event.target.value }))
+              setLocalErrors((current) => {
+                const next = { ...current }
+                delete next.email
+                return next
+              })
+            }}
+          />
+        </AuthField>
 
-        <Card className="py-0">
-          <CardHeader className="px-6 pt-6">
-            <CardTitle>Account login</CardTitle>
-            <CardDescription>Enter your credentials to continue.</CardDescription>
-          </CardHeader>
-          <CardContent className="px-6 pb-6">
-            <form className="space-y-5" onSubmit={onSubmit}>
-              <Field label="Email address" error={formErrors.email}>
-                <Input
-                  autoComplete="email"
-                  type="email"
-                  value={values.email}
-                  onChange={(event) => {
-                    setValues((current) => ({ ...current, email: event.target.value }))
-                    setLocalErrors((current) => {
-                      const next = { ...current }
-                      delete next.email
-                      return next
-                    })
-                  }}
-                />
-              </Field>
+        <AuthField label="Password" error={formErrors.password}>
+          <PasswordInput
+            autoComplete="current-password"
+            value={values.password}
+            onChange={(event) => {
+              setValues((current) => ({ ...current, password: event.target.value }))
+              setLocalErrors((current) => {
+                const next = { ...current }
+                delete next.password
+                return next
+              })
+            }}
+          />
+        </AuthField>
+        <Button className="h-10 w-full" size="lg" disabled={mutation.isPending} type="submit">
+          {mutation.isPending ? 'Signing in…' : 'Sign in'}
+        </Button>
+      </form>
 
-              <Field label="Password" error={formErrors.password}>
-                <Input
-                  autoComplete="current-password"
-                  type="password"
-                  value={values.password}
-                  onChange={(event) => {
-                    setValues((current) => ({ ...current, password: event.target.value }))
-                    setLocalErrors((current) => {
-                      const next = { ...current }
-                      delete next.password
-                      return next
-                    })
-                  }}
-                />
-              </Field>
-              <Button className="h-10 w-full" size="lg" disabled={mutation.isPending} type="submit">
-                {mutation.isPending ? 'Signing in…' : 'Sign in'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    </main>
-  )
-}
-
-function Field({
-  children,
-  error,
-  label,
-}: {
-  children: React.ReactNode
-  error?: string
-  label: string
-}) {
-  return (
-    <div className="space-y-2">
-      <label className="text-sm font-medium">{label}</label>
-      {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
+      <AuthProviderList redirect={redirect} />
+    </AuthLayout>
   )
 }
 
