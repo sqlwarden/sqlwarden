@@ -182,13 +182,7 @@ func TestTeamMemberManagement(t *testing.T) {
 	memberID, _, _ := registerAndLogin(t, app, "tm-member@example.com", "TM Member", "securepass99")
 
 	// Add second user to the org.
-	addOrgReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
-		"email": "tm-member@example.com",
-		"role":  access.BuiltinOrgMemberRole,
-	})
-	addOrgReq.Header.Set("Authorization", "Bearer "+ownerTok)
-	addOrgRes := send(t, addOrgReq, app.routes())
-	assert.Equal(t, addOrgRes.StatusCode, http.StatusNoContent)
+	addOrgMemberDirect(t, app, slug, "tm-member@example.com")
 
 	// Create a team.
 	createReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", map[string]any{
@@ -298,11 +292,7 @@ func TestListTeamMembers_SupportsPaginationAndSort(t *testing.T) {
 	memberBID, _, _ := registerAndLogin(t, app, "tm-page-b@example.com", "TM Page B", "securepass99")
 
 	for _, email := range []string{"tm-page-a@example.com", "tm-page-b@example.com"} {
-		addOrgRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
-			"email": email,
-			"role":  access.BuiltinOrgMemberRole,
-		}, ownerTok), app.routes())
-		assert.Equal(t, addOrgRes.StatusCode, http.StatusNoContent)
+		addOrgMemberDirect(t, app, slug, email)
 	}
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams", map[string]any{

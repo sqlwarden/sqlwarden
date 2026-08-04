@@ -34,6 +34,8 @@ func (app *application) routes() http.Handler {
 		r.Post("/auth/login", app.loginAccount)
 		r.Post("/auth/refresh", app.refreshToken)
 		r.Post("/auth/logout", app.logoutAccount)
+		r.Get("/invitations/{token}", app.getOrganizationInvitation)
+		r.Post("/invitations/{token}/accept", app.acceptOrganizationInvitation)
 
 		r.With(app.requireAccount, app.requireInstanceAdmin).Post("/orgs", app.createOrg)
 
@@ -177,14 +179,19 @@ func (app *application) routes() http.Handler {
 
 			r.Route("/members", func(r chi.Router) {
 				r.With(app.requireOrgPermission("org:read")).Get("/", app.listOrgMembers)
-				r.With(app.requireOrgPermission("org:invite")).Get("/candidates", app.listOrgMemberCandidates)
-				r.With(app.requireOrgPermission("org:invite")).Post("/", app.addOrgMember)
 				r.With(app.requireOrgPermission("org:read")).Get("/{account_id}", app.getOrgMember)
 				r.With(app.requireOrgPermission("org:read")).Get("/{account_id}/teams", app.listOrgMemberTeams)
 				r.With(app.requireOrgPermission("org:write")).Get("/{account_id}/sessions", app.listOrgMemberAccessSessions)
 				r.With(app.requireOrgPermission("org:write")).Delete("/{account_id}/sessions/{session_id}", app.revokeOrgMemberAccessSession)
 				r.With(app.requireOrgRole(access.BuiltinOrgOwnerRole)).Patch("/{account_id}", app.updateOrgMemberRole)
 				r.With(app.requireOrgPermission("org:write")).Delete("/{account_id}", app.removeOrgMember)
+			})
+
+			r.Route("/invitations", func(r chi.Router) {
+				r.With(app.requireOrgPermission("org:invite")).Get("/", app.listOrganizationInvitations)
+				r.With(app.requireOrgPermission("org:invite")).Post("/", app.createOrganizationInvitation)
+				r.With(app.requireOrgPermission("org:invite")).Post("/{invitation_id}/resend", app.resendOrganizationInvitation)
+				r.With(app.requireOrgPermission("org:invite")).Delete("/{invitation_id}", app.revokeOrganizationInvitation)
 			})
 
 			r.Route("/teams", func(r chi.Router) {

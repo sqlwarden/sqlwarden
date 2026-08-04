@@ -269,13 +269,14 @@ DRIVERS_SQLITE_ALLOWED_SOURCES=local
 | Config key | Environment | CLI flag | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `notifications.email` | `NOTIFICATIONS_EMAIL` | `--notifications-email` | Empty | Email address that receives error notifications. |
+| `smtp.enabled` | `SMTP_ENABLED` | `--smtp-enabled` | `false` | Enable outgoing SMTP email. |
 | `smtp.host` | `SMTP_HOST` | `--smtp-host` | `example.smtp.host` | SMTP server host. |
 | `smtp.port` | `SMTP_PORT` | `--smtp-port` | `25` | SMTP server port. |
 | `smtp.username` | `SMTP_USERNAME` | `--smtp-username` | `example_username` | SMTP username. |
 | `smtp.password` | `SMTP_PASSWORD` | `--smtp-password` | `pa55word` | SMTP password. |
 | `smtp.from` | `SMTP_FROM` | `--smtp-from` | `Example Name <no_reply@example.org>` | Default SMTP sender. |
 
-Email is optional today. Configure it when error notification delivery is needed.
+Email is optional. Set `SMTP_ENABLED=true` and configure the SMTP connection to deliver organization invitations and error notifications. When SMTP is disabled or invitation delivery fails, organization administrators can copy the invitation link from the UI.
 
 ## Production Checklist
 

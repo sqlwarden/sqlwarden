@@ -46,6 +46,7 @@ const (
 	defaultFilesRevisionsEnabled     = true
 	defaultFilesRevisionKeepLatest   = 50
 	defaultNotificationsEmail        = ""
+	defaultSMTPEnabled               = false
 	defaultSMTPHost                  = "example.smtp.host"
 	defaultSMTPPort                  = 25
 	defaultSMTPUsername              = "example_username"
@@ -168,6 +169,7 @@ type Config struct {
 		Email string
 	}
 	SMTP struct {
+		Enabled  bool
 		Host     string
 		Port     int
 		Username string
@@ -234,6 +236,7 @@ func DefaultConfig() Config {
 	cfg.Files.Revisions.Enabled = defaultFilesRevisionsEnabled
 	cfg.Files.Revisions.KeepLatest = defaultFilesRevisionKeepLatest
 	cfg.Notifications.Email = defaultNotificationsEmail
+	cfg.SMTP.Enabled = defaultSMTPEnabled
 	cfg.SMTP.Host = defaultSMTPHost
 	cfg.SMTP.Port = defaultSMTPPort
 	cfg.SMTP.Username = defaultSMTPUsername
@@ -307,6 +310,7 @@ var configOptions = []configOption{
 	{key: "files.revisions.enabled", env: "FILES_REVISIONS_ENABLED", flagName: "files-revisions-enabled", defaultValue: defaultFilesRevisionsEnabled, usage: "Enable saved-file revisions"},
 	{key: "files.revisions.keep_latest", env: "FILES_REVISIONS_KEEP_LATEST", flagName: "files-revisions-keep-latest", defaultValue: defaultFilesRevisionKeepLatest, usage: "Number of older saved-file revisions to retain per file"},
 	{key: "notifications.email", env: "NOTIFICATIONS_EMAIL", flagName: "notifications-email", defaultValue: defaultNotificationsEmail, usage: "Email address that receives error notifications"},
+	{key: "smtp.enabled", env: "SMTP_ENABLED", flagName: "smtp-enabled", defaultValue: defaultSMTPEnabled, usage: "Enable outgoing SMTP email"},
 	{key: "smtp.host", env: "SMTP_HOST", flagName: "smtp-host", defaultValue: defaultSMTPHost, usage: "SMTP server host"},
 	{key: "smtp.port", env: "SMTP_PORT", flagName: "smtp-port", defaultValue: defaultSMTPPort, usage: "SMTP server port"},
 	{key: "smtp.username", env: "SMTP_USERNAME", flagName: "smtp-username", defaultValue: defaultSMTPUsername, usage: "SMTP username"},
@@ -418,6 +422,7 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.Files.Revisions.Enabled = v.GetBool("files.revisions.enabled")
 	cfg.Files.Revisions.KeepLatest = v.GetInt("files.revisions.keep_latest")
 	cfg.Notifications.Email = v.GetString("notifications.email")
+	cfg.SMTP.Enabled = v.GetBool("smtp.enabled")
 	cfg.SMTP.Host = v.GetString("smtp.host")
 	cfg.SMTP.Port = v.GetInt("smtp.port")
 	cfg.SMTP.Username = v.GetString("smtp.username")
@@ -483,6 +488,17 @@ func validateConfig(cfg Config) error {
 		}
 		if strings.TrimSpace(cfg.TLS.KeyFile) == "" {
 			return fmt.Errorf("tls.key_file is required when tls.enabled is true")
+		}
+	}
+	if cfg.SMTP.Enabled {
+		if strings.TrimSpace(cfg.SMTP.Host) == "" {
+			return fmt.Errorf("smtp.host is required when smtp.enabled is true")
+		}
+		if cfg.SMTP.Port <= 0 {
+			return fmt.Errorf("smtp.port must be greater than 0 when smtp.enabled is true")
+		}
+		if strings.TrimSpace(cfg.SMTP.From) == "" {
+			return fmt.Errorf("smtp.from is required when smtp.enabled is true")
 		}
 	}
 	seenSQLiteSources := make(map[string]struct{}, len(cfg.Drivers.SQLite.AllowedSources))

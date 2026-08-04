@@ -374,8 +374,7 @@ func TestCreateWorkspaceRoleByOrgAdmin(t *testing.T) {
 	adminAccount, adminTok := seedAccountWithToken(t, app, "wsr-admin@example.com", "Admin")
 	adminID := fmt.Sprintf("%d", adminAccount.ID)
 
-	send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
-		map[string]any{"email": "wsr-admin@example.com"}, ownerTok), app.routes())
+	addOrgMemberDirect(t, app, slug, "wsr-admin@example.com")
 
 	send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+adminID,
 		map[string]any{"role": access.BuiltinOrgAdminRole}, ownerTok), app.routes())

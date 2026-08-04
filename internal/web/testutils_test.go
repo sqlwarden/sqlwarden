@@ -69,6 +69,7 @@ func newTestApplication(t *testing.T) *application {
 		},
 	}
 	app.config.Files.Revisions.Enabled = false
+	app.config.SMTP.Enabled = true
 
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
@@ -86,6 +87,40 @@ func newTestApplication(t *testing.T) *application {
 	}
 
 	return app
+}
+
+func inviteAndAcceptExistingAccount(t *testing.T, app *application, orgSlug, email, inviterToken, inviteeToken string) {
+	t.Helper()
+	created := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+orgSlug+"/invitations", map[string]any{
+		"email": email,
+	}, inviterToken), app.routes())
+	if created.StatusCode != http.StatusCreated {
+		t.Fatalf("create invitation: got status %d, body %s", created.StatusCode, created.BodyBytes)
+	}
+	inviteURL, _ := created.BodyFields["invite_url"].(string)
+	tokenValue := inviteURL[strings.LastIndex(inviteURL, "/")+1:]
+	accepted := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/invitations/"+tokenValue+"/accept", map[string]any{}, inviteeToken), app.routes())
+	if accepted.StatusCode != http.StatusOK {
+		t.Fatalf("accept invitation: got status %d, body %s", accepted.StatusCode, accepted.BodyBytes)
+	}
+}
+
+func addOrgMemberDirect(t *testing.T, app *application, orgSlug, email string) {
+	t.Helper()
+	org, found, err := app.db.GetOrgBySlug(context.Background(), orgSlug)
+	if err != nil || !found {
+		t.Fatalf("get organization %q: found=%v err=%v", orgSlug, found, err)
+	}
+	account, found, err := app.db.GetAccountByEmail(context.Background(), email)
+	if err != nil || !found {
+		t.Fatalf("get account %q: found=%v err=%v", email, found, err)
+	}
+	if err := app.db.AddOrgMember(context.Background(), org.ID, account.ID); err != nil {
+		t.Fatal(err)
+	}
+	if app.enforcer != nil {
+		app.enforcer.InvalidatePrincipals(org.ID, account.ID)
+	}
 }
 
 func seedAccount(t *testing.T, app *application, email, name string) database.Account {

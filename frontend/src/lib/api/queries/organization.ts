@@ -1,11 +1,11 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
 import type {
-  Account,
   EffectivePermissions,
   ListQuery,
   Organization,
   OrgMember,
+  OrganizationInvitation,
   Paginated,
   PermissionsCatalog,
   PolicyBinding,
@@ -58,11 +58,11 @@ export function orgMembersQueryOptions(slug: string, query?: ListQuery) {
   })
 }
 
-export function orgMemberCandidatesQueryOptions(slug: string, query?: ListQuery) {
+export function orgInvitationsQueryOptions(slug: string, query?: ListQuery) {
   return queryOptions({
-    queryKey: queryKeys.orgMemberCandidates(slug, query),
+    queryKey: queryKeys.orgInvitations(slug, query),
     queryFn: () =>
-      api.get<Paginated<Account>>(`/api/v1/orgs/${slug}/members/candidates`, { query }),
+      api.get<Paginated<OrganizationInvitation>>(`/api/v1/orgs/${slug}/invitations`, { query }),
     placeholderData: keepPreviousData,
   })
 }

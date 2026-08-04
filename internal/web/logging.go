@@ -200,6 +200,14 @@ func requestPath(r *http.Request) string {
 	if path == "" {
 		return "/"
 	}
+	const invitationPrefix = "/api/v1/invitations/"
+	if strings.HasPrefix(path, invitationPrefix) {
+		remainder := strings.TrimPrefix(path, invitationPrefix)
+		if suffixAt := strings.IndexByte(remainder, '/'); suffixAt >= 0 {
+			return invitationPrefix + "[redacted]" + remainder[suffixAt:]
+		}
+		return invitationPrefix + "[redacted]"
+	}
 	return path
 }
 
