@@ -197,6 +197,7 @@ function OrganizationChoiceCard({
           <Button
             variant="outline"
             size="sm"
+            nativeButton={false}
             render={<Link to="/orgs/$org_slug" params={{ org_slug: organization.slug }} />}
           >
             <Icon name="settings-02" size={20} />
@@ -205,6 +206,7 @@ function OrganizationChoiceCard({
         ) : null}
         <Button
           size="sm"
+          nativeButton={false}
           render={<Link to="/ide/$org_slug" params={{ org_slug: organization.slug }} />}
         >
           <Icon name="database-lightning" size={20} />
