@@ -3,7 +3,7 @@
 @import 'shadcn/tailwind.css';
 @import '@fontsource-variable/geist';
 @import '@fontsource-variable/inter';
-@import '@fontsource/geist-mono';
+@import '@fontsource-variable/jetbrains-mono';
 
 @font-face {
   font-family: 'Satoshi';
@@ -71,7 +71,7 @@
   --accent-datatype: #6366f1;
   /* Runtime font slots — overridden from the interface/editor font pickers. */
   --font-interface: 'Satoshi', 'Geist Variable', system-ui, sans-serif;
-  --font-data: 'Geist Mono', ui-monospace, monospace;
+  --font-data: 'JetBrains Mono Variable', 'Geist Mono', ui-monospace, monospace;
 }
 
 .dark {

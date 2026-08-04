@@ -7,11 +7,12 @@ export type EditorFont = {
 }
 
 export const EDITOR_FONTS: EditorFont[] = [
-  // Geist Mono is the app default — already loaded globally via styles.css
+  // JetBrains Mono is the brand default — reuses the existing fontsource
+  // package, imported eagerly in styles.css.
+  { label: 'JetBrains Mono', fontFamily: "'JetBrains Mono Variable', ui-monospace, monospace" },
   { label: 'Geist Mono', fontFamily: "'Geist Mono', ui-monospace, monospace" },
   { label: 'System Font', fontFamily: 'ui-monospace, monospace' },
   // @fontsource-variable packages register under the "Variable" family name
-  { label: 'JetBrains Mono', fontFamily: "'JetBrains Mono Variable', ui-monospace, monospace" },
   { label: 'Fira Code', fontFamily: "'Fira Code Variable', ui-monospace, monospace" },
   { label: 'Cascadia Code', fontFamily: "'Cascadia Code', ui-monospace, monospace" },
   { label: 'Source Code Pro', fontFamily: "'Source Code Pro Variable', ui-monospace, monospace" },
@@ -32,8 +33,8 @@ export async function loadEditorFont(font: EditorFont): Promise<void> {
   if (_loadedFonts.has(font.fontFamily)) return
   _loadedFonts.add(font.fontFamily)
   switch (font.label) {
-    case 'JetBrains Mono':
-      await import('@fontsource-variable/jetbrains-mono')
+    case 'Geist Mono':
+      await import('@fontsource/geist-mono')
       break
     case 'Fira Code':
       await import('@fontsource-variable/fira-code')
@@ -47,7 +48,7 @@ export async function loadEditorFont(font: EditorFont): Promise<void> {
     case 'Roboto Mono':
       await import('@fontsource-variable/roboto-mono')
       break
-    // Geist Mono: loaded globally in styles.css — no lazy load needed.
+    // JetBrains Mono: loaded globally in styles.css — no lazy load needed.
     // System Font, Courier New: no web font required.
   }
 }
