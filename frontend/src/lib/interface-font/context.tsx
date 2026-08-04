@@ -7,7 +7,9 @@ export type InterfaceFont = {
 }
 
 export const INTERFACE_FONTS: InterfaceFont[] = [
-  // Geist is the app default — loaded globally via styles.css.
+  // Satoshi is the brand default — self-hosted via hand-written @font-face
+  // rules in styles.css (see Task 10 of the branding plan).
+  { label: 'Satoshi', fontFamily: "'Satoshi', 'Geist Variable', system-ui, sans-serif" },
   { label: 'Geist', fontFamily: "'Geist Variable', 'Inter Variable', system-ui, sans-serif" },
   // Inter is also loaded globally (long-time previous default, common fallback).
   { label: 'Inter', fontFamily: "'Inter Variable', system-ui, sans-serif" },
@@ -28,6 +30,9 @@ export async function loadInterfaceFont(font: InterfaceFont): Promise<void> {
   if (_loadedFonts.has(font.fontFamily)) return
   _loadedFonts.add(font.fontFamily)
   switch (font.label) {
+    case 'Geist':
+      await import('@fontsource-variable/geist')
+      break
     case 'IBM Plex Sans':
       await import('@fontsource-variable/ibm-plex-sans')
       break
@@ -40,7 +45,8 @@ export async function loadInterfaceFont(font: InterfaceFont): Promise<void> {
     case 'Epilogue':
       await import('@fontsource-variable/epilogue')
       break
-    // Geist, Inter: loaded globally in styles.css. System Font: no web font.
+    // Satoshi: self-hosted via @font-face in styles.css, no package to load.
+    // Inter: loaded globally in styles.css. System Font: no web font.
   }
 }
 
