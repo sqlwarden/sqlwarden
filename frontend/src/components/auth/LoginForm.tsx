@@ -50,7 +50,7 @@ export function LoginForm({
         </AuthField>
 
         <Button
-          className="h-11 w-full rounded-lg text-sm active:translate-y-0 active:scale-[0.99]"
+          className="h-11 w-full rounded-lg text-sm shadow-md transition-all duration-150 ease-out hover:shadow-lg active:translate-y-px active:scale-[0.98] active:shadow-sm active:duration-75"
           size="lg"
           disabled={isPending}
           type="submit"
