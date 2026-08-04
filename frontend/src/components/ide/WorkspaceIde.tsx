@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
+import { useBrand } from '#/lib/brand/brand'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/components/ui/resizable'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
@@ -246,17 +247,18 @@ function useIdeDeepLink(orgSlug: string, workspaces: Workspace[]) {
 }
 
 function IdeBrand() {
+  const brand = useBrand()
   return (
     <Tip label="Back to dashboard" side="bottom">
       <Link
         to="/"
         className="flex shrink-0 items-center gap-2 border-r border-border px-3 text-xs font-semibold tracking-tight text-foreground transition-colors hover:bg-sidebar-accent/50"
-        aria-label="SQLWarden home"
+        aria-label={`${brand.productName} home`}
       >
         <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary to-chart-2 text-primary-foreground shadow-sm">
-          <Icon name="database-lightning" size={14} />
+          <brand.LogoMark size={14} />
         </span>
-        <span className="hidden sm:inline">SQLWarden</span>
+        <span className="hidden sm:inline">{brand.productName}</span>
       </Link>
     </Tip>
   )
