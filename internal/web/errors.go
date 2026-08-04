@@ -42,7 +42,7 @@ func (app *application) reportServerError(r *http.Request, err error) {
 		"trace", trace,
 	)
 
-	if app.config.Notifications.Email != "" {
+	if app.config.SMTP.Enabled && app.config.Notifications.Email != "" {
 		data := app.newEmailData()
 		data["Message"] = message
 		data["RequestMethod"] = method

@@ -82,6 +82,18 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if len(cfg.Drivers.SQLite.AllowedSources) != 0 {
 		t.Fatalf("drivers.sqlite.allowed_sources = %v, want empty", cfg.Drivers.SQLite.AllowedSources)
 	}
+	if cfg.SMTP.Enabled {
+		t.Fatal("expected SMTP to be disabled by default")
+	}
+}
+
+func TestValidateConfigRequiresSMTPConnectionSettingsWhenEnabled(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SMTP.Enabled = true
+	cfg.SMTP.Host = ""
+	if err := validateConfig(cfg); err == nil {
+		t.Fatal("expected enabled SMTP without a host to fail validation")
+	}
 }
 
 func TestLoadConfigDefaultsHaveNoPreviousEncryptionKeys(t *testing.T) {

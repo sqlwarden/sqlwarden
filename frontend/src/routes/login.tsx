@@ -21,6 +21,7 @@ export const Route = createFileRoute('/login')({
 
 function LoginPage() {
   const navigate = useNavigate()
+  const redirect = safeRedirect(new URLSearchParams(window.location.search).get('redirect'))
   const queryClient = useQueryClient()
   const setupStatus = useSetupStatus()
   const [values, setValues] = useState({ email: '', password: '' })
@@ -41,6 +42,10 @@ function LoginPage() {
     onSuccess: async (payload) => {
       clearAuthScopedQueryCache(queryClient)
       setAccessToken(payload.access_token)
+      if (redirect) {
+        window.location.replace(redirect)
+        return
+      }
       await navigate({ to: '/', replace: true })
     },
     onError: (error) => {
@@ -70,6 +75,10 @@ function LoginPage() {
   }
 
   if (hasToken && session.data) {
+    if (redirect) {
+      window.location.replace(redirect)
+      return null
+    }
     return <Navigate to="/" replace />
   }
 
@@ -171,4 +180,8 @@ function Field({
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   )
+}
+
+function safeRedirect(value: string | null) {
+  return value && value.startsWith('/') && !value.startsWith('//') ? value : undefined
 }

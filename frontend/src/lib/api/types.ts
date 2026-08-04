@@ -206,6 +206,40 @@ export interface OrgMember {
   joined_at: string
 }
 
+export interface OrganizationInvitation {
+  id: string
+  org_id: number
+  email: string
+  invited_by_account_id?: number
+  expires_at: string
+  delivery_status: 'sent' | 'failed' | 'disabled'
+  last_delivery_attempt_at?: string
+  created_at: string
+  updated_at: string
+  inviter_name?: string
+  status?: 'pending' | 'expired'
+}
+
+export interface OrganizationInvitationMutationResponse {
+  invitation: OrganizationInvitation
+  invite_url: string
+  delivery_status: OrganizationInvitation['delivery_status']
+}
+
+export interface OrganizationInvitationDetails {
+  organization: Organization
+  email: string
+  expires_at: string
+  status: 'pending' | 'expired'
+  account_exists: boolean
+  authenticated_as_invitee: boolean
+}
+
+export interface AcceptOrganizationInvitationResponse {
+  organization: Organization
+  access_token?: string
+}
+
 export interface WorkspaceMember {
   workspace_id: number
   account_id: number

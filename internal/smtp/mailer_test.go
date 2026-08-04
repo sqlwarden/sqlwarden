@@ -30,6 +30,11 @@ func TestNewMockMailer(t *testing.T) {
 	})
 }
 
+func TestDisabledMailer(t *testing.T) {
+	mailer := NewDisabledMailer("")
+	assert.ErrorIs(t, mailer.Send("recipient@example.com", nil, "testdata/test.tmpl"), ErrDisabled)
+}
+
 func TestSend(t *testing.T) {
 	t.Run("Send email successfully with mock mailer", func(t *testing.T) {
 		mailer := NewMockMailer("sender@example.com")

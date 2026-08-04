@@ -98,6 +98,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			"personal_spaces_enabled", cfg.PersonalSpacesEnabled,
 			"sessions_revocation_enabled", cfg.Sessions.RevocationEnabled,
 			"tls_enabled", cfg.TLS.Enabled,
+			"smtp_enabled", cfg.SMTP.Enabled,
 		),
 		slog.Group("database",
 			"driver", cfg.DB.Driver,
@@ -134,10 +135,13 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		logger.Info("database migrations complete")
 	}
 
-	mailer, err := smtp.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.Username, cfg.SMTP.Password, cfg.SMTP.From)
-	if err != nil {
-		db.Close()
-		return nil, err
+	mailer := smtp.NewDisabledMailer(cfg.SMTP.From)
+	if cfg.SMTP.Enabled {
+		mailer, err = smtp.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.Username, cfg.SMTP.Password, cfg.SMTP.From)
+		if err != nil {
+			db.Close()
+			return nil, err
+		}
 	}
 
 	enforcer, err := access.New(db.DB)

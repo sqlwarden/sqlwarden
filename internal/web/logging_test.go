@@ -160,3 +160,20 @@ func TestReportServerErrorLogsRequestIDAndSafeRequestPath(t *testing.T) {
 		t.Fatal("expected trace in server error log")
 	}
 }
+
+func TestRequestPathRedactsInvitationTokens(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		path string
+		want string
+	}{
+		{"/api/v1/invitations/super-secret", "/api/v1/invitations/[redacted]"},
+		{"/api/v1/invitations/super-secret/accept", "/api/v1/invitations/[redacted]/accept"},
+		{"/api/v1/orgs/acme/invitations", "/api/v1/orgs/acme/invitations"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+		if got := requestPath(req); got != tt.want {
+			t.Errorf("requestPath(%q) = %q, want %q", tt.path, got, tt.want)
+		}
+	}
+}

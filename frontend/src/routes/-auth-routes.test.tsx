@@ -95,4 +95,51 @@ describe('authentication route behavior', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
   })
+
+  it('asks an existing invited account to sign in and preserves the invitation return path', async () => {
+    server.use(
+      http.get('/api/v1/invitations/existing-token', () =>
+        HttpResponse.json({
+          organization: { id: 4, slug: 'acme', name: 'Acme', created_at: '', updated_at: '' },
+          email: 'invitee@example.com',
+          expires_at: '2026-08-11T00:00:00Z',
+          status: 'pending',
+          account_exists: true,
+          authenticated_as_invitee: false,
+        }),
+      ),
+    )
+
+    renderRoute('/invitations/existing-token')
+
+    expect(await screen.findByRole('heading', { name: 'Join Acme' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sign in to accept' })).toHaveAttribute(
+      'href',
+      '/login?redirect=%2Finvitations%2Fexisting-token',
+    )
+  })
+
+  it('shows account creation fields for a new invited email', async () => {
+    server.use(
+      http.get('/api/v1/invitations/new-token', () =>
+        HttpResponse.json({
+          organization: { id: 4, slug: 'acme', name: 'Acme', created_at: '', updated_at: '' },
+          email: 'new@example.com',
+          expires_at: '2026-08-11T00:00:00Z',
+          status: 'pending',
+          account_exists: false,
+          authenticated_as_invitee: false,
+        }),
+      ),
+    )
+
+    const { user } = renderRoute('/invitations/new-token')
+
+    expect(await screen.findByRole('heading', { name: 'Join Acme' })).toBeInTheDocument()
+    const submit = screen.getByRole('button', { name: 'Create account and join' })
+    expect(submit).toBeDisabled()
+    await user.type(screen.getByLabelText('Name'), 'New Invitee')
+    await user.type(screen.getByLabelText('Password'), 'securepass99')
+    expect(submit).toBeEnabled()
+  })
 })

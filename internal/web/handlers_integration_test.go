@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 )
 
@@ -29,10 +28,11 @@ func TestFullWorkflow(t *testing.T) {
 	assert.Equal(t, orgRes.StatusCode, http.StatusCreated)
 	orgSlug := orgRes.BodyFields["slug"].(string)
 
-	// ── Step 4: Add member to org ────────────────────────────────────────────
-	addMemberRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+orgSlug+"/members",
-		map[string]any{"email": "flow-member@example.com", "role": access.BuiltinOrgMemberRole}, ownerTok), app.routes())
-	assert.Equal(t, addMemberRes.StatusCode, http.StatusNoContent)
+	// ── Step 4: Invite the existing account and explicitly accept ────────────
+	memberLoginRes := loginTestUser(t, app, "flow-member@example.com", "securepass99")
+	assert.Equal(t, memberLoginRes.StatusCode, http.StatusOK)
+	memberTok := extractAccessToken(t, memberLoginRes)
+	inviteAndAcceptExistingAccount(t, app, orgSlug, "flow-member@example.com", ownerTok, memberTok)
 
 	// ── Step 5: Create workspace ─────────────────────────────────────────────
 	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+orgSlug+"/workspaces",
@@ -73,10 +73,6 @@ func TestFullWorkflow(t *testing.T) {
 	assert.Equal(t, bindRes.StatusCode, http.StatusNoContent)
 
 	// ── Step 9: Member logs in and verifies workspace access ─────────────────
-	memberLoginRes := loginTestUser(t, app, "flow-member@example.com", "securepass99")
-	assert.Equal(t, memberLoginRes.StatusCode, http.StatusOK)
-	memberTok := extractAccessToken(t, memberLoginRes)
-
 	// Member can GET workspace (has ws:read via viewer role).
 	getWsRes := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+orgSlug+"/workspaces/"+wsID, nil, memberTok), app.routes())

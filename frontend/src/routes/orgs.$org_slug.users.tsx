@@ -14,20 +14,25 @@ import {
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
+import { useSetupStatus } from '#/hooks/use-setup-status'
 import { api } from '#/lib/api/client'
 import {
   orgEffectivePermissionsQueryOptions,
-  orgMemberCandidatesQueryOptions,
+  orgInvitationsQueryOptions,
   orgMembersQueryOptions,
 } from '#/lib/api/query'
-import type { Account, OrgMember } from '#/lib/api/types'
+import type {
+  OrganizationInvitation,
+  OrganizationInvitationMutationResponse,
+  OrgMember,
+} from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
 import { entityColor } from '#/lib/entity-colors'
 import { getInitials } from '#/components/InitialsAvatar'
 import { SectionTabNav } from '#/components/SectionTabNav'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
-import { Card, CardContent } from '#/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import {
   Dialog,
   DialogClose,
@@ -43,6 +48,7 @@ import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { Skeleton } from '#/components/ui/skeleton'
+import { Input } from '#/components/ui/input'
 import {
   Table,
   TableBody,
@@ -72,7 +78,10 @@ function OrganizationUsersRoute() {
 
 function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
   const queryClient = useQueryClient()
+  const setupStatus = useSetupStatus()
   const [isAddingUser, setIsAddingUser] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteURL, setInviteURL] = useState('')
   const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
     useListPageState({
       page: 1,
@@ -81,30 +90,19 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
       order: 'asc',
       q: '',
     })
-  const {
-    query: pickerQuery,
-    searchText: pickerSearchText,
-    setSearchText: setPickerSearchText,
-    clearSearch: clearPickerSearch,
-  } = useListPageState({
-    page: 1,
-    page_size: 8,
-    sort: 'name',
-    order: 'asc',
-    q: '',
-  })
-
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
   const canReadUsers = hasPermission(effectivePermissions.data?.permissions, permission.orgRead)
   const canAddUser =
-    canReadUsers && hasPermission(effectivePermissions.data?.permissions, permission.orgInvite)
+    setupStatus.data?.access_mode === 'multi_user' &&
+    canReadUsers &&
+    hasPermission(effectivePermissions.data?.permissions, permission.orgInvite)
   const members = useQuery({
     ...orgMembersQueryOptions(orgSlug, query),
     enabled: canReadUsers,
   })
-  const candidates = useQuery({
-    ...orgMemberCandidatesQueryOptions(orgSlug, pickerQuery),
-    enabled: isAddingUser && canAddUser && Boolean(String(pickerQuery.q ?? '').trim()),
+  const invitations = useQuery({
+    ...orgInvitationsQueryOptions(orgSlug, { page: 1, page_size: 100 }),
+    enabled: canAddUser,
   })
   const data = members.data
   const items = data?.items ?? []
@@ -112,9 +110,6 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
   const pageSize = data?.page_size ?? Number(query.page_size ?? 10)
   const total = data?.total ?? 0
   const pageCount = total > 0 ? Math.ceil(total / pageSize) : 1
-  const candidateItems = candidates.data?.items ?? []
-  const candidateTotal = candidates.data?.total ?? 0
-  const hasPickerSearch = Boolean(String(pickerQuery.q ?? '').trim())
 
   useEffect(() => {
     if (!canReadUsers || !members.error) return
@@ -126,28 +121,25 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
     toast.error(errorMessage(effectivePermissions.error, 'Failed to load user permissions'))
   }, [effectivePermissions.error])
 
-  useEffect(() => {
-    if (!isAddingUser || !canAddUser || !candidates.error) return
-    toast.error(errorMessage(candidates.error, 'Failed to load users'))
-  }, [canAddUser, candidates.error, isAddingUser])
-
-  const addUser = useMutation({
-    mutationFn: async (accountId: number) =>
-      api.post<void>(`/api/v1/orgs/${orgSlug}/members`, { account_id: accountId }),
-    onSuccess: async () => {
-      setIsAddingUser(false)
-      resetAddUser()
-      toast.success('Done')
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orgMembersScope(orgSlug) })
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orgMemberCandidatesScope(orgSlug) })
+  const inviteUser = useMutation({
+    mutationFn: async () =>
+      api.post<OrganizationInvitationMutationResponse>(`/api/v1/orgs/${orgSlug}/invitations`, {
+        email: inviteEmail.trim(),
+      }),
+    onSuccess: async (payload) => {
+      setInviteURL(payload.invite_url)
+      toast.success(payload.delivery_status === 'sent' ? 'Invitation sent' : 'Invitation created')
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgInvitationsScope(orgSlug) })
     },
     onError: (error) => {
-      toast.error(errorMessage(error, 'Failed to add user'))
+      toast.error(errorMessage(error, 'Failed to invite user'))
     },
   })
 
   function resetAddUser() {
-    clearPickerSearch()
+    setInviteEmail('')
+    setInviteURL('')
+    inviteUser.reset()
   }
 
   return (
@@ -188,71 +180,68 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
               >
                 <DialogTrigger render={<Button />}>
                   <Icon name="plus-sign" size={20} data-icon="inline-start" />
-                  Add User
+                  Invite User
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Add User</DialogTitle>
+                    <DialogTitle>Invite User</DialogTitle>
                   </DialogHeader>
                   <div className="mt-6 flex flex-col gap-4">
-                    <SearchInput
-                      value={pickerSearchText}
-                      onValueChange={setPickerSearchText}
-                      onClear={clearPickerSearch}
-                      placeholder="Search by name or email"
-                      className="max-w-none"
-                    />
-                    <div className="rounded-md border bg-card">
-                      {!hasPickerSearch ? (
-                        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                          Start typing to search existing users.
-                        </div>
-                      ) : null}
-                      {hasPickerSearch && candidates.isLoading ? <UserPickerSkeleton /> : null}
-                      {hasPickerSearch && candidates.isError ? (
-                        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                          Failed to load users.
-                        </div>
-                      ) : null}
-                      {hasPickerSearch &&
-                      !candidates.isLoading &&
-                      !candidates.isError &&
-                      candidateItems.length === 0 ? (
-                        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                          No users matched your search.
-                        </div>
-                      ) : null}
-                      {hasPickerSearch &&
-                      !candidates.isLoading &&
-                      !candidates.isError &&
-                      candidateItems.length > 0 ? (
-                        <div className="divide-y">
-                          {candidateItems.map((account) => (
-                            <UserPickerRow
-                              key={account.id}
-                              account={account}
-                              isPending={addUser.isPending}
-                              onAdd={(accountId) => addUser.mutate(accountId)}
-                            />
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                    {hasPickerSearch && candidateTotal > candidateItems.length ? (
+                    <div className="flex flex-col gap-2">
+                      <label htmlFor="invite-email" className="text-sm font-medium">
+                        Email address
+                      </label>
+                      <Input
+                        id="invite-email"
+                        type="email"
+                        autoComplete="email"
+                        value={inviteEmail}
+                        disabled={inviteUser.isPending || Boolean(inviteURL)}
+                        onChange={(event) => setInviteEmail(event.target.value)}
+                        placeholder="person@example.com"
+                      />
                       <p className="text-sm text-muted-foreground">
-                        Showing the first {candidateItems.length} matches. Refine your search to
-                        narrow results.
+                        They will receive baseline organization access after accepting.
                       </p>
+                    </div>
+                    {inviteURL ? (
+                      <div className="flex flex-col gap-2">
+                        <label htmlFor="invite-link" className="text-sm font-medium">
+                          Invitation link
+                        </label>
+                        <div className="flex gap-2">
+                          <Input id="invite-link" readOnly value={inviteURL} />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              copyText(inviteURL)
+                              toast.success('Invitation link copied')
+                            }}
+                          >
+                            Copy
+                          </Button>
+                        </div>
+                      </div>
                     ) : null}
 
                     <DialogFooter>
                       <DialogClose
                         render={
-                          <Button type="button" variant="ghost" disabled={addUser.isPending} />
+                          <Button type="button" variant="ghost" disabled={inviteUser.isPending} />
                         }
                       >
-                        Close
+                        {inviteURL ? 'Done' : 'Cancel'}
                       </DialogClose>
+                      {!inviteURL ? (
+                        <Button
+                          type="button"
+                          disabled={!inviteEmail.trim() || inviteUser.isPending}
+                          onClick={() => inviteUser.mutate()}
+                        >
+                          {inviteUser.isPending ? 'Creating…' : 'Send invitation'}
+                        </Button>
+                      ) : null}
                     </DialogFooter>
                   </div>
                 </DialogContent>
@@ -345,6 +334,15 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
             onPageSizeChange={setPageSize}
           />
         ) : null}
+
+        {canAddUser ? (
+          <PendingInvitations
+            orgSlug={orgSlug}
+            invitations={invitations.data?.items ?? []}
+            isLoading={invitations.isLoading}
+            isError={invitations.isError}
+          />
+        ) : null}
       </div>
     </div>
   )
@@ -414,56 +412,120 @@ function UserRow({ member }: { member: OrgMember }) {
   )
 }
 
-function UserPickerRow({
-  account,
-  isPending,
-  onAdd,
+function PendingInvitations({
+  orgSlug,
+  invitations,
+  isLoading,
+  isError,
 }: {
-  account: Account
-  isPending: boolean
-  onAdd: (accountId: number) => void
+  orgSlug: string
+  invitations: OrganizationInvitation[]
+  isLoading: boolean
+  isError: boolean
 }) {
-  return (
-    <button
-      type="button"
-      className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
-      disabled={isPending}
-      onClick={() => onAdd(account.id)}
-    >
-      <div className="flex min-w-0 items-center gap-3">
-        <div
-          className={cn(
-            'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
-            entityColor(account.name || account.email),
-          )}
-        >
-          {getInitials(account.name || account.email, '?')}
-        </div>
-        <div className="min-w-0">
-          <div className="truncate font-medium text-foreground">
-            {account.name || account.email}
-          </div>
-          <div className="truncate text-sm text-muted-foreground">{account.email}</div>
-        </div>
-      </div>
-      <span className="shrink-0 text-sm font-medium text-primary">Add</span>
-    </button>
-  )
-}
+  const queryClient = useQueryClient()
+  const resend = useMutation({
+    mutationFn: (id: string) =>
+      api.post<OrganizationInvitationMutationResponse>(
+        `/api/v1/orgs/${orgSlug}/invitations/${id}/resend`,
+      ),
+    onSuccess: async (payload) => {
+      if (payload.delivery_status !== 'sent') {
+        copyText(payload.invite_url)
+        toast.success('Invitation renewed and link copied')
+      } else {
+        toast.success('Invitation resent')
+      }
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgInvitationsScope(orgSlug) })
+    },
+    onError: (error) => toast.error(errorMessage(error, 'Failed to resend invitation')),
+  })
+  const revoke = useMutation({
+    mutationFn: (id: string) => api.delete<void>(`/api/v1/orgs/${orgSlug}/invitations/${id}`),
+    onSuccess: async () => {
+      toast.success('Invitation revoked')
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgInvitationsScope(orgSlug) })
+    },
+    onError: (error) => toast.error(errorMessage(error, 'Failed to revoke invitation')),
+  })
 
-function UserPickerSkeleton() {
   return (
-    <div className="divide-y">
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div key={index} className="flex items-center gap-3 px-4 py-3">
-          <Skeleton className="size-8 rounded-md" />
-          <div className="flex min-w-0 flex-col gap-2">
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-3 w-48" />
-          </div>
-        </div>
-      ))}
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Pending invitations</CardTitle>
+        <CardDescription>
+          Invitations expire after seven days and grant baseline organization access.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Email</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Expires</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={4}>
+                  <Skeleton className="h-5 w-48" />
+                </TableCell>
+              </TableRow>
+            ) : null}
+            {isError ? (
+              <TableEmptyState
+                colSpan={4}
+                icon="user-multiple"
+                message="Failed to load invitations."
+              />
+            ) : null}
+            {!isLoading && !isError && invitations.length === 0 ? (
+              <TableEmptyState colSpan={4} icon="user-multiple" message="No pending invitations." />
+            ) : null}
+            {!isError
+              ? invitations.map((invitation) => (
+                  <TableRow key={invitation.id}>
+                    <TableCell className="font-medium">{invitation.email}</TableCell>
+                    <TableCell>
+                      <Badge variant={invitation.status === 'expired' ? 'destructive' : 'outline'}>
+                        {invitation.status === 'expired' ? 'Expired' : 'Pending'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDate(invitation.expires_at)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={resend.isPending || revoke.isPending}
+                          onClick={() => resend.mutate(invitation.id)}
+                        >
+                          Resend
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={resend.isPending || revoke.isPending}
+                          onClick={() => revoke.mutate(invitation.id)}
+                        >
+                          Revoke
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              : null}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -494,4 +556,18 @@ function elevationLabel(role: string) {
   if (role.includes('owner')) return 'Owner'
   if (role.includes('admin')) return 'Admin'
   return role
+}
+
+function copyText(value: string) {
+  if (navigator.clipboard) {
+    void navigator.clipboard.writeText(value)
+    return
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.style.cssText = 'position:fixed;opacity:0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  textarea.remove()
 }

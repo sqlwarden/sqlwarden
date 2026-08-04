@@ -29,9 +29,10 @@ export const queryKeys = {
   orgMembersScope: (slug: string) => ['org-members', slug] as const,
   orgMembers: (slug: string, query?: ListQuery) =>
     [...queryKeys.orgMembersScope(slug), query ?? {}] as const,
-  orgMemberCandidatesScope: (slug: string) => ['org-member-candidates', slug] as const,
-  orgMemberCandidates: (slug: string, query?: ListQuery) =>
-    [...queryKeys.orgMemberCandidatesScope(slug), query ?? {}] as const,
+  orgInvitationsScope: (slug: string) => ['org-invitations', slug] as const,
+  orgInvitations: (slug: string, query?: ListQuery) =>
+    [...queryKeys.orgInvitationsScope(slug), query ?? {}] as const,
+  invitation: (token: string) => ['invitation', token] as const,
   orgMember: (slug: string, accountId: string | number) => ['org-member', slug, accountId] as const,
   orgMemberTeamsScope: (slug: string, accountId: string | number) =>
     ['org-member-teams', slug, accountId] as const,

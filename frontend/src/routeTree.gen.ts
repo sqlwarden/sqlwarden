@@ -24,6 +24,7 @@ import { Route as SettingsApiTokensRouteImport } from './routes/settings.api-tok
 import { Route as SettingsAdministratorsRouteImport } from './routes/settings.administrators'
 import { Route as SettingsAccountRouteImport } from './routes/settings.account'
 import { Route as OrgsOrg_slugRouteImport } from './routes/orgs.$org_slug'
+import { Route as InvitationsTokenRouteImport } from './routes/invitations.$token'
 import { Route as IdeOrg_slugRouteImport } from './routes/ide.$org_slug'
 import { Route as AdministrationUsersRouteImport } from './routes/administration.users'
 import { Route as AdministrationOrganizationsRouteImport } from './routes/administration.organizations'
@@ -124,6 +125,11 @@ const SettingsAccountRoute = SettingsAccountRouteImport.update({
 const OrgsOrg_slugRoute = OrgsOrg_slugRouteImport.update({
   id: '/orgs/$org_slug',
   path: '/orgs/$org_slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InvitationsTokenRoute = InvitationsTokenRouteImport.update({
+  id: '/invitations/$token',
+  path: '/invitations/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IdeOrg_slugRoute = IdeOrg_slugRouteImport.update({
@@ -284,6 +290,7 @@ export interface FileRoutesByFullPath {
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/users': typeof AdministrationUsersRoute
   '/ide/$org_slug': typeof IdeOrg_slugRoute
+  '/invitations/$token': typeof InvitationsTokenRoute
   '/orgs/$org_slug': typeof OrgsOrg_slugRouteWithChildren
   '/settings/account': typeof SettingsAccountRoute
   '/settings/administrators': typeof SettingsAdministratorsRoute
@@ -325,6 +332,7 @@ export interface FileRoutesByTo {
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/users': typeof AdministrationUsersRoute
   '/ide/$org_slug': typeof IdeOrg_slugRoute
+  '/invitations/$token': typeof InvitationsTokenRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/administrators': typeof SettingsAdministratorsRoute
   '/settings/api-tokens': typeof SettingsApiTokensRoute
@@ -368,6 +376,7 @@ export interface FileRoutesById {
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/users': typeof AdministrationUsersRoute
   '/ide/$org_slug': typeof IdeOrg_slugRoute
+  '/invitations/$token': typeof InvitationsTokenRoute
   '/orgs/$org_slug': typeof OrgsOrg_slugRouteWithChildren
   '/settings/account': typeof SettingsAccountRoute
   '/settings/administrators': typeof SettingsAdministratorsRoute
@@ -413,6 +422,7 @@ export interface FileRouteTypes {
     | '/administration/organizations'
     | '/administration/users'
     | '/ide/$org_slug'
+    | '/invitations/$token'
     | '/orgs/$org_slug'
     | '/settings/account'
     | '/settings/administrators'
@@ -454,6 +464,7 @@ export interface FileRouteTypes {
     | '/administration/organizations'
     | '/administration/users'
     | '/ide/$org_slug'
+    | '/invitations/$token'
     | '/settings/account'
     | '/settings/administrators'
     | '/settings/api-tokens'
@@ -496,6 +507,7 @@ export interface FileRouteTypes {
     | '/administration/organizations'
     | '/administration/users'
     | '/ide/$org_slug'
+    | '/invitations/$token'
     | '/orgs/$org_slug'
     | '/settings/account'
     | '/settings/administrators'
@@ -536,6 +548,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRouteWithChildren
   SetupRoute: typeof SetupRoute
   IdeOrg_slugRoute: typeof IdeOrg_slugRoute
+  InvitationsTokenRoute: typeof InvitationsTokenRoute
   OrgsOrg_slugRoute: typeof OrgsOrg_slugRouteWithChildren
 }
 
@@ -644,6 +657,13 @@ declare module '@tanstack/react-router' {
       path: '/orgs/$org_slug'
       fullPath: '/orgs/$org_slug'
       preLoaderRoute: typeof OrgsOrg_slugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invitations/$token': {
+      id: '/invitations/$token'
+      path: '/invitations/$token'
+      fullPath: '/invitations/$token'
+      preLoaderRoute: typeof InvitationsTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ide/$org_slug': {
@@ -1026,6 +1046,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRouteWithChildren,
   SetupRoute: SetupRoute,
   IdeOrg_slugRoute: IdeOrg_slugRoute,
+  InvitationsTokenRoute: InvitationsTokenRoute,
   OrgsOrg_slugRoute: OrgsOrg_slugRouteWithChildren,
 }
 export const routeTree = rootRouteImport
