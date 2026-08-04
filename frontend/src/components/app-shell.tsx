@@ -52,12 +52,12 @@ export function AppShellHeader({
   icon: AppIcon | ReactElement
   description?: string
 }) {
-  const iconNode = typeof icon === 'string' ? <Icon name={icon} size={16} /> : icon
+  const iconNode = typeof icon === 'string' ? <Icon name={icon} size={18} /> : icon
   return (
     <SidebarHeader className="border-b border-sidebar-border">
       {/* Collapsed: show logo icon centred */}
-      <div className="hidden items-center justify-center py-1 group-data-[collapsible=icon]:flex">
-        <div className="flex size-8 shrink-0 items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-4">
+      <div className="hidden items-center justify-center py-2 group-data-[collapsible=icon]:flex">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-[18px]">
           {iconNode}
         </div>
       </div>
@@ -66,17 +66,15 @@ export function AppShellHeader({
         <SidebarMenuItem>
           <SidebarMenuButton
             tooltip={label}
-            className={
-              description ? 'h-auto items-center py-2 hover:bg-transparent' : 'hover:bg-transparent'
-            }
+            className="h-auto items-center gap-3 py-2.5 hover:bg-transparent"
           >
-            <div className="flex size-6 shrink-0 items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-3.5">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-[18px]">
               {iconNode}
             </div>
             <span className="grid min-w-0 flex-1 gap-0.5 text-left">
-              <span className="truncate font-semibold tracking-tight">{label}</span>
+              <span className="truncate text-[15px] font-semibold tracking-tight">{label}</span>
               {description ? (
-                <span className="truncate text-[11px] font-normal leading-none text-sidebar-foreground/50">
+                <span className="truncate text-xs font-normal leading-none text-sidebar-foreground/55">
                   {description}
                 </span>
               ) : null}

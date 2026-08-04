@@ -12,6 +12,7 @@ import {
 import { useSession } from '#/hooks/use-session'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { getAccessToken } from '#/lib/auth/access-token'
+import { useBrand } from '#/lib/brand/brand'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 
 export const Route = createFileRoute('/administration')({
@@ -28,6 +29,7 @@ const adminItems: AppShellNavItem[] = [
 ]
 
 function AdministrationLayout() {
+  const brand = useBrand()
   const setupStatus = useSetupStatus()
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
@@ -69,7 +71,11 @@ function AdministrationLayout() {
       }
     >
       <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
-        <AppShellHeader label="Administration" icon="shield-user" />
+        <AppShellHeader
+          label={brand.productName}
+          description="Administration"
+          icon={<brand.LogoMark size={18} />}
+        />
         <SidebarContent>
           <AppShellNavSection items={homeItems} pathname={pathname} />
           <AppShellNavSection label="Instance" items={adminItems} pathname={pathname} />
