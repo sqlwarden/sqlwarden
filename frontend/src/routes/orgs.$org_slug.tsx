@@ -19,6 +19,7 @@ import {
   orgWorkspaceQueryOptions,
 } from '#/lib/api/query'
 import { getAccessToken } from '#/lib/auth/access-token'
+import { useBrand } from '#/lib/brand/brand'
 import { hasAnyPermission, permission } from '#/lib/permissions'
 import {
   workspaceConnectionPagePermissions,
@@ -38,6 +39,7 @@ function OrganizationLayout() {
   const session = useSession(hasToken)
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const { org_slug: orgSlug } = Route.useParams()
+  const brand = useBrand()
   const workspaceId = workspaceIdFromPath(pathname, orgSlug)
   const organization = useQuery({
     ...orgQueryOptions(orgSlug),
@@ -125,13 +127,13 @@ function OrganizationLayout() {
     >
       <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
         <AppShellHeader
-          label="SQLWarden"
+          label={brand.productName}
           description={
             workspaceId
               ? `${organization.data?.name ?? orgSlug} / ${workspace.data?.name ?? `Workspace #${workspaceId}`}`
               : (organization.data?.name ?? orgSlug)
           }
-          icon="database-lightning"
+          icon={<brand.LogoMark size={16} />}
         />
         <SidebarContent>
           {workspaceId ? (
