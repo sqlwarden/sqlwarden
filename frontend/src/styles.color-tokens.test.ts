@@ -15,21 +15,21 @@ function block(selector: string): string {
 
 describe('brand color tokens', () => {
   it('sets the brand primary blue in :root', () => {
-    expect(block(':root')).toContain('--primary: #006EDC;')
+    expect(block(':root')).toContain('--primary: #006edc;')
   })
 
   it('lightens primary for AA contrast in dark mode', () => {
-    expect(block('.dark')).toContain('--primary: #007FFE;')
+    expect(block('.dark')).toContain('--primary: #007ffe;')
   })
 
   it('defines the new semantic feedback tokens', () => {
-    expect(block(':root')).toContain('--success: #10B981;')
-    expect(block(':root')).toContain('--warning: #F59E0B;')
+    expect(block(':root')).toContain('--success: #10b981;')
+    expect(block(':root')).toContain('--warning: #f59e0b;')
   })
 
   it('defines the new IDE accent tokens', () => {
-    expect(block(':root')).toContain('--accent-link: #38BDF8;')
-    expect(block(':root')).toContain('--accent-datatype: #6366F1;')
+    expect(block(':root')).toContain('--accent-link: #38bdf8;')
+    expect(block(':root')).toContain('--accent-datatype: #6366f1;')
   })
 
   it('maps the new tokens through the Tailwind theme', () => {
