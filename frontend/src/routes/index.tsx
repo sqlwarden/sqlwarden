@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
+import { useBrand } from '#/lib/brand/brand'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { useSession } from '#/hooks/use-session'
 import { api } from '#/lib/api/client'
@@ -37,6 +38,7 @@ export const Route = createFileRoute('/')({ component: LandingPage })
 
 function LandingPage() {
   const setupStatus = useSetupStatus()
+  const brand = useBrand()
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
   const shouldLoadOrganizations = Boolean(
@@ -93,8 +95,8 @@ function LandingPage() {
     <main className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-8 px-4 py-8 md:px-6">
       <div className="flex items-center justify-between gap-4">
         <Link to="/" className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-          <span className="size-2 rounded-full bg-primary" />
-          SQLWarden
+          <brand.LogoMark size={16} />
+          {brand.productName}
         </Link>
         <LandingUserMenu session={session.data} />
       </div>
