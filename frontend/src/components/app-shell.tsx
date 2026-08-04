@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Dispatch, ReactNode, SetStateAction } from 'react'
+import type { Dispatch, ReactElement, ReactNode, SetStateAction } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Icon, type AppIcon } from '#/lib/icons'
@@ -49,15 +49,16 @@ export function AppShellHeader({
   description,
 }: {
   label: string
-  icon: AppIcon
+  icon: AppIcon | ReactElement
   description?: string
 }) {
+  const iconNode = typeof icon === 'string' ? <Icon name={icon} size={16} /> : icon
   return (
     <SidebarHeader className="border-b border-sidebar-border">
       {/* Collapsed: show logo icon centred */}
       <div className="hidden items-center justify-center py-1 group-data-[collapsible=icon]:flex">
         <div className="flex size-8 shrink-0 items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-4">
-          <Icon name={icon} size={16} />
+          {iconNode}
         </div>
       </div>
       {/* Expanded: show full label + description */}
@@ -70,7 +71,7 @@ export function AppShellHeader({
             }
           >
             <div className="flex size-6 shrink-0 items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-3.5">
-              <Icon name={icon} size={14} />
+              {iconNode}
             </div>
             <span className="grid min-w-0 flex-1 gap-0.5 text-left">
               <span className="truncate font-semibold tracking-tight">{label}</span>
