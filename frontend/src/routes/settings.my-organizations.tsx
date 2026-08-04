@@ -69,7 +69,7 @@ function SettingsMyOrganizationsPage() {
       {organizations.isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="flex flex-col border border-border bg-card">
+            <div key={index} className="flex flex-col rounded-lg border border-border bg-card">
               <div className="flex flex-col gap-3 p-5">
                 <div className="flex items-start gap-3">
                   <Skeleton className="size-10 shrink-0" />
@@ -127,13 +127,13 @@ function SettingsMyOrganizationsPage() {
                 key={organization.id}
                 to="/orgs/$org_slug/workspaces"
                 params={{ org_slug: organization.slug }}
-                className="group flex flex-col border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:bg-muted/20 hover:shadow-sm"
+                className="group flex flex-col rounded-lg border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:bg-muted/20 hover:shadow-sm"
               >
                 <div className="flex flex-1 flex-col gap-3 p-5">
                   <div className="flex items-start gap-3">
                     <div
                       className={cn(
-                        'flex size-10 shrink-0 items-center justify-center text-sm font-semibold',
+                        'flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold',
                         organizationColor(organization.name),
                       )}
                     >
