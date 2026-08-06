@@ -31,27 +31,28 @@
 
 :root {
   /* SQLWarden brand palette. --primary/--ring/--sidebar-* are the literal
-       brand blue hex. Surface neutrals and --chart-1 match the Theme Lab's
-       "Default" accent/surface preset formulas (hue 256) exactly, so the
-       Theme Lab swatches agree with what's actually applied when a
-       preference equals its default and no inline override is set. */
-  --background: oklch(0.99 0.005 256);
-  --foreground: oklch(0.21 0.03 256);
+       brand blue hex — the only place light mode carries color. Surface
+       neutrals are pure achromatic (zero chroma): pushing hue 256 that light
+       (L 0.9-1.0) drove a gamut-clipping shift toward a muddy, brownish
+       gray, so surfaces are true black/gray/white instead and the brand
+       blue reads clean against them. */
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0.21 0 0);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.03 256);
+  --card-foreground: oklch(0.21 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.03 256);
+  --popover-foreground: oklch(0.21 0 0);
   --primary: #006edc;
   --primary-foreground: #ffffff;
-  --secondary: oklch(0.966 0.01 256);
-  --secondary-foreground: oklch(0.26 0.03 256);
-  --muted: oklch(0.966 0.01 256);
-  --muted-foreground: oklch(0.545 0.035 256);
-  --accent: oklch(0.955 0.02 256);
-  --accent-foreground: oklch(0.26 0.04 256);
+  --secondary: oklch(0.966 0 0);
+  --secondary-foreground: oklch(0.26 0 0);
+  --muted: oklch(0.966 0 0);
+  --muted-foreground: oklch(0.545 0 0);
+  --accent: oklch(0.955 0 0);
+  --accent-foreground: oklch(0.26 0 0);
   --destructive: #ef4444;
-  --border: oklch(0.916 0.015 256);
-  --input: oklch(0.916 0.015 256);
+  --border: oklch(0.916 0 0);
+  --input: oklch(0.916 0 0);
   --ring: #006edc;
   --chart-1: oklch(0.551 0.188 256);
   --chart-2: oklch(0.55 0.17 255);
@@ -59,13 +60,13 @@
   --chart-4: oklch(0.72 0.14 75);
   --chart-5: oklch(0.62 0.19 25);
   --radius: 0.5rem;
-  --sidebar: oklch(0.974 0.01 256);
-  --sidebar-foreground: oklch(0.21 0.03 256);
+  --sidebar: oklch(0.974 0 0);
+  --sidebar-foreground: oklch(0.21 0 0);
   --sidebar-primary: #006edc;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: oklch(0.948 0.0225 256);
-  --sidebar-accent-foreground: oklch(0.26 0.04 256);
-  --sidebar-border: oklch(0.916 0.015 256);
+  --sidebar-accent: oklch(0.948 0 0);
+  --sidebar-accent-foreground: oklch(0.26 0 0);
+  --sidebar-border: oklch(0.916 0 0);
   --sidebar-ring: #006edc;
   --success: #10b981;
   --warning: #f59e0b;
