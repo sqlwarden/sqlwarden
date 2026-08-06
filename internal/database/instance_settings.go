@@ -17,6 +17,11 @@ const (
 	DefaultExportsBackgroundMaxBytes      int64 = 0
 	DefaultSchemaSnapshotFreshnessSeconds int64 = 86400
 	DefaultFileRevisionsKeepLatest              = 50
+	DefaultJobsWorkerCount                      = 16
+	DefaultJobsPollIntervalSeconds        int64 = 1
+	DefaultJobsClaimLeaseSeconds          int64 = 300
+	DefaultJobsCompletedRetentionSeconds  int64 = 604800
+	DefaultSMTPPort                             = 25
 )
 
 type InstanceSettings struct {
@@ -36,6 +41,18 @@ type InstanceSettings struct {
 	FileRevisionsEnabled           bool      `bun:",notnull" json:"file_revisions_enabled"`
 	FileRevisionsKeepLatest        int       `bun:",notnull" json:"file_revisions_keep_latest"`
 	ErrorNotificationEmail         string    `bun:",notnull" json:"error_notification_email"`
+	LogLevel                       string    `bun:",notnull" json:"log_level"`
+	DatabaseQueryTracingEnabled    bool      `bun:",notnull" json:"database_query_tracing_enabled"`
+	JobsWorkerCount                int       `bun:",notnull" json:"jobs_worker_count"`
+	JobsPollIntervalSeconds        int64     `bun:",notnull" json:"jobs_poll_interval_seconds"`
+	JobsClaimLeaseSeconds          int64     `bun:",notnull" json:"jobs_claim_lease_seconds"`
+	JobsCompletedRetentionSeconds  int64     `bun:",notnull" json:"jobs_completed_retention_seconds"`
+	SMTPEnabled                    bool      `bun:",notnull" json:"smtp_enabled"`
+	SMTPHost                       string    `bun:",notnull" json:"smtp_host"`
+	SMTPPort                       int       `bun:",notnull" json:"smtp_port"`
+	SMTPUsername                   string    `bun:",notnull" json:"smtp_username"`
+	SMTPPasswordEncrypted          string    `bun:",notnull" json:"-"`
+	SMTPFrom                       string    `bun:",notnull" json:"smtp_from"`
 	CreatedAt                      time.Time `bun:",notnull" json:"created_at"`
 	UpdatedAt                      time.Time `bun:",notnull" json:"updated_at"`
 }
@@ -69,6 +86,12 @@ func DefaultInstanceSettings() InstanceSettings {
 		SchemaSnapshotFreshnessSeconds: DefaultSchemaSnapshotFreshnessSeconds,
 		FileRevisionsEnabled:           true,
 		FileRevisionsKeepLatest:        DefaultFileRevisionsKeepLatest,
+		LogLevel:                       "info",
+		JobsWorkerCount:                DefaultJobsWorkerCount,
+		JobsPollIntervalSeconds:        DefaultJobsPollIntervalSeconds,
+		JobsClaimLeaseSeconds:          DefaultJobsClaimLeaseSeconds,
+		JobsCompletedRetentionSeconds:  DefaultJobsCompletedRetentionSeconds,
+		SMTPPort:                       DefaultSMTPPort,
 	}
 }
 
@@ -114,6 +137,18 @@ func (db *DB) UpsertInstanceSettings(ctx context.Context, settings InstanceSetti
 		Set("file_revisions_enabled = EXCLUDED.file_revisions_enabled").
 		Set("file_revisions_keep_latest = EXCLUDED.file_revisions_keep_latest").
 		Set("error_notification_email = EXCLUDED.error_notification_email").
+		Set("log_level = EXCLUDED.log_level").
+		Set("database_query_tracing_enabled = EXCLUDED.database_query_tracing_enabled").
+		Set("jobs_worker_count = EXCLUDED.jobs_worker_count").
+		Set("jobs_poll_interval_seconds = EXCLUDED.jobs_poll_interval_seconds").
+		Set("jobs_claim_lease_seconds = EXCLUDED.jobs_claim_lease_seconds").
+		Set("jobs_completed_retention_seconds = EXCLUDED.jobs_completed_retention_seconds").
+		Set("smtp_enabled = EXCLUDED.smtp_enabled").
+		Set("smtp_host = EXCLUDED.smtp_host").
+		Set("smtp_port = EXCLUDED.smtp_port").
+		Set("smtp_username = EXCLUDED.smtp_username").
+		Set("smtp_password_encrypted = EXCLUDED.smtp_password_encrypted").
+		Set("smtp_from = EXCLUDED.smtp_from").
 		Set("updated_at = EXCLUDED.updated_at").
 		Exec(ctx)
 	if err != nil {

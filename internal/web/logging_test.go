@@ -15,6 +15,33 @@ import (
 
 var errTestServerFailure = errors.New("test server failure")
 
+func TestLoggerLevelChangesAtRuntime(t *testing.T) {
+	var buf bytes.Buffer
+	logger, err := NewLogger(DefaultConfig(), &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logger.Debug("hidden")
+	if buf.Len() != 0 {
+		t.Fatalf("debug log emitted at info level: %s", buf.String())
+	}
+	if err := setLoggerLevel(logger, LogLevelDebug); err != nil {
+		t.Fatal(err)
+	}
+	logger.Debug("visible")
+	if !strings.Contains(buf.String(), "visible") {
+		t.Fatalf("debug log missing after live level change: %s", buf.String())
+	}
+	if err := setLoggerLevel(logger, LogLevelError); err != nil {
+		t.Fatal(err)
+	}
+	before := buf.Len()
+	logger.Info("hidden again")
+	if buf.Len() != before {
+		t.Fatalf("info log emitted at error level: %s", buf.String())
+	}
+}
+
 func TestRequestLoggingContextGeneratesRequestIDAndSafeAccessLog(t *testing.T) {
 	var buf bytes.Buffer
 	app := &application{

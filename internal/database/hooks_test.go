@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,9 +43,11 @@ func TestSlowQueryDetectorHook(t *testing.T) {
 		var buf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
+		includeQuery := &atomic.Bool{}
+		includeQuery.Store(true)
 		hook := &slowQueryDetectorHook{
 			threshold:    50,
-			includeQuery: true,
+			includeQuery: includeQuery,
 			logger:       logger,
 		}
 
@@ -212,10 +215,11 @@ func TestHooksIntegration(t *testing.T) {
 		dsn := fmt.Sprintf("test_hooks_%d.db", time.Now().UnixNano())
 		defer os.Remove(dsn)
 
-		db, err := New("sqlite", dsn, logger, true)
+		db, err := New("sqlite", dsn, logger)
 		assert.Nil(t, err)
 		assert.NotNil(t, db)
 		defer db.Close()
+		db.SetQueryTracing(true)
 
 		// Run a simple query
 		_, err = db.ExecContext(context.Background(), "CREATE TABLE test (id INTEGER)")
@@ -225,6 +229,12 @@ func TestHooksIntegration(t *testing.T) {
 		// Debug hook should log the query
 		assert.True(t, strings.Contains(output, "executed query"))
 		assert.True(t, strings.Contains(output, "CREATE TABLE test"))
+
+		buf.Reset()
+		db.SetQueryTracing(false)
+		_, err = db.ExecContext(context.Background(), "CREATE TABLE test_disabled (id INTEGER)")
+		assert.Nil(t, err)
+		assert.False(t, strings.Contains(buf.String(), "executed query"))
 	})
 
 	t.Run("SQLite with logQueries disabled does not use debug hook", func(t *testing.T) {
@@ -234,7 +244,7 @@ func TestHooksIntegration(t *testing.T) {
 		dsn := fmt.Sprintf("test_hooks_%d.db", time.Now().UnixNano())
 		defer os.Remove(dsn)
 
-		db, err := New("sqlite", dsn, logger, false)
+		db, err := New("sqlite", dsn, logger)
 		assert.Nil(t, err)
 		assert.NotNil(t, db)
 		defer db.Close()
@@ -255,7 +265,7 @@ func TestHooksIntegration(t *testing.T) {
 		dsn := fmt.Sprintf("test_hooks_%d.db", time.Now().UnixNano())
 		defer os.Remove(dsn)
 
-		db, err := New("sqlite", dsn, logger, false)
+		db, err := New("sqlite", dsn, logger)
 		assert.Nil(t, err)
 		assert.NotNil(t, db)
 		defer db.Close()
@@ -269,6 +279,21 @@ func TestHooksIntegration(t *testing.T) {
 		// The slow query hook is tested with the unit tests above
 		// This integration test just ensures the hook is registered
 	})
+}
+
+func TestDebugQueryTracingPrefersPlaceholderTemplate(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	enabled := &atomic.Bool{}
+	enabled.Store(true)
+	hook := &debugQueryLoggerHook{logger: logger, enabled: enabled}
+	hook.AfterQuery(context.Background(), &bun.QueryEvent{
+		StartTime: time.Now(), QueryTemplate: "INSERT INTO secrets (value) VALUES (?)",
+		Query: "INSERT INTO secrets (value) VALUES ('plaintext-password')",
+	})
+	output := buf.String()
+	assert.True(t, strings.Contains(output, "VALUES (?)"))
+	assert.False(t, strings.Contains(output, "plaintext-password"))
 }
 
 // testResult is a mock implementation of sql.Result for testing

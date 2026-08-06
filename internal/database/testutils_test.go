@@ -62,7 +62,7 @@ func newTestDB(t *testing.T, drivers ...string) *DB {
 		}
 	}
 
-	db, err := New(driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+	db, err := New(driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

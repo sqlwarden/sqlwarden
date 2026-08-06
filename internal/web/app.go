@@ -40,6 +40,7 @@ type application struct {
 	db                *database.DB
 	logger            *slog.Logger
 	mailer            *smtp.Mailer
+	mailerMu          sync.RWMutex
 	wg                sync.WaitGroup
 	connManager       *connection.Manager
 	queryCursors      *connection.QueryCursorManager
@@ -53,7 +54,8 @@ type application struct {
 	fileReaperCancel  context.CancelFunc
 	jobStore          *jobs.Store
 	jobRegistry       *jobs.Registry
-	jobRunnerCancel   context.CancelFunc
+	runtimeCancel     context.CancelFunc
+	runtimeUpdates    chan database.InstanceSettings
 	runtimeSettings   *runtimeSettingsService
 }
 
@@ -93,25 +95,17 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 
 	logger.Info("application configuration loaded",
 		slog.Group("config",
-			"log_level", cfg.Log.Level,
 			"log_format", cfg.Log.Format,
 			"base_url_configured", strings.TrimSpace(cfg.BaseURL) != "",
 			"tls_enabled", cfg.TLS.Enabled,
-			"smtp_enabled", cfg.SMTP.Enabled,
 		),
 		slog.Group("database",
 			"driver", cfg.DB.Driver,
 			"automigrate", cfg.DB.Automigrate,
-			"log_queries", cfg.DB.LogQueries,
 		),
 		slog.Group("files",
 			"storage_mode", cfg.Files.StorageMode,
 			"active_backend", cfg.Files.ActiveStorageBackend,
-		),
-		slog.Group("jobs",
-			"worker_count", cfg.Jobs.WorkerCount,
-			"poll_interval_ms", cfg.Jobs.PollInterval.Milliseconds(),
-			"claim_lease_ms", cfg.Jobs.ClaimLease.Milliseconds(),
 		),
 		slog.Group("drivers",
 			"sqlite_allowed_sources", cfg.Drivers.SQLite.AllowedSources,
@@ -119,7 +113,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	)
 
 	logger.Info("initializing database", slog.Group("database", "driver", cfg.DB.Driver, "automigrate", cfg.DB.Automigrate))
-	db, err := database.New(cfg.DB.Driver, cfg.DB.DSN, logger, cfg.DB.LogQueries)
+	db, err := database.New(cfg.DB.Driver, cfg.DB.DSN, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -135,15 +129,6 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	if err := validateRuntimeSettingsInvariant(context.Background(), db); err != nil {
 		db.Close()
 		return nil, err
-	}
-
-	mailer := smtp.NewDisabledMailer(cfg.SMTP.From)
-	if cfg.SMTP.Enabled {
-		mailer, err = smtp.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.Username, cfg.SMTP.Password, cfg.SMTP.From)
-		if err != nil {
-			db.Close()
-			return nil, err
-		}
 	}
 
 	enforcer, err := access.New(db.DB)
@@ -174,7 +159,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		config:            cfg,
 		db:                db,
 		logger:            logger,
-		mailer:            mailer,
+		mailer:            smtp.NewDisabledMailer(""),
 		connManager:       connection.New(30 * time.Minute),
 		queryCursors:      connection.NewQueryCursorManager(30 * time.Minute),
 		schemaService:     schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
@@ -185,10 +170,20 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		fileStores:        fileStores,
 		jobStore:          jobs.NewStore(db),
 		runtimeSettings:   newRuntimeSettingsService(db, cfg.BaseURL),
+		runtimeUpdates:    make(chan database.InstanceSettings, 1),
+	}
+	initialSettings, err := app.instanceSettings(context.Background())
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := app.applyRuntimeOperations(initialSettings); err != nil {
+		db.Close()
+		return nil, err
 	}
 	app.configureConnectionCacheInvalidation()
 	app.jobRegistry = app.defaultJobRegistry()
-	app.startJobRunner()
+	app.startRuntimeSupervisor(initialSettings)
 	app.startFileContentDeletionReaper()
 	return app, nil
 }
@@ -217,8 +212,8 @@ func (app *application) Close() error {
 	if app.fileReaperCancel != nil {
 		app.fileReaperCancel()
 	}
-	if app.jobRunnerCancel != nil {
-		app.jobRunnerCancel()
+	if app.runtimeCancel != nil {
+		app.runtimeCancel()
 	}
 	app.wg.Wait()
 	app.logger.Info("background workers stopped", "duration_ms", time.Since(startedAt).Milliseconds())
@@ -288,29 +283,6 @@ func (app *application) defaultJobRegistry() *jobs.Registry {
 		}),
 	})
 	return registry
-}
-
-func (app *application) startJobRunner() {
-	if app.jobStore == nil {
-		app.jobStore = jobs.NewStore(app.db)
-	}
-	if app.jobRegistry == nil {
-		app.jobRegistry = app.defaultJobRegistry()
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	app.jobRunnerCancel = cancel
-	runner := jobs.NewRunner(app.jobStore, app.jobRegistry, app.logger, jobs.WorkerConfig{
-		WorkerID:           "api",
-		WorkerCount:        app.config.Jobs.WorkerCount,
-		PollInterval:       app.config.Jobs.PollInterval,
-		ClaimLease:         app.config.Jobs.ClaimLease,
-		CompletedRetention: app.config.Jobs.CompletedRetention,
-	})
-	app.wg.Add(1)
-	go func() {
-		defer app.wg.Done()
-		runner.Run(ctx)
-	}()
 }
 
 func (app *application) startFileContentDeletionReaper() {

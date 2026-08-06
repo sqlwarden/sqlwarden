@@ -5,45 +5,32 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
 const (
-	defaultBaseURL                = "http://localhost:6020"
-	defaultHTTPPort               = 6020
-	defaultDeploymentMode         = DeploymentModeServer
-	defaultAccessMode             = AccessModeMultiUser
-	defaultLogLevel               = LogLevelInfo
-	defaultLogFormat              = LogFormatJSON
-	defaultCookieSecretKey        = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
-	defaultDBLogQueries           = false
-	defaultDBDriver               = "sqlite"
-	defaultDBDSN                  = "~/.sqlwarden/sqlwarden.db"
-	defaultDBAutomigrate          = true
-	defaultEncryptionKey          = "dev-insecure-key-32byteslong!!"
-	defaultJWTSecretKey           = "fb57i5hiud5mzmykaquqsln5gcmolbac"
-	defaultJobsWorkerCount        = 16
-	defaultJobsPollInterval       = time.Second
-	defaultJobsClaimLease         = 5 * time.Minute
-	defaultJobsCompletedRetention = 7 * 24 * time.Hour
-	defaultTLSEnabled             = false
-	defaultTLSCertFile            = ""
-	defaultTLSKeyFile             = ""
-	defaultFilesStorageMode       = FilesStorageModeObject
-	defaultFilesActiveBackend     = "local"
-	defaultFilesRootDir           = "~/.sqlwarden/files"
-	defaultSMTPEnabled            = false
-	defaultSMTPHost               = "example.smtp.host"
-	defaultSMTPPort               = 25
-	defaultSMTPUsername           = "example_username"
-	defaultSMTPPassword           = "pa55word"
-	defaultSMTPFrom               = "Example Name <no_reply@example.org>"
-	defaultDesktopAppDir          = ""
-	defaultDesktopActiveBackend   = "local"
-	defaultAllowUserBackends      = true
+	defaultBaseURL              = "http://localhost:6020"
+	defaultHTTPPort             = 6020
+	defaultDeploymentMode       = DeploymentModeServer
+	defaultAccessMode           = AccessModeMultiUser
+	defaultLogFormat            = LogFormatJSON
+	defaultCookieSecretKey      = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
+	defaultDBDriver             = "sqlite"
+	defaultDBDSN                = "~/.sqlwarden/sqlwarden.db"
+	defaultDBAutomigrate        = true
+	defaultEncryptionKey        = "dev-insecure-key-32byteslong!!"
+	defaultJWTSecretKey         = "fb57i5hiud5mzmykaquqsln5gcmolbac"
+	defaultTLSEnabled           = false
+	defaultTLSCertFile          = ""
+	defaultTLSKeyFile           = ""
+	defaultFilesStorageMode     = FilesStorageModeObject
+	defaultFilesActiveBackend   = "local"
+	defaultFilesRootDir         = "~/.sqlwarden/files"
+	defaultDesktopAppDir        = ""
+	defaultDesktopActiveBackend = "local"
+	defaultAllowUserBackends    = true
 )
 
 var defaultSQLiteDriverSources = []string{}
@@ -92,14 +79,12 @@ type Config struct {
 	DeploymentMode string
 	AccessMode     string
 	Log            struct {
-		Level  string
 		Format string
 	}
 	Cookie struct {
 		SecretKey string
 	}
 	DB struct {
-		LogQueries  bool
 		Driver      string
 		DSN         string
 		Automigrate bool
@@ -112,12 +97,6 @@ type Config struct {
 	}
 	JWT struct {
 		SecretKey string
-	}
-	Jobs struct {
-		WorkerCount        int
-		PollInterval       time.Duration
-		ClaimLease         time.Duration
-		CompletedRetention time.Duration
 	}
 	TLS struct {
 		Enabled  bool
@@ -133,14 +112,6 @@ type Config struct {
 		StorageMode          string
 		ActiveStorageBackend string
 		StorageBackends      map[string]FileStorageBackend
-	}
-	SMTP struct {
-		Enabled  bool
-		Host     string
-		Port     int
-		Username string
-		Password string
-		From     string
 	}
 	Desktop struct {
 		AppDir            string
@@ -171,19 +142,13 @@ func DefaultConfig() Config {
 	cfg.HTTPPort = defaultHTTPPort
 	cfg.DeploymentMode = defaultDeploymentMode
 	cfg.AccessMode = defaultAccessMode
-	cfg.Log.Level = defaultLogLevel
 	cfg.Log.Format = defaultLogFormat
 	cfg.Cookie.SecretKey = defaultCookieSecretKey
-	cfg.DB.LogQueries = defaultDBLogQueries
 	cfg.DB.Driver = defaultDBDriver
 	cfg.DB.DSN = defaultDBDSN
 	cfg.DB.Automigrate = defaultDBAutomigrate
 	cfg.Encryption.Key = defaultEncryptionKey
 	cfg.JWT.SecretKey = defaultJWTSecretKey
-	cfg.Jobs.WorkerCount = defaultJobsWorkerCount
-	cfg.Jobs.PollInterval = defaultJobsPollInterval
-	cfg.Jobs.ClaimLease = defaultJobsClaimLease
-	cfg.Jobs.CompletedRetention = defaultJobsCompletedRetention
 	cfg.TLS.Enabled = defaultTLSEnabled
 	cfg.TLS.CertFile = defaultTLSCertFile
 	cfg.TLS.KeyFile = defaultTLSKeyFile
@@ -191,12 +156,6 @@ func DefaultConfig() Config {
 	cfg.Files.StorageMode = defaultFilesStorageMode
 	cfg.Files.ActiveStorageBackend = defaultFilesActiveBackend
 	cfg.Files.StorageBackends = defaultFileStorageBackends()
-	cfg.SMTP.Enabled = defaultSMTPEnabled
-	cfg.SMTP.Host = defaultSMTPHost
-	cfg.SMTP.Port = defaultSMTPPort
-	cfg.SMTP.Username = defaultSMTPUsername
-	cfg.SMTP.Password = defaultSMTPPassword
-	cfg.SMTP.From = defaultSMTPFrom
 	cfg.Desktop.AppDir = defaultDesktopAppDir
 	cfg.Desktop.ActiveBackend = defaultDesktopActiveBackend
 	cfg.Desktop.AllowUserBackends = defaultAllowUserBackends
@@ -235,31 +194,19 @@ type configOption struct {
 var configOptions = []configOption{
 	{key: "base_url", env: "BASE_URL", flagName: "base-url", defaultValue: defaultBaseURL, usage: "Application base URL used in generated links and JWT claims"},
 	{key: "http_port", env: "HTTP_PORT", flagName: "http-port", defaultValue: defaultHTTPPort, usage: "HTTP server port"},
-	{key: "log.level", env: "LOG_LEVEL", flagName: "log-level", defaultValue: defaultLogLevel, usage: "Log level (debug, info, warn, error)"},
 	{key: "log.format", env: "LOG_FORMAT", flagName: "log-format", defaultValue: defaultLogFormat, usage: "Log format (json or text)"},
 	{key: "cookie.secret_key", env: "COOKIE_SECRET_KEY", flagName: "cookie-secret-key", defaultValue: defaultCookieSecretKey, usage: "Cookie signing secret"},
-	{key: "db.log_queries", env: "DB_LOG_QUERIES", flagName: "db-log-queries", defaultValue: defaultDBLogQueries, usage: "Enable database query logging"},
 	{key: "db.driver", env: "DB_DRIVER", flagName: "db-driver", defaultValue: defaultDBDriver, usage: "Database driver (sqlite or postgres)"},
 	{key: "db.dsn", env: "DB_DSN", flagName: "db-dsn", defaultValue: defaultDBDSN, usage: "Database DSN"},
 	{key: "db.automigrate", env: "DB_AUTOMIGRATE", flagName: "db-automigrate", defaultValue: defaultDBAutomigrate, usage: "Run database migrations at startup"},
 	{key: "encryption.key", env: "ENCRYPTION_KEY", flagName: "encryption-key", defaultValue: defaultEncryptionKey, usage: "Application encryption key"},
 	{key: "encryption.previous_keys", env: "ENCRYPTION_PREVIOUS_KEYS", flagName: "encryption-previous-keys", defaultValue: "", usage: "Comma-separated retired encryption keys retained for decryption during rotation"},
 	{key: "jwt.secret_key", env: "JWT_SECRET_KEY", flagName: "jwt-secret-key", defaultValue: defaultJWTSecretKey, usage: "JWT signing secret"},
-	{key: "jobs.worker_count", env: "JOBS_WORKER_COUNT", flagName: "jobs-worker-count", defaultValue: defaultJobsWorkerCount, usage: "Number of background job workers"},
-	{key: "jobs.poll_interval", env: "JOBS_POLL_INTERVAL", flagName: "jobs-poll-interval", defaultValue: defaultJobsPollInterval, usage: "Background job polling interval"},
-	{key: "jobs.claim_lease", env: "JOBS_CLAIM_LEASE", flagName: "jobs-claim-lease", defaultValue: defaultJobsClaimLease, usage: "Background job claim lease duration"},
-	{key: "jobs.completed_retention", env: "JOBS_COMPLETED_RETENTION", flagName: "jobs-completed-retention", defaultValue: defaultJobsCompletedRetention, usage: "How long completed background job records are retained"},
 	{key: "tls.enabled", env: "TLS_ENABLED", flagName: "tls-enabled", defaultValue: defaultTLSEnabled, usage: "Serve HTTPS using configured TLS certificate and key files"},
 	{key: "tls.cert_file", env: "TLS_CERT_FILE", flagName: "tls-cert-file", defaultValue: defaultTLSCertFile, usage: "Path to PEM encoded TLS certificate file"},
 	{key: "tls.key_file", env: "TLS_KEY_FILE", flagName: "tls-key-file", defaultValue: defaultTLSKeyFile, usage: "Path to PEM encoded TLS private key file"},
 	{key: "drivers.sqlite.allowed_sources", env: "DRIVERS_SQLITE_ALLOWED_SOURCES", flagName: "drivers-sqlite-allowed-sources", defaultValue: defaultSQLiteDriverSources, usage: "Comma-separated SQLite target sources to allow (currently: local)"},
 	{key: "files.root_dir", env: "FILES_ROOT_DIR", flagName: "files-root-dir", defaultValue: defaultFilesRootDir, usage: "Filesystem root directory for stored workspace files"},
-	{key: "smtp.enabled", env: "SMTP_ENABLED", flagName: "smtp-enabled", defaultValue: defaultSMTPEnabled, usage: "Enable outgoing SMTP email"},
-	{key: "smtp.host", env: "SMTP_HOST", flagName: "smtp-host", defaultValue: defaultSMTPHost, usage: "SMTP server host"},
-	{key: "smtp.port", env: "SMTP_PORT", flagName: "smtp-port", defaultValue: defaultSMTPPort, usage: "SMTP server port"},
-	{key: "smtp.username", env: "SMTP_USERNAME", flagName: "smtp-username", defaultValue: defaultSMTPUsername, usage: "SMTP username"},
-	{key: "smtp.password", env: "SMTP_PASSWORD", flagName: "smtp-password", defaultValue: defaultSMTPPassword, usage: "SMTP password"},
-	{key: "smtp.from", env: "SMTP_FROM", flagName: "smtp-from", defaultValue: defaultSMTPFrom, usage: "Default SMTP sender"},
 }
 
 func LoadConfig(args []string) (Config, bool, error) {
@@ -281,8 +228,6 @@ func loadConfig(args []string) (Config, bool, error) {
 			flagSet.Int(opt.flagName, value, opt.usage)
 		case bool:
 			flagSet.Bool(opt.flagName, value, opt.usage)
-		case time.Duration:
-			flagSet.Duration(opt.flagName, value, opt.usage)
 		case []string:
 			flagSet.StringSlice(opt.flagName, value, opt.usage)
 		default:
@@ -333,20 +278,14 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg := DefaultConfig()
 	cfg.BaseURL = v.GetString("base_url")
 	cfg.HTTPPort = v.GetInt("http_port")
-	cfg.Log.Level = strings.ToLower(strings.TrimSpace(v.GetString("log.level")))
 	cfg.Log.Format = strings.ToLower(strings.TrimSpace(v.GetString("log.format")))
 	cfg.Cookie.SecretKey = v.GetString("cookie.secret_key")
-	cfg.DB.LogQueries = v.GetBool("db.log_queries")
 	cfg.DB.Driver = v.GetString("db.driver")
 	cfg.DB.DSN = v.GetString("db.dsn")
 	cfg.DB.Automigrate = v.GetBool("db.automigrate")
 	cfg.Encryption.Key = v.GetString("encryption.key")
 	cfg.Encryption.PreviousKeys = splitEncryptionKeys(v.GetString("encryption.previous_keys"))
 	cfg.JWT.SecretKey = v.GetString("jwt.secret_key")
-	cfg.Jobs.WorkerCount = v.GetInt("jobs.worker_count")
-	cfg.Jobs.PollInterval = v.GetDuration("jobs.poll_interval")
-	cfg.Jobs.ClaimLease = v.GetDuration("jobs.claim_lease")
-	cfg.Jobs.CompletedRetention = v.GetDuration("jobs.completed_retention")
 	cfg.TLS.Enabled = v.GetBool("tls.enabled")
 	cfg.TLS.CertFile = v.GetString("tls.cert_file")
 	cfg.TLS.KeyFile = v.GetString("tls.key_file")
@@ -355,12 +294,6 @@ func loadConfig(args []string) (Config, bool, error) {
 	localBackend := cfg.Files.StorageBackends[defaultFilesActiveBackend]
 	localBackend.RootDir = v.GetString("files.root_dir")
 	cfg.Files.StorageBackends[defaultFilesActiveBackend] = localBackend
-	cfg.SMTP.Enabled = v.GetBool("smtp.enabled")
-	cfg.SMTP.Host = v.GetString("smtp.host")
-	cfg.SMTP.Port = v.GetInt("smtp.port")
-	cfg.SMTP.Username = v.GetString("smtp.username")
-	cfg.SMTP.Password = v.GetString("smtp.password")
-	cfg.SMTP.From = v.GetString("smtp.from")
 	if len(cfg.Files.StorageBackends) == 0 {
 		cfg.Files.StorageBackends = defaultFileStorageBackends()
 	}
@@ -382,23 +315,8 @@ func validateConfig(cfg Config) error {
 	if cfg.AccessMode != AccessModeMultiUser && cfg.AccessMode != AccessModeSingleUser {
 		return fmt.Errorf("access_mode must be %q or %q", AccessModeMultiUser, AccessModeSingleUser)
 	}
-	if !isSupportedLogLevel(cfg.Log.Level) {
-		return fmt.Errorf("log.level must be %q, %q, %q, or %q", LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError)
-	}
 	if !isSupportedLogFormat(cfg.Log.Format) {
 		return fmt.Errorf("log.format must be %q or %q", LogFormatJSON, LogFormatText)
-	}
-	if cfg.Jobs.WorkerCount <= 0 {
-		return fmt.Errorf("jobs.worker_count must be greater than 0")
-	}
-	if cfg.Jobs.PollInterval <= 0 {
-		return fmt.Errorf("jobs.poll_interval must be greater than 0")
-	}
-	if cfg.Jobs.ClaimLease <= 0 {
-		return fmt.Errorf("jobs.claim_lease must be greater than 0")
-	}
-	if cfg.Jobs.CompletedRetention <= 0 {
-		return fmt.Errorf("jobs.completed_retention must be greater than 0")
 	}
 	if cfg.TLS.Enabled {
 		if strings.TrimSpace(cfg.TLS.CertFile) == "" {
@@ -406,17 +324,6 @@ func validateConfig(cfg Config) error {
 		}
 		if strings.TrimSpace(cfg.TLS.KeyFile) == "" {
 			return fmt.Errorf("tls.key_file is required when tls.enabled is true")
-		}
-	}
-	if cfg.SMTP.Enabled {
-		if strings.TrimSpace(cfg.SMTP.Host) == "" {
-			return fmt.Errorf("smtp.host is required when smtp.enabled is true")
-		}
-		if cfg.SMTP.Port <= 0 {
-			return fmt.Errorf("smtp.port must be greater than 0 when smtp.enabled is true")
-		}
-		if strings.TrimSpace(cfg.SMTP.From) == "" {
-			return fmt.Errorf("smtp.from is required when smtp.enabled is true")
 		}
 	}
 	seenSQLiteSources := make(map[string]struct{}, len(cfg.Drivers.SQLite.AllowedSources))

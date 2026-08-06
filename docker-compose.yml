@@ -37,11 +37,6 @@ services:
       FILES_ROOT_DIR: ${FILES_ROOT_DIR:-/var/lib/sqlwarden/files}
       COOKIE_SECRET_KEY: ${COOKIE_SECRET_KEY:-cpcgzjcote6h5hakeglpbzixhbuog2zc}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-fb57i5hiud5mzmykaquqsln5gcmolbac}
-      SMTP_HOST: ${SMTP_HOST:-example.smtp.host}
-      SMTP_PORT: ${SMTP_PORT:-25}
-      SMTP_USERNAME: ${SMTP_USERNAME:-example_username}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-pa55word}
-      SMTP_FROM: ${SMTP_FROM:-SQLWarden <no_reply@example.org>}
     ports:
       - "6020:6020"
     volumes:

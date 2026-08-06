@@ -47,7 +47,7 @@ func TestAppFailsWhenSavedFileStorageBackendIsNotConfigured(t *testing.T) {
 	}
 	setup.Close()
 
-	db, err := database.New("sqlite", dbPath, slog.Default(), false)
+	db, err := database.New("sqlite", dbPath, slog.Default())
 	if err != nil {
 		t.Fatal(err)
 	}

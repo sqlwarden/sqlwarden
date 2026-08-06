@@ -25,7 +25,7 @@ func newTestDB(t *testing.T) *database.DB {
 	}
 
 	dsn := trimPostgresScheme(dsnWithDatabase("postgres://"+pgAdminDSN, dbName))
-	db, err := database.New("postgres", dsn, nilLogger(), false)
+	db, err := database.New("postgres", dsn, nilLogger())
 	if err != nil {
 		t.Fatal(err)
 	}

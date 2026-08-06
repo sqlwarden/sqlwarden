@@ -1,0 +1,12 @@
+ALTER TABLE instance_settings ADD COLUMN log_level TEXT NOT NULL DEFAULT 'info' CHECK (log_level IN ('debug', 'info', 'warn', 'error'));
+ALTER TABLE instance_settings ADD COLUMN database_query_tracing_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE instance_settings ADD COLUMN jobs_worker_count INTEGER NOT NULL DEFAULT 16 CHECK (jobs_worker_count > 0 AND jobs_worker_count <= 256);
+ALTER TABLE instance_settings ADD COLUMN jobs_poll_interval_seconds INTEGER NOT NULL DEFAULT 1 CHECK (jobs_poll_interval_seconds > 0 AND jobs_poll_interval_seconds <= 3600);
+ALTER TABLE instance_settings ADD COLUMN jobs_claim_lease_seconds INTEGER NOT NULL DEFAULT 300 CHECK (jobs_claim_lease_seconds > 0 AND jobs_claim_lease_seconds <= 86400);
+ALTER TABLE instance_settings ADD COLUMN jobs_completed_retention_seconds INTEGER NOT NULL DEFAULT 604800 CHECK (jobs_completed_retention_seconds > 0 AND jobs_completed_retention_seconds <= 31536000);
+ALTER TABLE instance_settings ADD COLUMN smtp_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE instance_settings ADD COLUMN smtp_host TEXT NOT NULL DEFAULT '';
+ALTER TABLE instance_settings ADD COLUMN smtp_port INTEGER NOT NULL DEFAULT 25 CHECK (smtp_port > 0 AND smtp_port <= 65535);
+ALTER TABLE instance_settings ADD COLUMN smtp_username TEXT NOT NULL DEFAULT '';
+ALTER TABLE instance_settings ADD COLUMN smtp_password_encrypted TEXT NOT NULL DEFAULT '';
+ALTER TABLE instance_settings ADD COLUMN smtp_from TEXT NOT NULL DEFAULT '';

@@ -52,6 +52,69 @@ func TestInstanceRuntimeSettingsAPI(t *testing.T) {
 	}
 }
 
+func TestInstanceRuntimeOperationsAndWriteOnlySMTPPassword(t *testing.T) {
+	app := newTestApp(t)
+	adminToken := setupInstance(t, app, "runtime-operations@example.com", "Runtime Operations", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"log_level": "debug", "database_query_tracing_enabled": true,
+		"jobs_worker_count": 3, "jobs_poll_interval_seconds": 2,
+		"jobs_claim_lease_seconds": 90, "jobs_completed_retention_seconds": 86400,
+		"smtp_enabled": true, "smtp_host": "smtp.example.com", "smtp_port": 587,
+		"smtp_username": "mailer@example.com", "smtp_password": "top-secret-password",
+		"smtp_from": "SQLWarden <noreply@example.com>",
+	}, adminToken), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["log_level"], "debug")
+	assert.Equal(t, res.BodyFields["database_query_tracing_enabled"], true)
+	assert.Equal(t, res.BodyFields["smtp_password_configured"], true)
+	if _, ok := res.BodyFields["smtp_password"]; ok {
+		t.Fatal("runtime settings response exposed SMTP password")
+	}
+	if _, ok := res.BodyFields["smtp_password_encrypted"]; ok {
+		t.Fatal("runtime settings response exposed encrypted SMTP password")
+	}
+
+	stored, found, err := app.db.GetInstanceSettings(context.Background())
+	if err != nil || !found {
+		t.Fatalf("get stored settings: found=%v err=%v", found, err)
+	}
+	if stored.SMTPPasswordEncrypted == "" || stored.SMTPPasswordEncrypted == "top-secret-password" {
+		t.Fatalf("SMTP password was not encrypted at rest: %q", stored.SMTPPasswordEncrypted)
+	}
+	plaintext, err := app.keyring.Decrypt(stored.SMTPPasswordEncrypted)
+	assert.Nil(t, err)
+	assert.Equal(t, plaintext, "top-secret-password")
+
+	res = send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{"smtp_username": "updated@example.com"}, adminToken), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	storedAfterOmit, _, err := app.db.GetInstanceSettings(context.Background())
+	assert.Nil(t, err)
+	assert.Equal(t, storedAfterOmit.SMTPPasswordEncrypted, stored.SMTPPasswordEncrypted)
+
+	res = send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{"smtp_password": nil}, adminToken), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["smtp_password_configured"], false)
+	storedAfterClear, _, err := app.db.GetInstanceSettings(context.Background())
+	assert.Nil(t, err)
+	assert.Equal(t, storedAfterClear.SMTPPasswordEncrypted, "")
+}
+
+func TestInstanceRuntimeOperationsValidationIsAtomic(t *testing.T) {
+	app := newTestApp(t)
+	adminToken := setupInstance(t, app, "runtime-operations-validation@example.com", "Runtime Operations", "securepass99")
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"log_level": "verbose", "jobs_worker_count": 0, "smtp_port": 70000,
+	}, adminToken), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "log_level")
+	assertValidationField(t, res, "jobs_worker_count")
+	assertValidationField(t, res, "smtp_port")
+	settings, err := app.instanceSettings(context.Background())
+	assert.Nil(t, err)
+	assert.Equal(t, settings.LogLevel, LogLevelInfo)
+}
+
 func TestInstanceRuntimeSettingsValidationIsAtomic(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

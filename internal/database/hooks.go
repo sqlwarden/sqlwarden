@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/sqlwarden/internal/observability"
@@ -13,7 +14,7 @@ import (
 // Slow queries are defined as queries that take longer than a specified threshold in milliseconds to execute.
 type slowQueryDetectorHook struct {
 	threshold    int64        // threshold in milliseconds
-	includeQuery bool         // include SQL text only when query logging is explicitly enabled
+	includeQuery *atomic.Bool // include SQL text only when query tracing is explicitly enabled
 	logger       *slog.Logger // logger to use for logging slow queries
 }
 
@@ -28,8 +29,8 @@ func (s *slowQueryDetectorHook) AfterQuery(ctx context.Context, event *bun.Query
 	if requestID := observability.RequestID(ctx); requestID != "" {
 		attrs = append(attrs, slog.String("request_id", requestID))
 	}
-	if s.includeQuery {
-		attrs = append(attrs, slog.String("query", event.Query))
+	if s.includeQuery != nil && s.includeQuery.Load() {
+		attrs = append(attrs, slog.String("query", traceQuery(event)))
 	}
 
 	s.logger.LogAttrs(ctx, slog.LevelWarn, "slow query detected", attrs...)
@@ -44,11 +45,15 @@ var _ bun.QueryHook = (*slowQueryDetectorHook)(nil) // enforce that slowQueryDet
 
 // debugQueryLoggerHook is a [bun.QueryHook] that logs all queries for debugging purposes.
 type debugQueryLoggerHook struct {
-	logger *slog.Logger // logger to use for logging queries
+	logger  *slog.Logger // logger to use for logging queries
+	enabled *atomic.Bool
 }
 
 // AfterQuery implements [bun.QueryHook].
 func (d *debugQueryLoggerHook) AfterQuery(ctx context.Context, event *bun.QueryEvent) {
+	if d.enabled != nil && !d.enabled.Load() {
+		return
+	}
 	var rowsAffected int64
 	if event.Result != nil {
 		rowsAffected, _ = event.Result.RowsAffected()
@@ -56,7 +61,7 @@ func (d *debugQueryLoggerHook) AfterQuery(ctx context.Context, event *bun.QueryE
 
 	attrs := []slog.Attr{
 		slog.String("duration", time.Since(event.StartTime).String()),
-		slog.String("query", event.Query),
+		slog.String("query", traceQuery(event)),
 		slog.Int64("rows_affected", rowsAffected),
 	}
 	if requestID := observability.RequestID(ctx); requestID != "" {
@@ -74,3 +79,12 @@ func (d *debugQueryLoggerHook) BeforeQuery(ctx context.Context, event *bun.Query
 }
 
 var _ bun.QueryHook = (*debugQueryLoggerHook)(nil) // enforce that debugQueryLoggerHook implements bun.QueryHook
+
+// traceQuery intentionally prefers Bun's placeholder-bearing template. The
+// interpolated query may contain passwords, tokens, or user data.
+func traceQuery(event *bun.QueryEvent) string {
+	if event.QueryTemplate != "" {
+		return event.QueryTemplate
+	}
+	return event.Query
+}

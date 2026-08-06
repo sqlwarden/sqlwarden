@@ -14,10 +14,12 @@ import (
 // EncryptionRotationReport summarizes a key-rotation pass over all
 // application-encrypted data.
 type EncryptionRotationReport struct {
-	ConnectionsScanned  int `json:"connections_scanned"`
-	ConnectionsRotated  int `json:"connections_rotated"`
-	FileContentsScanned int `json:"file_contents_scanned"`
-	FileContentsRotated int `json:"file_contents_rotated"`
+	ConnectionsScanned   int `json:"connections_scanned"`
+	ConnectionsRotated   int `json:"connections_rotated"`
+	FileContentsScanned  int `json:"file_contents_scanned"`
+	FileContentsRotated  int `json:"file_contents_rotated"`
+	SMTPPasswordsScanned int `json:"smtp_passwords_scanned"`
+	SMTPPasswordsRotated int `json:"smtp_passwords_rotated"`
 }
 
 // rotateEncryptionKeysHandler re-encrypts all application-encrypted data with
@@ -52,13 +54,47 @@ func (app *application) RotateEncryptionKeys(ctx context.Context) (EncryptionRot
 	if err := app.rotateFileContents(ctx, &report); err != nil {
 		return report, err
 	}
+	if err := app.rotateSMTPPassword(ctx, &report); err != nil {
+		return report, err
+	}
 	app.logger.InfoContext(ctx, "encryption key rotation complete",
 		slog.Int("connections_scanned", report.ConnectionsScanned),
 		slog.Int("connections_rotated", report.ConnectionsRotated),
 		slog.Int("file_contents_scanned", report.FileContentsScanned),
 		slog.Int("file_contents_rotated", report.FileContentsRotated),
+		slog.Int("smtp_passwords_scanned", report.SMTPPasswordsScanned),
+		slog.Int("smtp_passwords_rotated", report.SMTPPasswordsRotated),
 	)
 	return report, nil
+}
+
+func (app *application) rotateSMTPPassword(ctx context.Context, report *EncryptionRotationReport) error {
+	settings, err := app.instanceSettings(ctx)
+	if err != nil {
+		return fmt.Errorf("rotate SMTP password: get settings: %w", err)
+	}
+	if settings.SMTPPasswordEncrypted == "" {
+		return nil
+	}
+	report.SMTPPasswordsScanned++
+	if !app.keyring.NeedsRotation(settings.SMTPPasswordEncrypted) {
+		return nil
+	}
+	plaintext, err := app.keyring.Decrypt(settings.SMTPPasswordEncrypted)
+	if err != nil {
+		return fmt.Errorf("rotate SMTP password: decrypt: %w", err)
+	}
+	settings.SMTPPasswordEncrypted, err = app.keyring.Encrypt(plaintext)
+	if err != nil {
+		return fmt.Errorf("rotate SMTP password: encrypt: %w", err)
+	}
+	settings, err = app.db.UpsertInstanceSettings(ctx, settings)
+	if err != nil {
+		return fmt.Errorf("rotate SMTP password: update: %w", err)
+	}
+	report.SMTPPasswordsRotated++
+	app.queueRuntimeOperations(settings)
+	return nil
 }
 
 // rotateConnectionDSNs re-encrypts stored connection DSNs with the primary key.

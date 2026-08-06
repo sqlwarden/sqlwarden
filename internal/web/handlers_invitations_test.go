@@ -111,7 +111,7 @@ func TestOrganizationInvitationListResendAndRevoke(t *testing.T) {
 func TestOrganizationInvitationDeliveryDisabledAndExpiration(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.SMTP.Enabled = false
+	app.mailer = smtp.NewDisabledMailer("")
 	_, ownerToken, slug := registerAndLogin(t, app, uniqueEmail(t, "invite-disabled-owner"), "Invite Owner", "securepass99")
 	created := createInvitationForTest(t, app, slug, uniqueEmail(t, "invite-disabled"), ownerToken)
 	assert.Equal(t, created.BodyFields["delivery_status"], database.InvitationDeliveryDisabled)

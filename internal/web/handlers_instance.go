@@ -370,22 +370,34 @@ func (app *application) getInstanceSettings(w http.ResponseWriter, r *http.Reque
 
 func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		InstanceName                   *string             `json:"instance_name"`
-		InstanceDescription            *string             `json:"instance_description"`
-		SupportEmail                   *string             `json:"support_email"`
-		PublicURL                      *string             `json:"public_url"`
-		PersonalSpacesEnabled          *bool               `json:"personal_spaces_enabled"`
-		JWTAccessTokenTTLSeconds       *int64              `json:"jwt_access_token_ttl_seconds"`
-		SessionsRevocationEnabled      *bool               `json:"sessions_revocation_enabled"`
-		QueryMaxResultRows             *int                `json:"query_max_result_rows"`
-		QueryMaxResultBytes            *int64              `json:"query_max_result_bytes"`
-		ExportsSyncMaxBytes            *int64              `json:"exports_sync_max_bytes"`
-		ExportsBackgroundMaxBytes      *int64              `json:"exports_background_max_bytes"`
-		SchemaSnapshotFreshnessSeconds *int64              `json:"schema_snapshot_freshness_seconds"`
-		FileRevisionsEnabled           *bool               `json:"file_revisions_enabled"`
-		FileRevisionsKeepLatest        *int                `json:"file_revisions_keep_latest"`
-		ErrorNotificationEmail         *string             `json:"error_notification_email"`
-		V                              validator.Validator `json:"-"`
+		InstanceName                   *string               `json:"instance_name"`
+		InstanceDescription            *string               `json:"instance_description"`
+		SupportEmail                   *string               `json:"support_email"`
+		PublicURL                      *string               `json:"public_url"`
+		PersonalSpacesEnabled          *bool                 `json:"personal_spaces_enabled"`
+		JWTAccessTokenTTLSeconds       *int64                `json:"jwt_access_token_ttl_seconds"`
+		SessionsRevocationEnabled      *bool                 `json:"sessions_revocation_enabled"`
+		QueryMaxResultRows             *int                  `json:"query_max_result_rows"`
+		QueryMaxResultBytes            *int64                `json:"query_max_result_bytes"`
+		ExportsSyncMaxBytes            *int64                `json:"exports_sync_max_bytes"`
+		ExportsBackgroundMaxBytes      *int64                `json:"exports_background_max_bytes"`
+		SchemaSnapshotFreshnessSeconds *int64                `json:"schema_snapshot_freshness_seconds"`
+		FileRevisionsEnabled           *bool                 `json:"file_revisions_enabled"`
+		FileRevisionsKeepLatest        *int                  `json:"file_revisions_keep_latest"`
+		ErrorNotificationEmail         *string               `json:"error_notification_email"`
+		LogLevel                       *string               `json:"log_level"`
+		DatabaseQueryTracingEnabled    *bool                 `json:"database_query_tracing_enabled"`
+		JobsWorkerCount                *int                  `json:"jobs_worker_count"`
+		JobsPollIntervalSeconds        *int64                `json:"jobs_poll_interval_seconds"`
+		JobsClaimLeaseSeconds          *int64                `json:"jobs_claim_lease_seconds"`
+		JobsCompletedRetentionSeconds  *int64                `json:"jobs_completed_retention_seconds"`
+		SMTPEnabled                    *bool                 `json:"smtp_enabled"`
+		SMTPHost                       *string               `json:"smtp_host"`
+		SMTPPort                       *int                  `json:"smtp_port"`
+		SMTPUsername                   *string               `json:"smtp_username"`
+		SMTPPassword                   nullablePatch[string] `json:"smtp_password"`
+		SMTPFrom                       *string               `json:"smtp_from"`
+		V                              validator.Validator   `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -408,7 +420,12 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		input.SchemaSnapshotFreshnessSeconds != nil ||
 		input.FileRevisionsEnabled != nil ||
 		input.FileRevisionsKeepLatest != nil ||
-		input.ErrorNotificationEmail != nil
+		input.ErrorNotificationEmail != nil || input.LogLevel != nil ||
+		input.DatabaseQueryTracingEnabled != nil || input.JobsWorkerCount != nil ||
+		input.JobsPollIntervalSeconds != nil || input.JobsClaimLeaseSeconds != nil ||
+		input.JobsCompletedRetentionSeconds != nil || input.SMTPEnabled != nil ||
+		input.SMTPHost != nil || input.SMTPPort != nil || input.SMTPUsername != nil ||
+		input.SMTPPassword.Set || input.SMTPFrom != nil
 	input.V.Check(hasPatch, "At least one setting is required.")
 	if input.InstanceName != nil {
 		*input.InstanceName = strings.TrimSpace(*input.InstanceName)
@@ -451,6 +468,40 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	if input.ErrorNotificationEmail != nil {
 		*input.ErrorNotificationEmail = strings.TrimSpace(*input.ErrorNotificationEmail)
 		input.V.CheckField(*input.ErrorNotificationEmail == "" || validator.IsEmail(*input.ErrorNotificationEmail), "error_notification_email", "Error notification email must be a valid email address.")
+	}
+	if input.LogLevel != nil {
+		*input.LogLevel = strings.ToLower(strings.TrimSpace(*input.LogLevel))
+		input.V.CheckField(isSupportedLogLevel(*input.LogLevel), "log_level", "Log level must be debug, info, warn, or error.")
+	}
+	if input.JobsWorkerCount != nil {
+		input.V.CheckField(*input.JobsWorkerCount > 0 && *input.JobsWorkerCount <= 256, "jobs_worker_count", "Worker count must be between 1 and 256.")
+	}
+	if input.JobsPollIntervalSeconds != nil {
+		input.V.CheckField(*input.JobsPollIntervalSeconds > 0 && *input.JobsPollIntervalSeconds <= 3600, "jobs_poll_interval_seconds", "Poll interval must be between 1 and 3600 seconds.")
+	}
+	if input.JobsClaimLeaseSeconds != nil {
+		input.V.CheckField(*input.JobsClaimLeaseSeconds > 0 && *input.JobsClaimLeaseSeconds <= 86400, "jobs_claim_lease_seconds", "Claim lease must be between 1 and 86400 seconds.")
+	}
+	if input.JobsCompletedRetentionSeconds != nil {
+		input.V.CheckField(*input.JobsCompletedRetentionSeconds > 0 && *input.JobsCompletedRetentionSeconds <= 31536000, "jobs_completed_retention_seconds", "Completed job retention must be between 1 and 31536000 seconds.")
+	}
+	if input.SMTPHost != nil {
+		*input.SMTPHost = strings.TrimSpace(*input.SMTPHost)
+		input.V.CheckField(validator.MaxRunes(*input.SMTPHost, 253), "smtp_host", "SMTP host must be 253 characters or fewer.")
+	}
+	if input.SMTPPort != nil {
+		input.V.CheckField(*input.SMTPPort > 0 && *input.SMTPPort <= 65535, "smtp_port", "SMTP port must be between 1 and 65535.")
+	}
+	if input.SMTPUsername != nil {
+		*input.SMTPUsername = strings.TrimSpace(*input.SMTPUsername)
+		input.V.CheckField(validator.MaxRunes(*input.SMTPUsername, 320), "smtp_username", "SMTP username must be 320 characters or fewer.")
+	}
+	if input.SMTPPassword.Value != nil {
+		input.V.CheckField(validator.MaxRunes(*input.SMTPPassword.Value, 4096), "smtp_password", "SMTP password is too long.")
+	}
+	if input.SMTPFrom != nil {
+		*input.SMTPFrom = strings.TrimSpace(*input.SMTPFrom)
+		input.V.CheckField(validator.MaxRunes(*input.SMTPFrom, 500), "smtp_from", "SMTP sender must be 500 characters or fewer.")
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -509,6 +560,52 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	if input.ErrorNotificationEmail != nil {
 		nextSettings.ErrorNotificationEmail = *input.ErrorNotificationEmail
 	}
+	if input.LogLevel != nil {
+		nextSettings.LogLevel = *input.LogLevel
+	}
+	if input.DatabaseQueryTracingEnabled != nil {
+		nextSettings.DatabaseQueryTracingEnabled = *input.DatabaseQueryTracingEnabled
+	}
+	if input.JobsWorkerCount != nil {
+		nextSettings.JobsWorkerCount = *input.JobsWorkerCount
+	}
+	if input.JobsPollIntervalSeconds != nil {
+		nextSettings.JobsPollIntervalSeconds = *input.JobsPollIntervalSeconds
+	}
+	if input.JobsClaimLeaseSeconds != nil {
+		nextSettings.JobsClaimLeaseSeconds = *input.JobsClaimLeaseSeconds
+	}
+	if input.JobsCompletedRetentionSeconds != nil {
+		nextSettings.JobsCompletedRetentionSeconds = *input.JobsCompletedRetentionSeconds
+	}
+	if input.SMTPEnabled != nil {
+		nextSettings.SMTPEnabled = *input.SMTPEnabled
+	}
+	if input.SMTPHost != nil {
+		nextSettings.SMTPHost = *input.SMTPHost
+	}
+	if input.SMTPPort != nil {
+		nextSettings.SMTPPort = *input.SMTPPort
+	}
+	if input.SMTPUsername != nil {
+		nextSettings.SMTPUsername = *input.SMTPUsername
+	}
+	if input.SMTPFrom != nil {
+		nextSettings.SMTPFrom = *input.SMTPFrom
+	}
+	if input.SMTPPassword.Set {
+		nextSettings.SMTPPasswordEncrypted = ""
+		if input.SMTPPassword.Value != nil && *input.SMTPPassword.Value != "" {
+			nextSettings.SMTPPasswordEncrypted, err = app.keyring.Encrypt(*input.SMTPPassword.Value)
+			if err != nil {
+				app.serverError(w, r, err)
+				return
+			}
+		}
+	}
+	if err := validateInstanceSettings(nextSettings); err != nil {
+		input.V.AddError(err.Error())
+	}
 	if app.config.Files.StorageMode == FilesStorageModeFile && nextSettings.FileRevisionsEnabled {
 		input.V.AddFieldError("file_revisions_enabled", "File revisions are not supported with file storage mode.")
 	}
@@ -522,6 +619,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		app.serverError(w, r, err)
 		return
 	}
+	app.queueRuntimeOperations(settings)
 
 	if currentSettings.PersonalSpacesEnabled && !settings.PersonalSpacesEnabled {
 		if err := app.dropPersonalSpaceSessions(r.Context()); err != nil {

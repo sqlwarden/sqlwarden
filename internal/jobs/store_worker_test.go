@@ -15,7 +15,7 @@ import (
 
 func newTestStore(t *testing.T) (*Store, *database.DB) {
 	t.Helper()
-	db, err := database.New("sqlite", filepath.Join(t.TempDir(), "jobs.db"), slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+	db, err := database.New("sqlite", filepath.Join(t.TempDir(), "jobs.db"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -546,5 +546,57 @@ func TestRunningJobCancellationCancelsHandler(t *testing.T) {
 			t.Fatalf("job status = %s, want cancelled", stored.Status)
 		case <-time.After(10 * time.Millisecond):
 		}
+	}
+}
+
+func TestRunnerDrainsInFlightJobWhenStopped(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	cancelled := make(chan struct{}, 1)
+	registry := NewRegistry()
+	registry.Register(Definition{Type: "blocking-drain", Handler: HandlerFunc(func(ctx context.Context, _ Runtime) (any, error) {
+		close(started)
+		select {
+		case <-release:
+			return map[string]any{"drained": true}, nil
+		case <-ctx.Done():
+			cancelled <- struct{}{}
+			return nil, ctx.Err()
+		}
+	})})
+	job, err := store.Enqueue(ctx, EnqueueInput{Type: "blocking-drain", Visibility: VisibilityInternal})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := NewRunner(store, registry, slog.New(slog.NewTextHandler(io.Discard, nil)), WorkerConfig{
+		WorkerCount: 1, PollInterval: time.Millisecond, ClaimLease: time.Minute,
+	})
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() { runner.RunUntilStopped(ctx, stop); close(done) }()
+	<-started
+	close(stop)
+	select {
+	case <-done:
+		t.Fatal("runner stopped before its in-flight job drained")
+	case <-cancelled:
+		t.Fatal("draining cancelled the in-flight job")
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runner did not stop after in-flight job completed")
+	}
+	var stored Record
+	if err := db.NewSelect().Model(&stored).Where("id = ?", job.ID).Scan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != StatusSucceeded {
+		t.Fatalf("status = %s, want succeeded", stored.Status)
 	}
 }

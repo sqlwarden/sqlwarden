@@ -64,8 +64,6 @@ func newTestApplication(t *testing.T) *application {
 			RootDir: t.TempDir(),
 		},
 	}
-	app.config.SMTP.Enabled = true
-
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
 	settings, found, err := app.db.GetInstanceSettings(context.Background())
@@ -256,7 +254,7 @@ func newTestDB(t *testing.T) *database.DB {
 		}
 	}
 
-	db, err := database.New(driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+	db, err := database.New(driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

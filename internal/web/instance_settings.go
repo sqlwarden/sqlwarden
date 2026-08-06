@@ -84,6 +84,30 @@ func validateInstanceSettings(settings database.InstanceSettings) error {
 	if settings.FileRevisionsKeepLatest < 0 {
 		return fmt.Errorf("validate runtime settings: file_revisions_keep_latest must be 0 or greater")
 	}
+	if !isSupportedLogLevel(settings.LogLevel) {
+		return fmt.Errorf("validate runtime settings: log_level is unsupported")
+	}
+	if settings.JobsWorkerCount <= 0 || settings.JobsWorkerCount > 256 {
+		return fmt.Errorf("validate runtime settings: jobs_worker_count is outside the supported range")
+	}
+	if settings.JobsPollIntervalSeconds <= 0 || settings.JobsPollIntervalSeconds > 3600 {
+		return fmt.Errorf("validate runtime settings: jobs_poll_interval_seconds is outside the supported range")
+	}
+	if settings.JobsClaimLeaseSeconds <= 0 || settings.JobsClaimLeaseSeconds > 86400 {
+		return fmt.Errorf("validate runtime settings: jobs_claim_lease_seconds is outside the supported range")
+	}
+	if settings.JobsCompletedRetentionSeconds <= 0 || settings.JobsCompletedRetentionSeconds > 31536000 {
+		return fmt.Errorf("validate runtime settings: jobs_completed_retention_seconds is outside the supported range")
+	}
+	if settings.SMTPPort <= 0 || settings.SMTPPort > 65535 {
+		return fmt.Errorf("validate runtime settings: smtp_port is outside the supported range")
+	}
+	if settings.SMTPEnabled && strings.TrimSpace(settings.SMTPHost) == "" {
+		return fmt.Errorf("validate runtime settings: smtp_host is required when SMTP is enabled")
+	}
+	if settings.SMTPEnabled && strings.TrimSpace(settings.SMTPFrom) == "" {
+		return fmt.Errorf("validate runtime settings: smtp_from is required when SMTP is enabled")
+	}
 	return nil
 }
 
@@ -223,6 +247,18 @@ func (app *application) instanceSettingsResponse(settings database.InstanceSetti
 		"file_revisions_enabled":            settings.FileRevisionsEnabled,
 		"file_revisions_keep_latest":        settings.FileRevisionsKeepLatest,
 		"error_notification_email":          settings.ErrorNotificationEmail,
+		"log_level":                         settings.LogLevel,
+		"database_query_tracing_enabled":    settings.DatabaseQueryTracingEnabled,
+		"jobs_worker_count":                 settings.JobsWorkerCount,
+		"jobs_poll_interval_seconds":        settings.JobsPollIntervalSeconds,
+		"jobs_claim_lease_seconds":          settings.JobsClaimLeaseSeconds,
+		"jobs_completed_retention_seconds":  settings.JobsCompletedRetentionSeconds,
+		"smtp_enabled":                      settings.SMTPEnabled,
+		"smtp_host":                         settings.SMTPHost,
+		"smtp_port":                         settings.SMTPPort,
+		"smtp_username":                     settings.SMTPUsername,
+		"smtp_password_configured":          settings.SMTPPasswordEncrypted != "",
+		"smtp_from":                         settings.SMTPFrom,
 	}
 }
 

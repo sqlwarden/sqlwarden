@@ -73,7 +73,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	templateDB, err := database.New("postgres", pgTestDSN, nilLogger(), false)
+	templateDB, err := database.New("postgres", pgTestDSN, nilLogger())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to open template db: %v\n", err)
 		_ = pgAdminDB.Close()

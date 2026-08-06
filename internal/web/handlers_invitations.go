@@ -13,6 +13,7 @@ import (
 	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
+	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/uptrace/bun"
@@ -335,14 +336,14 @@ func (app *application) organizationInvitationURL(ctx context.Context, plainToke
 
 func (app *application) deliverOrganizationInvitation(r *http.Request, invitation database.OrganizationInvitation, org database.Organization, inviterName, inviteURL string) string {
 	status := database.InvitationDeliveryDisabled
-	if app.config.SMTP.Enabled {
-		data := map[string]any{"OrganizationName": org.Name, "InviterName": inviterName, "InviteURL": inviteURL, "ExpiresAt": invitation.ExpiresAt}
-		if err := app.mailer.SendOnce(invitation.Email, data, "organization-invitation.tmpl"); err != nil {
+	data := map[string]any{"OrganizationName": org.Name, "InviterName": inviterName, "InviteURL": inviteURL, "ExpiresAt": invitation.ExpiresAt}
+	if err := app.sendEmail(true, invitation.Email, data, "organization-invitation.tmpl"); err != nil {
+		if !errors.Is(err, smtp.ErrDisabled) {
 			status = database.InvitationDeliveryFailed
 			app.logger.WarnContext(r.Context(), "organization invitation email delivery failed", "invitation_id", invitation.ID, "error", err)
-		} else {
-			status = database.InvitationDeliverySent
 		}
+	} else {
+		status = database.InvitationDeliverySent
 	}
 	if err := app.db.UpdateOrganizationInvitationDelivery(r.Context(), invitation.ID, status); err != nil {
 		app.logger.ErrorContext(r.Context(), "organization invitation delivery status update failed", "invitation_id", invitation.ID, "error", err)

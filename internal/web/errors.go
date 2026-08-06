@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/sqlwarden/internal/response"
+	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/uptrace/bun/driver/pgdriver"
 )
@@ -49,14 +50,17 @@ func (app *application) reportServerError(r *http.Request, err error) {
 	} else {
 		app.logger.ErrorContext(r.Context(), "runtime settings unavailable for error notification", "error", settingsErr)
 	}
-	if app.config.SMTP.Enabled && notificationEmail != "" {
+	if notificationEmail != "" {
 		data := app.newEmailData()
 		data["Message"] = message
 		data["RequestMethod"] = method
 		data["RequestURL"] = path
 		data["Trace"] = trace
 
-		err := app.mailer.Send(notificationEmail, data, "error-notification.tmpl")
+		err := app.sendEmail(false, notificationEmail, data, "error-notification.tmpl")
+		if errors.Is(err, smtp.ErrDisabled) {
+			return
+		}
 		if err != nil {
 			trace = string(debug.Stack())
 			app.logger.ErrorContext(r.Context(), err.Error(),

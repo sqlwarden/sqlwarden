@@ -115,9 +115,9 @@ Important concepts:
 Configuration ownership is split deliberately:
 
 - Bootstrap configuration is deployment-managed and must be available before the application database opens. It covers listeners, deployment/access mode, application database connectivity, secrets, TLS, storage topology, desktop topology, log format, and host-local SQLite access.
-- Runtime instance settings are typed columns in the singleton `instance_settings` row. They cover product policy and limits that can take effect without restarting.
+- Runtime instance settings are typed columns in the singleton `instance_settings` row. They cover product policy, limits, log level, database query tracing, job-runner tuning, and SMTP delivery without restarting.
 - Organizations store typed nullable overrides for the small set of policies they may tighten. Effective settings are the instance values plus valid organization overrides. Personal spaces use instance settings.
-The current consistency model intentionally performs a database read when an operation resolves settings. All replicas sharing the application database therefore observe committed changes without a process-local cache. A request uses one immutable resolved value set; background jobs capture settings when execution begins. Long-running work is not reconfigured midway through execution.
+The current consistency model intentionally performs a database read when an operation resolves policy settings. Live operational adapters additionally reconcile the singleton row every two seconds so all replicas converge after an update. A request uses one immutable resolved value set; background jobs capture policy settings when execution begins. Running jobs finish or cancel through the normal runner shutdown path when worker tuning changes.
 
 If settings reads become measurable load at larger horizontal scale, the settings service is the replacement boundary for a versioned in-process cache. Such a cache must use database notifications or an external pub/sub mechanism for cross-replica invalidation and retain a bounded fallback check. No cache or Redis dependency is part of the current implementation.
 

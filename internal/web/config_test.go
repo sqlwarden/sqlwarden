@@ -28,7 +28,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.AccessMode != AccessModeMultiUser {
 		t.Fatalf("accessMode = %q, want %q", cfg.AccessMode, AccessModeMultiUser)
 	}
-	if cfg.Log.Level != LogLevelInfo || cfg.Log.Format != LogFormatJSON {
+	if cfg.Log.Format != LogFormatJSON {
 		t.Fatalf("unexpected log config: %+v", cfg.Log)
 	}
 	if cfg.DB.Driver != defaultDBDriver {
@@ -43,9 +43,6 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 	if !cfg.DB.Automigrate {
 		t.Fatal("expected db.automigrate to default to true")
-	}
-	if cfg.Jobs.WorkerCount != defaultJobsWorkerCount || cfg.Jobs.ClaimLease != defaultJobsClaimLease {
-		t.Fatalf("unexpected default jobs config: %+v", cfg.Jobs)
 	}
 	if cfg.Desktop.ActiveBackend != "local" {
 		t.Fatalf("desktop.active_backend = %q, want local", cfg.Desktop.ActiveBackend)
@@ -65,18 +62,6 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 	if len(cfg.Drivers.SQLite.AllowedSources) != 0 {
 		t.Fatalf("drivers.sqlite.allowed_sources = %v, want empty", cfg.Drivers.SQLite.AllowedSources)
-	}
-	if cfg.SMTP.Enabled {
-		t.Fatal("expected SMTP to be disabled by default")
-	}
-}
-
-func TestValidateConfigRequiresSMTPConnectionSettingsWhenEnabled(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.SMTP.Enabled = true
-	cfg.SMTP.Host = ""
-	if err := validateConfig(cfg); err == nil {
-		t.Fatal("expected enabled SMTP without a host to fail validation")
 	}
 }
 
@@ -116,7 +101,6 @@ func TestLoadConfigFromExplicitFile(t *testing.T) {
 base_url: https://cfg.example.com
 http_port: 7000
 log:
-  level: warn
   format: text
 tls:
   enabled: true
@@ -126,9 +110,6 @@ db:
   driver: postgres
   dsn: cfg-dsn
   automigrate: false
-smtp:
-  host: smtp.cfg.local
-  port: 2525
 files:
   root_dir: /tmp/sqlwarden-files
 `)
@@ -150,7 +131,7 @@ files:
 	if cfg.HTTPPort != 7000 {
 		t.Fatalf("httpPort = %d", cfg.HTTPPort)
 	}
-	if cfg.Log.Level != LogLevelWarn || cfg.Log.Format != LogFormatText {
+	if cfg.Log.Format != LogFormatText {
 		t.Fatalf("unexpected log config: %+v", cfg.Log)
 	}
 	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/etc/sqlwarden/tls.crt" || cfg.TLS.KeyFile != "/etc/sqlwarden/tls.key" {
@@ -158,9 +139,6 @@ files:
 	}
 	if cfg.DB.Driver != "postgres" || cfg.DB.DSN != "cfg-dsn" || cfg.DB.Automigrate {
 		t.Fatalf("unexpected db config: %+v", cfg.DB)
-	}
-	if cfg.SMTP.Host != "smtp.cfg.local" || cfg.SMTP.Port != 2525 {
-		t.Fatalf("unexpected smtp config: %+v", cfg.SMTP)
 	}
 	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "local" {
 		t.Fatalf("unexpected file storage config: %+v", cfg.Files)
@@ -174,7 +152,6 @@ func TestLoadConfigEnvOverridesFile(t *testing.T) {
 	t.Setenv("DB_DRIVER", "sqlite")
 	t.Setenv("HTTP_PORT", "8123")
 	t.Setenv("FILES_ROOT_DIR", "/env/sqlwarden-files")
-	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("LOG_FORMAT", "text")
 	t.Setenv("TLS_ENABLED", "true")
 	t.Setenv("TLS_CERT_FILE", "/env/tls.crt")
@@ -202,7 +179,7 @@ db:
 	if cfg.DB.Driver != "sqlite" {
 		t.Fatalf("db.driver = %q, want sqlite", cfg.DB.Driver)
 	}
-	if cfg.Log.Level != LogLevelDebug || cfg.Log.Format != LogFormatText {
+	if cfg.Log.Format != LogFormatText {
 		t.Fatalf("unexpected log config: %+v", cfg.Log)
 	}
 	if cfg.Files.StorageBackends["local"].RootDir != "/env/sqlwarden-files" {
@@ -233,7 +210,6 @@ db:
 		"--http-port", "9200",
 		"--db-driver", "sqlite",
 		"--base-url", "https://flags.example.com",
-		"--log-level", "error",
 		"--log-format", "json",
 		"--tls-enabled",
 		"--tls-cert-file", "/flag/tls.crt",
@@ -253,7 +229,7 @@ db:
 	if cfg.BaseURL != "https://flags.example.com" {
 		t.Fatalf("baseURL = %q", cfg.BaseURL)
 	}
-	if cfg.Log.Level != LogLevelError || cfg.Log.Format != LogFormatJSON {
+	if cfg.Log.Format != LogFormatJSON {
 		t.Fatalf("unexpected log config: %+v", cfg.Log)
 	}
 	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/flag/tls.crt" || cfg.TLS.KeyFile != "/flag/tls.key" {
@@ -274,6 +250,14 @@ func TestLoadConfigRejectsInternalRuntimeFlags(t *testing.T) {
 		{"--files-active-storage-backend", "local"},
 		{"--files-storage-backends-local-type", FilesStorageBackendFilesystem},
 		{"--files-storage-backends-local-root-dir", "/tmp/sqlwarden-files"},
+		{"--log-level", "debug"},
+		{"--db-log-queries"},
+		{"--jobs-worker-count", "2"},
+		{"--jobs-poll-interval", "2s"},
+		{"--jobs-claim-lease", "1m"},
+		{"--jobs-completed-retention", "24h"},
+		{"--smtp-enabled"},
+		{"--smtp-host", "smtp.example.com"},
 	} {
 		if _, _, err := loadConfig(args); err == nil {
 			t.Fatalf("expected internal runtime flag %v to fail", args)

@@ -63,7 +63,7 @@ func newServiceFixture(t *testing.T, config Config) serviceFixture {
 
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "sqlwarden-files-test.db")
-	db, err := database.New("sqlite", dbPath, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+	db, err := database.New("sqlite", dbPath, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

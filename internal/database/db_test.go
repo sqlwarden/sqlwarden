@@ -58,7 +58,7 @@ func TestNew(t *testing.T) {
 				dsn = newRawPostgresTestDSN(t)
 			}
 
-			db, err := New(tc.driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+			db, err := New(tc.driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			assert.Nil(t, err)
 			assert.NotNil(t, db)
 			assert.NotNil(t, db.DB)
@@ -77,7 +77,7 @@ func TestNew(t *testing.T) {
 		t.Run("Fails with invalid DSN", func(t *testing.T) {
 			dsn := "fake_user:fake_pass@127.0.0.1:1/fake_db?sslmode=disable"
 
-			db, err := New("postgres", dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+			db, err := New("postgres", dsn, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			assert.NotNil(t, err)
 			assert.Nil(t, db)
 		})
@@ -102,7 +102,7 @@ func TestMigrateUp(t *testing.T) {
 				dsn = newRawPostgresTestDSN(t)
 			}
 
-			db, err := New(tc.driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+			db, err := New(tc.driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			assert.Nil(t, err)
 			assert.NotNil(t, db)
 			defer db.Close()

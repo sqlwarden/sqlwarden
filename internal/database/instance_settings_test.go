@@ -20,7 +20,14 @@ func TestInstanceSettingsMigrationCreatesCanonicalDefaults(t *testing.T) {
 				settings.PersonalSpacesEnabled != want.PersonalSpacesEnabled ||
 				settings.JWTAccessTokenTTLSeconds != want.JWTAccessTokenTTLSeconds ||
 				settings.QueryMaxResultRows != want.QueryMaxResultRows ||
-				settings.FileRevisionsKeepLatest != want.FileRevisionsKeepLatest {
+				settings.FileRevisionsKeepLatest != want.FileRevisionsKeepLatest ||
+				settings.LogLevel != want.LogLevel ||
+				settings.DatabaseQueryTracingEnabled != want.DatabaseQueryTracingEnabled ||
+				settings.JobsWorkerCount != want.JobsWorkerCount ||
+				settings.JobsPollIntervalSeconds != want.JobsPollIntervalSeconds ||
+				settings.JobsClaimLeaseSeconds != want.JobsClaimLeaseSeconds ||
+				settings.JobsCompletedRetentionSeconds != want.JobsCompletedRetentionSeconds ||
+				settings.SMTPEnabled || settings.SMTPPort != want.SMTPPort || settings.SMTPPasswordEncrypted != "" {
 				t.Fatalf("unexpected migration defaults: %+v", settings)
 			}
 		})
@@ -84,6 +91,13 @@ func TestInstanceSettingsUpsert(t *testing.T) {
 			settings.SupportEmail = "support@example.com"
 			settings.PublicURL = "https://sqlwarden.example.com"
 			settings.PersonalSpacesEnabled = false
+			settings.LogLevel = "debug"
+			settings.DatabaseQueryTracingEnabled = true
+			settings.JobsWorkerCount = 4
+			settings.SMTPHost = "smtp.example.com"
+			settings.SMTPUsername = "mailer"
+			settings.SMTPPasswordEncrypted = "encrypted-secret"
+			settings.SMTPFrom = "SQLWarden <noreply@example.com>"
 			settings, err = db.UpsertInstanceSettings(context.Background(), settings)
 			if err != nil {
 				t.Fatal(err)
@@ -102,6 +116,9 @@ func TestInstanceSettingsUpsert(t *testing.T) {
 			}
 			if settings.PublicURL != "https://sqlwarden.example.com" {
 				t.Fatalf("expected public url to persist, got %q", settings.PublicURL)
+			}
+			if settings.LogLevel != "debug" || !settings.DatabaseQueryTracingEnabled || settings.JobsWorkerCount != 4 || settings.SMTPPasswordEncrypted != "encrypted-secret" {
+				t.Fatalf("expected runtime operations to persist, got %+v", settings)
 			}
 
 			settings, found, err = db.GetInstanceSettings(context.Background())
