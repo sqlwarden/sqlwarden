@@ -3,6 +3,7 @@ import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import {
   connectionDirectoryQueryKey,
   connectionObjectQueryKey,
+  connectionRelationshipsQueryKey,
   invalidateConnectionSchemaQueries,
 } from './query'
 import type { ObjectRef } from '#/lib/api/types'
@@ -17,11 +18,14 @@ const ref: ObjectRef = {
 }
 
 describe('invalidateConnectionSchemaQueries', () => {
-  it('invalidates the directory and an expanded object detail, leaving other connections untouched', async () => {
+  it('invalidates directory, object, and relationship data while leaving other connections untouched', async () => {
     const qc = new QueryClient()
 
     qc.setQueryData(connectionDirectoryQueryKey(slug, workspaceId, connectionId), { directory: {} })
     qc.setQueryData(connectionObjectQueryKey(slug, workspaceId, connectionId, ref), { ref })
+    qc.setQueryData(connectionRelationshipsQueryKey(slug, workspaceId, connectionId, ref.scope), {
+      relationships: [],
+    })
     // A second connection's object detail must survive a refresh of the first.
     const otherConnId = 99
     qc.setQueryData(connectionObjectQueryKey(slug, workspaceId, otherConnId, ref), { ref })
@@ -39,6 +43,10 @@ describe('invalidateConnectionSchemaQueries', () => {
       qc.getQueryState(connectionObjectQueryKey(slug, workspaceId, otherConnId, ref))
         ?.isInvalidated,
     ).toBe(false)
+    expect(
+      qc.getQueryState(connectionRelationshipsQueryKey(slug, workspaceId, connectionId, ref.scope))
+        ?.isInvalidated,
+    ).toBe(true)
   })
 
   it('refetches an actively-expanded object query when its connection is refreshed', async () => {

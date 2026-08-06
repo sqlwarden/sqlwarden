@@ -1,5 +1,5 @@
 import { createContext, useContext, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Icon, type AppIcon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { isApiError } from '#/lib/api/errors'
@@ -34,10 +34,7 @@ import { buildNamespaceMenu, buildObjectGroupMenu } from './contextMenus/schemaM
 import { buildObjectMenu } from './contextMenus/objectMenu'
 import { buildColumnMenu, buildIndexMenu } from './contextMenus/columnMenu'
 import { useEvictGoneSession } from './sessionErrors'
-import {
-  invalidateConnectionSchemaQueries,
-  refreshConnectionSchema,
-} from '#/lib/api/queries/database'
+import { useSchemaRefresh } from './useSchemaRefresh'
 
 type TreeCtx = {
   dialect: SqlDialect
@@ -160,11 +157,11 @@ export function SchemaTree({
   const specQuery = useQuery({
     ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspaceId, connectionId, sessionId),
   })
-  const queryClient = useQueryClient()
-  const refreshSchema = useMutation({
-    mutationFn: () => refreshConnectionSchema(orgSlug, workspaceId, connectionId, sessionId ?? ''),
-    onSuccess: () =>
-      invalidateConnectionSchemaQueries(queryClient, orgSlug, workspaceId, connectionId),
+  const refreshSchema = useSchemaRefresh({
+    orgSlug,
+    workspaceId,
+    connectionId,
+    sessionId,
   })
 
   // A 410 from any schema endpoint means the server-side session died (idle

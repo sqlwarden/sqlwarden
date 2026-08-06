@@ -9,8 +9,6 @@ import {
   orgEffectivePermissionsQueryOptions,
   orgEnvironmentsQueryOptions,
   allOrgWorkspaceConnectionsQueryOptions,
-  refreshConnectionSchema,
-  invalidateConnectionSchemaQueries,
 } from '#/lib/api/query'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
@@ -64,6 +62,7 @@ import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { Textarea } from '#/components/ui/textarea'
 import { useConnectionActions } from './useConnectionActions'
+import { useSchemaRefresh } from './useSchemaRefresh'
 
 type DatabasePanelProps = {
   orgSlug: string
@@ -572,17 +571,11 @@ function ConnectionRow({
   const queryClient = useQueryClient()
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const refresh = useMutation({
-    mutationFn: () =>
-      refreshConnectionSchema(orgSlug, connection.workspace_id, connection.id, sessionId ?? ''),
-    onSuccess: () => {
-      void invalidateConnectionSchemaQueries(
-        queryClient,
-        orgSlug,
-        connection.workspace_id,
-        connection.id,
-      )
-    },
+  const refresh = useSchemaRefresh({
+    orgSlug,
+    workspaceId: connection.workspace_id,
+    connectionId: connection.id,
+    sessionId,
   })
   const deleteConnection = useMutation({
     mutationFn: () =>

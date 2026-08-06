@@ -128,6 +128,27 @@ describe('ObjectDetailView', () => {
     )
   })
 
+  it('runs an object refresh through the backend before reloading its detail', async () => {
+    store.getState().setSession(7, 'session-7')
+    respondReady()
+    let refreshBody: unknown
+    server.use(
+      http.post(
+        '/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh',
+        async ({ request }) => {
+          refreshBody = await request.json()
+          return HttpResponse.json({ status: 'ok', mode: 'ephemeral' })
+        },
+      ),
+    )
+    renderView()
+
+    await screen.findByRole('button', { name: 'Columns' })
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+
+    await waitFor(() => expect(refreshBody).toEqual({ ref }))
+  })
+
   it('renders permission loss without stale object data', async () => {
     store.getState().setSession(7, 'session-7')
     server.use(

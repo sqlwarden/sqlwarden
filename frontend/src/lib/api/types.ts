@@ -464,6 +464,13 @@ export interface SchemaSnapshotStatus {
   job_id?: string
 }
 
+export interface SchemaRefreshResponse {
+  status: 'ok'
+  mode: 'persistent' | 'ephemeral'
+  snapshot_id?: string
+  generated_at?: string
+}
+
 export interface SchemaSpecResponse {
   spec: SchemaSpec
 }
