@@ -127,8 +127,7 @@ function OrganizationLayout() {
     >
       <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
         <AppShellHeader
-          label={brand.productName}
-          description={
+          label={
             workspaceId
               ? `${organization.data?.name ?? orgSlug} / ${workspace.data?.name ?? `Workspace #${workspaceId}`}`
               : (organization.data?.name ?? orgSlug)

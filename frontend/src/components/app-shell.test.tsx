@@ -21,4 +21,16 @@ describe('AppShellHeader', () => {
     )
     expect(screen.getAllByTestId('custom-icon')).toHaveLength(2)
   })
+
+  it('truncates a long label and wraps it in a hover tooltip trigger with the full text', () => {
+    const longLabel = 'A Very Long Organization Name That Would Overflow The Sidebar Width'
+    render(
+      <SidebarProvider>
+        <AppShellHeader label={longLabel} icon="settings-02" />
+      </SidebarProvider>,
+    )
+    const label = screen.getByText(longLabel)
+    expect(label).toHaveClass('truncate')
+    expect(label.closest('[data-slot="tooltip-trigger"]')).not.toBeNull()
+  })
 })

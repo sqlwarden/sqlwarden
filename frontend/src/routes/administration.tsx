@@ -71,11 +71,7 @@ function AdministrationLayout() {
       }
     >
       <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
-        <AppShellHeader
-          label={brand.productName}
-          description="Administration"
-          icon={<brand.LogoMark size={18} />}
-        />
+        <AppShellHeader label="Administration" icon={<brand.LogoMark size={18} />} />
         <SidebarContent>
           <AppShellNavSection items={homeItems} pathname={pathname} />
           <AppShellNavSection label="Instance" items={adminItems} pathname={pathname} />

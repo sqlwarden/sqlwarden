@@ -66,11 +66,7 @@ function SettingsLayout() {
       }
     >
       <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
-        <AppShellHeader
-          label={brand.productName}
-          description="Settings"
-          icon={<brand.LogoMark size={18} />}
-        />
+        <AppShellHeader label="Settings" icon={<brand.LogoMark size={18} />} />
         <SidebarContent>
           <AppShellNavSection items={homeItems} pathname={pathname} />
           <AppShellNavSection label="Account" items={accountItems} pathname={pathname} />
