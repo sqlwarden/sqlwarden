@@ -194,6 +194,33 @@ const MONO_LIGHT_RAMP: LightSurfaceRamp = {
   sidebarAccent: 0.98,
 }
 
+/** Modeled on cloud.kaneo.app: card/popover sit almost flush against the page
+ *  background (elevation comes from the border, not a lightness jump), and
+ *  secondary/muted/accent share one flat, barely-there wash. */
+const KANEO_DARK_RAMP: DarkSurfaceRamp = {
+  background: 0.19,
+  foreground: 0.97,
+  card: 0.21,
+  secondary: 0.23,
+  mutedForeground: 0.6,
+  accent: 0.23,
+  accentForeground: 0.97,
+  border: 0.65,
+  sidebar: 0.16,
+}
+
+const KANEO_LIGHT_RAMP: LightSurfaceRamp = {
+  background: 1,
+  foreground: 0.27,
+  secondary: 0.97,
+  secondaryForeground: 0.27,
+  mutedForeground: 0.52,
+  accent: 0.97,
+  border: 0.94,
+  sidebar: 0.985,
+  sidebarAccent: 0.97,
+}
+
 export type SurfacePreset = {
   id: string
   label: string
@@ -221,6 +248,13 @@ export const SURFACE_PRESETS: SurfacePreset[] = [
     hue: 240,
     tint: 0,
     ramp: { dark: MONO_DARK_RAMP, light: MONO_LIGHT_RAMP },
+  },
+  {
+    id: 'kaneo',
+    label: 'Kaneo',
+    hue: 0,
+    tint: 0,
+    ramp: { dark: KANEO_DARK_RAMP, light: KANEO_LIGHT_RAMP },
   },
 ]
 
