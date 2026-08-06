@@ -16,9 +16,9 @@ import {
 } from './context'
 
 describe('editor font defaults', () => {
-  it('defaults to JetBrains Mono as the brand data/code font', () => {
-    expect(DEFAULT_EDITOR_FONT.label).toBe('JetBrains Mono')
-    expect(EDITOR_FONTS[0].label).toBe('JetBrains Mono')
+  it('defaults to Paper Mono as the brand data/code font', () => {
+    expect(DEFAULT_EDITOR_FONT.label).toBe('Paper Mono')
+    expect(EDITOR_FONTS[0].label).toBe('Paper Mono')
   })
 
   it('lazy-loads Geist Mono now that it is no longer the eager default', async () => {
@@ -34,9 +34,9 @@ describe('EditorFontProvider', () => {
     document.documentElement.style.removeProperty('--font-data')
   })
 
-  it('applies the default JetBrains Mono stack to --font-data on mount', async () => {
+  it('applies the default Paper Mono stack to --font-data on mount', async () => {
     const { result } = renderHook(() => useEditorFont(), { wrapper: EditorFontProvider })
-    expect(result.current.editorFont.label).toBe('JetBrains Mono')
+    expect(result.current.editorFont.label).toBe('Paper Mono')
     await waitFor(() =>
       expect(document.documentElement.style.getPropertyValue('--font-data')).toBe(
         DEFAULT_EDITOR_FONT.fontFamily,

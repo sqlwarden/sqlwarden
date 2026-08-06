@@ -142,7 +142,7 @@ function SettingsOrganizationsPage() {
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col gap-1.5">
-            <h2 className="text-2xl font-semibold tracking-tight">Organizations</h2>
+            <h2 className="font-heading text-2xl font-semibold tracking-tight">Organizations</h2>
             <p className="text-sm text-muted-foreground">
               {!organizations.isLoading && total > 0
                 ? `${total} organization${total !== 1 ? 's' : ''} on this instance`

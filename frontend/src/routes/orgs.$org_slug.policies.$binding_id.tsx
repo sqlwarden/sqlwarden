@@ -154,7 +154,7 @@ function PolicyContextPage() {
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">{pageTitle}</h1>
+            <h1 className="font-heading text-2xl font-semibold tracking-tight">{pageTitle}</h1>
             <p className="text-sm text-muted-foreground">
               Policy binding granting{' '}
               <span className="font-medium text-foreground">
@@ -242,7 +242,7 @@ function PolicyContextPage() {
               <SubjectIconLarge binding={binding.data} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-xl font-semibold leading-tight tracking-tight">
+                  <h2 className="font-heading text-xl font-semibold leading-tight tracking-tight">
                     {subjectDisplayName(binding.data)}
                   </h2>
                   <SubjectTypeBadge subjectType={binding.data.subject_type} />

@@ -146,7 +146,7 @@ function SettingsAccountPage() {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-1.5">
-        <h2 className="text-2xl font-semibold tracking-tight">Account</h2>
+        <h2 className="font-heading text-2xl font-semibold tracking-tight">Account</h2>
         <p className="text-sm text-muted-foreground">Manage your profile and local password.</p>
       </div>
 

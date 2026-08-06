@@ -111,7 +111,7 @@ function WorkspaceSettingsPage() {
   if (workspace.isError || !workspace.data) {
     return (
       <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">Failed to load workspace settings.</p>
       </div>
     )
@@ -136,7 +136,7 @@ function WorkspaceSettingsPage() {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">
           Manage workspace details and lifecycle actions.
         </p>

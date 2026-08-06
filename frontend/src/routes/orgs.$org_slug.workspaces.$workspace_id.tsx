@@ -103,7 +103,7 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-1.5">
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="font-heading text-2xl font-semibold tracking-tight">
             {workspace.data?.name ?? 'Workspace'}
           </h1>
           {workspace.data?.description ? (

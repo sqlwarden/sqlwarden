@@ -33,6 +33,13 @@ import {
 } from '#/lib/editor-font/context'
 import type { EditorFont, EditorFontSize } from '#/lib/editor-font/context'
 import {
+  useHeadingFont,
+  loadHeadingFont,
+  HEADING_FONTS,
+  DEFAULT_HEADING_FONT,
+} from '#/lib/heading-font/context'
+import type { HeadingFont } from '#/lib/heading-font/context'
+import {
   useInterfaceFont,
   loadInterfaceFont,
   INTERFACE_FONTS,
@@ -72,6 +79,7 @@ export function UiLabPanel({
   const { editorThemeDark, editorThemeLight, setEditorThemeDark, setEditorThemeLight } =
     useEditorTheme()
   const { editorFont, editorFontSize, setEditorFont, setEditorFontSize } = useEditorFont()
+  const { headingFont, setHeadingFont } = useHeadingFont()
   const { interfaceFont, setInterfaceFont } = useInterfaceFont()
   const { connectionLayout, setConnectionLayout } = useConnectionLayout()
   const {
@@ -144,6 +152,7 @@ export function UiLabPanel({
     setEditorThemeLight(DEFAULT_EDITOR_THEME_LIGHT)
     setEditorFont(DEFAULT_EDITOR_FONT)
     setEditorFontSize(DEFAULT_EDITOR_FONT_SIZE)
+    setHeadingFont(DEFAULT_HEADING_FONT)
     setInterfaceFont(DEFAULT_INTERFACE_FONT)
     resetThemeLab()
   }
@@ -220,6 +229,7 @@ export function UiLabPanel({
 
         <div className="flex flex-col gap-3 **:data-[slot=toggle-group]:w-full **:data-[slot=toggle-group-item]:flex-1 **:data-[slot=toggle-group-item]:text-xs">
           <div className="text-xs font-medium text-muted-foreground">App</div>
+          <HeadingFontSelect value={headingFont} onValueChange={setHeadingFont} />
           <InterfaceFontSelect value={interfaceFont} onValueChange={setInterfaceFont} />
 
           <PreferenceToggle
@@ -500,6 +510,50 @@ function LabSlider({
           if (typeof v === 'number') onValueChange(v)
         }}
       />
+    </div>
+  )
+}
+
+function HeadingFontSelect({
+  value,
+  onValueChange,
+}: {
+  value: HeadingFont
+  onValueChange: (font: HeadingFont) => void
+}) {
+  // Preload every heading font once the picker is on screen so each option
+  // previews in its own face while the user experiments.
+  useEffect(() => {
+    for (const font of HEADING_FONTS) void loadHeadingFont(font)
+  }, [])
+
+  const items = HEADING_FONTS.map((f) => ({ label: f.label, value: f.fontFamily }))
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="text-xs font-medium">Heading Font</div>
+      <Select
+        items={items}
+        value={value.fontFamily}
+        onValueChange={(v) => {
+          if (!v) return
+          const found = HEADING_FONTS.find((f) => f.fontFamily === v)
+          if (found) onValueChange(found)
+        }}
+      >
+        <SelectTrigger size="sm" className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {HEADING_FONTS.map((f) => (
+              <SelectItem key={f.fontFamily} value={f.fontFamily}>
+                <span style={{ fontFamily: f.fontFamily }}>{f.label}</span>
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
     </div>
   )
 }

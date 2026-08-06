@@ -15,20 +15,16 @@ export type AccentPreset = {
 
 export const ACCENT_PRESETS: AccentPreset[] = [
   {
-    // id kept stable for localStorage compatibility; label reflects that
-    // this is the brand default — values match styles.css's baked-in
-    // --primary (#006edc light / #007ffe dark) so the swatch and the
-    // applied color agree when this preset is the active default.
-    id: 'steel-teal',
-    label: 'Default',
-    light: { l: 0.551, c: 0.188, h: 256 },
-    dark: { l: 0.612, c: 0.211, h: 256 },
-  },
-  {
     id: 'blue',
-    label: 'Blue',
+    label: 'Default',
     light: { l: 0.55, c: 0.19, h: 255 },
     dark: { l: 0.68, c: 0.15, h: 250 },
+  },
+  {
+    id: 'steel-teal',
+    label: 'Steel Teal',
+    light: { l: 0.551, c: 0.188, h: 256 },
+    dark: { l: 0.612, c: 0.211, h: 256 },
   },
   {
     id: 'indigo',
@@ -70,7 +66,7 @@ export const ACCENT_PRESETS: AccentPreset[] = [
 
 export type Accent = { kind: 'preset'; id: string } | { kind: 'custom'; hex: string }
 
-const DEFAULT_ACCENT_ID = 'steel-teal'
+const DEFAULT_ACCENT_ID = 'blue'
 export const DEFAULT_ACCENT: Accent = { kind: 'preset', id: DEFAULT_ACCENT_ID }
 
 const oklchStr = ({ l, c, h }: Oklch) => `oklch(${l} ${c} ${h})`
@@ -194,9 +190,9 @@ const MONO_LIGHT_RAMP: LightSurfaceRamp = {
   sidebarAccent: 0.98,
 }
 
-/** Modeled on cloud.kaneo.app: card/popover sit almost flush against the page
- *  background (elevation comes from the border, not a lightness jump), and
- *  secondary/muted/accent share one flat, barely-there wash. */
+/** The "Mono" ramp: card/popover sit almost flush against the page background
+ *  (elevation comes from the border, not a lightness jump), and secondary/
+ *  muted/accent share one flat, barely-there wash. */
 const KANEO_DARK_RAMP: DarkSurfaceRamp = {
   background: 0.19,
   foreground: 0.97,
@@ -233,8 +229,13 @@ export type SurfacePreset = {
 }
 
 export const SURFACE_PRESETS: SurfacePreset[] = [
-  // Hue matches the brand primary (#006edc/#007ffe); styles.css bakes this
-  // preset's formula in directly so the swatch and applied surface agree.
+  {
+    id: 'kaneo',
+    label: 'Mono',
+    hue: 0,
+    tint: 0,
+    ramp: { dark: KANEO_DARK_RAMP, light: KANEO_LIGHT_RAMP },
+  },
   { id: 'default', label: 'Default', hue: 256, tint: 2.5 },
   { id: 'graphite', label: 'Graphite', hue: 240, tint: 1 },
   { id: 'neutral', label: 'Neutral', hue: 240, tint: 0 },
@@ -244,21 +245,14 @@ export const SURFACE_PRESETS: SurfacePreset[] = [
   { id: 'dusk', label: 'Dusk', hue: 285, tint: 3 },
   {
     id: 'mono',
-    label: 'Mono',
+    label: 'Deep Mono',
     hue: 240,
     tint: 0,
     ramp: { dark: MONO_DARK_RAMP, light: MONO_LIGHT_RAMP },
   },
-  {
-    id: 'kaneo',
-    label: 'Kaneo',
-    hue: 0,
-    tint: 0,
-    ramp: { dark: KANEO_DARK_RAMP, light: KANEO_LIGHT_RAMP },
-  },
 ]
 
-export const DEFAULT_SURFACE = 'default'
+export const DEFAULT_SURFACE = 'kaneo'
 
 /** Neutral lightness/chroma ramps matching the styles.css defaults; chroma is
  *  scaled by the preset tint and re-hued. Foregrounds follow at low chroma. */
@@ -323,7 +317,7 @@ export const RADIUS_RANGE = { min: 0, max: 1, step: 0.125 } as const
 export const DEFAULT_RADIUS = 0.5
 
 export const UI_SCALE_RANGE = { min: 90, max: 115, step: 5 } as const
-export const DEFAULT_UI_SCALE = 100
+export const DEFAULT_UI_SCALE = 110
 
 // ─── Persistence ───────────────────────────────────────────────────────────────
 
@@ -434,11 +428,8 @@ export function ThemeLabProvider({ children }: { children: ReactNode }) {
     else style.setProperty('--radius', `${radius}rem`)
   }, [radius])
 
-  // UI scale → root font-size (rem-based sizing scales with it).
   useEffect(() => {
-    const style = document.documentElement.style
-    if (uiScale === DEFAULT_UI_SCALE) style.removeProperty('font-size')
-    else style.fontSize = `${uiScale}%`
+    document.documentElement.style.fontSize = `${uiScale}%`
   }, [uiScale])
 
   function setAccent(next: Accent) {

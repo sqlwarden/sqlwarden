@@ -353,7 +353,7 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 overflow-hidden">
         <ResizablePanel
           panelRef={sidebarRef}
-          defaultSize="22%"
+          defaultSize="16%"
           minSize="14%"
           maxSize="40%"
           collapsible
@@ -366,7 +366,7 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
 
         <ResizableHandle withHandle />
 
-        <ResizablePanel defaultSize="78%" minSize="45%" className="overflow-hidden">
+        <ResizablePanel defaultSize="84%" minSize="45%" className="overflow-hidden">
           <IdeEditorAndResults orgSlug={orgSlug} workspace={workspace} />
         </ResizablePanel>
       </ResizablePanelGroup>

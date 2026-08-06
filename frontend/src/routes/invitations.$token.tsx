@@ -78,7 +78,7 @@ function InvitationPage() {
         <div className="flex flex-col items-center gap-3 text-center">
           <Badge variant="outline">SQLWarden</Badge>
           <div className="flex flex-col gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">
+            <h1 className="font-heading text-2xl font-semibold tracking-tight">
               Join {details.organization.name}
             </h1>
             <p className="text-sm text-muted-foreground">This invitation is for {details.email}.</p>
