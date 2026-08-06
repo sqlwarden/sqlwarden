@@ -97,7 +97,7 @@ function SettingsInstancePage() {
   if (settings.isError || !settings.data) {
     return (
       <div className="flex flex-col gap-1.5">
-        <h2 className="text-2xl font-semibold tracking-tight">Instance</h2>
+        <h2 className="font-heading text-2xl font-semibold tracking-tight">Instance</h2>
         <p className="text-muted-foreground">Failed to load instance settings.</p>
       </div>
     )
@@ -121,7 +121,7 @@ function SettingsInstancePage() {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-1.5">
-        <h2 className="text-2xl font-semibold tracking-tight">Instance</h2>
+        <h2 className="font-heading text-2xl font-semibold tracking-tight">Instance</h2>
         <p className="text-sm text-muted-foreground">Manage instance-wide settings.</p>
       </div>
 

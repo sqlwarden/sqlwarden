@@ -249,7 +249,9 @@ function OrganizationRoleContextPage() {
             )}
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
+                <h1 className="font-heading text-2xl font-semibold tracking-tight">
+                  {displayName}
+                </h1>
                 {role.data ? (
                   <>
                     <Badge variant={role.data.is_builtin ? 'secondary' : 'outline'}>

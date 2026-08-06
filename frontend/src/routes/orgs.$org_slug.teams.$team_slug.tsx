@@ -253,7 +253,7 @@ function OrganizationTeamContextPage() {
               <Skeleton className="size-10 shrink-0 rounded-full" />
             )}
             <div className="min-w-0">
-              <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
+              <h1 className="font-heading text-2xl font-semibold tracking-tight">{displayName}</h1>
               {team.data ? (
                 <p className="mt-0.5 text-sm text-muted-foreground">@{team.data.slug}</p>
               ) : null}

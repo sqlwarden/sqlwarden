@@ -110,7 +110,7 @@ function OrganizationGeneralSettingsPage() {
   if (org.isError || !org.data) {
     return (
       <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">General</h1>
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">General</h1>
         <p className="text-sm text-muted-foreground">Failed to load organization settings.</p>
       </div>
     )
@@ -137,7 +137,7 @@ function OrganizationGeneralSettingsPage() {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">General</h1>
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">General</h1>
         <p className="text-sm text-muted-foreground">
           Manage organization identity and lifecycle actions.
         </p>

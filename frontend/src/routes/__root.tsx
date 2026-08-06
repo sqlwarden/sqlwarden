@@ -8,6 +8,7 @@ import { TooltipProvider } from '#/components/ui/tooltip'
 import { IconPackProvider } from '#/lib/icons'
 import { EditorThemeProvider } from '#/lib/editor-themes/context'
 import { EditorFontProvider } from '#/lib/editor-font/context'
+import { HeadingFontProvider } from '#/lib/heading-font/context'
 import { InterfaceFontProvider } from '#/lib/interface-font/context'
 import { ThemeLabProvider } from '#/lib/theme-lab/context'
 import { ConnectionLayoutProvider } from '#/components/ide/useConnectionLayout'
@@ -46,18 +47,20 @@ function RootComponent() {
         <IconPackProvider>
           <EditorThemeProvider>
             <EditorFontProvider>
-              <InterfaceFontProvider>
-                <ConnectionLayoutProvider>
-                  <TooltipProvider>
-                    <GlobalLoadingBar />
-                    <div className="flex min-h-screen flex-col">
-                      <div className="flex-1">
-                        <Outlet />
+              <HeadingFontProvider>
+                <InterfaceFontProvider>
+                  <ConnectionLayoutProvider>
+                    <TooltipProvider>
+                      <GlobalLoadingBar />
+                      <div className="flex min-h-screen flex-col">
+                        <div className="flex-1">
+                          <Outlet />
+                        </div>
                       </div>
-                    </div>
-                  </TooltipProvider>
-                </ConnectionLayoutProvider>
-              </InterfaceFontProvider>
+                    </TooltipProvider>
+                  </ConnectionLayoutProvider>
+                </InterfaceFontProvider>
+              </HeadingFontProvider>
             </EditorFontProvider>
             <Toaster closeButton position="top-center" theme="system" />
             <Suspense fallback={null}>

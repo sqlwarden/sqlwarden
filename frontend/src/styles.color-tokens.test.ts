@@ -15,11 +15,11 @@ function block(selector: string): string {
 
 describe('brand color tokens', () => {
   it('sets the brand primary blue in :root', () => {
-    expect(block(':root')).toContain('--primary: #006edc;')
+    expect(block(':root')).toContain('--primary: oklch(0.55 0.19 255);')
   })
 
   it('lightens primary for AA contrast in dark mode', () => {
-    expect(block('.dark')).toContain('--primary: #007ffe;')
+    expect(block('.dark')).toContain('--primary: oklch(0.68 0.15 250);')
   })
 
   it('defines the new semantic feedback tokens', () => {

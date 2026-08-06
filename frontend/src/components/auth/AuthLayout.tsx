@@ -48,7 +48,7 @@ export function AuthLayout({
         />
         <brand.LogoLockup size={22} className="relative" />
         <div className="relative flex flex-col gap-10">
-          <h2 className="max-w-sm text-3xl leading-tight font-semibold tracking-tight text-balance">
+          <h2 className="font-heading max-w-sm text-3xl leading-tight font-semibold tracking-tight text-balance">
             The SQL IDE built for controlled database access.
           </h2>
           <ul className="flex flex-col gap-5">
@@ -77,7 +77,7 @@ export function AuthLayout({
           </div>
           <div className="space-y-2 text-center lg:text-left">
             {eyebrow}
-            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+            <h1 className="font-heading text-2xl font-semibold tracking-tight">{title}</h1>
             <p className="text-sm text-muted-foreground">{description}</p>
           </div>
           {children}

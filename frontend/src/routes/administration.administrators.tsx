@@ -124,7 +124,7 @@ function SettingsAdministratorsPage() {
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col gap-1.5">
-            <h2 className="text-2xl font-semibold tracking-tight">Administrators</h2>
+            <h2 className="font-heading text-2xl font-semibold tracking-tight">Administrators</h2>
             <p className="text-sm text-muted-foreground">
               {!administrators.isLoading && total > 0
                 ? `${total} instance administrator${total !== 1 ? 's' : ''}`

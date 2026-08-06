@@ -101,7 +101,9 @@ function LandingPage() {
       </div>
 
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Choose where to continue</h1>
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">
+          Choose where to continue
+        </h1>
         <p className="text-sm text-muted-foreground">
           Select an organization or administration area.
         </p>

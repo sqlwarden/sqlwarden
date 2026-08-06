@@ -7,8 +7,11 @@ export type EditorFont = {
 }
 
 export const EDITOR_FONTS: EditorFont[] = [
-  // JetBrains Mono is the brand default — reuses the existing fontsource
-  // package, imported eagerly in styles.css.
+  // Paper Mono is the brand default — self-hosted via @font-face in styles.css.
+  {
+    label: 'Paper Mono',
+    fontFamily: "'Paper Mono', 'JetBrains Mono Variable', ui-monospace, monospace",
+  },
   { label: 'JetBrains Mono', fontFamily: "'JetBrains Mono Variable', ui-monospace, monospace" },
   { label: 'Geist Mono', fontFamily: "'Geist Mono', ui-monospace, monospace" },
   { label: 'System Font', fontFamily: 'ui-monospace, monospace' },
@@ -48,6 +51,7 @@ export async function loadEditorFont(font: EditorFont): Promise<void> {
     case 'Roboto Mono':
       await import('@fontsource-variable/roboto-mono')
       break
+    // Paper Mono: self-hosted via @font-face in styles.css.
     // JetBrains Mono: loaded globally in styles.css — no lazy load needed.
     // System Font, Courier New: no web font required.
   }

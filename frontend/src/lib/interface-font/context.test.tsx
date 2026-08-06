@@ -26,6 +26,12 @@ describe('interface font defaults', () => {
     if (!geist) throw new Error('Geist option missing')
     await expect(loadInterfaceFont(geist)).resolves.toBeUndefined()
   })
+
+  it('offers Cal Sans UI as a self-hosted option', async () => {
+    const calSansUi = INTERFACE_FONTS.find((f) => f.label === 'Cal Sans UI')
+    if (!calSansUi) throw new Error('Cal Sans UI option missing')
+    await expect(loadInterfaceFont(calSansUi)).resolves.toBeUndefined()
+  })
 })
 
 describe('InterfaceFontProvider', () => {

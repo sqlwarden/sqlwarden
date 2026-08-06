@@ -50,7 +50,7 @@ function SettingsMyOrganizationsPage() {
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1.5">
-          <h2 className="text-2xl font-semibold tracking-tight">My Organizations</h2>
+          <h2 className="font-heading text-2xl font-semibold tracking-tight">My Organizations</h2>
           <p className="text-sm text-muted-foreground">
             {!organizations.isLoading && total > 0
               ? `${total} organization${total !== 1 ? 's' : ''} you belong to`

@@ -26,94 +26,116 @@
   font-style: normal;
   font-display: swap;
 }
+@font-face {
+  font-family: 'Cal Sans UI';
+  src: url('/fonts/cal-sans-ui/CalSansUI-Variable.woff2') format('woff2');
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Cal Sans Heading';
+  src: url('/fonts/cal-sans-heading/CalSans-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Paper Mono';
+  src: url('/fonts/paper-mono/PaperMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* SQLWarden brand palette. --primary/--ring/--sidebar-* are the literal
-       brand blue hex — the only place light mode carries color. Surface
-       neutrals are pure achromatic (zero chroma): pushing hue 256 that light
-       (L 0.9-1.0) drove a gamut-clipping shift toward a muddy, brownish
-       gray, so surfaces are true black/gray/white instead and the brand
-       blue reads clean against them. */
-  --background: oklch(0.99 0 0);
-  --foreground: oklch(0.21 0 0);
+  /* SQLWarden brand palette. --primary/--ring/--sidebar-* match the Theme
+       Lab's "Default" accent preset (id 'blue'). Surface neutrals match the
+       Theme Lab's "Mono" surface preset (id 'kaneo', zero chroma) — card/
+       popover sit almost flush against the page background, elevation comes
+       from the border rather than a lightness jump. */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.27 0 0);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0 0);
+  --card-foreground: oklch(0.27 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0 0);
-  --primary: #006edc;
-  --primary-foreground: #ffffff;
-  --secondary: oklch(0.966 0 0);
-  --secondary-foreground: oklch(0.26 0 0);
-  --muted: oklch(0.966 0 0);
-  --muted-foreground: oklch(0.545 0 0);
-  --accent: oklch(0.955 0 0);
-  --accent-foreground: oklch(0.26 0 0);
+  --popover-foreground: oklch(0.27 0 0);
+  --primary: oklch(0.55 0.19 255);
+  --primary-foreground: oklch(0.985 0.005 240);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.27 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.52 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.27 0 0);
   --destructive: #ef4444;
-  --border: oklch(0.916 0 0);
-  --input: oklch(0.916 0 0);
-  --ring: #006edc;
-  --chart-1: oklch(0.551 0.188 256);
+  --border: oklch(0.94 0 0);
+  --input: oklch(0.94 0 0);
+  --ring: oklch(0.55 0.19 255);
+  --chart-1: oklch(0.55 0.19 255);
   --chart-2: oklch(0.55 0.17 255);
   --chart-3: oklch(0.62 0.15 155);
   --chart-4: oklch(0.72 0.14 75);
   --chart-5: oklch(0.62 0.19 25);
   --radius: 0.5rem;
-  --sidebar: oklch(0.974 0 0);
-  --sidebar-foreground: oklch(0.21 0 0);
-  --sidebar-primary: #006edc;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: oklch(0.948 0 0);
-  --sidebar-accent-foreground: oklch(0.26 0 0);
-  --sidebar-border: oklch(0.916 0 0);
-  --sidebar-ring: #006edc;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.27 0 0);
+  --sidebar-primary: oklch(0.55 0.19 255);
+  --sidebar-primary-foreground: oklch(0.985 0.005 240);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.27 0 0);
+  --sidebar-border: oklch(0.94 0 0);
+  --sidebar-ring: oklch(0.55 0.19 255);
   --success: #10b981;
   --warning: #f59e0b;
   --accent-link: #38bdf8;
   --accent-datatype: #6366f1;
-  /* Runtime font slots — overridden from the interface/editor font pickers. */
+  /* Runtime font slots — overridden from the heading/interface/editor font pickers. */
+  --font-heading-face: 'Satoshi', 'Geist Variable', system-ui, sans-serif;
   --font-interface: 'Satoshi', 'Geist Variable', system-ui, sans-serif;
-  --font-data: 'JetBrains Mono Variable', 'Geist Mono', ui-monospace, monospace;
+  --font-data: 'Paper Mono', 'JetBrains Mono Variable', ui-monospace, monospace;
 }
 
 .dark {
-  /* SQLWarden brand palette, dark mode. --primary is lightened from the
-       brand's single blue value to reach WCAG AA (4.5:1) against
-       --background. Surface neutrals and --chart-1 match the Theme Lab's
-       "Default" accent/surface preset formulas (hue 256), same rationale
-       as :root above. */
-  --background: oklch(0.165 0.02 256);
-  --foreground: oklch(0.94 0.015 256);
-  --card: oklch(0.205 0.025 256);
-  --card-foreground: oklch(0.94 0.015 256);
-  --popover: oklch(0.205 0.025 256);
-  --popover-foreground: oklch(0.94 0.015 256);
-  --primary: #007ffe;
-  --primary-foreground: #111827;
-  --secondary: oklch(0.252 0.025 256);
-  --secondary-foreground: oklch(0.94 0.015 256);
-  --muted: oklch(0.252 0.025 256);
-  --muted-foreground: oklch(0.7 0.035 256);
-  --accent: oklch(0.29 0.045 256);
-  --accent-foreground: oklch(0.955 0.02 256);
+  /* SQLWarden brand palette, dark mode. --primary/--ring/--sidebar-* match
+       the Theme Lab's "Default" accent preset (id 'blue') — lightened
+       relative to light mode so the primary button reads as an inverted,
+       high-contrast surface rather than a dim one. Surface neutrals match
+       the Theme Lab's "Mono" surface preset (id 'kaneo', zero chroma), same
+       rationale as :root above. */
+  --background: oklch(0.19 0 0);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.21 0 0);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.21 0 0);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.68 0.15 250);
+  --primary-foreground: oklch(0.16 0.015 240);
+  --secondary: oklch(0.23 0 0);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted: oklch(0.23 0 0);
+  --muted-foreground: oklch(0.6 0 0);
+  --accent: oklch(0.23 0 0);
+  --accent-foreground: oklch(0.97 0 0);
   --destructive: #ef4444;
-  --border: oklch(0.85 0.0375 256 / 12%);
-  --input: oklch(0.85 0.0375 256 / 15%);
-  --ring: #007ffe;
-  --chart-1: oklch(0.612 0.211 256);
+  --border: oklch(0.65 0 0 / 12%);
+  --input: oklch(0.65 0 0 / 15%);
+  --ring: oklch(0.68 0.15 250);
+  --chart-1: oklch(0.68 0.15 250);
   --chart-2: oklch(0.68 0.15 255);
   --chart-3: oklch(0.72 0.14 155);
   --chart-4: oklch(0.8 0.13 78);
   --chart-5: oklch(0.68 0.17 20);
-  --sidebar: oklch(0.14 0.02 256);
-  --sidebar-foreground: oklch(0.94 0.015 256);
-  --sidebar-primary: #007ffe;
-  --sidebar-primary-foreground: #111827;
-  --sidebar-accent: oklch(0.29 0.045 256);
-  --sidebar-accent-foreground: oklch(0.955 0.02 256);
-  --sidebar-border: oklch(0.85 0.0375 256 / 12%);
-  --sidebar-ring: #007ffe;
+  --sidebar: oklch(0.16 0 0);
+  --sidebar-foreground: oklch(0.97 0 0);
+  --sidebar-primary: oklch(0.68 0.15 250);
+  --sidebar-primary-foreground: oklch(0.16 0.015 240);
+  --sidebar-accent: oklch(0.23 0 0);
+  --sidebar-accent-foreground: oklch(0.97 0 0);
+  --sidebar-border: oklch(0.65 0 0 / 12%);
+  --sidebar-ring: oklch(0.68 0.15 250);
 }
 
 @theme inline {
@@ -162,7 +184,7 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-heading-face);
   --font-mono: var(--font-data);
 }
 

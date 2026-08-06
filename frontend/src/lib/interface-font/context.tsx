@@ -7,13 +7,10 @@ export type InterfaceFont = {
 }
 
 export const INTERFACE_FONTS: InterfaceFont[] = [
-  // Satoshi is the brand default — self-hosted via hand-written @font-face
-  // rules in styles.css (see Task 10 of the branding plan).
   { label: 'Satoshi', fontFamily: "'Satoshi', 'Geist Variable', system-ui, sans-serif" },
-  { label: 'Geist', fontFamily: "'Geist Variable', 'Inter Variable', system-ui, sans-serif" },
-  // Inter is also loaded globally (long-time previous default, common fallback).
   { label: 'Inter', fontFamily: "'Inter Variable', system-ui, sans-serif" },
-  // @fontsource-variable packages register under the "Variable" family name.
+  { label: 'Cal Sans UI', fontFamily: "'Cal Sans UI', 'Geist Variable', system-ui, sans-serif" },
+  { label: 'Geist', fontFamily: "'Geist Variable', 'Inter Variable', system-ui, sans-serif" },
   { label: 'IBM Plex Sans', fontFamily: "'IBM Plex Sans Variable', system-ui, sans-serif" },
   { label: 'Manrope', fontFamily: "'Manrope Variable', system-ui, sans-serif" },
   { label: 'Space Grotesk', fontFamily: "'Space Grotesk Variable', system-ui, sans-serif" },
@@ -45,7 +42,7 @@ export async function loadInterfaceFont(font: InterfaceFont): Promise<void> {
     case 'Epilogue':
       await import('@fontsource-variable/epilogue')
       break
-    // Satoshi: self-hosted via @font-face in styles.css, no package to load.
+    // Cal Sans UI, Satoshi: self-hosted via @font-face in styles.css, no package to load.
     // Inter: loaded globally in styles.css. System Font: no web font.
   }
 }
