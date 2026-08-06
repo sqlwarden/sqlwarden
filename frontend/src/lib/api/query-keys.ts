@@ -19,6 +19,7 @@ export const queryKeys = {
   instanceOrganizations: (query?: ListQuery) =>
     [...queryKeys.instanceOrganizationsScope(), query ?? {}] as const,
   instanceSettings: () => ['instance-settings'] as const,
+  instanceConfiguration: () => ['instance-configuration'] as const,
   orgEffectivePermissions: (
     slug: string,
     resourceType: ResourceType,
@@ -26,6 +27,7 @@ export const queryKeys = {
   ) => ['org-effective-permissions', slug, resourceType, resourceId ?? null] as const,
   orgPermissions: (slug: string) => ['org-permissions', slug] as const,
   org: (slug: string) => ['org', slug] as const,
+  orgRuntimeSettings: (slug: string) => ['org-runtime-settings', slug] as const,
   orgMembersScope: (slug: string) => ['org-members', slug] as const,
   orgMembers: (slug: string, query?: ListQuery) =>
     [...queryKeys.orgMembersScope(slug), query ?? {}] as const,

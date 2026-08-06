@@ -305,11 +305,72 @@ export interface InstanceSettings {
   support_email: string
   public_url: string
   personal_spaces_enabled: boolean
+  jwt_access_token_ttl_seconds: number
+  sessions_revocation_enabled: boolean
+  query_max_result_rows: number
+  query_max_result_bytes: number
+  exports_sync_max_bytes: number
+  exports_background_max_bytes: number
+  schema_snapshot_freshness_seconds: number
+  file_revisions_enabled: boolean
+  file_revisions_keep_latest: number
+  error_notification_email: string
+}
+
+export interface InstanceConfiguration {
+  deployment_managed: boolean
+  restart_required: boolean
+  base_url: string
+  http_port: number
   deployment_mode: 'server' | 'desktop'
   access_mode: 'multi_user' | 'single_user'
-  single_user_mode: boolean
-  personal_spaces_default: boolean
-  runtime_settings_readonly: boolean
+  log_format: 'json' | 'text'
+  database_driver: string
+  database_automigrate: boolean
+  tls_enabled: boolean
+  file_storage_mode: 'file' | 'object'
+  file_storage_backend: string
+  sqlite_local_enabled: boolean
+}
+
+export interface OrganizationRuntimeOverrideValues {
+  query_max_result_rows: number | null
+  query_max_result_bytes: number | null
+  exports_sync_max_bytes: number | null
+  exports_background_max_bytes: number | null
+  schema_snapshot_freshness_seconds: number | null
+  file_revisions_enabled: boolean | null
+  file_revisions_keep_latest: number | null
+}
+
+export interface OrganizationRuntimeEffectiveValues {
+  query_max_result_rows: number
+  query_max_result_bytes: number
+  exports_sync_max_bytes: number
+  exports_background_max_bytes: number
+  schema_snapshot_freshness_seconds: number
+  file_revisions_enabled: boolean
+  file_revisions_keep_latest: number
+}
+
+export interface OrganizationRuntimeConstraints {
+  query_max_result_rows_max: number
+  query_max_result_bytes_max: number
+  exports_sync_max_bytes_max: number
+  exports_background_max_bytes_max: number
+  schema_snapshot_freshness_seconds_min: number
+  file_revisions_available: boolean
+  file_revisions_keep_latest_max: number
+}
+
+export interface OrganizationRuntimeSettings {
+  overrides: OrganizationRuntimeOverrideValues
+  effective: OrganizationRuntimeEffectiveValues
+  constraints: OrganizationRuntimeConstraints
+}
+
+export type OrganizationRuntimeSettingsPatch = {
+  [K in keyof OrganizationRuntimeOverrideValues]?: OrganizationRuntimeOverrideValues[K]
 }
 
 export interface InstanceAdmin {

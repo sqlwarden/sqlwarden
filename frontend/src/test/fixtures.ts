@@ -1,6 +1,9 @@
 import type {
   Account,
+  InstanceConfiguration,
+  InstanceSettings,
   Organization,
+  OrganizationRuntimeSettings,
   Paginated,
   SessionResponse,
   SetupStatusResponse,
@@ -49,6 +52,85 @@ export function setupStatusFixture(
   return {
     configured: true,
     access_mode: 'multi_user',
+    ...overrides,
+  }
+}
+
+export function instanceSettingsFixture(
+  overrides: Partial<InstanceSettings> = {},
+): InstanceSettings {
+  return {
+    instance_name: 'SQLWarden',
+    instance_description: '',
+    support_email: '',
+    public_url: 'https://sqlwarden.example.com',
+    personal_spaces_enabled: true,
+    jwt_access_token_ttl_seconds: 3_600,
+    sessions_revocation_enabled: false,
+    query_max_result_rows: 1_000,
+    query_max_result_bytes: 10_485_760,
+    exports_sync_max_bytes: 52_428_800,
+    exports_background_max_bytes: 0,
+    schema_snapshot_freshness_seconds: 3_600,
+    file_revisions_enabled: true,
+    file_revisions_keep_latest: 10,
+    error_notification_email: '',
+    ...overrides,
+  }
+}
+
+export function instanceConfigurationFixture(
+  overrides: Partial<InstanceConfiguration> = {},
+): InstanceConfiguration {
+  return {
+    deployment_managed: true,
+    restart_required: true,
+    base_url: 'https://sqlwarden.example.com',
+    http_port: 8080,
+    deployment_mode: 'server',
+    access_mode: 'multi_user',
+    log_format: 'json',
+    database_driver: 'sqlite',
+    database_automigrate: true,
+    tls_enabled: false,
+    file_storage_mode: 'file',
+    file_storage_backend: 'local',
+    sqlite_local_enabled: true,
+    ...overrides,
+  }
+}
+
+export function organizationRuntimeSettingsFixture(
+  overrides: Partial<OrganizationRuntimeSettings> = {},
+): OrganizationRuntimeSettings {
+  return {
+    overrides: {
+      query_max_result_rows: null,
+      query_max_result_bytes: null,
+      exports_sync_max_bytes: null,
+      exports_background_max_bytes: null,
+      schema_snapshot_freshness_seconds: null,
+      file_revisions_enabled: null,
+      file_revisions_keep_latest: null,
+    },
+    effective: {
+      query_max_result_rows: 1_000,
+      query_max_result_bytes: 10_485_760,
+      exports_sync_max_bytes: 52_428_800,
+      exports_background_max_bytes: 0,
+      schema_snapshot_freshness_seconds: 3_600,
+      file_revisions_enabled: true,
+      file_revisions_keep_latest: 10,
+    },
+    constraints: {
+      query_max_result_rows_max: 1_000,
+      query_max_result_bytes_max: 10_485_760,
+      exports_sync_max_bytes_max: 52_428_800,
+      exports_background_max_bytes_max: 0,
+      schema_snapshot_freshness_seconds_min: 3_600,
+      file_revisions_available: true,
+      file_revisions_keep_latest_max: 10,
+    },
     ...overrides,
   }
 }
