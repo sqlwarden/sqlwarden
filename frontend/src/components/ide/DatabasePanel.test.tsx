@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   createMemoryHistory,
@@ -155,5 +155,28 @@ describe('DatabasePanel', () => {
     expect(store.getState().tabs).toEqual([
       expect.objectContaining({ id: 'connection:7', connectionId: 7 }),
     ])
+  })
+
+  it('runs a connection schema refresh through the backend endpoint', async () => {
+    handlers('populated')
+    store.getState().setSession(7, 'session-7')
+    let refreshes = 0
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', () => {
+        refreshes++
+        return HttpResponse.json({
+          status: 'ok',
+          mode: 'persistent',
+          snapshot_id: 'snapshot-2',
+          generated_at: '2026-08-06T00:00:00Z',
+        })
+      }),
+    )
+    const { user } = renderPanel()
+
+    await screen.findByText('analytics-pg')
+    await user.click(screen.getByRole('button', { name: 'Refresh schema' }))
+
+    await waitFor(() => expect(refreshes).toBe(1))
   })
 })

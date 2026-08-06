@@ -22,8 +22,9 @@ type schemaSyncInput struct {
 }
 
 type schemaSyncOutput struct {
-	SnapshotID string `json:"snapshot_id"`
-	Objects    int    `json:"objects"`
+	SnapshotID  string    `json:"snapshot_id"`
+	GeneratedAt time.Time `json:"generated_at"`
+	Objects     int       `json:"objects"`
 }
 
 func schemaSyncSingletonKey(connectionID int64) string {
@@ -72,61 +73,68 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 	if err := json.Unmarshal([]byte(runtime.Job.InputJSON), &input); err != nil || input.ConnectionID == 0 {
 		return nil, jobs.Permanent("invalid_schema_sync_input", "Schema synchronization input is invalid.")
 	}
+	return app.syncSchemaSnapshot(ctx, input.ConnectionID)
+}
 
-	enabled, err := app.db.SchemaSnapshotsEnabled(ctx, input.ConnectionID)
+// syncSchemaSnapshot builds and atomically publishes one complete metadata
+// generation. It is shared by automatic jobs and user-requested synchronous
+// refreshes so both paths retain identical inspection and cache behavior.
+func (app *application) syncSchemaSnapshot(ctx context.Context, connectionID int64) (schemaSyncOutput, error) {
+	startedAt := time.Now()
+	enabled, err := app.db.SchemaSnapshotsEnabled(ctx, connectionID)
 	if err != nil {
-		return nil, err
+		return schemaSyncOutput{}, err
 	}
 	if !enabled {
-		return nil, jobs.Permanent("schema_snapshots_disabled", "Schema snapshots are disabled.")
+		return schemaSyncOutput{}, jobs.Permanent("schema_snapshots_disabled", "Schema snapshots are disabled.")
 	}
-	conn, found, err := app.db.GetConnection(ctx, input.ConnectionID)
+	conn, found, err := app.db.GetConnection(ctx, connectionID)
 	if err != nil {
-		return nil, err
+		return schemaSyncOutput{}, err
 	}
 	if !found {
-		return nil, jobs.Permanent("connection_not_found", "Connection was not found.")
+		return schemaSyncOutput{}, jobs.Permanent("connection_not_found", "Connection was not found.")
 	}
 	ws, found, err := app.db.GetWorkspace(ctx, conn.WorkspaceID)
 	if err != nil {
-		return nil, err
+		return schemaSyncOutput{}, err
 	}
 	if !found {
-		return nil, jobs.Permanent("workspace_not_found", "Workspace was not found.")
+		return schemaSyncOutput{}, jobs.Permanent("workspace_not_found", "Workspace was not found.")
 	}
 
 	plainDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
 	if err != nil {
-		return nil, err
+		return schemaSyncOutput{}, err
 	}
 	if err := app.validateTargetConnection(conn.Driver, plainDSN); err != nil {
-		return nil, jobs.Permanent("schema_sync_target_blocked", "The target database is blocked by policy.")
+		return schemaSyncOutput{}, jobs.Permanent("schema_sync_target_blocked", "The target database is blocked by policy.")
 	}
 	driver, err := engine.New(conn.Driver)
 	if err != nil {
-		return nil, jobs.Permanent("schema_sync_driver_unavailable", "The target driver is unavailable.")
+		return schemaSyncOutput{}, jobs.Permanent("schema_sync_driver_unavailable", "The target driver is unavailable.")
 	}
 	if err := driver.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, conn.DefaultScope)); err != nil {
-		return nil, jobs.Retryable("schema_sync_connect_failed", "Could not connect to the target database.")
+		return schemaSyncOutput{}, jobs.Retryable("schema_sync_connect_failed", "Could not connect to the target database.")
 	}
 	defer driver.Close()
 
 	inspector, ok := driver.(metadata.SchemaInspector)
 	if !ok {
-		return nil, jobs.Permanent("schema_sync_unsupported", "Schema inspection is not supported for this driver.")
+		return schemaSyncOutput{}, jobs.Permanent("schema_sync_unsupported", "Schema inspection is not supported for this driver.")
 	}
 	directory, err := inspector.InspectDirectory(ctx, metadata.DirectoryOptions{Root: conn.DefaultScope})
 	if err != nil {
-		return nil, jobs.Retryable("schema_directory_failed", "Could not inspect the schema directory.")
+		return schemaSyncOutput{}, jobs.Retryable("schema_directory_failed", "Could not inspect the schema directory.")
 	}
 	directory.Connection = strconv.FormatInt(conn.ID, 10)
-	if directory.GeneratedAt.IsZero() {
-		directory.GeneratedAt = time.Now()
-	}
+	// Ordering by operation start prevents a slower, older concurrent refresh
+	// from replacing a newer generation that finishes first.
+	directory.GeneratedAt = startedAt
 
 	snapshot, err := app.schemaSnapshots.Begin(ctx, conn.ID, ws.OrgID, directory)
 	if err != nil {
-		return nil, err
+		return schemaSyncOutput{}, err
 	}
 	published := false
 	defer func() {
@@ -144,10 +152,10 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 		}
 		objects, inspectErr := inspector.InspectObjects(ctx, refs[start:end])
 		if inspectErr != nil {
-			return nil, jobs.Retryable("schema_objects_failed", "Could not inspect schema object details.")
+			return schemaSyncOutput{}, jobs.Retryable("schema_objects_failed", "Could not inspect schema object details.")
 		}
 		if err := app.schemaSnapshots.PutObjects(ctx, snapshot.ID, objects); err != nil {
-			return nil, err
+			return schemaSyncOutput{}, err
 		}
 		objectCount += len(objects)
 	}
@@ -156,19 +164,29 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 		for _, scope := range directoryObjectScopes(directory) {
 			graph, inspectErr := relationshipInspector.InspectRelationshipsInScope(ctx, scope)
 			if inspectErr != nil {
-				return nil, jobs.Retryable("schema_relationships_failed", "Could not inspect schema relationships.")
+				return schemaSyncOutput{}, jobs.Retryable("schema_relationships_failed", "Could not inspect schema relationships.")
 			}
 			if err := app.schemaSnapshots.PutRelationship(ctx, snapshot.ID, graph); err != nil {
-				return nil, err
+				return schemaSyncOutput{}, err
 			}
 		}
 	}
 
 	if err := app.schemaSnapshots.Publish(ctx, snapshot.ID); err != nil {
-		if errors.Is(err, schemaapp.ErrSnapshotsDisabled) {
-			return nil, jobs.Permanent("schema_snapshots_disabled", "Schema snapshots were disabled during synchronization.")
+		if errors.Is(err, schemaapp.ErrSnapshotSuperseded) {
+			active, directory, found, activeErr := app.schemaSnapshots.Active(ctx, conn.ID)
+			if activeErr != nil {
+				return schemaSyncOutput{}, activeErr
+			}
+			if found {
+				return schemaSyncOutput{SnapshotID: active.ID, GeneratedAt: directory.GeneratedAt}, nil
+			}
+			return schemaSyncOutput{}, err
 		}
-		return nil, err
+		if errors.Is(err, schemaapp.ErrSnapshotsDisabled) {
+			return schemaSyncOutput{}, jobs.Permanent("schema_snapshots_disabled", "Schema snapshots were disabled during synchronization.")
+		}
+		return schemaSyncOutput{}, err
 	}
 	published = true
 	app.schemaService.RefreshConnection(strconv.FormatInt(conn.ID, 10))
@@ -179,7 +197,7 @@ func (app *application) handleSchemaSyncJob(ctx context.Context, runtime jobs.Ru
 		"scopes", len(directoryObjectScopes(directory)),
 		"objects", objectCount,
 	)
-	return schemaSyncOutput{SnapshotID: snapshot.ID, Objects: objectCount}, nil
+	return schemaSyncOutput{SnapshotID: snapshot.ID, GeneratedAt: directory.GeneratedAt, Objects: objectCount}, nil
 }
 
 func directoryObjectRefs(directory *metadata.Directory) []metadata.ObjectRef {

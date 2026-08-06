@@ -5,13 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/engine"
 	metadata "github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/jobs"
 	schemaapp "github.com/sqlwarden/internal/schema"
 )
 
@@ -98,6 +101,101 @@ func TestSchemaSnapshotStorePublishesAndRetainsTwoGenerations(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, count, 2)
+}
+
+func TestSchemaSnapshotStoreRejectsSupersededGeneration(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, _, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-order"), "Snapshot Order", "Snapshot Order Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn", "open")
+
+	older, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotDirectory("older", time.Now()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newer, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotDirectory("newer", time.Now().Add(time.Second)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.schemaSnapshots.Publish(context.Background(), newer.ID); err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, errors.Is(app.schemaSnapshots.Publish(context.Background(), older.ID), schemaapp.ErrSnapshotSuperseded), true)
+	if err := app.schemaSnapshots.Abort(context.Background(), older.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	active, directory, found, err := app.schemaSnapshots.Active(context.Background(), conn.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, found, true)
+	assert.Equal(t, active.ID, newer.ID)
+	assert.Equal(t, directory.Roots[0].Groups[0].Objects[0].Name, "newer")
+}
+
+func TestManualPersistentSchemaRefreshRunsSynchronously(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.config.Drivers.SQLite.AllowedSources = []string{SQLiteDriverSourceLocal}
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-manual"), "Snapshot Manual", "Snapshot Manual Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	dsn := filepath.Join(t.TempDir(), "target.db")
+	driver, err := engine.New("sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Connect(context.Background(), engine.ConnectionConfig{DSN: dsn}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := driver.Execute(context.Background(), "CREATE TABLE widgets (id INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	created := send(t, newAuthRequest(t, http.MethodPost, orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "Target", "driver": "sqlite", "dsn": dsn}, tok), app.routes())
+	if created.StatusCode != http.StatusCreated {
+		t.Fatalf("create target connection: status=%d body=%s", created.StatusCode, created.BodyBytes)
+	}
+	connectionID := int64(created.BodyFields["id"].(float64))
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(connectionID, 10))+"/schema/refresh", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["status"], "ok")
+	assert.Equal(t, res.BodyFields["mode"], "persistent")
+	if res.BodyFields["snapshot_id"] == "" || res.BodyFields["generated_at"] == "" {
+		t.Fatalf("expected completed snapshot metadata, got %v", res.BodyFields)
+	}
+
+	_, directory, found, err := app.schemaSnapshots.Active(context.Background(), connectionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, found, true)
+	refs := directoryObjectRefs(directory)
+	if len(refs) != 1 || refs[0].Name != "widgets" {
+		t.Fatalf("expected refreshed widgets table, got %v", refs)
+	}
+	_, activeJob, err := app.workspaceJobStore().ActiveBySingletonKey(context.Background(), schemaSyncSingletonKey(connectionID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, activeJob, false)
+	jobCount, err := app.db.NewSelect().Model((*jobs.Record)(nil)).
+		Where("type = ? AND singleton_key = ?", jobs.TypeSchemaSync, schemaSyncSingletonKey(connectionID)).
+		Count(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, jobCount, 0)
 }
 
 func TestSchemaSnapshotPublishRechecksPolicy(t *testing.T) {

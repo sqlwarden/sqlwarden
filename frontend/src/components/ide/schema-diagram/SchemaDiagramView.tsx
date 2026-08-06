@@ -19,7 +19,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { toPng, toSvg } from 'html-to-image'
 import { toast } from 'sonner'
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { Button } from '#/components/ui/button'
@@ -39,8 +39,6 @@ import {
   orgConnectionObjectQueryOptions,
   orgConnectionRelationshipsQueryOptions,
   orgConnectionSchemaSpecQueryOptions,
-  connectionObjectsQueryKeyPrefix,
-  connectionRelationshipsQueryKey,
 } from '#/lib/api/query'
 import { useIde, type EditorTab } from '../useIdeStore'
 import { newObjectTab } from '../object-detail/objectTab'
@@ -61,6 +59,7 @@ import { OBJECT_REF_DND_MIME } from './dnd'
 import { Tip } from './Tip'
 import { useEvictGoneSession } from '../sessionErrors'
 import { resolveDiagramViewState } from './viewState'
+import { useSchemaRefresh } from '../useSchemaRefresh'
 
 const NODE_TYPES: NodeTypes = { table: TableNode }
 const EDGE_TYPES: EdgeTypes = { fk: FkEdge }
@@ -129,7 +128,6 @@ function DiagramCanvas({
   const setSession = useIde((s) => s.setSession)
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const openTab = useIde((s) => s.openTab)
-  const queryClient = useQueryClient()
   const { fitView, screenToFlowPosition, getNodes, getViewport, setViewport } = useReactFlow()
   const savedViewport = useRef<Viewport | null>(null)
   const viewportRestored = useRef(false)
@@ -164,6 +162,12 @@ function DiagramCanvas({
       scope,
     ),
     enabled,
+  })
+  const refreshSchema = useSchemaRefresh({
+    orgSlug,
+    workspaceId: workspace.id,
+    connectionId: connectionId ?? 0,
+    sessionId,
   })
 
   // A 410 from any diagram query means the server-side session died — drop it
@@ -769,12 +773,7 @@ function DiagramCanvas({
     }
   }
   function refresh() {
-    void queryClient.invalidateQueries({
-      queryKey: connectionRelationshipsQueryKey(orgSlug, workspace.id, connectionId ?? 0, scope),
-    })
-    void queryClient.invalidateQueries({
-      queryKey: connectionObjectsQueryKeyPrefix(orgSlug, workspace.id, connectionId ?? 0),
-    })
+    refreshSchema.mutate()
   }
 
   // Render the whole diagram (every node, not just the visible viewport) to an
@@ -998,8 +997,18 @@ function DiagramCanvas({
           </DropdownMenuContent>
         </DropdownMenu>
         <Tip label="Refresh schema">
-          <Button variant="ghost" size="icon-sm" aria-label="Refresh schema" onClick={refresh}>
-            <Icon name="refresh" size={14} />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Refresh schema"
+            disabled={refreshSchema.isPending}
+            onClick={refresh}
+          >
+            <Icon
+              name="refresh"
+              size={14}
+              className={refreshSchema.isPending ? 'animate-spin' : undefined}
+            />
           </Button>
         </Tip>
       </div>

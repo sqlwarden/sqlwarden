@@ -21,6 +21,10 @@ const (
 	SnapshotStatusReady    = "ready"
 )
 
+// ErrSnapshotSuperseded means a newer generation was published while this
+// generation was being built. Callers should treat it as a successful no-op.
+var ErrSnapshotSuperseded = errors.New("schema snapshot generation was superseded")
+
 type Snapshot struct {
 	bun.BaseModel `bun:"table:schema_snapshots"`
 
@@ -156,6 +160,17 @@ func (s *SnapshotStore) Publish(ctx context.Context, snapshotID string) error {
 		}
 		if !enabled {
 			return ErrSnapshotsDisabled
+		}
+
+		var active Snapshot
+		err = tx.NewSelect().Model(&active).
+			Where("connection_id = ? AND is_active = ?", snapshot.ConnectionID, true).
+			Scan(ctx)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err == nil && !active.GeneratedAt.Before(snapshot.GeneratedAt) {
+			return ErrSnapshotSuperseded
 		}
 
 		now := time.Now()

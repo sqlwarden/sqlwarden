@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -16,6 +17,8 @@ import (
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 )
+
+const manualSchemaSyncTimeout = 2 * time.Minute
 
 type schemaSpecResponse struct {
 	Spec metadata.SchemaSpec `json:"spec"`
@@ -353,19 +356,23 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 			return
 		}
 		conn := contextGetConnection(r)
-		ws := contextGetWorkspace(r)
-		job, created, err := app.enqueueSchemaSync(r.Context(), conn.ID, ws.OrgID)
-		if err != nil && !errors.Is(err, jobs.ErrActiveExists) {
-			app.serverError(w, r, err)
+		// The server's general write timeout is intentionally short. Give this
+		// user-initiated long operation enough time to return its terminal result,
+		// while the context below remains the authoritative execution limit.
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(manualSchemaSyncTimeout + 5*time.Second))
+		ctx, cancel := context.WithTimeout(r.Context(), manualSchemaSyncTimeout)
+		defer cancel()
+
+		output, syncErr := app.syncSchemaSnapshot(ctx, conn.ID)
+		if syncErr != nil {
+			if ctx.Err() != nil {
+				syncErr = ctx.Err()
+			}
+			app.schemaSyncHTTPError(w, r, syncErr)
 			return
 		}
-		if !created {
-			if active, found, lookupErr := app.workspaceJobStore().ActiveBySingletonKey(r.Context(), schemaSyncSingletonKey(conn.ID)); lookupErr == nil && found {
-				job = active
-			}
-		}
-		if err := response.JSON(w, http.StatusAccepted, schemaStatusResponse{
-			Status: "pending", Mode: "persistent", JobID: job.ID,
+		if err := response.JSON(w, http.StatusOK, schemaStatusResponse{
+			Status: "ok", Mode: "persistent", SnapshotID: output.SnapshotID, GeneratedAt: &output.GeneratedAt,
 		}); err != nil {
 			app.serverError(w, r, err)
 		}
@@ -403,6 +410,40 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 	if err := response.JSON(w, http.StatusOK, schemaStatusResponse{Status: "ok", Mode: "ephemeral"}); err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func (app *application) schemaSyncHTTPError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		app.apiError(w, r, http.StatusGatewayTimeout, "schema_sync_timeout", "Schema refresh timed out.", response.APIError{}, nil)
+		return
+	}
+	if errors.Is(err, context.Canceled) {
+		app.apiError(w, r, statusClientClosedRequest, "schema_sync_cancelled", "Schema refresh was cancelled.", response.APIError{}, nil)
+		return
+	}
+
+	var coded jobs.CodedError
+	if !errors.As(err, &coded) {
+		app.serverError(w, r, err)
+		return
+	}
+	status := http.StatusInternalServerError
+	switch coded.Code {
+	case "connection_not_found", "workspace_not_found":
+		status = http.StatusNotFound
+	case "schema_snapshots_disabled":
+		status = http.StatusConflict
+	case "schema_sync_target_blocked":
+		status = http.StatusUnprocessableEntity
+	case "schema_sync_driver_unavailable", "schema_sync_unsupported":
+		status = http.StatusNotImplemented
+	case "schema_sync_connect_failed", "schema_directory_failed", "schema_objects_failed", "schema_relationships_failed":
+		status = http.StatusBadGateway
+	default:
+		app.serverError(w, r, err)
+		return
+	}
+	app.apiError(w, r, status, coded.Code, coded.Message, response.APIError{}, nil)
 }
 
 func schemaScopeQuery(r *http.Request) (metadata.ScopePath, error) {

@@ -6,6 +6,7 @@ import type {
   ObjectsResponse,
   RelationshipsResponse,
   ResultSet,
+  SchemaRefreshResponse,
   SchemaSpecResponse,
 } from '#/lib/api/types'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -151,6 +152,14 @@ export function connectionRelationshipsQueryKey(
     String(connectionId),
     JSON.stringify(scope),
   ] as const
+}
+
+export function connectionRelationshipsQueryKeyPrefix(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+) {
+  return ['connection-relationships', slug, String(workspaceId), String(connectionId)] as const
 }
 
 export function orgConnectionRelationshipsQueryOptions(
@@ -301,7 +310,7 @@ export function refreshConnectionSchema(
   sessionId?: string,
   ref?: ObjectRef,
 ) {
-  return api.post<{ status: string }>(
+  return api.post<SchemaRefreshResponse>(
     `${schemaBase(slug, workspaceId, connectionId)}/refresh`,
     ref ? { ref } : undefined,
     schemaRequestOptions(sessionId),
@@ -325,6 +334,9 @@ export function invalidateConnectionSchemaQueries(
     }),
     queryClient.invalidateQueries({
       queryKey: connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: connectionRelationshipsQueryKeyPrefix(slug, workspaceId, connectionId),
     }),
   ])
 }
