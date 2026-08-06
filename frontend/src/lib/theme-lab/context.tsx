@@ -114,12 +114,95 @@ const ACCENT_VAR_TARGETS = [
 
 // ─── Surface ───────────────────────────────────────────────────────────────────
 
+type DarkSurfaceRamp = {
+  background: number
+  foreground: number
+  card: number
+  secondary: number
+  mutedForeground: number
+  accent: number
+  accentForeground: number
+  border: number
+  sidebar: number
+}
+
+type LightSurfaceRamp = {
+  background: number
+  foreground: number
+  secondary: number
+  secondaryForeground: number
+  mutedForeground: number
+  accent: number
+  border: number
+  sidebar: number
+  sidebarAccent: number
+}
+
+/** Lightness ramp matching the styles.css defaults. Every preset uses this
+ *  unless it defines its own `ramp` override. */
+const DEFAULT_DARK_RAMP: DarkSurfaceRamp = {
+  background: 0.165,
+  foreground: 0.94,
+  card: 0.205,
+  secondary: 0.252,
+  mutedForeground: 0.7,
+  accent: 0.29,
+  accentForeground: 0.955,
+  border: 0.85,
+  sidebar: 0.14,
+}
+
+const DEFAULT_LIGHT_RAMP: LightSurfaceRamp = {
+  background: 0.99,
+  foreground: 0.21,
+  secondary: 0.966,
+  secondaryForeground: 0.26,
+  mutedForeground: 0.545,
+  accent: 0.955,
+  border: 0.916,
+  sidebar: 0.974,
+  sidebarAccent: 0.948,
+}
+
+/** Dark: wide lightness steps between surfaces carry elevation now that
+ *  there's no hue/chroma left to do it. Near-black background. */
+const MONO_DARK_RAMP: DarkSurfaceRamp = {
+  background: 0.085,
+  foreground: 0.96,
+  card: 0.15,
+  secondary: 0.2,
+  mutedForeground: 0.62,
+  accent: 0.25,
+  accentForeground: 0.97,
+  border: 0.85,
+  sidebar: 0.06,
+}
+
+/** Light: the inverse isn't a mirrored high-contrast ramp — a stark near-black
+ *  reads as "true black," but the same jump near white reads as flat gray
+ *  blocking, not "pure white." Surfaces stay close to background instead,
+ *  separated by faint steps and a soft border. */
+const MONO_LIGHT_RAMP: LightSurfaceRamp = {
+  background: 1,
+  foreground: 0.15,
+  secondary: 0.99,
+  secondaryForeground: 0.2,
+  mutedForeground: 0.5,
+  accent: 0.985,
+  border: 0.96,
+  sidebar: 0.995,
+  sidebarAccent: 0.98,
+}
+
 export type SurfacePreset = {
   id: string
   label: string
   hue: number
   /** Multiplier on the base neutral chroma ramp (0 = pure gray). */
   tint: number
+  /** Overrides the default lightness ramp (background/card/sidebar/... steps)
+   *  for presets whose contrast profile diverges from the shared default. */
+  ramp?: { dark: DarkSurfaceRamp; light: LightSurfaceRamp }
 }
 
 export const SURFACE_PRESETS: SurfacePreset[] = [
@@ -132,6 +215,13 @@ export const SURFACE_PRESETS: SurfacePreset[] = [
   { id: 'mist', label: 'Mist', hue: 210, tint: 2 },
   { id: 'warm', label: 'Warm', hue: 75, tint: 1.5 },
   { id: 'dusk', label: 'Dusk', hue: 285, tint: 3 },
+  {
+    id: 'mono',
+    label: 'Mono',
+    hue: 240,
+    tint: 0,
+    ramp: { dark: MONO_DARK_RAMP, light: MONO_LIGHT_RAMP },
+  },
 ]
 
 export const DEFAULT_SURFACE = 'default'
@@ -144,48 +234,50 @@ function surfaceTokens(preset: SurfacePreset, isDark: boolean): Record<string, s
   const t = (l: number, base: number) => `oklch(${l} ${c(base)} ${h})`
 
   if (isDark) {
+    const r = preset.ramp?.dark ?? DEFAULT_DARK_RAMP
     return {
-      '--background': t(0.165, 0.008),
-      '--foreground': t(0.94, 0.006),
-      '--card': t(0.205, 0.01),
-      '--card-foreground': t(0.94, 0.006),
-      '--popover': t(0.205, 0.01),
-      '--popover-foreground': t(0.94, 0.006),
-      '--secondary': t(0.252, 0.01),
-      '--secondary-foreground': t(0.94, 0.006),
-      '--muted': t(0.252, 0.01),
-      '--muted-foreground': t(0.7, 0.014),
-      '--accent': t(0.29, 0.018),
-      '--accent-foreground': t(0.955, 0.008),
-      '--border': `oklch(0.85 ${c(0.015)} ${h} / 12%)`,
-      '--input': `oklch(0.85 ${c(0.015)} ${h} / 15%)`,
-      '--sidebar': t(0.14, 0.008),
-      '--sidebar-foreground': t(0.94, 0.006),
-      '--sidebar-accent': t(0.29, 0.018),
-      '--sidebar-accent-foreground': t(0.955, 0.008),
-      '--sidebar-border': `oklch(0.85 ${c(0.015)} ${h} / 12%)`,
+      '--background': t(r.background, 0.008),
+      '--foreground': t(r.foreground, 0.006),
+      '--card': t(r.card, 0.01),
+      '--card-foreground': t(r.foreground, 0.006),
+      '--popover': t(r.card, 0.01),
+      '--popover-foreground': t(r.foreground, 0.006),
+      '--secondary': t(r.secondary, 0.01),
+      '--secondary-foreground': t(r.foreground, 0.006),
+      '--muted': t(r.secondary, 0.01),
+      '--muted-foreground': t(r.mutedForeground, 0.014),
+      '--accent': t(r.accent, 0.018),
+      '--accent-foreground': t(r.accentForeground, 0.008),
+      '--border': `oklch(${r.border} ${c(0.015)} ${h} / 12%)`,
+      '--input': `oklch(${r.border} ${c(0.015)} ${h} / 15%)`,
+      '--sidebar': t(r.sidebar, 0.008),
+      '--sidebar-foreground': t(r.foreground, 0.006),
+      '--sidebar-accent': t(r.accent, 0.018),
+      '--sidebar-accent-foreground': t(r.accentForeground, 0.008),
+      '--sidebar-border': `oklch(${r.border} ${c(0.015)} ${h} / 12%)`,
     }
   }
+  const r = preset.ramp?.light ?? DEFAULT_LIGHT_RAMP
   return {
-    '--background': t(0.99, 0.002),
-    '--foreground': t(0.21, 0.012),
+    '--background': t(r.background, 0.002),
+    '--foreground': t(r.foreground, 0.012),
     '--card': 'oklch(1 0 0)',
-    '--card-foreground': t(0.21, 0.012),
+    '--card-foreground': t(r.foreground, 0.012),
     '--popover': 'oklch(1 0 0)',
-    '--popover-foreground': t(0.21, 0.012),
-    '--secondary': t(0.966, 0.004),
-    '--secondary-foreground': t(0.26, 0.012),
-    '--muted': t(0.966, 0.004),
-    '--muted-foreground': t(0.545, 0.014),
-    '--accent': t(0.955, 0.008),
-    '--accent-foreground': t(0.26, 0.016),
-    '--border': t(0.916, 0.006),
-    '--input': t(0.916, 0.006),
-    '--sidebar': t(0.974, 0.004),
-    '--sidebar-foreground': t(0.21, 0.012),
-    '--sidebar-accent': t(0.948, 0.009),
-    '--sidebar-accent-foreground': t(0.26, 0.016),
-    '--sidebar-border': t(0.916, 0.006),
+    '--popover-foreground': t(r.foreground, 0.012),
+    '--secondary': t(r.secondary, 0.004),
+    '--secondary-foreground': t(r.secondaryForeground, 0.012),
+    '--muted': t(r.secondary, 0.004),
+    '--muted-foreground': t(r.mutedForeground, 0.014),
+    '--accent': t(r.accent, 0.008),
+    '--accent-foreground': t(r.secondaryForeground, 0.016),
+    '--border': t(r.border, 0.006),
+    '--input': t(r.border, 0.006),
+    '--sidebar': t(r.sidebar, 0.004),
+    '--sidebar-foreground': t(r.foreground, 0.012),
+    '--sidebar-accent': t(r.sidebarAccent, 0.009),
+    '--sidebar-accent-foreground': t(r.secondaryForeground, 0.016),
+    '--sidebar-border': t(r.border, 0.006),
   }
 }
 
