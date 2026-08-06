@@ -2,11 +2,40 @@
 
 This reference applies to the SQLWarden server.
 
-SQLWarden reads configuration from defaults, config files, environment variables, and CLI flags. The same setting can usually be expressed in all three forms.
+SQLWarden separates deployment-managed bootstrap configuration from database-backed runtime settings.
 
-Configuration is implemented in `internal/web/config.go`. Treat that file as the source of truth when adding or changing runtime options.
+Bootstrap configuration is read from defaults, config files, environment variables, and CLI flags. It is validated before listeners and workers start, and changes require a restart. Runtime settings are stored in the application database and changed through the administration API. They are read directly from the database for each request or background operation.
 
-## Sources
+Bootstrap loading is implemented in `internal/web/config.go`. Runtime ownership and inheritance are implemented by the runtime settings service and typed database models.
+
+## Configuration Lifecycle
+
+The following settings remain bootstrap-only:
+
+- HTTP listener, deployment mode, access mode, and log format.
+- Application database driver, DSN, and startup migration behavior.
+- Cookie, JWT-signing, and encryption keys.
+- TLS certificate configuration.
+- File-storage mode, active backend, backend definitions, and filesystem roots.
+- Desktop backend topology.
+- Allowed host-local SQLite sources.
+
+Changing a bootstrap setting requires a restart. Changing the application DSN selects another SQLWarden instance database; changing storage configuration does not move stored files. Secret rotation must use the documented key/session rotation behavior. SQLWarden does not perform these migrations automatically.
+
+The following settings are database-backed at runtime:
+
+- Instance identity, public URL, support email, and personal spaces.
+- JWT access-token lifetime and session revocation.
+- Interactive query and export limits.
+- Schema snapshot freshness.
+- File revision policy.
+- Error-notification recipient.
+
+Query/export limits, snapshot freshness, and file revision policy have nullable organization overrides. An organization may only tighten the instance policy: lower limits, a longer snapshot interval, or fewer revisions. Personal workspaces use instance settings.
+
+Logging level, application database query tracing, job-runner tuning, and SMTP connection settings remain bootstrap-managed until their live-reload adapters are implemented.
+
+## Bootstrap Sources
 
 Configuration is applied in this order:
 
@@ -38,8 +67,6 @@ sqlwarden --help
 ```yaml
 base_url: http://localhost:6020
 http_port: 6020
-personal_spaces_enabled: true
-
 log:
   level: info
   format: json
@@ -54,24 +81,12 @@ cookie:
 
 jwt:
   secret_key: replace-with-a-random-secret
-  access_token_ttl: 24h
 
 encryption:
   key: replace-with-a-random-secret
 
 files:
   root_dir: ~/.sqlwarden/files
-  revisions:
-    enabled: true
-    keep_latest: 50
-
-query:
-  max_result_rows: 10000
-  max_result_bytes: 26214400
-
-exports:
-  sync_max_bytes: 104857600
-  background_max_bytes: 0
 
 jobs:
   worker_count: 16
@@ -79,8 +94,6 @@ jobs:
   claim_lease: 5m
   completed_retention: 168h
 
-schema:
-  snapshot_freshness: 24h
 ```
 
 ## Docker Example
@@ -109,7 +122,6 @@ The default image runs as the `sqlwarden` user. The volume path above persists t
 | --- | --- | --- | --- | --- |
 | `base_url` | `BASE_URL` | `--base-url` | `http://localhost:6020` | Public base URL used for generated links and JWT claims. |
 | `http_port` | `HTTP_PORT` | `--http-port` | `6020` | HTTP server port. |
-| `personal_spaces_enabled` | `PERSONAL_SPACES_ENABLED` | `--personal-spaces-enabled` | `true` | Enables account-owned personal spaces under `/api/v1/me`. |
 
 ## Logging
 
@@ -157,35 +169,18 @@ Use PostgreSQL for larger deployments, environments with multiple server replica
 | --- | --- | --- | --- | --- |
 | `cookie.secret_key` | `COOKIE_SECRET_KEY` | `--cookie-secret-key` | Development-only secret | Cookie signing secret. Replace in every real deployment. |
 | `jwt.secret_key` | `JWT_SECRET_KEY` | `--jwt-secret-key` | Development-only secret | JWT signing secret. Replace in every real deployment. |
-| `jwt.access_token_ttl` | `JWT_ACCESS_TOKEN_TTL` | `--jwt-access-token-ttl` | `24h` | Access token lifetime. Examples: `8h`, `30m`. |
 | `encryption.key` | `ENCRYPTION_KEY` | `--encryption-key` | Development-only secret | Application encryption key for encrypted values such as DSNs. Replace in every real deployment. |
 | `encryption.previous_keys` | `ENCRYPTION_PREVIOUS_KEYS` | `--encryption-previous-keys` | Empty | Comma-separated retired encryption keys retained for decrypting old ciphertext during rotation. |
-| `sessions.revocation_enabled` | `SESSIONS_REVOCATION_ENABLED` | `--sessions-revocation-enabled` | `true` | Enables database-backed auth session and org access-session revocation checks. |
 
 Do not use the default secrets outside local development.
 
-Session revocation is enabled by default so administrators can invalidate sessions. Very small single-user deployments can disable it to reduce session-check overhead:
-
-```sh
-SESSIONS_REVOCATION_ENABLED=false
-```
-
 ## Interactive Queries
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `query.max_result_rows` | `QUERY_MAX_RESULT_ROWS` | `--query-max-result-rows` | `10000` | Maximum rows returned by an interactive query result. |
-| `query.max_result_bytes` | `QUERY_MAX_RESULT_BYTES` | `--query-max-result-bytes` | `26214400` | Approximate maximum row payload bytes returned by an interactive query result. |
-
-These limits apply to interactive IDE query responses. Future export workflows should use dedicated streaming/export limits instead of relying on interactive query caps.
+Interactive query limits are runtime settings managed at instance or organization scope through the administration API.
 
 The same limits apply to HTTP query cursors. Direct `/query` responses are capped once per response. Query-cursor start and fetch responses are capped per page; clients can continue fetching while the response has `exhausted=false`.
 
 ## Schema Snapshots
-
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `schema.snapshot_freshness` | `SCHEMA_SNAPSHOT_FRESHNESS` | `--schema-snapshot-freshness` | `24h` | Age after which connecting schedules a background schema snapshot refresh. |
 
 Persistent schema snapshots are enabled by default per organization and can be
 disabled in organization settings. A connection may inherit that setting or
@@ -198,12 +193,7 @@ For DQL/select-style queries, the IDE can request cursor-backed results through 
 
 ## Exports
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `exports.sync_max_bytes` | `EXPORTS_SYNC_MAX_BYTES` | `--exports-sync-max-bytes` | `104857600` | Maximum bytes streamed by synchronous HTTP exports. |
-| `exports.background_max_bytes` | `EXPORTS_BACKGROUND_MAX_BYTES` | `--exports-background-max-bytes` | `0` | Maximum bytes written by background export jobs. `0` disables the background cap. |
-
-Synchronous exports use the caller's existing live database session and stop if the HTTP request is cancelled. Background exports run as user-visible jobs, open their own short-lived target database connection, and write output to private workspace files.
+Export limits are runtime settings managed at instance or organization scope through the administration API. Synchronous exports use the caller's existing live database session and stop if the HTTP request is cancelled. Background exports run as user-visible jobs, open their own short-lived target database connection, and write output to private workspace files.
 
 ## Background Jobs
 
@@ -237,16 +227,7 @@ Many deployments should terminate TLS at a reverse proxy. Built-in TLS is availa
 | Config key | Environment | CLI flag | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `files.root_dir` | `FILES_ROOT_DIR` | `--files-root-dir` | `~/.sqlwarden/files` | Filesystem root directory for file content. `~` is expanded. |
-| `files.revisions.enabled` | `FILES_REVISIONS_ENABLED` | `--files-revisions-enabled` | `true` | Enables saved-file revisions. |
-| `files.revisions.keep_latest` | `FILES_REVISIONS_KEEP_LATEST` | `--files-revisions-keep-latest` | `50` | Number of old saved-file revisions retained per file when revisions are enabled. |
-
-The server stores workspace file content on the local filesystem by default. The storage implementation has internal backend plumbing for future expansion, but the server-facing configuration should normally only need the root directory and revision settings.
-
-To disable revisions:
-
-```sh
-FILES_REVISIONS_ENABLED=false
-```
+The server stores workspace file content on the local filesystem by default. Revision policy is a database-backed runtime setting. The storage implementation has internal backend plumbing for future expansion.
 
 ## Target SQLite Connections
 
@@ -268,7 +249,6 @@ DRIVERS_SQLITE_ALLOWED_SOURCES=local
 
 | Config key | Environment | CLI flag | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `notifications.email` | `NOTIFICATIONS_EMAIL` | `--notifications-email` | Empty | Email address that receives error notifications. |
 | `smtp.enabled` | `SMTP_ENABLED` | `--smtp-enabled` | `false` | Enable outgoing SMTP email. |
 | `smtp.host` | `SMTP_HOST` | `--smtp-host` | `example.smtp.host` | SMTP server host. |
 | `smtp.port` | `SMTP_PORT` | `--smtp-port` | `25` | SMTP server port. |
@@ -286,7 +266,5 @@ Email is optional. Set `SMTP_ENABLED=true` and configure the SMTP connection to 
 - Persist `~/.sqlwarden` or explicitly configure database and file storage paths.
 - Keep `LOG_FORMAT=json` for production log collection.
 - Disable `DB_LOG_QUERIES` unless actively debugging because it can log SQL text.
-- Decide whether `PERSONAL_SPACES_ENABLED` should be enabled.
 - Leave `DRIVERS_SQLITE_ALLOWED_SOURCES` empty unless local SQLite target access is intentional.
 - Use HTTPS through a reverse proxy or SQLWarden built-in TLS.
-- Review `SESSIONS_REVOCATION_ENABLED` for the deployment size and account lifecycle needs.

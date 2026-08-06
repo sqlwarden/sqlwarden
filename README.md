@@ -74,7 +74,6 @@ HTTP_PORT=6020
 DB_DRIVER=sqlite
 DB_DSN=~/.sqlwarden/sqlwarden.db
 FILES_ROOT_DIR=~/.sqlwarden/files
-FILES_REVISIONS_ENABLED=true
 ```
 
 To see available flags:

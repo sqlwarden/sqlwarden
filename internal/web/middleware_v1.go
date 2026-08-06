@@ -33,7 +33,12 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 			app.invalidAuthenticationToken(w, r)
 			return
 		}
-		if app.config.Sessions.RevocationEnabled && claims.AuthSessionID == "" {
+		runtimeSettings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if runtimeSettings.SessionsRevocationEnabled && claims.AuthSessionID == "" {
 			app.logWarn(r, "authentication token missing session binding")
 			app.invalidAuthenticationToken(w, r)
 			return
@@ -55,7 +60,7 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 			return
 		}
 
-		if app.config.Sessions.RevocationEnabled {
+		if runtimeSettings.SessionsRevocationEnabled {
 			authSession, found, err := app.db.GetAuthSession(r.Context(), claims.AuthSessionID, account.ID)
 			if err != nil {
 				app.serverError(w, r, err)
@@ -79,6 +84,7 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 			r = contextSetAuthSession(r, authSession)
 		}
 
+		r = contextSetRuntimeSettings(r, runtimeSettings)
 		r = contextSetAccount(r, account)
 		next.ServeHTTP(w, r)
 	})
@@ -122,7 +128,15 @@ func (app *application) orgCtx(next http.Handler) http.Handler {
 			return
 		}
 
-		if app.config.Sessions.RevocationEnabled {
+		runtimeSettings, ok := contextGetRuntimeSettings(r)
+		if !ok {
+			runtimeSettings, err = app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+			if err != nil {
+				app.serverError(w, r, err)
+				return
+			}
+		}
+		if runtimeSettings.SessionsRevocationEnabled {
 			authSession := contextGetAuthSession(r)
 			if authSession.ID == "" {
 				app.invalidAuthenticationToken(w, r)

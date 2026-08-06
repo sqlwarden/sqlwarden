@@ -39,3 +39,10 @@ type QueryCursor interface {
 type QueryCursorDriver interface {
 	StartQuery(ctx context.Context, req QueryRequest) (QueryCursor, error)
 }
+
+// ResultLimitDriver lets callers apply policy limits per operation instead of
+// freezing them when a long-lived target connection is opened.
+type ResultLimitDriver interface {
+	QueryWithOptions(ctx context.Context, query string, opts ScanOptions, args ...any) (*result.ResultSet, error)
+	ExecuteWithOptions(ctx context.Context, query string, opts ScanOptions, args ...any) (*result.ResultSet, error)
+}

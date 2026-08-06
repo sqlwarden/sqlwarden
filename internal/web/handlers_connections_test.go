@@ -19,6 +19,7 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/classifier"
 	"github.com/sqlwarden/internal/engine/cursor"
@@ -845,8 +846,6 @@ func TestExecuteQueryExecuteBranch(t *testing.T) {
 func TestExecuteQueryAppliesConfiguredResultLimit(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.Query.MaxResultRows = 2
-	app.config.Query.MaxResultBytes = 1024
 
 	_, tok, slug := registerAndLogin(t, app, "query-limit@example.com", "Query Limit", "securepass99")
 
@@ -879,6 +878,12 @@ func TestExecuteQueryAppliesConfiguredResultLimit(t *testing.T) {
 		res := send(t, req, app.routes())
 		assert.Equal(t, res.StatusCode, http.StatusOK)
 	}
+
+	settingsRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"query_max_result_rows":  2,
+		"query_max_result_bytes": 1024,
+	}, tok), app.routes())
+	assert.Equal(t, settingsRes.StatusCode, http.StatusOK)
 
 	selectReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{
 		"sql":        "SELECT id FROM t ORDER BY id",
@@ -1189,7 +1194,10 @@ func TestExecuteDQLQueryFallsBackToSessionQueryWhenCursorUnsupported(t *testing.
 	useCursor := true
 	req := httptest.NewRequest(http.MethodPost, "/query", nil)
 
-	rs, err := app.executeDQLQuery(req, session, "SELECT 1", &useCursor, nil, time.Now())
+	rs, err := app.executeDQLQuery(req, session, "SELECT 1", &useCursor, nil, time.Now(), effectiveRuntimeSettings{
+		QueryMaxResultRows:  database.DefaultQueryMaxResultRows,
+		QueryMaxResultBytes: database.DefaultQueryMaxResultBytes,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

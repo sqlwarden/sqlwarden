@@ -36,7 +36,6 @@ func newTestApp(t *testing.T) *application {
 	app.schemaSnapshots = schemaapp.NewSnapshotStore(app.db)
 	app.completionService = completionapp.NewService()
 	app.configureConnectionCacheInvalidation()
-	app.config.Schema.SnapshotFreshness = defaultSchemaSnapshotFreshness
 	t.Cleanup(func() { app.connManager.Close() })
 	return app
 }
@@ -811,9 +810,7 @@ func TestGetSessionIncludesPersistedPersonalSpaceFlag(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	_, token := seedAccountWithToken(t, app, uniqueEmail(t, "session-flag"), "Session Flag")
-	if _, err := app.db.UpsertInstanceSettings(context.Background(), database.InstanceSettings{PersonalSpacesEnabled: false}); err != nil {
-		t.Fatal(err)
-	}
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.PersonalSpacesEnabled = false })
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/session", nil)
 	req.Header.Set("Authorization", "Bearer "+token)

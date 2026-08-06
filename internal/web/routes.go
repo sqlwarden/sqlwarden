@@ -46,6 +46,7 @@ func (app *application) routes() http.Handler {
 			r.Get("/orgs", app.listOrganizations)
 			r.Get("/settings", app.getInstanceSettings)
 			r.Patch("/settings", app.updateInstanceSettings)
+			r.Get("/configuration", app.getInstanceConfiguration)
 			r.Post("/admins", app.addInstanceAdmin)
 			r.Post("/accounts", app.createInstanceAccount)
 			r.Get("/accounts/{account_id}/sessions", app.listInstanceAccountSessions)
@@ -176,6 +177,8 @@ func (app *application) routes() http.Handler {
 			r.Get("/", app.getOrg)
 			r.With(app.requireOrgPermission("org:write")).Patch("/", app.updateOrg)
 			r.With(app.requireOrgPermission("org:delete")).Delete("/", app.deleteOrg)
+			r.With(app.requireOrgPermission("org:read")).Get("/runtime-settings", app.getOrganizationRuntimeSettings)
+			r.With(app.requireOrgPermission("org:write")).Patch("/runtime-settings", app.updateOrganizationRuntimeSettings)
 
 			r.Route("/members", func(r chi.Router) {
 				r.With(app.requireOrgPermission("org:read")).Get("/", app.listOrgMembers)

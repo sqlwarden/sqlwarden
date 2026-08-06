@@ -12,49 +12,38 @@ import (
 )
 
 const (
-	defaultBaseURL                   = "http://localhost:6020"
-	defaultHTTPPort                  = 6020
-	defaultDeploymentMode            = DeploymentModeServer
-	defaultAccessMode                = AccessModeMultiUser
-	defaultPersonalSpacesEnabled     = true
-	defaultLogLevel                  = LogLevelInfo
-	defaultLogFormat                 = LogFormatJSON
-	defaultCookieSecretKey           = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
-	defaultDBLogQueries              = false
-	defaultDBDriver                  = "sqlite"
-	defaultDBDSN                     = "~/.sqlwarden/sqlwarden.db"
-	defaultDBAutomigrate             = true
-	defaultEncryptionKey             = "dev-insecure-key-32byteslong!!"
-	defaultJWTSecretKey              = "fb57i5hiud5mzmykaquqsln5gcmolbac"
-	defaultJWTAccessTokenTTL         = 24 * time.Hour
-	defaultSessionRevocation         = true
-	defaultQueryMaxResultRows        = 10000
-	defaultQueryMaxResultBytes       = 25 * 1024 * 1024
-	defaultExportsSyncMaxBytes       = 100 * 1024 * 1024
-	defaultExportsBackgroundMaxBytes = 0
-	defaultJobsWorkerCount           = 16
-	defaultJobsPollInterval          = time.Second
-	defaultJobsClaimLease            = 5 * time.Minute
-	defaultJobsCompletedRetention    = 7 * 24 * time.Hour
-	defaultSchemaSnapshotFreshness   = 24 * time.Hour
-	defaultTLSEnabled                = false
-	defaultTLSCertFile               = ""
-	defaultTLSKeyFile                = ""
-	defaultFilesStorageMode          = FilesStorageModeObject
-	defaultFilesActiveBackend        = "local"
-	defaultFilesRootDir              = "~/.sqlwarden/files"
-	defaultFilesRevisionsEnabled     = true
-	defaultFilesRevisionKeepLatest   = 50
-	defaultNotificationsEmail        = ""
-	defaultSMTPEnabled               = false
-	defaultSMTPHost                  = "example.smtp.host"
-	defaultSMTPPort                  = 25
-	defaultSMTPUsername              = "example_username"
-	defaultSMTPPassword              = "pa55word"
-	defaultSMTPFrom                  = "Example Name <no_reply@example.org>"
-	defaultDesktopAppDir             = ""
-	defaultDesktopActiveBackend      = "local"
-	defaultAllowUserBackends         = true
+	defaultBaseURL                = "http://localhost:6020"
+	defaultHTTPPort               = 6020
+	defaultDeploymentMode         = DeploymentModeServer
+	defaultAccessMode             = AccessModeMultiUser
+	defaultLogLevel               = LogLevelInfo
+	defaultLogFormat              = LogFormatJSON
+	defaultCookieSecretKey        = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
+	defaultDBLogQueries           = false
+	defaultDBDriver               = "sqlite"
+	defaultDBDSN                  = "~/.sqlwarden/sqlwarden.db"
+	defaultDBAutomigrate          = true
+	defaultEncryptionKey          = "dev-insecure-key-32byteslong!!"
+	defaultJWTSecretKey           = "fb57i5hiud5mzmykaquqsln5gcmolbac"
+	defaultJobsWorkerCount        = 16
+	defaultJobsPollInterval       = time.Second
+	defaultJobsClaimLease         = 5 * time.Minute
+	defaultJobsCompletedRetention = 7 * 24 * time.Hour
+	defaultTLSEnabled             = false
+	defaultTLSCertFile            = ""
+	defaultTLSKeyFile             = ""
+	defaultFilesStorageMode       = FilesStorageModeObject
+	defaultFilesActiveBackend     = "local"
+	defaultFilesRootDir           = "~/.sqlwarden/files"
+	defaultSMTPEnabled            = false
+	defaultSMTPHost               = "example.smtp.host"
+	defaultSMTPPort               = 25
+	defaultSMTPUsername           = "example_username"
+	defaultSMTPPassword           = "pa55word"
+	defaultSMTPFrom               = "Example Name <no_reply@example.org>"
+	defaultDesktopAppDir          = ""
+	defaultDesktopActiveBackend   = "local"
+	defaultAllowUserBackends      = true
 )
 
 var defaultSQLiteDriverSources = []string{}
@@ -98,12 +87,11 @@ const (
 )
 
 type Config struct {
-	BaseURL               string
-	HTTPPort              int
-	DeploymentMode        string
-	AccessMode            string
-	PersonalSpacesEnabled bool
-	Log                   struct {
+	BaseURL        string
+	HTTPPort       int
+	DeploymentMode string
+	AccessMode     string
+	Log            struct {
 		Level  string
 		Format string
 	}
@@ -123,28 +111,13 @@ type Config struct {
 		PreviousKeys []string
 	}
 	JWT struct {
-		SecretKey      string
-		AccessTokenTTL time.Duration
-	}
-	Sessions struct {
-		RevocationEnabled bool
-	}
-	Query struct {
-		MaxResultRows  int
-		MaxResultBytes int
-	}
-	Exports struct {
-		SyncMaxBytes       int64
-		BackgroundMaxBytes int64
+		SecretKey string
 	}
 	Jobs struct {
 		WorkerCount        int
 		PollInterval       time.Duration
 		ClaimLease         time.Duration
 		CompletedRetention time.Duration
-	}
-	Schema struct {
-		SnapshotFreshness time.Duration
 	}
 	TLS struct {
 		Enabled  bool
@@ -160,13 +133,6 @@ type Config struct {
 		StorageMode          string
 		ActiveStorageBackend string
 		StorageBackends      map[string]FileStorageBackend
-		Revisions            struct {
-			Enabled    bool
-			KeepLatest int
-		}
-	}
-	Notifications struct {
-		Email string
 	}
 	SMTP struct {
 		Enabled  bool
@@ -205,7 +171,6 @@ func DefaultConfig() Config {
 	cfg.HTTPPort = defaultHTTPPort
 	cfg.DeploymentMode = defaultDeploymentMode
 	cfg.AccessMode = defaultAccessMode
-	cfg.PersonalSpacesEnabled = defaultPersonalSpacesEnabled
 	cfg.Log.Level = defaultLogLevel
 	cfg.Log.Format = defaultLogFormat
 	cfg.Cookie.SecretKey = defaultCookieSecretKey
@@ -215,17 +180,10 @@ func DefaultConfig() Config {
 	cfg.DB.Automigrate = defaultDBAutomigrate
 	cfg.Encryption.Key = defaultEncryptionKey
 	cfg.JWT.SecretKey = defaultJWTSecretKey
-	cfg.JWT.AccessTokenTTL = defaultJWTAccessTokenTTL
-	cfg.Sessions.RevocationEnabled = defaultSessionRevocation
-	cfg.Query.MaxResultRows = defaultQueryMaxResultRows
-	cfg.Query.MaxResultBytes = defaultQueryMaxResultBytes
-	cfg.Exports.SyncMaxBytes = defaultExportsSyncMaxBytes
-	cfg.Exports.BackgroundMaxBytes = defaultExportsBackgroundMaxBytes
 	cfg.Jobs.WorkerCount = defaultJobsWorkerCount
 	cfg.Jobs.PollInterval = defaultJobsPollInterval
 	cfg.Jobs.ClaimLease = defaultJobsClaimLease
 	cfg.Jobs.CompletedRetention = defaultJobsCompletedRetention
-	cfg.Schema.SnapshotFreshness = defaultSchemaSnapshotFreshness
 	cfg.TLS.Enabled = defaultTLSEnabled
 	cfg.TLS.CertFile = defaultTLSCertFile
 	cfg.TLS.KeyFile = defaultTLSKeyFile
@@ -233,9 +191,6 @@ func DefaultConfig() Config {
 	cfg.Files.StorageMode = defaultFilesStorageMode
 	cfg.Files.ActiveStorageBackend = defaultFilesActiveBackend
 	cfg.Files.StorageBackends = defaultFileStorageBackends()
-	cfg.Files.Revisions.Enabled = defaultFilesRevisionsEnabled
-	cfg.Files.Revisions.KeepLatest = defaultFilesRevisionKeepLatest
-	cfg.Notifications.Email = defaultNotificationsEmail
 	cfg.SMTP.Enabled = defaultSMTPEnabled
 	cfg.SMTP.Host = defaultSMTPHost
 	cfg.SMTP.Port = defaultSMTPPort
@@ -280,7 +235,6 @@ type configOption struct {
 var configOptions = []configOption{
 	{key: "base_url", env: "BASE_URL", flagName: "base-url", defaultValue: defaultBaseURL, usage: "Application base URL used in generated links and JWT claims"},
 	{key: "http_port", env: "HTTP_PORT", flagName: "http-port", defaultValue: defaultHTTPPort, usage: "HTTP server port"},
-	{key: "personal_spaces_enabled", env: "PERSONAL_SPACES_ENABLED", flagName: "personal-spaces-enabled", defaultValue: defaultPersonalSpacesEnabled, usage: "Enable personal spaces by default"},
 	{key: "log.level", env: "LOG_LEVEL", flagName: "log-level", defaultValue: defaultLogLevel, usage: "Log level (debug, info, warn, error)"},
 	{key: "log.format", env: "LOG_FORMAT", flagName: "log-format", defaultValue: defaultLogFormat, usage: "Log format (json or text)"},
 	{key: "cookie.secret_key", env: "COOKIE_SECRET_KEY", flagName: "cookie-secret-key", defaultValue: defaultCookieSecretKey, usage: "Cookie signing secret"},
@@ -291,25 +245,15 @@ var configOptions = []configOption{
 	{key: "encryption.key", env: "ENCRYPTION_KEY", flagName: "encryption-key", defaultValue: defaultEncryptionKey, usage: "Application encryption key"},
 	{key: "encryption.previous_keys", env: "ENCRYPTION_PREVIOUS_KEYS", flagName: "encryption-previous-keys", defaultValue: "", usage: "Comma-separated retired encryption keys retained for decryption during rotation"},
 	{key: "jwt.secret_key", env: "JWT_SECRET_KEY", flagName: "jwt-secret-key", defaultValue: defaultJWTSecretKey, usage: "JWT signing secret"},
-	{key: "jwt.access_token_ttl", env: "JWT_ACCESS_TOKEN_TTL", flagName: "jwt-access-token-ttl", defaultValue: defaultJWTAccessTokenTTL, usage: "JWT access token lifetime (for example: 24h, 8h, 30m)"},
-	{key: "sessions.revocation_enabled", env: "SESSIONS_REVOCATION_ENABLED", flagName: "sessions-revocation-enabled", defaultValue: defaultSessionRevocation, usage: "Enable database-backed session revocation checks"},
-	{key: "query.max_result_rows", env: "QUERY_MAX_RESULT_ROWS", flagName: "query-max-result-rows", defaultValue: defaultQueryMaxResultRows, usage: "Maximum rows returned by an interactive query result"},
-	{key: "query.max_result_bytes", env: "QUERY_MAX_RESULT_BYTES", flagName: "query-max-result-bytes", defaultValue: defaultQueryMaxResultBytes, usage: "Approximate maximum bytes returned by an interactive query result"},
-	{key: "exports.sync_max_bytes", env: "EXPORTS_SYNC_MAX_BYTES", flagName: "exports-sync-max-bytes", defaultValue: defaultExportsSyncMaxBytes, usage: "Maximum bytes streamed by synchronous exports"},
-	{key: "exports.background_max_bytes", env: "EXPORTS_BACKGROUND_MAX_BYTES", flagName: "exports-background-max-bytes", defaultValue: defaultExportsBackgroundMaxBytes, usage: "Maximum bytes written by background exports (0 disables the cap)"},
 	{key: "jobs.worker_count", env: "JOBS_WORKER_COUNT", flagName: "jobs-worker-count", defaultValue: defaultJobsWorkerCount, usage: "Number of background job workers"},
 	{key: "jobs.poll_interval", env: "JOBS_POLL_INTERVAL", flagName: "jobs-poll-interval", defaultValue: defaultJobsPollInterval, usage: "Background job polling interval"},
 	{key: "jobs.claim_lease", env: "JOBS_CLAIM_LEASE", flagName: "jobs-claim-lease", defaultValue: defaultJobsClaimLease, usage: "Background job claim lease duration"},
 	{key: "jobs.completed_retention", env: "JOBS_COMPLETED_RETENTION", flagName: "jobs-completed-retention", defaultValue: defaultJobsCompletedRetention, usage: "How long completed background job records are retained"},
-	{key: "schema.snapshot_freshness", env: "SCHEMA_SNAPSHOT_FRESHNESS", flagName: "schema-snapshot-freshness", defaultValue: defaultSchemaSnapshotFreshness, usage: "Age after which connecting schedules a schema snapshot refresh"},
 	{key: "tls.enabled", env: "TLS_ENABLED", flagName: "tls-enabled", defaultValue: defaultTLSEnabled, usage: "Serve HTTPS using configured TLS certificate and key files"},
 	{key: "tls.cert_file", env: "TLS_CERT_FILE", flagName: "tls-cert-file", defaultValue: defaultTLSCertFile, usage: "Path to PEM encoded TLS certificate file"},
 	{key: "tls.key_file", env: "TLS_KEY_FILE", flagName: "tls-key-file", defaultValue: defaultTLSKeyFile, usage: "Path to PEM encoded TLS private key file"},
 	{key: "drivers.sqlite.allowed_sources", env: "DRIVERS_SQLITE_ALLOWED_SOURCES", flagName: "drivers-sqlite-allowed-sources", defaultValue: defaultSQLiteDriverSources, usage: "Comma-separated SQLite target sources to allow (currently: local)"},
 	{key: "files.root_dir", env: "FILES_ROOT_DIR", flagName: "files-root-dir", defaultValue: defaultFilesRootDir, usage: "Filesystem root directory for stored workspace files"},
-	{key: "files.revisions.enabled", env: "FILES_REVISIONS_ENABLED", flagName: "files-revisions-enabled", defaultValue: defaultFilesRevisionsEnabled, usage: "Enable saved-file revisions"},
-	{key: "files.revisions.keep_latest", env: "FILES_REVISIONS_KEEP_LATEST", flagName: "files-revisions-keep-latest", defaultValue: defaultFilesRevisionKeepLatest, usage: "Number of older saved-file revisions to retain per file"},
-	{key: "notifications.email", env: "NOTIFICATIONS_EMAIL", flagName: "notifications-email", defaultValue: defaultNotificationsEmail, usage: "Email address that receives error notifications"},
 	{key: "smtp.enabled", env: "SMTP_ENABLED", flagName: "smtp-enabled", defaultValue: defaultSMTPEnabled, usage: "Enable outgoing SMTP email"},
 	{key: "smtp.host", env: "SMTP_HOST", flagName: "smtp-host", defaultValue: defaultSMTPHost, usage: "SMTP server host"},
 	{key: "smtp.port", env: "SMTP_PORT", flagName: "smtp-port", defaultValue: defaultSMTPPort, usage: "SMTP server port"},
@@ -389,7 +333,6 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg := DefaultConfig()
 	cfg.BaseURL = v.GetString("base_url")
 	cfg.HTTPPort = v.GetInt("http_port")
-	cfg.PersonalSpacesEnabled = v.GetBool("personal_spaces_enabled")
 	cfg.Log.Level = strings.ToLower(strings.TrimSpace(v.GetString("log.level")))
 	cfg.Log.Format = strings.ToLower(strings.TrimSpace(v.GetString("log.format")))
 	cfg.Cookie.SecretKey = v.GetString("cookie.secret_key")
@@ -400,17 +343,10 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.Encryption.Key = v.GetString("encryption.key")
 	cfg.Encryption.PreviousKeys = splitEncryptionKeys(v.GetString("encryption.previous_keys"))
 	cfg.JWT.SecretKey = v.GetString("jwt.secret_key")
-	cfg.JWT.AccessTokenTTL = v.GetDuration("jwt.access_token_ttl")
-	cfg.Sessions.RevocationEnabled = v.GetBool("sessions.revocation_enabled")
-	cfg.Query.MaxResultRows = v.GetInt("query.max_result_rows")
-	cfg.Query.MaxResultBytes = v.GetInt("query.max_result_bytes")
-	cfg.Exports.SyncMaxBytes = v.GetInt64("exports.sync_max_bytes")
-	cfg.Exports.BackgroundMaxBytes = v.GetInt64("exports.background_max_bytes")
 	cfg.Jobs.WorkerCount = v.GetInt("jobs.worker_count")
 	cfg.Jobs.PollInterval = v.GetDuration("jobs.poll_interval")
 	cfg.Jobs.ClaimLease = v.GetDuration("jobs.claim_lease")
 	cfg.Jobs.CompletedRetention = v.GetDuration("jobs.completed_retention")
-	cfg.Schema.SnapshotFreshness = v.GetDuration("schema.snapshot_freshness")
 	cfg.TLS.Enabled = v.GetBool("tls.enabled")
 	cfg.TLS.CertFile = v.GetString("tls.cert_file")
 	cfg.TLS.KeyFile = v.GetString("tls.key_file")
@@ -419,9 +355,6 @@ func loadConfig(args []string) (Config, bool, error) {
 	localBackend := cfg.Files.StorageBackends[defaultFilesActiveBackend]
 	localBackend.RootDir = v.GetString("files.root_dir")
 	cfg.Files.StorageBackends[defaultFilesActiveBackend] = localBackend
-	cfg.Files.Revisions.Enabled = v.GetBool("files.revisions.enabled")
-	cfg.Files.Revisions.KeepLatest = v.GetInt("files.revisions.keep_latest")
-	cfg.Notifications.Email = v.GetString("notifications.email")
 	cfg.SMTP.Enabled = v.GetBool("smtp.enabled")
 	cfg.SMTP.Host = v.GetString("smtp.host")
 	cfg.SMTP.Port = v.GetInt("smtp.port")
@@ -455,18 +388,6 @@ func validateConfig(cfg Config) error {
 	if !isSupportedLogFormat(cfg.Log.Format) {
 		return fmt.Errorf("log.format must be %q or %q", LogFormatJSON, LogFormatText)
 	}
-	if cfg.Query.MaxResultRows <= 0 {
-		return fmt.Errorf("query.max_result_rows must be greater than 0")
-	}
-	if cfg.Query.MaxResultBytes <= 0 {
-		return fmt.Errorf("query.max_result_bytes must be greater than 0")
-	}
-	if cfg.Exports.SyncMaxBytes <= 0 {
-		return fmt.Errorf("exports.sync_max_bytes must be greater than 0")
-	}
-	if cfg.Exports.BackgroundMaxBytes < 0 {
-		return fmt.Errorf("exports.background_max_bytes must be greater than or equal to 0")
-	}
 	if cfg.Jobs.WorkerCount <= 0 {
 		return fmt.Errorf("jobs.worker_count must be greater than 0")
 	}
@@ -478,9 +399,6 @@ func validateConfig(cfg Config) error {
 	}
 	if cfg.Jobs.CompletedRetention <= 0 {
 		return fmt.Errorf("jobs.completed_retention must be greater than 0")
-	}
-	if cfg.Schema.SnapshotFreshness <= 0 {
-		return fmt.Errorf("schema.snapshot_freshness must be greater than 0")
 	}
 	if cfg.TLS.Enabled {
 		if strings.TrimSpace(cfg.TLS.CertFile) == "" {
@@ -513,12 +431,6 @@ func validateConfig(cfg Config) error {
 	}
 	if cfg.Files.StorageMode != FilesStorageModeFile && cfg.Files.StorageMode != FilesStorageModeObject {
 		return fmt.Errorf("files.storage_mode must be %q or %q", FilesStorageModeFile, FilesStorageModeObject)
-	}
-	if cfg.Files.StorageMode == FilesStorageModeFile && cfg.Files.Revisions.Enabled {
-		return fmt.Errorf("files.revisions.enabled=true is not supported with files.storage_mode=%q yet", FilesStorageModeFile)
-	}
-	if cfg.Files.Revisions.KeepLatest < 0 {
-		return fmt.Errorf("files.revisions.keep_latest must be greater than or equal to 0")
 	}
 	if err := validateFileStorageBackends(cfg); err != nil {
 		return err

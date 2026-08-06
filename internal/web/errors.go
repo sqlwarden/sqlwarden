@@ -26,6 +26,7 @@ const (
 	apiErrorConflict                   = "conflict"
 	apiErrorResourceInUse              = "resource_in_use"
 	apiErrorInternalServer             = "internal_server_error"
+	apiErrorSettingsUnavailable        = "settings_unavailable"
 )
 
 func (app *application) reportServerError(r *http.Request, err error) {
@@ -42,14 +43,20 @@ func (app *application) reportServerError(r *http.Request, err error) {
 		"trace", trace,
 	)
 
-	if app.config.SMTP.Enabled && app.config.Notifications.Email != "" {
+	notificationEmail := ""
+	if settings, settingsErr := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil); settingsErr == nil {
+		notificationEmail = settings.ErrorNotificationEmail
+	} else {
+		app.logger.ErrorContext(r.Context(), "runtime settings unavailable for error notification", "error", settingsErr)
+	}
+	if app.config.SMTP.Enabled && notificationEmail != "" {
 		data := app.newEmailData()
 		data["Message"] = message
 		data["RequestMethod"] = method
 		data["RequestURL"] = path
 		data["Trace"] = trace
 
-		err := app.mailer.Send(app.config.Notifications.Email, data, "error-notification.tmpl")
+		err := app.mailer.Send(notificationEmail, data, "error-notification.tmpl")
 		if err != nil {
 			trace = string(debug.Stack())
 			app.logger.ErrorContext(r.Context(), err.Error(),
@@ -77,6 +84,10 @@ func (app *application) apiError(w http.ResponseWriter, r *http.Request, status 
 
 func (app *application) serverError(w http.ResponseWriter, r *http.Request, err error) {
 	app.reportServerError(r, err)
+	if errors.Is(err, errRuntimeSettingsUnavailable) {
+		app.apiError(w, r, http.StatusServiceUnavailable, apiErrorSettingsUnavailable, "Runtime settings are temporarily unavailable.", response.APIError{}, nil)
+		return
+	}
 
 	message := "The server encountered a problem and could not process your request."
 	app.errorMessage(w, r, http.StatusInternalServerError, message, nil)

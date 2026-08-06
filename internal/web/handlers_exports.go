@@ -127,6 +127,11 @@ func (app *application) downloadConnectionExport(w http.ResponseWriter, r *http.
 		app.notPermitted(w, r)
 		return
 	}
+	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), ws)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
 
 	filename := safeExportFilename(input.Filename, time.Now())
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -135,7 +140,7 @@ func (app *application) downloadConnectionExport(w http.ResponseWriter, r *http.
 	result, err := exports.NewService().Stream(r.Context(), session.Conn, w, exports.StreamOptions{
 		Format:   normalizedExportFormat(input.Format),
 		SQL:      input.SQL,
-		MaxBytes: app.config.Exports.SyncMaxBytes,
+		MaxBytes: runtimeSettings.ExportsSyncMaxBytes,
 	})
 	if err != nil {
 		app.logWarn(r, "synchronous export failed", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID), slog.String("error", exportErrorCategory(err)))
@@ -264,6 +269,10 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 	}
 	defer driver.Close()
 	runtime.Events.Info(ctx, "target_connected", "Connected to database.", nil)
+	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
 
 	scope := files.Scope{AccountID: input.AccountID, OrgID: org.ID, OrgSlug: org.Slug, Workspace: ws, Visibility: database.FileVisibilityPrivate}
 	file, err := app.createExportFile(ctx, scope, input.Filename)
@@ -281,7 +290,7 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 		streamResult, err = exports.NewService().Stream(ctx, driver, writer, exports.StreamOptions{
 			Format:   input.Format,
 			SQL:      input.SQL,
-			MaxBytes: app.config.Exports.BackgroundMaxBytes,
+			MaxBytes: runtimeSettings.ExportsBackgroundMaxBytes,
 			OnProgress: func(rows int64, bytes int64) {
 				if rows-lastProgress >= exportProgressEveryRows {
 					lastProgress = rows
@@ -294,7 +303,7 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 		}
 		streamErr <- err
 	}()
-	_, writeErr := app.workspaceFileService().WriteContent(ctx, scope, file.ID, "", reader)
+	_, writeErr := app.workspaceFileServiceWithSettings(runtimeSettings).WriteContent(ctx, scope, file.ID, "", reader)
 	if writeErr != nil {
 		_ = reader.Close()
 		if err := <-streamErr; err != nil {

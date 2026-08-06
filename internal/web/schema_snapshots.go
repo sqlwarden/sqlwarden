@@ -55,12 +55,17 @@ func (app *application) maybeEnqueueSchemaSync(ctx context.Context, conn databas
 	if err != nil || !enabled {
 		return
 	}
+	runtimeSettings, err := app.runtimeSettingsService().effectiveForOrg(ctx, orgID)
+	if err != nil {
+		app.logger.WarnContext(ctx, "runtime settings lookup failed", "connection_id", conn.ID, "error", err)
+		return
+	}
 	_, directory, found, err := app.schemaSnapshots.Active(ctx, conn.ID)
 	if err != nil {
 		app.logger.WarnContext(ctx, "schema snapshot freshness check failed", "connection_id", conn.ID, "error", err)
 		return
 	}
-	if found && time.Since(directory.GeneratedAt) < app.config.Schema.SnapshotFreshness {
+	if found && time.Since(directory.GeneratedAt) < runtimeSettings.SchemaSnapshotFreshness {
 		return
 	}
 	if _, _, err := app.enqueueSchemaSync(ctx, conn.ID, orgID); err != nil && !errors.Is(err, jobs.ErrActiveExists) {
@@ -114,7 +119,11 @@ func (app *application) syncSchemaSnapshot(ctx context.Context, connectionID int
 	if err != nil {
 		return schemaSyncOutput{}, jobs.Permanent("schema_sync_driver_unavailable", "The target driver is unavailable.")
 	}
-	if err := driver.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, conn.DefaultScope)); err != nil {
+	settings, err := app.effectiveRuntimeSettingsForWorkspace(ctx, ws)
+	if err != nil {
+		return schemaSyncOutput{}, err
+	}
+	if err := driver.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, settings, conn.DefaultScope)); err != nil {
 		return schemaSyncOutput{}, jobs.Retryable("schema_sync_connect_failed", "Could not connect to the target database.")
 	}
 	defer driver.Close()

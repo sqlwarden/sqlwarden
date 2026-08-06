@@ -151,9 +151,13 @@ func (app *application) issueAccountSession(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		return "", "", err
 	}
+	settings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+	if err != nil {
+		return "", "", err
+	}
 	accessToken, _, err := token.IssueWithSessionTTL(
 		strconv.FormatInt(account.ID, 10), authSession.ID, account.Email, account.Name,
-		app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL,
+		app.config.JWT.SecretKey, settings.JWTAccessTokenTTL,
 	)
 	if err != nil {
 		return "", "", err
@@ -226,7 +230,12 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	accountIDStr := strconv.FormatInt(account.ID, 10)
-	accessToken, _, err := token.IssueWithSessionTTL(accountIDStr, authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
+	settings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	accessToken, _, err := token.IssueWithSessionTTL(accountIDStr, authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, settings.JWTAccessTokenTTL)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

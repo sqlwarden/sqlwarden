@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 func TestLoadConfigDefaults(t *testing.T) {
@@ -45,28 +44,13 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if !cfg.DB.Automigrate {
 		t.Fatal("expected db.automigrate to default to true")
 	}
-	if !cfg.PersonalSpacesEnabled {
-		t.Fatal("expected personal spaces to default to true")
-	}
-	if cfg.JWT.AccessTokenTTL != defaultJWTAccessTokenTTL {
-		t.Fatalf("jwt.accessTokenTTL = %s, want %s", cfg.JWT.AccessTokenTTL, defaultJWTAccessTokenTTL)
-	}
-	if !cfg.Sessions.RevocationEnabled {
-		t.Fatal("expected session revocation to default to enabled")
-	}
-	if cfg.Query.MaxResultRows != defaultQueryMaxResultRows || cfg.Query.MaxResultBytes != defaultQueryMaxResultBytes {
-		t.Fatalf("unexpected default query config: %+v", cfg.Query)
-	}
-	if cfg.Exports.SyncMaxBytes != defaultExportsSyncMaxBytes || cfg.Exports.BackgroundMaxBytes != defaultExportsBackgroundMaxBytes {
-		t.Fatalf("unexpected default exports config: %+v", cfg.Exports)
-	}
 	if cfg.Jobs.WorkerCount != defaultJobsWorkerCount || cfg.Jobs.ClaimLease != defaultJobsClaimLease {
 		t.Fatalf("unexpected default jobs config: %+v", cfg.Jobs)
 	}
 	if cfg.Desktop.ActiveBackend != "local" {
 		t.Fatalf("desktop.active_backend = %q, want local", cfg.Desktop.ActiveBackend)
 	}
-	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "local" || !cfg.Files.Revisions.Enabled || cfg.Files.Revisions.KeepLatest != defaultFilesRevisionKeepLatest {
+	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "local" {
 		t.Fatalf("unexpected default file config: %+v", cfg.Files)
 	}
 	defaultFilesRoot, err := expandHomePath(defaultFilesRootDir)
@@ -131,11 +115,6 @@ func TestLoadConfigFromExplicitFile(t *testing.T) {
 	content := []byte(`
 base_url: https://cfg.example.com
 http_port: 7000
-personal_spaces_enabled: false
-jwt:
-  access_token_ttl: 12h
-sessions:
-  revocation_enabled: false
 log:
   level: warn
   format: text
@@ -152,12 +131,6 @@ smtp:
   port: 2525
 files:
   root_dir: /tmp/sqlwarden-files
-  revisions:
-    enabled: false
-    keep_latest: 7
-query:
-  max_result_rows: 1234
-  max_result_bytes: 5678
 `)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
@@ -177,15 +150,6 @@ query:
 	if cfg.HTTPPort != 7000 {
 		t.Fatalf("httpPort = %d", cfg.HTTPPort)
 	}
-	if cfg.PersonalSpacesEnabled {
-		t.Fatal("expected personal spaces disabled from file")
-	}
-	if cfg.JWT.AccessTokenTTL != 12*time.Hour {
-		t.Fatalf("jwt.accessTokenTTL = %s, want 12h", cfg.JWT.AccessTokenTTL)
-	}
-	if cfg.Sessions.RevocationEnabled {
-		t.Fatal("expected session revocation disabled from file")
-	}
 	if cfg.Log.Level != LogLevelWarn || cfg.Log.Format != LogFormatText {
 		t.Fatalf("unexpected log config: %+v", cfg.Log)
 	}
@@ -201,30 +165,17 @@ query:
 	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "local" {
 		t.Fatalf("unexpected file storage config: %+v", cfg.Files)
 	}
-	if cfg.Files.Revisions.Enabled {
-		t.Fatal("expected file revisions disabled from file")
-	}
-	if cfg.Files.Revisions.KeepLatest != 7 {
-		t.Fatalf("files.revisions.keep_latest = %d, want 7", cfg.Files.Revisions.KeepLatest)
-	}
 	if cfg.Files.StorageBackends["local"].RootDir != "/tmp/sqlwarden-files" {
 		t.Fatalf("unexpected local storage backend: %+v", cfg.Files.StorageBackends["local"])
-	}
-	if cfg.Query.MaxResultRows != 1234 || cfg.Query.MaxResultBytes != 5678 {
-		t.Fatalf("unexpected query config: %+v", cfg.Query)
 	}
 }
 
 func TestLoadConfigEnvOverridesFile(t *testing.T) {
 	t.Setenv("DB_DRIVER", "sqlite")
 	t.Setenv("HTTP_PORT", "8123")
-	t.Setenv("JWT_ACCESS_TOKEN_TTL", "6h")
 	t.Setenv("FILES_ROOT_DIR", "/env/sqlwarden-files")
-	t.Setenv("FILES_REVISIONS_ENABLED", "false")
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("LOG_FORMAT", "text")
-	t.Setenv("QUERY_MAX_RESULT_ROWS", "4321")
-	t.Setenv("QUERY_MAX_RESULT_BYTES", "8765")
 	t.Setenv("TLS_ENABLED", "true")
 	t.Setenv("TLS_CERT_FILE", "/env/tls.crt")
 	t.Setenv("TLS_KEY_FILE", "/env/tls.key")
@@ -251,12 +202,6 @@ db:
 	if cfg.DB.Driver != "sqlite" {
 		t.Fatalf("db.driver = %q, want sqlite", cfg.DB.Driver)
 	}
-	if cfg.JWT.AccessTokenTTL != 6*time.Hour {
-		t.Fatalf("jwt.accessTokenTTL = %s, want 6h", cfg.JWT.AccessTokenTTL)
-	}
-	if cfg.Files.Revisions.Enabled {
-		t.Fatal("expected file revisions disabled from env")
-	}
 	if cfg.Log.Level != LogLevelDebug || cfg.Log.Format != LogFormatText {
 		t.Fatalf("unexpected log config: %+v", cfg.Log)
 	}
@@ -265,9 +210,6 @@ db:
 	}
 	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/env/tls.crt" || cfg.TLS.KeyFile != "/env/tls.key" {
 		t.Fatalf("unexpected tls config: %+v", cfg.TLS)
-	}
-	if cfg.Query.MaxResultRows != 4321 || cfg.Query.MaxResultBytes != 8765 {
-		t.Fatalf("unexpected query config: %+v", cfg.Query)
 	}
 }
 
@@ -293,16 +235,10 @@ db:
 		"--base-url", "https://flags.example.com",
 		"--log-level", "error",
 		"--log-format", "json",
-		"--jwt-access-token-ttl", "2h",
-		"--sessions-revocation-enabled=false",
 		"--tls-enabled",
 		"--tls-cert-file", "/flag/tls.crt",
 		"--tls-key-file", "/flag/tls.key",
 		"--files-root-dir", "/flag/sqlwarden-files",
-		"--files-revisions-enabled=false",
-		"--files-revisions-keep-latest", "3",
-		"--query-max-result-rows", "222",
-		"--query-max-result-bytes", "333",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -320,26 +256,11 @@ db:
 	if cfg.Log.Level != LogLevelError || cfg.Log.Format != LogFormatJSON {
 		t.Fatalf("unexpected log config: %+v", cfg.Log)
 	}
-	if cfg.JWT.AccessTokenTTL != 2*time.Hour {
-		t.Fatalf("jwt.accessTokenTTL = %s, want 2h", cfg.JWT.AccessTokenTTL)
-	}
-	if cfg.Sessions.RevocationEnabled {
-		t.Fatal("expected session revocation disabled from flag")
-	}
 	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/flag/tls.crt" || cfg.TLS.KeyFile != "/flag/tls.key" {
 		t.Fatalf("unexpected tls config: %+v", cfg.TLS)
 	}
-	if cfg.Files.Revisions.Enabled {
-		t.Fatal("expected file revisions disabled from flag")
-	}
 	if cfg.Files.StorageBackends["local"].RootDir != "/flag/sqlwarden-files" {
 		t.Fatalf("files.root_dir = %q, want /flag/sqlwarden-files", cfg.Files.StorageBackends["local"].RootDir)
-	}
-	if cfg.Files.Revisions.KeepLatest != 3 {
-		t.Fatalf("files.revisions.keep_latest = %d, want 3", cfg.Files.Revisions.KeepLatest)
-	}
-	if cfg.Query.MaxResultRows != 222 || cfg.Query.MaxResultBytes != 333 {
-		t.Fatalf("unexpected query config: %+v", cfg.Query)
 	}
 }
 
@@ -361,24 +282,21 @@ func TestLoadConfigRejectsInternalRuntimeFlags(t *testing.T) {
 }
 
 func TestLoadConfigRejectsUnsupportedFileConfiguration(t *testing.T) {
-	_, _, err := loadConfig([]string{"--files-revisions-enabled=definitely"})
-	if err == nil {
-		t.Fatal("expected invalid revision boolean to fail")
-	}
-
-	_, _, err = loadConfig([]string{"--files-revisions-keep-latest", "-1"})
-	if err == nil {
-		t.Fatal("expected negative revision retention to fail")
-	}
-
-	_, _, err = loadConfig([]string{"--query-max-result-rows", "0"})
-	if err == nil {
-		t.Fatal("expected zero max result rows to fail")
-	}
-
-	_, _, err = loadConfig([]string{"--query-max-result-bytes", "-1"})
-	if err == nil {
-		t.Fatal("expected negative max result bytes to fail")
+	for _, args := range [][]string{
+		{"--personal-spaces-enabled=false"},
+		{"--jwt-access-token-ttl", "2h"},
+		{"--sessions-revocation-enabled=false"},
+		{"--query-max-result-rows", "100"},
+		{"--query-max-result-bytes", "1000"},
+		{"--exports-sync-max-bytes", "1000"},
+		{"--schema-snapshot-freshness", "1h"},
+		{"--files-revisions-enabled=false"},
+		{"--files-revisions-keep-latest", "10"},
+		{"--notifications-email", "errors@example.com"},
+	} {
+		if _, _, err := loadConfig(args); err == nil {
+			t.Fatalf("expected removed runtime flag %v to fail", args)
+		}
 	}
 }
 

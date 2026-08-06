@@ -50,16 +50,12 @@ func newTestClaims() jwt.Claims {
 
 func newTestApplication(t *testing.T) *application {
 	app := new(application)
+	app.config = DefaultConfig()
 
 	app.config.JWT.SecretKey = "k7mp29rf4qxhwn8vbtaj6pgucmve53y9"
-	app.config.JWT.AccessTokenTTL = 24 * time.Hour
 	app.config.BaseURL = "https://www.example.com"
 	app.config.DeploymentMode = DeploymentModeServer
 	app.config.AccessMode = AccessModeMultiUser
-	app.config.PersonalSpacesEnabled = true
-	app.config.Sessions.RevocationEnabled = true
-	app.config.Query.MaxResultRows = defaultQueryMaxResultRows
-	app.config.Query.MaxResultBytes = defaultQueryMaxResultBytes
 	app.config.Files.StorageMode = FilesStorageModeObject
 	app.config.Files.ActiveStorageBackend = defaultFilesActiveBackend
 	app.config.Files.StorageBackends = map[string]FileStorageBackend{
@@ -68,11 +64,19 @@ func newTestApplication(t *testing.T) *application {
 			RootDir: t.TempDir(),
 		},
 	}
-	app.config.Files.Revisions.Enabled = false
 	app.config.SMTP.Enabled = true
 
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
+	settings, found, err := app.db.GetInstanceSettings(context.Background())
+	if err != nil || !found {
+		t.Fatalf("get instance settings: found=%v err=%v", found, err)
+	}
+	settings.PublicURL = app.config.BaseURL
+	settings.FileRevisionsEnabled = false
+	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
+		t.Fatal(err)
+	}
 	app.mailer = smtp.NewMockMailer("test@example.com")
 	app.queryCursors = connection.NewQueryCursorManager(30 * time.Minute)
 	t.Cleanup(func() { app.queryCursors.Close() })
@@ -87,6 +91,18 @@ func newTestApplication(t *testing.T) *application {
 	}
 
 	return app
+}
+
+func updateInstanceSettingsForTest(t *testing.T, app *application, mutate func(*database.InstanceSettings)) {
+	t.Helper()
+	settings, found, err := app.db.GetInstanceSettings(context.Background())
+	if err != nil || !found {
+		t.Fatalf("get instance settings: found=%v err=%v", found, err)
+	}
+	mutate(&settings)
+	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func inviteAndAcceptExistingAccount(t *testing.T, app *application, orgSlug, email, inviterToken, inviteeToken string) {
@@ -141,7 +157,7 @@ func seedAccountWithToken(t *testing.T, app *application, email, name string) (d
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, _, err := token.IssueWithSessionTTL(strconv.FormatInt(account.ID, 10), authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
+	tok, _, err := token.IssueWithSessionTTL(strconv.FormatInt(account.ID, 10), authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, time.Duration(database.DefaultJWTAccessTokenTTLSeconds)*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

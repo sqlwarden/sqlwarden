@@ -61,11 +61,31 @@ func (s *Session) Query(ctx context.Context, sql string, args ...any) (*result.R
 	return s.Conn.Query(ctx, sql, args...)
 }
 
+func (s *Session) QueryWithOptions(ctx context.Context, sql string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastUsed = time.Now()
+	if driver, ok := s.Conn.(cursor.ResultLimitDriver); ok {
+		return driver.QueryWithOptions(ctx, sql, opts, args...)
+	}
+	return s.Conn.Query(ctx, sql, args...)
+}
+
 // Execute executes a statement on the session, serialized via the session mutex.
 func (s *Session) Execute(ctx context.Context, sql string, args ...any) (*result.ResultSet, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastUsed = time.Now()
+	return s.Conn.Execute(ctx, sql, args...)
+}
+
+func (s *Session) ExecuteWithOptions(ctx context.Context, sql string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastUsed = time.Now()
+	if driver, ok := s.Conn.(cursor.ResultLimitDriver); ok {
+		return driver.ExecuteWithOptions(ctx, sql, opts, args...)
+	}
 	return s.Conn.Execute(ctx, sql, args...)
 }
 

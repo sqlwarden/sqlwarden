@@ -1,6 +1,6 @@
 # SQLWarden Architecture
 
-Updated: 2026-07-01
+Updated: 2026-08-06
 
 SQLWarden is a self-hosted database access platform and SQL IDE. The current repository contains a Go backend, embedded React SPA, custom RBAC engine, database connection/session manager, and workspace file storage foundation. Future product direction includes Wails desktop packaging, SSO/SCIM, stronger audit/compliance features, connector agents, and broader file/storage backends.
 
@@ -111,6 +111,15 @@ Important concepts:
 - Session revocation can be enabled/disabled for deployments that do not need account session management overhead.
 - File storage currently supports local filesystem storage. Config names are designed around active backend plus future backend registry.
 - Target SQLite connections are explicitly gated through `drivers.sqlite.allowed_sources`; REST clients cannot rely on the frontend driver list as the security control.
+
+Configuration ownership is split deliberately:
+
+- Bootstrap configuration is deployment-managed and must be available before the application database opens. It covers listeners, deployment/access mode, application database connectivity, secrets, TLS, storage topology, desktop topology, log format, and host-local SQLite access.
+- Runtime instance settings are typed columns in the singleton `instance_settings` row. They cover product policy and limits that can take effect without restarting.
+- Organizations store typed nullable overrides for the small set of policies they may tighten. Effective settings are the instance values plus valid organization overrides. Personal spaces use instance settings.
+The current consistency model intentionally performs a database read when an operation resolves settings. All replicas sharing the application database therefore observe committed changes without a process-local cache. A request uses one immutable resolved value set; background jobs capture settings when execution begins. Long-running work is not reconfigured midway through execution.
+
+If settings reads become measurable load at larger horizontal scale, the settings service is the replacement boundary for a versioned in-process cache. Such a cache must use database notifications or an external pub/sub mechanism for cross-replica invalidation and retain a bounded fallback check. No cache or Redis dependency is part of the current implementation.
 
 Defaults:
 

@@ -278,7 +278,12 @@ func (app *application) updateWorkspaceFileContent(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
-	saved, err := app.workspaceFileService().WriteContent(
+	service, err := app.workspaceFileServiceForRequest(r)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	saved, err := service.WriteContent(
 		r.Context(),
 		app.workspaceFileScope(r, visibility),
 		fileID,
@@ -303,16 +308,29 @@ func (app *application) updateWorkspaceFileContent(w http.ResponseWriter, r *htt
 
 // workspaceFileService builds the file domain service from current app state.
 func (app *application) workspaceFileService() *files.Service {
+	settings := effectiveSettingsFromInstance(database.DefaultInstanceSettings())
+	return app.workspaceFileServiceWithSettings(settings)
+}
+
+func (app *application) workspaceFileServiceWithSettings(settings effectiveRuntimeSettings) *files.Service {
 	revisionPolicy := files.RevisionPolicyDisabled
-	if app.config.Files.Revisions.Enabled {
+	if settings.FileRevisionsEnabled {
 		revisionPolicy = files.RevisionPolicyVersioned
 	}
 	return files.NewWithStoreResolver(app.db, app.fileStores, app.enforcer, files.Config{
 		StorageMode:            app.config.Files.StorageMode,
 		ActiveStorageBackendID: app.config.Files.ActiveStorageBackend,
 		RevisionPolicy:         revisionPolicy,
-		RevisionKeepLatest:     app.config.Files.Revisions.KeepLatest,
+		RevisionKeepLatest:     settings.FileRevisionsKeepLatest,
 	}, &app.fileLocks)
+}
+
+func (app *application) workspaceFileServiceForRequest(r *http.Request) (*files.Service, error) {
+	settings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
+	if err != nil {
+		return nil, err
+	}
+	return app.workspaceFileServiceWithSettings(settings), nil
 }
 
 // workspaceFileScope converts request context into domain scope.

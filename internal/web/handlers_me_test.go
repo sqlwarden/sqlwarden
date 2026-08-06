@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/database"
 )
 
 // setupMeTest seeds an authenticated account and returns the access token and account ID.
@@ -40,7 +41,7 @@ func TestGetMe(t *testing.T) {
 func TestGetMeStillWorksWhenPersonalSpacesDisabled(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.PersonalSpacesEnabled = false
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.PersonalSpacesEnabled = false })
 	_, tok := setupMeTest(t, app, "me-disabled@example.com")
 
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/me", nil, tok), app.routes())
@@ -191,10 +192,10 @@ func TestDeleteMyWorkspace(t *testing.T) {
 	assert.Equal(t, getRes.StatusCode, http.StatusNotFound)
 }
 
-func TestMyWorkspaceRoutesReturn404WhenPersonalSpacesDisabledByConfig(t *testing.T) {
+func TestMyWorkspaceRoutesReturn404WhenPersonalSpacesDisabled(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.PersonalSpacesEnabled = false
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.PersonalSpacesEnabled = false })
 	_, tok := setupMeTest(t, app, "me-gated@example.com")
 
 	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/me/workspaces", nil, tok), app.routes())

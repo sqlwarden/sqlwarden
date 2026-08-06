@@ -261,7 +261,7 @@ func TestPersonalWorkspaceFilesArePrivateAndFeatureGated(t *testing.T) {
 	crossOwner := send(t, newAuthRequest(t, http.MethodGet, mePrivateFilesURL(ws.ID), nil, otherTok), app.routes())
 	assert.Equal(t, crossOwner.StatusCode, http.StatusNotFound)
 
-	app.config.PersonalSpacesEnabled = false
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.PersonalSpacesEnabled = false })
 	gated := send(t, newAuthRequest(t, http.MethodGet, mePrivateFilesURL(ws.ID), nil, tok), app.routes())
 	assert.Equal(t, gated.StatusCode, http.StatusNotFound)
 }
@@ -333,7 +333,11 @@ func TestWorkspaceDirectoryWritesVisibleFilePath(t *testing.T) {
 
 func TestObjectStoreVersionsTextFilesButReplacesBinaryFilesByDefault(t *testing.T) {
 	app, org, ws, tok := setupWorkspaceOwner(t)
-	app.config.Files.Revisions.Enabled = true
+	settingsRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"file_revisions_enabled":     true,
+		"file_revisions_keep_latest": 50,
+	}, tok), app.routes())
+	assert.Equal(t, settingsRes.StatusCode, http.StatusOK)
 
 	saveTwice := func(name string) database.WorkspaceFileContent {
 		create := send(t, newAuthRequest(t, http.MethodPost, orgPrivateFilesURL(org.Slug, ws.ID), map[string]any{"name": name}, tok), app.routes())

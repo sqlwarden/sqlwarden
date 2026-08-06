@@ -98,23 +98,31 @@ func (d *mysqlDriver) Close() error {
 }
 
 func (d *mysqlDriver) Query(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
+	return d.QueryWithOptions(ctx, query, d.scanOptions, args...)
+}
+
+func (d *mysqlDriver) QueryWithOptions(ctx context.Context, query string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
 	// SQL is intentionally user-authored IDE input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: query: %w", err)
 	}
-	return cursor.ScanRows(rows, d.scanOptions)
+	return cursor.ScanRows(rows, opts)
 }
 
 func (d *mysqlDriver) Execute(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
+	return d.ExecuteWithOptions(ctx, query, d.scanOptions, args...)
+}
+
+func (d *mysqlDriver) ExecuteWithOptions(ctx context.Context, query string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
 	// SQL is intentionally user-authored IDE input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: execute: %w", err)
 	}
-	return cursor.ScanRows(rows, d.scanOptions)
+	return cursor.ScanRows(rows, opts)
 }
 
 func (d *mysqlDriver) Dialect() engine.Dialect {

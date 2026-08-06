@@ -116,7 +116,12 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, _, err := token.IssueWithSessionTTL(strconv.FormatInt(account.ID, 10), authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
+	runtimeSettings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	accessToken, _, err := token.IssueWithSessionTTL(strconv.FormatInt(account.ID, 10), authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, runtimeSettings.JWTAccessTokenTTL)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -365,12 +370,22 @@ func (app *application) getInstanceSettings(w http.ResponseWriter, r *http.Reque
 
 func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		InstanceName          *string             `json:"instance_name"`
-		InstanceDescription   *string             `json:"instance_description"`
-		SupportEmail          *string             `json:"support_email"`
-		PublicURL             *string             `json:"public_url"`
-		PersonalSpacesEnabled *bool               `json:"personal_spaces_enabled"`
-		V                     validator.Validator `json:"-"`
+		InstanceName                   *string             `json:"instance_name"`
+		InstanceDescription            *string             `json:"instance_description"`
+		SupportEmail                   *string             `json:"support_email"`
+		PublicURL                      *string             `json:"public_url"`
+		PersonalSpacesEnabled          *bool               `json:"personal_spaces_enabled"`
+		JWTAccessTokenTTLSeconds       *int64              `json:"jwt_access_token_ttl_seconds"`
+		SessionsRevocationEnabled      *bool               `json:"sessions_revocation_enabled"`
+		QueryMaxResultRows             *int                `json:"query_max_result_rows"`
+		QueryMaxResultBytes            *int64              `json:"query_max_result_bytes"`
+		ExportsSyncMaxBytes            *int64              `json:"exports_sync_max_bytes"`
+		ExportsBackgroundMaxBytes      *int64              `json:"exports_background_max_bytes"`
+		SchemaSnapshotFreshnessSeconds *int64              `json:"schema_snapshot_freshness_seconds"`
+		FileRevisionsEnabled           *bool               `json:"file_revisions_enabled"`
+		FileRevisionsKeepLatest        *int                `json:"file_revisions_keep_latest"`
+		ErrorNotificationEmail         *string             `json:"error_notification_email"`
+		V                              validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -383,7 +398,17 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		input.InstanceDescription != nil ||
 		input.SupportEmail != nil ||
 		input.PublicURL != nil ||
-		input.PersonalSpacesEnabled != nil
+		input.PersonalSpacesEnabled != nil ||
+		input.JWTAccessTokenTTLSeconds != nil ||
+		input.SessionsRevocationEnabled != nil ||
+		input.QueryMaxResultRows != nil ||
+		input.QueryMaxResultBytes != nil ||
+		input.ExportsSyncMaxBytes != nil ||
+		input.ExportsBackgroundMaxBytes != nil ||
+		input.SchemaSnapshotFreshnessSeconds != nil ||
+		input.FileRevisionsEnabled != nil ||
+		input.FileRevisionsKeepLatest != nil ||
+		input.ErrorNotificationEmail != nil
 	input.V.Check(hasPatch, "At least one setting is required.")
 	if input.InstanceName != nil {
 		*input.InstanceName = strings.TrimSpace(*input.InstanceName)
@@ -401,6 +426,31 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	if input.PublicURL != nil {
 		*input.PublicURL = strings.TrimSpace(*input.PublicURL)
 		input.V.CheckField(*input.PublicURL == "" || validator.IsURL(*input.PublicURL), "public_url", "Public URL must be a valid URL.")
+	}
+	if input.JWTAccessTokenTTLSeconds != nil {
+		input.V.CheckField(*input.JWTAccessTokenTTLSeconds > 0 && *input.JWTAccessTokenTTLSeconds <= maxRuntimeDurationSeconds, "jwt_access_token_ttl_seconds", "Access token lifetime is outside the supported range.")
+	}
+	if input.QueryMaxResultRows != nil {
+		input.V.CheckField(*input.QueryMaxResultRows > 0, "query_max_result_rows", "Query row limit must be greater than 0.")
+	}
+	if input.QueryMaxResultBytes != nil {
+		input.V.CheckField(*input.QueryMaxResultBytes > 0, "query_max_result_bytes", "Query byte limit must be greater than 0.")
+	}
+	if input.ExportsSyncMaxBytes != nil {
+		input.V.CheckField(*input.ExportsSyncMaxBytes > 0, "exports_sync_max_bytes", "Synchronous export limit must be greater than 0.")
+	}
+	if input.ExportsBackgroundMaxBytes != nil {
+		input.V.CheckField(*input.ExportsBackgroundMaxBytes >= 0, "exports_background_max_bytes", "Background export limit must be 0 or greater.")
+	}
+	if input.SchemaSnapshotFreshnessSeconds != nil {
+		input.V.CheckField(*input.SchemaSnapshotFreshnessSeconds > 0 && *input.SchemaSnapshotFreshnessSeconds <= maxRuntimeDurationSeconds, "schema_snapshot_freshness_seconds", "Schema snapshot freshness is outside the supported range.")
+	}
+	if input.FileRevisionsKeepLatest != nil {
+		input.V.CheckField(*input.FileRevisionsKeepLatest >= 0, "file_revisions_keep_latest", "Revision retention must be 0 or greater.")
+	}
+	if input.ErrorNotificationEmail != nil {
+		*input.ErrorNotificationEmail = strings.TrimSpace(*input.ErrorNotificationEmail)
+		input.V.CheckField(*input.ErrorNotificationEmail == "" || validator.IsEmail(*input.ErrorNotificationEmail), "error_notification_email", "Error notification email must be a valid email address.")
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -428,6 +478,43 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	}
 	if input.PersonalSpacesEnabled != nil {
 		nextSettings.PersonalSpacesEnabled = *input.PersonalSpacesEnabled
+	}
+	if input.JWTAccessTokenTTLSeconds != nil {
+		nextSettings.JWTAccessTokenTTLSeconds = *input.JWTAccessTokenTTLSeconds
+	}
+	if input.SessionsRevocationEnabled != nil {
+		nextSettings.SessionsRevocationEnabled = *input.SessionsRevocationEnabled
+	}
+	if input.QueryMaxResultRows != nil {
+		nextSettings.QueryMaxResultRows = *input.QueryMaxResultRows
+	}
+	if input.QueryMaxResultBytes != nil {
+		nextSettings.QueryMaxResultBytes = *input.QueryMaxResultBytes
+	}
+	if input.ExportsSyncMaxBytes != nil {
+		nextSettings.ExportsSyncMaxBytes = *input.ExportsSyncMaxBytes
+	}
+	if input.ExportsBackgroundMaxBytes != nil {
+		nextSettings.ExportsBackgroundMaxBytes = *input.ExportsBackgroundMaxBytes
+	}
+	if input.SchemaSnapshotFreshnessSeconds != nil {
+		nextSettings.SchemaSnapshotFreshnessSeconds = *input.SchemaSnapshotFreshnessSeconds
+	}
+	if input.FileRevisionsEnabled != nil {
+		nextSettings.FileRevisionsEnabled = *input.FileRevisionsEnabled
+	}
+	if input.FileRevisionsKeepLatest != nil {
+		nextSettings.FileRevisionsKeepLatest = *input.FileRevisionsKeepLatest
+	}
+	if input.ErrorNotificationEmail != nil {
+		nextSettings.ErrorNotificationEmail = *input.ErrorNotificationEmail
+	}
+	if app.config.Files.StorageMode == FilesStorageModeFile && nextSettings.FileRevisionsEnabled {
+		input.V.AddFieldError("file_revisions_enabled", "File revisions are not supported with file storage mode.")
+	}
+	if input.V.HasErrors() {
+		app.failedValidation(w, r, input.V)
+		return
 	}
 
 	settings, err := app.db.UpsertInstanceSettings(r.Context(), nextSettings)

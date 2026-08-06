@@ -486,10 +486,15 @@ func (app *application) getConnectionSchemaSnapshot(w http.ResponseWriter, r *ht
 		app.writeSnapshotPending(w, r)
 		return
 	}
+	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
 	status := schemaStatusResponse{
 		Status: "available", Mode: "persistent", SnapshotID: snapshot.ID,
 		GeneratedAt: &snapshot.GeneratedAt,
-		Stale:       time.Since(snapshot.GeneratedAt) >= app.config.Schema.SnapshotFreshness,
+		Stale:       time.Since(snapshot.GeneratedAt) >= runtimeSettings.SchemaSnapshotFreshness,
 	}
 	if job, active, lookupErr := app.workspaceJobStore().ActiveBySingletonKey(r.Context(), schemaSyncSingletonKey(conn.ID)); lookupErr == nil && active {
 		status.Status = "refreshing"

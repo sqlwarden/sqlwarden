@@ -548,7 +548,12 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = d.Connect(ctx, app.driverConnectionConfig(input.Driver, input.DSN))
+	settings, err := app.runtimeSettingsService().effectiveForOrg(ctx, nil)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	err = d.Connect(ctx, app.driverConnectionConfig(input.Driver, input.DSN, settings))
 	if err != nil {
 		latency := time.Since(start).Milliseconds()
 		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "connect"), slog.String("error_category", connectionTestErrorCategory(err)))
@@ -627,6 +632,11 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 
 	connID := strconv.FormatInt(conn.ID, 10)
 	accountID := strconv.FormatInt(account.ID, 10)
+	settings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), ws)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
 
 	session, created, err := app.connManager.GetOrCreateWithMetadata(accountID, connID, connection.SessionMetadata{
 		OrgID:       strconv.FormatInt(org.ID, 10),
@@ -638,7 +648,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		if err := d.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, conn.DefaultScope)); err != nil {
+		if err := d.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, settings, conn.DefaultScope)); err != nil {
 			return nil, err
 		}
 		return d, nil
@@ -793,12 +803,12 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) driverConnectionConfig(driverName, dsn string, defaultScopes ...metadata.ScopePath) engine.ConnectionConfig {
+func (app *application) driverConnectionConfig(driverName, dsn string, settings effectiveRuntimeSettings, defaultScopes ...metadata.ScopePath) engine.ConnectionConfig {
 	config := engine.ConnectionConfig{
 		DSN:            dsn,
 		Driver:         driverName,
-		MaxResultRows:  app.config.Query.MaxResultRows,
-		MaxResultBytes: int64(app.config.Query.MaxResultBytes),
+		MaxResultRows:  settings.QueryMaxResultRows,
+		MaxResultBytes: settings.QueryMaxResultBytes,
 	}
 	if len(defaultScopes) > 0 {
 		config.DefaultScope = defaultScopes[0]
@@ -826,6 +836,11 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
+		return
+	}
+	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
+	if err != nil {
+		app.serverError(w, r, err)
 		return
 	}
 
@@ -883,7 +898,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = app.executeDQLQuery(r, session, input.SQL, input.UseCursor, input.PageSize, start)
+		rs, execErr = app.executeDQLQuery(r, session, input.SQL, input.UseCursor, input.PageSize, start, runtimeSettings)
 	case classifier.KindDML:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
@@ -894,7 +909,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = session.Execute(r.Context(), input.SQL)
+		rs, execErr = session.ExecuteWithOptions(r.Context(), input.SQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
 	case classifier.KindDDL:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
@@ -905,14 +920,14 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = session.Execute(r.Context(), input.SQL)
+		rs, execErr = session.ExecuteWithOptions(r.Context(), input.SQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
 	default:
 		if !hasBroadExecute {
 			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnExecute)...)
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = session.Execute(r.Context(), input.SQL)
+		rs, execErr = session.ExecuteWithOptions(r.Context(), input.SQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
 	}
 
 	if execErr != nil {
@@ -946,9 +961,9 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *application) executeDQLQuery(r *http.Request, session *connection.Session, sql string, useCursor *bool, pageSize *int, start time.Time) (*result.ResultSet, error) {
+func (app *application) executeDQLQuery(r *http.Request, session *connection.Session, sql string, useCursor *bool, pageSize *int, start time.Time, runtimeSettings effectiveRuntimeSettings) (*result.ResultSet, error) {
 	if useCursor == nil || *useCursor {
-		rs, err := app.executeQueryWithCursor(r, session, sql, app.queryCursorPageSize(pageSize), start)
+		rs, err := app.executeQueryWithCursor(r, session, sql, queryCursorPageSize(pageSize, runtimeSettings), start, runtimeSettings)
 		if err == nil && rs != nil {
 			return rs, nil
 		}
@@ -961,10 +976,10 @@ func (app *application) executeDQLQuery(r *http.Request, session *connection.Ses
 			)
 		}
 	}
-	return session.Query(r.Context(), sql)
+	return session.QueryWithOptions(r.Context(), sql, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
 }
 
-func (app *application) executeQueryWithCursor(r *http.Request, session *connection.Session, sql string, pageSize int, start time.Time) (*result.ResultSet, error) {
+func (app *application) executeQueryWithCursor(r *http.Request, session *connection.Session, sql string, pageSize int, start time.Time, runtimeSettings effectiveRuntimeSettings) (*result.ResultSet, error) {
 	app.logInfo(r, "query cursor opening",
 		slog.String("session_id", session.ID),
 		slog.Int("page_size", pageSize),
@@ -980,7 +995,7 @@ func (app *application) executeQueryWithCursor(r *http.Request, session *connect
 		Cursor:        cursorHandle,
 	})
 
-	rs, state, err := cursorHandle.Fetch(r.Context(), app.queryCursorScanOptions(pageSize))
+	rs, state, err := cursorHandle.Fetch(r.Context(), queryCursorScanOptions(pageSize, runtimeSettings))
 	if err != nil {
 		app.queryCursorManager().Remove(qc.ID)
 		return nil, err

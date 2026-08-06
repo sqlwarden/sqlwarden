@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/token"
 )
 
@@ -40,7 +41,7 @@ func issueTestToken(t *testing.T, app *application, accountID int64, email, name
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, _, err := token.IssueWithSessionTTL(strconv.FormatInt(accountID, 10), authSession.ID, email, name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
+	tok, _, err := token.IssueWithSessionTTL(strconv.FormatInt(accountID, 10), authSession.ID, email, name, app.config.JWT.SecretKey, time.Duration(database.DefaultJWTAccessTokenTTLSeconds)*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +130,11 @@ func TestAuthenticateV1_RejectsTokenWithoutAuthSession(t *testing.T) {
 
 func TestAuthenticateV1_AllowsTokenWithoutAuthSessionWhenRevocationDisabled(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
-	app.config.Sessions.RevocationEnabled = false
+	settings := database.DefaultInstanceSettings()
+	settings.SessionsRevocationEnabled = false
+	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
+		t.Fatal(err)
+	}
 
 	account, err := app.db.InsertAccount(context.Background(), "revocation-disabled@example.com", "Revocation Disabled", nil)
 	if err != nil {
@@ -189,7 +194,11 @@ func TestAuthenticateV1_RejectsRevokedAuthSession(t *testing.T) {
 
 func TestOrgCtx_DoesNotCreateOrgAccessSessionWhenRevocationDisabled(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
-	app.config.Sessions.RevocationEnabled = false
+	settings := database.DefaultInstanceSettings()
+	settings.SessionsRevocationEnabled = false
+	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
+		t.Fatal(err)
+	}
 
 	account, err := app.db.InsertAccount(context.Background(), "orgctx-no-session@example.com", "Org Ctx No Session", nil)
 	if err != nil {

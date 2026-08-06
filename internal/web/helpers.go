@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -27,7 +28,11 @@ func (app *application) newAuthenticationToken(userID int64) (string, time.Time,
 	var claims jwt.Claims
 	claims.Subject = strconv.FormatInt(userID, 10)
 
-	tokenTTL := app.config.JWT.AccessTokenTTL
+	settings, err := app.runtimeSettingsService().effectiveForOrg(context.Background(), nil)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	tokenTTL := settings.JWTAccessTokenTTL
 	if tokenTTL <= 0 {
 		tokenTTL = 24 * time.Hour
 	}

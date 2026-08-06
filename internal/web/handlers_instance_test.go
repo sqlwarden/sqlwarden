@@ -435,9 +435,6 @@ func TestGetInstanceSettings(t *testing.T) {
 	assert.Equal(t, res.BodyFields["instance_name"], "SQLWarden")
 	assert.Equal(t, res.BodyFields["public_url"], any(app.config.BaseURL))
 	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], true)
-	assert.Equal(t, res.BodyFields["deployment_mode"], any(string(DeploymentModeServer)))
-	assert.Equal(t, res.BodyFields["access_mode"], any(string(AccessModeMultiUser)))
-	assert.Equal(t, res.BodyFields["single_user_mode"], false)
 }
 
 func TestUpdateInstanceSettings(t *testing.T) {
@@ -446,13 +443,11 @@ func TestUpdateInstanceSettings(t *testing.T) {
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
 	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
-		"instance_name":             "Acme SQLWarden",
-		"instance_description":      "Shared database access for Acme.",
-		"support_email":             "support@example.com",
-		"public_url":                "https://sqlwarden.example.com",
-		"personal_spaces_enabled":   false,
-		"deployment_mode":           "desktop",
-		"runtime_settings_readonly": false,
+		"instance_name":           "Acme SQLWarden",
+		"instance_description":    "Shared database access for Acme.",
+		"support_email":           "support@example.com",
+		"public_url":              "https://sqlwarden.example.com",
+		"personal_spaces_enabled": false,
 	}, adminTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["instance_name"], "Acme SQLWarden")
@@ -460,7 +455,6 @@ func TestUpdateInstanceSettings(t *testing.T) {
 	assert.Equal(t, res.BodyFields["support_email"], "support@example.com")
 	assert.Equal(t, res.BodyFields["public_url"], "https://sqlwarden.example.com")
 	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], false)
-	assert.Equal(t, res.BodyFields["deployment_mode"], any(string(DeploymentModeServer)))
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)

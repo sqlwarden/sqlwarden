@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/validator"
 )
 
@@ -30,7 +31,7 @@ func TestReportServerError(t *testing.T) {
 
 	t.Run("Does not send notification email when disabled", func(t *testing.T) {
 		app := newTestApplication(t)
-		app.config.Notifications.Email = ""
+		updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.ErrorNotificationEmail = "" })
 
 		req := newTestRequest(t, http.MethodGet, "/test", nil)
 
@@ -42,7 +43,7 @@ func TestReportServerError(t *testing.T) {
 
 	t.Run("Sends notification email when enabled", func(t *testing.T) {
 		app := newTestApplication(t)
-		app.config.Notifications.Email = "zoe@example.com"
+		updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.ErrorNotificationEmail = "zoe@example.com" })
 
 		req := newTestRequest(t, http.MethodGet, "/test", nil)
 
@@ -81,7 +82,7 @@ func TestServerError(t *testing.T) {
 
 	t.Run("Does not send notification email when disabled", func(t *testing.T) {
 		app := newTestApplication(t)
-		app.config.Notifications.Email = ""
+		updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.ErrorNotificationEmail = "" })
 
 		req := newTestRequest(t, http.MethodGet, "/test", nil)
 
@@ -93,7 +94,7 @@ func TestServerError(t *testing.T) {
 
 	t.Run("Sends notification email when enabled", func(t *testing.T) {
 		app := newTestApplication(t)
-		app.config.Notifications.Email = "zoe@example.com"
+		updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.ErrorNotificationEmail = "zoe@example.com" })
 
 		req := newTestRequest(t, http.MethodGet, "/test", nil)
 

@@ -72,7 +72,12 @@ func (app *application) startQueryCursor(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	pageSize := app.queryCursorPageSize(input.PageSize)
+	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	pageSize := queryCursorPageSize(input.PageSize, runtimeSettings)
 	session, ok := app.resolveQueryRuntimeSession(w, r, input.SQL)
 	if !ok {
 		return
@@ -112,7 +117,7 @@ func (app *application) startQueryCursor(w http.ResponseWriter, r *http.Request)
 		Cursor:        cursor,
 	})
 
-	rs, state, err := cursor.Fetch(r.Context(), app.queryCursorScanOptions(pageSize))
+	rs, state, err := cursor.Fetch(r.Context(), queryCursorScanOptions(pageSize, runtimeSettings))
 	if err != nil {
 		app.queryCursorManager().Remove(qc.ID)
 		if app.isQueryRequestCanceled(r, err) {
@@ -167,7 +172,12 @@ func (app *application) fetchQueryCursor(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	pageSize := app.queryCursorPageSize(input.PageSize)
+	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	pageSize := queryCursorPageSize(input.PageSize, runtimeSettings)
 	qc, ok := app.resolveQueryCursorRecord(w, r)
 	if !ok {
 		return
@@ -198,7 +208,7 @@ func (app *application) fetchQueryCursor(w http.ResponseWriter, r *http.Request)
 	}
 
 	start := time.Now()
-	rs, state, err := qc.Cursor.Fetch(r.Context(), app.queryCursorScanOptions(pageSize))
+	rs, state, err := qc.Cursor.Fetch(r.Context(), queryCursorScanOptions(pageSize, runtimeSettings))
 	if err != nil {
 		if app.isQueryRequestCanceled(r, err) {
 			app.logWarn(r, "query cursor fetch cancelled",
@@ -310,21 +320,21 @@ func queryCursorRecordAttrs(qc *connection.QueryCursorRecord, attrs ...slog.Attr
 	return append(out, attrs...)
 }
 
-func (app *application) queryCursorPageSize(requested *int) int {
+func queryCursorPageSize(requested *int, settings effectiveRuntimeSettings) int {
 	pageSize := defaultQueryCursorPageSize
 	if requested != nil {
 		pageSize = *requested
 	}
-	if pageSize > app.config.Query.MaxResultRows {
-		return app.config.Query.MaxResultRows
+	if pageSize > settings.QueryMaxResultRows {
+		return settings.QueryMaxResultRows
 	}
 	return pageSize
 }
 
-func (app *application) queryCursorScanOptions(pageSize int) cursor.ScanOptions {
+func queryCursorScanOptions(pageSize int, settings effectiveRuntimeSettings) cursor.ScanOptions {
 	return cursor.ScanOptions{
 		MaxRows:  pageSize,
-		MaxBytes: int64(app.config.Query.MaxResultBytes),
+		MaxBytes: settings.QueryMaxResultBytes,
 	}
 }
 

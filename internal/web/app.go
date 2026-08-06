@@ -54,6 +54,7 @@ type application struct {
 	jobStore          *jobs.Store
 	jobRegistry       *jobs.Registry
 	jobRunnerCancel   context.CancelFunc
+	runtimeSettings   *runtimeSettingsService
 }
 
 type fileStoreRegistry struct {
@@ -95,8 +96,6 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			"log_level", cfg.Log.Level,
 			"log_format", cfg.Log.Format,
 			"base_url_configured", strings.TrimSpace(cfg.BaseURL) != "",
-			"personal_spaces_enabled", cfg.PersonalSpacesEnabled,
-			"sessions_revocation_enabled", cfg.Sessions.RevocationEnabled,
 			"tls_enabled", cfg.TLS.Enabled,
 			"smtp_enabled", cfg.SMTP.Enabled,
 		),
@@ -108,7 +107,6 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		slog.Group("files",
 			"storage_mode", cfg.Files.StorageMode,
 			"active_backend", cfg.Files.ActiveStorageBackend,
-			"revisions_enabled", cfg.Files.Revisions.Enabled,
 		),
 		slog.Group("jobs",
 			"worker_count", cfg.Jobs.WorkerCount,
@@ -133,6 +131,10 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			return nil, err
 		}
 		logger.Info("database migrations complete")
+	}
+	if err := validateRuntimeSettingsInvariant(context.Background(), db); err != nil {
+		db.Close()
+		return nil, err
 	}
 
 	mailer := smtp.NewDisabledMailer(cfg.SMTP.From)
@@ -182,6 +184,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		enforcer:          enforcer,
 		fileStores:        fileStores,
 		jobStore:          jobs.NewStore(db),
+		runtimeSettings:   newRuntimeSettingsService(db, cfg.BaseURL),
 	}
 	app.configureConnectionCacheInvalidation()
 	app.jobRegistry = app.defaultJobRegistry()
