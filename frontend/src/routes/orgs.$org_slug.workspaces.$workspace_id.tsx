@@ -1,4 +1,5 @@
 import { trimTrailingSlash } from '#/lib/utils'
+import { useWorkspacePageTitle } from '#/lib/page-title'
 import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useRouterState } from '@tanstack/react-router'
 import { Icon, type AppIcon } from '#/lib/icons'
@@ -39,6 +40,7 @@ type OverviewCard = {
 }
 
 function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; workspaceId: string }) {
+  useWorkspacePageTitle('Overview')
   const workspace = useQuery(orgWorkspaceQueryOptions(orgSlug, workspaceId))
   const effectivePermissions = useQuery(
     orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId),

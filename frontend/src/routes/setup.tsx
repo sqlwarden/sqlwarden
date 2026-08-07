@@ -16,12 +16,14 @@ import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { PasswordInput } from '#/components/ui/password-input'
+import { usePageTitle } from '#/lib/page-title'
 
 export const Route = createFileRoute('/setup')({
   component: SetupPage,
 })
 
 function SetupPage() {
+  usePageTitle('Setup')
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const setupStatus = useSetupStatus()

@@ -54,6 +54,7 @@ import { Textarea } from '#/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { RoutePending } from '#/components/RoutePending'
 import { UnitInputField } from '#/components/settings/UnitInputField'
+import { usePageTitle } from '#/lib/page-title'
 
 export const Route = createFileRoute('/administration/instance')({
   component: SettingsInstancePage,
@@ -190,6 +191,7 @@ function unitsFromSettings(settings: InstanceSettings): FormUnits {
 }
 
 function SettingsInstancePage() {
+  usePageTitle('Settings', 'Administration')
   const queryClient = useQueryClient()
   const settings = useQuery(instanceSettingsQueryOptions())
   const configuration = useQuery(instanceConfigurationQueryOptions())

@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { usePageTitle, usePageTitleScope } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -114,6 +115,8 @@ function OrganizationUserContextPage() {
   const teamItems = teams.data?.items ?? []
   const existingTeamSlugs = new Set(teamItems.map((team) => team.slug))
   const displayName = member.data?.name || member.data?.email || `User #${accountId}`
+  const { organizationName } = usePageTitleScope()
+  usePageTitle(displayName, organizationName)
   const canManageTeams =
     canReadUser && hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
   const canManageMemberRole =

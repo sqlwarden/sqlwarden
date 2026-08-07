@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useOrganizationPageTitle } from '#/lib/page-title'
 import { trimTrailingSlash } from '#/lib/utils'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -51,6 +52,7 @@ function OrganizationWorkspacesRoute() {
 }
 
 function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
+  useOrganizationPageTitle('Workspaces')
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)

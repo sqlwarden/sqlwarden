@@ -15,6 +15,7 @@ import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
 import { Skeleton } from '#/components/ui/skeleton'
 import { cn } from '#/lib/utils'
+import { usePageTitle } from '#/lib/page-title'
 
 export const Route = createFileRoute('/settings/my-organizations')({
   component: SettingsMyOrganizationsPage,
@@ -22,6 +23,7 @@ export const Route = createFileRoute('/settings/my-organizations')({
 })
 
 function SettingsMyOrganizationsPage() {
+  usePageTitle('My Organizations', 'Settings')
   const { query, searchText, setSearchText, clearSearch, setPage, setPageSize } = useListPageState({
     page: 1,
     page_size: 12,

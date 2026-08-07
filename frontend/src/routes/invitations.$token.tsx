@@ -15,6 +15,7 @@ import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
+import { usePageTitle } from '#/lib/page-title'
 
 export const Route = createFileRoute('/invitations/$token')({
   component: InvitationPage,
@@ -30,6 +31,11 @@ function InvitationPage() {
     queryFn: () => api.get<OrganizationInvitationDetails>(`/api/v1/invitations/${token}`),
     retry: false,
   })
+  usePageTitle(
+    invitation.data?.organization.name
+      ? `${invitation.data.organization.name} invitation`
+      : 'Invitation',
+  )
   const accept = useMutation({
     mutationFn: () =>
       api.post<AcceptOrganizationInvitationResponse>(`/api/v1/invitations/${token}/accept`, {

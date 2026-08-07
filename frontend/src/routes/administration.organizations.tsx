@@ -37,6 +37,7 @@ import {
 } from '#/components/ui/table'
 import { cn } from '#/lib/utils'
 import { slugify } from '#/lib/strings'
+import { usePageTitle } from '#/lib/page-title'
 
 export const Route = createFileRoute('/administration/organizations')({
   component: SettingsOrganizationsPage,
@@ -44,6 +45,7 @@ export const Route = createFileRoute('/administration/organizations')({
 })
 
 function SettingsOrganizationsPage() {
+  usePageTitle('Organizations', 'Administration')
   const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)
   const [newOrganizationName, setNewOrganizationName] = useState('')

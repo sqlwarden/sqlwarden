@@ -27,6 +27,7 @@ import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
+import { usePageTitle } from '#/lib/page-title'
 import {
   Table,
   TableBody,
@@ -42,6 +43,7 @@ export const Route = createFileRoute('/administration/administrators')({
 })
 
 function SettingsAdministratorsPage() {
+  usePageTitle('Administrators', 'Administration')
   const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)
   const [email, setEmail] = useState('')

@@ -29,6 +29,7 @@ import { visibleActivities } from './ideActivities'
 import type { Workspace } from '#/lib/api/types'
 import { useSession } from '#/hooks/use-session'
 import { cn } from '#/lib/utils'
+import { usePageTitle } from '#/lib/page-title'
 import { ContextMenu, ContextMenuProvider } from '#/components/ui/context-menu'
 import { buildWorkspaceMenu } from './contextMenus/workspaceMenu'
 import {
@@ -142,6 +143,8 @@ export function WorkspaceIdeContent({
 }
 
 export function WorkspaceIdeSkeleton() {
+  usePageTitle('Editor')
+
   return (
     <main
       aria-busy="true"
@@ -220,6 +223,8 @@ export function WorkspaceIdeSkeleton() {
 }
 
 function NoWorkspaceAccess() {
+  usePageTitle('Editor')
+
   return (
     <WorkspaceStateFrame>
       <Empty>
@@ -241,6 +246,8 @@ function NoWorkspaceAccess() {
 }
 
 function WorkspaceLoadError({ isRetrying, onRetry }: { isRetrying: boolean; onRetry: () => void }) {
+  usePageTitle('Editor')
+
   return (
     <WorkspaceStateFrame>
       <Empty>
@@ -281,6 +288,46 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
   const { activeWorkspace, setActiveWorkspace } = useWorkspaceSelection(workspaces)
   const { data: session } = useSession()
 
+  return (
+    <>
+      <WorkspaceDocumentTitle workspace={activeWorkspace} />
+      <WorkspaceIdeInnerContent
+        orgSlug={orgSlug}
+        workspaces={workspaces}
+        activeWorkspace={activeWorkspace}
+        setActiveWorkspace={setActiveWorkspace}
+        session={session}
+      />
+    </>
+  )
+}
+
+export function WorkspaceDocumentTitle({ workspace }: { workspace?: Workspace }) {
+  const activeTabId = useIde((state) =>
+    workspace ? selectActiveTabId(state, workspace.id) : undefined,
+  )
+  const activeTabTitle = useIde((state) => state.tabs.find((tab) => tab.id === activeTabId)?.title)
+  usePageTitle(
+    activeTabTitle ?? workspace?.name ?? 'Editor',
+    activeTabTitle ? workspace?.name : workspace ? 'Editor' : undefined,
+  )
+
+  return null
+}
+
+function WorkspaceIdeInnerContent({
+  orgSlug,
+  workspaces,
+  activeWorkspace,
+  setActiveWorkspace,
+  session,
+}: {
+  orgSlug: string
+  workspaces: Workspace[]
+  activeWorkspace?: Workspace
+  setActiveWorkspace: (workspaceId: number) => void
+  session: ReturnType<typeof useSession>['data']
+}) {
   const orgPermissions = useQuery({
     ...orgEffectivePermissionsQueryOptions(orgSlug, 'org'),
     enabled: Boolean(session),

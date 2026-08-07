@@ -33,10 +33,12 @@ import { EmptyState } from '#/components/EmptyState'
 import { InitialsAvatar, getInitials } from '#/components/InitialsAvatar'
 import { Skeleton } from '#/components/ui/skeleton'
 import { cn } from '#/lib/utils'
+import { usePageTitle } from '#/lib/page-title'
 
 export const Route = createFileRoute('/')({ component: LandingPage })
 
 function LandingPage() {
+  usePageTitle('Organizations')
   const setupStatus = useSetupStatus()
   const brand = useBrand()
   const hasToken = Boolean(getAccessToken())

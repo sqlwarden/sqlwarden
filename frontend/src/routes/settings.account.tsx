@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/com
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { RoutePending } from '#/components/RoutePending'
+import { usePageTitle } from '#/lib/page-title'
 
 export const Route = createFileRoute('/settings/account')({
   component: SettingsAccountPage,
@@ -30,6 +31,7 @@ type PasswordErrors = {
 }
 
 function SettingsAccountPage() {
+  usePageTitle('Account', 'Settings')
   const queryClient = useQueryClient()
   const session = useSession(true)
   const account = session.data?.account

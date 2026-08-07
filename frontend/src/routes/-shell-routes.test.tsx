@@ -16,6 +16,7 @@ describe('authenticated shell routes', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/settings/account'))
     expect(await screen.findByRole('heading', { name: 'Account' })).toBeInTheDocument()
+    expect(document.title).toBe('Account | Settings | SQLWarden')
   })
 
   it('rejects administration routes for a regular account', async () => {
@@ -80,6 +81,7 @@ describe('authenticated shell routes', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/orgs/acme/workspaces/3'))
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
+    expect(document.title).toBe('Overview | Analytics | SQLWarden')
     expect(screen.queryByText('Connections', { selector: 'p' })).not.toBeInTheDocument()
   })
 })

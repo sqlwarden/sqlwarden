@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useOrganizationPageTitle } from '#/lib/page-title'
 import { trimTrailingSlash } from '#/lib/utils'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -94,6 +95,7 @@ function OrganizationRolesRoute() {
 }
 
 function OrganizationRolesPage({ orgSlug }: { orgSlug: string }) {
+  useOrganizationPageTitle('Roles')
   const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)
   const [roleName, setRoleName] = useState('')

@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useOrganizationPageTitle } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -53,6 +54,7 @@ type OrgFieldErrors = {
 }
 
 function OrganizationGeneralSettingsPage() {
+  useOrganizationPageTitle('General')
   const { org_slug: orgSlug } = Route.useParams()
   const search = Route.useSearch()
   const navigate = useNavigate()

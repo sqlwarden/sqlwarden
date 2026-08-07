@@ -16,6 +16,7 @@ describe('authentication route behavior', () => {
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
     expect(screen.getByRole('textbox')).toHaveAttribute('type', 'email')
     expect(document.querySelector('input[type="password"]')).toBeInTheDocument()
+    expect(document.title).toBe('Login | SQLWarden')
   })
 
   it('redirects an unconfigured instance from login to setup', async () => {
@@ -26,6 +27,7 @@ describe('authentication route behavior', () => {
     expect(
       await screen.findByRole('heading', { name: 'Create the instance admin' }),
     ).toBeInTheDocument()
+    expect(document.title).toBe('Setup | SQLWarden')
   })
 
   it('validates setup and derives an organization slug', async () => {
@@ -113,6 +115,7 @@ describe('authentication route behavior', () => {
     renderRoute('/invitations/existing-token')
 
     expect(await screen.findByRole('heading', { name: 'Join Acme' })).toBeInTheDocument()
+    expect(document.title).toBe('Acme invitation | SQLWarden')
     expect(screen.getByRole('button', { name: 'Sign in to accept' })).toHaveAttribute(
       'href',
       '/login?redirect=%2Finvitations%2Fexisting-token',

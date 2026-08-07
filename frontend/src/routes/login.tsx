@@ -13,12 +13,14 @@ import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { AmbientBackground } from '#/components/auth/AmbientBackground'
 import { LoginForm } from '#/components/auth/LoginForm'
 import { LoginSurface } from '#/components/auth/LoginSurface'
+import { usePageTitle } from '#/lib/page-title'
 
 export const Route = createFileRoute('/login')({
   component: LoginPage,
 })
 
 function LoginPage() {
+  usePageTitle('Login')
   const navigate = useNavigate()
   const redirect = safeRedirect(new URLSearchParams(window.location.search).get('redirect'))
   const queryClient = useQueryClient()

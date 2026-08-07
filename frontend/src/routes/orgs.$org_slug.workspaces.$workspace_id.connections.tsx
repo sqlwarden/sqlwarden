@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useWorkspacePageTitle } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -51,6 +52,7 @@ export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/c
 })
 
 function WorkspaceConnectionsPage() {
+  useWorkspacePageTitle('Connections')
   const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
   const queryClient = useQueryClient()
   const [editingConnection, setEditingConnection] = useState<Connection | null>(null)

@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useWorkspacePageTitle } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -100,6 +101,7 @@ const SUBJECT_TYPE_LABELS: Record<WorkspaceSubjectType, string> = {
 }
 
 function WorkspacePoliciesPage() {
+  useWorkspacePageTitle('Policies')
   const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
   const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)

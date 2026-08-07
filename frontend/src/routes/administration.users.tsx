@@ -31,6 +31,7 @@ import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
+import { usePageTitle } from '#/lib/page-title'
 import {
   Table,
   TableBody,
@@ -53,6 +54,7 @@ type CreateUserValues = {
 }
 
 function SettingsUsersPage() {
+  usePageTitle('Users', 'Administration')
   const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)
   const [values, setValues] = useState<CreateUserValues>({

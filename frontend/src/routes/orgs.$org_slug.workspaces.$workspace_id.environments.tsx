@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useWorkspacePageTitle } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -68,6 +69,7 @@ type EnvironmentFieldErrors = {
 }
 
 function WorkspaceEnvironmentsPage() {
+  useWorkspacePageTitle('Environments')
   const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)

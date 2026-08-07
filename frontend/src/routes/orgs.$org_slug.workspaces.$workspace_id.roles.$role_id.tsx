@@ -1,4 +1,5 @@
 import { errorMessage, isApiError } from '#/lib/api/errors'
+import { usePageTitle, usePageTitleScope } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -87,6 +88,8 @@ function WorkspaceRoleContextPage() {
     enabled: canReadRole,
   })
   const displayName = role.data ? role.data.name : `Role #${roleId}`
+  const { workspaceName } = usePageTitleScope()
+  usePageTitle(displayName, workspaceName)
   const editScopePermissions = role.data
     ? (permissionsCatalog.data?.scope_details[role.data.scope_type] ?? [])
     : []

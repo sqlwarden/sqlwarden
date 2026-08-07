@@ -2,8 +2,8 @@ import type { PropsWithChildren } from 'react'
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { Workspace } from '#/lib/api/types'
-import { WorkspaceIdeContent, useWorkspaceSelection } from './WorkspaceIde'
-import { createIdeStore, IdeStoreContext } from './useIdeStore'
+import { WorkspaceDocumentTitle, WorkspaceIdeContent, useWorkspaceSelection } from './WorkspaceIde'
+import { createIdeStore, IdeStoreContext, type EditorTab } from './useIdeStore'
 
 const workspaces: Workspace[] = [
   {
@@ -46,6 +46,7 @@ describe('WorkspaceIdeContent', () => {
     expect(status).toHaveAttribute('aria-busy', 'true')
     expect(screen.getByText('Loading editor…')).toHaveClass('sr-only')
     expect(view.container.querySelectorAll('[data-slot="skeleton"]')).not.toHaveLength(0)
+    expect(document.title).toBe('Editor | SQLWarden')
   })
 
   it('offers a retry when workspace loading fails', () => {
@@ -96,6 +97,46 @@ describe('WorkspaceIdeContent', () => {
       screen.getByText(/Ask an organization administrator to grant you access/),
     ).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+})
+
+describe('WorkspaceDocumentTitle', () => {
+  it('follows the active editor tab and workspace', async () => {
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const tab = (id: string, title: string): EditorTab => ({
+      id,
+      title,
+      workspaceId: workspaces[0].id,
+      kind: 'scratch',
+      content: '',
+    })
+
+    const view = render(
+      <IdeStoreContext.Provider value={store}>
+        <WorkspaceDocumentTitle workspace={workspaces[0]} />
+      </IdeStoreContext.Provider>,
+    )
+
+    expect(document.title).toBe('Analytics | Editor | SQLWarden')
+
+    await act(async () => store.getState().openTab(tab('first', 'Query 1')))
+    await waitFor(() => expect(document.title).toBe('Query 1 | Analytics | SQLWarden'))
+
+    await act(async () => store.getState().openTab(tab('second', 'Revenue report')))
+    await waitFor(() => expect(document.title).toBe('Revenue report | Analytics | SQLWarden'))
+
+    await act(async () => store.getState().closeTab('second'))
+    await waitFor(() => expect(document.title).toBe('Query 1 | Analytics | SQLWarden'))
+
+    await act(async () => store.getState().closeTab('first'))
+    await waitFor(() => expect(document.title).toBe('Analytics | Editor | SQLWarden'))
+
+    view.rerender(
+      <IdeStoreContext.Provider value={store}>
+        <WorkspaceDocumentTitle workspace={workspaces[1]} />
+      </IdeStoreContext.Provider>,
+    )
+    expect(document.title).toBe('Operations | Editor | SQLWarden')
   })
 })
 

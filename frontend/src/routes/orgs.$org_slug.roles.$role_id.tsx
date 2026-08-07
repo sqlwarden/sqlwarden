@@ -1,4 +1,5 @@
 import { errorMessage, isApiError } from '#/lib/api/errors'
+import { usePageTitle, usePageTitleScope } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -86,6 +87,8 @@ function OrganizationRoleContextPage() {
     enabled: canReadRole,
   })
   const displayName = role.data ? role.data.name : `Role #${roleId}`
+  const { organizationName } = usePageTitleScope()
+  usePageTitle(displayName, organizationName)
 
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState('')

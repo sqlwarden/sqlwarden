@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useOrganizationPageTitle } from '#/lib/page-title'
 import { trimTrailingSlash } from '#/lib/utils'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
@@ -77,6 +78,7 @@ function OrganizationUsersRoute() {
 }
 
 function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
+  useOrganizationPageTitle('Users')
   const queryClient = useQueryClient()
   const setupStatus = useSetupStatus()
   const [isAddingUser, setIsAddingUser] = useState(false)

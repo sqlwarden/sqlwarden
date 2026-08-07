@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { usePageTitle, usePageTitleScope } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
 import { useEffect } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -99,6 +100,8 @@ function PolicyContextPage() {
   const pageTitle = binding.data
     ? `${subjectDisplayName(binding.data)} → ${binding.data.role_name ? binding.data.role_name : 'Policy'}`
     : `Policy #${bindingId}`
+  const { organizationName } = usePageTitleScope()
+  usePageTitle(pageTitle, organizationName)
 
   useEffect(() => {
     if (!binding.error) return
