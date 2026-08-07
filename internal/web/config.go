@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"github.com/sqlwarden/internal/validator"
 )
 
 const (
@@ -74,11 +75,11 @@ const (
 )
 
 type Config struct {
-	BaseURL        string
-	HTTPPort       int
-	DeploymentMode string
-	AccessMode     string
-	Log            struct {
+	BootstrapBaseURL string
+	HTTPPort         int
+	DeploymentMode   string
+	AccessMode       string
+	Log              struct {
 		Format string
 	}
 	Cookie struct {
@@ -138,7 +139,7 @@ type DesktopBackend struct {
 
 func DefaultConfig() Config {
 	cfg := Config{}
-	cfg.BaseURL = defaultBaseURL
+	cfg.BootstrapBaseURL = defaultBaseURL
 	cfg.HTTPPort = defaultHTTPPort
 	cfg.DeploymentMode = defaultDeploymentMode
 	cfg.AccessMode = defaultAccessMode
@@ -192,7 +193,7 @@ type configOption struct {
 }
 
 var configOptions = []configOption{
-	{key: "base_url", env: "BASE_URL", flagName: "base-url", defaultValue: defaultBaseURL, usage: "Application base URL used in generated links and JWT claims"},
+	{key: "base_url", env: "BASE_URL", flagName: "base-url", defaultValue: defaultBaseURL, usage: "Initial instance base URL used only when bootstrapping runtime settings"},
 	{key: "http_port", env: "HTTP_PORT", flagName: "http-port", defaultValue: defaultHTTPPort, usage: "HTTP server port"},
 	{key: "log.format", env: "LOG_FORMAT", flagName: "log-format", defaultValue: defaultLogFormat, usage: "Log format (json or text)"},
 	{key: "cookie.secret_key", env: "COOKIE_SECRET_KEY", flagName: "cookie-secret-key", defaultValue: defaultCookieSecretKey, usage: "Cookie signing secret"},
@@ -276,7 +277,7 @@ func loadConfig(args []string) (Config, bool, error) {
 	}
 
 	cfg := DefaultConfig()
-	cfg.BaseURL = v.GetString("base_url")
+	cfg.BootstrapBaseURL = v.GetString("base_url")
 	cfg.HTTPPort = v.GetInt("http_port")
 	cfg.Log.Format = strings.ToLower(strings.TrimSpace(v.GetString("log.format")))
 	cfg.Cookie.SecretKey = v.GetString("cookie.secret_key")
@@ -309,6 +310,9 @@ func loadConfig(args []string) (Config, bool, error) {
 }
 
 func validateConfig(cfg Config) error {
+	if strings.TrimSpace(cfg.BootstrapBaseURL) == "" || !validator.IsURL(cfg.BootstrapBaseURL) {
+		return fmt.Errorf("base_url must be a valid URL")
+	}
 	if cfg.DeploymentMode != DeploymentModeServer && cfg.DeploymentMode != DeploymentModeDesktop {
 		return fmt.Errorf("deployment_mode must be %q or %q", DeploymentModeServer, DeploymentModeDesktop)
 	}

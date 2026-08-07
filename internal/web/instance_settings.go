@@ -18,9 +18,11 @@ var errRuntimeSettingsUnavailable = errors.New("runtime settings unavailable")
 const maxRuntimeDurationSeconds int64 = 9_223_372_036
 
 type effectiveRuntimeSettings struct {
+	BaseURL                   string
 	JWTAccessTokenTTL         time.Duration
 	SessionsRevocationEnabled bool
 	QueryMaxResultRows        int
+	QueryCursorPageSize       int
 	QueryMaxResultBytes       int64
 	ExportsSyncMaxBytes       int64
 	ExportsBackgroundMaxBytes int64
@@ -31,12 +33,37 @@ type effectiveRuntimeSettings struct {
 }
 
 type runtimeSettingsService struct {
-	db      *database.DB
-	baseURL string
+	db *database.DB
 }
 
-func newRuntimeSettingsService(db *database.DB, baseURL string) *runtimeSettingsService {
-	return &runtimeSettingsService{db: db, baseURL: baseURL}
+func newRuntimeSettingsService(db *database.DB) *runtimeSettingsService {
+	return &runtimeSettingsService{db: db}
+}
+
+func initializeInstanceBaseURL(ctx context.Context, db *database.DB, bootstrapBaseURL string) error {
+	current, found, err := db.GetInstanceSettings(ctx)
+	if err != nil {
+		return fmt.Errorf("initialize instance base URL: %w", err)
+	}
+	if !found {
+		return fmt.Errorf("initialize instance base URL: instance_settings row id=1 is missing; run database migrations")
+	}
+	if strings.TrimSpace(current.BaseURL) != "" {
+		return validateInstanceSettings(current)
+	}
+	configured, err := db.HasAnyInstanceAdmin(ctx)
+	if err != nil {
+		return fmt.Errorf("initialize instance base URL: %w", err)
+	}
+	if configured {
+		return validateInstanceSettings(current)
+	}
+
+	settings, err := db.InitializeInstanceBaseURL(ctx, strings.TrimSpace(bootstrapBaseURL))
+	if err != nil {
+		return fmt.Errorf("initialize instance base URL: %w", err)
+	}
+	return validateInstanceSettings(settings)
 }
 
 func validateRuntimeSettingsInvariant(ctx context.Context, db *database.DB) error {
@@ -54,8 +81,8 @@ func validateInstanceSettings(settings database.InstanceSettings) error {
 	if strings.TrimSpace(settings.InstanceName) == "" {
 		return fmt.Errorf("validate runtime settings: instance_name must not be empty")
 	}
-	if settings.PublicURL != "" && !validator.IsURL(settings.PublicURL) {
-		return fmt.Errorf("validate runtime settings: public_url is invalid")
+	if strings.TrimSpace(settings.BaseURL) == "" || !validator.IsURL(settings.BaseURL) {
+		return fmt.Errorf("validate runtime settings: base_url is invalid")
 	}
 	if settings.SupportEmail != "" && !validator.IsEmail(settings.SupportEmail) {
 		return fmt.Errorf("validate runtime settings: support_email is invalid")
@@ -68,6 +95,9 @@ func validateInstanceSettings(settings database.InstanceSettings) error {
 	}
 	if settings.QueryMaxResultRows <= 0 {
 		return fmt.Errorf("validate runtime settings: query_max_result_rows must be greater than 0")
+	}
+	if settings.QueryCursorPageSize <= 0 {
+		return fmt.Errorf("validate runtime settings: query_cursor_page_size must be greater than 0")
 	}
 	if settings.QueryMaxResultBytes <= 0 {
 		return fmt.Errorf("validate runtime settings: query_max_result_bytes must be greater than 0")
@@ -125,17 +155,16 @@ func (s *runtimeSettingsService) instance(ctx context.Context) (database.Instanc
 	if err := validateInstanceSettings(settings); err != nil {
 		return database.InstanceSettings{}, fmt.Errorf("%w: %v", errRuntimeSettingsUnavailable, err)
 	}
-	if settings.PublicURL == "" {
-		settings.PublicURL = s.baseURL
-	}
 	return settings, nil
 }
 
 func effectiveSettingsFromInstance(settings database.InstanceSettings) effectiveRuntimeSettings {
 	return effectiveRuntimeSettings{
+		BaseURL:                   settings.BaseURL,
 		JWTAccessTokenTTL:         time.Duration(settings.JWTAccessTokenTTLSeconds) * time.Second,
 		SessionsRevocationEnabled: settings.SessionsRevocationEnabled,
 		QueryMaxResultRows:        settings.QueryMaxResultRows,
+		QueryCursorPageSize:       settings.QueryCursorPageSize,
 		QueryMaxResultBytes:       settings.QueryMaxResultBytes,
 		ExportsSyncMaxBytes:       settings.ExportsSyncMaxBytes,
 		ExportsBackgroundMaxBytes: settings.ExportsBackgroundMaxBytes,
@@ -207,7 +236,7 @@ func (app *application) runtimeSettingsService() *runtimeSettingsService {
 	if app.runtimeSettings != nil {
 		return app.runtimeSettings
 	}
-	return newRuntimeSettingsService(app.db, app.config.BaseURL)
+	return newRuntimeSettingsService(app.db)
 }
 
 func (app *application) effectiveRuntimeSettingsForWorkspace(ctx context.Context, workspace database.Workspace) (effectiveRuntimeSettings, error) {
@@ -235,11 +264,12 @@ func (app *application) instanceSettingsResponse(settings database.InstanceSetti
 		"instance_name":                     settings.InstanceName,
 		"instance_description":              settings.InstanceDescription,
 		"support_email":                     settings.SupportEmail,
-		"public_url":                        settings.PublicURL,
+		"base_url":                          settings.BaseURL,
 		"personal_spaces_enabled":           settings.PersonalSpacesEnabled,
 		"jwt_access_token_ttl_seconds":      settings.JWTAccessTokenTTLSeconds,
 		"sessions_revocation_enabled":       settings.SessionsRevocationEnabled,
 		"query_max_result_rows":             settings.QueryMaxResultRows,
+		"query_cursor_page_size":            settings.QueryCursorPageSize,
 		"query_max_result_bytes":            settings.QueryMaxResultBytes,
 		"exports_sync_max_bytes":            settings.ExportsSyncMaxBytes,
 		"exports_background_max_bytes":      settings.ExportsBackgroundMaxBytes,
@@ -249,6 +279,7 @@ func (app *application) instanceSettingsResponse(settings database.InstanceSetti
 		"error_notification_email":          settings.ErrorNotificationEmail,
 		"log_level":                         settings.LogLevel,
 		"database_query_tracing_enabled":    settings.DatabaseQueryTracingEnabled,
+		"access_logs_enabled":               settings.AccessLogsEnabled,
 		"jobs_worker_count":                 settings.JobsWorkerCount,
 		"jobs_poll_interval_seconds":        settings.JobsPollIntervalSeconds,
 		"jobs_claim_lease_seconds":          settings.JobsClaimLeaseSeconds,

@@ -53,7 +53,7 @@ func newTestApplication(t *testing.T) *application {
 	app.config = DefaultConfig()
 
 	app.config.JWT.SecretKey = "k7mp29rf4qxhwn8vbtaj6pgucmve53y9"
-	app.config.BaseURL = "https://www.example.com"
+	app.config.BootstrapBaseURL = "https://www.example.com"
 	app.config.DeploymentMode = DeploymentModeServer
 	app.config.AccessMode = AccessModeMultiUser
 	app.config.Files.StorageMode = FilesStorageModeObject
@@ -70,7 +70,7 @@ func newTestApplication(t *testing.T) *application {
 	if err != nil || !found {
 		t.Fatalf("get instance settings: found=%v err=%v", found, err)
 	}
-	settings.PublicURL = app.config.BaseURL
+	settings.BaseURL = app.config.BootstrapBaseURL
 	settings.FileRevisionsEnabled = false
 	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
 		t.Fatal(err)

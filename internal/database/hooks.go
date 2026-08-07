@@ -13,9 +13,8 @@ import (
 // slowQueryDetectorHook is a [bun.QueryHook] that detects slow queries and logs them.
 // Slow queries are defined as queries that take longer than a specified threshold in milliseconds to execute.
 type slowQueryDetectorHook struct {
-	threshold    int64        // threshold in milliseconds
-	includeQuery *atomic.Bool // include SQL text only when query tracing is explicitly enabled
-	logger       *slog.Logger // logger to use for logging slow queries
+	threshold int64        // threshold in milliseconds
+	logger    *slog.Logger // logger to use for logging slow queries
 }
 
 // AfterQuery implements [bun.QueryHook].
@@ -25,14 +24,13 @@ func (s *slowQueryDetectorHook) AfterQuery(ctx context.Context, event *bun.Query
 		return
 	}
 
-	attrs := []slog.Attr{slog.String("duration", duration.String())}
+	attrs := []slog.Attr{
+		slog.String("duration", duration.String()),
+		slog.String("query", traceQuery(event)),
+	}
 	if requestID := observability.RequestID(ctx); requestID != "" {
 		attrs = append(attrs, slog.String("request_id", requestID))
 	}
-	if s.includeQuery != nil && s.includeQuery.Load() {
-		attrs = append(attrs, slog.String("query", traceQuery(event)))
-	}
-
 	s.logger.LogAttrs(ctx, slog.LevelWarn, "slow query detected", attrs...)
 }
 
@@ -80,11 +78,12 @@ func (d *debugQueryLoggerHook) BeforeQuery(ctx context.Context, event *bun.Query
 
 var _ bun.QueryHook = (*debugQueryLoggerHook)(nil) // enforce that debugQueryLoggerHook implements bun.QueryHook
 
-// traceQuery intentionally prefers Bun's placeholder-bearing template. The
-// interpolated query may contain passwords, tokens, or user data.
+// traceQuery intentionally prefers Bun's full executed query while SQLWarden
+// is under development. Production hardening must replace this with a
+// placeholder-bearing or redacted representation.
 func traceQuery(event *bun.QueryEvent) string {
-	if event.QueryTemplate != "" {
-		return event.QueryTemplate
+	if event.Query != "" {
+		return event.Query
 	}
-	return event.Query
+	return event.QueryTemplate
 }

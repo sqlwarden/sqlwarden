@@ -904,6 +904,8 @@ func TestExecuteQueryAppliesConfiguredResultLimit(t *testing.T) {
 func TestQueryCursorPagesResultsAndExpiresAfterExhaustion(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
+	var logs bytes.Buffer
+	app.logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-cursor-page"), "Query Cursor Page", "securepass99")
 	wsRes := send(t, newAuthRequest(t, http.MethodPost,
@@ -934,18 +936,23 @@ func TestQueryCursorPagesResultsAndExpiresAfterExhaustion(t *testing.T) {
 		assert.Equal(t, send(t, req, app.routes()).StatusCode, http.StatusOK)
 	}
 
+	settingsRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"query_cursor_page_size": 2,
+	}, tok), app.routes())
+	assert.Equal(t, settingsRes.StatusCode, http.StatusOK)
+
 	startReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors", map[string]any{
-		"sql":       "SELECT id FROM t ORDER BY id",
-		"page_size": 2,
+		"sql": "SELECT id FROM t ORDER BY id",
 	}, tok)
 	startReq.Header.Set("X-Warden-Session", sessionID)
 	startRes := send(t, startReq, app.routes())
 	assert.Equal(t, startRes.StatusCode, http.StatusOK)
 	assert.Equal(t, startRes.BodyFields["exhausted"], false)
 	assert.Equal(t, startRes.BodyFields["rows_returned"], any(float64(2)))
+	assert.Equal(t, startRes.BodyFields["page_size"], any(float64(2)))
 	queryCursorID := startRes.BodyFields["query_cursor_id"].(string)
 
-	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 2}, tok)
+	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+queryCursorID+"/fetch", nil, tok)
 	fetchReq.Header.Set("X-Warden-Session", sessionID)
 	fetchRes := send(t, fetchReq, app.routes())
 	assert.Equal(t, fetchRes.StatusCode, http.StatusOK)
@@ -957,6 +964,11 @@ func TestQueryCursorPagesResultsAndExpiresAfterExhaustion(t *testing.T) {
 	expiredRes := send(t, expiredReq, app.routes())
 	assert.Equal(t, expiredRes.StatusCode, http.StatusGone)
 	assert.Equal(t, expiredRes.BodyFields["error"].(map[string]any)["code"], apiErrorQueryCursorUnavailable)
+
+	for _, message := range []string{"query cursor started", "query cursor fetched"} {
+		assert.True(t, strings.Contains(logs.String(), `"level":"DEBUG","msg":"`+message+`"`))
+		assert.False(t, strings.Contains(logs.String(), `"level":"INFO","msg":"`+message+`"`))
+	}
 }
 
 func TestExecuteQueryReturnsCursorForPagedDQL(t *testing.T) {
@@ -1209,6 +1221,8 @@ func TestExecuteDQLQueryFallsBackToSessionQueryWhenCursorUnsupported(t *testing.
 func TestQueryCursorCloseAndRouteIsolation(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
+	var logs bytes.Buffer
+	app.logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-cursor-close"), "Query Cursor Close", "securepass99")
 	wsRes := send(t, newAuthRequest(t, http.MethodPost,
@@ -1251,6 +1265,8 @@ func TestQueryCursorCloseAndRouteIsolation(t *testing.T) {
 	fetchReq := newAuthRequest(t, http.MethodPost, envConnectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 1}, tok)
 	fetchReq.Header.Set("X-Warden-Session", sessionID)
 	assert.Equal(t, send(t, fetchReq, app.routes()).StatusCode, http.StatusGone)
+	assert.True(t, strings.Contains(logs.String(), `"level":"DEBUG","msg":"query cursor closed"`))
+	assert.False(t, strings.Contains(logs.String(), `"level":"INFO","msg":"query cursor closed"`))
 }
 
 func TestQueryCursorFetchHandlesParentSessionRemoval(t *testing.T) {

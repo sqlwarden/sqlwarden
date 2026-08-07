@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sqlwarden/internal/access"
@@ -57,6 +58,7 @@ type application struct {
 	runtimeCancel     context.CancelFunc
 	runtimeUpdates    chan database.InstanceSettings
 	runtimeSettings   *runtimeSettingsService
+	accessLogsEnabled atomic.Bool
 }
 
 type fileStoreRegistry struct {
@@ -96,7 +98,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	logger.Info("application configuration loaded",
 		slog.Group("config",
 			"log_format", cfg.Log.Format,
-			"base_url_configured", strings.TrimSpace(cfg.BaseURL) != "",
+			"bootstrap_base_url_configured", strings.TrimSpace(cfg.BootstrapBaseURL) != "",
 			"tls_enabled", cfg.TLS.Enabled,
 		),
 		slog.Group("database",
@@ -125,6 +127,10 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			return nil, err
 		}
 		logger.Info("database migrations complete")
+	}
+	if err := initializeInstanceBaseURL(context.Background(), db, cfg.BootstrapBaseURL); err != nil {
+		db.Close()
+		return nil, err
 	}
 	if err := validateRuntimeSettingsInvariant(context.Background(), db); err != nil {
 		db.Close()
@@ -169,7 +175,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		enforcer:          enforcer,
 		fileStores:        fileStores,
 		jobStore:          jobs.NewStore(db),
-		runtimeSettings:   newRuntimeSettingsService(db, cfg.BaseURL),
+		runtimeSettings:   newRuntimeSettingsService(db),
 		runtimeUpdates:    make(chan database.InstanceSettings, 1),
 	}
 	initialSettings, err := app.instanceSettings(context.Background())

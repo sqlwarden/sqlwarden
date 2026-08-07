@@ -130,11 +130,9 @@ func TestAuthenticateV1_RejectsTokenWithoutAuthSession(t *testing.T) {
 
 func TestAuthenticateV1_AllowsTokenWithoutAuthSessionWhenRevocationDisabled(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
-	settings := database.DefaultInstanceSettings()
-	settings.SessionsRevocationEnabled = false
-	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
-		t.Fatal(err)
-	}
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+		settings.SessionsRevocationEnabled = false
+	})
 
 	account, err := app.db.InsertAccount(context.Background(), "revocation-disabled@example.com", "Revocation Disabled", nil)
 	if err != nil {
@@ -194,11 +192,9 @@ func TestAuthenticateV1_RejectsRevokedAuthSession(t *testing.T) {
 
 func TestOrgCtx_DoesNotCreateOrgAccessSessionWhenRevocationDisabled(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
-	settings := database.DefaultInstanceSettings()
-	settings.SessionsRevocationEnabled = false
-	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
-		t.Fatal(err)
-	}
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+		settings.SessionsRevocationEnabled = false
+	})
 
 	account, err := app.db.InsertAccount(context.Background(), "orgctx-no-session@example.com", "Org Ctx No Session", nil)
 	if err != nil {

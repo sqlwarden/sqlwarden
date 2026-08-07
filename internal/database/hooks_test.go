@@ -17,7 +17,7 @@ import (
 )
 
 func TestSlowQueryDetectorHook(t *testing.T) {
-	t.Run("Logs slow queries that exceed threshold", func(t *testing.T) {
+	t.Run("Logs slow queries with the full executed query", func(t *testing.T) {
 		var buf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
@@ -28,27 +28,25 @@ func TestSlowQueryDetectorHook(t *testing.T) {
 
 		// Simulate a slow query event
 		event := &bun.QueryEvent{
-			StartTime: time.Now().Add(-100 * time.Millisecond), // Query took 100ms
-			Query:     "SELECT * FROM users WHERE id = 1",
+			StartTime:     time.Now().Add(-100 * time.Millisecond), // Query took 100ms
+			QueryTemplate: "SELECT * FROM users WHERE id = ?",
+			Query:         "SELECT * FROM users WHERE id = 'sensitive-id'",
 		}
 
 		hook.AfterQuery(context.Background(), event)
 
 		output := buf.String()
 		assert.True(t, strings.Contains(output, "slow query detected"))
-		assert.False(t, strings.Contains(output, "SELECT * FROM users"))
+		assert.True(t, strings.Contains(output, "SELECT * FROM users WHERE id = 'sensitive-id'"))
 	})
 
-	t.Run("Includes request ID and query when explicitly enabled", func(t *testing.T) {
+	t.Run("Includes request ID without requiring query tracing", func(t *testing.T) {
 		var buf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
-		includeQuery := &atomic.Bool{}
-		includeQuery.Store(true)
 		hook := &slowQueryDetectorHook{
-			threshold:    50,
-			includeQuery: includeQuery,
-			logger:       logger,
+			threshold: 50,
+			logger:    logger,
 		}
 
 		event := &bun.QueryEvent{
@@ -61,8 +59,22 @@ func TestSlowQueryDetectorHook(t *testing.T) {
 
 		output := buf.String()
 		assert.True(t, strings.Contains(output, "slow query detected"))
-		assert.True(t, strings.Contains(output, "SELECT * FROM users"))
+		assert.True(t, strings.Contains(output, "SELECT * FROM users WHERE id = 1"))
 		assert.True(t, strings.Contains(output, "req-slow-1"))
+	})
+
+	t.Run("Falls back to the template when the executed query is unavailable", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+		hook := &slowQueryDetectorHook{threshold: 50, logger: logger}
+
+		hook.AfterQuery(context.Background(), &bun.QueryEvent{
+			StartTime:     time.Now().Add(-100 * time.Millisecond),
+			QueryTemplate: "SELECT * FROM secrets WHERE value = ?",
+		})
+
+		output := buf.String()
+		assert.True(t, strings.Contains(output, "SELECT * FROM secrets WHERE value = ?"))
 	})
 
 	t.Run("Does not log fast queries below threshold", func(t *testing.T) {
@@ -111,9 +123,10 @@ func TestDebugQueryLoggerHook(t *testing.T) {
 
 		// Simulate a query event
 		event := &bun.QueryEvent{
-			StartTime: time.Now().Add(-5 * time.Millisecond),
-			Query:     "INSERT INTO users (email, hashed_password) VALUES ('test@example.com', 'hash')",
-			Result:    &testResult{rowsAffected: 1},
+			StartTime:     time.Now().Add(-5 * time.Millisecond),
+			QueryTemplate: "INSERT INTO users (email, hashed_password) VALUES (?, ?)",
+			Query:         "INSERT INTO users (email, hashed_password) VALUES ('test@example.com', 'hash')",
+			Result:        &testResult{rowsAffected: 1},
 		}
 
 		hook.AfterQuery(context.Background(), event)
@@ -133,9 +146,9 @@ func TestDebugQueryLoggerHook(t *testing.T) {
 		}
 
 		event := &bun.QueryEvent{
-			StartTime: time.Now().Add(-5 * time.Millisecond),
-			Query:     "SELECT 1",
-			Result:    &testResult{rowsAffected: 1},
+			StartTime:     time.Now().Add(-5 * time.Millisecond),
+			QueryTemplate: "SELECT 1",
+			Result:        &testResult{rowsAffected: 1},
 		}
 
 		hook.AfterQuery(observability.WithRequestID(context.Background(), "req-debug-1"), event)
@@ -155,10 +168,10 @@ func TestDebugQueryLoggerHook(t *testing.T) {
 
 		// Simulate a query event with error
 		event := &bun.QueryEvent{
-			StartTime: time.Now().Add(-5 * time.Millisecond),
-			Query:     "SELECT * FROM non_existent_table",
-			Result:    &testResult{rowsAffected: 0},
-			Err:       fmt.Errorf("table does not exist"),
+			StartTime:     time.Now().Add(-5 * time.Millisecond),
+			QueryTemplate: "SELECT * FROM non_existent_table",
+			Result:        &testResult{rowsAffected: 0},
+			Err:           fmt.Errorf("table does not exist"),
 		}
 
 		hook.AfterQuery(context.Background(), event)
@@ -190,9 +203,9 @@ func TestDebugQueryLoggerHook(t *testing.T) {
 		}
 
 		event := &bun.QueryEvent{
-			StartTime: time.Now().Add(-5 * time.Millisecond),
-			Query:     "SELECT EXISTS(SELECT 1)",
-			Result:    nil,
+			StartTime:     time.Now().Add(-5 * time.Millisecond),
+			QueryTemplate: "SELECT EXISTS(SELECT 1)",
+			Result:        nil,
 		}
 
 		defer func() {
@@ -208,7 +221,7 @@ func TestDebugQueryLoggerHook(t *testing.T) {
 }
 
 func TestHooksIntegration(t *testing.T) {
-	t.Run("SQLite with logQueries enabled uses debug hook", func(t *testing.T) {
+	t.Run("SQLite query tracing is visible at debug level", func(t *testing.T) {
 		var buf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
@@ -226,13 +239,30 @@ func TestHooksIntegration(t *testing.T) {
 		assert.Nil(t, err)
 
 		output := buf.String()
-		// Debug hook should log the query
 		assert.True(t, strings.Contains(output, "executed query"))
 		assert.True(t, strings.Contains(output, "CREATE TABLE test"))
 
 		buf.Reset()
 		db.SetQueryTracing(false)
 		_, err = db.ExecContext(context.Background(), "CREATE TABLE test_disabled (id INTEGER)")
+		assert.Nil(t, err)
+		assert.False(t, strings.Contains(buf.String(), "executed query"))
+	})
+
+	t.Run("SQLite query tracing stays silent at info level", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+		dsn := fmt.Sprintf("test_hooks_%d.db", time.Now().UnixNano())
+		defer os.Remove(dsn)
+
+		db, err := New("sqlite", dsn, logger)
+		assert.Nil(t, err)
+		assert.NotNil(t, db)
+		defer db.Close()
+		db.SetQueryTracing(true)
+
+		_, err = db.ExecContext(context.Background(), "CREATE TABLE test (id INTEGER)")
 		assert.Nil(t, err)
 		assert.False(t, strings.Contains(buf.String(), "executed query"))
 	})
@@ -281,7 +311,7 @@ func TestHooksIntegration(t *testing.T) {
 	})
 }
 
-func TestDebugQueryTracingPrefersPlaceholderTemplate(t *testing.T) {
+func TestDebugQueryTracingLogsFullExecutedQuery(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	enabled := &atomic.Bool{}
@@ -292,8 +322,7 @@ func TestDebugQueryTracingPrefersPlaceholderTemplate(t *testing.T) {
 		Query: "INSERT INTO secrets (value) VALUES ('plaintext-password')",
 	})
 	output := buf.String()
-	assert.True(t, strings.Contains(output, "VALUES (?)"))
-	assert.False(t, strings.Contains(output, "plaintext-password"))
+	assert.True(t, strings.Contains(output, "VALUES ('plaintext-password')"))
 }
 
 // testResult is a mock implementation of sql.Result for testing

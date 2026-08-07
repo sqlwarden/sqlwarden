@@ -47,6 +47,7 @@ func TestRequestLoggingContextGeneratesRequestIDAndSafeAccessLog(t *testing.T) {
 	app := &application{
 		logger: slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	}
+	app.accessLogsEnabled.Store(true)
 
 	router := chi.NewRouter()
 	router.Use(app.requestLoggingContext)
@@ -92,6 +93,37 @@ func TestRequestLoggingContextGeneratesRequestIDAndSafeAccessLog(t *testing.T) {
 	}
 	if _, ok := request["url"]; ok {
 		t.Fatalf("request.url should not be logged: %#v", request)
+	}
+}
+
+func TestAccessLogsCanBeToggledLive(t *testing.T) {
+	var buf bytes.Buffer
+	app := &application{
+		logger: slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})),
+	}
+	router := chi.NewRouter()
+	router.Use(app.requestLoggingContext)
+	router.Use(app.logAccess)
+	router.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/health", nil))
+	if buf.Len() != 0 {
+		t.Fatalf("access log emitted while disabled by default: %s", buf.String())
+	}
+
+	app.accessLogsEnabled.Store(true)
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/health", nil))
+	if !strings.Contains(buf.String(), "http request") {
+		t.Fatalf("access log missing after live enable: %s", buf.String())
+	}
+
+	app.accessLogsEnabled.Store(false)
+	buf.Reset()
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/health", nil))
+	if buf.Len() != 0 {
+		t.Fatalf("access log emitted after live disable: %s", buf.String())
 	}
 }
 

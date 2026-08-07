@@ -16,6 +16,7 @@ const runtimeSettingsRefreshInterval = 2 * time.Second
 type runtimeOperations struct {
 	LogLevel                      string
 	DatabaseQueryTracingEnabled   bool
+	AccessLogsEnabled             bool
 	JobsWorkerCount               int
 	JobsPollIntervalSeconds       int64
 	JobsClaimLeaseSeconds         int64
@@ -31,7 +32,8 @@ type runtimeOperations struct {
 func operationsFromSettings(settings database.InstanceSettings) runtimeOperations {
 	return runtimeOperations{
 		LogLevel: settings.LogLevel, DatabaseQueryTracingEnabled: settings.DatabaseQueryTracingEnabled,
-		JobsWorkerCount: settings.JobsWorkerCount, JobsPollIntervalSeconds: settings.JobsPollIntervalSeconds,
+		AccessLogsEnabled: settings.AccessLogsEnabled,
+		JobsWorkerCount:   settings.JobsWorkerCount, JobsPollIntervalSeconds: settings.JobsPollIntervalSeconds,
 		JobsClaimLeaseSeconds: settings.JobsClaimLeaseSeconds, JobsCompletedRetentionSeconds: settings.JobsCompletedRetentionSeconds,
 		SMTPEnabled: settings.SMTPEnabled, SMTPHost: settings.SMTPHost, SMTPPort: settings.SMTPPort,
 		SMTPUsername: settings.SMTPUsername, SMTPPasswordEncrypted: settings.SMTPPasswordEncrypted, SMTPFrom: settings.SMTPFrom,
@@ -68,6 +70,7 @@ func (app *application) applyRuntimeOperations(settings database.InstanceSetting
 		return fmt.Errorf("apply runtime log level: %w", err)
 	}
 	app.db.SetQueryTracing(settings.DatabaseQueryTracingEnabled)
+	app.accessLogsEnabled.Store(settings.AccessLogsEnabled)
 	app.mailerMu.Lock()
 	app.mailer = mailer
 	app.mailerMu.Unlock()

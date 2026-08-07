@@ -45,13 +45,15 @@ func (app *application) reportServerError(r *http.Request, err error) {
 	)
 
 	notificationEmail := ""
+	baseURL := ""
 	if settings, settingsErr := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil); settingsErr == nil {
 		notificationEmail = settings.ErrorNotificationEmail
+		baseURL = settings.BaseURL
 	} else {
 		app.logger.ErrorContext(r.Context(), "runtime settings unavailable for error notification", "error", settingsErr)
 	}
 	if notificationEmail != "" {
-		data := app.newEmailData()
+		data := newEmailData(baseURL)
 		data["Message"] = message
 		data["RequestMethod"] = method
 		data["RequestURL"] = path

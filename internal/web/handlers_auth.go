@@ -300,7 +300,13 @@ func (app *application) secureCookies(r *http.Request) bool {
 	if app.config.TLS.Enabled || r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
 		return true
 	}
-	baseURL, err := url.Parse(app.config.BaseURL)
+	settings, err := app.instanceSettings(r.Context())
+	if err != nil {
+		// Authentication settings are database-owned. If they are unavailable,
+		// prefer a secure cookie over falling back to stale node-local configuration.
+		return true
+	}
+	baseURL, err := url.Parse(settings.BaseURL)
 	return err == nil && strings.EqualFold(baseURL.Scheme, "https")
 }
 

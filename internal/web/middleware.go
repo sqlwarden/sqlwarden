@@ -63,6 +63,10 @@ func (app *application) noStoreCache(next http.Handler) http.Handler {
 
 func (app *application) logAccess(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !app.accessLogsEnabled.Load() {
+			next.ServeHTTP(w, r)
+			return
+		}
 		mw := response.NewMetricsResponseWriter(w)
 		startedAt := time.Now()
 		next.ServeHTTP(mw, r)

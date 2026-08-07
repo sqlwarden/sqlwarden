@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 
@@ -116,6 +117,28 @@ func TestMigrateUp(t *testing.T) {
 			assert.True(t, version > 0)
 		})
 	}
+}
+
+func TestMigrateUpAddsQueryCursorPageSizeAfterVersion29(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "version-29.db")
+	db, err := New("sqlite", dsn, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	assert.Nil(t, err)
+	assert.NotNil(t, db)
+	defer db.Close()
+
+	assert.Nil(t, db.MigrateUp())
+	_, err = db.ExecContext(context.Background(), "ALTER TABLE instance_settings DROP COLUMN query_cursor_page_size")
+	assert.Nil(t, err)
+	_, err = db.ExecContext(context.Background(), "ALTER TABLE instance_settings RENAME COLUMN base_url TO public_url")
+	assert.Nil(t, err)
+	_, err = db.ExecContext(context.Background(), "UPDATE schema_migrations SET version = 29, dirty = 0")
+	assert.Nil(t, err)
+
+	assert.Nil(t, db.MigrateUp())
+	var pageSize int
+	err = db.NewSelect().TableExpr("instance_settings").ColumnExpr("query_cursor_page_size").Where("id = 1").Scan(context.Background(), &pageSize)
+	assert.Nil(t, err)
+	assert.Equal(t, pageSize, DefaultQueryCursorPageSize)
 }
 
 func TestSQLSortDirectionUsesOnlyLiteralTokens(t *testing.T) {

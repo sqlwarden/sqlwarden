@@ -109,7 +109,14 @@ func TestRefreshTokenCookieSecurityPolicy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			app := newTestApp(t)
-			app.config.BaseURL = tt.baseURL
+			settings, found, err := app.db.GetInstanceSettings(context.Background())
+			if err != nil || !found {
+				t.Fatalf("get instance settings: found=%v err=%v", found, err)
+			}
+			settings.BaseURL = tt.baseURL
+			if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
+				t.Fatal(err)
+			}
 			app.config.TLS.Enabled = tt.tls
 			r := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
 			if tt.requestTLS {

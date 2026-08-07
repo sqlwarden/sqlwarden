@@ -12,6 +12,7 @@ import (
 const (
 	DefaultJWTAccessTokenTTLSeconds       int64 = 86400
 	DefaultQueryMaxResultRows                   = 10000
+	DefaultQueryCursorPageSize                  = 200
 	DefaultQueryMaxResultBytes            int64 = 26214400
 	DefaultExportsSyncMaxBytes            int64 = 104857600
 	DefaultExportsBackgroundMaxBytes      int64 = 0
@@ -29,11 +30,12 @@ type InstanceSettings struct {
 	InstanceName                   string    `json:"instance_name"`
 	InstanceDescription            string    `json:"instance_description"`
 	SupportEmail                   string    `json:"support_email"`
-	PublicURL                      string    `json:"public_url"`
+	BaseURL                        string    `json:"base_url"`
 	PersonalSpacesEnabled          bool      `bun:",notnull" json:"personal_spaces_enabled"`
 	JWTAccessTokenTTLSeconds       int64     `bun:",notnull" json:"jwt_access_token_ttl_seconds"`
 	SessionsRevocationEnabled      bool      `bun:",notnull" json:"sessions_revocation_enabled"`
 	QueryMaxResultRows             int       `bun:",notnull" json:"query_max_result_rows"`
+	QueryCursorPageSize            int       `bun:",notnull" json:"query_cursor_page_size"`
 	QueryMaxResultBytes            int64     `bun:",notnull" json:"query_max_result_bytes"`
 	ExportsSyncMaxBytes            int64     `bun:",notnull" json:"exports_sync_max_bytes"`
 	ExportsBackgroundMaxBytes      int64     `bun:",notnull" json:"exports_background_max_bytes"`
@@ -43,6 +45,7 @@ type InstanceSettings struct {
 	ErrorNotificationEmail         string    `bun:",notnull" json:"error_notification_email"`
 	LogLevel                       string    `bun:",notnull" json:"log_level"`
 	DatabaseQueryTracingEnabled    bool      `bun:",notnull" json:"database_query_tracing_enabled"`
+	AccessLogsEnabled              bool      `bun:",notnull" json:"access_logs_enabled"`
 	JobsWorkerCount                int       `bun:",notnull" json:"jobs_worker_count"`
 	JobsPollIntervalSeconds        int64     `bun:",notnull" json:"jobs_poll_interval_seconds"`
 	JobsClaimLeaseSeconds          int64     `bun:",notnull" json:"jobs_claim_lease_seconds"`
@@ -80,6 +83,7 @@ func DefaultInstanceSettings() InstanceSettings {
 		JWTAccessTokenTTLSeconds:       DefaultJWTAccessTokenTTLSeconds,
 		SessionsRevocationEnabled:      true,
 		QueryMaxResultRows:             DefaultQueryMaxResultRows,
+		QueryCursorPageSize:            DefaultQueryCursorPageSize,
 		QueryMaxResultBytes:            DefaultQueryMaxResultBytes,
 		ExportsSyncMaxBytes:            DefaultExportsSyncMaxBytes,
 		ExportsBackgroundMaxBytes:      DefaultExportsBackgroundMaxBytes,
@@ -125,11 +129,12 @@ func (db *DB) UpsertInstanceSettings(ctx context.Context, settings InstanceSetti
 		Set("instance_name = EXCLUDED.instance_name").
 		Set("instance_description = EXCLUDED.instance_description").
 		Set("support_email = EXCLUDED.support_email").
-		Set("public_url = EXCLUDED.public_url").
+		Set("base_url = EXCLUDED.base_url").
 		Set("personal_spaces_enabled = EXCLUDED.personal_spaces_enabled").
 		Set("jwt_access_token_ttl_seconds = EXCLUDED.jwt_access_token_ttl_seconds").
 		Set("sessions_revocation_enabled = EXCLUDED.sessions_revocation_enabled").
 		Set("query_max_result_rows = EXCLUDED.query_max_result_rows").
+		Set("query_cursor_page_size = EXCLUDED.query_cursor_page_size").
 		Set("query_max_result_bytes = EXCLUDED.query_max_result_bytes").
 		Set("exports_sync_max_bytes = EXCLUDED.exports_sync_max_bytes").
 		Set("exports_background_max_bytes = EXCLUDED.exports_background_max_bytes").
@@ -139,6 +144,7 @@ func (db *DB) UpsertInstanceSettings(ctx context.Context, settings InstanceSetti
 		Set("error_notification_email = EXCLUDED.error_notification_email").
 		Set("log_level = EXCLUDED.log_level").
 		Set("database_query_tracing_enabled = EXCLUDED.database_query_tracing_enabled").
+		Set("access_logs_enabled = EXCLUDED.access_logs_enabled").
 		Set("jobs_worker_count = EXCLUDED.jobs_worker_count").
 		Set("jobs_poll_interval_seconds = EXCLUDED.jobs_poll_interval_seconds").
 		Set("jobs_claim_lease_seconds = EXCLUDED.jobs_claim_lease_seconds").
@@ -160,6 +166,33 @@ func (db *DB) UpsertInstanceSettings(ctx context.Context, settings InstanceSetti
 		return InstanceSettings{}, err
 	}
 	return current, nil
+}
+
+// InitializeInstanceBaseURL persists the deployment bootstrap URL exactly once.
+// The conditional update keeps the database authoritative when multiple nodes start together.
+func (db *DB) InitializeInstanceBaseURL(ctx context.Context, baseURL string) (InstanceSettings, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	_, err := db.NewUpdate().
+		Table("instance_settings").
+		Set("base_url = ?", baseURL).
+		Set("updated_at = ?", time.Now()).
+		Where("id = 1").
+		Where("base_url = ''").
+		Exec(ctx)
+	if err != nil {
+		return InstanceSettings{}, err
+	}
+
+	settings, found, err := db.GetInstanceSettings(ctx)
+	if err != nil {
+		return InstanceSettings{}, err
+	}
+	if !found {
+		return InstanceSettings{}, sql.ErrNoRows
+	}
+	return settings, nil
 }
 
 func (db *DB) GetOrganizationRuntimeSettings(ctx context.Context, orgID int64) (OrganizationRuntimeSettings, bool, error) {

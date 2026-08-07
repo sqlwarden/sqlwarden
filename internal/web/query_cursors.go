@@ -20,11 +20,7 @@ import (
 	"github.com/sqlwarden/pkg/result"
 )
 
-const (
-	defaultQueryCursorPageSize = 200
-
-	apiErrorQueryCursorUnavailable = "query_cursor_unavailable"
-)
+const apiErrorQueryCursorUnavailable = "query_cursor_unavailable"
 
 type queryCursorRequest struct {
 	SQL      string              `json:"sql"`
@@ -96,7 +92,7 @@ func (app *application) startQueryCursor(w http.ResponseWriter, r *http.Request)
 		}
 		if app.isQueryRequestCanceled(r, err) {
 			app.connManager.Remove(session.ID)
-			app.logWarn(r, "query cursor start cancelled",
+			app.logDebug(r, "query cursor start cancelled",
 				slog.String("session_id", session.ID),
 				slog.Int64("duration_ms", time.Since(start).Milliseconds()),
 			)
@@ -122,7 +118,7 @@ func (app *application) startQueryCursor(w http.ResponseWriter, r *http.Request)
 		app.queryCursorManager().Remove(qc.ID)
 		if app.isQueryRequestCanceled(r, err) {
 			app.connManager.Remove(session.ID)
-			app.logWarn(r, "query cursor initial fetch cancelled",
+			app.logDebug(r, "query cursor initial fetch cancelled",
 				queryCursorRecordAttrs(qc,
 					slog.Int64("duration_ms", time.Since(start).Milliseconds()),
 				)...,
@@ -145,7 +141,7 @@ func (app *application) startQueryCursor(w http.ResponseWriter, r *http.Request)
 		app.queryCursorManager().Remove(qc.ID)
 	}
 
-	app.logInfo(r, "query cursor started",
+	app.logDebug(r, "query cursor started",
 		queryCursorRecordAttrs(qc,
 			slog.Int("page_size", pageSize),
 			slog.Int("rows_returned", state.RowsReturned),
@@ -200,7 +196,7 @@ func (app *application) fetchQueryCursor(w http.ResponseWriter, r *http.Request)
 	}
 	if !qc.Touch() {
 		app.queryCursorManager().Remove(qc.ID)
-		app.logWarn(r, "query cursor unavailable",
+		app.logDebug(r, "query cursor unavailable",
 			queryCursorRecordAttrs(qc, slog.String("reason", "cursor_closed"))...,
 		)
 		app.queryCursorUnavailable(w, r)
@@ -211,7 +207,7 @@ func (app *application) fetchQueryCursor(w http.ResponseWriter, r *http.Request)
 	rs, state, err := qc.Cursor.Fetch(r.Context(), queryCursorScanOptions(pageSize, runtimeSettings))
 	if err != nil {
 		if app.isQueryRequestCanceled(r, err) {
-			app.logWarn(r, "query cursor fetch cancelled",
+			app.logDebug(r, "query cursor fetch cancelled",
 				queryCursorRecordAttrs(qc,
 					slog.Int64("duration_ms", time.Since(start).Milliseconds()),
 				)...,
@@ -241,7 +237,7 @@ func (app *application) fetchQueryCursor(w http.ResponseWriter, r *http.Request)
 		app.queryCursorManager().Remove(qc.ID)
 	}
 
-	app.logInfo(r, "query cursor fetched",
+	app.logDebug(r, "query cursor fetched",
 		queryCursorRecordAttrs(qc,
 			slog.Int("page_size", pageSize),
 			slog.Int("rows_returned", state.RowsReturned),
@@ -261,7 +257,7 @@ func (app *application) closeQueryCursor(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	removed := app.queryCursorManager().Remove(qc.ID)
-	app.logInfo(r, "query cursor closed",
+	app.logDebug(r, "query cursor closed",
 		queryCursorRecordAttrs(qc, slog.Bool("removed", removed))...,
 	)
 	w.WriteHeader(http.StatusNoContent)
@@ -321,7 +317,7 @@ func queryCursorRecordAttrs(qc *connection.QueryCursorRecord, attrs ...slog.Attr
 }
 
 func queryCursorPageSize(requested *int, settings effectiveRuntimeSettings) int {
-	pageSize := defaultQueryCursorPageSize
+	pageSize := settings.QueryCursorPageSize
 	if requested != nil {
 		pageSize = *requested
 	}

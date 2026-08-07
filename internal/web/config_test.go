@@ -16,8 +16,8 @@ func TestLoadConfigDefaults(t *testing.T) {
 		t.Fatal("expected showVersion to be false")
 	}
 
-	if cfg.BaseURL != defaultBaseURL {
-		t.Fatalf("baseURL = %q, want %q", cfg.BaseURL, defaultBaseURL)
+	if cfg.BootstrapBaseURL != defaultBaseURL {
+		t.Fatalf("bootstrapBaseURL = %q, want %q", cfg.BootstrapBaseURL, defaultBaseURL)
 	}
 	if cfg.HTTPPort != defaultHTTPPort {
 		t.Fatalf("httpPort = %d, want %d", cfg.HTTPPort, defaultHTTPPort)
@@ -125,8 +125,8 @@ files:
 	if showVersion {
 		t.Fatal("expected showVersion to be false")
 	}
-	if cfg.BaseURL != "https://cfg.example.com" {
-		t.Fatalf("baseURL = %q", cfg.BaseURL)
+	if cfg.BootstrapBaseURL != "https://cfg.example.com" {
+		t.Fatalf("bootstrapBaseURL = %q", cfg.BootstrapBaseURL)
 	}
 	if cfg.HTTPPort != 7000 {
 		t.Fatalf("httpPort = %d", cfg.HTTPPort)
@@ -226,8 +226,8 @@ db:
 	if cfg.DB.Driver != "sqlite" {
 		t.Fatalf("db.driver = %q, want sqlite", cfg.DB.Driver)
 	}
-	if cfg.BaseURL != "https://flags.example.com" {
-		t.Fatalf("baseURL = %q", cfg.BaseURL)
+	if cfg.BootstrapBaseURL != "https://flags.example.com" {
+		t.Fatalf("bootstrapBaseURL = %q", cfg.BootstrapBaseURL)
 	}
 	if cfg.Log.Format != LogFormatJSON {
 		t.Fatalf("unexpected log config: %+v", cfg.Log)
@@ -334,8 +334,8 @@ func TestLoadConfigVersionFlag(t *testing.T) {
 	if !showVersion {
 		t.Fatal("expected showVersion to be true")
 	}
-	if cfg.BaseURL != defaultBaseURL {
-		t.Fatalf("baseURL = %q, want %q", cfg.BaseURL, defaultBaseURL)
+	if cfg.BootstrapBaseURL != defaultBaseURL {
+		t.Fatalf("bootstrapBaseURL = %q, want %q", cfg.BootstrapBaseURL, defaultBaseURL)
 	}
 }
 
@@ -364,8 +364,8 @@ db:
 		t.Fatal(err)
 	}
 
-	if cfg.BaseURL != "https://discovered.example.com" {
-		t.Fatalf("baseURL = %q", cfg.BaseURL)
+	if cfg.BootstrapBaseURL != "https://discovered.example.com" {
+		t.Fatalf("bootstrapBaseURL = %q", cfg.BootstrapBaseURL)
 	}
 	if cfg.DB.DSN != "discovered.db" {
 		t.Fatalf("db.dsn = %q", cfg.DB.DSN)

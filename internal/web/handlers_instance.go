@@ -373,11 +373,12 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		InstanceName                   *string               `json:"instance_name"`
 		InstanceDescription            *string               `json:"instance_description"`
 		SupportEmail                   *string               `json:"support_email"`
-		PublicURL                      *string               `json:"public_url"`
+		BaseURL                        *string               `json:"base_url"`
 		PersonalSpacesEnabled          *bool                 `json:"personal_spaces_enabled"`
 		JWTAccessTokenTTLSeconds       *int64                `json:"jwt_access_token_ttl_seconds"`
 		SessionsRevocationEnabled      *bool                 `json:"sessions_revocation_enabled"`
 		QueryMaxResultRows             *int                  `json:"query_max_result_rows"`
+		QueryCursorPageSize            *int                  `json:"query_cursor_page_size"`
 		QueryMaxResultBytes            *int64                `json:"query_max_result_bytes"`
 		ExportsSyncMaxBytes            *int64                `json:"exports_sync_max_bytes"`
 		ExportsBackgroundMaxBytes      *int64                `json:"exports_background_max_bytes"`
@@ -387,6 +388,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		ErrorNotificationEmail         *string               `json:"error_notification_email"`
 		LogLevel                       *string               `json:"log_level"`
 		DatabaseQueryTracingEnabled    *bool                 `json:"database_query_tracing_enabled"`
+		AccessLogsEnabled              *bool                 `json:"access_logs_enabled"`
 		JobsWorkerCount                *int                  `json:"jobs_worker_count"`
 		JobsPollIntervalSeconds        *int64                `json:"jobs_poll_interval_seconds"`
 		JobsClaimLeaseSeconds          *int64                `json:"jobs_claim_lease_seconds"`
@@ -409,11 +411,12 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	hasPatch := input.InstanceName != nil ||
 		input.InstanceDescription != nil ||
 		input.SupportEmail != nil ||
-		input.PublicURL != nil ||
+		input.BaseURL != nil ||
 		input.PersonalSpacesEnabled != nil ||
 		input.JWTAccessTokenTTLSeconds != nil ||
 		input.SessionsRevocationEnabled != nil ||
 		input.QueryMaxResultRows != nil ||
+		input.QueryCursorPageSize != nil ||
 		input.QueryMaxResultBytes != nil ||
 		input.ExportsSyncMaxBytes != nil ||
 		input.ExportsBackgroundMaxBytes != nil ||
@@ -421,7 +424,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		input.FileRevisionsEnabled != nil ||
 		input.FileRevisionsKeepLatest != nil ||
 		input.ErrorNotificationEmail != nil || input.LogLevel != nil ||
-		input.DatabaseQueryTracingEnabled != nil || input.JobsWorkerCount != nil ||
+		input.DatabaseQueryTracingEnabled != nil || input.AccessLogsEnabled != nil || input.JobsWorkerCount != nil ||
 		input.JobsPollIntervalSeconds != nil || input.JobsClaimLeaseSeconds != nil ||
 		input.JobsCompletedRetentionSeconds != nil || input.SMTPEnabled != nil ||
 		input.SMTPHost != nil || input.SMTPPort != nil || input.SMTPUsername != nil ||
@@ -440,15 +443,18 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		*input.SupportEmail = strings.TrimSpace(*input.SupportEmail)
 		input.V.CheckField(*input.SupportEmail == "" || validator.IsEmail(*input.SupportEmail), "support_email", "Support email must be a valid email address.")
 	}
-	if input.PublicURL != nil {
-		*input.PublicURL = strings.TrimSpace(*input.PublicURL)
-		input.V.CheckField(*input.PublicURL == "" || validator.IsURL(*input.PublicURL), "public_url", "Public URL must be a valid URL.")
+	if input.BaseURL != nil {
+		*input.BaseURL = strings.TrimSpace(*input.BaseURL)
+		input.V.CheckField(*input.BaseURL != "" && validator.IsURL(*input.BaseURL), "base_url", "Base URL must be a valid URL.")
 	}
 	if input.JWTAccessTokenTTLSeconds != nil {
 		input.V.CheckField(*input.JWTAccessTokenTTLSeconds > 0 && *input.JWTAccessTokenTTLSeconds <= maxRuntimeDurationSeconds, "jwt_access_token_ttl_seconds", "Access token lifetime is outside the supported range.")
 	}
 	if input.QueryMaxResultRows != nil {
 		input.V.CheckField(*input.QueryMaxResultRows > 0, "query_max_result_rows", "Query row limit must be greater than 0.")
+	}
+	if input.QueryCursorPageSize != nil {
+		input.V.CheckField(*input.QueryCursorPageSize > 0, "query_cursor_page_size", "Query cursor page size must be greater than 0.")
 	}
 	if input.QueryMaxResultBytes != nil {
 		input.V.CheckField(*input.QueryMaxResultBytes > 0, "query_max_result_bytes", "Query byte limit must be greater than 0.")
@@ -524,8 +530,8 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	if input.SupportEmail != nil {
 		nextSettings.SupportEmail = *input.SupportEmail
 	}
-	if input.PublicURL != nil {
-		nextSettings.PublicURL = *input.PublicURL
+	if input.BaseURL != nil {
+		nextSettings.BaseURL = *input.BaseURL
 	}
 	if input.PersonalSpacesEnabled != nil {
 		nextSettings.PersonalSpacesEnabled = *input.PersonalSpacesEnabled
@@ -538,6 +544,9 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	}
 	if input.QueryMaxResultRows != nil {
 		nextSettings.QueryMaxResultRows = *input.QueryMaxResultRows
+	}
+	if input.QueryCursorPageSize != nil {
+		nextSettings.QueryCursorPageSize = *input.QueryCursorPageSize
 	}
 	if input.QueryMaxResultBytes != nil {
 		nextSettings.QueryMaxResultBytes = *input.QueryMaxResultBytes
@@ -565,6 +574,9 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	}
 	if input.DatabaseQueryTracingEnabled != nil {
 		nextSettings.DatabaseQueryTracingEnabled = *input.DatabaseQueryTracingEnabled
+	}
+	if input.AccessLogsEnabled != nil {
+		nextSettings.AccessLogsEnabled = *input.AccessLogsEnabled
 	}
 	if input.JobsWorkerCount != nil {
 		nextSettings.JobsWorkerCount = *input.JobsWorkerCount

@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -36,9 +37,9 @@ func TestNewAuthenticationToken(t *testing.T) {
 		claims, err := jwt.HMACCheck([]byte(token), []byte(app.config.JWT.SecretKey))
 		assert.Nil(t, err)
 		assert.Equal(t, claims.Subject, strconv.FormatInt(userID, 10))
-		assert.Equal(t, claims.Issuer, app.config.BaseURL)
+		assert.Equal(t, claims.Issuer, app.config.BootstrapBaseURL)
 		assert.Equal(t, len(claims.Audiences), 1)
-		assert.Equal(t, claims.Audiences[0], app.config.BaseURL)
+		assert.Equal(t, claims.Audiences[0], app.config.BootstrapBaseURL)
 
 		assert.True(t, time.Since(claims.Issued.Time()) < time.Second)
 		assert.True(t, time.Since(claims.NotBefore.Time()) < time.Second)
@@ -64,6 +65,24 @@ func TestNewAuthenticationToken(t *testing.T) {
 		if token1 == token2 {
 			t.Error("expected different tokens for subsequent calls (different issued times)")
 		}
+	})
+
+	t.Run("uses the current runtime base URL", func(t *testing.T) {
+		settings, found, err := app.db.GetInstanceSettings(context.Background())
+		if err != nil || !found {
+			t.Fatalf("get instance settings: found=%v err=%v", found, err)
+		}
+		settings.BaseURL = "https://updated.example.com"
+		if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
+			t.Fatal(err)
+		}
+
+		token, _, err := app.newAuthenticationToken(789)
+		assert.Nil(t, err)
+		claims, err := jwt.HMACCheck([]byte(token), []byte(app.config.JWT.SecretKey))
+		assert.Nil(t, err)
+		assert.Equal(t, claims.Issuer, settings.BaseURL)
+		assert.Equal(t, claims.Audiences[0], settings.BaseURL)
 	})
 }
 

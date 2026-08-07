@@ -331,7 +331,7 @@ func (app *application) organizationInvitationURL(ctx context.Context, plainToke
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimRight(settings.PublicURL, "/") + "/invitations/" + plainToken, nil
+	return strings.TrimRight(settings.BaseURL, "/") + "/invitations/" + plainToken, nil
 }
 
 func (app *application) deliverOrganizationInvitation(r *http.Request, invitation database.OrganizationInvitation, org database.Organization, inviterName, inviteURL string) string {

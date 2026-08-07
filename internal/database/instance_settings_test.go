@@ -20,15 +20,44 @@ func TestInstanceSettingsMigrationCreatesCanonicalDefaults(t *testing.T) {
 				settings.PersonalSpacesEnabled != want.PersonalSpacesEnabled ||
 				settings.JWTAccessTokenTTLSeconds != want.JWTAccessTokenTTLSeconds ||
 				settings.QueryMaxResultRows != want.QueryMaxResultRows ||
+				settings.QueryCursorPageSize != want.QueryCursorPageSize ||
 				settings.FileRevisionsKeepLatest != want.FileRevisionsKeepLatest ||
 				settings.LogLevel != want.LogLevel ||
 				settings.DatabaseQueryTracingEnabled != want.DatabaseQueryTracingEnabled ||
+				settings.AccessLogsEnabled != want.AccessLogsEnabled ||
 				settings.JobsWorkerCount != want.JobsWorkerCount ||
 				settings.JobsPollIntervalSeconds != want.JobsPollIntervalSeconds ||
 				settings.JobsClaimLeaseSeconds != want.JobsClaimLeaseSeconds ||
 				settings.JobsCompletedRetentionSeconds != want.JobsCompletedRetentionSeconds ||
 				settings.SMTPEnabled || settings.SMTPPort != want.SMTPPort || settings.SMTPPasswordEncrypted != "" {
 				t.Fatalf("unexpected migration defaults: %+v", settings)
+			}
+		})
+	}
+}
+
+func TestInitializeInstanceBaseURLOnlySetsEmptyValue(t *testing.T) {
+	for _, driver := range testDrivers() {
+		driver := driver
+		t.Run(driver, func(t *testing.T) {
+			t.Parallel()
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+
+			settings, err := db.InitializeInstanceBaseURL(ctx, "https://first.example.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if settings.BaseURL != "https://first.example.com" {
+				t.Fatalf("base URL = %q", settings.BaseURL)
+			}
+
+			settings, err = db.InitializeInstanceBaseURL(ctx, "https://second.example.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if settings.BaseURL != "https://first.example.com" {
+				t.Fatalf("bootstrap URL overwrote runtime value: %q", settings.BaseURL)
 			}
 		})
 	}
@@ -89,10 +118,12 @@ func TestInstanceSettingsUpsert(t *testing.T) {
 			settings.InstanceName = "Demo Instance"
 			settings.InstanceDescription = "A shared SQLWarden instance."
 			settings.SupportEmail = "support@example.com"
-			settings.PublicURL = "https://sqlwarden.example.com"
+			settings.BaseURL = "https://sqlwarden.example.com"
 			settings.PersonalSpacesEnabled = false
 			settings.LogLevel = "debug"
 			settings.DatabaseQueryTracingEnabled = true
+			settings.AccessLogsEnabled = true
+			settings.QueryCursorPageSize = 75
 			settings.JobsWorkerCount = 4
 			settings.SMTPHost = "smtp.example.com"
 			settings.SMTPUsername = "mailer"
@@ -114,10 +145,10 @@ func TestInstanceSettingsUpsert(t *testing.T) {
 			if settings.SupportEmail != "support@example.com" {
 				t.Fatalf("expected support email to persist, got %q", settings.SupportEmail)
 			}
-			if settings.PublicURL != "https://sqlwarden.example.com" {
-				t.Fatalf("expected public url to persist, got %q", settings.PublicURL)
+			if settings.BaseURL != "https://sqlwarden.example.com" {
+				t.Fatalf("expected base URL to persist, got %q", settings.BaseURL)
 			}
-			if settings.LogLevel != "debug" || !settings.DatabaseQueryTracingEnabled || settings.JobsWorkerCount != 4 || settings.SMTPPasswordEncrypted != "encrypted-secret" {
+			if settings.LogLevel != "debug" || !settings.DatabaseQueryTracingEnabled || !settings.AccessLogsEnabled || settings.QueryCursorPageSize != 75 || settings.JobsWorkerCount != 4 || settings.SMTPPasswordEncrypted != "encrypted-secret" {
 				t.Fatalf("expected runtime operations to persist, got %+v", settings)
 			}
 
@@ -132,7 +163,7 @@ func TestInstanceSettingsUpsert(t *testing.T) {
 			settings.InstanceName = "Updated Instance"
 			settings.InstanceDescription = ""
 			settings.SupportEmail = ""
-			settings.PublicURL = "https://updated.example.com"
+			settings.BaseURL = "https://updated.example.com"
 			settings.PersonalSpacesEnabled = true
 			settings, err = db.UpsertInstanceSettings(context.Background(), settings)
 			if err != nil {

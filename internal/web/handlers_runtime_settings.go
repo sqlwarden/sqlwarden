@@ -34,7 +34,6 @@ func (app *application) getInstanceConfiguration(w http.ResponseWriter, r *http.
 	err := response.JSON(w, http.StatusOK, map[string]any{
 		"deployment_managed":   true,
 		"restart_required":     true,
-		"base_url":             app.config.BaseURL,
 		"http_port":            app.config.HTTPPort,
 		"deployment_mode":      app.config.DeploymentMode,
 		"access_mode":          app.config.AccessMode,

@@ -155,6 +155,21 @@ func createInvitationForTest(t *testing.T, app *application, slug, email, authTo
 	return send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/invitations", map[string]any{"email": email}, authToken), app.routes())
 }
 
+func TestInvitationURLUsesRuntimeBaseURL(t *testing.T) {
+	app := newTestApp(t)
+	_, ownerToken, slug := registerAndLogin(t, app, uniqueEmail(t, "invite-base-url-owner"), "Invite Owner", "securepass99")
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+		settings.BaseURL = "https://runtime.example.com/sqlwarden"
+	})
+
+	res := createInvitationForTest(t, app, slug, uniqueEmail(t, "invite-base-url"), ownerToken)
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+	inviteURL, ok := res.BodyFields["invite_url"].(string)
+	if !ok || !strings.HasPrefix(inviteURL, "https://runtime.example.com/sqlwarden/invitations/") {
+		t.Fatalf("invite URL = %q", inviteURL)
+	}
+}
+
 func invitationTokenFromResponse(t *testing.T, res testResponse) string {
 	t.Helper()
 	inviteURL, ok := res.BodyFields["invite_url"].(string)
