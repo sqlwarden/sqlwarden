@@ -5,6 +5,16 @@ import { Icon } from '#/lib/icons'
 import { useBrand } from '#/lib/brand/brand'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/components/ui/resizable'
+import { Button } from '#/components/ui/button'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '#/components/ui/empty'
+import { Skeleton } from '#/components/ui/skeleton'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import {
   orgWorkspacesQueryOptions,
@@ -96,7 +106,11 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
             orgSlug={orgSlug}
             isLoading={workspaces.isLoading}
             isError={workspaces.isError}
+            isRetrying={workspaces.isFetching}
             workspaces={workspaces.data?.items ?? []}
+            onRetry={() => {
+              void workspaces.refetch()
+            }}
           />
         </EditorViewRegistryContext.Provider>
       </YDocRegistryContext.Provider>
@@ -108,26 +122,157 @@ type WorkspaceIdeContentProps = {
   orgSlug: string
   isLoading: boolean
   isError: boolean
+  isRetrying: boolean
   workspaces: Workspace[]
+  onRetry: () => void
 }
 
 export function WorkspaceIdeContent({
   orgSlug,
   isLoading,
   isError,
+  isRetrying,
   workspaces,
+  onRetry,
 }: WorkspaceIdeContentProps) {
-  if (isLoading) {
-    return (
-      <IdeFrame>
-        <Icon name="loading-03" size={14} className="animate-spin" />
-        Loading workspaces…
-      </IdeFrame>
-    )
-  }
-  if (isError) return <IdeFrame>Unable to load workspaces.</IdeFrame>
-  if (workspaces.length === 0) return <IdeFrame>No accessible workspaces.</IdeFrame>
+  if (isLoading) return <WorkspaceIdeSkeleton />
+  if (isError) return <WorkspaceLoadError isRetrying={isRetrying} onRetry={onRetry} />
+  if (workspaces.length === 0) return <NoWorkspaceAccess />
   return <WorkspaceIdeInner orgSlug={orgSlug} workspaces={workspaces} />
+}
+
+export function WorkspaceIdeSkeleton() {
+  return (
+    <main
+      aria-busy="true"
+      aria-live="polite"
+      className="flex h-dvh w-dvw flex-col overflow-hidden bg-background"
+      role="status"
+    >
+      <span className="sr-only">Loading editor…</span>
+      <div aria-hidden="true" className="flex min-h-0 flex-1 flex-col">
+        <div className="flex h-10 shrink-0 items-center border-b border-border bg-sidebar">
+          <div className="flex h-full w-36 shrink-0 items-center gap-2 border-r border-border px-3">
+            <Skeleton className="size-5 rounded-sm" />
+            <Skeleton className="h-3.5 w-20" />
+          </div>
+          <div className="flex min-w-0 flex-1 items-center gap-1 px-2">
+            <Skeleton className="h-7 w-28 rounded-sm" />
+            <Skeleton className="h-7 w-24 rounded-sm" />
+          </div>
+          <div className="flex shrink-0 items-center gap-2 px-3">
+            <Skeleton className="size-6 rounded-sm" />
+            <Skeleton className="size-6 rounded-full" />
+          </div>
+        </div>
+
+        <div className="flex min-h-0 flex-1">
+          <div className="flex w-10 shrink-0 flex-col items-center gap-3 border-r border-border bg-sidebar py-3">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <Skeleton key={index} className="size-5 rounded-sm" />
+            ))}
+          </div>
+
+          <div className="hidden w-60 shrink-0 flex-col border-r border-border bg-sidebar sm:flex">
+            <div className="flex h-9 shrink-0 items-center border-b border-border px-3">
+              <Skeleton className="h-3.5 w-20" />
+            </div>
+            <div className="flex flex-col gap-3 p-3">
+              <Skeleton className="h-3 w-3/4" />
+              <Skeleton className="ms-2 h-3 w-2/3" />
+              <Skeleton className="ms-4 h-3 w-3/4" />
+              <Skeleton className="ms-4 h-3 w-1/2" />
+              <Skeleton className="h-3 w-4/5" />
+              <Skeleton className="ms-2 h-3 w-3/5" />
+              <Skeleton className="ms-4 h-3 w-2/3" />
+            </div>
+          </div>
+
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+              <Skeleton className="h-3.5 w-32" />
+              <Skeleton className="h-3.5 w-24" />
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+              <Skeleton className="h-3.5 w-2/3" />
+              <Skeleton className="h-3.5 w-1/2" />
+              <Skeleton className="h-3.5 w-3/4" />
+              <Skeleton className="h-3.5 w-2/5" />
+              <Skeleton className="h-3.5 w-3/5" />
+            </div>
+            <div className="flex h-48 shrink-0 flex-col border-t border-border">
+              <div className="flex h-8 shrink-0 items-center gap-4 border-b border-border px-3">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <div className="grid grid-cols-4 gap-x-4 gap-y-3 p-3">
+                {Array.from({ length: 12 }).map((_, index) => (
+                  <Skeleton key={index} className="h-3 w-full" />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  )
+}
+
+function NoWorkspaceAccess() {
+  return (
+    <WorkspaceStateFrame>
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Icon name="briefcase-01" size={16} />
+          </EmptyMedia>
+          <EmptyTitle aria-level={1} role="heading">
+            No workspace access
+          </EmptyTitle>
+          <EmptyDescription>
+            You don&apos;t currently have access to a workspace in this organization. Ask an
+            organization administrator to grant you access.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    </WorkspaceStateFrame>
+  )
+}
+
+function WorkspaceLoadError({ isRetrying, onRetry }: { isRetrying: boolean; onRetry: () => void }) {
+  return (
+    <WorkspaceStateFrame>
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Icon name="refresh" size={16} />
+          </EmptyMedia>
+          <EmptyTitle aria-level={1} role="heading">
+            Unable to load workspaces
+          </EmptyTitle>
+          <EmptyDescription>
+            SQLWarden couldn&apos;t load your workspaces. Check your connection and try again.
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button disabled={isRetrying} onClick={onRetry}>
+            <Icon
+              className={cn(isRetrying && 'animate-spin motion-reduce:animate-none')}
+              data-icon="inline-start"
+              name="refresh"
+              size={16}
+            />
+            {isRetrying ? 'Retrying…' : 'Retry'}
+          </Button>
+        </EmptyContent>
+      </Empty>
+    </WorkspaceStateFrame>
+  )
+}
+
+function WorkspaceStateFrame({ children }: { children: React.ReactNode }) {
+  return <main className="flex h-dvh w-dvw overflow-hidden bg-background">{children}</main>
 }
 
 // ─── Inner ─────────────────────────────────────────────────────────────────────
@@ -723,11 +868,3 @@ function EmptyStateCard({
 }
 
 // ─── Utility ───────────────────────────────────────────────────────────────────
-
-function IdeFrame({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex h-dvh w-dvw items-center justify-center gap-2 overflow-hidden bg-background text-sm text-muted-foreground">
-      {children}
-    </div>
-  )
-}
