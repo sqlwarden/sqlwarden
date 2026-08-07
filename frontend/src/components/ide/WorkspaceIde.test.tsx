@@ -31,7 +31,7 @@ const workspaces: Workspace[] = [
 ]
 
 describe('WorkspaceIdeContent', () => {
-  it('renders an accessible IDE-shaped loading state', () => {
+  it('renders an accessible editor-shaped loading state', () => {
     const view = render(
       <WorkspaceIdeContent
         orgSlug="acme"

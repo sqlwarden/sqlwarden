@@ -149,7 +149,7 @@ func (db *DB) ListWorkspaceFiles(ctx context.Context, workspaceID int64, visibil
 }
 
 // ListRecentWorkspaceFiles returns recently updated files from one authorized
-// workspace file tree. Folders are excluded because the IDE recent list opens
+// workspace file tree. Folders are excluded because the editor recent list opens
 // editable content, not containers.
 func (db *DB) ListRecentWorkspaceFiles(ctx context.Context, workspaceID int64, visibility string, ownerAccountID *int64, limit int) ([]WorkspaceFile, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)

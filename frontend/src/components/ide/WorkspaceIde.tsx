@@ -70,7 +70,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
   const registry = useMemo(() => createYDocRegistry(accountId, orgSlug), [orgSlug, accountId])
   const viewRegistry = useMemo(() => createEditorViewRegistry(), [])
 
-  // Release the primary lock when this IDE window unmounts so another window can
+  // Release the primary lock when this editor window unmounts so another window can
   // take over persistence.
   useEffect(() => {
     return () => {
@@ -84,7 +84,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
     return createStoreSync(store, channel)
   }, [store, orgSlug, accountId])
 
-  // Abort all in-flight queries when the IDE unmounts (e.g. navigation away).
+  // Abort all in-flight queries when the editor unmounts (e.g. navigation away).
   useEffect(() => {
     return () => {
       const { abortControllers } = store.getState()
@@ -463,7 +463,7 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
   const activeActivityId = useIde((s) => s.activeActivityId)
 
-  // Reconcile persisted sessions with the backend for as long as the IDE is
+  // Reconcile persisted sessions with the backend for as long as the editor is
   // open — regardless of which sidebar activity is visible.
   useSessionSync(orgSlug, workspace)
 

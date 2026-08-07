@@ -10,14 +10,14 @@ export type UserMenuItem = {
 }
 
 /** The landing hub at `/` redirects single-org sessions (without personal
- *  spaces) straight into the IDE, so it is only a meaningful destination
+ *  spaces) straight into the editor, so it is only a meaningful destination
  *  when there is actually a choice to make. */
 export function canReachLandingHub(session: SessionResponse): boolean {
   return session.personal_spaces_enabled || session.organizations.length !== 1
 }
 
 /** Single source of truth for the user menu shown on every surface
- *  (landing, admin shells, IDE). Surfaces render these items verbatim,
+ *  (landing, admin shells, editor). Surfaces render these items verbatim,
  *  then append their own Sign out action. */
 export function buildUserMenuItems({
   session,

@@ -204,7 +204,7 @@
   }
 
   /* Slim, token-driven scrollbars so scroll chrome matches the app instead of
-     the OS — essential for the dense IDE surfaces. */
+     the OS — essential for the dense editor surfaces. */
   * {
     scrollbar-width: thin;
     scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;

@@ -2,7 +2,7 @@
 
 Updated: 2026-08-06
 
-SQLWarden is a self-hosted database access platform and SQL IDE. The current repository contains a Go backend, embedded React SPA, custom RBAC engine, database connection/session manager, and workspace file storage foundation. Future product direction includes Wails desktop packaging, SSO/SCIM, stronger audit/compliance features, connector agents, and broader file/storage backends.
+SQLWarden is a self-hosted database access platform and SQL editor. The current repository contains a Go backend, embedded React SPA, custom RBAC engine, database connection/session manager, and workspace file storage foundation. Future product direction includes Wails desktop packaging, SSO/SCIM, stronger audit/compliance features, connector agents, and broader file/storage backends.
 
 This document is the committed architecture source of truth for the repository. When it conflicts with code, migrations, or tests, code wins.
 
@@ -35,7 +35,7 @@ Implemented today:
 - Database engine registry and capability abstractions for schema inspection, query classification, parsing, rewriting, completion, and cursor-backed result paging.
 - Schema introspection abstraction, cache, and API.
 - React 19 frontend with TanStack Router, TanStack Query, Tailwind CSS 4, shadcn/ui, Base UI primitives, CodeMirror 6, Zustand, IndexedDB, Y.js, and BroadcastChannel.
-- IDE workspace tabs, explorer, file tabs, console tabs, query execution, results pane, editor theme preferences, and same-browser cross-window sync.
+- Editor workspace tabs, explorer, file tabs, console tabs, query execution, results pane, editor theme preferences, and same-browser cross-window sync.
 - Config through spf13/viper with config file, environment variables, and CLI flags.
 - SQLite app database by default at `~/.sqlwarden/sqlwarden.db`; PostgreSQL app database support exists.
 
@@ -223,7 +223,7 @@ Small non-paginated list endpoints must still avoid top-level arrays. Workspace 
 
 ### Single Resources And Actions
 
-Many current create/update/get endpoints still return the raw resource directly. This is accepted current state but should be cleaned up incrementally if the API contract is tightened further. Query execution and live database session endpoints have specialized response shapes and should be changed carefully because frontend IDE behavior depends on them.
+Many current create/update/get endpoints still return the raw resource directly. This is accepted current state but should be cleaned up incrementally if the API contract is tightened further. Query execution and live database session endpoints have specialized response shapes and should be changed carefully because frontend editor behavior depends on them.
 
 ## Authentication And Sessions
 
@@ -623,7 +623,7 @@ move into Omni later without changing metadata storage or the editor protocol.
 - Queries on a live session are serialized.
 - Idle sessions are reaped.
 - Foreground query cancellation is supported via request context cancellation.
-- Backend session sync lets the IDE show connected state across same-browser windows.
+- Backend session sync lets the editor show connected state across same-browser windows.
 
 Interactive query execution has two server APIs:
 
@@ -663,7 +663,7 @@ Implemented:
 
 Synchronous exports use the caller's existing live database session from `X-Warden-Session`. This avoids opening another target database connection for small explicit downloads and lets request cancellation stop the stream when the browser disconnects. Synchronous exports are bounded by `exports.sync_max_bytes`.
 
-Background exports run through the persisted job framework. A background export opens its own short-lived target database connection, re-checks authorization at execution time, classifies the SQL as DQL/read-only again, streams the result through the engine cursor capability, and writes the output to a private workspace file. Background exports are appropriate when the user may leave the IDE and return later to download the generated file.
+Background exports run through the persisted job framework. A background export opens its own short-lived target database connection, re-checks authorization at execution time, classifies the SQL as DQL/read-only again, streams the result through the engine cursor capability, and writes the output to a private workspace file. Background exports are appropriate when the user may leave the editor and return later to download the generated file.
 
 Export jobs currently require an engine that supports cursor-backed query results. This keeps large exports streaming and avoids materializing the full result set in Go memory. Engines without cursor support should reject background export until a safe streaming strategy exists for that engine.
 
@@ -756,9 +756,9 @@ Current frontend stack:
 - Tailwind CSS 4.
 - shadcn/ui and Base UI primitives.
 - CodeMirror 6.
-- Zustand for IDE state.
-- IndexedDB for local IDE persistence.
-- Y.js and BroadcastChannel for same-browser cross-window IDE sync.
+- Zustand for editor state.
+- IndexedDB for local editor persistence.
+- Y.js and BroadcastChannel for same-browser cross-window editor sync.
 - Sonner for toast notifications.
 
 Route groups:
@@ -771,7 +771,7 @@ Route groups:
 - `/orgs/{org_slug}/ide`
 - `/orgs/{org_slug}/workspaces/{workspace_id}/*`
 
-The application no longer uses a global top bar as the primary shell. Settings and org/workspace sections use sidebar shells. IDE has its own workspace-tabbed layout and explorer.
+The application no longer uses a global top bar as the primary shell. Settings and org/workspace sections use sidebar shells. The editor has its own workspace-tabbed layout and explorer.
 
 Frontend API principles:
 
@@ -791,7 +791,7 @@ Backend tests are substantial and should be extended with every behavior change:
 
 Database tests use testcontainers where needed; Docker must be available locally.
 
-Frontend tests currently cover IDE state, Y.Doc registry, and SQL cursor statement behavior. Add tests for new complex client-side behavior.
+Frontend tests currently cover editor state, Y.Doc registry, and SQL cursor statement behavior. Add tests for new complex client-side behavior.
 
 ## Build And Operations
 
@@ -877,7 +877,7 @@ Likely enterprise-only features:
 - License enforcement.
 - Air-gapped enterprise packaging.
 
-The core RBAC engine, local auth, SQL IDE, database engine layer, and self-hosted server should remain usable in the community distribution.
+The core RBAC engine, local auth, SQL editor, database engine layer, and self-hosted server should remain usable in the community distribution.
 
 ## Implementation Invariants
 

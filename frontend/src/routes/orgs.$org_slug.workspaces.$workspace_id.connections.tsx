@@ -124,7 +124,7 @@ function WorkspaceConnectionsPage() {
             <p className="text-sm text-muted-foreground">
               {!connections.isLoading && total > 0
                 ? `${total} connection${total !== 1 ? 's' : ''} in this workspace`
-                : 'Databases reachable from this workspace. Create and edit connections in the IDE.'}
+                : 'Databases reachable from this workspace. Create and edit connections in the editor.'}
             </p>
           </div>
           <Button
@@ -137,7 +137,7 @@ function WorkspaceConnectionsPage() {
             }
           >
             <Icon name="terminal" size={20} data-icon="inline-start" />
-            Open in IDE
+            Open in Editor
           </Button>
         </div>
 
@@ -204,7 +204,7 @@ function WorkspaceConnectionsPage() {
                   icon="flow-connection"
                   message={query.q ? 'No connections matched your search.' : 'No connections yet'}
                   description={
-                    query.q ? undefined : 'Create your first connection from the IDE explorer.'
+                    query.q ? undefined : 'Create your first connection from the editor explorer.'
                   }
                 />
               ) : null}
@@ -311,7 +311,7 @@ function ConnectionRow({
             }
           >
             <Icon name="terminal" size={20} data-icon="inline-start" />
-            Open in IDE
+            Open in Editor
           </Button>
           {canEditConnection ? (
             <Button type="button" variant="ghost" size="sm" onClick={() => onEdit(connection)}>

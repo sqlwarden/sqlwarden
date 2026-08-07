@@ -121,7 +121,7 @@ type PathSegment struct {
 	ObjectType string `json:"object_type"`
 }
 
-// BrowserResult is the IDE-oriented snapshot for a file tree location. A nil
+// BrowserResult is the editor-oriented snapshot for a file tree location. A nil
 // File means the browser is at the tree root.
 type BrowserResult struct {
 	File     *database.WorkspaceFile  `json:"file"`
@@ -180,7 +180,7 @@ func (s *Service) List(ctx context.Context, scope Scope, parentID *int64) ([]dat
 }
 
 // Browser returns the current node, breadcrumb path, and direct children for an
-// IDE file browser location. A nil fileID represents the file-tree root.
+// Editor file browser location. A nil fileID represents the file-tree root.
 func (s *Service) Browser(ctx context.Context, scope Scope, fileID *int64) (BrowserResult, error) {
 	if fileID == nil {
 		children, err := s.List(ctx, scope, nil)
@@ -209,7 +209,7 @@ func (s *Service) Browser(ctx context.Context, scope Scope, fileID *int64) (Brow
 }
 
 // Recent returns recently updated files from the authorized private or shared
-// file tree. It excludes folders because IDE recent entries must be openable.
+// file tree. It excludes folders because editor recent entries must be openable.
 func (s *Service) Recent(ctx context.Context, scope Scope, limit int) ([]database.WorkspaceFile, error) {
 	ownerID, err := s.authorizeTree(ctx, scope, access.PermWsFileRead)
 	if err != nil {

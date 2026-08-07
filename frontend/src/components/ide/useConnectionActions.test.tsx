@@ -106,7 +106,7 @@ describe('useConnectionActions', () => {
     expect(requests).toBe(0)
   })
 
-  it('opens connection and console tabs through the IDE store', () => {
+  it('opens connection and console tabs through the editor store', () => {
     const { result } = renderHook(() => useConnectionActions('acme', workspace), { wrapper })
 
     act(() => result.current.openConnection(connection))

@@ -213,7 +213,7 @@ function OrganizationChoiceCard({
           render={<Link to="/ide/$org_slug" params={{ org_slug: organization.slug }} />}
         >
           <Icon name="terminal" size={20} />
-          IDE
+          Editor
         </Button>
       </div>
     </div>

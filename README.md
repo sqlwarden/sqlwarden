@@ -1,8 +1,8 @@
 # SQLWarden
 
-SQLWarden is a self-hosted database access platform and SQL IDE for teams that need controlled access to production and non-production databases.
+SQLWarden is a self-hosted database access platform and SQL editor for teams that need controlled access to production and non-production databases.
 
-It combines a Go backend, embedded React application, custom RBAC, workspace-scoped database resources, query execution, file storage, and an IDE built around organizations, workspaces, environments, and connections.
+It combines a Go backend, embedded React application, custom RBAC, workspace-scoped database resources, query execution, file storage, and an editor built around organizations, workspaces, environments, and connections.
 
 SQLWarden is pre-1.0. The API and database schema may change while the project is still being shaped.
 
@@ -14,7 +14,7 @@ SQLWarden is pre-1.0. The API and database schema may change while the project i
 - Workspace and personal-space models for team and individual database work.
 - PostgreSQL, MySQL, and gated SQLite target database connections.
 - Query execution with foreground cancellation.
-- SQL IDE with workspace tabs, explorer, editor tabs, console tabs, result panes, and same-browser multi-window sync.
+- SQL editor with workspace tabs, explorer, editor tabs, console tabs, result panes, and same-browser multi-window sync.
 - Workspace file APIs with private and shared file scopes.
 - SQLite application database by default, with PostgreSQL application database support.
 - Configuration through file, environment variables, and CLI flags.

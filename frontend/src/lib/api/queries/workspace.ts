@@ -164,7 +164,7 @@ const allWorkspaceConnectionsQuery = {
   order: 'asc',
 } satisfies ListQuery
 
-/** The canonical complete connection list used throughout the IDE. */
+/** The canonical complete connection list used throughout the editor. */
 export function allOrgWorkspaceConnectionsQueryOptions(slug: string, workspaceId: string | number) {
   return orgWorkspaceConnectionsQueryOptions(slug, workspaceId, allWorkspaceConnectionsQuery)
 }

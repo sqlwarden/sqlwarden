@@ -36,7 +36,7 @@ func (app *application) browseSharedWorkspaceFiles(w http.ResponseWriter, r *htt
 	app.browseWorkspaceFiles(w, r, database.FileVisibilityShared)
 }
 
-// browseWorkspaceFiles returns the IDE browser snapshot for root, folder, or file.
+// browseWorkspaceFiles returns the editor browser snapshot for root, folder, or file.
 func (app *application) browseWorkspaceFiles(w http.ResponseWriter, r *http.Request, visibility string) {
 	fileID, ok := app.optionalPositiveID(w, r, "file_id")
 	if !ok {

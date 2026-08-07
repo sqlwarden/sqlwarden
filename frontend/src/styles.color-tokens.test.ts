@@ -27,7 +27,7 @@ describe('brand color tokens', () => {
     expect(block(':root')).toContain('--warning: #f59e0b;')
   })
 
-  it('defines the new IDE accent tokens', () => {
+  it('defines the new editor accent tokens', () => {
     expect(block(':root')).toContain('--accent-link: #38bdf8;')
     expect(block(':root')).toContain('--accent-datatype: #6366f1;')
   })

@@ -139,7 +139,7 @@ func presentableNativeCandidate(candidate omnicompletion.Candidate) bool {
 		return true
 	}
 
-	// Grammar punctuation is useful to the parser but noisy in an IDE menu.
+	// Grammar punctuation is useful to the parser but noisy in an editor menu.
 	// Keep words (including one-character word-like tokens), while leaving
 	// punctuation such as ",", ";", and "(" for the user to type directly.
 	runes := []rune(candidate.Text)

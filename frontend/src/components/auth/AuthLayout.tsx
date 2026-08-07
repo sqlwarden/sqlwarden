@@ -17,7 +17,7 @@ const PANEL_HIGHLIGHTS: Array<{ icon: AppIcon; title: string; description: strin
   },
   {
     icon: 'terminal',
-    title: 'A real SQL IDE',
+    title: 'A real SQL editor',
     description: 'Explorer, editor, and results in one workspace built for teams.',
   },
 ]
@@ -49,7 +49,7 @@ export function AuthLayout({
         <brand.LogoLockup size={22} className="relative" />
         <div className="relative flex flex-col gap-10">
           <h2 className="font-heading max-w-sm text-3xl leading-tight font-semibold tracking-tight text-balance">
-            The SQL IDE built for controlled database access.
+            The SQL editor built for controlled database access.
           </h2>
           <ul className="flex flex-col gap-5">
             {PANEL_HIGHLIGHTS.map((item) => (

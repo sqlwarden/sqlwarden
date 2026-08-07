@@ -191,7 +191,7 @@ Disabling snapshots immediately deletes stored schema metadata. In that mode,
 schema inspection uses only the process-local cache associated with a live
 database session.
 
-For DQL/select-style queries, the IDE can request cursor-backed results through `/query`. When the selected target engine supports cursor-backed results, the first response includes the first page plus cursor metadata. Engines that do not support cursor-backed results fall back to the bounded direct query path. Cursor state is process-local and tied to the authenticated live database session; it is not durable query history.
+For DQL/select-style queries, the editor can request cursor-backed results through `/query`. When the selected target engine supports cursor-backed results, the first response includes the first page plus cursor metadata. Engines that do not support cursor-backed results fall back to the bounded direct query path. Cursor state is process-local and tied to the authenticated live database session; it is not durable query history.
 
 ## Exports
 

@@ -207,7 +207,7 @@ function workspacePrimaryItems(
       to: '/ide/$org_slug',
       params: { org_slug: orgSlug },
       search: { ws: Number(workspaceId) },
-      label: 'Open in IDE',
+      label: 'Open in Editor',
       icon: 'terminal',
     },
   ]
@@ -327,7 +327,7 @@ function organizationItems(orgSlug: string): AppShellNavItem[] {
     {
       to: '/ide/$org_slug',
       params: { org_slug: orgSlug },
-      label: 'Open IDE',
+      label: 'Open Editor',
       icon: 'terminal',
     },
     {
