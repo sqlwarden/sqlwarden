@@ -61,6 +61,7 @@ import { Tip } from './schema-diagram/Tip'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { Textarea } from '#/components/ui/textarea'
+import { Field, FieldError, FieldGroup, FieldLabel } from '#/components/ui/field'
 import { useConnectionActions } from './useConnectionActions'
 import { useSchemaRefresh } from './useSchemaRefresh'
 
@@ -89,6 +90,10 @@ export function DatabasePanel({
   const [envName, setEnvName] = useState('')
   const [envDescription, setEnvDescription] = useState('')
   const [envNameError, setEnvNameError] = useState<string | undefined>(undefined)
+  const [renamingEnvironment, setRenamingEnvironment] = useState<Environment | null>(null)
+  const [renameName, setRenameName] = useState('')
+  const [renameNameError, setRenameNameError] = useState<string | undefined>(undefined)
+  const [deletingEnvironment, setDeletingEnvironment] = useState<Environment | null>(null)
 
   const effectivePermissions = useQuery(
     orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspace.id),
@@ -146,6 +151,51 @@ export function DatabasePanel({
     },
   })
 
+  const renameEnvironment = useMutation({
+    mutationFn: ({ environment, name }: { environment: Environment; name: string }) =>
+      api.patch<void>(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/environments/${environment.id}`,
+        {
+          name,
+          description: environment.description ?? '',
+        },
+      ),
+    onSuccess: async () => {
+      setRenamingEnvironment(null)
+      setRenameName('')
+      setRenameNameError(undefined)
+      toast.success('Environment renamed')
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgEnvironmentsScope(orgSlug, workspace.id),
+      })
+    },
+    onError: (error) => {
+      if (isApiError(error) && error.fieldErrors?.name) {
+        setRenameNameError(error.fieldErrors.name)
+        return
+      }
+      toast.error(errorMessage(error, 'Failed to rename environment'))
+    },
+  })
+
+  const deleteEnvironment = useMutation({
+    mutationFn: (environment: Environment) =>
+      api.delete<void>(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/environments/${environment.id}`,
+      ),
+    onSuccess: async (_, environment) => {
+      setDeletingEnvironment(null)
+      setEnvFilter((current) => (current === environment.id ? 'all' : current))
+      toast.success('Environment deleted')
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgEnvironmentsScope(orgSlug, workspace.id),
+      })
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Failed to delete environment'))
+    },
+  })
+
   function handleAddEnvSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!envName.trim()) {
@@ -155,6 +205,28 @@ export function DatabasePanel({
     setEnvNameError(undefined)
     void createEnvironment.mutateAsync().catch(() => {})
   }
+
+  function openRenameEnvironment(environment: Environment) {
+    setRenamingEnvironment(environment)
+    setRenameName(environment.name)
+    setRenameNameError(undefined)
+  }
+
+  function handleRenameSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!renamingEnvironment) return
+    const name = renameName.trim()
+    if (!name) {
+      setRenameNameError('Name is required.')
+      return
+    }
+    setRenameNameError(undefined)
+    void renameEnvironment.mutateAsync({ environment: renamingEnvironment, name }).catch(() => {})
+  }
+
+  const deletingEnvironmentConnectionCount = deletingEnvironment
+    ? connItems.filter((connection) => connection.environment_id === deletingEnvironment.id).length
+    : 0
 
   // Connection creation is available from the panel header regardless of the
   // grouped/flat layout; per-environment permissions are enforced server-side.
@@ -315,6 +387,8 @@ export function DatabasePanel({
                   onConnect={connectionActions.connect}
                   onDisconnect={connectionActions.disconnect}
                   onAddConnection={() => setAddConnEnvironmentId(env.id)}
+                  onRenameEnvironment={() => openRenameEnvironment(env)}
+                  onDeleteEnvironment={() => setDeletingEnvironment(env)}
                 />
               ))
             ) : (
@@ -400,6 +474,98 @@ export function DatabasePanel({
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={renamingEnvironment !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRenamingEnvironment(null)
+            setRenameName('')
+            setRenameNameError(undefined)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename environment</DialogTitle>
+          </DialogHeader>
+          <form className="mt-6 flex flex-col gap-4" onSubmit={handleRenameSubmit}>
+            <FieldGroup>
+              <Field data-invalid={renameNameError ? true : undefined}>
+                <FieldLabel htmlFor="rename-environment-name">Name</FieldLabel>
+                <Input
+                  id="rename-environment-name"
+                  value={renameName}
+                  disabled={renameEnvironment.isPending}
+                  aria-invalid={renameNameError ? true : undefined}
+                  autoFocus
+                  onChange={(event) => {
+                    setRenameName(event.target.value)
+                    setRenameNameError(undefined)
+                  }}
+                />
+                <FieldError>{renameNameError}</FieldError>
+              </Field>
+            </FieldGroup>
+            <DialogFooter>
+              <DialogClose
+                render={
+                  <Button type="button" variant="ghost" disabled={renameEnvironment.isPending} />
+                }
+              >
+                Cancel
+              </DialogClose>
+              <Button type="submit" disabled={renameEnvironment.isPending}>
+                {renameEnvironment.isPending ? 'Renaming...' : 'Rename'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={deletingEnvironment !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteEnvironment.isPending) setDeletingEnvironment(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete environment?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletingEnvironmentConnectionCount > 0 ? (
+                <>
+                  <span className="font-medium text-foreground">{deletingEnvironment?.name}</span>{' '}
+                  contains {deletingEnvironmentConnectionCount}{' '}
+                  {deletingEnvironmentConnectionCount === 1 ? 'connection' : 'connections'}. Move or
+                  delete them before deleting this environment.
+                </>
+              ) : (
+                <>
+                  This permanently deletes{' '}
+                  <span className="font-medium text-foreground">{deletingEnvironment?.name}</span>.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel variant="ghost" disabled={deleteEnvironment.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deleteEnvironment.isPending || deletingEnvironmentConnectionCount > 0}
+              onClick={() => {
+                if (deletingEnvironment) {
+                  void deleteEnvironment.mutateAsync(deletingEnvironment).catch(() => {})
+                }
+              }}
+            >
+              {deleteEnvironment.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <ConnectionDialog
         open={addConnOpen || addConnEnvironmentId !== null}
         onOpenChange={(open) => {
@@ -430,6 +596,8 @@ function EnvironmentRow({
   onConnect,
   onDisconnect,
   onAddConnection,
+  onRenameEnvironment,
+  onDeleteEnvironment,
 }: {
   environment: Environment
   connections: Connection[]
@@ -443,6 +611,8 @@ function EnvironmentRow({
   onConnect: (conn: Connection) => void
   onDisconnect: (conn: Connection) => void
   onAddConnection: () => void
+  onRenameEnvironment: () => void
+  onDeleteEnvironment: () => void
 }) {
   const nodeKey = `env:${environment.id}`
   const navigate = useNavigate()
@@ -454,6 +624,8 @@ function EnvironmentRow({
     orgEffectivePermissionsQueryOptions(orgSlug, 'environment', environment.id),
   )
   const canCreateConnection = hasPermission(envPermissions.data?.permissions, permission.connCreate)
+  const canRenameEnvironment = hasPermission(envPermissions.data?.permissions, permission.envWrite)
+  const canDeleteEnvironment = hasPermission(envPermissions.data?.permissions, permission.envDelete)
 
   return (
     <div>
@@ -465,6 +637,9 @@ function EnvironmentRow({
               to: '/orgs/$org_slug/workspaces/$workspace_id/environments',
               params: { org_slug: orgSlug, workspace_id: String(environment.workspace_id) },
             }),
+          onNewConnection: canCreateConnection ? onAddConnection : undefined,
+          onRenameEnvironment: canRenameEnvironment ? onRenameEnvironment : undefined,
+          onDeleteEnvironment: canDeleteEnvironment ? onDeleteEnvironment : undefined,
         })}
       >
         <div className="group mx-1 flex h-6 items-center rounded-md text-xs transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">

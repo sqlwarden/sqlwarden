@@ -13,7 +13,13 @@ function action(items: ContextMenuItem[], id: string): ContextMenuActionItem | u
 }
 
 describe('buildEnvironmentMenu', () => {
-  const items = buildEnvironmentMenu({ onCopyName: noop, onManageEnvironments: noop })
+  const base = { onCopyName: noop, onManageEnvironments: noop }
+  const items = buildEnvironmentMenu({
+    ...base,
+    onNewConnection: noop,
+    onRenameEnvironment: noop,
+    onDeleteEnvironment: noop,
+  })
   it('has a live copy-name action', () => {
     const it = action(items, 'copy-name')
     expect(it?.soon).toBeFalsy()
@@ -24,8 +30,18 @@ describe('buildEnvironmentMenu', () => {
     expect(item?.soon).toBeFalsy()
     expect(typeof item?.onSelect).toBe('function')
   })
-  it('marks delete-environment as soon', () => {
-    expect(action(items, 'delete-environment')?.soon).toBe(true)
+  it('exposes live quick actions when their callbacks are provided', () => {
+    for (const id of ['new-connection', 'rename-environment', 'delete-environment']) {
+      expect(action(items, id)?.soon).toBeFalsy()
+      expect(typeof action(items, id)?.onSelect).toBe('function')
+    }
+    expect(action(items, 'delete-environment')?.destructive).toBe(true)
+  })
+  it('omits quick actions when their callbacks are unavailable', () => {
+    const restrictedItems = buildEnvironmentMenu(base)
+    expect(action(restrictedItems, 'new-connection')).toBeUndefined()
+    expect(action(restrictedItems, 'rename-environment')).toBeUndefined()
+    expect(action(restrictedItems, 'delete-environment')).toBeUndefined()
   })
 })
 

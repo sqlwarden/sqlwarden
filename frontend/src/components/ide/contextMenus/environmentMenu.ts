@@ -3,10 +3,13 @@ import type { ContextMenuItem } from '#/components/ui/context-menu'
 export type EnvironmentMenuCtx = {
   onCopyName: () => void
   onManageEnvironments: () => void
+  onNewConnection?: () => void
+  onRenameEnvironment?: () => void
+  onDeleteEnvironment?: () => void
 }
 
 export function buildEnvironmentMenu(ctx: EnvironmentMenuCtx): ContextMenuItem[] {
-  return [
+  const items: ContextMenuItem[] = [
     {
       kind: 'action',
       id: 'copy-name',
@@ -22,28 +25,42 @@ export function buildEnvironmentMenu(ctx: EnvironmentMenuCtx): ContextMenuItem[]
       icon: 'settings-02',
       onSelect: ctx.onManageEnvironments,
     },
-    { kind: 'separator' },
-    {
+  ]
+
+  if (ctx.onNewConnection || ctx.onRenameEnvironment) {
+    items.push({ kind: 'separator' })
+  }
+  if (ctx.onNewConnection) {
+    items.push({
       kind: 'action',
       id: 'new-connection',
       label: 'New connection here',
       icon: 'plus-sign',
-      soon: true,
-    },
-    {
+      onSelect: ctx.onNewConnection,
+    })
+  }
+  if (ctx.onRenameEnvironment) {
+    items.push({
       kind: 'action',
       id: 'rename-environment',
       label: 'Rename environment',
       icon: 'pencil-edit-02',
-      soon: true,
-    },
-    { kind: 'separator' },
-    {
-      kind: 'action',
-      id: 'delete-environment',
-      label: 'Delete environment',
-      icon: 'delete-01',
-      soon: true,
-    },
-  ]
+      onSelect: ctx.onRenameEnvironment,
+    })
+  }
+  if (ctx.onDeleteEnvironment) {
+    items.push(
+      { kind: 'separator' },
+      {
+        kind: 'action',
+        id: 'delete-environment',
+        label: 'Delete environment',
+        icon: 'delete-01',
+        destructive: true,
+        onSelect: ctx.onDeleteEnvironment,
+      },
+    )
+  }
+
+  return items
 }
