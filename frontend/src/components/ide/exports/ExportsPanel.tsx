@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '#/components/ui/button'
@@ -16,12 +17,39 @@ import { useExportJobs } from './useExportJobs'
 export function ExportsPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
   const { jobs, isLoading, latestEventByJobId, refresh } = useExportJobs(orgSlug, workspace.id)
   const [expandedLogJobId, setExpandedLogJobId] = useState<string | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const actions = useExportJobActions(orgSlug, workspace, refresh)
 
   const visibleJobs = jobs.filter((job) => !actions.dismissed.has(job.id))
 
+  async function handleRefresh() {
+    setIsRefreshing(true)
+    try {
+      await refresh()
+    } catch {
+      toast.error('Failed to refresh exports.')
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  const panelActions = (
+    <Tip label={isRefreshing ? 'Refreshing exports…' : 'Refresh exports'}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Refresh exports"
+        disabled={isRefreshing}
+        onClick={() => void handleRefresh()}
+      >
+        <Icon name="refresh" size={14} className={isRefreshing ? 'animate-spin' : undefined} />
+      </Button>
+    </Tip>
+  )
+
   return (
-    <SidebarPane title="Exports" icon="download-01">
+    <SidebarPane title="Exports" icon="download-01" actions={panelActions}>
       {isLoading ? (
         <div className="px-3 py-4 text-center text-xs text-muted-foreground">Loading exports…</div>
       ) : visibleJobs.length === 0 ? (
