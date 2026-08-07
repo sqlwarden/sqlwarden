@@ -299,28 +299,53 @@ export interface PolicyBinding {
   created_at: string
 }
 
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+
 export interface InstanceSettings {
   instance_name: string
   instance_description: string
   support_email: string
-  public_url: string
+  base_url: string
   personal_spaces_enabled: boolean
   jwt_access_token_ttl_seconds: number
   sessions_revocation_enabled: boolean
   query_max_result_rows: number
   query_max_result_bytes: number
+  query_cursor_page_size: number
   exports_sync_max_bytes: number
   exports_background_max_bytes: number
   schema_snapshot_freshness_seconds: number
   file_revisions_enabled: boolean
   file_revisions_keep_latest: number
   error_notification_email: string
+  log_level: LogLevel
+  database_query_tracing_enabled: boolean
+  access_logs_enabled: boolean
+  jobs_worker_count: number
+  jobs_poll_interval_seconds: number
+  jobs_claim_lease_seconds: number
+  jobs_completed_retention_seconds: number
+  smtp_enabled: boolean
+  smtp_host: string
+  smtp_port: number
+  smtp_username: string
+  /** Response-only: whether a secret is stored server-side. Never send this back in a PATCH. */
+  smtp_password_configured: boolean
+  smtp_from: string
+}
+
+/**
+ * PATCH body for /api/v1/instance/settings. `smtp_password_configured` is response-only and
+ * excluded; `smtp_password` is write-only: omit to preserve the saved secret, a string to
+ * replace it, or null to clear it.
+ */
+export interface InstanceSettingsPatch extends Omit<InstanceSettings, 'smtp_password_configured'> {
+  smtp_password?: string | null
 }
 
 export interface InstanceConfiguration {
   deployment_managed: boolean
   restart_required: boolean
-  base_url: string
   http_port: number
   deployment_mode: 'server' | 'desktop'
   access_mode: 'multi_user' | 'single_user'

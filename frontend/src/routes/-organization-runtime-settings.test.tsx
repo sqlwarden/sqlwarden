@@ -24,7 +24,7 @@ function permissionsHandler(permissions: string[]) {
   )
 }
 
-describe('organization runtime policy route', () => {
+describe('organization general settings runtime tab', () => {
   beforeEach(() => {
     setAccessToken('test-token')
     server.use(
@@ -34,16 +34,75 @@ describe('organization runtime policy route', () => {
     )
   })
 
-  it('shows inherited effective values and instance constraints', async () => {
+  it('redirects the legacy route and pairs editable values with instance boundaries', async () => {
     server.use(runtimeSettingsHandler(), permissionsHandler(['org:read', 'org:write']))
 
-    renderRoute('/orgs/acme/settings/runtime')
+    const { user } = renderRoute('/orgs/acme/settings/runtime')
 
-    await screen.findAllByText(/Inherits instance default:/)
-    expect(screen.getByRole('heading', { name: 'Runtime Policy' })).toBeInTheDocument()
-    expect(screen.getAllByText(/Inherits instance default:/)).toHaveLength(7)
-    expect(screen.getByText('Instance limit: 1,000 rows')).toBeInTheDocument()
-    expect(screen.getByText('Instance minimum interval: 1 hour')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'General' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Data Controls' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(screen.queryByRole('link', { name: 'Data Controls' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('spinbutton', { name: 'Query row limit' })).toHaveValue(1_000)
+    expect(screen.getByText('1,000 rows')).toBeInTheDocument()
+    const instanceInfo = screen.getByRole('button', {
+      name: 'About the Query row limit instance setting',
+    })
+    await user.hover(instanceInfo)
+    expect(
+      await screen.findByText(/fixed number is the instance-wide maximum/i),
+    ).toBeInTheDocument()
+    expect(screen.getByText('1 hour')).toBeInTheDocument()
+    expect(screen.queryByText(/Inherits instance default:/)).not.toBeInTheDocument()
+  })
+
+  it('groups organization settings and data controls behind one tab bar', async () => {
+    let capturedBody: Record<string, unknown> | undefined
+    server.use(
+      runtimeSettingsHandler(),
+      permissionsHandler(['org:read', 'org:write']),
+      http.patch('/api/v1/orgs/acme', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ ...organization, name: 'Acme Cloud' })
+      }),
+    )
+    const { user } = renderRoute('/orgs/acme/settings/general')
+
+    expect(await screen.findByRole('heading', { name: 'General' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Organization' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(screen.getByRole('tab', { name: 'Data Controls' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Danger Zone' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Organization Details' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Schema Metadata' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Connection Security' })).toBeInTheDocument()
+
+    const actions = screen.getByRole('region', { name: 'Organization settings actions' })
+    const save = screen.getByRole('button', { name: 'Save changes' })
+    const tabList = screen.getByRole('tablist')
+    expect(actions.parentElement).toContainElement(tabList)
+    expect(tabList.parentElement).toHaveClass('overflow-y-hidden')
+    expect(save).toBeDisabled()
+
+    const name = screen.getByRole('textbox', { name: 'Organization name' })
+    await user.clear(name)
+    await user.type(name, 'Acme Cloud')
+    await user.click(screen.getByRole('checkbox', { name: /Persist schema snapshots/ }))
+    await user.click(screen.getByRole('checkbox', { name: /Mask connection credentials on edit/ }))
+    expect(save).toBeEnabled()
+    await user.click(save)
+
+    await waitFor(() =>
+      expect(capturedBody).toMatchObject({
+        name: 'Acme Cloud',
+        schema_snapshots_enabled: false,
+        mask_connection_credentials_on_edit: true,
+      }),
+    )
   })
 
   it('creates an override and sends only the changed field', async () => {
@@ -69,9 +128,7 @@ describe('organization runtime policy route', () => {
     )
     const { user } = renderRoute('/orgs/acme/settings/runtime')
 
-    const override = await screen.findByRole('checkbox', { name: 'Override Query row limit' })
-    await user.click(override)
-    const input = screen.getByRole('spinbutton', { name: 'Query row limit' })
+    const input = await screen.findByRole('spinbutton', { name: 'Query row limit' })
     expect(input).toHaveAttribute('max', '1000')
     await user.clear(input)
     await user.type(input, '500')
@@ -97,9 +154,8 @@ describe('organization runtime policy route', () => {
     )
     const { user } = renderRoute('/orgs/acme/settings/runtime')
 
-    const override = await screen.findByRole('checkbox', { name: 'Override Query row limit' })
-    expect(override).toBeChecked()
-    await user.click(override)
+    await screen.findByRole('spinbutton', { name: 'Query row limit' })
+    await user.click(screen.getByRole('button', { name: 'Use instance setting' }))
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
 
     await waitFor(() => expect(capturedBody).toEqual({ query_max_result_rows: null }))
@@ -124,15 +180,9 @@ describe('organization runtime policy route', () => {
     )
     const { user } = renderRoute('/orgs/acme/settings/runtime')
 
-    const override = await screen.findByRole('checkbox', {
-      name: 'Override Enable file revisions',
-    })
-    expect(override).not.toHaveAttribute('aria-disabled', 'true')
-    expect(screen.getByRole('checkbox', { name: 'File revisions enabled' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    )
-    await user.click(override)
+    const fileRevisions = await screen.findByRole('checkbox', { name: 'File revisions enabled' })
+    expect(fileRevisions).toHaveAttribute('aria-disabled', 'true')
+    await user.click(screen.getByRole('button', { name: 'Use instance setting' }))
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
 
     await waitFor(() => expect(capturedBody).toEqual({ file_revisions_enabled: null }))
@@ -149,13 +199,9 @@ describe('organization runtime policy route', () => {
       ),
       permissionsHandler(['org:read', 'org:write']),
     )
-    const { user } = renderRoute('/orgs/acme/settings/runtime')
+    renderRoute('/orgs/acme/settings/runtime')
 
-    await user.click(
-      await screen.findByRole('checkbox', { name: 'Override Background export limit' }),
-    )
-
-    const input = screen.getByRole('spinbutton', { name: 'Background export limit' })
+    const input = await screen.findByRole('spinbutton', { name: 'Background export limit' })
     expect(Number(input.getAttribute('min'))).toBeGreaterThan(0)
     expect(input).toHaveAttribute('max', '10')
     expect(screen.queryByText(/0 means unlimited/)).not.toBeInTheDocument()
@@ -166,8 +212,8 @@ describe('organization runtime policy route', () => {
 
     renderRoute('/orgs/acme/settings/runtime')
 
-    const override = await screen.findByRole('checkbox', { name: 'Override Query row limit' })
-    expect(override).toHaveAttribute('aria-disabled', 'true')
+    const input = await screen.findByRole('spinbutton', { name: 'Query row limit' })
+    expect(input).toBeDisabled()
     expect(screen.getByText(/organization write permission/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
   })
@@ -191,8 +237,7 @@ describe('organization runtime policy route', () => {
     )
     const { user } = renderRoute('/orgs/acme/settings/runtime')
 
-    await user.click(await screen.findByRole('checkbox', { name: 'Override Query row limit' }))
-    const input = screen.getByRole('spinbutton', { name: 'Query row limit' })
+    const input = await screen.findByRole('spinbutton', { name: 'Query row limit' })
     await user.clear(input)
     await user.type(input, '500')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))

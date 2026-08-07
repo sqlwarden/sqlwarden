@@ -37,6 +37,7 @@ export type AppIcon =
   | 'folder'
   | 'folder-open'
   | 'home-04'
+  | 'information-circle'
   | 'key-01'
   | 'layout-bottom'
   | 'loading-03'

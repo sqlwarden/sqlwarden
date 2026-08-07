@@ -39,6 +39,7 @@ const icons: Record<AppIcon, string> = {
   folder: 'hugeicons:folder-02',
   'folder-open': 'hugeicons:folder-open',
   'home-04': 'hugeicons:home-04',
+  'information-circle': 'hugeicons:information-circle',
   'key-01': 'hugeicons:key-01',
   'layout-bottom': 'hugeicons:layout-bottom',
   'loading-03': 'hugeicons:loading-03',

@@ -1,7 +1,7 @@
 import { errorMessage, isApiError } from '#/lib/api/errors'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
+import { Navigate, createFileRoute } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
 import {
@@ -37,16 +37,32 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
 import { Checkbox } from '#/components/ui/checkbox'
-import { Button } from '#/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '#/components/ui/alert'
 import { RoutePending } from '#/components/RoutePending'
 import { OverrideField } from '#/components/settings/OverrideField'
 import { UnitInputField } from '#/components/settings/UnitInputField'
 
 export const Route = createFileRoute('/orgs/$org_slug/settings/runtime')({
-  component: OrganizationRuntimeSettingsPage,
-  pendingComponent: RoutePending,
+  component: LegacyRuntimeSettingsRedirect,
 })
+
+function LegacyRuntimeSettingsRedirect() {
+  const { org_slug: orgSlug } = Route.useParams()
+  return (
+    <Navigate
+      to="/orgs/$org_slug/settings/general"
+      params={{ org_slug: orgSlug }}
+      search={{ tab: 'runtime' }}
+      replace
+    />
+  )
+}
+
+export interface OrganizationSettingsActionState {
+  disabled: boolean
+  hasChanges: boolean
+  pending: boolean
+}
 
 type RuntimeFieldErrors = Partial<Record<keyof OrganizationRuntimeOverrideValues, string>>
 
@@ -67,8 +83,15 @@ function unitsFromForm(form: RuntimeSettingsFormState): RuntimeUnits {
   }
 }
 
-function OrganizationRuntimeSettingsPage() {
-  const { org_slug: orgSlug } = Route.useParams()
+export function OrganizationRuntimeSettingsPanel({
+  orgSlug,
+  formId,
+  onActionStateChange,
+}: {
+  orgSlug: string
+  formId: string
+  onActionStateChange: (state: OrganizationSettingsActionState) => void
+}) {
   const queryClient = useQueryClient()
   const settings = useQuery(orgRuntimeSettingsQueryOptions(orgSlug))
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
@@ -88,12 +111,12 @@ function OrganizationRuntimeSettingsPage() {
   useEffect(() => {
     if (!settings.error) return
     if (isApiError(settings.error) && settings.error.code === 'settings_unavailable') return
-    toast.error(errorMessage(settings.error, 'Failed to load runtime policy'))
+    toast.error(errorMessage(settings.error, 'Failed to load data controls'))
   }, [settings.error])
 
   const updateSettings = useMutation({
     mutationFn: async () => {
-      if (!settings.data || !form) throw new Error('Runtime policy is not loaded yet.')
+      if (!settings.data || !form) throw new Error('Data controls are not loaded yet.')
       const patch = buildRuntimeSettingsPatch(form, settings.data.overrides)
       return api.patch<OrganizationRuntimeSettings>(
         `/api/v1/orgs/${orgSlug}/runtime-settings`,
@@ -105,7 +128,7 @@ function OrganizationRuntimeSettingsPage() {
       const nextForm = runtimeSettingsFormState(updated)
       setForm(nextForm)
       setUnits(unitsFromForm(nextForm))
-      toast.success('Runtime policy updated')
+      toast.success('Data controls updated')
       queryClient.setQueryData(queryKeys.orgRuntimeSettings(orgSlug), updated)
     },
     onError: (error) => {
@@ -113,9 +136,22 @@ function OrganizationRuntimeSettingsPage() {
         setFieldErrors(error.fieldErrors as RuntimeFieldErrors)
         return
       }
-      toast.error(errorMessage(error, 'Failed to update runtime policy'))
+      toast.error(errorMessage(error, 'Failed to update data controls'))
     },
   })
+
+  const hasChanges = Boolean(
+    form && settings.data && hasRuntimeSettingsChanges(form, settings.data.overrides),
+  )
+  const disabled = !canWrite || updateSettings.isPending
+
+  useEffect(() => {
+    onActionStateChange({
+      disabled: disabled || !form || !settings.data,
+      hasChanges,
+      pending: updateSettings.isPending,
+    })
+  }, [disabled, form, hasChanges, onActionStateChange, settings.data, updateSettings.isPending])
 
   if (settings.isLoading) {
     return <RoutePending />
@@ -124,7 +160,6 @@ function OrganizationRuntimeSettingsPage() {
   if (isApiError(settings.error) && settings.error.code === 'settings_unavailable') {
     return (
       <div className="flex flex-col gap-4">
-        <h1 className="font-heading text-2xl font-semibold tracking-tight">Runtime Policy</h1>
         <Alert variant="destructive">
           <AlertTitle>Settings unavailable</AlertTitle>
           <AlertDescription>
@@ -136,18 +171,11 @@ function OrganizationRuntimeSettingsPage() {
   }
 
   if (settings.isError || !settings.data || !form || !units) {
-    return (
-      <div className="flex flex-col gap-1.5">
-        <h1 className="font-heading text-2xl font-semibold tracking-tight">Runtime Policy</h1>
-        <p className="text-muted-foreground">Failed to load runtime policy.</p>
-      </div>
-    )
+    return <p className="text-muted-foreground">Failed to load data controls.</p>
   }
 
-  const { effective, constraints } = settings.data
-  const disabled = !canWrite || updateSettings.isPending
+  const { constraints } = settings.data
   const fileRevisionsDisabled = disabled || !constraints.file_revisions_available
-  const hasChanges = hasRuntimeSettingsChanges(form, settings.data.overrides)
 
   function updateForm<K extends keyof RuntimeSettingsFormState>(
     field: K,
@@ -166,16 +194,8 @@ function OrganizationRuntimeSettingsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-1.5">
-        <h1 className="font-heading text-2xl font-semibold tracking-tight">Runtime Policy</h1>
-        <p className="text-sm text-muted-foreground">
-          Override instance-wide query, export, and storage limits for this organization. Overrides
-          can only tighten instance limits, never relax them.
-        </p>
-      </div>
-
-      <form className="flex flex-col gap-8" onSubmit={submitSettings}>
+    <div className="flex flex-col gap-6">
+      <form id={formId} className="flex flex-col gap-6" onSubmit={submitSettings}>
         <Card>
           <CardHeader className="border-b border-border">
             <CardTitle>Query &amp; Export Limits</CardTitle>
@@ -189,11 +209,15 @@ function OrganizationRuntimeSettingsPage() {
               description="Maximum rows returned by a single query."
               overridden={form.queryMaxResultRows.overridden}
               disabled={disabled}
-              onOverrideChange={(overridden) =>
-                updateForm('queryMaxResultRows', { ...form.queryMaxResultRows, overridden })
+              onReset={() =>
+                updateForm('queryMaxResultRows', {
+                  ...form.queryMaxResultRows,
+                  overridden: false,
+                  value: constraints.query_max_result_rows_max,
+                })
               }
-              effectiveText={`${effective.query_max_result_rows.toLocaleString()} rows`}
-              constraintText={`Instance limit: ${constraints.query_max_result_rows_max.toLocaleString()} rows`}
+              limitText={`${constraints.query_max_result_rows_max.toLocaleString()} rows`}
+              limitDescription="This fixed number is the instance-wide maximum. The organization can use the same or a lower row limit."
               error={fieldErrors.query_max_result_rows}
             >
               <Input
@@ -209,6 +233,7 @@ function OrganizationRuntimeSettingsPage() {
                   const next = event.target.valueAsNumber
                   updateForm('queryMaxResultRows', {
                     ...form.queryMaxResultRows,
+                    overridden: true,
                     value: Number.isFinite(next) ? next : 0,
                   })
                 }}
@@ -220,11 +245,15 @@ function OrganizationRuntimeSettingsPage() {
               description="Maximum result size returned by a single query."
               overridden={form.queryMaxResultBytes.overridden}
               disabled={disabled}
-              onOverrideChange={(overridden) =>
-                updateForm('queryMaxResultBytes', { ...form.queryMaxResultBytes, overridden })
+              onReset={() =>
+                updateForm('queryMaxResultBytes', {
+                  ...form.queryMaxResultBytes,
+                  overridden: false,
+                  value: constraints.query_max_result_bytes_max,
+                })
               }
-              effectiveText={formatBytesValue(effective.query_max_result_bytes)}
-              constraintText={`Instance limit: ${formatBytesValue(constraints.query_max_result_bytes_max)}`}
+              limitText={formatBytesValue(constraints.query_max_result_bytes_max)}
+              limitDescription="This fixed value is the instance-wide maximum result size. The organization can only choose a smaller limit."
               error={fieldErrors.query_max_result_bytes}
             >
               <UnitInputField
@@ -239,6 +268,7 @@ function OrganizationRuntimeSettingsPage() {
                 onAmountChange={(amount) =>
                   updateForm('queryMaxResultBytes', {
                     ...form.queryMaxResultBytes,
+                    overridden: true,
                     value: sizeToBytes(amount, units.queryMaxResultBytes),
                   })
                 }
@@ -255,11 +285,15 @@ function OrganizationRuntimeSettingsPage() {
               description="Maximum size for an export completed inline within the request."
               overridden={form.exportsSyncMaxBytes.overridden}
               disabled={disabled}
-              onOverrideChange={(overridden) =>
-                updateForm('exportsSyncMaxBytes', { ...form.exportsSyncMaxBytes, overridden })
+              onReset={() =>
+                updateForm('exportsSyncMaxBytes', {
+                  ...form.exportsSyncMaxBytes,
+                  overridden: false,
+                  value: constraints.exports_sync_max_bytes_max,
+                })
               }
-              effectiveText={formatBytesValue(effective.exports_sync_max_bytes)}
-              constraintText={`Instance limit: ${formatBytesValue(constraints.exports_sync_max_bytes_max)}`}
+              limitText={formatBytesValue(constraints.exports_sync_max_bytes_max)}
+              limitDescription="This fixed value is the instance-wide maximum synchronous export size. The organization can only choose a smaller limit."
               error={fieldErrors.exports_sync_max_bytes}
             >
               <UnitInputField
@@ -274,6 +308,7 @@ function OrganizationRuntimeSettingsPage() {
                 onAmountChange={(amount) =>
                   updateForm('exportsSyncMaxBytes', {
                     ...form.exportsSyncMaxBytes,
+                    overridden: true,
                     value: sizeToBytes(amount, units.exportsSyncMaxBytes),
                   })
                 }
@@ -294,22 +329,19 @@ function OrganizationRuntimeSettingsPage() {
               }
               overridden={form.exportsBackgroundMaxBytes.overridden}
               disabled={disabled}
-              onOverrideChange={(overridden) =>
+              onReset={() =>
                 updateForm('exportsBackgroundMaxBytes', {
                   ...form.exportsBackgroundMaxBytes,
-                  overridden,
+                  overridden: false,
+                  value: constraints.exports_background_max_bytes_max,
                 })
               }
-              effectiveText={
-                effective.exports_background_max_bytes === 0
-                  ? 'Unlimited'
-                  : formatBytesValue(effective.exports_background_max_bytes)
-              }
-              constraintText={
+              limitText={
                 constraints.exports_background_max_bytes_max === 0
-                  ? 'Instance limit: unlimited'
-                  : `Instance limit: ${formatBytesValue(constraints.exports_background_max_bytes_max)}`
+                  ? 'Unlimited'
+                  : formatBytesValue(constraints.exports_background_max_bytes_max)
               }
+              limitDescription="This fixed value is the instance-wide background export limit. A finite instance limit cannot be relaxed by the organization."
               error={fieldErrors.exports_background_max_bytes}
             >
               <UnitInputField
@@ -338,6 +370,7 @@ function OrganizationRuntimeSettingsPage() {
                 onAmountChange={(amount) =>
                   updateForm('exportsBackgroundMaxBytes', {
                     ...form.exportsBackgroundMaxBytes,
+                    overridden: true,
                     value: sizeToBytes(amount, units.exportsBackgroundMaxBytes),
                   })
                 }
@@ -364,14 +397,15 @@ function OrganizationRuntimeSettingsPage() {
               description="Minimum interval between snapshot refreshes. Can only be made less frequent than the instance interval."
               overridden={form.schemaSnapshotFreshnessSeconds.overridden}
               disabled={disabled}
-              onOverrideChange={(overridden) =>
+              onReset={() =>
                 updateForm('schemaSnapshotFreshnessSeconds', {
                   ...form.schemaSnapshotFreshnessSeconds,
-                  overridden,
+                  overridden: false,
+                  value: constraints.schema_snapshot_freshness_seconds_min,
                 })
               }
-              effectiveText={formatDuration(effective.schema_snapshot_freshness_seconds)}
-              constraintText={`Instance minimum interval: ${formatDuration(constraints.schema_snapshot_freshness_seconds_min)}`}
+              limitText={formatDuration(constraints.schema_snapshot_freshness_seconds_min)}
+              limitDescription="This fixed value is the instance-wide minimum refresh interval. The organization can refresh less frequently, but not more frequently."
               error={fieldErrors.schema_snapshot_freshness_seconds}
             >
               <UnitInputField
@@ -391,6 +425,7 @@ function OrganizationRuntimeSettingsPage() {
                 onAmountChange={(amount) =>
                   updateForm('schemaSnapshotFreshnessSeconds', {
                     ...form.schemaSnapshotFreshnessSeconds,
+                    overridden: true,
                     value: durationToSeconds(amount, units.schemaSnapshotFreshnessSeconds),
                   })
                 }
@@ -417,15 +452,15 @@ function OrganizationRuntimeSettingsPage() {
               description="Organizations can only further restrict this; it cannot be enabled here if disabled at the instance level."
               overridden={form.fileRevisionsEnabled.overridden}
               disabled={disabled}
-              onOverrideChange={(overridden) =>
-                updateForm('fileRevisionsEnabled', { ...form.fileRevisionsEnabled, overridden })
+              onReset={() =>
+                updateForm('fileRevisionsEnabled', {
+                  ...form.fileRevisionsEnabled,
+                  overridden: false,
+                  value: constraints.file_revisions_available,
+                })
               }
-              effectiveText={effective.file_revisions_enabled ? 'Enabled' : 'Disabled'}
-              constraintText={
-                constraints.file_revisions_available
-                  ? undefined
-                  : 'Disabled at the instance level; cannot be enabled here.'
-              }
+              limitText={constraints.file_revisions_available ? 'Enabled' : 'Disabled'}
+              limitDescription="This fixed state comes from the instance setting. The organization may disable revisions, but cannot enable them when the instance has disabled them."
               error={fieldErrors.file_revisions_enabled}
             >
               <div className="flex items-center gap-2 text-sm">
@@ -436,6 +471,7 @@ function OrganizationRuntimeSettingsPage() {
                   onCheckedChange={(checked) =>
                     updateForm('fileRevisionsEnabled', {
                       ...form.fileRevisionsEnabled,
+                      overridden: true,
                       value: checked === true,
                     })
                   }
@@ -449,14 +485,15 @@ function OrganizationRuntimeSettingsPage() {
               description="Maximum stored revisions per file."
               overridden={form.fileRevisionsKeepLatest.overridden}
               disabled={disabled}
-              onOverrideChange={(overridden) =>
+              onReset={() =>
                 updateForm('fileRevisionsKeepLatest', {
                   ...form.fileRevisionsKeepLatest,
-                  overridden,
+                  overridden: false,
+                  value: constraints.file_revisions_keep_latest_max,
                 })
               }
-              effectiveText={`${effective.file_revisions_keep_latest.toLocaleString()} revisions`}
-              constraintText={`Instance limit: ${constraints.file_revisions_keep_latest_max.toLocaleString()} revisions`}
+              limitText={`${constraints.file_revisions_keep_latest_max.toLocaleString()} revisions`}
+              limitDescription="This fixed number is the instance-wide maximum. The organization can retain the same or fewer revisions per file."
               error={fieldErrors.file_revisions_keep_latest}
             >
               <Input
@@ -472,6 +509,7 @@ function OrganizationRuntimeSettingsPage() {
                   const next = event.target.valueAsNumber
                   updateForm('fileRevisionsKeepLatest', {
                     ...form.fileRevisionsKeepLatest,
+                    overridden: true,
                     value: Number.isFinite(next) ? next : 0,
                   })
                 }}
@@ -482,15 +520,9 @@ function OrganizationRuntimeSettingsPage() {
 
         {!canWrite ? (
           <p className="text-xs text-muted-foreground">
-            You need organization write permission to change runtime policy.
+            You need organization write permission to change data controls.
           </p>
         ) : null}
-
-        <div className="flex justify-end">
-          <Button type="submit" disabled={disabled || !hasChanges}>
-            {updateSettings.isPending ? 'Saving...' : 'Save changes'}
-          </Button>
-        </div>
       </form>
     </div>
   )

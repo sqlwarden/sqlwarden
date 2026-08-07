@@ -39,6 +39,7 @@ const icons: Record<AppIcon, string> = {
   folder: 'ri:folder-line',
   'folder-open': 'ri:folder-open-line',
   'home-04': 'ri:home-line',
+  'information-circle': 'ri:information-line',
   'key-01': 'ri:key-line',
   'layout-bottom': 'ri:layout-bottom-line',
   'loading-03': 'ri:loader-line',

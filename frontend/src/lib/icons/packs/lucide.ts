@@ -39,6 +39,7 @@ const icons: Record<AppIcon, string> = {
   folder: 'lucide:folder',
   'folder-open': 'lucide:folder-open',
   'home-04': 'lucide:home',
+  'information-circle': 'lucide:info',
   'key-01': 'lucide:key',
   'layout-bottom': 'lucide:panel-bottom',
   'loading-03': 'lucide:loader-circle',

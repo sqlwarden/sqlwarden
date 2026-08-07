@@ -1,4 +1,4 @@
-import { Checkbox } from '#/components/ui/checkbox'
+import { Button } from '#/components/ui/button'
 import {
   Field,
   FieldContent,
@@ -6,6 +6,8 @@ import {
   FieldError,
   FieldTitle,
 } from '#/components/ui/field'
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
+import { Icon } from '#/lib/icons'
 
 /** A single runtime-policy field that can inherit the instance default or be overridden. */
 export function OverrideField({
@@ -13,9 +15,9 @@ export function OverrideField({
   description,
   overridden,
   disabled,
-  onOverrideChange,
-  effectiveText,
-  constraintText,
+  onReset,
+  limitText,
+  limitDescription,
   error,
   children,
 }: {
@@ -23,40 +25,51 @@ export function OverrideField({
   description: string
   overridden: boolean
   disabled?: boolean
-  onOverrideChange: (overridden: boolean) => void
-  effectiveText: string
-  constraintText?: string
+  onReset: () => void
+  limitText: string
+  limitDescription: string
   error?: string
   children: React.ReactNode
 }) {
   return (
     <Field data-invalid={Boolean(error)} className="gap-3 rounded-md border border-border p-4">
-      <div className="flex items-start justify-between gap-4">
-        <FieldContent>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <FieldContent className="min-w-0">
           <FieldTitle>{label}</FieldTitle>
           <FieldDescription>{description}</FieldDescription>
         </FieldContent>
-        <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-          <Checkbox
-            aria-label={`Override ${label}`}
-            checked={overridden}
-            disabled={disabled}
-            onCheckedChange={(checked) => onOverrideChange(checked === true)}
-          />
-          <span>Override</span>
-        </div>
+        {overridden ? (
+          <Button type="button" variant="ghost" size="xs" disabled={disabled} onClick={onReset}>
+            Use instance setting
+          </Button>
+        ) : null}
       </div>
-      {overridden ? (
-        <div className="flex flex-col gap-1.5">
-          {children}
-          <FieldError>{error}</FieldError>
+
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-32 flex-1">{children}</div>
+          <span aria-hidden="true" className="text-muted-foreground">
+            /
+          </span>
+          <span className="whitespace-nowrap font-medium text-foreground">{limitText}</span>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`About the ${label} instance setting`}
+                />
+              }
+            >
+              <Icon name="information-circle" />
+            </TooltipTrigger>
+            <TooltipContent>{limitDescription}</TooltipContent>
+          </Tooltip>
         </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          Inherits instance default: <span className="text-foreground">{effectiveText}</span>
-        </p>
-      )}
-      {constraintText ? <p className="text-xs text-muted-foreground">{constraintText}</p> : null}
+        <FieldError>{error}</FieldError>
+      </div>
     </Field>
   )
 }

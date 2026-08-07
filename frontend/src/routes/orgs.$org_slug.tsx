@@ -378,7 +378,7 @@ function settingsItems(
     return []
   }
 
-  const items: AppShellNavItem[] = [
+  return [
     {
       to: '/orgs/$org_slug/settings/general',
       params: { org_slug: orgSlug },
@@ -386,17 +386,6 @@ function settingsItems(
       icon: 'settings-02',
     },
   ]
-
-  if (hasAnyPermission(permissions, [permission.orgRead])) {
-    items.push({
-      to: '/orgs/$org_slug/settings/runtime',
-      params: { org_slug: orgSlug },
-      label: 'Runtime Policy',
-      icon: 'server-stack-01',
-    })
-  }
-
-  return items
 }
 
 function workspaceIdFromPath(pathname: string, orgSlug: string) {
