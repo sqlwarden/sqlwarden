@@ -14,6 +14,7 @@ import type {
   ObjectDescriptor,
   ObjectDetail,
   ObjectRef,
+  ScopePath,
   ScopeNode,
   SchemaSpec,
   Workspace,
@@ -259,7 +260,7 @@ export function SchemaTree({
       <div className="py-0.5">
         {single && (single.children?.length ?? 0) === 0
           ? sortedGroups(single, spec).map((g) => (
-              <SchemaGroupNode key={g.kind} group={g} forceOpen={filtering} />
+              <SchemaGroupNode key={g.kind} group={g} scope={single.path} forceOpen={filtering} />
             ))
           : single && single.groups.length === 0
             ? (single.children ?? []).map((node) => (
@@ -330,7 +331,7 @@ function SchemaScopeNode({ node, forceOpen }: { node: ScopeNode; forceOpen: bool
       {expanded && (
         <GuideChildren>
           {groups.map((g) => (
-            <SchemaGroupNode key={g.kind} group={g} forceOpen={forceOpen} />
+            <SchemaGroupNode key={g.kind} group={g} scope={node.path} forceOpen={forceOpen} />
           ))}
           {(node.children ?? []).map((child) => (
             <SchemaScopeNode key={JSON.stringify(child.path)} node={child} forceOpen={forceOpen} />
@@ -341,15 +342,30 @@ function SchemaScopeNode({ node, forceOpen }: { node: ScopeNode; forceOpen: bool
   )
 }
 
-function SchemaGroupNode({ group, forceOpen }: { group: ObjectGroup; forceOpen: boolean }) {
+function SchemaGroupNode({
+  group,
+  scope,
+  forceOpen,
+}: {
+  group: ObjectGroup
+  scope: ScopePath
+  forceOpen: boolean
+}) {
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
   const objects = group.objects ?? []
   const style = kindStyle(group.kind)
-  const { refresh, spec } = useTreeCtx()
+  const { refresh, spec, openDiagram } = useTreeCtx()
   const label = kindLabel(spec, group.kind)
   const newLabel = `New ${label.replace(/s$/, '')}...`
-  const menuItems = buildObjectGroupMenu({ newLabel, onRefresh: refresh })
+  const menuItems = buildObjectGroupMenu({
+    newLabel,
+    onRefresh: refresh,
+    onViewDiagram:
+      group.kind === 'table' && diagramSupportedForKind(spec, group.kind) && openDiagram
+        ? () => openDiagram({ kind: 'scope', scope })
+        : undefined,
+  })
 
   return (
     <div>

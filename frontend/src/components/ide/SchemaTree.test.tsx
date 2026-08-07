@@ -307,4 +307,53 @@ describe('SchemaTree', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Refresh' }))
     await waitFor(() => expect(refreshes).toBe(1))
   })
+
+  it('opens a scope diagram from a diagram-capable object group menu', async () => {
+    store.getState().setSession(7, 'session-7')
+    respondReady()
+    renderTree()
+
+    fireEvent.contextMenu(await screen.findByRole('button', { name: /Tables/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'View diagram' }))
+
+    await waitFor(() =>
+      expect(store.getState().tabs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'diagram',
+            diagramTarget: { kind: 'scope', scope },
+          }),
+        ]),
+      ),
+    )
+  })
+
+  it('omits the group diagram action when the object kind does not support diagrams', async () => {
+    store.getState().setSession(7, 'session-7')
+    respondReady()
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({
+          spec: {
+            dialect: 'postgres',
+            kinds: [
+              {
+                kind: 'table',
+                label: 'Table',
+                plural_label: 'Tables',
+                order: 1,
+                relational: true,
+                supports_diagram: false,
+                listing: 'enumerated',
+              },
+            ],
+          },
+        }),
+      ),
+    )
+    renderTree()
+
+    fireEvent.contextMenu(await screen.findByRole('button', { name: /Tables/ }))
+    expect(screen.queryByRole('menuitem', { name: 'View diagram' })).not.toBeInTheDocument()
+  })
 })

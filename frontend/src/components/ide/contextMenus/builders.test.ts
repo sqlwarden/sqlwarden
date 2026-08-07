@@ -111,6 +111,16 @@ describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
     expect(action(items, 'new-object')?.label).toBe('New Table…')
     expect(action(items, 'new-object')?.soon).toBe(true)
     expect(action(items, 'refresh')?.soon).toBeFalsy()
+    expect(action(items, 'view-diagram')).toBeUndefined()
+  })
+  it('object-group shows View diagram when the callback is provided', () => {
+    const items = buildObjectGroupMenu({
+      newLabel: 'New Table…',
+      onRefresh: noop,
+      onViewDiagram: noop,
+    })
+    expect(action(items, 'view-diagram')?.label).toBe('View diagram')
+    expect(action(items, 'view-diagram')?.soon).toBeFalsy()
   })
 })
 
