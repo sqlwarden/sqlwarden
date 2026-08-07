@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	singleUserDefaultOrgName = "Local"
-	singleUserDefaultOrgSlug = "local"
+	singleUserDefaultOrgName  = "Local"
+	singleUserDefaultOrgSlug  = "local"
+	maxOrganizationSlugLength = 64
 )
 
 func (app *application) createOwnedOrganization(ctx context.Context, slug, name string, ownerAccountID int64) (database.Organization, error) {
@@ -159,6 +160,7 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 	input.V.CheckField(slug != "", "slug", "Slug is required.")
 	if slug != "" {
 		input.V.CheckField(isValidSlug(slug), "slug", "Slug may only contain lowercase letters, numbers, and hyphens.")
+		input.V.CheckField(len(slug) <= maxOrganizationSlugLength, "slug", "Slug must be 64 characters or fewer.")
 	}
 
 	if input.V.HasErrors() {
@@ -490,8 +492,8 @@ func slugify(name string) string {
 		return -1
 	}, s)
 	s = strings.Trim(s, "-")
-	if len(s) > 50 {
-		s = s[:50]
+	if len(s) > maxOrganizationSlugLength {
+		s = s[:maxOrganizationSlugLength]
 	}
 	return s
 }

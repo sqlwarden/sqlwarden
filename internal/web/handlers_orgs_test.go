@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/sqlwarden/internal/access"
@@ -424,6 +425,25 @@ func TestCreateOrgWithExplicitSlug(t *testing.T) {
 	}, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusCreated)
 	assert.Equal(t, res.BodyFields["slug"], "custom-org")
+}
+
+func TestCreateOrgLimitsSlugLength(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, _ := registerAndLogin(t, app, "long-slug@example.com", "User", "securepass99")
+
+	generated := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{
+		"name": strings.Repeat("a", maxOrganizationSlugLength+10),
+	}, tok), app.routes())
+	assert.Equal(t, generated.StatusCode, http.StatusCreated)
+	assert.Equal(t, generated.BodyFields["slug"].(string), strings.Repeat("a", maxOrganizationSlugLength))
+
+	explicit := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{
+		"name": "Overlong explicit slug",
+		"slug": strings.Repeat("b", maxOrganizationSlugLength+1),
+	}, tok), app.routes())
+	assert.Equal(t, explicit.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, explicit, "slug")
 }
 
 func TestCreateOrgDuplicateSlug(t *testing.T) {

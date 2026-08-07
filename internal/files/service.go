@@ -930,7 +930,13 @@ func (s *Service) finishRelocations(ctx context.Context, planner storagePlanner,
 }
 
 func workspaceStorageSegment(ws database.Workspace) string {
-	return strconv.FormatInt(ws.ID, 10) + "-" + slugify(ws.Name)
+	const maxWorkspaceSlugLength = 64
+
+	slug := slugify(ws.Name)
+	if len(slug) > maxWorkspaceSlugLength {
+		slug = slug[:maxWorkspaceSlugLength]
+	}
+	return strconv.FormatInt(ws.ID, 10) + "-" + slug
 }
 
 func slugify(s string) string {

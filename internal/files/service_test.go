@@ -31,6 +31,13 @@ type serviceFixture struct {
 	other    database.Account
 }
 
+func TestWorkspaceStorageSegmentLimitsDerivedSlug(t *testing.T) {
+	segment := workspaceStorageSegment(database.Workspace{ID: 42, Name: strings.Repeat("A", 80)})
+	if want := "42-" + strings.Repeat("a", 64); segment != want {
+		t.Fatalf("workspaceStorageSegment() = %q, want %q", segment, want)
+	}
+}
+
 type fakeEnforcer struct {
 	allowed map[string]bool
 	calls   []string

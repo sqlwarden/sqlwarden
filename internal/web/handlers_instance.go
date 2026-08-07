@@ -58,6 +58,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		input.V.CheckField(organizationSlug != "", "organization_slug", "Organization slug is required.")
 		if organizationSlug != "" {
 			input.V.CheckField(isValidSlug(organizationSlug), "organization_slug", "Organization slug may only contain lowercase letters, numbers, and hyphens.")
+			input.V.CheckField(len(organizationSlug) <= maxOrganizationSlugLength, "organization_slug", "Organization slug must be 64 characters or fewer.")
 		}
 	}
 	if input.V.HasErrors() {

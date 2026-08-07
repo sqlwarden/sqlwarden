@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { slugify } from './strings'
+import { MAX_SLUG_LENGTH, slugify } from './strings'
 
 describe('slugify', () => {
   it('normalizes whitespace, casing, and punctuation', () => {
@@ -17,5 +17,9 @@ describe('slugify', () => {
   it('does not truncate unless requested', () => {
     const value = 'a'.repeat(80)
     expect(slugify(value)).toHaveLength(80)
+  })
+
+  it('exposes the shared resource slug limit', () => {
+    expect(slugify('a'.repeat(80), { maxLength: MAX_SLUG_LENGTH })).toHaveLength(64)
   })
 })

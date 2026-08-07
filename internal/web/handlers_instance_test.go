@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/sqlwarden/internal/access"
@@ -114,6 +115,23 @@ func TestSetupInMultiUserModeRejectsInvalidOrganizationSlug(t *testing.T) {
 	}), app.routes())
 
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+}
+
+func TestSetupInMultiUserModeRejectsOverlongOrganizationSlug(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.config.AccessMode = AccessModeMultiUser
+
+	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
+		"email":             "admin@example.com",
+		"name":              "Admin",
+		"password":          "securepass99",
+		"organization_name": "First Organization",
+		"organization_slug": strings.Repeat("a", maxOrganizationSlugLength+1),
+	}), app.routes())
+
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "organization_slug")
 }
 
 func TestSetupInMultiUserModeRejectsDuplicateOrganizationSlug(t *testing.T) {

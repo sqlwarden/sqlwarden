@@ -9,7 +9,7 @@ import { api } from '#/lib/api/client'
 import type { SetupResponse } from '#/lib/api/types'
 import { clearAccessToken } from '#/lib/auth/access-token'
 import { queryKeys } from '#/lib/api/query'
-import { slugify } from '#/lib/strings'
+import { MAX_SLUG_LENGTH, slugify } from '#/lib/strings'
 import { AuthField } from '#/components/auth/AuthField'
 import { AuthLayout } from '#/components/auth/AuthLayout'
 import { Badge } from '#/components/ui/badge'
@@ -81,7 +81,7 @@ function SetupPage() {
     setValues((current) => {
       const next = { ...current, [field]: value }
       if (field === 'organizationName' && !slugTouched) {
-        next.organizationSlug = slugify(value, { maxLength: 64 })
+        next.organizationSlug = slugify(value, { maxLength: MAX_SLUG_LENGTH })
       }
       return next
     })
@@ -191,11 +191,15 @@ function SetupPage() {
             <AuthField label="Organization slug" error={formErrors.organization_slug}>
               <Input
                 autoComplete="off"
+                maxLength={MAX_SLUG_LENGTH}
                 placeholder="acme-cloud"
                 value={values.organizationSlug}
                 onChange={(event) => {
                   setSlugTouched(true)
-                  updateField('organizationSlug', slugify(event.target.value, { maxLength: 64 }))
+                  updateField(
+                    'organizationSlug',
+                    slugify(event.target.value, { maxLength: MAX_SLUG_LENGTH }),
+                  )
                 }}
               />
             </AuthField>
