@@ -267,6 +267,136 @@ describe('SchemaTree', () => {
     )
   })
 
+  it('keeps routine and sequence rows compact while condensing trigger details', async () => {
+    store.getState().setSession(7, 'session-7')
+    const refs: ObjectRef[] = [
+      { scope, kind: 'function', name: 'calculate_tax' },
+      { scope, kind: 'procedure', name: 'refresh_totals' },
+      { scope, kind: 'sequence', name: 'orders_id_seq' },
+      { scope, kind: 'trigger', name: 'orders_audit' },
+    ]
+    const requestedKinds: string[] = []
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+        HttpResponse.json({
+          directory: {
+            connection: 'warehouse',
+            engine: 'postgres',
+            default_scope: scope,
+            generated_at: '',
+            roots: [
+              {
+                path: scope,
+                groups: refs.map((objectRef) => ({
+                  kind: objectRef.kind,
+                  objects: [objectRef],
+                })),
+              },
+            ],
+          },
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({
+          spec: {
+            dialect: 'postgres',
+            kinds: refs.map((objectRef, order) => ({
+              kind: objectRef.kind,
+              label: objectRef.kind[0].toUpperCase() + objectRef.kind.slice(1),
+              plural_label: objectRef.kind[0].toUpperCase() + objectRef.kind.slice(1) + 's',
+              order,
+              relational: false,
+              supports_diagram: false,
+              listing: 'enumerated',
+            })),
+          },
+        }),
+      ),
+      http.post(
+        '/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects',
+        async ({ request }) => {
+          const body = (await request.json()) as { refs: ObjectRef[] }
+          const objectRef = body.refs[0]
+          requestedKinds.push(objectRef.kind)
+          if (objectRef.kind === 'sequence') {
+            return HttpResponse.json({
+              objects: [
+                {
+                  ref: objectRef,
+                  descriptors: [
+                    {
+                      kind: 'fields',
+                      title: 'Sequence',
+                      fields: [{ name: 'Data type', value: 'bigint' }],
+                    },
+                  ],
+                },
+              ],
+            })
+          }
+          return HttpResponse.json({
+            objects: [
+              {
+                ref: objectRef,
+                descriptors: [
+                  {
+                    kind: 'fields',
+                    title: 'Trigger',
+                    fields: [
+                      { name: 'Timing', value: 'BEFORE' },
+                      { name: 'Event', value: 'INSERT' },
+                      { name: 'Table', value: 'public.orders' },
+                    ],
+                  },
+                  {
+                    kind: 'source',
+                    title: 'Statement',
+                    source: { language: 'sql', body: 'BEGIN audit(); END' },
+                  },
+                ],
+              },
+            ],
+          })
+        },
+      ),
+    )
+
+    renderTree()
+    for (const label of ['Functions', 'Procedures', 'Sequences', 'Triggers']) {
+      fireEvent.click(await screen.findByRole('button', { name: new RegExp(label) }))
+    }
+
+    const functionRow = screen.getByRole('button', { name: 'calculate_tax' })
+    const procedureRow = screen.getByRole('button', { name: 'refresh_totals' })
+    const sequenceRow = screen.getByRole('button', { name: /orders_id_seq/ })
+    expect(functionRow).not.toHaveAttribute('aria-expanded')
+    expect(procedureRow).not.toHaveAttribute('aria-expanded')
+    expect(sequenceRow).not.toHaveAttribute('aria-expanded')
+    expect(await screen.findByText('bigint')).toBeInTheDocument()
+    expect(requestedKinds).toEqual(['sequence'])
+
+    fireEvent.doubleClick(functionRow)
+    await waitFor(() =>
+      expect(store.getState().tabs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'object',
+            objectRef: expect.objectContaining({ kind: 'function', name: 'calculate_tax' }),
+          }),
+        ]),
+      ),
+    )
+
+    const triggerRow = screen.getByRole('button', { name: 'orders_audit' })
+    expect(triggerRow).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(triggerRow)
+    expect(await screen.findByText('BEFORE')).toBeInTheDocument()
+    expect(screen.getByText('INSERT')).toBeInTheDocument()
+    expect(screen.getByText('public.orders')).toBeInTheDocument()
+    expect(screen.queryByText('BEGIN audit(); END')).not.toBeInTheDocument()
+    expect(requestedKinds).toEqual(['sequence', 'trigger'])
+  })
+
   it('force-opens matching branches and reports an empty search', async () => {
     store.getState().setSession(7, 'session-7')
     respondReady()

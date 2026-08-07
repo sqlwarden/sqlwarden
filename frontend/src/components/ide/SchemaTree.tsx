@@ -112,6 +112,8 @@ const KIND_STYLE: Record<string, { icon: AppIcon; className: string }> = {
 const kindStyle = (kind: string) =>
   KIND_STYLE[kind] ?? { icon: 'box' as AppIcon, className: 'text-muted-foreground' }
 
+const NON_EXPANDABLE_OBJECT_KINDS = new Set(['function', 'procedure', 'sequence'])
+
 export function SchemaTree({
   orgSlug,
   workspaceId,
@@ -397,7 +399,9 @@ function SchemaGroupNode({
 function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forceOpen: boolean }) {
   const ctx = useContext(SchemaTreeContext)
   const [open, setOpen] = useState<boolean | null>(null)
-  const expanded = open ?? forceOpen
+  const expandable = !NON_EXPANDABLE_OBJECT_KINDS.has(objectRef.kind)
+  const inlineDetail = objectRef.kind === 'sequence'
+  const expanded = expandable && (open ?? forceOpen)
   const detailQuery = useQuery({
     ...orgConnectionObjectQueryOptions(
       ctx!.orgSlug,
@@ -406,7 +410,7 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
       ctx!.sessionId,
       objectRef,
     ),
-    enabled: Boolean(ctx) && expanded,
+    enabled: Boolean(ctx) && (expanded || inlineDetail),
   })
   useEvictGoneSession(ctx?.connectionId, [detailQuery.error])
   const detail = detailQuery.data ?? null
@@ -414,6 +418,7 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
   const insertable = useObjectInsert(objectRef)
   const { dialect, spec, openDiagram } = useTreeCtx()
   const style = kindStyle(objectRef.kind)
+  const inlineMeta = inlineDetail ? sequenceDataType(detail) : undefined
   const isView = objectRef.kind === 'view' || objectRef.kind === 'materialized_view'
   const objectMenu = buildObjectMenu({
     isView,
@@ -439,10 +444,11 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
         <TreeRow
           typeIcon={style.icon}
           typeIconClass={style.className}
-          chevron={expanded}
+          chevron={expandable ? expanded : undefined}
           label={objectRef.name}
+          meta={inlineMeta}
           insertable={insertable}
-          onClick={() => setOpen(!expanded)}
+          onClick={expandable ? () => setOpen(!expanded) : undefined}
           onDoubleClickRow={() => ctx?.openObject(objectRef)}
         />
       </ContextMenu>
@@ -452,6 +458,7 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
             detail={detail}
             loading={detailQuery.isLoading}
             objectName={objectRef.name}
+            objectKind={objectRef.kind}
           />
         </GuideChildren>
       )}
@@ -463,10 +470,12 @@ function SchemaObjectDetail({
   detail,
   loading,
   objectName,
+  objectKind,
 }: {
   detail: ObjectDetail | null
   loading: boolean
   objectName: string
+  objectKind: string
 }) {
   const { dialect } = useTreeCtx()
   if (loading && !detail) {
@@ -479,6 +488,9 @@ function SchemaObjectDetail({
   }
   const rel = detail?.relational
   if (!rel) {
+    if (objectKind === 'trigger') {
+      return <SchemaTriggerDetail descriptors={detail?.descriptors ?? []} />
+    }
     return <SchemaDescriptors descriptors={detail?.descriptors ?? []} />
   }
   const pk = new Set(rel.primary_key ?? [])
@@ -530,6 +542,22 @@ function SchemaObjectDetail({
       )}
     </>
   )
+}
+
+function sequenceDataType(detail: ObjectDetail | null): string | undefined {
+  return detail?.descriptors
+    ?.flatMap((descriptor) => descriptor.fields ?? [])
+    .find((field) => field.name.toLowerCase() === 'data type')?.value
+}
+
+function SchemaTriggerDetail({ descriptors }: { descriptors: ObjectDescriptor[] }) {
+  const fields = descriptors
+    .flatMap((descriptor) => descriptor.fields ?? [])
+    .filter((field) => ['timing', 'event', 'table'].includes(field.name.toLowerCase()))
+
+  return fields.map((field) => (
+    <LeafRow key={field.name} icon="information-circle" label={field.name} meta={field.value} />
+  ))
 }
 
 /** Collapsible sub-section under an expanded object (Columns, Indexes, …). */
@@ -691,6 +719,7 @@ function TreeRow({
   typeIconClass,
   chevron,
   label,
+  meta,
   count,
   bold,
   insertable,
@@ -699,12 +728,13 @@ function TreeRow({
 }: {
   typeIcon: AppIcon
   typeIconClass?: string
-  chevron: boolean
+  chevron?: boolean
   label: string
+  meta?: string
   count?: number
   bold?: boolean
   insertable?: InsertableProps
-  onClick: () => void
+  onClick?: () => void
   /** When set, double-clicking the row runs this instead of the insertable's
    *  insert action (object rows open their detail tab; drag-to-insert stays). */
   onDoubleClickRow?: () => void
@@ -712,30 +742,39 @@ function TreeRow({
   function handleClick(e: React.MouseEvent) {
     if (window.getSelection()?.toString()) return
     if (insertable && e.detail > 1) return
-    onClick()
+    onClick?.()
   }
 
   return (
     <div
       role="button"
+      aria-expanded={chevron === undefined ? undefined : chevron}
       tabIndex={0}
       draggable={insertable?.draggable}
       onDragStart={insertable?.onDragStart}
       onDoubleClick={onDoubleClickRow ?? insertable?.onDoubleClick}
       onClick={handleClick}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          if (onClick) onClick()
+          else onDoubleClickRow?.()
+        } else if (e.key === ' ' && onClick) {
           e.preventDefault()
           onClick()
         }
       }}
       className="mx-1 flex h-6 cursor-pointer items-center gap-1.5 rounded-md pl-1 pr-2 text-left text-xs transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
     >
-      <Icon
-        name={chevron ? 'chevron-down' : 'chevron-right'}
-        size={11}
-        className="shrink-0 text-muted-foreground/70"
-      />
+      {chevron === undefined ? (
+        <span className="size-[11px] shrink-0" aria-hidden="true" />
+      ) : (
+        <Icon
+          name={chevron ? 'chevron-down' : 'chevron-right'}
+          size={11}
+          className="shrink-0 text-muted-foreground/70"
+        />
+      )}
       <Icon
         name={typeIcon}
         size={13}
@@ -751,6 +790,14 @@ function TreeRow({
       >
         {label}
       </span>
+      {meta ? (
+        <span
+          className="min-w-0 max-w-[45%] shrink truncate text-right font-mono text-[10px] text-muted-foreground/80"
+          title={meta}
+        >
+          {meta}
+        </span>
+      ) : null}
       {count !== undefined && (
         <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground/60">{count}</span>
       )}
