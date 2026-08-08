@@ -237,10 +237,21 @@ describe('useIdeStore', () => {
   })
 
   it('newFileTab includes fileId and empty content', () => {
-    const tab = newFileTab(mockFile, mockWorkspace)
+    const tab = newFileTab(
+      {
+        ...mockFile,
+        media_type: 'text/csv; charset=utf-8',
+        file_kind: 'export',
+        size_bytes: 2048,
+      },
+      mockWorkspace,
+    )
     expect(tab.fileId).toBe(20)
     expect(tab.content).toBe('')
     expect(tab.etag).toBeUndefined()
+    expect(tab.fileMediaType).toBe('text/csv; charset=utf-8')
+    expect(tab.fileKind).toBe('export')
+    expect(tab.fileSizeBytes).toBe(2048)
   })
 
   it('updateTabEtag stores etag and sets isDirty false', () => {

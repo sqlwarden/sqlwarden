@@ -90,6 +90,32 @@ describe('useFileContent', () => {
     expect(request).not.toHaveBeenCalled()
   })
 
+  it('does not fetch when content loading is disabled', async () => {
+    const request = vi.fn()
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/files/private/11/content', () => {
+        request()
+        return new HttpResponse('unexpected')
+      }),
+    )
+    const { wrapper } = setup()
+    const { result } = renderHook(
+      () =>
+        useFileContent({
+          orgSlug: 'acme',
+          workspaceId: 3,
+          tab,
+          updateTabEtag: vi.fn(),
+          enabled: false,
+        }),
+      { wrapper },
+    )
+
+    expect(result.current.isLoading).toBe(false)
+    await Promise.resolve()
+    expect(request).not.toHaveBeenCalled()
+  })
+
   it('exposes failed loads and retries them on demand', async () => {
     let attempts = 0
     server.use(

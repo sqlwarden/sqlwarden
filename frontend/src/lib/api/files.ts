@@ -44,6 +44,21 @@ export async function getPrivateWorkspaceFileContent(
   return { text, etag: raw.replace(/^"|"$/g, '') }
 }
 
+export async function downloadPrivateWorkspaceFile(
+  orgSlug: string,
+  workspaceId: number,
+  fileId: number,
+): Promise<Blob> {
+  const url = `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/files/private/${fileId}/content`
+  const token = getAccessToken()
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const response = await fetch(url, { headers })
+  if (!response.ok) throw new Error(`Failed to download file: ${response.statusText}`)
+  return response.blob()
+}
+
 export async function renamePrivateWorkspaceFile(
   orgSlug: string,
   workspaceId: number,

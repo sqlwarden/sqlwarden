@@ -50,6 +50,10 @@ export type EditorTab = {
   connectionId?: number
   driver?: string
   fileId?: number
+  /** Original workspace-file metadata used to select a purpose-built viewer. */
+  fileMediaType?: string
+  fileKind?: string
+  fileSizeBytes?: number
   /** Set for `object` tabs: the qualified database object this tab views. */
   objectRef?: ObjectRef
   /** Set for `diagram` tabs: what the ER diagram is anchored to. */
@@ -737,6 +741,9 @@ export function newFileTab(file: WorkspaceFile, workspace: Workspace): EditorTab
     kind: 'file',
     subtitle: file.name,
     fileId: file.id,
+    fileMediaType: file.media_type,
+    fileKind: file.file_kind,
+    fileSizeBytes: file.size_bytes,
     content: '',
   }
 }
