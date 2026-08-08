@@ -44,6 +44,64 @@ export async function getPrivateWorkspaceFileContent(
   return { text, etag: raw.replace(/^"|"$/g, '') }
 }
 
+export async function renamePrivateWorkspaceFile(
+  orgSlug: string,
+  workspaceId: number,
+  fileId: number,
+  name: string,
+): Promise<WorkspaceFile> {
+  return apiRequest<WorkspaceFile>(
+    `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/files/private/${fileId}`,
+    { method: 'PATCH', body: { name } },
+  )
+}
+
+export async function renameSharedWorkspaceFile(
+  orgSlug: string,
+  workspaceId: number,
+  fileId: number,
+  name: string,
+): Promise<WorkspaceFile> {
+  return apiRequest<WorkspaceFile>(
+    `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/files/shared/${fileId}`,
+    { method: 'PATCH', body: { name } },
+  )
+}
+
+export async function duplicatePrivateWorkspaceFile(
+  orgSlug: string,
+  workspaceId: number,
+  fileId: number,
+  name: string,
+): Promise<WorkspaceFile> {
+  return apiRequest<WorkspaceFile>(
+    `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/files/private/${fileId}/duplicate`,
+    { method: 'POST', body: { name } },
+  )
+}
+
+export async function renameMyPrivateWorkspaceFile(
+  workspaceId: number,
+  fileId: number,
+  name: string,
+): Promise<WorkspaceFile> {
+  return apiRequest<WorkspaceFile>(`/api/v1/me/workspaces/${workspaceId}/files/private/${fileId}`, {
+    method: 'PATCH',
+    body: { name },
+  })
+}
+
+export async function duplicateMyPrivateWorkspaceFile(
+  workspaceId: number,
+  fileId: number,
+  name: string,
+): Promise<WorkspaceFile> {
+  return apiRequest<WorkspaceFile>(
+    `/api/v1/me/workspaces/${workspaceId}/files/private/${fileId}/duplicate`,
+    { method: 'POST', body: { name } },
+  )
+}
+
 export async function deletePrivateWorkspaceFile(
   orgSlug: string,
   workspaceId: number,

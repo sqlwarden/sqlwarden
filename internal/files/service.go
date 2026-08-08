@@ -34,6 +34,7 @@ var (
 	ErrMoveCycle                 = errors.New("workspace file cannot be moved into itself or its descendant")
 	ErrMissingUpdate             = errors.New("workspace file update requires name or parent_id")
 	ErrFolderContent             = errors.New("folder content cannot be read or updated")
+	ErrFolderDuplicate           = errors.New("folders cannot be duplicated")
 	ErrPreconditionRequired      = errors.New("if-match is required when updating existing file content")
 	ErrStaleContent              = errors.New("workspace file content is stale")
 	ErrStorageDestinationExists  = errors.New("workspace file destination exists")
@@ -105,6 +106,11 @@ type UpdateInput struct {
 	Name        *string
 	ParentID    *int64
 	ParentIDSet bool
+}
+
+// DuplicateInput is the domain input for copying a file beside its source.
+type DuplicateInput struct {
+	Name string
 }
 
 // ReadContentResult contains an opened content reader and its current metadata.
@@ -357,6 +363,107 @@ func (s *Service) Update(ctx context.Context, scope Scope, fileID int64, input U
 		return database.WorkspaceFile{}, err
 	}
 	return updated, nil
+}
+
+// Duplicate copies a file's current content into an independent file beside
+// the source. Revision history is intentionally not copied.
+func (s *Service) Duplicate(ctx context.Context, scope Scope, fileID int64, input DuplicateInput) (database.WorkspaceFile, error) {
+	lock := s.workspaceLock(scope.Workspace.ID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	source, err := s.authorizedFile(ctx, scope, access.PermWsFileRead, fileID)
+	if err != nil {
+		return database.WorkspaceFile{}, err
+	}
+	if source.ObjectType != database.FileObjectTypeFile {
+		return database.WorkspaceFile{}, ErrFolderDuplicate
+	}
+
+	// Creating the destination performs the independent create authorization,
+	// parent validation, name validation, and uniqueness enforcement.
+	duplicate, err := s.Create(ctx, scope, CreateInput{
+		Name:       input.Name,
+		ObjectType: database.FileObjectTypeFile,
+		ParentID:   source.ParentID,
+		MediaType:  source.MediaType,
+		FileKind:   source.FileKind,
+	})
+	if err != nil {
+		return database.WorkspaceFile{}, err
+	}
+
+	cleanupCtx := context.WithoutCancel(ctx)
+	cleanupMetadata := func(cause error) error {
+		if cleanupErr := s.db.PurgeWorkspaceFile(cleanupCtx, duplicate.ID); cleanupErr != nil {
+			return errors.Join(cause, cleanupErr)
+		}
+		return cause
+	}
+
+	current, found, err := s.db.CurrentWorkspaceFileContent(ctx, source)
+	if err != nil {
+		return database.WorkspaceFile{}, cleanupMetadata(err)
+	}
+	if !found {
+		return duplicate, nil
+	}
+
+	sourceStore, err := s.storeForContent(ctx, current)
+	if err != nil {
+		return database.WorkspaceFile{}, cleanupMetadata(err)
+	}
+	reader, _, err := sourceStore.Get(ctx, current.StorageKey)
+	if err != nil {
+		return database.WorkspaceFile{}, cleanupMetadata(err)
+	}
+
+	planner := s.planner()
+	storageKey, err := planner.ContentKey(ctx, s, scope, duplicate, database.WorkspaceFileContent{}, false)
+	if err != nil {
+		_ = reader.Close()
+		return database.WorkspaceFile{}, cleanupMetadata(err)
+	}
+	activeBackendID := s.activeBackendID()
+	destinationStore, err := s.storeForBackend(ctx, activeBackendID)
+	if err != nil {
+		_ = reader.Close()
+		return database.WorkspaceFile{}, cleanupMetadata(err)
+	}
+	object, putErr := destinationStore.Put(ctx, storageKey, reader)
+	closeErr := reader.Close()
+	if putErr != nil {
+		return database.WorkspaceFile{}, cleanupMetadata(putErr)
+	}
+	if closeErr != nil {
+		_ = destinationStore.Delete(cleanupCtx, object.Key)
+		return database.WorkspaceFile{}, cleanupMetadata(closeErr)
+	}
+
+	externalModifiedAt := object.ModifiedTime
+	saved, err := s.db.SaveWorkspaceFileContent(ctx, duplicate.ID, scope.AccountID, database.WorkspaceFileContent{
+		StorageBackendID:   activeBackendID,
+		StorageKey:         object.Key,
+		ContentHash:        object.ContentHash,
+		SizeBytes:          object.SizeBytes,
+		ExternalModifiedAt: &externalModifiedAt,
+	}, planner.UsesRevisions(duplicate))
+	if err != nil {
+		cleanupErr := destinationStore.Delete(cleanupCtx, object.Key)
+		if cleanupErr != nil {
+			err = errors.Join(err, cleanupErr)
+		}
+		return database.WorkspaceFile{}, cleanupMetadata(err)
+	}
+	duplicate.CurrentContentID = &saved.ID
+	if err := s.enrichFileWithCurrentContent(ctx, &duplicate); err != nil {
+		cleanupErr := destinationStore.Delete(cleanupCtx, object.Key)
+		if cleanupErr != nil {
+			err = errors.Join(err, cleanupErr)
+		}
+		return database.WorkspaceFile{}, cleanupMetadata(err)
+	}
+	return duplicate, nil
 }
 
 // Delete tombstones an authorized file/folder subtree and removes all tracked

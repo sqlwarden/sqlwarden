@@ -2,6 +2,7 @@ import type { PropsWithChildren } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
+import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Workspace, WorkspaceFile } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
@@ -16,7 +17,7 @@ vi.mock('idb-keyval', () => ({
   del: vi.fn(() => Promise.resolve()),
 }))
 
-vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock('./saveFile', () => ({ saveTextAs: vi.fn() }))
 
 const workspace: Workspace = {
@@ -126,6 +127,75 @@ describe('useFileActions', () => {
     await act(() => result.current.saveAs(file(14, 'one.sql')))
 
     expect(saveTextAs).toHaveBeenCalledWith('one.sql', 'select 1')
+  })
+
+  it('renames a file, refreshes browser and recent scopes, and updates its open tab', async () => {
+    const target = file(15, 'before.sql')
+    store.getState().openTab(newFileTab(target, workspace))
+    let body: unknown
+    server.use(
+      http.patch('/api/v1/orgs/acme/workspaces/3/files/private/15', async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(file(15, 'after.sql'))
+      }),
+    )
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderActions()
+
+    act(() => result.current.renameFile.mutate({ nodeId: 15, name: 'after.sql' }))
+
+    await waitFor(() => expect(result.current.renameFile.isSuccess).toBe(true))
+    expect(body).toEqual({ name: 'after.sql' })
+    expect(store.getState().tabs.find((tab) => tab.fileId === 15)?.title).toBe('after.sql')
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['org-workspace-private-file-browser', 'acme', 3],
+    })
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['org-workspace-private-recent-files', 'acme', 3],
+    })
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
+  it('duplicates a file without opening it and supports personal workspace routes', async () => {
+    let orgBody: unknown
+    server.use(
+      http.post(
+        '/api/v1/orgs/acme/workspaces/3/files/private/16/duplicate',
+        async ({ request }) => {
+          orgBody = await request.json()
+          return HttpResponse.json(file(17, 'source copy.sql'), { status: 201 })
+        },
+      ),
+    )
+    const orgActions = renderActions()
+    act(() =>
+      orgActions.result.current.duplicateFile.mutate({ nodeId: 16, name: 'source copy.sql' }),
+    )
+    await waitFor(() => expect(orgActions.result.current.duplicateFile.isSuccess).toBe(true))
+    expect(orgBody).toEqual({ name: 'source copy.sql' })
+    expect(store.getState().tabs).toHaveLength(0)
+
+    const personalWorkspace = { ...workspace, owner_type: 'space' as const, org_id: undefined }
+    let personalBody: unknown
+    server.use(
+      http.post('/api/v1/me/workspaces/3/files/private/16/duplicate', async ({ request }) => {
+        personalBody = await request.json()
+        return HttpResponse.json(file(18, 'personal copy.sql'), { status: 201 })
+      }),
+    )
+    const personalActions = renderHook(
+      () => useFileActions('ignored', personalWorkspace, 'private'),
+      { wrapper },
+    )
+    act(() =>
+      personalActions.result.current.duplicateFile.mutate({
+        nodeId: 16,
+        name: 'personal copy.sql',
+      }),
+    )
+    await waitFor(() => expect(personalActions.result.current.duplicateFile.isSuccess).toBe(true))
+    expect(personalBody).toEqual({ name: 'personal copy.sql' })
+    expect(toast.success).not.toHaveBeenCalled()
   })
 
   it('refreshes the correct private or shared browser scope', () => {

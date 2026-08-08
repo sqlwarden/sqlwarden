@@ -1,18 +1,21 @@
-import { useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { UseQueryOptions } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
+import { Input } from '#/components/ui/input'
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '#/components/ui/resizable'
 import {
   orgWorkspacePrivateFileBrowserQueryOptions,
   orgWorkspaceSharedFileBrowserQueryOptions,
 } from '#/lib/api/query'
+import { ApiError } from '#/lib/api/errors'
 import type { Workspace, WorkspaceFile, WorkspaceFileBrowserResult } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde } from './useIdeStore'
 import { SidebarPane } from './SidebarPane'
 import { FileContextMenu } from './FileContextMenu'
+import { FileNameDialog, selectionRange } from './FileNameDialog'
 import { Tip } from './schema-diagram/Tip'
 import { CreateItemDialog } from './CreateItemDialog'
 import { useFileActions } from './useFileActions'
@@ -26,11 +29,76 @@ type FilesPanelProps = {
 
 type DialogState = { kind: 'file' | 'folder'; parentId: number | null } | null
 
+type DuplicateState = { file: WorkspaceFile } | null
+
+/** Props threaded through the private file tree so exactly one row can be
+ *  edited inline at a time. */
+type RenameControls = {
+  renamingId: number | null
+  renamePending: boolean
+  renameError: string | null
+  onRenameSubmit: (nodeId: number, name: string) => void
+  onRenameCancel: () => void
+  onClearRenameError: () => void
+}
+
 export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }: FilesPanelProps) {
   const [dialogState, setDialogState] = useState<DialogState>(null)
+  const [renamingId, setRenamingId] = useState<number | null>(null)
+  const [duplicateState, setDuplicateState] = useState<DuplicateState>(null)
+
+  const privateActions = useFileActions(orgSlug, workspace, 'private')
+  const sharedActions = useFileActions(orgSlug, workspace, 'shared')
 
   function openCreateDialog(kind: 'file' | 'folder', parentId: number | null) {
     setDialogState({ kind, parentId })
+  }
+
+  function startRename(file: WorkspaceFile) {
+    privateActions.renameFile.reset()
+    setRenamingId(file.id)
+  }
+
+  function openDuplicateDialog(file: WorkspaceFile) {
+    privateActions.duplicateFile.reset()
+    setDuplicateState({ file })
+  }
+
+  const renameFieldError =
+    privateActions.renameFile.error instanceof ApiError
+      ? (privateActions.renameFile.error.fieldErrors?.name ?? null)
+      : null
+
+  function handleRenameSubmit(nodeId: number, name: string) {
+    privateActions.renameFile.mutate({ nodeId, name }, { onSuccess: () => setRenamingId(null) })
+  }
+
+  function handleRenameCancel() {
+    if (privateActions.renameFile.isPending) return
+    privateActions.renameFile.reset()
+    setRenamingId(null)
+  }
+
+  const renameControls: RenameControls = {
+    renamingId,
+    renamePending: privateActions.renameFile.isPending,
+    renameError: renameFieldError,
+    onRenameSubmit: handleRenameSubmit,
+    onRenameCancel: handleRenameCancel,
+    onClearRenameError: () => privateActions.renameFile.reset(),
+  }
+
+  const duplicateFieldError =
+    privateActions.duplicateFile.error instanceof ApiError
+      ? (privateActions.duplicateFile.error.fieldErrors?.name ?? null)
+      : null
+
+  function handleDuplicateSubmit(name: string) {
+    if (!duplicateState) return
+    privateActions.duplicateFile.mutate(
+      { nodeId: duplicateState.file.id, name },
+      { onSuccess: () => setDuplicateState(null) },
+    )
   }
 
   const headerActions = (
@@ -77,8 +145,12 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
               workspace={workspace}
               visibility="private"
               title="My Files"
+              actions={privateActions}
               onCreateFile={(parentId) => openCreateDialog('file', parentId)}
               onCreateFolder={(parentId) => openCreateDialog('folder', parentId)}
+              onRename={startRename}
+              onDuplicate={openDuplicateDialog}
+              renameControls={renameControls}
             />
           </ResizablePanel>
           <ResizableHandle withHandle />
@@ -88,8 +160,12 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
               workspace={workspace}
               visibility="shared"
               title="Shared Files"
+              actions={sharedActions}
               onCreateFile={undefined}
               onCreateFolder={undefined}
+              onRename={undefined}
+              onDuplicate={undefined}
+              renameControls={undefined}
             />
           </ResizablePanel>
         </ResizablePanelGroup>
@@ -108,6 +184,21 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
           onSuccess={() => setDialogState(null)}
         />
       )}
+
+      {duplicateState && (
+        <FileNameDialog
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setDuplicateState(null)
+          }}
+          objectType={duplicateState.file.object_type}
+          currentName={duplicateState.file.name}
+          pending={privateActions.duplicateFile.isPending}
+          fieldError={duplicateFieldError}
+          onClearError={() => privateActions.duplicateFile.reset()}
+          onSubmit={handleDuplicateSubmit}
+        />
+      )}
     </>
   )
 }
@@ -117,18 +208,24 @@ function FilesSection({
   workspace,
   visibility,
   title,
+  actions,
   onCreateFile,
   onCreateFolder,
+  onRename,
+  onDuplicate,
+  renameControls,
 }: {
   orgSlug: string
   workspace: Workspace
   visibility: 'private' | 'shared'
   title: string
+  actions: ReturnType<typeof useFileActions>
   onCreateFile?: ((parentId: number | null) => void) | undefined
   onCreateFolder?: ((parentId: number | null) => void) | undefined
+  onRename?: ((file: WorkspaceFile) => void) | undefined
+  onDuplicate?: ((file: WorkspaceFile) => void) | undefined
+  renameControls?: RenameControls | undefined
 }) {
-  const actions = useFileActions(orgSlug, workspace, visibility)
-
   const queryOptions =
     visibility === 'private'
       ? orgWorkspacePrivateFileBrowserQueryOptions(orgSlug, workspace.id, null)
@@ -176,6 +273,9 @@ function FilesSection({
               onDelete={
                 visibility === 'private' ? (id) => actions.deleteFile.mutate(id) : undefined
               }
+              onRename={onRename}
+              onDuplicate={onDuplicate}
+              renameControls={renameControls}
             />
           ) : (
             <FileContextMenu
@@ -189,12 +289,15 @@ function FilesSection({
               onDelete={
                 visibility === 'private' ? () => actions.deleteFile.mutate(file.id) : undefined
               }
+              onRename={onRename ? () => onRename(file) : undefined}
+              onDuplicate={onDuplicate ? () => onDuplicate(file) : undefined}
             >
               <FileTreeFile
                 file={file}
                 depth={0}
                 active={file.id === actions.activeFileId}
                 onOpen={actions.open}
+                renameControls={renameControls}
               />
             </FileContextMenu>
           ),
@@ -242,6 +345,9 @@ function FileTreeFolder({
   onCreateFile,
   onCreateFolder,
   onDelete,
+  onRename,
+  onDuplicate,
+  renameControls,
 }: {
   file: WorkspaceFile
   orgSlug: string
@@ -255,6 +361,9 @@ function FileTreeFolder({
   onCreateFile?: ((parentId: number | null) => void) | undefined
   onCreateFolder?: ((parentId: number | null) => void) | undefined
   onDelete?: ((nodeId: number) => void) | undefined
+  onRename?: ((file: WorkspaceFile) => void) | undefined
+  onDuplicate?: ((file: WorkspaceFile) => void) | undefined
+  renameControls?: RenameControls | undefined
 }) {
   const nodeKey = `folder:${file.id}`
   const stored = useIde((s) => s.expandedNodes[nodeKey])
@@ -272,8 +381,18 @@ function FileTreeFolder({
   } as UseQueryOptions<WorkspaceFileBrowserResult>)
 
   const children = data?.children ?? []
+  const isRenaming = renameControls?.renamingId === file.id
 
-  const folderRow = (
+  const folderRow = isRenaming ? (
+    <FileTreeRenameRow
+      file={file}
+      depth={depth}
+      iconName={expanded ? 'folder-open' : 'folder'}
+      chevronName={expanded ? 'chevron-down' : 'chevron-right'}
+      indentExtra={0}
+      renameControls={renameControls}
+    />
+  ) : (
     <button
       type="button"
       onClick={() => setNodeExpanded(nodeKey, !expanded)}
@@ -309,6 +428,7 @@ function FileTreeFolder({
           onCreateFile={onCreateFile}
           onCreateFolder={onCreateFolder}
           onDelete={onDelete ? () => onDelete(file.id) : undefined}
+          onRename={onRename ? () => onRename(file) : undefined}
         >
           {folderRow}
         </FileContextMenu>
@@ -333,6 +453,9 @@ function FileTreeFolder({
               onCreateFile={onCreateFile}
               onCreateFolder={onCreateFolder}
               onDelete={onDelete}
+              onRename={onRename}
+              onDuplicate={onDuplicate}
+              renameControls={renameControls}
             />
           ) : (
             <FileContextMenu
@@ -344,12 +467,15 @@ function FileTreeFolder({
               onOpenToSide={() => onOpenToSide(child)}
               onSaveAs={() => onSaveAs(child)}
               onDelete={onDelete ? () => onDelete(child.id) : undefined}
+              onRename={onRename ? () => onRename(child) : undefined}
+              onDuplicate={onDuplicate ? () => onDuplicate(child) : undefined}
             >
               <FileTreeFile
                 file={child}
                 depth={depth + 1}
                 active={child.id === activeFileId}
                 onOpen={onOpenFile}
+                renameControls={renameControls}
               />
             </FileContextMenu>
           ),
@@ -363,12 +489,26 @@ function FileTreeFile({
   depth,
   active,
   onOpen,
+  renameControls,
 }: {
   file: WorkspaceFile
   depth: number
   active?: boolean
   onOpen: (file: WorkspaceFile) => void
+  renameControls?: RenameControls | undefined
 }) {
+  if (renameControls?.renamingId === file.id) {
+    return (
+      <FileTreeRenameRow
+        file={file}
+        depth={depth}
+        iconName="file-01"
+        indentExtra={14}
+        renameControls={renameControls}
+      />
+    )
+  }
+
   return (
     <button
       type="button"
@@ -386,5 +526,146 @@ function FileTreeFile({
         {file.name}
       </span>
     </button>
+  )
+}
+
+/** Shared row shell for inline renaming: keeps the row's icon, indentation,
+ *  and compact height, swapping only the name label for an inline Input. */
+function FileTreeRenameRow({
+  file,
+  depth,
+  iconName,
+  chevronName,
+  indentExtra,
+  renameControls,
+}: {
+  file: WorkspaceFile
+  depth: number
+  iconName: 'file-01' | 'folder-open' | 'folder'
+  chevronName?: 'chevron-down' | 'chevron-right' | undefined
+  indentExtra: number
+  renameControls: RenameControls | undefined
+}) {
+  if (!renameControls) return null
+
+  return (
+    <div
+      style={{ paddingLeft: `${6 + depth * 11 + indentExtra}px` }}
+      className={cn(
+        'mx-1 flex h-6 w-[calc(100%-0.5rem)] min-w-0 items-center rounded-md pr-2',
+        chevronName ? 'gap-1.5' : 'gap-2',
+      )}
+    >
+      {chevronName ? (
+        <Icon name={chevronName} size={11} className="shrink-0 text-muted-foreground" />
+      ) : null}
+      <Icon name={iconName} size={13} className="shrink-0 text-muted-foreground" />
+      <InlineRenameInput
+        file={file}
+        pending={renameControls.renamePending}
+        fieldError={renameControls.renameError}
+        onSubmit={(name) => renameControls.onRenameSubmit(file.id, name)}
+        onCancel={renameControls.onRenameCancel}
+        onClearError={renameControls.onClearRenameError}
+      />
+    </div>
+  )
+}
+
+function InlineRenameInput({
+  file,
+  pending,
+  fieldError,
+  onSubmit,
+  onCancel,
+  onClearError,
+}: {
+  file: WorkspaceFile
+  pending: boolean
+  fieldError: string | null
+  onSubmit: (name: string) => void
+  onCancel: () => void
+  onClearError: () => void
+}) {
+  const [name, setName] = useState(file.name)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const errorId = useId()
+
+  useEffect(() => {
+    const [start, end] =
+      file.object_type === 'folder' ? [0, file.name.length] : selectionRange(file.name)
+    inputRef.current?.focus()
+    inputRef.current?.setSelectionRange(start, end)
+    // Only run on mount for this row instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!fieldError || pending) return
+    inputRef.current?.focus({ preventScroll: true })
+  }, [fieldError, pending])
+
+  const trimmed = name.trim()
+  const localError = trimmed === '' ? 'Name is required.' : null
+  const displayError = localError ?? fieldError
+
+  function submit() {
+    if (pending) return
+    if (trimmed === '') {
+      queueMicrotask(() => inputRef.current?.focus())
+      return
+    }
+    if (trimmed === file.name) {
+      onCancel()
+      return
+    }
+    onSubmit(trimmed)
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    e.stopPropagation()
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      submit()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      onCancel()
+    }
+  }
+
+  function handleBlur() {
+    submit()
+  }
+
+  return (
+    <div className="relative min-w-0 flex-1">
+      <Input
+        ref={inputRef}
+        value={name}
+        disabled={pending}
+        aria-label={`${file.object_type === 'folder' ? 'Folder' : 'File'} name`}
+        aria-invalid={Boolean(displayError) || undefined}
+        aria-describedby={displayError ? errorId : undefined}
+        autoComplete="off"
+        className="h-5.5 px-1.5 py-0 text-xs"
+        onChange={(e) => {
+          setName(e.target.value)
+          if (fieldError) onClearError()
+        }}
+        onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+      />
+      {displayError && (
+        <span
+          id={errorId}
+          role="alert"
+          className="absolute inset-x-0 top-full z-10 mt-0.5 truncate rounded-md bg-popover px-1.5 py-0.5 text-[10px] text-destructive shadow-sm"
+        >
+          {displayError}
+        </span>
+      )}
+    </div>
   )
 }

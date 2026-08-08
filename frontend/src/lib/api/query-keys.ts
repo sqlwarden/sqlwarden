@@ -113,19 +113,27 @@ export const queryKeys = {
     fileId?: string | number | null,
   ) =>
     [...queryKeys.orgWorkspaceSharedFileBrowserScope(slug, workspaceId), fileId ?? null] as const,
+  orgWorkspacePrivateRecentFilesScope: (slug: string, workspaceId: string | number) =>
+    ['org-workspace-private-recent-files', slug, workspaceId] as const,
   orgWorkspacePrivateRecentFiles: (slug: string, workspaceId: string | number, limit?: number) =>
-    ['org-workspace-private-recent-files', slug, workspaceId, limit ?? null] as const,
+    [...queryKeys.orgWorkspacePrivateRecentFilesScope(slug, workspaceId), limit ?? null] as const,
+  orgWorkspaceSharedRecentFilesScope: (slug: string, workspaceId: string | number) =>
+    ['org-workspace-shared-recent-files', slug, workspaceId] as const,
   orgWorkspaceSharedRecentFiles: (slug: string, workspaceId: string | number, limit?: number) =>
-    ['org-workspace-shared-recent-files', slug, workspaceId, limit ?? null] as const,
+    [...queryKeys.orgWorkspaceSharedRecentFilesScope(slug, workspaceId), limit ?? null] as const,
   fileContent: (slug: string, workspaceId: string | number, fileId: string | number | undefined) =>
     ['file-content', slug, workspaceId, fileId] as const,
   myWorkspaces: (query?: ListQuery) => ['my-workspaces', query ?? {}] as const,
   myWorkspacePrivateFiles: (workspaceId: string | number, parentId?: string | number | null) =>
     ['my-workspace-private-files', workspaceId, parentId ?? null] as const,
+  myWorkspacePrivateFileBrowserScope: (workspaceId: string | number) =>
+    ['my-workspace-private-file-browser', workspaceId] as const,
   myWorkspacePrivateFileBrowser: (workspaceId: string | number, fileId?: string | number | null) =>
-    ['my-workspace-private-file-browser', workspaceId, fileId ?? null] as const,
+    [...queryKeys.myWorkspacePrivateFileBrowserScope(workspaceId), fileId ?? null] as const,
+  myWorkspacePrivateRecentFilesScope: (workspaceId: string | number) =>
+    ['my-workspace-private-recent-files', workspaceId] as const,
   myWorkspacePrivateRecentFiles: (workspaceId: string | number, limit?: number) =>
-    ['my-workspace-private-recent-files', workspaceId, limit ?? null] as const,
+    [...queryKeys.myWorkspacePrivateRecentFilesScope(workspaceId), limit ?? null] as const,
   orgEnvironmentsScope: (slug: string, workspaceId?: string | number) =>
     workspaceId === undefined
       ? (['org-environments', slug] as const)

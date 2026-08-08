@@ -39,15 +39,33 @@ describe('buildFileMenu', () => {
   it('omits delete when onDelete is absent', () => {
     expect(action(buildFileMenu(base), 'delete')).toBeUndefined()
   })
+  it('exposes rename and duplicate only when callbacks are available', () => {
+    expect(action(buildFileMenu(base), 'rename')).toBeUndefined()
+    expect(action(buildFileMenu(base), 'duplicate')).toBeUndefined()
+
+    const onRename = () => {}
+    const onDuplicate = () => {}
+    const items = buildFileMenu({ ...base, onRename, onDuplicate })
+    expect(action(items, 'rename')?.onSelect).toBe(onRename)
+    expect(action(items, 'duplicate')?.onSelect).toBe(onDuplicate)
+    expect(action(items, 'rename')?.soon).toBeFalsy()
+    expect(action(items, 'duplicate')?.soon).toBeFalsy()
+  })
 })
 
 describe('buildFolderMenu', () => {
   const base = { name: 'reports', onCreateFile: noop, onCreateFolder: noop, onCopyName: noop }
-  it('has live new-file / new-folder and soon rename', () => {
+  it('has live create actions and exposes rename only when available', () => {
     const items = buildFolderMenu(base)
     expect(action(items, 'new-file')?.soon).toBeFalsy()
     expect(action(items, 'new-folder')?.soon).toBeFalsy()
-    expect(action(items, 'rename')?.soon).toBe(true)
+    expect(action(items, 'rename')).toBeUndefined()
+
+    const onRename = () => {}
+    const mutable = buildFolderMenu({ ...base, onRename })
+    expect(action(mutable, 'rename')?.onSelect).toBe(onRename)
+    expect(action(mutable, 'rename')?.soon).toBeFalsy()
+    expect(action(mutable, 'duplicate')).toBeUndefined()
   })
   it('delete confirm mentions contents and is present only with onDelete', () => {
     expect(action(buildFolderMenu(base), 'delete')).toBeUndefined()

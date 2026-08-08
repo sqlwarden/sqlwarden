@@ -102,6 +102,8 @@ export type IdeActions = {
   openTabToSide: (tab: EditorTab) => void
   ensureTab: (tab: EditorTab) => void
   closeTab: (tabId: string) => void
+  /** Renames the open tab for a file (title + subtitle), preserving all other tab state. */
+  renameTabByFileId: (fileId: number, name: string) => void
   /** Close one pane's instance of a tab; releases the tab only when no group still holds it. */
   closeTabInstance: (groupId: string, tabId: string) => void
   /** Activate a tab within a specific group and focus that group. */
@@ -344,6 +346,13 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
               },
             }
           }),
+
+        renameTabByFileId: (fileId, name) =>
+          set((s) => ({
+            tabs: s.tabs.map((t) =>
+              t.kind === 'file' && t.fileId === fileId ? { ...t, title: name, subtitle: name } : t,
+            ),
+          })),
 
         closeTabInstance: (groupId, tabId) =>
           set((s) => {
@@ -670,6 +679,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   openTabToSide: _noop,
   ensureTab: _noop,
   closeTab: _noop,
+  renameTabByFileId: _noop,
   closeTabInstance: _noop,
   setActiveTab: _noop,
   moveTab: _noop,

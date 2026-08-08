@@ -48,6 +48,15 @@ type mutableStoreResolver struct {
 	stores map[string]filestore.Store
 }
 
+type failingPutStore struct {
+	filestore.Store
+	err error
+}
+
+func (s failingPutStore) Put(context.Context, string, io.Reader) (filestore.StoredObject, error) {
+	return filestore.StoredObject{}, s.err
+}
+
 func (r *mutableStoreResolver) ActiveBackendID() string {
 	return r.active
 }
@@ -244,6 +253,194 @@ func TestCreateRejectsInvalidObjectsAndParents(t *testing.T) {
 	if _, err := f.service.Create(f.ctx, f.sharedScope(f.member), CreateInput{Name: "wrong-tree.sql", ParentID: &sharedParent.ID}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("wrong visibility parent error = %v, want %v", err, ErrNotFound)
 	}
+}
+
+func TestDuplicateCopiesCurrentContentIntoIndependentFile(t *testing.T) {
+	for _, storageMode := range []string{StorageModeObject, StorageModeFile} {
+		t.Run(storageMode, func(t *testing.T) {
+			policy := RevisionPolicyDisabled
+			if storageMode == StorageModeObject {
+				policy = RevisionPolicyVersioned
+			}
+			f := newServiceFixture(t, Config{StorageMode: storageMode, RevisionPolicy: policy})
+			scope := f.privateScope(f.member)
+			folder, err := f.service.Create(f.ctx, scope, CreateInput{Name: "reports", ObjectType: database.FileObjectTypeFolder})
+			if err != nil {
+				t.Fatal(err)
+			}
+			source, err := f.service.Create(f.ctx, scope, CreateInput{Name: "source.sql", ParentID: &folder.ID, MediaType: "text/plain", FileKind: "query"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			first, err := f.service.WriteContent(f.ctx, scope, source.ID, "", strings.NewReader("select 1"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			reloaded, found, err := f.db.GetWorkspaceFile(f.ctx, source.ID)
+			if err != nil || !found || reloaded.CurrentContentID == nil {
+				t.Fatalf("source current content after write: found=%v err=%v file=%+v saved=%+v", found, err, reloaded, first)
+			}
+
+			duplicate, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "source copy.sql"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if duplicate.ID == source.ID || duplicate.ParentID == nil || *duplicate.ParentID != folder.ID {
+				t.Fatalf("duplicate identity/parent = %+v, source=%+v", duplicate, source)
+			}
+			if duplicate.MediaType != source.MediaType || duplicate.FileKind != source.FileKind || duplicate.ContentVersion != 1 {
+				t.Fatalf("duplicate metadata = %+v, source=%+v", duplicate, source)
+			}
+			copied := readServiceContent(t, f.service, f.ctx, scope, duplicate.ID)
+			if copied != "select 1" {
+				t.Fatalf("duplicate content = %q, want select 1", copied)
+			}
+
+			if _, err := f.service.WriteContent(f.ctx, scope, source.ID, first.ContentHash, strings.NewReader("select 2")); err != nil {
+				t.Fatal(err)
+			}
+			if got := readServiceContent(t, f.service, f.ctx, scope, duplicate.ID); got != "select 1" {
+				t.Fatalf("duplicate changed with source: %q", got)
+			}
+
+			sourceContents, err := f.db.ListWorkspaceFileSubtreeContents(f.ctx, source.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			duplicateContents, err := f.db.ListWorkspaceFileSubtreeContents(f.ctx, duplicate.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(duplicateContents) != 1 || duplicateContents[0].Version != 1 {
+				t.Fatalf("duplicate content rows = %+v, want one version-1 row", duplicateContents)
+			}
+			if sourceContents[len(sourceContents)-1].StorageKey == duplicateContents[0].StorageKey {
+				t.Fatalf("source and duplicate share storage key %q", duplicateContents[0].StorageKey)
+			}
+		})
+	}
+}
+
+func TestDuplicateHandlesEmptyFilesAndRejectsInvalidSourcesOrNames(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
+	scope := f.privateScope(f.member)
+	source, err := f.service.Create(f.ctx, scope, CreateInput{Name: "empty.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyCopy, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "empty copy.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if emptyCopy.CurrentContentID != nil || emptyCopy.ContentVersion != 0 {
+		t.Fatalf("empty duplicate unexpectedly has content: %+v", emptyCopy)
+	}
+
+	folder, err := f.service.Create(f.ctx, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.Duplicate(f.ctx, scope, folder.ID, DuplicateInput{Name: "folder copy"}); !errors.Is(err, ErrFolderDuplicate) {
+		t.Fatalf("folder duplicate error = %v, want %v", err, ErrFolderDuplicate)
+	}
+	if _, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "bad/name.sql"}); !errors.Is(err, ErrInvalidName) {
+		t.Fatalf("invalid name error = %v, want %v", err, ErrInvalidName)
+	}
+	if _, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "empty.sql"}); err == nil {
+		t.Fatal("duplicate with sibling collision succeeded")
+	}
+	if _, err := f.service.Duplicate(f.ctx, f.privateScope(f.other), source.ID, DuplicateInput{Name: "stolen.sql"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("other user's duplicate error = %v, want %v", err, ErrNotFound)
+	}
+}
+
+func TestDuplicateRequiresReadAndCreatePermissions(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
+	scope := f.sharedScope(f.member)
+	f.enforcer.allowed[access.PermWsFileCreate] = true
+	f.enforcer.allowed[access.PermWsFileRead] = true
+	source, err := f.service.Create(f.ctx, scope, CreateInput{Name: "shared.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f.enforcer.allowed[access.PermWsFileCreate] = false
+	if _, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "no-create.sql"}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("duplicate without create permission = %v, want %v", err, ErrForbidden)
+	}
+	f.enforcer.allowed[access.PermWsFileCreate] = true
+	f.enforcer.allowed[access.PermWsFileRead] = false
+	if _, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "no-read.sql"}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("duplicate without read permission = %v, want %v", err, ErrForbidden)
+	}
+}
+
+func TestDuplicateReadsRecordedBackendWritesActiveBackendAndCleansUpFailure(t *testing.T) {
+	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
+	archiveRoot, err := filestore.NewFilesystem(filepath.Join(t.TempDir(), "archive"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := &mutableStoreResolver{active: "local", stores: map[string]filestore.Store{"local": f.store, "archive": archiveRoot}}
+	f.service = NewWithStoreResolver(f.db, resolver, f.enforcer, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyDisabled}, &sync.Map{})
+	scope := f.privateScope(f.member)
+	source, err := f.service.Create(f.ctx, scope, CreateInput{Name: "source.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.WriteContent(f.ctx, scope, source.ID, "", strings.NewReader("select archived")); err != nil {
+		t.Fatal(err)
+	}
+
+	resolver.active = "archive"
+	copy, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "archive copy.sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, found, err := f.db.CurrentWorkspaceFileContent(f.ctx, copy)
+	if err != nil || !found {
+		t.Fatalf("duplicate content found=%v err=%v", found, err)
+	}
+	if content.StorageBackendID != "archive" {
+		t.Fatalf("duplicate backend = %q, want archive", content.StorageBackendID)
+	}
+
+	putErr := errors.New("injected put failure")
+	resolver.active = "broken"
+	resolver.stores["broken"] = failingPutStore{Store: archiveRoot, err: putErr}
+	if _, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "failed copy.sql"}); !errors.Is(err, putErr) {
+		t.Fatalf("failed duplicate error = %v, want %v", err, putErr)
+	}
+	files, err := f.service.List(f.ctx, scope, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if file.Name == "failed copy.sql" {
+			t.Fatalf("failed duplicate left metadata: %+v", file)
+		}
+	}
+	count, err := f.db.NewSelect().Table("workspace_files").Where("name = ?", "failed copy.sql").Count(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("failed duplicate left %d database row(s)", count)
+	}
+}
+
+func readServiceContent(t *testing.T, service *Service, ctx context.Context, scope Scope, fileID int64) string {
+	t.Helper()
+	result, err := service.ReadContent(ctx, scope, fileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer result.Reader.Close()
+	content, err := io.ReadAll(result.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(content)
 }
 
 func TestBrowserReturnsRootBreadcrumbChildrenAndFileMetadata(t *testing.T) {

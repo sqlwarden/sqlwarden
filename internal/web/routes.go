@@ -97,6 +97,7 @@ func (app *application) routes() http.Handler {
 						r.Route("/{file_id}", func(r chi.Router) {
 							r.Get("/", app.getPrivateWorkspaceFile)
 							r.Patch("/", app.updatePrivateWorkspaceFile)
+							r.Post("/duplicate", app.duplicatePrivateWorkspaceFile)
 							r.Delete("/", app.deletePrivateWorkspaceFile)
 							r.Get("/content", app.getPrivateWorkspaceFileContent)
 							r.Put("/content", app.updatePrivateWorkspaceFileContent)
@@ -254,6 +255,7 @@ func (app *application) routes() http.Handler {
 						r.Route("/{file_id}", func(r chi.Router) {
 							r.Get("/", app.getPrivateWorkspaceFile)
 							r.Patch("/", app.updatePrivateWorkspaceFile)
+							r.Post("/duplicate", app.duplicatePrivateWorkspaceFile)
 							r.Delete("/", app.deletePrivateWorkspaceFile)
 							r.Get("/content", app.getPrivateWorkspaceFileContent)
 							r.Put("/content", app.updatePrivateWorkspaceFileContent)

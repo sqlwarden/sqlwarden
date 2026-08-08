@@ -167,6 +167,43 @@ func (app *application) updateSharedWorkspaceFile(w http.ResponseWriter, r *http
 	app.updateWorkspaceFile(w, r, database.FileVisibilityShared)
 }
 
+func (app *application) duplicatePrivateWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+	fileID, ok := app.workspaceFileID(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := request.DecodeJSON(w, r, &input); err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+	service, err := app.workspaceFileServiceForRequest(r)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	file, err := service.Duplicate(
+		r.Context(),
+		app.workspaceFileScope(r, database.FileVisibilityPrivate),
+		fileID,
+		files.DuplicateInput{Name: input.Name},
+	)
+	if err != nil {
+		if isUniqueViolation(err) {
+			app.failedDuplicateField(w, r, "name", "A file or folder with this name already exists here.")
+			return
+		}
+		app.workspaceFileError(w, r, err)
+		return
+	}
+	app.logInfo(r, "workspace file duplicated", slog.Int64("workspace_id", file.WorkspaceID), slog.Int64("file_id", file.ID), slog.Int64("source_file_id", fileID))
+	if err := response.JSON(w, http.StatusCreated, file); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 // updateWorkspaceFile renames and/or moves a file/folder in the selected tree.
 func (app *application) updateWorkspaceFile(w http.ResponseWriter, r *http.Request, visibility string) {
 	fileID, ok := app.workspaceFileID(w, r)
@@ -378,6 +415,8 @@ func (app *application) workspaceFileError(w http.ResponseWriter, r *http.Reques
 		app.failedValidation(w, r, fieldErrors(map[string]string{"file": "Name or parent ID must be provided."}))
 	case errors.Is(err, files.ErrFolderContent):
 		app.failedValidation(w, r, fieldErrors(map[string]string{"file": "Folder content cannot be updated."}))
+	case errors.Is(err, files.ErrFolderDuplicate):
+		app.failedValidation(w, r, fieldErrors(map[string]string{"file": "Folders cannot be duplicated."}))
 	case errors.Is(err, files.ErrPreconditionRequired):
 		app.errorMessage(w, r, http.StatusPreconditionRequired, "If-Match is required when updating existing file content.", nil)
 	case errors.Is(err, files.ErrStaleContent):
