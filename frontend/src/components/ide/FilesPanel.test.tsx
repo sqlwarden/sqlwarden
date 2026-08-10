@@ -15,6 +15,10 @@ vi.mock('idb-keyval', () => ({
   del: vi.fn(() => Promise.resolve()),
 }))
 
+vi.mock('#/lib/icons', () => ({
+  Icon: ({ name }: { name: string }) => <span data-icon-name={name} />,
+}))
+
 const workspace: Workspace = {
   id: 3,
   org_id: 1,
@@ -108,6 +112,20 @@ describe('FilesPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Queries' }))
 
     expect(await screen.findByRole('button', { name: 'nested.sql' })).toBeInTheDocument()
+  })
+
+  it('shows file-type icons for root and nested explorer files', async () => {
+    respondWith([file(7, 'query.sql'), file(8, 'results.csv'), file(9, 'Queries', 'folder')])
+    renderPanel()
+
+    const sqlRow = await screen.findByRole('button', { name: 'query.sql' })
+    const csvRow = screen.getByRole('button', { name: 'results.csv' })
+    expect(sqlRow.querySelector('[data-icon-name="database"]')).toBeInTheDocument()
+    expect(csvRow.querySelector('[data-icon-name="table"]')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Queries' }))
+    const nestedRow = await screen.findByRole('button', { name: 'nested.sql' })
+    expect(nestedRow.querySelector('[data-icon-name="database"]')).toBeInTheDocument()
   })
 
   it('offers rename and duplicate only for private explorer items', async () => {

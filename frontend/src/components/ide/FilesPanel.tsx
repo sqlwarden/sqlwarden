@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { UseQueryOptions } from '@tanstack/react-query'
-import { Icon } from '#/lib/icons'
+import { Icon, type AppIcon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '#/components/ui/resizable'
@@ -19,6 +19,7 @@ import { FileNameDialog, selectionRange } from './FileNameDialog'
 import { Tip } from './schema-diagram/Tip'
 import { CreateItemDialog } from './CreateItemDialog'
 import { useFileActions } from './useFileActions'
+import { workspaceFileIcon } from './workspaceFileIcon'
 
 type FilesPanelProps = {
   orgSlug: string
@@ -502,7 +503,7 @@ function FileTreeFile({
       <FileTreeRenameRow
         file={file}
         depth={depth}
-        iconName="file-01"
+        iconName={workspaceFileIcon(file)}
         indentExtra={14}
         renameControls={renameControls}
       />
@@ -521,7 +522,7 @@ function FileTreeFile({
           : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
       )}
     >
-      <Icon name="file-01" size={13} className="shrink-0 text-muted-foreground" />
+      <Icon name={workspaceFileIcon(file)} size={13} className="shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate" title={file.name}>
         {file.name}
       </span>
@@ -541,7 +542,7 @@ function FileTreeRenameRow({
 }: {
   file: WorkspaceFile
   depth: number
-  iconName: 'file-01' | 'folder-open' | 'folder'
+  iconName: AppIcon
   chevronName?: 'chevron-down' | 'chevron-right' | undefined
   indentExtra: number
   renameControls: RenameControls | undefined
