@@ -171,6 +171,7 @@ export function EditorGroup({
               doc={doc}
               className="h-full"
               onCursorChange={focused ? onCursorChange : undefined}
+              driver={activeTab.driver}
               completion={{
                 orgSlug,
                 workspaceId: workspace.id,

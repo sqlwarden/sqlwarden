@@ -18,6 +18,7 @@ import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { useIde } from './useIdeStore'
 import { sqlCompletionExtension, type SQLCompletionConfig } from './sqlCompletion'
 import { useIconPack } from '#/lib/icons'
+import { sqlFormatterForDriver, sqlFormattingKeymap } from './sqlFormatting'
 
 function makeBaseTheme(fontFamily: string, fontSize: number): Extension {
   return EditorView.theme({
@@ -46,6 +47,7 @@ type SqlEditorProps = {
   className?: string
   onCursorChange?: (line: number, col: number, selSize: number) => void
   completion?: SQLCompletionConfig
+  driver?: string
 }
 
 export function SqlEditor({
@@ -55,6 +57,7 @@ export function SqlEditor({
   className,
   onCursorChange,
   completion,
+  driver,
 }: SqlEditorProps) {
   const viewKey = groupId ? `${groupId}:${tabId}` : tabId
   const containerRef = useRef<HTMLDivElement>(null)
@@ -82,6 +85,7 @@ export function SqlEditor({
   const themeCompartment = useRef(new Compartment())
   const fontCompartment = useRef(new Compartment())
   const completionCompartment = useRef(new Compartment())
+  const formattingCompartment = useRef(new Compartment())
   const completionConfig = useMemo(
     () => ({
       orgSlug: completion?.orgSlug,
@@ -104,6 +108,12 @@ export function SqlEditor({
     ],
   )
   const initialCompletionConfig = useRef(completionConfig)
+  const initialFormatter = useRef(sqlFormatterForDriver(driver))
+  const notifyFormattingError = useCallback(() => {
+    toast.error('Could not format SQL.', {
+      description: 'The query may contain unsupported or incomplete syntax.',
+    })
+  }, [])
   const viewRef = useRef<EditorView | null>(null)
   const [findHost, setFindHost] = useState<FindPanelHost | null>(null)
 
@@ -119,6 +129,9 @@ export function SqlEditor({
         extensions: [
           sqlwardenBasicSetup,
           completionCompartment.current.of(sqlCompletionExtension(initialCompletionConfig.current)),
+          formattingCompartment.current.of(
+            sqlFormattingKeymap(initialFormatter.current, notifyFormattingError),
+          ),
           fontCompartment.current.of(
             makeBaseTheme(initialAppearance.current.fontFamily, initialAppearance.current.fontSize),
           ),
@@ -151,7 +164,7 @@ export function SqlEditor({
       viewRegistry.unregister(viewKey)
       view.destroy()
     }
-  }, [doc, viewKey, viewRegistry])
+  }, [doc, viewKey, viewRegistry, notifyFormattingError])
 
   useEffect(() => {
     if (!viewRef.current) return
@@ -159,6 +172,15 @@ export function SqlEditor({
       effects: completionCompartment.current.reconfigure(sqlCompletionExtension(completionConfig)),
     })
   }, [completionConfig])
+
+  useEffect(() => {
+    if (!viewRef.current) return
+    viewRef.current.dispatch({
+      effects: formattingCompartment.current.reconfigure(
+        sqlFormattingKeymap(sqlFormatterForDriver(driver), notifyFormattingError),
+      ),
+    })
+  }, [driver, notifyFormattingError])
 
   // Grab keyboard focus when this pane is the target of a split, so the new
   // split is ready to type in. requestAnimationFrame waits for layout.

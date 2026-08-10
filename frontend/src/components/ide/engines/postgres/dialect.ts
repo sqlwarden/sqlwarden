@@ -1,8 +1,10 @@
 import { BaseSqlDialect, createIdentifierQuoter } from '../../dialect'
 import type { ScopePath } from '#/lib/api/types'
 import { scopeName } from '#/lib/api/scope'
+import { postgresSqlFormatter } from '../../sqlFormatter'
 
 class PostgresDialect extends BaseSqlDialect {
+  protected override readonly formatter = postgresSqlFormatter
   private quoteIdentifier = createIdentifierQuoter('"')
 
   formatObject(scope: ScopePath, name: string): string {

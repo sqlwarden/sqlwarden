@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import {
@@ -24,6 +25,8 @@ import { Tip } from './schema-diagram/Tip'
 import { useSaveEditorTab } from './useSaveEditorTab'
 import { ConnectionSelector } from './ConnectionSelector'
 import { useToolbarQueryAction } from './useToolbarQueryAction'
+import { useEditorViewRegistry } from './useEditorViewRegistry'
+import { formatEditorSql, sqlFormatterForDriver } from './sqlFormatting'
 
 type IdeToolbarProps = {
   orgSlug: string
@@ -32,11 +35,14 @@ type IdeToolbarProps = {
 
 export const RUN_SHORTCUT =
   typeof navigator !== 'undefined' && /mac/i.test(navigator.platform) ? '⌘↵' : 'Ctrl ↵'
+export const FORMAT_SHORTCUT =
+  typeof navigator !== 'undefined' && /mac/i.test(navigator.platform) ? '⇧⌥F' : 'Shift Alt F'
 
 export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const [saveAsTab, setSaveAsTab] = useState<EditorTab | null>(null)
   const [confirmExportSql, setConfirmExportSql] = useState<string | null>(null)
   const [exportToWorkspaceOpen, setExportToWorkspaceOpen] = useState(false)
+  const viewRegistry = useEditorViewRegistry()
 
   const activeTabId = useIde((s) => selectActiveTabId(s, workspace.id))
   const activeGroupId = useIde((s) => s.activeGroupId[workspace.id])
@@ -64,6 +70,19 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     if (!activeTab) return
     const result = await saveEditorTab(activeTab)
     if (result?.kind === 'save-as') setSaveAsTab(result.tab)
+  }
+
+  function handleFormat() {
+    if (!activeTab || !activeGroupId) return
+    const view = viewRegistry.get(`${activeGroupId}:${activeTab.id}`)
+    if (!view) return
+    try {
+      formatEditorSql(view, sqlFormatterForDriver(activeTab.driver))
+    } catch {
+      toast.error('Could not format SQL.', {
+        description: 'The query may contain unsupported or incomplete syntax.',
+      })
+    }
   }
 
   function handleSaveAsSuccess(tab: EditorTab, file: WorkspaceFile, etag: string) {
@@ -213,6 +232,22 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           <Button type="button" variant="outline" aria-label="Save file" onClick={handleSave}>
             <Icon name="floppy-disk" size={13} data-icon="inline-start" />
             Save
+          </Button>
+        )}
+
+        {isSqlTab && (
+          <Button
+            type="button"
+            variant="outline"
+            aria-label="Format SQL"
+            onClick={handleFormat}
+            disabled={!activeGroupId}
+          >
+            <Icon name="subject" size={13} data-icon="inline-start" />
+            Format
+            <kbd className="ml-0.5 hidden rounded bg-muted px-1 font-sans text-[9px] font-medium leading-4 tracking-wide text-muted-foreground sm:inline">
+              {FORMAT_SHORTCUT}
+            </kbd>
           </Button>
         )}
 

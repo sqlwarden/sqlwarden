@@ -1,9 +1,11 @@
 import type { ObjectRef, ScopePath } from '#/lib/api/types'
+import { defaultSqlFormatter, type SqlTextFormatter } from './sqlFormatter'
 
 /** dataTransfer MIME identifying a schema-identifier drag (vs. a tab drag). */
 export const IDENTIFIER_DND_MIME = 'application/x-sqlwarden-identifier'
 
 export interface SqlDialect {
+  formatSql(sql: string): string
   formatObject(scope: ScopePath, name: string): string
   formatColumn(name: string): string
   previewQuery(ref: ObjectRef): string
@@ -12,8 +14,14 @@ export interface SqlDialect {
 }
 
 export abstract class BaseSqlDialect implements SqlDialect {
+  protected readonly formatter: SqlTextFormatter = defaultSqlFormatter
+
   abstract formatObject(scope: ScopePath, name: string): string
   abstract formatColumn(name: string): string
+
+  formatSql(sql: string): string {
+    return this.formatter.format(sql)
+  }
 
   previewQuery(ref: ObjectRef): string {
     return `SELECT * FROM ${this.formatObject(ref.scope, ref.name)}`
