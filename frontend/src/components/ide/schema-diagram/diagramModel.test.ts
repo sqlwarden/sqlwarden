@@ -7,6 +7,7 @@ import {
   planScopeSeed,
   estimateNodeSize,
   edgeCardinality,
+  relationalSignature,
   relationshipHandleId,
   DIAGRAM_MAX_TABLES,
 } from './diagramModel'
@@ -194,5 +195,143 @@ describe('relationshipHandleId', () => {
         connectedColumns: new Set(),
       }),
     ).toBe('node:out')
+  })
+})
+
+describe('relationalSignature', () => {
+  const detail = (over: object): ObjectDetail =>
+    ({ ref: t('x'), relational: { columns: [], ...over } }) as ObjectDetail
+
+  it('is empty for a missing detail', () => {
+    expect(relationalSignature(undefined)).toBe('')
+    expect(relationalSignature(null)).toBe('')
+  })
+
+  it('changes when a column is renamed', () => {
+    const before = detail({
+      columns: [{ name: 'name', data_type: 'text', nullable: false, ordinal: 1 }],
+    })
+    const after = detail({
+      columns: [{ name: 'full_name', data_type: 'text', nullable: false, ordinal: 1 }],
+    })
+    expect(relationalSignature(before)).not.toBe(relationalSignature(after))
+  })
+
+  it('changes when a column type or nullability changes', () => {
+    const base = detail({
+      columns: [{ name: 'age', data_type: 'int', nullable: false, ordinal: 1 }],
+    })
+    const retyped = detail({
+      columns: [{ name: 'age', data_type: 'bigint', nullable: false, ordinal: 1 }],
+    })
+    const nullable = detail({
+      columns: [{ name: 'age', data_type: 'int', nullable: true, ordinal: 1 }],
+    })
+    expect(relationalSignature(base)).not.toBe(relationalSignature(retyped))
+    expect(relationalSignature(base)).not.toBe(relationalSignature(nullable))
+  })
+
+  it('changes when the primary key or foreign keys change', () => {
+    const noPk = detail({ primary_key: [] })
+    const withPk = detail({ primary_key: ['id'] })
+    expect(relationalSignature(noPk)).not.toBe(relationalSignature(withPk))
+
+    const noFk = detail({ foreign_keys: [] })
+    const withFk = detail({
+      foreign_keys: [{ columns: ['user_id'], references: t('users'), referenced_columns: ['id'] }],
+    })
+    expect(relationalSignature(noFk)).not.toBe(relationalSignature(withFk))
+  })
+
+  it('changes when a unique index changes but ignores non-unique indexes', () => {
+    const noIndex = detail({ indexes: [] })
+    const uniqueIndex = detail({
+      indexes: [{ name: 'u', columns: ['email'], unique: true }],
+    })
+    const nonUniqueIndex = detail({
+      indexes: [{ name: 'n', columns: ['email'], unique: false }],
+    })
+    expect(relationalSignature(noIndex)).not.toBe(relationalSignature(uniqueIndex))
+    expect(relationalSignature(noIndex)).toBe(relationalSignature(nonUniqueIndex))
+  })
+
+  it('is stable across equivalent objects with fresh identities', () => {
+    const a = detail({
+      columns: [{ name: 'id', data_type: 'int', nullable: false, ordinal: 1 }],
+      primary_key: ['id'],
+    })
+    const b = detail({
+      columns: [{ name: 'id', data_type: 'int', nullable: false, ordinal: 1 }],
+      primary_key: ['id'],
+    })
+    expect(a).not.toBe(b)
+    expect(relationalSignature(a)).toBe(relationalSignature(b))
+  })
+
+  it('is stable across equivalent FK/unique-index objects listed in a different order', () => {
+    const a = detail({
+      foreign_keys: [
+        { columns: ['user_id'], references: t('users'), referenced_columns: ['id'] },
+        { columns: ['org_id'], references: t('orgs'), referenced_columns: ['id'] },
+      ],
+      indexes: [
+        { name: 'u1', columns: ['email'], unique: true },
+        { name: 'u2', columns: ['slug'], unique: true },
+      ],
+    })
+    const b = detail({
+      foreign_keys: [
+        { columns: ['org_id'], references: t('orgs'), referenced_columns: ['id'] },
+        { columns: ['user_id'], references: t('users'), referenced_columns: ['id'] },
+      ],
+      indexes: [
+        { name: 'u2', columns: ['slug'], unique: true },
+        { name: 'u1', columns: ['email'], unique: true },
+      ],
+    })
+    expect(relationalSignature(a)).toBe(relationalSignature(b))
+  })
+
+  it('does not collide two distinct primary keys that share a delimiter-joined encoding', () => {
+    // Under a naive `columns.join(',')` encoding, a single column named
+    // "a,b" and two columns "a" + "b" would both serialize to "a,b".
+    const quotedSingle = detail({ primary_key: ['a,b'] })
+    const twoColumns = detail({ primary_key: ['a', 'b'] })
+    expect(relationalSignature(quotedSingle)).not.toBe(relationalSignature(twoColumns))
+  })
+
+  it('does not collide two distinct foreign keys that share a delimiter-joined encoding', () => {
+    // Under a naive `columns.join('+')` encoding, a single column named
+    // "a+b" and two columns "a" + "b" would both serialize to "a+b".
+    const quotedSingle = detail({
+      foreign_keys: [{ columns: ['a+b'], references: t('users'), referenced_columns: ['id'] }],
+    })
+    const twoColumns = detail({
+      foreign_keys: [{ columns: ['a', 'b'], references: t('users'), referenced_columns: ['id'] }],
+    })
+    expect(relationalSignature(quotedSingle)).not.toBe(relationalSignature(twoColumns))
+  })
+
+  it('does not collide two distinct unique indexes that share a delimiter-joined encoding', () => {
+    const quotedSingle = detail({
+      indexes: [{ name: 'u', columns: ['a+b'], unique: true }],
+    })
+    const twoColumns = detail({
+      indexes: [{ name: 'u', columns: ['a', 'b'], unique: true }],
+    })
+    expect(relationalSignature(quotedSingle)).not.toBe(relationalSignature(twoColumns))
+  })
+
+  it('does not collide two distinct column lists that share a delimiter-joined encoding', () => {
+    // Under a naive `${name}:${type}:${nullable}` join, a column named
+    // "a:int:0" of type "text" and a plain "a" of type "int" both produce
+    // the segment "a:int:0:text:0" / "a:int:0" ambiguity across entries.
+    const quotedName = detail({
+      columns: [{ name: 'a:int:0', data_type: 'text', nullable: false, ordinal: 1 }],
+    })
+    const plainName = detail({
+      columns: [{ name: 'a', data_type: 'int', nullable: false, ordinal: 1 }],
+    })
+    expect(relationalSignature(quotedName)).not.toBe(relationalSignature(plainName))
   })
 })

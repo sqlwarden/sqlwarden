@@ -6,6 +6,8 @@ import type {
   ObjectsResponse,
   RelationshipsResponse,
   ResultSet,
+  SchemaEditRequest,
+  SchemaEditResponse,
   SchemaRefreshResponse,
   SchemaSpecResponse,
 } from '#/lib/api/types'
@@ -314,6 +316,23 @@ export function refreshConnectionSchema(
     `${schemaBase(slug, workspaceId, connectionId)}/refresh`,
     ref ? { ref } : undefined,
     schemaRequestOptions(sessionId),
+  )
+}
+
+/** Applies a structured schema change. Requires a live session: the backend
+ *  authorizes mutations against the session's connection and rejects the
+ *  request without X-Warden-Session. */
+export function applyConnectionSchemaEdit(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string,
+  input: SchemaEditRequest,
+) {
+  return api.post<SchemaEditResponse>(
+    `${schemaBase(slug, workspaceId, connectionId)}/mutations`,
+    input,
+    { headers: { 'X-Warden-Session': sessionId } },
   )
 }
 

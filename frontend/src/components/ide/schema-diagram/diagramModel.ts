@@ -162,3 +162,53 @@ export function edgeCardinality(
   }
   return 'one_to_many'
 }
+
+/** Sorts entries by their JSON encoding so a collection's overall order
+ *  (which carries no rendering meaning) can't affect the signature, while
+ *  each entry's own field order — which may be render-relevant — is left
+ *  untouched. */
+function byJson<T>(entries: T[]): T[] {
+  return [...entries].sort((a, b) => {
+    const ja = JSON.stringify(a)
+    const jb = JSON.stringify(b)
+    return ja < jb ? -1 : ja > jb ? 1 : 0
+  })
+}
+
+/** Deterministic, content-sensitive signature of the relational fields that
+ *  actually drive diagram node/edge rendering (columns, PK, FKs, and unique
+ *  indexes — the only indexes `edgeCardinality` consults). Used as an effect
+ *  dependency so a refetch that renames a column (etc.) reconciles nodes even
+ *  though `detail` keeps a fresh object identity every render; presence/loading
+ *  alone isn't enough to detect that. Deliberately excludes fields the diagram
+ *  never renders (e.g. column attributes, non-unique indexes) so unrelated
+ *  metadata churn can't trigger reconciliation or relayout.
+ *
+ *  Serialized as JSON rather than delimiter-joined strings: SQL identifiers
+ *  may legally contain the characters (`:`, `,`, `|`, `+`, `>`) a hand-built
+ *  delimiter encoding would rely on, so two distinct structures could
+ *  otherwise collide onto the same signature. Only genuinely unordered
+ *  collections (primary-key membership, and the FK/unique-index collections
+ *  themselves) are sorted; column order and each FK's/index's own column
+ *  order are render-relevant and preserved as-is. */
+export function relationalSignature(detail: ObjectDetail | null | undefined): string {
+  const rel = detail?.relational
+  if (!rel) return ''
+  const columns = rel.columns.map((c) => ({
+    name: c.name,
+    data_type: c.data_type,
+    nullable: !!c.nullable,
+  }))
+  const primary_key = [...(rel.primary_key ?? [])].sort()
+  const foreign_keys = byJson(
+    (rel.foreign_keys ?? []).map((fk) => ({
+      columns: fk.columns,
+      references: refKey(fk.references),
+      referenced_columns: fk.referenced_columns,
+    })),
+  )
+  const unique_indexes = byJson(
+    (rel.indexes ?? []).filter((ix) => ix.unique).map((ix) => ({ columns: ix.columns })),
+  )
+  return JSON.stringify({ columns, primary_key, foreign_keys, unique_indexes })
+}

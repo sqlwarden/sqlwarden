@@ -14,6 +14,7 @@ import (
 var knownCapabilities = map[engine.Capability]bool{
 	engine.CapabilitySchemaDirectory: true,
 	engine.CapabilitySchemaObjects:   true,
+	engine.CapabilityDDL:             true,
 	engine.CapabilityQueryCursor:     true,
 	engine.CapabilitySQLParse:        true,
 	engine.CapabilitySQLClassify:     true,
@@ -45,6 +46,9 @@ func RunCapabilityContract(t *testing.T, name string) {
 	}
 	if !set.Capabilities[engine.CapabilitySchemaDirectory] && set.Schema != nil {
 		t.Fatal("Schema spec present but schema.directory capability is false")
+	}
+	if set.Capabilities[engine.CapabilityDDL] != (set.DDL != nil) {
+		t.Fatal("schema.edit capability and schema edit spec disagree")
 	}
 }
 

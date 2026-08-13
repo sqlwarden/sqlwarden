@@ -12,6 +12,7 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/ddl"
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
@@ -22,6 +23,7 @@ const manualSchemaSyncTimeout = 2 * time.Minute
 
 type schemaSpecResponse struct {
 	Spec metadata.SchemaSpec `json:"spec"`
+	DDL  *ddl.Spec           `json:"editor,omitempty"`
 }
 
 type directoryResponse struct {
@@ -51,6 +53,11 @@ type schemaStatusResponse struct {
 	GeneratedAt *time.Time `json:"generated_at,omitempty"`
 	Stale       bool       `json:"stale,omitempty"`
 	JobID       string     `json:"job_id,omitempty"`
+}
+
+type schemaEditResponse struct {
+	Applied bool                 `json:"applied"`
+	Schema  schemaStatusResponse `json:"schema"`
 }
 
 func (app *application) authorizeSchemaAccess(w http.ResponseWriter, r *http.Request) bool {
@@ -241,11 +248,97 @@ func (app *application) getConnectionSchemaSpec(w http.ResponseWriter, r *http.R
 		return
 	}
 	spec := app.schemaService.Spec(inspector)
+	var ddlSpec *ddl.Spec
+	if executor, ok := driver.(ddl.Executor); ok {
+		s := executor.DDLSpec()
+		ddlSpec = &s
+	}
 	app.logDebug(r, "schema spec returned",
 		slog.String("dialect", spec.Dialect),
 		slog.Int("kind_count", len(spec.Kinds)),
 	)
-	if err := response.JSON(w, http.StatusOK, schemaSpecResponse{Spec: spec}); err != nil {
+	if err := response.JSON(w, http.StatusOK, schemaSpecResponse{Spec: spec, DDL: ddlSpec}); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) applyConnectionDDL(w http.ResponseWriter, r *http.Request) {
+	org := contextGetOrg(r)
+	conn := contextGetConnection(r)
+	ws := contextGetWorkspace(r)
+	if !app.hasAnyConnectionRuntimePermission(r, org.ID, ws.OwnerType, conn.ID,
+		access.PermConnExecute, access.PermConnDDL) {
+		app.notPermitted(w, r)
+		return
+	}
+
+	session, ok := app.resolveSchemaSession(w, r)
+	if !ok {
+		return
+	}
+	executor, ok := session.Conn.(ddl.Executor)
+	if !ok {
+		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support structured DDL.", nil)
+		return
+	}
+
+	var input ddl.Request
+	if err := request.DecodeJSON(w, r, &input); err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+	if err := ddl.Validate(input, executor.DDLSpec()); err != nil {
+		app.apiError(w, r, http.StatusUnprocessableEntity, "invalid_schema_edit", err.Error(), response.APIError{}, nil)
+		return
+	}
+	if err := session.ApplyDDL(r.Context(), input); err != nil {
+		app.apiError(w, r, http.StatusUnprocessableEntity, "schema_edit_failed", err.Error(), response.APIError{}, nil)
+		return
+	}
+
+	app.schemaService.RefreshConnection(session.ConnectionID)
+	app.completionService.InvalidateConnection(session.ConnectionID)
+	app.logInfo(r, "DDL applied",
+		slog.String("session_id", session.ID),
+		slog.String("connection_id", session.ConnectionID),
+		slog.String("operation", string(input.Operation)),
+	)
+
+	persistent, err := app.persistentSchemaMode(r)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !persistent {
+		if err := response.JSON(w, http.StatusOK, schemaEditResponse{
+			Applied: true, Schema: schemaStatusResponse{Status: "available", Mode: "ephemeral"},
+		}); err != nil {
+			app.serverError(w, r, err)
+		}
+		return
+	}
+
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(manualSchemaSyncTimeout + 5*time.Second))
+	ctx, cancel := context.WithTimeout(r.Context(), manualSchemaSyncTimeout)
+	defer cancel()
+	output, syncErr := app.syncSchemaSnapshot(ctx, conn.ID)
+	if syncErr != nil {
+		app.logWarn(r, "schema edit snapshot refresh failed",
+			slog.Int64("connection_id", conn.ID),
+			slog.String("operation", string(input.Operation)),
+			slog.Any("error", syncErr),
+		)
+		if err := response.JSON(w, http.StatusOK, schemaEditResponse{
+			Applied: true, Schema: schemaStatusResponse{Status: "refresh_failed", Mode: "persistent", Stale: true},
+		}); err != nil {
+			app.serverError(w, r, err)
+		}
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, schemaEditResponse{
+		Applied: true,
+		Schema:  schemaStatusResponse{Status: "available", Mode: "persistent", SnapshotID: output.SnapshotID, GeneratedAt: &output.GeneratedAt},
+	}); err != nil {
 		app.serverError(w, r, err)
 	}
 }

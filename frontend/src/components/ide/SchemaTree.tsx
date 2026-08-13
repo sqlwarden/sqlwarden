@@ -7,7 +7,9 @@ import {
   orgConnectionDirectoryQueryOptions,
   orgConnectionSchemaSpecQueryOptions,
   orgConnectionObjectQueryOptions,
+  orgEffectivePermissionsQueryOptions,
 } from '#/lib/api/query'
+import { hasAnyPermission, permission } from '#/lib/permissions'
 import type {
   Connection,
   ObjectGroup,
@@ -16,6 +18,8 @@ import type {
   ObjectRef,
   ScopePath,
   ScopeNode,
+  SchemaEditRequest,
+  SchemaEditSpec,
   SchemaSpec,
   Workspace,
 } from '#/lib/api/types'
@@ -24,7 +28,14 @@ import { newObjectTab } from './object-detail/objectTab'
 import { newDiagramTab, type DiagramTarget } from './schema-diagram/diagramTab'
 import { diagramSupported, diagramSupportedForKind } from './schema-diagram/capability'
 import { OBJECT_REF_DND_MIME } from './schema-diagram/dnd'
-import { filterDirectory, hasDirectoryObjects, kindLabel, sortedGroups } from './schemaDirectory'
+import {
+  defaultCreateTableScope,
+  filterDirectory,
+  hasDirectoryObjects,
+  kindLabel,
+  kindLabelSingular,
+  sortedGroups,
+} from './schemaDirectory'
 import { scopeLabel } from '#/lib/api/scope'
 import { columnTypeIcon, columnTypeIconColor } from './columnTypeIcon'
 import { dialectFor, IDENTIFIER_DND_MIME, type SqlDialect } from './sqlDialect'
@@ -36,6 +47,25 @@ import { buildObjectMenu } from './contextMenus/objectMenu'
 import { buildColumnMenu, buildIndexMenu } from './contextMenus/columnMenu'
 import { useEvictGoneSession } from './sessionErrors'
 import { useSchemaRefresh } from './useSchemaRefresh'
+import { useSchemaEdit } from './useSchemaEdit'
+import {
+  canCreateTable,
+  canDropColumn,
+  canDropIndex,
+  canDropObject,
+  canDropScope,
+  canRenameColumn,
+  cascadeAvailable,
+} from './schemaEditCapability'
+import { CreateTableDialog } from './schemaEdit/CreateTableDialog'
+import { RenameColumnDialog } from './schemaEdit/RenameColumnDialog'
+import { DropConfirmDialog } from './schemaEdit/DropConfirmDialog'
+
+type DropTarget =
+  | { kind: 'scope'; scope: ScopePath; scopeKind: string }
+  | { kind: 'object'; ref: ObjectRef }
+  | { kind: 'column'; ref: ObjectRef; columnName: string }
+  | { kind: 'index'; ref: ObjectRef; indexName: string }
 
 type TreeCtx = {
   dialect: SqlDialect
@@ -48,6 +78,14 @@ type TreeCtx = {
   workspaceId: number
   connectionId: number
   sessionId?: string
+  editor: SchemaEditSpec | undefined
+  canMutate: boolean
+  openCreateTable: (scope: ScopePath) => void
+  openDropScope: (scope: ScopePath, scopeKind: string) => void
+  openDropObject: (ref: ObjectRef) => void
+  openRenameColumn: (ref: ObjectRef, columnName: string) => void
+  openDropColumn: (ref: ObjectRef, columnName: string) => void
+  openDropIndex: (ref: ObjectRef, indexName: string) => void
 }
 
 const SchemaTreeContext = createContext<TreeCtx | null>(null)
@@ -95,6 +133,15 @@ function useTreeCtx() {
     refresh: ctx?.refresh ?? (() => {}),
     spec: ctx?.spec,
     openDiagram: ctx?.openDiagram,
+    editor: ctx?.editor,
+    sessionId: ctx?.sessionId,
+    canMutate: ctx?.canMutate ?? false,
+    openCreateTable: ctx?.openCreateTable,
+    openDropScope: ctx?.openDropScope,
+    openDropObject: ctx?.openDropObject,
+    openRenameColumn: ctx?.openRenameColumn,
+    openDropColumn: ctx?.openDropColumn,
+    openDropIndex: ctx?.openDropIndex,
   }
 }
 
@@ -160,12 +207,22 @@ export function SchemaTree({
   const specQuery = useQuery({
     ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspaceId, connectionId, sessionId),
   })
+  const permissionsQuery = useQuery({
+    ...orgEffectivePermissionsQueryOptions(orgSlug, 'connection', connectionId),
+  })
   const refreshSchema = useSchemaRefresh({
     orgSlug,
     workspaceId,
     connectionId,
     sessionId,
   })
+  const schemaEdit = useSchemaEdit({ orgSlug, workspaceId, connectionId, sessionId })
+
+  const [createTableScope, setCreateTableScope] = useState<ScopePath | null>(null)
+  const [renameTarget, setRenameTarget] = useState<{ ref: ObjectRef; columnName: string } | null>(
+    null,
+  )
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
 
   // A 410 from any schema endpoint means the server-side session died (idle
   // timeout, restart). Drop it so the tree flips to the reconnect hint instead
@@ -237,13 +294,32 @@ export function SchemaTree({
 
   const filtering = filter.trim() !== ''
   const roots = filterDirectory(raw, filter).roots
-
-  if (roots.length === 0 || !hasDirectoryObjects(roots)) {
-    return <SchemaMessage>{filtering ? 'No matches.' : 'No objects.'}</SchemaMessage>
-  }
+  const noScope = roots.length === 0
+  // A single unambiguous empty scope (one root, at most one child) collapses to
+  // the flat empty state below. A directory with multiple schemas/databases
+  // still has distinct scopes worth showing and right-clicking even when none
+  // of them have objects yet, so it falls through to the tree render instead.
+  const trivialEmptyScope =
+    !filtering && !noScope && !hasDirectoryObjects(roots) && defaultCreateTableScope(roots) !== null
+  const isEmpty = noScope || trivialEmptyScope
 
   const spec = specQuery.data?.spec
+  const editor = specQuery.data?.editor
+  const canMutate = hasAnyPermission(permissionsQuery.data?.permissions, [
+    permission.connExecute,
+    permission.connDdl,
+  ])
   const single = roots.length === 1 ? roots[0] : null
+
+  // An empty scope is still a valid place to start: offer the create-table
+  // action when the backend editor spec advertises it for this scope, rather
+  // than dead-ending the explorer.
+  const emptyCreateScope = isEmpty && !filtering ? defaultCreateTableScope(roots) : null
+  const emptyCreateScopeKind = emptyCreateScope?.[emptyCreateScope.length - 1]?.kind ?? ''
+  const emptyCreateGate = emptyCreateScope
+    ? canCreateTable(editor, sessionId, canMutate, emptyCreateScopeKind)
+    : null
+
   const ctx: TreeCtx = {
     dialect,
     insert,
@@ -255,33 +331,163 @@ export function SchemaTree({
     workspaceId,
     connectionId,
     sessionId,
+    editor,
+    canMutate,
+    openCreateTable: setCreateTableScope,
+    openDropScope: (scope, scopeKind) => setDropTarget({ kind: 'scope', scope, scopeKind }),
+    openDropObject: (ref) => setDropTarget({ kind: 'object', ref }),
+    openRenameColumn: (ref, columnName) => setRenameTarget({ ref, columnName }),
+    openDropColumn: (ref, columnName) => setDropTarget({ kind: 'column', ref, columnName }),
+    openDropIndex: (ref, indexName) => setDropTarget({ kind: 'index', ref, indexName }),
   }
 
   return (
     <SchemaTreeContext.Provider value={ctx}>
-      <div className="py-0.5">
-        {single && (single.children?.length ?? 0) === 0
-          ? sortedGroups(single, spec).map((g) => (
-              <SchemaGroupNode key={g.kind} group={g} scope={single.path} forceOpen={filtering} />
-            ))
-          : single && single.groups.length === 0
-            ? (single.children ?? []).map((node) => (
-                <SchemaScopeNode
-                  key={JSON.stringify(node.path)}
-                  node={node}
-                  forceOpen={filtering}
-                />
+      {isEmpty ? (
+        <SchemaEmptyState
+          filtering={filtering}
+          onCreateTable={
+            emptyCreateGate?.allowed && emptyCreateScope
+              ? () => setCreateTableScope(emptyCreateScope)
+              : undefined
+          }
+        />
+      ) : (
+        <div className="py-0.5">
+          {single && (single.children?.length ?? 0) === 0 && single.groups.length > 0
+            ? sortedGroups(single, spec).map((g) => (
+                <SchemaGroupNode key={g.kind} group={g} scope={single.path} forceOpen={filtering} />
               ))
-            : roots.map((node) => (
-                <SchemaScopeNode
-                  key={JSON.stringify(node.path)}
-                  node={node}
-                  forceOpen={filtering}
-                />
-              ))}
-      </div>
+            : single && single.groups.length === 0 && (single.children?.length ?? 0) > 0
+              ? (single.children ?? []).map((node) => (
+                  <SchemaScopeNode
+                    key={JSON.stringify(node.path)}
+                    node={node}
+                    forceOpen={filtering}
+                  />
+                ))
+              : roots.map((node) => (
+                  <SchemaScopeNode
+                    key={JSON.stringify(node.path)}
+                    node={node}
+                    forceOpen={filtering}
+                  />
+                ))}
+        </div>
+      )}
+
+      {editor && (
+        <CreateTableDialog
+          open={createTableScope !== null}
+          onOpenChange={(open) => !open && setCreateTableScope(null)}
+          scope={createTableScope ?? []}
+          columnTypes={editor.column_types}
+          pending={schemaEdit.isPending}
+          onSubmit={(name, columns) =>
+            schemaEdit.mutate(
+              {
+                operation: 'create_table',
+                scope: createTableScope ?? [],
+                name,
+                columns,
+              },
+              { onSuccess: () => setCreateTableScope(null) },
+            )
+          }
+        />
+      )}
+
+      {renameTarget && (
+        <RenameColumnDialog
+          open={renameTarget !== null}
+          onOpenChange={(open) => !open && setRenameTarget(null)}
+          tableName={renameTarget.ref.name}
+          columnName={renameTarget.columnName}
+          pending={schemaEdit.isPending}
+          onSubmit={(newName) =>
+            schemaEdit.mutate(
+              {
+                operation: 'rename_column',
+                ref: renameTarget.ref,
+                name: renameTarget.columnName,
+                new_name: newName,
+              },
+              { onSuccess: () => setRenameTarget(null) },
+            )
+          }
+        />
+      )}
+
+      {dropTarget && (
+        <DropConfirmDialog
+          open={dropTarget !== null}
+          onOpenChange={(open) => !open && setDropTarget(null)}
+          objectType={dropTargetLabel(dropTarget, spec)}
+          objectName={dropTargetName(dropTarget)}
+          description={dropTargetDescription(dropTarget, spec)}
+          cascadeAvailable={cascadeAvailable(editor, dropTarget.kind)}
+          pending={schemaEdit.isPending}
+          onConfirm={(cascade) =>
+            schemaEdit.mutate(dropTargetRequest(dropTarget, cascade), {
+              onSuccess: () => setDropTarget(null),
+            })
+          }
+        />
+      )}
     </SchemaTreeContext.Provider>
   )
+}
+
+function dropTargetLabel(target: DropTarget, spec: SchemaSpec | undefined): string {
+  switch (target.kind) {
+    case 'scope':
+      return kindLabelSingular(spec, target.scopeKind).toLowerCase()
+    case 'object':
+      return kindLabelSingular(spec, target.ref.kind).toLowerCase()
+    case 'column':
+      return 'column'
+    case 'index':
+      return 'index'
+  }
+}
+
+function dropTargetName(target: DropTarget): string {
+  switch (target.kind) {
+    case 'scope':
+      return scopeLabel(target.scope)
+    case 'object':
+      return target.ref.name
+    case 'column':
+      return target.columnName
+    case 'index':
+      return target.indexName
+  }
+}
+
+function dropTargetDescription(target: DropTarget, spec: SchemaSpec | undefined): string {
+  switch (target.kind) {
+    case 'scope':
+      return `This permanently drops ${scopeLabel(target.scope)} and everything it contains. This cannot be undone.`
+    case 'object':
+      return `This permanently drops the ${kindLabelSingular(spec, target.ref.kind).toLowerCase()} ${target.ref.name}. This cannot be undone.`
+    case 'column':
+      return `This permanently drops the column ${target.columnName} from ${target.ref.name}, including its data. This cannot be undone.`
+    case 'index':
+      return `This permanently drops the index ${target.indexName} from ${target.ref.name}. This cannot be undone.`
+  }
+}
+
+function dropTargetRequest(target: DropTarget, cascade: boolean): SchemaEditRequest {
+  switch (target.kind) {
+    case 'scope':
+      return { operation: 'drop_scope', scope: target.scope, cascade }
+    case 'object':
+      return { operation: 'drop_object', ref: target.ref, cascade }
+    case 'column':
+      return { operation: 'drop_column', ref: target.ref, name: target.columnName, cascade }
+    case 'index':
+      return { operation: 'drop_index', ref: target.ref, name: target.indexName, cascade }
+  }
 }
 
 function SchemaMessage({ children }: { children: React.ReactNode }) {
@@ -289,6 +495,29 @@ function SchemaMessage({ children }: { children: React.ReactNode }) {
     <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground">
       {children}
     </div>
+  )
+}
+
+function SchemaEmptyState({
+  filtering,
+  onCreateTable,
+}: {
+  filtering: boolean
+  onCreateTable?: () => void
+}) {
+  return (
+    <SchemaMessage>
+      <span>{filtering ? 'No matches.' : 'No objects.'}</span>
+      {onCreateTable && (
+        <button
+          type="button"
+          className="font-medium text-primary hover:underline"
+          onClick={onCreateTable}
+        >
+          Create table
+        </button>
+      )}
+    </SchemaMessage>
   )
 }
 
@@ -307,9 +536,21 @@ function GuideChildren({ children }: { children: React.ReactNode }) {
 function SchemaScopeNode({ node, forceOpen }: { node: ScopeNode; forceOpen: boolean }) {
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
-  const { refresh, spec, openDiagram } = useTreeCtx()
+  const {
+    refresh,
+    spec,
+    openDiagram,
+    editor,
+    sessionId,
+    canMutate,
+    openCreateTable,
+    openDropScope,
+  } = useTreeCtx()
   const groups = sortedGroups(node, spec)
+  const scopeKind = node.path[node.path.length - 1]?.kind ?? ''
   const label = node.path[node.path.length - 1]?.name ?? scopeLabel(node.path)
+  const createGate = canCreateTable(editor, sessionId, canMutate, scopeKind)
+  const dropGate = canDropScope(editor, sessionId, canMutate, scopeKind)
   const menuItems = buildNamespaceMenu({
     onCopyName: () => copyWithToast(label),
     onRefresh: refresh,
@@ -317,6 +558,11 @@ function SchemaScopeNode({ node, forceOpen }: { node: ScopeNode; forceOpen: bool
       diagramSupported(spec) && openDiagram
         ? () => openDiagram({ kind: 'scope', scope: node.path })
         : undefined,
+    dropLabel: `Drop ${kindLabelSingular(spec, scopeKind).toLowerCase()}`,
+    onCreateTable: createGate.allowed ? () => openCreateTable?.(node.path) : undefined,
+    createTableDisabledReason: createGate.allowed ? undefined : createGate.reason,
+    onDropScope: dropGate.allowed ? () => openDropScope?.(node.path, scopeKind) : undefined,
+    dropScopeDisabledReason: dropGate.allowed ? undefined : dropGate.reason,
   })
 
   return (
@@ -357,9 +603,12 @@ function SchemaGroupNode({
   const expanded = open ?? forceOpen
   const objects = group.objects ?? []
   const style = kindStyle(group.kind)
-  const { refresh, spec, openDiagram } = useTreeCtx()
+  const { refresh, spec, openDiagram, editor, sessionId, canMutate, openCreateTable } = useTreeCtx()
   const label = kindLabel(spec, group.kind)
   const newLabel = `New ${label.replace(/s$/, '')}...`
+  const scopeKind = scope[scope.length - 1]?.kind ?? ''
+  const createGate =
+    group.kind === 'table' ? canCreateTable(editor, sessionId, canMutate, scopeKind) : null
   const menuItems = buildObjectGroupMenu({
     newLabel,
     onRefresh: refresh,
@@ -367,6 +616,8 @@ function SchemaGroupNode({
       group.kind === 'table' && diagramSupportedForKind(spec, group.kind) && openDiagram
         ? () => openDiagram({ kind: 'scope', scope })
         : undefined,
+    onCreateTable: createGate?.allowed ? () => openCreateTable?.(scope) : undefined,
+    createTableDisabledReason: createGate && !createGate.allowed ? createGate.reason : undefined,
   })
 
   return (
@@ -416,10 +667,11 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
   const detail = detailQuery.data ?? null
   const columns = detail?.relational?.columns ?? []
   const insertable = useObjectInsert(objectRef)
-  const { dialect, spec, openDiagram } = useTreeCtx()
+  const { dialect, spec, openDiagram, editor, sessionId, canMutate, openDropObject } = useTreeCtx()
   const style = kindStyle(objectRef.kind)
   const inlineMeta = inlineDetail ? sequenceDataType(detail) : undefined
   const isView = objectRef.kind === 'view' || objectRef.kind === 'materialized_view'
+  const dropGate = canDropObject(editor, sessionId, canMutate, objectRef.kind)
   const objectMenu = buildObjectMenu({
     isView,
     onOpen: () => ctx?.openObject(objectRef),
@@ -436,6 +688,8 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
       copyWithToast(
         columnList(columns.map((c) => (dialect ? dialect.formatColumn(c.name) : c.name))),
       ),
+    onDrop: dropGate.allowed ? () => openDropObject?.(objectRef) : undefined,
+    dropDisabledReason: dropGate.allowed ? undefined : dropGate.reason,
   })
 
   return (
@@ -457,8 +711,7 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
           <SchemaObjectDetail
             detail={detail}
             loading={detailQuery.isLoading}
-            objectName={objectRef.name}
-            objectKind={objectRef.kind}
+            objectRef={objectRef}
           />
         </GuideChildren>
       )}
@@ -469,15 +722,16 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
 function SchemaObjectDetail({
   detail,
   loading,
-  objectName,
-  objectKind,
+  objectRef,
 }: {
   detail: ObjectDetail | null
   loading: boolean
-  objectName: string
-  objectKind: string
+  objectRef: ObjectRef
 }) {
-  const { dialect } = useTreeCtx()
+  const { dialect, editor, sessionId, canMutate, openRenameColumn, openDropColumn, openDropIndex } =
+    useTreeCtx()
+  const objectName = objectRef.name
+  const objectKind = objectRef.kind
   if (loading && !detail) {
     return (
       <DetailMessage>
@@ -497,6 +751,9 @@ function SchemaObjectDetail({
   const fk = new Set((rel.foreign_keys ?? []).flatMap((f) => f.columns))
   const columns = rel.columns ?? []
   const indexes = rel.indexes ?? []
+  const renameGate = canRenameColumn(editor, sessionId, canMutate, objectKind)
+  const dropColumnGate = canDropColumn(editor, sessionId, canMutate, objectKind)
+  const dropIndexGate = canDropIndex(editor, sessionId, canMutate, objectKind)
   return (
     <>
       <DetailGroup label="Columns" count={columns.length} defaultOpen>
@@ -512,6 +769,14 @@ function SchemaObjectDetail({
                     : `${objectName}.${c.name}`,
                 ),
               onCopyType: () => copyWithToast(c.data_type),
+              onRename: renameGate.allowed
+                ? () => openRenameColumn?.(objectRef, c.name)
+                : undefined,
+              renameDisabledReason: renameGate.allowed ? undefined : renameGate.reason,
+              onDrop: dropColumnGate.allowed
+                ? () => openDropColumn?.(objectRef, c.name)
+                : undefined,
+              dropDisabledReason: dropColumnGate.allowed ? undefined : dropColumnGate.reason,
             })}
           >
             <ColumnRow
@@ -528,7 +793,13 @@ function SchemaObjectDetail({
           {indexes.map((ix) => (
             <ContextMenu
               key={`ix:${ix.name}`}
-              items={buildIndexMenu({ onCopyName: () => copyWithToast(ix.name) })}
+              items={buildIndexMenu({
+                onCopyName: () => copyWithToast(ix.name),
+                onDrop: dropIndexGate.allowed
+                  ? () => openDropIndex?.(objectRef, ix.name)
+                  : undefined,
+                dropDisabledReason: dropIndexGate.allowed ? undefined : dropIndexGate.reason,
+              })}
             >
               <LeafRow
                 icon="key-01"

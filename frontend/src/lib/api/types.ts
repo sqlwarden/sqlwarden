@@ -557,8 +557,52 @@ export interface SchemaRefreshResponse {
   generated_at?: string
 }
 
+export type SchemaEditOperation =
+  'create_table' | 'drop_object' | 'drop_scope' | 'rename_column' | 'drop_column' | 'drop_index'
+
+export interface SchemaEditColumn {
+  name: string
+  data_type: string
+  nullable: boolean
+  primary_key: boolean
+}
+
+/** Static, driver-advertised schema-editing capabilities. Never infer these in the UI. */
+export interface SchemaEditSpec {
+  operations: SchemaEditOperation[]
+  column_types: string[]
+  creatable_table_scope_kinds: string[]
+  droppable_object_kinds: string[]
+  droppable_scope_kinds: string[]
+  supports_cascade: boolean
+}
+
+export interface SchemaEditRequest {
+  operation: SchemaEditOperation
+  scope?: ScopePath
+  ref?: ObjectRef
+  name?: string
+  new_name?: string
+  columns?: SchemaEditColumn[]
+  cascade?: boolean
+}
+
+export interface SchemaEditStatus {
+  status: 'available' | 'refresh_failed'
+  mode: 'persistent' | 'ephemeral'
+  snapshot_id?: string
+  generated_at?: string
+  stale?: boolean
+}
+
+export interface SchemaEditResponse {
+  applied: boolean
+  schema: SchemaEditStatus
+}
+
 export interface SchemaSpecResponse {
   spec: SchemaSpec
+  editor?: SchemaEditSpec
 }
 
 export interface ObjectsResponse {

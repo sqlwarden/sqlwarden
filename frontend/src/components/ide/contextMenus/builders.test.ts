@@ -110,24 +110,64 @@ describe('buildConnectionMenu', () => {
 })
 
 describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
-  it('scope copy + refresh are live', () => {
-    const items = buildNamespaceMenu({ onCopyName: noop, onRefresh: noop })
+  it('scope copy + refresh are live; create/drop disabled without callbacks', () => {
+    const items = buildNamespaceMenu({
+      onCopyName: noop,
+      onRefresh: noop,
+      dropLabel: 'Drop schema',
+    })
     expect(action(items, 'copy-schema-name')?.soon).toBeFalsy()
     expect(action(items, 'refresh')?.soon).toBeFalsy()
-    expect(action(items, 'drop-schema')?.soon).toBe(true)
+    expect(action(items, 'create-table')?.disabled).toBe(true)
+    expect(action(items, 'drop-schema')?.disabled).toBe(true)
+    expect(action(items, 'drop-schema')?.label).toBe('Drop schema')
     expect(action(items, 'view-schema-diagram')).toBeUndefined()
   })
   it('scope shows View schema diagram when the callback is provided', () => {
-    const items = buildNamespaceMenu({ onCopyName: noop, onRefresh: noop, onViewDiagram: noop })
+    const items = buildNamespaceMenu({
+      onCopyName: noop,
+      onRefresh: noop,
+      onViewDiagram: noop,
+      dropLabel: 'Drop schema',
+    })
     expect(action(items, 'view-schema-diagram')?.label).toBe('View schema diagram')
     expect(action(items, 'view-schema-diagram')?.soon).toBeFalsy()
   })
-  it('object-group uses the provided new-label and keeps it soon', () => {
-    const items = buildObjectGroupMenu({ newLabel: 'New Table…', onRefresh: noop })
-    expect(action(items, 'new-object')?.label).toBe('New Table…')
-    expect(action(items, 'new-object')?.soon).toBe(true)
-    expect(action(items, 'refresh')?.soon).toBeFalsy()
-    expect(action(items, 'view-diagram')).toBeUndefined()
+  it('scope enables create-table/drop-schema when callbacks are provided', () => {
+    const items = buildNamespaceMenu({
+      onCopyName: noop,
+      onRefresh: noop,
+      dropLabel: 'Drop schema',
+      onCreateTable: noop,
+      onDropScope: noop,
+    })
+    expect(action(items, 'create-table')?.disabled).toBeFalsy()
+    expect(action(items, 'drop-schema')?.disabled).toBeFalsy()
+    expect(action(items, 'drop-schema')?.destructive).toBe(true)
+  })
+  it('scope surfaces disabled reasons for create-table/drop-schema', () => {
+    const items = buildNamespaceMenu({
+      onCopyName: noop,
+      onRefresh: noop,
+      dropLabel: 'Drop schema',
+      createTableDisabledReason: 'This driver does not support this change.',
+      dropScopeDisabledReason: 'Connect to the database to make this change.',
+    })
+    expect(action(items, 'create-table')?.disabledReason).toBe(
+      'This driver does not support this change.',
+    )
+    expect(action(items, 'drop-schema')?.disabledReason).toBe(
+      'Connect to the database to make this change.',
+    )
+  })
+  it('object-group omits new-object entirely without create-table support (non-table kinds)', () => {
+    for (const newLabel of ['New View…', 'New Function…', 'New Sequence…', 'New Trigger…']) {
+      const items = buildObjectGroupMenu({ newLabel, onRefresh: noop })
+      expect(action(items, 'new-object')).toBeUndefined()
+      expect(items.some((i) => i.kind === 'action' && i.soon)).toBe(false)
+      expect(action(items, 'refresh')?.soon).toBeFalsy()
+      expect(action(items, 'view-diagram')).toBeUndefined()
+    }
   })
   it('object-group shows View diagram when the callback is provided', () => {
     const items = buildObjectGroupMenu({
@@ -137,6 +177,27 @@ describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
     })
     expect(action(items, 'view-diagram')?.label).toBe('View diagram')
     expect(action(items, 'view-diagram')?.soon).toBeFalsy()
+  })
+  it('object-group enables new-object when onCreateTable is provided', () => {
+    const items = buildObjectGroupMenu({
+      newLabel: 'New Table…',
+      onRefresh: noop,
+      onCreateTable: noop,
+    })
+    expect(action(items, 'new-object')?.soon).toBeFalsy()
+    expect(action(items, 'new-object')?.disabled).toBeFalsy()
+  })
+  it('object-group shows a disabled reason instead of soon when create-table is gated', () => {
+    const items = buildObjectGroupMenu({
+      newLabel: 'New Table…',
+      onRefresh: noop,
+      createTableDisabledReason: 'You do not have permission to change this schema.',
+    })
+    expect(action(items, 'new-object')?.soon).toBeFalsy()
+    expect(action(items, 'new-object')?.disabled).toBe(true)
+    expect(action(items, 'new-object')?.disabledReason).toBe(
+      'You do not have permission to change this schema.',
+    )
   })
 })
 
@@ -153,29 +214,60 @@ describe('buildObjectMenu', () => {
     expect(action(items, 'view-diagram')?.label).toBe('View diagram')
     expect(action(items, 'view-diagram')?.soon).toBeFalsy()
   })
-  it('table omits the view-only action', () => {
+  it('table omits the view-only action; drop disabled without a callback', () => {
     const items = buildObjectMenu({ ...base, isView: false })
     expect(action(items, 'copy-qualified-name')?.soon).toBeFalsy()
     expect(action(items, 'edit-view-definition')).toBeUndefined()
-    expect(action(items, 'drop')?.soon).toBe(true)
+    expect(action(items, 'drop')?.disabled).toBe(true)
   })
   it('view includes edit-view-definition', () => {
     const items = buildObjectMenu({ ...base, isView: true })
     expect(action(items, 'edit-view-definition')?.soon).toBe(true)
   })
+  it('drop is enabled and destructive when a callback is provided', () => {
+    const items = buildObjectMenu({ ...base, isView: false, onDrop: noop })
+    expect(action(items, 'drop')?.disabled).toBeFalsy()
+    expect(action(items, 'drop')?.destructive).toBe(true)
+  })
+  it('surfaces a disabled reason when drop is gated', () => {
+    const items = buildObjectMenu({
+      ...base,
+      isView: false,
+      dropDisabledReason: 'This driver does not support this change.',
+    })
+    expect(action(items, 'drop')?.disabledReason).toBe('This driver does not support this change.')
+  })
 })
 
 describe('buildColumnMenu / buildIndexMenu', () => {
-  it('column copy actions are live, mutations are soon', () => {
+  it('column copy actions are live, rename/drop disabled without callbacks', () => {
     const items = buildColumnMenu({ onCopyName: noop, onCopyQualifiedName: noop, onCopyType: noop })
     expect(action(items, 'copy-column-name')?.soon).toBeFalsy()
     expect(action(items, 'copy-qualified-name')?.soon).toBeFalsy()
     expect(action(items, 'copy-type')?.soon).toBeFalsy()
-    expect(action(items, 'drop-column')?.soon).toBe(true)
+    expect(action(items, 'rename')?.disabled).toBe(true)
+    expect(action(items, 'drop-column')?.disabled).toBe(true)
   })
-  it('index copy is live, drop is soon', () => {
+  it('column rename/drop enabled when callbacks are provided', () => {
+    const items = buildColumnMenu({
+      onCopyName: noop,
+      onCopyQualifiedName: noop,
+      onCopyType: noop,
+      onRename: noop,
+      onDrop: noop,
+    })
+    expect(action(items, 'rename')?.disabled).toBeFalsy()
+    expect(action(items, 'drop-column')?.disabled).toBeFalsy()
+    expect(action(items, 'drop-column')?.destructive).toBe(true)
+  })
+  it('index copy is live, drop disabled without a callback', () => {
     const items = buildIndexMenu({ onCopyName: noop })
     expect(action(items, 'copy-index-name')?.soon).toBeFalsy()
-    expect(action(items, 'drop-index')?.soon).toBe(true)
+    expect(action(items, 'drop-index')?.disabled).toBe(true)
+  })
+  it('index drop enabled when a callback is provided', () => {
+    const items = buildIndexMenu({ onCopyName: noop, onDrop: noop })
+    expect(action(items, 'drop-index')?.disabled).toBeFalsy()
+    expect(action(items, 'drop-index')?.destructive).toBe(true)
   })
 })

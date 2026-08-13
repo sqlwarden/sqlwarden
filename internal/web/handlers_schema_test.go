@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/ddl"
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -89,6 +91,28 @@ func (schemaRelDriver) InspectRelationshipsInScope(_ context.Context, scope meta
 			ReferencedColumns: []string{"id"},
 		}},
 	}, nil
+}
+
+type ddlFakeDriver struct {
+	schemaFakeDriver
+	mu      sync.Mutex
+	applied []ddl.Request
+}
+
+func (*ddlFakeDriver) DDLSpec() ddl.Spec {
+	return ddl.Spec{
+		Operations:               []ddl.Operation{ddl.OperationCreateTable, ddl.OperationDropObject},
+		ColumnTypes:              []string{"integer", "text"},
+		CreatableTableScopeKinds: []string{"database"},
+		DroppableObjectKinds:     []string{"table", "view"},
+	}
+}
+
+func (d *ddlFakeDriver) ApplyDDL(_ context.Context, request ddl.Request) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.applied = append(d.applied, request)
+	return nil
 }
 
 func TestGetConnectionSchemaRelationships(t *testing.T) {
@@ -202,6 +226,59 @@ func TestGetConnectionSchemaSpec(t *testing.T) {
 	table := kinds[0].(map[string]any)
 	assert.Equal(t, table["kind"], "table")
 	assert.Equal(t, table["listing"], "enumerated")
+	if _, ok := res.BodyFields["editor"].(map[string]any); !ok {
+		t.Fatalf("expected schema editor spec, got %v", res.BodyFields["editor"])
+	}
+}
+
+func TestApplyConnectionDDL(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-edit"), "Schema Edit", "Schema Edit Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	driver := &ddlFakeDriver{}
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, driver)
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+
+	req := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/mutations",
+		map[string]any{"operation": "create_table", "scope": scope, "name": "events", "columns": []map[string]any{{"name": "id", "data_type": "integer", "primary_key": true}}}, tok)
+	req.Header.Set("X-Warden-Session", sess.ID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["applied"], true)
+	schemaStatus := res.BodyFields["schema"].(map[string]any)
+	assert.Equal(t, schemaStatus["mode"], "ephemeral")
+
+	driver.mu.Lock()
+	defer driver.mu.Unlock()
+	if len(driver.applied) != 1 || driver.applied[0].Name != "events" {
+		t.Fatalf("applied edits = %+v", driver.applied)
+	}
+}
+
+func TestApplyConnectionDDLRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-edit-invalid"), "Schema Edit", "Schema Edit Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	driver := &ddlFakeDriver{}
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, driver)
+
+	req := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/mutations",
+		map[string]any{"operation": "create_table", "scope": metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"}), "name": "events", "columns": []map[string]any{{"name": "id", "data_type": "text); DROP TABLE users"}}}, tok)
+	req.Header.Set("X-Warden-Session", sess.ID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assert.Equal(t, res.BodyFields["error"].(map[string]any)["code"], "invalid_schema_edit")
+	if len(driver.applied) != 0 {
+		t.Fatalf("invalid edit reached driver: %+v", driver.applied)
+	}
 }
 
 func TestPostConnectionObjects(t *testing.T) {

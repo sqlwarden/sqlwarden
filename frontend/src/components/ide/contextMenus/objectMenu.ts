@@ -7,6 +7,8 @@ export type ObjectMenuCtx = {
   onCopyName: () => void
   onCopyQualifiedName: () => void
   onCopyColumnList: () => void
+  onDrop?: () => void
+  dropDisabledReason?: string
 }
 
 export function buildObjectMenu(ctx: ObjectMenuCtx): ContextMenuItem[] {
@@ -46,7 +48,16 @@ export function buildObjectMenu(ctx: ObjectMenuCtx): ContextMenuItem[] {
       onSelect: ctx.onCopyColumnList,
     },
     { kind: 'separator' },
-    { kind: 'action', id: 'drop', label: 'Drop', icon: 'delete-01', soon: true },
+    {
+      kind: 'action',
+      id: 'drop',
+      label: 'Drop',
+      icon: 'delete-01',
+      destructive: true,
+      disabled: !ctx.onDrop,
+      disabledReason: ctx.dropDisabledReason,
+      onSelect: ctx.onDrop,
+    },
   ]
   if (ctx.isView) {
     items.push({

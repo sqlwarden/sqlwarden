@@ -11,6 +11,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/cursor"
+	"github.com/sqlwarden/internal/engine/ddl"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -87,6 +88,19 @@ func (s *Session) ExecuteWithOptions(ctx context.Context, sql string, opts curso
 		return driver.ExecuteWithOptions(ctx, sql, opts, args...)
 	}
 	return s.Conn.Execute(ctx, sql, args...)
+}
+
+// ApplyDDL applies a structured DDL operation while holding the same
+// session lock used by queries and executions.
+func (s *Session) ApplyDDL(ctx context.Context, request ddl.Request) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastUsed = time.Now()
+	executor, ok := s.Conn.(ddl.Executor)
+	if !ok {
+		return ddl.ErrUnsupported
+	}
+	return executor.ApplyDDL(ctx, request)
 }
 
 func (s *Session) StartQueryCursor(ctx context.Context, sql string, args ...any) (*QueryCursorHandle, error) {

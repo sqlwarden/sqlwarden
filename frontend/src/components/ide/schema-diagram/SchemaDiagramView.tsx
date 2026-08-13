@@ -48,6 +48,7 @@ import {
   planScopeSeed,
   reachableRefs,
   refKey,
+  relationalSignature,
   relationshipHandleId,
 } from './diagramModel'
 import { FkEdge } from './edges/FkEdge'
@@ -464,7 +465,7 @@ function DiagramCanvas({
   const detailSig = present
     .map((r) => {
       const e = detailByKey.get(refKey(r))
-      return `${refKey(r)}:${e?.detail ? 1 : 0}:${e?.loading ? 1 : 0}`
+      return `${refKey(r)}:${e?.loading ? 1 : 0}:${relationalSignature(e?.detail)}`
     })
     .join('|')
 

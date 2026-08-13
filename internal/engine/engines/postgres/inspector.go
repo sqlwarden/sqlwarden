@@ -391,6 +391,8 @@ JOIN pg_class t ON t.oid = ix.indrelid
 JOIN pg_namespace ns ON ns.oid = t.relnamespace
 CROSS JOIN LATERAL generate_series(1, ix.indnkeyatts) AS g(n)
 WHERE (ns.nspname, t.relname) IN (` + pairs + `)
+  AND NOT ix.indisprimary
+  AND NOT EXISTS (SELECT 1 FROM pg_constraint con WHERE con.conindid = ix.indexrelid)
 ORDER BY ns.nspname, t.relname, i.relname, g.n`
 	irows, err := d.db.QueryContext(ctx, idxQ, args...)
 	if err != nil {

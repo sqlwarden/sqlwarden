@@ -4,6 +4,10 @@ export type ColumnMenuCtx = {
   onCopyName: () => void
   onCopyQualifiedName: () => void
   onCopyType: () => void
+  onRename?: () => void
+  renameDisabledReason?: string
+  onDrop?: () => void
+  dropDisabledReason?: string
 }
 
 export function buildColumnMenu(ctx: ColumnMenuCtx): ContextMenuItem[] {
@@ -30,13 +34,32 @@ export function buildColumnMenu(ctx: ColumnMenuCtx): ContextMenuItem[] {
       onSelect: ctx.onCopyType,
     },
     { kind: 'separator' },
-    { kind: 'action', id: 'rename', label: 'Rename', icon: 'pencil-edit-02', soon: true },
-    { kind: 'action', id: 'drop-column', label: 'Drop column', icon: 'delete-01', soon: true },
+    {
+      kind: 'action',
+      id: 'rename',
+      label: 'Rename',
+      icon: 'pencil-edit-02',
+      disabled: !ctx.onRename,
+      disabledReason: ctx.renameDisabledReason,
+      onSelect: ctx.onRename,
+    },
+    {
+      kind: 'action',
+      id: 'drop-column',
+      label: 'Drop column',
+      icon: 'delete-01',
+      destructive: true,
+      disabled: !ctx.onDrop,
+      disabledReason: ctx.dropDisabledReason,
+      onSelect: ctx.onDrop,
+    },
   ]
 }
 
 export type IndexMenuCtx = {
   onCopyName: () => void
+  onDrop?: () => void
+  dropDisabledReason?: string
 }
 
 export function buildIndexMenu(ctx: IndexMenuCtx): ContextMenuItem[] {
@@ -49,6 +72,15 @@ export function buildIndexMenu(ctx: IndexMenuCtx): ContextMenuItem[] {
       onSelect: ctx.onCopyName,
     },
     { kind: 'separator' },
-    { kind: 'action', id: 'drop-index', label: 'Drop index', icon: 'delete-01', soon: true },
+    {
+      kind: 'action',
+      id: 'drop-index',
+      label: 'Drop index',
+      icon: 'delete-01',
+      destructive: true,
+      disabled: !ctx.onDrop,
+      disabledReason: ctx.dropDisabledReason,
+      onSelect: ctx.onDrop,
+    },
   ]
 }
