@@ -53,8 +53,12 @@ type Spec struct {
 	SupportsCascade          bool        `json:"supports_cascade"`
 }
 
+// Executor advertises and applies a bounded set of structured DDL operations.
+// Implementations must validate requests and safely quote every identifier.
 type Executor interface {
+	// DDLSpec reports the operations and input vocabulary accepted by ApplyDDL.
 	DDLSpec() Spec
+	// ApplyDDL validates and executes one structured DDL request.
 	ApplyDDL(context.Context, Request) error
 }
 

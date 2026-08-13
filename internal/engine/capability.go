@@ -18,14 +18,29 @@ type Capability string
 // The capability keys an engine may report. Each corresponds to an optional
 // interface the engine type implements (see CapabilitySet and capabilitiesOf).
 const (
+	// CapabilitySchemaDirectory provides a cheap hierarchy and object-name
+	// listing through metadata.SchemaInspector.InspectDirectory.
 	CapabilitySchemaDirectory Capability = "schema.directory"
-	CapabilitySchemaObjects   Capability = "schema.objects"
-	CapabilityDDL             Capability = "schema.edit"
-	CapabilityQueryCursor     Capability = "query.cursor"
-	CapabilitySQLParse        Capability = "sql.parse"
-	CapabilitySQLClassify     Capability = "sql.classify"
-	CapabilitySQLRewrite      Capability = "sql.rewrite"
-	CapabilitySQLComplete     Capability = "sql.complete"
+	// CapabilitySchemaObjects provides on-demand columns, keys, indexes, and
+	// descriptors through metadata.SchemaInspector.InspectObjects.
+	CapabilitySchemaObjects Capability = "schema.objects"
+	// CapabilityDDL applies the bounded structured schema operations advertised
+	// by ddl.Executor.DDLSpec. It does not accept arbitrary SQL.
+	CapabilityDDL Capability = "schema.edit"
+	// CapabilityQueryCursor streams query results in bounded forward-only pages.
+	CapabilityQueryCursor Capability = "query.cursor"
+	// CapabilitySQLParse strictly parses complete SQL and reports statement
+	// boundaries plus an engine-private syntax tree.
+	CapabilitySQLParse Capability = "sql.parse"
+	// CapabilitySQLClassify assigns the conservative DQL, DML, or DDL class used
+	// by runtime authorization. Unknown input receives the strictest treatment.
+	CapabilitySQLClassify Capability = "sql.classify"
+	// CapabilitySQLRewrite performs only a named, explicitly supported SQL
+	// transformation and refuses input it cannot prove safe.
+	CapabilitySQLRewrite Capability = "sql.rewrite"
+	// CapabilitySQLComplete returns cursor-aware lexical and metadata-backed
+	// suggestions for incomplete editor SQL.
+	CapabilitySQLComplete Capability = "sql.complete"
 	// CapabilitySQLGenerate produces dialect-specific statement templates from
 	// inspected metadata without executing them.
 	CapabilitySQLGenerate Capability = "sql.generate"
@@ -34,11 +49,14 @@ const (
 // CapabilitySet is an engine's static capability report. Safe to compute and
 // serialize without opening a target connection.
 type CapabilitySet struct {
-	Engine       EngineDescriptor     `json:"engine"`
-	Capabilities map[Capability]bool  `json:"capabilities"`
-	Schema       *metadata.SchemaSpec `json:"schema,omitempty"`
-	DDL          *ddl.Spec            `json:"schema_edit,omitempty"`
-	Statements   *statement.Spec      `json:"statements,omitempty"`
+	Engine       EngineDescriptor    `json:"engine"`
+	Capabilities map[Capability]bool `json:"capabilities"`
+	// Schema accompanies schema.directory/schema.objects.
+	Schema *metadata.SchemaSpec `json:"schema,omitempty"`
+	// DDL accompanies schema.edit.
+	DDL *ddl.Spec `json:"schema_edit,omitempty"`
+	// Statements accompanies sql.generate.
+	Statements *statement.Spec `json:"statements,omitempty"`
 }
 
 // capabilitiesOf derives an engine's capabilities by type-asserting a fresh,
