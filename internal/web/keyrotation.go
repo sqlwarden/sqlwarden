@@ -62,8 +62,6 @@ func (app *application) RotateEncryptionKeys(ctx context.Context) (EncryptionRot
 		slog.Int("connections_rotated", report.ConnectionsRotated),
 		slog.Int("file_contents_scanned", report.FileContentsScanned),
 		slog.Int("file_contents_rotated", report.FileContentsRotated),
-		slog.Int("smtp_passwords_scanned", report.SMTPPasswordsScanned),
-		slog.Int("smtp_passwords_rotated", report.SMTPPasswordsRotated),
 	)
 	return report, nil
 }

@@ -93,8 +93,6 @@ func runRotateKeys(args []string) error {
 		"connections_rotated", report.ConnectionsRotated,
 		"file_contents_scanned", report.FileContentsScanned,
 		"file_contents_rotated", report.FileContentsRotated,
-		"smtp_passwords_scanned", report.SMTPPasswordsScanned,
-		"smtp_passwords_rotated", report.SMTPPasswordsRotated,
 	)
 	return nil
 }

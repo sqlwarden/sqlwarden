@@ -338,7 +338,9 @@ describe('SQL completion', () => {
     'keeps contextual %s completion ahead of vocabulary noise in %j',
     async (markedSQL, contextualLabel, contextualKind) => {
       const cursor = markedSQL.indexOf('|')
-      const sql = markedSQL.replace('|', '')
+      expect(cursor).toBeGreaterThanOrEqual(0)
+      expect(markedSQL.indexOf('|', cursor + 1)).toBe(-1)
+      const sql = markedSQL.slice(0, cursor) + markedSQL.slice(cursor + 1)
       const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
         String(input).includes('completion-vocabulary')
           ? vocabularyResponse()
