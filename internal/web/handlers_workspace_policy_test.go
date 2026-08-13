@@ -374,8 +374,7 @@ func TestCreateWorkspaceRoleByOrgAdmin(t *testing.T) {
 	adminAccount, adminTok := seedAccountWithToken(t, app, "wsr-admin@example.com", "Admin")
 	adminID := fmt.Sprintf("%d", adminAccount.ID)
 
-	send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
-		map[string]any{"email": "wsr-admin@example.com"}, ownerTok), app.routes())
+	addOrgMemberDirect(t, app, slug, "wsr-admin@example.com")
 
 	send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+adminID,
 		map[string]any{"role": access.BuiltinOrgAdminRole}, ownerTok), app.routes())
@@ -472,6 +471,105 @@ func TestGetWorkspaceRoleNotFound(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/9999", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+// ── Update workspace role ─────────────────────────────────────────────────────
+
+func TestUpdateWorkspaceRole(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-update@example.com", "WSR Update")
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{"name": "viewer", "permissions": []string{"ws:read"}}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	roleID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+roleID,
+		map[string]any{
+			"name":        "viewer-plus",
+			"description": "Read-only plus connections",
+			"permissions": []string{"ws:read", "conn:read"},
+		}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusOK)
+	assert.Equal(t, updateRes.BodyFields["name"].(string), "viewer-plus")
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+roleID, nil, tok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	assert.Equal(t, getRes.BodyFields["name"].(string), "viewer-plus")
+	perms := getRes.BodyFields["permissions"].([]any)
+	assert.Equal(t, len(perms), 2)
+}
+
+func TestUpdateWorkspaceRoleCrossWorkspaceIsolation(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-update-iso@example.com", "WSR Update Iso")
+
+	ws2Res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Second WS"}, tok), app.routes())
+	assert.Equal(t, ws2Res.StatusCode, http.StatusCreated)
+	ws2ID := fmt.Sprintf("%v", ws2Res.BodyFields["id"])
+
+	roleRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+ws2ID+"/roles",
+		map[string]any{"name": "ws2-role", "permissions": []string{"ws:read"}}, tok), app.routes())
+	assert.Equal(t, roleRes.StatusCode, http.StatusCreated)
+	ws2RoleID := fmt.Sprintf("%v", roleRes.BodyFields["id"])
+
+	res := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+ws2RoleID,
+		map[string]any{"name": "hijacked", "permissions": []string{"ws:read"}}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestUpdateBuiltinWorkspaceRoleForbidden(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	slug, wsID, tok := wsSetup(t, app, "wsr-update-builtin@example.com", "WSR Update Builtin")
+
+	rolesRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles", nil, tok), app.routes())
+	var rolePayload struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(rolesRes.BodyBytes, &rolePayload); err != nil {
+		t.Fatal(err)
+	}
+	var builtinID string
+	for _, r := range rolePayload.Items {
+		if r["name"].(string) == access.BuiltinWorkspaceAdminRole {
+			builtinID = fmt.Sprintf("%v", r["id"])
+			break
+		}
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+builtinID,
+		map[string]any{"name": "renamed"}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+}
+
+func TestUpdateWorkspaceRoleByWsMemberForbidden(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	slug, wsID, ownerTok := wsSetup(t, app, "wsr-update-mforbid@example.com", "WSR Update MForbid")
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles",
+		map[string]any{"name": "viewer", "permissions": []string{"ws:read"}}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	roleID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	memberTok := wsJoinAs(t, app, slug, wsID, access.BuiltinWorkspaceMemberRole, "wsr-update-mforbid-m@example.com", ownerTok)
+
+	res := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/workspaces/"+wsID+"/roles/"+roleID,
+		map[string]any{"name": "sneaky", "permissions": []string{"ws:read"}}, memberTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
 }
 
 // ── Delete workspace role ─────────────────────────────────────────────────────

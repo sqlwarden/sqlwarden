@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useWorkspacePageTitle } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -68,6 +69,7 @@ type EnvironmentFieldErrors = {
 }
 
 function WorkspaceEnvironmentsPage() {
+  useWorkspacePageTitle('Environments')
   const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
@@ -232,7 +234,7 @@ function WorkspaceEnvironmentsPage() {
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">Environments</h1>
+            <h1 className="font-heading text-2xl font-semibold tracking-tight">Environments</h1>
             <p className="text-sm text-muted-foreground">
               {!environments.isLoading && total > 0
                 ? `${total} environment${total !== 1 ? 's' : ''} in this workspace`

@@ -15,11 +15,39 @@ import (
 
 var errTestServerFailure = errors.New("test server failure")
 
+func TestLoggerLevelChangesAtRuntime(t *testing.T) {
+	var buf bytes.Buffer
+	logger, err := NewLogger(DefaultConfig(), &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logger.Debug("hidden")
+	if buf.Len() != 0 {
+		t.Fatalf("debug log emitted at info level: %s", buf.String())
+	}
+	if err := setLoggerLevel(logger, LogLevelDebug); err != nil {
+		t.Fatal(err)
+	}
+	logger.Debug("visible")
+	if !strings.Contains(buf.String(), "visible") {
+		t.Fatalf("debug log missing after live level change: %s", buf.String())
+	}
+	if err := setLoggerLevel(logger, LogLevelError); err != nil {
+		t.Fatal(err)
+	}
+	before := buf.Len()
+	logger.Info("hidden again")
+	if buf.Len() != before {
+		t.Fatalf("info log emitted at error level: %s", buf.String())
+	}
+}
+
 func TestRequestLoggingContextGeneratesRequestIDAndSafeAccessLog(t *testing.T) {
 	var buf bytes.Buffer
 	app := &application{
 		logger: slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	}
+	app.accessLogsEnabled.Store(true)
 
 	router := chi.NewRouter()
 	router.Use(app.requestLoggingContext)
@@ -65,6 +93,37 @@ func TestRequestLoggingContextGeneratesRequestIDAndSafeAccessLog(t *testing.T) {
 	}
 	if _, ok := request["url"]; ok {
 		t.Fatalf("request.url should not be logged: %#v", request)
+	}
+}
+
+func TestAccessLogsCanBeToggledLive(t *testing.T) {
+	var buf bytes.Buffer
+	app := &application{
+		logger: slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})),
+	}
+	router := chi.NewRouter()
+	router.Use(app.requestLoggingContext)
+	router.Use(app.logAccess)
+	router.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/health", nil))
+	if buf.Len() != 0 {
+		t.Fatalf("access log emitted while disabled by default: %s", buf.String())
+	}
+
+	app.accessLogsEnabled.Store(true)
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/health", nil))
+	if !strings.Contains(buf.String(), "http request") {
+		t.Fatalf("access log missing after live enable: %s", buf.String())
+	}
+
+	app.accessLogsEnabled.Store(false)
+	buf.Reset()
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/health", nil))
+	if buf.Len() != 0 {
+		t.Fatalf("access log emitted after live disable: %s", buf.String())
 	}
 }
 
@@ -158,5 +217,22 @@ func TestReportServerErrorLogsRequestIDAndSafeRequestPath(t *testing.T) {
 	}
 	if entry["trace"] == "" {
 		t.Fatal("expected trace in server error log")
+	}
+}
+
+func TestRequestPathRedactsInvitationTokens(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		path string
+		want string
+	}{
+		{"/api/v1/invitations/super-secret", "/api/v1/invitations/[redacted]"},
+		{"/api/v1/invitations/super-secret/accept", "/api/v1/invitations/[redacted]/accept"},
+		{"/api/v1/orgs/acme/invitations", "/api/v1/orgs/acme/invitations"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+		if got := requestPath(req); got != tt.want {
+			t.Errorf("requestPath(%q) = %q, want %q", tt.path, got, tt.want)
+		}
 	}
 }

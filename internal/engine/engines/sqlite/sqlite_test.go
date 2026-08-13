@@ -1,0 +1,411 @@
+package sqlite
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/cursor"
+	"github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/pkg/result"
+)
+
+func TestSQLiteDriver(t *testing.T) {
+	d := &sqliteDriver{}
+	ctx := context.Background()
+
+	if err := d.Connect(ctx, engine.ConnectionConfig{DSN: "file:introspect_schema?mode=memory&cache=shared", Driver: "sqlite"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer d.Close()
+
+	if err := d.Ping(ctx); err != nil {
+		t.Fatalf("Ping: %v", err)
+	}
+
+	// Create a test table.
+	_, err := d.Execute(ctx, `CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER)`)
+	if err != nil {
+		t.Fatalf("Create table: %v", err)
+	}
+
+	// Insert rows.
+	_, err = d.Execute(ctx, `INSERT INTO users (id, name, age) VALUES (1, 'Alice', 30), (2, 'Bob', 25)`)
+	if err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+
+	// Query rows.
+	rs, err := d.Query(ctx, `SELECT id, name, age FROM users ORDER BY id`)
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(rs.Columns) != 3 {
+		t.Errorf("expected 3 columns, got %d", len(rs.Columns))
+	}
+	if len(rs.Rows) != 2 {
+		t.Errorf("expected 2 rows, got %d", len(rs.Rows))
+	}
+
+	// Test Dialect.
+	if d.Dialect() != engine.DialectSQLite {
+		t.Errorf("expected dialect sqlite, got %s", d.Dialect())
+	}
+}
+
+func TestInspectDirectoryAndObjects(t *testing.T) {
+	d := &sqliteDriver{}
+	ctx := context.Background()
+
+	if err := d.Connect(ctx, engine.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer d.Close()
+
+	if _, err := d.Execute(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		t.Fatalf("foreign_keys pragma: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE TABLE introspect_parent (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`); err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+	if _, err := d.Execute(ctx, `
+		CREATE TABLE introspect_child (
+			id INTEGER PRIMARY KEY,
+			parent_id INTEGER NOT NULL REFERENCES introspect_parent(id),
+			label TEXT
+		)
+	`); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE INDEX idx_child_label ON introspect_child(label)`); err != nil {
+		t.Fatalf("create index: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE VIEW introspect_child_view AS SELECT id, label FROM introspect_child`); err != nil {
+		t.Fatalf("create view: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE TRIGGER introspect_child_ai AFTER INSERT ON introspect_child BEGIN UPDATE introspect_child SET label = COALESCE(label, 'untitled') WHERE id = NEW.id; END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	spec := d.SchemaSpec()
+	if spec.Dialect != "sqlite" || len(spec.Kinds) != 3 {
+		t.Fatalf("unexpected schema spec: %+v", spec)
+	}
+
+	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
+	if err != nil {
+		t.Fatalf("InspectDirectory: %v", err)
+	}
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "table", Name: "introspect_child"}) {
+		t.Fatalf("directory missing child table: %+v", directory.Roots)
+	}
+	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "view", Name: "introspect_child_view"}) {
+		t.Fatalf("directory missing child view: %+v", directory.Roots)
+	}
+	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "trigger", Name: "introspect_child_ai"}) {
+		t.Fatalf("directory missing child trigger: %+v", directory.Roots)
+	}
+
+	objects, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: scope, Kind: "table", Name: "introspect_child"}})
+	if err != nil {
+		t.Fatalf("InspectObjects: %v", err)
+	}
+	if len(objects) != 1 {
+		t.Fatalf("expected one object, got %d: %+v", len(objects), objects)
+	}
+	child := objects[0]
+	if child.Relational == nil {
+		t.Fatalf("expected relational detail: %+v", child)
+	}
+	if !slices.Contains(child.Relational.PrimaryKey, "id") {
+		t.Fatalf("expected primary key id, got %+v", child.Relational.PrimaryKey)
+	}
+	if len(child.Relational.ForeignKeys) != 1 || child.Relational.ForeignKeys[0].References.Name != "introspect_parent" {
+		t.Fatalf("expected parent foreign key, got %+v", child.Relational.ForeignKeys)
+	}
+	if !hasIndex(child.Relational.Indexes, "idx_child_label", "label") {
+		t.Fatalf("expected idx_child_label index, got %+v", child.Relational.Indexes)
+	}
+
+	objects, err = d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: scope, Kind: "trigger", Name: "introspect_child_ai"}})
+	if err != nil {
+		t.Fatalf("InspectObjects trigger: %v", err)
+	}
+	if len(objects) != 1 {
+		t.Fatalf("expected one trigger, got %d: %+v", len(objects), objects)
+	}
+	if objects[0].Relational != nil || len(objects[0].Descriptors) == 0 {
+		t.Fatalf("expected trigger descriptors, got %+v", objects[0])
+	}
+}
+
+func TestSQLiteStartQueryCursor(t *testing.T) {
+	d := &sqliteDriver{}
+	ctx := context.Background()
+
+	if err := d.Connect(ctx, engine.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer d.Close()
+
+	if _, err := d.Execute(ctx, `CREATE TABLE cursor_users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`); err != nil {
+		t.Fatalf("create cursor_users: %v", err)
+	}
+	if _, err := d.Execute(ctx, `INSERT INTO cursor_users (id, name) VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Cara')`); err != nil {
+		t.Fatalf("insert cursor_users: %v", err)
+	}
+
+	cur, err := d.StartQuery(ctx, cursor.QueryRequest{SQL: `SELECT id, name FROM cursor_users ORDER BY id`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cur.Close()
+
+	first, state, err := cur.Fetch(ctx, cursor.ScanOptions{MaxRows: 2, MaxBytes: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Exhausted || first.RowsReturned != 2 {
+		t.Fatalf("first fetch state=%+v result=%+v, want 2 non-exhausted rows", state, first)
+	}
+
+	second, state, err := cur.Fetch(ctx, cursor.ScanOptions{MaxRows: 2, MaxBytes: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.Exhausted || second.RowsReturned != 1 {
+		t.Fatalf("second fetch state=%+v result=%+v, want 1 exhausted row", state, second)
+	}
+}
+
+func TestSQLiteQueryCursorCancelledFetchCanBeRetried(t *testing.T) {
+	d := &sqliteDriver{}
+	ctx := context.Background()
+
+	if err := d.Connect(ctx, engine.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer d.Close()
+
+	if _, err := d.Execute(ctx, `CREATE TABLE cursor_retry_users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`); err != nil {
+		t.Fatalf("create cursor_retry_users: %v", err)
+	}
+	if _, err := d.Execute(ctx, `INSERT INTO cursor_retry_users (id, name) VALUES (1, 'Alice'), (2, 'Bob')`); err != nil {
+		t.Fatalf("insert cursor_retry_users: %v", err)
+	}
+
+	cur, err := d.StartQuery(ctx, cursor.QueryRequest{SQL: `SELECT id, name FROM cursor_retry_users ORDER BY id`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cur.Close()
+
+	cancelledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, _, err := cur.Fetch(cancelledCtx, cursor.ScanOptions{MaxRows: 1, MaxBytes: 1024}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled fetch err = %v, want context.Canceled", err)
+	}
+
+	first, state, err := cur.Fetch(ctx, cursor.ScanOptions{MaxRows: 1, MaxBytes: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Exhausted || first.RowsReturned != 1 {
+		t.Fatalf("retry fetch state=%+v result=%+v, want 1 non-exhausted row", state, first)
+	}
+}
+
+func TestToValue(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+
+	tests := []struct {
+		name  string
+		input any
+		check func(t *testing.T, got result.Value)
+	}{
+		{
+			name:  "nil",
+			input: nil,
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeNull {
+					t.Fatalf("expected null type, got %v", got.Type)
+				}
+			},
+		},
+		{
+			name:  "int64",
+			input: int64(42),
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeInteger || got.Integer != 42 {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+		{
+			name:  "float64",
+			input: 3.14,
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeFloat || got.Float != 3.14 {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+		{
+			name:  "bool",
+			input: true,
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeBool || !got.Bool {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+		{
+			name:  "time",
+			input: now,
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeTime || got.Time == nil || !got.Time.Equal(now) {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+		{
+			name:  "bytes text",
+			input: []byte("hello"),
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeText || got.Text != "hello" {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+		{
+			name:  "bytes binary",
+			input: []byte{0xff, 0xfe},
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeBytes || len(got.Bytes) != 2 {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+		{
+			name:  "fallback string",
+			input: struct{ N int }{N: 7},
+			check: func(t *testing.T, got result.Value) {
+				if got.Type != result.ValueTypeText || got.Text == "" {
+					t.Fatalf("unexpected value: %+v", got)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.check(t, cursor.NormalizeValue(tc.input))
+		})
+	}
+}
+
+func TestSQLiteObjectDefinitions(t *testing.T) {
+	d := &sqliteDriver{}
+	ctx := context.Background()
+
+	if err := d.Connect(ctx, engine.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer d.Close()
+
+	if _, err := d.Execute(ctx, `CREATE TABLE defs_t (id INTEGER PRIMARY KEY, n TEXT)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE VIEW defs_v AS SELECT id FROM defs_t`); err != nil {
+		t.Fatalf("create view: %v", err)
+	}
+
+	tbl, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"}), Kind: "table", Name: "defs_t"}})
+	if err != nil {
+		t.Fatalf("InspectObjects table: %v", err)
+	}
+	ddl := descriptorByTitle(tbl[0].Descriptors, "DDL")
+	if ddl == nil || !strings.Contains(ddl.Body, "CREATE TABLE") {
+		t.Fatalf("table DDL descriptor missing/blank: %+v", tbl[0].Descriptors)
+	}
+
+	view, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"}), Kind: "view", Name: "defs_v"}})
+	if err != nil {
+		t.Fatalf("InspectObjects view: %v", err)
+	}
+	def := descriptorByTitle(view[0].Descriptors, "Definition")
+	if def == nil || !strings.Contains(strings.ToUpper(def.Body), "SELECT") {
+		t.Fatalf("view definition descriptor missing/blank: %+v", view[0].Descriptors)
+	}
+}
+
+func TestSQLiteInspectRelationships(t *testing.T) {
+	d := &sqliteDriver{}
+	ctx := context.Background()
+	if err := d.Connect(ctx, engine.ConnectionConfig{DSN: ":memory:", Driver: "sqlite"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer d.Close()
+
+	if _, err := d.Execute(ctx, `CREATE TABLE rel_parent (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Execute(ctx, `CREATE TABLE rel_child (id INTEGER PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES rel_parent(id))`); err != nil {
+		t.Fatal(err)
+	}
+
+	graph, err := d.InspectRelationshipsInScope(ctx, metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"}))
+	if err != nil {
+		t.Fatalf("InspectRelationships: %v", err)
+	}
+	var found bool
+	for _, r := range graph.Relationships {
+		if r.Source.Name == "rel_child" && r.References.Name == "rel_parent" &&
+			strings.Join(r.Columns, ",") == "parent_id" && strings.Join(r.ReferencedColumns, ",") == "id" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("edge rel_child->rel_parent not found: %+v", graph.Relationships)
+	}
+}
+
+func descriptorByTitle(ds []metadata.Descriptor, title string) *metadata.Source {
+	for _, d := range ds {
+		if d.Title == title && d.Source != nil {
+			return d.Source
+		}
+	}
+	return nil
+}
+
+func directoryHasRef(directory *metadata.Directory, ref metadata.ObjectRef) bool {
+	for _, got := range directory.ObjectRefs() {
+		if got == ref {
+			return true
+		}
+	}
+	return false
+}
+
+func hasIndex(indexes []metadata.SecondaryIndex, name, column string) bool {
+	for _, ix := range indexes {
+		if ix.Name == name && slices.Contains(ix.Columns, column) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestSQLiteQuoteIdentEscapesDoubleQuotes(t *testing.T) {
+	got := sqliteQuoteIdent(`main"; ATTACH DATABASE '/tmp/other.db' AS other; --`)
+	want := `"main""; ATTACH DATABASE '/tmp/other.db' AS other; --"`
+	if got != want {
+		t.Fatalf("sqliteQuoteIdent() = %q, want %q", got, want)
+	}
+}

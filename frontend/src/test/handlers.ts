@@ -15,8 +15,7 @@ export function apiErrorHandler(
   path: string,
   status: number,
   message: string,
+  code = 'test_error',
 ) {
-  return http[method](path, () =>
-    HttpResponse.json({ error: { code: 'test_error', message } }, { status }),
-  )
+  return http[method](path, () => HttpResponse.json({ error: { code, message } }, { status }))
 }

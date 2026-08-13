@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/token"
 )
 
@@ -40,7 +41,7 @@ func issueTestToken(t *testing.T, app *application, accountID int64, email, name
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, _, err := token.IssueWithSessionTTL(strconv.FormatInt(accountID, 10), authSession.ID, email, name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
+	tok, _, err := token.IssueWithSessionTTL(strconv.FormatInt(accountID, 10), authSession.ID, email, name, app.config.JWT.SecretKey, time.Duration(database.DefaultJWTAccessTokenTTLSeconds)*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +130,9 @@ func TestAuthenticateV1_RejectsTokenWithoutAuthSession(t *testing.T) {
 
 func TestAuthenticateV1_AllowsTokenWithoutAuthSessionWhenRevocationDisabled(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
-	app.config.Sessions.RevocationEnabled = false
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+		settings.SessionsRevocationEnabled = false
+	})
 
 	account, err := app.db.InsertAccount(context.Background(), "revocation-disabled@example.com", "Revocation Disabled", nil)
 	if err != nil {
@@ -189,7 +192,9 @@ func TestAuthenticateV1_RejectsRevokedAuthSession(t *testing.T) {
 
 func TestOrgCtx_DoesNotCreateOrgAccessSessionWhenRevocationDisabled(t *testing.T) {
 	app := newTestApplicationWithEnforcer(t)
-	app.config.Sessions.RevocationEnabled = false
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+		settings.SessionsRevocationEnabled = false
+	})
 
 	account, err := app.db.InsertAccount(context.Background(), "orgctx-no-session@example.com", "Org Ctx No Session", nil)
 	if err != nil {
@@ -574,7 +579,7 @@ func TestRequireConcreteResourcePermissions(t *testing.T) {
 	orgRoleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgWrite)
 	workspaceRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "workspace", access.PermWsWrite)
 	envRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "environment", access.PermEnvWrite)
-	connRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "connection", access.PermConnWrite)
+	connRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "connection", access.PermConnUpdate)
 
 	for _, binding := range []struct {
 		roleID       int64
@@ -628,7 +633,7 @@ func TestRequireConcreteResourcePermissions(t *testing.T) {
 		},
 		{
 			name:       "connection",
-			middleware: app.requireConnectionPermission(access.PermConnWrite),
+			middleware: app.requireConnectionPermission(access.PermConnUpdate),
 			request: func() *http.Request {
 				req := httptest.NewRequest(http.MethodPatch, "/api/v1/orgs/resource-perms-org/workspaces/1/environments/1/connections/1", nil)
 				req = contextSetAccount(req, account)

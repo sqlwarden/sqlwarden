@@ -26,7 +26,7 @@ export function IdeActivityBar() {
 
   return (
     <nav
-      aria-label="IDE activities"
+      aria-label="Editor activities"
       className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-border bg-sidebar py-2"
     >
       {activities.map((activity) => {

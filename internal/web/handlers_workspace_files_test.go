@@ -129,6 +129,32 @@ func TestWorkspacePrivateFilesAreOwnerOnlyAndRequireMembership(t *testing.T) {
 	assert.Equal(t, revokedFile.StatusCode, http.StatusNotFound)
 }
 
+func TestDuplicatePrivateWorkspaceFile(t *testing.T) {
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	filesURL := orgPrivateFilesURL(org.Slug, ws.ID)
+	source := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "source.sql", "media_type": "text/plain", "file_kind": "query",
+	}, tok), app.routes()))
+	write := send(t, newAuthContentRequest(t, http.MethodPut, filesURL+"/"+strconv.FormatInt(source.ID, 10)+"/content", "select 1", tok, ""), app.routes())
+	assert.Equal(t, write.StatusCode, http.StatusOK)
+
+	duplicateURL := filesURL + "/" + strconv.FormatInt(source.ID, 10) + "/duplicate"
+	created := send(t, newAuthRequest(t, http.MethodPost, duplicateURL, map[string]any{"name": "source copy.sql"}, tok), app.routes())
+	assert.Equal(t, created.StatusCode, http.StatusCreated)
+	duplicate := decodeWorkspaceFile(t, created)
+	if duplicate.ID == source.ID || duplicate.Name != "source copy.sql" || duplicate.ContentVersion != 1 {
+		t.Fatalf("duplicate = %+v, source=%+v", duplicate, source)
+	}
+	read := send(t, newAuthRequest(t, http.MethodGet, filesURL+"/"+strconv.FormatInt(duplicate.ID, 10)+"/content", nil, tok), app.routes())
+	assert.Equal(t, read.StatusCode, http.StatusOK)
+	assert.Equal(t, string(read.BodyBytes), "select 1")
+
+	collision := send(t, newAuthRequest(t, http.MethodPost, duplicateURL, map[string]any{"name": "source.sql"}, tok), app.routes())
+	assert.Equal(t, collision.StatusCode, http.StatusUnprocessableEntity)
+	invalid := send(t, newAuthRequest(t, http.MethodPost, duplicateURL, map[string]any{"name": "bad/name.sql"}, tok), app.routes())
+	assert.Equal(t, invalid.StatusCode, http.StatusUnprocessableEntity)
+}
+
 func TestWorkspaceSharedFilesRequireSharedFilePermission(t *testing.T) {
 	app, org, ws, ownerTok := setupWorkspaceOwner(t)
 	_, memberTok := addWorkspaceMemberForFiles(t, app, org, ws, uniqueEmail(t, "shared-member"))
@@ -250,6 +276,8 @@ func TestPersonalWorkspaceFilesArePrivateAndFeatureGated(t *testing.T) {
 	file := decodeWorkspaceFile(t, create)
 	assert.Equal(t, file.Visibility, database.FileVisibilityPrivate)
 	assert.Equal(t, *file.OwnerAccountID, account.ID)
+	duplicate := send(t, newAuthRequest(t, http.MethodPost, mePrivateFilesURL(ws.ID)+"/"+strconv.FormatInt(file.ID, 10)+"/duplicate", map[string]any{"name": "mine copy.sql"}, tok), app.routes())
+	assert.Equal(t, duplicate.StatusCode, http.StatusCreated)
 
 	rename := send(t, newAuthRequest(t, http.MethodPatch, mePrivateFilesURL(ws.ID)+"/"+strconv.FormatInt(file.ID, 10), map[string]any{"name": "renamed.sql"}, tok), app.routes())
 	assert.Equal(t, rename.StatusCode, http.StatusOK)
@@ -261,7 +289,7 @@ func TestPersonalWorkspaceFilesArePrivateAndFeatureGated(t *testing.T) {
 	crossOwner := send(t, newAuthRequest(t, http.MethodGet, mePrivateFilesURL(ws.ID), nil, otherTok), app.routes())
 	assert.Equal(t, crossOwner.StatusCode, http.StatusNotFound)
 
-	app.config.PersonalSpacesEnabled = false
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.PersonalSpacesEnabled = false })
 	gated := send(t, newAuthRequest(t, http.MethodGet, mePrivateFilesURL(ws.ID), nil, tok), app.routes())
 	assert.Equal(t, gated.StatusCode, http.StatusNotFound)
 }
@@ -333,7 +361,11 @@ func TestWorkspaceDirectoryWritesVisibleFilePath(t *testing.T) {
 
 func TestObjectStoreVersionsTextFilesButReplacesBinaryFilesByDefault(t *testing.T) {
 	app, org, ws, tok := setupWorkspaceOwner(t)
-	app.config.Files.Revisions.Enabled = true
+	settingsRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"file_revisions_enabled":     true,
+		"file_revisions_keep_latest": 50,
+	}, tok), app.routes())
+	assert.Equal(t, settingsRes.StatusCode, http.StatusOK)
 
 	saveTwice := func(name string) database.WorkspaceFileContent {
 		create := send(t, newAuthRequest(t, http.MethodPost, orgPrivateFilesURL(org.Slug, ws.ID), map[string]any{"name": name}, tok), app.routes())

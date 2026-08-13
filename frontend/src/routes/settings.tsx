@@ -12,7 +12,9 @@ import {
 import { useSession } from '#/hooks/use-session'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { getAccessToken } from '#/lib/auth/access-token'
+import { useBrand } from '#/lib/brand/brand'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
+import { NavigateToLogin } from '#/components/auth/NavigateToLogin'
 
 export const Route = createFileRoute('/settings')({
   component: SettingsLayout,
@@ -27,6 +29,7 @@ const accountItems: AppShellNavItem[] = [
 ]
 
 function SettingsLayout() {
+  const brand = useBrand()
   const setupStatus = useSetupStatus()
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
@@ -50,7 +53,7 @@ function SettingsLayout() {
   }
 
   if (!hasToken || !session.data) {
-    return <Navigate to="/login" replace />
+    return <NavigateToLogin />
   }
 
   return (
@@ -64,7 +67,7 @@ function SettingsLayout() {
       }
     >
       <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
-        <AppShellHeader label="Settings" icon="settings-02" />
+        <AppShellHeader label="Settings" icon={<brand.LogoMark size={18} />} />
         <SidebarContent>
           <AppShellNavSection items={homeItems} pathname={pathname} />
           <AppShellNavSection label="Account" items={accountItems} pathname={pathname} />

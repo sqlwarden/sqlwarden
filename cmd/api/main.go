@@ -58,8 +58,8 @@ func run(args []string) error {
 	return app.ServeHTTP(ctx)
 }
 
-// runRotateKeys re-encrypts all application-encrypted data (connection DSNs and
-// any application-encrypted file content) with the configured primary
+// runRotateKeys re-encrypts all application-encrypted data (connection DSNs,
+// SMTP credentials, and application-encrypted file content) with the configured primary
 // encryption key, decrypting through any retired keys in ENCRYPTION_PREVIOUS_KEYS.
 //
 // It runs at infrastructure trust level: anyone who can execute the binary with

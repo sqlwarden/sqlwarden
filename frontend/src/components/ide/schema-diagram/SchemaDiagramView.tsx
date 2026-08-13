@@ -19,7 +19,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { toPng, toSvg } from 'html-to-image'
 import { toast } from 'sonner'
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { Button } from '#/components/ui/button'
@@ -32,21 +32,20 @@ import {
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
 import { api } from '#/lib/api/client'
-import type { ObjectDetail, ObjectRef, Workspace } from '#/lib/api/types'
+import type { ObjectDetail, ObjectRef, ScopeNode, Workspace } from '#/lib/api/types'
+import { scopeKey, scopeLabel } from '#/lib/api/scope'
 import {
-  orgConnectionCatalogQueryOptions,
+  orgConnectionDirectoryQueryOptions,
   orgConnectionObjectQueryOptions,
   orgConnectionRelationshipsQueryOptions,
   orgConnectionSchemaSpecQueryOptions,
-  connectionObjectsQueryKeyPrefix,
-  connectionRelationshipsQueryKey,
 } from '#/lib/api/query'
 import { useIde, type EditorTab } from '../useIdeStore'
 import { newObjectTab } from '../object-detail/objectTab'
 import {
   edgeCardinality,
   estimateNodeSize,
-  planNamespaceSeed,
+  planScopeSeed,
   reachableRefs,
   refKey,
   relationshipHandleId,
@@ -60,10 +59,15 @@ import { OBJECT_REF_DND_MIME } from './dnd'
 import { Tip } from './Tip'
 import { useEvictGoneSession } from '../sessionErrors'
 import { resolveDiagramViewState } from './viewState'
+import { useSchemaRefresh } from '../useSchemaRefresh'
 
 const NODE_TYPES: NodeTypes = { table: TableNode }
 const EDGE_TYPES: EdgeTypes = { fk: FkEdge }
 type FlowNode = Node<TableNodeData, 'table'>
+
+function flattenScopeNodes(nodes: ScopeNode[]): ScopeNode[] {
+  return nodes.flatMap((node) => [node, ...flattenScopeNodes(node.children ?? [])])
+}
 
 type Box = { x: number; y: number; w: number; h: number }
 function boxesOverlap(a: Box, b: Box, pad = 16): boolean {
@@ -114,17 +118,16 @@ function DiagramCanvas({
   const target = tab.diagramTarget
   const connectionId = tab.connectionId
   const driver = tab.driver ?? 'postgres'
-  const namespace = target
-    ? target.kind === 'namespace'
-      ? target.namespace
-      : target.ref.namespace
-    : ''
+  const scope = useMemo(
+    () => (target ? (target.kind === 'scope' ? target.scope : target.ref.scope) : []),
+    [target],
+  )
+  const currentScopeLabel = scopeLabel(scope)
 
   const sessionId = useIde((s) => (connectionId ? s.sessions[connectionId] : undefined))
   const setSession = useIde((s) => s.setSession)
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const openTab = useIde((s) => s.openTab)
-  const queryClient = useQueryClient()
   const { fitView, screenToFlowPosition, getNodes, getViewport, setViewport } = useReactFlow()
   const savedViewport = useRef<Viewport | null>(null)
   const viewportRestored = useRef(false)
@@ -141,8 +144,13 @@ function DiagramCanvas({
     ),
     enabled,
   })
-  const catalogQuery = useQuery({
-    ...orgConnectionCatalogQueryOptions(orgSlug, workspace.id, connectionId ?? 0, sessionId ?? ''),
+  const directoryQuery = useQuery({
+    ...orgConnectionDirectoryQueryOptions(
+      orgSlug,
+      workspace.id,
+      connectionId ?? 0,
+      sessionId ?? '',
+    ),
     enabled,
   })
   const relQuery = useQuery({
@@ -151,14 +159,20 @@ function DiagramCanvas({
       workspace.id,
       connectionId ?? 0,
       sessionId ?? '',
-      namespace,
+      scope,
     ),
     enabled,
+  })
+  const refreshSchema = useSchemaRefresh({
+    orgSlug,
+    workspaceId: workspace.id,
+    connectionId: connectionId ?? 0,
+    sessionId,
   })
 
   // A 410 from any diagram query means the server-side session died — drop it
   // so the canvas flips to its reconnect pane instead of silently stalling.
-  useEvictGoneSession(connectionId, [specQuery.error, catalogQuery.error, relQuery.error])
+  useEvictGoneSession(connectionId, [specQuery.error, directoryQuery.error, relQuery.error])
 
   const spec = specQuery.data?.spec
   const edges = useMemo(() => relQuery.data?.relationships ?? [], [relQuery.data])
@@ -168,9 +182,10 @@ function DiagramCanvas({
     const diagramKinds = new Set(
       (spec?.kinds ?? []).filter((k) => k.supports_diagram).map((k) => k.kind),
     )
-    for (const ns of catalogQuery.data?.catalog?.namespaces ?? []) {
-      if (ns.name !== namespace) continue
-      for (const group of ns.groups ?? []) {
+    const nodes = flattenScopeNodes(directoryQuery.data?.directory?.roots ?? [])
+    for (const node of nodes) {
+      if (scopeKey(node.path) !== scopeKey(scope)) continue
+      for (const group of node.groups) {
         if (!diagramKinds.has(group.kind)) continue
         for (const ref of group.objects) map.set(refKey(ref), ref)
       }
@@ -181,7 +196,7 @@ function DiagramCanvas({
     }
     if (target?.kind === 'object') map.set(refKey(target.ref), target.ref)
     return map
-  }, [catalogQuery.data, edges, spec, namespace, target])
+  }, [directoryQuery.data, edges, spec, scope, target])
 
   const [present, setPresent] = useState<ObjectRef[]>([])
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -212,7 +227,7 @@ function DiagramCanvas({
   // expanded/removed tables are exactly where the user left them on reload. If
   // there's a saved set, mark it seeded so the fresh seed below doesn't run.
   useEffect(() => {
-    if (hydratedRef.current || !catalogQuery.isSuccess || !relQuery.isSuccess) return
+    if (hydratedRef.current || !directoryQuery.isSuccess || !relQuery.isSuccess) return
     hydratedRef.current = true
     void loadDiagram(tab.id).then((saved) => {
       savedPositions.current = saved.positions
@@ -230,7 +245,7 @@ function DiagramCanvas({
       }
       setHydrateChecked(true)
     })
-  }, [tab.id, refByKey, catalogQuery.isSuccess, relQuery.isSuccess])
+  }, [tab.id, refByKey, directoryQuery.isSuccess, relQuery.isSuccess])
 
   // Seed the working set from the target — only after the queries have
   // SUCCEEDED (so edges are populated) and persisted positions have loaded.
@@ -239,12 +254,12 @@ function DiagramCanvas({
   // edges and show only the anchor table.
   useEffect(() => {
     if (seededRef.current || !hydrateChecked || !target) return
-    if (!catalogQuery.isSuccess || !relQuery.isSuccess) return
+    if (!directoryQuery.isSuccess || !relQuery.isSuccess) return
     seededRef.current = true
     const seed =
       target.kind === 'object'
         ? reachableRefs([target.ref], edges, undefined, depth)
-        : planNamespaceSeed([...refByKey.values()], edges).seed
+        : planScopeSeed([...refByKey.values()], edges).seed
     setPresent(seed)
     // Reuse saved positions when they cover the whole seed (stable reopen);
     // otherwise auto-layout.
@@ -253,7 +268,7 @@ function DiagramCanvas({
     target,
     edges,
     refByKey,
-    catalogQuery.isSuccess,
+    directoryQuery.isSuccess,
     relQuery.isSuccess,
     hydrateChecked,
     requestLayout,
@@ -392,7 +407,7 @@ function DiagramCanvas({
     return set
   }, [activeSelected, edges])
 
-  // Find-a-table search over every table in the namespace (on-canvas or not).
+  // Find-a-table search over every table in the scope (on-canvas or not).
   const [search, setSearch] = useState('')
   const searchResults = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -491,7 +506,7 @@ function DiagramCanvas({
           width: existing?.width ?? 240,
           data: {
             label: ref.name,
-            namespace: ref.namespace,
+            scopeLabel: scopeLabel(ref.scope),
             columns,
             pk: new Set(rel?.primary_key ?? []),
             outgoingByCol,
@@ -730,7 +745,7 @@ function DiagramCanvas({
       if (!raw) return
       try {
         const ref = JSON.parse(raw) as ObjectRef
-        if (!ref?.namespace || !ref?.name) return
+        if (!Array.isArray(ref?.scope) || ref.scope.length === 0 || !ref?.name) return
         const key = refKey(ref)
         const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY })
         // Seed the reconcile position for the new node (reconcile reads this).
@@ -758,17 +773,7 @@ function DiagramCanvas({
     }
   }
   function refresh() {
-    void queryClient.invalidateQueries({
-      queryKey: connectionRelationshipsQueryKey(
-        orgSlug,
-        workspace.id,
-        connectionId ?? 0,
-        namespace,
-      ),
-    })
-    void queryClient.invalidateQueries({
-      queryKey: connectionObjectsQueryKeyPrefix(orgSlug, workspace.id, connectionId ?? 0),
-    })
+    refreshSchema.mutate()
   }
 
   // Render the whole diagram (every node, not just the visible viewport) to an
@@ -810,7 +815,7 @@ function DiagramCanvas({
           downloadDataUrl(
             dataUrl,
             diagramFileName(
-              namespace,
+              currentScopeLabel,
               target?.kind === 'object' ? target.ref.name : undefined,
               format,
             ),
@@ -822,7 +827,7 @@ function DiagramCanvas({
         setExporting(false)
       }
     },
-    [renderImage, namespace, target],
+    [renderImage, currentScopeLabel, target],
   )
 
   // Copy a PNG of the diagram to the system clipboard (paste-as-picture into
@@ -849,16 +854,16 @@ function DiagramCanvas({
     hasSession: Boolean(sessionId),
     spec,
     specError: specQuery.error,
-    catalogError: catalogQuery.error,
+    directoryError: directoryQuery.error,
     relationshipsError: relQuery.error,
-    catalogLoading: catalogQuery.isLoading,
+    directoryLoading: directoryQuery.isLoading,
     relationshipsLoading: relQuery.isLoading,
     presentCount: present.length,
   })
   if (viewState === 'missing-target' || !target || !connectionId)
     return <Center>This tab is missing its diagram target.</Center>
   if (viewState === 'no-session')
-    return <Reconnect namespace={namespace} driver={driver} onReconnect={reconnect} />
+    return <Reconnect scopeLabel={currentScopeLabel} driver={driver} onReconnect={reconnect} />
   if (viewState === 'unsupported')
     return <Center>Diagrams aren&apos;t available for this connection.</Center>
   if (viewState === 'forbidden')
@@ -878,7 +883,7 @@ function DiagramCanvas({
     <div ref={containerRef} className="flex h-full min-h-0 flex-col">
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
         <span className="truncate text-xs font-medium text-foreground">
-          {target.kind === 'namespace' ? namespace : `${namespace}.${target.ref.name}`}
+          {target.kind === 'scope' ? currentScopeLabel : `${currentScopeLabel}.${target.ref.name}`}
         </span>
         <span className="text-[10px] text-muted-foreground">{driver}</span>
         <div className="flex-1" />
@@ -992,8 +997,18 @@ function DiagramCanvas({
           </DropdownMenuContent>
         </DropdownMenu>
         <Tip label="Refresh schema">
-          <Button variant="ghost" size="icon-sm" aria-label="Refresh schema" onClick={refresh}>
-            <Icon name="refresh" size={14} />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Refresh schema"
+            disabled={refreshSchema.isPending}
+            onClick={refresh}
+          >
+            <Icon
+              name="refresh"
+              size={14}
+              className={refreshSchema.isPending ? 'animate-spin' : undefined}
+            />
           </Button>
         </Tip>
       </div>
@@ -1075,18 +1090,18 @@ function Center({ children, className = '' }: { children: React.ReactNode; class
 }
 
 function Reconnect({
-  namespace,
+  scopeLabel,
   driver,
   onReconnect,
 }: {
-  namespace: string
+  scopeLabel: string
   driver: string
   onReconnect: () => void
 }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
       <div className="flex flex-col gap-1">
-        <div className="text-sm font-medium text-foreground">{namespace}</div>
+        <div className="text-sm font-medium text-foreground">{scopeLabel}</div>
         <div className="text-xs text-muted-foreground">{driver} · connection not available</div>
       </div>
       <Button variant="outline" size="sm" onClick={onReconnect}>

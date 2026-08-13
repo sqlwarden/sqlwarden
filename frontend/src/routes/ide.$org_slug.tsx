@@ -1,14 +1,14 @@
 import { Navigate, createFileRoute } from '@tanstack/react-router'
-import { WorkspaceIde } from '#/components/ide/WorkspaceIde'
+import { WorkspaceIde, WorkspaceIdeSkeleton } from '#/components/ide/WorkspaceIde'
 import { parseIdeSearch } from '#/components/ide/ideDeepLink'
-import { RoutePending } from '#/components/RoutePending'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { useSession } from '#/hooks/use-session'
 import { getAccessToken } from '#/lib/auth/access-token'
+import { NavigateToLogin } from '#/components/auth/NavigateToLogin'
 
 export const Route = createFileRoute('/ide/$org_slug')({
   component: IdePage,
-  pendingComponent: RoutePending,
+  pendingComponent: WorkspaceIdeSkeleton,
   validateSearch: parseIdeSearch,
 })
 
@@ -19,17 +19,13 @@ function IdePage() {
   const session = useSession(hasToken)
 
   if (setupStatus.isLoading || (hasToken && session.isLoading)) {
-    return (
-      <main className="flex min-h-screen items-center justify-center px-4">
-        <div className="text-sm text-muted-foreground">Loading...</div>
-      </main>
-    )
+    return <WorkspaceIdeSkeleton />
   }
   if (setupStatus.data && !setupStatus.data.configured) {
     return <Navigate to="/setup" replace />
   }
   if (!hasToken || !session.data) {
-    return <Navigate to="/login" replace />
+    return <NavigateToLogin />
   }
   return <WorkspaceIde orgSlug={orgSlug} />
 }

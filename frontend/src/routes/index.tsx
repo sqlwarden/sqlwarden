@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
+import { useBrand } from '#/lib/brand/brand'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { useSession } from '#/hooks/use-session'
 import { api } from '#/lib/api/client'
@@ -32,11 +33,15 @@ import { EmptyState } from '#/components/EmptyState'
 import { InitialsAvatar, getInitials } from '#/components/InitialsAvatar'
 import { Skeleton } from '#/components/ui/skeleton'
 import { cn } from '#/lib/utils'
+import { usePageTitle } from '#/lib/page-title'
+import { NavigateToLogin } from '#/components/auth/NavigateToLogin'
 
 export const Route = createFileRoute('/')({ component: LandingPage })
 
 function LandingPage() {
+  usePageTitle('Organizations')
   const setupStatus = useSetupStatus()
+  const brand = useBrand()
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
   const shouldLoadOrganizations = Boolean(
@@ -72,7 +77,7 @@ function LandingPage() {
   }
 
   if (!hasToken || !session.data) {
-    return <Navigate to="/login" replace />
+    return <NavigateToLogin />
   }
 
   if (!session.data.personal_spaces_enabled && session.data.organizations.length === 1) {
@@ -92,15 +97,16 @@ function LandingPage() {
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-8 px-4 py-8 md:px-6">
       <div className="flex items-center justify-between gap-4">
-        <Link to="/" className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-          <span className="size-2 rounded-full bg-primary" />
-          SQLWarden
+        <Link to="/" className="flex items-center text-sm font-semibold tracking-tight">
+          <brand.LogoLockup size={28} />
         </Link>
         <LandingUserMenu session={session.data} />
       </div>
 
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Choose where to continue</h1>
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">
+          Choose where to continue
+        </h1>
         <p className="text-sm text-muted-foreground">
           Select an organization or administration area.
         </p>
@@ -153,12 +159,12 @@ function OrganizationChoiceCard({
   const canAccessSettings = hasAnyPermission(orgPermissions.data?.permissions, [permission.orgRead])
 
   return (
-    <div className="flex h-full flex-col border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:shadow-sm">
+    <div className="flex h-full flex-col rounded-lg border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:shadow-sm">
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex min-w-0 items-start gap-3">
           <div
             className={cn(
-              'flex size-10 shrink-0 items-center justify-center text-sm font-semibold',
+              'flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold',
               organizationColor(organization.name),
             )}
           >
@@ -197,6 +203,7 @@ function OrganizationChoiceCard({
           <Button
             variant="outline"
             size="sm"
+            nativeButton={false}
             render={<Link to="/orgs/$org_slug" params={{ org_slug: organization.slug }} />}
           >
             <Icon name="settings-02" size={20} />
@@ -205,10 +212,11 @@ function OrganizationChoiceCard({
         ) : null}
         <Button
           size="sm"
+          nativeButton={false}
           render={<Link to="/ide/$org_slug" params={{ org_slug: organization.slug }} />}
         >
-          <Icon name="database-lightning" size={20} />
-          IDE
+          <Icon name="terminal" size={20} />
+          Editor
         </Button>
       </div>
     </div>
@@ -217,7 +225,7 @@ function OrganizationChoiceCard({
 
 function PersonalSpaceCard() {
   return (
-    <div className="flex h-full flex-col border border-border bg-card text-card-foreground">
+    <div className="flex h-full flex-col rounded-lg border border-border bg-card text-card-foreground">
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex min-w-0 items-start gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted">
@@ -242,10 +250,10 @@ function AdministrationChoiceCard() {
       to="/administration"
       className="group block h-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <div className="flex h-full flex-col border border-border bg-card text-card-foreground transition-all group-hover:border-foreground/20 group-hover:bg-muted/20 group-hover:shadow-sm">
+      <div className="flex h-full flex-col rounded-lg border border-border bg-card text-card-foreground transition-all group-hover:border-foreground/20 group-hover:bg-muted/20 group-hover:shadow-sm">
         <div className="flex flex-1 flex-col gap-3 p-5">
           <div className="flex min-w-0 items-start gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center bg-muted text-muted-foreground">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
               <Icon name="shield-user" size={20} />
             </div>
             <div className="min-w-0 flex-1 pt-0.5">
@@ -339,7 +347,7 @@ function LandingCardsSkeleton() {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {Array.from({ length: 3 }).map((_, index) => (
-        <div key={index} className="flex flex-col border border-border bg-card">
+        <div key={index} className="flex flex-col rounded-lg border border-border bg-card">
           <div className="flex flex-col gap-3 p-5">
             <div className="flex items-start gap-3">
               <Skeleton className="size-10 shrink-0" />

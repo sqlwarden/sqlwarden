@@ -2,6 +2,8 @@ import type { ContextMenuItem } from '#/components/ui/context-menu'
 
 export type ConnectionMenuCtx = {
   isConnected: boolean
+  canEditConnection: boolean
+  canDeleteConnection: boolean
   onOpen: () => void
   onOpenConsole: () => void
   onConnect: () => void
@@ -9,10 +11,12 @@ export type ConnectionMenuCtx = {
   onRefreshSchema: () => void
   onCopyName: () => void
   onManageConnections: () => void
+  onEditConnection: () => void
+  onDeleteConnection: () => void
 }
 
 export function buildConnectionMenu(ctx: ConnectionMenuCtx): ContextMenuItem[] {
-  return [
+  const items: ContextMenuItem[] = [
     { kind: 'action', id: 'open', label: 'Open', icon: 'flow-connection', onSelect: ctx.onOpen },
     {
       kind: 'action',
@@ -62,21 +66,34 @@ export function buildConnectionMenu(ctx: ConnectionMenuCtx): ContextMenuItem[] {
       icon: 'settings-02',
       onSelect: ctx.onManageConnections,
     },
-    { kind: 'separator' },
-    {
-      kind: 'action',
-      id: 'edit-connection',
-      label: 'Edit connection',
-      icon: 'pencil-edit-02',
-      soon: true,
-    },
-    { kind: 'separator' },
-    {
-      kind: 'action',
-      id: 'delete-connection',
-      label: 'Delete connection',
-      icon: 'delete-01',
-      soon: true,
-    },
   ]
+
+  if (ctx.canEditConnection) {
+    items.push(
+      { kind: 'separator' },
+      {
+        kind: 'action',
+        id: 'edit-connection',
+        label: 'Edit connection',
+        icon: 'pencil-edit-02',
+        onSelect: ctx.onEditConnection,
+      },
+    )
+  }
+
+  if (ctx.canDeleteConnection) {
+    items.push(
+      { kind: 'separator' },
+      {
+        kind: 'action',
+        id: 'delete-connection',
+        label: 'Delete connection',
+        icon: 'delete-01',
+        destructive: true,
+        onSelect: ctx.onDeleteConnection,
+      },
+    )
+  }
+
+  return items
 }

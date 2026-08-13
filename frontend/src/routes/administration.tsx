@@ -12,7 +12,9 @@ import {
 import { useSession } from '#/hooks/use-session'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { getAccessToken } from '#/lib/auth/access-token'
+import { useBrand } from '#/lib/brand/brand'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
+import { NavigateToLogin } from '#/components/auth/NavigateToLogin'
 
 export const Route = createFileRoute('/administration')({
   component: AdministrationLayout,
@@ -24,10 +26,11 @@ const adminItems: AppShellNavItem[] = [
   { to: '/administration/users', label: 'Users', icon: 'user-multiple-02' },
   { to: '/administration/administrators', label: 'Administrators', icon: 'shield-user' },
   { to: '/administration/organizations', label: 'Organizations', icon: 'building-04' },
-  { to: '/administration/instance', label: 'Instance', icon: 'settings-02' },
+  { to: '/administration/instance', label: 'Settings', icon: 'settings-02' },
 ]
 
 function AdministrationLayout() {
+  const brand = useBrand()
   const setupStatus = useSetupStatus()
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
@@ -51,7 +54,7 @@ function AdministrationLayout() {
   }
 
   if (!hasToken || !session.data) {
-    return <Navigate to="/login" replace />
+    return <NavigateToLogin />
   }
 
   if (!session.data.is_instance_admin) {
@@ -69,7 +72,7 @@ function AdministrationLayout() {
       }
     >
       <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
-        <AppShellHeader label="Administration" icon="shield-user" />
+        <AppShellHeader label="Administration" icon={<brand.LogoMark size={18} />} />
         <SidebarContent>
           <AppShellNavSection items={homeItems} pathname={pathname} />
           <AppShellNavSection label="Instance" items={adminItems} pathname={pathname} />

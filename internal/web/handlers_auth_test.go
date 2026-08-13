@@ -16,6 +16,7 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/cache"
+	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	schemaapp "github.com/sqlwarden/internal/schema"
@@ -32,6 +33,9 @@ func newTestApp(t *testing.T) *application {
 	app.enforcer = enforcer
 	app.connManager = connection.New(30 * time.Minute)
 	app.schemaService = schemaapp.NewService(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL)
+	app.schemaSnapshots = schemaapp.NewSnapshotStore(app.db)
+	app.completionService = completionapp.NewService()
+	app.configureConnectionCacheInvalidation()
 	t.Cleanup(func() { app.connManager.Close() })
 	return app
 }
@@ -105,7 +109,14 @@ func TestRefreshTokenCookieSecurityPolicy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			app := newTestApp(t)
-			app.config.BaseURL = tt.baseURL
+			settings, found, err := app.db.GetInstanceSettings(context.Background())
+			if err != nil || !found {
+				t.Fatalf("get instance settings: found=%v err=%v", found, err)
+			}
+			settings.BaseURL = tt.baseURL
+			if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
+				t.Fatal(err)
+			}
 			app.config.TLS.Enabled = tt.tls
 			r := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
 			if tt.requestTLS {
@@ -806,9 +817,7 @@ func TestGetSessionIncludesPersistedPersonalSpaceFlag(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	_, token := seedAccountWithToken(t, app, uniqueEmail(t, "session-flag"), "Session Flag")
-	if _, err := app.db.UpsertInstanceSettings(context.Background(), database.InstanceSettings{PersonalSpacesEnabled: false}); err != nil {
-		t.Fatal(err)
-	}
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.PersonalSpacesEnabled = false })
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/session", nil)
 	req.Header.Set("Authorization", "Bearer "+token)

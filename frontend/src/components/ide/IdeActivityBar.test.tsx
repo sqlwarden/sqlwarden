@@ -14,6 +14,7 @@ describe('IdeActivityBar', () => {
       </IdeStoreContext.Provider>,
     )
 
+    expect(screen.getByRole('navigation', { name: 'Editor activities' })).toBeInTheDocument()
     const explorer = screen.getByRole('button', { name: 'Explorer' })
     expect(explorer).toHaveAttribute('aria-pressed', 'true')
     await user.click(explorer)

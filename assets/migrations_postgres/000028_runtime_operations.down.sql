@@ -1,0 +1,13 @@
+ALTER TABLE instance_settings
+    DROP COLUMN smtp_from,
+    DROP COLUMN smtp_password_encrypted,
+    DROP COLUMN smtp_username,
+    DROP COLUMN smtp_port,
+    DROP COLUMN smtp_host,
+    DROP COLUMN smtp_enabled,
+    DROP COLUMN jobs_completed_retention_seconds,
+    DROP COLUMN jobs_claim_lease_seconds,
+    DROP COLUMN jobs_poll_interval_seconds,
+    DROP COLUMN jobs_worker_count,
+    DROP COLUMN database_query_tracing_enabled,
+    DROP COLUMN log_level;

@@ -1,4 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query'
+import { EditorState } from '@codemirror/state'
+import { EditorView } from '@codemirror/view'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
@@ -8,6 +10,7 @@ import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
 import { IdeToolbar } from './IdeToolbar'
 import { createIdeStore, IdeStoreContext, type EditorTab } from './useIdeStore'
+import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 
 const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
@@ -56,15 +59,18 @@ const scratchTab: EditorTab = {
   kind: 'scratch',
   content: 'select 1',
   connectionId: 7,
+  driver: 'postgres',
 }
 
 describe('IdeToolbar', () => {
   let store: ReturnType<typeof createIdeStore>
+  let views: ReturnType<typeof createEditorViewRegistry>
 
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.isRunning = false
     store = createIdeStore('acme', 1, 'ephemeral')
+    views = createEditorViewRegistry()
     server.use(
       http.get('/api/v1/orgs/acme/workspaces/3/environments', () =>
         HttpResponse.json({
@@ -112,7 +118,9 @@ describe('IdeToolbar', () => {
       ...render(
         <QueryClientProvider client={createTestQueryClient()}>
           <IdeStoreContext.Provider value={store}>
-            <IdeToolbar orgSlug="acme" workspace={workspace} />
+            <EditorViewRegistryContext.Provider value={views}>
+              <IdeToolbar orgSlug="acme" workspace={workspace} />
+            </EditorViewRegistryContext.Provider>
           </IdeStoreContext.Provider>
         </QueryClientProvider>,
       ),
@@ -139,6 +147,22 @@ describe('IdeToolbar', () => {
     expect(mocks.run).toHaveBeenCalledOnce()
     expect(mocks.save).toHaveBeenCalledWith(scratchTab)
     expect(screen.getByRole('button', { name: 'More run options' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Format SQL' })).toBeEnabled()
+  })
+
+  it('formats the active editor using its connection dialect', async () => {
+    store.getState().openTab(scratchTab)
+    const groupId = store.getState().activeGroupId[workspace.id]!
+    const editor = new EditorView({
+      state: EditorState.create({ doc: 'select * from users where id=1' }),
+    })
+    views.register(`${groupId}:${scratchTab.id}`, editor)
+    const { user } = renderToolbar()
+
+    await user.click(screen.getByRole('button', { name: 'Format SQL' }))
+
+    expect(editor.state.doc.toString()).toBe('select\n  *\nfrom\n  users\nwhere\n  id = 1')
+    editor.destroy()
   })
 
   it('hides export for non-SQL files and only offers save when a file is dirty', async () => {
@@ -159,6 +183,7 @@ describe('IdeToolbar', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /^Run/ })).toBeEnabled())
     expect(screen.queryByRole('button', { name: 'More run options' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save file' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Format SQL' })).not.toBeInTheDocument()
 
     store.setState({ tabs: [{ ...csvTab, isDirty: true }] })
     expect(await screen.findByRole('button', { name: 'Save file' })).toBeInTheDocument()
@@ -184,6 +209,18 @@ describe('IdeToolbar', () => {
 
     expect(store.getState().tabs[0]).toEqual(
       expect.objectContaining({ connectionId: 8, driver: 'mysql' }),
+    )
+  })
+
+  it('repairs a persisted console that has a connection but no driver', async () => {
+    store.getState().openTab({ ...scratchTab, driver: undefined })
+    renderToolbar()
+
+    await waitFor(() =>
+      expect(store.getState().tabs.find((tab) => tab.id === scratchTab.id)).toMatchObject({
+        connectionId: 7,
+        driver: 'postgres',
+      }),
     )
   })
 

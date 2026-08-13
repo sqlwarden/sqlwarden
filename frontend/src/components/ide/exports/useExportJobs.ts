@@ -77,7 +77,7 @@ export function useExportJobs(orgSlug: string, workspaceId: number) {
   })
 
   function refresh() {
-    queryClient.invalidateQueries({
+    return queryClient.invalidateQueries({
       queryKey: queryKeys.orgWorkspaceJobsScope(orgSlug, workspaceId),
     })
   }

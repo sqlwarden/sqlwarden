@@ -50,6 +50,10 @@ export type EditorTab = {
   connectionId?: number
   driver?: string
   fileId?: number
+  /** Original workspace-file metadata used to select a purpose-built viewer. */
+  fileMediaType?: string
+  fileKind?: string
+  fileSizeBytes?: number
   /** Set for `object` tabs: the qualified database object this tab views. */
   objectRef?: ObjectRef
   /** Set for `diagram` tabs: what the ER diagram is anchored to. */
@@ -102,6 +106,8 @@ export type IdeActions = {
   openTabToSide: (tab: EditorTab) => void
   ensureTab: (tab: EditorTab) => void
   closeTab: (tabId: string) => void
+  /** Renames the open tab for a file (title + subtitle), preserving all other tab state. */
+  renameTabByFileId: (fileId: number, name: string) => void
   /** Close one pane's instance of a tab; releases the tab only when no group still holds it. */
   closeTabInstance: (groupId: string, tabId: string) => void
   /** Activate a tab within a specific group and focus that group. */
@@ -160,7 +166,12 @@ export type IdeActions = {
   /** Opens a new numbered console tab. Pass yState (encoded Y.Doc) so all windows
    *  that receive this tab share the same canonical Y.js initial history.
    *  Pass connectionId to pre-select a connection on the new tab. */
-  openConsole: (workspace: Workspace, yState: number[], connectionId?: number) => void
+  openConsole: (
+    workspace: Workspace,
+    yState: number[],
+    connectionId?: number,
+    driver?: string,
+  ) => void
 }
 
 // ─── Layout selectors ───────────────────────────────────────────────────────────
@@ -339,6 +350,13 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
               },
             }
           }),
+
+        renameTabByFileId: (fileId, name) =>
+          set((s) => ({
+            tabs: s.tabs.map((t) =>
+              t.kind === 'file' && t.fileId === fileId ? { ...t, title: name, subtitle: name } : t,
+            ),
+          })),
 
         closeTabInstance: (groupId, tabId) =>
           set((s) => {
@@ -544,7 +562,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             return { abortControllers: { ...s.abortControllers, [tabId]: controller } }
           }),
 
-        openConsole: (workspace, yState, connectionId) =>
+        openConsole: (workspace, yState, connectionId, driver) =>
           set((s) => {
             const wsConsoleTabs = s.tabs.filter(
               (t) => t.workspaceId === workspace.id && t.kind === 'scratch',
@@ -562,6 +580,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
               content: DEFAULT_CONSOLE_CONTENT,
               yState,
               ...(connectionId !== undefined ? { connectionId } : {}),
+              ...(driver ? { driver } : {}),
             }
             const exists = s.tabs.some((t) => t.id === tab.id)
             const { layout, groupId } = ensureWorkspaceLayout(s, workspace.id)
@@ -664,6 +683,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   openTabToSide: _noop,
   ensureTab: _noop,
   closeTab: _noop,
+  renameTabByFileId: _noop,
   closeTabInstance: _noop,
   setActiveTab: _noop,
   moveTab: _noop,
@@ -721,6 +741,9 @@ export function newFileTab(file: WorkspaceFile, workspace: Workspace): EditorTab
     kind: 'file',
     subtitle: file.name,
     fileId: file.id,
+    fileMediaType: file.media_type,
+    fileKind: file.file_kind,
+    fileSizeBytes: file.size_bytes,
     content: '',
   }
 }

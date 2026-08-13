@@ -74,7 +74,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	templateDB, err := New("postgres", pgTestDSN, nilLogger(), false)
+	templateDB, err := New("postgres", pgTestDSN, nilLogger())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to open template db: %v\n", err)
 		_ = pgAdminDB.Close()
@@ -120,7 +120,7 @@ func TestMain(m *testing.M) {
 
 	sqliteTemplateDB = filepath.Join(os.TempDir(), fmt.Sprintf("sqlwarden-internal-database-template-%d.db", os.Getpid()))
 	_ = os.Remove(sqliteTemplateDB)
-	sqliteDB, err := New("sqlite", sqliteTemplateDB, nilLogger(), false)
+	sqliteDB, err := New("sqlite", sqliteTemplateDB, nilLogger())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to open sqlite template db: %v\n", err)
 		_ = pgAdminDB.Close()

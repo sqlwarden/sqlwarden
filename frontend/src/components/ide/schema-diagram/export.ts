@@ -16,14 +16,14 @@ export function exportDimensions(
 }
 
 /** Filename for a downloaded diagram, e.g. `public-users-diagram.png` for an
- *  object diagram or `public-diagram.svg` for a whole-namespace diagram.
+ *  object diagram or `public-diagram.svg` for a whole-scope diagram.
  *  Non-filename-safe characters are collapsed to underscores. */
 export function diagramFileName(
-  namespace: string,
+  scopeLabel: string,
   tableName: string | undefined,
   ext: ExportFormat,
 ): string {
-  const base = tableName ? `${namespace}-${tableName}` : namespace
+  const base = tableName ? `${scopeLabel}-${tableName}` : scopeLabel
   const safe = (base || 'schema').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '')
   return `${safe || 'schema'}-diagram.${ext}`
 }

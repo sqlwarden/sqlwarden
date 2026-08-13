@@ -11,6 +11,7 @@ type UseFileContentOptions = {
   workspaceId: number
   tab: EditorTab | undefined
   updateTabEtag: (tabId: string, etag: string) => void
+  enabled?: boolean
 }
 
 export function useFileContent({
@@ -18,13 +19,14 @@ export function useFileContent({
   workspaceId,
   tab,
   updateTabEtag,
+  enabled = true,
 }: UseFileContentOptions) {
   const registry = useYDocRegistry()
   const fileId = tab?.kind === 'file' ? tab.fileId : undefined
   // Always fetch file content when a file tab is open. The etag gates conflict
   // detection on saves, not content loading — if the page is refreshed after a
   // save the etag exists but the Y.Doc is empty and needs to be repopulated.
-  const needsLoad = fileId != null
+  const needsLoad = enabled && fileId != null
 
   const query = useQuery({
     queryKey: queryKeys.fileContent(orgSlug, workspaceId, fileId),
@@ -35,14 +37,16 @@ export function useFileContent({
   })
 
   useEffect(() => {
-    if (!query.data || !tab?.id) return
+    if (!enabled || !query.data || !tab?.id) return
 
     hydrateFileTab(tab, query.data, registry, updateTabEtag)
-  }, [query.data, tab, registry, updateTabEtag])
+  }, [enabled, query.data, tab, registry, updateTabEtag])
 
   return {
     isLoading: needsLoad && query.isLoading,
-    isError: query.isError,
-    retry: () => void query.refetch(),
+    isError: needsLoad && query.isError,
+    retry: () => {
+      if (needsLoad) void query.refetch()
+    },
   }
 }

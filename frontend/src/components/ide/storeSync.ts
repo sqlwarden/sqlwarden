@@ -15,7 +15,7 @@ export type StoreSyncChannel = {
   close: () => void
 }
 
-/** Synchronizes shared IDE tabs, etags, and target sessions between windows. */
+/** Synchronizes shared editor tabs, etags, and target sessions between windows. */
 export function createStoreSync(store: StoreSyncStore, channel: StoreSyncChannel) {
   const previousEtags = new Map<string, string>()
   const previousTabIds = new Set<string>()

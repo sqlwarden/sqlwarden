@@ -17,7 +17,17 @@ const (
 	environmentKey          contextKey = "environment"
 	connectionKey           contextKey = "connection"
 	requestLogContextKey    contextKey = "requestLogContext"
+	runtimeSettingsKey      contextKey = "runtimeSettings"
 )
+
+func contextSetRuntimeSettings(r *http.Request, settings effectiveRuntimeSettings) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), runtimeSettingsKey, settings))
+}
+
+func contextGetRuntimeSettings(r *http.Request) (effectiveRuntimeSettings, bool) {
+	settings, ok := r.Context().Value(runtimeSettingsKey).(effectiveRuntimeSettings)
+	return settings, ok
+}
 
 // Account context helpers.
 func contextSetAccount(r *http.Request, account database.Account) *http.Request {

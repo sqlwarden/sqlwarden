@@ -11,10 +11,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/cache"
+	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
@@ -35,22 +37,28 @@ const (
 type App = application
 
 type application struct {
-	config           Config
-	db               *database.DB
-	logger           *slog.Logger
-	mailer           *smtp.Mailer
-	wg               sync.WaitGroup
-	connManager      *connection.Manager
-	queryCursors     *connection.QueryCursorManager
-	schemaService    *schemaapp.Service
-	keyring          *encrypt.Keyring
-	enforcer         *access.Enforcer
-	fileStores       *fileStoreRegistry
-	fileLocks        sync.Map
-	fileReaperCancel context.CancelFunc
-	jobStore         *jobs.Store
-	jobRegistry      *jobs.Registry
-	jobRunnerCancel  context.CancelFunc
+	config            Config
+	db                *database.DB
+	logger            *slog.Logger
+	mailer            *smtp.Mailer
+	mailerMu          sync.RWMutex
+	wg                sync.WaitGroup
+	connManager       *connection.Manager
+	queryCursors      *connection.QueryCursorManager
+	schemaService     *schemaapp.Service
+	schemaSnapshots   *schemaapp.SnapshotStore
+	completionService *completionapp.Service
+	keyring           *encrypt.Keyring
+	enforcer          *access.Enforcer
+	fileStores        *fileStoreRegistry
+	fileLocks         sync.Map
+	fileReaperCancel  context.CancelFunc
+	jobStore          *jobs.Store
+	jobRegistry       *jobs.Registry
+	runtimeCancel     context.CancelFunc
+	runtimeUpdates    chan database.InstanceSettings
+	runtimeSettings   *runtimeSettingsService
+	accessLogsEnabled atomic.Bool
 }
 
 type fileStoreRegistry struct {
@@ -89,27 +97,17 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 
 	logger.Info("application configuration loaded",
 		slog.Group("config",
-			"log_level", cfg.Log.Level,
 			"log_format", cfg.Log.Format,
-			"base_url_configured", strings.TrimSpace(cfg.BaseURL) != "",
-			"personal_spaces_enabled", cfg.PersonalSpacesEnabled,
-			"sessions_revocation_enabled", cfg.Sessions.RevocationEnabled,
+			"bootstrap_base_url_configured", strings.TrimSpace(cfg.BootstrapBaseURL) != "",
 			"tls_enabled", cfg.TLS.Enabled,
 		),
 		slog.Group("database",
 			"driver", cfg.DB.Driver,
 			"automigrate", cfg.DB.Automigrate,
-			"log_queries", cfg.DB.LogQueries,
 		),
 		slog.Group("files",
 			"storage_mode", cfg.Files.StorageMode,
 			"active_backend", cfg.Files.ActiveStorageBackend,
-			"revisions_enabled", cfg.Files.Revisions.Enabled,
-		),
-		slog.Group("jobs",
-			"worker_count", cfg.Jobs.WorkerCount,
-			"poll_interval_ms", cfg.Jobs.PollInterval.Milliseconds(),
-			"claim_lease_ms", cfg.Jobs.ClaimLease.Milliseconds(),
 		),
 		slog.Group("drivers",
 			"sqlite_allowed_sources", cfg.Drivers.SQLite.AllowedSources,
@@ -117,7 +115,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	)
 
 	logger.Info("initializing database", slog.Group("database", "driver", cfg.DB.Driver, "automigrate", cfg.DB.Automigrate))
-	db, err := database.New(cfg.DB.Driver, cfg.DB.DSN, logger, cfg.DB.LogQueries)
+	db, err := database.New(cfg.DB.Driver, cfg.DB.DSN, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -130,9 +128,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		}
 		logger.Info("database migrations complete")
 	}
-
-	mailer, err := smtp.NewMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.Username, cfg.SMTP.Password, cfg.SMTP.From)
-	if err != nil {
+	if err := initializeInstanceBaseURL(context.Background(), db, cfg.BootstrapBaseURL); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := validateRuntimeSettingsInvariant(context.Background(), db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -160,23 +160,52 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("encryption keyring init: %w", err)
 	}
 
+	snapshotStore := schemaapp.NewSnapshotStore(db)
 	app := &application{
-		config:        cfg,
-		db:            db,
-		logger:        logger,
-		mailer:        mailer,
-		connManager:   connection.New(30 * time.Minute),
-		queryCursors:  connection.NewQueryCursorManager(30 * time.Minute),
-		schemaService: schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
-		keyring:       keyring,
-		enforcer:      enforcer,
-		fileStores:    fileStores,
-		jobStore:      jobs.NewStore(db),
+		config:            cfg,
+		db:                db,
+		logger:            logger,
+		mailer:            smtp.NewDisabledMailer(""),
+		connManager:       connection.New(30 * time.Minute),
+		queryCursors:      connection.NewQueryCursorManager(30 * time.Minute),
+		schemaService:     schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
+		schemaSnapshots:   snapshotStore,
+		completionService: completionapp.NewService(),
+		keyring:           keyring,
+		enforcer:          enforcer,
+		fileStores:        fileStores,
+		jobStore:          jobs.NewStore(db),
+		runtimeSettings:   newRuntimeSettingsService(db),
+		runtimeUpdates:    make(chan database.InstanceSettings, 1),
 	}
+	initialSettings, err := app.instanceSettings(context.Background())
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := app.applyRuntimeOperations(initialSettings); err != nil {
+		db.Close()
+		return nil, err
+	}
+	app.configureConnectionCacheInvalidation()
 	app.jobRegistry = app.defaultJobRegistry()
-	app.startJobRunner()
+	app.startRuntimeSupervisor(initialSettings)
 	app.startFileContentDeletionReaper()
 	return app, nil
+}
+
+func (app *application) configureConnectionCacheInvalidation() {
+	if app.connManager == nil {
+		return
+	}
+	app.connManager.SetOnConnectionEmpty(func(connectionID string) {
+		if app.schemaService != nil {
+			app.schemaService.RefreshConnection(connectionID)
+		}
+		if app.completionService != nil {
+			app.completionService.InvalidateConnection(connectionID)
+		}
+	})
 }
 
 func (app *application) Handler() http.Handler {
@@ -189,8 +218,8 @@ func (app *application) Close() error {
 	if app.fileReaperCancel != nil {
 		app.fileReaperCancel()
 	}
-	if app.jobRunnerCancel != nil {
-		app.jobRunnerCancel()
+	if app.runtimeCancel != nil {
+		app.runtimeCancel()
 	}
 	app.wg.Wait()
 	app.logger.Info("background workers stopped", "duration_ms", time.Since(startedAt).Milliseconds())
@@ -249,30 +278,17 @@ func (app *application) defaultJobRegistry() *jobs.Registry {
 			return app.handleExportJob(ctx, runtime)
 		}),
 	})
-	return registry
-}
-
-func (app *application) startJobRunner() {
-	if app.jobStore == nil {
-		app.jobStore = jobs.NewStore(app.db)
-	}
-	if app.jobRegistry == nil {
-		app.jobRegistry = app.defaultJobRegistry()
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	app.jobRunnerCancel = cancel
-	runner := jobs.NewRunner(app.jobStore, app.jobRegistry, app.logger, jobs.WorkerConfig{
-		WorkerID:           "api",
-		WorkerCount:        app.config.Jobs.WorkerCount,
-		PollInterval:       app.config.Jobs.PollInterval,
-		ClaimLease:         app.config.Jobs.ClaimLease,
-		CompletedRetention: app.config.Jobs.CompletedRetention,
+	registry.Register(jobs.Definition{
+		Type:        jobs.TypeSchemaSync,
+		MaxAttempts: 3,
+		Backoff: func(attempt int) time.Duration {
+			return time.Duration(attempt) * time.Minute
+		},
+		Handler: jobs.HandlerFunc(func(ctx context.Context, runtime jobs.Runtime) (any, error) {
+			return app.handleSchemaSyncJob(ctx, runtime)
+		}),
 	})
-	app.wg.Add(1)
-	go func() {
-		defer app.wg.Done()
-		runner.Run(ctx)
-	}()
+	return registry
 }
 
 func (app *application) startFileContentDeletionReaper() {

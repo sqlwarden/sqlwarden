@@ -1,3 +1,5 @@
+declare module '@fontsource-variable/geist'
+declare module '@fontsource/geist-mono'
 declare module '@fontsource-variable/jetbrains-mono'
 declare module '@fontsource-variable/fira-code'
 declare module '@fontsource-variable/source-code-pro'

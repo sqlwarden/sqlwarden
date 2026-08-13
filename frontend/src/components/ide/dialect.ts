@@ -1,10 +1,12 @@
-import type { ObjectRef } from '#/lib/api/types'
+import type { ObjectRef, ScopePath } from '#/lib/api/types'
+import { defaultSqlFormatter, type SqlTextFormatter } from './sqlFormatter'
 
 /** dataTransfer MIME identifying a schema-identifier drag (vs. a tab drag). */
 export const IDENTIFIER_DND_MIME = 'application/x-sqlwarden-identifier'
 
 export interface SqlDialect {
-  formatObject(namespace: string, name: string): string
+  formatSql(sql: string): string
+  formatObject(scope: ScopePath, name: string): string
   formatColumn(name: string): string
   previewQuery(ref: ObjectRef): string
   exactCountQuery(ref: ObjectRef): string
@@ -12,19 +14,25 @@ export interface SqlDialect {
 }
 
 export abstract class BaseSqlDialect implements SqlDialect {
-  abstract formatObject(namespace: string, name: string): string
+  protected readonly formatter: SqlTextFormatter = defaultSqlFormatter
+
+  abstract formatObject(scope: ScopePath, name: string): string
   abstract formatColumn(name: string): string
 
+  formatSql(sql: string): string {
+    return this.formatter.format(sql)
+  }
+
   previewQuery(ref: ObjectRef): string {
-    return `SELECT * FROM ${this.formatObject(ref.namespace, ref.name)}`
+    return `SELECT * FROM ${this.formatObject(ref.scope, ref.name)}`
   }
 
   exactCountQuery(ref: ObjectRef): string {
-    return `SELECT COUNT(*) FROM ${this.formatObject(ref.namespace, ref.name)}`
+    return `SELECT COUNT(*) FROM ${this.formatObject(ref.scope, ref.name)}`
   }
 
   boundedCountQuery(ref: ObjectRef, limit: number): string {
-    return `SELECT COUNT(*) FROM (SELECT 1 FROM ${this.formatObject(ref.namespace, ref.name)} LIMIT ${limit}) AS _warden_count`
+    return `SELECT COUNT(*) FROM (SELECT 1 FROM ${this.formatObject(ref.scope, ref.name)} LIMIT ${limit}) AS _warden_count`
   }
 }
 

@@ -30,6 +30,45 @@ func TestAppCanBeConstructedFromExternalPackage(t *testing.T) {
 	var _ http.Handler = app.Handler()
 }
 
+func TestBaseURLIsBootstrappedOnceAndThenDatabaseOwned(t *testing.T) {
+	dbPath := t.TempDir() + "/sqlwarden.db"
+	cfg := web.DefaultConfig()
+	cfg.BootstrapBaseURL = "https://first.example.com"
+	cfg.DB.Driver = "sqlite"
+	cfg.DB.DSN = dbPath
+	cfg.DB.Automigrate = true
+	cfg.Files.StorageBackends["local"] = web.FileStorageBackend{
+		Type:    web.FilesStorageBackendFilesystem,
+		RootDir: t.TempDir() + "/files",
+	}
+
+	app, err := web.New(cfg, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Close()
+
+	cfg.BootstrapBaseURL = "https://second.example.com"
+	app, err = web.New(cfg, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Close()
+
+	db, err := database.New("sqlite", dbPath, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	settings, found, err := db.GetInstanceSettings(context.Background())
+	if err != nil || !found {
+		t.Fatalf("get instance settings: found=%v err=%v", found, err)
+	}
+	if settings.BaseURL != "https://first.example.com" {
+		t.Fatalf("base URL = %q, want first bootstrap value", settings.BaseURL)
+	}
+}
+
 func TestAppFailsWhenSavedFileStorageBackendIsNotConfigured(t *testing.T) {
 	dbPath := t.TempDir() + "/sqlwarden.db"
 	cfg := web.DefaultConfig()
@@ -47,7 +86,7 @@ func TestAppFailsWhenSavedFileStorageBackendIsNotConfigured(t *testing.T) {
 	}
 	setup.Close()
 
-	db, err := database.New("sqlite", dbPath, slog.Default(), false)
+	db, err := database.New("sqlite", dbPath, slog.Default())
 	if err != nil {
 		t.Fatal(err)
 	}

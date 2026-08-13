@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	singleUserDefaultOrgName = "Local"
-	singleUserDefaultOrgSlug = "local"
+	singleUserDefaultOrgName  = "Local"
+	singleUserDefaultOrgSlug  = "local"
+	maxOrganizationSlugLength = 64
 )
 
 func (app *application) createOwnedOrganization(ctx context.Context, slug, name string, ownerAccountID int64) (database.Organization, error) {
@@ -63,8 +64,10 @@ func (app *application) updateOrg(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 
 	var input struct {
-		Name string              `json:"name"`
-		V    validator.Validator `json:"-"`
+		Name                            *string             `json:"name"`
+		SchemaSnapshotsEnabled          *bool               `json:"schema_snapshots_enabled"`
+		MaskConnectionCredentialsOnEdit *bool               `json:"mask_connection_credentials_on_edit"`
+		V                               validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -73,18 +76,31 @@ func (app *application) updateOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.Name = strings.TrimSpace(input.Name)
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
+	if input.Name != nil {
+		name := strings.TrimSpace(*input.Name)
+		input.Name = &name
+		input.V.CheckField(name != "", "name", "Name must not be empty.")
+	}
+	input.V.CheckField(
+		input.Name != nil || input.SchemaSnapshotsEnabled != nil || input.MaskConnectionCredentialsOnEdit != nil,
+		"request", "At least one setting is required.")
 
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
 	}
 
-	err = app.db.UpdateOrg(r.Context(), org.ID, input.Name)
+	wasEnabled := org.SchemaSnapshotsEnabled
+	err = app.db.UpdateOrgSettings(r.Context(), org.ID, input.Name, input.SchemaSnapshotsEnabled, input.MaskConnectionCredentialsOnEdit)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
+	}
+	if wasEnabled && input.SchemaSnapshotsEnabled != nil && !*input.SchemaSnapshotsEnabled {
+		if err := app.disableOrganizationSnapshots(r.Context(), org.ID); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
 	}
 	app.logInfo(r, "organization updated", slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
 
@@ -144,6 +160,7 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 	input.V.CheckField(slug != "", "slug", "Slug is required.")
 	if slug != "" {
 		input.V.CheckField(isValidSlug(slug), "slug", "Slug may only contain lowercase letters, numbers, and hyphens.")
+		input.V.CheckField(len(slug) <= maxOrganizationSlugLength, "slug", "Slug must be 64 characters or fewer.")
 	}
 
 	if input.V.HasErrors() {
@@ -206,88 +223,6 @@ func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.serverError(w, r, err)
 	}
-}
-
-func (app *application) listOrgMemberCandidates(w http.ResponseWriter, r *http.Request) {
-	q, errs := readListQuery(r.URL.Query(), map[string]string{
-		"id":         "id",
-		"email":      "email",
-		"name":       "name",
-		"created_at": "created_at",
-	})
-	if len(errs) > 0 {
-		app.failedValidation(w, r, fieldErrors(errs))
-		return
-	}
-
-	org := contextGetOrg(r)
-	accounts, err := app.db.ListAccountsPage(r.Context(), database.ListAccountsParams{
-		ExcludeOrgID: org.ID,
-		Search:       q.Search,
-		Sort:         q.Sort,
-		Order:        q.Order,
-		Page:         q.Page,
-		PageSize:     q.PageSize,
-	})
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	err = response.JSON(w, http.StatusOK, accounts)
-	if err != nil {
-		app.serverError(w, r, err)
-	}
-}
-
-func (app *application) addOrgMember(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		AccountID int64               `json:"account_id"`
-		Email     string              `json:"email"`
-		V         validator.Validator `json:"-"`
-	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
-		app.badRequest(w, r, err)
-		return
-	}
-
-	input.Email = strings.TrimSpace(input.Email)
-	input.V.CheckField(input.AccountID > 0 || input.Email != "", "account", "Select a user.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	org := contextGetOrg(r)
-	var (
-		account database.Account
-		found   bool
-	)
-	if input.AccountID > 0 {
-		account, found, err = app.db.GetAccount(r.Context(), input.AccountID)
-	} else {
-		account, found, err = app.db.GetAccountByEmail(r.Context(), input.Email)
-	}
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-
-	err = app.db.AddOrgMember(r.Context(), org.ID, account.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	// No role binding is created here. The new member has no workspace access by default;
-	// a workspace admin must explicitly grant access to each workspace.
-	app.logInfo(r, "organization member added", slog.Int64("target_account_id", account.ID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) getOrgMember(w http.ResponseWriter, r *http.Request) {
@@ -407,7 +342,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 	}
 
 	input.V.CheckField(input.Role != "", "role", "Role is required.")
-	input.V.CheckField(input.Role == access.BuiltinOrgOwnerRole || input.Role == access.BuiltinOrgAdminRole, "role", "Role must be Owner or Administrator.")
+	input.V.CheckField(input.Role == access.BuiltinOrgOwnerRole || input.Role == access.BuiltinOrgAdminRole || input.Role == access.BuiltinOrgMemberRole, "role", "Role must be Owner, Administrator, or Baseline Access.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -464,7 +399,7 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 
 	var builtinRoleIDs []int64
 	for _, role := range roles {
-		if role.IsBuiltin && (role.Name == access.BuiltinOrgOwnerRole || role.Name == access.BuiltinOrgAdminRole) {
+		if role.IsBuiltin && (role.Name == access.BuiltinOrgOwnerRole || role.Name == access.BuiltinOrgAdminRole || role.Name == access.BuiltinOrgMemberRole) {
 			builtinRoleIDs = append(builtinRoleIDs, role.ID)
 		}
 	}
@@ -557,8 +492,8 @@ func slugify(name string) string {
 		return -1
 	}, s)
 	s = strings.Trim(s, "-")
-	if len(s) > 50 {
-		s = s[:50]
+	if len(s) > maxOrganizationSlugLength {
+		s = s[:maxOrganizationSlugLength]
 	}
 	return s
 }

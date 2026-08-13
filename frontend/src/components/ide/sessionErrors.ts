@@ -78,7 +78,7 @@ export async function ensureSession<T>(
   }
 }
 
-/** Wires ensureSession's dependencies to the IDE store and the connect endpoint. */
+/** Wires ensureSession's dependencies to the editor store and the connect endpoint. */
 export function useEnsureSession(orgSlug: string, workspaceId: number) {
   const sessions = useIde((s) => s.sessions)
   const setSession = useIde((s) => s.setSession)

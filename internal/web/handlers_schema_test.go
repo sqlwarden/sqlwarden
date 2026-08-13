@@ -2,36 +2,39 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/connection"
-	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/schema"
+	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/pkg/result"
 )
 
-// schemaFakeDriver implements schema.SchemaInspector without requiring a live
+// schemaFakeDriver implements metadata.SchemaInspector without requiring a live
 // target database, keeping schema handler tests focused on HTTP behavior.
 type schemaFakeDriver struct{}
 
-func (schemaFakeDriver) Connect(context.Context, dbengine.ConnectionConfig) error { return nil }
-func (schemaFakeDriver) Ping(context.Context) error                               { return nil }
-func (schemaFakeDriver) Close() error                                             { return nil }
+func (schemaFakeDriver) Connect(context.Context, engine.ConnectionConfig) error { return nil }
+func (schemaFakeDriver) Ping(context.Context) error                             { return nil }
+func (schemaFakeDriver) Close() error                                           { return nil }
 func (schemaFakeDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }
 func (schemaFakeDriver) Execute(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }
-func (schemaFakeDriver) Dialect() dbengine.Dialect { return dbengine.DialectSQLite }
+func (schemaFakeDriver) Dialect() engine.Dialect { return engine.DialectSQLite }
 
-func (schemaFakeDriver) SchemaSpec() schema.SchemaSpec {
-	return schema.SchemaSpec{
+func (schemaFakeDriver) SchemaSpec() metadata.SchemaSpec {
+	return metadata.SchemaSpec{
 		Dialect: "sqlite",
-		Kinds: []schema.SchemaObjectKind{{
+		Kinds: []metadata.SchemaObjectKind{{
 			Kind:            "table",
 			Label:           "Table",
 			PluralLabel:     "Tables",
@@ -43,27 +46,27 @@ func (schemaFakeDriver) SchemaSpec() schema.SchemaSpec {
 	}
 }
 
-func (schemaFakeDriver) InspectCatalog(context.Context, schema.CatalogOptions) (*schema.Catalog, error) {
-	return &schema.Catalog{
-		Dialect:  "sqlite",
-		Database: "test",
-		Namespaces: []schema.NamespaceCatalog{{
-			Name: "main",
-			Groups: []schema.ObjectGroupCatalog{{
+func (schemaFakeDriver) InspectDirectory(context.Context, metadata.DirectoryOptions) (*metadata.Directory, error) {
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	return &metadata.Directory{
+		Engine: "sqlite", DefaultScope: scope,
+		Roots: []metadata.ScopeNode{{
+			Path: scope,
+			Groups: []metadata.ObjectGroup{{
 				Kind:    "table",
-				Objects: []schema.ObjectRef{{Namespace: "main", Kind: "table", Name: "widgets"}},
+				Objects: []metadata.ObjectRef{{Scope: scope, Kind: "table", Name: "widgets"}},
 			}},
 		}},
 	}, nil
 }
 
-func (schemaFakeDriver) InspectObjects(_ context.Context, refs []schema.ObjectRef) ([]schema.Object, error) {
-	out := make([]schema.Object, 0, len(refs))
+func (schemaFakeDriver) InspectObjects(_ context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	out := make([]metadata.Object, 0, len(refs))
 	for _, ref := range refs {
-		out = append(out, schema.Object{
+		out = append(out, metadata.Object{
 			Ref: ref,
-			Relational: &schema.RelationalDetail{
-				Columns: []schema.Column{{Name: "id", DataType: "INTEGER", Ordinal: 1}},
+			Relational: &metadata.RelationalDetail{
+				Columns: []metadata.Column{{Name: "id", DataType: "INTEGER", Ordinal: 1}},
 			},
 		})
 	}
@@ -75,14 +78,14 @@ func (schemaFakeDriver) InspectObjects(_ context.Context, refs []schema.ObjectRe
 // deliberately does NOT implement it, so it drives the 501 path.
 type schemaRelDriver struct{ schemaFakeDriver }
 
-func (schemaRelDriver) InspectRelationships(_ context.Context, namespace string) (*schema.RelationshipGraph, error) {
-	return &schema.RelationshipGraph{
-		Namespace: namespace,
-		Relationships: []schema.Relationship{{
+func (schemaRelDriver) InspectRelationshipsInScope(_ context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
+	return &metadata.RelationshipGraph{
+		Scope: scope,
+		Relationships: []metadata.Relationship{{
 			Name:              "orders_user_fk",
-			Source:            schema.ObjectRef{Namespace: namespace, Kind: "table", Name: "orders"},
+			Source:            metadata.ObjectRef{Scope: scope, Kind: "table", Name: "orders"},
 			Columns:           []string{"user_id"},
-			References:        schema.ObjectRef{Namespace: namespace, Kind: "table", Name: "users"},
+			References:        metadata.ObjectRef{Scope: scope, Kind: "table", Name: "users"},
 			ReferencedColumns: []string{"id"},
 		}},
 	}, nil
@@ -98,7 +101,7 @@ func TestGetConnectionSchemaRelationships(t *testing.T) {
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaRelDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/relationships?namespace=public", nil, tok)
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/relationships?scope="+schemaScopeParam(metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"})), nil, tok)
 	req.Header.Set("X-Warden-Session", sess.ID)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
@@ -126,27 +129,28 @@ func TestGetConnectionSchemaRelationships_Unsupported(t *testing.T) {
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/relationships?namespace=public", nil, tok)
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/relationships?scope="+schemaScopeParam(metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"})), nil, tok)
 	req.Header.Set("X-Warden-Session", sess.ID)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNotImplemented)
 }
 
-func TestGetConnectionCatalog_RequiresSession(t *testing.T) {
+func TestGetConnectionDirectory_RequiresSession(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-owner"), "Schema Owner", "Schema Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	disableSchemaSnapshots(t, app, conn.ID)
 
 	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/catalog", nil, tok)
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/directory", nil, tok)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusBadRequest)
 }
 
-func TestGetConnectionCatalog_InspectsAndCaches(t *testing.T) {
+func TestGetConnectionDirectory_InspectsAndCaches(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-owner2"), "Schema Owner2", "Schema Org2")
@@ -156,22 +160,22 @@ func TestGetConnectionCatalog_InspectsAndCaches(t *testing.T) {
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/catalog", nil, tok)
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/directory", nil, tok)
 	req.Header.Set("X-Warden-Session", sess.ID)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	catalogField, ok := res.BodyFields["catalog"].(map[string]any)
+	directoryField, ok := res.BodyFields["directory"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected catalog object, got %v", res.BodyFields)
+		t.Fatalf("expected directory object, got %v", res.BodyFields)
 	}
-	assert.Equal(t, catalogField["dialect"], "sqlite")
-	namespaces, ok := catalogField["namespaces"].([]any)
-	if !ok || len(namespaces) != 1 {
-		t.Fatalf("expected one namespace, got %v", catalogField)
+	assert.Equal(t, directoryField["engine"], "sqlite")
+	roots, ok := directoryField["roots"].([]any)
+	if !ok || len(roots) != 1 {
+		t.Fatalf("expected one root, got %v", directoryField)
 	}
-	firstNamespace := namespaces[0].(map[string]any)
-	groups := firstNamespace["groups"].([]any)
+	firstRoot := roots[0].(map[string]any)
+	groups := firstRoot["groups"].([]any)
 	firstGroup := groups[0].(map[string]any)
 	objects := firstGroup["objects"].([]any)
 	firstObject := objects[0].(map[string]any)
@@ -211,7 +215,7 @@ func TestPostConnectionObjects(t *testing.T) {
 
 	req := newAuthRequest(t, http.MethodPost,
 		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/objects",
-		map[string]any{"refs": []map[string]any{{"namespace": "main", "kind": "table", "name": "widgets"}}},
+		map[string]any{"refs": []map[string]any{{"scope": []map[string]any{{"kind": "database", "name": "main"}}, "kind": "table", "name": "widgets"}}},
 		tok)
 	req.Header.Set("X-Warden-Session", sess.ID)
 	res := send(t, req, app.routes())
@@ -245,7 +249,7 @@ func TestRefreshConnectionSchema(t *testing.T) {
 
 	req = newAuthRequest(t, http.MethodPost,
 		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/refresh",
-		map[string]any{"ref": map[string]any{"namespace": "main", "kind": "table", "name": "widgets"}},
+		map[string]any{"ref": map[string]any{"scope": []map[string]any{{"kind": "database", "name": "main"}}, "kind": "table", "name": "widgets"}},
 		tok)
 	req.Header.Set("X-Warden-Session", sess.ID)
 	res = send(t, req, app.routes())
@@ -253,22 +257,23 @@ func TestRefreshConnectionSchema(t *testing.T) {
 	assert.Equal(t, res.BodyFields["status"], "ok")
 }
 
-func TestGetConnectionCatalog_SessionExpired(t *testing.T) {
+func TestGetConnectionDirectory_SessionExpired(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-expired"), "Schema Expired", "Schema Expired Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	disableSchemaSnapshots(t, app, conn.ID)
 
 	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/catalog", nil, tok)
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/directory", nil, tok)
 	req.Header.Set("X-Warden-Session", "nonexistent-session-id")
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusGone)
 }
 
-func TestGetConnectionCatalog_SessionConnectionMismatch(t *testing.T) {
+func TestGetConnectionDirectory_SessionConnectionMismatch(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-mismatch"), "Schema Mismatch", "Schema Mismatch Org")
@@ -276,10 +281,11 @@ func TestGetConnectionCatalog_SessionConnectionMismatch(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	connA := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Conn A", "open")
 	connB := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Conn B", "open")
+	disableSchemaSnapshots(t, app, connA.ID)
 	sess := openSchemaSession(t, app, owner.ID, connB.ID, schemaFakeDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(connA.ID, 10))+"/schema/catalog", nil, tok)
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(connA.ID, 10))+"/schema/directory", nil, tok)
 	req.Header.Set("X-Warden-Session", sess.ID)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusForbidden)
@@ -288,7 +294,7 @@ func TestGetConnectionCatalog_SessionConnectionMismatch(t *testing.T) {
 // nonSchemaInspectableDriver exercises the 501 unsupported-driver path.
 type nonSchemaInspectableDriver struct{}
 
-func (nonSchemaInspectableDriver) Connect(context.Context, dbengine.ConnectionConfig) error {
+func (nonSchemaInspectableDriver) Connect(context.Context, engine.ConnectionConfig) error {
 	return nil
 }
 func (nonSchemaInspectableDriver) Ping(context.Context) error { return nil }
@@ -299,9 +305,9 @@ func (nonSchemaInspectableDriver) Query(context.Context, string, ...any) (*resul
 func (nonSchemaInspectableDriver) Execute(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }
-func (nonSchemaInspectableDriver) Dialect() dbengine.Dialect { return dbengine.DialectSQLite }
+func (nonSchemaInspectableDriver) Dialect() engine.Dialect { return engine.DialectSQLite }
 
-func TestGetConnectionCatalog_UnsupportedDriver(t *testing.T) {
+func TestGetConnectionDirectory_UnsupportedDriver(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-unsupported"), "Schema Unsupported", "Schema Unsupported Org")
@@ -311,21 +317,38 @@ func TestGetConnectionCatalog_UnsupportedDriver(t *testing.T) {
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, nonSchemaInspectableDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/catalog", nil, tok)
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/directory", nil, tok)
 	req.Header.Set("X-Warden-Session", sess.ID)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNotImplemented)
 }
 
-func openSchemaSession(t *testing.T, app *application, accountID, connectionID int64, drv dbengine.Driver) *connection.Session {
+func schemaScopeParam(scope metadata.ScopePath) string {
+	data, _ := json.Marshal(scope)
+	return url.QueryEscape(string(data))
+}
+
+func openSchemaSession(t *testing.T, app *application, accountID, connectionID int64, drv engine.Driver) *connection.Session {
 	t.Helper()
+	disableSchemaSnapshots(t, app, connectionID)
 	sess, _, err := app.connManager.GetOrCreate(
 		strconv.FormatInt(accountID, 10),
 		strconv.FormatInt(connectionID, 10),
-		func() (dbengine.Driver, error) { return drv, nil },
+		func() (engine.Driver, error) { return drv, nil },
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return sess
+}
+
+func disableSchemaSnapshots(t *testing.T, app *application, connectionID int64) {
+	t.Helper()
+	conn, found, err := app.db.GetConnection(context.Background(), connectionID)
+	if err != nil || !found {
+		t.Fatalf("get schema test connection: found=%v err=%v", found, err)
+	}
+	if err := app.db.UpdateConnectionWithPolicy(context.Background(), conn.ID, conn.Name, conn.DSNEncrypted, conn.AccessMode, database.SchemaSnapshotPolicyDisabled); err != nil {
+		t.Fatalf("disable snapshots for ephemeral schema test: %v", err)
+	}
 }

@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { toast } from 'sonner'
 import { EditorView } from '@codemirror/view'
 import { EditorState, Compartment } from '@codemirror/state'
 import type { Extension } from '@codemirror/state'
-import { sql } from '@codemirror/lang-sql'
 import { yCollab } from 'y-codemirror.next'
 import type * as Y from 'yjs'
 import { cn } from '#/lib/utils'
@@ -16,6 +16,9 @@ import { findPanelHost, type FindPanelHost } from './findPanelBridge'
 import { FindPanel } from './FindPanel'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { useIde } from './useIdeStore'
+import { sqlCompletionExtension, type SQLCompletionConfig } from './sqlCompletion'
+import { useIconPack } from '#/lib/icons'
+import { sqlFormatterForDriver, sqlFormattingKeymap } from './sqlFormatting'
 
 function makeBaseTheme(fontFamily: string, fontSize: number): Extension {
   return EditorView.theme({
@@ -29,7 +32,7 @@ function makeBaseTheme(fontFamily: string, fontSize: number): Extension {
     '.cm-content': { padding: '8px 0' },
     '.cm-lineNumbers .cm-gutterElement': { minWidth: '3.5ch', textAlign: 'right' },
     '.cm-foldGutter': { display: 'none' },
-    '.cm-tooltip': { borderRadius: '0' },
+    '.cm-tooltip:not(.cm-tooltip-autocomplete)': { borderRadius: '0' },
   })
 }
 
@@ -43,9 +46,19 @@ type SqlEditorProps = {
   doc: Y.Doc
   className?: string
   onCursorChange?: (line: number, col: number, selSize: number) => void
+  completion?: SQLCompletionConfig
+  driver?: string
 }
 
-export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: SqlEditorProps) {
+export function SqlEditor({
+  tabId,
+  groupId,
+  doc,
+  className,
+  onCursorChange,
+  completion,
+  driver,
+}: SqlEditorProps) {
   const viewKey = groupId ? `${groupId}:${tabId}` : tabId
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRegistry = useEditorViewRegistry()
@@ -56,6 +69,13 @@ export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: Sq
   const { editorThemeDark, editorThemeLight } = useEditorTheme()
   const activeThemeName = resolvedTheme === 'dark' ? editorThemeDark : editorThemeLight
   const { editorFont, editorFontSize } = useEditorFont()
+  const { iconMap } = useIconPack()
+  const notifyConnectionRequired = useCallback(() => {
+    toast.info('Select a connection for schema-aware autocomplete.', {
+      id: 'sql-completion-connection-required',
+      description: 'SQL keywords are still available without a connection.',
+    })
+  }, [])
   const initialAppearance = useRef({
     fontFamily: editorFont.fontFamily,
     fontSize: editorFontSize,
@@ -64,6 +84,36 @@ export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: Sq
 
   const themeCompartment = useRef(new Compartment())
   const fontCompartment = useRef(new Compartment())
+  const completionCompartment = useRef(new Compartment())
+  const formattingCompartment = useRef(new Compartment())
+  const completionConfig = useMemo(
+    () => ({
+      orgSlug: completion?.orgSlug,
+      workspaceId: completion?.workspaceId,
+      connectionId: completion?.connectionId,
+      driver: completion?.driver,
+      sessionId: completion?.sessionId,
+      iconMap,
+      onConnectionRequired: completion?.onConnectionRequired ?? notifyConnectionRequired,
+    }),
+    [
+      completion?.orgSlug,
+      completion?.workspaceId,
+      completion?.connectionId,
+      completion?.driver,
+      completion?.sessionId,
+      completion?.onConnectionRequired,
+      iconMap,
+      notifyConnectionRequired,
+    ],
+  )
+  const initialCompletionConfig = useRef(completionConfig)
+  const initialFormatter = useRef(sqlFormatterForDriver(driver))
+  const notifyFormattingError = useCallback(() => {
+    toast.error('Could not format SQL.', {
+      description: 'The query may contain unsupported or incomplete syntax.',
+    })
+  }, [])
   const viewRef = useRef<EditorView | null>(null)
   const [findHost, setFindHost] = useState<FindPanelHost | null>(null)
 
@@ -78,7 +128,10 @@ export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: Sq
         doc: yText.toString(),
         extensions: [
           sqlwardenBasicSetup,
-          sql(),
+          completionCompartment.current.of(sqlCompletionExtension(initialCompletionConfig.current)),
+          formattingCompartment.current.of(
+            sqlFormattingKeymap(initialFormatter.current, notifyFormattingError),
+          ),
           fontCompartment.current.of(
             makeBaseTheme(initialAppearance.current.fontFamily, initialAppearance.current.fontSize),
           ),
@@ -111,7 +164,23 @@ export function SqlEditor({ tabId, groupId, doc, className, onCursorChange }: Sq
       viewRegistry.unregister(viewKey)
       view.destroy()
     }
-  }, [doc, viewKey, viewRegistry])
+  }, [doc, viewKey, viewRegistry, notifyFormattingError])
+
+  useEffect(() => {
+    if (!viewRef.current) return
+    viewRef.current.dispatch({
+      effects: completionCompartment.current.reconfigure(sqlCompletionExtension(completionConfig)),
+    })
+  }, [completionConfig])
+
+  useEffect(() => {
+    if (!viewRef.current) return
+    viewRef.current.dispatch({
+      effects: formattingCompartment.current.reconfigure(
+        sqlFormattingKeymap(sqlFormatterForDriver(driver), notifyFormattingError),
+      ),
+    })
+  }, [driver, notifyFormattingError])
 
   // Grab keyboard focus when this pane is the target of a split, so the new
   // split is ready to type in. requestAnimationFrame waits for layout.

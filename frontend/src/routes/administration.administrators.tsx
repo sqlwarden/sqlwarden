@@ -27,6 +27,7 @@ import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
+import { usePageTitle } from '#/lib/page-title'
 import {
   Table,
   TableBody,
@@ -42,6 +43,7 @@ export const Route = createFileRoute('/administration/administrators')({
 })
 
 function SettingsAdministratorsPage() {
+  usePageTitle('Administrators', 'Administration')
   const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)
   const [email, setEmail] = useState('')
@@ -124,7 +126,7 @@ function SettingsAdministratorsPage() {
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col gap-1.5">
-            <h2 className="text-2xl font-semibold tracking-tight">Administrators</h2>
+            <h2 className="font-heading text-2xl font-semibold tracking-tight">Administrators</h2>
             <p className="text-sm text-muted-foreground">
               {!administrators.isLoading && total > 0
                 ? `${total} instance administrator${total !== 1 ? 's' : ''}`

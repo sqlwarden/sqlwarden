@@ -36,7 +36,8 @@ import {
   TableRow,
 } from '#/components/ui/table'
 import { cn } from '#/lib/utils'
-import { slugify } from '#/lib/strings'
+import { MAX_SLUG_LENGTH, slugify } from '#/lib/strings'
+import { usePageTitle } from '#/lib/page-title'
 
 export const Route = createFileRoute('/administration/organizations')({
   component: SettingsOrganizationsPage,
@@ -44,6 +45,7 @@ export const Route = createFileRoute('/administration/organizations')({
 })
 
 function SettingsOrganizationsPage() {
+  usePageTitle('Organizations', 'Administration')
   const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)
   const [newOrganizationName, setNewOrganizationName] = useState('')
@@ -79,7 +81,7 @@ function SettingsOrganizationsPage() {
     if (slugTouched) {
       return
     }
-    setNewOrganizationSlug(slugify(newOrganizationName, { maxLength: 64 }))
+    setNewOrganizationSlug(slugify(newOrganizationName, { maxLength: MAX_SLUG_LENGTH }))
   }, [newOrganizationName, slugTouched])
 
   const createOrganization = useMutation({
@@ -142,7 +144,7 @@ function SettingsOrganizationsPage() {
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col gap-1.5">
-            <h2 className="text-2xl font-semibold tracking-tight">Organizations</h2>
+            <h2 className="font-heading text-2xl font-semibold tracking-tight">Organizations</h2>
             <p className="text-sm text-muted-foreground">
               {!organizations.isLoading && total > 0
                 ? `${total} organization${total !== 1 ? 's' : ''} on this instance`
@@ -189,10 +191,13 @@ function SettingsOrganizationsPage() {
 
                 <div className="flex flex-col gap-2">
                   <Input
+                    maxLength={MAX_SLUG_LENGTH}
                     value={newOrganizationSlug}
                     onChange={(event) => {
                       setSlugTouched(true)
-                      setNewOrganizationSlug(slugify(event.target.value, { maxLength: 64 }))
+                      setNewOrganizationSlug(
+                        slugify(event.target.value, { maxLength: MAX_SLUG_LENGTH }),
+                      )
                       setCreateFieldErrors((current) => ({ ...current, slug: undefined }))
                     }}
                     placeholder="organization-slug"

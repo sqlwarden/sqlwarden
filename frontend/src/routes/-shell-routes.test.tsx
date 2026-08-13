@@ -1,7 +1,8 @@
 import { screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { setAccessToken } from '#/lib/auth/access-token'
+import { clearAccessToken, setAccessToken } from '#/lib/auth/access-token'
+import { AUTH_INVALIDATED_EVENT } from '#/lib/auth/invalidation'
 import { renderRoute } from '#/test/render'
 import { server } from '#/test/server'
 import { sessionHandler, setupStatusHandler } from '#/test/handlers'
@@ -16,6 +17,20 @@ describe('authenticated shell routes', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/settings/account'))
     expect(await screen.findByRole('heading', { name: 'Account' })).toBeInTheDocument()
+    expect(document.title).toBe('Account | Settings | SQLWarden')
+  })
+
+  it('preserves the current URL when an active session is invalidated', async () => {
+    server.use(setupStatusHandler(), sessionHandler(sessionFixture({ organizations: [] })))
+    const current = '/settings/account?section=password#password'
+    const { router } = renderRoute(current)
+
+    expect(await screen.findByRole('heading', { name: 'Account' })).toBeInTheDocument()
+    clearAccessToken()
+    window.dispatchEvent(new Event(AUTH_INVALIDATED_EVENT))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
+    expect(router.state.location.search).toEqual({ redirect: current })
   })
 
   it('rejects administration routes for a regular account', async () => {
@@ -80,6 +95,7 @@ describe('authenticated shell routes', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/orgs/acme/workspaces/3'))
     expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
+    expect(document.title).toBe('Overview | Analytics | SQLWarden')
     expect(screen.queryByText('Connections', { selector: 'p' })).not.toBeInTheDocument()
   })
 })

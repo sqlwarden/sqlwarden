@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { usePageTitle, usePageTitleScope } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -48,6 +49,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '#/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '#/components/ui/select'
 import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
@@ -106,8 +115,13 @@ function OrganizationUserContextPage() {
   const teamItems = teams.data?.items ?? []
   const existingTeamSlugs = new Set(teamItems.map((team) => team.slug))
   const displayName = member.data?.name || member.data?.email || `User #${accountId}`
+  const { organizationName } = usePageTitleScope()
+  usePageTitle(displayName, organizationName)
   const canManageTeams =
     canReadUser && hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
+  const canManageMemberRole =
+    canReadUser &&
+    hasPermission(effectivePermissions.data?.permissions, permission.orgTransferOwnership)
 
   useEffect(() => {
     if (!canReadUser || !member.error) {
@@ -177,6 +191,18 @@ function OrganizationUserContextPage() {
     },
   })
 
+  const updateRole = useMutation({
+    mutationFn: async (role: string) =>
+      api.patch<void>(`/api/v1/orgs/${orgSlug}/members/${accountId}`, { role }),
+    onSuccess: async () => {
+      toast.success('Role updated')
+      await queryClient.invalidateQueries({ queryKey: queryKeys.orgMember(orgSlug, accountId) })
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Failed to update role'))
+    },
+  })
+
   function resetAddTeam() {
     clearSearch()
   }
@@ -208,8 +234,33 @@ function OrganizationUserContextPage() {
           )}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
-              {member.data?.role ? (
+              <h1 className="font-heading text-2xl font-semibold tracking-tight">{displayName}</h1>
+              {member.data && canManageMemberRole ? (
+                <Select
+                  value={member.data.role}
+                  onValueChange={(value) => {
+                    if (value && value !== member.data?.role) {
+                      updateRole.mutate(value)
+                    }
+                  }}
+                  disabled={updateRole.isPending}
+                >
+                  <SelectTrigger size="sm" className="w-auto">
+                    <SelectValue>{roleLabel(member.data.role)}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={builtinRole.organizationOwner}>
+                        {builtinRole.organizationOwner}
+                      </SelectItem>
+                      <SelectItem value={builtinRole.organizationAdmin}>
+                        {builtinRole.organizationAdmin}
+                      </SelectItem>
+                      <SelectItem value={builtinRole.organizationMember}>Member</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ) : member.data ? (
                 <Badge variant={roleBadgeVariant(member.data.role)}>
                   {roleLabel(member.data.role)}
                 </Badge>
@@ -597,5 +648,6 @@ function roleBadgeVariant(role: string): 'default' | 'secondary' | 'outline' {
 }
 
 function roleLabel(role: string) {
-  return role
+  if (role === builtinRole.organizationMember) return 'Member'
+  return role || 'Member'
 }

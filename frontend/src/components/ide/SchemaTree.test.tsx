@@ -8,6 +8,7 @@ import { server } from '#/test/server'
 import { SchemaTree } from './SchemaTree'
 import { createIdeStore, IdeStoreContext } from './useIdeStore'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
+import { ContextMenuProvider } from '#/components/ui/context-menu'
 
 vi.mock('idb-keyval', () => ({
   get: vi.fn(() => Promise.resolve(null)),
@@ -15,7 +16,8 @@ vi.mock('idb-keyval', () => ({
   del: vi.fn(() => Promise.resolve()),
 }))
 
-const ref: ObjectRef = { namespace: 'public', kind: 'table', name: 'orders' }
+const scope = [{ kind: 'schema', name: 'public' }]
+const ref: ObjectRef = { scope, kind: 'table', name: 'orders' }
 
 describe('SchemaTree', () => {
   let store: ReturnType<typeof createIdeStore>
@@ -31,14 +33,16 @@ describe('SchemaTree', () => {
       <QueryClientProvider client={createTestQueryClient()}>
         <IdeStoreContext.Provider value={store}>
           <EditorViewRegistryContext.Provider value={editorViews}>
-            <SchemaTree
-              orgSlug="acme"
-              workspaceId={3}
-              connectionId={7}
-              driver="postgres"
-              filter={filter}
-              onConnect={onConnect}
-            />
+            <ContextMenuProvider>
+              <SchemaTree
+                orgSlug="acme"
+                workspaceId={3}
+                connectionId={7}
+                driver="postgres"
+                filter={filter}
+                onConnect={onConnect}
+              />
+            </ContextMenuProvider>
           </EditorViewRegistryContext.Provider>
         </IdeStoreContext.Provider>
       </QueryClientProvider>,
@@ -47,14 +51,20 @@ describe('SchemaTree', () => {
 
   function respondReady() {
     server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/catalog', () =>
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
         HttpResponse.json({
-          catalog: {
+          directory: {
             connection: 'warehouse',
             dialect: 'postgres',
             database: 'analytics',
             generated_at: '',
-            namespaces: [{ name: 'public', groups: [{ kind: 'table', objects: [ref] }] }],
+            roots: [
+              {
+                segment: scope[0],
+                path: scope,
+                groups: [{ kind: 'table', objects: [ref] }],
+              },
+            ],
           },
         }),
       ),
@@ -94,18 +104,133 @@ describe('SchemaTree', () => {
     )
   }
 
-  it('offers connection recovery without issuing schema calls', () => {
+  it('offers connection recovery when ephemeral schema access requires a session', async () => {
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+        HttpResponse.json(
+          { error: { code: 'bad_request', message: 'X-Warden-Session header is required.' } },
+          { status: 400 },
+        ),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({ spec: { dialect: 'postgres', kinds: [] } }),
+      ),
+    )
     const onConnect = vi.fn()
     renderTree('', onConnect)
-    expect(screen.getByText('Not connected.')).toBeInTheDocument()
+    expect(await screen.findByText('Not connected.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }))
     expect(onConnect).toHaveBeenCalledOnce()
+  })
+
+  it('loads a persisted schema snapshot without a live session', async () => {
+    respondReady()
+    renderTree()
+    fireEvent.click(await screen.findByText('Tables'))
+    expect(await screen.findByText('orders')).toBeInTheDocument()
+  })
+
+  it('renders an empty state when an empty snapshot contains null roots', async () => {
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+        HttpResponse.json({
+          directory: {
+            connection: 'warehouse',
+            engine: 'postgres',
+            default_scope: scope,
+            generated_at: '',
+            roots: null,
+          },
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({ spec: { dialect: 'postgres', kinds: [] } }),
+      ),
+    )
+
+    renderTree()
+    expect(await screen.findByText('No objects.')).toBeInTheDocument()
+  })
+
+  it('renders an empty state for a PostgreSQL database scope with no schemas or objects', async () => {
+    const databaseScope = [{ kind: 'database', name: 'postgres' }]
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+        HttpResponse.json({
+          directory: {
+            connection: 'warehouse',
+            engine: 'postgres',
+            default_scope: databaseScope,
+            generated_at: '',
+            roots: [{ path: databaseScope, groups: [] }],
+          },
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({ spec: { dialect: 'postgres', kinds: [] } }),
+      ),
+    )
+
+    renderTree()
+    expect(await screen.findByText('No objects.')).toBeInTheDocument()
+  })
+
+  it('automatically reloads a directory while its snapshot is being prepared', async () => {
+    let directoryRequests = 0
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () => {
+        directoryRequests++
+        if (directoryRequests === 1) {
+          return HttpResponse.json({ status: 'pending' }, { status: 202 })
+        }
+        return HttpResponse.json({
+          status: 'ready',
+          directory: {
+            connection: 'warehouse',
+            dialect: 'postgres',
+            database: 'analytics',
+            generated_at: '',
+            roots: [
+              {
+                segment: scope[0],
+                path: scope,
+                groups: [{ kind: 'table', objects: [ref] }],
+              },
+            ],
+          },
+        })
+      }),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({
+          spec: {
+            dialect: 'postgres',
+            kinds: [
+              {
+                kind: 'table',
+                label: 'Table',
+                plural_label: 'Tables',
+                order: 1,
+                relational: true,
+                supports_diagram: true,
+                listing: 'enumerated',
+              },
+            ],
+          },
+        }),
+      ),
+    )
+
+    renderTree()
+
+    expect(await screen.findByText('Preparing schema snapshot…')).toBeInTheDocument()
+    expect(await screen.findByText('Tables', {}, { timeout: 2_500 })).toBeInTheDocument()
+    expect(directoryRequests).toBe(2)
   })
 
   it('distinguishes unsupported inspection from a generic failure', async () => {
     store.getState().setSession(7, 'session-7')
     server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/catalog', () =>
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
         HttpResponse.json(
           {
             error: { code: 'not_implemented', message: 'Unsupported' },
@@ -142,6 +267,136 @@ describe('SchemaTree', () => {
     )
   })
 
+  it('keeps routine and sequence rows compact while condensing trigger details', async () => {
+    store.getState().setSession(7, 'session-7')
+    const refs: ObjectRef[] = [
+      { scope, kind: 'function', name: 'calculate_tax' },
+      { scope, kind: 'procedure', name: 'refresh_totals' },
+      { scope, kind: 'sequence', name: 'orders_id_seq' },
+      { scope, kind: 'trigger', name: 'orders_audit' },
+    ]
+    const requestedKinds: string[] = []
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+        HttpResponse.json({
+          directory: {
+            connection: 'warehouse',
+            engine: 'postgres',
+            default_scope: scope,
+            generated_at: '',
+            roots: [
+              {
+                path: scope,
+                groups: refs.map((objectRef) => ({
+                  kind: objectRef.kind,
+                  objects: [objectRef],
+                })),
+              },
+            ],
+          },
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({
+          spec: {
+            dialect: 'postgres',
+            kinds: refs.map((objectRef, order) => ({
+              kind: objectRef.kind,
+              label: objectRef.kind[0].toUpperCase() + objectRef.kind.slice(1),
+              plural_label: objectRef.kind[0].toUpperCase() + objectRef.kind.slice(1) + 's',
+              order,
+              relational: false,
+              supports_diagram: false,
+              listing: 'enumerated',
+            })),
+          },
+        }),
+      ),
+      http.post(
+        '/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects',
+        async ({ request }) => {
+          const body = (await request.json()) as { refs: ObjectRef[] }
+          const objectRef = body.refs[0]
+          requestedKinds.push(objectRef.kind)
+          if (objectRef.kind === 'sequence') {
+            return HttpResponse.json({
+              objects: [
+                {
+                  ref: objectRef,
+                  descriptors: [
+                    {
+                      kind: 'fields',
+                      title: 'Sequence',
+                      fields: [{ name: 'Data type', value: 'bigint' }],
+                    },
+                  ],
+                },
+              ],
+            })
+          }
+          return HttpResponse.json({
+            objects: [
+              {
+                ref: objectRef,
+                descriptors: [
+                  {
+                    kind: 'fields',
+                    title: 'Trigger',
+                    fields: [
+                      { name: 'Timing', value: 'BEFORE' },
+                      { name: 'Event', value: 'INSERT' },
+                      { name: 'Table', value: 'public.orders' },
+                    ],
+                  },
+                  {
+                    kind: 'source',
+                    title: 'Statement',
+                    source: { language: 'sql', body: 'BEGIN audit(); END' },
+                  },
+                ],
+              },
+            ],
+          })
+        },
+      ),
+    )
+
+    renderTree()
+    for (const label of ['Functions', 'Procedures', 'Sequences', 'Triggers']) {
+      fireEvent.click(await screen.findByRole('button', { name: new RegExp(label) }))
+    }
+
+    const functionRow = screen.getByRole('button', { name: 'calculate_tax' })
+    const procedureRow = screen.getByRole('button', { name: 'refresh_totals' })
+    const sequenceRow = screen.getByRole('button', { name: /orders_id_seq/ })
+    expect(functionRow).not.toHaveAttribute('aria-expanded')
+    expect(procedureRow).not.toHaveAttribute('aria-expanded')
+    expect(sequenceRow).not.toHaveAttribute('aria-expanded')
+    expect(await screen.findByText('bigint')).toBeInTheDocument()
+    expect(requestedKinds).toEqual(['sequence'])
+
+    fireEvent.doubleClick(functionRow)
+    await waitFor(() =>
+      expect(store.getState().tabs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'object',
+            objectRef: expect.objectContaining({ kind: 'function', name: 'calculate_tax' }),
+          }),
+        ]),
+      ),
+    )
+
+    const triggerRow = screen.getByRole('button', { name: 'orders_audit' })
+    expect(triggerRow).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(triggerRow)
+    expect(await screen.findByText('BEFORE')).toBeInTheDocument()
+    expect(screen.getByText('INSERT')).toBeInTheDocument()
+    expect(screen.getByText('public.orders')).toBeInTheDocument()
+    expect(screen.queryByText('BEGIN audit(); END')).not.toBeInTheDocument()
+    expect(requestedKinds).toEqual(['sequence', 'trigger'])
+  })
+
   it('force-opens matching branches and reports an empty search', async () => {
     store.getState().setSession(7, 'session-7')
     respondReady()
@@ -164,5 +419,71 @@ describe('SchemaTree', () => {
       </QueryClientProvider>,
     )
     expect(await screen.findByText('No matches.')).toBeInTheDocument()
+  })
+
+  it('uses the backend refresh endpoint from schema group menus', async () => {
+    store.getState().setSession(7, 'session-7')
+    respondReady()
+    let refreshes = 0
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', () => {
+        refreshes++
+        return HttpResponse.json({ status: 'ok', mode: 'ephemeral' })
+      }),
+    )
+    renderTree()
+
+    fireEvent.contextMenu(await screen.findByRole('button', { name: /Tables/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Refresh' }))
+    await waitFor(() => expect(refreshes).toBe(1))
+  })
+
+  it('opens a scope diagram from a diagram-capable object group menu', async () => {
+    store.getState().setSession(7, 'session-7')
+    respondReady()
+    renderTree()
+
+    fireEvent.contextMenu(await screen.findByRole('button', { name: /Tables/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'View diagram' }))
+
+    await waitFor(() =>
+      expect(store.getState().tabs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'diagram',
+            diagramTarget: { kind: 'scope', scope },
+          }),
+        ]),
+      ),
+    )
+  })
+
+  it('omits the group diagram action when the object kind does not support diagrams', async () => {
+    store.getState().setSession(7, 'session-7')
+    respondReady()
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({
+          spec: {
+            dialect: 'postgres',
+            kinds: [
+              {
+                kind: 'table',
+                label: 'Table',
+                plural_label: 'Tables',
+                order: 1,
+                relational: true,
+                supports_diagram: false,
+                listing: 'enumerated',
+              },
+            ],
+          },
+        }),
+      ),
+    )
+    renderTree()
+
+    fireEvent.contextMenu(await screen.findByRole('button', { name: /Tables/ }))
+    expect(screen.queryByRole('menuitem', { name: 'View diagram' })).not.toBeInTheDocument()
   })
 })

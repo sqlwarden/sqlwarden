@@ -21,7 +21,7 @@ export type ColumnIncoming = { hidden: boolean; sources: ObjectRef[] }
 
 export type TableNodeData = {
   label: string
-  namespace: string
+  scopeLabel: string
   columns: DbColumn[]
   pk: Set<string>
   outgoingByCol: Record<string, ColumnOutgoing> // this column is an FK → target table

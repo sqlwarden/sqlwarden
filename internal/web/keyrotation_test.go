@@ -187,6 +187,49 @@ func TestRotateEncryptionKeys(t *testing.T) {
 	}
 }
 
+func TestRotateEncryptionKeysIncludesSMTPPassword(t *testing.T) {
+	app := newTestApplication(t)
+	oldKeyring, err := encrypt.NewKeyring("old-smtp-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := oldKeyring.Encrypt("smtp-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := app.instanceSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.SMTPPasswordEncrypted = ciphertext
+	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
+		t.Fatal(err)
+	}
+	app.keyring, err = encrypt.NewKeyring("new-smtp-key", "old-smtp-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := app.RotateEncryptionKeys(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.SMTPPasswordsScanned != 1 || report.SMTPPasswordsRotated != 1 {
+		t.Fatalf("unexpected SMTP rotation report: %+v", report)
+	}
+	rotated, _, err := app.db.GetInstanceSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.keyring.NeedsRotation(rotated.SMTPPasswordEncrypted) {
+		t.Fatal("SMTP password still needs rotation")
+	}
+	plaintext, err := app.keyring.Decrypt(rotated.SMTPPasswordEncrypted)
+	if err != nil || plaintext != "smtp-secret" {
+		t.Fatalf("rotated SMTP password = %q, err=%v", plaintext, err)
+	}
+}
+
 func TestRotateEncryptionKeysEndpointRequiresAuth(t *testing.T) {
 	app := newTestApp(t)
 

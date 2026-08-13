@@ -7,6 +7,7 @@ import type { WorkspaceFile } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
 import { CreateItemDialog } from './CreateItemDialog'
+import { duplicateFileName, FileNameDialog } from './FileNameDialog'
 import { SaveAsDialog } from './SaveAsDialog'
 import type { EditorTab } from './useIdeStore'
 
@@ -30,6 +31,77 @@ function provider(children: React.ReactNode) {
 }
 
 describe('workspace file dialogs', () => {
+  it('builds predictable duplicate names', () => {
+    expect(duplicateFileName('query.sql')).toBe('query copy.sql')
+    expect(duplicateFileName('README')).toBe('README copy')
+    expect(duplicateFileName('.env')).toBe('.env copy')
+  })
+
+  it('submits trimmed duplicate names and reports local validation', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <FileNameDialog
+        open
+        onOpenChange={vi.fn()}
+        objectType="file"
+        currentName="report.sql"
+        pending={false}
+        fieldError={null}
+        onClearError={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: 'Duplicate file' })).toBeInTheDocument()
+    const input = screen.getByLabelText('Name')
+    await user.clear(input)
+    expect(screen.getByText('Name is required.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Duplicate' })).toBeDisabled()
+    await user.type(input, '  renamed.sql  ')
+    await user.click(screen.getByRole('button', { name: 'Duplicate' }))
+    expect(onSubmit).toHaveBeenCalledWith('renamed.sql')
+  })
+
+  it('prefills duplicate names, selects the stem, and cannot close while pending', async () => {
+    const onOpenChange = vi.fn()
+    const { rerender } = render(
+      <FileNameDialog
+        open
+        onOpenChange={onOpenChange}
+        objectType="file"
+        currentName="report.sql"
+        pending={false}
+        fieldError="Already exists."
+        onClearError={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+    const input = screen.getByLabelText('Name') as HTMLInputElement
+    await waitFor(() => expect(input).toHaveValue('report copy.sql'))
+    await waitFor(() => {
+      expect(input.selectionStart).toBe(0)
+      expect(input.selectionEnd).toBe('report copy'.length)
+    })
+    expect(screen.getByText('Already exists.')).toBeInTheDocument()
+
+    rerender(
+      <FileNameDialog
+        open
+        onOpenChange={onOpenChange}
+        objectType="file"
+        currentName="report.sql"
+        pending
+        fieldError={null}
+        onClearError={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+    await userEvent.keyboard('{Escape}')
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+  })
+
   it('creates a file, initializes its content, and returns the created item', async () => {
     const user = userEvent.setup()
     const onSuccess = vi.fn()

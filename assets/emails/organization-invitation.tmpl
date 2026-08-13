@@ -1,0 +1,15 @@
+{{define "subject"}}Invitation to join {{.OrganizationName}}{{end}}
+
+{{define "plainBody"}}
+{{if .InviterName}}{{.InviterName}} invited you to join {{.OrganizationName}} in SQLWarden.{{else}}You were invited to join {{.OrganizationName}} in SQLWarden.{{end}}
+
+Accept the invitation: {{.InviteURL}}
+
+This invitation expires in 7 days.
+{{end}}
+
+{{define "htmlBody"}}
+<p>{{if .InviterName}}{{.InviterName}} invited you{{else}}You were invited{{end}} to join <strong>{{.OrganizationName}}</strong> in SQLWarden.</p>
+<p><a href="{{.InviteURL}}">Accept invitation</a></p>
+<p>This invitation expires in 7 days.</p>
+{{end}}

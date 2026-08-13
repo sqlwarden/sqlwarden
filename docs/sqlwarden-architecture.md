@@ -1,8 +1,8 @@
 # SQLWarden Architecture
 
-Updated: 2026-07-01
+Updated: 2026-08-06
 
-SQLWarden is a self-hosted database access platform and SQL IDE. The current repository contains a Go backend, embedded React SPA, custom RBAC engine, database connection/session manager, and workspace file storage foundation. Future product direction includes Wails desktop packaging, SSO/SCIM, stronger audit/compliance features, connector agents, and broader file/storage backends.
+SQLWarden is a self-hosted database access platform and SQL editor. The current repository contains a Go backend, embedded React SPA, custom RBAC engine, database connection/session manager, and workspace file storage foundation. Future product direction includes Wails desktop packaging, SSO/SCIM, stronger audit/compliance features, connector agents, and broader file/storage backends.
 
 This document is the committed architecture source of truth for the repository. When it conflicts with code, migrations, or tests, code wins.
 
@@ -35,7 +35,7 @@ Implemented today:
 - Database engine registry and capability abstractions for schema inspection, query classification, parsing, rewriting, completion, and cursor-backed result paging.
 - Schema introspection abstraction, cache, and API.
 - React 19 frontend with TanStack Router, TanStack Query, Tailwind CSS 4, shadcn/ui, Base UI primitives, CodeMirror 6, Zustand, IndexedDB, Y.js, and BroadcastChannel.
-- IDE workspace tabs, explorer, file tabs, console tabs, query execution, results pane, editor theme preferences, and same-browser cross-window sync.
+- Editor workspace tabs, explorer, file tabs, console tabs, query execution, results pane, editor theme preferences, and same-browser cross-window sync.
 - Config through spf13/viper with config file, environment variables, and CLI flags.
 - SQLite app database by default at `~/.sqlwarden/sqlwarden.db`; PostgreSQL app database support exists.
 
@@ -51,7 +51,7 @@ Explicitly future or incomplete:
 - Distributed RBAC cache invalidation.
 - Shared-file collaborative editing through WebSockets.
 - File uploads, revision browsing UX, S3-compatible file storage, and storage migration tooling.
-- Full SQL parser/AST-based query classification.
+- SQLite SQL parsing/classification and SQL autocomplete.
 - PWA service worker setup.
 
 ## Repository Layout
@@ -81,7 +81,7 @@ sqlwarden/
 │   ├── access/                       # custom RBAC enforcer and permissions catalog
 │   ├── connection/                   # live target DB sessions
 │   ├── database/                     # Bun models and query helpers
-│   ├── dbengine/                     # target database engines and capabilities
+│   ├── engine/                       # external data-system engines and capabilities
 │   ├── encrypt/                      # AES-GCM/keyring helpers
 │   ├── files/                        # workspace file service
 │   ├── filestore/                    # filesystem object storage
@@ -111,6 +111,15 @@ Important concepts:
 - Session revocation can be enabled/disabled for deployments that do not need account session management overhead.
 - File storage currently supports local filesystem storage. Config names are designed around active backend plus future backend registry.
 - Target SQLite connections are explicitly gated through `drivers.sqlite.allowed_sources`; REST clients cannot rely on the frontend driver list as the security control.
+
+Configuration ownership is split deliberately:
+
+- Bootstrap configuration is deployment-managed and must be available before the application database opens. It covers listeners, deployment/access mode, application database connectivity, secrets, TLS, storage topology, desktop topology, log format, and host-local SQLite access.
+- Runtime instance settings are typed columns in the singleton `instance_settings` row. They cover product policy, limits, log level, database query tracing, job-runner tuning, and SMTP delivery without restarting.
+- Organizations store typed nullable overrides for the small set of policies they may tighten. Effective settings are the instance values plus valid organization overrides. Personal spaces use instance settings.
+The current consistency model intentionally performs a database read when an operation resolves policy settings. Live operational adapters additionally reconcile the singleton row every two seconds so all replicas converge after an update. A request uses one immutable resolved value set; background jobs capture policy settings when execution begins. Running jobs finish or cancel through the normal runner shutdown path when worker tuning changes.
+
+If settings reads become measurable load at larger horizontal scale, the settings service is the replacement boundary for a versioned in-process cache. Such a cache must use database notifications or an external pub/sub mechanism for cross-replica invalidation and retain a bounded fallback check. No cache or Redis dependency is part of the current implementation.
 
 Defaults:
 
@@ -214,7 +223,7 @@ Small non-paginated list endpoints must still avoid top-level arrays. Workspace 
 
 ### Single Resources And Actions
 
-Many current create/update/get endpoints still return the raw resource directly. This is accepted current state but should be cleaned up incrementally if the API contract is tightened further. Query execution and live database session endpoints have specialized response shapes and should be changed carefully because frontend IDE behavior depends on them.
+Many current create/update/get endpoints still return the raw resource directly. This is accepted current state but should be cleaned up incrementally if the API contract is tightened further. Query execution and live database session endpoints have specialized response shapes and should be changed carefully because frontend editor behavior depends on them.
 
 ## Authentication And Sessions
 
@@ -270,7 +279,9 @@ Important tables:
 - `auth_sessions`
 - `org_access_sessions`
 - `refresh_tokens`
-- `schema_introspection_cache`
+- `schema_snapshots`
+- `schema_snapshot_objects`
+- `schema_snapshot_relationships`
 
 Entity IDs are database integer IDs for relational resources. Refresh tokens and live database session IDs use ULIDs.
 
@@ -355,7 +366,12 @@ Query permissions:
 - `conn:ddl` for schema mutation queries.
 - `conn:execute` allows all query classes.
 
-Current query classification is intentionally simple and should be replaced by SQL parser/AST classification later.
+PostgreSQL and MySQL use strict Omni parsing and fail-closed AST classification.
+Only proven read-only statements receive `conn:dql`; ambiguous constructs
+require `conn:execute`. Engines without a registered dialect classifier, which
+currently means SQLite, use the conservative keyword heuristic for runtime
+authorization. SQL export never uses that fallback and is unavailable for such
+engines.
 
 ### Roles
 
@@ -557,7 +573,10 @@ Cross-org and cross-workspace boundaries must be enforced when creating workspac
 
 ## Query Execution And Live Sessions
 
-`internal/dbengine` is for target databases. It is separate from `internal/database`, which stores SQLWarden metadata.
+`internal/engine` is for external data-system integrations. It is separate from
+`internal/database`, which stores SQLWarden application metadata. Current
+engines target SQL databases, but the package name does not constrain future
+integrations to relational systems.
 
 Implemented target drivers:
 
@@ -565,16 +584,37 @@ Implemented target drivers:
 - MySQL
 - SQLite
 
-Each engine registers through the `dbengine` registry and advertises implemented capabilities. Current capability packages include:
+Each engine registers through the `engine` registry and advertises implemented capabilities. Current capability packages include:
 
-- `schema`: cheap catalog listing and on-demand object detail.
+- `metadata`: cheap catalog listing and on-demand object detail.
 - `classifier`: query kind classification used for RBAC decisions.
-- `parser`: SQL parse surface for future AST-backed IDE behavior.
+- `parser`: strict SQL parsing with opaque ASTs and normalized statement spans.
 - `rewriter`: query rewrite surface for future pagination/export behavior.
 - `completer`: autocomplete surface.
 - `cursor`: forward-only query result paging over a live database session.
 
-Each concrete engine keeps capability implementations in separate files such as `driver.go`, `inspector.go`, `classifier.go`, `parser.go`, `rewriter.go`, and `cursor.go`. Shared helpers such as the GoSQLX-backed SQL provider live behind those interfaces; engines remain the source of truth for which capabilities they expose.
+Each concrete engine keeps optional capability implementations in separate
+files alongside its driver. PostgreSQL and MySQL implement strict parsing and
+AST classification with Omni. SQLite intentionally implements neither and uses
+the runtime heuristic fallback. Capabilities are derived from the interfaces
+the engine actually implements, so rewriting and completion remain false
+instead of being backed by placeholder methods.
+
+PostgreSQL and MySQL completion use the SQLWarden-owned
+`internal/engine/completioncore` boundary, adapted from Bytebase's
+MIT-licensed completion design. Omni supplies grammar candidates and
+PostgreSQL parser-native scope snapshots. Until Omni exposes the equivalent
+MySQL scope API, the MySQL adapter owns its isolated reference collector.
+Both dialects resolve semantic candidates through the reusable immutable
+`metadata.Index`, adapted by completioncore's `SchemaResolver`; no completer
+opens or queries a live connection. `metadata.MetadataSet` keeps a lightweight
+catalog, independently inspected object details, optional relationship graphs,
+and their version together without conflating their storage tiers. The same
+index provides object and FK adjacency lookups for schema-graph consumers such
+as ER diagrams. Engine adapters map completion candidates into the stable
+`completer.Suggestion` API and cache prepared Omni catalogs and schema indexes
+by connection and metadata version. This boundary allows more resolution to
+move into Omni later without changing metadata storage or the editor protocol.
 
 `internal/connection` manages live target database sessions:
 
@@ -583,7 +623,7 @@ Each concrete engine keeps capability implementations in separate files such as 
 - Queries on a live session are serialized.
 - Idle sessions are reaped.
 - Foreground query cancellation is supported via request context cancellation.
-- Backend session sync lets the IDE show connected state across same-browser windows.
+- Backend session sync lets the editor show connected state across same-browser windows.
 
 Interactive query execution has two server APIs:
 
@@ -623,7 +663,7 @@ Implemented:
 
 Synchronous exports use the caller's existing live database session from `X-Warden-Session`. This avoids opening another target database connection for small explicit downloads and lets request cancellation stop the stream when the browser disconnects. Synchronous exports are bounded by `exports.sync_max_bytes`.
 
-Background exports run through the persisted job framework. A background export opens its own short-lived target database connection, re-checks authorization at execution time, classifies the SQL as DQL/read-only again, streams the result through the engine cursor capability, and writes the output to a private workspace file. Background exports are appropriate when the user may leave the IDE and return later to download the generated file.
+Background exports run through the persisted job framework. A background export opens its own short-lived target database connection, re-checks authorization at execution time, classifies the SQL as DQL/read-only again, streams the result through the engine cursor capability, and writes the output to a private workspace file. Background exports are appropriate when the user may leave the editor and return later to download the generated file.
 
 Export jobs currently require an engine that supports cursor-backed query results. This keeps large exports streaming and avoids materializing the full result set in Go memory. Engines without cursor support should reject background export until a safe streaming strategy exists for that engine.
 
@@ -688,11 +728,22 @@ Future:
 Implemented schema introspection includes:
 
 - Engine-level schema capability for cheap catalog listing and on-demand object detail.
-- Cache in SQLWarden metadata DB.
-- API surface for schema explorer use.
-- Request-aware logs for schema session validation, unsupported engine capability, cache refresh requests, and response summaries. The schema service logs cache hit/miss, inspection failures, successful inspection, and cache invalidation.
+- Immutable, compressed schema generations in the SQLWarden metadata database. Publication atomically swaps the active generation and retains the immediately previous generation.
+- Organization policy enabled by default, with a connection-level `inherit|disabled` override that can only tighten the organization policy.
+- Immediate snapshot deletion and queued/running refresh cancellation when persistence is disabled.
+- A singleton background `schema_sync` job scheduled after a successful connection when metadata is missing or older than the configured freshness interval, and after successful DDL.
+- API access to persisted catalog, object, and relationship metadata without a live target-database session.
+- A compliance fallback that stores metadata only in the bounded process-local cache while a live session exists. Disconnected schema browsing and semantic autocomplete are unavailable in this mode; syntax-only completion remains possible.
+- Request-aware logs for schema session validation, unsupported engine capability, refresh requests, and response summaries. Snapshot jobs log only operational counts and dialect information, never DSNs or object contents.
 
-This should become the foundation for IDE explorer expansion, autocomplete, and metadata refresh policies. Cache invalidation and deep per-database metadata behavior should remain driver-specific behind the shared abstraction.
+The metadata database is the synchronization boundary for multiple SQLWarden
+replicas: singleton job keys deduplicate refresh work and immutable snapshot IDs
+avoid partial reads. Redis is not required. Live database sessions and query
+cursors remain process-local and therefore still require sticky routing until a
+separate distributed session design is introduced. Completion should consume
+the same snapshot reader through a transport-neutral service; WebSocket/LSP
+transport can be added later for collaboration without changing snapshot
+storage.
 
 ## Frontend Architecture
 
@@ -705,9 +756,9 @@ Current frontend stack:
 - Tailwind CSS 4.
 - shadcn/ui and Base UI primitives.
 - CodeMirror 6.
-- Zustand for IDE state.
-- IndexedDB for local IDE persistence.
-- Y.js and BroadcastChannel for same-browser cross-window IDE sync.
+- Zustand for editor state.
+- IndexedDB for local editor persistence.
+- Y.js and BroadcastChannel for same-browser cross-window editor sync.
 - Sonner for toast notifications.
 
 Route groups:
@@ -720,7 +771,7 @@ Route groups:
 - `/orgs/{org_slug}/ide`
 - `/orgs/{org_slug}/workspaces/{workspace_id}/*`
 
-The application no longer uses a global top bar as the primary shell. Settings and org/workspace sections use sidebar shells. IDE has its own workspace-tabbed layout and explorer.
+The application no longer uses a global top bar as the primary shell. Settings and org/workspace sections use sidebar shells. The editor has its own workspace-tabbed layout and explorer.
 
 Frontend API principles:
 
@@ -740,7 +791,7 @@ Backend tests are substantial and should be extended with every behavior change:
 
 Database tests use testcontainers where needed; Docker must be available locally.
 
-Frontend tests currently cover IDE state, Y.Doc registry, and SQL cursor statement behavior. Add tests for new complex client-side behavior.
+Frontend tests currently cover editor state, Y.Doc registry, and SQL cursor statement behavior. Add tests for new complex client-side behavior.
 
 ## Build And Operations
 
@@ -790,7 +841,7 @@ Important open gaps:
 - Tamper-evident audit logs.
 - SSO/SCIM identity lifecycle.
 - SSRF-safe cloud deployment model.
-- Strong SQL parser for DQL/DML/DDL classification.
+- SQLite dialect parsing/classification and SQL autocomplete.
 - Distributed cache invalidation.
 - Binding expiry enforcement.
 - Service accounts/API tokens.
@@ -826,7 +877,7 @@ Likely enterprise-only features:
 - License enforcement.
 - Air-gapped enterprise packaging.
 
-The core RBAC engine, local auth, SQL IDE, database engine layer, and self-hosted server should remain usable in the community distribution.
+The core RBAC engine, local auth, SQL editor, database engine layer, and self-hosted server should remain usable in the community distribution.
 
 ## Implementation Invariants
 

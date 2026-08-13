@@ -1,4 +1,5 @@
 import { trimTrailingSlash } from '#/lib/utils'
+import { useWorkspacePageTitle } from '#/lib/page-title'
 import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useRouterState } from '@tanstack/react-router'
 import { Icon, type AppIcon } from '#/lib/icons'
@@ -39,6 +40,7 @@ type OverviewCard = {
 }
 
 function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; workspaceId: string }) {
+  useWorkspacePageTitle('Overview')
   const workspace = useQuery(orgWorkspaceQueryOptions(orgSlug, workspaceId))
   const effectivePermissions = useQuery(
     orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId),
@@ -103,7 +105,7 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-1.5">
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="font-heading text-2xl font-semibold tracking-tight">
             {workspace.data?.name ?? 'Workspace'}
           </h1>
           {workspace.data?.description ? (
@@ -120,8 +122,8 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
             />
           }
         >
-          <Icon name="database-lightning" size={20} data-icon="inline-start" />
-          Open in IDE
+          <Icon name="terminal" size={20} data-icon="inline-start" />
+          Open in Editor
         </Button>
       </div>
 

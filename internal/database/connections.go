@@ -10,19 +10,28 @@ import (
 
 	"github.com/sqlwarden/internal/response"
 	"github.com/uptrace/bun"
+
+	"github.com/sqlwarden/internal/engine/metadata"
 )
 
 type Connection struct {
-	ID            int64     `bun:",pk,autoincrement" json:"id"`
-	WorkspaceID   int64     `bun:",notnull"          json:"workspace_id"`
-	EnvironmentID int64     `bun:",notnull"          json:"environment_id"`
-	Name          string    `bun:",notnull"          json:"name"`
-	Driver        string    `bun:",notnull"          json:"driver"`
-	DSNEncrypted  string    `bun:",notnull"          json:"-"`
-	AccessMode    string    `bun:",notnull,default:'open'" json:"access_mode"`
-	CreatedAt     time.Time `bun:",notnull"          json:"created_at"`
-	UpdatedAt     time.Time `bun:",notnull"          json:"updated_at"`
+	ID                   int64              `bun:",pk,autoincrement" json:"id"`
+	WorkspaceID          int64              `bun:",notnull"          json:"workspace_id"`
+	EnvironmentID        int64              `bun:",notnull"          json:"environment_id"`
+	Name                 string             `bun:",notnull"          json:"name"`
+	Driver               string             `bun:",notnull"          json:"driver"`
+	DSNEncrypted         string             `bun:",notnull"          json:"-"`
+	AccessMode           string             `bun:",notnull,default:'open'" json:"access_mode"`
+	SchemaSnapshotPolicy string             `bun:",notnull,default:'inherit'" json:"schema_snapshot_policy"`
+	DefaultScope         metadata.ScopePath `bun:",notnull,default:''" json:"default_scope,omitempty"`
+	CreatedAt            time.Time          `bun:",notnull"          json:"created_at"`
+	UpdatedAt            time.Time          `bun:",notnull"          json:"updated_at"`
 }
+
+const (
+	SchemaSnapshotPolicyInherit  = "inherit"
+	SchemaSnapshotPolicyDisabled = "disabled"
+)
 
 type ListConnectionsParams struct {
 	WorkspaceID   int64
@@ -37,13 +46,17 @@ type ListConnectionsParams struct {
 }
 
 func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string) (Connection, error) {
+	return db.InsertConnectionWithScope(ctx, workspaceID, envID, name, driver, dsnEncrypted, accessMode, "")
+}
+
+func (db *DB) InsertConnectionWithScope(ctx context.Context, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string, defaultScope metadata.ScopePath) (Connection, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var conn Connection
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		var err error
-		conn, err = db.InsertConnectionWithExecutor(ctx, tx, workspaceID, envID, name, driver, dsnEncrypted, accessMode)
+		conn, err = db.InsertConnectionWithScopeAndExecutor(ctx, tx, workspaceID, envID, name, driver, dsnEncrypted, accessMode, defaultScope)
 		return err
 	})
 	if err != nil {
@@ -55,6 +68,10 @@ func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID *in
 // InsertConnectionWithExecutor inserts a connection and its hierarchy row using
 // exec so callers can compose connection creation in a larger transaction.
 func (db *DB) InsertConnectionWithExecutor(ctx context.Context, exec bun.IDB, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string) (Connection, error) {
+	return db.InsertConnectionWithScopeAndExecutor(ctx, exec, workspaceID, envID, name, driver, dsnEncrypted, accessMode, "")
+}
+
+func (db *DB) InsertConnectionWithScopeAndExecutor(ctx context.Context, exec bun.IDB, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string, defaultScope metadata.ScopePath) (Connection, error) {
 	resolvedEnvID := int64(0)
 	if envID == nil {
 		var err error
@@ -67,14 +84,16 @@ func (db *DB) InsertConnectionWithExecutor(ctx context.Context, exec bun.IDB, wo
 	}
 
 	conn := Connection{
-		WorkspaceID:   workspaceID,
-		EnvironmentID: resolvedEnvID,
-		Name:          name,
-		Driver:        driver,
-		DSNEncrypted:  dsnEncrypted,
-		AccessMode:    accessMode,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		WorkspaceID:          workspaceID,
+		EnvironmentID:        resolvedEnvID,
+		Name:                 name,
+		Driver:               driver,
+		DSNEncrypted:         dsnEncrypted,
+		AccessMode:           accessMode,
+		SchemaSnapshotPolicy: SchemaSnapshotPolicyInherit,
+		DefaultScope:         defaultScope,
+		CreatedAt:            time.Now(),
+		UpdatedAt:            time.Now(),
 	}
 	_, err := exec.NewInsert().Model(&conn).Returning("id").Exec(ctx)
 	if err != nil {
@@ -120,6 +139,24 @@ func (db *DB) GetConnection(ctx context.Context, id int64) (Connection, bool, er
 // UpdateConnection updates only mutable connection fields.
 // Workspace, environment, ownership, and driver are intentionally immutable.
 func (db *DB) UpdateConnection(ctx context.Context, id int64, name, dsnEncrypted, accessMode string) error {
+	return db.UpdateConnectionWithPolicy(ctx, id, name, dsnEncrypted, accessMode, SchemaSnapshotPolicyInherit)
+}
+
+func (db *DB) UpdateConnectionWithPolicy(ctx context.Context, id int64, name, dsnEncrypted, accessMode, snapshotPolicy string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+	_, err := db.NewUpdate().Model((*Connection)(nil)).
+		Set("name = ?", name).
+		Set("dsn_encrypted = ?", dsnEncrypted).
+		Set("access_mode = ?", accessMode).
+		Set("schema_snapshot_policy = ?", snapshotPolicy).
+		Set("updated_at = ?", time.Now()).
+		Where("id = ?", id).
+		Exec(ctx)
+	return err
+}
+
+func (db *DB) UpdateConnectionWithScopeAndPolicy(ctx context.Context, id int64, name, dsnEncrypted, accessMode, snapshotPolicy string, defaultScope metadata.ScopePath) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -127,10 +164,52 @@ func (db *DB) UpdateConnection(ctx context.Context, id int64, name, dsnEncrypted
 		Set("name = ?", name).
 		Set("dsn_encrypted = ?", dsnEncrypted).
 		Set("access_mode = ?", accessMode).
+		Set("schema_snapshot_policy = ?", snapshotPolicy).
+		Set("default_scope = ?", defaultScope).
 		Set("updated_at = ?", time.Now()).
 		Where("id = ?", id).
 		Exec(ctx)
 	return err
+}
+
+// SchemaSnapshotsEnabled resolves the organization policy and connection
+// override. Personal-space connections have no organization and default to
+// enabled unless the connection explicitly disables snapshots.
+func (db *DB) SchemaSnapshotsEnabled(ctx context.Context, connectionID int64) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	var row struct {
+		Policy     string `bun:"schema_snapshot_policy"`
+		OrgEnabled *bool  `bun:"schema_snapshots_enabled"`
+	}
+	err := db.NewSelect().
+		TableExpr("connections AS c").
+		ColumnExpr("c.schema_snapshot_policy").
+		ColumnExpr("o.schema_snapshots_enabled").
+		Join("JOIN workspaces AS w ON w.id = c.workspace_id").
+		Join("LEFT JOIN organizations AS o ON o.id = w.org_id").
+		Where("c.id = ?", connectionID).
+		Scan(ctx, &row)
+	if err != nil {
+		return false, err
+	}
+	if row.Policy == SchemaSnapshotPolicyDisabled {
+		return false, nil
+	}
+	return row.OrgEnabled == nil || *row.OrgEnabled, nil
+}
+
+func (db *DB) ListOrgConnections(ctx context.Context, orgID int64) ([]Connection, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+	var conns []Connection
+	err := db.NewSelect().Model(&conns).
+		Join("JOIN workspaces AS w ON w.id = connection.workspace_id").
+		Where("w.org_id = ?", orgID).
+		OrderExpr("connection.id ASC").
+		Scan(ctx)
+	return conns, err
 }
 
 // ListAllConnections returns every connection across all workspaces. It is used

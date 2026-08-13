@@ -1,0 +1,41 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+
+const stylesPath = join(dirname(fileURLToPath(import.meta.url)), 'styles.css')
+const css = readFileSync(stylesPath, 'utf-8')
+
+function block(selector: string): string {
+  const start = css.indexOf(`${selector} {`)
+  if (start === -1) throw new Error(`selector "${selector}" not found in styles.css`)
+  const end = css.indexOf('\n}', start)
+  return css.slice(start, end)
+}
+
+describe('brand color tokens', () => {
+  it('sets the brand primary blue in :root', () => {
+    expect(block(':root')).toContain('--primary: oklch(0.55 0.19 255);')
+  })
+
+  it('lightens primary for AA contrast in dark mode', () => {
+    expect(block('.dark')).toContain('--primary: oklch(0.68 0.15 250);')
+  })
+
+  it('defines the new semantic feedback tokens', () => {
+    expect(block(':root')).toContain('--success: #10b981;')
+    expect(block(':root')).toContain('--warning: #f59e0b;')
+  })
+
+  it('defines the new editor accent tokens', () => {
+    expect(block(':root')).toContain('--accent-link: #38bdf8;')
+    expect(block(':root')).toContain('--accent-datatype: #6366f1;')
+  })
+
+  it('maps the new tokens through the Tailwind theme', () => {
+    expect(css).toContain('--color-success: var(--success);')
+    expect(css).toContain('--color-warning: var(--warning);')
+    expect(css).toContain('--color-accent-link: var(--accent-link);')
+    expect(css).toContain('--color-accent-datatype: var(--accent-datatype);')
+  })
+})

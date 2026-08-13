@@ -95,6 +95,7 @@ func TestLogAccess(t *testing.T) {
 		var buf bytes.Buffer
 		app := newTestApplication(t)
 		app.logger = slog.New(slog.NewTextHandler(&buf, nil))
+		app.accessLogsEnabled.Store(true)
 
 		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusTeapot)

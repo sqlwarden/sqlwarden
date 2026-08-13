@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { JobRecord, Workspace } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
@@ -95,6 +95,32 @@ describe('ExportsPanel', () => {
       </QueryClientProvider>,
     )
     expect(screen.getByText('No exports yet')).toBeInTheDocument()
+  })
+
+  it('refreshes exports from the sidebar header and shows pending feedback', async () => {
+    let resolveRefresh: (() => void) | undefined
+    const refresh = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRefresh = resolve
+        }),
+    )
+    mocks.useExportJobs.mockReturnValue({
+      jobs: [],
+      isLoading: false,
+      latestEventByJobId: new Map(),
+      refresh,
+    })
+    renderPanel()
+
+    const button = screen.getByRole('button', { name: 'Refresh exports' })
+    fireEvent.click(button)
+
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(button).toBeDisabled()
+
+    resolveRefresh?.()
+    await waitFor(() => expect(button).toBeEnabled())
   })
 
   it('shows running progress and allows cancellation', () => {

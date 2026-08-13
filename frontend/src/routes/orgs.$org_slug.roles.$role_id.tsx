@@ -1,6 +1,7 @@
-import { errorMessage } from '#/lib/api/errors'
+import { errorMessage, isApiError } from '#/lib/api/errors'
+import { usePageTitle, usePageTitleScope } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
-import { useEffect } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
@@ -12,7 +13,7 @@ import {
   orgPermissionsQueryOptions,
   orgRoleQueryOptions,
 } from '#/lib/api/query'
-import type { PermissionDefinition } from '#/lib/api/types'
+import type { PermissionDefinition, Role } from '#/lib/api/types'
 import {
   hasPermission,
   permission,
@@ -44,8 +45,22 @@ import {
 } from '#/components/ui/breadcrumb'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '#/components/ui/dialog'
+import { Input } from '#/components/ui/input'
+import { Label } from '#/components/ui/label'
 import { RoutePending } from '#/components/RoutePending'
 import { Skeleton } from '#/components/ui/skeleton'
+import { Textarea } from '#/components/ui/textarea'
+import { PermissionPicker } from '#/components/access-control/PermissionPicker'
 import { cn } from '#/lib/utils'
 import { roleScopeLabel } from '#/components/access-control/roleScope'
 
@@ -66,11 +81,24 @@ function OrganizationRoleContextPage() {
   )
   const permissionsCatalog = useQuery(orgPermissionsQueryOptions(orgSlug))
   const permissionDefinitions = permissionDefinitionMap(permissionsCatalog.data?.permission_details)
+  const orgScopePermissions = permissionsCatalog.data?.scope_details.org ?? []
   const role = useQuery({
     ...orgRoleQueryOptions(orgSlug, roleId),
     enabled: canReadRole,
   })
   const displayName = role.data ? role.data.name : `Role #${roleId}`
+  const { organizationName } = usePageTitleScope()
+  usePageTitle(displayName, organizationName)
+
+  const [isEditing, setIsEditing] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editPermissions, setEditPermissions] = useState<Set<Permission>>(new Set())
+  const [fieldErrors, setFieldErrors] = useState<{
+    name?: string
+    description?: string
+    permissions?: string
+  }>({})
 
   useEffect(() => {
     if (!role.error) {
@@ -111,6 +139,84 @@ function OrganizationRoleContextPage() {
     },
   })
 
+  const updateRole = useMutation({
+    mutationFn: async () =>
+      api.patch<Role>(`/api/v1/orgs/${orgSlug}/roles/${roleId}`, {
+        name: editName.trim(),
+        description: editDescription.trim(),
+        permissions: Array.from(editPermissions),
+      }),
+    onSuccess: async () => {
+      setIsEditing(false)
+      toast.success('Role updated')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgRolesScope(orgSlug) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgRole(orgSlug, roleId) }),
+      ])
+    },
+    onError: (error) => {
+      if (isApiError(error)) {
+        setFieldErrors({
+          name: error.fieldErrors?.name,
+          description: error.fieldErrors?.description,
+          permissions: error.fieldErrors?.permissions,
+        })
+        if (
+          error.fieldErrors?.name ||
+          error.fieldErrors?.description ||
+          error.fieldErrors?.permissions
+        ) {
+          return
+        }
+      }
+
+      toast.error(errorMessage(error, 'Failed to update role'))
+    },
+  })
+
+  function openEditRole() {
+    if (!role.data) {
+      return
+    }
+    setEditName(role.data.name)
+    setEditDescription(role.data.description ?? '')
+    setEditPermissions(new Set((role.data.permissions ?? []) as Permission[]))
+    setFieldErrors({})
+    setIsEditing(true)
+  }
+
+  function submitEditRole(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const errors: typeof fieldErrors = {}
+    if (!editName.trim()) {
+      errors.name = 'Name is required.'
+    }
+    if (editPermissions.size === 0) {
+      errors.permissions = 'Select at least one permission.'
+    }
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      return
+    }
+
+    setFieldErrors({})
+    void updateRole.mutateAsync().catch(() => {})
+  }
+
+  function setEditPermissionChecked(value: Permission, checked: boolean) {
+    setEditPermissions((current) => {
+      const next = new Set(current)
+      if (checked) {
+        next.add(value)
+      } else {
+        next.delete(value)
+      }
+      return next
+    })
+    setFieldErrors((current) => ({ ...current, permissions: undefined }))
+  }
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-4">
@@ -146,7 +252,9 @@ function OrganizationRoleContextPage() {
             )}
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
+                <h1 className="font-heading text-2xl font-semibold tracking-tight">
+                  {displayName}
+                </h1>
                 {role.data ? (
                   <>
                     <Badge variant={role.data.is_builtin ? 'secondary' : 'outline'}>
@@ -163,34 +271,120 @@ function OrganizationRoleContextPage() {
           </div>
 
           {role.data && canDeleteRole && !role.data.is_builtin ? (
-            <AlertDialog>
-              <AlertDialogTrigger
-                render={<Button variant="destructive" disabled={deleteRole.isPending} />}
+            <div className="flex shrink-0 items-center gap-2">
+              <Dialog
+                open={isEditing}
+                onOpenChange={(open) => {
+                  setIsEditing(open)
+                  if (open) {
+                    openEditRole()
+                  }
+                }}
               >
-                Delete
-              </AlertDialogTrigger>
-              <AlertDialogContent size="sm">
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete role?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This permanently deletes {role.data.name}. Any policies using this role will no
-                    longer grant its permissions.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel variant="ghost" disabled={deleteRole.isPending}>
-                    Cancel
-                  </AlertDialogCancel>
-                  <AlertDialogAction
-                    variant="destructive"
-                    disabled={deleteRole.isPending}
-                    onClick={() => deleteRole.mutate()}
-                  >
-                    Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                <DialogTrigger render={<Button variant="outline" />}>Edit</DialogTrigger>
+                <DialogContent className="sm:max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Edit role</DialogTitle>
+                    <DialogDescription>
+                      Update the name, description, and permissions granted by this role.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form className="mt-6 flex flex-col gap-6" onSubmit={submitEditRole}>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="edit-role-name">Name</Label>
+                      <Input
+                        id="edit-role-name"
+                        value={editName}
+                        onChange={(event) => {
+                          setEditName(event.target.value)
+                          setFieldErrors((current) => ({ ...current, name: undefined }))
+                        }}
+                        placeholder="database-reader"
+                        aria-invalid={fieldErrors.name ? true : undefined}
+                        disabled={updateRole.isPending}
+                      />
+                      {fieldErrors.name ? (
+                        <p className="text-sm text-destructive">{fieldErrors.name}</p>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="edit-role-description">
+                        Description{' '}
+                        <span className="font-normal text-muted-foreground">(optional)</span>
+                      </Label>
+                      <Textarea
+                        id="edit-role-description"
+                        value={editDescription}
+                        onChange={(event) => {
+                          setEditDescription(event.target.value)
+                          setFieldErrors((current) => ({ ...current, description: undefined }))
+                        }}
+                        placeholder="Describe when this role should be used"
+                        aria-invalid={fieldErrors.description ? true : undefined}
+                        disabled={updateRole.isPending}
+                      />
+                      {fieldErrors.description ? (
+                        <p className="text-sm text-destructive">{fieldErrors.description}</p>
+                      ) : null}
+                    </div>
+
+                    <PermissionPicker
+                      description="Select the capabilities this role should grant."
+                      idPrefix="edit-permission"
+                      selectedPermissions={editPermissions}
+                      permissionDetails={orgScopePermissions}
+                      permissionDefinitions={permissionDefinitions}
+                      disabled={updateRole.isPending}
+                      error={fieldErrors.permissions}
+                      onPermissionChecked={setEditPermissionChecked}
+                    />
+
+                    <DialogFooter>
+                      <DialogClose
+                        render={
+                          <Button type="button" variant="ghost" disabled={updateRole.isPending} />
+                        }
+                      >
+                        Cancel
+                      </DialogClose>
+                      <Button type="submit" disabled={updateRole.isPending}>
+                        {updateRole.isPending ? 'Saving...' : 'Save'}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+
+              <AlertDialog>
+                <AlertDialogTrigger
+                  render={<Button variant="destructive" disabled={deleteRole.isPending} />}
+                >
+                  Delete
+                </AlertDialogTrigger>
+                <AlertDialogContent size="sm">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete role?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This permanently deletes {role.data.name}. Any policies using this role will
+                      no longer grant its permissions.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel variant="ghost" disabled={deleteRole.isPending}>
+                      Cancel
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      variant="destructive"
+                      disabled={deleteRole.isPending}
+                      onClick={() => deleteRole.mutate()}
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           ) : null}
         </div>
       </div>

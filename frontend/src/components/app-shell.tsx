@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Dispatch, ReactNode, SetStateAction } from 'react'
+import type { Dispatch, ReactElement, ReactNode, SetStateAction } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Icon, type AppIcon } from '#/lib/icons'
@@ -43,44 +43,26 @@ import { UiLabPanel } from './ui-lab-panel'
 export { useAppShellPreferences }
 export type { AppShellPreferences, AppShellNavItem, AppShellSidebarStyle, AppShellTheme }
 
-export function AppShellHeader({
-  label,
-  icon,
-  description,
-}: {
-  label: string
-  icon: AppIcon
-  description?: string
-}) {
+export function AppShellHeader({ label, icon }: { label: string; icon: AppIcon | ReactElement }) {
+  const iconNode = typeof icon === 'string' ? <Icon name={icon} size={18} /> : icon
+
   return (
     <SidebarHeader className="border-b border-sidebar-border">
-      {/* Collapsed: show logo icon centred */}
-      <div className="hidden items-center justify-center py-1 group-data-[collapsible=icon]:flex">
-        <div className="flex size-8 shrink-0 items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-4">
-          <Icon name={icon} size={16} />
-        </div>
+      {/* Collapsed: show the mono mark centred */}
+      <div className="hidden items-center justify-center py-2.5 text-sidebar-foreground group-data-[collapsible=icon]:flex [&_svg]:size-5">
+        {iconNode}
       </div>
-      {/* Expanded: show full label + description */}
+      {/* Expanded: mono mark + name; name gets a hover tooltip since long names truncate */}
       <SidebarMenu className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
         <SidebarMenuItem>
-          <SidebarMenuButton
-            tooltip={label}
-            className={
-              description ? 'h-auto items-center py-2 hover:bg-transparent' : 'hover:bg-transparent'
-            }
-          >
-            <div className="flex size-6 shrink-0 items-center justify-center bg-sidebar-primary text-sidebar-primary-foreground [&_svg]:size-3.5">
-              <Icon name={icon} size={14} />
-            </div>
-            <span className="grid min-w-0 flex-1 gap-0.5 text-left">
-              <span className="truncate font-semibold tracking-tight">{label}</span>
-              {description ? (
-                <span className="truncate text-[11px] font-normal leading-none text-sidebar-foreground/50">
-                  {description}
-                </span>
-              ) : null}
-            </span>
-          </SidebarMenuButton>
+          <Tip label={label} side="right">
+            <SidebarMenuButton className="h-auto items-center gap-2.5 py-2.5 hover:bg-transparent">
+              <span className="shrink-0 text-sidebar-foreground [&_svg]:size-5">{iconNode}</span>
+              <span className="min-w-0 flex-1 truncate text-left text-[15px] font-semibold tracking-tight">
+                {label}
+              </span>
+            </SidebarMenuButton>
+          </Tip>
         </SidebarMenuItem>
       </SidebarMenu>
     </SidebarHeader>

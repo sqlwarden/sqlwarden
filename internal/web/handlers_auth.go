@@ -128,37 +128,43 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accountIDStr := strconv.FormatInt(account.ID, 10)
-	sessionExpiresAt := time.Now().Add(7 * 24 * time.Hour)
-	family := database.NewID()
-	authSession, _, err := app.db.CreateAuthSessionWithRefreshToken(
-		r.Context(),
-		account.ID,
-		sessionExpiresAt,
-		r.Header.Get("User-Agent"),
-		r.RemoteAddr,
-		token.Hash(family),
-		family,
-	)
+	accessToken, authSessionID, err := app.issueAccountSession(w, r, account)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-
-	accessToken, _, err := token.IssueWithSessionTTL(accountIDStr, authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	app.logInfo(r, "account logged in", slog.Int64("account_id", account.ID), slog.String("auth_session_id", authSession.ID))
-	// Local HTTP is supported; refreshTokenCookie enforces Secure for HTTPS and built-in TLS.
-	http.SetCookie(w, app.refreshTokenCookie(r, family, 7*24*3600))
+	app.logInfo(r, "account logged in", slog.Int64("account_id", account.ID), slog.String("auth_session_id", authSessionID))
 
 	err = response.JSON(w, http.StatusOK, map[string]string{"access_token": accessToken})
 	if err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func (app *application) issueAccountSession(w http.ResponseWriter, r *http.Request, account database.Account) (string, string, error) {
+	const refreshTTL = 7 * 24 * time.Hour
+	family := database.NewID()
+	authSession, _, err := app.db.CreateAuthSessionWithRefreshToken(
+		r.Context(), account.ID, time.Now().Add(refreshTTL), r.Header.Get("User-Agent"),
+		r.RemoteAddr, token.Hash(family), family,
+	)
+	if err != nil {
+		return "", "", err
+	}
+	settings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+	if err != nil {
+		return "", "", err
+	}
+	accessToken, _, err := token.IssueWithSessionTTL(
+		strconv.FormatInt(account.ID, 10), authSession.ID, account.Email, account.Name,
+		app.config.JWT.SecretKey, settings.JWTAccessTokenTTL,
+	)
+	if err != nil {
+		return "", "", err
+	}
+	// Local HTTP is supported; refreshTokenCookie enforces Secure for HTTPS and built-in TLS.
+	http.SetCookie(w, app.refreshTokenCookie(r, family, int(refreshTTL.Seconds())))
+	return accessToken, authSession.ID, nil
 }
 
 func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +230,12 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	accountIDStr := strconv.FormatInt(account.ID, 10)
-	accessToken, _, err := token.IssueWithSessionTTL(accountIDStr, authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
+	settings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	accessToken, _, err := token.IssueWithSessionTTL(accountIDStr, authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, settings.JWTAccessTokenTTL)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -289,7 +300,13 @@ func (app *application) secureCookies(r *http.Request) bool {
 	if app.config.TLS.Enabled || r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
 		return true
 	}
-	baseURL, err := url.Parse(app.config.BaseURL)
+	settings, err := app.instanceSettings(r.Context())
+	if err != nil {
+		// Authentication settings are database-owned. If they are unavailable,
+		// prefer a secure cookie over falling back to stale node-local configuration.
+		return true
+	}
+	baseURL, err := url.Parse(settings.BaseURL)
 	return err == nil && strings.EqualFold(baseURL.Scheme, "https")
 }
 

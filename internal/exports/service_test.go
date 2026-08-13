@@ -7,8 +7,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/cursor"
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -16,16 +16,16 @@ type fakeDriver struct {
 	pages []*result.ResultSet
 }
 
-func (d *fakeDriver) Connect(context.Context, dbengine.ConnectionConfig) error { return nil }
-func (d *fakeDriver) Ping(context.Context) error                               { return nil }
-func (d *fakeDriver) Close() error                                             { return nil }
+func (d *fakeDriver) Connect(context.Context, engine.ConnectionConfig) error { return nil }
+func (d *fakeDriver) Ping(context.Context) error                             { return nil }
+func (d *fakeDriver) Close() error                                           { return nil }
 func (d *fakeDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
 	return nil, errors.New("buffered query should not be used")
 }
 func (d *fakeDriver) Execute(context.Context, string, ...any) (*result.ResultSet, error) {
 	return nil, errors.New("execute should not be used")
 }
-func (d *fakeDriver) Dialect() dbengine.Dialect { return dbengine.DialectSQLite }
+func (d *fakeDriver) Dialect() engine.Dialect { return engine.DialectSQLite }
 func (d *fakeDriver) StartQuery(context.Context, cursor.QueryRequest) (cursor.QueryCursor, error) {
 	return &fakeCursor{pages: d.pages}, nil
 }

@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useOrganizationPageTitle } from '#/lib/page-title'
 import { trimTrailingSlash } from '#/lib/utils'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -100,6 +101,7 @@ function OrganizationPoliciesRoute() {
 }
 
 function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
+  useOrganizationPageTitle('Policies')
   const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)
   const [subjectType, setSubjectType] = useState<SubjectType>('account')

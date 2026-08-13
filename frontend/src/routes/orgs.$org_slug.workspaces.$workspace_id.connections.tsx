@@ -1,13 +1,32 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useWorkspacePageTitle } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
-import { useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
+import { api } from '#/lib/api/client'
 import { useListPageState } from '#/hooks/use-list-page-state'
-import { orgEnvironmentsQueryOptions, orgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
+import { queryKeys } from '#/lib/api/query-keys'
+import {
+  orgEffectivePermissionsQueryOptions,
+  orgEnvironmentsQueryOptions,
+  orgWorkspaceConnectionsQueryOptions,
+} from '#/lib/api/query'
 import type { Connection } from '#/lib/api/types'
+import { hasPermission, permission } from '#/lib/permissions'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '#/components/ui/alert-dialog'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
 import { Skeleton } from '#/components/ui/skeleton'
@@ -20,6 +39,7 @@ import {
   TableRow,
 } from '#/components/ui/table'
 import { DriverBadge } from '#/components/ide/DriverBadge'
+import { EditConnectionDialog } from '#/components/ide/EditConnectionDialog'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
@@ -32,7 +52,10 @@ export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/c
 })
 
 function WorkspaceConnectionsPage() {
+  useWorkspacePageTitle('Connections')
   const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
+  const queryClient = useQueryClient()
+  const [editingConnection, setEditingConnection] = useState<Connection | null>(null)
   const { query, searchText, setSearchText, clearSearch, setPage, setPageSize, toggleSort } =
     useListPageState({
       page: 1,
@@ -41,6 +64,19 @@ function WorkspaceConnectionsPage() {
       order: 'asc',
       q: '',
     })
+
+  const effectivePermissions = useQuery(
+    orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId),
+  )
+  const canEditConnection = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.connUpdate,
+  )
+  const canDeleteConnection = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.connDelete,
+  )
+  const canManageConnection = canEditConnection || canDeleteConnection
 
   const connections = useQuery(orgWorkspaceConnectionsQueryOptions(orgSlug, workspaceId, query))
   const environments = useQuery(
@@ -65,16 +101,32 @@ function WorkspaceConnectionsPage() {
     toast.error(errorMessage(connections.error, 'Failed to load connections'))
   }, [connections.error])
 
+  const deleteConnection = useMutation({
+    mutationFn: async (connectionId: number) =>
+      api.delete<void>(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections/${connectionId}`,
+      ),
+    onSuccess: async () => {
+      toast.success('Connection deleted')
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgWorkspaceConnectionsScope(orgSlug, workspaceId),
+      })
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Failed to delete connection'))
+    },
+  })
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">Connections</h1>
+            <h1 className="font-heading text-2xl font-semibold tracking-tight">Connections</h1>
             <p className="text-sm text-muted-foreground">
               {!connections.isLoading && total > 0
                 ? `${total} connection${total !== 1 ? 's' : ''} in this workspace`
-                : 'Databases reachable from this workspace. Create and edit connections in the IDE.'}
+                : 'Databases reachable from this workspace. Create and edit connections in the editor.'}
             </p>
           </div>
           <Button
@@ -86,8 +138,8 @@ function WorkspaceConnectionsPage() {
               />
             }
           >
-            <Icon name="database-lightning" size={20} data-icon="inline-start" />
-            Open in IDE
+            <Icon name="terminal" size={20} data-icon="inline-start" />
+            Open in Editor
           </Button>
         </div>
 
@@ -154,7 +206,7 @@ function WorkspaceConnectionsPage() {
                   icon="flow-connection"
                   message={query.q ? 'No connections matched your search.' : 'No connections yet'}
                   description={
-                    query.q ? undefined : 'Create your first connection from the IDE explorer.'
+                    query.q ? undefined : 'Create your first connection from the editor explorer.'
                   }
                 />
               ) : null}
@@ -166,6 +218,11 @@ function WorkspaceConnectionsPage() {
                       environmentName={environmentNames.get(connection.environment_id)}
                       orgSlug={orgSlug}
                       workspaceId={workspaceId}
+                      canEditConnection={canEditConnection}
+                      canDeleteConnection={canDeleteConnection}
+                      isDeleting={deleteConnection.isPending}
+                      onEdit={setEditingConnection}
+                      onDelete={(connectionId) => deleteConnection.mutate(connectionId)}
                     />
                   ))
                 : null}
@@ -186,6 +243,19 @@ function WorkspaceConnectionsPage() {
           onPageSizeChange={setPageSize}
         />
       ) : null}
+
+      {canManageConnection ? (
+        <EditConnectionDialog
+          open={editingConnection !== null}
+          onOpenChange={(open) => {
+            if (!open) setEditingConnection(null)
+          }}
+          orgSlug={orgSlug}
+          workspaceId={Number(workspaceId)}
+          connection={editingConnection ?? undefined}
+          canRevealDsn={canEditConnection}
+        />
+      ) : null}
     </div>
   )
 }
@@ -195,11 +265,21 @@ function ConnectionRow({
   environmentName,
   orgSlug,
   workspaceId,
+  canEditConnection,
+  canDeleteConnection,
+  isDeleting,
+  onEdit,
+  onDelete,
 }: {
   connection: Connection
   environmentName: string | undefined
   orgSlug: string
   workspaceId: string
+  canEditConnection: boolean
+  canDeleteConnection: boolean
+  isDeleting: boolean
+  onEdit: (connection: Connection) => void
+  onDelete: (connectionId: number) => void
 }) {
   return (
     <TableRow>
@@ -220,20 +300,62 @@ function ConnectionRow({
       </TableCell>
       <TableCell className="text-muted-foreground">{formatDate(connection.created_at)}</TableCell>
       <TableCell className="text-end">
-        <Button
-          variant="outline"
-          size="sm"
-          render={
-            <Link
-              to="/ide/$org_slug"
-              params={{ org_slug: orgSlug }}
-              search={{ ws: Number(workspaceId), conn: connection.id }}
-            />
-          }
-        >
-          <Icon name="database-lightning" size={20} data-icon="inline-start" />
-          Open in IDE
-        </Button>
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            render={
+              <Link
+                to="/ide/$org_slug"
+                params={{ org_slug: orgSlug }}
+                search={{ ws: Number(workspaceId), conn: connection.id }}
+              />
+            }
+          >
+            <Icon name="terminal" size={20} data-icon="inline-start" />
+            Open in Editor
+          </Button>
+          {canEditConnection ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => onEdit(connection)}>
+              <Icon name="pencil-edit-02" size={20} data-icon="inline-start" />
+              Edit
+            </Button>
+          ) : null}
+          {canDeleteConnection ? (
+            <AlertDialog>
+              <AlertDialogTrigger
+                render={
+                  <Button type="button" variant="destructive" size="sm" disabled={isDeleting} />
+                }
+              >
+                <Icon name="delete-02" size={20} data-icon="inline-start" />
+                Delete
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete connection?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This permanently deletes{' '}
+                    <span className="font-medium text-foreground">{connection.name}</span> and drops
+                    any active sessions.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel variant="ghost" disabled={isDeleting}>
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    disabled={isDeleting}
+                    onClick={() => onDelete(connection.id)}
+                  >
+                    {isDeleting ? 'Deleting...' : 'Delete'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : null}
+        </div>
       </TableCell>
     </TableRow>
   )

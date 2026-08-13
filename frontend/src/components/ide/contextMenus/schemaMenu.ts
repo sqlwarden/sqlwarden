@@ -45,10 +45,23 @@ export function buildNamespaceMenu(ctx: NamespaceMenuCtx): ContextMenuItem[] {
 export type ObjectGroupMenuCtx = {
   newLabel: string
   onRefresh: () => void
+  onViewDiagram?: () => void
 }
 
 export function buildObjectGroupMenu(ctx: ObjectGroupMenuCtx): ContextMenuItem[] {
   return [
+    ...(ctx.onViewDiagram
+      ? [
+          {
+            kind: 'action',
+            id: 'view-diagram',
+            label: 'View diagram',
+            icon: 'flow-connection',
+            onSelect: ctx.onViewDiagram,
+          } as ContextMenuItem,
+          { kind: 'separator' } as ContextMenuItem,
+        ]
+      : []),
     { kind: 'action', id: 'new-object', label: ctx.newLabel, icon: 'plus-sign', soon: true },
     { kind: 'action', id: 'refresh', label: 'Refresh', icon: 'refresh', onSelect: ctx.onRefresh },
   ]

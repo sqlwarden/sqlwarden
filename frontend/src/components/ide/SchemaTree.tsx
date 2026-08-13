@@ -4,17 +4,18 @@ import { Icon, type AppIcon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { isApiError } from '#/lib/api/errors'
 import {
-  orgConnectionCatalogQueryOptions,
+  orgConnectionDirectoryQueryOptions,
   orgConnectionSchemaSpecQueryOptions,
   orgConnectionObjectQueryOptions,
 } from '#/lib/api/query'
 import type {
-  CatalogNamespace,
-  CatalogObjectGroup,
   Connection,
+  ObjectGroup,
   ObjectDescriptor,
   ObjectDetail,
   ObjectRef,
+  ScopePath,
+  ScopeNode,
   SchemaSpec,
   Workspace,
 } from '#/lib/api/types'
@@ -23,7 +24,8 @@ import { newObjectTab } from './object-detail/objectTab'
 import { newDiagramTab, type DiagramTarget } from './schema-diagram/diagramTab'
 import { diagramSupported, diagramSupportedForKind } from './schema-diagram/capability'
 import { OBJECT_REF_DND_MIME } from './schema-diagram/dnd'
-import { filterCatalog, kindLabel, sortedGroups } from './schemaCatalog'
+import { filterDirectory, hasDirectoryObjects, kindLabel, sortedGroups } from './schemaDirectory'
+import { scopeLabel } from '#/lib/api/scope'
 import { columnTypeIcon, columnTypeIconColor } from './columnTypeIcon'
 import { dialectFor, IDENTIFIER_DND_MIME, type SqlDialect } from './sqlDialect'
 import { useInsertIntoEditor } from './useInsertIntoEditor'
@@ -33,6 +35,7 @@ import { buildNamespaceMenu, buildObjectGroupMenu } from './contextMenus/schemaM
 import { buildObjectMenu } from './contextMenus/objectMenu'
 import { buildColumnMenu, buildIndexMenu } from './contextMenus/columnMenu'
 import { useEvictGoneSession } from './sessionErrors'
+import { useSchemaRefresh } from './useSchemaRefresh'
 
 type TreeCtx = {
   dialect: SqlDialect
@@ -44,7 +47,7 @@ type TreeCtx = {
   orgSlug: string
   workspaceId: number
   connectionId: number
-  sessionId: string
+  sessionId?: string
 }
 
 const SchemaTreeContext = createContext<TreeCtx | null>(null)
@@ -77,7 +80,7 @@ function dragPropsFor(
 
 function useObjectInsert(ref: ObjectRef): InsertableProps | undefined {
   const ctx = useContext(SchemaTreeContext)
-  return dragPropsFor(ctx, ctx ? ctx.dialect.formatObject(ref.namespace, ref.name) : undefined, ref)
+  return dragPropsFor(ctx, ctx ? ctx.dialect.formatObject(ref.scope, ref.name) : undefined, ref)
 }
 
 function useColumnInsert(name: string): InsertableProps | undefined {
@@ -108,6 +111,8 @@ const KIND_STYLE: Record<string, { icon: AppIcon; className: string }> = {
 
 const kindStyle = (kind: string) =>
   KIND_STYLE[kind] ?? { icon: 'box' as AppIcon, className: 'text-muted-foreground' }
+
+const NON_EXPANDABLE_OBJECT_KINDS = new Set(['function', 'procedure', 'sequence'])
 
 export function SchemaTree({
   orgSlug,
@@ -149,45 +154,25 @@ export function SchemaTree({
       ),
     )
 
-  const catalogQuery = useQuery({
-    ...orgConnectionCatalogQueryOptions(orgSlug, workspaceId, connectionId, sessionId ?? ''),
-    enabled: Boolean(sessionId),
+  const directoryQuery = useQuery({
+    ...orgConnectionDirectoryQueryOptions(orgSlug, workspaceId, connectionId, sessionId),
   })
   const specQuery = useQuery({
-    ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspaceId, connectionId, sessionId ?? ''),
-    enabled: Boolean(sessionId),
+    ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspaceId, connectionId, sessionId),
+  })
+  const refreshSchema = useSchemaRefresh({
+    orgSlug,
+    workspaceId,
+    connectionId,
+    sessionId,
   })
 
   // A 410 from any schema endpoint means the server-side session died (idle
   // timeout, restart). Drop it so the tree flips to the reconnect hint instead
   // of erroring forever against a dead session id.
-  useEvictGoneSession(connectionId, [catalogQuery.error, specQuery.error])
+  useEvictGoneSession(connectionId, [directoryQuery.error, specQuery.error])
 
-  if (!sessionId) {
-    if (connStatus === 'connecting') {
-      return (
-        <SchemaMessage>
-          <SchemaSpinner />
-          Connecting…
-        </SchemaMessage>
-      )
-    }
-    return (
-      <SchemaMessage>
-        <span>Not connected.</span>
-        {onConnect && (
-          <button
-            type="button"
-            className="font-medium text-primary hover:underline"
-            onClick={onConnect}
-          >
-            Connect
-          </button>
-        )}
-      </SchemaMessage>
-    )
-  }
-  if (catalogQuery.isLoading) {
+  if (directoryQuery.isLoading) {
     return (
       <SchemaMessage>
         <SchemaSpinner />
@@ -195,8 +180,32 @@ export function SchemaTree({
       </SchemaMessage>
     )
   }
-  if (catalogQuery.isError) {
-    if (isApiError(catalogQuery.error) && catalogQuery.error.status === 501) {
+  if (directoryQuery.isError) {
+    if (!sessionId) {
+      if (connStatus === 'connecting') {
+        return (
+          <SchemaMessage>
+            <SchemaSpinner />
+            Connecting…
+          </SchemaMessage>
+        )
+      }
+      return (
+        <SchemaMessage>
+          <span>Not connected.</span>
+          {onConnect && (
+            <button
+              type="button"
+              className="font-medium text-primary hover:underline"
+              onClick={onConnect}
+            >
+              Connect
+            </button>
+          )}
+        </SchemaMessage>
+      )
+    }
+    if (isApiError(directoryQuery.error) && directoryQuery.error.status === 501) {
       return <SchemaMessage>This driver doesn&apos;t support schema inspection.</SchemaMessage>
     }
     return (
@@ -205,7 +214,7 @@ export function SchemaTree({
         <button
           type="button"
           className="underline hover:text-foreground"
-          onClick={() => catalogQuery.refetch()}
+          onClick={() => directoryQuery.refetch()}
         >
           Retry
         </button>
@@ -213,24 +222,32 @@ export function SchemaTree({
     )
   }
 
-  const raw = catalogQuery.data?.catalog
-  if (!raw) return <SchemaMessage>No schema.</SchemaMessage>
+  const raw = directoryQuery.data?.directory
+  if (!raw) {
+    if (directoryQuery.data?.status === 'pending') {
+      return (
+        <SchemaMessage>
+          <SchemaSpinner />
+          Preparing schema snapshot…
+        </SchemaMessage>
+      )
+    }
+    return <SchemaMessage>No schema.</SchemaMessage>
+  }
 
   const filtering = filter.trim() !== ''
-  const namespaces = filterCatalog(raw, filter).namespaces ?? []
+  const roots = filterDirectory(raw, filter).roots
 
-  if (namespaces.length === 0) {
+  if (roots.length === 0 || !hasDirectoryObjects(roots)) {
     return <SchemaMessage>{filtering ? 'No matches.' : 'No objects.'}</SchemaMessage>
   }
 
   const spec = specQuery.data?.spec
-  const single = namespaces.length === 1 ? namespaces[0] : null
+  const single = roots.length === 1 ? roots[0] : null
   const ctx: TreeCtx = {
     dialect,
     insert,
-    refresh: () => {
-      void catalogQuery.refetch()
-    },
+    refresh: () => refreshSchema.mutate(),
     openObject,
     openDiagram,
     spec,
@@ -243,13 +260,25 @@ export function SchemaTree({
   return (
     <SchemaTreeContext.Provider value={ctx}>
       <div className="py-0.5">
-        {single
+        {single && (single.children?.length ?? 0) === 0
           ? sortedGroups(single, spec).map((g) => (
-              <SchemaGroupNode key={g.kind} group={g} forceOpen={filtering} />
+              <SchemaGroupNode key={g.kind} group={g} scope={single.path} forceOpen={filtering} />
             ))
-          : namespaces.map((ns) => (
-              <SchemaNamespaceNode key={ns.name} namespace={ns} forceOpen={filtering} />
-            ))}
+          : single && single.groups.length === 0
+            ? (single.children ?? []).map((node) => (
+                <SchemaScopeNode
+                  key={JSON.stringify(node.path)}
+                  node={node}
+                  forceOpen={filtering}
+                />
+              ))
+            : roots.map((node) => (
+                <SchemaScopeNode
+                  key={JSON.stringify(node.path)}
+                  node={node}
+                  forceOpen={filtering}
+                />
+              ))}
       </div>
     </SchemaTreeContext.Provider>
   )
@@ -275,23 +304,18 @@ function GuideChildren({ children }: { children: React.ReactNode }) {
   return <div className="ml-[13px] border-l border-border/60">{children}</div>
 }
 
-function SchemaNamespaceNode({
-  namespace,
-  forceOpen,
-}: {
-  namespace: CatalogNamespace
-  forceOpen: boolean
-}) {
+function SchemaScopeNode({ node, forceOpen }: { node: ScopeNode; forceOpen: boolean }) {
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
   const { refresh, spec, openDiagram } = useTreeCtx()
-  const groups = sortedGroups(namespace, spec)
+  const groups = sortedGroups(node, spec)
+  const label = node.path[node.path.length - 1]?.name ?? scopeLabel(node.path)
   const menuItems = buildNamespaceMenu({
-    onCopyName: () => copyWithToast(namespace.name),
+    onCopyName: () => copyWithToast(label),
     onRefresh: refresh,
     onViewDiagram:
       diagramSupported(spec) && openDiagram
-        ? () => openDiagram({ kind: 'namespace', namespace: namespace.name })
+        ? () => openDiagram({ kind: 'scope', scope: node.path })
         : undefined,
   })
 
@@ -302,14 +326,17 @@ function SchemaNamespaceNode({
           typeIcon="database"
           chevron={expanded}
           bold
-          label={namespace.name}
+          label={label}
           onClick={() => setOpen(!expanded)}
         />
       </ContextMenu>
       {expanded && (
         <GuideChildren>
           {groups.map((g) => (
-            <SchemaGroupNode key={g.kind} group={g} forceOpen={forceOpen} />
+            <SchemaGroupNode key={g.kind} group={g} scope={node.path} forceOpen={forceOpen} />
+          ))}
+          {(node.children ?? []).map((child) => (
+            <SchemaScopeNode key={JSON.stringify(child.path)} node={child} forceOpen={forceOpen} />
           ))}
         </GuideChildren>
       )}
@@ -317,15 +344,30 @@ function SchemaNamespaceNode({
   )
 }
 
-function SchemaGroupNode({ group, forceOpen }: { group: CatalogObjectGroup; forceOpen: boolean }) {
+function SchemaGroupNode({
+  group,
+  scope,
+  forceOpen,
+}: {
+  group: ObjectGroup
+  scope: ScopePath
+  forceOpen: boolean
+}) {
   const [open, setOpen] = useState<boolean | null>(null)
   const expanded = open ?? forceOpen
   const objects = group.objects ?? []
   const style = kindStyle(group.kind)
-  const { refresh, spec } = useTreeCtx()
+  const { refresh, spec, openDiagram } = useTreeCtx()
   const label = kindLabel(spec, group.kind)
   const newLabel = `New ${label.replace(/s$/, '')}...`
-  const menuItems = buildObjectGroupMenu({ newLabel, onRefresh: refresh })
+  const menuItems = buildObjectGroupMenu({
+    newLabel,
+    onRefresh: refresh,
+    onViewDiagram:
+      group.kind === 'table' && diagramSupportedForKind(spec, group.kind) && openDiagram
+        ? () => openDiagram({ kind: 'scope', scope })
+        : undefined,
+  })
 
   return (
     <div>
@@ -357,7 +399,9 @@ function SchemaGroupNode({ group, forceOpen }: { group: CatalogObjectGroup; forc
 function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forceOpen: boolean }) {
   const ctx = useContext(SchemaTreeContext)
   const [open, setOpen] = useState<boolean | null>(null)
-  const expanded = open ?? forceOpen
+  const expandable = !NON_EXPANDABLE_OBJECT_KINDS.has(objectRef.kind)
+  const inlineDetail = objectRef.kind === 'sequence'
+  const expanded = expandable && (open ?? forceOpen)
   const detailQuery = useQuery({
     ...orgConnectionObjectQueryOptions(
       ctx!.orgSlug,
@@ -366,7 +410,7 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
       ctx!.sessionId,
       objectRef,
     ),
-    enabled: Boolean(ctx) && expanded,
+    enabled: Boolean(ctx) && (expanded || inlineDetail),
   })
   useEvictGoneSession(ctx?.connectionId, [detailQuery.error])
   const detail = detailQuery.data ?? null
@@ -374,6 +418,7 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
   const insertable = useObjectInsert(objectRef)
   const { dialect, spec, openDiagram } = useTreeCtx()
   const style = kindStyle(objectRef.kind)
+  const inlineMeta = inlineDetail ? sequenceDataType(detail) : undefined
   const isView = objectRef.kind === 'view' || objectRef.kind === 'materialized_view'
   const objectMenu = buildObjectMenu({
     isView,
@@ -385,7 +430,7 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
     onCopyName: () => copyWithToast(objectRef.name),
     onCopyQualifiedName: () =>
       copyWithToast(
-        dialect ? dialect.formatObject(objectRef.namespace, objectRef.name) : objectRef.name,
+        dialect ? dialect.formatObject(objectRef.scope, objectRef.name) : objectRef.name,
       ),
     onCopyColumnList: () =>
       copyWithToast(
@@ -399,10 +444,11 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
         <TreeRow
           typeIcon={style.icon}
           typeIconClass={style.className}
-          chevron={expanded}
+          chevron={expandable ? expanded : undefined}
           label={objectRef.name}
+          meta={inlineMeta}
           insertable={insertable}
-          onClick={() => setOpen(!expanded)}
+          onClick={expandable ? () => setOpen(!expanded) : undefined}
           onDoubleClickRow={() => ctx?.openObject(objectRef)}
         />
       </ContextMenu>
@@ -412,6 +458,7 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
             detail={detail}
             loading={detailQuery.isLoading}
             objectName={objectRef.name}
+            objectKind={objectRef.kind}
           />
         </GuideChildren>
       )}
@@ -423,10 +470,12 @@ function SchemaObjectDetail({
   detail,
   loading,
   objectName,
+  objectKind,
 }: {
   detail: ObjectDetail | null
   loading: boolean
   objectName: string
+  objectKind: string
 }) {
   const { dialect } = useTreeCtx()
   if (loading && !detail) {
@@ -439,6 +488,9 @@ function SchemaObjectDetail({
   }
   const rel = detail?.relational
   if (!rel) {
+    if (objectKind === 'trigger') {
+      return <SchemaTriggerDetail descriptors={detail?.descriptors ?? []} />
+    }
     return <SchemaDescriptors descriptors={detail?.descriptors ?? []} />
   }
   const pk = new Set(rel.primary_key ?? [])
@@ -490,6 +542,22 @@ function SchemaObjectDetail({
       )}
     </>
   )
+}
+
+function sequenceDataType(detail: ObjectDetail | null): string | undefined {
+  return detail?.descriptors
+    ?.flatMap((descriptor) => descriptor.fields ?? [])
+    .find((field) => field.name.toLowerCase() === 'data type')?.value
+}
+
+function SchemaTriggerDetail({ descriptors }: { descriptors: ObjectDescriptor[] }) {
+  const fields = descriptors
+    .flatMap((descriptor) => descriptor.fields ?? [])
+    .filter((field) => ['timing', 'event', 'table'].includes(field.name.toLowerCase()))
+
+  return fields.map((field) => (
+    <LeafRow key={field.name} icon="information-circle" label={field.name} meta={field.value} />
+  ))
 }
 
 /** Collapsible sub-section under an expanded object (Columns, Indexes, …). */
@@ -651,6 +719,7 @@ function TreeRow({
   typeIconClass,
   chevron,
   label,
+  meta,
   count,
   bold,
   insertable,
@@ -659,12 +728,13 @@ function TreeRow({
 }: {
   typeIcon: AppIcon
   typeIconClass?: string
-  chevron: boolean
+  chevron?: boolean
   label: string
+  meta?: string
   count?: number
   bold?: boolean
   insertable?: InsertableProps
-  onClick: () => void
+  onClick?: () => void
   /** When set, double-clicking the row runs this instead of the insertable's
    *  insert action (object rows open their detail tab; drag-to-insert stays). */
   onDoubleClickRow?: () => void
@@ -672,30 +742,39 @@ function TreeRow({
   function handleClick(e: React.MouseEvent) {
     if (window.getSelection()?.toString()) return
     if (insertable && e.detail > 1) return
-    onClick()
+    onClick?.()
   }
 
   return (
     <div
       role="button"
+      aria-expanded={chevron === undefined ? undefined : chevron}
       tabIndex={0}
       draggable={insertable?.draggable}
       onDragStart={insertable?.onDragStart}
       onDoubleClick={onDoubleClickRow ?? insertable?.onDoubleClick}
       onClick={handleClick}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          if (onClick) onClick()
+          else onDoubleClickRow?.()
+        } else if (e.key === ' ' && onClick) {
           e.preventDefault()
           onClick()
         }
       }}
       className="mx-1 flex h-6 cursor-pointer items-center gap-1.5 rounded-md pl-1 pr-2 text-left text-xs transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
     >
-      <Icon
-        name={chevron ? 'chevron-down' : 'chevron-right'}
-        size={11}
-        className="shrink-0 text-muted-foreground/70"
-      />
+      {chevron === undefined ? (
+        <span className="size-[11px] shrink-0" aria-hidden="true" />
+      ) : (
+        <Icon
+          name={chevron ? 'chevron-down' : 'chevron-right'}
+          size={11}
+          className="shrink-0 text-muted-foreground/70"
+        />
+      )}
       <Icon
         name={typeIcon}
         size={13}
@@ -711,6 +790,14 @@ function TreeRow({
       >
         {label}
       </span>
+      {meta ? (
+        <span
+          className="min-w-0 max-w-[45%] shrink truncate text-right font-mono text-[10px] text-muted-foreground/80"
+          title={meta}
+        >
+          {meta}
+        </span>
+      ) : null}
       {count !== undefined && (
         <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground/60">{count}</span>
       )}

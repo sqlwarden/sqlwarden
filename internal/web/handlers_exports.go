@@ -16,8 +16,8 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/classifier"
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/classifier"
 	"github.com/sqlwarden/internal/exports"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/jobs"
@@ -127,6 +127,11 @@ func (app *application) downloadConnectionExport(w http.ResponseWriter, r *http.
 		app.notPermitted(w, r)
 		return
 	}
+	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), ws)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
 
 	filename := safeExportFilename(input.Filename, time.Now())
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -135,7 +140,7 @@ func (app *application) downloadConnectionExport(w http.ResponseWriter, r *http.
 	result, err := exports.NewService().Stream(r.Context(), session.Conn, w, exports.StreamOptions{
 		Format:   normalizedExportFormat(input.Format),
 		SQL:      input.SQL,
-		MaxBytes: app.config.Exports.SyncMaxBytes,
+		MaxBytes: runtimeSettings.ExportsSyncMaxBytes,
 	})
 	if err != nil {
 		app.logWarn(r, "synchronous export failed", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID), slog.String("error", exportErrorCategory(err)))
@@ -169,7 +174,12 @@ func (app *application) decodeExportRequest(w http.ResponseWriter, r *http.Reque
 }
 
 func (app *application) validateExportSQL(w http.ResponseWriter, r *http.Request, conn database.Connection, sql string) bool {
-	classification, err := app.classifyConnectionSQL(r, conn, sql)
+	c, ok := registeredConnectionClassifier(conn.Driver)
+	if !ok {
+		app.errorMessage(w, r, http.StatusNotImplemented, "SQL export is unavailable for this driver because reliable SQL classification is not implemented.", nil)
+		return false
+	}
+	classification, err := c.Classify(r.Context(), classifier.Request{SQL: sql})
 	if err != nil {
 		app.serverError(w, r, err)
 		return false
@@ -178,7 +188,7 @@ func (app *application) validateExportSQL(w http.ResponseWriter, r *http.Request
 		app.failedValidation(w, r, fieldErrors(map[string]string{"sql": "Only read queries can be exported."}))
 		return false
 	}
-	if classification.StatementCount > 1 {
+	if classification.StatementCount != 1 {
 		app.failedValidation(w, r, fieldErrors(map[string]string{"sql": "Only a single query can be exported. Multi-query export isn't supported yet."}))
 		return false
 	}
@@ -228,14 +238,18 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 		!app.enforcer.Can(ctx, input.AccountID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnExecute) {
 		return nil, jobs.Permanent("export_not_permitted", "You no longer have permission to export this query.")
 	}
-	classification, err := connectionClassifier(conn.Driver).Classify(ctx, classifier.Request{SQL: input.SQL})
+	c, ok := registeredConnectionClassifier(conn.Driver)
+	if !ok {
+		return nil, jobs.Permanent("export_classifier_unavailable", "SQL export is unavailable for this driver because reliable SQL classification is not implemented.")
+	}
+	classification, err := c.Classify(ctx, classifier.Request{SQL: input.SQL})
 	if err != nil {
 		return nil, err
 	}
 	if classification.Kind != classifier.KindDQL {
 		return nil, jobs.Permanent("export_not_read_query", "Only read queries can be exported.")
 	}
-	if classification.StatementCount > 1 {
+	if classification.StatementCount != 1 {
 		return nil, jobs.Permanent("export_multi_statement", "Only a single query can be exported. Multi-query export isn't supported yet.")
 	}
 
@@ -246,15 +260,19 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 	if err := app.validateTargetConnection(conn.Driver, plainDSN); err != nil {
 		return nil, jobs.Permanent("export_target_blocked", targetConnectionFieldError(err))
 	}
-	driver, err := dbengine.New(conn.Driver)
+	driver, err := engine.New(conn.Driver)
 	if err != nil {
 		return nil, err
 	}
-	if err := driver.Connect(ctx, dbengine.ConnectionConfig{DSN: plainDSN, Driver: conn.Driver}); err != nil {
+	if err := driver.Connect(ctx, engine.ConnectionConfig{DSN: plainDSN, Driver: conn.Driver, DefaultScope: conn.DefaultScope}); err != nil {
 		return nil, jobs.Retryable("export_connect_failed", "Could not connect to the target database.")
 	}
 	defer driver.Close()
 	runtime.Events.Info(ctx, "target_connected", "Connected to database.", nil)
+	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
 
 	scope := files.Scope{AccountID: input.AccountID, OrgID: org.ID, OrgSlug: org.Slug, Workspace: ws, Visibility: database.FileVisibilityPrivate}
 	file, err := app.createExportFile(ctx, scope, input.Filename)
@@ -272,7 +290,7 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 		streamResult, err = exports.NewService().Stream(ctx, driver, writer, exports.StreamOptions{
 			Format:   input.Format,
 			SQL:      input.SQL,
-			MaxBytes: app.config.Exports.BackgroundMaxBytes,
+			MaxBytes: runtimeSettings.ExportsBackgroundMaxBytes,
 			OnProgress: func(rows int64, bytes int64) {
 				if rows-lastProgress >= exportProgressEveryRows {
 					lastProgress = rows
@@ -285,7 +303,7 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 		}
 		streamErr <- err
 	}()
-	_, writeErr := app.workspaceFileService().WriteContent(ctx, scope, file.ID, "", reader)
+	_, writeErr := app.workspaceFileServiceWithSettings(runtimeSettings).WriteContent(ctx, scope, file.ID, "", reader)
 	if writeErr != nil {
 		_ = reader.Close()
 		if err := <-streamErr; err != nil {

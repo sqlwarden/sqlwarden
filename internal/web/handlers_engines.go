@@ -1,20 +1,22 @@
 package web
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/sqlwarden/internal/dbengine"
+	completionapp "github.com/sqlwarden/internal/completion"
+	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/response"
 )
 
 type engineView struct {
-	ID           string                       `json:"id"`
-	DisplayName  string                       `json:"display_name"`
-	Dialect      string                       `json:"dialect"`
-	Capabilities map[dbengine.Capability]bool `json:"capabilities"`
-	Schema       *schemaSpecPayload           `json:"schema,omitempty"`
+	ID           string                     `json:"id"`
+	DisplayName  string                     `json:"display_name"`
+	Dialect      string                     `json:"dialect"`
+	Capabilities map[engine.Capability]bool `json:"capabilities"`
+	Schema       *schemaSpecPayload         `json:"schema,omitempty"`
 }
 
 // schemaSpecPayload mirrors schema.SchemaSpec but lives here so the engines API
@@ -28,7 +30,7 @@ type enginesResponse struct {
 	Engines []engineView `json:"engines"`
 }
 
-func engineToView(set dbengine.CapabilitySet) engineView {
+func engineToView(set engine.CapabilitySet) engineView {
 	v := engineView{
 		ID:           string(set.Engine.ID),
 		DisplayName:  set.Engine.DisplayName,
@@ -42,7 +44,7 @@ func engineToView(set dbengine.CapabilitySet) engineView {
 }
 
 func (app *application) listEngines(w http.ResponseWriter, r *http.Request) {
-	engines := dbengine.Engines()
+	engines := engine.Engines()
 	views := make([]engineView, 0, len(engines))
 	for _, set := range engines {
 		views = append(views, engineToView(set))
@@ -55,7 +57,7 @@ func (app *application) listEngines(w http.ResponseWriter, r *http.Request) {
 
 func (app *application) getEngine(w http.ResponseWriter, r *http.Request) {
 	engineID := chi.URLParam(r, "engine_id")
-	set, ok := dbengine.Describe(engineID)
+	set, ok := engine.Describe(engineID)
 	if !ok {
 		app.logWarn(r, "database engine lookup failed", slog.String("engine_id", engineID))
 		app.errorMessage(w, r, http.StatusNotFound, "Unknown engine.", nil)
@@ -67,6 +69,26 @@ func (app *application) getEngine(w http.ResponseWriter, r *http.Request) {
 		slog.Int("capability_count", len(set.Capabilities)),
 	)
 	if err := response.JSON(w, http.StatusOK, engineToView(set)); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) getEngineCompletionVocabulary(w http.ResponseWriter, r *http.Request) {
+	engineID := chi.URLParam(r, "engine_id")
+	if _, ok := engine.Describe(engineID); !ok {
+		app.errorMessage(w, r, http.StatusNotFound, "Unknown engine.", nil)
+		return
+	}
+	vocabulary, err := app.completionService.Vocabulary(engineID)
+	if errors.Is(err, completionapp.ErrUnsupported) {
+		app.errorMessage(w, r, http.StatusNotImplemented, "This engine does not provide a completion vocabulary.", nil)
+		return
+	}
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, vocabulary); err != nil {
 		app.serverError(w, r, err)
 	}
 }

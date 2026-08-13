@@ -7,6 +7,8 @@ export type FileMenuCtx = {
   onCopyName: () => void
   onSaveAs: () => void
   onDelete?: () => void
+  onRename?: () => void
+  onDuplicate?: () => void
 }
 
 export function buildFileMenu(ctx: FileMenuCtx): ContextMenuItem[] {
@@ -28,16 +30,32 @@ export function buildFileMenu(ctx: FileMenuCtx): ContextMenuItem[] {
       onSelect: ctx.onCopyName,
     },
     { kind: 'separator' },
-    { kind: 'action', id: 'rename', label: 'Rename', icon: 'pencil-edit-02', soon: true },
-    { kind: 'action', id: 'duplicate', label: 'Duplicate', icon: 'copy-01', soon: true },
-    {
-      kind: 'action',
-      id: 'save-as',
-      label: 'Save As…',
-      icon: 'download-01',
-      onSelect: ctx.onSaveAs,
-    },
   ]
+  if (ctx.onRename) {
+    items.push({
+      kind: 'action',
+      id: 'rename',
+      label: 'Rename',
+      icon: 'pencil-edit-02',
+      onSelect: ctx.onRename,
+    })
+  }
+  if (ctx.onDuplicate) {
+    items.push({
+      kind: 'action',
+      id: 'duplicate',
+      label: 'Duplicate',
+      icon: 'copy-01',
+      onSelect: ctx.onDuplicate,
+    })
+  }
+  items.push({
+    kind: 'action',
+    id: 'save-as',
+    label: 'Save As…',
+    icon: 'download-01',
+    onSelect: ctx.onSaveAs,
+  })
   if (ctx.onDelete) {
     items.push(
       { kind: 'separator' },
@@ -64,6 +82,7 @@ export type FolderMenuCtx = {
   onCreateFolder: () => void
   onCopyName: () => void
   onDelete?: () => void
+  onRename?: () => void
 }
 
 export function buildFolderMenu(ctx: FolderMenuCtx): ContextMenuItem[] {
@@ -90,8 +109,16 @@ export function buildFolderMenu(ctx: FolderMenuCtx): ContextMenuItem[] {
       icon: 'copy-01',
       onSelect: ctx.onCopyName,
     },
-    { kind: 'action', id: 'rename', label: 'Rename', icon: 'pencil-edit-02', soon: true },
   ]
+  if (ctx.onRename) {
+    items.push({
+      kind: 'action',
+      id: 'rename',
+      label: 'Rename',
+      icon: 'pencil-edit-02',
+      onSelect: ctx.onRename,
+    })
+  }
   if (ctx.onDelete) {
     items.push(
       { kind: 'separator' },

@@ -3,6 +3,7 @@ import { api } from '#/lib/api/client'
 import type {
   Account,
   InstanceAdmin,
+  InstanceConfiguration,
   InstanceSettings,
   ListQuery,
   Organization,
@@ -38,6 +39,14 @@ export function instanceSettingsQueryOptions() {
   return queryOptions({
     queryKey: queryKeys.instanceSettings(),
     queryFn: () => api.get<InstanceSettings>('/api/v1/instance/settings'),
+    staleTime: 60_000,
+  })
+}
+
+export function instanceConfigurationQueryOptions() {
+  return queryOptions({
+    queryKey: queryKeys.instanceConfiguration(),
+    queryFn: () => api.get<InstanceConfiguration>('/api/v1/instance/configuration'),
     staleTime: 60_000,
   })
 }

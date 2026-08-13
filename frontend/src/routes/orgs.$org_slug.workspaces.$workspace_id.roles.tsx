@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useWorkspacePageTitle } from '#/lib/page-title'
 import { trimTrailingSlash } from '#/lib/utils'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -108,6 +109,7 @@ function WorkspaceRolesRoute() {
 }
 
 function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspaceId: string }) {
+  useWorkspacePageTitle('Roles')
   const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)
   const [roleName, setRoleName] = useState('')

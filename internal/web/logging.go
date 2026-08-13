@@ -28,13 +28,11 @@ type requestLogContext struct {
 	ConnectionID  int64
 }
 
-// NewLogger builds the process logger from runtime configuration.
+// NewLogger builds the process logger. Its level starts at info and is updated
+// from database-backed instance settings after the application database opens.
 func NewLogger(cfg Config, out io.Writer) (*slog.Logger, error) {
-	level, err := parseLogLevel(cfg.Log.Level)
-	if err != nil {
-		return nil, err
-	}
-
+	level := new(slog.LevelVar)
+	level.Set(slog.LevelInfo)
 	opts := &slog.HandlerOptions{Level: level}
 	var handler slog.Handler
 	switch cfg.Log.Format {
@@ -46,10 +44,37 @@ func NewLogger(cfg Config, out io.Writer) (*slog.Logger, error) {
 		return nil, fmt.Errorf("unsupported log format: %s", cfg.Log.Format)
 	}
 
+	handler = &runtimeLevelHandler{Handler: handler, level: level}
 	return slog.New(handler).With(
 		"service", "sqlwarden",
 		"version", version.Get(),
 	), nil
+}
+
+type runtimeLevelHandler struct {
+	slog.Handler
+	level *slog.LevelVar
+}
+
+func (h *runtimeLevelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &runtimeLevelHandler{Handler: h.Handler.WithAttrs(attrs), level: h.level}
+}
+
+func (h *runtimeLevelHandler) WithGroup(name string) slog.Handler {
+	return &runtimeLevelHandler{Handler: h.Handler.WithGroup(name), level: h.level}
+}
+
+func setLoggerLevel(logger *slog.Logger, value string) error {
+	level, err := parseLogLevel(value)
+	if err != nil {
+		return err
+	}
+	handler, ok := logger.Handler().(*runtimeLevelHandler)
+	if !ok {
+		return nil
+	}
+	handler.level.Set(level)
+	return nil
 }
 
 func parseLogLevel(level string) (slog.Level, error) {
@@ -199,6 +224,14 @@ func requestPath(r *http.Request) string {
 	path := r.URL.EscapedPath()
 	if path == "" {
 		return "/"
+	}
+	const invitationPrefix = "/api/v1/invitations/"
+	if strings.HasPrefix(path, invitationPrefix) {
+		remainder := strings.TrimPrefix(path, invitationPrefix)
+		if suffixAt := strings.IndexByte(remainder, '/'); suffixAt >= 0 {
+			return invitationPrefix + "[redacted]" + remainder[suffixAt:]
+		}
+		return invitationPrefix + "[redacted]"
 	}
 	return path
 }

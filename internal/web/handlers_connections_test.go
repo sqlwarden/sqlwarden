@@ -19,11 +19,39 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/connection"
-	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/cursor"
+	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/classifier"
+	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/pkg/result"
 )
+
+func TestConnectionClassifierFallsBackToHeuristic(t *testing.T) {
+	if _, ok := registeredConnectionClassifier("sqlite"); ok {
+		t.Fatal("sqlite must not advertise a registered classifier")
+	}
+
+	c := connectionClassifier("sqlite")
+	tests := []struct {
+		sql  string
+		want classifier.Kind
+	}{
+		{sql: "SELECT 1", want: classifier.KindDQL},
+		{sql: "UPDATE widgets SET active = false", want: classifier.KindDML},
+		{sql: "DROP TABLE widgets", want: classifier.KindDDL},
+		{sql: "VACUUM", want: classifier.KindUnknown},
+	}
+	for _, test := range tests {
+		got, err := c.Classify(context.Background(), classifier.Request{SQL: test.sql})
+		if err != nil {
+			t.Fatalf("Classify(%q): %v", test.sql, err)
+		}
+		if got.Kind != test.want || got.Source != "heuristic" {
+			t.Errorf("Classify(%q) = %+v, want kind=%q source=heuristic", test.sql, got, test.want)
+		}
+	}
+}
 
 func TestTestConnectionUnknownDriver(t *testing.T) {
 	t.Parallel()
@@ -110,6 +138,11 @@ func TestTestConnectionValidationAndSuccess(t *testing.T) {
 		map[string]any{"driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
 	assert.Equal(t, successRes.StatusCode, http.StatusOK)
 	assert.Equal(t, successRes.BodyFields["ok"], true)
+	discovery, ok := successRes.BodyFields["scope_discovery"].(map[string]any)
+	if !ok {
+		t.Fatalf("scope_discovery = %#v, want object", successRes.BodyFields["scope_discovery"])
+	}
+	assert.Equal[any](t, discovery["current"], []any{map[string]any{"kind": "database", "name": "main"}})
 }
 
 func TestTestConnectionSuccessLogsOutcome(t *testing.T) {
@@ -442,6 +475,73 @@ func TestUpdateConnection(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("%v", getRes.BodyFields["environment_id"]), envID)
 }
 
+func TestGetConnectionDSN(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, org := seedOrgOwner(t, app, "conn-dsn-owner@example.com", "Conn DSN Owner", "Conn DSN Org")
+	member, memberTok := seedAccountWithToken(t, app, "conn-dsn-member@example.com", "Conn DSN Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Conn DSN WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	dsn := "host=localhost port=5432 user=test dbname=test sslmode=disable"
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{
+			"name":   "Primary",
+			"driver": "postgres",
+			"dsn":    dsn,
+		}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	// The member lacks conn:update and must be forbidden from revealing the DSN.
+	memberRes := send(t, newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/dsn", nil, memberTok), app.routes())
+	assert.Equal(t, memberRes.StatusCode, http.StatusForbidden)
+
+	// The owner holds conn:update and must see the decrypted DSN.
+	ownerRes := send(t, newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/dsn", nil, ownerTok), app.routes())
+	assert.Equal(t, ownerRes.StatusCode, http.StatusOK)
+	assert.Equal(t, ownerRes.BodyFields["dsn"].(string), dsn)
+}
+
+func TestGetConnectionDSNMaskedByOrgSetting(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, org := seedOrgOwner(t, app, "conn-dsn-masked-owner@example.com", "Conn DSN Masked Owner", "Conn DSN Masked Org")
+
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Conn DSN Masked WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	dsn := "host=localhost port=5432 user=test dbname=test sslmode=disable"
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{
+			"name":   "Primary",
+			"driver": "postgres",
+			"dsn":    dsn,
+		}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	masked := true
+	if err := app.db.UpdateOrgSettings(context.Background(), org.ID, nil, nil, &masked); err != nil {
+		t.Fatal(err)
+	}
+
+	// Even the owner, who holds conn:update, must be forbidden once the org masks credentials on edit.
+	ownerRes := send(t, newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/dsn", nil, ownerTok), app.routes())
+	assert.Equal(t, ownerRes.StatusCode, http.StatusForbidden)
+}
+
 func TestUpdateConnectionRejectsSQLiteFileTargetInServerMode(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -746,8 +846,6 @@ func TestExecuteQueryExecuteBranch(t *testing.T) {
 func TestExecuteQueryAppliesConfiguredResultLimit(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.Query.MaxResultRows = 2
-	app.config.Query.MaxResultBytes = 1024
 
 	_, tok, slug := registerAndLogin(t, app, "query-limit@example.com", "Query Limit", "securepass99")
 
@@ -781,6 +879,12 @@ func TestExecuteQueryAppliesConfiguredResultLimit(t *testing.T) {
 		assert.Equal(t, res.StatusCode, http.StatusOK)
 	}
 
+	settingsRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"query_max_result_rows":  2,
+		"query_max_result_bytes": 1024,
+	}, tok), app.routes())
+	assert.Equal(t, settingsRes.StatusCode, http.StatusOK)
+
 	selectReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{
 		"sql":        "SELECT id FROM t ORDER BY id",
 		"use_cursor": false,
@@ -800,6 +904,8 @@ func TestExecuteQueryAppliesConfiguredResultLimit(t *testing.T) {
 func TestQueryCursorPagesResultsAndExpiresAfterExhaustion(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
+	var logs bytes.Buffer
+	app.logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-cursor-page"), "Query Cursor Page", "securepass99")
 	wsRes := send(t, newAuthRequest(t, http.MethodPost,
@@ -830,18 +936,23 @@ func TestQueryCursorPagesResultsAndExpiresAfterExhaustion(t *testing.T) {
 		assert.Equal(t, send(t, req, app.routes()).StatusCode, http.StatusOK)
 	}
 
+	settingsRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"query_cursor_page_size": 2,
+	}, tok), app.routes())
+	assert.Equal(t, settingsRes.StatusCode, http.StatusOK)
+
 	startReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors", map[string]any{
-		"sql":       "SELECT id FROM t ORDER BY id",
-		"page_size": 2,
+		"sql": "SELECT id FROM t ORDER BY id",
 	}, tok)
 	startReq.Header.Set("X-Warden-Session", sessionID)
 	startRes := send(t, startReq, app.routes())
 	assert.Equal(t, startRes.StatusCode, http.StatusOK)
 	assert.Equal(t, startRes.BodyFields["exhausted"], false)
 	assert.Equal(t, startRes.BodyFields["rows_returned"], any(float64(2)))
+	assert.Equal(t, startRes.BodyFields["page_size"], any(float64(2)))
 	queryCursorID := startRes.BodyFields["query_cursor_id"].(string)
 
-	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 2}, tok)
+	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+queryCursorID+"/fetch", nil, tok)
 	fetchReq.Header.Set("X-Warden-Session", sessionID)
 	fetchRes := send(t, fetchReq, app.routes())
 	assert.Equal(t, fetchRes.StatusCode, http.StatusOK)
@@ -853,6 +964,11 @@ func TestQueryCursorPagesResultsAndExpiresAfterExhaustion(t *testing.T) {
 	expiredRes := send(t, expiredReq, app.routes())
 	assert.Equal(t, expiredRes.StatusCode, http.StatusGone)
 	assert.Equal(t, expiredRes.BodyFields["error"].(map[string]any)["code"], apiErrorQueryCursorUnavailable)
+
+	for _, message := range []string{"query cursor started", "query cursor fetched"} {
+		assert.True(t, strings.Contains(logs.String(), `"level":"DEBUG","msg":"`+message+`"`))
+		assert.False(t, strings.Contains(logs.String(), `"level":"INFO","msg":"`+message+`"`))
+	}
 }
 
 func TestExecuteQueryReturnsCursorForPagedDQL(t *testing.T) {
@@ -1090,7 +1206,10 @@ func TestExecuteDQLQueryFallsBackToSessionQueryWhenCursorUnsupported(t *testing.
 	useCursor := true
 	req := httptest.NewRequest(http.MethodPost, "/query", nil)
 
-	rs, err := app.executeDQLQuery(req, session, "SELECT 1", &useCursor, nil, time.Now())
+	rs, err := app.executeDQLQuery(req, session, "SELECT 1", &useCursor, nil, time.Now(), effectiveRuntimeSettings{
+		QueryMaxResultRows:  database.DefaultQueryMaxResultRows,
+		QueryMaxResultBytes: database.DefaultQueryMaxResultBytes,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1102,6 +1221,8 @@ func TestExecuteDQLQueryFallsBackToSessionQueryWhenCursorUnsupported(t *testing.
 func TestQueryCursorCloseAndRouteIsolation(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
+	var logs bytes.Buffer
+	app.logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	_, tok, slug := registerAndLogin(t, app, uniqueEmail(t, "query-cursor-close"), "Query Cursor Close", "securepass99")
 	wsRes := send(t, newAuthRequest(t, http.MethodPost,
@@ -1144,6 +1265,8 @@ func TestQueryCursorCloseAndRouteIsolation(t *testing.T) {
 	fetchReq := newAuthRequest(t, http.MethodPost, envConnectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 1}, tok)
 	fetchReq.Header.Set("X-Warden-Session", sessionID)
 	assert.Equal(t, send(t, fetchReq, app.routes()).StatusCode, http.StatusGone)
+	assert.True(t, strings.Contains(logs.String(), `"level":"DEBUG","msg":"query cursor closed"`))
+	assert.False(t, strings.Contains(logs.String(), `"level":"INFO","msg":"query cursor closed"`))
 }
 
 func TestQueryCursorFetchHandlesParentSessionRemoval(t *testing.T) {
@@ -1631,7 +1754,7 @@ func TestRevokeWorkspaceDatabaseSession_OwnerCanRevokeOwnSession(t *testing.T) {
 			OrgID:       strconv.FormatInt(org.ID, 10),
 			WorkspaceID: strconv.FormatInt(ws.ID, 10),
 		},
-		func() (dbengine.Driver, error) { return newIdleQueryDriver(), nil },
+		func() (engine.Driver, error) { return newIdleQueryDriver(), nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1663,7 +1786,7 @@ func TestRevokeWorkspaceDatabaseSession_AdminCanRevokeWorkspaceSession(t *testin
 			OrgID:       strconv.FormatInt(org.ID, 10),
 			WorkspaceID: strconv.FormatInt(ws.ID, 10),
 		},
-		func() (dbengine.Driver, error) { return newIdleQueryDriver(), nil },
+		func() (engine.Driver, error) { return newIdleQueryDriver(), nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1693,7 +1816,7 @@ func TestRevokeWorkspaceDatabaseSession_CrossWorkspaceHidden(t *testing.T) {
 			OrgID:       strconv.FormatInt(org.ID, 10),
 			WorkspaceID: strconv.FormatInt(wsB.ID, 10),
 		},
-		func() (dbengine.Driver, error) { return newIdleQueryDriver(), nil },
+		func() (engine.Driver, error) { return newIdleQueryDriver(), nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1780,7 +1903,7 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 	cancelledSession, _, err := app.connManager.GetOrCreate(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(connA.ID, 10),
-		func() (dbengine.Driver, error) { return blockingDriver, nil },
+		func() (engine.Driver, error) { return blockingDriver, nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1789,7 +1912,7 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 	unrelatedSession, _, err := app.connManager.GetOrCreate(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(connB.ID, 10),
-		func() (dbengine.Driver, error) { return newIdleQueryDriver(), nil },
+		func() (engine.Driver, error) { return newIdleQueryDriver(), nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -2110,10 +2233,10 @@ func newBlockingQueryDriver() *blockingQueryDriver {
 	return &blockingQueryDriver{started: make(chan struct{})}
 }
 
-func (d *blockingQueryDriver) Connect(context.Context, dbengine.ConnectionConfig) error { return nil }
-func (d *blockingQueryDriver) Ping(context.Context) error                               { return nil }
-func (d *blockingQueryDriver) Close() error                                             { return nil }
-func (d *blockingQueryDriver) Dialect() dbengine.Dialect                                { return dbengine.DialectSQLite }
+func (d *blockingQueryDriver) Connect(context.Context, engine.ConnectionConfig) error { return nil }
+func (d *blockingQueryDriver) Ping(context.Context) error                             { return nil }
+func (d *blockingQueryDriver) Close() error                                           { return nil }
+func (d *blockingQueryDriver) Dialect() engine.Dialect                                { return engine.DialectSQLite }
 func (d *blockingQueryDriver) Query(ctx context.Context, _ string, _ ...any) (*result.ResultSet, error) {
 	d.startOnce.Do(func() { close(d.started) })
 	<-ctx.Done()
@@ -2127,10 +2250,10 @@ type idleQueryDriver struct{}
 
 func newIdleQueryDriver() *idleQueryDriver { return &idleQueryDriver{} }
 
-func (d *idleQueryDriver) Connect(context.Context, dbengine.ConnectionConfig) error { return nil }
-func (d *idleQueryDriver) Ping(context.Context) error                               { return nil }
-func (d *idleQueryDriver) Close() error                                             { return nil }
-func (d *idleQueryDriver) Dialect() dbengine.Dialect                                { return dbengine.DialectSQLite }
+func (d *idleQueryDriver) Connect(context.Context, engine.ConnectionConfig) error { return nil }
+func (d *idleQueryDriver) Ping(context.Context) error                             { return nil }
+func (d *idleQueryDriver) Close() error                                           { return nil }
+func (d *idleQueryDriver) Dialect() engine.Dialect                                { return engine.DialectSQLite }
 func (d *idleQueryDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
 }
@@ -2142,12 +2265,12 @@ type cursorUnsupportedQueryDriver struct {
 	queryCalls int
 }
 
-func (d *cursorUnsupportedQueryDriver) Connect(context.Context, dbengine.ConnectionConfig) error {
+func (d *cursorUnsupportedQueryDriver) Connect(context.Context, engine.ConnectionConfig) error {
 	return nil
 }
 func (d *cursorUnsupportedQueryDriver) Ping(context.Context) error { return nil }
 func (d *cursorUnsupportedQueryDriver) Close() error               { return nil }
-func (d *cursorUnsupportedQueryDriver) Dialect() dbengine.Dialect  { return dbengine.DialectSQLite }
+func (d *cursorUnsupportedQueryDriver) Dialect() engine.Dialect    { return engine.DialectSQLite }
 func (d *cursorUnsupportedQueryDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
 	d.queryCalls++
 	return &result.ResultSet{

@@ -46,6 +46,13 @@ func NewRunner(store *Store, registry *Registry, logger *slog.Logger, cfg Worker
 // Run starts worker goroutines and blocks until ctx is cancelled and all
 // in-flight jobs have stopped.
 func (r *Runner) Run(ctx context.Context) {
+	r.RunUntilStopped(ctx, ctx.Done())
+}
+
+// RunUntilStopped stops claiming new work when stop is closed while allowing
+// in-flight handlers to finish. Cancelling ctx still cancels in-flight work and
+// is reserved for process shutdown.
+func (r *Runner) RunUntilStopped(ctx context.Context, stop <-chan struct{}) {
 	r.logger.InfoContext(ctx, "job runner started",
 		"worker_id", r.cfg.WorkerID,
 		"workers", r.cfg.WorkerCount,
@@ -60,15 +67,14 @@ func (r *Runner) Run(ctx context.Context) {
 		wg.Add(1)
 		go func(worker int) {
 			defer wg.Done()
-			r.workerLoop(ctx, worker)
+			r.workerLoop(ctx, stop, worker)
 		}(i)
 	}
-	<-ctx.Done()
 	wg.Wait()
 	r.logger.InfoContext(context.Background(), "job runner stopped", "worker_id", r.cfg.WorkerID)
 }
 
-func (r *Runner) workerLoop(ctx context.Context, worker int) {
+func (r *Runner) workerLoop(ctx context.Context, stop <-chan struct{}, worker int) {
 	ticker := time.NewTicker(r.cfg.PollInterval)
 	defer ticker.Stop()
 	pruneTicker := time.NewTicker(time.Hour)
@@ -80,11 +86,20 @@ func (r *Runner) workerLoop(ctx context.Context, worker int) {
 	recoveryTicker := time.NewTicker(recoveryInterval)
 	defer recoveryTicker.Stop()
 	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-stop:
+			return
+		default:
+		}
 		if r.runOnce(ctx, worker) {
 			continue
 		}
 		select {
 		case <-ctx.Done():
+			return
+		case <-stop:
 			return
 		case <-ticker.C:
 		case <-pruneTicker.C:

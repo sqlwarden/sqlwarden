@@ -1,9 +1,11 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { Environment } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
+import { server } from '#/test/server'
 import { drivers } from './connection-drivers'
 import { ConnectionDialog } from './ConnectionDialog'
 
@@ -62,5 +64,101 @@ describe('ConnectionDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Change' }))
     expect(screen.getByRole('heading', { name: 'Choose a database' })).toBeInTheDocument()
+  })
+
+  it('discovers and persists the selected database and schema', async () => {
+    const user = userEvent.setup()
+    let createBody: Record<string, unknown> | undefined
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/test', () =>
+        HttpResponse.json({
+          ok: true,
+          latency_ms: 12,
+          scope_discovery: {
+            current: [
+              { kind: 'database', name: 'analytics' },
+              { kind: 'schema', name: 'public' },
+            ],
+            scopes: [
+              [{ kind: 'database', name: 'analytics' }],
+              [{ kind: 'database', name: 'warehouse' }],
+              [
+                { kind: 'database', name: 'analytics' },
+                { kind: 'schema', name: 'reporting' },
+              ],
+              [
+                { kind: 'database', name: 'analytics' },
+                { kind: 'schema', name: 'public' },
+              ],
+            ],
+          },
+        }),
+      ),
+      http.post('/api/v1/orgs/acme/workspaces/3/connections', async ({ request }) => {
+        createBody = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ id: 9 }, { status: 201 })
+      }),
+    )
+    renderDialog()
+    await user.click(screen.getByRole('button', { name: /PostgreSQL/ }))
+    await user.type(screen.getByPlaceholderText('My PostgreSQL'), 'Analytics')
+    await user.type(screen.getByPlaceholderText('localhost'), 'db.example.test')
+    await user.type(screen.getByPlaceholderText('postgres'), 'reader')
+
+    await user.click(screen.getByRole('button', { name: 'Test Connection' }))
+    expect(await screen.findByRole('combobox', { name: 'Default database' })).toHaveTextContent(
+      'analytics',
+    )
+    expect(screen.queryByText('Database (optional)')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Default schema' })).toHaveTextContent('public')
+
+    await user.click(screen.getByRole('combobox', { name: 'Default schema' }))
+    await user.click(screen.getByRole('option', { name: 'Use database default' }))
+    expect(screen.getByRole('combobox', { name: 'Default schema' })).toHaveTextContent(
+      'Use database default',
+    )
+    expect(screen.queryByText('__sqlwarden_no_default_scope__')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('combobox', { name: 'Default database' }))
+    await user.click(screen.getByRole('option', { name: 'No default database' }))
+    expect(screen.getByRole('combobox', { name: 'Default database' })).toHaveTextContent(
+      'No default database',
+    )
+    expect(screen.queryByText('__sqlwarden_no_default_scope__')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('combobox', { name: 'Default database' }))
+    await user.click(await screen.findByRole('option', { name: 'analytics' }))
+    await user.click(screen.getByRole('combobox', { name: 'Default schema' }))
+    await user.click(await screen.findByRole('option', { name: 'reporting' }))
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() =>
+      expect(createBody).toMatchObject({
+        name: 'Analytics',
+        driver: 'postgres',
+        default_scope: [
+          { kind: 'database', name: 'analytics' },
+          { kind: 'schema', name: 'reporting' },
+        ],
+      }),
+    )
+    expect(createBody?.dsn).toContain('/analytics?')
+  })
+
+  it('toggles password field visibility', async () => {
+    const user = userEvent.setup()
+    renderDialog()
+    await user.click(screen.getByRole('button', { name: /PostgreSQL/ }))
+
+    expect(document.querySelector('input[type="password"]')).not.toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Show password' }))
+
+    expect(document.querySelector('input[type="password"]')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Hide password' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Hide password' }))
+
+    expect(document.querySelector('input[type="password"]')).not.toBeNull()
   })
 })

@@ -5,14 +5,14 @@ import { DatabasePanel } from './DatabasePanel'
 import { FilesPanel } from './FilesPanel'
 import { ExportsPanel } from './exports/ExportsPanel'
 
-/** Context every activity surface receives from the IDE shell. */
+/** Context every activity surface receives from the editor shell. */
 export type IdeSidebarPanelProps = {
   orgSlug: string
   workspace: Workspace
 }
 
 /**
- * An IDE activity. `mode` decides what the activity bar does on click:
+ * An editor activity. `mode` decides what the activity bar does on click:
  *  - 'sidebar': swap the side panel only (editor/tabs stay).
  *  - 'page':    replace the whole main content region (reserved; unused in v1).
  * `requires` optionally gates visibility; omit to always show.

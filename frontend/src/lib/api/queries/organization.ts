@@ -1,10 +1,11 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
 import type {
-  Account,
   EffectivePermissions,
   ListQuery,
   Organization,
+  OrganizationInvitation,
+  OrganizationRuntimeSettings,
   OrgMember,
   Paginated,
   PermissionsCatalog,
@@ -28,6 +29,14 @@ export function orgQueryOptions(slug: string) {
   return queryOptions({
     queryKey: queryKeys.org(slug),
     queryFn: () => api.get<Organization>(`/api/v1/orgs/${slug}`),
+    staleTime: 60_000,
+  })
+}
+
+export function orgRuntimeSettingsQueryOptions(slug: string) {
+  return queryOptions({
+    queryKey: queryKeys.orgRuntimeSettings(slug),
+    queryFn: () => api.get<OrganizationRuntimeSettings>(`/api/v1/orgs/${slug}/runtime-settings`),
     staleTime: 60_000,
   })
 }
@@ -58,11 +67,11 @@ export function orgMembersQueryOptions(slug: string, query?: ListQuery) {
   })
 }
 
-export function orgMemberCandidatesQueryOptions(slug: string, query?: ListQuery) {
+export function orgInvitationsQueryOptions(slug: string, query?: ListQuery) {
   return queryOptions({
-    queryKey: queryKeys.orgMemberCandidates(slug, query),
+    queryKey: queryKeys.orgInvitations(slug, query),
     queryFn: () =>
-      api.get<Paginated<Account>>(`/api/v1/orgs/${slug}/members/candidates`, { query }),
+      api.get<Paginated<OrganizationInvitation>>(`/api/v1/orgs/${slug}/invitations`, { query }),
     placeholderData: keepPreviousData,
   })
 }

@@ -12,17 +12,19 @@ import {
   DialogTitle,
 } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
-import { Label } from '#/components/ui/label'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
-import { drivers, driverBrands, type DriverDef, type FieldDef } from './connection-drivers/index'
+import { drivers, driverBrands } from './connection-drivers/index'
+import { TestStatusIndicator } from './ConnectionTestStatus'
+import { DriverFields, FormField } from './ConnectionFormFields'
 import { DriverBadge } from './DriverBadge'
-import { useConnectionForm, type ConnectionTestState } from './useConnectionForm'
+import { useConnectionForm } from './useConnectionForm'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -129,11 +131,13 @@ export function ConnectionDialog({
                             <SelectValue>{form.selectedEnvironmentName}</SelectValue>
                           </SelectTrigger>
                           <SelectContent className="min-w-[180px]">
-                            {environments.map((env) => (
-                              <SelectItem key={env.id} value={String(env.id)}>
-                                {env.name}
-                              </SelectItem>
-                            ))}
+                            <SelectGroup>
+                              {environments.map((env) => (
+                                <SelectItem key={env.id} value={String(env.id)}>
+                                  {env.name}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
                           </SelectContent>
                         </Select>
                       </FormField>
@@ -146,6 +150,10 @@ export function ConnectionDialog({
                     errors={form.errors.fields}
                     disabled={isPending}
                     onChange={form.changeField}
+                    scopeDiscovery={form.scopeDiscovery}
+                    defaultScope={form.defaultScope}
+                    onDatabaseChange={form.selectDatabase}
+                    onSchemaChange={form.selectSchema}
                   />
                 </div>
 
@@ -251,164 +259,5 @@ function DriverGallery({ onPick }: { onPick: (driverId: string) => void }) {
         </div>
       )}
     </div>
-  )
-}
-
-// ─── Registry-driven driver form ─────────────────────────────────────────────────
-// Fields, sections, and layout all come from the driver definition, so adding a
-// new database means writing one driver def — no dialog changes.
-
-const SPAN_CLASS: Record<NonNullable<FieldDef['span']>, string> = {
-  full: 'col-span-6',
-  wide: 'col-span-4',
-  half: 'col-span-3',
-  compact: 'col-span-2',
-}
-
-function DriverFields({
-  driver,
-  values,
-  errors,
-  disabled,
-  onChange,
-}: {
-  driver: DriverDef
-  values: Record<string, string>
-  errors: Record<string, string>
-  disabled: boolean
-  onChange: (key: string, value: string) => void
-}) {
-  const nodes: React.ReactNode[] = []
-  let lastSection: string | undefined
-
-  for (const field of driver.fields) {
-    if (field.section && field.section !== lastSection) {
-      lastSection = field.section
-      nodes.push(
-        <div key={`section:${field.section}`} className="col-span-6">
-          <SectionDivider label={field.section} />
-        </div>,
-      )
-    }
-    nodes.push(
-      <div key={field.key} className={SPAN_CLASS[field.span ?? 'full']}>
-        <FormField label={field.label} error={errors[field.key]}>
-          <DriverFieldControl
-            field={field}
-            value={values[field.key] ?? ''}
-            invalid={Boolean(errors[field.key])}
-            disabled={disabled}
-            onChange={onChange}
-          />
-        </FormField>
-      </div>,
-    )
-  }
-
-  return <>{nodes}</>
-}
-
-function DriverFieldControl({
-  field,
-  value,
-  invalid,
-  disabled,
-  onChange,
-}: {
-  field: FieldDef
-  value: string
-  invalid: boolean
-  disabled: boolean
-  onChange: (key: string, value: string) => void
-}) {
-  if (field.type === 'select') {
-    const selectedLabel =
-      field.options?.find((o) => o.value === (value || field.default))?.label ?? value
-    return (
-      <Select
-        value={value || field.default || ''}
-        onValueChange={(v) => {
-          if (v) onChange(field.key, v)
-        }}
-        disabled={disabled}
-      >
-        <SelectTrigger className="w-full">
-          <SelectValue>{selectedLabel}</SelectValue>
-        </SelectTrigger>
-        <SelectContent className="min-w-[120px]">
-          {(field.options ?? []).map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    )
-  }
-  return (
-    <Input
-      type={field.type === 'number' ? 'number' : field.type === 'password' ? 'password' : 'text'}
-      value={value}
-      placeholder={field.placeholder}
-      disabled={disabled}
-      aria-invalid={invalid ? true : undefined}
-      onChange={(e) => onChange(field.key, e.target.value)}
-    />
-  )
-}
-
-// ─── Shared form helpers ────────────────────────────────────────────────────────
-
-function SectionDivider({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-2 pt-1">
-      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </span>
-      <div className="h-px flex-1 bg-border" />
-    </div>
-  )
-}
-
-function FormField({
-  label,
-  error,
-  children,
-}: {
-  label: string
-  error?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label>{label}</Label>
-      {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
-  )
-}
-
-// ─── Test status indicator ───────────────────────────────────────────────────────
-
-function TestStatusIndicator({ state }: { state: ConnectionTestState }) {
-  if (state.status === 'idle') return null
-  if (state.status === 'pending') {
-    return <span className="text-xs text-muted-foreground">Connecting…</span>
-  }
-  if (state.status === 'ok') {
-    return (
-      <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-        <Icon name="tick-02" size={13} />
-        {state.latencyMs}ms
-      </span>
-    )
-  }
-  return (
-    <span className="flex min-w-0 items-center gap-1 text-xs text-destructive">
-      <Icon name="cancel-01" size={13} className="shrink-0" />
-      <span className="truncate" title={state.message}>
-        {state.message}
-      </span>
-    </span>
   )
 }

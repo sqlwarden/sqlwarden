@@ -1,21 +1,22 @@
 import { queryOptions, type QueryClient } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
 import type {
-  CatalogResponse,
+  DirectoryResponse,
   ObjectRef,
   ObjectsResponse,
   RelationshipsResponse,
   ResultSet,
+  SchemaRefreshResponse,
   SchemaSpecResponse,
 } from '#/lib/api/types'
 import { queryKeys } from '#/lib/api/query-keys'
 
-export function connectionCatalogQueryKey(
+export function connectionDirectoryQueryKey(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
 ) {
-  return ['connection-catalog', slug, String(workspaceId), String(connectionId)] as const
+  return ['connection-directory', slug, String(workspaceId), String(connectionId)] as const
 }
 
 export function connectionSchemaSpecQueryKey(
@@ -30,19 +31,94 @@ function schemaBase(slug: string, workspaceId: string | number, connectionId: st
   return `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/schema`
 }
 
-export function orgConnectionCatalogQueryOptions(
+function schemaRequestOptions(sessionId?: string) {
+  return sessionId ? { headers: { 'X-Warden-Session': sessionId } } : undefined
+}
+
+export type SQLCompletionSuggestion = {
+  label: string
+  display_label?: string
+  kind: string
+  detail?: string
+  insert_text?: string
+  replace_start: number
+  replace_end: number
+  score?: number
+}
+
+export type SQLCompletionVocabulary = {
+  dialect: string
+  version: string
+  suggestions: SQLCompletionSuggestion[]
+}
+
+export type SQLCompletionResponse = {
+  suggestions: SQLCompletionSuggestion[]
+  mode: 'persistent' | 'ephemeral'
+  metadata_available: boolean
+  metadata_status: string
+  snapshot_id?: string
+}
+
+export function completeConnectionSQL(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-  sessionId: string,
+  sql: string,
+  cursorOffset: number,
+  sessionId: string | undefined,
+  signal: AbortSignal,
+  triggerKind: 'invoked' | 'automatic' = 'invoked',
+  triggerCharacter?: string,
+) {
+  return api.post<SQLCompletionResponse>(
+    `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/completion`,
+    {
+      sql,
+      cursor_offset: cursorOffset,
+      trigger_kind: triggerKind,
+      ...(triggerCharacter ? { trigger_character: triggerCharacter } : {}),
+    },
+    {
+      signal,
+      ...(sessionId ? { headers: { 'X-Warden-Session': sessionId } } : {}),
+    },
+  )
+}
+
+export function getSQLCompletionVocabulary(driver: string, signal?: AbortSignal) {
+  const normalized =
+    driver === 'postgresql'
+      ? 'postgres'
+      : driver === 'mariadb'
+        ? 'mysql'
+        : driver === 'sqlite3'
+          ? 'sqlite'
+          : driver
+  return api.get<SQLCompletionVocabulary>(
+    `/api/v1/engines/${normalized}/completion-vocabulary`,
+    signal ? { signal } : undefined,
+  )
+}
+
+export function orgConnectionDirectoryQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId?: string,
 ) {
   return queryOptions({
-    queryKey: connectionCatalogQueryKey(slug, workspaceId, connectionId),
+    queryKey: connectionDirectoryQueryKey(slug, workspaceId, connectionId),
     queryFn: () =>
-      api.get<CatalogResponse>(`${schemaBase(slug, workspaceId, connectionId)}/catalog`, {
-        headers: { 'X-Warden-Session': sessionId },
-      }),
+      api.get<DirectoryResponse>(
+        `${schemaBase(slug, workspaceId, connectionId)}/directory`,
+        schemaRequestOptions(sessionId),
+      ),
     staleTime: 60_000,
+    // Persistent snapshots are prepared asynchronously. Keep checking only
+    // while the server reports that work is still in progress, then stop as
+    // soon as a directory (or any terminal response) is available.
+    refetchInterval: (query) => (query.state.data?.status === 'pending' ? 1_000 : false),
   })
 }
 
@@ -50,14 +126,15 @@ export function orgConnectionSchemaSpecQueryOptions(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-  sessionId: string,
+  sessionId?: string,
 ) {
   return queryOptions({
     queryKey: connectionSchemaSpecQueryKey(slug, workspaceId, connectionId),
     queryFn: () =>
-      api.get<SchemaSpecResponse>(`${schemaBase(slug, workspaceId, connectionId)}/spec`, {
-        headers: { 'X-Warden-Session': sessionId },
-      }),
+      api.get<SchemaSpecResponse>(
+        `${schemaBase(slug, workspaceId, connectionId)}/spec`,
+        schemaRequestOptions(sessionId),
+      ),
     staleTime: 5 * 60_000,
   })
 }
@@ -66,30 +143,38 @@ export function connectionRelationshipsQueryKey(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-  namespace: string,
+  scope: ObjectRef['scope'],
 ) {
   return [
     'connection-relationships',
     slug,
     String(workspaceId),
     String(connectionId),
-    namespace,
+    JSON.stringify(scope),
   ] as const
+}
+
+export function connectionRelationshipsQueryKeyPrefix(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+) {
+  return ['connection-relationships', slug, String(workspaceId), String(connectionId)] as const
 }
 
 export function orgConnectionRelationshipsQueryOptions(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-  sessionId: string,
-  namespace: string,
+  sessionId: string | undefined,
+  scope: ObjectRef['scope'],
 ) {
   return queryOptions({
-    queryKey: connectionRelationshipsQueryKey(slug, workspaceId, connectionId, namespace),
+    queryKey: connectionRelationshipsQueryKey(slug, workspaceId, connectionId, scope),
     queryFn: async () => {
       const res = await api.get<RelationshipsResponse>(
-        `${schemaBase(slug, workspaceId, connectionId)}/relationships?namespace=${encodeURIComponent(namespace)}`,
-        { headers: { 'X-Warden-Session': sessionId } },
+        `${schemaBase(slug, workspaceId, connectionId)}/relationships?scope=${encodeURIComponent(JSON.stringify(scope))}`,
+        schemaRequestOptions(sessionId),
       )
       return res.graph
     },
@@ -113,7 +198,7 @@ export function connectionObjectQueryKey(
 ) {
   return [
     ...connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId),
-    ref.namespace,
+    JSON.stringify(ref.scope),
     ref.kind,
     ref.name,
   ] as const
@@ -123,7 +208,7 @@ export function orgConnectionObjectQueryOptions(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-  sessionId: string,
+  sessionId: string | undefined,
   ref: ObjectRef,
 ) {
   return queryOptions({
@@ -132,7 +217,7 @@ export function orgConnectionObjectQueryOptions(
       const res = await api.post<ObjectsResponse>(
         `${schemaBase(slug, workspaceId, connectionId)}/objects`,
         { refs: [ref] },
-        { headers: { 'X-Warden-Session': sessionId } },
+        schemaRequestOptions(sessionId),
       )
       return res.objects[0] ?? null
     },
@@ -151,7 +236,7 @@ export function connectionPreviewQueryKey(
     slug,
     String(workspaceId),
     String(connectionId),
-    ref.namespace,
+    JSON.stringify(ref.scope),
     ref.kind,
     ref.name,
   ] as const
@@ -222,20 +307,20 @@ export function refreshConnectionSchema(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-  sessionId: string,
+  sessionId?: string,
   ref?: ObjectRef,
 ) {
-  return api.post<{ status: string }>(
+  return api.post<SchemaRefreshResponse>(
     `${schemaBase(slug, workspaceId, connectionId)}/refresh`,
     ref ? { ref } : undefined,
-    { headers: { 'X-Warden-Session': sessionId } },
+    schemaRequestOptions(sessionId),
   )
 }
 
 /**
  * Invalidates a connection's cached schema after a whole-connection refresh:
- * the catalog and every lazily-fetched object detail. The server drops both on
- * refresh, so expanded object nodes must refetch — not just the catalog.
+ * the directory and every lazily-fetched object detail. The server drops both on
+ * refresh, so expanded object nodes must refetch — not just the directory.
  */
 export function invalidateConnectionSchemaQueries(
   queryClient: QueryClient,
@@ -245,10 +330,13 @@ export function invalidateConnectionSchemaQueries(
 ) {
   return Promise.all([
     queryClient.invalidateQueries({
-      queryKey: connectionCatalogQueryKey(slug, workspaceId, connectionId),
+      queryKey: connectionDirectoryQueryKey(slug, workspaceId, connectionId),
     }),
     queryClient.invalidateQueries({
       queryKey: connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: connectionRelationshipsQueryKeyPrefix(slug, workspaceId, connectionId),
     }),
   ])
 }

@@ -54,6 +54,144 @@ func TestRoleLifecycle(t *testing.T) {
 	assert.Equal(t, getAfterDel.StatusCode, http.StatusNotFound)
 }
 
+func TestUpdateRole(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "policy-update@example.com", "Policy Update", "securepass99")
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/roles",
+		map[string]any{
+			"name":        "viewer",
+			"scope_type":  "org",
+			"permissions": []string{"org:read"},
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	roleID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/roles/"+roleID,
+		map[string]any{
+			"name":        "viewer-plus",
+			"description": "Read-only plus workspace read",
+			"permissions": []string{"org:read", "ws:read"},
+		}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusOK)
+	assert.Equal(t, updateRes.BodyFields["name"].(string), "viewer-plus")
+	assert.Equal(t, updateRes.BodyFields["description"].(string), "Read-only plus workspace read")
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/roles/"+roleID, nil, tok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	assert.Equal(t, getRes.BodyFields["name"].(string), "viewer-plus")
+	perms := getRes.BodyFields["permissions"].([]any)
+	assert.Equal(t, len(perms), 2)
+}
+
+func TestUpdateRoleValidation(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "policy-update-val@example.com", "Policy Update Val", "securepass99")
+
+	roleID := createRoleForTest(t, app, mustOrgID(t, app, slug), nil, "org", access.PermOrgRead)
+
+	// Missing name returns 422.
+	badRes := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/roles/"+strconv.FormatInt(roleID, 10),
+		map[string]any{"permissions": []string{"org:read"}}, tok), app.routes())
+	assert.Equal(t, badRes.StatusCode, http.StatusUnprocessableEntity)
+
+	// Permission not valid for scope returns 422.
+	badRes2 := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/roles/"+strconv.FormatInt(roleID, 10),
+		map[string]any{"name": "renamed", "permissions": []string{"not:a_permission"}}, tok), app.routes())
+	assert.Equal(t, badRes2.StatusCode, http.StatusUnprocessableEntity)
+}
+
+func TestUpdateBuiltinRoleForbidden(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "builtin-update@example.com", "Builtin Update", "securepass99")
+
+	listRes := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/orgs/"+slug+"/roles", nil, tok), app.routes())
+	assert.Equal(t, listRes.StatusCode, http.StatusOK)
+
+	var payload struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(listRes.BodyBytes, &payload); err != nil {
+		t.Fatal(err)
+	}
+
+	var builtinID string
+	for _, r := range payload.Items {
+		if isBuiltin, ok := r["is_builtin"].(bool); ok && isBuiltin {
+			builtinID = fmt.Sprintf("%v", r["id"])
+			break
+		}
+	}
+	if builtinID == "" {
+		t.Skip("no builtin roles found")
+	}
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/roles/"+builtinID,
+		map[string]any{"name": "renamed"}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusForbidden)
+}
+
+func TestUpdateRoleNotFoundReturns404(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "update-missing-role@example.com", "Update Missing Role", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/roles/999999",
+		map[string]any{"name": "renamed"}, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestUpdateRoleDuplicateNameReturns422(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "update-dup-role@example.com", "Update Dup Role", "securepass99")
+
+	firstRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/roles",
+		map[string]any{"name": "role-a", "scope_type": "org", "permissions": []string{"org:read"}}, tok), app.routes())
+	assert.Equal(t, firstRes.StatusCode, http.StatusCreated)
+
+	secondRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/roles",
+		map[string]any{"name": "role-b", "scope_type": "org", "permissions": []string{"org:read"}}, tok), app.routes())
+	assert.Equal(t, secondRes.StatusCode, http.StatusCreated)
+	secondRoleID := fmt.Sprintf("%v", secondRes.BodyFields["id"])
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		"/api/v1/orgs/"+slug+"/roles/"+secondRoleID,
+		map[string]any{"name": "role-a", "permissions": []string{"org:read"}}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, updateRes, "name")
+}
+
+func mustOrgID(t *testing.T, app *application, slug string) int64 {
+	t.Helper()
+	org, found, err := app.db.GetOrgBySlug(context.Background(), slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatalf("org %q not found", slug)
+	}
+	return org.ID
+}
+
 func TestCreateRoleValidation(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

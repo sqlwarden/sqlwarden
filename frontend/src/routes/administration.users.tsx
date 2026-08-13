@@ -31,6 +31,7 @@ import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
+import { usePageTitle } from '#/lib/page-title'
 import {
   Table,
   TableBody,
@@ -53,6 +54,7 @@ type CreateUserValues = {
 }
 
 function SettingsUsersPage() {
+  usePageTitle('Users', 'Administration')
   const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)
   const [values, setValues] = useState<CreateUserValues>({
@@ -157,7 +159,7 @@ function SettingsUsersPage() {
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col gap-1.5">
-            <h2 className="text-2xl font-semibold tracking-tight">Users</h2>
+            <h2 className="font-heading text-2xl font-semibold tracking-tight">Users</h2>
             <p className="text-sm text-muted-foreground">
               {!users.isLoading && total > 0
                 ? `${total} user${total !== 1 ? 's' : ''} on this instance`

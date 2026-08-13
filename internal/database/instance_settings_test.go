@@ -5,6 +5,100 @@ import (
 	"testing"
 )
 
+func TestInstanceSettingsMigrationCreatesCanonicalDefaults(t *testing.T) {
+	for _, driver := range testDrivers() {
+		driver := driver
+		t.Run(driver, func(t *testing.T) {
+			t.Parallel()
+			db := newTestDB(t, driver)
+			settings, found, err := db.GetInstanceSettings(context.Background())
+			if err != nil || !found {
+				t.Fatalf("get settings: found=%v err=%v", found, err)
+			}
+			want := DefaultInstanceSettings()
+			if settings.InstanceName != want.InstanceName ||
+				settings.PersonalSpacesEnabled != want.PersonalSpacesEnabled ||
+				settings.JWTAccessTokenTTLSeconds != want.JWTAccessTokenTTLSeconds ||
+				settings.QueryMaxResultRows != want.QueryMaxResultRows ||
+				settings.QueryCursorPageSize != want.QueryCursorPageSize ||
+				settings.FileRevisionsKeepLatest != want.FileRevisionsKeepLatest ||
+				settings.LogLevel != want.LogLevel ||
+				settings.DatabaseQueryTracingEnabled != want.DatabaseQueryTracingEnabled ||
+				settings.AccessLogsEnabled != want.AccessLogsEnabled ||
+				settings.JobsWorkerCount != want.JobsWorkerCount ||
+				settings.JobsPollIntervalSeconds != want.JobsPollIntervalSeconds ||
+				settings.JobsClaimLeaseSeconds != want.JobsClaimLeaseSeconds ||
+				settings.JobsCompletedRetentionSeconds != want.JobsCompletedRetentionSeconds ||
+				settings.SMTPEnabled || settings.SMTPPort != want.SMTPPort || settings.SMTPPasswordEncrypted != "" {
+				t.Fatalf("unexpected migration defaults: %+v", settings)
+			}
+		})
+	}
+}
+
+func TestInitializeInstanceBaseURLOnlySetsEmptyValue(t *testing.T) {
+	for _, driver := range testDrivers() {
+		driver := driver
+		t.Run(driver, func(t *testing.T) {
+			t.Parallel()
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+
+			settings, err := db.InitializeInstanceBaseURL(ctx, "https://first.example.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if settings.BaseURL != "https://first.example.com" {
+				t.Fatalf("base URL = %q", settings.BaseURL)
+			}
+
+			settings, err = db.InitializeInstanceBaseURL(ctx, "https://second.example.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if settings.BaseURL != "https://first.example.com" {
+				t.Fatalf("bootstrap URL overwrote runtime value: %q", settings.BaseURL)
+			}
+		})
+	}
+}
+
+func TestOrganizationRuntimeSettingsUpsert(t *testing.T) {
+	for _, driver := range testDrivers() {
+		driver := driver
+		t.Run(driver, func(t *testing.T) {
+			t.Parallel()
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+			org, err := db.InsertOrg(ctx, "runtime-settings-"+driver, "Runtime Settings")
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows := 100
+			revisions := false
+			stored, err := db.UpsertOrganizationRuntimeSettings(ctx, OrganizationRuntimeSettings{
+				OrgID:                org.ID,
+				QueryMaxResultRows:   &rows,
+				FileRevisionsEnabled: &revisions,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored.QueryMaxResultRows == nil || *stored.QueryMaxResultRows != rows || stored.FileRevisionsEnabled == nil || *stored.FileRevisionsEnabled {
+				t.Fatalf("unexpected stored overrides: %+v", stored)
+			}
+			stored.QueryMaxResultRows = nil
+			stored, err = db.UpsertOrganizationRuntimeSettings(ctx, stored)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored.QueryMaxResultRows != nil {
+				t.Fatalf("expected cleared override, got %+v", stored)
+			}
+		})
+	}
+}
+
 func TestInstanceSettingsUpsert(t *testing.T) {
 	for _, driver := range testDrivers() {
 		driver := driver
@@ -13,21 +107,29 @@ func TestInstanceSettingsUpsert(t *testing.T) {
 
 			db := newTestDB(t, driver)
 
-			_, found, err := db.GetInstanceSettings(context.Background())
+			settings, found, err := db.GetInstanceSettings(context.Background())
 			if err != nil {
 				t.Fatal(err)
 			}
-			if found {
-				t.Fatal("expected no instance settings row initially")
+			if !found {
+				t.Fatal("expected migration-created instance settings row")
 			}
 
-			settings, err := db.UpsertInstanceSettings(context.Background(), InstanceSettings{
-				InstanceName:          "Demo Instance",
-				InstanceDescription:   "A shared SQLWarden instance.",
-				SupportEmail:          "support@example.com",
-				PublicURL:             "https://sqlwarden.example.com",
-				PersonalSpacesEnabled: false,
-			})
+			settings.InstanceName = "Demo Instance"
+			settings.InstanceDescription = "A shared SQLWarden instance."
+			settings.SupportEmail = "support@example.com"
+			settings.BaseURL = "https://sqlwarden.example.com"
+			settings.PersonalSpacesEnabled = false
+			settings.LogLevel = "debug"
+			settings.DatabaseQueryTracingEnabled = true
+			settings.AccessLogsEnabled = true
+			settings.QueryCursorPageSize = 75
+			settings.JobsWorkerCount = 4
+			settings.SMTPHost = "smtp.example.com"
+			settings.SMTPUsername = "mailer"
+			settings.SMTPPasswordEncrypted = "encrypted-secret"
+			settings.SMTPFrom = "SQLWarden <noreply@example.com>"
+			settings, err = db.UpsertInstanceSettings(context.Background(), settings)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -43,8 +145,11 @@ func TestInstanceSettingsUpsert(t *testing.T) {
 			if settings.SupportEmail != "support@example.com" {
 				t.Fatalf("expected support email to persist, got %q", settings.SupportEmail)
 			}
-			if settings.PublicURL != "https://sqlwarden.example.com" {
-				t.Fatalf("expected public url to persist, got %q", settings.PublicURL)
+			if settings.BaseURL != "https://sqlwarden.example.com" {
+				t.Fatalf("expected base URL to persist, got %q", settings.BaseURL)
+			}
+			if settings.LogLevel != "debug" || !settings.DatabaseQueryTracingEnabled || !settings.AccessLogsEnabled || settings.QueryCursorPageSize != 75 || settings.JobsWorkerCount != 4 || settings.SMTPPasswordEncrypted != "encrypted-secret" {
+				t.Fatalf("expected runtime operations to persist, got %+v", settings)
 			}
 
 			settings, found, err = db.GetInstanceSettings(context.Background())
@@ -55,13 +160,12 @@ func TestInstanceSettingsUpsert(t *testing.T) {
 				t.Fatalf("expected persisted disabled settings, got %+v found=%v", settings, found)
 			}
 
-			settings, err = db.UpsertInstanceSettings(context.Background(), InstanceSettings{
-				InstanceName:          "Updated Instance",
-				InstanceDescription:   "",
-				SupportEmail:          "",
-				PublicURL:             "https://updated.example.com",
-				PersonalSpacesEnabled: true,
-			})
+			settings.InstanceName = "Updated Instance"
+			settings.InstanceDescription = ""
+			settings.SupportEmail = ""
+			settings.BaseURL = "https://updated.example.com"
+			settings.PersonalSpacesEnabled = true
+			settings, err = db.UpsertInstanceSettings(context.Background(), settings)
 			if err != nil {
 				t.Fatal(err)
 			}

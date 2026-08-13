@@ -14,8 +14,10 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/classifier"
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/classifier"
+	metadata "github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -193,15 +195,25 @@ func (app *application) classifyConnectionSQL(r *http.Request, conn database.Con
 	return connectionClassifier(conn.Driver).Classify(r.Context(), classifier.Request{SQL: sql})
 }
 
+// registeredConnectionClassifier resolves only a classifier implemented by the
+// registered engine. Callers that must prove SQL properties, such as exports,
+// must not fall back to a heuristic.
+func registeredConnectionClassifier(driverName string) (classifier.Classifier, bool) {
+	d, err := engine.New(driverName)
+	if err != nil {
+		return nil, false
+	}
+	c, ok := d.(classifier.Classifier)
+	return c, ok
+}
+
 // connectionClassifier resolves a stateless classifier for a connection's
 // driver by type-asserting a fresh (unconnected) driver instance — the same
 // pattern as schema/cursor capabilities — and falls back to the conservative
 // heuristic when the driver does not implement classification.
 func connectionClassifier(driverName string) classifier.Classifier {
-	if d, err := dbengine.New(driverName); err == nil {
-		if c, ok := d.(classifier.Classifier); ok {
-			return c
-		}
+	if c, ok := registeredConnectionClassifier(driverName); ok {
+		return c
 	}
 	return classifier.NewHeuristic()
 }
@@ -213,6 +225,7 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		DSN           string              `json:"dsn"`
 		EnvironmentID *int64              `json:"environment_id"`
 		AccessMode    string              `json:"access_mode"`
+		DefaultScope  metadata.ScopePath  `json:"default_scope,omitempty"`
 		V             validator.Validator `json:"-"`
 	}
 
@@ -270,9 +283,9 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	conn, err := app.db.InsertConnection(context.Background(),
+	conn, err := app.db.InsertConnectionWithScope(context.Background(),
 		ws.ID, targetEnvID,
-		input.Name, input.Driver, dsnEncrypted, input.AccessMode,
+		input.Name, input.Driver, dsnEncrypted, input.AccessMode, input.DefaultScope,
 	)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -308,14 +321,39 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// getConnectionDSN reveals the decrypted DSN so it can be pre-filled when editing a
+// connection. The route requires conn:update, since holding conn:update is what makes
+// re-entering the DSN unnecessary.
+func (app *application) getConnectionDSN(w http.ResponseWriter, r *http.Request) {
+	org := contextGetOrg(r)
+	if org.MaskConnectionCredentialsOnEdit {
+		app.notPermitted(w, r)
+		return
+	}
+
+	conn := contextGetConnection(r)
+	dsn, err := app.keyring.Decrypt(conn.DSNEncrypted)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	app.logInfo(r, "connection dsn revealed", slog.Int64("connection_id", conn.ID))
+	err = response.JSON(w, http.StatusOK, map[string]string{"dsn": dsn})
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 func (app *application) updateConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name       string              `json:"name"`
-		Driver     *string             `json:"driver"`
-		DSN        string              `json:"dsn"`
-		AccessMode string              `json:"access_mode"`
-		Force      bool                `json:"force"`
-		V          validator.Validator `json:"-"`
+		Name                 *string             `json:"name"`
+		Driver               *string             `json:"driver"`
+		DSN                  *string             `json:"dsn"`
+		AccessMode           *string             `json:"access_mode"`
+		SchemaSnapshotPolicy *string             `json:"schema_snapshot_policy"`
+		DefaultScope         *metadata.ScopePath `json:"default_scope"`
+		Force                bool                `json:"force"`
+		V                    validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -324,23 +362,42 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
 	input.V.CheckField(input.Driver == nil, "driver", "Driver cannot be changed.")
-	if input.AccessMode == "" {
-		input.AccessMode = "open"
+	if input.Name != nil {
+		name := strings.TrimSpace(*input.Name)
+		input.Name = &name
+		input.V.CheckField(name != "", "name", "Name must not be empty.")
 	}
-	input.V.CheckField(
-		input.AccessMode == "open" || input.AccessMode == "restricted",
-		"access_mode", "Access mode must be open or restricted.",
-	)
+	if input.DSN != nil {
+		input.V.CheckField(strings.TrimSpace(*input.DSN) != "", "dsn", "DSN must not be empty.")
+	}
+	if input.AccessMode != nil {
+		input.V.CheckField(*input.AccessMode == "open" || *input.AccessMode == "restricted",
+			"access_mode", "Access mode must be open or restricted.")
+	}
+	if input.SchemaSnapshotPolicy != nil {
+		input.V.CheckField(*input.SchemaSnapshotPolicy == database.SchemaSnapshotPolicyInherit ||
+			*input.SchemaSnapshotPolicy == database.SchemaSnapshotPolicyDisabled,
+			"schema_snapshot_policy", "Schema snapshot policy must be inherit or disabled.")
+	}
+	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil || input.DefaultScope != nil,
+		"request", "At least one setting is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
 	}
 
 	conn := contextGetConnection(r)
-	if err := app.validateTargetConnection(conn.Driver, input.DSN); err != nil {
+	currentDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	nextDSN := currentDSN
+	if input.DSN != nil {
+		nextDSN = *input.DSN
+	}
+	if err := app.validateTargetConnection(conn.Driver, nextDSN); err != nil {
 		if errors.Is(err, errSQLiteTargetDisabled) {
 			app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "update_connection"), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver))
 		}
@@ -350,18 +407,16 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	dsnEncrypted, err := app.keyring.Encrypt(input.DSN)
+	dsnEncrypted := conn.DSNEncrypted
+	if input.DSN != nil {
+		dsnEncrypted, err = app.keyring.Encrypt(nextDSN)
+	}
 	if err != nil {
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 		return
 	}
 
-	currentDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	dsnChanged := currentDSN != input.DSN
+	dsnChanged := currentDSN != nextDSN
 	if dsnChanged {
 		activeSessions := app.connManager.CountForConnection(strconv.FormatInt(conn.ID, 10))
 		if activeSessions > 0 && !input.Force {
@@ -373,12 +428,63 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			app.logInfo(r, "connection sessions dropped for dsn rotation", slog.Int64("connection_id", conn.ID), slog.Int("dropped_sessions", activeSessions))
 		}
 	}
-	err = app.db.UpdateConnection(r.Context(), conn.ID, input.Name, dsnEncrypted, input.AccessMode)
+	nextName := conn.Name
+	if input.Name != nil {
+		nextName = *input.Name
+	}
+	nextAccessMode := conn.AccessMode
+	if input.AccessMode != nil {
+		nextAccessMode = *input.AccessMode
+	}
+	nextSnapshotPolicy := conn.SchemaSnapshotPolicy
+	if nextSnapshotPolicy == "" {
+		nextSnapshotPolicy = database.SchemaSnapshotPolicyInherit
+	}
+	if input.SchemaSnapshotPolicy != nil {
+		nextSnapshotPolicy = *input.SchemaSnapshotPolicy
+	}
+	nextDefaultScope := conn.DefaultScope
+	if input.DefaultScope != nil {
+		nextDefaultScope = *input.DefaultScope
+	}
+	scopeChanged := nextDefaultScope != conn.DefaultScope
+	if scopeChanged && !dsnChanged {
+		activeSessions := app.connManager.CountForConnection(strconv.FormatInt(conn.ID, 10))
+		if activeSessions > 0 && !input.Force {
+			app.errorMessage(w, r, http.StatusConflict, "Connection has active sessions. Retry with force=true to change its default scope and drop them.", nil)
+			return
+		}
+		if input.Force && activeSessions > 0 {
+			app.connManager.RemoveForConnection(strconv.FormatInt(conn.ID, 10))
+		}
+	}
+	err = app.db.UpdateConnectionWithScopeAndPolicy(r.Context(), conn.ID, nextName, dsnEncrypted, nextAccessMode, nextSnapshotPolicy, nextDefaultScope)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.String("access_mode", input.AccessMode))
+	if conn.SchemaSnapshotPolicy != database.SchemaSnapshotPolicyDisabled &&
+		nextSnapshotPolicy == database.SchemaSnapshotPolicyDisabled {
+		if err := app.disableConnectionSnapshots(r.Context(), conn.ID); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
+	if scopeChanged {
+		app.schemaService.RefreshConnection(strconv.FormatInt(conn.ID, 10))
+		app.completionService.InvalidateConnection(strconv.FormatInt(conn.ID, 10))
+		if snapshotsEnabled, enabledErr := app.db.SchemaSnapshotsEnabled(r.Context(), conn.ID); enabledErr != nil {
+			app.logWarn(r, "schema snapshot policy lookup failed after scope change",
+				slog.Int64("connection_id", conn.ID), slog.String("error", enabledErr.Error()))
+		} else if snapshotsEnabled {
+			if _, _, enqueueErr := app.enqueueSchemaSync(r.Context(), conn.ID, contextGetWorkspace(r).OrgID); enqueueErr != nil &&
+				!errors.Is(enqueueErr, jobs.ErrActiveExists) {
+				app.logWarn(r, "schema sync enqueue failed after scope change",
+					slog.Int64("connection_id", conn.ID), slog.String("error", enqueueErr.Error()))
+			}
+		}
+	}
+	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.Bool("scope_changed", scopeChanged), slog.String("access_mode", nextAccessMode), slog.String("schema_snapshot_policy", nextSnapshotPolicy))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -396,9 +502,10 @@ func (app *application) deleteConnection(w http.ResponseWriter, r *http.Request)
 
 func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Driver string              `json:"driver"`
-		DSN    string              `json:"dsn"`
-		V      validator.Validator `json:"-"`
+		Driver      string              `json:"driver"`
+		DSN         string              `json:"dsn"`
+		ParentScope metadata.ScopePath  `json:"parent_scope,omitempty"`
+		V           validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -428,7 +535,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 
-	d, err := dbengine.New(input.Driver)
+	d, err := engine.New(input.Driver)
 	if err != nil {
 		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", time.Since(start).Milliseconds()), slog.String("stage", "driver_init"), slog.String("error_category", connectionTestErrorCategory(err)))
 		err = response.JSON(w, http.StatusUnprocessableEntity, map[string]any{
@@ -441,7 +548,12 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = d.Connect(ctx, app.driverConnectionConfig(input.Driver, input.DSN))
+	settings, err := app.runtimeSettingsService().effectiveForOrg(ctx, nil)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	err = d.Connect(ctx, app.driverConnectionConfig(input.Driver, input.DSN, settings))
 	if err != nil {
 		latency := time.Since(start).Milliseconds()
 		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "connect"), slog.String("error_category", connectionTestErrorCategory(err)))
@@ -472,11 +584,20 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	app.logInfo(r, "connection test completed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.Bool("ok", true))
-	err = response.JSON(w, http.StatusOK, map[string]any{
+	payload := map[string]any{
 		"ok":         true,
 		"latency_ms": latency,
-	})
+	}
+	if discoverer, ok := d.(metadata.ScopeDiscoverer); ok {
+		discovery, discoveryErr := discoverer.DiscoverScopes(ctx, metadata.ScopeDiscoveryRequest{Parent: input.ParentScope})
+		if discoveryErr == nil {
+			payload["scope_discovery"] = discovery
+		} else {
+			payload["scope_discovery_error"] = discoveryErr.Error()
+		}
+	}
+	app.logInfo(r, "connection test completed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.Bool("ok", true))
+	err = response.JSON(w, http.StatusOK, payload)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
@@ -511,18 +632,23 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 
 	connID := strconv.FormatInt(conn.ID, 10)
 	accountID := strconv.FormatInt(account.ID, 10)
+	settings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), ws)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
 
 	session, created, err := app.connManager.GetOrCreateWithMetadata(accountID, connID, connection.SessionMetadata{
 		OrgID:       strconv.FormatInt(org.ID, 10),
 		WorkspaceID: strconv.FormatInt(ws.ID, 10),
-	}, func() (dbengine.Driver, error) {
-		d, err := dbengine.New(conn.Driver)
+	}, func() (engine.Driver, error) {
+		d, err := engine.New(conn.Driver)
 		if err != nil {
 			return nil, err
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		if err := d.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN)); err != nil {
+		if err := d.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, settings, conn.DefaultScope)); err != nil {
 			return nil, err
 		}
 		return d, nil
@@ -533,6 +659,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 	}
 
 	app.logInfo(r, "database session opened", slog.Int64("connection_id", conn.ID), slog.String("session_id", session.ID), slog.Bool("reused", !created))
+	app.maybeEnqueueSchemaSync(context.WithoutCancel(r.Context()), conn, ws.OrgID)
 	err = response.JSON(w, http.StatusOK, map[string]any{
 		"session_id": session.ID,
 		"reused":     !created,
@@ -632,6 +759,11 @@ func (app *application) disconnectFromDatabase(w http.ResponseWriter, r *http.Re
 	}
 
 	app.connManager.Remove(sessionID)
+	if app.connManager.CountForConnection(connID) == 0 {
+		if persistent, policyErr := app.db.SchemaSnapshotsEnabled(r.Context(), conn.ID); policyErr == nil && !persistent {
+			app.schemaService.RefreshConnection(connID)
+		}
+	}
 	app.logInfo(r, "database session disconnected", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -671,13 +803,17 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) driverConnectionConfig(driverName, dsn string) dbengine.ConnectionConfig {
-	return dbengine.ConnectionConfig{
+func (app *application) driverConnectionConfig(driverName, dsn string, settings effectiveRuntimeSettings, defaultScopes ...metadata.ScopePath) engine.ConnectionConfig {
+	config := engine.ConnectionConfig{
 		DSN:            dsn,
 		Driver:         driverName,
-		MaxResultRows:  app.config.Query.MaxResultRows,
-		MaxResultBytes: int64(app.config.Query.MaxResultBytes),
+		MaxResultRows:  settings.QueryMaxResultRows,
+		MaxResultBytes: settings.QueryMaxResultBytes,
 	}
+	if len(defaultScopes) > 0 {
+		config.DefaultScope = defaultScopes[0]
+	}
+	return config
 }
 
 func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
@@ -700,6 +836,11 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
+		return
+	}
+	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
+	if err != nil {
+		app.serverError(w, r, err)
 		return
 	}
 
@@ -757,7 +898,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = app.executeDQLQuery(r, session, input.SQL, input.UseCursor, input.PageSize, start)
+		rs, execErr = app.executeDQLQuery(r, session, input.SQL, input.UseCursor, input.PageSize, start, runtimeSettings)
 	case classifier.KindDML:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
@@ -768,7 +909,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = session.Execute(r.Context(), input.SQL)
+		rs, execErr = session.ExecuteWithOptions(r.Context(), input.SQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
 	case classifier.KindDDL:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
@@ -779,14 +920,14 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = session.Execute(r.Context(), input.SQL)
+		rs, execErr = session.ExecuteWithOptions(r.Context(), input.SQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
 	default:
 		if !hasBroadExecute {
 			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnExecute)...)
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = session.Execute(r.Context(), input.SQL)
+		rs, execErr = session.ExecuteWithOptions(r.Context(), input.SQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
 	}
 
 	if execErr != nil {
@@ -807,6 +948,12 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		slog.Group("result", "rows", len(rs.Rows), "columns", len(rs.Columns)),
 		slog.String("query_cursor_id", rs.QueryCursorID),
 	)...)
+	if classification.Kind == classifier.KindDDL {
+		if _, _, syncErr := app.enqueueSchemaSync(context.WithoutCancel(r.Context()), conn.ID, ws.OrgID); syncErr != nil &&
+			!errors.Is(syncErr, jobs.ErrActiveExists) {
+			app.logger.Warn("post-ddl schema snapshot enqueue failed", append(logAttrs, "error", syncErr)...)
+		}
+	}
 
 	err = response.JSON(w, http.StatusOK, rs)
 	if err != nil {
@@ -814,9 +961,9 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *application) executeDQLQuery(r *http.Request, session *connection.Session, sql string, useCursor *bool, pageSize *int, start time.Time) (*result.ResultSet, error) {
+func (app *application) executeDQLQuery(r *http.Request, session *connection.Session, sql string, useCursor *bool, pageSize *int, start time.Time, runtimeSettings effectiveRuntimeSettings) (*result.ResultSet, error) {
 	if useCursor == nil || *useCursor {
-		rs, err := app.executeQueryWithCursor(r, session, sql, app.queryCursorPageSize(pageSize), start)
+		rs, err := app.executeQueryWithCursor(r, session, sql, queryCursorPageSize(pageSize, runtimeSettings), start, runtimeSettings)
 		if err == nil && rs != nil {
 			return rs, nil
 		}
@@ -829,10 +976,10 @@ func (app *application) executeDQLQuery(r *http.Request, session *connection.Ses
 			)
 		}
 	}
-	return session.Query(r.Context(), sql)
+	return session.QueryWithOptions(r.Context(), sql, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
 }
 
-func (app *application) executeQueryWithCursor(r *http.Request, session *connection.Session, sql string, pageSize int, start time.Time) (*result.ResultSet, error) {
+func (app *application) executeQueryWithCursor(r *http.Request, session *connection.Session, sql string, pageSize int, start time.Time, runtimeSettings effectiveRuntimeSettings) (*result.ResultSet, error) {
 	app.logInfo(r, "query cursor opening",
 		slog.String("session_id", session.ID),
 		slog.Int("page_size", pageSize),
@@ -848,7 +995,7 @@ func (app *application) executeQueryWithCursor(r *http.Request, session *connect
 		Cursor:        cursorHandle,
 	})
 
-	rs, state, err := cursorHandle.Fetch(r.Context(), app.queryCursorScanOptions(pageSize))
+	rs, state, err := cursorHandle.Fetch(r.Context(), queryCursorScanOptions(pageSize, runtimeSettings))
 	if err != nil {
 		app.queryCursorManager().Remove(qc.ID)
 		return nil, err

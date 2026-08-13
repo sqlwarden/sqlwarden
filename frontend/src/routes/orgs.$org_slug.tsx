@@ -19,6 +19,7 @@ import {
   orgWorkspaceQueryOptions,
 } from '#/lib/api/query'
 import { getAccessToken } from '#/lib/auth/access-token'
+import { useBrand } from '#/lib/brand/brand'
 import { hasAnyPermission, permission } from '#/lib/permissions'
 import {
   workspaceConnectionPagePermissions,
@@ -27,6 +28,8 @@ import {
   workspaceSettingsPagePermissions,
 } from '#/lib/workspace-page-permissions'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
+import { PageTitleScopeProvider } from '#/lib/page-title'
+import { NavigateToLogin } from '#/components/auth/NavigateToLogin'
 
 export const Route = createFileRoute('/orgs/$org_slug')({
   component: OrganizationLayout,
@@ -38,6 +41,7 @@ function OrganizationLayout() {
   const session = useSession(hasToken)
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const { org_slug: orgSlug } = Route.useParams()
+  const brand = useBrand()
   const workspaceId = workspaceIdFromPath(pathname, orgSlug)
   const organization = useQuery({
     ...orgQueryOptions(orgSlug),
@@ -74,7 +78,7 @@ function OrganizationLayout() {
   }
 
   if (!hasToken || !session.data) {
-    return <Navigate to="/login" replace />
+    return <NavigateToLogin />
   }
 
   const workspacePermissions = workspaceEffectivePermissions.data?.permissions
@@ -113,74 +117,80 @@ function OrganizationLayout() {
     )
   }
 
+  const organizationName = organization.data?.name ?? orgSlug
+  const workspaceName = workspaceId
+    ? (workspace.data?.name ?? `Workspace #${workspaceId}`)
+    : undefined
+
   return (
-    <SidebarProvider
-      defaultOpen={initialOpen}
-      defaultWidth={240}
-      style={
-        {
-          '--sidebar-width-icon': '3rem',
-        } as React.CSSProperties
-      }
-    >
-      <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
-        <AppShellHeader
-          label="SQLWarden"
-          description={
-            workspaceId
-              ? `${organization.data?.name ?? orgSlug} / ${workspace.data?.name ?? `Workspace #${workspaceId}`}`
-              : (organization.data?.name ?? orgSlug)
-          }
-          icon="database-lightning"
-        />
-        <SidebarContent>
-          {workspaceId ? (
-            <>
-              <AppShellNavSection items={workspacePrimaryNavItems} pathname={pathname} />
-              {workspaceAccessControlNavItems.length > 0 ? (
-                <AppShellNavSection
-                  label="Access Control"
-                  items={workspaceAccessControlNavItems}
-                  pathname={pathname}
-                />
-              ) : null}
-              {workspaceSettingsNavItems.length > 0 ? (
-                <AppShellNavSection items={workspaceSettingsNavItems} pathname={pathname} />
-              ) : null}
-            </>
-          ) : (
-            <>
-              <AppShellNavSection items={organizationItems(orgSlug)} pathname={pathname} />
-              {orgAccessControlNavItems.length > 0 ? (
-                <AppShellNavSection
-                  label="Access Control"
-                  items={orgAccessControlNavItems}
-                  pathname={pathname}
-                />
-              ) : null}
-              {orgSettingsNavItems.length > 0 ? (
-                <AppShellNavSection
-                  label="Settings"
-                  items={orgSettingsNavItems}
-                  pathname={pathname}
-                />
-              ) : null}
-            </>
-          )}
-        </SidebarContent>
-        <AppShellSidebarFooter
-          session={session.data}
-          preferences={preferences}
-          setPreferences={setPreferences}
-        />
-        <AppShellRail />
-      </Sidebar>
-      <SidebarInset className="min-w-0 bg-background">
-        <AppShellContent preferences={preferences}>
-          <Outlet />
-        </AppShellContent>
-      </SidebarInset>
-    </SidebarProvider>
+    <PageTitleScopeProvider organizationName={organizationName} workspaceName={workspaceName}>
+      <SidebarProvider
+        defaultOpen={initialOpen}
+        defaultWidth={240}
+        style={
+          {
+            '--sidebar-width-icon': '3rem',
+          } as React.CSSProperties
+        }
+      >
+        <Sidebar collapsible="icon" variant={preferences.sidebarStyle}>
+          <AppShellHeader
+            label={
+              workspaceId
+                ? `${organization.data?.name ?? orgSlug} / ${workspace.data?.name ?? `Workspace #${workspaceId}`}`
+                : (organization.data?.name ?? orgSlug)
+            }
+            icon={<brand.LogoMark size={18} />}
+          />
+          <SidebarContent>
+            {workspaceId ? (
+              <>
+                <AppShellNavSection items={workspacePrimaryNavItems} pathname={pathname} />
+                {workspaceAccessControlNavItems.length > 0 ? (
+                  <AppShellNavSection
+                    label="Access Control"
+                    items={workspaceAccessControlNavItems}
+                    pathname={pathname}
+                  />
+                ) : null}
+                {workspaceSettingsNavItems.length > 0 ? (
+                  <AppShellNavSection items={workspaceSettingsNavItems} pathname={pathname} />
+                ) : null}
+              </>
+            ) : (
+              <>
+                <AppShellNavSection items={organizationItems(orgSlug)} pathname={pathname} />
+                {orgAccessControlNavItems.length > 0 ? (
+                  <AppShellNavSection
+                    label="Access Control"
+                    items={orgAccessControlNavItems}
+                    pathname={pathname}
+                  />
+                ) : null}
+                {orgSettingsNavItems.length > 0 ? (
+                  <AppShellNavSection
+                    label="Settings"
+                    items={orgSettingsNavItems}
+                    pathname={pathname}
+                  />
+                ) : null}
+              </>
+            )}
+          </SidebarContent>
+          <AppShellSidebarFooter
+            session={session.data}
+            preferences={preferences}
+            setPreferences={setPreferences}
+          />
+          <AppShellRail />
+        </Sidebar>
+        <SidebarInset className="min-w-0 bg-background">
+          <AppShellContent preferences={preferences}>
+            <Outlet />
+          </AppShellContent>
+        </SidebarInset>
+      </SidebarProvider>
+    </PageTitleScopeProvider>
   )
 }
 
@@ -206,8 +216,8 @@ function workspacePrimaryItems(
       to: '/ide/$org_slug',
       params: { org_slug: orgSlug },
       search: { ws: Number(workspaceId) },
-      label: 'Open in IDE',
-      icon: 'database-lightning',
+      label: 'Open in Editor',
+      icon: 'terminal',
     },
   ]
 
@@ -326,8 +336,8 @@ function organizationItems(orgSlug: string): AppShellNavItem[] {
     {
       to: '/ide/$org_slug',
       params: { org_slug: orgSlug },
-      label: 'Open IDE',
-      icon: 'database-lightning',
+      label: 'Open Editor',
+      icon: 'terminal',
     },
     {
       to: '/orgs/$org_slug/workspaces',

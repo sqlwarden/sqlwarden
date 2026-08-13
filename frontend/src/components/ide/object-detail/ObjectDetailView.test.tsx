@@ -25,7 +25,11 @@ const workspace: Workspace = {
   created_at: '',
   updated_at: '',
 }
-const ref: ObjectRef = { namespace: 'public', kind: 'table', name: 'orders' }
+const ref: ObjectRef = {
+  scope: [{ kind: 'schema', name: 'public' }],
+  kind: 'table',
+  name: 'orders',
+}
 const tab: EditorTab = {
   id: 'object:7:public:table:orders',
   workspaceId: 3,
@@ -122,6 +126,27 @@ describe('ObjectDetailView', () => {
     expect(store.getState().tabs).toEqual(
       expect.arrayContaining([expect.objectContaining({ kind: 'diagram', connectionId: 7 })]),
     )
+  })
+
+  it('runs an object refresh through the backend before reloading its detail', async () => {
+    store.getState().setSession(7, 'session-7')
+    respondReady()
+    let refreshBody: unknown
+    server.use(
+      http.post(
+        '/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh',
+        async ({ request }) => {
+          refreshBody = await request.json()
+          return HttpResponse.json({ status: 'ok', mode: 'ephemeral' })
+        },
+      ),
+    )
+    renderView()
+
+    await screen.findByRole('button', { name: 'Columns' })
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+
+    await waitFor(() => expect(refreshBody).toEqual({ ref }))
   })
 
   it('renders permission loss without stale object data', async () => {

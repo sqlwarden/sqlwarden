@@ -24,10 +24,12 @@ import { Route as SettingsApiTokensRouteImport } from './routes/settings.api-tok
 import { Route as SettingsAdministratorsRouteImport } from './routes/settings.administrators'
 import { Route as SettingsAccountRouteImport } from './routes/settings.account'
 import { Route as OrgsOrg_slugRouteImport } from './routes/orgs.$org_slug'
+import { Route as InvitationsTokenRouteImport } from './routes/invitations.$token'
 import { Route as IdeOrg_slugRouteImport } from './routes/ide.$org_slug'
 import { Route as AdministrationUsersRouteImport } from './routes/administration.users'
 import { Route as AdministrationOrganizationsRouteImport } from './routes/administration.organizations'
 import { Route as AdministrationInstanceRouteImport } from './routes/administration.instance'
+import { Route as AdministrationConfigurationRouteImport } from './routes/administration.configuration'
 import { Route as AdministrationAdministratorsRouteImport } from './routes/administration.administrators'
 import { Route as OrgsOrg_slugIndexRouteImport } from './routes/orgs.$org_slug.index'
 import { Route as OrgsOrg_slugWorkspacesRouteImport } from './routes/orgs.$org_slug.workspaces'
@@ -39,6 +41,7 @@ import { Route as OrgsOrg_slugPoliciesRouteImport } from './routes/orgs.$org_slu
 import { Route as OrgsOrg_slugWorkspacesWorkspace_idRouteImport } from './routes/orgs.$org_slug.workspaces.$workspace_id'
 import { Route as OrgsOrg_slugUsersAccount_idRouteImport } from './routes/orgs.$org_slug.users.$account_id'
 import { Route as OrgsOrg_slugTeamsTeam_slugRouteImport } from './routes/orgs.$org_slug.teams.$team_slug'
+import { Route as OrgsOrg_slugSettingsRuntimeRouteImport } from './routes/orgs.$org_slug.settings.runtime'
 import { Route as OrgsOrg_slugSettingsGeneralRouteImport } from './routes/orgs.$org_slug.settings.general'
 import { Route as OrgsOrg_slugRolesRole_idRouteImport } from './routes/orgs.$org_slug.roles.$role_id'
 import { Route as OrgsOrg_slugPoliciesBinding_idRouteImport } from './routes/orgs.$org_slug.policies.$binding_id'
@@ -126,6 +129,11 @@ const OrgsOrg_slugRoute = OrgsOrg_slugRouteImport.update({
   path: '/orgs/$org_slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InvitationsTokenRoute = InvitationsTokenRouteImport.update({
+  id: '/invitations/$token',
+  path: '/invitations/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IdeOrg_slugRoute = IdeOrg_slugRouteImport.update({
   id: '/ide/$org_slug',
   path: '/ide/$org_slug',
@@ -147,6 +155,12 @@ const AdministrationInstanceRoute = AdministrationInstanceRouteImport.update({
   path: '/instance',
   getParentRoute: () => AdministrationRoute,
 } as any)
+const AdministrationConfigurationRoute =
+  AdministrationConfigurationRouteImport.update({
+    id: '/configuration',
+    path: '/configuration',
+    getParentRoute: () => AdministrationRoute,
+  } as any)
 const AdministrationAdministratorsRoute =
   AdministrationAdministratorsRouteImport.update({
     id: '/administrators',
@@ -205,6 +219,12 @@ const OrgsOrg_slugTeamsTeam_slugRoute =
     id: '/$team_slug',
     path: '/$team_slug',
     getParentRoute: () => OrgsOrg_slugTeamsRoute,
+  } as any)
+const OrgsOrg_slugSettingsRuntimeRoute =
+  OrgsOrg_slugSettingsRuntimeRouteImport.update({
+    id: '/runtime',
+    path: '/runtime',
+    getParentRoute: () => OrgsOrg_slugSettingsRoute,
   } as any)
 const OrgsOrg_slugSettingsGeneralRoute =
   OrgsOrg_slugSettingsGeneralRouteImport.update({
@@ -280,10 +300,12 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRouteWithChildren
   '/setup': typeof SetupRoute
   '/administration/administrators': typeof AdministrationAdministratorsRoute
+  '/administration/configuration': typeof AdministrationConfigurationRoute
   '/administration/instance': typeof AdministrationInstanceRoute
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/users': typeof AdministrationUsersRoute
   '/ide/$org_slug': typeof IdeOrg_slugRoute
+  '/invitations/$token': typeof InvitationsTokenRoute
   '/orgs/$org_slug': typeof OrgsOrg_slugRouteWithChildren
   '/settings/account': typeof SettingsAccountRoute
   '/settings/administrators': typeof SettingsAdministratorsRoute
@@ -304,6 +326,7 @@ export interface FileRoutesByFullPath {
   '/orgs/$org_slug/policies/$binding_id': typeof OrgsOrg_slugPoliciesBinding_idRoute
   '/orgs/$org_slug/roles/$role_id': typeof OrgsOrg_slugRolesRole_idRoute
   '/orgs/$org_slug/settings/general': typeof OrgsOrg_slugSettingsGeneralRoute
+  '/orgs/$org_slug/settings/runtime': typeof OrgsOrg_slugSettingsRuntimeRoute
   '/orgs/$org_slug/teams/$team_slug': typeof OrgsOrg_slugTeamsTeam_slugRoute
   '/orgs/$org_slug/users/$account_id': typeof OrgsOrg_slugUsersAccount_idRoute
   '/orgs/$org_slug/workspaces/$workspace_id': typeof OrgsOrg_slugWorkspacesWorkspace_idRouteWithChildren
@@ -321,10 +344,12 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/administration/administrators': typeof AdministrationAdministratorsRoute
+  '/administration/configuration': typeof AdministrationConfigurationRoute
   '/administration/instance': typeof AdministrationInstanceRoute
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/users': typeof AdministrationUsersRoute
   '/ide/$org_slug': typeof IdeOrg_slugRoute
+  '/invitations/$token': typeof InvitationsTokenRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/administrators': typeof SettingsAdministratorsRoute
   '/settings/api-tokens': typeof SettingsApiTokensRoute
@@ -344,6 +369,7 @@ export interface FileRoutesByTo {
   '/orgs/$org_slug/policies/$binding_id': typeof OrgsOrg_slugPoliciesBinding_idRoute
   '/orgs/$org_slug/roles/$role_id': typeof OrgsOrg_slugRolesRole_idRoute
   '/orgs/$org_slug/settings/general': typeof OrgsOrg_slugSettingsGeneralRoute
+  '/orgs/$org_slug/settings/runtime': typeof OrgsOrg_slugSettingsRuntimeRoute
   '/orgs/$org_slug/teams/$team_slug': typeof OrgsOrg_slugTeamsTeam_slugRoute
   '/orgs/$org_slug/users/$account_id': typeof OrgsOrg_slugUsersAccount_idRoute
   '/orgs/$org_slug/workspaces/$workspace_id': typeof OrgsOrg_slugWorkspacesWorkspace_idRouteWithChildren
@@ -364,10 +390,12 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRouteWithChildren
   '/setup': typeof SetupRoute
   '/administration/administrators': typeof AdministrationAdministratorsRoute
+  '/administration/configuration': typeof AdministrationConfigurationRoute
   '/administration/instance': typeof AdministrationInstanceRoute
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/users': typeof AdministrationUsersRoute
   '/ide/$org_slug': typeof IdeOrg_slugRoute
+  '/invitations/$token': typeof InvitationsTokenRoute
   '/orgs/$org_slug': typeof OrgsOrg_slugRouteWithChildren
   '/settings/account': typeof SettingsAccountRoute
   '/settings/administrators': typeof SettingsAdministratorsRoute
@@ -388,6 +416,7 @@ export interface FileRoutesById {
   '/orgs/$org_slug/policies/$binding_id': typeof OrgsOrg_slugPoliciesBinding_idRoute
   '/orgs/$org_slug/roles/$role_id': typeof OrgsOrg_slugRolesRole_idRoute
   '/orgs/$org_slug/settings/general': typeof OrgsOrg_slugSettingsGeneralRoute
+  '/orgs/$org_slug/settings/runtime': typeof OrgsOrg_slugSettingsRuntimeRoute
   '/orgs/$org_slug/teams/$team_slug': typeof OrgsOrg_slugTeamsTeam_slugRoute
   '/orgs/$org_slug/users/$account_id': typeof OrgsOrg_slugUsersAccount_idRoute
   '/orgs/$org_slug/workspaces/$workspace_id': typeof OrgsOrg_slugWorkspacesWorkspace_idRouteWithChildren
@@ -409,10 +438,12 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/administration/administrators'
+    | '/administration/configuration'
     | '/administration/instance'
     | '/administration/organizations'
     | '/administration/users'
     | '/ide/$org_slug'
+    | '/invitations/$token'
     | '/orgs/$org_slug'
     | '/settings/account'
     | '/settings/administrators'
@@ -433,6 +464,7 @@ export interface FileRouteTypes {
     | '/orgs/$org_slug/policies/$binding_id'
     | '/orgs/$org_slug/roles/$role_id'
     | '/orgs/$org_slug/settings/general'
+    | '/orgs/$org_slug/settings/runtime'
     | '/orgs/$org_slug/teams/$team_slug'
     | '/orgs/$org_slug/users/$account_id'
     | '/orgs/$org_slug/workspaces/$workspace_id'
@@ -450,10 +482,12 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/administration/administrators'
+    | '/administration/configuration'
     | '/administration/instance'
     | '/administration/organizations'
     | '/administration/users'
     | '/ide/$org_slug'
+    | '/invitations/$token'
     | '/settings/account'
     | '/settings/administrators'
     | '/settings/api-tokens'
@@ -473,6 +507,7 @@ export interface FileRouteTypes {
     | '/orgs/$org_slug/policies/$binding_id'
     | '/orgs/$org_slug/roles/$role_id'
     | '/orgs/$org_slug/settings/general'
+    | '/orgs/$org_slug/settings/runtime'
     | '/orgs/$org_slug/teams/$team_slug'
     | '/orgs/$org_slug/users/$account_id'
     | '/orgs/$org_slug/workspaces/$workspace_id'
@@ -492,10 +527,12 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/administration/administrators'
+    | '/administration/configuration'
     | '/administration/instance'
     | '/administration/organizations'
     | '/administration/users'
     | '/ide/$org_slug'
+    | '/invitations/$token'
     | '/orgs/$org_slug'
     | '/settings/account'
     | '/settings/administrators'
@@ -516,6 +553,7 @@ export interface FileRouteTypes {
     | '/orgs/$org_slug/policies/$binding_id'
     | '/orgs/$org_slug/roles/$role_id'
     | '/orgs/$org_slug/settings/general'
+    | '/orgs/$org_slug/settings/runtime'
     | '/orgs/$org_slug/teams/$team_slug'
     | '/orgs/$org_slug/users/$account_id'
     | '/orgs/$org_slug/workspaces/$workspace_id'
@@ -536,6 +574,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRouteWithChildren
   SetupRoute: typeof SetupRoute
   IdeOrg_slugRoute: typeof IdeOrg_slugRoute
+  InvitationsTokenRoute: typeof InvitationsTokenRoute
   OrgsOrg_slugRoute: typeof OrgsOrg_slugRouteWithChildren
 }
 
@@ -646,6 +685,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrgsOrg_slugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invitations/$token': {
+      id: '/invitations/$token'
+      path: '/invitations/$token'
+      fullPath: '/invitations/$token'
+      preLoaderRoute: typeof InvitationsTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ide/$org_slug': {
       id: '/ide/$org_slug'
       path: '/ide/$org_slug'
@@ -672,6 +718,13 @@ declare module '@tanstack/react-router' {
       path: '/instance'
       fullPath: '/administration/instance'
       preLoaderRoute: typeof AdministrationInstanceRouteImport
+      parentRoute: typeof AdministrationRoute
+    }
+    '/administration/configuration': {
+      id: '/administration/configuration'
+      path: '/configuration'
+      fullPath: '/administration/configuration'
+      preLoaderRoute: typeof AdministrationConfigurationRouteImport
       parentRoute: typeof AdministrationRoute
     }
     '/administration/administrators': {
@@ -750,6 +803,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/orgs/$org_slug/teams/$team_slug'
       preLoaderRoute: typeof OrgsOrg_slugTeamsTeam_slugRouteImport
       parentRoute: typeof OrgsOrg_slugTeamsRoute
+    }
+    '/orgs/$org_slug/settings/runtime': {
+      id: '/orgs/$org_slug/settings/runtime'
+      path: '/runtime'
+      fullPath: '/orgs/$org_slug/settings/runtime'
+      preLoaderRoute: typeof OrgsOrg_slugSettingsRuntimeRouteImport
+      parentRoute: typeof OrgsOrg_slugSettingsRoute
     }
     '/orgs/$org_slug/settings/general': {
       id: '/orgs/$org_slug/settings/general'
@@ -833,6 +893,7 @@ declare module '@tanstack/react-router' {
 
 interface AdministrationRouteChildren {
   AdministrationAdministratorsRoute: typeof AdministrationAdministratorsRoute
+  AdministrationConfigurationRoute: typeof AdministrationConfigurationRoute
   AdministrationInstanceRoute: typeof AdministrationInstanceRoute
   AdministrationOrganizationsRoute: typeof AdministrationOrganizationsRoute
   AdministrationUsersRoute: typeof AdministrationUsersRoute
@@ -841,6 +902,7 @@ interface AdministrationRouteChildren {
 
 const AdministrationRouteChildren: AdministrationRouteChildren = {
   AdministrationAdministratorsRoute: AdministrationAdministratorsRoute,
+  AdministrationConfigurationRoute: AdministrationConfigurationRoute,
   AdministrationInstanceRoute: AdministrationInstanceRoute,
   AdministrationOrganizationsRoute: AdministrationOrganizationsRoute,
   AdministrationUsersRoute: AdministrationUsersRoute,
@@ -901,10 +963,12 @@ const OrgsOrg_slugRolesRouteWithChildren =
 
 interface OrgsOrg_slugSettingsRouteChildren {
   OrgsOrg_slugSettingsGeneralRoute: typeof OrgsOrg_slugSettingsGeneralRoute
+  OrgsOrg_slugSettingsRuntimeRoute: typeof OrgsOrg_slugSettingsRuntimeRoute
 }
 
 const OrgsOrg_slugSettingsRouteChildren: OrgsOrg_slugSettingsRouteChildren = {
   OrgsOrg_slugSettingsGeneralRoute: OrgsOrg_slugSettingsGeneralRoute,
+  OrgsOrg_slugSettingsRuntimeRoute: OrgsOrg_slugSettingsRuntimeRoute,
 }
 
 const OrgsOrg_slugSettingsRouteWithChildren =
@@ -1026,6 +1090,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRouteWithChildren,
   SetupRoute: SetupRoute,
   IdeOrg_slugRoute: IdeOrg_slugRoute,
+  InvitationsTokenRoute: InvitationsTokenRoute,
   OrgsOrg_slugRoute: OrgsOrg_slugRouteWithChildren,
 }
 export const routeTree = rootRouteImport

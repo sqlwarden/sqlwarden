@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useWorkspacePageTitle } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -71,6 +72,7 @@ export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/u
 })
 
 function WorkspaceUsersPage() {
+  useWorkspacePageTitle('Members')
   const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
   const queryClient = useQueryClient()
   const [isAddingUser, setIsAddingUser] = useState(false)

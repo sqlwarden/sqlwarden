@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -25,13 +26,14 @@ import (
 const defaultTimeout = 3 * time.Second
 
 type DB struct {
-	logger *slog.Logger
-	driver string
-	dsn    string
+	logger       *slog.Logger
+	driver       string
+	dsn          string
+	queryTracing atomic.Bool
 	*bun.DB
 }
 
-func New(driver, dsn string, logger *slog.Logger, logQueries bool) (*DB, error) {
+func New(driver, dsn string, logger *slog.Logger) (*DB, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -71,10 +73,9 @@ func New(driver, dsn string, logger *slog.Logger, logQueries bool) (*DB, error) 
 		return nil, fmt.Errorf("unsupported database driver: %s", driver)
 	}
 
-	if logQueries {
-		db.AddQueryHook(&debugQueryLoggerHook{logger: logger})
-	}
-	db.AddQueryHook(&slowQueryDetectorHook{threshold: 100, includeQuery: logQueries, logger: logger})
+	result := &DB{driver: driver, dsn: dsn, DB: db, logger: logger}
+	db.AddQueryHook(&debugQueryLoggerHook{logger: logger, enabled: &result.queryTracing})
+	db.AddQueryHook(&slowQueryDetectorHook{threshold: 100, logger: logger})
 
 	if driver == "sqlite" {
 		sqldb.SetMaxOpenConns(1)
@@ -92,7 +93,11 @@ func New(driver, dsn string, logger *slog.Logger, logQueries bool) (*DB, error) 
 		return nil, err
 	}
 
-	return &DB{driver: driver, dsn: dsn, DB: db, logger: logger}, nil
+	return result, nil
+}
+
+func (db *DB) SetQueryTracing(enabled bool) {
+	db.queryTracing.Store(enabled)
 }
 
 func (db *DB) MigrateUp() error {

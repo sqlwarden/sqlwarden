@@ -1,14 +1,13 @@
 import { useMemo, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { api } from '#/lib/api/client'
 import type { Connection, ObjectRef, Workspace } from '#/lib/api/types'
+import { scopeLabel } from '#/lib/api/scope'
 import {
   orgConnectionObjectQueryOptions,
   orgConnectionSchemaSpecQueryOptions,
-  refreshConnectionSchema,
-  connectionObjectQueryKey,
 } from '#/lib/api/query'
 import { dialectFor } from '../sqlDialect'
 import { useIde, type EditorTab } from '../useIdeStore'
@@ -18,6 +17,7 @@ import { getObjectRenderer, type HeaderBadge, type ObjectViewModel } from './reg
 import { resolveObjectViewState, type ObjectViewState } from './viewState'
 import { Tip } from '../schema-diagram/Tip'
 import { useEvictGoneSession } from '../sessionErrors'
+import { useSchemaRefresh } from '../useSchemaRefresh'
 
 export function ObjectDetailView({
   orgSlug,
@@ -35,27 +35,29 @@ export function ObjectDetailView({
   const setSession = useIde((s) => s.setSession)
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const openTab = useIde((s) => s.openTab)
-  const queryClient = useQueryClient()
   const [activeSection, setActiveSection] = useState<string>('columns')
+
+  const refreshSchema = useSchemaRefresh({
+    orgSlug,
+    workspaceId: workspace.id,
+    connectionId: connectionId ?? 0,
+    sessionId,
+    ref,
+  })
 
   const detailQuery = useQuery({
     ...orgConnectionObjectQueryOptions(
       orgSlug,
       workspace.id,
       connectionId ?? 0,
-      sessionId ?? '',
+      sessionId,
       ref ?? EMPTY_REF,
     ),
-    enabled: Boolean(sessionId && connectionId && ref),
+    enabled: Boolean(connectionId && ref),
   })
   const specQuery = useQuery({
-    ...orgConnectionSchemaSpecQueryOptions(
-      orgSlug,
-      workspace.id,
-      connectionId ?? 0,
-      sessionId ?? '',
-    ),
-    enabled: Boolean(sessionId && connectionId),
+    ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspace.id, connectionId ?? 0, sessionId),
+    enabled: Boolean(connectionId && ref),
   })
 
   // A 410 means the server-side session died while this tab was open — drop it
@@ -64,7 +66,7 @@ export function ObjectDetailView({
 
   const detail = detailQuery.data ?? null
   const state = resolveObjectViewState({
-    hasSession: Boolean(sessionId),
+    hasSession: Boolean(sessionId) || Boolean(detail),
     isLoading: detailQuery.isLoading,
     error: detailQuery.error,
     hasData: Boolean(detail),
@@ -114,22 +116,15 @@ export function ObjectDetailView({
     }
   }
 
-  async function refresh() {
-    if (!sessionId || !ref || !connectionId) return
-    await refreshConnectionSchema(orgSlug, workspace.id, connectionId, sessionId, ref)
-    await queryClient.invalidateQueries({
-      queryKey: connectionObjectQueryKey(orgSlug, workspace.id, connectionId, ref),
-    })
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
       <Header
         objectRef={ref}
         driver={driver}
         badges={vm ? renderer.headerBadges(vm) : []}
-        onRefresh={refresh}
+        onRefresh={() => refreshSchema.mutate()}
         canRefresh={state.kind === 'ready'}
+        refreshing={refreshSchema.isPending}
         onViewInDiagram={
           ref && connectionId && diagramSupportedForKind(specQuery.data?.spec, ref.kind)
             ? () =>
@@ -173,7 +168,7 @@ export function ObjectDetailView({
   )
 }
 
-const EMPTY_REF: ObjectRef = { namespace: '', kind: '', name: '' }
+const EMPTY_REF: ObjectRef = { scope: [], kind: '', name: '' }
 function noop() {}
 
 function Header({
@@ -182,6 +177,7 @@ function Header({
   badges,
   onRefresh,
   canRefresh,
+  refreshing,
   onViewInDiagram,
 }: {
   objectRef: ObjectRef
@@ -189,12 +185,13 @@ function Header({
   badges: HeaderBadge[]
   onRefresh: () => void
   canRefresh: boolean
+  refreshing: boolean
   onViewInDiagram?: () => void
 }) {
   return (
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
       <span className="truncate text-sm font-medium text-foreground">
-        {objectRef.namespace ? `${objectRef.namespace}.` : ''}
+        {objectRef.scope.length > 0 ? `${scopeLabel(objectRef.scope)}.` : ''}
         {objectRef.name}
       </span>
       <Tag>{objectRef.kind}</Tag>
@@ -218,7 +215,13 @@ function Header({
         </Tip>
       )}
       <Tip
-        label={canRefresh ? `Refresh ${objectRef.kind || 'object'}` : 'Connect first to refresh'}
+        label={
+          refreshing
+            ? 'Refreshing schema'
+            : canRefresh
+              ? `Refresh ${objectRef.kind || 'object'}`
+              : 'Connect first to refresh'
+        }
       >
         {/* Span wrapper so the tooltip still fires while the button is disabled
             (disabled buttons swallow pointer events). */}
@@ -226,11 +229,11 @@ function Header({
           <button
             type="button"
             onClick={onRefresh}
-            disabled={!canRefresh}
+            disabled={!canRefresh || refreshing}
             aria-label="Refresh"
             className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
           >
-            <Icon name="refresh" size={14} />
+            <Icon name="refresh" size={14} className={refreshing ? 'animate-spin' : undefined} />
           </button>
         </span>
       </Tip>
@@ -281,7 +284,7 @@ function StatePane({
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
       <div className="flex flex-col gap-1">
         <div className="text-sm font-medium text-foreground">
-          {objectRef?.namespace ? `${objectRef.namespace}.` : ''}
+          {objectRef?.scope?.length ? `${scopeLabel(objectRef.scope)}.` : ''}
           {objectRef?.name}
         </div>
         <div className="text-xs text-muted-foreground">{driver} · connection not available</div>

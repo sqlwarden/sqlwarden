@@ -2,11 +2,43 @@
 
 This reference applies to the SQLWarden server.
 
-SQLWarden reads configuration from defaults, config files, environment variables, and CLI flags. The same setting can usually be expressed in all three forms.
+SQLWarden separates deployment-managed bootstrap configuration from database-backed runtime settings.
 
-Configuration is implemented in `internal/web/config.go`. Treat that file as the source of truth when adding or changing runtime options.
+Bootstrap configuration is read from defaults, config files, environment variables, and CLI flags. It is validated before listeners and workers start, and changes require a restart. Runtime settings are stored in the application database and changed through the administration API. They are read directly from the database for each request or background operation.
 
-## Sources
+Bootstrap loading is implemented in `internal/web/config.go`. Runtime ownership and inheritance are implemented by the runtime settings service and typed database models.
+
+## Configuration Lifecycle
+
+The following settings remain bootstrap-only:
+
+- HTTP listener, deployment mode, access mode, and log format.
+- Application database driver, DSN, and startup migration behavior.
+- Cookie, JWT-signing, and encryption keys.
+- TLS certificate configuration.
+- File-storage mode, active backend, backend definitions, and filesystem roots.
+- Desktop backend topology.
+- Allowed host-local SQLite sources.
+
+Changing a bootstrap setting requires a restart. Changing the application DSN selects another SQLWarden instance database; changing storage configuration does not move stored files. Secret rotation must use the documented key/session rotation behavior. SQLWarden does not perform these migrations automatically.
+
+The following settings are database-backed at runtime:
+
+- Instance identity, public URL, support email, and personal spaces.
+- JWT access-token lifetime and session revocation.
+- Interactive query and export limits.
+- Schema snapshot freshness.
+- File revision policy.
+- Error-notification recipient.
+- Log level and application database query tracing.
+- Job worker count, polling, claim lease, and completed-job retention.
+- SMTP enablement, connection details, sender, and encrypted password.
+
+Query/export limits, snapshot freshness, and file revision policy have nullable organization overrides. An organization may only tighten the instance policy: lower limits, a longer snapshot interval, or fewer revisions. Personal workspaces use instance settings.
+
+Operational settings are applied immediately on the process that accepts the update and are reconciled by every other replica from the shared application database.
+
+## Bootstrap Sources
 
 Configuration is applied in this order:
 
@@ -38,8 +70,6 @@ sqlwarden --help
 ```yaml
 base_url: http://localhost:6020
 http_port: 6020
-personal_spaces_enabled: true
-
 log:
   level: info
   format: json
@@ -54,30 +84,19 @@ cookie:
 
 jwt:
   secret_key: replace-with-a-random-secret
-  access_token_ttl: 24h
 
 encryption:
   key: replace-with-a-random-secret
 
 files:
   root_dir: ~/.sqlwarden/files
-  revisions:
-    enabled: true
-    keep_latest: 50
-
-query:
-  max_result_rows: 10000
-  max_result_bytes: 26214400
-
-exports:
-  sync_max_bytes: 104857600
-  background_max_bytes: 0
 
 jobs:
   worker_count: 16
   poll_interval: 1s
   claim_lease: 5m
   completed_retention: 168h
+
 ```
 
 ## Docker Example
@@ -106,16 +125,15 @@ The default image runs as the `sqlwarden` user. The volume path above persists t
 | --- | --- | --- | --- | --- |
 | `base_url` | `BASE_URL` | `--base-url` | `http://localhost:6020` | Public base URL used for generated links and JWT claims. |
 | `http_port` | `HTTP_PORT` | `--http-port` | `6020` | HTTP server port. |
-| `personal_spaces_enabled` | `PERSONAL_SPACES_ENABLED` | `--personal-spaces-enabled` | `true` | Enables account-owned personal spaces under `/api/v1/me`. |
 
 ## Logging
 
 | Config key | Environment | CLI flag | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `log.level` | `LOG_LEVEL` | `--log-level` | `info` | Server log level. Supported values: `debug`, `info`, `warn`, `error`. |
 | `log.format` | `LOG_FORMAT` | `--log-format` | `json` | Server log format. Supported values: `json`, `text`. |
 
 JSON logs are the default for production and log aggregation systems. Text logs are intended for local development.
+The log level is an instance runtime setting and changes live without restarting the server.
 
 Every HTTP response includes `X-Request-ID`. If the request provides a valid bounded `X-Request-ID`, SQLWarden preserves it; otherwise it generates one. Access logs include request ID, route, path, response status, duration, remote IP, user agent, and resolved account/resource identifiers when available.
 
@@ -130,7 +148,6 @@ Server logs do not include request bodies, authorization headers, DSNs, SQL text
 | `db.driver` | `DB_DRIVER` | `--db-driver` | `sqlite` | Application database driver. Supported values: `sqlite`, `postgres`. |
 | `db.dsn` | `DB_DSN` | `--db-dsn` | `~/.sqlwarden/sqlwarden.db` | SQLite path or PostgreSQL DSN. `~` is expanded for SQLite. |
 | `db.automigrate` | `DB_AUTOMIGRATE` | `--db-automigrate` | `true` | Runs embedded migrations at startup. |
-| `db.log_queries` | `DB_LOG_QUERIES` | `--db-log-queries` | `false` | Logs application database SQL text. Use only for short-lived debugging. |
 
 PostgreSQL DSNs are passed without a `postgres://` prefix in the existing compose setup:
 
@@ -154,55 +171,41 @@ Use PostgreSQL for larger deployments, environments with multiple server replica
 | --- | --- | --- | --- | --- |
 | `cookie.secret_key` | `COOKIE_SECRET_KEY` | `--cookie-secret-key` | Development-only secret | Cookie signing secret. Replace in every real deployment. |
 | `jwt.secret_key` | `JWT_SECRET_KEY` | `--jwt-secret-key` | Development-only secret | JWT signing secret. Replace in every real deployment. |
-| `jwt.access_token_ttl` | `JWT_ACCESS_TOKEN_TTL` | `--jwt-access-token-ttl` | `24h` | Access token lifetime. Examples: `8h`, `30m`. |
-| `encryption.key` | `ENCRYPTION_KEY` | `--encryption-key` | Development-only secret | Application encryption key for encrypted values such as DSNs. Replace in every real deployment. |
+| `encryption.key` | `ENCRYPTION_KEY` | `--encryption-key` | Development-only secret | Application encryption key for encrypted values such as DSNs and SMTP credentials. Replace in every real deployment. |
 | `encryption.previous_keys` | `ENCRYPTION_PREVIOUS_KEYS` | `--encryption-previous-keys` | Empty | Comma-separated retired encryption keys retained for decrypting old ciphertext during rotation. |
-| `sessions.revocation_enabled` | `SESSIONS_REVOCATION_ENABLED` | `--sessions-revocation-enabled` | `true` | Enables database-backed auth session and org access-session revocation checks. |
 
 Do not use the default secrets outside local development.
 
-Session revocation is enabled by default so administrators can invalidate sessions. Very small single-user deployments can disable it to reduce session-check overhead:
-
-```sh
-SESSIONS_REVOCATION_ENABLED=false
-```
-
 ## Interactive Queries
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `query.max_result_rows` | `QUERY_MAX_RESULT_ROWS` | `--query-max-result-rows` | `10000` | Maximum rows returned by an interactive query result. |
-| `query.max_result_bytes` | `QUERY_MAX_RESULT_BYTES` | `--query-max-result-bytes` | `26214400` | Approximate maximum row payload bytes returned by an interactive query result. |
-
-These limits apply to interactive IDE query responses. Future export workflows should use dedicated streaming/export limits instead of relying on interactive query caps.
+Interactive query limits are runtime settings managed at instance or organization scope through the administration API.
 
 The same limits apply to HTTP query cursors. Direct `/query` responses are capped once per response. Query-cursor start and fetch responses are capped per page; clients can continue fetching while the response has `exhausted=false`.
 
-For DQL/select-style queries, the IDE can request cursor-backed results through `/query`. When the selected target engine supports cursor-backed results, the first response includes the first page plus cursor metadata. Engines that do not support cursor-backed results fall back to the bounded direct query path. Cursor state is process-local and tied to the authenticated live database session; it is not durable query history.
+## Schema Snapshots
+
+Persistent schema snapshots are enabled by default per organization and can be
+disabled in organization settings. A connection may inherit that setting or
+tighten it to `disabled`; a connection cannot override a disabled organization.
+Disabling snapshots immediately deletes stored schema metadata. In that mode,
+schema inspection uses only the process-local cache associated with a live
+database session.
+
+For DQL/select-style queries, the editor can request cursor-backed results through `/query`. When the selected target engine supports cursor-backed results, the first response includes the first page plus cursor metadata. Engines that do not support cursor-backed results fall back to the bounded direct query path. Cursor state is process-local and tied to the authenticated live database session; it is not durable query history.
 
 ## Exports
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `exports.sync_max_bytes` | `EXPORTS_SYNC_MAX_BYTES` | `--exports-sync-max-bytes` | `104857600` | Maximum bytes streamed by synchronous HTTP exports. |
-| `exports.background_max_bytes` | `EXPORTS_BACKGROUND_MAX_BYTES` | `--exports-background-max-bytes` | `0` | Maximum bytes written by background export jobs. `0` disables the background cap. |
-
-Synchronous exports use the caller's existing live database session and stop if the HTTP request is cancelled. Background exports run as user-visible jobs, open their own short-lived target database connection, and write output to private workspace files.
+Export limits are runtime settings managed at instance or organization scope through the administration API. Synchronous exports use the caller's existing live database session and stop if the HTTP request is cancelled. Background exports run as user-visible jobs, open their own short-lived target database connection, and write output to private workspace files.
 
 ## Background Jobs
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `jobs.worker_count` | `JOBS_WORKER_COUNT` | `--jobs-worker-count` | `16` | Number of in-process background job workers. |
-| `jobs.poll_interval` | `JOBS_POLL_INTERVAL` | `--jobs-poll-interval` | `1s` | How often workers poll for due queued jobs. |
-| `jobs.claim_lease` | `JOBS_CLAIM_LEASE` | `--jobs-claim-lease` | `5m` | Lease duration for a claimed running job before another worker may recover it. |
-| `jobs.completed_retention` | `JOBS_COMPLETED_RETENTION` | `--jobs-completed-retention` | `168h` | How long succeeded, failed, and cancelled job records are retained. |
+Worker count, polling interval, claim lease, and completed-job retention are instance runtime settings. Updates restart only the in-process job runner; the API process stays available.
 
 Jobs are persisted in the application database. Workers always run inside the API process and use database claim leases so a future separate worker binary can use the same job table safely. Job scheduling is best effort: due jobs run when a worker is available, with higher-priority due jobs claimed before lower-priority due jobs. Internal maintenance such as stale file-content cleanup uses this framework.
 
 Maintenance jobs that must have only one active instance use a database-enforced singleton key, so multiple API processes can safely race to schedule the same maintenance work in distributed deployments.
 
-User-facing jobs can also persist progress events. Events are read through the scoped job API with an `after_id` marker so clients can poll only for new events. Events follow the parent job retention period configured by `jobs.completed_retention`; there is no separate event retention setting.
+User-facing jobs can also persist progress events. Events are read through the scoped job API with an `after_id` marker so clients can poll only for new events. Events follow the parent job retention period; there is no separate event retention setting.
 
 The claim lease is stale-worker recovery time, not a maximum job runtime. Running jobs heartbeat to extend the lease while the worker is healthy.
 
@@ -221,16 +224,7 @@ Many deployments should terminate TLS at a reverse proxy. Built-in TLS is availa
 | Config key | Environment | CLI flag | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `files.root_dir` | `FILES_ROOT_DIR` | `--files-root-dir` | `~/.sqlwarden/files` | Filesystem root directory for file content. `~` is expanded. |
-| `files.revisions.enabled` | `FILES_REVISIONS_ENABLED` | `--files-revisions-enabled` | `true` | Enables saved-file revisions. |
-| `files.revisions.keep_latest` | `FILES_REVISIONS_KEEP_LATEST` | `--files-revisions-keep-latest` | `50` | Number of old saved-file revisions retained per file when revisions are enabled. |
-
-The server stores workspace file content on the local filesystem by default. The storage implementation has internal backend plumbing for future expansion, but the server-facing configuration should normally only need the root directory and revision settings.
-
-To disable revisions:
-
-```sh
-FILES_REVISIONS_ENABLED=false
-```
+The server stores workspace file content on the local filesystem by default. Revision policy is a database-backed runtime setting. The storage implementation has internal backend plumbing for future expansion.
 
 ## Target SQLite Connections
 
@@ -250,16 +244,7 @@ DRIVERS_SQLITE_ALLOWED_SOURCES=local
 
 ## Email
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `notifications.email` | `NOTIFICATIONS_EMAIL` | `--notifications-email` | Empty | Email address that receives error notifications. |
-| `smtp.host` | `SMTP_HOST` | `--smtp-host` | `example.smtp.host` | SMTP server host. |
-| `smtp.port` | `SMTP_PORT` | `--smtp-port` | `25` | SMTP server port. |
-| `smtp.username` | `SMTP_USERNAME` | `--smtp-username` | `example_username` | SMTP username. |
-| `smtp.password` | `SMTP_PASSWORD` | `--smtp-password` | `pa55word` | SMTP password. |
-| `smtp.from` | `SMTP_FROM` | `--smtp-from` | `Example Name <no_reply@example.org>` | Default SMTP sender. |
-
-Email is optional today. Configure it when error notification delivery is needed.
+SMTP is optional and configured in instance runtime settings. The password is write-only through the API and encrypted with `ENCRYPTION_KEY` at rest. Configure and enable SMTP to deliver organization invitations and error notifications.
 
 ## Production Checklist
 
@@ -268,8 +253,6 @@ Email is optional today. Configure it when error notification delivery is needed
 - Decide whether to use SQLite or PostgreSQL for the application database.
 - Persist `~/.sqlwarden` or explicitly configure database and file storage paths.
 - Keep `LOG_FORMAT=json` for production log collection.
-- Disable `DB_LOG_QUERIES` unless actively debugging because it can log SQL text.
-- Decide whether `PERSONAL_SPACES_ENABLED` should be enabled.
+- Leave database query tracing disabled unless actively debugging.
 - Leave `DRIVERS_SQLITE_ALLOWED_SOURCES` empty unless local SQLite target access is intentional.
 - Use HTTPS through a reverse proxy or SQLWarden built-in TLS.
-- Review `SESSIONS_REVOCATION_ENABLED` for the deployment size and account lifecycle needs.

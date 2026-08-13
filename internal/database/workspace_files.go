@@ -111,6 +111,17 @@ func (db *DB) InsertWorkspaceFile(ctx context.Context, file *WorkspaceFile) erro
 	return err
 }
 
+// PurgeWorkspaceFile permanently removes one workspace file and its content
+// metadata. It is intended for compensating cleanup when a multi-store create
+// fails before the file becomes visible to callers.
+func (db *DB) PurgeWorkspaceFile(ctx context.Context, fileID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	_, err := db.NewDelete().Model((*WorkspaceFile)(nil)).Where("id = ?", fileID).Exec(ctx)
+	return err
+}
+
 // GetWorkspaceFile returns a non-deleted workspace file/folder by ID.
 func (db *DB) GetWorkspaceFile(ctx context.Context, id int64) (WorkspaceFile, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
@@ -149,7 +160,7 @@ func (db *DB) ListWorkspaceFiles(ctx context.Context, workspaceID int64, visibil
 }
 
 // ListRecentWorkspaceFiles returns recently updated files from one authorized
-// workspace file tree. Folders are excluded because the IDE recent list opens
+// workspace file tree. Folders are excluded because the editor recent list opens
 // editable content, not containers.
 func (db *DB) ListRecentWorkspaceFiles(ctx context.Context, workspaceID int64, visibility string, ownerAccountID *int64, limit int) ([]WorkspaceFile, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)

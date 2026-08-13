@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/com
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { RoutePending } from '#/components/RoutePending'
+import { usePageTitle } from '#/lib/page-title'
 
 export const Route = createFileRoute('/settings/account')({
   component: SettingsAccountPage,
@@ -30,6 +31,7 @@ type PasswordErrors = {
 }
 
 function SettingsAccountPage() {
+  usePageTitle('Account', 'Settings')
   const queryClient = useQueryClient()
   const session = useSession(true)
   const account = session.data?.account
@@ -146,7 +148,7 @@ function SettingsAccountPage() {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-1.5">
-        <h2 className="text-2xl font-semibold tracking-tight">Account</h2>
+        <h2 className="font-heading text-2xl font-semibold tracking-tight">Account</h2>
         <p className="text-sm text-muted-foreground">Manage your profile and local password.</p>
       </div>
 

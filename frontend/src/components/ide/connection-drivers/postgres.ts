@@ -25,10 +25,9 @@ export const postgresDriver: DriverDef = {
     },
     {
       key: 'database',
-      label: 'Database',
+      label: 'Database (optional)',
       type: 'text',
-      placeholder: 'mydb',
-      required: true,
+      placeholder: 'Optional',
       section: 'Server',
     },
     {
@@ -67,5 +66,20 @@ export const postgresDriver: DriverDef = {
       ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}`
       : encodeURIComponent(username)
     return `postgresql://${userPart}@${host}:${port}/${database}?sslmode=${sslmode || 'prefer'}`
+  },
+  parseDSN: (dsn): Record<string, string> => {
+    try {
+      const url = new URL(dsn)
+      return {
+        host: url.hostname,
+        port: url.port || '5432',
+        database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+        username: decodeURIComponent(url.username),
+        password: decodeURIComponent(url.password),
+        sslmode: url.searchParams.get('sslmode') || 'prefer',
+      }
+    } catch {
+      return {}
+    }
   },
 }

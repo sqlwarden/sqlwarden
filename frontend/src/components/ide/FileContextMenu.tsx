@@ -17,6 +17,8 @@ type FileContextMenuProps = {
   onCreateFolder?: (parentId: number | null) => void
   onDelete?: () => void
   onRefresh?: () => void
+  onRename?: () => void
+  onDuplicate?: () => void
 }
 
 export function FileContextMenu({
@@ -32,6 +34,8 @@ export function FileContextMenu({
   onCreateFolder,
   onDelete,
   onRefresh,
+  onRename,
+  onDuplicate,
 }: FileContextMenuProps) {
   const parentId = kind === 'root' ? null : (nodeId ?? null)
   const name = nodeName ?? ''
@@ -45,6 +49,8 @@ export function FileContextMenu({
           onCopyName: () => copyWithToast(name),
           onSaveAs: () => onSaveAs?.(),
           onDelete,
+          onRename,
+          onDuplicate,
         })
       : kind === 'folder'
         ? buildFolderMenu({
@@ -53,6 +59,7 @@ export function FileContextMenu({
             onCreateFolder: () => onCreateFolder?.(parentId),
             onCopyName: () => copyWithToast(name),
             onDelete,
+            onRename,
           })
         : buildRootMenu({
             onCreateFile: () => onCreateFile?.(parentId),

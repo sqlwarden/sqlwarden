@@ -7,11 +7,10 @@ export type InterfaceFont = {
 }
 
 export const INTERFACE_FONTS: InterfaceFont[] = [
-  // Geist is the app default — loaded globally via styles.css.
-  { label: 'Geist', fontFamily: "'Geist Variable', 'Inter Variable', system-ui, sans-serif" },
-  // Inter is also loaded globally (long-time previous default, common fallback).
+  { label: 'Satoshi', fontFamily: "'Satoshi', 'Geist Variable', system-ui, sans-serif" },
   { label: 'Inter', fontFamily: "'Inter Variable', system-ui, sans-serif" },
-  // @fontsource-variable packages register under the "Variable" family name.
+  { label: 'Cal Sans UI', fontFamily: "'Cal Sans UI', 'Geist Variable', system-ui, sans-serif" },
+  { label: 'Geist', fontFamily: "'Geist Variable', 'Inter Variable', system-ui, sans-serif" },
   { label: 'IBM Plex Sans', fontFamily: "'IBM Plex Sans Variable', system-ui, sans-serif" },
   { label: 'Manrope', fontFamily: "'Manrope Variable', system-ui, sans-serif" },
   { label: 'Space Grotesk', fontFamily: "'Space Grotesk Variable', system-ui, sans-serif" },
@@ -28,6 +27,9 @@ export async function loadInterfaceFont(font: InterfaceFont): Promise<void> {
   if (_loadedFonts.has(font.fontFamily)) return
   _loadedFonts.add(font.fontFamily)
   switch (font.label) {
+    case 'Geist':
+      await import('@fontsource-variable/geist')
+      break
     case 'IBM Plex Sans':
       await import('@fontsource-variable/ibm-plex-sans')
       break
@@ -40,7 +42,8 @@ export async function loadInterfaceFont(font: InterfaceFont): Promise<void> {
     case 'Epilogue':
       await import('@fontsource-variable/epilogue')
       break
-    // Geist, Inter: loaded globally in styles.css. System Font: no web font.
+    // Cal Sans UI, Satoshi: self-hosted via @font-face in styles.css, no package to load.
+    // Inter: loaded globally in styles.css. System Font: no web font.
   }
 }
 

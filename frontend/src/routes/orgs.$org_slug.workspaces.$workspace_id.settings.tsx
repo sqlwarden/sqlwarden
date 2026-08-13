@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useWorkspacePageTitle } from '#/lib/page-title'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
@@ -40,6 +41,7 @@ type WorkspaceFieldErrors = {
 }
 
 function WorkspaceSettingsPage() {
+  useWorkspacePageTitle('Settings')
   const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -111,7 +113,7 @@ function WorkspaceSettingsPage() {
   if (workspace.isError || !workspace.data) {
     return (
       <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">Failed to load workspace settings.</p>
       </div>
     )
@@ -136,7 +138,7 @@ function WorkspaceSettingsPage() {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">
           Manage workspace details and lifecycle actions.
         </p>

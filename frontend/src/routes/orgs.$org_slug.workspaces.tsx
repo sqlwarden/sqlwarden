@@ -1,4 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
+import { useOrganizationPageTitle } from '#/lib/page-title'
 import { trimTrailingSlash } from '#/lib/utils'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -51,6 +52,7 @@ function OrganizationWorkspacesRoute() {
 }
 
 function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
+  useOrganizationPageTitle('Workspaces')
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)
@@ -153,7 +155,7 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">Workspaces</h1>
+            <h1 className="font-heading text-2xl font-semibold tracking-tight">Workspaces</h1>
             <p className="text-sm text-muted-foreground">
               {!workspaces.isLoading && total > 0
                 ? `${total} workspace${total !== 1 ? 's' : ''} in @${orgSlug}`

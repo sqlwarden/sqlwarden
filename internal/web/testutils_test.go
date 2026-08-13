@@ -50,16 +50,12 @@ func newTestClaims() jwt.Claims {
 
 func newTestApplication(t *testing.T) *application {
 	app := new(application)
+	app.config = DefaultConfig()
 
 	app.config.JWT.SecretKey = "k7mp29rf4qxhwn8vbtaj6pgucmve53y9"
-	app.config.JWT.AccessTokenTTL = 24 * time.Hour
-	app.config.BaseURL = "https://www.example.com"
+	app.config.BootstrapBaseURL = "https://www.example.com"
 	app.config.DeploymentMode = DeploymentModeServer
 	app.config.AccessMode = AccessModeMultiUser
-	app.config.PersonalSpacesEnabled = true
-	app.config.Sessions.RevocationEnabled = true
-	app.config.Query.MaxResultRows = defaultQueryMaxResultRows
-	app.config.Query.MaxResultBytes = defaultQueryMaxResultBytes
 	app.config.Files.StorageMode = FilesStorageModeObject
 	app.config.Files.ActiveStorageBackend = defaultFilesActiveBackend
 	app.config.Files.StorageBackends = map[string]FileStorageBackend{
@@ -68,10 +64,17 @@ func newTestApplication(t *testing.T) *application {
 			RootDir: t.TempDir(),
 		},
 	}
-	app.config.Files.Revisions.Enabled = false
-
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
+	settings, found, err := app.db.GetInstanceSettings(context.Background())
+	if err != nil || !found {
+		t.Fatalf("get instance settings: found=%v err=%v", found, err)
+	}
+	settings.BaseURL = app.config.BootstrapBaseURL
+	settings.FileRevisionsEnabled = false
+	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
+		t.Fatal(err)
+	}
 	app.mailer = smtp.NewMockMailer("test@example.com")
 	app.queryCursors = connection.NewQueryCursorManager(30 * time.Minute)
 	t.Cleanup(func() { app.queryCursors.Close() })
@@ -86,6 +89,52 @@ func newTestApplication(t *testing.T) *application {
 	}
 
 	return app
+}
+
+func updateInstanceSettingsForTest(t *testing.T, app *application, mutate func(*database.InstanceSettings)) {
+	t.Helper()
+	settings, found, err := app.db.GetInstanceSettings(context.Background())
+	if err != nil || !found {
+		t.Fatalf("get instance settings: found=%v err=%v", found, err)
+	}
+	mutate(&settings)
+	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func inviteAndAcceptExistingAccount(t *testing.T, app *application, orgSlug, email, inviterToken, inviteeToken string) {
+	t.Helper()
+	created := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+orgSlug+"/invitations", map[string]any{
+		"email": email,
+	}, inviterToken), app.routes())
+	if created.StatusCode != http.StatusCreated {
+		t.Fatalf("create invitation: got status %d, body %s", created.StatusCode, created.BodyBytes)
+	}
+	inviteURL, _ := created.BodyFields["invite_url"].(string)
+	tokenValue := inviteURL[strings.LastIndex(inviteURL, "/")+1:]
+	accepted := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/invitations/"+tokenValue+"/accept", map[string]any{}, inviteeToken), app.routes())
+	if accepted.StatusCode != http.StatusOK {
+		t.Fatalf("accept invitation: got status %d, body %s", accepted.StatusCode, accepted.BodyBytes)
+	}
+}
+
+func addOrgMemberDirect(t *testing.T, app *application, orgSlug, email string) {
+	t.Helper()
+	org, found, err := app.db.GetOrgBySlug(context.Background(), orgSlug)
+	if err != nil || !found {
+		t.Fatalf("get organization %q: found=%v err=%v", orgSlug, found, err)
+	}
+	account, found, err := app.db.GetAccountByEmail(context.Background(), email)
+	if err != nil || !found {
+		t.Fatalf("get account %q: found=%v err=%v", email, found, err)
+	}
+	if err := app.db.AddOrgMember(context.Background(), org.ID, account.ID); err != nil {
+		t.Fatal(err)
+	}
+	if app.enforcer != nil {
+		app.enforcer.InvalidatePrincipals(org.ID, account.ID)
+	}
 }
 
 func seedAccount(t *testing.T, app *application, email, name string) database.Account {
@@ -106,7 +155,7 @@ func seedAccountWithToken(t *testing.T, app *application, email, name string) (d
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, _, err := token.IssueWithSessionTTL(strconv.FormatInt(account.ID, 10), authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, app.config.JWT.AccessTokenTTL)
+	tok, _, err := token.IssueWithSessionTTL(strconv.FormatInt(account.ID, 10), authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, time.Duration(database.DefaultJWTAccessTokenTTLSeconds)*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +254,7 @@ func newTestDB(t *testing.T) *database.DB {
 		}
 	}
 
-	db, err := database.New(driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+	db, err := database.New(driver, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

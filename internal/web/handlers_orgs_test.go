@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/sqlwarden/internal/access"
@@ -152,9 +152,7 @@ func TestListOrgMembers_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	bob, _ := seedAccountWithToken(t, app, uniqueEmail(t, "bob-member"), "Bob Builder")
 
 	for _, email := range []string{alice.Email, bob.Email} {
-		res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
-			map[string]any{"email": email}, ownerTok), app.routes())
-		assert.Equal(t, res.StatusCode, http.StatusNoContent)
+		addOrgMemberDirect(t, app, slug, email)
 	}
 
 	addRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+strconv.FormatInt(alice.ID, 10),
@@ -179,32 +177,16 @@ func TestListOrgMembers_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 	assert.Equal(t, payload.Items[0]["role"], access.BuiltinOrgAdminRole)
 }
 
-func TestListOrgMemberCandidates(t *testing.T) {
+func TestListOrgMemberCandidatesEndpointRemoved(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
 	_, ownerTok, slug := registerAndLogin(t, app, uniqueEmail(t, "org-candidates-owner"), "Owner User", "securepass99")
-	candidate, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-candidates-alice"), "Alice Candidate")
-	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-candidates-bob"), "Bob Member")
-
-	addMemberRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
-		map[string]any{"account_id": member.ID}, ownerTok), app.routes())
-	assert.Equal(t, addMemberRes.StatusCode, http.StatusNoContent)
-
-	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members/candidates?q="+url.QueryEscape(candidate.Email)+"&sort=name&order=asc&page=1&page_size=10", nil, ownerTok), app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-
-	var payload struct {
-		Items []map[string]any `json:"items"`
-		Total int              `json:"total"`
-	}
-	decodeJSONResponse(t, res.BodyBytes, &payload)
-	assert.Equal(t, payload.Total, 1)
-	assert.Equal(t, len(payload.Items), 1)
-	assert.Equal(t, payload.Items[0]["email"].(string), candidate.Email)
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members/candidates", nil, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }
 
-func TestAddOrgMemberByAccountID(t *testing.T) {
+func TestAddOrgMemberEndpointRemoved(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
@@ -213,11 +195,7 @@ func TestAddOrgMemberByAccountID(t *testing.T) {
 
 	addMemberRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
 		map[string]any{"account_id": member.ID}, ownerTok), app.routes())
-	assert.Equal(t, addMemberRes.StatusCode, http.StatusNoContent)
-
-	getMemberRes := send(t, newOrgRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members/"+strconv.FormatInt(member.ID, 10), ownerTok), app.routes())
-	assert.Equal(t, getMemberRes.StatusCode, http.StatusOK)
-	assert.Equal(t, getMemberRes.BodyFields["email"].(string), member.Email)
+	assert.Equal(t, addMemberRes.StatusCode, http.StatusMethodNotAllowed)
 }
 
 func TestGetOrgMemberAndTeams(t *testing.T) {
@@ -227,9 +205,7 @@ func TestGetOrgMemberAndTeams(t *testing.T) {
 	_, ownerTok, slug := registerAndLogin(t, app, uniqueEmail(t, "org-member-context-owner"), "Owner User", "securepass99")
 	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-member-context-member"), "Member User")
 
-	addMemberRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
-		map[string]any{"email": member.Email}, ownerTok), app.routes())
-	assert.Equal(t, addMemberRes.StatusCode, http.StatusNoContent)
+	addOrgMemberDirect(t, app, slug, member.Email)
 
 	createTeamRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/teams",
 		map[string]any{"slug": "engineering", "name": "Engineering"}, ownerTok), app.routes())
@@ -255,7 +231,7 @@ func TestGetOrgMemberAndTeams(t *testing.T) {
 	assert.Equal(t, payload.Items[0]["slug"], "engineering")
 }
 
-func TestAddOrgMember(t *testing.T) {
+func TestAddOrgMemberLegacyRouteIsNotAvailable(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 
@@ -272,7 +248,7 @@ func TestAddOrgMember(t *testing.T) {
 	})
 	req.Header.Set("Authorization", "Bearer "+ownerTok)
 	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+	assert.Equal(t, res.StatusCode, http.StatusMethodNotAllowed)
 
 	// Non-existent email returns 404.
 	req2 := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
@@ -281,7 +257,7 @@ func TestAddOrgMember(t *testing.T) {
 	})
 	req2.Header.Set("Authorization", "Bearer "+ownerTok)
 	res2 := send(t, req2, app.routes())
-	assert.Equal(t, res2.StatusCode, http.StatusNotFound)
+	assert.Equal(t, res2.StatusCode, http.StatusMethodNotAllowed)
 }
 
 func TestUpdateOrgMemberRole(t *testing.T) {
@@ -293,13 +269,7 @@ func TestUpdateOrgMemberRole(t *testing.T) {
 	// Add a second user.
 	memberID, _, _ := registerAndLogin(t, app, "member-upd@example.com", "Member", "securepass99")
 
-	addReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
-		"email": "member-upd@example.com",
-		"role":  access.BuiltinOrgMemberRole,
-	})
-	addReq.Header.Set("Authorization", "Bearer "+ownerTok)
-	addRes := send(t, addReq, app.routes())
-	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+	addOrgMemberDirect(t, app, slug, "member-upd@example.com")
 
 	// Promote member to admin.
 	req := newTestRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+memberID, map[string]any{
@@ -308,6 +278,22 @@ func TestUpdateOrgMemberRole(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+ownerTok)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	// Demote admin back to baseline member access.
+	demoteReq := newTestRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+memberID, map[string]any{
+		"role": access.BuiltinOrgMemberRole,
+	})
+	demoteReq.Header.Set("Authorization", "Bearer "+ownerTok)
+	demoteRes := send(t, demoteReq, app.routes())
+	assert.Equal(t, demoteRes.StatusCode, http.StatusNoContent)
+
+	getReq := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members/"+memberID, nil)
+	getReq.Header.Set("Authorization", "Bearer "+ownerTok)
+	getRes := send(t, getReq, app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	var member database.OrgMemberListItem
+	decodeJSONResponse(t, getRes.BodyBytes, &member)
+	assert.Equal(t, member.Role, access.BuiltinOrgMemberRole)
 
 	// Demoting last owner should fail with 422.
 	req2 := newTestRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+ownerID, map[string]any{
@@ -325,9 +311,7 @@ func TestUpdateOrgMemberRoleReplacesPreviousBuiltinBinding(t *testing.T) {
 	_, ownerTok, slug := registerAndLogin(t, app, "owner-switch@example.com", "Owner", "securepass99")
 	memberID, _, _ := registerAndLogin(t, app, "member-switch@example.com", "Member", "securepass99")
 
-	addRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members",
-		map[string]any{"email": "member-switch@example.com"}, ownerTok), app.routes())
-	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+	addOrgMemberDirect(t, app, slug, "member-switch@example.com")
 
 	promoteRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+slug+"/members/"+memberID,
 		map[string]any{"role": access.BuiltinOrgAdminRole}, ownerTok), app.routes())
@@ -374,13 +358,7 @@ func TestRemoveOrgMember(t *testing.T) {
 	// Add a second user.
 	memberID, _, _ := registerAndLogin(t, app, "member-rem@example.com", "Member", "securepass99")
 
-	addReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
-		"email": "member-rem@example.com",
-		"role":  access.BuiltinOrgMemberRole,
-	})
-	addReq.Header.Set("Authorization", "Bearer "+ownerTok)
-	addRes := send(t, addReq, app.routes())
-	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+	addOrgMemberDirect(t, app, slug, "member-rem@example.com")
 
 	// Remove member — should succeed.
 	req := newTestRequest(t, http.MethodDelete, "/api/v1/orgs/"+slug+"/members/"+memberID, nil)
@@ -400,18 +378,12 @@ func TestOrgPermissionEnforcement(t *testing.T) {
 	app := newTestApp(t)
 
 	// Owner registers and gets an org.
-	_, ownerTok, slug := registerAndLogin(t, app, "owner-perm@example.com", "Owner", "securepass99")
+	_, _, slug := registerAndLogin(t, app, "owner-perm@example.com", "Owner", "securepass99")
 
 	// Register a second user and add as member.
 	_, memberTok, _ := registerAndLogin(t, app, "member-perm@example.com", "Member", "securepass99")
 
-	addReq := newTestRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/members", map[string]any{
-		"email": "member-perm@example.com",
-		"role":  access.BuiltinOrgMemberRole,
-	})
-	addReq.Header.Set("Authorization", "Bearer "+ownerTok)
-	addRes := send(t, addReq, app.routes())
-	assert.Equal(t, addRes.StatusCode, http.StatusNoContent)
+	addOrgMemberDirect(t, app, slug, "member-perm@example.com")
 
 	// Member can list members through the default org_members -> member -> org:read policy.
 	req := newTestRequest(t, http.MethodGet, "/api/v1/orgs/"+slug+"/members", nil)
@@ -426,7 +398,7 @@ func TestOrgPermissionEnforcement(t *testing.T) {
 	})
 	req2.Header.Set("Authorization", "Bearer "+memberTok)
 	res2 := send(t, req2, app.routes())
-	assert.Equal(t, res2.StatusCode, http.StatusForbidden)
+	assert.Equal(t, res2.StatusCode, http.StatusMethodNotAllowed)
 }
 
 func TestCreateOrgDuplicateName(t *testing.T) {
@@ -453,6 +425,25 @@ func TestCreateOrgWithExplicitSlug(t *testing.T) {
 	}, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusCreated)
 	assert.Equal(t, res.BodyFields["slug"], "custom-org")
+}
+
+func TestCreateOrgLimitsSlugLength(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, _ := registerAndLogin(t, app, "long-slug@example.com", "User", "securepass99")
+
+	generated := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{
+		"name": strings.Repeat("a", maxOrganizationSlugLength+10),
+	}, tok), app.routes())
+	assert.Equal(t, generated.StatusCode, http.StatusCreated)
+	assert.Equal(t, generated.BodyFields["slug"].(string), strings.Repeat("a", maxOrganizationSlugLength))
+
+	explicit := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{
+		"name": "Overlong explicit slug",
+		"slug": strings.Repeat("b", maxOrganizationSlugLength+1),
+	}, tok), app.routes())
+	assert.Equal(t, explicit.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, explicit, "slug")
 }
 
 func TestCreateOrgDuplicateSlug(t *testing.T) {

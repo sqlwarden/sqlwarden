@@ -13,7 +13,13 @@ function action(items: ContextMenuItem[], id: string): ContextMenuActionItem | u
 }
 
 describe('buildEnvironmentMenu', () => {
-  const items = buildEnvironmentMenu({ onCopyName: noop, onManageEnvironments: noop })
+  const base = { onCopyName: noop, onManageEnvironments: noop }
+  const items = buildEnvironmentMenu({
+    ...base,
+    onNewConnection: noop,
+    onRenameEnvironment: noop,
+    onDeleteEnvironment: noop,
+  })
   it('has a live copy-name action', () => {
     const it = action(items, 'copy-name')
     expect(it?.soon).toBeFalsy()
@@ -24,13 +30,25 @@ describe('buildEnvironmentMenu', () => {
     expect(item?.soon).toBeFalsy()
     expect(typeof item?.onSelect).toBe('function')
   })
-  it('marks delete-environment as soon', () => {
-    expect(action(items, 'delete-environment')?.soon).toBe(true)
+  it('exposes live quick actions when their callbacks are provided', () => {
+    for (const id of ['new-connection', 'rename-environment', 'delete-environment']) {
+      expect(action(items, id)?.soon).toBeFalsy()
+      expect(typeof action(items, id)?.onSelect).toBe('function')
+    }
+    expect(action(items, 'delete-environment')?.destructive).toBe(true)
+  })
+  it('omits quick actions when their callbacks are unavailable', () => {
+    const restrictedItems = buildEnvironmentMenu(base)
+    expect(action(restrictedItems, 'new-connection')).toBeUndefined()
+    expect(action(restrictedItems, 'rename-environment')).toBeUndefined()
+    expect(action(restrictedItems, 'delete-environment')).toBeUndefined()
   })
 })
 
 describe('buildConnectionMenu', () => {
   const base = {
+    canEditConnection: true,
+    canDeleteConnection: true,
     onOpen: noop,
     onOpenConsole: noop,
     onConnect: noop,
@@ -38,6 +56,8 @@ describe('buildConnectionMenu', () => {
     onRefreshSchema: noop,
     onCopyName: noop,
     onManageConnections: noop,
+    onEditConnection: noop,
+    onDeleteConnection: noop,
   }
   it('shows connect (not disconnect) and disables refresh when not connected', () => {
     const items = buildConnectionMenu({ ...base, isConnected: false })
@@ -51,9 +71,17 @@ describe('buildConnectionMenu', () => {
     expect(action(items, 'connect')).toBeUndefined()
     expect(action(items, 'refresh-schema')?.disabled).toBeFalsy()
   })
-  it('keeps edit-connection as soon', () => {
+  it('has a live edit-connection action', () => {
     const items = buildConnectionMenu({ ...base, isConnected: true })
-    expect(action(items, 'edit-connection')?.soon).toBe(true)
+    const item = action(items, 'edit-connection')
+    expect(item?.soon).toBeFalsy()
+    expect(typeof item?.onSelect).toBe('function')
+  })
+  it('has a live delete-connection action', () => {
+    const items = buildConnectionMenu({ ...base, isConnected: true })
+    const item = action(items, 'delete-connection')
+    expect(item?.soon).toBeFalsy()
+    expect(typeof item?.onSelect).toBe('function')
   })
   it('has a live manage-connections action', () => {
     const items = buildConnectionMenu({ ...base, isConnected: true })
@@ -61,17 +89,35 @@ describe('buildConnectionMenu', () => {
     expect(item?.soon).toBeFalsy()
     expect(typeof item?.onSelect).toBe('function')
   })
+  it('omits edit-connection when canEditConnection is false', () => {
+    const items = buildConnectionMenu({ ...base, isConnected: true, canEditConnection: false })
+    expect(action(items, 'edit-connection')).toBeUndefined()
+  })
+  it('omits delete-connection when canDeleteConnection is false', () => {
+    const items = buildConnectionMenu({ ...base, isConnected: true, canDeleteConnection: false })
+    expect(action(items, 'delete-connection')).toBeUndefined()
+  })
+  it('omits both when neither permission is held', () => {
+    const items = buildConnectionMenu({
+      ...base,
+      isConnected: true,
+      canEditConnection: false,
+      canDeleteConnection: false,
+    })
+    expect(action(items, 'edit-connection')).toBeUndefined()
+    expect(action(items, 'delete-connection')).toBeUndefined()
+  })
 })
 
 describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
-  it('namespace copy + refresh are live', () => {
+  it('scope copy + refresh are live', () => {
     const items = buildNamespaceMenu({ onCopyName: noop, onRefresh: noop })
     expect(action(items, 'copy-schema-name')?.soon).toBeFalsy()
     expect(action(items, 'refresh')?.soon).toBeFalsy()
     expect(action(items, 'drop-schema')?.soon).toBe(true)
     expect(action(items, 'view-schema-diagram')).toBeUndefined()
   })
-  it('namespace shows View schema diagram when the callback is provided', () => {
+  it('scope shows View schema diagram when the callback is provided', () => {
     const items = buildNamespaceMenu({ onCopyName: noop, onRefresh: noop, onViewDiagram: noop })
     expect(action(items, 'view-schema-diagram')?.label).toBe('View schema diagram')
     expect(action(items, 'view-schema-diagram')?.soon).toBeFalsy()
@@ -81,6 +127,16 @@ describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
     expect(action(items, 'new-object')?.label).toBe('New Table…')
     expect(action(items, 'new-object')?.soon).toBe(true)
     expect(action(items, 'refresh')?.soon).toBeFalsy()
+    expect(action(items, 'view-diagram')).toBeUndefined()
+  })
+  it('object-group shows View diagram when the callback is provided', () => {
+    const items = buildObjectGroupMenu({
+      newLabel: 'New Table…',
+      onRefresh: noop,
+      onViewDiagram: noop,
+    })
+    expect(action(items, 'view-diagram')?.label).toBe('View diagram')
+    expect(action(items, 'view-diagram')?.soon).toBeFalsy()
   })
 })
 

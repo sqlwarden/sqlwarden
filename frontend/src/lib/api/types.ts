@@ -20,6 +20,8 @@ export interface Organization {
   id: number
   slug: string
   name: string
+  schema_snapshots_enabled?: boolean
+  mask_connection_credentials_on_edit?: boolean
   member_count?: number
   team_count?: number
   created_at: string
@@ -79,6 +81,13 @@ export interface Environment {
   updated_at: string
 }
 
+export interface ScopeSegment {
+  kind: string
+  name: string
+}
+
+export type ScopePath = ScopeSegment[]
+
 // ─── Query result types ─────────────────────────────────────────────────────
 
 export type ColumnType =
@@ -127,6 +136,8 @@ export interface Connection {
   name: string
   driver: string
   access_mode: 'open' | 'restricted'
+  default_scope?: ScopePath
+  schema_snapshot_policy?: 'inherit' | 'disabled'
   created_at: string
   updated_at: string
 }
@@ -195,6 +206,40 @@ export interface OrgMember {
   joined_at: string
 }
 
+export interface OrganizationInvitation {
+  id: string
+  org_id: number
+  email: string
+  invited_by_account_id?: number
+  expires_at: string
+  delivery_status: 'sent' | 'failed' | 'disabled'
+  last_delivery_attempt_at?: string
+  created_at: string
+  updated_at: string
+  inviter_name?: string
+  status?: 'pending' | 'expired'
+}
+
+export interface OrganizationInvitationMutationResponse {
+  invitation: OrganizationInvitation
+  invite_url: string
+  delivery_status: OrganizationInvitation['delivery_status']
+}
+
+export interface OrganizationInvitationDetails {
+  organization: Organization
+  email: string
+  expires_at: string
+  status: 'pending' | 'expired'
+  account_exists: boolean
+  authenticated_as_invitee: boolean
+}
+
+export interface AcceptOrganizationInvitationResponse {
+  organization: Organization
+  access_token?: string
+}
+
 export interface WorkspaceMember {
   workspace_id: number
   account_id: number
@@ -254,17 +299,103 @@ export interface PolicyBinding {
   created_at: string
 }
 
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+
 export interface InstanceSettings {
   instance_name: string
   instance_description: string
   support_email: string
-  public_url: string
+  base_url: string
   personal_spaces_enabled: boolean
+  jwt_access_token_ttl_seconds: number
+  sessions_revocation_enabled: boolean
+  query_max_result_rows: number
+  query_max_result_bytes: number
+  query_cursor_page_size: number
+  exports_sync_max_bytes: number
+  exports_background_max_bytes: number
+  schema_snapshot_freshness_seconds: number
+  file_revisions_enabled: boolean
+  file_revisions_keep_latest: number
+  error_notification_email: string
+  log_level: LogLevel
+  database_query_tracing_enabled: boolean
+  access_logs_enabled: boolean
+  jobs_worker_count: number
+  jobs_poll_interval_seconds: number
+  jobs_claim_lease_seconds: number
+  jobs_completed_retention_seconds: number
+  smtp_enabled: boolean
+  smtp_host: string
+  smtp_port: number
+  smtp_username: string
+  /** Response-only: whether a secret is stored server-side. Never send this back in a PATCH. */
+  smtp_password_configured: boolean
+  smtp_from: string
+}
+
+/**
+ * PATCH body for /api/v1/instance/settings. `smtp_password_configured` is response-only and
+ * excluded; `smtp_password` is write-only: omit to preserve the saved secret, a string to
+ * replace it, or null to clear it.
+ */
+export interface InstanceSettingsPatch extends Omit<InstanceSettings, 'smtp_password_configured'> {
+  smtp_password?: string | null
+}
+
+export interface InstanceConfiguration {
+  deployment_managed: boolean
+  restart_required: boolean
+  http_port: number
   deployment_mode: 'server' | 'desktop'
   access_mode: 'multi_user' | 'single_user'
-  single_user_mode: boolean
-  personal_spaces_default: boolean
-  runtime_settings_readonly: boolean
+  log_format: 'json' | 'text'
+  database_driver: string
+  database_automigrate: boolean
+  tls_enabled: boolean
+  file_storage_mode: 'file' | 'object'
+  file_storage_backend: string
+  sqlite_local_enabled: boolean
+}
+
+export interface OrganizationRuntimeOverrideValues {
+  query_max_result_rows: number | null
+  query_max_result_bytes: number | null
+  exports_sync_max_bytes: number | null
+  exports_background_max_bytes: number | null
+  schema_snapshot_freshness_seconds: number | null
+  file_revisions_enabled: boolean | null
+  file_revisions_keep_latest: number | null
+}
+
+export interface OrganizationRuntimeEffectiveValues {
+  query_max_result_rows: number
+  query_max_result_bytes: number
+  exports_sync_max_bytes: number
+  exports_background_max_bytes: number
+  schema_snapshot_freshness_seconds: number
+  file_revisions_enabled: boolean
+  file_revisions_keep_latest: number
+}
+
+export interface OrganizationRuntimeConstraints {
+  query_max_result_rows_max: number
+  query_max_result_bytes_max: number
+  exports_sync_max_bytes_max: number
+  exports_background_max_bytes_max: number
+  schema_snapshot_freshness_seconds_min: number
+  file_revisions_available: boolean
+  file_revisions_keep_latest_max: number
+}
+
+export interface OrganizationRuntimeSettings {
+  overrides: OrganizationRuntimeOverrideValues
+  effective: OrganizationRuntimeEffectiveValues
+  constraints: OrganizationRuntimeConstraints
+}
+
+export type OrganizationRuntimeSettingsPatch = {
+  [K in keyof OrganizationRuntimeOverrideValues]?: OrganizationRuntimeOverrideValues[K]
 }
 
 export interface InstanceAdmin {
@@ -305,27 +436,28 @@ export interface ListQuery {
 }
 
 export interface ObjectRef {
-  namespace: string
+  scope: ScopePath
   kind: string
   name: string
 }
 
-export interface CatalogObjectGroup {
+export interface ScopeNode {
+  path: ScopePath
+  groups: ObjectGroup[]
+  children?: ScopeNode[]
+}
+
+export interface ObjectGroup {
   kind: string
   objects: ObjectRef[]
 }
 
-export interface CatalogNamespace {
-  name: string
-  groups: CatalogObjectGroup[] | null
-}
-
-export interface SchemaCatalog {
+export interface SchemaDirectory {
   connection: string
-  dialect: string
-  database: string
+  engine: string
+  default_scope: ScopePath
   generated_at: string
-  namespaces: CatalogNamespace[] | null
+  roots: ScopeNode[]
 }
 
 export interface SchemaObjectKind {
@@ -402,8 +534,27 @@ export interface ObjectDetail {
   attributes?: Record<string, unknown>
 }
 
-export interface CatalogResponse {
-  catalog: SchemaCatalog
+export interface DirectoryResponse {
+  directory?: SchemaDirectory
+  status?: 'pending'
+  mode?: 'persistent' | 'ephemeral'
+  job_id?: string
+}
+
+export interface SchemaSnapshotStatus {
+  status: 'ready' | 'pending' | 'disabled'
+  mode: 'persistent' | 'ephemeral'
+  snapshot_id?: string
+  generated_at?: string
+  stale?: boolean
+  job_id?: string
+}
+
+export interface SchemaRefreshResponse {
+  status: 'ok'
+  mode: 'persistent' | 'ephemeral'
+  snapshot_id?: string
+  generated_at?: string
 }
 
 export interface SchemaSpecResponse {
@@ -423,7 +574,7 @@ export interface Relationship {
 }
 
 export interface RelationshipGraph {
-  namespace: string
+  scope: ScopePath
   relationships: Relationship[] | null
 }
 

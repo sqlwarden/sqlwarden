@@ -7,11 +7,15 @@ export type EditorFont = {
 }
 
 export const EDITOR_FONTS: EditorFont[] = [
-  // Geist Mono is the app default — already loaded globally via styles.css
+  // Paper Mono is the brand default — self-hosted via @font-face in styles.css.
+  {
+    label: 'Paper Mono',
+    fontFamily: "'Paper Mono', 'JetBrains Mono Variable', ui-monospace, monospace",
+  },
+  { label: 'JetBrains Mono', fontFamily: "'JetBrains Mono Variable', ui-monospace, monospace" },
   { label: 'Geist Mono', fontFamily: "'Geist Mono', ui-monospace, monospace" },
   { label: 'System Font', fontFamily: 'ui-monospace, monospace' },
   // @fontsource-variable packages register under the "Variable" family name
-  { label: 'JetBrains Mono', fontFamily: "'JetBrains Mono Variable', ui-monospace, monospace" },
   { label: 'Fira Code', fontFamily: "'Fira Code Variable', ui-monospace, monospace" },
   { label: 'Cascadia Code', fontFamily: "'Cascadia Code', ui-monospace, monospace" },
   { label: 'Source Code Pro', fontFamily: "'Source Code Pro Variable', ui-monospace, monospace" },
@@ -23,7 +27,7 @@ export const EDITOR_FONT_SIZES = [11, 12, 13, 14, 15, 16] as const
 export type EditorFontSize = (typeof EDITOR_FONT_SIZES)[number]
 
 export const DEFAULT_EDITOR_FONT = EDITOR_FONTS[0]
-export const DEFAULT_EDITOR_FONT_SIZE: EditorFontSize = 13
+export const DEFAULT_EDITOR_FONT_SIZE: EditorFontSize = 12
 
 // Module-level cache — once a font's CSS is injected it persists in the document.
 const _loadedFonts = new Set<string>()
@@ -32,8 +36,8 @@ export async function loadEditorFont(font: EditorFont): Promise<void> {
   if (_loadedFonts.has(font.fontFamily)) return
   _loadedFonts.add(font.fontFamily)
   switch (font.label) {
-    case 'JetBrains Mono':
-      await import('@fontsource-variable/jetbrains-mono')
+    case 'Geist Mono':
+      await import('@fontsource/geist-mono')
       break
     case 'Fira Code':
       await import('@fontsource-variable/fira-code')
@@ -47,7 +51,8 @@ export async function loadEditorFont(font: EditorFont): Promise<void> {
     case 'Roboto Mono':
       await import('@fontsource-variable/roboto-mono')
       break
-    // Geist Mono: loaded globally in styles.css — no lazy load needed.
+    // Paper Mono: self-hosted via @font-face in styles.css.
+    // JetBrains Mono: loaded globally in styles.css — no lazy load needed.
     // System Font, Courier New: no web font required.
   }
 }

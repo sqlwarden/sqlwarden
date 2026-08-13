@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"github.com/sqlwarden/internal/dbengine"
-	"github.com/sqlwarden/internal/dbengine/cursor"
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -36,8 +36,8 @@ type Session struct {
 	ConnectionID string
 	OrgID        string
 	WorkspaceID  string
-	Conn         dbengine.Driver // open connection
-	mu           sync.Mutex      // serializes Query/Execute on this session
+	Conn         engine.Driver // open connection
+	mu           sync.Mutex    // serializes Query/Execute on this session
 	cursors      map[string]*QueryCursorHandle
 	lastUsed     time.Time
 }
@@ -61,11 +61,31 @@ func (s *Session) Query(ctx context.Context, sql string, args ...any) (*result.R
 	return s.Conn.Query(ctx, sql, args...)
 }
 
+func (s *Session) QueryWithOptions(ctx context.Context, sql string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastUsed = time.Now()
+	if driver, ok := s.Conn.(cursor.ResultLimitDriver); ok {
+		return driver.QueryWithOptions(ctx, sql, opts, args...)
+	}
+	return s.Conn.Query(ctx, sql, args...)
+}
+
 // Execute executes a statement on the session, serialized via the session mutex.
 func (s *Session) Execute(ctx context.Context, sql string, args ...any) (*result.ResultSet, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastUsed = time.Now()
+	return s.Conn.Execute(ctx, sql, args...)
+}
+
+func (s *Session) ExecuteWithOptions(ctx context.Context, sql string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastUsed = time.Now()
+	if driver, ok := s.Conn.(cursor.ResultLimitDriver); ok {
+		return driver.ExecuteWithOptions(ctx, sql, opts, args...)
+	}
 	return s.Conn.Execute(ctx, sql, args...)
 }
 
@@ -140,13 +160,22 @@ func (h *QueryCursorHandle) Close() error {
 
 // Manager maintains in-memory live sessions with TTL reaping.
 type Manager struct {
-	mu          sync.RWMutex
-	byKey       map[string]*Session // key: "accountID:connID"
-	byID        map[string]*Session // key: session ULID
-	idleTimeout time.Duration
-	stop        chan struct{}
-	stopped     chan struct{}
-	closeOnce   sync.Once
+	mu                sync.RWMutex
+	byKey             map[string]*Session // key: "accountID:connID"
+	byID              map[string]*Session // key: session ULID
+	idleTimeout       time.Duration
+	stop              chan struct{}
+	stopped           chan struct{}
+	closeOnce         sync.Once
+	onConnectionEmpty func(string)
+}
+
+// SetOnConnectionEmpty registers a lifecycle hook invoked after the final live
+// session for a connection is removed. The hook always runs without m.mu held.
+func (m *Manager) SetOnConnectionEmpty(hook func(connectionID string)) {
+	m.mu.Lock()
+	m.onConnectionEmpty = hook
+	m.mu.Unlock()
 }
 
 // New creates a new Manager with the given idle timeout and starts the background reaper.
@@ -164,13 +193,13 @@ func New(idleTimeout time.Duration) *Manager {
 
 // GetOrCreate returns the existing session for (accountID, connID) or creates one using open().
 // Returns: (session, created, error) where created=true means a new session was opened.
-func (m *Manager) GetOrCreate(accountID, connID string, open func() (dbengine.Driver, error)) (*Session, bool, error) {
+func (m *Manager) GetOrCreate(accountID, connID string, open func() (engine.Driver, error)) (*Session, bool, error) {
 	return m.GetOrCreateWithMetadata(accountID, connID, SessionMetadata{}, open)
 }
 
 // GetOrCreateWithMetadata returns an existing session or creates one with
 // resource metadata used for workspace-scoped admin visibility and revocation.
-func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata SessionMetadata, open func() (dbengine.Driver, error)) (*Session, bool, error) {
+func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata SessionMetadata, open func() (engine.Driver, error)) (*Session, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -274,10 +303,9 @@ func (m *Manager) Get(sessionID string) (*Session, bool) {
 // Remove closes and removes a session by ID.
 func (m *Manager) Remove(sessionID string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	sess, ok := m.byID[sessionID]
 	if !ok {
+		m.mu.Unlock()
 		return
 	}
 
@@ -285,6 +313,9 @@ func (m *Manager) Remove(sessionID string) {
 	key := sess.AccountID + ":" + sess.ConnectionID
 	delete(m.byKey, key)
 	delete(m.byID, sessionID)
+	connectionID := sess.ConnectionID
+	m.mu.Unlock()
+	m.notifyConnectionEmpty(connectionID)
 }
 
 // CountForConnection returns the number of live sessions for the given connection ID.
@@ -305,8 +336,6 @@ func (m *Manager) CountForConnection(connID string) int {
 // Returns the number of removed sessions.
 func (m *Manager) RemoveForConnection(connID string) int {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	removed := 0
 	for id, sess := range m.byID {
 		if sess.ConnectionID != connID {
@@ -318,14 +347,17 @@ func (m *Manager) RemoveForConnection(connID string) int {
 		delete(m.byID, id)
 		removed++
 	}
+	m.mu.Unlock()
+	if removed > 0 {
+		m.notifyConnectionEmpty(connID)
+	}
 	return removed
 }
 
 // RemoveForAccount closes and removes all live sessions owned by accountID.
 func (m *Manager) RemoveForAccount(accountID string) int {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
+	connectionIDs := make(map[string]struct{})
 	removed := 0
 	for id, sess := range m.byID {
 		if sess.AccountID != accountID {
@@ -336,7 +368,10 @@ func (m *Manager) RemoveForAccount(accountID string) int {
 		delete(m.byKey, key)
 		delete(m.byID, id)
 		removed++
+		connectionIDs[sess.ConnectionID] = struct{}{}
 	}
+	m.mu.Unlock()
+	m.notifyConnectionsEmpty(connectionIDs)
 	return removed
 }
 
@@ -344,8 +379,7 @@ func (m *Manager) RemoveForAccount(accountID string) int {
 // inside one workspace.
 func (m *Manager) RemoveForWorkspaceAccount(workspaceID, accountID string) int {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
+	connectionIDs := make(map[string]struct{})
 	removed := 0
 	for id, sess := range m.byID {
 		if sess.WorkspaceID != workspaceID || sess.AccountID != accountID {
@@ -356,7 +390,10 @@ func (m *Manager) RemoveForWorkspaceAccount(workspaceID, accountID string) int {
 		delete(m.byKey, key)
 		delete(m.byID, id)
 		removed++
+		connectionIDs[sess.ConnectionID] = struct{}{}
 	}
+	m.mu.Unlock()
+	m.notifyConnectionsEmpty(connectionIDs)
 	return removed
 }
 
@@ -364,8 +401,7 @@ func (m *Manager) RemoveForWorkspaceAccount(workspaceID, accountID string) int {
 // an organization.
 func (m *Manager) RemoveForOrgAccount(orgID, accountID string) int {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
+	connectionIDs := make(map[string]struct{})
 	removed := 0
 	for id, sess := range m.byID {
 		if sess.OrgID != orgID || sess.AccountID != accountID {
@@ -376,7 +412,10 @@ func (m *Manager) RemoveForOrgAccount(orgID, accountID string) int {
 		delete(m.byKey, key)
 		delete(m.byID, id)
 		removed++
+		connectionIDs[sess.ConnectionID] = struct{}{}
 	}
+	m.mu.Unlock()
+	m.notifyConnectionsEmpty(connectionIDs)
 	return removed
 }
 
@@ -388,14 +427,16 @@ func (m *Manager) Close() {
 	<-m.stopped
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
+	connectionIDs := make(map[string]struct{})
 	for id, sess := range m.byID {
 		sess.close()
 		key := sess.AccountID + ":" + sess.ConnectionID
 		delete(m.byKey, key)
 		delete(m.byID, id)
+		connectionIDs[sess.ConnectionID] = struct{}{}
 	}
+	m.mu.Unlock()
+	m.notifyConnectionsEmpty(connectionIDs)
 }
 
 func (m *Manager) reap() {
@@ -414,7 +455,7 @@ func (m *Manager) reap() {
 
 func (m *Manager) reapIdle() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	connectionIDs := make(map[string]struct{})
 	now := time.Now()
 	for id, sess := range m.byID {
 		if now.Sub(sess.lastUsed) > m.idleTimeout {
@@ -422,7 +463,31 @@ func (m *Manager) reapIdle() {
 			key := sess.AccountID + ":" + sess.ConnectionID
 			delete(m.byKey, key)
 			delete(m.byID, id)
+			connectionIDs[sess.ConnectionID] = struct{}{}
 		}
+	}
+	m.mu.Unlock()
+	m.notifyConnectionsEmpty(connectionIDs)
+}
+
+func (m *Manager) notifyConnectionsEmpty(connectionIDs map[string]struct{}) {
+	for connectionID := range connectionIDs {
+		m.notifyConnectionEmpty(connectionID)
+	}
+}
+
+func (m *Manager) notifyConnectionEmpty(connectionID string) {
+	m.mu.RLock()
+	hook := m.onConnectionEmpty
+	for _, session := range m.byID {
+		if session.ConnectionID == connectionID {
+			m.mu.RUnlock()
+			return
+		}
+	}
+	m.mu.RUnlock()
+	if hook != nil {
+		hook(connectionID)
 	}
 }
 

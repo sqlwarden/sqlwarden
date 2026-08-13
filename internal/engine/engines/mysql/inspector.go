@@ -1,0 +1,607 @@
+package mysql
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/sqlwarden/internal/engine/metadata"
+	build "github.com/sqlwarden/internal/engine/metadata/build"
+)
+
+var _ metadata.SchemaInspector = (*mysqlDriver)(nil)
+var _ metadata.ScopeDiscoverer = (*mysqlDriver)(nil)
+
+func (d *mysqlDriver) SchemaSpec() metadata.SchemaSpec {
+	return metadata.SchemaSpec{
+		Dialect: "mysql",
+		Kinds: []metadata.SchemaObjectKind{
+			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
+			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
+			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+		},
+	}
+}
+
+func (d *mysqlDriver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOptions) (*metadata.Directory, error) {
+	database := opts.Root.Name("database")
+	if database == "" {
+		database = d.defaultScope.Name("database")
+	}
+	if database == "" {
+		var current sql.NullString
+		if err := d.db.QueryRowContext(ctx, `SELECT DATABASE()`).Scan(&current); err != nil {
+			return nil, fmt.Errorf("mysql: directory database name: %w", err)
+		}
+		database = current.String
+	}
+	if database == "" {
+		return &metadata.Directory{Engine: "mysql"}, nil
+	}
+
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: database})
+	b := build.NewDirectory()
+	b.DeclareKind("table")
+	b.DeclareKind("view")
+	b.DeclareKind("function")
+	b.DeclareKind("procedure")
+	b.DeclareKind("trigger")
+
+	q := `
+SELECT table_schema, table_name, table_type
+FROM information_schema.tables
+WHERE table_schema = ?
+ORDER BY table_schema, table_name`
+	rows, err := d.db.QueryContext(ctx, q, database)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: catalog tables: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var ns, name, tableType string
+		if err := rows.Scan(&ns, &name, &tableType); err != nil {
+			return nil, fmt.Errorf("mysql: catalog tables scan: %w", err)
+		}
+		kind := "table"
+		if tableType == "VIEW" {
+			kind = "view"
+		}
+		b.AddRef(scope, kind, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("mysql: catalog tables rows: %w", err)
+	}
+	rows.Close()
+
+	const routineQ = `
+SELECT routine_schema, routine_name, routine_type
+FROM information_schema.routines
+WHERE routine_schema = ?
+ORDER BY routine_type, routine_name`
+	routineRows, err := d.db.QueryContext(ctx, routineQ, database)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: catalog routines: %w", err)
+	}
+	for routineRows.Next() {
+		var ns, name, routineType string
+		if err := routineRows.Scan(&ns, &name, &routineType); err != nil {
+			routineRows.Close()
+			return nil, fmt.Errorf("mysql: catalog routines scan: %w", err)
+		}
+		kind := "procedure"
+		if routineType == "FUNCTION" {
+			kind = "function"
+		}
+		b.AddRef(scope, kind, name)
+	}
+	if err := routineRows.Err(); err != nil {
+		routineRows.Close()
+		return nil, fmt.Errorf("mysql: catalog routines rows: %w", err)
+	}
+	routineRows.Close()
+
+	const triggerQ = `
+SELECT trigger_schema, trigger_name
+FROM information_schema.triggers
+WHERE trigger_schema = ?
+ORDER BY trigger_name`
+	triggerRows, err := d.db.QueryContext(ctx, triggerQ, database)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: catalog triggers: %w", err)
+	}
+	for triggerRows.Next() {
+		var ns, name string
+		if err := triggerRows.Scan(&ns, &name); err != nil {
+			triggerRows.Close()
+			return nil, fmt.Errorf("mysql: catalog triggers scan: %w", err)
+		}
+		b.AddRef(scope, "trigger", name)
+	}
+	if err := triggerRows.Err(); err != nil {
+		triggerRows.Close()
+		return nil, fmt.Errorf("mysql: catalog triggers rows: %w", err)
+	}
+	triggerRows.Close()
+
+	return b.Build("", "mysql", scope), nil
+}
+
+func (d *mysqlDriver) DiscoverScopes(ctx context.Context, request metadata.ScopeDiscoveryRequest) (*metadata.ScopeDiscovery, error) {
+	var current sql.NullString
+	if err := d.db.QueryRowContext(ctx, `SELECT DATABASE()`).Scan(&current); err != nil {
+		return nil, fmt.Errorf("mysql: discover current database: %w", err)
+	}
+	result := &metadata.ScopeDiscovery{Scopes: []metadata.ScopePath{}}
+	if current.Valid {
+		result.Current = metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: current.String})
+	}
+	if request.Parent != "" {
+		return result, nil
+	}
+	rows, err := d.db.QueryContext(ctx, `
+SELECT schema_name
+FROM information_schema.schemata
+WHERE schema_name NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+ORDER BY schema_name`)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: discover databases: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		result.Scopes = append(result.Scopes, metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: name}))
+	}
+	return result, rows.Err()
+}
+
+func (d *mysqlDriver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	var relRefs []metadata.ObjectRef
+	var routineRefs []metadata.ObjectRef
+	var triggerRefs []metadata.ObjectRef
+	for _, ref := range refs {
+		switch ref.Kind {
+		case "table", "view":
+			relRefs = append(relRefs, ref)
+		case "function", "procedure":
+			routineRefs = append(routineRefs, ref)
+		case "trigger":
+			triggerRefs = append(triggerRefs, ref)
+		}
+	}
+
+	var out []metadata.Object
+	if len(relRefs) > 0 {
+		objs, err := d.inspectRelational(ctx, relRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(routineRefs) > 0 {
+		objs, err := d.inspectRoutines(ctx, routineRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(triggerRefs) > 0 {
+		objs, err := d.inspectTriggers(ctx, triggerRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	return out, nil
+}
+
+func mysqlPairFilter(refs []metadata.ObjectRef) (string, []any) {
+	var sb strings.Builder
+	args := make([]any, 0, len(refs)*2)
+	for i, ref := range refs {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		sb.WriteString("(?,?)")
+		args = append(args, ref.Scope.Name("database"), ref.Name)
+	}
+	return sb.String(), args
+}
+
+func (d *mysqlDriver) inspectRelational(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	refByName := make(map[string]metadata.ObjectRef, len(refs))
+	for _, ref := range refs {
+		refByName[ref.Scope.Name("database")+"\x00"+ref.Name] = ref
+	}
+	refFor := func(ns, name string) metadata.ObjectRef {
+		return refByName[ns+"\x00"+name]
+	}
+
+	b := build.NewRelational()
+	for _, ref := range refs {
+		b.Ensure(ref)
+	}
+
+	pairs, args := mysqlPairFilter(refs)
+
+	colQ := `
+SELECT table_schema, table_name, column_name, column_type, is_nullable, column_default, ordinal_position,
+       column_comment, extra
+FROM information_schema.columns
+WHERE (table_schema, table_name) IN (` + pairs + `)
+ORDER BY table_schema, table_name, ordinal_position`
+	crows, err := d.db.QueryContext(ctx, colQ, args...)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: object columns: %w", err)
+	}
+	for crows.Next() {
+		var ns, tbl, col, dtype, nullable string
+		var def sql.NullString
+		var ord int
+		var comment, extra string
+		if err := crows.Scan(&ns, &tbl, &col, &dtype, &nullable, &def, &ord, &comment, &extra); err != nil {
+			crows.Close()
+			return nil, fmt.Errorf("mysql: object columns scan: %w", err)
+		}
+		c := metadata.Column{Name: col, DataType: dtype, Nullable: nullable == "YES", Ordinal: ord}
+		if def.Valid {
+			v := def.String
+			c.Default = &v
+		}
+		setColumnAttr(&c, "comment", comment)
+		setColumnAttr(&c, "extra", extra)
+		b.AddColumn(refFor(ns, tbl), c)
+	}
+	if err := crows.Err(); err != nil {
+		crows.Close()
+		return nil, fmt.Errorf("mysql: object columns rows: %w", err)
+	}
+	crows.Close()
+
+	pkQ := `
+SELECT table_schema, table_name, column_name
+FROM information_schema.key_column_usage
+WHERE constraint_name = 'PRIMARY'
+  AND (table_schema, table_name) IN (` + pairs + `)
+ORDER BY table_schema, table_name, ordinal_position`
+	prows, err := d.db.QueryContext(ctx, pkQ, args...)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: object pk: %w", err)
+	}
+	for prows.Next() {
+		var ns, tbl, col string
+		if err := prows.Scan(&ns, &tbl, &col); err != nil {
+			prows.Close()
+			return nil, fmt.Errorf("mysql: object pk scan: %w", err)
+		}
+		b.AddPrimaryKeyColumn(refFor(ns, tbl), col)
+	}
+	if err := prows.Err(); err != nil {
+		prows.Close()
+		return nil, fmt.Errorf("mysql: object pk rows: %w", err)
+	}
+	prows.Close()
+
+	fkQ := `
+SELECT table_schema, table_name, constraint_name, column_name,
+       referenced_table_schema, referenced_table_name, referenced_column_name
+FROM information_schema.key_column_usage
+WHERE referenced_table_schema IS NOT NULL
+  AND referenced_table_name IS NOT NULL
+  AND referenced_column_name IS NOT NULL
+  AND (table_schema, table_name) IN (` + pairs + `)
+ORDER BY table_schema, table_name, constraint_name, ordinal_position`
+	frows, err := d.db.QueryContext(ctx, fkQ, args...)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: object fk: %w", err)
+	}
+	for frows.Next() {
+		var ns, tbl, name, col, refNs, refTbl, refCol string
+		if err := frows.Scan(&ns, &tbl, &name, &col, &refNs, &refTbl, &refCol); err != nil {
+			frows.Close()
+			return nil, fmt.Errorf("mysql: object fk scan: %w", err)
+		}
+		b.AddForeignKeyColumn(refFor(ns, tbl), name, col,
+			metadata.ObjectRef{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: refNs}), Kind: "table", Name: refTbl}, refCol)
+	}
+	if err := frows.Err(); err != nil {
+		frows.Close()
+		return nil, fmt.Errorf("mysql: object fk rows: %w", err)
+	}
+	frows.Close()
+
+	idxQ := `
+SELECT table_schema, table_name, index_name, non_unique, column_name, seq_in_index
+FROM information_schema.statistics
+WHERE (table_schema, table_name) IN (` + pairs + `)
+ORDER BY table_schema, table_name, index_name, seq_in_index`
+	irows, err := d.db.QueryContext(ctx, idxQ, args...)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: object indexes: %w", err)
+	}
+	type idxKey struct{ ns, tbl, name string }
+	indexes := map[idxKey]*metadata.SecondaryIndex{}
+	var indexOrder []idxKey
+	for irows.Next() {
+		var ns, tbl, name, col string
+		var nonUnique int
+		var seq int
+		if err := irows.Scan(&ns, &tbl, &name, &nonUnique, &col, &seq); err != nil {
+			irows.Close()
+			return nil, fmt.Errorf("mysql: object index scan: %w", err)
+		}
+		key := idxKey{ns: ns, tbl: tbl, name: name}
+		ix, ok := indexes[key]
+		if !ok {
+			ix = &metadata.SecondaryIndex{Name: name, Unique: nonUnique == 0}
+			indexes[key] = ix
+			indexOrder = append(indexOrder, key)
+		}
+		ix.Columns = append(ix.Columns, col)
+	}
+	if err := irows.Err(); err != nil {
+		irows.Close()
+		return nil, fmt.Errorf("mysql: object index rows: %w", err)
+	}
+	irows.Close()
+	for _, key := range indexOrder {
+		b.AddIndex(refFor(key.ns, key.tbl), *indexes[key])
+	}
+
+	out := b.Build()
+	if err := d.attachMySQLTableAttributes(ctx, out, pairs, args); err != nil {
+		return nil, err
+	}
+	if err := d.attachMySQLDefinitions(ctx, out, pairs, args); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// attachMySQLTableAttributes populates each table object's engine, collation,
+// and estimated row count from information_schema.tables.
+func (d *mysqlDriver) attachMySQLTableAttributes(ctx context.Context, objs []metadata.Object, pairs string, args []any) error {
+	q := `
+SELECT table_schema, table_name, engine, table_collation, table_rows
+FROM information_schema.tables
+WHERE (table_schema, table_name) IN (` + pairs + `)`
+	rows, err := d.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return fmt.Errorf("mysql: table attributes: %w", err)
+	}
+	defer rows.Close()
+
+	type meta struct {
+		engine    string
+		collation string
+		rows      string
+	}
+	byName := map[string]meta{}
+	for rows.Next() {
+		var ns, tbl string
+		var engine, collation sql.NullString
+		var tableRows sql.NullInt64
+		if err := rows.Scan(&ns, &tbl, &engine, &collation, &tableRows); err != nil {
+			return fmt.Errorf("mysql: table attributes scan: %w", err)
+		}
+		m := meta{engine: engine.String, collation: collation.String}
+		if tableRows.Valid {
+			m.rows = strconv.FormatInt(tableRows.Int64, 10)
+		}
+		byName[ns+"\x00"+tbl] = m
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("mysql: table attributes rows: %w", err)
+	}
+	for i := range objs {
+		m, ok := byName[objs[i].Ref.Scope.Name("database")+"\x00"+objs[i].Ref.Name]
+		if !ok {
+			continue
+		}
+		setObjectAttr(&objs[i], "engine", m.engine)
+		setObjectAttr(&objs[i], "collation", m.collation)
+		setObjectAttr(&objs[i], "row_estimate", m.rows)
+	}
+	return nil
+}
+
+// attachMySQLDefinitions appends a "source" descriptor per object: views get
+// their definition from information_schema.views; tables get DDL from SHOW
+// CREATE TABLE.
+func (d *mysqlDriver) attachMySQLDefinitions(ctx context.Context, objs []metadata.Object, pairs string, args []any) error {
+	viewDefs := map[string]string{}
+	vrows, err := d.db.QueryContext(ctx, `
+SELECT table_schema, table_name, view_definition
+FROM information_schema.views
+WHERE (table_schema, table_name) IN (`+pairs+`)`, args...)
+	if err != nil {
+		return fmt.Errorf("mysql: view definitions: %w", err)
+	}
+	for vrows.Next() {
+		var ns, name string
+		var def sql.NullString
+		if err := vrows.Scan(&ns, &name, &def); err != nil {
+			vrows.Close()
+			return fmt.Errorf("mysql: view definitions scan: %w", err)
+		}
+		if def.Valid {
+			viewDefs[ns+"\x00"+name] = def.String
+		}
+	}
+	if err := vrows.Err(); err != nil {
+		vrows.Close()
+		return fmt.Errorf("mysql: view definitions rows: %w", err)
+	}
+	vrows.Close()
+
+	for i := range objs {
+		switch objs[i].Ref.Kind {
+		case "view":
+			if def := viewDefs[objs[i].Ref.Scope.Name("database")+"\x00"+objs[i].Ref.Name]; def != "" {
+				appendSource(&objs[i], "Definition", def)
+			}
+		case "table":
+			// MySQL cannot bind identifiers; mysqlQuoteQualified escapes both components.
+			// codeql[go/sql-injection]
+			row := d.db.QueryRowContext(ctx, "SHOW CREATE TABLE "+mysqlQuoteQualified(objs[i].Ref.Scope.Name("database"), objs[i].Ref.Name))
+			var name, ddl string
+			if err := row.Scan(&name, &ddl); err != nil {
+				return fmt.Errorf("mysql: show create table: %w", err)
+			}
+			appendSource(&objs[i], "DDL", ddl)
+		}
+	}
+	return nil
+}
+
+func mysqlQuoteQualified(namespace, name string) string {
+	return mysqlQuoteIdent(namespace) + "." + mysqlQuoteIdent(name)
+}
+
+func mysqlQuoteIdent(s string) string {
+	return "`" + strings.ReplaceAll(s, "`", "``") + "`"
+}
+
+func setColumnAttr(c *metadata.Column, key, value string) {
+	if value == "" {
+		return
+	}
+	if c.Attributes == nil {
+		c.Attributes = map[string]any{}
+	}
+	c.Attributes[key] = value
+}
+
+func setObjectAttr(o *metadata.Object, key, value string) {
+	if value == "" {
+		return
+	}
+	if o.Attributes == nil {
+		o.Attributes = map[string]any{}
+	}
+	o.Attributes[key] = value
+}
+
+func appendSource(o *metadata.Object, title, body string) {
+	if body == "" {
+		return
+	}
+	o.Descriptors = append(o.Descriptors, metadata.Descriptor{
+		Kind:   "source",
+		Title:  title,
+		Source: &metadata.Source{Language: "sql", Body: body},
+	})
+}
+
+func (d *mysqlDriver) inspectRoutines(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	kindOf := make(map[string]string, len(refs))
+	for _, ref := range refs {
+		kindOf[ref.Scope.Name("database")+"\x00"+ref.Name] = ref.Kind
+	}
+	pairs, args := mysqlPairFilter(refs)
+	q := `
+SELECT routine_schema, routine_name, routine_type, data_type, routine_definition,
+       external_language, sql_data_access, is_deterministic
+FROM information_schema.routines
+WHERE (routine_schema, routine_name) IN (` + pairs + `)
+ORDER BY routine_schema, routine_name`
+	rows, err := d.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: routine detail: %w", err)
+	}
+	defer rows.Close()
+
+	var out []metadata.Object
+	for rows.Next() {
+		var ns, name, routineType, sqlAccess, deterministic string
+		var dataType, definition, language sql.NullString
+		if err := rows.Scan(&ns, &name, &routineType, &dataType, &definition, &language, &sqlAccess, &deterministic); err != nil {
+			return nil, fmt.Errorf("mysql: routine detail scan: %w", err)
+		}
+		kind := kindOf[ns+"\x00"+name]
+		if kind == "" {
+			kind = strings.ToLower(routineType)
+		}
+		fields := []metadata.Field{
+			{Name: "Type", Value: routineType},
+			{Name: "SQL data access", Value: sqlAccess},
+			{Name: "Deterministic", Value: deterministic},
+		}
+		if dataType.Valid && dataType.String != "" {
+			fields = append(fields, metadata.Field{Name: "Returns", Value: dataType.String})
+		}
+		if language.Valid && language.String != "" {
+			fields = append(fields, metadata.Field{Name: "Language", Value: language.String})
+		}
+		obj := metadata.Object{
+			Ref: mysqlRequestedRef(refs, ns, name, kind),
+			Descriptors: []metadata.Descriptor{
+				{Kind: "fields", Title: "Routine", Fields: fields},
+			},
+		}
+		if definition.Valid && definition.String != "" {
+			obj.Descriptors = append(obj.Descriptors, metadata.Descriptor{
+				Kind:   "source",
+				Title:  "Definition",
+				Source: &metadata.Source{Language: "sql", Body: definition.String},
+			})
+		}
+		out = append(out, obj)
+	}
+	return out, rows.Err()
+}
+
+func (d *mysqlDriver) inspectTriggers(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	pairs, args := mysqlPairFilter(refs)
+	q := `
+SELECT trigger_schema, trigger_name, action_timing, event_manipulation,
+       event_object_schema, event_object_table, action_statement
+FROM information_schema.triggers
+WHERE (trigger_schema, trigger_name) IN (` + pairs + `)
+ORDER BY trigger_schema, trigger_name`
+	rows, err := d.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: trigger detail: %w", err)
+	}
+	defer rows.Close()
+
+	var out []metadata.Object
+	for rows.Next() {
+		var ns, name, timing, event, tableNs, tableName, statement string
+		if err := rows.Scan(&ns, &name, &timing, &event, &tableNs, &tableName, &statement); err != nil {
+			return nil, fmt.Errorf("mysql: trigger detail scan: %w", err)
+		}
+		out = append(out, metadata.Object{
+			Ref: mysqlRequestedRef(refs, ns, name, "trigger"),
+			Descriptors: []metadata.Descriptor{
+				{Kind: "fields", Title: "Trigger", Fields: []metadata.Field{
+					{Name: "Timing", Value: timing},
+					{Name: "Event", Value: event},
+					{Name: "Table", Value: tableNs + "." + tableName},
+				}},
+				{Kind: "source", Title: "Statement", Source: &metadata.Source{Language: "sql", Body: statement}},
+			},
+		})
+	}
+	return out, rows.Err()
+}
+
+func mysqlRequestedRef(refs []metadata.ObjectRef, database, name, kind string) metadata.ObjectRef {
+	for _, ref := range refs {
+		if ref.Scope.Name("database") == database && ref.Name == name {
+			return ref
+		}
+	}
+	return metadata.ObjectRef{
+		Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: database}),
+		Kind:  kind,
+		Name:  name,
+	}
+}

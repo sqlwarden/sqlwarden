@@ -1,4 +1,5 @@
-import { errorMessage } from '#/lib/api/errors'
+import { errorMessage, isApiError } from '#/lib/api/errors'
+import { usePageTitle, usePageTitleScope } from '#/lib/page-title'
 import { formatDate } from '#/lib/format'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -42,6 +43,7 @@ import {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -51,6 +53,8 @@ import { InitialsAvatar } from '#/components/InitialsAvatar'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
+import { Input } from '#/components/ui/input'
+import { Label } from '#/components/ui/label'
 import { Skeleton } from '#/components/ui/skeleton'
 import {
   Table,
@@ -70,6 +74,9 @@ function OrganizationTeamContextPage() {
   const { org_slug: orgSlug, team_slug: teamSlug } = Route.useParams()
   const queryClient = useQueryClient()
   const [isAddingMember, setIsAddingMember] = useState(false)
+  const [isEditingTeam, setIsEditingTeam] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editNameError, setEditNameError] = useState<string>()
   const {
     searchText,
     setSearchText,
@@ -105,8 +112,11 @@ function OrganizationTeamContextPage() {
   const memberItems = members.data?.items ?? []
   const existingMemberIDs = new Set(memberItems.map((member) => member.account_id))
   const displayName = team.data?.name ?? teamSlug
-  const canManageMembers =
+  const { organizationName } = usePageTitleScope()
+  usePageTitle(displayName, organizationName)
+  const canManageTeam =
     canReadTeam && hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
+  const canManageMembers = canManageTeam
 
   useEffect(() => {
     if (!canReadTeam || !team.error) {
@@ -176,8 +186,47 @@ function OrganizationTeamContextPage() {
     },
   })
 
+  const updateTeam = useMutation({
+    mutationFn: async () =>
+      api.patch<void>(`/api/v1/orgs/${orgSlug}/teams/${teamSlug}`, {
+        name: editName.trim(),
+      }),
+    onSuccess: async () => {
+      setIsEditingTeam(false)
+      toast.success('Team updated')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgTeam(orgSlug, teamSlug) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.orgTeamsScope(orgSlug) }),
+      ])
+    },
+    onError: (error) => {
+      if (isApiError(error) && error.fieldErrors?.name) {
+        setEditNameError(error.fieldErrors.name)
+        return
+      }
+      toast.error(errorMessage(error, 'Failed to update team'))
+    },
+  })
+
   function resetAddMember() {
     clearSearch()
+  }
+
+  function openEditTeam() {
+    if (!team.data) return
+    setEditName(team.data.name)
+    setEditNameError(undefined)
+    setIsEditingTeam(true)
+  }
+
+  function submitEditTeam(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!editName.trim()) {
+      setEditNameError('Name is required.')
+      return
+    }
+    setEditNameError(undefined)
+    void updateTeam.mutateAsync().catch(() => {})
   }
 
   return (
@@ -199,18 +248,68 @@ function OrganizationTeamContextPage() {
           </BreadcrumbList>
         </Breadcrumb>
 
-        <div className="flex min-w-0 items-center gap-3">
-          {team.data ? (
-            <InitialsAvatar value={team.data.name} fallback="T" size="lg" />
-          ) : (
-            <Skeleton className="size-10 shrink-0 rounded-full" />
-          )}
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
             {team.data ? (
-              <p className="mt-0.5 text-sm text-muted-foreground">@{team.data.slug}</p>
-            ) : null}
+              <InitialsAvatar value={team.data.name} fallback="T" size="lg" />
+            ) : (
+              <Skeleton className="size-10 shrink-0 rounded-full" />
+            )}
+            <div className="min-w-0">
+              <h1 className="font-heading text-2xl font-semibold tracking-tight">{displayName}</h1>
+              {team.data ? (
+                <p className="mt-0.5 text-sm text-muted-foreground">@{team.data.slug}</p>
+              ) : null}
+            </div>
           </div>
+
+          {team.data && canManageTeam ? (
+            <Dialog
+              open={isEditingTeam}
+              onOpenChange={(open) => {
+                setIsEditingTeam(open)
+                if (open) openEditTeam()
+              }}
+            >
+              <DialogTrigger render={<Button variant="outline" />}>Edit</DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Edit team</DialogTitle>
+                  <DialogDescription>Update the name shown for this team.</DialogDescription>
+                </DialogHeader>
+                <form className="mt-6 flex flex-col gap-4" onSubmit={submitEditTeam}>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="edit-team-name">Name</Label>
+                    <Input
+                      id="edit-team-name"
+                      value={editName}
+                      onChange={(event) => {
+                        setEditName(event.target.value)
+                        setEditNameError(undefined)
+                      }}
+                      aria-invalid={editNameError ? true : undefined}
+                      disabled={updateTeam.isPending}
+                    />
+                    {editNameError ? (
+                      <p className="text-sm text-destructive">{editNameError}</p>
+                    ) : null}
+                  </div>
+                  <DialogFooter>
+                    <DialogClose
+                      render={
+                        <Button type="button" variant="ghost" disabled={updateTeam.isPending} />
+                      }
+                    >
+                      Cancel
+                    </DialogClose>
+                    <Button type="submit" disabled={updateTeam.isPending}>
+                      {updateTeam.isPending ? 'Saving...' : 'Save'}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          ) : null}
         </div>
       </div>
 

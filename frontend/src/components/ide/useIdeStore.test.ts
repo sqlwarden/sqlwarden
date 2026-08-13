@@ -131,6 +131,20 @@ describe('useIdeStore', () => {
     expect(store.getState().tabs[0].content).toBe('SELECT 1;')
   })
 
+  it('renames a file tab without changing its editor state', () => {
+    const tab = newFileTab(mockFile, mockWorkspace)
+    store.getState().openTab(tab)
+    store.getState().updateTabEtag(tab.id, 'etag-1')
+    store.getState().updateTabContent(tab.id, 'select 1', [1, 2, 3])
+    const before = store.getState().tabs[0]
+
+    store.getState().renameTabByFileId(mockFile.id, 'renamed.sql')
+
+    const after = store.getState().tabs[0]
+    expect(after).toEqual({ ...before, title: 'renamed.sql', subtitle: 'renamed.sql' })
+    expect(after.id).toBe(tab.id)
+  })
+
   // ── Regression: ySnapshot persistence (reload survival) ────────────────────
   // Before the fix, updateTabContent only stored the text; on page reload the
   // Y.Doc was re-initialised from the stale yState (creation-time empty state)
@@ -223,10 +237,21 @@ describe('useIdeStore', () => {
   })
 
   it('newFileTab includes fileId and empty content', () => {
-    const tab = newFileTab(mockFile, mockWorkspace)
+    const tab = newFileTab(
+      {
+        ...mockFile,
+        media_type: 'text/csv; charset=utf-8',
+        file_kind: 'export',
+        size_bytes: 2048,
+      },
+      mockWorkspace,
+    )
     expect(tab.fileId).toBe(20)
     expect(tab.content).toBe('')
     expect(tab.etag).toBeUndefined()
+    expect(tab.fileMediaType).toBe('text/csv; charset=utf-8')
+    expect(tab.fileKind).toBe('export')
+    expect(tab.fileSizeBytes).toBe(2048)
   })
 
   it('updateTabEtag stores etag and sets isDirty false', () => {

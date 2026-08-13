@@ -1,5 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -10,23 +10,33 @@ import type { AccessTokenResponse } from '#/lib/api/types'
 import { isApiError } from '#/lib/api/errors'
 import { getAccessToken, setAccessToken } from '#/lib/auth/access-token'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
-import { Badge } from '#/components/ui/badge'
-import { Button } from '#/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
-import { Input } from '#/components/ui/input'
+import { AmbientBackground } from '#/components/auth/AmbientBackground'
+import { LoginForm } from '#/components/auth/LoginForm'
+import { LoginSurface } from '#/components/auth/LoginSurface'
+import { usePageTitle } from '#/lib/page-title'
+import { parseLoginSearch } from '#/lib/auth/login-redirect'
 
 export const Route = createFileRoute('/login')({
+  validateSearch: parseLoginSearch,
   component: LoginPage,
 })
 
 function LoginPage() {
+  usePageTitle('Login')
   const navigate = useNavigate()
+  const { redirect } = Route.useSearch()
   const queryClient = useQueryClient()
   const setupStatus = useSetupStatus()
   const [values, setValues] = useState({ email: '', password: '' })
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({})
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
+
+  useEffect(() => {
+    if (hasToken && session.data && redirect) {
+      void navigate({ href: redirect, replace: true })
+    }
+  }, [hasToken, navigate, redirect, session.data])
 
   const mutation = useMutation({
     mutationFn: async () =>
@@ -41,6 +51,10 @@ function LoginPage() {
     onSuccess: async (payload) => {
       clearAuthScopedQueryCache(queryClient)
       setAccessToken(payload.access_token)
+      if (redirect) {
+        await navigate({ href: redirect, replace: true })
+        return
+      }
       await navigate({ to: '/', replace: true })
     },
     onError: (error) => {
@@ -70,6 +84,9 @@ function LoginPage() {
   }
 
   if (hasToken && session.data) {
+    if (redirect) {
+      return null
+    }
     return <Navigate to="/" replace />
   }
 
@@ -94,81 +111,43 @@ function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md space-y-6">
-        <div className="space-y-3 text-center">
-          <Badge variant="outline">SQLWarden</Badge>
-          <div className="space-y-2">
-            <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
-            <p className="text-sm text-muted-foreground">
-              Use the instance admin account you just created.
-            </p>
-          </div>
-        </div>
-
-        <Card className="py-0">
-          <CardHeader className="px-6 pt-6">
-            <CardTitle>Account login</CardTitle>
-            <CardDescription>Enter your credentials to continue.</CardDescription>
-          </CardHeader>
-          <CardContent className="px-6 pb-6">
-            <form className="space-y-5" onSubmit={onSubmit}>
-              <Field label="Email address" error={formErrors.email}>
-                <Input
-                  autoComplete="email"
-                  type="email"
-                  value={values.email}
-                  onChange={(event) => {
-                    setValues((current) => ({ ...current, email: event.target.value }))
-                    setLocalErrors((current) => {
-                      const next = { ...current }
-                      delete next.email
-                      return next
-                    })
-                  }}
-                />
-              </Field>
-
-              <Field label="Password" error={formErrors.password}>
-                <Input
-                  autoComplete="current-password"
-                  type="password"
-                  value={values.password}
-                  onChange={(event) => {
-                    setValues((current) => ({ ...current, password: event.target.value }))
-                    setLocalErrors((current) => {
-                      const next = { ...current }
-                      delete next.password
-                      return next
-                    })
-                  }}
-                />
-              </Field>
-              <Button className="h-10 w-full" size="lg" disabled={mutation.isPending} type="submit">
-                {mutation.isPending ? 'Signing in…' : 'Sign in'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
+    <main className="relative">
+      <AmbientBackground />
+      <LoginSurface
+        title="Sign in"
+        description="Enter your credentials to access your organizations."
+        footer={
+          <p className="text-center text-xs text-muted-foreground">
+            Trouble signing in? Contact your instance administrator.
+          </p>
+        }
+      >
+        <LoginForm
+          email={values.email}
+          password={values.password}
+          emailError={formErrors.email}
+          passwordError={formErrors.password}
+          isPending={mutation.isPending}
+          redirect={redirect}
+          onEmailChange={(value) => {
+            setValues((current) => ({ ...current, email: value }))
+            setLocalErrors((current) => {
+              const next = { ...current }
+              delete next.email
+              return next
+            })
+          }}
+          onPasswordChange={(value) => {
+            setValues((current) => ({ ...current, password: value }))
+            setLocalErrors((current) => {
+              const next = { ...current }
+              delete next.password
+              return next
+            })
+          }}
+          onSubmit={onSubmit}
+        />
+      </LoginSurface>
     </main>
-  )
-}
-
-function Field({
-  children,
-  error,
-  label,
-}: {
-  children: React.ReactNode
-  error?: string
-  label: string
-}) {
-  return (
-    <div className="space-y-2">
-      <label className="text-sm font-medium">{label}</label>
-      {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
   )
 }

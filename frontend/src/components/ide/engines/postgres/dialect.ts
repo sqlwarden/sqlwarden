@@ -1,12 +1,17 @@
 import { BaseSqlDialect, createIdentifierQuoter } from '../../dialect'
+import type { ScopePath } from '#/lib/api/types'
+import { scopeName } from '#/lib/api/scope'
+import { postgresSqlFormatter } from '../../sqlFormatter'
 
 class PostgresDialect extends BaseSqlDialect {
+  protected override readonly formatter = postgresSqlFormatter
   private quoteIdentifier = createIdentifierQuoter('"')
 
-  formatObject(namespace: string, name: string): string {
+  formatObject(scope: ScopePath, name: string): string {
+    const schemaName = scopeName(scope, 'schema')
     const object = this.quoteIdentifier(name)
-    return namespace && namespace !== 'public'
-      ? `${this.quoteIdentifier(namespace)}.${object}`
+    return schemaName && schemaName !== 'public'
+      ? `${this.quoteIdentifier(schemaName)}.${object}`
       : object
   }
 

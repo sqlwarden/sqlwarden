@@ -1,3 +1,5 @@
+export const MAX_SLUG_LENGTH = 64
+
 export function slugify(value: string, options: { maxLength?: number } = {}) {
   const slug = value
     .toLowerCase()

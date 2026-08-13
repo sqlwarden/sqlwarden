@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,9 +14,9 @@ import (
 	"github.com/sqlwarden/internal/validator"
 )
 
-func (app *application) newEmailData() map[string]any {
+func newEmailData(baseURL string) map[string]any {
 	data := map[string]any{
-		"BaseURL": app.config.BaseURL,
+		"BaseURL": baseURL,
 	}
 
 	return data
@@ -27,7 +28,11 @@ func (app *application) newAuthenticationToken(userID int64) (string, time.Time,
 	var claims jwt.Claims
 	claims.Subject = strconv.FormatInt(userID, 10)
 
-	tokenTTL := app.config.JWT.AccessTokenTTL
+	settings, err := app.runtimeSettingsService().effectiveForOrg(context.Background(), nil)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	tokenTTL := settings.JWTAccessTokenTTL
 	if tokenTTL <= 0 {
 		tokenTTL = 24 * time.Hour
 	}
@@ -36,8 +41,8 @@ func (app *application) newAuthenticationToken(userID int64) (string, time.Time,
 	claims.NotBefore = jwt.NewNumericTime(now)
 	claims.Expires = jwt.NewNumericTime(expiry)
 
-	claims.Issuer = app.config.BaseURL
-	claims.Audiences = []string{app.config.BaseURL}
+	claims.Issuer = settings.BaseURL
+	claims.Audiences = []string{settings.BaseURL}
 
 	jwt, err := claims.HMACSign(jwt.HS256, []byte(app.config.JWT.SecretKey))
 	return string(jwt), expiry, err

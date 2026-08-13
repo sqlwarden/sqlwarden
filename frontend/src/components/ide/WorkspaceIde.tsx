@@ -2,8 +2,19 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
+import { useBrand } from '#/lib/brand/brand'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/components/ui/resizable'
+import { Button } from '#/components/ui/button'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '#/components/ui/empty'
+import { Skeleton } from '#/components/ui/skeleton'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import {
   orgWorkspacesQueryOptions,
@@ -18,6 +29,7 @@ import { visibleActivities } from './ideActivities'
 import type { Workspace } from '#/lib/api/types'
 import { useSession } from '#/hooks/use-session'
 import { cn } from '#/lib/utils'
+import { usePageTitle } from '#/lib/page-title'
 import { ContextMenu, ContextMenuProvider } from '#/components/ui/context-menu'
 import { buildWorkspaceMenu } from './contextMenus/workspaceMenu'
 import {
@@ -59,7 +71,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
   const registry = useMemo(() => createYDocRegistry(accountId, orgSlug), [orgSlug, accountId])
   const viewRegistry = useMemo(() => createEditorViewRegistry(), [])
 
-  // Release the primary lock when this IDE window unmounts so another window can
+  // Release the primary lock when this editor window unmounts so another window can
   // take over persistence.
   useEffect(() => {
     return () => {
@@ -73,7 +85,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
     return createStoreSync(store, channel)
   }, [store, orgSlug, accountId])
 
-  // Abort all in-flight queries when the IDE unmounts (e.g. navigation away).
+  // Abort all in-flight queries when the editor unmounts (e.g. navigation away).
   useEffect(() => {
     return () => {
       const { abortControllers } = store.getState()
@@ -95,7 +107,11 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
             orgSlug={orgSlug}
             isLoading={workspaces.isLoading}
             isError={workspaces.isError}
+            isRetrying={workspaces.isFetching}
             workspaces={workspaces.data?.items ?? []}
+            onRetry={() => {
+              void workspaces.refetch()
+            }}
           />
         </EditorViewRegistryContext.Provider>
       </YDocRegistryContext.Provider>
@@ -107,26 +123,163 @@ type WorkspaceIdeContentProps = {
   orgSlug: string
   isLoading: boolean
   isError: boolean
+  isRetrying: boolean
   workspaces: Workspace[]
+  onRetry: () => void
 }
 
 export function WorkspaceIdeContent({
   orgSlug,
   isLoading,
   isError,
+  isRetrying,
   workspaces,
+  onRetry,
 }: WorkspaceIdeContentProps) {
-  if (isLoading) {
-    return (
-      <IdeFrame>
-        <Icon name="loading-03" size={14} className="animate-spin" />
-        Loading workspaces…
-      </IdeFrame>
-    )
-  }
-  if (isError) return <IdeFrame>Unable to load workspaces.</IdeFrame>
-  if (workspaces.length === 0) return <IdeFrame>No accessible workspaces.</IdeFrame>
+  if (isLoading) return <WorkspaceIdeSkeleton />
+  if (isError) return <WorkspaceLoadError isRetrying={isRetrying} onRetry={onRetry} />
+  if (workspaces.length === 0) return <NoWorkspaceAccess />
   return <WorkspaceIdeInner orgSlug={orgSlug} workspaces={workspaces} />
+}
+
+export function WorkspaceIdeSkeleton() {
+  usePageTitle('Editor')
+
+  return (
+    <main
+      aria-busy="true"
+      aria-live="polite"
+      className="flex h-dvh w-dvw flex-col overflow-hidden bg-background"
+      role="status"
+    >
+      <span className="sr-only">Loading editor…</span>
+      <div aria-hidden="true" className="flex min-h-0 flex-1 flex-col">
+        <div className="flex h-10 shrink-0 items-center border-b border-border bg-sidebar">
+          <div className="flex h-full w-36 shrink-0 items-center gap-2 border-r border-border px-3">
+            <Skeleton className="size-5 rounded-sm" />
+            <Skeleton className="h-3.5 w-20" />
+          </div>
+          <div className="flex min-w-0 flex-1 items-center gap-1 px-2">
+            <Skeleton className="h-7 w-28 rounded-sm" />
+            <Skeleton className="h-7 w-24 rounded-sm" />
+          </div>
+          <div className="flex shrink-0 items-center gap-2 px-3">
+            <Skeleton className="size-6 rounded-sm" />
+            <Skeleton className="size-6 rounded-full" />
+          </div>
+        </div>
+
+        <div className="flex min-h-0 flex-1">
+          <div className="flex w-10 shrink-0 flex-col items-center gap-3 border-r border-border bg-sidebar py-3">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <Skeleton key={index} className="size-5 rounded-sm" />
+            ))}
+          </div>
+
+          <div className="hidden w-60 shrink-0 flex-col border-r border-border bg-sidebar sm:flex">
+            <div className="flex h-9 shrink-0 items-center border-b border-border px-3">
+              <Skeleton className="h-3.5 w-20" />
+            </div>
+            <div className="flex flex-col gap-3 p-3">
+              <Skeleton className="h-3 w-3/4" />
+              <Skeleton className="ms-2 h-3 w-2/3" />
+              <Skeleton className="ms-4 h-3 w-3/4" />
+              <Skeleton className="ms-4 h-3 w-1/2" />
+              <Skeleton className="h-3 w-4/5" />
+              <Skeleton className="ms-2 h-3 w-3/5" />
+              <Skeleton className="ms-4 h-3 w-2/3" />
+            </div>
+          </div>
+
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+              <Skeleton className="h-3.5 w-32" />
+              <Skeleton className="h-3.5 w-24" />
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+              <Skeleton className="h-3.5 w-2/3" />
+              <Skeleton className="h-3.5 w-1/2" />
+              <Skeleton className="h-3.5 w-3/4" />
+              <Skeleton className="h-3.5 w-2/5" />
+              <Skeleton className="h-3.5 w-3/5" />
+            </div>
+            <div className="flex h-48 shrink-0 flex-col border-t border-border">
+              <div className="flex h-8 shrink-0 items-center gap-4 border-b border-border px-3">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <div className="grid grid-cols-4 gap-x-4 gap-y-3 p-3">
+                {Array.from({ length: 12 }).map((_, index) => (
+                  <Skeleton key={index} className="h-3 w-full" />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  )
+}
+
+function NoWorkspaceAccess() {
+  usePageTitle('Editor')
+
+  return (
+    <WorkspaceStateFrame>
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Icon name="briefcase-01" size={16} />
+          </EmptyMedia>
+          <EmptyTitle aria-level={1} role="heading">
+            No workspace access
+          </EmptyTitle>
+          <EmptyDescription>
+            You don&apos;t currently have access to a workspace in this organization. Ask an
+            organization administrator to grant you access.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    </WorkspaceStateFrame>
+  )
+}
+
+function WorkspaceLoadError({ isRetrying, onRetry }: { isRetrying: boolean; onRetry: () => void }) {
+  usePageTitle('Editor')
+
+  return (
+    <WorkspaceStateFrame>
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Icon name="refresh" size={16} />
+          </EmptyMedia>
+          <EmptyTitle aria-level={1} role="heading">
+            Unable to load workspaces
+          </EmptyTitle>
+          <EmptyDescription>
+            SQLWarden couldn&apos;t load your workspaces. Check your connection and try again.
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button disabled={isRetrying} onClick={onRetry}>
+            <Icon
+              className={cn(isRetrying && 'animate-spin motion-reduce:animate-none')}
+              data-icon="inline-start"
+              name="refresh"
+              size={16}
+            />
+            {isRetrying ? 'Retrying…' : 'Retry'}
+          </Button>
+        </EmptyContent>
+      </Empty>
+    </WorkspaceStateFrame>
+  )
+}
+
+function WorkspaceStateFrame({ children }: { children: React.ReactNode }) {
+  return <main className="flex h-dvh w-dvw overflow-hidden bg-background">{children}</main>
 }
 
 // ─── Inner ─────────────────────────────────────────────────────────────────────
@@ -135,6 +288,46 @@ function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspace
   const { activeWorkspace, setActiveWorkspace } = useWorkspaceSelection(workspaces)
   const { data: session } = useSession()
 
+  return (
+    <>
+      <WorkspaceDocumentTitle workspace={activeWorkspace} />
+      <WorkspaceIdeInnerContent
+        orgSlug={orgSlug}
+        workspaces={workspaces}
+        activeWorkspace={activeWorkspace}
+        setActiveWorkspace={setActiveWorkspace}
+        session={session}
+      />
+    </>
+  )
+}
+
+export function WorkspaceDocumentTitle({ workspace }: { workspace?: Workspace }) {
+  const activeTabId = useIde((state) =>
+    workspace ? selectActiveTabId(state, workspace.id) : undefined,
+  )
+  const activeTabTitle = useIde((state) => state.tabs.find((tab) => tab.id === activeTabId)?.title)
+  usePageTitle(
+    activeTabTitle ?? workspace?.name ?? 'Editor',
+    activeTabTitle ? workspace?.name : workspace ? 'Editor' : undefined,
+  )
+
+  return null
+}
+
+function WorkspaceIdeInnerContent({
+  orgSlug,
+  workspaces,
+  activeWorkspace,
+  setActiveWorkspace,
+  session,
+}: {
+  orgSlug: string
+  workspaces: Workspace[]
+  activeWorkspace?: Workspace
+  setActiveWorkspace: (workspaceId: number) => void
+  session: ReturnType<typeof useSession>['data']
+}) {
   const orgPermissions = useQuery({
     ...orgEffectivePermissionsQueryOptions(orgSlug, 'org'),
     enabled: Boolean(session),
@@ -246,17 +439,15 @@ function useIdeDeepLink(orgSlug: string, workspaces: Workspace[]) {
 }
 
 function IdeBrand() {
+  const brand = useBrand()
   return (
     <Tip label="Back to dashboard" side="bottom">
       <Link
         to="/"
-        className="flex shrink-0 items-center gap-2 border-r border-border px-3 text-xs font-semibold tracking-tight text-foreground transition-colors hover:bg-sidebar-accent/50"
-        aria-label="SQLWarden home"
+        className="flex w-11 shrink-0 items-center justify-center text-foreground transition-colors hover:bg-sidebar-accent/50"
+        aria-label={`${brand.productName} home`}
       >
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary to-chart-2 text-primary-foreground shadow-sm">
-          <Icon name="database-lightning" size={14} />
-        </span>
-        <span className="hidden sm:inline">SQLWarden</span>
+        <brand.LogoMark size={20} className="shrink-0" />
       </Link>
     </Tip>
   )
@@ -319,7 +510,7 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
   const activeActivityId = useIde((s) => s.activeActivityId)
 
-  // Reconcile persisted sessions with the backend for as long as the IDE is
+  // Reconcile persisted sessions with the backend for as long as the editor is
   // open — regardless of which sidebar activity is visible.
   useSessionSync(orgSlug, workspace)
 
@@ -354,7 +545,7 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 overflow-hidden">
         <ResizablePanel
           panelRef={sidebarRef}
-          defaultSize="22%"
+          defaultSize="16%"
           minSize="14%"
           maxSize="40%"
           collapsible
@@ -367,7 +558,7 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
 
         <ResizableHandle withHandle />
 
-        <ResizablePanel defaultSize="78%" minSize="45%" className="overflow-hidden">
+        <ResizablePanel defaultSize="84%" minSize="45%" className="overflow-hidden">
           <IdeEditorAndResults orgSlug={orgSlug} workspace={workspace} />
         </ResizablePanel>
       </ResizablePanelGroup>
@@ -647,7 +838,7 @@ function EmptyEditorState({ onNewConsole, onNewFile }: EmptyEditorStateProps) {
     <div className="flex h-full flex-col items-center justify-center gap-8 p-8">
       <div className="flex flex-col items-center gap-3 text-center">
         <div className="flex size-11 items-center justify-center rounded-xl border border-border bg-muted/50">
-          <Icon name="database-lightning" size={20} className="text-muted-foreground" />
+          <Icon name="terminal" size={20} className="text-muted-foreground" />
         </div>
         <div>
           <p className="text-sm font-semibold text-foreground">No editors open</p>
@@ -724,11 +915,3 @@ function EmptyStateCard({
 }
 
 // ─── Utility ───────────────────────────────────────────────────────────────────
-
-function IdeFrame({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex h-dvh w-dvw items-center justify-center gap-2 overflow-hidden bg-background text-sm text-muted-foreground">
-      {children}
-    </div>
-  )
-}
