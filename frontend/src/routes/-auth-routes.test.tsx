@@ -70,11 +70,56 @@ describe('authentication route behavior', () => {
     expect(localStorage.getItem('sqlwarden.access_token')).toBe('new-token')
   })
 
+  it('returns to the complete internal URL after login', async () => {
+    server.use(
+      setupStatusHandler(),
+      http.post('/api/v1/auth/login', () => HttpResponse.json({ access_token: 'new-token' })),
+      http.get('/api/v1/session', () =>
+        HttpResponse.json({
+          account: { id: 1, email: 'alex@example.com', name: 'Alex Ward', is_active: true },
+          organizations: [],
+          is_instance_admin: false,
+          personal_spaces_enabled: false,
+        }),
+      ),
+      http.get('/api/v1/account', () =>
+        HttpResponse.json({
+          id: 1,
+          email: 'alex@example.com',
+          name: 'Alex Ward',
+          is_active: true,
+          created_at: '',
+          updated_at: '',
+        }),
+      ),
+    )
+    const redirect = '/settings/account?section=password#password'
+    const { router, user } = renderRoute(`/login?redirect=${encodeURIComponent(redirect)}`)
+
+    await user.type(await screen.findByRole('textbox'), 'alex@example.com')
+    await user.type(document.querySelector<HTMLInputElement>('input[type="password"]')!, 'secret')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    await waitFor(() => expect(router.state.location.href).toBe(redirect))
+    expect(localStorage.getItem('sqlwarden.access_token')).toBe('new-token')
+  })
+
   it('redirects anonymous landing-page visits to login', async () => {
     server.use(setupStatusHandler())
     const { router } = renderRoute('/')
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
+    expect(router.state.location.search).toEqual({ redirect: '/' })
+  })
+
+  it('preserves an anonymous deep link, including search and hash, for login', async () => {
+    server.use(setupStatusHandler())
+    const { router } = renderRoute('/settings/api-tokens?status=active#token-list')
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
+    expect(router.state.location.search).toEqual({
+      redirect: '/settings/api-tokens?status=active#token-list',
+    })
   })
 
   it('redirects authenticated users away from login', async () => {

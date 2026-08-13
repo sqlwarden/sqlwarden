@@ -14,6 +14,7 @@ import { useSetupStatus } from '#/hooks/use-setup-status'
 import { getAccessToken } from '#/lib/auth/access-token'
 import { useBrand } from '#/lib/brand/brand'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
+import { NavigateToLogin } from '#/components/auth/NavigateToLogin'
 
 export const Route = createFileRoute('/settings')({
   component: SettingsLayout,
@@ -52,7 +53,7 @@ function SettingsLayout() {
   }
 
   if (!hasToken || !session.data) {
-    return <Navigate to="/login" replace />
+    return <NavigateToLogin />
   }
 
   return (

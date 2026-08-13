@@ -29,6 +29,7 @@ import {
 } from '#/lib/workspace-page-permissions'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 import { PageTitleScopeProvider } from '#/lib/page-title'
+import { NavigateToLogin } from '#/components/auth/NavigateToLogin'
 
 export const Route = createFileRoute('/orgs/$org_slug')({
   component: OrganizationLayout,
@@ -77,7 +78,7 @@ function OrganizationLayout() {
   }
 
   if (!hasToken || !session.data) {
-    return <Navigate to="/login" replace />
+    return <NavigateToLogin />
   }
 
   const workspacePermissions = workspaceEffectivePermissions.data?.permissions

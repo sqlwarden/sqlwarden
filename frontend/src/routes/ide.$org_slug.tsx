@@ -4,6 +4,7 @@ import { parseIdeSearch } from '#/components/ide/ideDeepLink'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { useSession } from '#/hooks/use-session'
 import { getAccessToken } from '#/lib/auth/access-token'
+import { NavigateToLogin } from '#/components/auth/NavigateToLogin'
 
 export const Route = createFileRoute('/ide/$org_slug')({
   component: IdePage,
@@ -24,7 +25,7 @@ function IdePage() {
     return <Navigate to="/setup" replace />
   }
   if (!hasToken || !session.data) {
-    return <Navigate to="/login" replace />
+    return <NavigateToLogin />
   }
   return <WorkspaceIde orgSlug={orgSlug} />
 }

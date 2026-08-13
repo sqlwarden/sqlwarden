@@ -34,6 +34,7 @@ import { InitialsAvatar, getInitials } from '#/components/InitialsAvatar'
 import { Skeleton } from '#/components/ui/skeleton'
 import { cn } from '#/lib/utils'
 import { usePageTitle } from '#/lib/page-title'
+import { NavigateToLogin } from '#/components/auth/NavigateToLogin'
 
 export const Route = createFileRoute('/')({ component: LandingPage })
 
@@ -76,7 +77,7 @@ function LandingPage() {
   }
 
   if (!hasToken || !session.data) {
-    return <Navigate to="/login" replace />
+    return <NavigateToLogin />
   }
 
   if (!session.data.personal_spaces_enabled && session.data.organizations.length === 1) {

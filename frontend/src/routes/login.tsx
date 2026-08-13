@@ -1,5 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -14,21 +14,29 @@ import { AmbientBackground } from '#/components/auth/AmbientBackground'
 import { LoginForm } from '#/components/auth/LoginForm'
 import { LoginSurface } from '#/components/auth/LoginSurface'
 import { usePageTitle } from '#/lib/page-title'
+import { parseLoginSearch } from '#/lib/auth/login-redirect'
 
 export const Route = createFileRoute('/login')({
+  validateSearch: parseLoginSearch,
   component: LoginPage,
 })
 
 function LoginPage() {
   usePageTitle('Login')
   const navigate = useNavigate()
-  const redirect = safeRedirect(new URLSearchParams(window.location.search).get('redirect'))
+  const { redirect } = Route.useSearch()
   const queryClient = useQueryClient()
   const setupStatus = useSetupStatus()
   const [values, setValues] = useState({ email: '', password: '' })
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({})
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
+
+  useEffect(() => {
+    if (hasToken && session.data && redirect) {
+      void navigate({ href: redirect, replace: true })
+    }
+  }, [hasToken, navigate, redirect, session.data])
 
   const mutation = useMutation({
     mutationFn: async () =>
@@ -44,7 +52,7 @@ function LoginPage() {
       clearAuthScopedQueryCache(queryClient)
       setAccessToken(payload.access_token)
       if (redirect) {
-        window.location.replace(redirect)
+        await navigate({ href: redirect, replace: true })
         return
       }
       await navigate({ to: '/', replace: true })
@@ -77,7 +85,6 @@ function LoginPage() {
 
   if (hasToken && session.data) {
     if (redirect) {
-      window.location.replace(redirect)
       return null
     }
     return <Navigate to="/" replace />
@@ -143,8 +150,4 @@ function LoginPage() {
       </LoginSurface>
     </main>
   )
-}
-
-function safeRedirect(value: string | null) {
-  return value && value.startsWith('/') && !value.startsWith('//') ? value : undefined
 }
