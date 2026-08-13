@@ -1,5 +1,76 @@
 # Changelog
 
+## [0.8.0](https://github.com/sqlwarden/sqlwarden/compare/v0.7.0...v0.8.0) (2026-08-13)
+
+
+### Features
+
+* advance SQLWarden branding, configuration, autocomplete, and database foundations ([#46](https://github.com/sqlwarden/sqlwarden/issues/46)) ([4c6535a](https://github.com/sqlwarden/sqlwarden/commit/4c6535ae86363ef2a505d717a8bee3ed015b2019))
+* **dbengine:** add relationship graph types and inspector capability ([ba05c56](https://github.com/sqlwarden/sqlwarden/commit/ba05c5689a3058b8a2750315b2419bb458673b65))
+* **dbengine:** expose object ddl, definitions, and driver attributes in schema inspectors ([557422d](https://github.com/sqlwarden/sqlwarden/commit/557422d9f4f02e7c9bb465bafc13b1e00d71ba38))
+* **dbengine:** implement mysql InspectRelationships ([259675f](https://github.com/sqlwarden/sqlwarden/commit/259675f9673a2f9ff87c3f1897ebaca94be2f0e4))
+* **dbengine:** implement postgres InspectRelationships ([cdf1cf5](https://github.com/sqlwarden/sqlwarden/commit/cdf1cf561609fa68154aec618f17aefd250f3513))
+* **dbengine:** implement sqlite InspectRelationships ([6e301a4](https://github.com/sqlwarden/sqlwarden/commit/6e301a455bb230b043f87c2e94a99a401ba4cf3a))
+* **dbengine:** populate postgres index columns ([1bf71cf](https://github.com/sqlwarden/sqlwarden/commit/1bf71cff88a666f3e42eece5a5ad1a9ed128dd2f))
+* **exports:** add export UI, job panel, and multi-statement guard ([373f69b](https://github.com/sqlwarden/sqlwarden/commit/373f69b60a8cbfd2dd2ac562109a8cf761796d9c))
+* **exports:** add query export workflow ([8f7bca2](https://github.com/sqlwarden/sqlwarden/commit/8f7bca263f5d8c6b86655c2ab26fcc9ea9e1e924))
+* **ide:** add 'View in diagram' from the object-detail tab ([6a906fb](https://github.com/sqlwarden/sqlwarden/commit/6a906fbb4a61ee89e74f7f974d291f3117c4b4ef))
+* **ide:** add detail viewer tab for table and view objects ([fe12375](https://github.com/sqlwarden/sqlwarden/commit/fe12375eb90656718122cb0e006d1ef0ec1669db))
+* **ide:** add diagram layout persistence ([be75ed1](https://github.com/sqlwarden/sqlwarden/commit/be75ed1a988a907b60c37c73b36f8b04e05f2fb3))
+* **ide:** add diagram tab kind and factory ([112fa80](https://github.com/sqlwarden/sqlwarden/commit/112fa80779f487ff3c43c86bb872a0c5c554d3fc))
+* **ide:** add per-driver diagram hooks registry ([48c0cf1](https://github.com/sqlwarden/sqlwarden/commit/48c0cf1e1939a72cd9c0e3a22fccd10f3382d2e8))
+* **ide:** add pure diagram model (seed, hub, neighbors, sizing) ([ffc8b8e](https://github.com/sqlwarden/sqlwarden/commit/ffc8b8e5afa9ecd18ed0463a5ca42a53bd73a242))
+* **ide:** add react-flow + elkjs deps and layout wrapper ([65dbe87](https://github.com/sqlwarden/sqlwarden/commit/65dbe8754e3e15faaf67f9e5dd20b7685b2d9c99))
+* **ide:** add relationships api types and query options ([1225a19](https://github.com/sqlwarden/sqlwarden/commit/1225a19c6344d9f8b367505c6ef2e2cb51cc80e1))
+* **ide:** add schema-diagram entry points gated on capability ([269a369](https://github.com/sqlwarden/sqlwarden/commit/269a3697e96e21e2e5e01f3b96a77e13ef79f59b))
+* **ide:** add tooltips to icon-only IDE controls ([4daf14c](https://github.com/sqlwarden/sqlwarden/commit/4daf14c813396ad7aee26f70dcb78d6e857b7ca8))
+* **ide:** click a table to highlight its relations and dim the rest ([61d25d1](https://github.com/sqlwarden/sqlwarden/commit/61d25d151f2d5ee89dee20e5674698535b22ed54))
+* **ide:** crow's-foot cardinality with bezier/orthogonal edge toggle (persisted) ([e1015f1](https://github.com/sqlwarden/sqlwarden/commit/e1015f16695dbe6081dc789d6290f3e95ba8dc55))
+* **ide:** export schema diagram as PNG/SVG and copy image to clipboard ([c517de4](https://github.com/sqlwarden/sqlwarden/commit/c517de468f38d8fb6d455299018f36f2739025ff))
+* **ide:** in-diagram search to find, add, and focus a table on the canvas ([c9398da](https://github.com/sqlwarden/sqlwarden/commit/c9398da2d593b321010c27dfd206e22a6ae1f359))
+* **ide:** keys-only toggle to show just PK/FK columns (persisted) ([4615bed](https://github.com/sqlwarden/sqlwarden/commit/4615bed464e2d4b9ac7f5bc7b0abca173db27c5a))
+* **ide:** per-column FK expand handles and depth control for schema diagram ([ec0d574](https://github.com/sqlwarden/sqlwarden/commit/ec0d5746a431a32ffd329787f265cc5e91f9fbb7))
+* **ide:** persist and restore diagram working set, depth, and camera across reloads ([918730d](https://github.com/sqlwarden/sqlwarden/commit/918730dd403cdbc7ec5790c254a92c62e8b2a4d8))
+* **ide:** polish schema diagram (resizable nodes, remove, drop-in-place, fk hover highlight, cursors) ([6171ee0](https://github.com/sqlwarden/sqlwarden/commit/6171ee08cacf7e2324731a16fcafd47d163d6b5b))
+* **ide:** render schema diagram tab with react-flow ([ac3b2be](https://github.com/sqlwarden/sqlwarden/commit/ac3b2be42484a075ad9d864ac74790e2e931cf57))
+* **ide:** seed and expand schema diagram transitively across the connected component ([ed3f909](https://github.com/sqlwarden/sqlwarden/commit/ed3f909fe66e14cb4371972735cf4bd1b1b263aa))
+* **ide:** show sql source for function, procedure, and trigger objects ([4e8dd7f](https://github.com/sqlwarden/sqlwarden/commit/4e8dd7f0befc6c60249ed2f789f14ad6035c1c8c))
+* **jobs:** add persisted background job framework ([3dd5df8](https://github.com/sqlwarden/sqlwarden/commit/3dd5df85f20103c8f6e34959084fc285774b1bad))
+* **jobs:** add user-facing job events ([6e36185](https://github.com/sqlwarden/sqlwarden/commit/6e361855d4055dfbc8c3d40e5368dc664e982489))
+* **jobs:** enforce singleton maintenance jobs ([df84c39](https://github.com/sqlwarden/sqlwarden/commit/df84c39aac9a32ac3821cce4b8dac3f7df595fd9))
+* **ui:** complete cross-surface navigation graph ([3146ceb](https://github.com/sqlwarden/sqlwarden/commit/3146cebfc56c32778e49ed8383843c1dba1024bd))
+* **ui:** redesign IDE with new product identity and experimental UI lab ([d12dc63](https://github.com/sqlwarden/sqlwarden/commit/d12dc63557a4d2deebff1ee27e57fa6b3d9f5a62))
+* **web:** raise default query cursor page size to 200 ([a6324df](https://github.com/sqlwarden/sqlwarden/commit/a6324df73c0563f6751aee5bcb36b025e69b72ab))
+* **web:** serve schema relationships with 501 for unsupported drivers ([4c929ca](https://github.com/sqlwarden/sqlwarden/commit/4c929caadbf5d585f0d350d782eabcb876e1dc36))
+
+
+### Bug Fixes
+
+* **build:** resolve dependency audit failures ([5aef779](https://github.com/sqlwarden/sqlwarden/commit/5aef779b74dab461dfe2f2751e982d6730a4f366))
+* **ide:** guard against null key and index columns in object detail ([1b92058](https://github.com/sqlwarden/sqlwarden/commit/1b92058dd6194f1a2b8114f4c8efe14606107383))
+* **ide:** hide export options for non-SQL tabs ([db5fc5c](https://github.com/sqlwarden/sqlwarden/commit/db5fc5caf6bb3465ed46358bc762d677e7abc26b))
+* **ide:** lay out full diagram on seed and expand so related tables appear ([294c3c1](https://github.com/sqlwarden/sqlwarden/commit/294c3c17c937ecb2fab31892ddecae261c123090))
+* **ide:** make schema-diagram controls follow the app theme in dark mode ([0eb3586](https://github.com/sqlwarden/sqlwarden/commit/0eb358666eddbdc1d2b2c9819d3d02247c1c71e7))
+* **ide:** manage diagram nodes via useNodesState to fix drag and stutter ([2bb4019](https://github.com/sqlwarden/sqlwarden/commit/2bb4019490ed9a47bb69606e67203db3b5ad4ae5))
+* **ide:** recover expired database sessions ([f058fdb](https://github.com/sqlwarden/sqlwarden/commit/f058fdb07f786ed4861eae531a8111c54a17468d))
+* **ide:** refresh node internals so fk edges attach to column handles ([12f297e](https://github.com/sqlwarden/sqlwarden/commit/12f297e50973333759d45beb6af40015f3853205))
+* **ide:** remount object/diagram views per tab to avoid cross-connection state bleed ([b6254cb](https://github.com/sqlwarden/sqlwarden/commit/b6254cbc3a5c3157622736ebc29cd0a7e154a71e))
+* **ide:** seed diagram after queries succeed and always from depth ([8a4bf48](https://github.com/sqlwarden/sqlwarden/commit/8a4bf487965d873d4a3eb9c829b2acb43560b9da))
+* **security:** resolve existing Go CodeQL alerts ([#45](https://github.com/sqlwarden/sqlwarden/issues/45)) ([a2eb083](https://github.com/sqlwarden/sqlwarden/commit/a2eb083396f3f3c75b553dba21d8341725b75e44))
+
+
+### Documentation
+
+* **project:** require request-aware backend logging ([81e9674](https://github.com/sqlwarden/sqlwarden/commit/81e967409a96aac62978d29aef5e9796c67a0610))
+* require abstraction+implementation pattern for per-driver code ([e559f0b](https://github.com/sqlwarden/sqlwarden/commit/e559f0b54f696ea6a97fdc02b1c9f3ff3465e812))
+
+
+### Code Refactoring
+
+* **frontend:** improve IDE architecture and test coverage ([#44](https://github.com/sqlwarden/sqlwarden/issues/44)) ([ae66f62](https://github.com/sqlwarden/sqlwarden/commit/ae66f62a8834a018d725404cc6639ed8b6145050))
+* **ide:** use design-system Tooltip for in-node diagram affordances ([1268fe5](https://github.com/sqlwarden/sqlwarden/commit/1268fe5dc5fcad3feea17fbd0715dc9ea5da154a))
+* **ide:** use shadcn Button/ToggleGroup + tokens; expand FK in place without relayout ([6a1a83f](https://github.com/sqlwarden/sqlwarden/commit/6a1a83f8bca8c0d42806a93ac4114153af36bf1a))
+
 ## [0.7.0](https://github.com/sqlwarden/sqlwarden/compare/v0.6.2...v0.7.0) (2026-06-29)
 
 
