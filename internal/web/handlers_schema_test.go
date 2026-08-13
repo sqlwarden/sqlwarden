@@ -3,9 +3,11 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -229,6 +231,59 @@ func TestGetConnectionSchemaSpec(t *testing.T) {
 	if _, ok := res.BodyFields["editor"].(map[string]any); !ok {
 		t.Fatalf("expected schema editor spec, got %v", res.BodyFields["editor"])
 	}
+	if _, ok := res.BodyFields["statements"].(map[string]any); !ok {
+		t.Fatalf("expected statement generator spec, got %v", res.BodyFields["statements"])
+	}
+}
+
+func TestGenerateConnectionStatement(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "statement-generate"), "Statement", "Statement Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Statement WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Statement Conn", "open")
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
+	ref := map[string]any{
+		"scope": []map[string]any{{"kind": "database", "name": "main"}},
+		"kind":  "table",
+		"name":  "widgets",
+	}
+	url := orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10)) + "/schema/statements"
+
+	tests := []struct {
+		operation string
+		contains  string
+	}{
+		{operation: "select", contains: "SELECT\n  \"id\"\nFROM \"main\".\"widgets\";"},
+		{operation: "insert", contains: "VALUES (\n  ?\n);"},
+		{operation: "update", contains: "WHERE 1 = 0;"},
+		{operation: "delete", contains: "DELETE FROM \"main\".\"widgets\"\nWHERE 1 = 0;"},
+	}
+	for _, test := range tests {
+		t.Run(test.operation, func(t *testing.T) {
+			req := newAuthRequest(t, http.MethodPost, url, map[string]any{"operation": test.operation, "ref": ref}, tok)
+			req.Header.Set("X-Warden-Session", sess.ID)
+			res := send(t, req, app.routes())
+			assert.Equal(t, res.StatusCode, http.StatusOK)
+			generated, _ := res.BodyFields["sql"].(string)
+			if !strings.Contains(generated, test.contains) {
+				t.Fatalf("generated %s = %q, want substring %q", test.operation, generated, test.contains)
+			}
+		})
+	}
+
+	viewRef := maps.Clone(ref)
+	viewRef["kind"] = "view"
+	req := newAuthRequest(t, http.MethodPost, url, map[string]any{"operation": "delete", "ref": viewRef}, tok)
+	req.Header.Set("X-Warden-Session", sess.ID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assert.Equal(t, res.BodyFields["error"].(map[string]any)["code"], "statement_generation_failed")
+
+	req = newAuthRequest(t, http.MethodPost, url, map[string]any{"operation": "select", "ref": ref}, tok)
+	res = send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusBadRequest)
 }
 
 func TestApplyConnectionDDL(t *testing.T) {

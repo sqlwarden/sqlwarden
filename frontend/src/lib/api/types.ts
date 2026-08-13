@@ -557,6 +557,27 @@ export interface SchemaRefreshResponse {
   generated_at?: string
 }
 
+export type StatementOperation = 'select' | 'insert' | 'update' | 'delete'
+
+export interface StatementObjectSpec {
+  kind: string
+  operations: StatementOperation[]
+}
+
+/** Static, driver-advertised SQL-statement-generation capabilities, keyed by object kind. */
+export interface StatementSpec {
+  objects: StatementObjectSpec[]
+}
+
+export interface GenerateStatementRequest {
+  operation: StatementOperation
+  ref: ObjectRef
+}
+
+export interface GenerateStatementResponse {
+  sql: string
+}
+
 export type SchemaEditOperation =
   'create_table' | 'drop_object' | 'drop_scope' | 'rename_column' | 'drop_column' | 'drop_index'
 
@@ -603,6 +624,7 @@ export interface SchemaEditResponse {
 export interface SchemaSpecResponse {
   spec: SchemaSpec
   editor?: SchemaEditSpec
+  statements?: StatementSpec
 }
 
 export interface ObjectsResponse {

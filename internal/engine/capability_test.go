@@ -7,6 +7,7 @@ import (
 	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/internal/engine/ddl"
 	"github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/engine/statement"
 )
 
 // capabilityDriver implements the optional metadata, DDL, and cursor interfaces so we
@@ -29,6 +30,10 @@ func (capabilityDriver) DDLSpec() ddl.Spec {
 	return ddl.Spec{Operations: []ddl.Operation{ddl.OperationCreateTable}}
 }
 func (capabilityDriver) ApplyDDL(context.Context, ddl.Request) error { return nil }
+func (capabilityDriver) StatementSpec() statement.Spec {
+	return statement.Spec{Objects: []statement.ObjectSpec{{Kind: "table", Operations: []statement.Operation{statement.OperationSelect}}}}
+}
+func (capabilityDriver) Generate(statement.Request) (string, error) { return "SELECT 1;", nil }
 
 func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	resetRegistry(t)
@@ -52,6 +57,9 @@ func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	}
 	if !set.Capabilities[CapabilityDDL] || set.DDL == nil {
 		t.Errorf("schema.edit and its spec should be derived from Executor: %+v", set)
+	}
+	if !set.Capabilities[CapabilitySQLGenerate] || set.Statements == nil {
+		t.Errorf("sql.generate and its spec should be derived from Generator: %+v", set)
 	}
 	if set.Schema == nil || len(set.Schema.Kinds) != 1 {
 		t.Errorf("schema spec should be populated from SchemaSpec(): %+v", set.Schema)

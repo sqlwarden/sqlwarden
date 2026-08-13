@@ -14,6 +14,7 @@ import (
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/ddl"
 	"github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/engine/statement"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -22,8 +23,9 @@ import (
 const manualSchemaSyncTimeout = 2 * time.Minute
 
 type schemaSpecResponse struct {
-	Spec metadata.SchemaSpec `json:"spec"`
-	DDL  *ddl.Spec           `json:"editor,omitempty"`
+	Spec       metadata.SchemaSpec `json:"spec"`
+	DDL        *ddl.Spec           `json:"editor,omitempty"`
+	Statements *statement.Spec     `json:"statements,omitempty"`
 }
 
 type directoryResponse struct {
@@ -44,6 +46,15 @@ type refreshRequest struct {
 
 type relationshipsResponse struct {
 	Graph *metadata.RelationshipGraph `json:"graph"`
+}
+
+type generateStatementRequest struct {
+	Operation statement.Operation `json:"operation"`
+	Ref       metadata.ObjectRef  `json:"ref"`
+}
+
+type generateStatementResponse struct {
+	SQL string `json:"sql"`
 }
 
 type schemaStatusResponse struct {
@@ -253,13 +264,98 @@ func (app *application) getConnectionSchemaSpec(w http.ResponseWriter, r *http.R
 		s := executor.DDLSpec()
 		ddlSpec = &s
 	}
+	var statementSpec *statement.Spec
+	if generator, ok := driver.(statement.Generator); ok {
+		s := generator.StatementSpec()
+		statementSpec = &s
+	}
 	app.logDebug(r, "schema spec returned",
 		slog.String("dialect", spec.Dialect),
 		slog.Int("kind_count", len(spec.Kinds)),
 	)
-	if err := response.JSON(w, http.StatusOK, schemaSpecResponse{Spec: spec, DDL: ddlSpec}); err != nil {
+	if err := response.JSON(w, http.StatusOK, schemaSpecResponse{Spec: spec, DDL: ddlSpec, Statements: statementSpec}); err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+func (app *application) generateConnectionStatement(w http.ResponseWriter, r *http.Request) {
+	if !app.authorizeSchemaAccess(w, r) {
+		return
+	}
+	var input generateStatementRequest
+	if err := request.DecodeJSON(w, r, &input); err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+	driver, err := engine.New(contextGetConnection(r).Driver)
+	if err != nil {
+		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support statement generation.", nil)
+		return
+	}
+	generator, ok := driver.(statement.Generator)
+	if !ok {
+		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support statement generation.", nil)
+		return
+	}
+	if !generator.StatementSpec().Supports(input.Ref.Kind, input.Operation) {
+		app.apiError(w, r, http.StatusUnprocessableEntity, "statement_generation_failed", "The requested statement is not supported for this object.", response.APIError{}, nil)
+		return
+	}
+
+	objects, ok := app.objectsForStatement(w, r, []metadata.ObjectRef{input.Ref})
+	if !ok {
+		return
+	}
+	if len(objects) != 1 || objects[0].Ref != input.Ref {
+		app.errorMessage(w, r, http.StatusNotFound, "Schema object was not found.", nil)
+		return
+	}
+	generated, err := generator.Generate(statement.Request{Operation: input.Operation, Object: objects[0]})
+	if err != nil {
+		app.apiError(w, r, http.StatusUnprocessableEntity, "statement_generation_failed", err.Error(), response.APIError{}, nil)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, generateStatementResponse{SQL: generated}); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) objectsForStatement(w http.ResponseWriter, r *http.Request, refs []metadata.ObjectRef) ([]metadata.Object, bool) {
+	persistent, err := app.persistentSchemaMode(r)
+	if err != nil {
+		app.serverError(w, r, err)
+		return nil, false
+	}
+	if persistent {
+		if !app.authorizeSchemaAccess(w, r) {
+			return nil, false
+		}
+		snapshot, _, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return nil, false
+		}
+		if !found {
+			app.writeSnapshotPending(w, r)
+			return nil, false
+		}
+		objects, err := app.schemaSnapshots.Objects(r.Context(), snapshot.ID, refs)
+		if err != nil {
+			app.serverError(w, r, err)
+			return nil, false
+		}
+		return objects, true
+	}
+	session, inspector, ok := app.resolveSchemaInspector(w, r)
+	if !ok {
+		return nil, false
+	}
+	objects, err := app.schemaService.Objects(r.Context(), session.ConnectionID, refs, inspector)
+	if err != nil {
+		app.serverError(w, r, err)
+		return nil, false
+	}
+	return objects, true
 }
 
 func (app *application) applyConnectionDDL(w http.ResponseWriter, r *http.Request) {

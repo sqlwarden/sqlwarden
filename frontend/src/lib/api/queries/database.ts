@@ -2,6 +2,7 @@ import { queryOptions, type QueryClient } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
 import type {
   DirectoryResponse,
+  GenerateStatementResponse,
   ObjectRef,
   ObjectsResponse,
   RelationshipsResponse,
@@ -10,6 +11,7 @@ import type {
   SchemaEditResponse,
   SchemaRefreshResponse,
   SchemaSpecResponse,
+  StatementOperation,
 } from '#/lib/api/types'
 import { queryKeys } from '#/lib/api/query-keys'
 
@@ -224,6 +226,48 @@ export function orgConnectionObjectQueryOptions(
       return res.objects[0] ?? null
     },
     staleTime: 3 * 60_000,
+  })
+}
+
+export function connectionGenerateStatementQueryKey(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  operation: StatementOperation,
+  ref: ObjectRef,
+) {
+  return [
+    'connection-generate-statement',
+    slug,
+    String(workspaceId),
+    String(connectionId),
+    operation,
+    JSON.stringify(ref.scope),
+    ref.kind,
+    ref.name,
+  ] as const
+}
+
+/** Requests a SQL statement template for one object. Persistent snapshots can
+ *  generate without a live session, so sessionId is optional here — unlike
+ *  applyConnectionSchemaEdit, which always mutates a live connection. */
+export function orgConnectionGenerateStatementQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string | undefined,
+  operation: StatementOperation,
+  ref: ObjectRef,
+) {
+  return queryOptions({
+    queryKey: connectionGenerateStatementQueryKey(slug, workspaceId, connectionId, operation, ref),
+    queryFn: () =>
+      api.post<GenerateStatementResponse>(
+        `${schemaBase(slug, workspaceId, connectionId)}/statements`,
+        { operation, ref },
+        schemaRequestOptions(sessionId),
+      ),
+    retry: false,
   })
 }
 

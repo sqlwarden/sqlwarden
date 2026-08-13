@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import type { ContextMenuItem, ContextMenuActionItem } from '#/components/ui/context-menu'
+import type {
+  ContextMenuItem,
+  ContextMenuActionItem,
+  ContextMenuSubItem,
+} from '#/components/ui/context-menu'
 import { buildEnvironmentMenu } from './environmentMenu'
 import { buildConnectionMenu } from './connectionMenu'
 import { buildNamespaceMenu, buildObjectGroupMenu } from './schemaMenu'
@@ -10,6 +14,10 @@ const noop = () => {}
 
 function action(items: ContextMenuItem[], id: string): ContextMenuActionItem | undefined {
   return items.find((i): i is ContextMenuActionItem => i.kind === 'action' && i.id === id)
+}
+
+function submenu(items: ContextMenuItem[], id: string): ContextMenuSubItem | undefined {
+  return items.find((i): i is ContextMenuSubItem => i.kind === 'submenu' && i.id === id)
 }
 
 describe('buildEnvironmentMenu', () => {
@@ -236,6 +244,63 @@ describe('buildObjectMenu', () => {
       dropDisabledReason: 'This driver does not support this change.',
     })
     expect(action(items, 'drop')?.disabledReason).toBe('This driver does not support this change.')
+  })
+  it('omits the Generate submenu when no operations are advertised', () => {
+    const items = buildObjectMenu({ ...base, isView: false, onGenerateStatement: noop })
+    expect(submenu(items, 'generate')).toBeUndefined()
+  })
+  it('omits the Generate submenu when no callback is provided, even if operations exist', () => {
+    const items = buildObjectMenu({
+      ...base,
+      isView: false,
+      statementOperations: ['select', 'insert'],
+    })
+    expect(submenu(items, 'generate')).toBeUndefined()
+  })
+  it('shows the Generate submenu with plain child labels in fixed order', () => {
+    const items = buildObjectMenu({
+      ...base,
+      isView: false,
+      statementOperations: ['delete', 'select', 'insert', 'update'],
+      onGenerateStatement: noop,
+    })
+    const generate = submenu(items, 'generate')
+    expect(generate?.label).toBe('Generate')
+    expect(generate?.items.map((i) => (i.kind === 'action' ? i.id : i.kind))).toEqual([
+      'generate-select',
+      'generate-insert',
+      'generate-update',
+      'generate-delete',
+    ])
+    expect(generate?.items.map((i) => (i.kind === 'action' ? i.label : ''))).toEqual([
+      'Select',
+      'Insert',
+      'Update',
+      'Delete',
+    ])
+  })
+  it('a view only gets the operations the backend advertises for it', () => {
+    const items = buildObjectMenu({
+      ...base,
+      isView: true,
+      statementOperations: ['select'],
+      onGenerateStatement: noop,
+    })
+    const generate = submenu(items, 'generate')
+    expect(generate?.items).toHaveLength(1)
+    expect(action(generate?.items ?? [], 'generate-select')).toBeDefined()
+  })
+  it('invokes onGenerateStatement with the selected operation', () => {
+    const calls: string[] = []
+    const items = buildObjectMenu({
+      ...base,
+      isView: false,
+      statementOperations: ['select', 'update'],
+      onGenerateStatement: (operation) => calls.push(operation),
+    })
+    const generate = submenu(items, 'generate')
+    action(generate?.items ?? [], 'generate-update')?.onSelect?.()
+    expect(calls).toEqual(['update'])
   })
 })
 

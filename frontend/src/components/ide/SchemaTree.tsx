@@ -21,6 +21,8 @@ import type {
   SchemaEditRequest,
   SchemaEditSpec,
   SchemaSpec,
+  StatementOperation,
+  StatementSpec,
   Workspace,
 } from '#/lib/api/types'
 import { useIde } from './useIdeStore'
@@ -57,9 +59,11 @@ import {
   canRenameColumn,
   cascadeAvailable,
 } from './schemaEditCapability'
+import { statementOperationsFor } from './generateStatementCapability'
 import { CreateTableDialog } from './schemaEdit/CreateTableDialog'
 import { RenameColumnDialog } from './schemaEdit/RenameColumnDialog'
 import { DropConfirmDialog } from './schemaEdit/DropConfirmDialog'
+import { GenerateStatementDialog } from './GenerateStatementDialog'
 
 type DropTarget =
   | { kind: 'scope'; scope: ScopePath; scopeKind: string }
@@ -74,6 +78,7 @@ type TreeCtx = {
   openObject: (ref: ObjectRef) => void
   openDiagram: (target: DiagramTarget) => void
   spec: SchemaSpec | undefined
+  statementSpec: StatementSpec | undefined
   orgSlug: string
   workspaceId: number
   connectionId: number
@@ -86,6 +91,7 @@ type TreeCtx = {
   openRenameColumn: (ref: ObjectRef, columnName: string) => void
   openDropColumn: (ref: ObjectRef, columnName: string) => void
   openDropIndex: (ref: ObjectRef, indexName: string) => void
+  openGenerateStatement: (ref: ObjectRef, operation: StatementOperation) => void
 }
 
 const SchemaTreeContext = createContext<TreeCtx | null>(null)
@@ -132,6 +138,7 @@ function useTreeCtx() {
     dialect: ctx?.dialect ?? null,
     refresh: ctx?.refresh ?? (() => {}),
     spec: ctx?.spec,
+    statementSpec: ctx?.statementSpec,
     openDiagram: ctx?.openDiagram,
     editor: ctx?.editor,
     sessionId: ctx?.sessionId,
@@ -142,6 +149,7 @@ function useTreeCtx() {
     openRenameColumn: ctx?.openRenameColumn,
     openDropColumn: ctx?.openDropColumn,
     openDropIndex: ctx?.openDropIndex,
+    openGenerateStatement: ctx?.openGenerateStatement,
   }
 }
 
@@ -223,6 +231,10 @@ export function SchemaTree({
     null,
   )
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
+  const [generateTarget, setGenerateTarget] = useState<{
+    ref: ObjectRef
+    operation: StatementOperation
+  } | null>(null)
 
   // A 410 from any schema endpoint means the server-side session died (idle
   // timeout, restart). Drop it so the tree flips to the reconnect hint instead
@@ -304,6 +316,7 @@ export function SchemaTree({
   const isEmpty = noScope || trivialEmptyScope
 
   const spec = specQuery.data?.spec
+  const statementSpec = specQuery.data?.statements
   const editor = specQuery.data?.editor
   const canMutate = hasAnyPermission(permissionsQuery.data?.permissions, [
     permission.connExecute,
@@ -327,6 +340,7 @@ export function SchemaTree({
     openObject,
     openDiagram,
     spec,
+    statementSpec,
     orgSlug,
     workspaceId,
     connectionId,
@@ -339,6 +353,7 @@ export function SchemaTree({
     openRenameColumn: (ref, columnName) => setRenameTarget({ ref, columnName }),
     openDropColumn: (ref, columnName) => setDropTarget({ kind: 'column', ref, columnName }),
     openDropIndex: (ref, indexName) => setDropTarget({ kind: 'index', ref, indexName }),
+    openGenerateStatement: (ref, operation) => setGenerateTarget({ ref, operation }),
   }
 
   return (
@@ -434,6 +449,16 @@ export function SchemaTree({
           }
         />
       )}
+
+      <GenerateStatementDialog
+        open={generateTarget !== null}
+        onOpenChange={(open) => !open && setGenerateTarget(null)}
+        orgSlug={orgSlug}
+        workspaceId={workspaceId}
+        connectionId={connectionId}
+        sessionId={sessionId}
+        target={generateTarget}
+      />
     </SchemaTreeContext.Provider>
   )
 }
@@ -667,7 +692,17 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
   const detail = detailQuery.data ?? null
   const columns = detail?.relational?.columns ?? []
   const insertable = useObjectInsert(objectRef)
-  const { dialect, spec, openDiagram, editor, sessionId, canMutate, openDropObject } = useTreeCtx()
+  const {
+    dialect,
+    spec,
+    statementSpec,
+    openDiagram,
+    editor,
+    sessionId,
+    canMutate,
+    openDropObject,
+    openGenerateStatement,
+  } = useTreeCtx()
   const style = kindStyle(objectRef.kind)
   const inlineMeta = inlineDetail ? sequenceDataType(detail) : undefined
   const isView = objectRef.kind === 'view' || objectRef.kind === 'materialized_view'
@@ -690,6 +725,10 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
       ),
     onDrop: dropGate.allowed ? () => openDropObject?.(objectRef) : undefined,
     dropDisabledReason: dropGate.allowed ? undefined : dropGate.reason,
+    statementOperations: statementOperationsFor(statementSpec, objectRef.kind),
+    onGenerateStatement: openGenerateStatement
+      ? (operation) => openGenerateStatement(objectRef, operation)
+      : undefined,
   })
 
   return (

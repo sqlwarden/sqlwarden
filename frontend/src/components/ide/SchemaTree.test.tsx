@@ -16,6 +16,12 @@ vi.mock('idb-keyval', () => ({
   del: vi.fn(() => Promise.resolve()),
 }))
 
+vi.mock('./object-detail/ReadOnlySqlView', () => ({
+  ReadOnlySqlView: ({ value }: { value: string }) => (
+    <pre data-testid="generated-sql-preview">{value}</pre>
+  ),
+}))
+
 const scope = [{ kind: 'schema', name: 'public' }]
 const ref: ObjectRef = { scope, kind: 'table', name: 'orders' }
 
@@ -864,6 +870,145 @@ describe('SchemaTree', () => {
       expect(screen.queryByText('Cascade')).not.toBeInTheDocument()
       expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
       expect(mutationCalls).toBe(0)
+    })
+  })
+
+  describe('Generate SQL', () => {
+    const viewRef: ObjectRef = { scope, kind: 'view', name: 'orders_view' }
+
+    function respondWithStatements(statements: {
+      objects: { kind: string; operations: string[] }[]
+    }) {
+      server.use(
+        http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+          HttpResponse.json({
+            directory: {
+              connection: 'warehouse',
+              dialect: 'postgres',
+              database: 'analytics',
+              generated_at: '',
+              roots: [
+                {
+                  segment: scope[0],
+                  path: scope,
+                  groups: [
+                    { kind: 'table', objects: [ref] },
+                    { kind: 'view', objects: [viewRef] },
+                  ],
+                },
+              ],
+            },
+          }),
+        ),
+        http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+          HttpResponse.json({
+            spec: {
+              dialect: 'postgres',
+              kinds: [
+                {
+                  kind: 'table',
+                  label: 'Table',
+                  plural_label: 'Tables',
+                  order: 1,
+                  relational: true,
+                  supports_diagram: true,
+                  listing: 'enumerated',
+                },
+                {
+                  kind: 'view',
+                  label: 'View',
+                  plural_label: 'Views',
+                  order: 2,
+                  relational: true,
+                  supports_diagram: true,
+                  listing: 'enumerated',
+                },
+              ],
+            },
+            statements,
+          }),
+        ),
+        http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects', () =>
+          HttpResponse.json({
+            objects: [
+              {
+                ref,
+                relational: {
+                  columns: [{ name: 'id', data_type: 'bigint', nullable: false, ordinal: 1 }],
+                  primary_key: ['id'],
+                  foreign_keys: [],
+                  indexes: [],
+                },
+              },
+            ],
+          }),
+        ),
+      )
+    }
+
+    it('omits the Generate submenu when the spec advertises no operations', async () => {
+      respondWithStatements({ objects: [] })
+      renderTree()
+      fireEvent.click(await screen.findByRole('button', { name: /Tables/ }))
+      const objectRow = await screen.findByRole('button', { name: 'orders' })
+      fireEvent.contextMenu(objectRow)
+      expect(await screen.findByRole('menuitem', { name: 'Open' })).toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Generate' })).not.toBeInTheDocument()
+    })
+
+    it('gives tables every advertised operation and views only their own', async () => {
+      respondWithStatements({
+        objects: [
+          { kind: 'table', operations: ['select', 'insert', 'update', 'delete'] },
+          { kind: 'view', operations: ['select'] },
+        ],
+      })
+      renderTree()
+
+      fireEvent.click(await screen.findByRole('button', { name: /Tables/ }))
+      const tableRow = await screen.findByRole('button', { name: 'orders' })
+      fireEvent.contextMenu(tableRow)
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Generate' }))
+      expect(await screen.findByRole('menuitem', { name: 'Select' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'Insert' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'Update' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
+
+      fireEvent.click(await screen.findByRole('button', { name: /Views/ }))
+      const viewRow = await screen.findByRole('button', { name: 'orders_view' })
+      fireEvent.contextMenu(viewRow)
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Generate' }))
+      expect(await screen.findByRole('menuitem', { name: 'Select' })).toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Insert' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Update' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument()
+    })
+
+    it('requests the generated statement and opens it in the Generate SQL dialog', async () => {
+      respondWithStatements({ objects: [{ kind: 'table', operations: ['select'] }] })
+      let requestBody: unknown
+      server.use(
+        http.post(
+          '/api/v1/orgs/acme/workspaces/3/connections/7/schema/statements',
+          async ({ request }) => {
+            requestBody = await request.json()
+            return HttpResponse.json({ sql: 'SELECT * FROM public.orders;' })
+          },
+        ),
+      )
+
+      renderTree()
+      fireEvent.click(await screen.findByRole('button', { name: /Tables/ }))
+      const objectRow = await screen.findByRole('button', { name: 'orders' })
+      fireEvent.contextMenu(objectRow)
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Generate' }))
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Select' }))
+
+      expect(await screen.findByRole('heading', { name: 'Generate SQL' })).toBeInTheDocument()
+      expect(await screen.findByTestId('generated-sql-preview')).toHaveTextContent(
+        'SELECT * FROM public.orders;',
+      )
+      expect(requestBody).toEqual({ operation: 'select', ref })
     })
   })
 })

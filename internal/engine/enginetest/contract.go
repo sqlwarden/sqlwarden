@@ -20,6 +20,7 @@ var knownCapabilities = map[engine.Capability]bool{
 	engine.CapabilitySQLClassify:     true,
 	engine.CapabilitySQLRewrite:      true,
 	engine.CapabilitySQLComplete:     true,
+	engine.CapabilitySQLGenerate:     true,
 }
 
 // RunCapabilityContract asserts the static-capability invariants every engine
@@ -49,6 +50,9 @@ func RunCapabilityContract(t *testing.T, name string) {
 	}
 	if set.Capabilities[engine.CapabilityDDL] != (set.DDL != nil) {
 		t.Fatal("schema.edit capability and schema edit spec disagree")
+	}
+	if set.Capabilities[engine.CapabilitySQLGenerate] != (set.Statements != nil) {
+		t.Fatal("sql.generate capability and statement spec disagree")
 	}
 }
 
