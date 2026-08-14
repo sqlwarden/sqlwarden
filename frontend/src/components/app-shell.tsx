@@ -103,11 +103,17 @@ export function AppShellNavSection({
   )
 }
 
-export function AppShellSidebarFooter({ session }: { session: SessionResponse }) {
+export function AppShellSidebarFooter({
+  session,
+  hideUserMenu = false,
+}: {
+  session: SessionResponse
+  hideUserMenu?: boolean
+}) {
   return (
     <SidebarFooter className="border-t border-sidebar-border">
       <AppearanceTrigger buttonLabel="Appearance" />
-      <AppShellUserMenu session={session} />
+      {hideUserMenu ? null : <AppShellUserMenu session={session} />}
       <div className="flex justify-center px-2 pb-1">
         <SidebarTrigger
           className="w-full cursor-pointer group-data-[collapsible=icon]:w-auto"

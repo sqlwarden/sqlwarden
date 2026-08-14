@@ -2,6 +2,7 @@ import { ApiError } from '#/lib/api/errors'
 import { getAccessToken, clearAccessToken } from '#/lib/auth/access-token'
 import { notifyAuthInvalidated } from '#/lib/auth/invalidation'
 import type { ListQuery } from '#/lib/api/types'
+import { isNativeDesktop, startDesktopSession } from '#/lib/desktop/runtime'
 
 export interface ApiClientOptions extends Omit<RequestInit, 'body'> {
   query?: ListQuery
@@ -120,6 +121,14 @@ export function parseAPIErrorPayload(payload: unknown, fallback: string) {
 }
 
 export async function apiRequest<T>(path: string, options: ApiClientOptions = {}): Promise<T> {
+  return apiRequestWithRetry<T>(path, options, false)
+}
+
+async function apiRequestWithRetry<T>(
+  path: string,
+  options: ApiClientOptions,
+  desktopRetried: boolean,
+): Promise<T> {
   const url = new URL(path, window.location.origin)
   const params = buildSearchParams(options.query)
   if ([...params.keys()].length > 0) {
@@ -139,6 +148,10 @@ export async function apiRequest<T>(path: string, options: ApiClientOptions = {}
   const payload = await parseJson(response)
   if (!response.ok) {
     if (response.status === 401 && !options.skipAuth) {
+      if (isNativeDesktop() && !desktopRetried) {
+        await startDesktopSession()
+        return apiRequestWithRetry<T>(path, options, true)
+      }
       clearAccessToken()
       notifyAuthInvalidated()
     }

@@ -142,11 +142,8 @@ func (app *application) createOwnedWorkspace(ctx context.Context, orgID, creator
 	var ws database.Workspace
 	err := app.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		var err error
-		ws, err = app.db.InsertWorkspaceWithExecutor(ctx, tx, &orgID, "org", orgID, name, description)
-		if err != nil {
-			return err
-		}
-		return app.enforcer.SeedWorkspaceWithExecutor(ctx, tx, orgID, ws.ID, creatorAccountID)
+		ws, err = app.createOwnedWorkspaceWithExecutor(ctx, tx, orgID, creatorAccountID, name, description)
+		return err
 	})
 	if err != nil {
 		return database.Workspace{}, err
@@ -154,6 +151,17 @@ func (app *application) createOwnedWorkspace(ctx context.Context, orgID, creator
 
 	app.enforcer.InvalidateOrgPolicy(orgID)
 	app.enforcer.InvalidatePrincipals(orgID, creatorAccountID)
+	return ws, nil
+}
+
+func (app *application) createOwnedWorkspaceWithExecutor(ctx context.Context, tx bun.Tx, orgID, creatorAccountID int64, name, description string) (database.Workspace, error) {
+	ws, err := app.db.InsertWorkspaceWithExecutor(ctx, tx, &orgID, "org", orgID, name, description)
+	if err != nil {
+		return database.Workspace{}, err
+	}
+	if err := app.enforcer.SeedWorkspaceWithExecutor(ctx, tx, orgID, ws.ID, creatorAccountID); err != nil {
+		return database.Workspace{}, err
+	}
 	return ws, nil
 }
 
@@ -223,6 +231,19 @@ func (app *application) updateWorkspace(w http.ResponseWriter, r *http.Request) 
 
 func (app *application) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	ws := contextGetWorkspace(r)
+	if app.config.DeploymentMode == DeploymentModeDesktop && ws.OrgID != nil {
+		app.desktopWorkspaceMu.Lock()
+		defer app.desktopWorkspaceMu.Unlock()
+		count, err := app.db.CountOrganizationWorkspaces(r.Context(), *ws.OrgID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if count <= 1 {
+			app.apiError(w, r, http.StatusConflict, apiErrorConflict, "The last desktop workspace cannot be deleted.", response.APIError{}, nil)
+			return
+		}
+	}
 	err := app.db.DeleteWorkspace(r.Context(), ws.ID)
 	if err != nil {
 		app.serverError(w, r, err)

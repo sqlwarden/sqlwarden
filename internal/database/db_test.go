@@ -146,6 +146,7 @@ func TestMigrateUpAddsQueryCursorPageSizeAfterVersion29(t *testing.T) {
 		ALTER TABLE connections DROP COLUMN tls_config_encrypted;
 		ALTER TABLE connections DROP COLUMN ssh_config_encrypted;
 		ALTER TABLE connections DROP COLUMN show_system_schemas;
+		DROP TABLE desktop_installation;
 	`)
 	assert.Nil(t, err)
 	_, err = db.ExecContext(context.Background(), "UPDATE schema_migrations SET version = 29, dirty = 0")

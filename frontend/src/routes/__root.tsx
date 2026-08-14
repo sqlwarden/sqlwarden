@@ -15,6 +15,7 @@ import { ConnectionLayoutProvider } from '#/components/ide/useConnectionLayout'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { AUTH_INVALIDATED_EVENT } from '#/lib/auth/invalidation'
 import { loginSearchFor } from '#/lib/auth/login-redirect'
+import { isNativeDesktop, startDesktopSession } from '#/lib/desktop/runtime'
 import '../styles.css'
 
 // Dev-only. The import.meta.env.DEV guard lets Rollup drop the devtools
@@ -33,8 +34,18 @@ function RootComponent() {
   const queryClient = useQueryClient()
 
   useEffect(() => {
-    function handleAuthInvalidated() {
+    async function handleAuthInvalidated() {
       clearAuthScopedQueryCache(queryClient)
+      if (isNativeDesktop()) {
+        try {
+          await startDesktopSession()
+          await queryClient.invalidateQueries()
+          await router.invalidate()
+          return
+        } catch {
+          // The next request will retain the startup error rather than exposing login.
+        }
+      }
       void router.navigate({
         to: '/login',
         search: loginSearchFor(router.state.location.href),

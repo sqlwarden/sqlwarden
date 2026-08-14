@@ -255,6 +255,7 @@ func TestSetupStatus_ReturnsStableShape(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assertBodyContainsJSONKeys(t, res.BodyBytes, "configured")
 	assert.Equal(t, res.BodyFields["access_mode"].(string), string(AccessModeMultiUser))
+	assert.Equal(t, res.BodyFields["deployment_mode"].(string), string(DeploymentModeServer))
 }
 
 func TestSetupBlockedAfterFirstAdmin(t *testing.T) {

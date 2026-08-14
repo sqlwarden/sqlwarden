@@ -37,28 +37,29 @@ const (
 type App = application
 
 type application struct {
-	config            Config
-	db                *database.DB
-	logger            *slog.Logger
-	mailer            *smtp.Mailer
-	mailerMu          sync.RWMutex
-	wg                sync.WaitGroup
-	connManager       *connection.Manager
-	queryCursors      *connection.QueryCursorManager
-	schemaService     *schemaapp.Service
-	schemaSnapshots   *schemaapp.SnapshotStore
-	completionService *completionapp.Service
-	keyring           *encrypt.Keyring
-	enforcer          *access.Enforcer
-	fileStores        *fileStoreRegistry
-	fileLocks         sync.Map
-	fileReaperCancel  context.CancelFunc
-	jobStore          *jobs.Store
-	jobRegistry       *jobs.Registry
-	runtimeCancel     context.CancelFunc
-	runtimeUpdates    chan database.InstanceSettings
-	runtimeSettings   *runtimeSettingsService
-	accessLogsEnabled atomic.Bool
+	config             Config
+	db                 *database.DB
+	logger             *slog.Logger
+	mailer             *smtp.Mailer
+	mailerMu           sync.RWMutex
+	wg                 sync.WaitGroup
+	connManager        *connection.Manager
+	queryCursors       *connection.QueryCursorManager
+	schemaService      *schemaapp.Service
+	schemaSnapshots    *schemaapp.SnapshotStore
+	completionService  *completionapp.Service
+	keyring            *encrypt.Keyring
+	enforcer           *access.Enforcer
+	fileStores         *fileStoreRegistry
+	fileLocks          sync.Map
+	desktopWorkspaceMu sync.Mutex
+	fileReaperCancel   context.CancelFunc
+	jobStore           *jobs.Store
+	jobRegistry        *jobs.Registry
+	runtimeCancel      context.CancelFunc
+	runtimeUpdates     chan database.InstanceSettings
+	runtimeSettings    *runtimeSettingsService
+	accessLogsEnabled  atomic.Bool
 }
 
 type fileStoreRegistry struct {
