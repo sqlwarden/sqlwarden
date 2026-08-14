@@ -1,3 +1,13 @@
+FROM oven/bun:1.3.10-alpine AS frontend-builder
+
+WORKDIR /build/frontend
+
+COPY frontend/package.json frontend/bun.lock ./
+RUN bun install --frozen-lockfile
+
+COPY frontend/ ./
+RUN bun run build && test -s /build/assets/static/index.html
+
 FROM golang:1.26.5-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates tzdata
@@ -8,6 +18,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+
+COPY --from=frontend-builder /build/assets/static ./assets/static
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-s -w" \
