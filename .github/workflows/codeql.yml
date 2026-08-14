@@ -59,10 +59,14 @@ jobs:
           category: /language:${{ matrix.language }}
           output: sarif-results
 
-      # Alert dismissal is repository-global, so source suppressions are applied
-      # only from trusted code after it reaches the default branch.
+      # Alert dismissal is repository-global. Apply reviewed source suppressions
+      # on trusted branches and same-repository PRs, but never let a fork use a
+      # source comment to dismiss a repository alert.
       - name: Apply source suppressions
-        if: github.ref == 'refs/heads/main' && matrix.language == 'go'
+        if: >-
+          matrix.language == 'go' &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
         uses: advanced-security/dismiss-alerts@v2
         with:
           sarif-id: ${{ steps.analyze.outputs.sarif-id }}
