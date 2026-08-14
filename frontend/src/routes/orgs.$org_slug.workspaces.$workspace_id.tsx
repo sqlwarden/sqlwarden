@@ -11,8 +11,9 @@ import {
   workspacePolicyPagePermissions,
   workspaceSettingsPagePermissions,
 } from '#/lib/workspace-page-permissions'
-import { Button } from '#/components/ui/button'
+import { buttonVariants } from '#/components/ui/button'
 import { Skeleton } from '#/components/ui/skeleton'
+import { useSetupStatus } from '#/hooks/use-setup-status'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id')({
   component: WorkspaceRoute,
@@ -45,6 +46,8 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
   const effectivePermissions = useQuery(
     orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId),
   )
+  const setupStatus = useSetupStatus()
+  const desktopMode = setupStatus.data?.deployment_mode === 'desktop'
   const permissions = effectivePermissions.data?.permissions
 
   const allCards: OverviewCard[] = [
@@ -86,7 +89,11 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
       required: workspaceSettingsPagePermissions,
     },
   ]
-  const cards = allCards.filter((card) => hasAnyPermission(permissions, card.required))
+  const cards = allCards.filter(
+    (card) =>
+      (!desktopMode || (card.section !== 'users' && card.section !== 'policies')) &&
+      hasAnyPermission(permissions, card.required),
+  )
 
   if (workspace.isLoading || effectivePermissions.isLoading) {
     return (
@@ -112,19 +119,15 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
             <p className="text-sm text-muted-foreground">{workspace.data.description}</p>
           ) : null}
         </div>
-        <Button
-          nativeButton={false}
-          render={
-            <Link
-              to="/ide/$org_slug"
-              params={{ org_slug: orgSlug }}
-              search={{ ws: Number(workspaceId) }}
-            />
-          }
+        <Link
+          to="/ide/$org_slug"
+          params={{ org_slug: orgSlug }}
+          search={{ ws: Number(workspaceId) }}
+          className={buttonVariants()}
         >
-          <Icon name="terminal" size={20} data-icon="inline-start" />
+          <Icon name="terminal" data-icon="inline-start" />
           Open in Editor
-        </Button>
+        </Link>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

@@ -3,7 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory } from '@tanstack/react-router'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setAccessToken } from '#/lib/auth/access-token'
 import { instanceSettingsFixture, organizationFixture } from '#/test/fixtures'
 import { createTestQueryClient } from '#/test/render'
@@ -40,8 +40,8 @@ describe('desktop settings', () => {
               config_file: '/desktop/data/desktop.json',
             },
           }),
-          RevealDataDirectory: async () => undefined,
-          RevealLogDirectory: async () => undefined,
+          RevealDataDirectory: vi.fn(async () => undefined),
+          RevealLogDirectory: vi.fn(async () => undefined),
         },
       },
     }
@@ -68,7 +68,7 @@ describe('desktop settings', () => {
     )
 
     const { user } = renderDesktopSettings()
-    expect(await screen.findByRole('heading', { name: 'Desktop Settings' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument()
     expect(screen.getByRole('spinbutton', { name: 'Cursor page size' })).toHaveValue(200)
     expect(screen.queryByText('SMTP')).not.toBeInTheDocument()
     expect(screen.queryByText('Users')).not.toBeInTheDocument()
@@ -76,6 +76,8 @@ describe('desktop settings', () => {
     await user.click(screen.getByRole('tab', { name: 'About & Storage' }))
     expect(await screen.findByText('/desktop/data/sqlwarden.db')).toBeInTheDocument()
     expect(screen.getByText('0.9.0')).toBeInTheDocument()
+    await user.click(screen.getAllByRole('button', { name: 'Reveal' })[0])
+    expect(window.go?.main?.DesktopBridge?.RevealDataDirectory).toHaveBeenCalledOnce()
   })
 
   it('patches only changed organization and instance fields', async () => {

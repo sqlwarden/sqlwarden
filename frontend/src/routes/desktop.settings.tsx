@@ -58,7 +58,7 @@ function formFrom(org: Organization, settings: InstanceSettings): DesktopSetting
 }
 
 function DesktopSettingsPage() {
-  usePageTitle('Desktop Settings')
+  usePageTitle('Settings')
   const setup = useSetupStatus()
   const desktop = useDesktopRuntime()
   const orgSlug = desktop.session?.identity.org_slug ?? ''
@@ -136,7 +136,7 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
         queryClient.invalidateQueries({ queryKey: queryKeys.org(orgSlug) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.instanceSettings() }),
       ])
-      toast.success('Desktop settings updated')
+      toast.success('Settings updated')
     },
     onError: (error) => {
       if (error instanceof LocalValidationError) return
@@ -144,7 +144,7 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
         setFieldErrors(apiFieldErrors(error.fieldErrors))
         return
       }
-      toast.error(errorMessage(error, 'Failed to update desktop settings'))
+      toast.error(errorMessage(error, 'Failed to update settings'))
     },
   })
 
@@ -158,7 +158,7 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
       <DesktopSettingsFrame orgSlug={orgSlug} saveDisabled>
         <Alert variant="destructive">
           <AlertTitle>Settings unavailable</AlertTitle>
-          <AlertDescription>Desktop settings are temporarily unavailable.</AlertDescription>
+          <AlertDescription>Settings are temporarily unavailable.</AlertDescription>
         </Alert>
       </DesktopSettingsFrame>
     )
@@ -166,7 +166,7 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
   if (org.isError || settings.isError) {
     return (
       <DesktopSettingsFrame orgSlug={orgSlug} saveDisabled>
-        <p className="text-sm text-muted-foreground">Failed to load desktop settings.</p>
+        <p className="text-sm text-muted-foreground">Failed to load settings.</p>
       </DesktopSettingsFrame>
     )
   }
@@ -174,6 +174,14 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
   function update<K extends keyof DesktopSettingsForm>(key: K, value: DesktopSettingsForm[K]) {
     setForm((current) => (current ? { ...current, [key]: value } : current))
     setFieldErrors((current) => ({ ...current, [key]: undefined }))
+  }
+
+  async function revealDirectory(action: () => Promise<void>, label: string) {
+    try {
+      await action()
+    } catch (error) {
+      toast.error(errorMessage(error, `Failed to reveal ${label}`))
+    }
   }
 
   return (
@@ -184,7 +192,7 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
       onSave={() => save.mutate()}
     >
       <Tabs defaultValue="data" className="gap-5">
-        <TabsList aria-label="Desktop settings sections">
+        <TabsList aria-label="Settings sections">
           <TabsTrigger value="data">Data</TabsTrigger>
           <TabsTrigger value="about">About &amp; Storage</TabsTrigger>
         </TabsList>
@@ -264,7 +272,7 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
                 label="Data directory"
                 value={info?.paths.data_dir}
                 action="Reveal"
-                onAction={() => void revealDesktopDataDirectory()}
+                onAction={() => void revealDirectory(revealDesktopDataDirectory, 'data directory')}
               />
               <PathRow label="Database" value={info?.paths.database} />
               <PathRow label="Files" value={info?.paths.files} />
@@ -272,7 +280,7 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
                 label="Logs"
                 value={info?.paths.logs}
                 action="Reveal"
-                onAction={() => void revealDesktopLogDirectory()}
+                onAction={() => void revealDirectory(revealDesktopLogDirectory, 'log directory')}
               />
               <PathRow label="Configuration" value={info?.paths.config_file} />
             </CardContent>
@@ -310,7 +318,7 @@ function DesktopSettingsFrame({
             >
               <Icon name="arrow-left-01" size={20} /> Back to editor
             </Button>
-            <h1 className="font-heading text-xl font-semibold tracking-tight">Desktop Settings</h1>
+            <h1 className="font-heading text-xl font-semibold tracking-tight">Settings</h1>
             <p className="text-sm text-muted-foreground">
               Configure this local SQLWarden installation.
             </p>
