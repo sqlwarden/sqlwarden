@@ -1,4 +1,5 @@
 coverage/
 dist/
 src/routeTree.gen.ts
+src/wailsjs/
 src/lib/icons/packs/*.subset.json
