@@ -5,31 +5,41 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/engine/cursor"
+	"github.com/sqlwarden/internal/engine/ddl"
 	"github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/engine/statement"
 )
 
-// schemaCursorDriver implements the optional schema + cursor interfaces so we
+// capabilityDriver implements the optional metadata, DDL, and cursor interfaces so we
 // can assert derivation turns them into capabilities.
-type schemaCursorDriver struct{ fakeDriver }
+type capabilityDriver struct{ fakeDriver }
 
-func (schemaCursorDriver) SchemaSpec() metadata.SchemaSpec {
+func (capabilityDriver) SchemaSpec() metadata.SchemaSpec {
 	return metadata.SchemaSpec{Dialect: "postgres", Kinds: []metadata.SchemaObjectKind{{Kind: "table"}}}
 }
-func (schemaCursorDriver) InspectDirectory(context.Context, metadata.DirectoryOptions) (*metadata.Directory, error) {
+func (capabilityDriver) InspectDirectory(context.Context, metadata.DirectoryOptions) (*metadata.Directory, error) {
 	return &metadata.Directory{}, nil
 }
-func (schemaCursorDriver) InspectObjects(context.Context, []metadata.ObjectRef) ([]metadata.Object, error) {
+func (capabilityDriver) InspectObjects(context.Context, []metadata.ObjectRef) ([]metadata.Object, error) {
 	return nil, nil
 }
-func (schemaCursorDriver) StartQuery(context.Context, cursor.QueryRequest) (cursor.QueryCursor, error) {
+func (capabilityDriver) StartQuery(context.Context, cursor.QueryRequest) (cursor.QueryCursor, error) {
 	return nil, nil
 }
+func (capabilityDriver) DDLSpec() ddl.Spec {
+	return ddl.Spec{Operations: []ddl.Operation{ddl.OperationCreateTable}}
+}
+func (capabilityDriver) ApplyDDL(context.Context, ddl.Request) error { return nil }
+func (capabilityDriver) StatementSpec() statement.Spec {
+	return statement.Spec{Objects: []statement.ObjectSpec{{Kind: "table", Operations: []statement.Operation{statement.OperationSelect}}}}
+}
+func (capabilityDriver) Generate(statement.Request) (string, error) { return "SELECT 1;", nil }
 
 func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	resetRegistry(t)
 	Register(Registration{
 		ID: "postgres", DisplayName: "PostgreSQL", Dialect: DialectPostgres,
-		New: func() Driver { return schemaCursorDriver{} },
+		New: func() Driver { return capabilityDriver{} },
 	})
 	set, ok := Describe("postgres")
 	if !ok {
@@ -44,6 +54,12 @@ func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	}
 	if !set.Capabilities[CapabilityQueryCursor] {
 		t.Errorf("query.cursor should be true (driver implements StartQuery)")
+	}
+	if !set.Capabilities[CapabilityDDL] || set.DDL == nil {
+		t.Errorf("schema.edit and its spec should be derived from Executor: %+v", set)
+	}
+	if !set.Capabilities[CapabilitySQLGenerate] || set.Statements == nil {
+		t.Errorf("sql.generate and its spec should be derived from Generator: %+v", set)
 	}
 	if set.Schema == nil || len(set.Schema.Kinds) != 1 {
 		t.Errorf("schema spec should be populated from SchemaSpec(): %+v", set.Schema)

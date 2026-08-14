@@ -318,10 +318,11 @@ ORDER BY table_schema, table_name, constraint_name, ordinal_position`
 	frows.Close()
 
 	idxQ := `
-SELECT table_schema, table_name, index_name, non_unique, column_name, seq_in_index
-FROM information_schema.statistics
-WHERE (table_schema, table_name) IN (` + pairs + `)
-ORDER BY table_schema, table_name, index_name, seq_in_index`
+SELECT s.table_schema, s.table_name, s.index_name, s.non_unique, s.column_name, s.seq_in_index
+FROM information_schema.statistics s
+WHERE (s.table_schema, s.table_name) IN (` + pairs + `)
+  AND s.index_name <> 'PRIMARY'
+ORDER BY s.table_schema, s.table_name, s.index_name, s.seq_in_index`
 	irows, err := d.db.QueryContext(ctx, idxQ, args...)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: object indexes: %w", err)

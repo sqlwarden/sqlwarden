@@ -841,6 +841,24 @@ func TestExecuteQueryExecuteBranch(t *testing.T) {
 	execReq.Header.Set("X-Warden-Session", sessionID)
 	execRes := send(t, execReq, app.routes())
 	assert.Equal(t, execRes.StatusCode, http.StatusOK)
+	_, reportsRowsAffected := execRes.BodyFields["rows_affected"]
+	assert.Equal(t, reportsRowsAffected, false)
+
+	insertReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/query",
+		map[string]any{"sql": "INSERT INTO t (id) VALUES (1), (2), (3)"}, tok)
+	insertReq.Header.Set("X-Warden-Session", sessionID)
+	insertRes := send(t, insertReq, app.routes())
+	assert.Equal(t, insertRes.StatusCode, http.StatusOK)
+	assert.Equal(t, insertRes.BodyFields["rows_affected"], any(float64(3)))
+
+	updateReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/query",
+		map[string]any{"sql": "UPDATE t SET id = id WHERE id = 99"}, tok)
+	updateReq.Header.Set("X-Warden-Session", sessionID)
+	updateRes := send(t, updateReq, app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusOK)
+	assert.Equal(t, updateRes.BodyFields["rows_affected"], any(float64(0)))
 }
 
 func TestExecuteQueryAppliesConfiguredResultLimit(t *testing.T) {

@@ -201,6 +201,73 @@ describe('SchemaDiagramView', () => {
     await waitFor(() => expect(refreshes).toBe(1))
   })
 
+  it('reconciles a renamed column after refreshing the schema', async () => {
+    store.getState().setSession(7, 'session-7')
+    schemaHandlers()
+    const scope = [{ kind: 'schema', name: 'public' }]
+    const customer = { scope, kind: 'table', name: 'customer' }
+    let refreshes = 0
+    let renamed = false
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+        HttpResponse.json({
+          directory: {
+            generated_at: '',
+            roots: [
+              {
+                segment: scope[0],
+                path: scope,
+                groups: [{ kind: 'table', objects: [customer] }],
+              },
+            ],
+          },
+        }),
+      ),
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects', () =>
+        HttpResponse.json({
+          objects: [
+            {
+              ref: customer,
+              relational: {
+                columns: [
+                  {
+                    name: renamed ? 'full_name' : 'name',
+                    data_type: 'text',
+                    nullable: false,
+                    ordinal: 1,
+                  },
+                ],
+                primary_key: [],
+                foreign_keys: [],
+                indexes: [],
+              },
+            },
+          ],
+        }),
+      ),
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', () => {
+        refreshes++
+        renamed = true
+        return HttpResponse.json({
+          status: 'ok',
+          mode: 'persistent',
+          snapshot_id: 'snapshot-2',
+          generated_at: '2026-08-06T00:00:00Z',
+        })
+      }),
+    )
+    const { user } = renderDiagram()
+
+    expect(await screen.findByText('name')).toBeInTheDocument()
+    expect(screen.queryByText('full_name')).not.toBeInTheDocument()
+
+    await user.click(await screen.findByRole('button', { name: 'Refresh schema' }))
+
+    await waitFor(() => expect(refreshes).toBe(1))
+    expect(await screen.findByText('full_name')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('name')).not.toBeInTheDocument())
+  })
+
   it('restores a persisted relationship diagram without attaching missing handles', async () => {
     const scope = [{ kind: 'schema', name: 'public' }]
     const customer = { scope, kind: 'table', name: 'customer' }

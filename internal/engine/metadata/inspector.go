@@ -25,6 +25,7 @@ type RelationshipInspector interface {
 	InspectRelationshipsInScope(ctx context.Context, scope ScopePath) (*RelationshipGraph, error)
 }
 
+// DirectoryOptions optionally limits inspection to one hierarchy root.
 type DirectoryOptions struct {
 	Root ScopePath
 }
@@ -35,10 +36,12 @@ type ScopeDiscoverer interface {
 	DiscoverScopes(ctx context.Context, request ScopeDiscoveryRequest) (*ScopeDiscovery, error)
 }
 
+// ScopeDiscoveryRequest identifies the parent whose immediate scopes are needed.
 type ScopeDiscoveryRequest struct {
 	Parent ScopePath `json:"parent,omitempty"`
 }
 
+// ScopeDiscovery reports the current scope and its selectable descendants.
 type ScopeDiscovery struct {
 	Current ScopePath   `json:"current,omitempty"`
 	Scopes  []ScopePath `json:"scopes"`

@@ -31,6 +31,9 @@ export type ContextMenuActionItem = {
   icon?: AppIcon
   shortcut?: string
   disabled?: boolean
+  /** Shown in place of a shortcut when the item is disabled, explaining why
+   *  (unsupported driver, no live session, missing permission, …). */
+  disabledReason?: string
   soon?: boolean
   destructive?: boolean
   onSelect?: () => void
@@ -209,12 +212,17 @@ function renderItem(
       key={item.id}
       disabled={inactive}
       variant={item.destructive ? 'destructive' : 'default'}
+      title={inactive && item.disabledReason ? item.disabledReason : undefined}
       onClick={() => selectAction(item)}
     >
       {item.icon && <Icon name={item.icon} size={13} />}
       <span className={cn(!item.soon && 'flex-1')}>{item.label}</span>
       {item.soon ? (
         <SoonBadge />
+      ) : inactive && item.disabledReason ? (
+        <span className="ml-auto max-w-[7.5rem] truncate text-right text-[10px] text-muted-foreground">
+          {item.disabledReason}
+        </span>
       ) : item.shortcut ? (
         <DropdownMenuShortcut>{item.shortcut}</DropdownMenuShortcut>
       ) : null}

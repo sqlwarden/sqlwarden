@@ -34,9 +34,20 @@ func TestSQLiteDriver(t *testing.T) {
 	}
 
 	// Insert rows.
-	_, err = d.Execute(ctx, `INSERT INTO users (id, name, age) VALUES (1, 'Alice', 30), (2, 'Bob', 25)`)
+	insertResult, err := d.Execute(ctx, `INSERT INTO users (id, name, age) VALUES (1, 'Alice', 30), (2, 'Bob', 25)`)
 	if err != nil {
 		t.Fatalf("Insert: %v", err)
+	}
+	if insertResult.RowsAffected == nil || *insertResult.RowsAffected != 2 {
+		t.Fatalf("insert rows affected = %v, want 2", insertResult.RowsAffected)
+	}
+
+	updateResult, err := d.Execute(ctx, `UPDATE users SET age = age + 1 WHERE id = 1`)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updateResult.RowsAffected == nil || *updateResult.RowsAffected != 1 {
+		t.Fatalf("update rows affected = %v, want 1", updateResult.RowsAffected)
 	}
 
 	// Query rows.

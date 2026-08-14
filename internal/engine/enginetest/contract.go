@@ -14,11 +14,13 @@ import (
 var knownCapabilities = map[engine.Capability]bool{
 	engine.CapabilitySchemaDirectory: true,
 	engine.CapabilitySchemaObjects:   true,
+	engine.CapabilityDDL:             true,
 	engine.CapabilityQueryCursor:     true,
 	engine.CapabilitySQLParse:        true,
 	engine.CapabilitySQLClassify:     true,
 	engine.CapabilitySQLRewrite:      true,
 	engine.CapabilitySQLComplete:     true,
+	engine.CapabilitySQLGenerate:     true,
 }
 
 // RunCapabilityContract asserts the static-capability invariants every engine
@@ -45,6 +47,12 @@ func RunCapabilityContract(t *testing.T, name string) {
 	}
 	if !set.Capabilities[engine.CapabilitySchemaDirectory] && set.Schema != nil {
 		t.Fatal("Schema spec present but schema.directory capability is false")
+	}
+	if set.Capabilities[engine.CapabilityDDL] != (set.DDL != nil) {
+		t.Fatal("schema.edit capability and schema edit spec disagree")
+	}
+	if set.Capabilities[engine.CapabilitySQLGenerate] != (set.Statements != nil) {
+		t.Fatal("sql.generate capability and statement spec disagree")
 	}
 }
 

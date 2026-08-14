@@ -279,6 +279,7 @@ function ResultSetView({
   const columns = result.data.columns ?? []
   const rows = result.data.rows ?? []
   const hasColumns = columns.length > 0
+  const rowsAffected = result.data.rows_affected
   const columnNames = columns.map((c) => c.name)
   const cellText = (v: ResultValue) => formatValue(v).display
 
@@ -528,6 +529,11 @@ function ResultSetView({
           <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <Icon name="checkmark-circle-02" size={14} className="text-green-500" />
             <span className="font-medium text-foreground">Query executed</span>
+            {rowsAffected !== undefined && (
+              <span className="tabular-nums">
+                · {rowsAffected} {rowsAffected === 1 ? 'row' : 'rows'} affected
+              </span>
+            )}
             <span className="tabular-nums">· {durationMs}ms</span>
           </div>
         </div>

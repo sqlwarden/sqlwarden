@@ -3,15 +3,19 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/ddl"
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -89,6 +93,28 @@ func (schemaRelDriver) InspectRelationshipsInScope(_ context.Context, scope meta
 			ReferencedColumns: []string{"id"},
 		}},
 	}, nil
+}
+
+type ddlFakeDriver struct {
+	schemaFakeDriver
+	mu      sync.Mutex
+	applied []ddl.Request
+}
+
+func (*ddlFakeDriver) DDLSpec() ddl.Spec {
+	return ddl.Spec{
+		Operations:               []ddl.Operation{ddl.OperationCreateTable, ddl.OperationDropObject},
+		ColumnTypes:              []string{"integer", "text"},
+		CreatableTableScopeKinds: []string{"database"},
+		DroppableObjectKinds:     []string{"table", "view"},
+	}
+}
+
+func (d *ddlFakeDriver) ApplyDDL(_ context.Context, request ddl.Request) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.applied = append(d.applied, request)
+	return nil
 }
 
 func TestGetConnectionSchemaRelationships(t *testing.T) {
@@ -202,6 +228,112 @@ func TestGetConnectionSchemaSpec(t *testing.T) {
 	table := kinds[0].(map[string]any)
 	assert.Equal(t, table["kind"], "table")
 	assert.Equal(t, table["listing"], "enumerated")
+	if _, ok := res.BodyFields["editor"].(map[string]any); !ok {
+		t.Fatalf("expected schema editor spec, got %v", res.BodyFields["editor"])
+	}
+	if _, ok := res.BodyFields["statements"].(map[string]any); !ok {
+		t.Fatalf("expected statement generator spec, got %v", res.BodyFields["statements"])
+	}
+}
+
+func TestGenerateConnectionStatement(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "statement-generate"), "Statement", "Statement Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Statement WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Statement Conn", "open")
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
+	ref := map[string]any{
+		"scope": []map[string]any{{"kind": "database", "name": "main"}},
+		"kind":  "table",
+		"name":  "widgets",
+	}
+	url := orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10)) + "/schema/statements"
+
+	tests := []struct {
+		operation string
+		contains  string
+	}{
+		{operation: "select", contains: "SELECT\n  \"id\"\nFROM \"main\".\"widgets\";"},
+		{operation: "insert", contains: "VALUES (\n  ?\n);"},
+		{operation: "update", contains: "WHERE 1 = 0;"},
+		{operation: "delete", contains: "DELETE FROM \"main\".\"widgets\"\nWHERE 1 = 0;"},
+	}
+	for _, test := range tests {
+		t.Run(test.operation, func(t *testing.T) {
+			req := newAuthRequest(t, http.MethodPost, url, map[string]any{"operation": test.operation, "ref": ref}, tok)
+			req.Header.Set("X-Warden-Session", sess.ID)
+			res := send(t, req, app.routes())
+			assert.Equal(t, res.StatusCode, http.StatusOK)
+			generated, _ := res.BodyFields["sql"].(string)
+			if !strings.Contains(generated, test.contains) {
+				t.Fatalf("generated %s = %q, want substring %q", test.operation, generated, test.contains)
+			}
+		})
+	}
+
+	viewRef := maps.Clone(ref)
+	viewRef["kind"] = "view"
+	req := newAuthRequest(t, http.MethodPost, url, map[string]any{"operation": "delete", "ref": viewRef}, tok)
+	req.Header.Set("X-Warden-Session", sess.ID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assert.Equal(t, res.BodyFields["error"].(map[string]any)["code"], "statement_generation_failed")
+
+	req = newAuthRequest(t, http.MethodPost, url, map[string]any{"operation": "select", "ref": ref}, tok)
+	res = send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusBadRequest)
+}
+
+func TestApplyConnectionDDL(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-edit"), "Schema Edit", "Schema Edit Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	driver := &ddlFakeDriver{}
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, driver)
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+
+	req := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/mutations",
+		map[string]any{"operation": "create_table", "scope": scope, "name": "events", "columns": []map[string]any{{"name": "id", "data_type": "integer", "primary_key": true}}}, tok)
+	req.Header.Set("X-Warden-Session", sess.ID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["applied"], true)
+	schemaStatus := res.BodyFields["schema"].(map[string]any)
+	assert.Equal(t, schemaStatus["mode"], "ephemeral")
+
+	driver.mu.Lock()
+	defer driver.mu.Unlock()
+	if len(driver.applied) != 1 || driver.applied[0].Name != "events" {
+		t.Fatalf("applied edits = %+v", driver.applied)
+	}
+}
+
+func TestApplyConnectionDDLRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-edit-invalid"), "Schema Edit", "Schema Edit Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	driver := &ddlFakeDriver{}
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, driver)
+
+	req := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/mutations",
+		map[string]any{"operation": "create_table", "scope": metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"}), "name": "events", "columns": []map[string]any{{"name": "id", "data_type": "text); DROP TABLE users"}}}, tok)
+	req.Header.Set("X-Warden-Session", sess.ID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assert.Equal(t, res.BodyFields["error"].(map[string]any)["code"], "invalid_schema_edit")
+	if len(driver.applied) != 0 {
+		t.Fatalf("invalid edit reached driver: %+v", driver.applied)
+	}
 }
 
 func TestPostConnectionObjects(t *testing.T) {

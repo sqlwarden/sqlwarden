@@ -8,6 +8,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/ddl"
+	"github.com/sqlwarden/internal/engine/statement"
 	"github.com/sqlwarden/internal/response"
 )
 
@@ -17,6 +19,8 @@ type engineView struct {
 	Dialect      string                     `json:"dialect"`
 	Capabilities map[engine.Capability]bool `json:"capabilities"`
 	Schema       *schemaSpecPayload         `json:"schema,omitempty"`
+	DDL          *ddl.Spec                  `json:"schema_edit,omitempty"`
+	Statements   *statement.Spec            `json:"statements,omitempty"`
 }
 
 // schemaSpecPayload mirrors schema.SchemaSpec but lives here so the engines API
@@ -36,6 +40,8 @@ func engineToView(set engine.CapabilitySet) engineView {
 		DisplayName:  set.Engine.DisplayName,
 		Dialect:      string(set.Engine.Dialect),
 		Capabilities: set.Capabilities,
+		DDL:          set.DDL,
+		Statements:   set.Statements,
 	}
 	if set.Schema != nil {
 		v.Schema = &schemaSpecPayload{Dialect: set.Schema.Dialect, Kinds: set.Schema.Kinds}

@@ -10,7 +10,8 @@ import (
 // Driver is the connection capability every engine must implement. An engine
 // type also implements whichever optional capability interfaces it supports
 // (classifier.Classifier, parser.Parser, rewriter.Rewriter, completer.Completer,
-// metadata.SchemaInspector, cursor.QueryCursorDriver), resolved by type assertion.
+// metadata.SchemaInspector, cursor.QueryCursorDriver, ddl.Executor, and
+// statement.Generator), resolved by type assertion.
 type Driver interface {
 	Connect(ctx context.Context, cfg ConnectionConfig) error
 	Ping(ctx context.Context) error

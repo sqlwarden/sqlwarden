@@ -53,19 +53,35 @@ jobs:
           packs: ${{ matrix.packs }}
 
       - name: Analyze
-        id: analyze
         uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}
           output: sarif-results
+          # Upload the processed SARIF below. This keeps source suppressions out
+          # of PR results without changing repository-global alert state.
+          upload: failure-only
 
-      # Alert dismissal is repository-global, so source suppressions are applied
-      # only from trusted code after it reaches the default branch.
-      - name: Apply source suppressions
-        if: github.ref == 'refs/heads/main' && matrix.language == 'go'
-        uses: advanced-security/dismiss-alerts@v2
+      - name: Filter source suppressions
+        if: matrix.language == 'go'
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=false
+          while IFS= read -r -d '' sarif; do
+            found=true
+            filtered="${sarif}.filtered"
+            jq '(.runs[] | select(.results != null) | .results) |= map(select(((.suppressions // []) | length) == 0))' \
+              "$sarif" > "$filtered"
+            mv "$filtered" "$sarif"
+          done < <(find sarif-results -type f \( -name '*.sarif' -o -name '*.sarif.json' \) -print0)
+          if [[ "$found" != true ]]; then
+            echo "No SARIF files found" >&2
+            exit 1
+          fi
+
+      - name: Upload results
+        uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif-id: ${{ steps.analyze.outputs.sarif-id }}
-          sarif-file: sarif-results
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+          category: /language:${{ matrix.language }}
+          sarif_file: sarif-results
+          wait-for-processing: true

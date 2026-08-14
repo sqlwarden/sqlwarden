@@ -9,6 +9,7 @@ import (
 type ResultSet struct {
 	Columns          []Column `json:"columns"`
 	Rows             []Row    `json:"rows"`
+	RowsAffected     *int64   `json:"rows_affected,omitempty"`
 	DurationMs       int64    `json:"duration_ms"`
 	Truncated        bool     `json:"truncated"`
 	RowsReturned     int      `json:"rows_returned"`
@@ -17,6 +18,12 @@ type ResultSet struct {
 	QueryCursorID    string   `json:"query_cursor_id,omitempty"`
 	Exhausted        *bool    `json:"exhausted,omitempty"`
 	PageSize         int      `json:"page_size,omitempty"`
+}
+
+// NewExecutionResult returns a columnless result for an executed statement.
+// A pointer preserves zero as a reported affected-row count in JSON.
+func NewExecutionResult(rowsAffected int64) *ResultSet {
+	return &ResultSet{RowsAffected: &rowsAffected}
 }
 
 // Column describes a single column in a ResultSet.

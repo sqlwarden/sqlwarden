@@ -1,7 +1,25 @@
-import type { ObjectGroup, SchemaDirectory, SchemaSpec, ScopeNode } from '#/lib/api/types'
+import type {
+  ObjectGroup,
+  SchemaDirectory,
+  SchemaSpec,
+  ScopeNode,
+  ScopePath,
+} from '#/lib/api/types'
 
 export function kindLabel(spec: SchemaSpec | undefined, kind: string): string {
   return spec?.kinds.find((k) => k.kind === kind)?.plural_label ?? fallbackKindLabel(kind)
+}
+
+/** Singular display label for an object kind (e.g. "Materialized view"), used
+ *  in confirmations and dialogs where the plural directory label reads oddly. */
+export function kindLabelSingular(spec: SchemaSpec | undefined, kind: string): string {
+  const found = spec?.kinds.find((k) => k.kind === kind)?.label
+  if (found) return found
+  return kind
+    .split('_')
+    .filter(Boolean)
+    .map((word, i) => (i === 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word))
+    .join(' ')
 }
 
 function fallbackKindLabel(kind: string): string {
@@ -29,6 +47,19 @@ export function hasDirectoryObjects(nodes: ScopeNode[]): boolean {
       node.groups.some((group) => group.objects.length > 0) ||
       hasDirectoryObjects(node.children ?? []),
   )
+}
+
+/** Best-effort scope for a first "Create table" action when a database has no
+ *  objects yet: the sole root scope, or its sole child scope when the root is
+ *  just a container (e.g. a database holding a single schema). Ambiguous
+ *  shapes (multiple roots, multiple children) return null rather than
+ *  guessing which scope the user meant. */
+export function defaultCreateTableScope(roots: ScopeNode[]): ScopePath | null {
+  if (roots.length !== 1) return null
+  const children = roots[0].children ?? []
+  if (children.length === 0) return roots[0].path
+  if (children.length === 1) return children[0].path
+  return null
 }
 
 export function filterDirectory(directory: SchemaDirectory, query: string): SchemaDirectory {

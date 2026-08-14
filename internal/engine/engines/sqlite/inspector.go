@@ -262,6 +262,11 @@ func (d *sqliteDriver) inspectSQLiteRelational(ctx context.Context, b *build.Rel
 			idxRows.Close()
 			return fmt.Errorf("sqlite: object index scan: %w", err)
 		}
+		// Only indexes created explicitly by the user are independently
+		// droppable. SQLite owns indexes backing primary/unique constraints.
+		if origin != "c" {
+			continue
+		}
 		indexes = append(indexes, metadata.SecondaryIndex{Name: name, Unique: unique == 1})
 	}
 	if err := idxRows.Err(); err != nil {

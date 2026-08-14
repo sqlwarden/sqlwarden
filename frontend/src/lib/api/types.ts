@@ -119,6 +119,7 @@ export type ResultRow = ResultValue[]
 export interface ResultSet {
   columns: ResultColumn[] | null
   rows: ResultRow[] | null
+  rows_affected?: number
   duration_ms: number
   truncated: boolean
   rows_returned: number
@@ -557,8 +558,74 @@ export interface SchemaRefreshResponse {
   generated_at?: string
 }
 
+export type StatementOperation = 'select' | 'insert' | 'update' | 'delete'
+
+export interface StatementObjectSpec {
+  kind: string
+  operations: StatementOperation[]
+}
+
+/** Static, driver-advertised SQL-statement-generation capabilities, keyed by object kind. */
+export interface StatementSpec {
+  objects: StatementObjectSpec[]
+}
+
+export interface GenerateStatementRequest {
+  operation: StatementOperation
+  ref: ObjectRef
+}
+
+export interface GenerateStatementResponse {
+  sql: string
+}
+
+export type SchemaEditOperation =
+  'create_table' | 'drop_object' | 'drop_scope' | 'rename_column' | 'drop_column' | 'drop_index'
+
+export interface SchemaEditColumn {
+  name: string
+  data_type: string
+  nullable: boolean
+  primary_key: boolean
+}
+
+/** Static, driver-advertised schema-editing capabilities. Never infer these in the UI. */
+export interface SchemaEditSpec {
+  operations: SchemaEditOperation[]
+  column_types: string[]
+  creatable_table_scope_kinds: string[]
+  droppable_object_kinds: string[]
+  droppable_scope_kinds: string[]
+  supports_cascade: boolean
+}
+
+export interface SchemaEditRequest {
+  operation: SchemaEditOperation
+  scope?: ScopePath
+  ref?: ObjectRef
+  name?: string
+  new_name?: string
+  columns?: SchemaEditColumn[]
+  cascade?: boolean
+}
+
+export interface SchemaEditStatus {
+  status: 'available' | 'refresh_failed'
+  mode: 'persistent' | 'ephemeral'
+  snapshot_id?: string
+  generated_at?: string
+  stale?: boolean
+}
+
+export interface SchemaEditResponse {
+  applied: boolean
+  schema: SchemaEditStatus
+}
+
 export interface SchemaSpecResponse {
   spec: SchemaSpec
+  editor?: SchemaEditSpec
+  statements?: StatementSpec
 }
 
 export interface ObjectsResponse {

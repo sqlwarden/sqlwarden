@@ -65,14 +65,18 @@ func (d *sqliteDriver) Execute(ctx context.Context, query string, args ...any) (
 	return d.ExecuteWithOptions(ctx, query, d.scanOptions, args...)
 }
 
-func (d *sqliteDriver) ExecuteWithOptions(ctx context.Context, query string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
+func (d *sqliteDriver) ExecuteWithOptions(ctx context.Context, query string, _ cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
 	// SQL is intentionally user-authored editor input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	execResult, err := d.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: execute: %w", err)
 	}
-	return cursor.ScanRows(rows, opts)
+	rowsAffected, err := execResult.RowsAffected()
+	if err != nil {
+		return &result.ResultSet{}, nil
+	}
+	return result.NewExecutionResult(rowsAffected), nil
 }
 
 func (d *sqliteDriver) Dialect() engine.Dialect {
