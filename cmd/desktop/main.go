@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -75,7 +76,7 @@ func run(args []string) error {
 		Height:      900,
 		MinWidth:    1024,
 		MinHeight:   680,
-		AssetServer: &assetserver.Options{Assets: staticFiles, Middleware: apiMiddleware(apiHandler)},
+		AssetServer: &assetserver.Options{Assets: staticFiles, Middleware: desktopRoutingMiddleware(apiHandler)},
 		OnStartup:   bridge.startup,
 		OnShutdown:  bridge.shutdown,
 		Bind:        []interface{}{bridge},
@@ -110,16 +111,32 @@ func desktopLogger(paths desktopconfig.Paths) (*slog.Logger, func(), error) {
 	return slog.New(slog.NewTextHandler(io.MultiWriter(writers...), &slog.HandlerOptions{Level: slog.LevelInfo})), closeLog, nil
 }
 
-func apiMiddleware(api http.Handler) assetserver.Middleware {
+func desktopRoutingMiddleware(api http.Handler) assetserver.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
 				api.ServeHTTP(w, r)
 				return
 			}
+			if isSPARoute(r) {
+				request := r.Clone(r.Context())
+				request.URL.Path = "/"
+				next.ServeHTTP(w, request)
+				return
+			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func isSPARoute(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	if r.URL.Path == "/" || path.Ext(r.URL.Path) != "" {
+		return false
+	}
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
 func unavailableAPI(startupErr error) http.Handler {
