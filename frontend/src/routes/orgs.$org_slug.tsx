@@ -149,6 +149,7 @@ function OrganizationLayout() {
                 : (organization.data?.name ?? orgSlug)
             }
             icon={<brand.LogoMark size={18} />}
+            homeTo="/"
           />
           <SidebarContent>
             {workspaceId ? (
@@ -421,8 +422,12 @@ function isDesktopHiddenOrganizationPath(
   workspaceId: string | undefined,
 ) {
   const path = trimTrailingSlash(pathname)
+  const orgBase = `/orgs/${orgSlug}`
+  if (path !== orgBase && !path.startsWith(`${orgBase}/`)) {
+    return false
+  }
   if (!workspaceId) {
-    const allowed = [`/orgs/${orgSlug}`, `/orgs/${orgSlug}/workspaces`]
+    const allowed = [orgBase, `${orgBase}/workspaces`]
     return !allowed.includes(path)
   }
   const base = `/orgs/${orgSlug}/workspaces/${workspaceId}`
