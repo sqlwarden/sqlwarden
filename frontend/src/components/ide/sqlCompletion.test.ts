@@ -755,6 +755,63 @@ SELECT * FROM customer_total_spent`
     },
   )
 
+  it.each([
+    ['postgres', false],
+    ['postgres', true],
+    ['mysql', false],
+    ['mysql', true],
+  ] as const)(
+    'requests standalone CTE columns for %s with explicit=%s and a commented outer query',
+    async (driver, explicit) => {
+      const marker = explicit ? '' : 'cust'
+      const sql = `WITH customer_total_spent AS (
+  SELECT
+    ${marker}
+  FROM payment
+  GROUP BY customer_id
+)
+-- block
+-- SELECT
+-- FROM customer c
+-- block`
+      const cursorLine = `    ${marker}\n`
+      const cursor = sql.indexOf(cursorLine) + cursorLine.length - 1
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('completion-vocabulary')) return vocabularyResponse()
+        expect(JSON.parse(String(init?.body))).toEqual({
+          sql,
+          cursor_offset: cursor,
+          trigger_kind: explicit ? 'invoked' : 'automatic',
+        })
+        return semanticCompletionResponse([
+          {
+            label: 'customer_id',
+            kind: 'column',
+            insert_text: 'customer_id',
+            replace_start: cursor - marker.length,
+            replace_end: cursor,
+            score: 100,
+          },
+        ])
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const state = EditorState.create({ doc: sql, selection: { anchor: cursor } })
+      const source = remoteSQLCompletionSource({
+        orgSlug: 'acme',
+        workspaceId: 1,
+        connectionId: 2,
+        driver,
+      })
+
+      const result = await source(new CompletionContext(state, cursor, explicit))
+
+      expect(result?.options).toEqual(
+        expect.arrayContaining([expect.objectContaining({ label: 'customer_id', type: 'column' })]),
+      )
+      expect(fetchMock).toHaveBeenCalledTimes(explicit ? 1 : 2)
+    },
+  )
+
   it('calls semantic completion on a dot and preserves display labels', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).not.toContain('completion-vocabulary')

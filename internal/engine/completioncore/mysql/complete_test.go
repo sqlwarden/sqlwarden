@@ -63,6 +63,20 @@ func TestScopeScenarios(t *testing.T) {
 			},
 		},
 		{
+			Name: "standalone incomplete CTE body",
+			SQL:  "WITH picked AS (\n  SELECT \n    |\n  FROM film\n)",
+			Require: []completiontest.Expected{
+				{Text: "film_id", Type: column}, {Text: "title", Type: column},
+			},
+		},
+		{
+			Name: "standalone incomplete CTE ignores commented outer query",
+			SQL:  "WITH picked AS (\n  SELECT \n    |\n  FROM film\n)\n-- SELECT *\n-- FROM picked",
+			Require: []completiontest.Expected{
+				{Text: "film_id", Type: column}, {Text: "title", Type: column},
+			},
+		},
+		{
 			Name: "derived table columns",
 			SQL:  "SELECT * FROM (SELECT customer_id, email AS address FROM customer) c WHERE c.|",
 			Require: []completiontest.Expected{

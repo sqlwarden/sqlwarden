@@ -320,6 +320,34 @@ func TestMySQLCompleteSelectAliasesByClause(t *testing.T) {
 	}
 }
 
+func TestMySQLCompleteInsideStandaloneCTE(t *testing.T) {
+	driver := &mysqlDriver{}
+	set := &metadata.MetadataSet{
+		Directory: mysqlCompletionTestCatalog(), Objects: mysqlCompletionTestObjects(),
+	}
+	for _, trigger := range []completer.TriggerKind{completer.TriggerAutomatic, completer.TriggerInvoked} {
+		for _, suffix := range []string{"", "\n-- block\n-- SELECT\n-- FROM users\n-- block"} {
+			name := string(trigger)
+			if suffix != "" {
+				name += "/commented-outer"
+			}
+			t.Run(name, func(t *testing.T) {
+				template := "WITH picked AS (\n  SELECT \n    |\n  FROM users\n)" + suffix
+				cursor := strings.IndexByte(template, '|')
+				sql := strings.Replace(template, "|", "", 1)
+				result, err := driver.Complete(context.Background(), completer.Request{
+					SQL: sql, CursorOffset: cursor, TriggerKind: trigger, Schema: set,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				requireMySQLCompletion(t, result, "id", "column")
+				requireMySQLCompletion(t, result, "display name", "column")
+			})
+		}
+	}
+}
+
 func TestMySQLCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
 	directory := mysqlCompletionTestCatalog()
 	objects := mysqlCompletionTestObjects()

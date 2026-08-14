@@ -454,6 +454,34 @@ func TestPostgresCompleteSelectAliasesByClause(t *testing.T) {
 	}
 }
 
+func TestPostgresCompleteInsideStandaloneCTE(t *testing.T) {
+	driver := &postgresDriver{}
+	set := &metadata.MetadataSet{
+		Directory: completionTestCatalog("postgres", "public"), Objects: completionTestObjects("public"),
+	}
+	for _, trigger := range []completer.TriggerKind{completer.TriggerAutomatic, completer.TriggerInvoked} {
+		for _, suffix := range []string{"", "\n-- block\n-- SELECT\n-- FROM users\n-- block"} {
+			name := string(trigger)
+			if suffix != "" {
+				name += "/commented-outer"
+			}
+			t.Run(name, func(t *testing.T) {
+				template := "WITH picked AS (\n  SELECT \n    |\n  FROM users\n)" + suffix
+				cursor := strings.IndexByte(template, '|')
+				sql := strings.Replace(template, "|", "", 1)
+				result, err := driver.Complete(context.Background(), completer.Request{
+					SQL: sql, CursorOffset: cursor, TriggerKind: trigger, Schema: set,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				requireCompletion(t, result, "id", "column")
+				requireCompletion(t, result, "display name", "column")
+			})
+		}
+	}
+}
+
 func TestPostgresCompletionContextMatrix(t *testing.T) {
 	driver := &postgresDriver{}
 	directory := completionTestCatalog("postgres", "public")
