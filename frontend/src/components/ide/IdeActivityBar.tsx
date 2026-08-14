@@ -29,6 +29,7 @@ import {
 } from './ideActivities'
 import { Tip } from './schema-diagram/Tip'
 import { WorkspaceSelector } from './WorkspaceSelector'
+import { useSetupStatus } from '#/hooks/use-setup-status'
 
 type IdeActivityBarProps = {
   orgSlug: string
@@ -324,6 +325,8 @@ function RailPreferencesAndAvatar({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { preferences, setPreferences } = useAppShellPreferences()
+  const setupStatus = useSetupStatus()
+  const desktopMode = setupStatus.data?.deployment_mode === 'desktop'
 
   const logout = useMutation({
     mutationFn: async () => api.post<void>('/api/v1/auth/logout'),
@@ -368,55 +371,71 @@ function RailPreferencesAndAvatar({
         }
       />
 
-      <DropdownMenu>
-        {expanded ? (
-          avatarTrigger
-        ) : (
-          <Tip label={session.account.name} side="right">
-            {avatarTrigger}
-          </Tip>
-        )}
-        <DropdownMenuContent align="start" side="right" className="w-64 min-w-64">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel className="px-2 py-2">
-              <div className="flex items-center gap-2 normal-case tracking-normal">
-                <UserAvatar value={session.account.name} fallback="U" size={28} />
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate text-sm font-medium text-foreground">
-                    {session.account.name}
-                  </span>
-                  <span className="truncate text-xs font-normal text-muted-foreground">
-                    {session.account.email}
-                  </span>
-                </div>
-              </div>
-            </DropdownMenuLabel>
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            {menuItems.map((item) => (
-              <DropdownMenuItem
-                key={item.id}
-                render={<Link to={item.to as never} params={item.params as never} />}
-              >
-                <Icon name={item.icon} size={20} />
-                {item.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            variant="destructive"
-            disabled={logout.isPending}
-            onClick={() => {
-              logout.mutate()
-            }}
+      {desktopMode ? (
+        <Tip label="Settings" side="right">
+          <Link
+            to="/desktop/settings"
+            aria-label="Settings"
+            className={cn(
+              'flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors hover:bg-sidebar-accent/60',
+              expanded ? 'h-8 w-full justify-start gap-2 p-2' : 'size-8 justify-center',
+            )}
           >
-            <Icon name="logout-03" size={20} />
-            {logout.isPending ? 'Signing out...' : 'Sign out'}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <Icon name="settings-02" size={17} className="shrink-0" />
+            {expanded ? <span>Settings</span> : null}
+          </Link>
+        </Tip>
+      ) : (
+        <DropdownMenu>
+          {expanded ? (
+            avatarTrigger
+          ) : (
+            <Tip label={session.account.name} side="right">
+              {avatarTrigger}
+            </Tip>
+          )}
+          <DropdownMenuContent align="start" side="right" className="w-64 min-w-64">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="px-2 py-2">
+                <div className="flex items-center gap-2 normal-case tracking-normal">
+                  <UserAvatar value={session.account.name} fallback="U" size={28} />
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {session.account.name}
+                    </span>
+                    <span className="truncate text-xs font-normal text-muted-foreground">
+                      {session.account.email}
+                    </span>
+                  </div>
+                </div>
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              {menuItems.map((item) => (
+                <DropdownMenuItem
+                  key={item.id}
+                  render={<Link to={item.to as never} params={item.params as never} />}
+                >
+                  <Icon name={item.icon} size={20} />
+                  {item.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={logout.isPending}
+              onClick={() => {
+                logout.mutate()
+              }}
+            >
+              <Icon name="logout-03" size={20} />
+              {logout.isPending ? 'Signing out...' : 'Sign out'}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </>
   )
 }
