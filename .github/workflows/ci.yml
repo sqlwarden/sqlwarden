@@ -202,5 +202,20 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          load: true
           push: false
           tags: sqlwarden/sqlwarden:ci
+
+      - name: Verify image serves the frontend
+        if: steps.changes.outputs.docker == 'true'
+        run: |
+          docker run --rm -d --name sqlwarden-ci -p 6020:6020 sqlwarden/sqlwarden:ci
+          trap 'docker logs sqlwarden-ci; docker stop sqlwarden-ci' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:6020/ | grep --quiet '<div id="app"></div>'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "SQLWarden frontend did not become ready" >&2
+          exit 1
