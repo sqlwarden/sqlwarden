@@ -75,7 +75,7 @@ describe('SQL completion', () => {
       label: 'widgets',
       apply: 'widgets',
       type: 'table',
-      boost: 80,
+      boost: 4080,
     })
   })
 
@@ -316,6 +316,155 @@ describe('SQL completion', () => {
     expect(result?.options.map((option) => option.label)).toEqual(['SELECT'])
     expect(fetchMock).toHaveBeenCalledOnce()
   })
+
+  it('ranks exact and prefix vocabulary matches ahead of broader matches', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              dialect: 'postgres',
+              version: 'ranking-test',
+              suggestions: [
+                { label: 'consumer', kind: 'function', score: 100 },
+                { label: 'set_user_mapping', kind: 'function', score: 100 },
+                { label: 'summary', kind: 'function', score: 1 },
+                { label: 'gross_sum', kind: 'function', score: 100 },
+                { label: 'SUM', kind: 'function', score: 1 },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+      ),
+    )
+    const state = EditorState.create({ doc: 'sum' })
+    const source = remoteSQLCompletionSource({ driver: 'postgres' })
+
+    const result = await source(new CompletionContext(state, state.doc.length, false))
+
+    expect(result?.options.map((option) => option.label)).toEqual([
+      'SUM',
+      'summary',
+      'gross_sum',
+      'consumer',
+      'set_user_mapping',
+    ])
+  })
+
+  it.each(['postgres', 'mysql'])(
+    'invalidates a broad %s semantic result and refreshes it for the typed prefix',
+    async (driver) => {
+      const broadSQL = 'SELECT amount FROM payment HAVING '
+      const prefixSQL = `${broadSQL}su`
+      const exactSQL = `${broadSQL}sum`
+      const semanticRequests: string[] = []
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('completion-vocabulary')) {
+          return new Response(
+            JSON.stringify({
+              dialect: driver,
+              version: 'function-prefix-test',
+              suggestions: [{ label: 'SUM', kind: 'function', score: 60 }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        const body = JSON.parse(String(init?.body)) as { sql: string }
+        semanticRequests.push(body.sql)
+        return semanticCompletionResponse(
+          body.sql === broadSQL
+            ? [
+                {
+                  label: 'binary_upgrade_set_next_pg_enum_oid',
+                  kind: 'function',
+                  insert_text: 'binary_upgrade_set_next_pg_enum_oid',
+                  replace_start: broadSQL.length,
+                  replace_end: broadSQL.length,
+                  score: 100,
+                },
+              ]
+            : body.sql === prefixSQL
+              ? [
+                  {
+                    label: 'array_append_support',
+                    kind: 'function',
+                    insert_text: 'array_append_support',
+                    replace_start: broadSQL.length,
+                    replace_end: prefixSQL.length,
+                    score: 50,
+                  },
+                ]
+              : [
+                  {
+                    label: 'binary_upgrade_set_next_pg_enum_oid',
+                    kind: 'function',
+                    insert_text: 'binary_upgrade_set_next_pg_enum_oid',
+                    replace_start: broadSQL.length,
+                    replace_end: exactSQL.length,
+                    score: 100,
+                  },
+                ],
+        )
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const source = remoteSQLCompletionSource({
+        orgSlug: 'acme',
+        workspaceId: 1,
+        connectionId: 2,
+        driver,
+      })
+
+      const broadState = EditorState.create({ doc: broadSQL })
+      const broadResult = await source(
+        new CompletionContext(broadState, broadState.doc.length, false),
+      )
+      expect(typeof broadResult?.validFor).toBe('function')
+      if (typeof broadResult?.validFor !== 'function') throw new Error('expected validFor function')
+      expect(
+        broadResult.validFor('', broadResult.from, broadResult.to ?? broadResult.from, broadState),
+      ).toBe(true)
+      expect(
+        broadResult.validFor(
+          'su',
+          broadResult.from,
+          broadResult.to ?? broadResult.from,
+          broadState,
+        ),
+      ).toBe(false)
+
+      const prefixState = EditorState.create({ doc: prefixSQL })
+      const prefixResult = await source(
+        new CompletionContext(prefixState, prefixState.doc.length, false),
+      )
+
+      expect(prefixResult?.options.map((option) => option.label)).toEqual([
+        'SUM',
+        'array_append_support',
+      ])
+      expect(typeof prefixResult?.validFor).toBe('function')
+      if (typeof prefixResult?.validFor !== 'function')
+        throw new Error('expected validFor function')
+      expect(
+        prefixResult.validFor(
+          'sum',
+          prefixResult.from,
+          prefixResult.to ?? prefixResult.from,
+          prefixState,
+        ),
+      ).toBe(false)
+
+      const exactState = EditorState.create({ doc: exactSQL })
+      const exactResult = await source(
+        new CompletionContext(exactState, exactState.doc.length, false),
+      )
+      expect(exactResult?.options[0]?.label).toBe('SUM')
+      expect(exactResult?.options.map((option) => option.label)).toContain(
+        'binary_upgrade_set_next_pg_enum_oid',
+      )
+      expect(semanticRequests).toEqual([broadSQL, prefixSQL, exactSQL])
+    },
+  )
 
   it.each([
     ['SELECT | FROM users', 'email', 'column'],
@@ -603,6 +752,63 @@ SELECT * FROM customer_total_spent`
         expect.arrayContaining([expect.objectContaining({ label: 'customer_id', type: 'column' })]),
       )
       expect(fetchMock).toHaveBeenCalledTimes(2)
+    },
+  )
+
+  it.each([
+    ['postgres', false],
+    ['postgres', true],
+    ['mysql', false],
+    ['mysql', true],
+  ] as const)(
+    'requests standalone CTE columns for %s with explicit=%s and a commented outer query',
+    async (driver, explicit) => {
+      const marker = explicit ? '' : 'cust'
+      const sql = `WITH customer_total_spent AS (
+  SELECT
+    ${marker}
+  FROM payment
+  GROUP BY customer_id
+)
+-- block
+-- SELECT
+-- FROM customer c
+-- block`
+      const cursorLine = `    ${marker}\n`
+      const cursor = sql.indexOf(cursorLine) + cursorLine.length - 1
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('completion-vocabulary')) return vocabularyResponse()
+        expect(JSON.parse(String(init?.body))).toEqual({
+          sql,
+          cursor_offset: cursor,
+          trigger_kind: explicit ? 'invoked' : 'automatic',
+        })
+        return semanticCompletionResponse([
+          {
+            label: 'customer_id',
+            kind: 'column',
+            insert_text: 'customer_id',
+            replace_start: cursor - marker.length,
+            replace_end: cursor,
+            score: 100,
+          },
+        ])
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const state = EditorState.create({ doc: sql, selection: { anchor: cursor } })
+      const source = remoteSQLCompletionSource({
+        orgSlug: 'acme',
+        workspaceId: 1,
+        connectionId: 2,
+        driver,
+      })
+
+      const result = await source(new CompletionContext(state, cursor, explicit))
+
+      expect(result?.options).toEqual(
+        expect.arrayContaining([expect.objectContaining({ label: 'customer_id', type: 'column' })]),
+      )
+      expect(fetchMock).toHaveBeenCalledTimes(explicit ? 1 : 2)
     },
   )
 

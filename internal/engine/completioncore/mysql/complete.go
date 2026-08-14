@@ -58,10 +58,204 @@ func Complete(
 	if columnContext && metadata != nil {
 		result = append(result, resolveColumns(sql, cursor, qualifier, metadata)...)
 	}
+	result = append(result, cteRelationCandidates(sql, cursor)...)
+	result = append(result, selectAliasCandidates(sql, cursor)...)
 	if continuation, ok := relationContinuationAt(sql, cursor); ok {
 		result = relationContinuationCandidates(continuation)
 	}
 	return filterByPrefix(deduplicate(result), prefixAt(sql, cursor)), completioncore.CheckContext(ctx)
+}
+
+func cteRelationCandidates(sql string, cursor int) []completioncore.Candidate {
+	tokens := completionTokens(parser.Tokenize(sql))
+	if len(tokens) == 0 {
+		return nil
+	}
+	start, _ := statementBounds(tokens, cursor)
+	cursorDepth := depthAt(tokens, cursor)
+	selectIndex, selectDepth := activeSelect(tokens, start, cursor, cursorDepth)
+	if selectIndex < 0 || !mysqlRelationPosition(sql, tokens, selectIndex, cursor, cursorDepth) {
+		return nil
+	}
+	withIndex := -1
+	for i := selectIndex - 1; i >= start; i-- {
+		if tokens[i].depth == selectDepth && tokenIs(tokens[i], "WITH") {
+			withIndex = i
+			break
+		}
+	}
+	if withIndex < 0 {
+		return nil
+	}
+	names := mysqlCTENames(tokens, withIndex, selectIndex, selectDepth)
+	result := make([]completioncore.Candidate, 0, len(names))
+	for _, name := range names {
+		result = append(result, completioncore.Candidate{Text: name, Type: completioncore.CandidateTable})
+	}
+	return result
+}
+
+func mysqlRelationPosition(sql string, tokens []token, selectIndex, cursor, depth int) bool {
+	indices := make([]int, 0, 2)
+	for i := selectIndex + 1; i < len(tokens) && tokens[i].Loc < cursor; i++ {
+		if tokens[i].depth == depth {
+			indices = append(indices, i)
+		}
+	}
+	if len(indices) == 0 {
+		return false
+	}
+	last := tokens[indices[len(indices)-1]]
+	if last.Type == parser.FROM || last.Type == parser.JOIN {
+		return true
+	}
+	if len(indices) < 2 || prefixAt(sql, cursor) == "" {
+		return false
+	}
+	previous := tokens[indices[len(indices)-2]]
+	return previous.Type == parser.FROM || previous.Type == parser.JOIN
+}
+
+func mysqlCTENames(tokens []token, withIndex, end, depth int) []string {
+	i := withIndex + 1
+	if i < end && tokenIs(tokens[i], "RECURSIVE") {
+		i++
+	}
+	var result []string
+	for i < end && tokens[i].depth == depth && parser.IsIdentTokenType(tokens[i].Type) {
+		name := unquote(tokens[i].Str)
+		i++
+		if i < end && tokens[i].depth == depth && tokens[i].Type == '(' {
+			close := matchingParen(tokens, i, end)
+			if close < 0 {
+				break
+			}
+			i = close + 1
+		}
+		if i < end && tokens[i].depth == depth && tokens[i].Type == parser.AS {
+			i++
+		}
+		if i >= end || tokens[i].depth != depth || tokens[i].Type != '(' {
+			break
+		}
+		close := matchingParen(tokens, i, end)
+		if close < 0 {
+			break
+		}
+		result = append(result, name)
+		i = close + 1
+		if i >= end || tokens[i].depth != depth || tokens[i].Type != ',' {
+			break
+		}
+		i++
+	}
+	return result
+}
+
+// selectAliasCandidates returns output aliases from the SELECT owning the
+// cursor. MySQL permits those aliases in GROUP BY, HAVING, and ORDER BY.
+func selectAliasCandidates(sql string, cursor int) []completioncore.Candidate {
+	tokens := completionTokens(parser.Tokenize(sql))
+	if len(tokens) == 0 {
+		return nil
+	}
+	start, _ := statementBounds(tokens, cursor)
+	cursorDepth := depthAt(tokens, cursor)
+	selectIndex, selectDepth := activeSelect(tokens, start, cursor, cursorDepth)
+	if selectIndex < 0 || !mysqlAliasClause(tokens, selectIndex, cursor, selectDepth) {
+		return nil
+	}
+
+	aliases := explicitProjectionAliases(tokens, selectIndex, selectDepth)
+	result := make([]completioncore.Candidate, 0, len(aliases))
+	for _, alias := range aliases {
+		result = append(result, completioncore.Candidate{Text: alias, Type: completioncore.CandidateColumn})
+	}
+	return result
+}
+
+func activeSelect(tokens []token, start, cursor, cursorDepth int) (int, int) {
+	index, depth := -1, -1
+	for i := start; i < len(tokens) && tokens[i].Loc < cursor; i++ {
+		if tokens[i].Type != parser.SELECT || tokens[i].depth > cursorDepth {
+			continue
+		}
+		if tokens[i].depth > depth || tokens[i].depth == depth {
+			index, depth = i, tokens[i].depth
+		}
+	}
+	return index, depth
+}
+
+func mysqlAliasClause(tokens []token, selectIndex, cursor, depth int) bool {
+	clause, pending := 0, 0
+	for i := selectIndex + 1; i < len(tokens) && tokens[i].Loc < cursor; i++ {
+		if tokens[i].depth != depth {
+			continue
+		}
+		switch tokens[i].Type {
+		case parser.GROUP, parser.ORDER:
+			pending = tokens[i].Type
+			clause = 0
+		case parser.HAVING:
+			clause = tokens[i].Type
+		case parser.WHERE, parser.LIMIT, parser.UNION:
+			clause, pending = 0, 0
+		default:
+			if tokenIs(tokens[i], "BY") {
+				if pending == parser.GROUP || pending == parser.ORDER {
+					clause = pending
+				}
+				pending = 0
+			}
+		}
+	}
+	return clause == parser.GROUP || clause == parser.HAVING || clause == parser.ORDER
+}
+
+func explicitProjectionAliases(tokens []token, selectIndex, depth int) []string {
+	end := len(tokens)
+	for i := selectIndex + 1; i < len(tokens); i++ {
+		if tokens[i].depth == depth && tokens[i].Type == parser.FROM {
+			end = i
+			break
+		}
+	}
+	var result []string
+	itemStart := selectIndex + 1
+	for i := itemStart; i <= end; i++ {
+		if i != end && (tokens[i].depth != depth || tokens[i].Type != ',') {
+			continue
+		}
+		if alias := explicitProjectionAlias(tokens[itemStart:i], depth); alias != "" {
+			result = append(result, alias)
+		}
+		itemStart = i + 1
+	}
+	return result
+}
+
+func explicitProjectionAlias(tokens []token, depth int) string {
+	for i := len(tokens) - 2; i >= 0; i-- {
+		if tokens[i].depth == depth && tokens[i].Type == parser.AS &&
+			tokens[i+1].depth == depth && parser.IsIdentTokenType(tokens[i+1].Type) {
+			return unquote(tokens[i+1].Str)
+		}
+	}
+	if len(tokens) < 2 {
+		return ""
+	}
+	last := tokens[len(tokens)-1]
+	previous := tokens[len(tokens)-2]
+	if last.depth == depth && parser.IsIdentTokenType(last.Type) &&
+		!(previous.depth == depth && previous.Type == '.') {
+		for _, item := range tokens[:len(tokens)-1] {
+			if item.depth == depth {
+				return unquote(last.Str)
+			}
+		}
+	}
+	return ""
 }
 
 type relationContinuation struct {

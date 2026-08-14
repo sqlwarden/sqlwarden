@@ -114,7 +114,7 @@ docker run --rm \
   -e COOKIE_SECRET_KEY=replace-with-a-random-secret \
   -e JWT_SECRET_KEY=replace-with-a-random-secret \
   -e ENCRYPTION_KEY=replace-with-a-random-secret \
-  ghcr.io/sqlwarden/sqlwarden:0.6.1
+  ghcr.io/sqlwarden/sqlwarden:latest
 ```
 
 The default image runs as the `sqlwarden` user. The volume path above persists the SQLite database and file storage directory.

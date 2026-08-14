@@ -255,6 +255,147 @@ func TestMySQLCompletionVocabulary(t *testing.T) {
 	requireMySQLCompletion(t, completer.Result{Suggestions: vocabulary.Suggestions}, "COUNT", "function")
 }
 
+func TestMySQLSuggestionRankingPrioritizesTypedPrefix(t *testing.T) {
+	suggestions := []completer.Suggestion{
+		{Label: "consumer", Score: 100},
+		{Label: "summary", Score: 1},
+		{Label: "gross_sum", Score: 100},
+		{Label: "SUM", Score: 1},
+	}
+	mysqlSortSuggestions(suggestions, "sum")
+	want := []string{"SUM", "summary", "gross_sum", "consumer"}
+	for i, label := range want {
+		if suggestions[i].Label != label {
+			t.Fatalf("suggestion %d = %q, want %q: %+v", i, suggestions[i].Label, label, suggestions)
+		}
+	}
+}
+
+func TestMySQLCompleteRefreshesFunctionPrefix(t *testing.T) {
+	for _, prefix := range []string{"su", "sum"} {
+		t.Run(prefix, func(t *testing.T) {
+			sql := "SELECT customer_id, SUM(amount) AS total_amount FROM payment GROUP BY customer_id HAVING " + prefix
+			result, err := (&mysqlDriver{}).Complete(context.Background(), completer.Request{
+				SQL: sql, CursorOffset: len(sql), TriggerKind: completer.TriggerAutomatic,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			requireMySQLCompletion(t, result, "SUM", "function")
+			for _, suggestion := range result.Suggestions {
+				if !strings.HasPrefix(strings.ToLower(suggestion.Label), prefix) {
+					t.Fatalf("non-prefix suggestion %q returned for %q", suggestion.Label, prefix)
+				}
+			}
+		})
+	}
+}
+
+func TestMySQLCompleteSelectAliasesByClause(t *testing.T) {
+	driver := &mysqlDriver{}
+	tests := []struct {
+		name string
+		sql  string
+		want bool
+	}{
+		{name: "group by", sql: "SELECT id, SUM(id) AS total_amount FROM users GROUP BY ", want: true},
+		{name: "having", sql: "SELECT id, SUM(id) AS total_amount FROM users GROUP BY id HAVING ", want: true},
+		{name: "order by", sql: "SELECT id, SUM(id) AS total_amount FROM users GROUP BY id ORDER BY ", want: true},
+		{name: "where", sql: "SELECT id, SUM(id) AS total_amount FROM users WHERE ", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := driver.Complete(context.Background(), completer.Request{
+				SQL: test.sql, CursorOffset: len(test.sql), TriggerKind: completer.TriggerInvoked,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.want {
+				requireMySQLCompletion(t, result, "total_amount", "column")
+			} else {
+				requireNoMySQLCompletion(t, result, "total_amount", "column")
+			}
+		})
+	}
+}
+
+func TestMySQLCompleteInsideStandaloneCTE(t *testing.T) {
+	driver := &mysqlDriver{}
+	set := &metadata.MetadataSet{
+		Directory: mysqlCompletionTestCatalog(), Objects: mysqlCompletionTestObjects(),
+	}
+	for _, trigger := range []completer.TriggerKind{completer.TriggerAutomatic, completer.TriggerInvoked} {
+		for _, suffix := range []string{"", "\n-- block\n-- SELECT\n-- FROM users\n-- block"} {
+			name := string(trigger)
+			if suffix != "" {
+				name += "/commented-outer"
+			}
+			t.Run(name, func(t *testing.T) {
+				template := "WITH picked AS (\n  SELECT \n    |\n  FROM users\n)" + suffix
+				cursor := strings.IndexByte(template, '|')
+				sql := strings.Replace(template, "|", "", 1)
+				result, err := driver.Complete(context.Background(), completer.Request{
+					SQL: sql, CursorOffset: cursor, TriggerKind: trigger, Schema: set,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				requireMySQLCompletion(t, result, "id", "column")
+				requireMySQLCompletion(t, result, "display name", "column")
+			})
+		}
+	}
+}
+
+func TestMySQLCompleteCTERelationsAndProjectedColumns(t *testing.T) {
+	driver := &mysqlDriver{}
+	set := &metadata.MetadataSet{
+		Directory: mysqlCompletionTestCatalog(), Objects: mysqlCompletionTestObjects(),
+	}
+	for _, trigger := range []completer.TriggerKind{completer.TriggerAutomatic, completer.TriggerInvoked} {
+		for _, prefix := range []string{"", "pic"} {
+			t.Run(string(trigger)+"/relation/"+prefix, func(t *testing.T) {
+				sql := "WITH picked AS (SELECT id, `display name` AS amt FROM users) SELECT * FROM " + prefix
+				result, err := driver.Complete(context.Background(), completer.Request{
+					SQL: sql, CursorOffset: len(sql), TriggerKind: trigger, Schema: set,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				requireMySQLCompletion(t, result, "picked", "table")
+			})
+		}
+	}
+
+	template := "WITH picked AS (SELECT id, `display name` AS amt FROM users) SELECT | FROM picked"
+	cursor := strings.IndexByte(template, '|')
+	sql := strings.Replace(template, "|", "", 1)
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: cursor, TriggerKind: completer.TriggerInvoked, Schema: set,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireMySQLCompletion(t, result, "id", "column")
+	requireMySQLCompletion(t, result, "amt", "column")
+	requireNoMySQLCompletion(t, result, "display name", "column")
+}
+
+func TestMySQLCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
+	directory := mysqlCompletionTestCatalog()
+	objects := mysqlCompletionTestObjects()
+	sql := "SELECT * FROM veraxasdwadqwd"
+	result, err := (&mysqlDriver{}).Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql),
+		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireNoMySQLCompletion(t, result, "veraxasdwadqwd", "table")
+}
+
 func TestMySQLCompletionContextMatrix(t *testing.T) {
 	driver := &mysqlDriver{}
 	directory := mysqlCompletionTestCatalog()

@@ -367,6 +367,153 @@ func TestPostgresCompletionVocabulary(t *testing.T) {
 	}
 	requireCompletion(t, completer.Result{Suggestions: vocabulary.Suggestions}, "SELECT", "keyword")
 	requireCompletion(t, completer.Result{Suggestions: vocabulary.Suggestions}, "count", "function")
+	requireCompletion(t, completer.Result{Suggestions: vocabulary.Suggestions}, "sum", "function")
+}
+
+func TestPostgresSuggestionRankingPrioritizesTypedPrefix(t *testing.T) {
+	suggestions := []completer.Suggestion{
+		{Label: "consumer", Score: 100},
+		{Label: "summary", Score: 1},
+		{Label: "gross_sum", Score: 100},
+		{Label: "SUM", Score: 1},
+	}
+	sortSuggestions(suggestions, "sum")
+	want := []string{"SUM", "summary", "gross_sum", "consumer"}
+	for i, label := range want {
+		if suggestions[i].Label != label {
+			t.Fatalf("suggestion %d = %q, want %q: %+v", i, suggestions[i].Label, label, suggestions)
+		}
+	}
+}
+
+func TestPostgresCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
+	directory := completionTestCatalog("postgres", "public")
+	objects := completionTestObjects("public")
+	sql := "SELECT * FROM veraxasdwadqwd"
+	result, err := (&postgresDriver{}).Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql),
+		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireNoCompletion(t, result, "veraxasdwadqwd", "table")
+
+	partialSQL := "SELECT * FROM us"
+	partial, err := (&postgresDriver{}).Complete(context.Background(), completer.Request{
+		SQL: partialSQL, CursorOffset: len(partialSQL),
+		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireCompletion(t, partial, "users", "table")
+	requireNoCompletion(t, partial, "us", "table")
+}
+
+func TestPostgresCompletePreservesCTERelation(t *testing.T) {
+	directory := completionTestCatalog("postgres", "public")
+	objects := completionTestObjects("public")
+	sql := "WITH recent_orders AS (SELECT * FROM users) SELECT * FROM recent"
+	result, err := (&postgresDriver{}).Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql),
+		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireCompletion(t, result, "recent_orders", "table")
+}
+
+func TestPostgresCompleteSelectAliasesByClause(t *testing.T) {
+	driver := &postgresDriver{}
+	tests := []struct {
+		name string
+		sql  string
+		want bool
+	}{
+		{name: "group by", sql: "SELECT id, SUM(id) AS total_amount FROM users GROUP BY ", want: true},
+		{name: "order by", sql: "SELECT id, SUM(id) AS total_amount FROM users GROUP BY id ORDER BY ", want: true},
+		{name: "having", sql: "SELECT id, SUM(id) AS total_amount FROM users GROUP BY id HAVING ", want: false},
+		{name: "where", sql: "SELECT id, SUM(id) AS total_amount FROM users WHERE ", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := driver.Complete(context.Background(), completer.Request{
+				SQL: test.sql, CursorOffset: len(test.sql), TriggerKind: completer.TriggerInvoked,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.want {
+				requireCompletion(t, result, "total_amount", "column")
+			} else {
+				requireNoCompletion(t, result, "total_amount", "column")
+			}
+		})
+	}
+}
+
+func TestPostgresCompleteInsideStandaloneCTE(t *testing.T) {
+	driver := &postgresDriver{}
+	set := &metadata.MetadataSet{
+		Directory: completionTestCatalog("postgres", "public"), Objects: completionTestObjects("public"),
+	}
+	for _, trigger := range []completer.TriggerKind{completer.TriggerAutomatic, completer.TriggerInvoked} {
+		for _, suffix := range []string{"", "\n-- block\n-- SELECT\n-- FROM users\n-- block"} {
+			name := string(trigger)
+			if suffix != "" {
+				name += "/commented-outer"
+			}
+			t.Run(name, func(t *testing.T) {
+				template := "WITH picked AS (\n  SELECT \n    |\n  FROM users\n)" + suffix
+				cursor := strings.IndexByte(template, '|')
+				sql := strings.Replace(template, "|", "", 1)
+				result, err := driver.Complete(context.Background(), completer.Request{
+					SQL: sql, CursorOffset: cursor, TriggerKind: trigger, Schema: set,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				requireCompletion(t, result, "id", "column")
+				requireCompletion(t, result, "display name", "column")
+			})
+		}
+	}
+}
+
+func TestPostgresCompleteCTERelationsAndProjectedColumns(t *testing.T) {
+	driver := &postgresDriver{}
+	set := &metadata.MetadataSet{
+		Directory: completionTestCatalog("postgres", "public"), Objects: completionTestObjects("public"),
+	}
+	for _, trigger := range []completer.TriggerKind{completer.TriggerAutomatic, completer.TriggerInvoked} {
+		for _, prefix := range []string{"", "pic"} {
+			t.Run(string(trigger)+"/relation/"+prefix, func(t *testing.T) {
+				sql := `WITH picked AS (SELECT id, "display name" AS amt FROM users) SELECT * FROM ` + prefix
+				result, err := driver.Complete(context.Background(), completer.Request{
+					SQL: sql, CursorOffset: len(sql), TriggerKind: trigger, Schema: set,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				requireCompletion(t, result, "picked", "table")
+			})
+		}
+	}
+
+	template := `WITH picked AS (SELECT id, "display name" AS amt FROM users) SELECT | FROM picked`
+	cursor := strings.IndexByte(template, '|')
+	sql := strings.Replace(template, "|", "", 1)
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: cursor, TriggerKind: completer.TriggerInvoked, Schema: set,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireCompletion(t, result, "id", "column")
+	requireCompletion(t, result, "amt", "column")
+	requireNoCompletion(t, result, "display name", "column")
 }
 
 func TestPostgresCompletionContextMatrix(t *testing.T) {

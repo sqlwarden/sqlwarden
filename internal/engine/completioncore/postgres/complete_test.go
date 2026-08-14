@@ -63,6 +63,79 @@ func TestScopeScenarios(t *testing.T) {
 			},
 		},
 		{
+			Name: "CTE name in empty relation position",
+			SQL:  "WITH picked AS (SELECT film_id, title FROM film) SELECT * FROM |",
+			Require: []completiontest.Expected{
+				{Text: "picked", Type: completioncore.CandidateTable},
+			},
+		},
+		{
+			Name: "CTE name from partial relation prefix",
+			SQL:  "WITH picked AS (SELECT film_id, title FROM film) SELECT * FROM pic|",
+			Require: []completiontest.Expected{
+				{Text: "picked", Type: completioncore.CandidateTable},
+			},
+		},
+		{
+			Name: "CTE name in join relation position",
+			SQL:  "WITH picked AS (SELECT film_id FROM film) SELECT * FROM film JOIN |",
+			Require: []completiontest.Expected{
+				{Text: "picked", Type: completioncore.CandidateTable},
+			},
+		},
+		{
+			Name:    "CTE relation name is not a select expression",
+			SQL:     "WITH picked AS (SELECT film_id FROM film) SELECT | FROM film",
+			Exclude: []completiontest.Expected{{Text: "picked", Type: completioncore.CandidateTable}},
+		},
+		{
+			Name: "multiple CTE names in relation position",
+			SQL:  "WITH first_pick AS (SELECT film_id FROM film), second_pick AS (SELECT actor_id FROM film_actor) SELECT * FROM |",
+			Require: []completiontest.Expected{
+				{Text: "first_pick", Type: completioncore.CandidateTable},
+				{Text: "second_pick", Type: completioncore.CandidateTable},
+			},
+		},
+		{
+			Name: "nested CTE name in its relation position",
+			SQL:  "SELECT * FROM (WITH nested_pick AS (SELECT film_id FROM film) SELECT * FROM |) nested",
+			Require: []completiontest.Expected{
+				{Text: "nested_pick", Type: completioncore.CandidateTable},
+			},
+		},
+		{
+			Name:    "nested sibling CTE does not leak outward",
+			SQL:     "SELECT * FROM (WITH nested_pick AS (SELECT film_id FROM film) SELECT * FROM nested_pick) nested JOIN |",
+			Exclude: []completiontest.Expected{{Text: "nested_pick", Type: completioncore.CandidateTable}},
+		},
+		{
+			Name: "unqualified CTE projected columns",
+			SQL:  "WITH picked AS (SELECT film_id, title AS amt FROM film) SELECT | FROM picked",
+			Require: []completiontest.Expected{
+				{Text: "film_id", Type: column}, {Text: "amt", Type: column},
+			},
+			Exclude: []completiontest.Expected{{Text: "title", Type: column}},
+		},
+		{
+			Name:    "CTE name does not cross statement boundary",
+			SQL:     "WITH picked AS (SELECT film_id FROM film) SELECT * FROM picked; SELECT * FROM |",
+			Exclude: []completiontest.Expected{{Text: "picked", Type: completioncore.CandidateTable}},
+		},
+		{
+			Name: "standalone incomplete CTE body",
+			SQL:  "WITH picked AS (\n  SELECT \n    |\n  FROM film\n)",
+			Require: []completiontest.Expected{
+				{Text: "film_id", Type: column}, {Text: "title", Type: column},
+			},
+		},
+		{
+			Name: "standalone incomplete CTE ignores commented outer query",
+			SQL:  "WITH picked AS (\n  SELECT \n    |\n  FROM film\n)\n-- SELECT *\n-- FROM picked",
+			Require: []completiontest.Expected{
+				{Text: "film_id", Type: column}, {Text: "title", Type: column},
+			},
+		},
+		{
 			Name: "derived table columns",
 			SQL:  "SELECT * FROM (SELECT customer_id, email AS address FROM customer) c WHERE c.|",
 			Require: []completiontest.Expected{
@@ -108,6 +181,48 @@ func TestScopeScenarios(t *testing.T) {
 			Require: []completiontest.Expected{
 				{Text: "film_id", Type: column}, {Text: "title", Type: column},
 			},
+		},
+		{
+			Name:    "group by sees select alias",
+			SQL:     "SELECT film_id, SUM(film_id) AS total_amount FROM film GROUP BY |",
+			Require: []completiontest.Expected{{Text: "total_amount", Type: column}},
+		},
+		{
+			Name:    "group by sees bare select alias",
+			SQL:     "SELECT SUM(film_id) total_amount FROM film GROUP BY |",
+			Require: []completiontest.Expected{{Text: "total_amount", Type: column}},
+		},
+		{
+			Name:    "group keyword hides select alias before by",
+			SQL:     "SELECT SUM(film_id) AS total_amount FROM film GROUP |",
+			Exclude: []completiontest.Expected{{Text: "total_amount", Type: column}},
+		},
+		{
+			Name:    "order by sees select alias",
+			SQL:     "SELECT film_id, SUM(film_id) AS total_amount FROM film GROUP BY film_id ORDER BY |",
+			Require: []completiontest.Expected{{Text: "total_amount", Type: column}},
+		},
+		{
+			Name:    "having hides select alias",
+			SQL:     "SELECT film_id, SUM(film_id) AS total_amount FROM film GROUP BY film_id HAVING |",
+			Exclude: []completiontest.Expected{{Text: "total_amount", Type: column}},
+		},
+		{
+			Name:    "where hides select alias",
+			SQL:     "SELECT film_id, SUM(film_id) AS total_amount FROM film WHERE |",
+			Exclude: []completiontest.Expected{{Text: "total_amount", Type: column}},
+		},
+		{
+			Name:    "nested query sees only its select alias",
+			SQL:     "SELECT film_id AS outer_alias FROM film WHERE EXISTS (SELECT actor_id AS inner_alias FROM film_actor GROUP BY |)",
+			Require: []completiontest.Expected{{Text: "inner_alias", Type: column}},
+			Exclude: []completiontest.Expected{{Text: "outer_alias", Type: column}},
+		},
+		{
+			Name:    "outer query does not see nested select alias",
+			SQL:     "SELECT film_id AS outer_alias, (SELECT actor_id AS inner_alias FROM film_actor LIMIT 1) FROM film ORDER BY |",
+			Require: []completiontest.Expected{{Text: "outer_alias", Type: column}},
+			Exclude: []completiontest.Expected{{Text: "inner_alias", Type: column}},
 		},
 		{
 			Name: "insert target columns",
