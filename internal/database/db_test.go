@@ -119,6 +119,18 @@ func TestMigrateUp(t *testing.T) {
 	}
 }
 
+func TestMigrateUpDoesNotParseSQLiteDSNAsURL(t *testing.T) {
+	db, err := New("sqlite", ":memory:", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	assert.Nil(t, err)
+	assert.NotNil(t, db)
+	defer db.Close()
+
+	// Migrations must use the existing connection. Treating this Windows path
+	// as a sqlite:// URL would fail by interpreting the drive path as a port.
+	db.dsn = `C:\Users\sqlwarden\AppData\Roaming\SQLWarden\sqlwarden.db`
+	assert.Nil(t, db.MigrateUp())
+}
+
 func TestMigrateUpAddsQueryCursorPageSizeAfterVersion29(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "version-29.db")
 	db, err := New("sqlite", dsn, slog.New(slog.NewTextHandler(io.Discard, nil)))
