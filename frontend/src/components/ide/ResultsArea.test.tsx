@@ -126,6 +126,46 @@ describe('ResultsArea', () => {
     expect(screen.getByTitle('update users set active = true')).toBeInTheDocument()
   })
 
+  it('renders the affected row count for an executed statement', async () => {
+    renderResult({
+      status: 'ok',
+      durationMs: 8,
+      sql: 'delete from users where disabled = true',
+      connectionId: 7,
+      data: {
+        columns: [],
+        rows: [],
+        rows_affected: 3,
+        duration_ms: 8,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+      },
+    })
+
+    expect(await screen.findByText('· 3 rows affected')).toBeInTheDocument()
+  })
+
+  it('renders zero affected rows as a reported result', async () => {
+    renderResult({
+      status: 'ok',
+      durationMs: 4,
+      sql: 'update users set active = true where false',
+      connectionId: 7,
+      data: {
+        columns: [],
+        rows: [],
+        rows_affected: 0,
+        duration_ms: 4,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+      },
+    })
+
+    expect(await screen.findByText('· 0 rows affected')).toBeInTheDocument()
+  })
+
   it('renders an empty grid and result metadata for a column-bearing query', async () => {
     renderResult({
       status: 'ok',

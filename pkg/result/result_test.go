@@ -145,6 +145,16 @@ func TestResultSetJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestNewExecutionResultReportsZeroRowsAffected(t *testing.T) {
+	data, err := json.Marshal(NewExecutionResult(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != `{"columns":null,"rows":null,"rows_affected":0,"duration_ms":0,"truncated":false,"rows_returned":0,"bytes_returned":0}` {
+		t.Fatalf("execution result JSON = %s", data)
+	}
+}
+
 func TestValueNullOmitempty(t *testing.T) {
 	v := Value{Type: ValueTypeNull}
 

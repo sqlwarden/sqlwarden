@@ -119,6 +119,7 @@ export type ResultRow = ResultValue[]
 export interface ResultSet {
   columns: ResultColumn[] | null
   rows: ResultRow[] | null
+  rows_affected?: number
   duration_ms: number
   truncated: boolean
   rows_returned: number

@@ -941,6 +941,9 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, execErr.Error(), nil)
 		return
 	}
+	if classification.Kind != classifier.KindDML {
+		rs.RowsAffected = nil
+	}
 
 	rs.DurationMs = time.Since(start).Milliseconds()
 	app.logger.Info("query executed", append(logAttrs,

@@ -282,9 +282,12 @@ func TestExecute_DML(t *testing.T) {
 	})
 
 	// Insert multiple rows
-	_, err = d.Execute(ctx, "INSERT INTO dml_test (name) VALUES ('row1'), ('row2'), ('row3')")
+	insertResult, err := d.Execute(ctx, "INSERT INTO dml_test (name) VALUES ('row1'), ('row2'), ('row3')")
 	if err != nil {
 		t.Fatalf("INSERT: %v", err)
+	}
+	if insertResult.RowsAffected == nil || *insertResult.RowsAffected != 3 {
+		t.Fatalf("INSERT rows affected = %v, want 3", insertResult.RowsAffected)
 	}
 
 	// Verify count via Query
@@ -300,10 +303,21 @@ func TestExecute_DML(t *testing.T) {
 		t.Errorf("expected count=3, got %d", cnt)
 	}
 
+	updateResult, err := d.Execute(ctx, "UPDATE dml_test SET name = 'updated' WHERE name = 'row2'")
+	if err != nil {
+		t.Fatalf("UPDATE: %v", err)
+	}
+	if updateResult.RowsAffected == nil || *updateResult.RowsAffected != 1 {
+		t.Fatalf("UPDATE rows affected = %v, want 1", updateResult.RowsAffected)
+	}
+
 	// Test DELETE
-	_, err = d.Execute(ctx, "DELETE FROM dml_test WHERE name = 'row1'")
+	deleteResult, err := d.Execute(ctx, "DELETE FROM dml_test WHERE name = 'row1'")
 	if err != nil {
 		t.Fatalf("DELETE: %v", err)
+	}
+	if deleteResult.RowsAffected == nil || *deleteResult.RowsAffected != 1 {
+		t.Fatalf("DELETE rows affected = %v, want 1", deleteResult.RowsAffected)
 	}
 
 	rs, err = d.Query(ctx, "SELECT COUNT(*) AS cnt FROM dml_test")
