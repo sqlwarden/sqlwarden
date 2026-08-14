@@ -9,14 +9,14 @@ import (
 	"testing"
 )
 
-func TestAPIMiddlewareRoutesOnlyAPIRequestsToApplication(t *testing.T) {
+func TestDesktopRoutingMiddlewareRoutesAPIAndSPAFallback(t *testing.T) {
 	apiCalls := 0
-	assetCalls := 0
-	handler := apiMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	var assetPaths []string
+	handler := desktopRoutingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		apiCalls++
 		w.WriteHeader(http.StatusNoContent)
-	}))(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		assetCalls++
+	}))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assetPaths = append(assetPaths, r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -27,15 +27,51 @@ func TestAPIMiddlewareRoutesOnlyAPIRequestsToApplication(t *testing.T) {
 			t.Fatalf("%s status = %d, want %d", path, response.Code, http.StatusNoContent)
 		}
 	}
-	for _, path := range []string{"/", "/ide/local", "/assets/app.js"} {
+	assets := []struct {
+		path   string
+		accept string
+	}{
+		{path: "/", accept: "text/html"},
+		{path: "/ide/local", accept: "text/html,application/xhtml+xml"},
+		{path: "/assets/app.js", accept: "*/*"},
+	}
+	for _, tc := range assets {
 		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		request := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		request.Header.Set("Accept", tc.accept)
+		handler.ServeHTTP(response, request)
 		if response.Code != http.StatusOK {
-			t.Fatalf("%s status = %d, want %d", path, response.Code, http.StatusOK)
+			t.Fatalf("%s status = %d, want %d", tc.path, response.Code, http.StatusOK)
 		}
 	}
-	if apiCalls != 3 || assetCalls != 3 {
-		t.Fatalf("calls = api:%d assets:%d, want 3 each", apiCalls, assetCalls)
+	if apiCalls != 3 {
+		t.Fatalf("api calls = %d, want 3", apiCalls)
+	}
+	wantAssetPaths := []string{"/", "/", "/assets/app.js"}
+	if len(assetPaths) != len(wantAssetPaths) {
+		t.Fatalf("asset paths = %v, want %v", assetPaths, wantAssetPaths)
+	}
+	for i := range assetPaths {
+		if assetPaths[i] != wantAssetPaths[i] {
+			t.Fatalf("asset paths = %v, want %v", assetPaths, wantAssetPaths)
+		}
+	}
+}
+
+func TestDesktopRoutingMiddlewareDoesNotMaskMissingAssets(t *testing.T) {
+	var gotPath string
+	handler := desktopRoutingMiddleware(http.NotFoundHandler())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	request := httptest.NewRequest(http.MethodGet, "/assets/missing.js", nil)
+	request.Header.Set("Accept", "text/html")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound || gotPath != "/assets/missing.js" {
+		t.Fatalf("status/path = %d %q, want %d %q", response.Code, gotPath, http.StatusNotFound, "/assets/missing.js")
 	}
 }
 
