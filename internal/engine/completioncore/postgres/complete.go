@@ -51,10 +51,141 @@ func Complete(
 	if columnContext && metadata != nil {
 		result = append(result, resolveColumns(sql, cursor, completion, metadata)...)
 	}
+	result = append(result, selectAliasCandidates(sql, cursor)...)
 	if continuation, ok := relationContinuationAt(sql, cursor); ok {
 		result = relationContinuationCandidates(continuation)
 	}
 	return filterByPrefix(deduplicate(result), prefixAt(sql, cursor)), completioncore.CheckContext(ctx)
+}
+
+// selectAliasCandidates returns output aliases from the SELECT owning the
+// cursor. PostgreSQL permits those aliases in GROUP BY and ORDER BY, but not
+// in HAVING or WHERE.
+func selectAliasCandidates(sql string, cursor int) []completioncore.Candidate {
+	tokens := parser.Tokenize(sql)
+	if len(tokens) == 0 {
+		return nil
+	}
+	depths, cursorDepth := postgresTokenDepths(tokens, cursor)
+	start := 0
+	for i, token := range tokens {
+		if token.Loc >= cursor {
+			break
+		}
+		if token.Type == ';' && depths[i] == 0 {
+			start = i + 1
+		}
+	}
+	selectIndex, selectDepth := activeSelect(tokens, depths, start, cursor, cursorDepth)
+	if selectIndex < 0 || !postgresAliasClause(tokens, depths, selectIndex, cursor, selectDepth) {
+		return nil
+	}
+
+	aliases := explicitProjectionAliases(tokens, depths, selectIndex, selectDepth)
+	result := make([]completioncore.Candidate, 0, len(aliases))
+	for _, alias := range aliases {
+		result = append(result, completioncore.Candidate{Text: alias, Type: completioncore.CandidateColumn})
+	}
+	return result
+}
+
+func postgresTokenDepths(tokens []parser.Token, cursor int) ([]int, int) {
+	depth := 0
+	depths := make([]int, len(tokens))
+	for i, token := range tokens {
+		depths[i] = depth
+		if token.Loc >= cursor {
+			continue
+		}
+		switch token.Type {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		}
+	}
+	return depths, depth
+}
+
+func activeSelect(tokens []parser.Token, depths []int, start, cursor, cursorDepth int) (int, int) {
+	index, depth := -1, -1
+	for i := start; i < len(tokens) && tokens[i].Loc < cursor; i++ {
+		if tokens[i].Type != parser.SELECT || depths[i] > cursorDepth {
+			continue
+		}
+		if depths[i] > depth || depths[i] == depth {
+			index, depth = i, depths[i]
+		}
+	}
+	return index, depth
+}
+
+func postgresAliasClause(tokens []parser.Token, depths []int, selectIndex, cursor, depth int) bool {
+	clause, pending := 0, 0
+	for i := selectIndex + 1; i < len(tokens) && tokens[i].Loc < cursor; i++ {
+		if depths[i] != depth {
+			continue
+		}
+		switch tokens[i].Type {
+		case parser.GROUP_P, parser.ORDER:
+			pending = tokens[i].Type
+			clause = 0
+		case parser.BY:
+			if pending == parser.GROUP_P || pending == parser.ORDER {
+				clause = pending
+			}
+			pending = 0
+		case parser.WHERE, parser.HAVING, parser.LIMIT, parser.UNION:
+			clause, pending = 0, 0
+		}
+	}
+	return clause == parser.GROUP_P || clause == parser.ORDER
+}
+
+func explicitProjectionAliases(tokens []parser.Token, depths []int, selectIndex, depth int) []string {
+	end := len(tokens)
+	for i := selectIndex + 1; i < len(tokens); i++ {
+		if depths[i] == depth && tokens[i].Type == parser.FROM {
+			end = i
+			break
+		}
+	}
+	var result []string
+	itemStart := selectIndex + 1
+	for i := itemStart; i <= end; i++ {
+		if i != end && (depths[i] != depth || tokens[i].Type != ',') {
+			continue
+		}
+		if alias := explicitProjectionAlias(tokens[itemStart:i], depths[itemStart:i], depth); alias != "" {
+			result = append(result, alias)
+		}
+		itemStart = i + 1
+	}
+	return result
+}
+
+func explicitProjectionAlias(tokens []parser.Token, depths []int, depth int) string {
+	for i := len(tokens) - 2; i >= 0; i-- {
+		if depths[i] == depth && tokens[i].Type == parser.AS &&
+			depths[i+1] == depth && parser.IsIdentifierTokenType(tokens[i+1].Type) {
+			return normalizeIdentifier(tokens[i+1].Str)
+		}
+	}
+	if len(tokens) < 2 {
+		return ""
+	}
+	last := len(tokens) - 1
+	if depths[last] == depth && parser.IsIdentifierTokenType(tokens[last].Type) &&
+		!(depths[last-1] == depth && tokens[last-1].Type == '.') {
+		for _, itemDepth := range depths[:last] {
+			if itemDepth == depth {
+				return normalizeIdentifier(tokens[last].Str)
+			}
+		}
+	}
+	return ""
 }
 
 type relationContinuation struct {

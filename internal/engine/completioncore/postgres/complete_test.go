@@ -110,6 +110,48 @@ func TestScopeScenarios(t *testing.T) {
 			},
 		},
 		{
+			Name:    "group by sees select alias",
+			SQL:     "SELECT film_id, SUM(film_id) AS total_amount FROM film GROUP BY |",
+			Require: []completiontest.Expected{{Text: "total_amount", Type: column}},
+		},
+		{
+			Name:    "group by sees bare select alias",
+			SQL:     "SELECT SUM(film_id) total_amount FROM film GROUP BY |",
+			Require: []completiontest.Expected{{Text: "total_amount", Type: column}},
+		},
+		{
+			Name:    "group keyword hides select alias before by",
+			SQL:     "SELECT SUM(film_id) AS total_amount FROM film GROUP |",
+			Exclude: []completiontest.Expected{{Text: "total_amount", Type: column}},
+		},
+		{
+			Name:    "order by sees select alias",
+			SQL:     "SELECT film_id, SUM(film_id) AS total_amount FROM film GROUP BY film_id ORDER BY |",
+			Require: []completiontest.Expected{{Text: "total_amount", Type: column}},
+		},
+		{
+			Name:    "having hides select alias",
+			SQL:     "SELECT film_id, SUM(film_id) AS total_amount FROM film GROUP BY film_id HAVING |",
+			Exclude: []completiontest.Expected{{Text: "total_amount", Type: column}},
+		},
+		{
+			Name:    "where hides select alias",
+			SQL:     "SELECT film_id, SUM(film_id) AS total_amount FROM film WHERE |",
+			Exclude: []completiontest.Expected{{Text: "total_amount", Type: column}},
+		},
+		{
+			Name:    "nested query sees only its select alias",
+			SQL:     "SELECT film_id AS outer_alias FROM film WHERE EXISTS (SELECT actor_id AS inner_alias FROM film_actor GROUP BY |)",
+			Require: []completiontest.Expected{{Text: "inner_alias", Type: column}},
+			Exclude: []completiontest.Expected{{Text: "outer_alias", Type: column}},
+		},
+		{
+			Name:    "outer query does not see nested select alias",
+			SQL:     "SELECT film_id AS outer_alias, (SELECT actor_id AS inner_alias FROM film_actor LIMIT 1) FROM film ORDER BY |",
+			Require: []completiontest.Expected{{Text: "outer_alias", Type: column}},
+			Exclude: []completiontest.Expected{{Text: "inner_alias", Type: column}},
+		},
+		{
 			Name: "insert target columns",
 			SQL:  "INSERT INTO film (|)",
 			Require: []completiontest.Expected{

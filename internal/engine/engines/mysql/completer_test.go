@@ -291,6 +291,35 @@ func TestMySQLCompleteRefreshesFunctionPrefix(t *testing.T) {
 	}
 }
 
+func TestMySQLCompleteSelectAliasesByClause(t *testing.T) {
+	driver := &mysqlDriver{}
+	tests := []struct {
+		name string
+		sql  string
+		want bool
+	}{
+		{name: "group by", sql: "SELECT id, SUM(id) AS total_amount FROM users GROUP BY ", want: true},
+		{name: "having", sql: "SELECT id, SUM(id) AS total_amount FROM users GROUP BY id HAVING ", want: true},
+		{name: "order by", sql: "SELECT id, SUM(id) AS total_amount FROM users GROUP BY id ORDER BY ", want: true},
+		{name: "where", sql: "SELECT id, SUM(id) AS total_amount FROM users WHERE ", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := driver.Complete(context.Background(), completer.Request{
+				SQL: test.sql, CursorOffset: len(test.sql), TriggerKind: completer.TriggerInvoked,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.want {
+				requireMySQLCompletion(t, result, "total_amount", "column")
+			} else {
+				requireNoMySQLCompletion(t, result, "total_amount", "column")
+			}
+		})
+	}
+}
+
 func TestMySQLCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
 	directory := mysqlCompletionTestCatalog()
 	objects := mysqlCompletionTestObjects()
