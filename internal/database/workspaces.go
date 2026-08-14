@@ -108,6 +108,15 @@ func (db *DB) GetWorkspace(ctx context.Context, id int64) (Workspace, bool, erro
 	return ws, true, nil
 }
 
+func (db *DB) CountOrganizationWorkspaces(ctx context.Context, orgID int64) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	return db.NewSelect().Model((*Workspace)(nil)).
+		Where("owner_type = ? AND owner_id = ?", "org", orgID).
+		Count(ctx)
+}
+
 func (db *DB) ListWorkspacesPage(ctx context.Context, params ListWorkspacesParams) (response.Paginated[Workspace], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()

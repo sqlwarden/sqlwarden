@@ -8,6 +8,7 @@ import type { SessionResponse } from '#/lib/api/types'
 import { getAccessToken, setAccessToken } from '#/lib/auth/access-token'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
+import { setupStatusHandler } from '#/test/handlers'
 import { IdeTopBarControls } from './IdeTopBarControls'
 
 const router = vi.hoisted(() => ({ navigate: vi.fn(() => Promise.resolve()) }))
@@ -36,6 +37,9 @@ const session: SessionResponse = {
 }
 
 describe('IdeTopBarControls', () => {
+  beforeEach(() => {
+    server.use(setupStatusHandler())
+  })
   beforeEach(() => vi.clearAllMocks())
 
   it('clears authentication state and redirects even when logout fails', async () => {

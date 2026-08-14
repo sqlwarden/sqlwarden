@@ -103,15 +103,17 @@ export function AppShellSidebarFooter({
   session,
   preferences,
   setPreferences,
+  hideUserMenu = false,
 }: {
   session: SessionResponse
   preferences: AppShellPreferences
   setPreferences: Dispatch<SetStateAction<AppShellPreferences>>
+  hideUserMenu?: boolean
 }) {
   return (
     <SidebarFooter className="border-t border-sidebar-border">
       <AppShellPreferencesPopover preferences={preferences} setPreferences={setPreferences} />
-      <AppShellUserMenu session={session} />
+      {hideUserMenu ? null : <AppShellUserMenu session={session} />}
       <div className="flex justify-center px-2 pb-1">
         <SidebarTrigger
           className="w-full cursor-pointer group-data-[collapsible=icon]:w-auto"

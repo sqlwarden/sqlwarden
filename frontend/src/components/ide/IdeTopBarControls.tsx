@@ -2,6 +2,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { AppShellPreferencesPopover, useAppShellPreferences } from '#/components/app-shell'
+import { Button } from '#/components/ui/button'
 import { InitialsAvatar } from '#/components/InitialsAvatar'
 import {
   DropdownMenu,
@@ -18,6 +19,7 @@ import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import type { SessionResponse } from '#/lib/api/types'
 import { buildUserMenuItems } from '#/lib/user-menu'
 import { Tip } from './schema-diagram/Tip'
+import { useSetupStatus } from '#/hooks/use-setup-status'
 
 export function IdeTopBarControls({
   orgSlug,
@@ -31,6 +33,8 @@ export function IdeTopBarControls({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { preferences, setPreferences } = useAppShellPreferences()
+  const setupStatus = useSetupStatus()
+  const desktopMode = setupStatus.data?.deployment_mode === 'desktop'
   const menuItems = buildUserMenuItems({ session, orgSlug, canAccessOrgSettings })
 
   const logout = useMutation({
@@ -51,57 +55,73 @@ export function IdeTopBarControls({
         buttonClassName="size-7 justify-center px-0"
       />
 
-      <DropdownMenu>
-        <Tip label={session.account.name}>
-          <DropdownMenuTrigger
-            aria-label={session.account.name}
-            className="inline-flex cursor-pointer items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      {desktopMode ? (
+        <Tip label="Desktop settings">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Desktop settings"
+            nativeButton={false}
+            render={<Link to="/desktop/settings" />}
           >
-            <InitialsAvatar
-              value={session.account.name}
-              fallback="U"
-              className="size-7 rounded-full"
-            />
-          </DropdownMenuTrigger>
+            <Icon name="settings-02" size={20} />
+          </Button>
         </Tip>
-        <DropdownMenuContent align="end" className="w-64 min-w-64">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel className="px-2 py-2">
-              <div className="flex flex-col gap-0.5 normal-case tracking-normal">
-                <span className="truncate text-sm font-medium text-foreground">
-                  {session.account.name}
-                </span>
-                <span className="truncate text-xs font-normal text-muted-foreground">
-                  {session.account.email}
-                </span>
-              </div>
-            </DropdownMenuLabel>
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            {menuItems.map((item) => (
-              <DropdownMenuItem
-                key={item.id}
-                render={<Link to={item.to as never} params={item.params as never} />}
-              >
-                <Icon name={item.icon} size={20} />
-                {item.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            variant="destructive"
-            disabled={logout.isPending}
-            onClick={() => {
-              logout.mutate()
-            }}
-          >
-            <Icon name="logout-03" size={20} />
-            {logout.isPending ? 'Signing out...' : 'Sign out'}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      ) : null}
+
+      {desktopMode ? null : (
+        <DropdownMenu>
+          <Tip label={session.account.name}>
+            <DropdownMenuTrigger
+              aria-label={session.account.name}
+              className="inline-flex cursor-pointer items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <InitialsAvatar
+                value={session.account.name}
+                fallback="U"
+                className="size-7 rounded-full"
+              />
+            </DropdownMenuTrigger>
+          </Tip>
+          <DropdownMenuContent align="end" className="w-64 min-w-64">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="px-2 py-2">
+                <div className="flex flex-col gap-0.5 normal-case tracking-normal">
+                  <span className="truncate text-sm font-medium text-foreground">
+                    {session.account.name}
+                  </span>
+                  <span className="truncate text-xs font-normal text-muted-foreground">
+                    {session.account.email}
+                  </span>
+                </div>
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              {menuItems.map((item) => (
+                <DropdownMenuItem
+                  key={item.id}
+                  render={<Link to={item.to as never} params={item.params as never} />}
+                >
+                  <Icon name={item.icon} size={20} />
+                  {item.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={logout.isPending}
+              onClick={() => {
+                logout.mutate()
+              }}
+            >
+              <Icon name="logout-03" size={20} />
+              {logout.isPending ? 'Signing out...' : 'Sign out'}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   )
 }

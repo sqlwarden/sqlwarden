@@ -848,18 +848,29 @@ Important open gaps:
 
 SQLWarden is primarily self-hosted. Any future hosted/cloud offering needs stronger controls around SSRF, target network egress, tenant isolation, audit integrity, and managed identity lifecycle before it is safe.
 
-## Desktop/Wails Direction
+## Desktop/Wails Application
 
-Future Wails support should reuse `internal/web` instead of importing `cmd/api`.
+The Wails v2 application in `cmd/desktop` embeds the same frontend and constructs `internal/web`
+in-process. Its asset middleware sends `/api` requests directly to the HTTP handler, so production
+desktop mode does not open a localhost listener.
 
-Recommended model:
+Current model:
 
-- `deployment_mode=desktop` controls runtime packaging and local loopback behavior.
+- `deployment_mode=desktop` controls native packaging and frontend capability visibility.
 - `access_mode=single_user` controls bootstrap and account behavior.
-- Desktop still creates a real local account and local organization.
+- First launch transactionally creates a passwordless local account, instance-admin record, Local
+  organization, Default workspace, Default environment, and desktop installation anchor.
 - Desktop does not bypass RBAC for org-owned resources.
-- Personal spaces remain optional sandboxes for multi-user deployments, not the desktop security model.
-- Wails-specific code should be isolated behind a small bridge layer in the frontend and a future `cmd/desktop` entrypoint.
+- Native sessions use the normal JWT and revocable session middleware. The Wails bridge issues and
+  refreshes them without exposing a login flow.
+- Desktop configuration secrets are generated once in a protected file. Missing secrets beside an
+  existing database are a startup error.
+- The UI hides identity, organization administration, and RBAC surfaces while retaining the editor,
+  workspace/environment/connection management, files, exports, schema tools, and diagrams.
+- Multiple workspaces are supported, but the final workspace cannot be deleted.
+- Wails-specific code stays in `cmd/desktop`, `internal/desktop`, and the small frontend bridge.
+
+Personal spaces remain optional sandboxes for multi-user deployments, not the desktop security model.
 
 Future desktop may support multiple remote SQLWarden backends, such as separate prod and non-prod enterprise instances. That should be modeled as a client-side backend registry, not as a change to the server authorization model.
 

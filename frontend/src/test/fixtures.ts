@@ -52,6 +52,7 @@ export function setupStatusFixture(
   return {
     configured: true,
     access_mode: 'multi_user',
+    deployment_mode: 'server',
     ...overrides,
   }
 }

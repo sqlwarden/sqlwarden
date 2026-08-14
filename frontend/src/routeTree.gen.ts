@@ -26,6 +26,7 @@ import { Route as SettingsAccountRouteImport } from './routes/settings.account'
 import { Route as OrgsOrg_slugRouteImport } from './routes/orgs.$org_slug'
 import { Route as InvitationsTokenRouteImport } from './routes/invitations.$token'
 import { Route as IdeOrg_slugRouteImport } from './routes/ide.$org_slug'
+import { Route as DesktopSettingsRouteImport } from './routes/desktop.settings'
 import { Route as AdministrationUsersRouteImport } from './routes/administration.users'
 import { Route as AdministrationOrganizationsRouteImport } from './routes/administration.organizations'
 import { Route as AdministrationInstanceRouteImport } from './routes/administration.instance'
@@ -137,6 +138,11 @@ const InvitationsTokenRoute = InvitationsTokenRouteImport.update({
 const IdeOrg_slugRoute = IdeOrg_slugRouteImport.update({
   id: '/ide/$org_slug',
   path: '/ide/$org_slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DesktopSettingsRoute = DesktopSettingsRouteImport.update({
+  id: '/desktop/settings',
+  path: '/desktop/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdministrationUsersRoute = AdministrationUsersRouteImport.update({
@@ -304,6 +310,7 @@ export interface FileRoutesByFullPath {
   '/administration/instance': typeof AdministrationInstanceRoute
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/users': typeof AdministrationUsersRoute
+  '/desktop/settings': typeof DesktopSettingsRoute
   '/ide/$org_slug': typeof IdeOrg_slugRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/orgs/$org_slug': typeof OrgsOrg_slugRouteWithChildren
@@ -348,6 +355,7 @@ export interface FileRoutesByTo {
   '/administration/instance': typeof AdministrationInstanceRoute
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/users': typeof AdministrationUsersRoute
+  '/desktop/settings': typeof DesktopSettingsRoute
   '/ide/$org_slug': typeof IdeOrg_slugRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/settings/account': typeof SettingsAccountRoute
@@ -394,6 +402,7 @@ export interface FileRoutesById {
   '/administration/instance': typeof AdministrationInstanceRoute
   '/administration/organizations': typeof AdministrationOrganizationsRoute
   '/administration/users': typeof AdministrationUsersRoute
+  '/desktop/settings': typeof DesktopSettingsRoute
   '/ide/$org_slug': typeof IdeOrg_slugRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/orgs/$org_slug': typeof OrgsOrg_slugRouteWithChildren
@@ -442,6 +451,7 @@ export interface FileRouteTypes {
     | '/administration/instance'
     | '/administration/organizations'
     | '/administration/users'
+    | '/desktop/settings'
     | '/ide/$org_slug'
     | '/invitations/$token'
     | '/orgs/$org_slug'
@@ -486,6 +496,7 @@ export interface FileRouteTypes {
     | '/administration/instance'
     | '/administration/organizations'
     | '/administration/users'
+    | '/desktop/settings'
     | '/ide/$org_slug'
     | '/invitations/$token'
     | '/settings/account'
@@ -531,6 +542,7 @@ export interface FileRouteTypes {
     | '/administration/instance'
     | '/administration/organizations'
     | '/administration/users'
+    | '/desktop/settings'
     | '/ide/$org_slug'
     | '/invitations/$token'
     | '/orgs/$org_slug'
@@ -573,6 +585,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   SetupRoute: typeof SetupRoute
+  DesktopSettingsRoute: typeof DesktopSettingsRoute
   IdeOrg_slugRoute: typeof IdeOrg_slugRoute
   InvitationsTokenRoute: typeof InvitationsTokenRoute
   OrgsOrg_slugRoute: typeof OrgsOrg_slugRouteWithChildren
@@ -697,6 +710,13 @@ declare module '@tanstack/react-router' {
       path: '/ide/$org_slug'
       fullPath: '/ide/$org_slug'
       preLoaderRoute: typeof IdeOrg_slugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/desktop/settings': {
+      id: '/desktop/settings'
+      path: '/desktop/settings'
+      fullPath: '/desktop/settings'
+      preLoaderRoute: typeof DesktopSettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/administration/users': {
@@ -1089,6 +1109,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRouteWithChildren,
   SetupRoute: SetupRoute,
+  DesktopSettingsRoute: DesktopSettingsRoute,
   IdeOrg_slugRoute: IdeOrg_slugRoute,
   InvitationsTokenRoute: InvitationsTokenRoute,
   OrgsOrg_slugRoute: OrgsOrg_slugRouteWithChildren,

@@ -2,6 +2,16 @@
 
 This reference applies to the SQLWarden server.
 
+The Wails desktop application owns its bootstrap configuration. On first launch it creates
+`desktop.json` with mode `0600` in the platform application-data directory, alongside the SQLite
+application database, files, and logs. Cookie, JWT, and encryption secrets are generated once and
+reused on later launches. If the database exists but this configuration is missing, desktop startup
+fails instead of generating keys that could make existing encrypted data unreadable.
+
+Desktop accepts `--data-dir` for development and portable test installations. It always uses
+`deployment_mode=desktop`, `access_mode=single_user`, local SQLite application storage, and the
+local filesystem backend. These topology settings are not editable in the desktop UI.
+
 SQLWarden separates deployment-managed bootstrap configuration from database-backed runtime settings.
 
 Bootstrap configuration is read from defaults, config files, environment variables, and CLI flags. It is validated before listeners and workers start, and changes require a restart. Runtime settings are stored in the application database and changed through the administration API. They are read directly from the database for each request or background operation.

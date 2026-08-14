@@ -141,6 +141,7 @@ func TestMigrateUpAddsQueryCursorPageSizeAfterVersion29(t *testing.T) {
 		ALTER TABLE organization_runtime_settings DROP COLUMN query_favorites_mode;
 		DROP TABLE query_history;
 		DROP TABLE query_favorites;
+		DROP TABLE desktop_installation;
 	`)
 	assert.Nil(t, err)
 	_, err = db.ExecContext(context.Background(), "UPDATE schema_migrations SET version = 29, dirty = 0")

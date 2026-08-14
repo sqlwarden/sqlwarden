@@ -64,6 +64,7 @@ function OrganizationLayout() {
     const cookie = document.cookie.split('; ').find((row) => row.startsWith('sidebar_state='))
     return cookie ? cookie.split('=')[1] === 'true' : true
   })
+  const desktopMode = setupStatus.data?.deployment_mode === 'desktop'
 
   if (setupStatus.isLoading || (hasToken && session.isLoading)) {
     return (
@@ -81,22 +82,29 @@ function OrganizationLayout() {
     return <NavigateToLogin />
   }
 
+  if (desktopMode && isDesktopHiddenOrganizationPath(pathname, orgSlug, workspaceId)) {
+    return <Navigate to="/orgs/$org_slug/workspaces" params={{ org_slug: orgSlug }} replace />
+  }
+
   const workspacePermissions = workspaceEffectivePermissions.data?.permissions
   const workspacePrimaryNavItems = workspaceId
     ? workspacePrimaryItems(orgSlug, workspaceId, workspacePermissions)
     : []
-  const workspaceAccessControlNavItems = workspaceId
-    ? workspaceAccessControlItems(orgSlug, workspaceId, workspacePermissions)
-    : []
+  const workspaceAccessControlNavItems =
+    workspaceId && !desktopMode
+      ? workspaceAccessControlItems(orgSlug, workspaceId, workspacePermissions)
+      : []
   const workspaceSettingsNavItems = workspaceId
     ? workspaceSettingsItems(orgSlug, workspaceId, workspacePermissions)
     : []
-  const orgAccessControlNavItems = !workspaceId
-    ? accessControlItems(orgSlug, orgEffectivePermissions.data?.permissions)
-    : []
-  const orgSettingsNavItems = !workspaceId
-    ? settingsItems(orgSlug, orgEffectivePermissions.data?.permissions)
-    : []
+  const orgAccessControlNavItems =
+    !workspaceId && !desktopMode
+      ? accessControlItems(orgSlug, orgEffectivePermissions.data?.permissions)
+      : []
+  const orgSettingsNavItems =
+    !workspaceId && !desktopMode
+      ? settingsItems(orgSlug, orgEffectivePermissions.data?.permissions)
+      : []
 
   if (
     workspaceId &&
@@ -181,6 +189,7 @@ function OrganizationLayout() {
             session={session.data}
             preferences={preferences}
             setPreferences={setPreferences}
+            hideUserMenu={desktopMode}
           />
           <AppShellRail />
         </Sidebar>
@@ -405,4 +414,20 @@ function workspaceIdFromPath(pathname: string, orgSlug: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function isDesktopHiddenOrganizationPath(
+  pathname: string,
+  orgSlug: string,
+  workspaceId: string | undefined,
+) {
+  const path = trimTrailingSlash(pathname)
+  if (!workspaceId) {
+    const allowed = [`/orgs/${orgSlug}`, `/orgs/${orgSlug}/workspaces`]
+    return !allowed.includes(path)
+  }
+  const base = `/orgs/${orgSlug}/workspaces/${workspaceId}`
+  return ['users', 'teams', 'roles', 'policies'].some((section) =>
+    isPathInSection(path, base, section),
+  )
 }

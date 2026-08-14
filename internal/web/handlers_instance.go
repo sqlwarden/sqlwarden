@@ -195,8 +195,9 @@ func (app *application) setupStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = response.JSON(w, http.StatusOK, map[string]any{
-		"configured":  configured,
-		"access_mode": app.config.AccessMode,
+		"configured":      configured,
+		"access_mode":     app.config.AccessMode,
+		"deployment_mode": app.config.DeploymentMode,
 	})
 	if err != nil {
 		app.serverError(w, r, err)

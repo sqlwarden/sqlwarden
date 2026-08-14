@@ -484,6 +484,7 @@ export interface SessionResponse {
 export interface SetupStatusResponse {
   configured: boolean
   access_mode: 'multi_user' | 'single_user'
+  deployment_mode: 'server' | 'desktop'
 }
 
 export interface SetupResponse {
