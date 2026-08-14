@@ -348,6 +348,40 @@ func TestMySQLCompleteInsideStandaloneCTE(t *testing.T) {
 	}
 }
 
+func TestMySQLCompleteCTERelationsAndProjectedColumns(t *testing.T) {
+	driver := &mysqlDriver{}
+	set := &metadata.MetadataSet{
+		Directory: mysqlCompletionTestCatalog(), Objects: mysqlCompletionTestObjects(),
+	}
+	for _, trigger := range []completer.TriggerKind{completer.TriggerAutomatic, completer.TriggerInvoked} {
+		for _, prefix := range []string{"", "pic"} {
+			t.Run(string(trigger)+"/relation/"+prefix, func(t *testing.T) {
+				sql := "WITH picked AS (SELECT id, `display name` AS amt FROM users) SELECT * FROM " + prefix
+				result, err := driver.Complete(context.Background(), completer.Request{
+					SQL: sql, CursorOffset: len(sql), TriggerKind: trigger, Schema: set,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				requireMySQLCompletion(t, result, "picked", "table")
+			})
+		}
+	}
+
+	template := "WITH picked AS (SELECT id, `display name` AS amt FROM users) SELECT | FROM picked"
+	cursor := strings.IndexByte(template, '|')
+	sql := strings.Replace(template, "|", "", 1)
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: cursor, TriggerKind: completer.TriggerInvoked, Schema: set,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireMySQLCompletion(t, result, "id", "column")
+	requireMySQLCompletion(t, result, "amt", "column")
+	requireNoMySQLCompletion(t, result, "display name", "column")
+}
+
 func TestMySQLCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
 	directory := mysqlCompletionTestCatalog()
 	objects := mysqlCompletionTestObjects()

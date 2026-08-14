@@ -51,11 +51,106 @@ func Complete(
 	if columnContext && metadata != nil {
 		result = append(result, resolveColumns(sql, cursor, completion, metadata)...)
 	}
+	result = append(result, cteRelationCandidates(sql, cursor)...)
 	result = append(result, selectAliasCandidates(sql, cursor)...)
 	if continuation, ok := relationContinuationAt(sql, cursor); ok {
 		result = relationContinuationCandidates(continuation)
 	}
 	return filterByPrefix(deduplicate(result), prefixAt(sql, cursor)), completioncore.CheckContext(ctx)
+}
+
+func cteRelationCandidates(sql string, cursor int) []completioncore.Candidate {
+	tokens := parser.Tokenize(sql)
+	if len(tokens) == 0 {
+		return nil
+	}
+	depths, cursorDepth := postgresTokenDepths(tokens, cursor)
+	start := 0
+	for i, token := range tokens {
+		if token.Loc >= cursor {
+			break
+		}
+		if token.Type == ';' && depths[i] == 0 {
+			start = i + 1
+		}
+	}
+	selectIndex, selectDepth := activeSelect(tokens, depths, start, cursor, cursorDepth)
+	if selectIndex < 0 || !postgresRelationPosition(sql, tokens, depths, selectIndex, cursor, cursorDepth) {
+		return nil
+	}
+	withIndex := -1
+	for i := selectIndex - 1; i >= start; i-- {
+		if depths[i] == selectDepth && tokens[i].Type == parser.WITH {
+			withIndex = i
+			break
+		}
+	}
+	if withIndex < 0 {
+		return nil
+	}
+	names := postgresCTENamesAt(tokens, depths, withIndex, selectIndex, selectDepth)
+	result := make([]completioncore.Candidate, 0, len(names))
+	for _, name := range names {
+		result = append(result, completioncore.Candidate{Text: name, Type: completioncore.CandidateTable})
+	}
+	return result
+}
+
+func postgresRelationPosition(sql string, tokens []parser.Token, depths []int, selectIndex, cursor, depth int) bool {
+	indices := make([]int, 0, 2)
+	for i := selectIndex + 1; i < len(tokens) && tokens[i].Loc < cursor; i++ {
+		if depths[i] == depth {
+			indices = append(indices, i)
+		}
+	}
+	if len(indices) == 0 {
+		return false
+	}
+	last := tokens[indices[len(indices)-1]]
+	if last.Type == parser.FROM || last.Type == parser.JOIN {
+		return true
+	}
+	if len(indices) < 2 || prefixAt(sql, cursor) == "" {
+		return false
+	}
+	previous := tokens[indices[len(indices)-2]]
+	return previous.Type == parser.FROM || previous.Type == parser.JOIN
+}
+
+func postgresCTENamesAt(tokens []parser.Token, depths []int, withIndex, end, depth int) []string {
+	i := withIndex + 1
+	if i < end && tokens[i].Type == parser.RECURSIVE {
+		i++
+	}
+	var result []string
+	for i < end && depths[i] == depth && parser.IsIdentifierTokenType(tokens[i].Type) {
+		name := normalizeIdentifier(tokens[i].Str)
+		i++
+		if i < end && depths[i] == depth && tokens[i].Type == '(' {
+			close := matchingPGParen(tokens, i, end)
+			if close < 0 {
+				break
+			}
+			i = close + 1
+		}
+		if i < end && depths[i] == depth && tokens[i].Type == parser.AS {
+			i++
+		}
+		if i >= end || depths[i] != depth || tokens[i].Type != '(' {
+			break
+		}
+		close := matchingPGParen(tokens, i, end)
+		if close < 0 {
+			break
+		}
+		result = append(result, name)
+		i = close + 1
+		if i >= end || depths[i] != depth || tokens[i].Type != ',' {
+			break
+		}
+		i++
+	}
+	return result
 }
 
 // selectAliasCandidates returns output aliases from the SELECT owning the

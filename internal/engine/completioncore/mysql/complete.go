@@ -58,11 +58,98 @@ func Complete(
 	if columnContext && metadata != nil {
 		result = append(result, resolveColumns(sql, cursor, qualifier, metadata)...)
 	}
+	result = append(result, cteRelationCandidates(sql, cursor)...)
 	result = append(result, selectAliasCandidates(sql, cursor)...)
 	if continuation, ok := relationContinuationAt(sql, cursor); ok {
 		result = relationContinuationCandidates(continuation)
 	}
 	return filterByPrefix(deduplicate(result), prefixAt(sql, cursor)), completioncore.CheckContext(ctx)
+}
+
+func cteRelationCandidates(sql string, cursor int) []completioncore.Candidate {
+	tokens := completionTokens(parser.Tokenize(sql))
+	if len(tokens) == 0 {
+		return nil
+	}
+	start, _ := statementBounds(tokens, cursor)
+	cursorDepth := depthAt(tokens, cursor)
+	selectIndex, selectDepth := activeSelect(tokens, start, cursor, cursorDepth)
+	if selectIndex < 0 || !mysqlRelationPosition(sql, tokens, selectIndex, cursor, cursorDepth) {
+		return nil
+	}
+	withIndex := -1
+	for i := selectIndex - 1; i >= start; i-- {
+		if tokens[i].depth == selectDepth && tokenIs(tokens[i], "WITH") {
+			withIndex = i
+			break
+		}
+	}
+	if withIndex < 0 {
+		return nil
+	}
+	names := mysqlCTENames(tokens, withIndex, selectIndex, selectDepth)
+	result := make([]completioncore.Candidate, 0, len(names))
+	for _, name := range names {
+		result = append(result, completioncore.Candidate{Text: name, Type: completioncore.CandidateTable})
+	}
+	return result
+}
+
+func mysqlRelationPosition(sql string, tokens []token, selectIndex, cursor, depth int) bool {
+	indices := make([]int, 0, 2)
+	for i := selectIndex + 1; i < len(tokens) && tokens[i].Loc < cursor; i++ {
+		if tokens[i].depth == depth {
+			indices = append(indices, i)
+		}
+	}
+	if len(indices) == 0 {
+		return false
+	}
+	last := tokens[indices[len(indices)-1]]
+	if last.Type == parser.FROM || last.Type == parser.JOIN {
+		return true
+	}
+	if len(indices) < 2 || prefixAt(sql, cursor) == "" {
+		return false
+	}
+	previous := tokens[indices[len(indices)-2]]
+	return previous.Type == parser.FROM || previous.Type == parser.JOIN
+}
+
+func mysqlCTENames(tokens []token, withIndex, end, depth int) []string {
+	i := withIndex + 1
+	if i < end && tokenIs(tokens[i], "RECURSIVE") {
+		i++
+	}
+	var result []string
+	for i < end && tokens[i].depth == depth && parser.IsIdentTokenType(tokens[i].Type) {
+		name := unquote(tokens[i].Str)
+		i++
+		if i < end && tokens[i].depth == depth && tokens[i].Type == '(' {
+			close := matchingParen(tokens, i, end)
+			if close < 0 {
+				break
+			}
+			i = close + 1
+		}
+		if i < end && tokens[i].depth == depth && tokens[i].Type == parser.AS {
+			i++
+		}
+		if i >= end || tokens[i].depth != depth || tokens[i].Type != '(' {
+			break
+		}
+		close := matchingParen(tokens, i, end)
+		if close < 0 {
+			break
+		}
+		result = append(result, name)
+		i = close + 1
+		if i >= end || tokens[i].depth != depth || tokens[i].Type != ',' {
+			break
+		}
+		i++
+	}
+	return result
 }
 
 // selectAliasCandidates returns output aliases from the SELECT owning the

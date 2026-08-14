@@ -482,6 +482,40 @@ func TestPostgresCompleteInsideStandaloneCTE(t *testing.T) {
 	}
 }
 
+func TestPostgresCompleteCTERelationsAndProjectedColumns(t *testing.T) {
+	driver := &postgresDriver{}
+	set := &metadata.MetadataSet{
+		Directory: completionTestCatalog("postgres", "public"), Objects: completionTestObjects("public"),
+	}
+	for _, trigger := range []completer.TriggerKind{completer.TriggerAutomatic, completer.TriggerInvoked} {
+		for _, prefix := range []string{"", "pic"} {
+			t.Run(string(trigger)+"/relation/"+prefix, func(t *testing.T) {
+				sql := `WITH picked AS (SELECT id, "display name" AS amt FROM users) SELECT * FROM ` + prefix
+				result, err := driver.Complete(context.Background(), completer.Request{
+					SQL: sql, CursorOffset: len(sql), TriggerKind: trigger, Schema: set,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				requireCompletion(t, result, "picked", "table")
+			})
+		}
+	}
+
+	template := `WITH picked AS (SELECT id, "display name" AS amt FROM users) SELECT | FROM picked`
+	cursor := strings.IndexByte(template, '|')
+	sql := strings.Replace(template, "|", "", 1)
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: cursor, TriggerKind: completer.TriggerInvoked, Schema: set,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireCompletion(t, result, "id", "column")
+	requireCompletion(t, result, "amt", "column")
+	requireNoCompletion(t, result, "display name", "column")
+}
+
 func TestPostgresCompletionContextMatrix(t *testing.T) {
 	driver := &postgresDriver{}
 	directory := completionTestCatalog("postgres", "public")
