@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"net/url"
-	"path/filepath"
 	"sync"
 
 	desktopconfig "github.com/sqlwarden/internal/desktop"
@@ -12,6 +10,8 @@ import (
 	"github.com/sqlwarden/internal/web"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+var openDirectory = openDirectoryNative
 
 type DesktopBridge struct {
 	mu            sync.Mutex
@@ -80,18 +80,12 @@ func (b *DesktopBridge) StartSession() (web.DesktopSession, error) {
 	return session, err
 }
 
-func (b *DesktopBridge) RevealDataDirectory() {
-	b.mu.Lock()
-	ctx := b.ctx
-	b.mu.Unlock()
-	runtime.BrowserOpenURL(ctx, fileURL(b.paths.DataDir))
+func (b *DesktopBridge) RevealDataDirectory() error {
+	return revealDirectory(b.paths.DataDir)
 }
 
-func (b *DesktopBridge) RevealLogDirectory() {
-	b.mu.Lock()
-	ctx := b.ctx
-	b.mu.Unlock()
-	runtime.BrowserOpenURL(ctx, fileURL(b.paths.Logs))
+func (b *DesktopBridge) RevealLogDirectory() error {
+	return revealDirectory(b.paths.Logs)
 }
 
 func (b *DesktopBridge) focusWindow() {
@@ -104,6 +98,9 @@ func (b *DesktopBridge) focusWindow() {
 	}
 }
 
-func fileURL(path string) string {
-	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+func revealDirectory(path string) error {
+	if path == "" {
+		return errors.New("desktop directory is unavailable")
+	}
+	return openDirectory(path)
 }
