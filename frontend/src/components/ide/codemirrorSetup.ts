@@ -23,7 +23,7 @@ import {
   lineNumbers,
   rectangularSelection,
 } from '@codemirror/view'
-import { createFindPanel } from './findPanel'
+import { createFindPanel } from './codemirrorFindPanel'
 import { IDENTIFIER_DND_MIME } from './sqlDialect'
 
 // The find panel supplies its own design-system chrome, so strip CodeMirror's
