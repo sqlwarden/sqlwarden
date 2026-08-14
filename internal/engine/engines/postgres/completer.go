@@ -113,7 +113,7 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 		}
 	}
 	if req.Schema != nil && req.Schema.Directory != nil {
-		candidates = filterPostgresUnqualifiedRelations(
+		candidates = filterPostgresRelations(
 			candidates,
 			req.Schema.Directory,
 			completionSQL,
@@ -142,7 +142,7 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 	if req.TriggerKind == completer.TriggerAutomatic && isBareSelect(req.SQL, req.CursorOffset) {
 		suggestions = curatedSelectSuggestions(start, req.CursorOffset)
 	}
-	sortSuggestions(suggestions)
+	sortSuggestions(suggestions, req.SQL[start:req.CursorOffset])
 	if err := ctx.Err(); err != nil {
 		return completer.Result{}, err
 	}
@@ -244,15 +244,16 @@ func postgresCompletionDefaultSchema(directory *metadata.Directory) string {
 	return "public"
 }
 
-func filterPostgresUnqualifiedRelations(
+func filterPostgresRelations(
 	candidates []completioncore.Candidate,
 	directory *metadata.Directory,
 	sql string,
 	cursor int,
 ) []completioncore.Candidate {
-	if directory == nil || completionHasQualifier(sql, cursor) {
+	if directory == nil {
 		return candidates
 	}
+	qualified := completionHasQualifier(sql, cursor)
 	defaultSchema := postgresCompletionDefaultSchema(directory)
 	if defaultSchema == "" {
 		return candidates
@@ -283,6 +284,7 @@ func filterPostgresUnqualifiedRelations(
 	if !foundDefaultSchema {
 		return candidates
 	}
+	localRelations := postgresCTENames(sql)
 	result := make([]completioncore.Candidate, 0, len(candidates))
 	for _, candidate := range candidates {
 		if !postgresRelationCandidate(candidate.Type) {
@@ -291,16 +293,81 @@ func filterPostgresUnqualifiedRelations(
 		}
 		name := strings.ToLower(candidate.Text)
 		if _, catalogRelation := allRelations[name]; !catalogRelation {
-			// Preserve CTEs and parser-derived relations that are not catalog
-			// objects. Only cross-schema catalog leakage is filtered here.
-			result = append(result, candidate)
+			// Omni may echo the unfinished identifier as a table candidate even
+			// when it is absent from the catalog. Preserve only query-local CTEs.
+			if _, localRelation := localRelations[name]; localRelation {
+				result = append(result, candidate)
+			}
 			continue
 		}
-		if _, visible := defaultRelations[name]; visible {
+		if _, visible := defaultRelations[name]; qualified || visible {
 			result = append(result, candidate)
 		}
 	}
 	return result
+}
+
+func postgresCTENames(sql string) map[string]struct{} {
+	result := make(map[string]struct{})
+	tokens := pgparser.Tokenize(sql)
+	if len(tokens) == 0 || tokens[0].Type != pgparser.WITH {
+		return result
+	}
+	i := 1
+	if i < len(tokens) && tokens[i].Type == pgparser.RECURSIVE {
+		i++
+	}
+	for i < len(tokens) && pgparser.IsIdentifierTokenType(tokens[i].Type) {
+		name := strings.ToLower(postgresCompletionUnquoteIdentifier(tokens[i].Str))
+		result[name] = struct{}{}
+		i++
+		if i < len(tokens) && tokens[i].Type == '(' {
+			close := postgresMatchingParen(tokens, i)
+			if close < 0 {
+				break
+			}
+			i = close + 1
+		}
+		if i < len(tokens) && tokens[i].Type == pgparser.AS {
+			i++
+		}
+		if i >= len(tokens) || tokens[i].Type != '(' {
+			break
+		}
+		close := postgresMatchingParen(tokens, i)
+		if close < 0 {
+			break
+		}
+		i = close + 1
+		if i >= len(tokens) || tokens[i].Type != ',' {
+			break
+		}
+		i++
+	}
+	return result
+}
+
+func postgresMatchingParen(tokens []pgparser.Token, open int) int {
+	depth := 0
+	for i := open; i < len(tokens); i++ {
+		switch tokens[i].Type {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func postgresCompletionUnquoteIdentifier(identifier string) string {
+	if len(identifier) >= 2 && identifier[0] == '"' && identifier[len(identifier)-1] == '"' {
+		return strings.ReplaceAll(identifier[1:len(identifier)-1], `""`, `"`)
+	}
+	return identifier
 }
 
 func postgresRelationKind(kind string) bool {
@@ -572,8 +639,13 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func sortSuggestions(suggestions []completer.Suggestion) {
+func sortSuggestions(suggestions []completer.Suggestion, prefix string) {
 	sort.SliceStable(suggestions, func(i, j int) bool {
+		leftTier := completer.MatchTier(suggestions[i].Label, prefix)
+		rightTier := completer.MatchTier(suggestions[j].Label, prefix)
+		if leftTier != rightTier {
+			return leftTier > rightTier
+		}
 		if suggestions[i].Score != suggestions[j].Score {
 			return suggestions[i].Score > suggestions[j].Score
 		}

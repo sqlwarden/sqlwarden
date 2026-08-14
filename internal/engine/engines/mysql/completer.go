@@ -90,7 +90,7 @@ func (d *mysqlDriver) Complete(ctx context.Context, req completer.Request) (comp
 	if req.TriggerKind == completer.TriggerAutomatic && isMySQLBareSelect(req.SQL, req.CursorOffset) {
 		suggestions = mysqlCuratedSelectSuggestions(start, req.CursorOffset)
 	}
-	mysqlSortSuggestions(suggestions)
+	mysqlSortSuggestions(suggestions, req.SQL[start:req.CursorOffset])
 	if err := ctx.Err(); err != nil {
 		return completer.Result{}, err
 	}
@@ -379,8 +379,13 @@ func mysqlFirstNonEmpty(values ...string) string {
 	return ""
 }
 
-func mysqlSortSuggestions(suggestions []completer.Suggestion) {
+func mysqlSortSuggestions(suggestions []completer.Suggestion, prefix string) {
 	sort.SliceStable(suggestions, func(i, j int) bool {
+		leftTier := completer.MatchTier(suggestions[i].Label, prefix)
+		rightTier := completer.MatchTier(suggestions[j].Label, prefix)
+		if leftTier != rightTier {
+			return leftTier > rightTier
+		}
 		if suggestions[i].Score != suggestions[j].Score {
 			return suggestions[i].Score > suggestions[j].Score
 		}

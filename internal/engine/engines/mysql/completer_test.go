@@ -255,6 +255,56 @@ func TestMySQLCompletionVocabulary(t *testing.T) {
 	requireMySQLCompletion(t, completer.Result{Suggestions: vocabulary.Suggestions}, "COUNT", "function")
 }
 
+func TestMySQLSuggestionRankingPrioritizesTypedPrefix(t *testing.T) {
+	suggestions := []completer.Suggestion{
+		{Label: "consumer", Score: 100},
+		{Label: "summary", Score: 1},
+		{Label: "gross_sum", Score: 100},
+		{Label: "SUM", Score: 1},
+	}
+	mysqlSortSuggestions(suggestions, "sum")
+	want := []string{"SUM", "summary", "gross_sum", "consumer"}
+	for i, label := range want {
+		if suggestions[i].Label != label {
+			t.Fatalf("suggestion %d = %q, want %q: %+v", i, suggestions[i].Label, label, suggestions)
+		}
+	}
+}
+
+func TestMySQLCompleteRefreshesFunctionPrefix(t *testing.T) {
+	for _, prefix := range []string{"su", "sum"} {
+		t.Run(prefix, func(t *testing.T) {
+			sql := "SELECT customer_id, SUM(amount) AS total_amount FROM payment GROUP BY customer_id HAVING " + prefix
+			result, err := (&mysqlDriver{}).Complete(context.Background(), completer.Request{
+				SQL: sql, CursorOffset: len(sql), TriggerKind: completer.TriggerAutomatic,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			requireMySQLCompletion(t, result, "SUM", "function")
+			for _, suggestion := range result.Suggestions {
+				if !strings.HasPrefix(strings.ToLower(suggestion.Label), prefix) {
+					t.Fatalf("non-prefix suggestion %q returned for %q", suggestion.Label, prefix)
+				}
+			}
+		})
+	}
+}
+
+func TestMySQLCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
+	directory := mysqlCompletionTestCatalog()
+	objects := mysqlCompletionTestObjects()
+	sql := "SELECT * FROM veraxasdwadqwd"
+	result, err := (&mysqlDriver{}).Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql),
+		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireNoMySQLCompletion(t, result, "veraxasdwadqwd", "table")
+}
+
 func TestMySQLCompletionContextMatrix(t *testing.T) {
 	driver := &mysqlDriver{}
 	directory := mysqlCompletionTestCatalog()

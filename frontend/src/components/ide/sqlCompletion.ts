@@ -246,6 +246,7 @@ const completionNavigationKeymap = Prec.highest(
 
 const vocabularyCache = new Map<string, Promise<SQLCompletionSuggestion[]>>()
 const IDENTIFIER_VALID_FOR = /^[\w$]*$/
+const MATCH_TIER_BOOST = 1_000
 const SEMANTIC_SPACE_KEYWORDS = new Set([
   'SELECT',
   'DISTINCT',
@@ -495,6 +496,48 @@ export function clearSQLCompletionVocabularyCache(): void {
   vocabularyCache.clear()
 }
 
+function completionMatchTier(label: string, prefix: string): number {
+  const foldedLabel = label.toLocaleLowerCase()
+  const foldedPrefix = prefix.toLocaleLowerCase()
+  if (foldedPrefix.length === 0) return 0
+  if (foldedLabel === foldedPrefix) return 5
+  if (foldedLabel.startsWith(foldedPrefix)) return 4
+  if (foldedLabel.split(/[^\p{L}\p{N}]+/u).some((segment) => segment.startsWith(foldedPrefix))) {
+    return 3
+  }
+  if (foldedLabel.includes(foldedPrefix)) return 2
+  const prefixCharacters = Array.from(foldedPrefix)
+  if (prefixCharacters.length < 3) return 0
+  let prefixIndex = 0
+  for (const character of foldedLabel) {
+    if (character === prefixCharacters[prefixIndex]) prefixIndex++
+    if (prefixIndex === prefixCharacters.length) return 1
+  }
+  return 0
+}
+
+function rankSuggestions(
+  suggestions: SQLCompletionSuggestion[],
+  prefix: string,
+): SQLCompletionSuggestion[] {
+  if (prefix.length === 0) return suggestions
+  return suggestions
+    .map((suggestion) => ({ suggestion, tier: completionMatchTier(suggestion.label, prefix) }))
+    .filter(({ tier }) => tier > 0)
+    .sort(
+      (left, right) =>
+        right.tier - left.tier ||
+        (right.suggestion.score ?? 0) - (left.suggestion.score ?? 0) ||
+        left.suggestion.label.localeCompare(right.suggestion.label, undefined, {
+          sensitivity: 'base',
+        }),
+    )
+    .map(({ suggestion, tier }) => ({
+      ...suggestion,
+      score: tier * MATCH_TIER_BOOST + (suggestion.score ?? 0),
+    }))
+}
+
 function suggestionToCompletion(suggestion: SQLCompletionSuggestion): Completion {
   return {
     label: suggestion.label,
@@ -504,6 +547,19 @@ function suggestionToCompletion(suggestion: SQLCompletionSuggestion): Completion
     apply: suggestion.insert_text || suggestion.label,
     boost: suggestion.score,
   }
+}
+
+function mergeRankedCompletions(primary: Completion[], secondary: Completion[]): Completion[] {
+  const merged = new Map<string, Completion>()
+  for (const completion of [...primary, ...secondary]) {
+    const key = `${completion.label.toLocaleLowerCase()}\u0000${completion.type ?? ''}`
+    if (!merged.has(key)) merged.set(key, completion)
+  }
+  return [...merged.values()].sort(
+    (left, right) =>
+      (right.boost ?? 0) - (left.boost ?? 0) ||
+      left.label.localeCompare(right.label, undefined, { sensitivity: 'base' }),
+  )
 }
 
 export function remoteSQLCompletionSource(config: SQLCompletionConfig): CompletionSource {
@@ -531,11 +587,9 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
     // In particular, Ctrl+Space at an empty prefix must not dump every dialect
     // keyword and function into an otherwise precise semantic result.
     const shouldCompleteLexically = prefix.length >= 2 || (context.explicit && prefix.length > 0)
-    // CodeMirror can invalidate a pending request from a semantic boundary
-    // (for example "FROM ") as the user immediately continues typing. Once
-    // the prefix has settled for the normal activation delay, retry against
-    // the current document. A completed result remains locally filterable via
-    // validFor, so this does not turn every subsequent keystroke into a fetch.
+    // A broad result from a semantic boundary (for example "HAVING ") may be
+    // capped before the typed identifier exists. Re-run semantic completion
+    // for a settled prefix instead of fuzzy-filtering that incomplete result.
     const shouldRetrySemanticIdentifier =
       !context.explicit && hasSemanticIdentifierContext(source, context.pos, prefix)
     const shouldCompleteRemotely =
@@ -555,9 +609,7 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
           lexical = [...(fallback?.options ?? [])]
         } else {
           const foldedPrefix = prefix.toLocaleLowerCase()
-          lexical = vocabulary
-            .filter((suggestion) => suggestion.label.toLocaleLowerCase().startsWith(foldedPrefix))
-            .map(suggestionToCompletion)
+          lexical = rankSuggestions(vocabulary, foldedPrefix).map(suggestionToCompletion)
         }
       } catch (_error) {
         const fallback = await localKeywords(context)
@@ -595,19 +647,28 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
       if (context.aborted || controller.signal.aborted || generation !== remoteGeneration)
         return null
       const from = result.suggestions[0]?.replace_start ?? word?.from ?? context.pos
-      const semantic = result.suggestions
-        .filter((suggestion) => suggestion.replace_start === from)
-        .map(suggestionToCompletion)
-      // The backend has statement grammar and schema metadata; its contextual
-      // result is authoritative. Lexical vocabulary is used only when semantic
-      // completion has no answer.
-      const options = semantic.length > 0 ? semantic : lexical
+      const semantic = rankSuggestions(
+        result.suggestions.filter((suggestion) => suggestion.replace_start === from),
+        prefix,
+      ).map(suggestionToCompletion)
+      // Empty-prefix contexts remain semantic-only so broad vocabulary cannot
+      // add noise. Once the user types a prefix, matching dialect vocabulary
+      // may supplement parser candidates that omit valid functions or types.
+      const options =
+        semantic.length > 0
+          ? prefix.length > 0
+            ? mergeRankedCompletions(semantic, lexical)
+            : semantic
+          : lexical
       if (options.length === 0) return null
       return {
         from: Math.max(0, Math.min(from, context.pos)),
         to: context.pos,
         options,
-        validFor: IDENTIFIER_VALID_FOR,
+        // Only reuse a semantic result for the exact prefix it was requested
+        // with. The 150 ms activation delay and cancellation coalesce normal
+        // typing while still letting the backend rank against the new prefix.
+        validFor: (text) => text === prefix,
       }
     } catch (_error) {
       if (controller.signal.aborted || context.aborted || generation !== remoteGeneration)

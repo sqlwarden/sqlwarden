@@ -367,6 +367,62 @@ func TestPostgresCompletionVocabulary(t *testing.T) {
 	}
 	requireCompletion(t, completer.Result{Suggestions: vocabulary.Suggestions}, "SELECT", "keyword")
 	requireCompletion(t, completer.Result{Suggestions: vocabulary.Suggestions}, "count", "function")
+	requireCompletion(t, completer.Result{Suggestions: vocabulary.Suggestions}, "sum", "function")
+}
+
+func TestPostgresSuggestionRankingPrioritizesTypedPrefix(t *testing.T) {
+	suggestions := []completer.Suggestion{
+		{Label: "consumer", Score: 100},
+		{Label: "summary", Score: 1},
+		{Label: "gross_sum", Score: 100},
+		{Label: "SUM", Score: 1},
+	}
+	sortSuggestions(suggestions, "sum")
+	want := []string{"SUM", "summary", "gross_sum", "consumer"}
+	for i, label := range want {
+		if suggestions[i].Label != label {
+			t.Fatalf("suggestion %d = %q, want %q: %+v", i, suggestions[i].Label, label, suggestions)
+		}
+	}
+}
+
+func TestPostgresCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
+	directory := completionTestCatalog("postgres", "public")
+	objects := completionTestObjects("public")
+	sql := "SELECT * FROM veraxasdwadqwd"
+	result, err := (&postgresDriver{}).Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql),
+		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireNoCompletion(t, result, "veraxasdwadqwd", "table")
+
+	partialSQL := "SELECT * FROM us"
+	partial, err := (&postgresDriver{}).Complete(context.Background(), completer.Request{
+		SQL: partialSQL, CursorOffset: len(partialSQL),
+		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireCompletion(t, partial, "users", "table")
+	requireNoCompletion(t, partial, "us", "table")
+}
+
+func TestPostgresCompletePreservesCTERelation(t *testing.T) {
+	directory := completionTestCatalog("postgres", "public")
+	objects := completionTestObjects("public")
+	sql := "WITH recent_orders AS (SELECT * FROM users) SELECT * FROM recent"
+	result, err := (&postgresDriver{}).Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql),
+		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireCompletion(t, result, "recent_orders", "table")
 }
 
 func TestPostgresCompletionContextMatrix(t *testing.T) {
