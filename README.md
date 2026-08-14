@@ -57,7 +57,7 @@ docker run --rm \
   -e COOKIE_SECRET_KEY=replace-with-a-random-secret \
   -e JWT_SECRET_KEY=replace-with-a-random-secret \
   -e ENCRYPTION_KEY=replace-with-a-random-secret \
-  ghcr.io/sqlwarden/sqlwarden:0.6.1
+  ghcr.io/sqlwarden/sqlwarden:latest
 ```
 
 Use the latest published release tag for production deployments. The secrets above are placeholders and must be replaced before exposing the service to users.
