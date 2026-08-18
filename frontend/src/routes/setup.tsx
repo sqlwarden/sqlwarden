@@ -10,12 +10,14 @@ import type { SetupResponse } from '#/lib/api/types'
 import { clearAccessToken } from '#/lib/auth/access-token'
 import { queryKeys } from '#/lib/api/query'
 import { MAX_SLUG_LENGTH, slugify } from '#/lib/strings'
+import { AmbientBackground } from '#/components/auth/AmbientBackground'
 import { AuthField } from '#/components/auth/AuthField'
-import { AuthLayout } from '#/components/auth/AuthLayout'
+import { LoginSurface } from '#/components/auth/LoginSurface'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { PasswordInput } from '#/components/ui/password-input'
+import { Icon } from '#/lib/icons'
 import { usePageTitle } from '#/lib/page-title'
 
 export const Route = createFileRoute('/setup')({
@@ -142,104 +144,118 @@ function SetupPage() {
   }
 
   return (
-    <AuthLayout
-      eyebrow={
-        <Badge variant="outline" className="mb-1">
-          First-time setup
-        </Badge>
-      }
-      title="Create the instance admin"
-      description={setupDescription(requiresOrganization)}
-      contentClassName="max-w-lg"
-      footer={
-        <p className="text-center text-xs text-muted-foreground">
-          No users exist yet. Complete this step to bootstrap the instance.
-        </p>
-      }
-    >
-      <form className="space-y-5" onSubmit={onSubmit}>
-        <AuthField label="Full name" error={formErrors.name}>
-          <Input
-            autoComplete="name"
-            placeholder="Alex Ward"
-            value={values.name}
-            onChange={(event) => updateField('name', event.target.value)}
-          />
-        </AuthField>
+    <main className="relative">
+      <AmbientBackground />
+      <LoginSurface
+        eyebrow={
+          <Badge variant="outline" className="mb-1">
+            First-time setup
+          </Badge>
+        }
+        title="Set up SQLWarden"
+        description={setupDescription(requiresOrganization)}
+        className="max-w-[480px]"
+        footer={
+          <p className="text-center text-xs text-muted-foreground">
+            No users exist yet. This account becomes the instance administrator.
+          </p>
+        }
+      >
+        <form className="space-y-5" onSubmit={onSubmit}>
+          <AuthField label="Full name" error={formErrors.name}>
+            <Input
+              autoComplete="name"
+              placeholder="Alex Ward"
+              value={values.name}
+              onChange={(event) => updateField('name', event.target.value)}
+            />
+          </AuthField>
 
-        <AuthField label="Email address" error={formErrors.email}>
-          <Input
-            autoComplete="email"
-            type="email"
-            placeholder="admin@organization.com"
-            value={values.email}
-            onChange={(event) => updateField('email', event.target.value)}
-          />
-        </AuthField>
+          <AuthField label="Email address" error={formErrors.email}>
+            <Input
+              autoComplete="email"
+              type="email"
+              placeholder="admin@organization.com"
+              value={values.email}
+              onChange={(event) => updateField('email', event.target.value)}
+            />
+          </AuthField>
 
-        {requiresOrganization ? (
+          {requiresOrganization ? (
+            <div className="grid gap-5 sm:grid-cols-2">
+              <AuthField label="Organization name" error={formErrors.organization_name}>
+                <Input
+                  autoComplete="organization"
+                  placeholder="Acme Cloud"
+                  value={values.organizationName}
+                  onChange={(event) => updateField('organizationName', event.target.value)}
+                />
+              </AuthField>
+
+              <AuthField label="Organization slug" error={formErrors.organization_slug}>
+                <Input
+                  autoComplete="off"
+                  maxLength={MAX_SLUG_LENGTH}
+                  placeholder="acme-cloud"
+                  value={values.organizationSlug}
+                  onChange={(event) => {
+                    setSlugTouched(true)
+                    updateField(
+                      'organizationSlug',
+                      slugify(event.target.value, { maxLength: MAX_SLUG_LENGTH }),
+                    )
+                  }}
+                />
+              </AuthField>
+            </div>
+          ) : null}
+
           <div className="grid gap-5 sm:grid-cols-2">
-            <AuthField label="Organization name" error={formErrors.organization_name}>
-              <Input
-                autoComplete="organization"
-                placeholder="Acme Cloud"
-                value={values.organizationName}
-                onChange={(event) => updateField('organizationName', event.target.value)}
+            <AuthField label="Password" error={formErrors.password}>
+              <PasswordInput
+                autoComplete="new-password"
+                placeholder="Minimum 8 characters"
+                value={values.password}
+                onChange={(event) => updateField('password', event.target.value)}
               />
             </AuthField>
 
-            <AuthField label="Organization slug" error={formErrors.organization_slug}>
-              <Input
-                autoComplete="off"
-                maxLength={MAX_SLUG_LENGTH}
-                placeholder="acme-cloud"
-                value={values.organizationSlug}
-                onChange={(event) => {
-                  setSlugTouched(true)
-                  updateField(
-                    'organizationSlug',
-                    slugify(event.target.value, { maxLength: MAX_SLUG_LENGTH }),
-                  )
-                }}
+            <AuthField label="Confirm password" error={formErrors.confirmPassword}>
+              <PasswordInput
+                autoComplete="new-password"
+                placeholder="Repeat password"
+                value={values.confirmPassword}
+                onChange={(event) => updateField('confirmPassword', event.target.value)}
               />
             </AuthField>
           </div>
-        ) : null}
 
-        <div className="grid gap-5 sm:grid-cols-2">
-          <AuthField label="Password" error={formErrors.password}>
-            <PasswordInput
-              autoComplete="new-password"
-              placeholder="Minimum 8 characters"
-              value={values.password}
-              onChange={(event) => updateField('password', event.target.value)}
-            />
-          </AuthField>
+          <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+            {requiresOrganization
+              ? 'This account gets instance admin access and becomes the owner of the first organization.'
+              : 'This account gets instance admin access. A local organization will be created automatically.'}
+          </div>
 
-          <AuthField label="Confirm password" error={formErrors.confirmPassword}>
-            <PasswordInput
-              autoComplete="new-password"
-              placeholder="Repeat password"
-              value={values.confirmPassword}
-              onChange={(event) => updateField('confirmPassword', event.target.value)}
-            />
-          </AuthField>
-        </div>
-
-        <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-          {requiresOrganization
-            ? 'This account gets instance admin access and becomes the owner of the first organization.'
-            : 'This account gets instance admin access. A local organization will be created automatically.'}
-        </div>
-        <Button className="h-10 w-full" disabled={mutation.isPending} size="lg" type="submit">
-          {mutation.isPending
-            ? 'Creating setup…'
-            : requiresOrganization
-              ? 'Create admin and organization'
-              : 'Create admin account'}
-        </Button>
-      </form>
-    </AuthLayout>
+          <Button
+            className="h-11 w-full rounded-lg text-sm shadow-md transition-all duration-150 ease-out hover:shadow-lg active:translate-y-px active:scale-[0.98] active:shadow-sm active:duration-75"
+            size="lg"
+            disabled={mutation.isPending}
+            type="submit"
+          >
+            {mutation.isPending ? (
+              <span className="flex items-center gap-2">
+                <Icon name="loading-03" size={14} className="animate-spin" />
+                Setting up…
+              </span>
+            ) : requiresOrganization ? (
+              'Create admin and organization'
+            ) : (
+              'Create admin account'
+            )}
+          </Button>
+        </form>
+      </LoginSurface>
+    </main>
   )
 }
 
@@ -269,7 +285,7 @@ function setupPayload(
 
 function setupDescription(requiresOrganization: boolean) {
   if (requiresOrganization) {
-    return 'Create the first administrator and organization for this SQLWarden deployment.'
+    return 'Create an administrator account and organization to get started.'
   }
-  return 'Create the first administrator for this SQLWarden deployment.'
+  return 'Create an administrator account to get started.'
 }
