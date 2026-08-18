@@ -24,9 +24,7 @@ describe('authentication route behavior', () => {
 
     renderRoute('/login')
 
-    expect(
-      await screen.findByRole('heading', { name: 'Create the instance admin' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Set up SQLWarden' })).toBeInTheDocument()
     expect(document.title).toBe('Setup | SQLWarden')
   })
 

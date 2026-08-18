@@ -9,11 +9,15 @@ export function LoginSurface({
   description,
   children,
   footer,
+  eyebrow,
+  className,
 }: {
   title: string
   description: string
   children: ReactNode
   footer?: ReactNode
+  eyebrow?: ReactNode
+  className?: string
 }) {
   const brand = useBrand()
 
@@ -29,9 +33,11 @@ export function LoginSurface({
         className={cn(
           'auth-card relative w-full max-w-[420px] rounded-[18px] border border-border/70 bg-card p-8 text-card-foreground',
           'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-4 motion-safe:duration-[420ms] motion-safe:ease-out',
+          className,
         )}
       >
         <div className="space-y-1.5 text-center">
+          {eyebrow}
           <h1 className="font-heading text-xl font-semibold tracking-tight">{title}</h1>
           <p className="text-sm text-muted-foreground">{description}</p>
         </div>
