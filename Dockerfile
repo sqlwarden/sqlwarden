@@ -8,7 +8,7 @@ RUN bun install --frozen-lockfile
 COPY frontend/ ./
 RUN bun run build && test -s /build/assets/static/index.html
 
-FROM golang:1.26.5-alpine AS builder
+FROM golang:1.26.6-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates tzdata
 
