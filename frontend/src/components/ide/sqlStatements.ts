@@ -102,3 +102,11 @@ export function sqlStatementAtCursor(text: string, cursor: number): string {
 export function countSqlStatements(text: string): number {
   return sqlStatementSpans(text).filter(([s, e]) => text.slice(s, e).trim().length > 0).length
 }
+
+/** Splits `text` into its non-empty top-level statements, in order, stripping each statement's terminating semicolon. */
+export function splitSqlStatements(text: string): string[] {
+  return sqlStatementSpans(text)
+    .map(([start, end]) => text.slice(start, end).trim())
+    .map((statement) => (statement.endsWith(';') ? statement.slice(0, -1).trim() : statement))
+    .filter((statement) => statement.length > 0)
+}

@@ -33,6 +33,7 @@ import {
 
 export type QueryResult =
   | { status: 'idle' }
+  | { status: 'pending'; sql: string }
   | { status: 'running' }
   | {
       status: 'ok'
@@ -45,12 +46,34 @@ export type QueryResult =
     }
   | { status: 'error'; message: string; sql: string }
   | { status: 'cancelled'; sql: string }
+  | { status: 'skipped'; sql: string }
 
 /** A query the backend refused to run unconfirmed because it looked unsafe
- *  (e.g. UPDATE/DELETE with no WHERE clause), awaiting Cancel/Run Anyway. */
+ *  (e.g. UPDATE/DELETE with no WHERE clause), awaiting Cancel/Run Anyway.
+ *  `batchIndex` is set when this confirmation paused a Run All. */
 export type PendingUnsafeQuery = {
   sql: string
   statements: UnsafeStatement[]
+  batchIndex?: number
+}
+
+const TERMINAL_STATUSES: ReadonlySet<QueryResult['status']> = new Set([
+  'ok',
+  'error',
+  'cancelled',
+  'skipped',
+])
+
+/**
+ * Returns `list` with every entry from `fromIndex` onward marked `skipped`,
+ * unless it already reached a terminal status.
+ */
+function skipFromIndex(list: QueryResult[], fromIndex: number): QueryResult[] {
+  return list.map((entry, i) =>
+    i >= fromIndex && !TERMINAL_STATUSES.has(entry.status)
+      ? { status: 'skipped' as const, sql: 'sql' in entry ? entry.sql : '' }
+      : entry,
+  )
 }
 
 export type TabKind = 'scratch' | 'file' | 'connection' | 'object' | 'diagram'
@@ -108,14 +131,16 @@ export type IdeState = {
   tabs: EditorTab[]
   /** Live session IDs keyed by connectionId. A session entry means the backend has an open pool connection for this account. */
   sessions: Record<number, string>
-  /** Last query result per tab ID. Not persisted to IndexedDB. */
-  results: Record<string, QueryResult>
+  /** Ordered query results per tab ID — one entry per statement in the most recent run. Not persisted to IndexedDB. */
+  results: Record<string, QueryResult[]>
   /** Tabs with an in-flight query. Not persisted to IndexedDB. */
   runningTabs: Record<string, boolean>
   /** AbortControllers for in-flight fetch requests, keyed by tabId. Not persisted. */
   abortControllers: Record<string, AbortController>
   /** Queries refused as unsafe pending explicit confirmation, keyed by tabId. Not persisted. */
   pendingConfirmations: Record<string, PendingUnsafeQuery>
+  /** Index into `results[tabId]` shown in the results pane, keyed by tabId. Not persisted. */
+  selectedResultIndex: Record<string, number>
 }
 
 export type IdeActions = {
@@ -182,10 +207,20 @@ export type IdeActions = {
    *  replaced. */
   syncSessions: (backendSessions: Record<number, string>, scopeConnectionIds?: number[]) => void
   setQueryResult: (tabId: string, result: QueryResult) => void
+  /** Seeds one pending entry per statement, replacing any previous results for the tab. */
+  initBatchResults: (tabId: string, sqls: string[]) => void
+  /** Updates one entry in place without touching the others. */
+  setStatementResult: (tabId: string, index: number, result: QueryResult) => void
+  /** Marks every entry from `fromIndex` onward `skipped`, if not already terminal. */
+  markRemainingSkipped: (tabId: string, fromIndex: number) => void
   setTabRunning: (tabId: string, running: boolean) => void
   setTabController: (tabId: string, controller: AbortController | null) => void
   setPendingConfirmation: (tabId: string, pending: PendingUnsafeQuery) => void
   clearPendingConfirmation: (tabId: string) => void
+  /** Clears a paused batch confirmation and marks the rest of that Run All skipped. */
+  abandonPendingBatchConfirmation: (tabId: string) => void
+  /** Selects which statement's result the results pane displays. */
+  setSelectedResultIndex: (tabId: string, index: number) => void
   /** Opens a new numbered console tab. Pass yState (encoded Y.Doc) so all windows
    *  that receive this tab share the same canonical Y.js initial history.
    *  Pass connectionId to pre-select a connection on the new tab. */
@@ -289,6 +324,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         runningTabs: {},
         abortControllers: {},
         pendingConfirmations: {},
+        selectedResultIndex: {},
 
         setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
@@ -352,6 +388,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             const { [tabId]: _rt, ...nextRunning } = s.runningTabs
             const { [tabId]: _ac, ...nextControllers } = s.abortControllers
             const { [tabId]: _pc, ...nextPending } = s.pendingConfirmations
+            const { [tabId]: _sr, ...nextSelected } = s.selectedResultIndex
 
             const patch = {
               tabs: nextTabs,
@@ -359,6 +396,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
               runningTabs: nextRunning,
               abortControllers: nextControllers,
               pendingConfirmations: nextPending,
+              selectedResultIndex: nextSelected,
             }
             if (!closedTab) return patch
 
@@ -409,6 +447,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             const { [tabId]: _rt, ...nextRunning } = s.runningTabs
             const { [tabId]: _ac, ...nextControllers } = s.abortControllers
             const { [tabId]: _pc, ...nextPending } = s.pendingConfirmations
+            const { [tabId]: _sr, ...nextSelected } = s.selectedResultIndex
             return {
               ...base,
               tabs: s.tabs.filter((t) => t.id !== tabId),
@@ -416,6 +455,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
               runningTabs: nextRunning,
               abortControllers: nextControllers,
               pendingConfirmations: nextPending,
+              selectedResultIndex: nextSelected,
             }
           }),
 
@@ -579,7 +619,30 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
           }),
 
         setQueryResult: (tabId, result) =>
-          set((s) => ({ results: { ...s.results, [tabId]: result } })),
+          set((s) => ({ results: { ...s.results, [tabId]: [result] } })),
+
+        initBatchResults: (tabId, sqls) =>
+          set((s) => ({
+            results: {
+              ...s.results,
+              [tabId]: sqls.map((sql) => ({ status: 'pending' as const, sql })),
+            },
+            selectedResultIndex: { ...s.selectedResultIndex, [tabId]: 0 },
+          })),
+
+        setStatementResult: (tabId, index, result) =>
+          set((s) => {
+            const list = [...(s.results[tabId] ?? [])]
+            list[index] = result
+            return { results: { ...s.results, [tabId]: list } }
+          }),
+
+        markRemainingSkipped: (tabId, fromIndex) =>
+          set((s) => {
+            const list = s.results[tabId]
+            if (!list) return {}
+            return { results: { ...s.results, [tabId]: skipFromIndex(list, fromIndex) } }
+          }),
 
         setTabRunning: (tabId, running) =>
           set((s) => ({ runningTabs: { ...s.runningTabs, [tabId]: running } })),
@@ -603,6 +666,21 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             const { [tabId]: _pc, ...rest } = s.pendingConfirmations
             return { pendingConfirmations: rest }
           }),
+
+        abandonPendingBatchConfirmation: (tabId) =>
+          set((s) => {
+            const { [tabId]: _pc, ...restPending } = s.pendingConfirmations
+            const list = s.results[tabId]
+            const batchIndex = s.pendingConfirmations[tabId]?.batchIndex
+            const results =
+              list && batchIndex !== undefined
+                ? { ...s.results, [tabId]: skipFromIndex(list, batchIndex) }
+                : s.results
+            return { pendingConfirmations: restPending, results }
+          }),
+
+        setSelectedResultIndex: (tabId, index) =>
+          set((s) => ({ selectedResultIndex: { ...s.selectedResultIndex, [tabId]: index } })),
 
         openConsole: (workspace, yState, connectionId, driver) =>
           set((s) => {
@@ -671,6 +749,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
           runningTabs: _rt,
           abortControllers: _ac,
           pendingConfirmations: _pc,
+          selectedResultIndex: _sr,
           draggingTab: _dt,
           focusEditorRequest: _fe,
           pendingJump: _pj,
@@ -724,6 +803,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   runningTabs: {},
   abortControllers: {},
   pendingConfirmations: {},
+  selectedResultIndex: {},
   setActiveWorkspace: _noop,
   openTab: _noop,
   openTabToSide: _noop,
@@ -754,10 +834,15 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   clearSession: _noop,
   syncSessions: _noop,
   setQueryResult: _noop,
+  initBatchResults: _noop,
+  setStatementResult: _noop,
+  markRemainingSkipped: _noop,
   setTabRunning: _noop,
   setTabController: _noop,
   setPendingConfirmation: _noop,
   clearPendingConfirmation: _noop,
+  abandonPendingBatchConfirmation: _noop,
+  setSelectedResultIndex: _noop,
   openConsole: _noop,
 }))
 

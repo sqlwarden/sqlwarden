@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
-import { Icon } from '#/lib/icons'
+import { Icon, type AppIcon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/components/ui/resizable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
@@ -40,10 +40,16 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
     s.activeWorkspaceId ? selectActiveTabId(s, s.activeWorkspaceId) : undefined,
   )
   const results = useIde((s) => s.results)
+  const selectedResultIndex = useIde((s) => s.selectedResultIndex)
+  const setSelectedResultIndex = useIde((s) => s.setSelectedResultIndex)
 
-  const result: QueryResult = activeTabId
-    ? (results[activeTabId] ?? { status: 'idle' })
-    : { status: 'idle' }
+  const resultList: QueryResult[] = activeTabId ? (results[activeTabId] ?? []) : []
+  const totalRows = resultList.reduce(
+    (sum, entry) => (entry.status === 'ok' ? sum + (entry.data.rows?.length ?? 0) : sum),
+    0,
+  )
+  const rawSelectedIndex = activeTabId ? (selectedResultIndex[activeTabId] ?? 0) : 0
+  const selectedIndex = Math.min(Math.max(rawSelectedIndex, 0), Math.max(resultList.length - 1, 0))
 
   function toggleMaximize() {
     setMaximizedPane(maximizedPane === 'results' ? null : 'results')
@@ -56,9 +62,9 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
           <TabsTrigger value="results" className="h-full rounded-none px-3 text-xs gap-1.5">
             <Icon name="table" size={13} />
             Results
-            {result.status === 'ok' && (result.data.rows?.length ?? 0) > 0 && (
+            {totalRows > 0 && (
               <span className="ml-0.5 rounded bg-primary/10 px-1 text-[10px] font-medium text-primary tabular-nums">
-                {result.data.rows?.length}
+                {totalRows}
               </span>
             )}
           </TabsTrigger>
@@ -103,7 +109,9 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
           orgSlug={orgSlug}
           workspace={workspace}
           activeTabId={activeTabId}
-          result={result}
+          results={resultList}
+          selectedIndex={selectedIndex}
+          onSelectIndex={(index) => activeTabId && setSelectedResultIndex(activeTabId, index)}
         />
       </TabsContent>
       <TabsContent value="history" className="min-h-0 flex-1 overflow-hidden m-0 p-0">
@@ -122,29 +130,173 @@ function ResultsContent({
   orgSlug,
   workspace,
   activeTabId,
+  results,
+  selectedIndex,
+  onSelectIndex,
+}: {
+  orgSlug: string
+  workspace: Workspace
+  activeTabId?: string
+  results: QueryResult[]
+  selectedIndex: number
+  onSelectIndex: (index: number) => void
+}) {
+  if (results.length === 0) return <EmptyState />
+
+  if (results.length === 1) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <ResultEntry
+          orgSlug={orgSlug}
+          workspace={workspace}
+          activeTabId={activeTabId}
+          result={results[0]}
+          index={0}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full min-h-0">
+      <ResultsSidebar results={results} selectedIndex={selectedIndex} onSelect={onSelectIndex} />
+      <div className="min-w-0 flex-1">
+        <ResultEntry
+          orgSlug={orgSlug}
+          workspace={workspace}
+          activeTabId={activeTabId}
+          result={results[selectedIndex]}
+          index={selectedIndex}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ─── Results sidebar ─────────────────────────────────────────────────────────
+
+const STATUS_ICON: Record<QueryResult['status'], { name: AppIcon; className: string }> = {
+  idle: { name: 'loading-03', className: 'text-muted-foreground/50' },
+  pending: { name: 'loading-03', className: 'text-muted-foreground/50' },
+  running: { name: 'loading-03', className: 'animate-spin text-primary' },
+  ok: { name: 'checkmark-circle-02', className: 'text-green-500' },
+  error: { name: 'cancel-01', className: 'text-destructive' },
+  cancelled: { name: 'cancel-01', className: 'text-muted-foreground' },
+  skipped: { name: 'cancel-01', className: 'text-muted-foreground/60' },
+}
+
+function resultSummary(result: QueryResult): string {
+  switch (result.status) {
+    case 'idle':
+      return ''
+    case 'pending':
+      return 'Queued'
+    case 'running':
+      return 'Running…'
+    case 'cancelled':
+      return 'Cancelled'
+    case 'skipped':
+      return 'Skipped'
+    case 'error':
+      return 'Failed'
+    case 'ok': {
+      const rowsAffected = result.data.rows_affected
+      const count =
+        rowsAffected !== undefined
+          ? `${rowsAffected} ${rowsAffected === 1 ? 'row' : 'rows'} affected`
+          : `${result.data.rows?.length ?? 0} rows`
+      return `${count} · ${result.durationMs}ms`
+    }
+  }
+}
+
+function resultLabel(result: QueryResult, index: number): string {
+  return 'sql' in result && result.sql ? result.sql.replace(/\s+/g, ' ').trim() : `Statement ${index + 1}`
+}
+
+function ResultsSidebar({
+  results,
+  selectedIndex,
+  onSelect,
+}: {
+  results: QueryResult[]
+  selectedIndex: number
+  onSelect: (index: number) => void
+}) {
+  return (
+    <div
+      role="listbox"
+      aria-label="Statement results"
+      className="flex w-52 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar"
+    >
+      {results.map((result, index) => {
+        const icon = STATUS_ICON[result.status]
+        const selected = index === selectedIndex
+        return (
+          <button
+            key={index}
+            type="button"
+            role="option"
+            aria-selected={selected}
+            onClick={() => onSelect(index)}
+            className={cn(
+              'flex flex-col gap-0.5 border-b border-border px-2.5 py-2 text-left transition-colors hover:bg-accent/40',
+              selected && 'bg-accent',
+            )}
+          >
+            <div className="flex items-center gap-1.5">
+              <Icon name={icon.name} size={12} className={cn('shrink-0', icon.className)} />
+              <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                #{index + 1}
+              </span>
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
+                {resultLabel(result, index)}
+              </span>
+            </div>
+            <span className="truncate pl-[19px] text-[10px] text-muted-foreground">
+              {resultSummary(result)}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function ResultEntry({
+  orgSlug,
+  workspace,
+  activeTabId,
   result,
+  index,
 }: {
   orgSlug: string
   workspace: Workspace
   activeTabId?: string
   result: QueryResult
+  index: number
 }) {
   switch (result.status) {
     case 'idle':
       return <EmptyState />
+    case 'pending':
+      return <PendingState />
     case 'running':
       return <RunningState />
     case 'cancelled':
       return <CancelledState />
+    case 'skipped':
+      return <SkippedState sql={result.sql} orgSlug={orgSlug} workspaceId={workspace.id} />
     case 'error':
       return <ErrorState message={result.message} />
     case 'ok':
       return (
-        <OkState
+        <ResultSetView
           orgSlug={orgSlug}
           workspace={workspace}
           activeTabId={activeTabId}
           result={result}
+          index={index}
         />
       )
   }
@@ -243,23 +395,29 @@ function copyToClipboard(text: string) {
   }
 }
 
-function OkState(props: {
-  orgSlug: string
-  workspace: Workspace
-  activeTabId?: string
-  result: Extract<QueryResult, { status: 'ok' }>
-}) {
-  // The store holds one result set per tab, so this renders a single-element
-  // stack; running several statements at once only has to append to this list.
-  const resultSets = [props.result]
-
+function PendingState() {
   return (
-    <div className="flex h-full min-h-0 flex-col divide-y divide-border">
-      {resultSets.map((set, i) => (
-        <div key={i} className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <ResultSetView {...props} result={set} />
-        </div>
-      ))}
+    <div className="flex h-full min-h-0 flex-col items-center justify-center gap-1 bg-card p-6 text-center text-sm text-muted-foreground">
+      Queued
+    </div>
+  )
+}
+
+function SkippedState({
+  sql,
+  orgSlug,
+  workspaceId,
+}: {
+  sql: string
+  orgSlug: string
+  workspaceId: number
+}) {
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-card">
+      <ResultSqlCaption sql={sql} orgSlug={orgSlug} workspaceId={workspaceId} connectionId={undefined} />
+      <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
+        Skipped — an earlier statement stopped the run.
+      </div>
     </div>
   )
 }
@@ -269,11 +427,13 @@ function ResultSetView({
   workspace,
   activeTabId,
   result,
+  index,
 }: {
   orgSlug: string
   workspace: Workspace
   activeTabId?: string
   result: Extract<QueryResult, { status: 'ok' }>
+  index: number
 }) {
   const { durationMs } = result
   const columns = result.data.columns ?? []
@@ -311,6 +471,7 @@ function ResultSetView({
   const { handleGridScroll } = useResultCursorPaging({
     activeTabId,
     connectionId: cursorConnectionId,
+    index,
     orgSlug,
     result,
     workspaceId: workspace.id,

@@ -35,7 +35,7 @@ describe('useResultCursorPaging', () => {
 
   beforeEach(() => {
     store = createIdeStore('test', 1, 'ephemeral')
-    store.getState().setQueryResult('tab-1', initialResult)
+    store.getState().setStatementResult('tab-1', 0, initialResult)
   })
 
   function wrapper({ children }: PropsWithChildren) {
@@ -48,6 +48,7 @@ describe('useResultCursorPaging', () => {
         useResultCursorPaging({
           activeTabId: 'tab-1',
           connectionId: 7,
+          index: 0,
           orgSlug: 'acme',
           result,
           workspaceId: 3,
@@ -72,7 +73,7 @@ describe('useResultCursorPaging', () => {
 
     await act(() => result.current.fetchNextPage())
 
-    const stored = store.getState().results['tab-1']
+    const stored = store.getState().results['tab-1'][0]
     expect(stored.status).toBe('ok')
     if (stored.status !== 'ok') return
     expect(stored.data.rows).toHaveLength(2)
@@ -122,7 +123,7 @@ describe('useResultCursorPaging', () => {
 
     await act(() => result.current.fetchNextPage())
 
-    const stored = store.getState().results['tab-1']
+    const stored = store.getState().results['tab-1'][0]
     expect(stored.status).toBe('ok')
     if (stored.status !== 'ok') return
     expect(stored.cursorMessage).toBe('Cursor expired. Run the query again.')

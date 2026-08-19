@@ -16,6 +16,14 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./useQueryExecution', () => ({
   useQueryExecution: () => ({ cancel: mocks.cancel, isRunning: false, run: mocks.run }),
 }))
+vi.mock('./useRunAllStatements', () => ({
+  useRunAllStatements: () => ({
+    runAll: vi.fn(),
+    confirmAt: vi.fn(),
+    cancel: vi.fn(),
+    isRunning: false,
+  }),
+}))
 vi.mock('sonner', () => ({ toast: { warning: mocks.warning } }))
 
 const workspace: Workspace = {

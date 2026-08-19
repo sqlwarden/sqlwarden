@@ -9,6 +9,14 @@ const execute = vi.fn(async () => undefined)
 vi.mock('./useQueryExecution', () => ({
   useQueryExecution: () => ({ cancel: vi.fn(), isRunning: false, run: execute }),
 }))
+vi.mock('./useRunAllStatements', () => ({
+  useRunAllStatements: () => ({
+    runAll: vi.fn(),
+    confirmAt: vi.fn(),
+    cancel: vi.fn(),
+    isRunning: false,
+  }),
+}))
 vi.mock('./useIdeStore', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./useIdeStore')>()
   return {

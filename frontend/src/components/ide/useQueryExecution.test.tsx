@@ -42,13 +42,15 @@ describe('useQueryExecution', () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
     store.setState({
       results: {
-        query: {
-          status: 'ok',
-          sql: 'select old',
-          durationMs: 1,
-          connectionId: 8,
-          data: { ...result, query_cursor_id: 'cursor-1' },
-        },
+        query: [
+          {
+            status: 'ok',
+            sql: 'select old',
+            durationMs: 1,
+            connectionId: 8,
+            data: { ...result, query_cursor_id: 'cursor-1' },
+          },
+        ],
       },
     })
     function wrapper({ children }: PropsWithChildren) {
@@ -72,7 +74,7 @@ describe('useQueryExecution', () => {
       'select 1',
       expect.objectContaining({ useCursor: true, signal: expect.any(AbortSignal) }),
     )
-    expect(store.getState().results.query).toEqual(
+    expect(store.getState().results.query[0]).toEqual(
       expect.objectContaining({
         status: 'ok',
         sql: 'select 1',
