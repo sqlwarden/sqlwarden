@@ -17,11 +17,12 @@ export function useQueryExecution(
   const setResult = useIde((state) => state.setQueryResult)
   const setRunning = useIde((state) => state.setTabRunning)
   const setController = useIde((state) => state.setTabController)
+  const setPendingConfirmation = useIde((state) => state.setPendingConfirmation)
 
   const cancel = useCallback(() => previousController?.abort(), [previousController])
 
   const run = useCallback(
-    async (sql: string) => {
+    async (sql: string, confirmUnsafe?: boolean) => {
       if (!tabId || !connectionId || isRunning) return
 
       previousController?.abort()
@@ -43,11 +44,13 @@ export function useQueryExecution(
           runQuery: (sessionId, signal) =>
             runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, sql, {
               useCursor: true,
+              confirmUnsafe,
               signal,
             }),
           setResult,
           setRunning,
           setController,
+          setPendingConfirmation,
         },
       )
     },
@@ -59,6 +62,7 @@ export function useQueryExecution(
       previousController,
       previousResult,
       setController,
+      setPendingConfirmation,
       setResult,
       setRunning,
       tabId,

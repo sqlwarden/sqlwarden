@@ -130,6 +130,15 @@ export interface ResultSet {
   page_size?: number
 }
 
+/** One statement flagged by the backend's unsafe-DML safety check (e.g. an
+ *  UPDATE/DELETE with no WHERE clause), returned as `error.details` on a
+ *  `unsafe_query_confirmation_required` response. */
+export interface UnsafeStatement {
+  kind: string
+  start_offset: number
+  end_offset: number
+}
+
 export interface Connection {
   id: number
   workspace_id: number

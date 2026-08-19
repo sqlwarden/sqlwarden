@@ -25,6 +25,7 @@ import { Tip } from './schema-diagram/Tip'
 import { useSaveEditorTab } from './useSaveEditorTab'
 import { ConnectionSelector } from './ConnectionSelector'
 import { useToolbarQueryAction } from './useToolbarQueryAction'
+import { UnsafeQueryDialog } from './UnsafeQueryDialog'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { formatEditorSql, sqlFormatterForDriver } from './sqlFormatting'
 
@@ -52,6 +53,10 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const setTabConnection = useIde((s) => s.setTabConnection)
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
+  const clearPendingConfirmation = useIde((s) => s.clearPendingConfirmation)
+  const pendingConfirmation = useIde((s) =>
+    activeTabId ? s.pendingConfirmations[activeTabId] : undefined,
+  )
 
   const saveEditorTab = useSaveEditorTab(orgSlug, workspace.id)
   const activeTab = tabs.find((t) => t.id === activeTabId)
@@ -312,6 +317,20 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           workspaceId={workspace.id}
           connectionId={activeConnection.id}
           getSql={queryAction.resolveSql}
+        />
+      )}
+
+      {activeTab && pendingConfirmation && (
+        <UnsafeQueryDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) clearPendingConfirmation(activeTab.id)
+          }}
+          sql={pendingConfirmation.sql}
+          onConfirm={() => {
+            clearPendingConfirmation(activeTab.id)
+            void queryAction.run(true)
+          }}
         />
       )}
     </>

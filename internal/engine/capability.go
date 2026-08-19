@@ -8,6 +8,7 @@ import (
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/engine/parser"
 	"github.com/sqlwarden/internal/engine/rewriter"
+	"github.com/sqlwarden/internal/engine/safety"
 	"github.com/sqlwarden/internal/engine/statement"
 )
 
@@ -44,6 +45,12 @@ const (
 	// CapabilitySQLGenerate produces dialect-specific statement templates from
 	// inspected metadata without executing them.
 	CapabilitySQLGenerate Capability = "sql.generate"
+	// CapabilitySQLSafetyCheck flags UPDATE/DELETE statements with no WHERE
+	// clause so the runtime can require explicit confirmation before running
+	// them. Dialects without a registered checker fall back to a heuristic,
+	// which is why this capability can read false while confirmation gating
+	// still applies (see connectionSafetyChecker in internal/web).
+	CapabilitySQLSafetyCheck Capability = "sql.safety_check"
 )
 
 // CapabilitySet is an engine's static capability report. Safe to compute and
@@ -94,6 +101,7 @@ func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec
 	}
 	_, caps[CapabilityQueryCursor] = probe.(cursor.QueryCursorDriver)
 	_, caps[CapabilitySQLClassify] = probe.(classifier.Classifier)
+	_, caps[CapabilitySQLSafetyCheck] = probe.(safety.Checker)
 	_, caps[CapabilitySQLParse] = probe.(parser.Parser)
 	_, caps[CapabilitySQLRewrite] = probe.(rewriter.Rewriter)
 	_, caps[CapabilitySQLComplete] = probe.(completer.Completer)

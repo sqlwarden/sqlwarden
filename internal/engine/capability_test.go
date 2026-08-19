@@ -7,6 +7,7 @@ import (
 	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/internal/engine/ddl"
 	"github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/engine/safety"
 	"github.com/sqlwarden/internal/engine/statement"
 )
 
@@ -34,6 +35,9 @@ func (capabilityDriver) StatementSpec() statement.Spec {
 	return statement.Spec{Objects: []statement.ObjectSpec{{Kind: "table", Operations: []statement.Operation{statement.OperationSelect}}}}
 }
 func (capabilityDriver) Generate(statement.Request) (string, error) { return "SELECT 1;", nil }
+func (capabilityDriver) Check(context.Context, safety.Request) (safety.Result, error) {
+	return safety.Result{Source: "omni"}, nil
+}
 
 func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	resetRegistry(t)
@@ -61,6 +65,9 @@ func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	if !set.Capabilities[CapabilitySQLGenerate] || set.Statements == nil {
 		t.Errorf("sql.generate and its spec should be derived from Generator: %+v", set)
 	}
+	if !set.Capabilities[CapabilitySQLSafetyCheck] {
+		t.Errorf("sql.safety_check should be true (driver implements Check): %+v", set.Capabilities)
+	}
 	if set.Schema == nil || len(set.Schema.Kinds) != 1 {
 		t.Errorf("schema spec should be populated from SchemaSpec(): %+v", set.Schema)
 	}
@@ -77,6 +84,9 @@ func TestCapabilitiesAbsentWhenInterfacesNotImplemented(t *testing.T) {
 
 	if set.Capabilities[CapabilitySchemaDirectory] || set.Capabilities[CapabilityQueryCursor] {
 		t.Errorf("plain driver must not report schema/cursor caps: %+v", set.Capabilities)
+	}
+	if set.Capabilities[CapabilitySQLSafetyCheck] {
+		t.Errorf("plain driver must not report sql.safety_check: %+v", set.Capabilities)
 	}
 	if set.Schema != nil {
 		t.Errorf("plain driver must not carry a schema spec: %+v", set.Schema)

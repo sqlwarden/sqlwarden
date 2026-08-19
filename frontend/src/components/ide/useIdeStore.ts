@@ -1,7 +1,14 @@
 import { createContext, useContext } from 'react'
 import { createStore, useStore } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import type { Connection, ObjectRef, ResultSet, Workspace, WorkspaceFile } from '#/lib/api/types'
+import type {
+  Connection,
+  ObjectRef,
+  ResultSet,
+  UnsafeStatement,
+  Workspace,
+  WorkspaceFile,
+} from '#/lib/api/types'
 import { makeRoleGatedStorage, electPrimary, type WindowRole } from './windowRole'
 import {
   createGroup,
@@ -38,6 +45,13 @@ export type QueryResult =
     }
   | { status: 'error'; message: string; sql: string }
   | { status: 'cancelled'; sql: string }
+
+/** A query the backend refused to run unconfirmed because it looked unsafe
+ *  (e.g. UPDATE/DELETE with no WHERE clause), awaiting Cancel/Run Anyway. */
+export type PendingUnsafeQuery = {
+  sql: string
+  statements: UnsafeStatement[]
+}
 
 export type TabKind = 'scratch' | 'file' | 'connection' | 'object' | 'diagram'
 
@@ -100,6 +114,8 @@ export type IdeState = {
   runningTabs: Record<string, boolean>
   /** AbortControllers for in-flight fetch requests, keyed by tabId. Not persisted. */
   abortControllers: Record<string, AbortController>
+  /** Queries refused as unsafe pending explicit confirmation, keyed by tabId. Not persisted. */
+  pendingConfirmations: Record<string, PendingUnsafeQuery>
 }
 
 export type IdeActions = {
@@ -168,6 +184,8 @@ export type IdeActions = {
   setQueryResult: (tabId: string, result: QueryResult) => void
   setTabRunning: (tabId: string, running: boolean) => void
   setTabController: (tabId: string, controller: AbortController | null) => void
+  setPendingConfirmation: (tabId: string, pending: PendingUnsafeQuery) => void
+  clearPendingConfirmation: (tabId: string) => void
   /** Opens a new numbered console tab. Pass yState (encoded Y.Doc) so all windows
    *  that receive this tab share the same canonical Y.js initial history.
    *  Pass connectionId to pre-select a connection on the new tab. */
@@ -270,6 +288,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         results: {},
         runningTabs: {},
         abortControllers: {},
+        pendingConfirmations: {},
 
         setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
@@ -332,12 +351,14 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             const { [tabId]: _r, ...nextResults } = s.results
             const { [tabId]: _rt, ...nextRunning } = s.runningTabs
             const { [tabId]: _ac, ...nextControllers } = s.abortControllers
+            const { [tabId]: _pc, ...nextPending } = s.pendingConfirmations
 
             const patch = {
               tabs: nextTabs,
               results: nextResults,
               runningTabs: nextRunning,
               abortControllers: nextControllers,
+              pendingConfirmations: nextPending,
             }
             if (!closedTab) return patch
 
@@ -387,12 +408,14 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             const { [tabId]: _r, ...nextResults } = s.results
             const { [tabId]: _rt, ...nextRunning } = s.runningTabs
             const { [tabId]: _ac, ...nextControllers } = s.abortControllers
+            const { [tabId]: _pc, ...nextPending } = s.pendingConfirmations
             return {
               ...base,
               tabs: s.tabs.filter((t) => t.id !== tabId),
               results: nextResults,
               runningTabs: nextRunning,
               abortControllers: nextControllers,
+              pendingConfirmations: nextPending,
             }
           }),
 
@@ -570,6 +593,17 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             return { abortControllers: { ...s.abortControllers, [tabId]: controller } }
           }),
 
+        setPendingConfirmation: (tabId, pending) =>
+          set((s) => ({
+            pendingConfirmations: { ...s.pendingConfirmations, [tabId]: pending },
+          })),
+
+        clearPendingConfirmation: (tabId) =>
+          set((s) => {
+            const { [tabId]: _pc, ...rest } = s.pendingConfirmations
+            return { pendingConfirmations: rest }
+          }),
+
         openConsole: (workspace, yState, connectionId, driver) =>
           set((s) => {
             const wsConsoleTabs = s.tabs.filter(
@@ -636,6 +670,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
           results: _r,
           runningTabs: _rt,
           abortControllers: _ac,
+          pendingConfirmations: _pc,
           draggingTab: _dt,
           focusEditorRequest: _fe,
           pendingJump: _pj,
@@ -688,6 +723,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   results: {},
   runningTabs: {},
   abortControllers: {},
+  pendingConfirmations: {},
   setActiveWorkspace: _noop,
   openTab: _noop,
   openTabToSide: _noop,
@@ -720,6 +756,8 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   setQueryResult: _noop,
   setTabRunning: _noop,
   setTabController: _noop,
+  setPendingConfirmation: _noop,
+  clearPendingConfirmation: _noop,
   openConsole: _noop,
 }))
 

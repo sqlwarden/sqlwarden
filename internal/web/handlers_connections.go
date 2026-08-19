@@ -17,6 +17,7 @@ import (
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/classifier"
 	metadata "github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/engine/safety"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -216,6 +217,32 @@ func connectionClassifier(driverName string) classifier.Classifier {
 		return c
 	}
 	return classifier.NewHeuristic()
+}
+
+func (app *application) checkConnectionSQLSafety(r *http.Request, conn database.Connection, sql string) (safety.Result, error) {
+	return connectionSafetyChecker(conn.Driver).Check(r.Context(), safety.Request{SQL: sql})
+}
+
+// registeredConnectionSafetyChecker resolves only a checker implemented by
+// the registered engine, mirroring registeredConnectionClassifier.
+func registeredConnectionSafetyChecker(driverName string) (safety.Checker, bool) {
+	d, err := engine.New(driverName)
+	if err != nil {
+		return nil, false
+	}
+	c, ok := d.(safety.Checker)
+	return c, ok
+}
+
+// connectionSafetyChecker resolves a stateless safety checker for a
+// connection's driver, falling back to the conservative heuristic when the
+// driver does not implement Checker — the same fallback shape as
+// connectionClassifier.
+func connectionSafetyChecker(driverName string) safety.Checker {
+	if c, ok := registeredConnectionSafetyChecker(driverName); ok {
+		return c
+	}
+	return safety.NewHeuristic()
 }
 
 func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
@@ -818,10 +845,11 @@ func (app *application) driverConnectionConfig(driverName, dsn string, settings 
 
 func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		SQL       string              `json:"sql"`
-		PageSize  *int                `json:"page_size"`
-		UseCursor *bool               `json:"use_cursor"`
-		V         validator.Validator `json:"-"`
+		SQL           string              `json:"sql"`
+		PageSize      *int                `json:"page_size"`
+		UseCursor     *bool               `json:"use_cursor"`
+		ConfirmUnsafe bool                `json:"confirm_unsafe"`
+		V             validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -908,6 +936,23 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnDML)...)
 			app.notPermitted(w, r)
 			return
+		}
+		if !input.ConfirmUnsafe {
+			safetyResult, safetyErr := app.checkConnectionSQLSafety(r, conn, input.SQL)
+			if safetyErr != nil {
+				app.serverError(w, r, safetyErr)
+				return
+			}
+			if safetyResult.Unsafe {
+				app.logger.Warn("unsafe query refused pending confirmation", append(logAttrs, "unsafe_statement_count", len(safetyResult.Statements))...)
+				app.apiError(w, r, http.StatusUnprocessableEntity,
+					"unsafe_query_confirmation_required",
+					"This statement has no WHERE clause and will affect every row. Confirm to run it anyway.",
+					response.APIError{Details: safetyResult.Statements},
+					nil,
+				)
+				return
+			}
 		}
 		rs, execErr = session.ExecuteWithOptions(r.Context(), input.SQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
 	case classifier.KindDDL:
