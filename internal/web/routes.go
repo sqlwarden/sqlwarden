@@ -94,6 +94,7 @@ func (app *application) routes() http.Handler {
 						r.Post("/", app.createPrivateWorkspaceFile)
 						r.Get("/browser", app.browsePrivateWorkspaceFiles)
 						r.Get("/recent", app.listRecentPrivateWorkspaceFiles)
+						r.Get("/search", app.searchPrivateWorkspaceFiles)
 						r.Route("/{file_id}", func(r chi.Router) {
 							r.Get("/", app.getPrivateWorkspaceFile)
 							r.Patch("/", app.updatePrivateWorkspaceFile)
@@ -256,6 +257,7 @@ func (app *application) routes() http.Handler {
 						r.Post("/", app.createPrivateWorkspaceFile)
 						r.Get("/browser", app.browsePrivateWorkspaceFiles)
 						r.Get("/recent", app.listRecentPrivateWorkspaceFiles)
+						r.Get("/search", app.searchPrivateWorkspaceFiles)
 						r.Route("/{file_id}", func(r chi.Router) {
 							r.Get("/", app.getPrivateWorkspaceFile)
 							r.Patch("/", app.updatePrivateWorkspaceFile)
@@ -271,6 +273,7 @@ func (app *application) routes() http.Handler {
 						r.Post("/", app.createSharedWorkspaceFile)
 						r.Get("/browser", app.browseSharedWorkspaceFiles)
 						r.Get("/recent", app.listRecentSharedWorkspaceFiles)
+						r.Get("/search", app.searchSharedWorkspaceFiles)
 						r.Route("/{file_id}", func(r chi.Router) {
 							r.Get("/", app.getSharedWorkspaceFile)
 							r.Patch("/", app.updateSharedWorkspaceFile)

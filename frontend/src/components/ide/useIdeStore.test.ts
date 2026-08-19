@@ -501,6 +501,17 @@ describe('activity state', () => {
   })
 })
 
+describe('pendingJump', () => {
+  it('setPendingJump stores a jump target and clearPendingJump resets it', () => {
+    const store = createIdeStore('test-org', 1)
+    expect(store.getState().pendingJump).toBeNull()
+    store.getState().setPendingJump({ tabId: 'file:9', line: 2, column: 4 })
+    expect(store.getState().pendingJump).toEqual({ tabId: 'file:9', line: 2, column: 4 })
+    store.getState().clearPendingJump()
+    expect(store.getState().pendingJump).toBeNull()
+  })
+})
+
 describe('syncSessions', () => {
   it('replaces the whole map when no scope is given', () => {
     const store = createIdeStore('test-org', 1)

@@ -180,6 +180,28 @@ func (db *DB) ListRecentWorkspaceFiles(ctx context.Context, workspaceID int64, v
 	return files, nil
 }
 
+// ListAllWorkspaceFiles returns every non-folder, non-deleted file across the
+// entire visibility tree, not just one folder's direct children or one
+// root's descendants. Used by content search, which needs to scan the whole
+// tree regardless of folder structure.
+func (db *DB) ListAllWorkspaceFiles(ctx context.Context, workspaceID int64, visibility string, ownerAccountID *int64) ([]WorkspaceFile, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	query := db.NewSelect().Model((*WorkspaceFile)(nil)).
+		Where("workspace_id = ? AND visibility = ? AND object_type = ? AND deleted_at IS NULL", workspaceID, visibility, FileObjectTypeFile)
+	if ownerAccountID == nil {
+		query = query.Where("owner_account_id IS NULL")
+	} else {
+		query = query.Where("owner_account_id = ?", *ownerAccountID)
+	}
+	var files []WorkspaceFile
+	if err := query.OrderExpr("name ASC, id ASC").Scan(ctx, &files); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
 // WorkspaceFileAncestors returns the parent chain plus the file itself, ordered
 // from root to leaf, while verifying every parent remains in the same tree.
 func (db *DB) WorkspaceFileAncestors(ctx context.Context, file WorkspaceFile) ([]WorkspaceFile, error) {

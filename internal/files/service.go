@@ -38,6 +38,7 @@ var (
 	ErrPreconditionRequired      = errors.New("if-match is required when updating existing file content")
 	ErrStaleContent              = errors.New("workspace file content is stale")
 	ErrStorageDestinationExists  = errors.New("workspace file destination exists")
+	ErrInvalidSearchQuery        = errors.New("workspace file search query is invalid")
 )
 
 // Enforcer is the permission check used for shared workspace-file operations.
@@ -862,18 +863,7 @@ func (p objectStorePlanner) UsesRevisions(file database.WorkspaceFile) bool {
 	if p.revisionPolicy != RevisionPolicyVersioned {
 		return false
 	}
-	if strings.HasPrefix(strings.ToLower(file.MediaType), "text/") {
-		return true
-	}
-	switch strings.ToLower(file.FileKind) {
-	case "query", "text", "text_document":
-		return true
-	}
-	switch strings.ToLower(path.Ext(file.Name)) {
-	case ".sql", ".txt", ".md", ".json", ".yaml", ".yml", ".toml":
-		return true
-	}
-	return false
+	return isTextLikeFile(file)
 }
 
 type workspaceDirectoryPlanner struct{}

@@ -77,4 +77,51 @@ describe('SqlEditor', () => {
     expect(registry.get('left:query')).toBeUndefined()
     doc.destroy()
   })
+
+  it('applies a pending line/column jump from search and clears it', async () => {
+    const registry = createEditorViewRegistry()
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const doc = new Y.Doc()
+    doc.getText('content').insert(0, 'select 1\nselect 2\nselect 3')
+
+    function Providers({ children }: PropsWithChildren) {
+      return (
+        <ThemeProvider defaultTheme="light" disableTransitionOnChange={false}>
+          <EditorThemeProvider>
+            <EditorFontProvider>
+              <IdeStoreContext.Provider value={store}>
+                <EditorViewRegistryContext.Provider value={registry}>
+                  {children}
+                </EditorViewRegistryContext.Provider>
+              </IdeStoreContext.Provider>
+            </EditorFontProvider>
+          </EditorThemeProvider>
+        </ThemeProvider>
+      )
+    }
+
+    const rendered = render(<SqlEditor tabId="file:9" groupId="left" doc={doc} />, {
+      wrapper: Providers,
+    })
+
+    const editor = await waitFor(() => {
+      const registered = registry.get('left:file:9')
+      expect(registered).toBeDefined()
+      return registered!
+    })
+
+    const focus = vi.spyOn(editor, 'focus')
+    act(() => {
+      store.getState().setPendingJump({ tabId: 'file:9', line: 2, column: 4 })
+    })
+
+    await waitFor(() => {
+      expect(editor.state.selection.main.head).toBe(editor.state.doc.line(2).from + 3)
+    })
+    expect(focus).toHaveBeenCalled()
+    expect(store.getState().pendingJump).toBeNull()
+
+    act(() => rendered.unmount())
+    doc.destroy()
+  })
 })

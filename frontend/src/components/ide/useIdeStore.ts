@@ -89,6 +89,8 @@ export type IdeState = {
   expandedNodes: Record<string, boolean>
   /** `${groupId}:${tabId}` of an editor that should grab keyboard focus once mounted (after a split). */
   focusEditorRequest: string | null
+  /** A line/column jump requested by search, applied by the matching SqlEditor once its view is registered. */
+  pendingJump: { tabId: string; line: number; column: number } | null
   tabs: EditorTab[]
   /** Live session IDs keyed by connectionId. A session entry means the backend has an open pool connection for this account. */
   sessions: Record<number, string>
@@ -146,6 +148,9 @@ export type IdeActions = {
   collapseAllNodes: () => void
   /** Request (or clear) keyboard focus for a specific editor pane. */
   setFocusEditorRequest: (key: string | null) => void
+  /** Request (or clear) a line/column jump for a specific tab's editor. */
+  setPendingJump: (jump: { tabId: string; line: number; column: number } | null) => void
+  clearPendingJump: () => void
   updateTabContent: (tabId: string, content: string, ySnapshot?: number[]) => void
   updateTabEtag: (tabId: string, etag: string) => void
   setTabConnection: (tabId: string, connectionId: number, driver?: string) => void
@@ -257,6 +262,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         activeGroupId: {},
         draggingTab: null,
         focusEditorRequest: null,
+        pendingJump: null,
         connectionStatus: {},
         expandedNodes: {},
         tabs: [],
@@ -496,6 +502,8 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         collapseAllNodes: () => set({ expandedNodes: {} }),
 
         setFocusEditorRequest: (key) => set({ focusEditorRequest: key }),
+        setPendingJump: (jump) => set({ pendingJump: jump }),
+        clearPendingJump: () => set({ pendingJump: null }),
 
         updateTabContent: (tabId, content, ySnapshot?) =>
           set((s) => ({
@@ -630,6 +638,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
           abortControllers: _ac,
           draggingTab: _dt,
           focusEditorRequest: _fe,
+          pendingJump: _pj,
           connectionStatus: _cs,
           ...state
         }) => state,
@@ -671,6 +680,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   activeGroupId: {},
   draggingTab: null,
   focusEditorRequest: null,
+  pendingJump: null,
   connectionStatus: {},
   expandedNodes: {},
   tabs: [],
@@ -693,6 +703,8 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   setSplitSizes: _noop,
   setDraggingTab: _noop,
   setFocusEditorRequest: _noop,
+  setPendingJump: _noop,
+  clearPendingJump: _noop,
   setConnectionStatus: _noop,
   setNodeExpanded: _noop,
   collapseAllNodes: _noop,

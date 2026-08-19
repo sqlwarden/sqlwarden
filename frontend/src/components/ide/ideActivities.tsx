@@ -4,6 +4,7 @@ import type { Workspace } from '#/lib/api/types'
 import { DatabasePanel } from './DatabasePanel'
 import { FilesPanel } from './FilesPanel'
 import { ExportsPanel } from './exports/ExportsPanel'
+import { SearchPanel } from './SearchPanel'
 
 /** Context every activity surface receives from the editor shell. */
 export type IdeSidebarPanelProps = {
@@ -35,6 +36,7 @@ export const IDE_ACTIVITIES: IdeActivity[] = [
     component: DatabasePanel,
   },
   { id: 'files', label: 'Files', icon: 'file-01', mode: 'sidebar', component: FilesPanel },
+  { id: 'search', label: 'Search', icon: 'search-01', mode: 'sidebar', component: SearchPanel },
   {
     id: 'exports',
     label: 'Exports',
