@@ -18,6 +18,7 @@ var knownCapabilities = map[engine.Capability]bool{
 	engine.CapabilityQueryCursor:     true,
 	engine.CapabilitySQLParse:        true,
 	engine.CapabilitySQLClassify:     true,
+	engine.CapabilitySQLSafetyCheck:  true,
 	engine.CapabilitySQLRewrite:      true,
 	engine.CapabilitySQLComplete:     true,
 	engine.CapabilitySQLGenerate:     true,

@@ -861,6 +861,159 @@ func TestExecuteQueryExecuteBranch(t *testing.T) {
 	assert.Equal(t, updateRes.BodyFields["rows_affected"], any(float64(0)))
 }
 
+func TestExecuteQueryUnsafeDeleteRequiresConfirmation(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "unsafe-dml@example.com", "Unsafe DML", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Unsafe DML WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "UnsafeConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	queryURL := orgConnectionURL(slug, wsIDInt, envID, connID) + "/query"
+
+	createTableReq := newAuthRequest(t, http.MethodPost, queryURL,
+		map[string]any{"sql": "CREATE TABLE t (id INTEGER)"}, tok)
+	createTableReq.Header.Set("X-Warden-Session", sessionID)
+	assert.Equal(t, send(t, createTableReq, app.routes()).StatusCode, http.StatusOK)
+
+	insertReq := newAuthRequest(t, http.MethodPost, queryURL,
+		map[string]any{"sql": "INSERT INTO t (id) VALUES (1), (2), (3)"}, tok)
+	insertReq.Header.Set("X-Warden-Session", sessionID)
+	assert.Equal(t, send(t, insertReq, app.routes()).StatusCode, http.StatusOK)
+
+	// Unconfirmed DELETE with no WHERE is refused and does not mutate the table.
+	deleteReq := newAuthRequest(t, http.MethodPost, queryURL,
+		map[string]any{"sql": "DELETE FROM t"}, tok)
+	deleteReq.Header.Set("X-Warden-Session", sessionID)
+	deleteRes := send(t, deleteReq, app.routes())
+	assert.Equal(t, deleteRes.StatusCode, http.StatusUnprocessableEntity)
+	assertAPIError(t, deleteRes, "unsafe_query_confirmation_required", "")
+	errorValue, ok := deleteRes.BodyFields["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error envelope in response, got %#v", deleteRes.BodyFields)
+	}
+	details, ok := errorValue["details"].([]any)
+	if !ok || len(details) == 0 {
+		t.Fatalf("expected non-empty error details array, got %#v", errorValue["details"])
+	}
+
+	countReq := newAuthRequest(t, http.MethodPost, queryURL,
+		map[string]any{"sql": "SELECT COUNT(*) AS n FROM t", "use_cursor": false}, tok)
+	countReq.Header.Set("X-Warden-Session", sessionID)
+	countRes := send(t, countReq, app.routes())
+	assert.Equal(t, countRes.StatusCode, http.StatusOK)
+
+	// The same DELETE with confirm_unsafe: true executes.
+	confirmedReq := newAuthRequest(t, http.MethodPost, queryURL,
+		map[string]any{"sql": "DELETE FROM t", "confirm_unsafe": true}, tok)
+	confirmedReq.Header.Set("X-Warden-Session", sessionID)
+	confirmedRes := send(t, confirmedReq, app.routes())
+	assert.Equal(t, confirmedRes.StatusCode, http.StatusOK)
+	assert.Equal(t, confirmedRes.BodyFields["rows_affected"], any(float64(3)))
+}
+
+func TestExecuteQuerySafeUpdateExecutesWithoutConfirmation(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "safe-dml@example.com", "Safe DML", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Safe DML WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "SafeConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	queryURL := orgConnectionURL(slug, wsIDInt, envID, connID) + "/query"
+
+	createTableReq := newAuthRequest(t, http.MethodPost, queryURL,
+		map[string]any{"sql": "CREATE TABLE t (id INTEGER)"}, tok)
+	createTableReq.Header.Set("X-Warden-Session", sessionID)
+	assert.Equal(t, send(t, createTableReq, app.routes()).StatusCode, http.StatusOK)
+
+	insertReq := newAuthRequest(t, http.MethodPost, queryURL,
+		map[string]any{"sql": "INSERT INTO t (id) VALUES (1)"}, tok)
+	insertReq.Header.Set("X-Warden-Session", sessionID)
+	assert.Equal(t, send(t, insertReq, app.routes()).StatusCode, http.StatusOK)
+
+	updateReq := newAuthRequest(t, http.MethodPost, queryURL,
+		map[string]any{"sql": "UPDATE t SET id = id WHERE id = 1"}, tok)
+	updateReq.Header.Set("X-Warden-Session", sessionID)
+	updateRes := send(t, updateReq, app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusOK)
+	assert.Equal(t, updateRes.BodyFields["rows_affected"], any(float64(1)))
+}
+
+func TestExecuteQueryDQLAndDDLUnaffectedByConfirmation(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "dql-ddl-dml@example.com", "DQL DDL", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "DQL DDL WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "DqlDdlConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	queryURL := orgConnectionURL(slug, wsIDInt, envID, connID) + "/query"
+
+	// DDL with no WHERE concept at all executes without confirmation.
+	createTableReq := newAuthRequest(t, http.MethodPost, queryURL,
+		map[string]any{"sql": "CREATE TABLE t (id INTEGER)"}, tok)
+	createTableReq.Header.Set("X-Warden-Session", sessionID)
+	assert.Equal(t, send(t, createTableReq, app.routes()).StatusCode, http.StatusOK)
+
+	// DQL executes without confirmation.
+	selectReq := newAuthRequest(t, http.MethodPost, queryURL,
+		map[string]any{"sql": "SELECT * FROM t", "use_cursor": false}, tok)
+	selectReq.Header.Set("X-Warden-Session", sessionID)
+	assert.Equal(t, send(t, selectReq, app.routes()).StatusCode, http.StatusOK)
+}
+
 func TestExecuteQueryAppliesConfiguredResultLimit(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -1520,7 +1673,7 @@ func TestConnectionRuntimePermissionClasses(t *testing.T) {
 
 	dmlUpdateReq := newAuthRequest(t, http.MethodPost,
 		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
-		map[string]any{"sql": "UPDATE t SET id = 3"}, dmlTok)
+		map[string]any{"sql": "UPDATE t SET id = 3 WHERE id = 1"}, dmlTok)
 	dmlUpdateReq.Header.Set("X-Warden-Session", dmlSession)
 	assert.Equal(t, send(t, dmlUpdateReq, app.routes()).StatusCode, http.StatusOK)
 

@@ -137,7 +137,7 @@ describe('useToolbarQueryAction', () => {
       ),
     )
 
-    await waitFor(() => expect(mocks.run).toHaveBeenCalledWith(tab.content))
+    await waitFor(() => expect(mocks.run).toHaveBeenCalledWith(tab.content, undefined))
     expect(store.getState().maximizedPane).toBeNull()
     unmount()
     docs.disposeAll()

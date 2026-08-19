@@ -303,6 +303,9 @@ export function connectionPreviewCountQueryKey(
 export type RunConnectionQueryOptions = {
   useCursor: boolean
   pageSize?: number
+  /** Re-submits a statement the backend flagged as unsafe (e.g. missing
+   *  WHERE) with explicit user confirmation to run it anyway. */
+  confirmUnsafe?: boolean
   signal?: AbortSignal
 }
 
@@ -316,7 +319,12 @@ export function runConnectionQuery(
 ) {
   return api.post<ResultSet>(
     `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/query`,
-    { sql, use_cursor: options.useCursor, page_size: options.pageSize },
+    {
+      sql,
+      use_cursor: options.useCursor,
+      page_size: options.pageSize,
+      confirm_unsafe: options.confirmUnsafe,
+    },
     { headers: { 'X-Warden-Session': sessionId }, signal: options.signal },
   )
 }
