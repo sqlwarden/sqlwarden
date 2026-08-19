@@ -76,6 +76,27 @@ func (app *application) listRecentWorkspaceFiles(w http.ResponseWriter, r *http.
 	}
 }
 
+func (app *application) searchPrivateWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
+	app.searchWorkspaceFiles(w, r, database.FileVisibilityPrivate)
+}
+
+func (app *application) searchSharedWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
+	app.searchWorkspaceFiles(w, r, database.FileVisibilityShared)
+}
+
+// searchWorkspaceFiles scans the route-selected file tree for a content match.
+func (app *application) searchWorkspaceFiles(w http.ResponseWriter, r *http.Request, visibility string) {
+	query := r.URL.Query().Get("q")
+	result, err := app.workspaceFileService().Search(r.Context(), app.workspaceFileScope(r, visibility), files.SearchInput{Query: query})
+	if err != nil {
+		app.workspaceFileError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, result); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 // listWorkspaceFiles lists direct children for the route-selected file tree.
 func (app *application) listWorkspaceFiles(w http.ResponseWriter, r *http.Request, visibility string) {
 	parentID, ok := app.optionalPositiveID(w, r, "parent_id")
@@ -407,6 +428,8 @@ func (app *application) workspaceFileError(w http.ResponseWriter, r *http.Reques
 		app.failedValidation(w, r, fieldErrors(map[string]string{"name": "Name must be a valid file or folder name."}))
 	case errors.Is(err, files.ErrInvalidObjectType):
 		app.failedValidation(w, r, fieldErrors(map[string]string{"object_type": "Object type must be file or folder."}))
+	case errors.Is(err, files.ErrInvalidSearchQuery):
+		app.failedValidation(w, r, fieldErrors(map[string]string{"q": "Search query must be at least 2 characters."}))
 	case errors.Is(err, files.ErrInvalidParent), errors.Is(err, database.ErrInvalidWorkspaceFileParent):
 		app.failedValidation(w, r, fieldErrors(map[string]string{"parent_id": "Parent folder is invalid."}))
 	case errors.Is(err, files.ErrMoveCycle), errors.Is(err, database.ErrWorkspaceFileMoveCycle):

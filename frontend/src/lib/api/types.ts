@@ -181,6 +181,26 @@ export interface WorkspaceFileBrowserResult {
   children: WorkspaceFile[]
 }
 
+export interface WorkspaceFileSearchSnippet {
+  line: number
+  column: number
+  excerpt: string
+}
+
+export interface WorkspaceFileSearchFileResult {
+  file: WorkspaceFile
+  path: WorkspaceFilePathSegment[]
+  match_count: number
+  snippets: WorkspaceFileSearchSnippet[]
+}
+
+export interface WorkspaceFileSearchResult {
+  query: string
+  results: WorkspaceFileSearchFileResult[]
+  files_scanned: number
+  truncated: boolean
+}
+
 export interface Team {
   id: number
   org_id: number

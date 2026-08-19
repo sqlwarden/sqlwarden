@@ -340,3 +340,109 @@ func TestWorkspaceFileMoveRejectsCyclesAndDeleteTombstonesSubtree(t *testing.T) 
 		})
 	}
 }
+
+func TestListAllWorkspaceFiles(t *testing.T) {
+	for _, driver := range testDrivers() {
+		t.Run(driver, func(t *testing.T) {
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+			org, err := db.InsertOrg(ctx, "all-files-"+driver, "AllFiles")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ownerID := testUsers["alice"].id
+			ws, err := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Workspace", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			folder := WorkspaceFile{
+				WorkspaceID:    ws.ID,
+				Visibility:     FileVisibilityPrivate,
+				OwnerAccountID: &ownerID,
+				ObjectType:     FileObjectTypeFolder,
+				Name:           "reports",
+				CreatedBy:      ownerID,
+				UpdatedBy:      ownerID,
+			}
+			if err := db.InsertWorkspaceFile(ctx, &folder); err != nil {
+				t.Fatal(err)
+			}
+			nested := WorkspaceFile{
+				WorkspaceID:    ws.ID,
+				ParentID:       &folder.ID,
+				Visibility:     FileVisibilityPrivate,
+				OwnerAccountID: &ownerID,
+				ObjectType:     FileObjectTypeFile,
+				Name:           "orders.sql",
+				CreatedBy:      ownerID,
+				UpdatedBy:      ownerID,
+			}
+			if err := db.InsertWorkspaceFile(ctx, &nested); err != nil {
+				t.Fatal(err)
+			}
+			root := WorkspaceFile{
+				WorkspaceID:    ws.ID,
+				Visibility:     FileVisibilityPrivate,
+				OwnerAccountID: &ownerID,
+				ObjectType:     FileObjectTypeFile,
+				Name:           "customers.sql",
+				CreatedBy:      ownerID,
+				UpdatedBy:      ownerID,
+			}
+			if err := db.InsertWorkspaceFile(ctx, &root); err != nil {
+				t.Fatal(err)
+			}
+
+			bobID := testUsers["bob"].id
+			bobFile := WorkspaceFile{
+				WorkspaceID:    ws.ID,
+				Visibility:     FileVisibilityPrivate,
+				OwnerAccountID: &bobID,
+				ObjectType:     FileObjectTypeFile,
+				Name:           "bob-only.sql",
+				CreatedBy:      bobID,
+				UpdatedBy:      bobID,
+			}
+			if err := db.InsertWorkspaceFile(ctx, &bobFile); err != nil {
+				t.Fatal(err)
+			}
+
+			shared := WorkspaceFile{
+				WorkspaceID: ws.ID,
+				Visibility:  FileVisibilityShared,
+				ObjectType:  FileObjectTypeFile,
+				Name:        "team.sql",
+				CreatedBy:   ownerID,
+				UpdatedBy:   ownerID,
+			}
+			if err := db.InsertWorkspaceFile(ctx, &shared); err != nil {
+				t.Fatal(err)
+			}
+
+			aliceFiles, err := db.ListAllWorkspaceFiles(ctx, ws.ID, FileVisibilityPrivate, &ownerID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(aliceFiles) != 2 || aliceFiles[0].ID != root.ID || aliceFiles[1].ID != nested.ID {
+				t.Fatalf("alice's private files = %+v, want [customers.sql orders.sql] name-ordered, excluding the folder and bob's file", aliceFiles)
+			}
+
+			bobFiles, err := db.ListAllWorkspaceFiles(ctx, ws.ID, FileVisibilityPrivate, &bobID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(bobFiles) != 1 || bobFiles[0].ID != bobFile.ID {
+				t.Fatalf("bob's private files = %+v, want only bob-only.sql", bobFiles)
+			}
+
+			sharedFiles, err := db.ListAllWorkspaceFiles(ctx, ws.ID, FileVisibilityShared, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(sharedFiles) != 1 || sharedFiles[0].ID != shared.ID {
+				t.Fatalf("shared files = %+v, want only team.sql", sharedFiles)
+			}
+		})
+	}
+}

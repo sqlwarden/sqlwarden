@@ -192,6 +192,27 @@ export function SqlEditor({
     setFocusEditorRequest(null)
   }, [focusEditorRequest, viewKey, setFocusEditorRequest])
 
+  // Apply a line/column jump requested by search. Compared against the raw
+  // tabId (not viewKey) — a jump targets a file's tab and should apply
+  // regardless of which split group's pane currently shows it.
+  const pendingJump = useIde((s) => s.pendingJump)
+  const clearPendingJump = useIde((s) => s.clearPendingJump)
+  useEffect(() => {
+    if (!pendingJump || pendingJump.tabId !== tabId) return
+    const view = viewRef.current
+    if (!view) return
+    const targetLine = Math.min(Math.max(pendingJump.line, 1), view.state.doc.lines)
+    const docLine = view.state.doc.line(targetLine)
+    const column = Math.max(0, pendingJump.column - 1)
+    const pos = Math.min(docLine.from + column, docLine.to)
+    view.dispatch({
+      selection: { anchor: pos },
+      effects: EditorView.scrollIntoView(pos, { y: 'center' }),
+    })
+    view.focus()
+    clearPendingJump()
+  }, [pendingJump, tabId, clearPendingJump])
+
   // Hot-swap the theme without remounting the editor.
   useEffect(() => {
     let cancelled = false

@@ -121,6 +121,14 @@ export const queryKeys = {
     ['org-workspace-shared-recent-files', slug, workspaceId] as const,
   orgWorkspaceSharedRecentFiles: (slug: string, workspaceId: string | number, limit?: number) =>
     [...queryKeys.orgWorkspaceSharedRecentFilesScope(slug, workspaceId), limit ?? null] as const,
+  orgWorkspacePrivateFileSearchScope: (slug: string, workspaceId: string | number) =>
+    ['org-workspace-private-file-search', slug, workspaceId] as const,
+  orgWorkspacePrivateFileSearch: (slug: string, workspaceId: string | number, query: string) =>
+    [...queryKeys.orgWorkspacePrivateFileSearchScope(slug, workspaceId), query] as const,
+  orgWorkspaceSharedFileSearchScope: (slug: string, workspaceId: string | number) =>
+    ['org-workspace-shared-file-search', slug, workspaceId] as const,
+  orgWorkspaceSharedFileSearch: (slug: string, workspaceId: string | number, query: string) =>
+    [...queryKeys.orgWorkspaceSharedFileSearchScope(slug, workspaceId), query] as const,
   fileContent: (slug: string, workspaceId: string | number, fileId: string | number | undefined) =>
     ['file-content', slug, workspaceId, fileId] as const,
   myWorkspaces: (query?: ListQuery) => ['my-workspaces', query ?? {}] as const,

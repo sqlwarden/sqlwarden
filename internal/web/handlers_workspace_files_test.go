@@ -79,6 +79,15 @@ func decodeWorkspaceFilesResponse(t *testing.T, res testResponse) []database.Wor
 	return result.Files
 }
 
+func decodeWorkspaceFileSearchResult(t *testing.T, res testResponse) files.SearchResult {
+	t.Helper()
+	var result files.SearchResult
+	if err := json.Unmarshal(res.BodyBytes, &result); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
 func addWorkspaceMemberForFiles(t *testing.T, app *application, org database.Organization, workspace database.Workspace, email string) (database.Account, string) {
 	t.Helper()
 	member, tok := seedAccountWithToken(t, app, email, email)
@@ -218,6 +227,50 @@ func TestWorkspaceFileBrowserAndRecentEndpoints(t *testing.T) {
 
 	invalid := send(t, newAuthRequest(t, http.MethodGet, filesURL+"/recent?limit=0", nil, tok), app.routes())
 	assert.Equal(t, invalid.StatusCode, http.StatusUnprocessableEntity)
+}
+
+func TestWorkspaceFileSearchEndpoints(t *testing.T) {
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	filesURL := orgPrivateFilesURL(org.Slug, ws.ID)
+
+	folder := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "reports", "object_type": "folder",
+	}, tok), app.routes()))
+	orders := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "orders.sql", "parent_id": folder.ID,
+	}, tok), app.routes()))
+	customers := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
+		"name": "customers.sql",
+	}, tok), app.routes()))
+
+	writeOrders := send(t, newAuthContentRequest(t, http.MethodPut, filesURL+"/"+strconv.FormatInt(orders.ID, 10)+"/content", "select * from orders", tok, ""), app.routes())
+	assert.Equal(t, writeOrders.StatusCode, http.StatusOK)
+	writeCustomers := send(t, newAuthContentRequest(t, http.MethodPut, filesURL+"/"+strconv.FormatInt(customers.ID, 10)+"/content", "select * from customers", tok, ""), app.routes())
+	assert.Equal(t, writeCustomers.StatusCode, http.StatusOK)
+
+	found := send(t, newAuthRequest(t, http.MethodGet, filesURL+"/search?q=orders", nil, tok), app.routes())
+	assert.Equal(t, found.StatusCode, http.StatusOK)
+	result := decodeWorkspaceFileSearchResult(t, found)
+	if result.Query != "orders" || len(result.Results) != 1 {
+		t.Fatalf("search result = %+v, want one match for orders.sql", result)
+	}
+	if result.Results[0].File.ID != orders.ID || result.Results[0].MatchCount != 1 {
+		t.Fatalf("search match = %+v, want orders.sql with 1 match", result.Results[0])
+	}
+	if len(result.Results[0].Path) != 2 || result.Results[0].Path[0].Name != "reports" || result.Results[0].Path[1].Name != "orders.sql" {
+		t.Fatalf("search match path = %+v, want [reports orders.sql]", result.Results[0].Path)
+	}
+
+	tooShort := send(t, newAuthRequest(t, http.MethodGet, filesURL+"/search?q=o", nil, tok), app.routes())
+	assert.Equal(t, tooShort.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, tooShort, "q")
+
+	_, memberTok := addWorkspaceMemberForFiles(t, app, org, ws, uniqueEmail(t, "search-member"))
+	denied := send(t, newAuthRequest(t, http.MethodGet, orgSharedFilesURL(org.Slug, ws.ID)+"/search?q=orders", nil, memberTok), app.routes())
+	assert.Equal(t, denied.StatusCode, http.StatusForbidden)
+
+	meDenied := send(t, newAuthRequest(t, http.MethodGet, mePrivateFilesURL(ws.ID)+"/search?q=orders", nil, tok), app.routes())
+	assert.Equal(t, meDenied.StatusCode, http.StatusNotFound)
 }
 
 func TestWorkspacePrivateFilesAllowTeamMembersAndRejectCrossWorkspaceRoute(t *testing.T) {

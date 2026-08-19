@@ -1,6 +1,10 @@
 import { queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
-import type { WorkspaceFileBrowserResult, WorkspaceFilesResponse } from '#/lib/api/types'
+import type {
+  WorkspaceFileBrowserResult,
+  WorkspaceFileSearchResult,
+  WorkspaceFilesResponse,
+} from '#/lib/api/types'
 import { queryKeys } from '#/lib/api/query-keys'
 
 export function orgWorkspacePrivateFilesQueryOptions(
@@ -110,6 +114,36 @@ export function orgWorkspaceSharedRecentFilesQueryOptions(
           },
         )
         .then((res) => res.files),
+  })
+}
+
+export function orgWorkspacePrivateFileSearchQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  query: string,
+) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspacePrivateFileSearch(slug, workspaceId, query),
+    queryFn: () =>
+      api.get<WorkspaceFileSearchResult>(
+        `/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/private/search`,
+        { query: { q: query } },
+      ),
+  })
+}
+
+export function orgWorkspaceSharedFileSearchQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  query: string,
+) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspaceSharedFileSearch(slug, workspaceId, query),
+    queryFn: () =>
+      api.get<WorkspaceFileSearchResult>(
+        `/api/v1/orgs/${slug}/workspaces/${workspaceId}/files/shared/search`,
+        { query: { q: query } },
+      ),
   })
 }
 
