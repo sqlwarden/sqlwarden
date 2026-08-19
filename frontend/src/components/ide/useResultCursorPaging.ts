@@ -8,6 +8,7 @@ type SuccessfulQueryResult = Extract<QueryResult, { status: 'ok' }>
 type ResultCursorPagingOptions = {
   activeTabId?: string
   connectionId?: number
+  index: number
   orgSlug: string
   result: SuccessfulQueryResult
   workspaceId: number
@@ -16,12 +17,13 @@ type ResultCursorPagingOptions = {
 export function useResultCursorPaging({
   activeTabId,
   connectionId,
+  index,
   orgSlug,
   result,
   workspaceId,
 }: ResultCursorPagingOptions) {
   const fetchingRef = useRef(false)
-  const setQueryResult = useIde((state) => state.setQueryResult)
+  const setStatementResult = useIde((state) => state.setStatementResult)
   const cursorId = result.data.query_cursor_id
   const canFetchMore = Boolean(
     activeTabId &&
@@ -37,7 +39,7 @@ export function useResultCursorPaging({
     }
 
     fetchingRef.current = true
-    setQueryResult(activeTabId, {
+    setStatementResult(activeTabId, index, {
       ...result,
       isFetchingNextPage: true,
       cursorMessage: undefined,
@@ -51,9 +53,9 @@ export function useResultCursorPaging({
         cursorId,
         result.data.page_size,
       )
-      setQueryResult(activeTabId, mergeCursorPage(result, page, cursorId))
+      setStatementResult(activeTabId, index, mergeCursorPage(result, page, cursorId))
     } catch (error) {
-      setQueryResult(activeTabId, applyCursorPageError(result, error))
+      setStatementResult(activeTabId, index, applyCursorPageError(result, error))
     } finally {
       fetchingRef.current = false
     }

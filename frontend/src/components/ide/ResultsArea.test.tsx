@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -81,8 +81,7 @@ describe('ResultsArea', () => {
     )
   })
 
-  function renderResult(result: QueryResult) {
-    store.getState().setQueryResult('scratch-1', result)
+  function renderResultsArea() {
     const queryClient = createTestQueryClient()
     return render(
       <QueryClientProvider client={queryClient}>
@@ -93,6 +92,11 @@ describe('ResultsArea', () => {
         </IdeStoreContext.Provider>
       </QueryClientProvider>,
     )
+  }
+
+  function renderResult(result: QueryResult) {
+    store.getState().setQueryResult('scratch-1', result)
+    return renderResultsArea()
   }
 
   it.each([
@@ -263,5 +267,83 @@ describe('ResultsArea', () => {
     expect(store.getState().maximizedPane).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Hide results panel' }))
     expect(store.getState().maximizedPane).toBe('editor')
+  })
+
+  it('lists every statement in a sidebar and shows the first one selected by default', async () => {
+    store.getState().initBatchResults('scratch-1', ['select 1', 'select 2', 'select 3', 'select 4'])
+    store.getState().setStatementResult('scratch-1', 0, {
+      status: 'ok',
+      durationMs: 2,
+      sql: 'select 1',
+      connectionId: 7,
+      data: {
+        columns: [],
+        rows: [],
+        duration_ms: 2,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+        rows_affected: 2,
+      },
+    })
+    store.getState().setStatementResult('scratch-1', 1, {
+      status: 'error',
+      message: 'boom',
+      sql: 'select 2',
+    })
+    store.getState().setStatementResult('scratch-1', 2, { status: 'skipped', sql: 'select 3' })
+
+    renderResultsArea()
+
+    const list = await screen.findByRole('listbox', { name: 'Statement results' })
+    expect(within(list).getByText('Queued')).toBeInTheDocument()
+    expect(within(list).getByText('Failed')).toBeInTheDocument()
+    expect(within(list).getByText('Skipped')).toBeInTheDocument()
+    // The first statement (ok) is selected by default and shown in the detail pane.
+    expect(screen.getByText('· 2 rows affected')).toBeInTheDocument()
+    expect(screen.queryByText('Query failed')).not.toBeInTheDocument()
+  })
+
+  it('switches the detail pane when a different statement row is clicked', async () => {
+    const user = userEvent.setup()
+    store.getState().initBatchResults('scratch-1', ['select 1', 'select 2'])
+    store.getState().setStatementResult('scratch-1', 0, {
+      status: 'ok',
+      durationMs: 2,
+      sql: 'select 1',
+      connectionId: 7,
+      data: {
+        columns: [],
+        rows: [],
+        duration_ms: 2,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+        rows_affected: 2,
+      },
+    })
+    store.getState().setStatementResult('scratch-1', 1, {
+      status: 'error',
+      message: 'boom',
+      sql: 'select 2',
+    })
+
+    renderResultsArea()
+
+    await screen.findByText('· 2 rows affected')
+    await user.click(screen.getByRole('option', { name: /select 2/ }))
+
+    expect(screen.getByText('Query failed')).toBeInTheDocument()
+    expect(screen.queryByText('· 2 rows affected')).not.toBeInTheDocument()
+  })
+
+  it('sums row counts across every ok entry in the results badge', async () => {
+    store.getState().initBatchResults('scratch-1', ['select 1', 'select 2'])
+    store.getState().setStatementResult('scratch-1', 0, populatedResult())
+    store.getState().setStatementResult('scratch-1', 1, populatedResult())
+
+    renderResultsArea()
+
+    expect(await screen.findByText('4')).toBeInTheDocument()
   })
 })

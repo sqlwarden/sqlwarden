@@ -531,3 +531,109 @@ describe('syncSessions', () => {
     expect(store.getState().sessions).toEqual({ 9: 'other-ws', 2: 'still-alive' })
   })
 })
+
+describe('query results', () => {
+  it('setQueryResult replaces the tab with a single-element array', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().setQueryResult('tab-1', { status: 'running' })
+    expect(store.getState().results['tab-1']).toEqual([{ status: 'running' }])
+  })
+
+  it('initBatchResults seeds one pending entry per statement, replacing any prior results', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().setQueryResult('tab-1', { status: 'error', sql: 'old', message: 'boom' })
+    store.getState().initBatchResults('tab-1', ['select 1', 'select 2'])
+    expect(store.getState().results['tab-1']).toEqual([
+      { status: 'pending', sql: 'select 1' },
+      { status: 'pending', sql: 'select 2' },
+    ])
+  })
+
+  it('setStatementResult updates one entry without touching the others', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().initBatchResults('tab-1', ['select 1', 'select 2'])
+    store.getState().setStatementResult('tab-1', 1, { status: 'running' })
+    expect(store.getState().results['tab-1']).toEqual([
+      { status: 'pending', sql: 'select 1' },
+      { status: 'running' },
+    ])
+  })
+
+  it('markRemainingSkipped marks every non-terminal entry from fromIndex onward', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().initBatchResults('tab-1', ['select 1', 'select 2', 'select 3'])
+    store.getState().setStatementResult('tab-1', 0, {
+      status: 'ok',
+      durationMs: 1,
+      sql: 'select 1',
+      data: {
+        columns: [],
+        rows: [],
+        duration_ms: 1,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+      },
+    })
+    store.getState().markRemainingSkipped('tab-1', 1)
+    expect(store.getState().results['tab-1']).toEqual([
+      expect.objectContaining({ status: 'ok' }),
+      { status: 'skipped', sql: 'select 2' },
+      { status: 'skipped', sql: 'select 3' },
+    ])
+  })
+
+  it('markRemainingSkipped does nothing for a tab with no results', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().markRemainingSkipped('tab-1', 0)
+    expect(store.getState().results['tab-1']).toBeUndefined()
+  })
+
+  it('abandonPendingBatchConfirmation clears the confirmation and skips from its batchIndex', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().initBatchResults('tab-1', ['select 1', 'select 2', 'select 3'])
+    store.getState().setPendingConfirmation('tab-1', {
+      sql: 'select 2',
+      statements: [],
+      batchIndex: 1,
+    })
+    store.getState().abandonPendingBatchConfirmation('tab-1')
+    expect(store.getState().pendingConfirmations['tab-1']).toBeUndefined()
+    expect(store.getState().results['tab-1']).toEqual([
+      { status: 'pending', sql: 'select 1' },
+      { status: 'skipped', sql: 'select 2' },
+      { status: 'skipped', sql: 'select 3' },
+    ])
+  })
+
+  it('clears the confirmation without touching results when there is no batchIndex', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().setQueryResult('tab-1', { status: 'running' })
+    store.getState().setPendingConfirmation('tab-1', { sql: 'select 1', statements: [] })
+    store.getState().abandonPendingBatchConfirmation('tab-1')
+    expect(store.getState().pendingConfirmations['tab-1']).toBeUndefined()
+    expect(store.getState().results['tab-1']).toEqual([{ status: 'running' }])
+  })
+
+  it('setSelectedResultIndex sets the selected index for a tab', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().setSelectedResultIndex('tab-1', 2)
+    expect(store.getState().selectedResultIndex['tab-1']).toBe(2)
+  })
+
+  it('initBatchResults resets the selected index to 0 for a new run', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().initBatchResults('tab-1', ['select 1', 'select 2'])
+    store.getState().setSelectedResultIndex('tab-1', 1)
+    store.getState().initBatchResults('tab-1', ['select 1', 'select 2', 'select 3'])
+    expect(store.getState().selectedResultIndex['tab-1']).toBe(0)
+  })
+
+  it('closeTab clears the selected index for the closed tab', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().initBatchResults('tab-1', ['select 1', 'select 2'])
+    store.getState().setSelectedResultIndex('tab-1', 1)
+    store.getState().closeTab('tab-1')
+    expect(store.getState().selectedResultIndex['tab-1']).toBeUndefined()
+  })
+})

@@ -11,7 +11,7 @@ export function useQueryExecution(
   connectionId: number | undefined,
 ) {
   const ensureSession = useEnsureSession(orgSlug, workspaceId)
-  const previousResult = useIde((state) => (tabId ? state.results[tabId] : undefined))
+  const previousResult = useIde((state) => (tabId ? state.results[tabId]?.[0] : undefined))
   const previousController = useIde((state) => (tabId ? state.abortControllers[tabId] : undefined))
   const isRunning = useIde((state) => Boolean(tabId && state.runningTabs[tabId]))
   const setResult = useIde((state) => state.setQueryResult)

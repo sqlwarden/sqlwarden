@@ -1,0 +1,189 @@
+import { describe, expect, it, vi } from 'vitest'
+import { ApiError } from '#/lib/api/errors'
+import type { ResultSet } from '#/lib/api/types'
+import { runStatementBatch, type BatchExecutionDependencies } from './runStatementBatch'
+
+function resultSet(durationMs: number): ResultSet {
+  return {
+    columns: [],
+    rows: [],
+    duration_ms: durationMs,
+    truncated: false,
+    rows_returned: 0,
+    bytes_returned: 0,
+  }
+}
+
+function dependencies(
+  overrides: Partial<BatchExecutionDependencies> = {},
+): BatchExecutionDependencies {
+  return {
+    ensureSession: vi.fn(async (_connectionId, run) => run('session-1')),
+    runStatement: vi.fn(async () => resultSet(1)),
+    initBatch: vi.fn(),
+    setStatementResult: vi.fn(),
+    markRemainingSkipped: vi.fn(),
+    setRunning: vi.fn(),
+    setController: vi.fn(),
+    setPendingConfirmation: vi.fn(),
+    ...overrides,
+  }
+}
+
+describe('runStatementBatch', () => {
+  it('runs every statement in order over the same session and finishes clean', async () => {
+    const runStatement = vi.fn(async (_sessionId: string, sql: string) => resultSet(sql.length))
+    const deps = dependencies({ runStatement })
+    const controller = new AbortController()
+
+    await runStatementBatch(
+      { tabId: 'tab-1', connectionId: 7, sqls: ['select 1', 'select 2'], controller },
+      deps,
+    )
+
+    expect(deps.initBatch).toHaveBeenCalledWith('tab-1', ['select 1', 'select 2'])
+    expect(deps.ensureSession).toHaveBeenCalledTimes(2)
+    expect(runStatement).toHaveBeenNthCalledWith(
+      1,
+      'session-1',
+      'select 1',
+      false,
+      controller.signal,
+    )
+    expect(runStatement).toHaveBeenNthCalledWith(
+      2,
+      'session-1',
+      'select 2',
+      false,
+      controller.signal,
+    )
+    expect(deps.setStatementResult).toHaveBeenNthCalledWith(1, 'tab-1', 0, { status: 'running' })
+    expect(deps.setStatementResult).toHaveBeenNthCalledWith(2, 'tab-1', 0, {
+      status: 'ok',
+      data: resultSet(8),
+      durationMs: 8,
+      sql: 'select 1',
+      connectionId: 7,
+    })
+    expect(deps.setStatementResult).toHaveBeenNthCalledWith(3, 'tab-1', 1, { status: 'running' })
+    expect(deps.setStatementResult).toHaveBeenNthCalledWith(4, 'tab-1', 1, {
+      status: 'ok',
+      data: resultSet(8),
+      durationMs: 8,
+      sql: 'select 2',
+      connectionId: 7,
+    })
+    expect(deps.markRemainingSkipped).not.toHaveBeenCalled()
+    expect(deps.setController).toHaveBeenLastCalledWith('tab-1', null)
+    expect(deps.setRunning).toHaveBeenLastCalledWith('tab-1', false)
+  })
+
+  it('stops at the first error and marks every later statement skipped', async () => {
+    const runStatement = vi.fn(async (_sessionId: string, sql: string) => {
+      if (sql === 'select 2') throw new Error('boom')
+      return resultSet(1)
+    })
+    const deps = dependencies({ runStatement })
+    const controller = new AbortController()
+
+    await runStatementBatch(
+      {
+        tabId: 'tab-1',
+        connectionId: 7,
+        sqls: ['select 1', 'select 2', 'select 3'],
+        controller,
+      },
+      deps,
+    )
+
+    expect(runStatement).toHaveBeenCalledTimes(2)
+    expect(deps.setStatementResult).toHaveBeenCalledWith('tab-1', 1, {
+      status: 'error',
+      message: 'boom',
+      sql: 'select 2',
+    })
+    expect(deps.markRemainingSkipped).toHaveBeenCalledWith('tab-1', 2)
+    expect(deps.setRunning).toHaveBeenLastCalledWith('tab-1', false)
+  })
+
+  it('marks the in-flight statement cancelled and the rest skipped on abort', async () => {
+    const abortError = new Error('cancelled')
+    abortError.name = 'AbortError'
+    const runStatement = vi.fn(async () => {
+      throw abortError
+    })
+    const deps = dependencies({ runStatement })
+    const controller = new AbortController()
+
+    await runStatementBatch(
+      { tabId: 'tab-1', connectionId: 7, sqls: ['select 1', 'select 2'], controller },
+      deps,
+    )
+
+    expect(deps.setStatementResult).toHaveBeenCalledWith('tab-1', 0, {
+      status: 'cancelled',
+      sql: 'select 1',
+    })
+    expect(deps.markRemainingSkipped).toHaveBeenCalledWith('tab-1', 1)
+  })
+
+  it('pauses on an unsafe-confirmation error without marking anything skipped', async () => {
+    const error = new ApiError('Confirm to run it anyway.', 422, {
+      code: 'unsafe_query_confirmation_required',
+      details: [{ kind: 'unsafe_missing_where', start_offset: 0, end_offset: 18 }],
+    })
+    const runStatement = vi.fn(async () => {
+      throw error
+    })
+    const deps = dependencies({ runStatement })
+    const controller = new AbortController()
+
+    await runStatementBatch(
+      {
+        tabId: 'tab-1',
+        connectionId: 7,
+        sqls: ['DELETE FROM widgets', 'select 2'],
+        controller,
+      },
+      deps,
+    )
+
+    expect(deps.setStatementResult).toHaveBeenCalledWith('tab-1', 0, {
+      status: 'pending',
+      sql: 'DELETE FROM widgets',
+    })
+    expect(deps.setPendingConfirmation).toHaveBeenCalledWith('tab-1', {
+      sql: 'DELETE FROM widgets',
+      statements: [{ kind: 'unsafe_missing_where', start_offset: 0, end_offset: 18 }],
+      batchIndex: 0,
+    })
+    expect(deps.markRemainingSkipped).not.toHaveBeenCalled()
+    expect(deps.setController).toHaveBeenLastCalledWith('tab-1', null)
+    expect(deps.setRunning).toHaveBeenLastCalledWith('tab-1', false)
+  })
+
+  it('resumes from startAt with confirmUnsafe only at confirmUnsafeAt, without re-seeding', async () => {
+    const confirmFlags: boolean[] = []
+    const runStatement = vi.fn(async (_sessionId: string, _sql: string, confirmUnsafe: boolean) => {
+      confirmFlags.push(confirmUnsafe)
+      return resultSet(1)
+    })
+    const deps = dependencies({ runStatement })
+    const controller = new AbortController()
+
+    await runStatementBatch(
+      {
+        tabId: 'tab-1',
+        connectionId: 7,
+        sqls: ['DELETE FROM widgets', 'select 2'],
+        controller,
+        startAt: 0,
+        confirmUnsafeAt: 0,
+      },
+      deps,
+    )
+
+    expect(deps.initBatch).not.toHaveBeenCalled()
+    expect(confirmFlags).toEqual([true, false])
+  })
+})

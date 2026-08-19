@@ -6,6 +6,7 @@ import type { EditorTab } from './useIdeStore'
 import { useIde } from './useIdeStore'
 import { useEditorViewRegistry, type EditorViewRegistry } from './useEditorViewRegistry'
 import { useQueryExecution } from './useQueryExecution'
+import { useRunAllStatements } from './useRunAllStatements'
 import { useYDocRegistry, type YDocRegistry } from './useYDocRegistry'
 
 export function resolveEditorSql({
@@ -31,6 +32,24 @@ export function resolveEditorSql({
   return (document ? document.getText('content').toString() : tab.content).trim()
 }
 
+export function resolveEditorDocumentText({
+  activeGroupId,
+  tab,
+  viewRegistry,
+  documentRegistry,
+}: {
+  activeGroupId?: string
+  tab?: EditorTab
+  viewRegistry: EditorViewRegistry
+  documentRegistry: YDocRegistry
+}): string {
+  if (!tab) return ''
+  const view = viewRegistry.get(activeGroupId ? `${activeGroupId}:${tab.id}` : tab.id)
+  if (view) return view.state.doc.toString().trim()
+  const document = documentRegistry.get(tab.id)
+  return (document ? document.getText('content').toString() : tab.content).trim()
+}
+
 export function useToolbarQueryAction({
   orgSlug,
   workspace,
@@ -51,14 +70,38 @@ export function useToolbarQueryAction({
   const maximizedPane = useIde((state) => state.maximizedPane)
   const setMaximizedPane = useIde((state) => state.setMaximizedPane)
   const {
-    cancel,
-    isRunning,
+    cancel: cancelRun,
+    isRunning: isRunningPlain,
     run: execute,
   } = useQueryExecution(orgSlug, workspace.id, activeTab?.id, activeConnection?.id)
+  const {
+    runAll: executeAll,
+    confirmAt,
+    cancel: cancelBatch,
+    isRunning: isRunningBatch,
+  } = useRunAllStatements(orgSlug, workspace.id, activeTab?.id, activeConnection?.id)
+
+  const isRunning = isRunningPlain || isRunningBatch
+
+  const cancel = useCallback(() => {
+    cancelRun()
+    cancelBatch()
+  }, [cancelRun, cancelBatch])
 
   const resolveSql = useCallback(
     () =>
       resolveEditorSql({
+        activeGroupId,
+        tab: activeTab,
+        viewRegistry,
+        documentRegistry,
+      }),
+    [activeGroupId, activeTab, viewRegistry, documentRegistry],
+  )
+
+  const resolveDocumentText = useCallback(
+    () =>
+      resolveEditorDocumentText({
         activeGroupId,
         tab: activeTab,
         viewRegistry,
@@ -95,6 +138,31 @@ export function useToolbarQueryAction({
     ],
   )
 
+  const runAll = useCallback(
+    async (sqls: string[]) => {
+      if (!activeTab || isRunning || sqls.length === 0) return
+      if (!activeConnection) {
+        toast.warning(
+          hasConnections
+            ? 'Select a connection to run this query.'
+            : 'No connection available. Add a connection to run queries.',
+        )
+        return
+      }
+      if (maximizedPane === 'editor') setMaximizedPane(null)
+      await executeAll(sqls)
+    },
+    [
+      activeTab,
+      activeConnection,
+      executeAll,
+      hasConnections,
+      isRunning,
+      maximizedPane,
+      setMaximizedPane,
+    ],
+  )
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
@@ -107,5 +175,5 @@ export function useToolbarQueryAction({
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
   }, [run])
 
-  return { cancel, isRunning, resolveSql, run }
+  return { cancel, confirmAt, isRunning, resolveDocumentText, resolveSql, run, runAll }
 }

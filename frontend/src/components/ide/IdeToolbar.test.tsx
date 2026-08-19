@@ -14,9 +14,12 @@ import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditor
 
 const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
+  confirmAt: vi.fn(() => Promise.resolve()),
   download: vi.fn(),
+  resolveDocumentText: vi.fn(() => ''),
   resolveSql: vi.fn(() => 'select 1'),
   run: vi.fn(() => Promise.resolve()),
+  runAll: vi.fn(() => Promise.resolve()),
   save: vi.fn(() => Promise.resolve(undefined)),
   isRunning: false,
 }))
@@ -24,9 +27,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./useToolbarQueryAction', () => ({
   useToolbarQueryAction: () => ({
     cancel: mocks.cancel,
+    confirmAt: mocks.confirmAt,
     isRunning: mocks.isRunning,
+    resolveDocumentText: mocks.resolveDocumentText,
     resolveSql: mocks.resolveSql,
     run: mocks.run,
+    runAll: mocks.runAll,
   }),
 }))
 
@@ -232,5 +238,67 @@ describe('IdeToolbar', () => {
     expect(store.getState().maximizedPane).toBe('editor')
     await user.click(toggle)
     expect(store.getState().maximizedPane).toBeNull()
+  })
+
+  it('splits the document and runs every statement via Run All', async () => {
+    store.getState().openTab(scratchTab)
+    mocks.resolveDocumentText.mockReturnValue('select 1;\nselect 2;')
+    const { user } = renderToolbar()
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Run/ })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'More run options' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Run All' }))
+
+    expect(mocks.runAll).toHaveBeenCalledWith(['select 1', 'select 2'])
+  })
+
+  it('resumes a paused batch confirmation via confirmAt and clears it on confirm', async () => {
+    store.getState().openTab(scratchTab)
+    store.getState().setPendingConfirmation(scratchTab.id, {
+      sql: 'DELETE FROM widgets',
+      statements: [],
+      batchIndex: 1,
+    })
+    const { user } = renderToolbar()
+
+    await user.click(screen.getByRole('button', { name: 'Run Anyway' }))
+
+    expect(mocks.confirmAt).toHaveBeenCalledWith(1)
+    expect(mocks.run).not.toHaveBeenCalled()
+    expect(store.getState().pendingConfirmations[scratchTab.id]).toBeUndefined()
+  })
+
+  it('confirms a plain (non-batch) unsafe query via run(true)', async () => {
+    store.getState().openTab(scratchTab)
+    store.getState().setPendingConfirmation(scratchTab.id, {
+      sql: 'DELETE FROM widgets',
+      statements: [],
+    })
+    const { user } = renderToolbar()
+
+    await user.click(screen.getByRole('button', { name: 'Run Anyway' }))
+
+    expect(mocks.run).toHaveBeenCalledWith(true)
+    expect(mocks.confirmAt).not.toHaveBeenCalled()
+  })
+
+  it('abandons the rest of a batch when a pending confirmation is dismissed', async () => {
+    store.getState().openTab(scratchTab)
+    store.getState().setPendingConfirmation(scratchTab.id, {
+      sql: 'DELETE FROM widgets',
+      statements: [],
+      batchIndex: 1,
+    })
+    store.getState().initBatchResults(scratchTab.id, ['select 1', 'DELETE FROM widgets', 'select 3'])
+    const { user } = renderToolbar()
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(store.getState().pendingConfirmations[scratchTab.id]).toBeUndefined()
+    expect(store.getState().results[scratchTab.id][1]).toEqual({
+      status: 'skipped',
+      sql: 'DELETE FROM widgets',
+    })
+    expect(store.getState().results[scratchTab.id][2]).toEqual({ status: 'skipped', sql: 'select 3' })
   })
 })

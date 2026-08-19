@@ -28,6 +28,7 @@ import { useToolbarQueryAction } from './useToolbarQueryAction'
 import { UnsafeQueryDialog } from './UnsafeQueryDialog'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { formatEditorSql, sqlFormatterForDriver } from './sqlFormatting'
+import { splitSqlStatements } from './sqlStatements'
 
 type IdeToolbarProps = {
   orgSlug: string
@@ -54,6 +55,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
   const clearPendingConfirmation = useIde((s) => s.clearPendingConfirmation)
+  const abandonPendingBatchConfirmation = useIde((s) => s.abandonPendingBatchConfirmation)
   const pendingConfirmation = useIde((s) =>
     activeTabId ? s.pendingConfirmations[activeTabId] : undefined,
   )
@@ -156,6 +158,13 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     setConfirmExportSql(sql)
   }
 
+  function handleRunAll() {
+    const text = queryAction.resolveDocumentText()
+    const sqls = splitSqlStatements(text)
+    if (sqls.length === 0) return
+    void queryAction.runAll(sqls)
+  }
+
   const runDisabled = !activeTab || !activeConnection || queryAction.isRunning
   return (
     <>
@@ -211,6 +220,10 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
                   <Icon name="chevron-down" size={12} />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={handleRunAll} disabled={runDisabled}>
+                    <Icon name="play" size={13} data-icon="inline-start" />
+                    Run All
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleExportClick}>
                     <Icon name="download-01" size={13} data-icon="inline-start" />
                     Export
@@ -324,12 +337,24 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         <UnsafeQueryDialog
           open
           onOpenChange={(open) => {
-            if (!open) clearPendingConfirmation(activeTab.id)
+            if (!open) {
+              if (pendingConfirmation.batchIndex !== undefined) {
+                abandonPendingBatchConfirmation(activeTab.id)
+              } else {
+                clearPendingConfirmation(activeTab.id)
+              }
+            }
           }}
           sql={pendingConfirmation.sql}
           onConfirm={() => {
-            clearPendingConfirmation(activeTab.id)
-            void queryAction.run(true)
+            if (pendingConfirmation.batchIndex !== undefined) {
+              const index = pendingConfirmation.batchIndex
+              clearPendingConfirmation(activeTab.id)
+              void queryAction.confirmAt(index)
+            } else {
+              clearPendingConfirmation(activeTab.id)
+              void queryAction.run(true)
+            }
           }}
         />
       )}

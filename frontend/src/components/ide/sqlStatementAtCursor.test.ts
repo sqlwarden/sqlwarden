@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sqlStatementAtCursor, countSqlStatements } from './sqlStatements'
+import { sqlStatementAtCursor, countSqlStatements, splitSqlStatements } from './sqlStatements'
 
 // Helper: find the index of the Nth occurrence of a substring.
 function nthIndex(text: string, sub: string, n: number): number {
@@ -291,5 +291,47 @@ describe('countSqlStatements', () => {
 
   it('trailing semicolon with nothing after does not count as a second statement', () => {
     expect(countSqlStatements('SELECT 1;   ')).toBe(1)
+  })
+})
+
+describe('splitSqlStatements', () => {
+  it('returns an empty array for empty text', () => {
+    expect(splitSqlStatements('')).toEqual([])
+  })
+
+  it('returns an empty array for whitespace-only text', () => {
+    expect(splitSqlStatements('   \n\t  ')).toEqual([])
+  })
+
+  it('splits multiple semicolon-terminated statements', () => {
+    expect(splitSqlStatements('select 1;\nselect 2;\nselect 3;')).toEqual([
+      'select 1',
+      'select 2',
+      'select 3',
+    ])
+  })
+
+  it('includes a trailing statement with no terminating semicolon', () => {
+    expect(splitSqlStatements('select 1;\nselect 2')).toEqual(['select 1', 'select 2'])
+  })
+
+  it('ignores semicolons inside single- and double-quoted strings', () => {
+    expect(splitSqlStatements(`select 'a;b';\nselect "c;d";`)).toEqual([
+      "select 'a;b'",
+      'select "c;d"',
+    ])
+  })
+
+  it('ignores semicolons inside line and block comments', () => {
+    const text = 'select 1; -- comment; with semicolon\nselect 2 /* block; comment */;\nselect 3;'
+    expect(splitSqlStatements(text)).toEqual([
+      'select 1',
+      '-- comment; with semicolon\nselect 2 /* block; comment */',
+      'select 3',
+    ])
+  })
+
+  it('drops empty statements produced by consecutive semicolons', () => {
+    expect(splitSqlStatements('select 1;;\n;\nselect 2;')).toEqual(['select 1', 'select 2'])
   })
 })
