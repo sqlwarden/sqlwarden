@@ -21,6 +21,8 @@ func TestAppIconIsNativeReady(t *testing.T) {
 		t.Fatalf("app icon size = %dx%d, want 1024x1024", bounds.Dx(), bounds.Dy())
 	}
 
+	minX, minY := bounds.Max.X, bounds.Max.Y
+	maxX, maxY := bounds.Min.X, bounds.Min.Y
 	var hasBlue, hasWhite bool
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -28,12 +30,27 @@ func TestAppIconIsNativeReady(t *testing.T) {
 			if alpha < 0x8000 {
 				continue
 			}
+			if x < minX {
+				minX = x
+			}
+			if x > maxX {
+				maxX = x
+			}
+			if y < minY {
+				minY = y
+			}
+			if y > maxY {
+				maxY = y
+			}
 			hasBlue = hasBlue || (red < 0x1000 && green > 0x5000 && blue > 0xC000)
 			hasWhite = hasWhite || (red > 0xE000 && green > 0xE000 && blue > 0xE000)
 		}
 	}
 	if !hasBlue || !hasWhite {
 		t.Fatal("app icon must contain an opaque brand-blue background and white mark")
+	}
+	if minX < 90 || minY < 90 || maxX > 933 || maxY > 933 {
+		t.Fatalf("app icon opaque bounds = (%d,%d)-(%d,%d), want native macOS padding", minX, minY, maxX, maxY)
 	}
 }
 
