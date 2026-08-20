@@ -7,12 +7,14 @@ import { createIdeStore, IdeStoreContext } from './useIdeStore'
 import { useRunAllStatements } from './useRunAllStatements'
 
 const mocks = vi.hoisted(() => ({
+  closeCursor: vi.fn(),
   ensureSession: vi.fn(),
   runQuery: vi.fn(),
   recordHistory: vi.fn(),
 }))
 
 vi.mock('#/lib/api/query', () => ({
+  closeConnectionQueryCursor: mocks.closeCursor,
   runConnectionQuery: mocks.runQuery,
 }))
 vi.mock('./sessionErrors', () => ({ useEnsureSession: () => mocks.ensureSession }))
@@ -29,6 +31,7 @@ const result: ResultSet = {
 
 describe('useRunAllStatements', () => {
   beforeEach(() => {
+    mocks.closeCursor.mockReset().mockResolvedValue(undefined)
     mocks.runQuery.mockReset().mockResolvedValue(result)
     mocks.recordHistory.mockReset()
     mocks.ensureSession
@@ -45,7 +48,7 @@ describe('useRunAllStatements', () => {
     }
   }
 
-  it('runs every statement in order and stores one ok result per index', async () => {
+  it('runs every statement in order as one run and stores one ok result per index', async () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
     const { result: hook } = renderHook(() => useRunAllStatements('acme', 3, 'tab-1', 7), {
       wrapper: wrapper(store),
@@ -63,14 +66,16 @@ describe('useRunAllStatements', () => {
       'select 1',
       expect.objectContaining({ useCursor: true, confirmUnsafe: false }),
     )
-    const stored = store.getState().results['tab-1']
+    const runs = store.getState().resultRuns['tab-1']
+    expect(runs).toHaveLength(1)
+    const stored = runs[0].results
     expect(stored).toHaveLength(2)
     expect(stored[0]).toEqual(expect.objectContaining({ status: 'ok', sql: 'select 1' }))
     expect(stored[1]).toEqual(expect.objectContaining({ status: 'ok', sql: 'select 2' }))
     expect(store.getState().runningTabs['tab-1']).toBe(false)
   })
 
-  it('resumes a paused batch from confirmAt using the last-seen statements', async () => {
+  it('resumes a paused run from confirmAt using the last-seen statements', async () => {
     mocks.runQuery.mockRejectedValueOnce(
       new ApiError('Confirm to run it anyway.', 422, {
         code: 'unsafe_query_confirmation_required',
@@ -83,9 +88,8 @@ describe('useRunAllStatements', () => {
     })
 
     await act(async () => hook.current.runAll(['DELETE FROM widgets', 'select 2']))
-    expect(store.getState().pendingConfirmations['tab-1']).toEqual(
-      expect.objectContaining({ batchIndex: 0 }),
-    )
+    const pending = store.getState().pendingConfirmations['tab-1']
+    expect(pending).toEqual(expect.objectContaining({ statementIndex: 0 }))
 
     mocks.runQuery.mockResolvedValue(result)
     await act(async () => hook.current.confirmAt(0))
@@ -98,9 +102,30 @@ describe('useRunAllStatements', () => {
       'select 2',
       expect.objectContaining({ useCursor: true, confirmUnsafe: false }),
     )
-    const stored = store.getState().results['tab-1']
+    const runs = store.getState().resultRuns['tab-1']
+    expect(runs).toHaveLength(1)
+    expect(runs[0].id).toBe(pending?.runId)
+    const stored = runs[0].results
     expect(stored[0]).toEqual(expect.objectContaining({ status: 'ok', sql: 'DELETE FROM widgets' }))
     expect(stored[1]).toEqual(expect.objectContaining({ status: 'ok', sql: 'select 2' }))
+  })
+
+  it('confirmAt no-ops when the pending confirmation belongs to a different run', async () => {
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const { result: hook } = renderHook(() => useRunAllStatements('acme', 3, 'tab-1', 7), {
+      wrapper: wrapper(store),
+    })
+
+    store.getState().setPendingConfirmation('tab-1', {
+      sql: 'select 1',
+      statements: [],
+      runId: 'someone-elses-run',
+      statementIndex: 0,
+    })
+
+    await act(async () => hook.current.confirmAt(0))
+
+    expect(mocks.runQuery).not.toHaveBeenCalled()
   })
 
   it('cancels the in-flight batch by aborting its controller', () => {

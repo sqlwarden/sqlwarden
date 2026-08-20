@@ -1,7 +1,8 @@
 import { useCallback, useRef } from 'react'
 import { runConnectionQuery } from '#/lib/api/query'
-import { runStatementBatch } from './runStatementBatch'
+import { runStatementBatch, type BatchExecutionDependencies } from './runStatementBatch'
 import { useEnsureSession } from './sessionErrors'
+import { useBeginRun } from './useBeginRun'
 import { useHistoryRecorder } from './useHistoryRecorder'
 import { useIde } from './useIdeStore'
 
@@ -13,18 +14,63 @@ export function useRunAllStatements(
 ) {
   const ensureSession = useEnsureSession(orgSlug, workspaceId)
   const recordHistory = useHistoryRecorder(orgSlug, workspaceId, connectionId ?? 0)
+  const beginRun = useBeginRun(orgSlug, workspaceId, tabId, connectionId)
   const previousController = useIde((state) => (tabId ? state.abortControllers[tabId] : undefined))
   const isRunning = useIde((state) => Boolean(tabId && state.runningTabs[tabId]))
-  const initBatch = useIde((state) => state.initBatchResults)
-  const setStatementResult = useIde((state) => state.setStatementResult)
-  const markRemainingSkipped = useIde((state) => state.markRemainingSkipped)
+  const pendingRunId = useIde((state) =>
+    tabId ? state.pendingConfirmations[tabId]?.runId : undefined,
+  )
+  const setRunStatementResult = useIde((state) => state.setRunStatementResult)
+  const markRunRemainingSkipped = useIde((state) => state.markRunRemainingSkipped)
   const setRunning = useIde((state) => state.setTabRunning)
   const setController = useIde((state) => state.setTabController)
   const setPendingConfirmation = useIde((state) => state.setPendingConfirmation)
 
   const sqlsRef = useRef<string[]>([])
+  const runIdRef = useRef('')
 
   const cancel = useCallback(() => previousController?.abort(), [previousController])
+
+  const executeBatch = useCallback(
+    (
+      sqls: string[],
+      controller: AbortController,
+      options: { runId: string; startAt?: number; confirmUnsafeAt?: number },
+    ) => {
+      if (!tabId || !connectionId) return Promise.resolve('')
+      const deps: BatchExecutionDependencies = {
+        ensureSession,
+        runStatement: (sessionId, sql, confirmUnsafe, signal) =>
+          runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, sql, {
+            useCursor: true,
+            confirmUnsafe,
+            signal,
+          }),
+        beginRun: (_tabId, batchSqls) => beginRun(batchSqls),
+        setRunStatementResult,
+        markRunRemainingSkipped,
+        setRunning,
+        setController,
+        setPendingConfirmation,
+        recordHistory,
+      }
+      return runStatementBatch({ tabId, connectionId, sqls, controller, ...options }, deps)
+    },
+    [
+      beginRun,
+      connectionId,
+      ensureSession,
+      markRunRemainingSkipped,
+      orgSlug,
+      recordHistory,
+      setController,
+      setPendingConfirmation,
+      setRunStatementResult,
+      setRunning,
+      tabId,
+      workspaceId,
+    ],
+  )
 
   const runAll = useCallback(
     async (sqls: string[]) => {
@@ -34,86 +80,28 @@ export function useRunAllStatements(
       sqlsRef.current = sqls
 
       const controller = new AbortController()
-      await runStatementBatch(
-        { tabId, connectionId, sqls, controller },
-        {
-          ensureSession,
-          runStatement: (sessionId, sql, confirmUnsafe, signal) =>
-            runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, sql, {
-              useCursor: true,
-              confirmUnsafe,
-              signal,
-            }),
-          initBatch,
-          setStatementResult,
-          markRemainingSkipped,
-          setRunning,
-          setController,
-          setPendingConfirmation,
-          recordHistory,
-        },
-      )
+      const runId = beginRun(sqls)
+      runIdRef.current = runId
+      await executeBatch(sqls, controller, { runId })
     },
-    [
-      connectionId,
-      ensureSession,
-      initBatch,
-      isRunning,
-      markRemainingSkipped,
-      orgSlug,
-      previousController,
-      recordHistory,
-      setController,
-      setPendingConfirmation,
-      setRunning,
-      setStatementResult,
-      tabId,
-      workspaceId,
-    ],
+    [beginRun, connectionId, executeBatch, isRunning, previousController, tabId],
   )
 
   const confirmAt = useCallback(
     async (index: number) => {
-      if (!tabId || !connectionId || isRunning) return
+      if (!tabId || !connectionId) return
+      if (!runIdRef.current || runIdRef.current !== pendingRunId) return
       const sqls = sqlsRef.current
       if (sqls.length === 0) return
 
       const controller = new AbortController()
-      await runStatementBatch(
-        { tabId, connectionId, sqls, controller, startAt: index, confirmUnsafeAt: index },
-        {
-          ensureSession,
-          runStatement: (sessionId, sql, confirmUnsafe, signal) =>
-            runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, sql, {
-              useCursor: true,
-              confirmUnsafe,
-              signal,
-            }),
-          initBatch,
-          setStatementResult,
-          markRemainingSkipped,
-          setRunning,
-          setController,
-          setPendingConfirmation,
-          recordHistory,
-        },
-      )
+      await executeBatch(sqls, controller, {
+        runId: runIdRef.current,
+        startAt: index,
+        confirmUnsafeAt: index,
+      })
     },
-    [
-      connectionId,
-      ensureSession,
-      initBatch,
-      isRunning,
-      markRemainingSkipped,
-      orgSlug,
-      recordHistory,
-      setController,
-      setPendingConfirmation,
-      setRunning,
-      setStatementResult,
-      tabId,
-      workspaceId,
-    ],
+    [connectionId, executeBatch, pendingRunId, tabId],
   )
 
   return { runAll, confirmAt, cancel, isRunning }

@@ -5,10 +5,15 @@ import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { Icon, type AppIcon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/components/ui/resizable'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { cn } from '#/lib/utils'
-import type { ResultColumn, ResultValue, Workspace } from '#/lib/api/types'
-import { useIde, activeTabId as selectActiveTabId, type QueryResult } from './useIdeStore'
+import type { Connection, ResultColumn, ResultValue, Workspace } from '#/lib/api/types'
+import {
+  useIde,
+  activeTabId as selectActiveTabId,
+  type QueryResult,
+  type ResultRun,
+} from './useIdeStore'
+import { closeRunCursors } from './resultRunHistory'
 import { useContextMenuOpener } from '#/components/ui/context-menu'
 import { copyWithToast, rowToTsv, rowToJson, valuesToLines } from './contextMenus/clipboard'
 import { buildCellMenu, buildRowMenu, buildColumnHeaderMenu } from './contextMenus/resultMenu'
@@ -39,40 +44,55 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
   const activeTabId = useIde((s) =>
     s.activeWorkspaceId ? selectActiveTabId(s, s.activeWorkspaceId) : undefined,
   )
-  const results = useIde((s) => s.results)
-  const selectedResultIndex = useIde((s) => s.selectedResultIndex)
-  const setSelectedResultIndex = useIde((s) => s.setSelectedResultIndex)
+  const tabs = useIde((s) => s.tabs)
+  const resultRuns = useIde((s) => s.resultRuns)
+  const selectedRunId = useIde((s) => s.selectedRunId)
+  const setSelectedRun = useIde((s) => s.setSelectedRun)
+  const setSelectedIndexInRun = useIde((s) => s.setSelectedIndexInRun)
+  const closeRunTab = useIde((s) => s.closeRunTab)
 
-  const resultList: QueryResult[] = activeTabId ? (results[activeTabId] ?? []) : []
-  const totalRows = resultList.reduce(
-    (sum, entry) => (entry.status === 'ok' ? sum + (entry.data.rows?.length ?? 0) : sum),
-    0,
-  )
-  const rawSelectedIndex = activeTabId ? (selectedResultIndex[activeTabId] ?? 0) : 0
+  // Same query key the toolbar uses, so this is a cache hit, not a new request.
+  const connectionsQuery = useQuery(allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id))
+  const connections = connectionsQuery.data?.items ?? []
+
+  const runs: ResultRun[] = activeTabId ? (resultRuns[activeTabId] ?? []) : []
+  // The selected run may have been evicted; fall back to the latest one.
+  const activeRun =
+    runs.find((r) => r.id === (activeTabId ? selectedRunId[activeTabId] : undefined)) ??
+    runs[runs.length - 1]
+  const resultList: QueryResult[] = activeRun?.results ?? []
+  const rawSelectedIndex = activeRun?.selectedIndex ?? 0
   const selectedIndex = Math.min(Math.max(rawSelectedIndex, 0), Math.max(resultList.length - 1, 0))
 
   function toggleMaximize() {
     setMaximizedPane(maximizedPane === 'results' ? null : 'results')
   }
 
+  function handleSelectRun(runId: string) {
+    if (activeTabId) setSelectedRun(activeTabId, runId)
+  }
+
+  function handleCloseRun(runId: string) {
+    if (!activeTabId) return
+    const run = runs.find((r) => r.id === runId)
+    closeRunTab(activeTabId, runId)
+    if (run) {
+      const tab = tabs.find((t) => t.id === activeTabId)
+      void closeRunCursors(orgSlug, workspace.id, tab?.connectionId, run)
+    }
+  }
+
   return (
-    <Tabs defaultValue="results" className="flex min-h-0 flex-1 flex-col gap-0">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-background px-1">
-        <TabsList variant="line" className="h-full gap-0 rounded-none p-0">
-          <TabsTrigger value="results" className="h-full rounded-none px-3 text-xs gap-1.5">
-            <Icon name="table" size={13} />
-            Results
-            {totalRows > 0 && (
-              <span className="ml-0.5 rounded bg-primary/10 px-1 text-[10px] font-medium text-primary tabular-nums">
-                {totalRows}
-              </span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="explain" className="h-full rounded-none px-3 text-xs">
-            Explain
-          </TabsTrigger>
-        </TabsList>
-        <div className="flex items-center gap-0.5 pr-1">
+    <div className="flex min-h-0 flex-1 flex-col gap-0">
+      <div className="flex h-8 shrink-0 items-center bg-sidebar">
+        <RunTabStrip
+          runs={runs}
+          connections={connections}
+          activeRunId={activeRun?.id}
+          onSelect={handleSelectRun}
+          onClose={handleCloseRun}
+        />
+        <div className="flex shrink-0 items-center gap-0.5 border-l border-border px-1">
           <Tip
             label={maximizedPane === 'results' ? 'Restore results panel' : 'Maximize results panel'}
           >
@@ -100,39 +120,59 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
         </div>
       </div>
 
-      <TabsContent value="results" className="min-h-0 flex-1 overflow-hidden m-0 p-0">
+      <div className="min-h-0 flex-1 overflow-hidden">
         <ResultsContent
-          key={activeTabId}
+          key={`${activeTabId ?? ''}-${activeRun?.id ?? ''}`}
           orgSlug={orgSlug}
           workspace={workspace}
           activeTabId={activeTabId}
+          runId={activeRun?.id ?? ''}
           results={resultList}
           selectedIndex={selectedIndex}
-          onSelectIndex={(index) => activeTabId && setSelectedResultIndex(activeTabId, index)}
+          connections={connections}
+          runConnectionId={activeRun?.connectionId}
+          onSelectIndex={(index) =>
+            activeTabId && activeRun && setSelectedIndexInRun(activeTabId, activeRun.id, index)
+          }
         />
-      </TabsContent>
-      <TabsContent value="explain" className="min-h-0 flex-1 overflow-hidden m-0 p-0">
-        <StubPane message="Execution plan coming soon." />
-      </TabsContent>
-    </Tabs>
+      </div>
+    </div>
   )
 }
 
 // ─── Result content switcher ────────────────────────────────────────────────
 
+/** A result's own `connectionId` (only 'ok' results carry one) takes priority
+ *  over the run's connectionId, so a statement keeps the connection it actually
+ *  ran against even if reused across runs. */
+function resolveResultConnection(
+  connections: Connection[],
+  result: QueryResult,
+  runConnectionId: number | undefined,
+): Connection | undefined {
+  const id = (result.status === 'ok' ? result.connectionId : undefined) ?? runConnectionId
+  return connections.find((c) => c.id === id)
+}
+
 function ResultsContent({
   orgSlug,
   workspace,
   activeTabId,
+  runId,
   results,
   selectedIndex,
+  connections,
+  runConnectionId,
   onSelectIndex,
 }: {
   orgSlug: string
   workspace: Workspace
   activeTabId?: string
+  runId: string
   results: QueryResult[]
   selectedIndex: number
+  connections: Connection[]
+  runConnectionId: number | undefined
   onSelectIndex: (index: number) => void
 }) {
   if (results.length === 0) return <EmptyState />
@@ -144,8 +184,10 @@ function ResultsContent({
           orgSlug={orgSlug}
           workspace={workspace}
           activeTabId={activeTabId}
+          runId={runId}
           result={results[0]}
           index={0}
+          connection={resolveResultConnection(connections, results[0], runConnectionId)}
         />
       </div>
     )
@@ -159,8 +201,10 @@ function ResultsContent({
           orgSlug={orgSlug}
           workspace={workspace}
           activeTabId={activeTabId}
+          runId={runId}
           result={results[selectedIndex]}
           index={selectedIndex}
+          connection={resolveResultConnection(connections, results[selectedIndex], runConnectionId)}
         />
       </div>
     </div>
@@ -208,6 +252,88 @@ function resultLabel(result: QueryResult, index: number): string {
   return 'sql' in result && result.sql
     ? result.sql.replace(/\s+/g, ' ').trim()
     : `Statement ${index + 1}`
+}
+
+// ─── Run tabs ─────────────────────────────────────────────────────────────────
+
+function runStatus(results: QueryResult[]): QueryResult['status'] {
+  if (results.some((r) => r.status === 'running')) return 'running'
+  if (results.some((r) => r.status === 'pending')) return 'pending'
+  if (results.some((r) => r.status === 'error')) return 'error'
+  if (results.some((r) => r.status === 'cancelled')) return 'cancelled'
+  if (results.length > 0 && results.every((r) => r.status === 'skipped')) return 'skipped'
+  return 'ok'
+}
+
+function runTabLabel(run: ResultRun, index: number): string {
+  const first = run.results[0]
+  const sql = first && 'sql' in first ? first.sql : undefined
+  return sql ? sql.replace(/\s+/g, ' ').trim() : `Run ${index + 1}`
+}
+
+function RunTabStrip({
+  runs,
+  connections,
+  activeRunId,
+  onSelect,
+  onClose,
+}: {
+  runs: ResultRun[]
+  connections: Connection[]
+  activeRunId?: string
+  onSelect: (runId: string) => void
+  onClose: (runId: string) => void
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Runs"
+      className="flex h-8 min-w-0 flex-1 items-center gap-0 overflow-x-auto"
+    >
+      {runs.map((run, index) => {
+        const status = runStatus(run.results)
+        const icon = STATUS_ICON[status]
+        const selected = run.id === activeRunId
+        const connection = connections.find((c) => c.id === run.connectionId)
+        return (
+          <div
+            key={run.id}
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onSelect(run.id)}
+            className={cn(
+              'group relative flex h-8 max-w-40 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-2.5 text-xs',
+              selected
+                ? 'bg-card text-foreground after:absolute after:left-0 after:right-0 after:top-0 after:h-[2px] after:bg-primary'
+                : 'text-muted-foreground hover:bg-card/50 hover:text-foreground',
+            )}
+          >
+            <Icon name={icon.name} size={11} className={cn('shrink-0', icon.className)} />
+            {connection && (
+              <span className="shrink-0" title={connection.name}>
+                <DriverBadge driver={connection.driver} size="sm" className="size-3" />
+              </span>
+            )}
+            <span className="min-w-0 flex-1 truncate font-mono">{runTabLabel(run, index)}</span>
+            <button
+              type="button"
+              aria-label={`Close run ${index + 1}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                onClose(run.id)
+              }}
+              className={cn(
+                'flex size-4 shrink-0 items-center justify-center rounded transition-colors hover:bg-muted hover:text-foreground',
+                selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+              )}
+            >
+              <Icon name="cancel-01" size={10} />
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 function ResultsSidebar({
@@ -263,14 +389,18 @@ function ResultEntry({
   orgSlug,
   workspace,
   activeTabId,
+  runId,
   result,
   index,
+  connection,
 }: {
   orgSlug: string
   workspace: Workspace
   activeTabId?: string
+  runId: string
   result: QueryResult
   index: number
+  connection: Connection | undefined
 }) {
   switch (result.status) {
     case 'idle':
@@ -280,27 +410,67 @@ function ResultEntry({
     case 'running':
       return <RunningState />
     case 'cancelled':
-      return <CancelledState />
+      return (
+        <CancelledState
+          sql={result.sql}
+          orgSlug={orgSlug}
+          workspaceId={workspace.id}
+          connection={connection}
+        />
+      )
     case 'skipped':
-      return <SkippedState sql={result.sql} orgSlug={orgSlug} workspaceId={workspace.id} />
+      return (
+        <SkippedState
+          sql={result.sql}
+          orgSlug={orgSlug}
+          workspaceId={workspace.id}
+          connection={undefined}
+        />
+      )
     case 'error':
-      return <ErrorState message={result.message} />
+      return (
+        <ErrorState
+          sql={result.sql}
+          message={result.message}
+          orgSlug={orgSlug}
+          workspaceId={workspace.id}
+          connection={connection}
+        />
+      )
     case 'ok':
       return (
         <ResultSetView
           orgSlug={orgSlug}
           workspace={workspace}
           activeTabId={activeTabId}
+          runId={runId}
           result={result}
           index={index}
+          connection={connection}
         />
       )
   }
 }
 
-function CancelledState() {
+function CancelledState({
+  sql,
+  orgSlug,
+  workspaceId,
+  connection,
+}: {
+  sql: string
+  orgSlug: string
+  workspaceId: number
+  connection: Connection | undefined
+}) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
+      <ResultSqlCaption
+        sql={sql}
+        orgSlug={orgSlug}
+        workspaceId={workspaceId}
+        connection={connection}
+      />
       <div className="min-h-0 flex-1 overflow-auto p-3">
         <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 p-3">
           <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
@@ -350,9 +520,27 @@ function RunningState() {
   )
 }
 
-function ErrorState({ message }: { message: string }) {
+function ErrorState({
+  sql,
+  message,
+  orgSlug,
+  workspaceId,
+  connection,
+}: {
+  sql: string
+  message: string
+  orgSlug: string
+  workspaceId: number
+  connection: Connection | undefined
+}) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
+      <ResultSqlCaption
+        sql={sql}
+        orgSlug={orgSlug}
+        workspaceId={workspaceId}
+        connection={connection}
+      />
       <div className="min-h-0 flex-1 overflow-auto p-3">
         <div className="flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
           <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-destructive" />
@@ -403,10 +591,12 @@ function SkippedState({
   sql,
   orgSlug,
   workspaceId,
+  connection,
 }: {
   sql: string
   orgSlug: string
   workspaceId: number
+  connection: Connection | undefined
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
@@ -414,7 +604,7 @@ function SkippedState({
         sql={sql}
         orgSlug={orgSlug}
         workspaceId={workspaceId}
-        connectionId={undefined}
+        connection={connection}
       />
       <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
         Skipped — an earlier statement stopped the run.
@@ -427,14 +617,18 @@ function ResultSetView({
   orgSlug,
   workspace,
   activeTabId,
+  runId,
   result,
   index,
+  connection,
 }: {
   orgSlug: string
   workspace: Workspace
   activeTabId?: string
+  runId: string
   result: Extract<QueryResult, { status: 'ok' }>
   index: number
+  connection: Connection | undefined
 }) {
   const { durationMs } = result
   const columns = result.data.columns ?? []
@@ -464,17 +658,13 @@ function ResultSetView({
   const activeTab = activeTabId ? tabs.find((t) => t.id === activeTabId) : undefined
   const queryCursorId = result.data.query_cursor_id
   const cursorConnectionId = result.connectionId ?? activeTab?.connectionId
-  // Same query key the toolbar uses, so this is a cache hit, not a new request.
-  const connectionsQuery = useQuery(allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id))
-  const executedConnection = connectionsQuery.data?.items.find(
-    (c) => c.id === (result.connectionId ?? activeTab?.connectionId),
-  )
   const { handleGridScroll } = useResultCursorPaging({
     activeTabId,
     connectionId: cursorConnectionId,
     index,
     orgSlug,
     result,
+    runId,
     workspaceId: workspace.id,
   })
 
@@ -685,7 +875,7 @@ function ResultSetView({
           sql={result.sql}
           orgSlug={orgSlug}
           workspaceId={workspace.id}
-          connectionId={executedConnection?.id}
+          connection={connection}
         />
         <div className="flex min-h-0 flex-1 items-center justify-center">
           <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
@@ -780,7 +970,8 @@ function ResultSetView({
         sql={result.sql}
         orgSlug={orgSlug}
         workspaceId={workspace.id}
-        connectionId={executedConnection?.id}
+        connection={connection}
+        showConnection={false}
       />
       {/*
        * Always render the table inside ResizablePanelGroup so the table's
@@ -827,6 +1018,18 @@ function ResultSetView({
       </ResizablePanelGroup>
 
       <div className="flex h-6 shrink-0 items-center border-t border-border bg-sidebar px-3 text-[11px] text-muted-foreground">
+        {connection && (
+          <>
+            <span
+              className="flex min-w-0 max-w-32 shrink-0 items-center gap-1 tabular-nums"
+              title={connection.name}
+            >
+              <DriverBadge driver={connection.driver} size="sm" className="size-3 shrink-0" />
+              <span className="min-w-0 truncate">{connection.name}</span>
+            </span>
+            <span className="mx-1.5 shrink-0 opacity-40">·</span>
+          </>
+        )}
         <span className="shrink-0 tabular-nums">
           {rows.length === 1 ? '1 row' : `${rows.length} rows`}
           {queryCursorId ? ' fetched' : ''}
@@ -845,20 +1048,6 @@ function ResultSetView({
             <span className="min-w-0 truncate">{result.cursorMessage}</span>
           </>
         )}
-        <div className="min-w-3 flex-1" />
-        {executedConnection && (
-          <span
-            className="flex min-w-0 max-w-56 items-center gap-1.5"
-            title={executedConnection.name}
-          >
-            <DriverBadge
-              driver={executedConnection.driver}
-              size="sm"
-              className="size-3.5 shrink-0"
-            />
-            <span className="truncate">{executedConnection.name}</span>
-          </span>
-        )}
       </div>
     </div>
   )
@@ -871,12 +1060,14 @@ function ResultSqlCaption({
   sql,
   orgSlug,
   workspaceId,
-  connectionId,
+  connection,
+  showConnection = true,
 }: {
   sql: string
   orgSlug: string
   workspaceId: number
-  connectionId: number | undefined
+  connection: Connection | undefined
+  showConnection?: boolean
 }) {
   if (!sql) return null
   return (
@@ -888,10 +1079,19 @@ function ResultSqlCaption({
       >
         {sql.replace(/\s+/g, ' ').trim()}
       </span>
+      {showConnection && connection && (
+        <span
+          className="flex min-w-0 max-w-32 shrink-0 items-center gap-1 text-[11px] text-muted-foreground"
+          title={connection.name}
+        >
+          <DriverBadge driver={connection.driver} size="sm" className="size-3 shrink-0" />
+          <span className="min-w-0 truncate">{connection.name}</span>
+        </span>
+      )}
       <ExportButton
         orgSlug={orgSlug}
         workspaceId={workspaceId}
-        connectionId={connectionId}
+        connectionId={connection?.id}
         getSql={() => sql}
         className="scale-90"
       />
@@ -1184,13 +1384,3 @@ function CellContent({
 }
 
 // ─── Value formatter ─────────────────────────────────────────────────────────
-
-// ─── Stub ─────────────────────────────────────────────────────────────────────
-
-function StubPane({ message }: { message: string }) {
-  return (
-    <div className="flex h-full items-center justify-center bg-card">
-      <p className="text-xs text-muted-foreground">{message}</p>
-    </div>
-  )
-}

@@ -14,7 +14,12 @@ const mocks = vi.hoisted(() => ({
   warning: vi.fn(),
 }))
 vi.mock('./useQueryExecution', () => ({
-  useQueryExecution: () => ({ cancel: mocks.cancel, isRunning: false, run: mocks.run }),
+  useQueryExecution: () => ({
+    cancel: mocks.cancel,
+    confirmAt: vi.fn(),
+    isRunning: false,
+    run: mocks.run,
+  }),
 }))
 vi.mock('./useRunAllStatements', () => ({
   useRunAllStatements: () => ({
@@ -145,7 +150,7 @@ describe('useToolbarQueryAction', () => {
       ),
     )
 
-    await waitFor(() => expect(mocks.run).toHaveBeenCalledWith(tab.content, undefined))
+    await waitFor(() => expect(mocks.run).toHaveBeenCalledWith(tab.content))
     expect(store.getState().maximizedPane).toBeNull()
     unmount()
     docs.disposeAll()
