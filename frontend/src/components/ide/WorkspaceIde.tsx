@@ -19,13 +19,14 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import {
   orgWorkspacesQueryOptions,
   orgEffectivePermissionsQueryOptions,
+  orgRuntimeSettingsQueryOptions,
   allOrgWorkspaceConnectionsQueryOptions,
 } from '#/lib/api/query'
 import { resolveDeepLink } from './ideDeepLink'
 import { hasAnyPermission, permission } from '#/lib/permissions'
 import { IdeTopBarControls } from './IdeTopBarControls'
 import { IdeActivityBar } from './IdeActivityBar'
-import { visibleActivities } from './ideActivities'
+import { visibleActivities, type ActivityVisibilityContext } from './ideActivities'
 import type { Workspace } from '#/lib/api/types'
 import { useSession } from '#/hooks/use-session'
 import { cn } from '#/lib/utils'
@@ -514,7 +515,12 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
   // open — regardless of which sidebar activity is visible.
   useSessionSync(orgSlug, workspace)
 
-  const activities = visibleActivities()
+  const runtimeSettings = useQuery(orgRuntimeSettingsQueryOptions(orgSlug))
+  const visibilityContext: ActivityVisibilityContext = {
+    queryHistoryMode: runtimeSettings.data?.effective.query_history_mode ?? 'backend',
+    queryFavoritesMode: runtimeSettings.data?.effective.query_favorites_mode ?? 'backend',
+  }
+  const activities = visibleActivities(visibilityContext)
   const activeActivity = activities.find((a) => a.id === activeActivityId) ?? activities[0]
 
   // Sync store → panel (e.g. on initial mount with persisted state).
@@ -531,7 +537,7 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
     const PageSurface = activeActivity.component
     return (
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <IdeActivityBar />
+        <IdeActivityBar orgSlug={orgSlug} />
         <div className="min-w-0 flex-1 overflow-hidden">
           <PageSurface orgSlug={orgSlug} workspace={workspace} />
         </div>
@@ -541,7 +547,7 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
-      <IdeActivityBar />
+      <IdeActivityBar orgSlug={orgSlug} />
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 overflow-hidden">
         <ResizablePanel
           panelRef={sidebarRef}
@@ -570,7 +576,12 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
 
 function IdeSidebar({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
   const activeActivityId = useIde((s) => s.activeActivityId)
-  const activities = visibleActivities()
+  const runtimeSettings = useQuery(orgRuntimeSettingsQueryOptions(orgSlug))
+  const visibilityContext: ActivityVisibilityContext = {
+    queryHistoryMode: runtimeSettings.data?.effective.query_history_mode ?? 'backend',
+    queryFavoritesMode: runtimeSettings.data?.effective.query_favorites_mode ?? 'backend',
+  }
+  const activities = visibleActivities(visibilityContext)
   const active =
     activities.find((a) => a.id === activeActivityId && a.mode === 'sidebar') ??
     activities.find((a) => a.mode === 'sidebar')

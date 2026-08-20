@@ -1,15 +1,31 @@
+import { useQuery } from '@tanstack/react-query'
+import { orgRuntimeSettingsQueryOptions } from '#/lib/api/query'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { useIde } from './useIdeStore'
-import { visibleActivities, type IdeActivity } from './ideActivities'
+import {
+  visibleActivities,
+  type ActivityVisibilityContext,
+  type IdeActivity,
+} from './ideActivities'
 import { Tip } from './schema-diagram/Tip'
 
-export function IdeActivityBar() {
+type IdeActivityBarProps = {
+  orgSlug: string
+}
+
+export function IdeActivityBar({ orgSlug }: IdeActivityBarProps) {
   const activeActivityId = useIde((s) => s.activeActivityId)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
   const setActiveActivity = useIde((s) => s.setActiveActivity)
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
-  const activities = visibleActivities()
+
+  const runtimeSettings = useQuery(orgRuntimeSettingsQueryOptions(orgSlug))
+  const visibilityContext: ActivityVisibilityContext = {
+    queryHistoryMode: runtimeSettings.data?.effective.query_history_mode ?? 'backend',
+    queryFavoritesMode: runtimeSettings.data?.effective.query_favorites_mode ?? 'backend',
+  }
+  const activities = visibleActivities(visibilityContext)
 
   function handleClick(activity: IdeActivity) {
     const isActive = activity.id === activeActivityId

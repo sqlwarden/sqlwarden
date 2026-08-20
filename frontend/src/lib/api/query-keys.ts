@@ -192,4 +192,48 @@ export const queryKeys = {
       ref.kind,
       ref.name,
     ] as const,
+  orgConnectionQueryHistoryScope: (
+    slug: string,
+    workspaceId: string | number,
+    connectionId: string | number,
+  ) => ['org-connection-query-history', slug, workspaceId, connectionId] as const,
+  orgConnectionQueryHistory: (
+    slug: string,
+    workspaceId: string | number,
+    connectionId: string | number,
+    query?: ListQuery,
+  ) =>
+    [
+      ...queryKeys.orgConnectionQueryHistoryScope(slug, workspaceId, connectionId),
+      query ?? {},
+    ] as const,
+  orgWorkspaceQueryFavoritesScope: (slug: string, workspaceId: string | number) =>
+    ['org-workspace-query-favorites', slug, workspaceId] as const,
+  orgWorkspaceQueryFavorites: (slug: string, workspaceId: string | number, search?: string) =>
+    [...queryKeys.orgWorkspaceQueryFavoritesScope(slug, workspaceId), search ?? ''] as const,
+  orgWorkspaceQueryHistoryScope: (slug: string, workspaceId: string | number) =>
+    ['org-workspace-query-history', slug, workspaceId] as const,
+  orgWorkspaceQueryHistory: (
+    slug: string,
+    workspaceId: string | number,
+    connectionId: string | number | undefined,
+    search?: string,
+  ) =>
+    [
+      ...queryKeys.orgWorkspaceQueryHistoryScope(slug, workspaceId),
+      connectionId ?? 'all',
+      search ?? '',
+    ] as const,
+  localQueryHistoryScope: (workspaceId: string | number) =>
+    ['local-query-history', workspaceId] as const,
+  localQueryHistory: (
+    workspaceId: string | number,
+    connectionId: number | undefined,
+    search?: string,
+  ) =>
+    [
+      ...queryKeys.localQueryHistoryScope(workspaceId),
+      connectionId ?? 'all',
+      search ?? '',
+    ] as const,
 }

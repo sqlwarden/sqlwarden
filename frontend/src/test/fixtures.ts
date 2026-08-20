@@ -75,6 +75,10 @@ export function instanceSettingsFixture(
     schema_snapshot_freshness_seconds: 3_600,
     file_revisions_enabled: true,
     file_revisions_keep_latest: 10,
+    query_history_mode: 'backend',
+    query_history_retention_count: 500,
+    query_history_retention_count_max: 5_000,
+    query_favorites_mode: 'backend',
     error_notification_email: '',
     log_level: 'info',
     database_query_tracing_enabled: false,
@@ -125,6 +129,9 @@ export function organizationRuntimeSettingsFixture(
       schema_snapshot_freshness_seconds: null,
       file_revisions_enabled: null,
       file_revisions_keep_latest: null,
+      query_history_mode: null,
+      query_history_retention_count: null,
+      query_favorites_mode: null,
     },
     effective: {
       query_max_result_rows: 1_000,
@@ -134,6 +141,9 @@ export function organizationRuntimeSettingsFixture(
       schema_snapshot_freshness_seconds: 3_600,
       file_revisions_enabled: true,
       file_revisions_keep_latest: 10,
+      query_history_mode: 'backend',
+      query_history_retention_count: 500,
+      query_favorites_mode: 'backend',
     },
     constraints: {
       query_max_result_rows_max: 1_000,
@@ -143,6 +153,7 @@ export function organizationRuntimeSettingsFixture(
       schema_snapshot_freshness_seconds_min: 3_600,
       file_revisions_available: true,
       file_revisions_keep_latest_max: 10,
+      query_history_retention_count_max: 5_000,
     },
     ...overrides,
   }

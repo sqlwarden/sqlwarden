@@ -9,6 +9,14 @@ export type QueryExecutionRequest = {
   controller: AbortController
 }
 
+export type RecordHistoryInput = {
+  sqlText: string
+  status: 'ok' | 'error' | 'cancelled'
+  errorMessage?: string
+  durationMs: number
+  rowsAffected: number
+}
+
 export type QueryExecutionDependencies = {
   ensureSession: <T>(
     connectionId: number,
@@ -20,6 +28,7 @@ export type QueryExecutionDependencies = {
   setRunning: (tabId: string, running: boolean) => void
   setController: (tabId: string, controller: AbortController | null) => void
   setPendingConfirmation: (tabId: string, pending: PendingUnsafeQuery) => void
+  recordHistory: (entry: RecordHistoryInput) => void
 }
 
 export function isQueryAbort(error: unknown) {
@@ -51,19 +60,36 @@ export async function executeQuery(
       sql,
       connectionId,
     })
+    dependencies.recordHistory({
+      sqlText: sql,
+      status: 'ok',
+      durationMs: result.duration_ms,
+      rowsAffected: result.rows_affected ?? 0,
+    })
   } catch (error) {
     if (isApiError(error) && error.code === UNSAFE_QUERY_CONFIRMATION_REQUIRED) {
       dependencies.setPendingConfirmation(tabId, {
         sql,
         statements: (error.details as UnsafeStatement[] | undefined) ?? [],
       })
+    } else if (isQueryAbort(error)) {
+      dependencies.setResult(tabId, { status: 'cancelled', sql })
+      dependencies.recordHistory({
+        sqlText: sql,
+        status: 'cancelled',
+        durationMs: 0,
+        rowsAffected: 0,
+      })
     } else {
-      dependencies.setResult(
-        tabId,
-        isQueryAbort(error)
-          ? { status: 'cancelled', sql }
-          : { status: 'error', message: errorMessage(error, 'Query failed'), sql },
-      )
+      const message = errorMessage(error, 'Query failed')
+      dependencies.setResult(tabId, { status: 'error', message, sql })
+      dependencies.recordHistory({
+        sqlText: sql,
+        status: 'error',
+        errorMessage: message,
+        durationMs: 0,
+        rowsAffected: 0,
+      })
     }
   } finally {
     dependencies.setController(tabId, null)

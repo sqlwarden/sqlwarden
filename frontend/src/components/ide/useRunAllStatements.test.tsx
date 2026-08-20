@@ -9,12 +9,14 @@ import { useRunAllStatements } from './useRunAllStatements'
 const mocks = vi.hoisted(() => ({
   ensureSession: vi.fn(),
   runQuery: vi.fn(),
+  recordHistory: vi.fn(),
 }))
 
 vi.mock('#/lib/api/query', () => ({
   runConnectionQuery: mocks.runQuery,
 }))
 vi.mock('./sessionErrors', () => ({ useEnsureSession: () => mocks.ensureSession }))
+vi.mock('./useHistoryRecorder', () => ({ useHistoryRecorder: () => mocks.recordHistory }))
 
 const result: ResultSet = {
   columns: [],
@@ -28,10 +30,12 @@ const result: ResultSet = {
 describe('useRunAllStatements', () => {
   beforeEach(() => {
     mocks.runQuery.mockReset().mockResolvedValue(result)
+    mocks.recordHistory.mockReset()
     mocks.ensureSession
       .mockReset()
       .mockImplementation(
-        async (_connectionId: number, run: (sessionId: string) => Promise<unknown>) => run('session-1'),
+        async (_connectionId: number, run: (sessionId: string) => Promise<unknown>) =>
+          run('session-1'),
       )
   })
 

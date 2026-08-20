@@ -2,6 +2,8 @@ import type {
   OrganizationRuntimeOverrideValues,
   OrganizationRuntimeSettings,
   OrganizationRuntimeSettingsPatch,
+  QueryFavoritesMode,
+  QueryHistoryMode,
 } from '#/lib/api/types'
 
 export interface OverrideFieldState<T> {
@@ -17,6 +19,9 @@ export interface RuntimeSettingsFormState {
   schemaSnapshotFreshnessSeconds: OverrideFieldState<number>
   fileRevisionsEnabled: OverrideFieldState<boolean>
   fileRevisionsKeepLatest: OverrideFieldState<number>
+  queryHistoryMode: OverrideFieldState<QueryHistoryMode>
+  queryHistoryRetentionCount: OverrideFieldState<number>
+  queryFavoritesMode: OverrideFieldState<QueryFavoritesMode>
 }
 
 function fieldState<T>(override: T | null, effective: T): OverrideFieldState<T> {
@@ -54,6 +59,18 @@ export function runtimeSettingsFormState(
     fileRevisionsKeepLatest: fieldState(
       settings.overrides.file_revisions_keep_latest,
       settings.effective.file_revisions_keep_latest,
+    ),
+    queryHistoryMode: fieldState(
+      settings.overrides.query_history_mode,
+      settings.effective.query_history_mode,
+    ),
+    queryHistoryRetentionCount: fieldState(
+      settings.overrides.query_history_retention_count,
+      settings.effective.query_history_retention_count,
+    ),
+    queryFavoritesMode: fieldState(
+      settings.overrides.query_favorites_mode,
+      settings.effective.query_favorites_mode,
     ),
   }
 }
@@ -123,6 +140,30 @@ export function buildRuntimeSettingsPatch(
     }
   } else if (original.file_revisions_keep_latest !== null) {
     patch.file_revisions_keep_latest = null
+  }
+
+  if (form.queryHistoryMode.overridden) {
+    if (original.query_history_mode !== form.queryHistoryMode.value) {
+      patch.query_history_mode = form.queryHistoryMode.value
+    }
+  } else if (original.query_history_mode !== null) {
+    patch.query_history_mode = null
+  }
+
+  if (form.queryHistoryRetentionCount.overridden) {
+    if (original.query_history_retention_count !== form.queryHistoryRetentionCount.value) {
+      patch.query_history_retention_count = form.queryHistoryRetentionCount.value
+    }
+  } else if (original.query_history_retention_count !== null) {
+    patch.query_history_retention_count = null
+  }
+
+  if (form.queryFavoritesMode.overridden) {
+    if (original.query_favorites_mode !== form.queryFavoritesMode.value) {
+      patch.query_favorites_mode = form.queryFavoritesMode.value
+    }
+  } else if (original.query_favorites_mode !== null) {
+    patch.query_favorites_mode = null
   }
 
   return patch
