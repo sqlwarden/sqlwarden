@@ -71,7 +71,7 @@ function DesktopStarting() {
     <main className="flex min-h-svh items-center justify-center bg-background px-6">
       <div className="w-full max-w-sm space-y-6" aria-label="Starting SQLWarden">
         <div className="flex justify-center">
-          <brand.LogoLockup size={32} />
+          <brand.LogoColorLockup size={32} />
         </div>
         <Card size="sm">
           <CardHeader>
