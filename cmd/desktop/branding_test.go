@@ -20,6 +20,36 @@ func TestAppIconIsNativeReady(t *testing.T) {
 	if bounds.Dx() != 1024 || bounds.Dy() != 1024 {
 		t.Fatalf("app icon size = %dx%d, want 1024x1024", bounds.Dx(), bounds.Dy())
 	}
+
+	visible := bounds
+	visible.Min = bounds.Max
+	visible.Max = bounds.Min
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			red, green, blue, alpha := image.At(x, y).RGBA()
+			if alpha == 0 {
+				continue
+			}
+			if red != alpha || green != alpha || blue != alpha {
+				t.Fatalf("app icon contains a non-white visible pixel at %d,%d", x, y)
+			}
+			if x < visible.Min.X {
+				visible.Min.X = x
+			}
+			if y < visible.Min.Y {
+				visible.Min.Y = y
+			}
+			if x >= visible.Max.X {
+				visible.Max.X = x + 1
+			}
+			if y >= visible.Max.Y {
+				visible.Max.Y = y + 1
+			}
+		}
+	}
+	if visible.Dx() < 850 || visible.Dy() < 850 {
+		t.Fatalf("visible app icon size = %dx%d, want at least 850x850", visible.Dx(), visible.Dy())
+	}
 }
 
 func TestApplyDesktopBranding(t *testing.T) {
