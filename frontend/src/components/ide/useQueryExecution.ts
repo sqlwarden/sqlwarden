@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { closeConnectionQueryCursor, runConnectionQuery } from '#/lib/api/query'
 import { executeQuery } from './queryExecution'
 import { useEnsureSession } from './sessionErrors'
+import { useHistoryRecorder } from './useHistoryRecorder'
 import { useIde } from './useIdeStore'
 
 export function useQueryExecution(
@@ -11,6 +12,7 @@ export function useQueryExecution(
   connectionId: number | undefined,
 ) {
   const ensureSession = useEnsureSession(orgSlug, workspaceId)
+  const recordHistory = useHistoryRecorder(orgSlug, workspaceId, connectionId ?? 0)
   const previousResult = useIde((state) => (tabId ? state.results[tabId]?.[0] : undefined))
   const previousController = useIde((state) => (tabId ? state.abortControllers[tabId] : undefined))
   const isRunning = useIde((state) => Boolean(tabId && state.runningTabs[tabId]))
@@ -51,6 +53,7 @@ export function useQueryExecution(
           setRunning,
           setController,
           setPendingConfirmation,
+          recordHistory,
         },
       )
     },
@@ -61,6 +64,7 @@ export function useQueryExecution(
       orgSlug,
       previousController,
       previousResult,
+      recordHistory,
       setController,
       setPendingConfirmation,
       setResult,

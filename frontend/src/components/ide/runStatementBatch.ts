@@ -1,6 +1,6 @@
 import { errorMessage, isApiError } from '#/lib/api/errors'
 import type { ResultSet, UnsafeStatement } from '#/lib/api/types'
-import { isQueryAbort } from './queryExecution'
+import { isQueryAbort, type RecordHistoryInput } from './queryExecution'
 import type { PendingUnsafeQuery, QueryResult } from './useIdeStore'
 
 export type BatchExecutionDependencies = {
@@ -21,6 +21,7 @@ export type BatchExecutionDependencies = {
   setRunning: (tabId: string, running: boolean) => void
   setController: (tabId: string, controller: AbortController | null) => void
   setPendingConfirmation: (tabId: string, pending: PendingUnsafeQuery) => void
+  recordHistory: (entry: RecordHistoryInput) => void
 }
 
 export type BatchExecutionRequest = {
@@ -57,7 +58,8 @@ export async function runStatementBatch(
       try {
         const result = await deps.ensureSession(
           connectionId,
-          (sessionId) => deps.runStatement(sessionId, sql, i === confirmUnsafeAt, controller.signal),
+          (sessionId) =>
+            deps.runStatement(sessionId, sql, i === confirmUnsafeAt, controller.signal),
           controller.signal,
         )
         deps.setStatementResult(tabId, i, {
@@ -66,6 +68,12 @@ export async function runStatementBatch(
           durationMs: result.duration_ms,
           sql,
           connectionId,
+        })
+        deps.recordHistory({
+          sqlText: sql,
+          status: 'ok',
+          durationMs: result.duration_ms,
+          rowsAffected: result.rows_affected ?? 0,
         })
       } catch (error) {
         if (isApiError(error) && error.code === UNSAFE_QUERY_CONFIRMATION_REQUIRED) {
@@ -79,13 +87,18 @@ export async function runStatementBatch(
         }
         if (isQueryAbort(error)) {
           deps.setStatementResult(tabId, i, { status: 'cancelled', sql })
+          deps.recordHistory({ sqlText: sql, status: 'cancelled', durationMs: 0, rowsAffected: 0 })
           deps.markRemainingSkipped(tabId, i + 1)
           return
         }
-        deps.setStatementResult(tabId, i, {
+        const message = errorMessage(error, 'Query failed')
+        deps.setStatementResult(tabId, i, { status: 'error', message, sql })
+        deps.recordHistory({
+          sqlText: sql,
           status: 'error',
-          message: errorMessage(error, 'Query failed'),
-          sql,
+          errorMessage: message,
+          durationMs: 0,
+          rowsAffected: 0,
         })
         deps.markRemainingSkipped(tabId, i + 1)
         return

@@ -22,6 +22,7 @@ function dependencies(
     setRunning: vi.fn(),
     setController: vi.fn(),
     setPendingConfirmation: vi.fn(),
+    recordHistory: vi.fn(),
     ...overrides,
   }
 }
@@ -45,6 +46,12 @@ describe('executeQuery', () => {
     })
     expect(deps.setController).toHaveBeenLastCalledWith('tab-1', null)
     expect(deps.setRunning).toHaveBeenLastCalledWith('tab-1', false)
+    expect(deps.recordHistory).toHaveBeenCalledWith({
+      sqlText: 'select 1',
+      status: 'ok',
+      durationMs: 12,
+      rowsAffected: 0,
+    })
   })
 
   it('records cancellation and always releases transient execution state', async () => {
@@ -67,6 +74,12 @@ describe('executeQuery', () => {
     })
     expect(deps.setController).toHaveBeenLastCalledWith('tab-1', null)
     expect(deps.setRunning).toHaveBeenLastCalledWith('tab-1', false)
+    expect(deps.recordHistory).toHaveBeenCalledWith({
+      sqlText: 'select 1',
+      status: 'cancelled',
+      durationMs: 0,
+      rowsAffected: 0,
+    })
   })
 
   it('normalizes unknown failures without rejecting the UI event', async () => {
@@ -92,6 +105,13 @@ describe('executeQuery', () => {
       status: 'error',
       message: 'Query failed',
       sql: 'select 1',
+    })
+    expect(deps.recordHistory).toHaveBeenCalledWith({
+      sqlText: 'select 1',
+      status: 'error',
+      errorMessage: 'Query failed',
+      durationMs: 0,
+      rowsAffected: 0,
     })
   })
 
@@ -128,6 +148,7 @@ describe('executeQuery', () => {
     expect(deps.setResult).toHaveBeenCalledTimes(1)
     expect(deps.setController).toHaveBeenLastCalledWith('tab-1', null)
     expect(deps.setRunning).toHaveBeenLastCalledWith('tab-1', false)
+    expect(deps.recordHistory).not.toHaveBeenCalled()
   })
 
   it('still routes a normal API error through the existing error path', async () => {

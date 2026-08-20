@@ -152,6 +152,32 @@ export interface Connection {
   updated_at: string
 }
 
+export type QueryHistoryMode = 'backend' | 'local' | 'off'
+export type QueryFavoritesMode = 'backend' | 'local' | 'off'
+
+export interface QueryHistoryEntry {
+  id: number
+  connection_id: number
+  account_id: number
+  sql_text: string
+  status: 'ok' | 'error' | 'cancelled'
+  error_message: string | null
+  duration_ms: number
+  rows_affected: number
+  executed_at: string
+}
+
+export interface QueryFavorite {
+  id: number
+  workspace_id: number
+  account_id: number
+  connection_id: number | null
+  name: string
+  sql_text: string
+  created_at: string
+  updated_at: string
+}
+
 export type WorkspaceFileObjectType = 'file' | 'folder'
 
 export interface WorkspaceFile {
@@ -347,6 +373,10 @@ export interface InstanceSettings {
   schema_snapshot_freshness_seconds: number
   file_revisions_enabled: boolean
   file_revisions_keep_latest: number
+  query_history_mode: QueryHistoryMode
+  query_history_retention_count: number
+  query_history_retention_count_max: number
+  query_favorites_mode: QueryFavoritesMode
   error_notification_email: string
   log_level: LogLevel
   database_query_tracing_enabled: boolean
@@ -396,6 +426,9 @@ export interface OrganizationRuntimeOverrideValues {
   schema_snapshot_freshness_seconds: number | null
   file_revisions_enabled: boolean | null
   file_revisions_keep_latest: number | null
+  query_history_mode: QueryHistoryMode | null
+  query_history_retention_count: number | null
+  query_favorites_mode: QueryFavoritesMode | null
 }
 
 export interface OrganizationRuntimeEffectiveValues {
@@ -406,6 +439,9 @@ export interface OrganizationRuntimeEffectiveValues {
   schema_snapshot_freshness_seconds: number
   file_revisions_enabled: boolean
   file_revisions_keep_latest: number
+  query_history_mode: QueryHistoryMode
+  query_history_retention_count: number
+  query_favorites_mode: QueryFavoritesMode
 }
 
 export interface OrganizationRuntimeConstraints {
@@ -416,12 +452,16 @@ export interface OrganizationRuntimeConstraints {
   schema_snapshot_freshness_seconds_min: number
   file_revisions_available: boolean
   file_revisions_keep_latest_max: number
+  query_history_retention_count_max: number
 }
 
 export interface OrganizationRuntimeSettings {
   overrides: OrganizationRuntimeOverrideValues
   effective: OrganizationRuntimeEffectiveValues
   constraints: OrganizationRuntimeConstraints
+  /** Present (and true) only on a PATCH response, when the mode just transitioned away from `backend` and rows still exist. */
+  query_history_rows_remain?: boolean
+  query_favorites_rows_remain?: boolean
 }
 
 export type OrganizationRuntimeSettingsPatch = {

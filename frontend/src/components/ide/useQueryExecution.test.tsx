@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   closeCursor: vi.fn(),
   ensureSession: vi.fn(),
   runQuery: vi.fn(),
+  recordHistory: vi.fn(),
 }))
 
 vi.mock('#/lib/api/query', () => ({
@@ -16,6 +17,7 @@ vi.mock('#/lib/api/query', () => ({
   runConnectionQuery: mocks.runQuery,
 }))
 vi.mock('./sessionErrors', () => ({ useEnsureSession: () => mocks.ensureSession }))
+vi.mock('./useHistoryRecorder', () => ({ useHistoryRecorder: () => mocks.recordHistory }))
 
 const result: ResultSet = {
   columns: [{ name: 'id', type: 'integer', raw_type: 'int4', nullable: false }],
@@ -30,6 +32,7 @@ describe('useQueryExecution', () => {
   beforeEach(() => {
     mocks.closeCursor.mockReset().mockResolvedValue(undefined)
     mocks.runQuery.mockReset().mockResolvedValue(result)
+    mocks.recordHistory.mockReset()
     mocks.ensureSession
       .mockReset()
       .mockImplementation(

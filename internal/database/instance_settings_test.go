@@ -179,6 +179,73 @@ func TestInstanceSettingsUpsert(t *testing.T) {
 	}
 }
 
+func TestUpsertInstanceSettings_QueryHistoryFields(t *testing.T) {
+	for _, driver := range testDrivers() {
+		driver := driver
+		t.Run(driver, func(t *testing.T) {
+			t.Parallel()
+
+			db := newTestDB(t, driver)
+			ctx := context.Background()
+
+			settings, found, err := db.GetInstanceSettings(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !found {
+				t.Fatal("expected migration-created instance settings row")
+			}
+
+			settings.QueryHistoryMode = "off"
+			settings.QueryHistoryRetentionCount = 50
+			settings.QueryFavoritesMode = "backend"
+			saved, err := db.UpsertInstanceSettings(ctx, settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if saved.QueryHistoryMode != "off" || saved.QueryHistoryRetentionCount != 50 || saved.QueryFavoritesMode != "backend" {
+				t.Fatalf("expected query history fields to persist, got %+v", saved)
+			}
+
+			reloaded, found, err := db.GetInstanceSettings(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !found || reloaded.QueryHistoryMode != "off" || reloaded.QueryHistoryRetentionCount != 50 || reloaded.QueryFavoritesMode != "backend" {
+				t.Fatalf("expected persisted query history fields, got %+v found=%v", reloaded, found)
+			}
+
+			org, err := db.InsertOrg(ctx, "runtime-settings-query-history-"+driver, "Runtime Settings QH")
+			if err != nil {
+				t.Fatal(err)
+			}
+			mode := "local"
+			count := 25
+			stored, err := db.UpsertOrganizationRuntimeSettings(ctx, OrganizationRuntimeSettings{
+				OrgID:                      org.ID,
+				QueryHistoryMode:           &mode,
+				QueryHistoryRetentionCount: &count,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored.QueryHistoryMode == nil || *stored.QueryHistoryMode != "local" ||
+				stored.QueryHistoryRetentionCount == nil || *stored.QueryHistoryRetentionCount != 25 {
+				t.Fatalf("expected org override to persist, got %+v", stored)
+			}
+
+			stored.QueryHistoryMode = nil
+			stored, err = db.UpsertOrganizationRuntimeSettings(ctx, stored)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored.QueryHistoryMode != nil {
+				t.Fatalf("expected cleared override, got %+v", stored)
+			}
+		})
+	}
+}
+
 func TestListPersonalConnectionIDs(t *testing.T) {
 	for _, driver := range testDrivers() {
 		driver := driver

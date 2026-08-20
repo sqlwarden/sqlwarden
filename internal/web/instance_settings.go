@@ -18,18 +18,21 @@ var errRuntimeSettingsUnavailable = errors.New("runtime settings unavailable")
 const maxRuntimeDurationSeconds int64 = 9_223_372_036
 
 type effectiveRuntimeSettings struct {
-	BaseURL                   string
-	JWTAccessTokenTTL         time.Duration
-	SessionsRevocationEnabled bool
-	QueryMaxResultRows        int
-	QueryCursorPageSize       int
-	QueryMaxResultBytes       int64
-	ExportsSyncMaxBytes       int64
-	ExportsBackgroundMaxBytes int64
-	SchemaSnapshotFreshness   time.Duration
-	FileRevisionsEnabled      bool
-	FileRevisionsKeepLatest   int
-	ErrorNotificationEmail    string
+	BaseURL                    string
+	JWTAccessTokenTTL          time.Duration
+	SessionsRevocationEnabled  bool
+	QueryMaxResultRows         int
+	QueryCursorPageSize        int
+	QueryMaxResultBytes        int64
+	ExportsSyncMaxBytes        int64
+	ExportsBackgroundMaxBytes  int64
+	SchemaSnapshotFreshness    time.Duration
+	FileRevisionsEnabled       bool
+	FileRevisionsKeepLatest    int
+	ErrorNotificationEmail     string
+	QueryHistoryMode           string
+	QueryHistoryRetentionCount int
+	QueryFavoritesMode         string
 }
 
 type runtimeSettingsService struct {
@@ -138,7 +141,31 @@ func validateInstanceSettings(settings database.InstanceSettings) error {
 	if settings.SMTPEnabled && strings.TrimSpace(settings.SMTPFrom) == "" {
 		return fmt.Errorf("validate runtime settings: smtp_from is required when SMTP is enabled")
 	}
+	if !isSupportedQueryHistoryMode(settings.QueryHistoryMode) {
+		return fmt.Errorf("validate runtime settings: query_history_mode must be backend, local, or off")
+	}
+	if !isSupportedQueryHistoryMode(settings.QueryFavoritesMode) {
+		return fmt.Errorf("validate runtime settings: query_favorites_mode must be backend, local, or off")
+	}
+	if settings.QueryHistoryRetentionCount < 1 {
+		return fmt.Errorf("validate runtime settings: query_history_retention_count must be at least 1")
+	}
+	if settings.QueryHistoryRetentionCountMax < 1 {
+		return fmt.Errorf("validate runtime settings: query_history_retention_count_max must be at least 1")
+	}
+	if settings.QueryHistoryRetentionCount > settings.QueryHistoryRetentionCountMax {
+		return fmt.Errorf("validate runtime settings: query_history_retention_count cannot exceed query_history_retention_count_max")
+	}
 	return nil
+}
+
+func isSupportedQueryHistoryMode(mode string) bool {
+	switch mode {
+	case "backend", "local", "off":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *runtimeSettingsService) instance(ctx context.Context) (database.InstanceSettings, error) {
@@ -160,18 +187,21 @@ func (s *runtimeSettingsService) instance(ctx context.Context) (database.Instanc
 
 func effectiveSettingsFromInstance(settings database.InstanceSettings) effectiveRuntimeSettings {
 	return effectiveRuntimeSettings{
-		BaseURL:                   settings.BaseURL,
-		JWTAccessTokenTTL:         time.Duration(settings.JWTAccessTokenTTLSeconds) * time.Second,
-		SessionsRevocationEnabled: settings.SessionsRevocationEnabled,
-		QueryMaxResultRows:        settings.QueryMaxResultRows,
-		QueryCursorPageSize:       settings.QueryCursorPageSize,
-		QueryMaxResultBytes:       settings.QueryMaxResultBytes,
-		ExportsSyncMaxBytes:       settings.ExportsSyncMaxBytes,
-		ExportsBackgroundMaxBytes: settings.ExportsBackgroundMaxBytes,
-		SchemaSnapshotFreshness:   time.Duration(settings.SchemaSnapshotFreshnessSeconds) * time.Second,
-		FileRevisionsEnabled:      settings.FileRevisionsEnabled,
-		FileRevisionsKeepLatest:   settings.FileRevisionsKeepLatest,
-		ErrorNotificationEmail:    settings.ErrorNotificationEmail,
+		BaseURL:                    settings.BaseURL,
+		JWTAccessTokenTTL:          time.Duration(settings.JWTAccessTokenTTLSeconds) * time.Second,
+		SessionsRevocationEnabled:  settings.SessionsRevocationEnabled,
+		QueryMaxResultRows:         settings.QueryMaxResultRows,
+		QueryCursorPageSize:        settings.QueryCursorPageSize,
+		QueryMaxResultBytes:        settings.QueryMaxResultBytes,
+		ExportsSyncMaxBytes:        settings.ExportsSyncMaxBytes,
+		ExportsBackgroundMaxBytes:  settings.ExportsBackgroundMaxBytes,
+		SchemaSnapshotFreshness:    time.Duration(settings.SchemaSnapshotFreshnessSeconds) * time.Second,
+		FileRevisionsEnabled:       settings.FileRevisionsEnabled,
+		FileRevisionsKeepLatest:    settings.FileRevisionsKeepLatest,
+		ErrorNotificationEmail:     settings.ErrorNotificationEmail,
+		QueryHistoryMode:           settings.QueryHistoryMode,
+		QueryHistoryRetentionCount: settings.QueryHistoryRetentionCount,
+		QueryFavoritesMode:         settings.QueryFavoritesMode,
 	}
 }
 
@@ -228,6 +258,15 @@ func (s *runtimeSettingsService) effectiveForOrg(ctx context.Context, orgID *int
 		if *overrides.FileRevisionsKeepLatest >= 0 && *overrides.FileRevisionsKeepLatest < effective.FileRevisionsKeepLatest {
 			effective.FileRevisionsKeepLatest = *overrides.FileRevisionsKeepLatest
 		}
+	}
+	if effective.QueryHistoryMode != "off" && overrides.QueryHistoryMode != nil {
+		effective.QueryHistoryMode = *overrides.QueryHistoryMode
+	}
+	if overrides.QueryHistoryRetentionCount != nil && *overrides.QueryHistoryRetentionCount >= 1 && *overrides.QueryHistoryRetentionCount <= effective.QueryHistoryRetentionCount {
+		effective.QueryHistoryRetentionCount = *overrides.QueryHistoryRetentionCount
+	}
+	if effective.QueryFavoritesMode != "off" && overrides.QueryFavoritesMode != nil {
+		effective.QueryFavoritesMode = *overrides.QueryFavoritesMode
 	}
 	return effective, nil
 }
@@ -290,6 +329,10 @@ func (app *application) instanceSettingsResponse(settings database.InstanceSetti
 		"smtp_username":                     settings.SMTPUsername,
 		"smtp_password_configured":          settings.SMTPPasswordEncrypted != "",
 		"smtp_from":                         settings.SMTPFrom,
+		"query_history_mode":                settings.QueryHistoryMode,
+		"query_history_retention_count":     settings.QueryHistoryRetentionCount,
+		"query_history_retention_count_max": settings.QueryHistoryRetentionCountMax,
+		"query_favorites_mode":              settings.QueryFavoritesMode,
 	}
 }
 

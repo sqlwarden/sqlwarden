@@ -318,3 +318,147 @@ func TestOrganizationRuntimeSettingsCannotWeakenInstancePolicy(t *testing.T) {
 	assertValidationField(t, res, "schema_snapshot_freshness_seconds")
 	assertValidationField(t, res, "file_revisions_keep_latest")
 }
+
+func TestOrganizationRuntimeSettingsQueryHistoryFields(t *testing.T) {
+	t.Parallel()
+	app, org, _, token := setupWorkspaceOwner(t)
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+org.Slug+"/runtime-settings", map[string]any{
+		"query_history_mode":            "local",
+		"query_history_retention_count": 10,
+		"query_favorites_mode":          "local",
+	}, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	overrides := res.BodyFields["overrides"].(map[string]any)
+	assert.Equal(t, overrides["query_history_mode"], "local")
+	assert.Equal(t, overrides["query_history_retention_count"], any(float64(10)))
+	assert.Equal(t, overrides["query_favorites_mode"], "local")
+	effective := res.BodyFields["effective"].(map[string]any)
+	assert.Equal(t, effective["query_history_mode"], "local")
+	assert.Equal(t, effective["query_history_retention_count"], any(float64(10)))
+	assert.Equal(t, effective["query_favorites_mode"], "local")
+}
+
+func TestOrganizationRuntimeSettingsQueryHistoryFieldsCannotWeakenInstancePolicy(t *testing.T) {
+	t.Parallel()
+	app, org, _, token := setupWorkspaceOwner(t)
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+		settings.QueryHistoryMode = "off"
+		settings.QueryFavoritesMode = "off"
+	})
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+org.Slug+"/runtime-settings", map[string]any{
+		"query_history_mode":            "local",
+		"query_history_retention_count": database.DefaultQueryHistoryRetentionCount + 1,
+		"query_favorites_mode":          "local",
+	}, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "query_history_mode")
+	assertValidationField(t, res, "query_history_retention_count")
+	assertValidationField(t, res, "query_favorites_mode")
+}
+
+func TestOrganizationRuntimeSettingsQueryHistoryRowsRemainFlag(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "query-history-rows-remain"), "Rows Remain Owner", "Rows Remain Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Primary Workspace", "")
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+		settings.QueryHistoryMode = "backend"
+	})
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Rows Remain Conn", "open")
+
+	_, err := app.db.InsertQueryHistoryEntry(context.Background(), database.QueryHistoryEntry{
+		ConnectionID: conn.ID,
+		AccountID:    owner.ID,
+		SQL:          "select 1",
+		Status:       "ok",
+	}, database.DefaultQueryHistoryRetentionCount)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+org.Slug+"/runtime-settings", map[string]any{
+		"query_history_mode": "local",
+	}, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["query_history_rows_remain"], true)
+}
+
+func TestPurgeOrganizationQueryHistory(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "purge-query-history"), "Purge History Owner", "Purge History Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Primary Workspace", "")
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+		settings.QueryHistoryMode = "backend"
+	})
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Purge History Conn", "open")
+
+	_, err := app.db.InsertQueryHistoryEntry(context.Background(), database.QueryHistoryEntry{
+		ConnectionID: conn.ID,
+		AccountID:    owner.ID,
+		SQL:          "select 1",
+		Status:       "ok",
+	}, database.DefaultQueryHistoryRetentionCount)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hasRows, err := app.db.QueryHistoryHasRowsForOrg(context.Background(), org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasRows {
+		t.Fatalf("expected rows to exist before purge")
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+org.Slug+"/query-history", nil, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	hasRows, err = app.db.QueryHistoryHasRowsForOrg(context.Background(), org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasRows {
+		t.Fatalf("expected no rows after purge")
+	}
+}
+
+func TestPurgeOrganizationQueryFavorites(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "purge-query-favorites"), "Purge Favorites Owner", "Purge Favorites Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Primary Workspace", "")
+
+	_, err := app.db.CreateQueryFavorite(context.Background(), database.QueryFavorite{
+		WorkspaceID: ws.ID,
+		AccountID:   owner.ID,
+		Name:        "Top customers",
+		SQL:         "select 1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hasRows, err := app.db.QueryFavoritesHasRowsForOrg(context.Background(), org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasRows {
+		t.Fatalf("expected rows to exist before purge")
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+org.Slug+"/query-favorites", nil, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	hasRows, err = app.db.QueryFavoritesHasRowsForOrg(context.Background(), org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasRows {
+		t.Fatalf("expected no rows after purge")
+	}
+}

@@ -483,6 +483,56 @@ func TestUpdateInstanceSettings(t *testing.T) {
 	assert.Equal(t, getRes.BodyFields["personal_spaces_enabled"], false)
 }
 
+func TestUpdateInstanceSettingsQueryHistoryFields(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"query_history_mode":                "off",
+		"query_history_retention_count":     100,
+		"query_history_retention_count_max": 1000,
+		"query_favorites_mode":              "local",
+	}, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["query_history_mode"], "off")
+	assert.Equal(t, res.BodyFields["query_history_retention_count"], any(float64(100)))
+	assert.Equal(t, res.BodyFields["query_history_retention_count_max"], any(float64(1000)))
+	assert.Equal(t, res.BodyFields["query_favorites_mode"], "local")
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	assert.Equal(t, getRes.BodyFields["query_history_mode"], "off")
+	assert.Equal(t, getRes.BodyFields["query_favorites_mode"], "local")
+}
+
+func TestUpdateInstanceSettingsValidatesQueryHistoryFields(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"query_history_mode":            "sometimes",
+		"query_history_retention_count": 0,
+		"query_favorites_mode":          "always",
+	}, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, res, "query_history_mode")
+	assertValidationField(t, res, "query_history_retention_count")
+	assertValidationField(t, res, "query_favorites_mode")
+}
+
+func TestUpdateInstanceSettingsRejectsRetentionCountAboveMax(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"query_history_retention_count_max": 50,
+	}, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+}
+
 func TestUpdateInstanceSettingsValidatesFields(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

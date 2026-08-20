@@ -131,6 +131,18 @@ func TestMigrateUpAddsQueryCursorPageSizeAfterVersion29(t *testing.T) {
 	assert.Nil(t, err)
 	_, err = db.ExecContext(context.Background(), "ALTER TABLE instance_settings RENAME COLUMN base_url TO public_url")
 	assert.Nil(t, err)
+	_, err = db.ExecContext(context.Background(), `
+		ALTER TABLE instance_settings DROP COLUMN query_history_mode;
+		ALTER TABLE instance_settings DROP COLUMN query_history_retention_count;
+		ALTER TABLE instance_settings DROP COLUMN query_history_retention_count_max;
+		ALTER TABLE instance_settings DROP COLUMN query_favorites_mode;
+		ALTER TABLE organization_runtime_settings DROP COLUMN query_history_mode;
+		ALTER TABLE organization_runtime_settings DROP COLUMN query_history_retention_count;
+		ALTER TABLE organization_runtime_settings DROP COLUMN query_favorites_mode;
+		DROP TABLE query_history;
+		DROP TABLE query_favorites;
+	`)
+	assert.Nil(t, err)
 	_, err = db.ExecContext(context.Background(), "UPDATE schema_migrations SET version = 29, dirty = 0")
 	assert.Nil(t, err)
 
