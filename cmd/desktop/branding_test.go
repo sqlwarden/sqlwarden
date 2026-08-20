@@ -21,19 +21,19 @@ func TestAppIconIsNativeReady(t *testing.T) {
 		t.Fatalf("app icon size = %dx%d, want 1024x1024", bounds.Dx(), bounds.Dy())
 	}
 
-	var hasBlack, hasWhite bool
+	var hasBlue, hasWhite bool
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			red, green, blue, alpha := image.At(x, y).RGBA()
 			if alpha < 0x8000 {
 				continue
 			}
-			hasBlack = hasBlack || (red < 0x2000 && green < 0x2000 && blue < 0x2000)
+			hasBlue = hasBlue || (red < 0x1000 && green > 0x5000 && blue > 0xC000)
 			hasWhite = hasWhite || (red > 0xE000 && green > 0xE000 && blue > 0xE000)
 		}
 	}
-	if !hasBlack || !hasWhite {
-		t.Fatal("app icon must contain an opaque black mark and white background")
+	if !hasBlue || !hasWhite {
+		t.Fatal("app icon must contain an opaque brand-blue background and white mark")
 	}
 }
 
