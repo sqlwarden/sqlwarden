@@ -68,9 +68,6 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="history" className="h-full rounded-none px-3 text-xs">
-            History
-          </TabsTrigger>
           <TabsTrigger value="explain" className="h-full rounded-none px-3 text-xs">
             Explain
           </TabsTrigger>
@@ -113,9 +110,6 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
           selectedIndex={selectedIndex}
           onSelectIndex={(index) => activeTabId && setSelectedResultIndex(activeTabId, index)}
         />
-      </TabsContent>
-      <TabsContent value="history" className="min-h-0 flex-1 overflow-hidden m-0 p-0">
-        <StubPane message="Query history coming soon." />
       </TabsContent>
       <TabsContent value="explain" className="min-h-0 flex-1 overflow-hidden m-0 p-0">
         <StubPane message="Execution plan coming soon." />
@@ -211,7 +205,9 @@ function resultSummary(result: QueryResult): string {
 }
 
 function resultLabel(result: QueryResult, index: number): string {
-  return 'sql' in result && result.sql ? result.sql.replace(/\s+/g, ' ').trim() : `Statement ${index + 1}`
+  return 'sql' in result && result.sql
+    ? result.sql.replace(/\s+/g, ' ').trim()
+    : `Statement ${index + 1}`
 }
 
 function ResultsSidebar({
@@ -414,7 +410,12 @@ function SkippedState({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
-      <ResultSqlCaption sql={sql} orgSlug={orgSlug} workspaceId={workspaceId} connectionId={undefined} />
+      <ResultSqlCaption
+        sql={sql}
+        orgSlug={orgSlug}
+        workspaceId={workspaceId}
+        connectionId={undefined}
+      />
       <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
         Skipped — an earlier statement stopped the run.
       </div>

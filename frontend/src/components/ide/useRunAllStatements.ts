@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react'
 import { runConnectionQuery } from '#/lib/api/query'
 import { runStatementBatch } from './runStatementBatch'
 import { useEnsureSession } from './sessionErrors'
+import { useHistoryRecorder } from './useHistoryRecorder'
 import { useIde } from './useIdeStore'
 
 export function useRunAllStatements(
@@ -11,6 +12,7 @@ export function useRunAllStatements(
   connectionId: number | undefined,
 ) {
   const ensureSession = useEnsureSession(orgSlug, workspaceId)
+  const recordHistory = useHistoryRecorder(orgSlug, workspaceId, connectionId ?? 0)
   const previousController = useIde((state) => (tabId ? state.abortControllers[tabId] : undefined))
   const isRunning = useIde((state) => Boolean(tabId && state.runningTabs[tabId]))
   const initBatch = useIde((state) => state.initBatchResults)
@@ -48,6 +50,7 @@ export function useRunAllStatements(
           setRunning,
           setController,
           setPendingConfirmation,
+          recordHistory,
         },
       )
     },
@@ -59,6 +62,7 @@ export function useRunAllStatements(
       markRemainingSkipped,
       orgSlug,
       previousController,
+      recordHistory,
       setController,
       setPendingConfirmation,
       setRunning,
@@ -91,6 +95,7 @@ export function useRunAllStatements(
           setRunning,
           setController,
           setPendingConfirmation,
+          recordHistory,
         },
       )
     },
@@ -101,6 +106,7 @@ export function useRunAllStatements(
       isRunning,
       markRemainingSkipped,
       orgSlug,
+      recordHistory,
       setController,
       setPendingConfirmation,
       setRunning,

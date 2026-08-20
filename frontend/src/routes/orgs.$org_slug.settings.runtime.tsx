@@ -18,6 +18,8 @@ import {
 import type {
   OrganizationRuntimeOverrideValues,
   OrganizationRuntimeSettings,
+  QueryFavoritesMode,
+  QueryHistoryMode,
 } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
 import {
@@ -38,6 +40,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/com
 import { Input } from '#/components/ui/input'
 import { Checkbox } from '#/components/ui/checkbox'
 import { Alert, AlertDescription, AlertTitle } from '#/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '#/components/ui/alert-dialog'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '#/components/ui/select'
 import { RoutePending } from '#/components/RoutePending'
 import { OverrideField } from '#/components/settings/OverrideField'
 import { UnitInputField } from '#/components/settings/UnitInputField'
@@ -65,6 +85,18 @@ export interface OrganizationSettingsActionState {
 }
 
 type RuntimeFieldErrors = Partial<Record<keyof OrganizationRuntimeOverrideValues, string>>
+
+const queryHistoryModeOptions: { value: QueryHistoryMode; label: string }[] = [
+  { value: 'backend', label: 'Backend' },
+  { value: 'local', label: 'Local (browser only)' },
+  { value: 'off', label: 'Off' },
+]
+
+const queryFavoritesModeOptions: { value: QueryFavoritesMode; label: string }[] = [
+  { value: 'backend', label: 'Backend' },
+  { value: 'local', label: 'Local (browser only)' },
+  { value: 'off', label: 'Off' },
+]
 
 interface RuntimeUnits {
   queryMaxResultBytes: ByteUnit
@@ -98,6 +130,8 @@ export function OrganizationRuntimeSettingsPanel({
   const [form, setForm] = useState<RuntimeSettingsFormState | null>(null)
   const [units, setUnits] = useState<RuntimeUnits | null>(null)
   const [fieldErrors, setFieldErrors] = useState<RuntimeFieldErrors>({})
+  const [historyRowsRemainPrompt, setHistoryRowsRemainPrompt] = useState(false)
+  const [favoritesRowsRemainPrompt, setFavoritesRowsRemainPrompt] = useState(false)
 
   const canWrite = hasPermission(effectivePermissions.data?.permissions, permission.orgWrite)
 
@@ -130,6 +164,8 @@ export function OrganizationRuntimeSettingsPanel({
       setUnits(unitsFromForm(nextForm))
       toast.success('Data controls updated')
       queryClient.setQueryData(queryKeys.orgRuntimeSettings(orgSlug), updated)
+      if (updated.query_history_rows_remain) setHistoryRowsRemainPrompt(true)
+      if (updated.query_favorites_rows_remain) setFavoritesRowsRemainPrompt(true)
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors) {
@@ -137,6 +173,28 @@ export function OrganizationRuntimeSettingsPanel({
         return
       }
       toast.error(errorMessage(error, 'Failed to update data controls'))
+    },
+  })
+
+  const clearHistory = useMutation({
+    mutationFn: async () => api.delete(`/api/v1/orgs/${orgSlug}/query-history`),
+    onSuccess: () => {
+      setHistoryRowsRemainPrompt(false)
+      toast.success('Query history cleared')
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Failed to clear query history'))
+    },
+  })
+
+  const clearFavorites = useMutation({
+    mutationFn: async () => api.delete(`/api/v1/orgs/${orgSlug}/query-favorites`),
+    onSuccess: () => {
+      setFavoritesRowsRemainPrompt(false)
+      toast.success('Query favorites cleared')
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Failed to clear query favorites'))
     },
   })
 
@@ -518,12 +576,206 @@ export function OrganizationRuntimeSettingsPanel({
           </CardContent>
         </Card>
 
+        <Card>
+          <CardHeader className="border-b border-border">
+            <CardTitle>Query History &amp; Favorites</CardTitle>
+            <CardDescription>
+              Control how run queries and saved favorites are stored for this organization.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <OverrideField
+              label="Query history mode"
+              description="Where executed queries are recorded: backend (persisted), local (browser only), or off."
+              overridden={form.queryHistoryMode.overridden}
+              disabled={disabled}
+              onReset={() =>
+                updateForm('queryHistoryMode', {
+                  ...form.queryHistoryMode,
+                  overridden: false,
+                  value: 'backend',
+                })
+              }
+              limitText="Instance default applies when not overridden."
+              limitDescription="The organization can only choose a mode the instance allows."
+              error={fieldErrors.query_history_mode}
+            >
+              <Select
+                value={form.queryHistoryMode.value}
+                onValueChange={(value) =>
+                  updateForm('queryHistoryMode', {
+                    ...form.queryHistoryMode,
+                    overridden: true,
+                    value: value as QueryHistoryMode,
+                  })
+                }
+                disabled={disabled}
+              >
+                <SelectTrigger
+                  aria-label="Query history mode"
+                  aria-invalid={Boolean(fieldErrors.query_history_mode) || undefined}
+                  className="w-full"
+                >
+                  <SelectValue>
+                    {queryHistoryModeOptions.find(
+                      (option) => option.value === form.queryHistoryMode.value,
+                    )?.label ?? form.queryHistoryMode.value}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {queryHistoryModeOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </OverrideField>
+
+            <OverrideField
+              label="Query history retention"
+              description="Maximum stored query history entries per connection."
+              overridden={form.queryHistoryRetentionCount.overridden}
+              disabled={disabled}
+              onReset={() =>
+                updateForm('queryHistoryRetentionCount', {
+                  ...form.queryHistoryRetentionCount,
+                  overridden: false,
+                  value: constraints.query_history_retention_count_max,
+                })
+              }
+              limitText={`${constraints.query_history_retention_count_max.toLocaleString()} entries`}
+              limitDescription="This fixed number is the instance-wide maximum. The organization can retain the same or fewer entries."
+              error={fieldErrors.query_history_retention_count}
+            >
+              <Input
+                aria-label="Query history retention"
+                aria-invalid={Boolean(fieldErrors.query_history_retention_count) || undefined}
+                type="number"
+                min={1}
+                max={constraints.query_history_retention_count_max}
+                step={1}
+                value={form.queryHistoryRetentionCount.value}
+                disabled={disabled}
+                onChange={(event) => {
+                  const next = event.target.valueAsNumber
+                  updateForm('queryHistoryRetentionCount', {
+                    ...form.queryHistoryRetentionCount,
+                    overridden: true,
+                    value: Number.isFinite(next) ? next : 0,
+                  })
+                }}
+              />
+            </OverrideField>
+
+            <OverrideField
+              label="Query favorites mode"
+              description="Where saved query favorites are stored: backend (persisted), local (browser only), or off."
+              overridden={form.queryFavoritesMode.overridden}
+              disabled={disabled}
+              onReset={() =>
+                updateForm('queryFavoritesMode', {
+                  ...form.queryFavoritesMode,
+                  overridden: false,
+                  value: 'backend',
+                })
+              }
+              limitText="Instance default applies when not overridden."
+              limitDescription="The organization can only choose a mode the instance allows."
+              error={fieldErrors.query_favorites_mode}
+            >
+              <Select
+                value={form.queryFavoritesMode.value}
+                onValueChange={(value) =>
+                  updateForm('queryFavoritesMode', {
+                    ...form.queryFavoritesMode,
+                    overridden: true,
+                    value: value as QueryFavoritesMode,
+                  })
+                }
+                disabled={disabled}
+              >
+                <SelectTrigger
+                  aria-label="Query favorites mode"
+                  aria-invalid={Boolean(fieldErrors.query_favorites_mode) || undefined}
+                  className="w-full"
+                >
+                  <SelectValue>
+                    {queryFavoritesModeOptions.find(
+                      (option) => option.value === form.queryFavoritesMode.value,
+                    )?.label ?? form.queryFavoritesMode.value}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {queryFavoritesModeOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </OverrideField>
+          </CardContent>
+        </Card>
+
         {!canWrite ? (
           <p className="text-xs text-muted-foreground">
             You need organization write permission to change data controls.
           </p>
         ) : null}
       </form>
+
+      <AlertDialog open={historyRowsRemainPrompt} onOpenChange={setHistoryRowsRemainPrompt}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Query history rows remain</AlertDialogTitle>
+            <AlertDialogDescription>
+              This organization stopped using backend query history, but past entries are still
+              stored. You can wipe them now or keep them for later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel variant="ghost" disabled={clearHistory.isPending}>
+              Keep for now
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={clearHistory.isPending}
+              onClick={() => clearHistory.mutate()}
+            >
+              Wipe now
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={favoritesRowsRemainPrompt} onOpenChange={setFavoritesRowsRemainPrompt}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Query favorites rows remain</AlertDialogTitle>
+            <AlertDialogDescription>
+              This organization stopped using backend query favorites, but saved favorites are still
+              stored. You can wipe them now or keep them for later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel variant="ghost" disabled={clearFavorites.isPending}>
+              Keep for now
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={clearFavorites.isPending}
+              onClick={() => clearFavorites.mutate()}
+            >
+              Wipe now
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -539,4 +791,7 @@ const runtimeFormFieldToApiField: Record<
   schemaSnapshotFreshnessSeconds: 'schema_snapshot_freshness_seconds',
   fileRevisionsEnabled: 'file_revisions_enabled',
   fileRevisionsKeepLatest: 'file_revisions_keep_latest',
+  queryHistoryMode: 'query_history_mode',
+  queryHistoryRetentionCount: 'query_history_retention_count',
+  queryFavoritesMode: 'query_favorites_mode',
 }

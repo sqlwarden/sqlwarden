@@ -23,6 +23,8 @@ const (
 	DefaultJobsClaimLeaseSeconds          int64 = 300
 	DefaultJobsCompletedRetentionSeconds  int64 = 604800
 	DefaultSMTPPort                             = 25
+	DefaultQueryHistoryRetentionCount           = 500
+	DefaultQueryHistoryRetentionCountMax        = 5000
 )
 
 type InstanceSettings struct {
@@ -56,6 +58,10 @@ type InstanceSettings struct {
 	SMTPUsername                   string    `bun:",notnull" json:"smtp_username"`
 	SMTPPasswordEncrypted          string    `bun:",notnull" json:"-"`
 	SMTPFrom                       string    `bun:",notnull" json:"smtp_from"`
+	QueryHistoryMode               string    `bun:",notnull" json:"query_history_mode"`
+	QueryHistoryRetentionCount     int       `bun:",notnull" json:"query_history_retention_count"`
+	QueryHistoryRetentionCountMax  int       `bun:",notnull" json:"query_history_retention_count_max"`
+	QueryFavoritesMode             string    `bun:",notnull" json:"query_favorites_mode"`
 	CreatedAt                      time.Time `bun:",notnull" json:"created_at"`
 	UpdatedAt                      time.Time `bun:",notnull" json:"updated_at"`
 }
@@ -71,6 +77,9 @@ type OrganizationRuntimeSettings struct {
 	SchemaSnapshotFreshnessSeconds *int64    `json:"schema_snapshot_freshness_seconds"`
 	FileRevisionsEnabled           *bool     `json:"file_revisions_enabled"`
 	FileRevisionsKeepLatest        *int      `json:"file_revisions_keep_latest"`
+	QueryHistoryMode               *string   `json:"query_history_mode"`
+	QueryHistoryRetentionCount     *int      `json:"query_history_retention_count"`
+	QueryFavoritesMode             *string   `json:"query_favorites_mode"`
 	CreatedAt                      time.Time `bun:",notnull" json:"created_at"`
 	UpdatedAt                      time.Time `bun:",notnull" json:"updated_at"`
 }
@@ -96,6 +105,10 @@ func DefaultInstanceSettings() InstanceSettings {
 		JobsClaimLeaseSeconds:          DefaultJobsClaimLeaseSeconds,
 		JobsCompletedRetentionSeconds:  DefaultJobsCompletedRetentionSeconds,
 		SMTPPort:                       DefaultSMTPPort,
+		QueryHistoryMode:               "backend",
+		QueryHistoryRetentionCount:     DefaultQueryHistoryRetentionCount,
+		QueryHistoryRetentionCountMax:  DefaultQueryHistoryRetentionCountMax,
+		QueryFavoritesMode:             "backend",
 	}
 }
 
@@ -155,6 +168,10 @@ func (db *DB) UpsertInstanceSettings(ctx context.Context, settings InstanceSetti
 		Set("smtp_username = EXCLUDED.smtp_username").
 		Set("smtp_password_encrypted = EXCLUDED.smtp_password_encrypted").
 		Set("smtp_from = EXCLUDED.smtp_from").
+		Set("query_history_mode = EXCLUDED.query_history_mode").
+		Set("query_history_retention_count = EXCLUDED.query_history_retention_count").
+		Set("query_history_retention_count_max = EXCLUDED.query_history_retention_count_max").
+		Set("query_favorites_mode = EXCLUDED.query_favorites_mode").
 		Set("updated_at = EXCLUDED.updated_at").
 		Exec(ctx)
 	if err != nil {
@@ -226,6 +243,9 @@ func (db *DB) UpsertOrganizationRuntimeSettings(ctx context.Context, settings Or
 		Set("schema_snapshot_freshness_seconds = EXCLUDED.schema_snapshot_freshness_seconds").
 		Set("file_revisions_enabled = EXCLUDED.file_revisions_enabled").
 		Set("file_revisions_keep_latest = EXCLUDED.file_revisions_keep_latest").
+		Set("query_history_mode = EXCLUDED.query_history_mode").
+		Set("query_history_retention_count = EXCLUDED.query_history_retention_count").
+		Set("query_favorites_mode = EXCLUDED.query_favorites_mode").
 		Set("updated_at = EXCLUDED.updated_at").
 		Exec(ctx)
 	if err != nil {

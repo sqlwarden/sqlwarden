@@ -2,7 +2,9 @@ import type { ComponentType } from 'react'
 import type { AppIcon } from '#/lib/icons'
 import type { Workspace } from '#/lib/api/types'
 import { DatabasePanel } from './DatabasePanel'
+import { FavoritesPanel } from './FavoritesPanel'
 import { FilesPanel } from './FilesPanel'
+import { HistoryPanel } from './HistoryPanel'
 import { ExportsPanel } from './exports/ExportsPanel'
 import { SearchPanel } from './SearchPanel'
 
@@ -12,11 +14,17 @@ export type IdeSidebarPanelProps = {
   workspace: Workspace
 }
 
+/** Org runtime settings relevant to which activities `requires` should show. */
+export type ActivityVisibilityContext = {
+  queryHistoryMode: string
+  queryFavoritesMode: string
+}
+
 /**
  * An editor activity. `mode` decides what the activity bar does on click:
  *  - 'sidebar': swap the side panel only (editor/tabs stay).
  *  - 'page':    replace the whole main content region (reserved; unused in v1).
- * `requires` optionally gates visibility; omit to always show.
+ * `requires` optionally gates visibility against org runtime settings; omit to always show.
  */
 export type IdeActivity = {
   id: string
@@ -24,7 +32,7 @@ export type IdeActivity = {
   icon: AppIcon
   mode: 'sidebar' | 'page'
   component: ComponentType<IdeSidebarPanelProps>
-  requires?: () => boolean
+  requires?: (ctx: ActivityVisibilityContext) => boolean
 }
 
 export const IDE_ACTIVITIES: IdeActivity[] = [
@@ -44,9 +52,25 @@ export const IDE_ACTIVITIES: IdeActivity[] = [
     mode: 'sidebar',
     component: ExportsPanel,
   },
+  {
+    id: 'history',
+    label: 'History',
+    icon: 'history',
+    mode: 'sidebar',
+    component: HistoryPanel,
+    requires: (ctx) => ctx.queryHistoryMode !== 'off',
+  },
+  {
+    id: 'favorites',
+    label: 'Favorites',
+    icon: 'star',
+    mode: 'sidebar',
+    component: FavoritesPanel,
+    requires: (ctx) => ctx.queryFavoritesMode !== 'off',
+  },
 ]
 
 /** Activities visible to the current user (honours `requires`). */
-export function visibleActivities(): IdeActivity[] {
-  return IDE_ACTIVITIES.filter((a) => (a.requires ? a.requires() : true))
+export function visibleActivities(ctx: ActivityVisibilityContext): IdeActivity[] {
+  return IDE_ACTIVITIES.filter((a) => (a.requires ? a.requires(ctx) : true))
 }

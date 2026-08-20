@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '#/components/ui/button'
-import { Icon, type AppIcon } from '#/lib/icons'
+import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { getJobEvents } from '#/lib/api/exports'
 import type { ExportJobOutput, JobRecord } from '#/lib/api/types'
@@ -89,18 +89,6 @@ export function ExportsPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
   )
 }
 
-function statusIconName(status: string): AppIcon {
-  switch (status) {
-    case 'succeeded':
-      return 'checkmark-circle-02'
-    case 'failed':
-    case 'cancelled':
-      return 'cancel-01'
-    default:
-      return 'loading-03' // queued | running
-  }
-}
-
 function statusColorClass(status: string): string {
   switch (status) {
     case 'succeeded':
@@ -165,11 +153,13 @@ function ExportJobRow({
   return (
     <div className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-card/40 p-2.5 transition-colors hover:border-border hover:bg-muted/20">
       <div className="flex items-center gap-2">
-        <Icon
-          name={statusIconName(job.status)}
-          size={13}
-          className={cn('shrink-0', isRunning && 'animate-spin', statusColorClass(job.status))}
-        />
+        {!isTerminal && (
+          <Icon
+            name="loading-03"
+            size={13}
+            className={cn('shrink-0', isRunning && 'animate-spin', statusColorClass(job.status))}
+          />
+        )}
         <span className="min-w-0 flex-1 truncate text-xs font-medium">
           {output?.filename ?? 'query-export.csv'}
         </span>

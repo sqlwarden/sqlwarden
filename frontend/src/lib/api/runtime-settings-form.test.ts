@@ -21,6 +21,9 @@ function settingsFixture(
       schema_snapshot_freshness_seconds: null,
       file_revisions_enabled: null,
       file_revisions_keep_latest: null,
+      query_history_mode: null,
+      query_history_retention_count: null,
+      query_favorites_mode: null,
       ...overrides,
     },
     effective: {
@@ -31,6 +34,9 @@ function settingsFixture(
       schema_snapshot_freshness_seconds: 3_600,
       file_revisions_enabled: true,
       file_revisions_keep_latest: 10,
+      query_history_mode: 'backend',
+      query_history_retention_count: 500,
+      query_favorites_mode: 'backend',
     },
     constraints: {
       query_max_result_rows_max: 5_000,
@@ -40,6 +46,7 @@ function settingsFixture(
       schema_snapshot_freshness_seconds_min: 900,
       file_revisions_available: true,
       file_revisions_keep_latest_max: 50,
+      query_history_retention_count_max: 5_000,
     },
   }
 }

@@ -17,6 +17,7 @@ import type { Connection, Workspace, WorkspaceFile } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, activeTabId as selectActiveTabId, type EditorTab } from './useIdeStore'
 import { SaveAsDialog } from './SaveAsDialog'
+import { SaveFavoriteDialog } from './SaveFavoriteDialog'
 import { ExportConfirmDialog } from './exports/ExportConfirmDialog'
 import { ExportToFilesDialog } from './exports/ExportToFilesDialog'
 import { formatBytes } from './exports/formatBytes'
@@ -44,6 +45,8 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const [saveAsTab, setSaveAsTab] = useState<EditorTab | null>(null)
   const [confirmExportSql, setConfirmExportSql] = useState<string | null>(null)
   const [exportToWorkspaceOpen, setExportToWorkspaceOpen] = useState(false)
+  const [saveFavoriteOpen, setSaveFavoriteOpen] = useState(false)
+  const [saveFavoriteSql, setSaveFavoriteSql] = useState('')
   const viewRegistry = useEditorViewRegistry()
 
   const activeTabId = useIde((s) => selectActiveTabId(s, workspace.id))
@@ -158,6 +161,13 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     setConfirmExportSql(sql)
   }
 
+  function handleSaveFavoriteClick() {
+    const sql = queryAction.resolveSql()
+    if (!sql) return
+    setSaveFavoriteSql(sql)
+    setSaveFavoriteOpen(true)
+  }
+
   function handleRunAll() {
     const text = queryAction.resolveDocumentText()
     const sqls = splitSqlStatements(text)
@@ -232,6 +242,10 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
                     <Icon name="folder" size={13} data-icon="inline-start" />
                     Export to workspace
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleSaveFavoriteClick}>
+                    <Icon name="star" size={13} data-icon="inline-start" />
+                    Save as favorite
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ))}
@@ -305,6 +319,17 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           orgSlug={orgSlug}
           workspaceId={workspace.id}
           onSuccess={(file, etag) => handleSaveAsSuccess(saveAsTab, file, etag)}
+        />
+      )}
+
+      {saveFavoriteOpen && (
+        <SaveFavoriteDialog
+          open={true}
+          onOpenChange={setSaveFavoriteOpen}
+          orgSlug={orgSlug}
+          workspaceId={workspace.id}
+          sqlText={saveFavoriteSql}
+          connectionId={activeConnection?.id ?? null}
         />
       )}
 

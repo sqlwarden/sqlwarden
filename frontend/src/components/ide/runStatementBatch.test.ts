@@ -26,6 +26,7 @@ function dependencies(
     setRunning: vi.fn(),
     setController: vi.fn(),
     setPendingConfirmation: vi.fn(),
+    recordHistory: vi.fn(),
     ...overrides,
   }
 }
@@ -76,6 +77,18 @@ describe('runStatementBatch', () => {
     expect(deps.markRemainingSkipped).not.toHaveBeenCalled()
     expect(deps.setController).toHaveBeenLastCalledWith('tab-1', null)
     expect(deps.setRunning).toHaveBeenLastCalledWith('tab-1', false)
+    expect(deps.recordHistory).toHaveBeenNthCalledWith(1, {
+      sqlText: 'select 1',
+      status: 'ok',
+      durationMs: 8,
+      rowsAffected: 0,
+    })
+    expect(deps.recordHistory).toHaveBeenNthCalledWith(2, {
+      sqlText: 'select 2',
+      status: 'ok',
+      durationMs: 8,
+      rowsAffected: 0,
+    })
   })
 
   it('stops at the first error and marks every later statement skipped', async () => {
@@ -104,6 +117,13 @@ describe('runStatementBatch', () => {
     })
     expect(deps.markRemainingSkipped).toHaveBeenCalledWith('tab-1', 2)
     expect(deps.setRunning).toHaveBeenLastCalledWith('tab-1', false)
+    expect(deps.recordHistory).toHaveBeenCalledWith({
+      sqlText: 'select 2',
+      status: 'error',
+      errorMessage: 'boom',
+      durationMs: 0,
+      rowsAffected: 0,
+    })
   })
 
   it('marks the in-flight statement cancelled and the rest skipped on abort', async () => {
@@ -125,6 +145,12 @@ describe('runStatementBatch', () => {
       sql: 'select 1',
     })
     expect(deps.markRemainingSkipped).toHaveBeenCalledWith('tab-1', 1)
+    expect(deps.recordHistory).toHaveBeenCalledWith({
+      sqlText: 'select 1',
+      status: 'cancelled',
+      durationMs: 0,
+      rowsAffected: 0,
+    })
   })
 
   it('pauses on an unsafe-confirmation error without marking anything skipped', async () => {

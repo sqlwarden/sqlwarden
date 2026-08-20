@@ -129,6 +129,12 @@ func (app *application) routes() http.Handler {
 									r.Post("/query-cursors/{query_cursor_id}/fetch", app.fetchQueryCursor)
 									r.Delete("/query-cursors/{query_cursor_id}", app.closeQueryCursor)
 									r.Post("/query", app.executeQuery)
+									r.Route("/history", func(r chi.Router) {
+										r.Get("/", app.listQueryHistory)
+										r.Post("/", app.createQueryHistoryEntry)
+										r.Delete("/", app.clearQueryHistoryForConnection)
+										r.Delete("/{history_id}", app.deleteQueryHistoryEntry)
+									})
 									r.Post("/completion", app.completeConnectionSQL)
 									r.Post("/exports", app.createConnectionExport)
 									r.Post("/exports/download", app.downloadConnectionExport)
@@ -145,6 +151,15 @@ func (app *application) routes() http.Handler {
 						})
 					})
 
+					r.Route("/query-favorites", func(r chi.Router) {
+						r.Get("/", app.listQueryFavorites)
+						r.Post("/", app.createQueryFavorite)
+						r.Patch("/{favorite_id}", app.updateQueryFavorite)
+						r.Delete("/{favorite_id}", app.deleteQueryFavorite)
+					})
+
+					r.Get("/history", app.listWorkspaceQueryHistory)
+
 					r.Route("/connections", func(r chi.Router) {
 						r.Post("/test", app.testConnection)
 						r.Get("/", app.listMyConnections)
@@ -160,6 +175,12 @@ func (app *application) routes() http.Handler {
 							r.Post("/query-cursors/{query_cursor_id}/fetch", app.fetchQueryCursor)
 							r.Delete("/query-cursors/{query_cursor_id}", app.closeQueryCursor)
 							r.Post("/query", app.executeQuery)
+							r.Route("/history", func(r chi.Router) {
+								r.Get("/", app.listQueryHistory)
+								r.Post("/", app.createQueryHistoryEntry)
+								r.Delete("/", app.clearQueryHistoryForConnection)
+								r.Delete("/{history_id}", app.deleteQueryHistoryEntry)
+							})
 							r.Post("/completion", app.completeConnectionSQL)
 							r.Post("/exports", app.createConnectionExport)
 							r.Post("/exports/download", app.downloadConnectionExport)
@@ -185,6 +206,8 @@ func (app *application) routes() http.Handler {
 			r.With(app.requireOrgPermission("org:delete")).Delete("/", app.deleteOrg)
 			r.With(app.requireOrgPermission("org:read")).Get("/runtime-settings", app.getOrganizationRuntimeSettings)
 			r.With(app.requireOrgPermission("org:write")).Patch("/runtime-settings", app.updateOrganizationRuntimeSettings)
+			r.With(app.requireOrgPermission("org:write")).Delete("/query-history", app.purgeOrganizationQueryHistory)
+			r.With(app.requireOrgPermission("org:write")).Delete("/query-favorites", app.purgeOrganizationQueryFavorites)
 
 			r.Route("/members", func(r chi.Router) {
 				r.With(app.requireOrgPermission("org:read")).Get("/", app.listOrgMembers)
@@ -335,6 +358,12 @@ func (app *application) routes() http.Handler {
 									r.Post("/query-cursors/{query_cursor_id}/fetch", app.fetchQueryCursor)
 									r.Delete("/query-cursors/{query_cursor_id}", app.closeQueryCursor)
 									r.Post("/query", app.executeQuery)
+									r.Route("/history", func(r chi.Router) {
+										r.Get("/", app.listQueryHistory)
+										r.Post("/", app.createQueryHistoryEntry)
+										r.Delete("/", app.clearQueryHistoryForConnection)
+										r.Delete("/{history_id}", app.deleteQueryHistoryEntry)
+									})
 									r.Post("/completion", app.completeConnectionSQL)
 									r.Post("/exports", app.createConnectionExport)
 									r.Post("/exports/download", app.downloadConnectionExport)
@@ -350,6 +379,15 @@ func (app *application) routes() http.Handler {
 							})
 						})
 					})
+
+					r.Route("/query-favorites", func(r chi.Router) {
+						r.Get("/", app.listQueryFavorites)
+						r.Post("/", app.createQueryFavorite)
+						r.Patch("/{favorite_id}", app.updateQueryFavorite)
+						r.Delete("/{favorite_id}", app.deleteQueryFavorite)
+					})
+
+					r.Get("/history", app.listWorkspaceQueryHistory)
 
 					r.Route("/connections", func(r chi.Router) {
 						r.With(app.requireWorkspacePermission("conn:create")).Post("/test", app.testConnection)
@@ -367,6 +405,12 @@ func (app *application) routes() http.Handler {
 							r.Post("/query-cursors/{query_cursor_id}/fetch", app.fetchQueryCursor)
 							r.Delete("/query-cursors/{query_cursor_id}", app.closeQueryCursor)
 							r.Post("/query", app.executeQuery)
+							r.Route("/history", func(r chi.Router) {
+								r.Get("/", app.listQueryHistory)
+								r.Post("/", app.createQueryHistoryEntry)
+								r.Delete("/", app.clearQueryHistoryForConnection)
+								r.Delete("/{history_id}", app.deleteQueryHistoryEntry)
+							})
 							r.Post("/completion", app.completeConnectionSQL)
 							r.Post("/exports", app.createConnectionExport)
 							r.Post("/exports/download", app.downloadConnectionExport)

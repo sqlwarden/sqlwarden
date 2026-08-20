@@ -400,6 +400,10 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		SMTPUsername                   *string               `json:"smtp_username"`
 		SMTPPassword                   nullablePatch[string] `json:"smtp_password"`
 		SMTPFrom                       *string               `json:"smtp_from"`
+		QueryHistoryMode               *string               `json:"query_history_mode"`
+		QueryHistoryRetentionCount     *int                  `json:"query_history_retention_count"`
+		QueryHistoryRetentionCountMax  *int                  `json:"query_history_retention_count_max"`
+		QueryFavoritesMode             *string               `json:"query_favorites_mode"`
 		V                              validator.Validator   `json:"-"`
 	}
 
@@ -429,7 +433,9 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		input.JobsPollIntervalSeconds != nil || input.JobsClaimLeaseSeconds != nil ||
 		input.JobsCompletedRetentionSeconds != nil || input.SMTPEnabled != nil ||
 		input.SMTPHost != nil || input.SMTPPort != nil || input.SMTPUsername != nil ||
-		input.SMTPPassword.Set || input.SMTPFrom != nil
+		input.SMTPPassword.Set || input.SMTPFrom != nil ||
+		input.QueryHistoryMode != nil || input.QueryHistoryRetentionCount != nil ||
+		input.QueryHistoryRetentionCountMax != nil || input.QueryFavoritesMode != nil
 	input.V.Check(hasPatch, "At least one setting is required.")
 	if input.InstanceName != nil {
 		*input.InstanceName = strings.TrimSpace(*input.InstanceName)
@@ -509,6 +515,18 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	if input.SMTPFrom != nil {
 		*input.SMTPFrom = strings.TrimSpace(*input.SMTPFrom)
 		input.V.CheckField(validator.MaxRunes(*input.SMTPFrom, 500), "smtp_from", "SMTP sender must be 500 characters or fewer.")
+	}
+	if input.QueryHistoryMode != nil {
+		input.V.CheckField(isSupportedQueryHistoryMode(*input.QueryHistoryMode), "query_history_mode", "Query history mode must be backend, local, or off.")
+	}
+	if input.QueryHistoryRetentionCount != nil {
+		input.V.CheckField(*input.QueryHistoryRetentionCount >= 1, "query_history_retention_count", "Retention count must be at least 1.")
+	}
+	if input.QueryHistoryRetentionCountMax != nil {
+		input.V.CheckField(*input.QueryHistoryRetentionCountMax >= 1, "query_history_retention_count_max", "Retention count maximum must be at least 1.")
+	}
+	if input.QueryFavoritesMode != nil {
+		input.V.CheckField(isSupportedQueryHistoryMode(*input.QueryFavoritesMode), "query_favorites_mode", "Query favorites mode must be backend, local, or off.")
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -615,6 +633,18 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 				return
 			}
 		}
+	}
+	if input.QueryHistoryMode != nil {
+		nextSettings.QueryHistoryMode = *input.QueryHistoryMode
+	}
+	if input.QueryHistoryRetentionCount != nil {
+		nextSettings.QueryHistoryRetentionCount = *input.QueryHistoryRetentionCount
+	}
+	if input.QueryHistoryRetentionCountMax != nil {
+		nextSettings.QueryHistoryRetentionCountMax = *input.QueryHistoryRetentionCountMax
+	}
+	if input.QueryFavoritesMode != nil {
+		nextSettings.QueryFavoritesMode = *input.QueryFavoritesMode
 	}
 	if err := validateInstanceSettings(nextSettings); err != nil {
 		input.V.AddError(err.Error())
