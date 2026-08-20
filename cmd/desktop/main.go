@@ -70,7 +70,7 @@ func run(args []string) error {
 		apiHandler = app.Handler()
 	}
 
-	err = wails.Run(&options.App{
+	appOptions := &options.App{
 		Title:       "SQLWarden",
 		Width:       1440,
 		Height:      900,
@@ -87,7 +87,9 @@ func run(args []string) error {
 			},
 		},
 		BackgroundColour: options.NewRGB(10, 10, 12),
-	})
+	}
+	applyDesktopBranding(appOptions)
+	err = wails.Run(appOptions)
 	if err != nil {
 		return fmt.Errorf("run desktop window: %w", err)
 	}
