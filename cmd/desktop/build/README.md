@@ -1,5 +1,5 @@
 # Desktop build assets
 
-`appicon.svg` contains the native white-on-brand-blue variant of the SQLWarden mark. `appicon.png` is its 1024px rendered form. Wails packages it as the macOS Dock icon and uses the generated `windows/icon.ico` for Windows title-bar and taskbar branding.
+`appicon.svg` contains the full-size white-on-brand-blue SQLWarden app icon. `appicon.png` places that artwork at 824px on a transparent 1024px canvas so the macOS Dock and Linux window icon have native optical sizing. The separately generated `windows/icon.ico` keeps the full-size artwork for Windows title-bar and taskbar legibility.
 
-When the product mark changes, regenerate the PNG and Windows icon from this SVG so native and web branding stay in sync.
+When the product mark changes, regenerate both platform assets from this SVG, retaining the transparent padding only in `appicon.png`.

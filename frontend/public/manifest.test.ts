@@ -21,7 +21,7 @@ describe('manifest.json', () => {
     expect(manifest.name).toBe('SQLWarden')
   })
 
-  it('uses the mono icon background for installed-app surfaces', () => {
+  it('keeps installed-app chrome on the neutral application background', () => {
     expect(manifest.theme_color).toBe('#0A0A0A')
     expect(manifest.background_color).toBe('#0A0A0A')
   })
@@ -47,22 +47,23 @@ describe('manifest.json', () => {
     ])
   })
 
-  it('advertises only mono browser and Apple icon sources', () => {
-    expect(indexHtml).toContain('content="#0A0A0A"')
-    expect(indexHtml).toContain('href="/favicon.ico?v=4"')
-    expect(indexHtml).toContain('href="/favicon.svg?v=4"')
-    expect(indexHtml).toContain('href="/apple-touch-icon.png?v=4"')
+  it('advertises the branded browser and Apple icon sources with neutral browser chrome', () => {
+    expect(indexHtml).toContain('content="#FFFFFF" media="(prefers-color-scheme: light)"')
+    expect(indexHtml).toContain('content="#0A0A0A" media="(prefers-color-scheme: dark)"')
+    expect(indexHtml).toContain('href="/favicon.ico?v=5"')
+    expect(indexHtml).toContain('href="/favicon.svg?v=5"')
+    expect(indexHtml).toContain('href="/apple-touch-icon.png?v=5"')
     expect(indexHtml).not.toContain('rel="icon" type="image/png"')
     expect(existsSync(join(dir, 'apple-touch-icon.png'))).toBe(true)
   })
 
-  it('keeps every published icon on the approved mono asset set', () => {
+  it('keeps every published icon on the approved brand asset set', () => {
     const expectedHashes = {
-      'favicon.ico': '828c952bd7214d1cd9312c19c0858272e617af1be77c93a706aac80e3cba55c8',
-      'favicon.svg': '7c4c1d3e705dbb546f6f6a8bb1e8245e483e18ed6bb624e797138fc8b7a6d061',
-      'apple-touch-icon.png': '6a32cf2d172d065d62fe973119ad422c177a655bede54d06927d33fc84a8724e',
-      'logo192.png': '669ec7814084e536855981693b084f41b47b95ebc805b902c067ba1bd50f4430',
-      'logo512.png': '558fcbdc8b6ee417f1994200e34572157dd97cb36cd3b5bf850e8eddc6deea3f',
+      'favicon.ico': '3e917685c4edfc9852bfbf36ac0c61b292ced53fafa8dd0120ed224e8aec29a5',
+      'favicon.svg': '99b6f7b102acc9b79e3520cef7ce63c4f6805c9a5adbb8c75b36043e9e7cc747',
+      'apple-touch-icon.png': 'd0f708425416e7150e52b4fd7c5c87813108e63f3e6e8731cb1e1288b05715fc',
+      'logo192.png': '437a19b1a6d441b47b307be741f9e4bb2496ee34a73c26e51745b79ccad28b39',
+      'logo512.png': '9b7f8aa9985ea0cce9ce9013ae324bf155e24b24da62ca815cd0544d183abd47',
     }
 
     for (const [filename, expectedHash] of Object.entries(expectedHashes)) {
