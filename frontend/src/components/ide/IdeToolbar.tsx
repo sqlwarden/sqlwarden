@@ -58,7 +58,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
   const clearPendingConfirmation = useIde((s) => s.clearPendingConfirmation)
-  const abandonPendingBatchConfirmation = useIde((s) => s.abandonPendingBatchConfirmation)
+  const abandonPendingRunConfirmation = useIde((s) => s.abandonPendingRunConfirmation)
   const pendingConfirmation = useIde((s) =>
     activeTabId ? s.pendingConfirmations[activeTabId] : undefined,
   )
@@ -362,24 +362,13 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
         <UnsafeQueryDialog
           open
           onOpenChange={(open) => {
-            if (!open) {
-              if (pendingConfirmation.batchIndex !== undefined) {
-                abandonPendingBatchConfirmation(activeTab.id)
-              } else {
-                clearPendingConfirmation(activeTab.id)
-              }
-            }
+            if (!open) abandonPendingRunConfirmation(activeTab.id)
           }}
           sql={pendingConfirmation.sql}
           onConfirm={() => {
-            if (pendingConfirmation.batchIndex !== undefined) {
-              const index = pendingConfirmation.batchIndex
-              clearPendingConfirmation(activeTab.id)
-              void queryAction.confirmAt(index)
-            } else {
-              clearPendingConfirmation(activeTab.id)
-              void queryAction.run(true)
-            }
+            const index = pendingConfirmation.statementIndex
+            clearPendingConfirmation(activeTab.id)
+            void queryAction.confirmAt(index)
           }}
         />
       )}

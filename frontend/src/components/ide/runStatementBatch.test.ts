@@ -20,9 +20,9 @@ function dependencies(
   return {
     ensureSession: vi.fn(async (_connectionId, run) => run('session-1')),
     runStatement: vi.fn(async () => resultSet(1)),
-    initBatch: vi.fn(),
-    setStatementResult: vi.fn(),
-    markRemainingSkipped: vi.fn(),
+    beginRun: vi.fn(() => 'run-1'),
+    setRunStatementResult: vi.fn(),
+    markRunRemainingSkipped: vi.fn(),
     setRunning: vi.fn(),
     setController: vi.fn(),
     setPendingConfirmation: vi.fn(),
@@ -37,12 +37,13 @@ describe('runStatementBatch', () => {
     const deps = dependencies({ runStatement })
     const controller = new AbortController()
 
-    await runStatementBatch(
+    const runId = await runStatementBatch(
       { tabId: 'tab-1', connectionId: 7, sqls: ['select 1', 'select 2'], controller },
       deps,
     )
 
-    expect(deps.initBatch).toHaveBeenCalledWith('tab-1', ['select 1', 'select 2'])
+    expect(runId).toBe('run-1')
+    expect(deps.beginRun).toHaveBeenCalledWith('tab-1', ['select 1', 'select 2'])
     expect(deps.ensureSession).toHaveBeenCalledTimes(2)
     expect(runStatement).toHaveBeenNthCalledWith(
       1,
@@ -58,23 +59,29 @@ describe('runStatementBatch', () => {
       false,
       controller.signal,
     )
-    expect(deps.setStatementResult).toHaveBeenNthCalledWith(1, 'tab-1', 0, { status: 'running' })
-    expect(deps.setStatementResult).toHaveBeenNthCalledWith(2, 'tab-1', 0, {
+    expect(deps.setRunStatementResult).toHaveBeenNthCalledWith(1, 'tab-1', 'run-1', 0, {
+      status: 'running',
+      sql: 'select 1',
+    })
+    expect(deps.setRunStatementResult).toHaveBeenNthCalledWith(2, 'tab-1', 'run-1', 0, {
       status: 'ok',
       data: resultSet(8),
       durationMs: 8,
       sql: 'select 1',
       connectionId: 7,
     })
-    expect(deps.setStatementResult).toHaveBeenNthCalledWith(3, 'tab-1', 1, { status: 'running' })
-    expect(deps.setStatementResult).toHaveBeenNthCalledWith(4, 'tab-1', 1, {
+    expect(deps.setRunStatementResult).toHaveBeenNthCalledWith(3, 'tab-1', 'run-1', 1, {
+      status: 'running',
+      sql: 'select 2',
+    })
+    expect(deps.setRunStatementResult).toHaveBeenNthCalledWith(4, 'tab-1', 'run-1', 1, {
       status: 'ok',
       data: resultSet(8),
       durationMs: 8,
       sql: 'select 2',
       connectionId: 7,
     })
-    expect(deps.markRemainingSkipped).not.toHaveBeenCalled()
+    expect(deps.markRunRemainingSkipped).not.toHaveBeenCalled()
     expect(deps.setController).toHaveBeenLastCalledWith('tab-1', null)
     expect(deps.setRunning).toHaveBeenLastCalledWith('tab-1', false)
     expect(deps.recordHistory).toHaveBeenNthCalledWith(1, {
@@ -110,12 +117,12 @@ describe('runStatementBatch', () => {
     )
 
     expect(runStatement).toHaveBeenCalledTimes(2)
-    expect(deps.setStatementResult).toHaveBeenCalledWith('tab-1', 1, {
+    expect(deps.setRunStatementResult).toHaveBeenCalledWith('tab-1', 'run-1', 1, {
       status: 'error',
       message: 'boom',
       sql: 'select 2',
     })
-    expect(deps.markRemainingSkipped).toHaveBeenCalledWith('tab-1', 2)
+    expect(deps.markRunRemainingSkipped).toHaveBeenCalledWith('tab-1', 'run-1', 2)
     expect(deps.setRunning).toHaveBeenLastCalledWith('tab-1', false)
     expect(deps.recordHistory).toHaveBeenCalledWith({
       sqlText: 'select 2',
@@ -140,11 +147,11 @@ describe('runStatementBatch', () => {
       deps,
     )
 
-    expect(deps.setStatementResult).toHaveBeenCalledWith('tab-1', 0, {
+    expect(deps.setRunStatementResult).toHaveBeenCalledWith('tab-1', 'run-1', 0, {
       status: 'cancelled',
       sql: 'select 1',
     })
-    expect(deps.markRemainingSkipped).toHaveBeenCalledWith('tab-1', 1)
+    expect(deps.markRunRemainingSkipped).toHaveBeenCalledWith('tab-1', 'run-1', 1)
     expect(deps.recordHistory).toHaveBeenCalledWith({
       sqlText: 'select 1',
       status: 'cancelled',
@@ -174,21 +181,22 @@ describe('runStatementBatch', () => {
       deps,
     )
 
-    expect(deps.setStatementResult).toHaveBeenCalledWith('tab-1', 0, {
+    expect(deps.setRunStatementResult).toHaveBeenCalledWith('tab-1', 'run-1', 0, {
       status: 'pending',
       sql: 'DELETE FROM widgets',
     })
     expect(deps.setPendingConfirmation).toHaveBeenCalledWith('tab-1', {
       sql: 'DELETE FROM widgets',
       statements: [{ kind: 'unsafe_missing_where', start_offset: 0, end_offset: 18 }],
-      batchIndex: 0,
+      runId: 'run-1',
+      statementIndex: 0,
     })
-    expect(deps.markRemainingSkipped).not.toHaveBeenCalled()
+    expect(deps.markRunRemainingSkipped).not.toHaveBeenCalled()
     expect(deps.setController).toHaveBeenLastCalledWith('tab-1', null)
     expect(deps.setRunning).toHaveBeenLastCalledWith('tab-1', false)
   })
 
-  it('resumes from startAt with confirmUnsafe only at confirmUnsafeAt, without re-seeding', async () => {
+  it('resumes from startAt with confirmUnsafe only at confirmUnsafeAt, reusing the given runId', async () => {
     const confirmFlags: boolean[] = []
     const runStatement = vi.fn(async (_sessionId: string, _sql: string, confirmUnsafe: boolean) => {
       confirmFlags.push(confirmUnsafe)
@@ -197,19 +205,73 @@ describe('runStatementBatch', () => {
     const deps = dependencies({ runStatement })
     const controller = new AbortController()
 
-    await runStatementBatch(
+    const runId = await runStatementBatch(
       {
         tabId: 'tab-1',
         connectionId: 7,
         sqls: ['DELETE FROM widgets', 'select 2'],
         controller,
+        runId: 'existing-run',
         startAt: 0,
         confirmUnsafeAt: 0,
       },
       deps,
     )
 
-    expect(deps.initBatch).not.toHaveBeenCalled()
+    expect(runId).toBe('existing-run')
+    expect(deps.beginRun).not.toHaveBeenCalled()
     expect(confirmFlags).toEqual([true, false])
+  })
+
+  it('runs a single statement (the Run button path) as a one-statement batch', async () => {
+    const deps = dependencies()
+    const controller = new AbortController()
+
+    const runId = await runStatementBatch(
+      { tabId: 'tab-1', connectionId: 7, sqls: ['select 1'], controller },
+      deps,
+    )
+
+    expect(runId).toBe('run-1')
+    expect(deps.beginRun).toHaveBeenCalledWith('tab-1', ['select 1'])
+    expect(deps.setRunStatementResult).toHaveBeenNthCalledWith(2, 'tab-1', 'run-1', 0, {
+      status: 'ok',
+      data: resultSet(1),
+      durationMs: 1,
+      sql: 'select 1',
+      connectionId: 7,
+    })
+    expect(deps.recordHistory).toHaveBeenCalledWith({
+      sqlText: 'select 1',
+      status: 'ok',
+      durationMs: 1,
+      rowsAffected: 0,
+    })
+  })
+
+  it('normalizes an unknown single-statement failure without rejecting the UI event', async () => {
+    const deps = dependencies({
+      ensureSession: vi.fn(async () => {
+        throw { reason: 'unknown' }
+      }),
+    })
+    const controller = new AbortController()
+
+    await expect(
+      runStatementBatch({ tabId: 'tab-1', connectionId: 7, sqls: ['select 1'], controller }, deps),
+    ).resolves.toBe('run-1')
+
+    expect(deps.setRunStatementResult).toHaveBeenLastCalledWith('tab-1', 'run-1', 0, {
+      status: 'error',
+      message: 'Query failed',
+      sql: 'select 1',
+    })
+    expect(deps.recordHistory).toHaveBeenCalledWith({
+      sqlText: 'select 1',
+      status: 'error',
+      errorMessage: 'Query failed',
+      durationMs: 0,
+      rowsAffected: 0,
+    })
   })
 })

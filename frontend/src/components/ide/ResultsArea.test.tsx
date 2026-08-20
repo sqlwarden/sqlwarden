@@ -94,14 +94,20 @@ describe('ResultsArea', () => {
     )
   }
 
-  function renderResult(result: QueryResult) {
-    store.getState().setQueryResult('scratch-1', result)
+  function beginRunWithResult(result: QueryResult, connectionId?: number) {
+    const runId = store.getState().beginRun('scratch-1', ['placeholder'], connectionId)
+    store.getState().setRunStatementResult('scratch-1', runId, 0, result)
+    return runId
+  }
+
+  function renderResult(result: QueryResult, connectionId?: number) {
+    beginRunWithResult(result, connectionId)
     return renderResultsArea()
   }
 
   it.each([
     [{ status: 'idle' } as const, 'Run a query to see results'],
-    [{ status: 'running' } as const, 'Running query…'],
+    [{ status: 'running', sql: 'select 1' } as const, 'Running query…'],
     [{ status: 'cancelled', sql: 'select 1' } as const, 'Query cancelled'],
     [{ status: 'error', sql: 'select 1', message: 'permission denied' } as const, 'Query failed'],
   ])('renders the %s result state', async (result, message) => {
@@ -191,6 +197,33 @@ describe('ResultsArea', () => {
     expect(await screen.findByText('analytics-pg')).toBeInTheDocument()
   })
 
+  it('shows the connection name in the bottom status bar, before the row count, not in the sql caption', async () => {
+    renderResult({
+      status: 'ok',
+      durationMs: 3,
+      sql: 'select id from users where false',
+      connectionId: 7,
+      data: {
+        columns: [{ name: 'id', type: 'integer', raw_type: 'int4', nullable: false }],
+        rows: [],
+        duration_ms: 3,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+      },
+    })
+
+    const rowsLabel = await screen.findByText('0 rows')
+    const statusBar = rowsLabel.parentElement as HTMLElement
+    const connectionLabel = await within(statusBar).findByText('analytics-pg')
+    expect(
+      connectionLabel.compareDocumentPosition(rowsLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    const caption = screen.getByTitle('select id from users where false').closest('div')!
+    expect(within(caption).queryByText('analytics-pg')).not.toBeInTheDocument()
+  })
+
   function populatedResult(): QueryResult {
     return {
       status: 'ok',
@@ -270,8 +303,10 @@ describe('ResultsArea', () => {
   })
 
   it('lists every statement in a sidebar and shows the first one selected by default', async () => {
-    store.getState().initBatchResults('scratch-1', ['select 1', 'select 2', 'select 3', 'select 4'])
-    store.getState().setStatementResult('scratch-1', 0, {
+    const runId = store
+      .getState()
+      .beginRun('scratch-1', ['select 1', 'select 2', 'select 3', 'select 4'])
+    store.getState().setRunStatementResult('scratch-1', runId, 0, {
       status: 'ok',
       durationMs: 2,
       sql: 'select 1',
@@ -286,12 +321,14 @@ describe('ResultsArea', () => {
         rows_affected: 2,
       },
     })
-    store.getState().setStatementResult('scratch-1', 1, {
+    store.getState().setRunStatementResult('scratch-1', runId, 1, {
       status: 'error',
       message: 'boom',
       sql: 'select 2',
     })
-    store.getState().setStatementResult('scratch-1', 2, { status: 'skipped', sql: 'select 3' })
+    store
+      .getState()
+      .setRunStatementResult('scratch-1', runId, 2, { status: 'skipped', sql: 'select 3' })
 
     renderResultsArea()
 
@@ -306,8 +343,8 @@ describe('ResultsArea', () => {
 
   it('switches the detail pane when a different statement row is clicked', async () => {
     const user = userEvent.setup()
-    store.getState().initBatchResults('scratch-1', ['select 1', 'select 2'])
-    store.getState().setStatementResult('scratch-1', 0, {
+    const runId = store.getState().beginRun('scratch-1', ['select 1', 'select 2'])
+    store.getState().setRunStatementResult('scratch-1', runId, 0, {
       status: 'ok',
       durationMs: 2,
       sql: 'select 1',
@@ -322,7 +359,7 @@ describe('ResultsArea', () => {
         rows_affected: 2,
       },
     })
-    store.getState().setStatementResult('scratch-1', 1, {
+    store.getState().setRunStatementResult('scratch-1', runId, 1, {
       status: 'error',
       message: 'boom',
       sql: 'select 2',
@@ -337,13 +374,133 @@ describe('ResultsArea', () => {
     expect(screen.queryByText('· 2 rows affected')).not.toBeInTheDocument()
   })
 
-  it('sums row counts across every ok entry in the results badge', async () => {
-    store.getState().initBatchResults('scratch-1', ['select 1', 'select 2'])
-    store.getState().setStatementResult('scratch-1', 0, populatedResult())
-    store.getState().setStatementResult('scratch-1', 1, populatedResult())
+  it('shows a run tab even when there is only one run', async () => {
+    beginRunWithResult({
+      status: 'ok',
+      durationMs: 2,
+      sql: 'select 1',
+      connectionId: 7,
+      data: {
+        columns: [],
+        rows: [],
+        duration_ms: 2,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+        rows_affected: 1,
+      },
+    })
 
     renderResultsArea()
 
-    expect(await screen.findByText('4')).toBeInTheDocument()
+    const runTabs = within(await screen.findByRole('tablist', { name: 'Runs' }))
+    expect(await runTabs.findAllByRole('tab')).toHaveLength(1)
+  })
+
+  it('labels a running run tab with its query instead of a generic run number', async () => {
+    const runId = store.getState().beginRun('scratch-1', ['select 1'], 7)
+    store.getState().setRunStatementResult('scratch-1', runId, 0, {
+      status: 'running',
+      sql: 'select 1',
+    })
+
+    renderResultsArea()
+
+    const runTabs = within(await screen.findByRole('tablist', { name: 'Runs' }))
+    expect(await runTabs.findByText('select 1')).toBeInTheDocument()
+    expect(runTabs.queryByText('Run 1')).not.toBeInTheDocument()
+  })
+
+  it('shows one tab per run and switches results when a run tab is clicked', async () => {
+    const user = userEvent.setup()
+    beginRunWithResult({
+      status: 'ok',
+      durationMs: 2,
+      sql: 'select 1',
+      connectionId: 7,
+      data: {
+        columns: [],
+        rows: [],
+        duration_ms: 2,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+        rows_affected: 1,
+      },
+    })
+    beginRunWithResult({ status: 'error', sql: 'select 2', message: 'boom' })
+
+    renderResultsArea()
+
+    const runTabs = within(await screen.findByRole('tablist', { name: 'Runs' }))
+    const tabs = await runTabs.findAllByRole('tab')
+    expect(tabs).toHaveLength(2)
+    // The most recently begun run is selected by default.
+    expect(screen.getByText('Query failed')).toBeInTheDocument()
+
+    await user.click(tabs[0])
+    expect(screen.getByText('· 1 row affected')).toBeInTheDocument()
+  })
+
+  it('closes a run tab and falls back to the previous run', async () => {
+    const user = userEvent.setup()
+    beginRunWithResult({
+      status: 'ok',
+      durationMs: 2,
+      sql: 'select 1',
+      connectionId: 7,
+      data: {
+        columns: [],
+        rows: [],
+        duration_ms: 2,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+        rows_affected: 1,
+      },
+    })
+    beginRunWithResult({ status: 'error', sql: 'select 2', message: 'boom' })
+
+    renderResultsArea()
+    expect(screen.getByText('Query failed')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Close run 2' }))
+
+    expect(store.getState().resultRuns['scratch-1']).toHaveLength(1)
+    expect(screen.getByText('· 1 row affected')).toBeInTheDocument()
+  })
+
+  it('shows the connection a failed query ran against', async () => {
+    renderResult({ status: 'error', sql: 'select 1', message: 'permission denied' }, 7)
+
+    expect(await screen.findByText('Query failed')).toBeInTheDocument()
+    expect(await screen.findByText('analytics-pg')).toBeInTheDocument()
+  })
+
+  it("labels each run tab with its own connection's driver badge", async () => {
+    beginRunWithResult(
+      {
+        status: 'ok',
+        durationMs: 2,
+        sql: 'select 1',
+        connectionId: 7,
+        data: {
+          columns: [],
+          rows: [],
+          duration_ms: 2,
+          truncated: false,
+          rows_returned: 0,
+          bytes_returned: 0,
+          rows_affected: 1,
+        },
+      },
+      7,
+    )
+    beginRunWithResult({ status: 'error', sql: 'select 2', message: 'boom' }, 7)
+
+    renderResultsArea()
+
+    const runTabs = within(await screen.findByRole('tablist', { name: 'Runs' }))
+    expect(await runTabs.findAllByRole('img', { name: 'PostgreSQL' })).toHaveLength(2)
   })
 })

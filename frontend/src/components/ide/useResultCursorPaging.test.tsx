@@ -33,9 +33,12 @@ const initialResult: Extract<QueryResult, { status: 'ok' }> = {
 describe('useResultCursorPaging', () => {
   let store: ReturnType<typeof createIdeStore>
 
+  let runId: string
+
   beforeEach(() => {
     store = createIdeStore('test', 1, 'ephemeral')
-    store.getState().setStatementResult('tab-1', 0, initialResult)
+    runId = store.getState().beginRun('tab-1', ['select * from users'])
+    store.getState().setRunStatementResult('tab-1', runId, 0, initialResult)
   })
 
   function wrapper({ children }: PropsWithChildren) {
@@ -51,6 +54,7 @@ describe('useResultCursorPaging', () => {
           index: 0,
           orgSlug: 'acme',
           result,
+          runId,
           workspaceId: 3,
         }),
       { wrapper },
@@ -73,7 +77,7 @@ describe('useResultCursorPaging', () => {
 
     await act(() => result.current.fetchNextPage())
 
-    const stored = store.getState().results['tab-1'][0]
+    const stored = store.getState().resultRuns['tab-1'][0].results[0]
     expect(stored.status).toBe('ok')
     if (stored.status !== 'ok') return
     expect(stored.data.rows).toHaveLength(2)
@@ -123,7 +127,7 @@ describe('useResultCursorPaging', () => {
 
     await act(() => result.current.fetchNextPage())
 
-    const stored = store.getState().results['tab-1'][0]
+    const stored = store.getState().resultRuns['tab-1'][0].results[0]
     expect(stored.status).toBe('ok')
     if (stored.status !== 'ok') return
     expect(stored.cursorMessage).toBe('Cursor expired. Run the query again.')

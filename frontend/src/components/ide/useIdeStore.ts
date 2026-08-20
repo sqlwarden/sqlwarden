@@ -34,7 +34,7 @@ import {
 export type QueryResult =
   | { status: 'idle' }
   | { status: 'pending'; sql: string }
-  | { status: 'running' }
+  | { status: 'running'; sql: string }
   | {
       status: 'ok'
       data: ResultSet
@@ -50,11 +50,23 @@ export type QueryResult =
 
 /** A query the backend refused to run unconfirmed because it looked unsafe
  *  (e.g. UPDATE/DELETE with no WHERE clause), awaiting Cancel/Run Anyway.
- *  `batchIndex` is set when this confirmation paused a Run All. */
+ *  `runId`/`statementIndex` identify which run and statement to resume on confirm. */
 export type PendingUnsafeQuery = {
   sql: string
   statements: UnsafeStatement[]
-  batchIndex?: number
+  runId: string
+  statementIndex: number
+}
+
+/** One execution of a query or Run All batch, holding one result per statement.
+ *  Tabs keep a bounded history of runs (see resultRunHistory.ts) so switching
+ *  back to an earlier run's tab still shows its results. */
+export type ResultRun = {
+  id: string
+  results: QueryResult[]
+  selectedIndex: number
+  createdAt: number
+  connectionId?: number
 }
 
 const TERMINAL_STATUSES: ReadonlySet<QueryResult['status']> = new Set([
@@ -131,16 +143,17 @@ export type IdeState = {
   tabs: EditorTab[]
   /** Live session IDs keyed by connectionId. A session entry means the backend has an open pool connection for this account. */
   sessions: Record<number, string>
-  /** Ordered query results per tab ID — one entry per statement in the most recent run. Not persisted to IndexedDB. */
-  results: Record<string, QueryResult[]>
+  /** Bounded run history per tab ID — each run holds one result per statement.
+   *  Fully ephemeral: never persisted to IndexedDB and reset on reload. */
+  resultRuns: Record<string, ResultRun[]>
+  /** Which run's results the results pane shows, keyed by tabId. Not persisted. */
+  selectedRunId: Record<string, string>
   /** Tabs with an in-flight query. Not persisted to IndexedDB. */
   runningTabs: Record<string, boolean>
   /** AbortControllers for in-flight fetch requests, keyed by tabId. Not persisted. */
   abortControllers: Record<string, AbortController>
   /** Queries refused as unsafe pending explicit confirmation, keyed by tabId. Not persisted. */
   pendingConfirmations: Record<string, PendingUnsafeQuery>
-  /** Index into `results[tabId]` shown in the results pane, keyed by tabId. Not persisted. */
-  selectedResultIndex: Record<string, number>
 }
 
 export type IdeActions = {
@@ -206,21 +219,27 @@ export type IdeActions = {
    *  other workspaces must keep their sessions); otherwise the whole map is
    *  replaced. */
   syncSessions: (backendSessions: Record<number, string>, scopeConnectionIds?: number[]) => void
-  setQueryResult: (tabId: string, result: QueryResult) => void
-  /** Seeds one pending entry per statement, replacing any previous results for the tab. */
-  initBatchResults: (tabId: string, sqls: string[]) => void
-  /** Updates one entry in place without touching the others. */
-  setStatementResult: (tabId: string, index: number, result: QueryResult) => void
-  /** Marks every entry from `fromIndex` onward `skipped`, if not already terminal. */
-  markRemainingSkipped: (tabId: string, fromIndex: number) => void
+  /** Starts a new run with one pending entry per statement, appends it to the
+   *  tab's run history, and selects it. Returns the new run's id. */
+  beginRun: (tabId: string, sqls: string[], connectionId?: number) => string
+  /** Removes the given (already-evicted) runs from a tab's history. */
+  evictRuns: (tabId: string, runIds: string[]) => void
+  /** Updates one statement's result within a specific run, without touching others. */
+  setRunStatementResult: (tabId: string, runId: string, index: number, result: QueryResult) => void
+  /** Marks every entry in a run from `fromIndex` onward `skipped`, if not already terminal. */
+  markRunRemainingSkipped: (tabId: string, runId: string, fromIndex: number) => void
   setTabRunning: (tabId: string, running: boolean) => void
   setTabController: (tabId: string, controller: AbortController | null) => void
   setPendingConfirmation: (tabId: string, pending: PendingUnsafeQuery) => void
   clearPendingConfirmation: (tabId: string) => void
-  /** Clears a paused batch confirmation and marks the rest of that Run All skipped. */
-  abandonPendingBatchConfirmation: (tabId: string) => void
-  /** Selects which statement's result the results pane displays. */
-  setSelectedResultIndex: (tabId: string, index: number) => void
+  /** Clears a paused confirmation and marks the rest of that run skipped. */
+  abandonPendingRunConfirmation: (tabId: string) => void
+  /** Selects which run's results the results pane displays. */
+  setSelectedRun: (tabId: string, runId: string) => void
+  /** Selects which statement's result is shown within one run. */
+  setSelectedIndexInRun: (tabId: string, runId: string, index: number) => void
+  /** Closes one run tab. Reselects the previous run, or the next one if the first closed. */
+  closeRunTab: (tabId: string, runId: string) => void
   /** Opens a new numbered console tab. Pass yState (encoded Y.Doc) so all windows
    *  that receive this tab share the same canonical Y.js initial history.
    *  Pass connectionId to pre-select a connection on the new tab. */
@@ -236,6 +255,8 @@ export type IdeActions = {
 
 let _groupSeq = 0
 const newGroupId = () => `grp-${Date.now().toString(36)}-${(_groupSeq++).toString(36)}`
+
+let _runSeq = 0
 
 /** Returns a workspace's layout + focused group id, creating an empty group if none exists. */
 function ensureWorkspaceLayout(
@@ -320,11 +341,11 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         expandedNodes: {},
         tabs: [],
         sessions: {},
-        results: {},
+        resultRuns: {},
+        selectedRunId: {},
         runningTabs: {},
         abortControllers: {},
         pendingConfirmations: {},
-        selectedResultIndex: {},
 
         setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
@@ -384,19 +405,19 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             s.abortControllers[tabId]?.abort()
             const closedTab = s.tabs.find((t) => t.id === tabId)
             const nextTabs = s.tabs.filter((t) => t.id !== tabId)
-            const { [tabId]: _r, ...nextResults } = s.results
+            const { [tabId]: _r, ...nextRuns } = s.resultRuns
             const { [tabId]: _rt, ...nextRunning } = s.runningTabs
             const { [tabId]: _ac, ...nextControllers } = s.abortControllers
             const { [tabId]: _pc, ...nextPending } = s.pendingConfirmations
-            const { [tabId]: _sr, ...nextSelected } = s.selectedResultIndex
+            const { [tabId]: _sr, ...nextSelected } = s.selectedRunId
 
             const patch = {
               tabs: nextTabs,
-              results: nextResults,
+              resultRuns: nextRuns,
               runningTabs: nextRunning,
               abortControllers: nextControllers,
               pendingConfirmations: nextPending,
-              selectedResultIndex: nextSelected,
+              selectedRunId: nextSelected,
             }
             if (!closedTab) return patch
 
@@ -443,19 +464,19 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             // Keep the tab and its Y.Doc alive while another pane still shows it.
             if (allGroups(nextLayout).some((g) => g.tabIds.includes(tabId))) return base
             s.abortControllers[tabId]?.abort()
-            const { [tabId]: _r, ...nextResults } = s.results
+            const { [tabId]: _r, ...nextRuns } = s.resultRuns
             const { [tabId]: _rt, ...nextRunning } = s.runningTabs
             const { [tabId]: _ac, ...nextControllers } = s.abortControllers
             const { [tabId]: _pc, ...nextPending } = s.pendingConfirmations
-            const { [tabId]: _sr, ...nextSelected } = s.selectedResultIndex
+            const { [tabId]: _sr, ...nextSelected } = s.selectedRunId
             return {
               ...base,
               tabs: s.tabs.filter((t) => t.id !== tabId),
-              results: nextResults,
+              resultRuns: nextRuns,
               runningTabs: nextRunning,
               abortControllers: nextControllers,
               pendingConfirmations: nextPending,
-              selectedResultIndex: nextSelected,
+              selectedRunId: nextSelected,
             }
           }),
 
@@ -618,30 +639,68 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             return { sessions: next }
           }),
 
-        setQueryResult: (tabId, result) =>
-          set((s) => ({ results: { ...s.results, [tabId]: [result] } })),
-
-        initBatchResults: (tabId, sqls) =>
+        beginRun: (tabId, sqls, connectionId) => {
+          const runId = `run-${Date.now().toString(36)}-${(_runSeq++).toString(36)}`
           set((s) => ({
-            results: {
-              ...s.results,
-              [tabId]: sqls.map((sql) => ({ status: 'pending' as const, sql })),
+            resultRuns: {
+              ...s.resultRuns,
+              [tabId]: [
+                ...(s.resultRuns[tabId] ?? []),
+                {
+                  id: runId,
+                  results: sqls.map((sql) => ({ status: 'pending' as const, sql })),
+                  selectedIndex: 0,
+                  createdAt: Date.now(),
+                  connectionId,
+                },
+              ],
             },
-            selectedResultIndex: { ...s.selectedResultIndex, [tabId]: 0 },
-          })),
+            selectedRunId: { ...s.selectedRunId, [tabId]: runId },
+          }))
+          return runId
+        },
 
-        setStatementResult: (tabId, index, result) =>
+        evictRuns: (tabId, runIds) =>
           set((s) => {
-            const list = [...(s.results[tabId] ?? [])]
-            list[index] = result
-            return { results: { ...s.results, [tabId]: list } }
+            const runs = s.resultRuns[tabId]
+            if (!runs) return {}
+            const evict = new Set(runIds)
+            return {
+              resultRuns: { ...s.resultRuns, [tabId]: runs.filter((r) => !evict.has(r.id)) },
+            }
           }),
 
-        markRemainingSkipped: (tabId, fromIndex) =>
+        setRunStatementResult: (tabId, runId, index, result) =>
           set((s) => {
-            const list = s.results[tabId]
-            if (!list) return {}
-            return { results: { ...s.results, [tabId]: skipFromIndex(list, fromIndex) } }
+            const runs = s.resultRuns[tabId]
+            if (!runs) return {}
+            return {
+              resultRuns: {
+                ...s.resultRuns,
+                [tabId]: runs.map((run) => {
+                  if (run.id !== runId) return run
+                  const results = [...run.results]
+                  results[index] = result
+                  return { ...run, results }
+                }),
+              },
+            }
+          }),
+
+        markRunRemainingSkipped: (tabId, runId, fromIndex) =>
+          set((s) => {
+            const runs = s.resultRuns[tabId]
+            if (!runs) return {}
+            return {
+              resultRuns: {
+                ...s.resultRuns,
+                [tabId]: runs.map((run) =>
+                  run.id === runId
+                    ? { ...run, results: skipFromIndex(run.results, fromIndex) }
+                    : run,
+                ),
+              },
+            }
           }),
 
         setTabRunning: (tabId, running) =>
@@ -667,20 +726,56 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             return { pendingConfirmations: rest }
           }),
 
-        abandonPendingBatchConfirmation: (tabId) =>
+        abandonPendingRunConfirmation: (tabId) =>
           set((s) => {
-            const { [tabId]: _pc, ...restPending } = s.pendingConfirmations
-            const list = s.results[tabId]
-            const batchIndex = s.pendingConfirmations[tabId]?.batchIndex
-            const results =
-              list && batchIndex !== undefined
-                ? { ...s.results, [tabId]: skipFromIndex(list, batchIndex) }
-                : s.results
-            return { pendingConfirmations: restPending, results }
+            const { [tabId]: pending, ...restPending } = s.pendingConfirmations
+            const runs = s.resultRuns[tabId]
+            if (!pending || !runs) return { pendingConfirmations: restPending }
+            return {
+              pendingConfirmations: restPending,
+              resultRuns: {
+                ...s.resultRuns,
+                [tabId]: runs.map((run) =>
+                  run.id === pending.runId
+                    ? { ...run, results: skipFromIndex(run.results, pending.statementIndex) }
+                    : run,
+                ),
+              },
+            }
           }),
 
-        setSelectedResultIndex: (tabId, index) =>
-          set((s) => ({ selectedResultIndex: { ...s.selectedResultIndex, [tabId]: index } })),
+        setSelectedRun: (tabId, runId) =>
+          set((s) => ({ selectedRunId: { ...s.selectedRunId, [tabId]: runId } })),
+
+        setSelectedIndexInRun: (tabId, runId, index) =>
+          set((s) => {
+            const runs = s.resultRuns[tabId]
+            if (!runs) return {}
+            return {
+              resultRuns: {
+                ...s.resultRuns,
+                [tabId]: runs.map((run) =>
+                  run.id === runId ? { ...run, selectedIndex: index } : run,
+                ),
+              },
+            }
+          }),
+
+        closeRunTab: (tabId, runId) =>
+          set((s) => {
+            const runs = s.resultRuns[tabId]
+            if (!runs) return {}
+            const closedIndex = runs.findIndex((r) => r.id === runId)
+            const nextRuns = runs.filter((r) => r.id !== runId)
+            const patch: Partial<IdeState> = {
+              resultRuns: { ...s.resultRuns, [tabId]: nextRuns },
+            }
+            if (s.selectedRunId[tabId] === runId && nextRuns.length > 0) {
+              const fallback = nextRuns[Math.max(0, closedIndex - 1)]
+              patch.selectedRunId = { ...s.selectedRunId, [tabId]: fallback.id }
+            }
+            return patch
+          }),
 
         openConsole: (workspace, yState, connectionId, driver) =>
           set((s) => {
@@ -745,11 +840,11 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         // Exclude ephemeral query results from IndexedDB — they can be large
         // and are meaningless after a page reload anyway.
         partialize: ({
-          results: _r,
+          resultRuns: _r,
           runningTabs: _rt,
           abortControllers: _ac,
           pendingConfirmations: _pc,
-          selectedResultIndex: _sr,
+          selectedRunId: _sr,
           draggingTab: _dt,
           focusEditorRequest: _fe,
           pendingJump: _pj,
@@ -799,11 +894,11 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   expandedNodes: {},
   tabs: [],
   sessions: {},
-  results: {},
+  resultRuns: {},
+  selectedRunId: {},
   runningTabs: {},
   abortControllers: {},
   pendingConfirmations: {},
-  selectedResultIndex: {},
   setActiveWorkspace: _noop,
   openTab: _noop,
   openTabToSide: _noop,
@@ -833,16 +928,18 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   setSession: _noop,
   clearSession: _noop,
   syncSessions: _noop,
-  setQueryResult: _noop,
-  initBatchResults: _noop,
-  setStatementResult: _noop,
-  markRemainingSkipped: _noop,
+  beginRun: () => '',
+  evictRuns: _noop,
+  setRunStatementResult: _noop,
+  markRunRemainingSkipped: _noop,
   setTabRunning: _noop,
   setTabController: _noop,
   setPendingConfirmation: _noop,
   clearPendingConfirmation: _noop,
-  abandonPendingBatchConfirmation: _noop,
-  setSelectedResultIndex: _noop,
+  abandonPendingRunConfirmation: _noop,
+  setSelectedRun: _noop,
+  setSelectedIndexInRun: _noop,
+  closeRunTab: _noop,
   openConsole: _noop,
 }))
 

@@ -1,7 +1,18 @@
 import { errorMessage, isApiError } from '#/lib/api/errors'
 import type { ResultSet, UnsafeStatement } from '#/lib/api/types'
-import { isQueryAbort, type RecordHistoryInput } from './queryExecution'
 import type { PendingUnsafeQuery, QueryResult } from './useIdeStore'
+
+export type RecordHistoryInput = {
+  sqlText: string
+  status: 'ok' | 'error' | 'cancelled'
+  errorMessage?: string
+  durationMs: number
+  rowsAffected: number
+}
+
+export function isQueryAbort(error: unknown) {
+  return error instanceof Error && error.name === 'AbortError'
+}
 
 export type BatchExecutionDependencies = {
   ensureSession: <T>(
@@ -15,9 +26,9 @@ export type BatchExecutionDependencies = {
     confirmUnsafe: boolean,
     signal: AbortSignal,
   ) => Promise<ResultSet>
-  initBatch: (tabId: string, sqls: string[]) => void
-  setStatementResult: (tabId: string, index: number, result: QueryResult) => void
-  markRemainingSkipped: (tabId: string, fromIndex: number) => void
+  beginRun: (tabId: string, sqls: string[]) => string
+  setRunStatementResult: (tabId: string, runId: string, index: number, result: QueryResult) => void
+  markRunRemainingSkipped: (tabId: string, runId: string, fromIndex: number) => void
   setRunning: (tabId: string, running: boolean) => void
   setController: (tabId: string, controller: AbortController | null) => void
   setPendingConfirmation: (tabId: string, pending: PendingUnsafeQuery) => void
@@ -29,22 +40,24 @@ export type BatchExecutionRequest = {
   connectionId: number
   sqls: string[]
   controller: AbortController
+  /** An existing run to resume into (e.g. from confirmAt). Omit to start a new run. */
+  runId?: string
   startAt?: number
   confirmUnsafeAt?: number
 }
 
 const UNSAFE_QUERY_CONFIRMATION_REQUIRED = 'unsafe_query_confirmation_required'
 
-/** Runs every statement in `request.sqls` sequentially over one session, stopping on the first error, cancel, or unconfirmed unsafe statement. */
+/** Runs every statement in `request.sqls` sequentially over one session as one
+ *  run, stopping on the first error, cancel, or unconfirmed unsafe statement.
+ *  Resolves to the run's id. */
 export async function runStatementBatch(
   request: BatchExecutionRequest,
   deps: BatchExecutionDependencies,
-): Promise<void> {
+): Promise<string> {
   const { tabId, connectionId, sqls, controller, confirmUnsafeAt } = request
 
-  if (request.startAt === undefined) {
-    deps.initBatch(tabId, sqls)
-  }
+  const runId = request.runId ?? deps.beginRun(tabId, sqls)
   const startAt = request.startAt ?? 0
 
   deps.setController(tabId, controller)
@@ -53,7 +66,7 @@ export async function runStatementBatch(
   try {
     for (let i = startAt; i < sqls.length; i++) {
       const sql = sqls[i]
-      deps.setStatementResult(tabId, i, { status: 'running' })
+      deps.setRunStatementResult(tabId, runId, i, { status: 'running', sql })
 
       try {
         const result = await deps.ensureSession(
@@ -62,7 +75,7 @@ export async function runStatementBatch(
             deps.runStatement(sessionId, sql, i === confirmUnsafeAt, controller.signal),
           controller.signal,
         )
-        deps.setStatementResult(tabId, i, {
+        deps.setRunStatementResult(tabId, runId, i, {
           status: 'ok',
           data: result,
           durationMs: result.duration_ms,
@@ -77,22 +90,23 @@ export async function runStatementBatch(
         })
       } catch (error) {
         if (isApiError(error) && error.code === UNSAFE_QUERY_CONFIRMATION_REQUIRED) {
-          deps.setStatementResult(tabId, i, { status: 'pending', sql })
+          deps.setRunStatementResult(tabId, runId, i, { status: 'pending', sql })
           deps.setPendingConfirmation(tabId, {
             sql,
             statements: (error.details as UnsafeStatement[] | undefined) ?? [],
-            batchIndex: i,
+            runId,
+            statementIndex: i,
           })
-          return
+          return runId
         }
         if (isQueryAbort(error)) {
-          deps.setStatementResult(tabId, i, { status: 'cancelled', sql })
+          deps.setRunStatementResult(tabId, runId, i, { status: 'cancelled', sql })
           deps.recordHistory({ sqlText: sql, status: 'cancelled', durationMs: 0, rowsAffected: 0 })
-          deps.markRemainingSkipped(tabId, i + 1)
-          return
+          deps.markRunRemainingSkipped(tabId, runId, i + 1)
+          return runId
         }
         const message = errorMessage(error, 'Query failed')
-        deps.setStatementResult(tabId, i, { status: 'error', message, sql })
+        deps.setRunStatementResult(tabId, runId, i, { status: 'error', message, sql })
         deps.recordHistory({
           sqlText: sql,
           status: 'error',
@@ -100,12 +114,14 @@ export async function runStatementBatch(
           durationMs: 0,
           rowsAffected: 0,
         })
-        deps.markRemainingSkipped(tabId, i + 1)
-        return
+        deps.markRunRemainingSkipped(tabId, runId, i + 1)
+        return runId
       }
     }
   } finally {
     deps.setController(tabId, null)
     deps.setRunning(tabId, false)
   }
+
+  return runId
 }

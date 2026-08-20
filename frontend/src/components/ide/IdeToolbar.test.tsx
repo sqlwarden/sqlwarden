@@ -252,12 +252,14 @@ describe('IdeToolbar', () => {
     expect(mocks.runAll).toHaveBeenCalledWith(['select 1', 'select 2'])
   })
 
-  it('resumes a paused batch confirmation via confirmAt and clears it on confirm', async () => {
+  it('resumes a paused run confirmation via confirmAt and clears it on confirm', async () => {
     store.getState().openTab(scratchTab)
+    const runId = store.getState().beginRun(scratchTab.id, ['select 1', 'DELETE FROM widgets'])
     store.getState().setPendingConfirmation(scratchTab.id, {
       sql: 'DELETE FROM widgets',
       statements: [],
-      batchIndex: 1,
+      runId,
+      statementIndex: 1,
     })
     const { user } = renderToolbar()
 
@@ -268,37 +270,27 @@ describe('IdeToolbar', () => {
     expect(store.getState().pendingConfirmations[scratchTab.id]).toBeUndefined()
   })
 
-  it('confirms a plain (non-batch) unsafe query via run(true)', async () => {
+  it('abandons the rest of a run when a pending confirmation is dismissed', async () => {
     store.getState().openTab(scratchTab)
+    const runId = store
+      .getState()
+      .beginRun(scratchTab.id, ['select 1', 'DELETE FROM widgets', 'select 3'])
     store.getState().setPendingConfirmation(scratchTab.id, {
       sql: 'DELETE FROM widgets',
       statements: [],
+      runId,
+      statementIndex: 1,
     })
-    const { user } = renderToolbar()
-
-    await user.click(screen.getByRole('button', { name: 'Run Anyway' }))
-
-    expect(mocks.run).toHaveBeenCalledWith(true)
-    expect(mocks.confirmAt).not.toHaveBeenCalled()
-  })
-
-  it('abandons the rest of a batch when a pending confirmation is dismissed', async () => {
-    store.getState().openTab(scratchTab)
-    store.getState().setPendingConfirmation(scratchTab.id, {
-      sql: 'DELETE FROM widgets',
-      statements: [],
-      batchIndex: 1,
-    })
-    store.getState().initBatchResults(scratchTab.id, ['select 1', 'DELETE FROM widgets', 'select 3'])
     const { user } = renderToolbar()
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     expect(store.getState().pendingConfirmations[scratchTab.id]).toBeUndefined()
-    expect(store.getState().results[scratchTab.id][1]).toEqual({
+    const results = store.getState().resultRuns[scratchTab.id][0].results
+    expect(results[1]).toEqual({
       status: 'skipped',
       sql: 'DELETE FROM widgets',
     })
-    expect(store.getState().results[scratchTab.id][2]).toEqual({ status: 'skipped', sql: 'select 3' })
+    expect(results[2]).toEqual({ status: 'skipped', sql: 'select 3' })
   })
 })
