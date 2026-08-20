@@ -49,8 +49,8 @@ func TestAppIconIsNativeReady(t *testing.T) {
 	if !hasBlue || !hasWhite {
 		t.Fatal("app icon must contain an opaque brand-blue background and white mark")
 	}
-	if minX < 90 || minY < 90 || maxX > 933 || maxY > 933 {
-		t.Fatalf("app icon opaque bounds = (%d,%d)-(%d,%d), want native macOS padding", minX, minY, maxX, maxY)
+	if minX != 100 || minY != 100 || maxX != 923 || maxY != 923 {
+		t.Fatalf("app icon opaque bounds = (%d,%d)-(%d,%d), want standard 824px macOS footprint", minX, minY, maxX, maxY)
 	}
 }
 
