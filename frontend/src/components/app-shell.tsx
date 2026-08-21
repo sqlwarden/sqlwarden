@@ -29,6 +29,7 @@ import {
   SidebarTrigger,
 } from '#/components/ui/sidebar'
 import { Tip } from '#/components/ide/schema-diagram/Tip'
+import { sectionCaptionClass } from '#/lib/typography'
 import { buildUserMenuItems } from '#/lib/user-menu'
 import { cn } from '#/lib/utils'
 import {
@@ -81,7 +82,12 @@ export function AppShellNavSection({
   return (
     <div className="flex flex-col gap-1 px-2 py-1 group-data-[collapsible=icon]:px-2">
       {label ? (
-        <div className="flex h-6 items-center gap-1.5 px-2 text-[10px] font-semibold tracking-widest text-sidebar-foreground/40 uppercase group-data-[collapsible=icon]:hidden">
+        <div
+          className={cn(
+            sectionCaptionClass,
+            'flex h-6 items-center gap-1.5 px-2 text-sidebar-foreground/40 group-data-[collapsible=icon]:hidden',
+          )}
+        >
           <span className="size-1 shrink-0 rounded-full bg-sidebar-foreground/30" />
           <span>{label}</span>
         </div>
@@ -110,7 +116,11 @@ export function AppShellSidebarFooter({
 }) {
   return (
     <SidebarFooter className="border-t border-sidebar-border">
-      <AppShellPreferencesPopover preferences={preferences} setPreferences={setPreferences} />
+      <AppShellPreferencesPopover
+        preferences={preferences}
+        setPreferences={setPreferences}
+        isAdmin={session.is_instance_admin}
+      />
       <AppShellUserMenu session={session} />
       <div className="flex justify-center px-2 pb-1">
         <SidebarTrigger
@@ -267,11 +277,13 @@ export function AppShellUserMenu({ session }: { session: SessionResponse }) {
 export function AppShellPreferencesPopover({
   preferences,
   setPreferences,
+  isAdmin,
   buttonLabel = 'UI Lab',
   buttonClassName,
 }: {
   preferences: AppShellPreferences
   setPreferences: Dispatch<SetStateAction<AppShellPreferences>>
+  isAdmin: boolean
   buttonLabel?: string
   buttonClassName?: string
 }) {
@@ -305,6 +317,7 @@ export function AppShellPreferencesPopover({
           preferences={preferences}
           setPreferences={setPreferences}
           onClose={() => setOpen(false)}
+          isAdmin={isAdmin}
         />
       )}
     </>

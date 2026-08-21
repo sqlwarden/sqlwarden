@@ -13,6 +13,8 @@ import {
 } from '#/lib/workspace-page-permissions'
 import { Button } from '#/components/ui/button'
 import { Skeleton } from '#/components/ui/skeleton'
+import { EmptyState } from '#/components/EmptyState'
+import { errorMessage, isApiError } from '#/lib/api/errors'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id')({
   component: WorkspaceRoute,
@@ -98,6 +100,32 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
           ))}
         </div>
       </div>
+    )
+  }
+
+  if (workspace.isError) {
+    const notFound = isApiError(workspace.error) && workspace.error.status === 404
+    return (
+      <EmptyState
+        icon={notFound ? 'search-01' : 'information-circle'}
+        message={notFound ? 'Workspace not found' : "Couldn't load this workspace"}
+        description={
+          notFound
+            ? 'This workspace may have been deleted, or the link you followed is incorrect.'
+            : errorMessage(workspace.error, 'Something went wrong. Try again.')
+        }
+        action={
+          <Button
+            variant="outline"
+            size="sm"
+            nativeButton={false}
+            render={<Link to="/orgs/$org_slug/workspaces" params={{ org_slug: orgSlug }} />}
+          >
+            <Icon name="arrow-left-01" size={16} data-icon="inline-start" />
+            Back to Workspaces
+          </Button>
+        }
+      />
     )
   }
 
