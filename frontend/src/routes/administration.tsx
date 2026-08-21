@@ -20,7 +20,10 @@ export const Route = createFileRoute('/administration')({
   component: AdministrationLayout,
 })
 
-const homeItems: AppShellNavItem[] = [{ to: '/', label: 'Home', icon: 'arrow-left-01' }]
+const homeItems: AppShellNavItem[] = [
+  { to: '/', label: 'Org Picker', icon: 'arrow-left-01' },
+  { to: '/administration', label: 'Overview', icon: 'home-04' },
+]
 
 const adminItems: AppShellNavItem[] = [
   { to: '/administration/users', label: 'Users', icon: 'user-multiple-02' },

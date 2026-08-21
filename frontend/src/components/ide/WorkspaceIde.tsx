@@ -6,6 +6,14 @@ import { useBrand } from '#/lib/brand/brand'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/components/ui/resizable'
 import { Button } from '#/components/ui/button'
+import { useIsMobile } from '#/hooks/use-mobile'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '#/components/ui/sheet'
 import {
   Empty,
   EmptyContent,
@@ -510,6 +518,7 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
   const activeActivityId = useIde((s) => s.activeActivityId)
+  const isMobile = useIsMobile()
 
   // Reconcile persisted sessions with the backend for as long as the editor is
   // open — regardless of which sidebar activity is visible.
@@ -523,7 +532,35 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
   const activities = visibleActivities(visibilityContext)
   const activeActivity = activities.find((a) => a.id === activeActivityId) ?? activities[0]
 
-  // Sync store → panel (e.g. on initial mount with persisted state).
+  // sidebarCollapsed is shared with the mobile Sheet's open/closed state (it
+  // doubles as the drawer's persisted "open" flag so IdeActivityBar's toggle
+  // works on both layouts), but it's also the persisted desktop panel
+  // preference. Track the last desktop value here so a mobile visit's drawer
+  // open/close activity can't permanently overwrite it.
+  const desktopSidebarCollapsedRef = useRef(sidebarCollapsed)
+  const wasMobileRef = useRef(false)
+
+  // The store's sidebarCollapsed default is false (a sensible desktop default),
+  // so entering mobile needs an explicit collapse to keep the drawer closed on
+  // first mount rather than inheriting an open desktop panel. Leaving mobile
+  // restores whatever the desktop preference was before that visit, rather
+  // than whatever the mobile drawer's open/close activity left behind. Both
+  // concerns live in one effect so the "capture the desktop value" branch
+  // can't run on the same commit as the "just left mobile" transition and
+  // clobber the value with the mobile-forced one before it's read back.
+  useEffect(() => {
+    if (isMobile) {
+      if (!wasMobileRef.current) setSidebarCollapsed(true)
+    } else if (wasMobileRef.current) {
+      setSidebarCollapsed(desktopSidebarCollapsedRef.current)
+    } else {
+      desktopSidebarCollapsedRef.current = sidebarCollapsed
+    }
+    wasMobileRef.current = isMobile
+  }, [isMobile, sidebarCollapsed, setSidebarCollapsed])
+
+  // Sync store → panel (e.g. on initial mount with persisted state). No-ops on
+  // mobile since the resizable panel isn't mounted there.
   useEffect(() => {
     if (sidebarCollapsed) {
       sidebarRef.current?.collapse()
@@ -541,6 +578,26 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
         <div className="min-w-0 flex-1 overflow-hidden">
           <PageSurface orgSlug={orgSlug} workspace={workspace} />
         </div>
+      </div>
+    )
+  }
+
+  if (isMobile) {
+    return (
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <IdeActivityBar orgSlug={orgSlug} />
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <IdeEditorAndResults orgSlug={orgSlug} workspace={workspace} />
+        </div>
+        <Sheet open={!sidebarCollapsed} onOpenChange={(open) => setSidebarCollapsed(!open)}>
+          <SheetContent side="left" className="w-[85vw] max-w-sm p-0 sm:max-w-sm">
+            <SheetHeader className="sr-only">
+              <SheetTitle>{activeActivity?.label ?? 'Explorer'}</SheetTitle>
+              <SheetDescription>Editor sidebar panel</SheetDescription>
+            </SheetHeader>
+            <IdeSidebar orgSlug={orgSlug} workspace={workspace} />
+          </SheetContent>
+        </Sheet>
       </div>
     )
   }

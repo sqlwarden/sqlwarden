@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Icon, type AppIcon } from '#/lib/icons'
 import { TableCell, TableRow } from '#/components/ui/table'
 
@@ -5,9 +6,10 @@ type EmptyStateProps = {
   icon?: AppIcon
   message: string
   description?: string
+  action?: ReactNode
 }
 
-export function EmptyState({ description, icon, message }: EmptyStateProps) {
+export function EmptyState({ action, description, icon, message }: EmptyStateProps) {
   return (
     <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
       {icon ? <Icon name={icon} size={40} className="text-muted-foreground" /> : null}
@@ -15,6 +17,7 @@ export function EmptyState({ description, icon, message }: EmptyStateProps) {
         <p className="font-medium text-foreground">{message}</p>
         {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
       </div>
+      {action ? <div className="mt-1">{action}</div> : null}
     </div>
   )
 }

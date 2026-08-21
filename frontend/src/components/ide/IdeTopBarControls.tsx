@@ -47,6 +47,7 @@ export function IdeTopBarControls({
       <AppShellPreferencesPopover
         preferences={preferences}
         setPreferences={setPreferences}
+        isAdmin={session.is_instance_admin}
         buttonLabel=""
         buttonClassName="size-7 justify-center px-0"
       />
