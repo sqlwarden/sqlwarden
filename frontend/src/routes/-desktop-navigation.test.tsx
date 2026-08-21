@@ -6,7 +6,11 @@ import { permission } from '#/lib/permissions'
 import { renderRoute } from '#/test/render'
 import { server } from '#/test/server'
 import { sessionHandler, setupStatusHandler } from '#/test/handlers'
-import { organizationFixture, sessionFixture } from '#/test/fixtures'
+import {
+  organizationFixture,
+  organizationRuntimeSettingsFixture,
+  sessionFixture,
+} from '#/test/fixtures'
 
 vi.mock('idb-keyval', () => ({
   get: vi.fn(async () => undefined),
@@ -48,6 +52,9 @@ describe('desktop organization navigation', () => {
       }),
       sessionHandler(sessionFixture({ organizations: [organization] })),
       http.get('/api/v1/orgs/local', () => HttpResponse.json(organization)),
+      http.get('/api/v1/orgs/local/runtime-settings', () =>
+        HttpResponse.json(organizationRuntimeSettingsFixture()),
+      ),
       http.get('/api/v1/orgs/local/workspaces', () =>
         HttpResponse.json({ items: [workspace], page: 1, page_size: 100, total: 1 }),
       ),
