@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.9.0](https://github.com/sqlwarden/sqlwarden/compare/v0.8.0...v0.9.0) (2026-08-21)
+
+
+### Features
+
+* **auth:** match setup page design and copy to login ([2732286](https://github.com/sqlwarden/sqlwarden/commit/2732286560029a351bb80df753e8498fb1a1b214))
+* **editor:** add structured DDL actions, SQL generation, and DML row counts ([#47](https://github.com/sqlwarden/sqlwarden/issues/47)) ([ee87430](https://github.com/sqlwarden/sqlwarden/commit/ee87430f9412b2bbf66ffaebdf47652f39faa66d))
+* **ide:** add query history and favorites (SQLW-19) ([7b8a4d8](https://github.com/sqlwarden/sqlwarden/commit/7b8a4d8b921c935c41368e2403fa2bfcd9dc3094))
+* **ide:** add workspace file content search ([bddbc62](https://github.com/sqlwarden/sqlwarden/commit/bddbc62ef5efdb43e70969f4f0286016f7bf03a7))
+* **ide:** support running all statements in the SQL console (SQLW-2) ([50b6923](https://github.com/sqlwarden/sqlwarden/commit/50b69235ac387e80c32af3fc4b3a9e8ceb168d4b))
+* **ide:** tab query results by run (SQLW-81) ([0498a7b](https://github.com/sqlwarden/sqlwarden/commit/0498a7bdbcaf86baa821edf2df3b54a029756ec7))
+* **ide:** warn before running unsafe UPDATE/DELETE queries ([e6198d5](https://github.com/sqlwarden/sqlwarden/commit/e6198d5ae0c7633c8f43252f0c3ce0b474ca58b9))
+
+
+### Bug Fixes
+
+* **autocomplete:** improve ranking, aliases, and CTE completion ([#49](https://github.com/sqlwarden/sqlwarden/issues/49)) ([0a6ba89](https://github.com/sqlwarden/sqlwarden/commit/0a6ba89040c615234c682d8ea9fddb1da05aa452))
+* **build:** bump Go toolchain to 1.26.6 to resolve govulncheck failures ([7acb61e](https://github.com/sqlwarden/sqlwarden/commit/7acb61eab07b2029e5144467cda591259f239d04))
+* **docker:** build and serve the SQLWarden frontend ([#50](https://github.com/sqlwarden/sqlwarden/issues/50)) ([dc8ff07](https://github.com/sqlwarden/sqlwarden/commit/dc8ff0713a08eebbe13a68040612d6952ba83800))
+* **docker:** embed frontend assets in image ([dc8ff07](https://github.com/sqlwarden/sqlwarden/commit/dc8ff0713a08eebbe13a68040612d6952ba83800))
+
 ## [0.8.0](https://github.com/sqlwarden/sqlwarden/compare/v0.7.0...v0.8.0) (2026-08-13)
 
 
