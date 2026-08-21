@@ -70,10 +70,12 @@ export function UiLabPanel({
   preferences,
   setPreferences,
   onClose,
+  isAdmin,
 }: {
   preferences: AppShellPreferences
   setPreferences: Dispatch<SetStateAction<AppShellPreferences>>
   onClose: () => void
+  isAdmin: boolean
 }) {
   const { packName, setPackName } = useIconPack()
   const { editorThemeDark, editorThemeLight, setEditorThemeDark, setEditorThemeLight } =
@@ -203,77 +205,84 @@ export function UiLabPanel({
             options={['light', 'dark', 'system']}
             onValueChange={(value) => updatePreference('themeMode', value as AppShellTheme)}
           />
-
-          <AccentPicker value={accent} isDark={isDark} onValueChange={setAccent} />
-          <SurfacePicker value={surface} isDark={isDark} onValueChange={setSurface} />
-
-          <LabSlider
-            label="Border Radius"
-            display={`${radius}rem`}
-            value={radius}
-            min={RADIUS_RANGE.min}
-            max={RADIUS_RANGE.max}
-            step={RADIUS_RANGE.step}
-            onValueChange={setRadius}
-          />
-          <LabSlider
-            label="UI Scale"
-            display={`${uiScale}%`}
-            value={uiScale}
-            min={UI_SCALE_RANGE.min}
-            max={UI_SCALE_RANGE.max}
-            step={UI_SCALE_RANGE.step}
-            onValueChange={setUiScale}
-          />
         </div>
 
-        <div className="flex flex-col gap-3 **:data-[slot=toggle-group]:w-full **:data-[slot=toggle-group-item]:flex-1 **:data-[slot=toggle-group-item]:text-xs">
-          <div className="text-xs font-medium text-muted-foreground">App</div>
-          <HeadingFontSelect value={headingFont} onValueChange={setHeadingFont} />
-          <InterfaceFontSelect value={interfaceFont} onValueChange={setInterfaceFont} />
+        {isAdmin ? (
+          <>
+            <div className="flex flex-col gap-3 **:data-[slot=toggle-group]:w-full **:data-[slot=toggle-group-item]:flex-1 **:data-[slot=toggle-group-item]:text-xs">
+              <div className="text-xs font-medium text-muted-foreground">Appearance</div>
+              <AccentPicker value={accent} isDark={isDark} onValueChange={setAccent} />
+              <SurfacePicker value={surface} isDark={isDark} onValueChange={setSurface} />
 
-          <PreferenceToggle
-            label="Sidebar Style"
-            value={preferences.sidebarStyle}
-            options={['inset', 'sidebar', 'floating']}
-            labels={{ inset: 'Inset', sidebar: 'Sidebar', floating: 'Floating' }}
-            onValueChange={(value) =>
-              updatePreference('sidebarStyle', value as AppShellSidebarStyle)
-            }
-          />
+              <LabSlider
+                label="Border Radius"
+                display={`${radius}rem`}
+                value={radius}
+                min={RADIUS_RANGE.min}
+                max={RADIUS_RANGE.max}
+                step={RADIUS_RANGE.step}
+                onValueChange={setRadius}
+              />
+              <LabSlider
+                label="UI Scale"
+                display={`${uiScale}%`}
+                value={uiScale}
+                min={UI_SCALE_RANGE.min}
+                max={UI_SCALE_RANGE.max}
+                step={UI_SCALE_RANGE.step}
+                onValueChange={setUiScale}
+              />
+            </div>
 
-          <PreferenceToggle
-            label="Icon Pack"
-            value={packName}
-            options={['hugeicons', 'lucide', 'remix']}
-            labels={{ hugeicons: 'HugeIcons', lucide: 'Lucide', remix: 'Remix' }}
-            onValueChange={(value) => setPackName(value as IconPackName)}
-          />
+            <div className="flex flex-col gap-3 **:data-[slot=toggle-group]:w-full **:data-[slot=toggle-group-item]:flex-1 **:data-[slot=toggle-group-item]:text-xs">
+              <div className="text-xs font-medium text-muted-foreground">App</div>
+              <HeadingFontSelect value={headingFont} onValueChange={setHeadingFont} />
+              <InterfaceFontSelect value={interfaceFont} onValueChange={setInterfaceFont} />
 
-          <PreferenceToggle
-            label="Connections"
-            value={connectionLayout}
-            options={['flat', 'grouped']}
-            labels={{ flat: 'Flat', grouped: 'By Environment' }}
-            onValueChange={(value) => setConnectionLayout(value as ConnectionLayout)}
-          />
-        </div>
+              <PreferenceToggle
+                label="Sidebar Style"
+                value={preferences.sidebarStyle}
+                options={['inset', 'sidebar', 'floating']}
+                labels={{ inset: 'Inset', sidebar: 'Sidebar', floating: 'Floating' }}
+                onValueChange={(value) =>
+                  updatePreference('sidebarStyle', value as AppShellSidebarStyle)
+                }
+              />
 
-        <div className="flex flex-col gap-3">
-          <div className="text-xs font-medium text-muted-foreground">Editor</div>
-          <EditorThemeSelect
-            label="Dark Theme"
-            value={editorThemeDark}
-            onValueChange={setEditorThemeDark}
-          />
-          <EditorThemeSelect
-            label="Light Theme"
-            value={editorThemeLight}
-            onValueChange={setEditorThemeLight}
-          />
-          <EditorFontSelect value={editorFont} onValueChange={setEditorFont} />
-          <EditorFontSizeSlider value={editorFontSize} onValueChange={setEditorFontSize} />
-        </div>
+              <PreferenceToggle
+                label="Icon Pack"
+                value={packName}
+                options={['hugeicons', 'lucide', 'remix']}
+                labels={{ hugeicons: 'HugeIcons', lucide: 'Lucide', remix: 'Remix' }}
+                onValueChange={(value) => setPackName(value as IconPackName)}
+              />
+
+              <PreferenceToggle
+                label="Connections"
+                value={connectionLayout}
+                options={['flat', 'grouped']}
+                labels={{ flat: 'Flat', grouped: 'By Environment' }}
+                onValueChange={(value) => setConnectionLayout(value as ConnectionLayout)}
+              />
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <div className="text-xs font-medium text-muted-foreground">Editor</div>
+              <EditorThemeSelect
+                label="Dark Theme"
+                value={editorThemeDark}
+                onValueChange={setEditorThemeDark}
+              />
+              <EditorThemeSelect
+                label="Light Theme"
+                value={editorThemeLight}
+                onValueChange={setEditorThemeLight}
+              />
+              <EditorFontSelect value={editorFont} onValueChange={setEditorFont} />
+              <EditorFontSizeSlider value={editorFontSize} onValueChange={setEditorFontSize} />
+            </div>
+          </>
+        ) : null}
       </div>
     </div>,
     document.body,

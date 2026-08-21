@@ -49,18 +49,15 @@ describe('authenticated shell routes', () => {
     ).toBeInTheDocument()
   })
 
-  it('routes an instance administrator to the default users page', async () => {
+  it('shows the administration overview page to an instance administrator', async () => {
     server.use(
       setupStatusHandler(),
       sessionHandler(sessionFixture({ organizations: [], is_instance_admin: true })),
-      http.get('/api/v1/instance/accounts', () =>
-        HttpResponse.json({ items: [], page: 1, page_size: 10, total: 0 }),
-      ),
     )
     const { router } = renderRoute('/administration')
 
-    await waitFor(() => expect(router.state.location.pathname).toBe('/administration/users'))
-    expect(await screen.findByRole('heading', { name: 'Users' })).toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.pathname).toBe('/administration'))
+    expect(await screen.findByText('Instance-wide users, orgs, and settings.')).toBeInTheDocument()
   })
 
   it('redirects a direct workspace URL when effective permissions deny its section', async () => {

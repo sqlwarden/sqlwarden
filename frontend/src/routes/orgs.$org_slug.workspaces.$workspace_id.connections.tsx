@@ -46,6 +46,9 @@ import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 
+const stickyActionsCellClass =
+  'sticky right-0 bg-card text-end [tr:hover>&]:bg-muted/50 [tr:has([aria-expanded])>&]:bg-muted/50 [tr[data-state=selected]>&]:bg-muted'
+
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/connections')({
   component: WorkspaceConnectionsPage,
   pendingComponent: RoutePending,
@@ -130,6 +133,7 @@ function WorkspaceConnectionsPage() {
             </p>
           </div>
           <Button
+            nativeButton={false}
             render={
               <Link
                 to="/ide/$org_slug"
@@ -186,7 +190,7 @@ function WorkspaceConnectionsPage() {
                     onSortChange={toggleSort}
                   />
                 </TableHead>
-                <TableHead className="text-end">
+                <TableHead className={stickyActionsCellClass}>
                   <TableColumnHeader label="Actions" />
                 </TableHead>
               </TableRow>
@@ -260,7 +264,7 @@ function WorkspaceConnectionsPage() {
   )
 }
 
-function ConnectionRow({
+export function ConnectionRow({
   connection,
   environmentName,
   orgSlug,
@@ -299,11 +303,12 @@ function ConnectionRow({
         {environmentName ?? `Environment #${connection.environment_id}`}
       </TableCell>
       <TableCell className="text-muted-foreground">{formatDate(connection.created_at)}</TableCell>
-      <TableCell className="text-end">
+      <TableCell className={stickyActionsCellClass}>
         <div className="flex justify-end gap-2">
           <Button
             variant="outline"
             size="sm"
+            nativeButton={false}
             render={
               <Link
                 to="/ide/$org_slug"
@@ -382,7 +387,7 @@ function ConnectionTableSkeleton() {
       <TableCell>
         <Skeleton className="h-4 w-24" />
       </TableCell>
-      <TableCell className="text-end">
+      <TableCell className={stickyActionsCellClass}>
         <Skeleton className="ms-auto h-8 w-24" />
       </TableCell>
     </TableRow>
