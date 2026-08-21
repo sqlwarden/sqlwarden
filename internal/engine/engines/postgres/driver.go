@@ -16,8 +16,23 @@ import (
 
 type postgresDriver struct {
 	db           *sql.DB
+	currentTx    *sql.Tx
 	scanOptions  cursor.ScanOptions
 	defaultScope metadata.ScopePath
+}
+
+// execer is satisfied by both *sql.DB and *sql.Tx, letting every statement
+// path resolve through the same accessor whether or not a transaction is open.
+type execer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func (d *postgresDriver) conn() execer {
+	if d.currentTx != nil {
+		return d.currentTx
+	}
+	return d.db
 }
 
 func (d *postgresDriver) Connect(ctx context.Context, cfg engine.ConnectionConfig) error {
@@ -56,7 +71,7 @@ func (d *postgresDriver) Query(ctx context.Context, query string, args ...any) (
 func (d *postgresDriver) QueryWithOptions(ctx context.Context, query string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
 	// SQL is intentionally user-authored editor input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.conn().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: query: %w", err)
 	}
@@ -70,7 +85,7 @@ func (d *postgresDriver) Execute(ctx context.Context, query string, args ...any)
 func (d *postgresDriver) ExecuteWithOptions(ctx context.Context, query string, _ cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
 	// SQL is intentionally user-authored editor input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
-	execResult, err := d.db.ExecContext(ctx, query, args...)
+	execResult, err := d.conn().ExecContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: execute: %w", err)
 	}
