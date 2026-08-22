@@ -671,4 +671,23 @@ describe('query results', () => {
     expect(store.getState().resultRuns['tab-1']).toBeUndefined()
     expect(store.getState().selectedRunId['tab-1']).toBeUndefined()
   })
+
+  describe('transaction state', () => {
+    it('starts with no transaction state for a connection', () => {
+      const store = createIdeStore('acme', 1, 'ephemeral')
+      expect(store.getState().transactions[7]).toBeUndefined()
+    })
+
+    it('sets and clears transaction state per connection', () => {
+      const store = createIdeStore('acme', 1, 'ephemeral')
+      store.getState().setTransactionState(7, { mode: 'manual', open: true, pendingStatements: 2 })
+      expect(store.getState().transactions[7]).toEqual({
+        mode: 'manual',
+        open: true,
+        pendingStatements: 2,
+      })
+      store.getState().clearTransactionState(7)
+      expect(store.getState().transactions[7]).toBeUndefined()
+    })
+  })
 })

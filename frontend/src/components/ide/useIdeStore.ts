@@ -5,6 +5,7 @@ import type {
   Connection,
   ObjectRef,
   ResultSet,
+  TransactionMode,
   UnsafeStatement,
   Workspace,
   WorkspaceFile,
@@ -154,6 +155,10 @@ export type IdeState = {
   abortControllers: Record<string, AbortController>
   /** Queries refused as unsafe pending explicit confirmation, keyed by tabId. Not persisted. */
   pendingConfirmations: Record<string, PendingUnsafeQuery>
+  /** Connection-keyed transaction mode/state, mirroring the shared-session
+   *  reality: every tab on a connection sees the same transaction. Not
+   *  persisted — hydrated from the backend on connect/reconnect. */
+  transactions: Record<number, TransactionState>
 }
 
 export type IdeActions = {
@@ -249,6 +254,10 @@ export type IdeActions = {
     connectionId?: number,
     driver?: string,
   ) => void
+  /** Sets (or replaces) a connection's transaction state from a backend response. */
+  setTransactionState: (connectionId: number, state: TransactionState) => void
+  /** Clears a connection's transaction state, e.g. on disconnect. */
+  clearTransactionState: (connectionId: number) => void
 }
 
 // ─── Layout selectors ───────────────────────────────────────────────────────────
@@ -287,6 +296,8 @@ export type ConnectionState =
   | { kind: 'connecting' }
   | { kind: 'error'; message: string }
   | { kind: 'idle' }
+
+export type TransactionState = { mode: TransactionMode; open: boolean; pendingStatements: number }
 
 /** A node's expanded state: the stored value, or `fallback` when there's no record. */
 export function isNodeExpanded(
@@ -346,6 +357,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         runningTabs: {},
         abortControllers: {},
         pendingConfirmations: {},
+        transactions: {},
 
         setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
@@ -628,6 +640,15 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             return { sessions: rest }
           }),
 
+        setTransactionState: (connectionId, state) =>
+          set((s) => ({ transactions: { ...s.transactions, [connectionId]: state } })),
+
+        clearTransactionState: (connectionId) =>
+          set((s) => {
+            const { [connectionId]: _removed, ...rest } = s.transactions
+            return { transactions: rest }
+          }),
+
         syncSessions: (backendSessions, scopeConnectionIds) =>
           set((s) => {
             if (!scopeConnectionIds) return { sessions: backendSessions }
@@ -849,6 +870,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
           focusEditorRequest: _fe,
           pendingJump: _pj,
           connectionStatus: _cs,
+          transactions: _t,
           ...state
         }) => state,
       },
@@ -899,6 +921,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   runningTabs: {},
   abortControllers: {},
   pendingConfirmations: {},
+  transactions: {},
   setActiveWorkspace: _noop,
   openTab: _noop,
   openTabToSide: _noop,
@@ -941,6 +964,8 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   setSelectedIndexInRun: _noop,
   closeRunTab: _noop,
   openConsole: _noop,
+  setTransactionState: _noop,
+  clearTransactionState: _noop,
 }))
 
 export function useIde<T>(selector: (state: IdeState & IdeActions) => T): T {
