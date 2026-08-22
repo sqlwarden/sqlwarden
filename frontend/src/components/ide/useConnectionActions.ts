@@ -67,9 +67,13 @@ export function useConnectionActions(orgSlug: string, workspace: Workspace) {
     void connectMutation.mutateAsync(connection).catch(() => undefined)
   }
 
-  function disconnect(connection: Connection) {
+  function disconnect(connection: Connection, transactionOpen: boolean, onBlocked?: () => void) {
     const sessionId = sessions[connection.id]
     if (!sessionId) {
+      return
+    }
+    if (transactionOpen) {
+      onBlocked?.()
       return
     }
     void disconnectMutation.mutateAsync({ connection, sessionId }).catch(() => undefined)

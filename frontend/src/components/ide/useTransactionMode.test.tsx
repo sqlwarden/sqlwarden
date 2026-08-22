@@ -2,6 +2,7 @@ import type { PropsWithChildren } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { toast } from 'sonner'
 import { createTestQueryClient } from '#/test/render'
 import { createIdeStore, IdeStoreContext } from './useIdeStore'
 import { useTransactionMode } from './useTransactionMode'
@@ -18,7 +19,7 @@ vi.mock('#/lib/api/queries/database', () => ({
   rollbackConnectionTransaction: mocks.rollbackConnectionTransaction,
 }))
 
-vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), info: vi.fn() } }))
 
 describe('useTransactionMode', () => {
   let store: ReturnType<typeof createIdeStore>
@@ -30,6 +31,7 @@ describe('useTransactionMode', () => {
     mocks.setConnectionTransactionMode.mockReset()
     mocks.commitConnectionTransaction.mockReset()
     mocks.rollbackConnectionTransaction.mockReset()
+    vi.mocked(toast.info).mockReset()
   })
 
   function wrapper({ children }: PropsWithChildren) {
@@ -138,5 +140,24 @@ describe('useTransactionMode', () => {
       'session-7',
       'manual',
     )
+  })
+
+  it('switchToManual shows a one-time informational toast when switching from auto', async () => {
+    store.getState().setSession(7, 'session-7')
+    store.getState().setTransactionState(7, { mode: 'auto', open: false, pendingStatements: 0 })
+    mocks.setConnectionTransactionMode.mockResolvedValue({
+      mode: 'manual',
+      open: false,
+      pending_statements: 0,
+    })
+
+    const { result } = renderHook(() => useTransactionMode('acme', 3, 7, 'session-7'), {
+      wrapper,
+    })
+
+    act(() => result.current.switchToManual())
+
+    await waitFor(() => expect(toast.info).toHaveBeenCalledTimes(1))
+    expect(toast.info).toHaveBeenCalledWith(expect.stringMatching(/manual commit mode is on/i))
   })
 })

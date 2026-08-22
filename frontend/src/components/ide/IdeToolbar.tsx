@@ -26,7 +26,9 @@ import { Tip } from './schema-diagram/Tip'
 import { useSaveEditorTab } from './useSaveEditorTab'
 import { ConnectionSelector } from './ConnectionSelector'
 import { TransactionControls } from './TransactionControls'
+import { TransactionGuardDialog } from './TransactionGuardDialog'
 import { useToolbarQueryAction } from './useToolbarQueryAction'
+import { useTransactionMode } from './useTransactionMode'
 import { UnsafeQueryDialog } from './UnsafeQueryDialog'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { formatEditorSql, sqlFormatterForDriver } from './sqlFormatting'
@@ -48,6 +50,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const [exportToWorkspaceOpen, setExportToWorkspaceOpen] = useState(false)
   const [saveFavoriteOpen, setSaveFavoriteOpen] = useState(false)
   const [saveFavoriteSql, setSaveFavoriteSql] = useState('')
+  const [switchToAutoGuardOpen, setSwitchToAutoGuardOpen] = useState(false)
   const viewRegistry = useEditorViewRegistry()
 
   const activeTabId = useIde((s) => selectActiveTabId(s, workspace.id))
@@ -128,6 +131,12 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const hasConnections = connItems.length > 0
   const activeConnectionSessionId = useIde((s) =>
     activeConnection ? s.sessions[activeConnection.id] : undefined,
+  )
+  const transactionMode = useTransactionMode(
+    orgSlug,
+    workspace.id,
+    activeConnection?.id,
+    activeConnectionSessionId,
   )
   useEffect(() => {
     if (activeTab && activeConnection && activeTab.driver !== activeConnection.driver) {
@@ -299,15 +308,16 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           onSelect={selectConnection}
         />
 
-        <TransactionControls
-          orgSlug={orgSlug}
-          workspaceId={workspace.id}
-          connectionId={activeConnection?.id}
-          sessionId={activeConnectionSessionId}
-          onSwitchToAutoBlocked={() =>
-            toast.info('Commit or roll back the open transaction before switching to Auto.')
-          }
-        />
+        {activeConnection && activeConnectionSessionId && (
+          <TransactionControls
+            state={transactionMode.state}
+            switchToManual={transactionMode.switchToManual}
+            switchToAuto={transactionMode.switchToAuto}
+            commit={transactionMode.commit}
+            rollback={transactionMode.rollback}
+            onSwitchToAutoBlocked={() => setSwitchToAutoGuardOpen(true)}
+          />
+        )}
 
         {/* Maximize toggle */}
         <Tip label={maximizedPane === 'editor' ? 'Restore layout' : 'Maximize editor'}>
@@ -371,6 +381,27 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           getSql={queryAction.resolveSql}
         />
       )}
+
+      <TransactionGuardDialog
+        open={switchToAutoGuardOpen}
+        reason="switch-to-auto"
+        pendingStatements={transactionMode.state.pendingStatements}
+        onOpenChange={setSwitchToAutoGuardOpen}
+        onCommit={() => {
+          void (async () => {
+            await transactionMode.commit()
+            await transactionMode.switchToAuto()
+            setSwitchToAutoGuardOpen(false)
+          })()
+        }}
+        onRollback={() => {
+          void (async () => {
+            await transactionMode.rollback()
+            await transactionMode.switchToAuto()
+            setSwitchToAutoGuardOpen(false)
+          })()
+        }}
+      />
 
       {activeTab && pendingConfirmation && (
         <UnsafeQueryDialog

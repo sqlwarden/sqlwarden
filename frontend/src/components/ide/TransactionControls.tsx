@@ -1,32 +1,27 @@
 import { Button } from '#/components/ui/button'
 import { Toggle } from '#/components/ui/toggle'
 import { Tip } from './schema-diagram/Tip'
-import { useTransactionMode } from './useTransactionMode'
+import type { TransactionState } from './useIdeStore'
 
-export function TransactionControls({
-  orgSlug,
-  workspaceId,
-  connectionId,
-  sessionId,
-  onSwitchToAutoBlocked,
-}: {
-  orgSlug: string
-  workspaceId: number
-  connectionId: number | undefined
-  sessionId: string | undefined
+export type TransactionControlsProps = {
+  state: TransactionState
+  switchToManual: () => void
+  switchToAuto: () => Promise<'ok' | 'blocked'>
+  commit: () => Promise<void>
+  rollback: () => Promise<void>
   /** Called instead of switching when a transaction is open — the caller
    *  shows the Commit/Rollback/Cancel guard dialog. */
   onSwitchToAutoBlocked: () => void
-}) {
-  const { state, switchToManual, switchToAuto, commit, rollback } = useTransactionMode(
-    orgSlug,
-    workspaceId,
-    connectionId,
-    sessionId,
-  )
+}
 
-  if (!connectionId || !sessionId) return null
-
+export function TransactionControls({
+  state,
+  switchToManual,
+  switchToAuto,
+  commit,
+  rollback,
+  onSwitchToAutoBlocked,
+}: TransactionControlsProps) {
   return (
     <div className="flex items-center gap-2">
       <Tip label={state.mode === 'manual' ? 'Manual commit' : 'Auto-commit'}>

@@ -29,6 +29,11 @@ export function useTransactionMode(
     },
     onSuccess: (data) => {
       if (!connectionId) return
+      if (data.mode === 'manual' && state.mode !== 'manual') {
+        toast.info(
+          "Manual commit mode is on. Changes won't be saved until you commit — some DDL may still commit immediately depending on the connected engine.",
+        )
+      }
       setTransactionState(connectionId, {
         mode: data.mode,
         open: data.open,

@@ -18,7 +18,9 @@ import { useIde, DEFAULT_CONSOLE_CONTENT, type EditorTab, type TabKind } from '.
 import { allGroups, tabsToClose, type GroupNode, type SplitDirection } from './ideLayout'
 import { DriverBadge } from './DriverBadge'
 import { Tip } from './schema-diagram/Tip'
+import { TransactionGuardDialog } from './TransactionGuardDialog'
 import { useTabStripOverflow } from './useTabStripOverflow'
+import { useTransactionMode } from './useTransactionMode'
 
 type IdeTabBarProps = {
   orgSlug: string
@@ -46,17 +48,15 @@ export function requiresCloseConfirmation(
   return running || (tab.kind === 'file' && Boolean(tab.isDirty)) || hasConsoleContent
 }
 
-export function IdeTabBar({
-  orgSlug: _orgSlug,
-  workspace,
-  group,
-  focused,
-  onFocus,
-}: IdeTabBarProps) {
+export function IdeTabBar({ orgSlug, workspace, group, focused, onFocus }: IdeTabBarProps) {
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null)
+  const [pendingTransactionCloseTabId, setPendingTransactionCloseTabId] = useState<string | null>(
+    null,
+  )
 
   const tabs = useIde((s) => s.tabs)
   const runningTabs = useIde((s) => s.runningTabs)
+  const transactions = useIde((s) => s.transactions)
   const openConsole = useIde((s) => s.openConsole)
   const closeTabInstance = useIde((s) => s.closeTabInstance)
   const setActiveTab = useIde((s) => s.setActiveTab)
@@ -82,7 +82,21 @@ export function IdeTabBar({
     openConsole(workspace, yState)
   }
 
+  // A connection-backed tab (console or the connection's own tab) closing while
+  // it's the last tab referencing that connection would silently roll back an
+  // open transaction — guard that case instead of closing directly.
+  function isLastConnectionTabWithOpenTransaction(tab: EditorTab): boolean {
+    if (tab.connectionId === undefined) return false
+    if (tab.kind !== 'connection' && tab.kind !== 'scratch') return false
+    if (!transactions[tab.connectionId]?.open) return false
+    return tabs.filter((t) => t.connectionId === tab.connectionId).length === 1
+  }
+
   function handleCloseRequest(tab: EditorTab) {
+    if (isLastConnectionTabWithOpenTransaction(tab)) {
+      setPendingTransactionCloseTabId(tab.id)
+      return
+    }
     // Closing one pane only loses content when it's the tab's last instance.
     const instances = layout ? allGroups(layout).filter((g) => g.tabIds.includes(tab.id)).length : 1
     if (requiresCloseConfirmation(tab, Boolean(runningTabs[tab.id]), instances)) {
@@ -114,6 +128,20 @@ export function IdeTabBar({
   const pendingCloseTab = pendingCloseTabId ? tabs.find((t) => t.id === pendingCloseTabId) : null
   const pendingCloseRunning = pendingCloseTab ? !!runningTabs[pendingCloseTab.id] : false
   const pendingCloseIsConsole = !pendingCloseRunning && pendingCloseTab?.kind === 'scratch'
+
+  const pendingTransactionCloseTab = pendingTransactionCloseTabId
+    ? tabs.find((t) => t.id === pendingTransactionCloseTabId)
+    : null
+  const pendingTransactionConnectionId = pendingTransactionCloseTab?.connectionId
+  const pendingTransactionSessionId = useIde((s) =>
+    pendingTransactionConnectionId ? s.sessions[pendingTransactionConnectionId] : undefined,
+  )
+  const pendingTransaction = useTransactionMode(
+    orgSlug,
+    workspace.id,
+    pendingTransactionConnectionId,
+    pendingTransactionSessionId,
+  )
 
   return (
     <>
@@ -233,6 +261,31 @@ export function IdeTabBar({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+
+      {pendingTransactionCloseTab && (
+        <TransactionGuardDialog
+          open
+          reason="close-connection"
+          pendingStatements={pendingTransaction.state.pendingStatements}
+          onOpenChange={(open) => {
+            if (!open) setPendingTransactionCloseTabId(null)
+          }}
+          onCommit={() => {
+            void (async () => {
+              await pendingTransaction.commit()
+              closeTabInstance(group.id, pendingTransactionCloseTab.id)
+              setPendingTransactionCloseTabId(null)
+            })()
+          }}
+          onRollback={() => {
+            void (async () => {
+              await pendingTransaction.rollback()
+              closeTabInstance(group.id, pendingTransactionCloseTab.id)
+              setPendingTransactionCloseTabId(null)
+            })()
+          }}
+        />
       )}
     </>
   )

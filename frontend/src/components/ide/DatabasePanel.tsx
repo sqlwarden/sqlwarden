@@ -64,6 +64,8 @@ import { Textarea } from '#/components/ui/textarea'
 import { Field, FieldError, FieldGroup, FieldLabel } from '#/components/ui/field'
 import { useConnectionActions } from './useConnectionActions'
 import { useSchemaRefresh } from './useSchemaRefresh'
+import { TransactionGuardDialog } from './TransactionGuardDialog'
+import { useTransactionMode } from './useTransactionMode'
 
 type DatabasePanelProps = {
   orgSlug: string
@@ -94,6 +96,25 @@ export function DatabasePanel({
   const [renameName, setRenameName] = useState('')
   const [renameNameError, setRenameNameError] = useState<string | undefined>(undefined)
   const [deletingEnvironment, setDeletingEnvironment] = useState<Environment | null>(null)
+  const [blockedDisconnectConnection, setBlockedDisconnectConnection] = useState<Connection | null>(
+    null,
+  )
+
+  const transactions = useIde((s) => s.transactions)
+  const blockedDisconnectSessionId = useIde((s) =>
+    blockedDisconnectConnection ? s.sessions[blockedDisconnectConnection.id] : undefined,
+  )
+  const blockedDisconnectTransaction = useTransactionMode(
+    orgSlug,
+    workspace.id,
+    blockedDisconnectConnection?.id,
+    blockedDisconnectSessionId,
+  )
+
+  function handleDisconnect(conn: Connection) {
+    const transactionOpen = Boolean(transactions[conn.id]?.open)
+    connectionActions.disconnect(conn, transactionOpen, () => setBlockedDisconnectConnection(conn))
+  }
 
   const effectivePermissions = useQuery(
     orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspace.id),
@@ -385,7 +406,7 @@ export function DatabasePanel({
                   onOpen={connectionActions.openConnection}
                   onOpenConsole={connectionActions.openConnectionConsole}
                   onConnect={connectionActions.connect}
-                  onDisconnect={connectionActions.disconnect}
+                  onDisconnect={handleDisconnect}
                   onAddConnection={() => setAddConnEnvironmentId(env.id)}
                   onRenameEnvironment={() => openRenameEnvironment(env)}
                   onDeleteEnvironment={() => setDeletingEnvironment(env)}
@@ -411,7 +432,7 @@ export function DatabasePanel({
                     onOpen={() => connectionActions.openConnection(conn)}
                     onOpenConsole={() => connectionActions.openConnectionConsole(conn)}
                     onConnect={() => connectionActions.connect(conn)}
-                    onDisconnect={() => connectionActions.disconnect(conn)}
+                    onDisconnect={() => handleDisconnect(conn)}
                   />
                 ))
               })()
@@ -578,6 +599,31 @@ export function DatabasePanel({
         workspaceId={workspace.id}
         environments={envItems}
         lockedEnvironmentId={addConnEnvironmentId ?? undefined}
+      />
+
+      <TransactionGuardDialog
+        open={blockedDisconnectConnection !== null}
+        reason="close-connection"
+        pendingStatements={blockedDisconnectTransaction.state.pendingStatements}
+        onOpenChange={(open) => {
+          if (!open) setBlockedDisconnectConnection(null)
+        }}
+        onCommit={() => {
+          void (async () => {
+            if (!blockedDisconnectConnection) return
+            await blockedDisconnectTransaction.commit()
+            connectionActions.disconnect(blockedDisconnectConnection, false)
+            setBlockedDisconnectConnection(null)
+          })()
+        }}
+        onRollback={() => {
+          void (async () => {
+            if (!blockedDisconnectConnection) return
+            await blockedDisconnectTransaction.rollback()
+            connectionActions.disconnect(blockedDisconnectConnection, false)
+            setBlockedDisconnectConnection(null)
+          })()
+        }}
       />
     </>
   )

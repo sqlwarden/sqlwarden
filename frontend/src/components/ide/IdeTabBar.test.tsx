@@ -1,10 +1,14 @@
+import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { Workspace } from '#/lib/api/types'
+import { createTestQueryClient } from '#/test/render'
 import type { GroupNode } from './ideLayout'
 import { IdeTabBar, requiresCloseConfirmation } from './IdeTabBar'
 import { createIdeStore, IdeStoreContext, useIde, type EditorTab } from './useIdeStore'
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), info: vi.fn() } }))
 
 function tab(overrides: Partial<EditorTab> = {}): EditorTab {
   return {
@@ -52,6 +56,7 @@ function TabBarHarness() {
 describe('IdeTabBar', () => {
   it('activates tabs, closes clean tabs, and confirms destructive closes', async () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
+    const queryClient = createTestQueryClient()
     const consoleTab = tab({ id: 'scratch:3:1', content: '' })
     const fileTab = tab({
       id: 'file:9',
@@ -74,9 +79,11 @@ describe('IdeTabBar', () => {
     })
     const user = userEvent.setup()
     render(
-      <IdeStoreContext.Provider value={store}>
-        <TabBarHarness />
-      </IdeStoreContext.Provider>,
+      <QueryClientProvider client={queryClient}>
+        <IdeStoreContext.Provider value={store}>
+          <TabBarHarness />
+        </IdeStoreContext.Provider>
+      </QueryClientProvider>,
     )
 
     await user.click(screen.getByRole('tab', { name: /query.sql/ }))
@@ -94,20 +101,57 @@ describe('IdeTabBar', () => {
 
   it('opens a new console in the current workspace', async () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
+    const queryClient = createTestQueryClient()
     store.setState({
       layout: { 3: { type: 'group', id: 'main', tabIds: [], activeTabId: undefined } },
       activeGroupId: { 3: 'main' },
     })
     const user = userEvent.setup()
     render(
-      <IdeStoreContext.Provider value={store}>
-        <TabBarHarness />
-      </IdeStoreContext.Provider>,
+      <QueryClientProvider client={queryClient}>
+        <IdeStoreContext.Provider value={store}>
+          <TabBarHarness />
+        </IdeStoreContext.Provider>
+      </QueryClientProvider>,
     )
 
     await user.click(screen.getByRole('button', { name: 'New SQL console' }))
     expect(store.getState().tabs).toEqual([
       expect.objectContaining({ id: 'scratch:3:1', title: 'Console 1', workspaceId: 3 }),
     ])
+  })
+
+  it('guards closing the last tab on a connection with an open transaction', async () => {
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const queryClient = createTestQueryClient()
+    const connTab = tab({
+      id: 'scratch:3:2',
+      title: 'Console 2',
+      connectionId: 42,
+    })
+    store.setState({
+      tabs: [connTab],
+      layout: {
+        3: { type: 'group', id: 'main', tabIds: [connTab.id], activeTabId: connTab.id },
+      },
+      activeGroupId: { 3: 'main' },
+      sessions: { 42: 'session-42' },
+      transactions: { 42: { mode: 'manual', open: true, pendingStatements: 2 } },
+    })
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <IdeStoreContext.Provider value={store}>
+          <TabBarHarness />
+        </IdeStoreContext.Provider>
+      </QueryClientProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Close Console 2' }))
+    expect(await screen.findByText(/commit or roll back before closing/i)).toBeInTheDocument()
+    expect(store.getState().tabs).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: /cancel/i }))
+    expect(store.getState().tabs).toHaveLength(1)
   })
 })
