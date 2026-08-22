@@ -593,6 +593,7 @@ describe('query results', () => {
         truncated: false,
         rows_returned: 0,
         bytes_returned: 0,
+        transaction: { mode: 'auto', open: false, pending_statements: 0 },
       },
     })
     store.getState().markRunRemainingSkipped('tab-1', runId, 1)

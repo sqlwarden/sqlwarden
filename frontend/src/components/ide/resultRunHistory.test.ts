@@ -42,6 +42,7 @@ describe('closeRunCursors', () => {
           truncated: false,
           rows_returned: 0,
           bytes_returned: 0,
+          transaction: { mode: 'auto', open: false, pending_statements: 0 },
           query_cursor_id: 'cursor-1',
         },
       },
@@ -68,6 +69,7 @@ describe('closeRunCursors', () => {
           truncated: false,
           rows_returned: 0,
           bytes_returned: 0,
+          transaction: { mode: 'auto', open: false, pending_statements: 0 },
         },
       },
     ])
@@ -90,6 +92,7 @@ describe('closeRunCursors', () => {
           truncated: false,
           rows_returned: 0,
           bytes_returned: 0,
+          transaction: { mode: 'auto', open: false, pending_statements: 0 },
           query_cursor_id: 'cursor-1',
         },
       },
