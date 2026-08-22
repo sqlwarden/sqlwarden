@@ -67,8 +67,9 @@ type schemaStatusResponse struct {
 }
 
 type schemaEditResponse struct {
-	Applied bool                 `json:"applied"`
-	Schema  schemaStatusResponse `json:"schema"`
+	Applied     bool                  `json:"applied"`
+	Schema      schemaStatusResponse  `json:"schema"`
+	Transaction transactionStatusView `json:"transaction"`
 }
 
 func (app *application) authorizeSchemaAccess(w http.ResponseWriter, r *http.Request) bool {
@@ -408,6 +409,7 @@ func (app *application) applyConnectionDDL(w http.ResponseWriter, r *http.Reques
 	if !persistent {
 		if err := response.JSON(w, http.StatusOK, schemaEditResponse{
 			Applied: true, Schema: schemaStatusResponse{Status: "available", Mode: "ephemeral"},
+			Transaction: newTransactionStatusView(session.TransactionStatus()),
 		}); err != nil {
 			app.serverError(w, r, err)
 		}
@@ -426,14 +428,16 @@ func (app *application) applyConnectionDDL(w http.ResponseWriter, r *http.Reques
 		)
 		if err := response.JSON(w, http.StatusOK, schemaEditResponse{
 			Applied: true, Schema: schemaStatusResponse{Status: "refresh_failed", Mode: "persistent", Stale: true},
+			Transaction: newTransactionStatusView(session.TransactionStatus()),
 		}); err != nil {
 			app.serverError(w, r, err)
 		}
 		return
 	}
 	if err := response.JSON(w, http.StatusOK, schemaEditResponse{
-		Applied: true,
-		Schema:  schemaStatusResponse{Status: "available", Mode: "persistent", SnapshotID: output.SnapshotID, GeneratedAt: &output.GeneratedAt},
+		Applied:     true,
+		Schema:      schemaStatusResponse{Status: "available", Mode: "persistent", SnapshotID: output.SnapshotID, GeneratedAt: &output.GeneratedAt},
+		Transaction: newTransactionStatusView(session.TransactionStatus()),
 	}); err != nil {
 		app.serverError(w, r, err)
 	}

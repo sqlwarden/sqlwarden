@@ -1003,7 +1003,10 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err = response.JSON(w, http.StatusOK, rs)
+	err = response.JSON(w, http.StatusOK, struct {
+		*result.ResultSet
+		Transaction transactionStatusView `json:"transaction"`
+	}{ResultSet: rs, Transaction: newTransactionStatusView(session.TransactionStatus())})
 	if err != nil {
 		app.serverError(w, r, err)
 	}

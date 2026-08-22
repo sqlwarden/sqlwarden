@@ -129,6 +129,12 @@ func (app *application) routes() http.Handler {
 									r.Post("/query-cursors/{query_cursor_id}/fetch", app.fetchQueryCursor)
 									r.Delete("/query-cursors/{query_cursor_id}", app.closeQueryCursor)
 									r.Post("/query", app.executeQuery)
+									r.Route("/transaction", func(r chi.Router) {
+										r.Get("/", app.getTransactionStatus)
+										r.Post("/mode", app.setTransactionMode)
+										r.Post("/commit", app.commitTransaction)
+										r.Post("/rollback", app.rollbackTransaction)
+									})
 									r.Route("/history", func(r chi.Router) {
 										r.Get("/", app.listQueryHistory)
 										r.Post("/", app.createQueryHistoryEntry)
@@ -175,6 +181,12 @@ func (app *application) routes() http.Handler {
 							r.Post("/query-cursors/{query_cursor_id}/fetch", app.fetchQueryCursor)
 							r.Delete("/query-cursors/{query_cursor_id}", app.closeQueryCursor)
 							r.Post("/query", app.executeQuery)
+							r.Route("/transaction", func(r chi.Router) {
+								r.Get("/", app.getTransactionStatus)
+								r.Post("/mode", app.setTransactionMode)
+								r.Post("/commit", app.commitTransaction)
+								r.Post("/rollback", app.rollbackTransaction)
+							})
 							r.Route("/history", func(r chi.Router) {
 								r.Get("/", app.listQueryHistory)
 								r.Post("/", app.createQueryHistoryEntry)
@@ -358,6 +370,12 @@ func (app *application) routes() http.Handler {
 									r.Post("/query-cursors/{query_cursor_id}/fetch", app.fetchQueryCursor)
 									r.Delete("/query-cursors/{query_cursor_id}", app.closeQueryCursor)
 									r.Post("/query", app.executeQuery)
+									r.Route("/transaction", func(r chi.Router) {
+										r.Get("/", app.getTransactionStatus)
+										r.Post("/mode", app.setTransactionMode)
+										r.Post("/commit", app.commitTransaction)
+										r.Post("/rollback", app.rollbackTransaction)
+									})
 									r.Route("/history", func(r chi.Router) {
 										r.Get("/", app.listQueryHistory)
 										r.Post("/", app.createQueryHistoryEntry)
@@ -405,6 +423,12 @@ func (app *application) routes() http.Handler {
 							r.Post("/query-cursors/{query_cursor_id}/fetch", app.fetchQueryCursor)
 							r.Delete("/query-cursors/{query_cursor_id}", app.closeQueryCursor)
 							r.Post("/query", app.executeQuery)
+							r.Route("/transaction", func(r chi.Router) {
+								r.Get("/", app.getTransactionStatus)
+								r.Post("/mode", app.setTransactionMode)
+								r.Post("/commit", app.commitTransaction)
+								r.Post("/rollback", app.rollbackTransaction)
+							})
 							r.Route("/history", func(r chi.Router) {
 								r.Get("/", app.listQueryHistory)
 								r.Post("/", app.createQueryHistoryEntry)
