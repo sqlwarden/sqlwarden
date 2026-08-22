@@ -77,6 +77,11 @@ describe('useQueryExecution', () => {
     )
     expect(store.getState().runningTabs.query).toBe(false)
     expect(store.getState().abortControllers.query).toBeUndefined()
+    expect(store.getState().transactions[7]).toEqual({
+      mode: 'auto',
+      open: false,
+      pendingStatements: 0,
+    })
   })
 
   it('cancels the active request and ignores unavailable or already-running tabs', async () => {

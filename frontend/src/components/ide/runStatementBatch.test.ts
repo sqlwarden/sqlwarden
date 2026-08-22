@@ -28,6 +28,7 @@ function dependencies(
     setController: vi.fn(),
     setPendingConfirmation: vi.fn(),
     recordHistory: vi.fn(),
+    setTransactionState: vi.fn(),
     ...overrides,
   }
 }
@@ -96,6 +97,26 @@ describe('runStatementBatch', () => {
       status: 'ok',
       durationMs: 8,
       rowsAffected: 0,
+    })
+  })
+
+  it('syncs transaction state from the response on every successful statement', async () => {
+    const runStatement = vi.fn(async () => ({
+      ...resultSet(1),
+      transaction: { mode: 'manual' as const, open: true, pending_statements: 1 },
+    }))
+    const deps = dependencies({ runStatement })
+    const controller = new AbortController()
+
+    await runStatementBatch(
+      { tabId: 'tab-1', connectionId: 7, sqls: ['select 1'], controller },
+      deps,
+    )
+
+    expect(deps.setTransactionState).toHaveBeenCalledWith(7, {
+      mode: 'manual',
+      open: true,
+      pendingStatements: 1,
     })
   })
 

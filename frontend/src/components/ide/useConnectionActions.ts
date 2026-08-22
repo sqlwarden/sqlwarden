@@ -13,6 +13,7 @@ export function useConnectionActions(orgSlug: string, workspace: Workspace) {
   const sessions = useIde((state) => state.sessions)
   const setSession = useIde((state) => state.setSession)
   const clearSession = useIde((state) => state.clearSession)
+  const clearTransactionState = useIde((state) => state.clearTransactionState)
   const setConnectionStatus = useIde((state) => state.setConnectionStatus)
   const queryClient = useQueryClient()
   const sessionsQueryKey = queryKeys.workspaceSessions(orgSlug, workspace.id)
@@ -43,6 +44,7 @@ export function useConnectionActions(orgSlug: string, workspace: Workspace) {
       ),
     onSuccess: (_, { connection }) => {
       clearSession(connection.id)
+      clearTransactionState(connection.id)
       setConnectionStatus(connection.id, null)
       void queryClient.invalidateQueries({ queryKey: sessionsQueryKey })
     },

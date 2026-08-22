@@ -25,6 +25,7 @@ export function useRunAllStatements(
   const setRunning = useIde((state) => state.setTabRunning)
   const setController = useIde((state) => state.setTabController)
   const setPendingConfirmation = useIde((state) => state.setPendingConfirmation)
+  const setTransactionState = useIde((state) => state.setTransactionState)
 
   const sqlsRef = useRef<string[]>([])
   const runIdRef = useRef('')
@@ -53,6 +54,7 @@ export function useRunAllStatements(
         setController,
         setPendingConfirmation,
         recordHistory,
+        setTransactionState,
       }
       return runStatementBatch({ tabId, connectionId, sqls, controller, ...options }, deps)
     },
@@ -67,6 +69,7 @@ export function useRunAllStatements(
       setPendingConfirmation,
       setRunStatementResult,
       setRunning,
+      setTransactionState,
       tabId,
       workspaceId,
     ],

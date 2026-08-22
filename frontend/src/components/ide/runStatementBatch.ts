@@ -1,6 +1,6 @@
 import { errorMessage, isApiError } from '#/lib/api/errors'
 import type { ResultSet, UnsafeStatement } from '#/lib/api/types'
-import type { PendingUnsafeQuery, QueryResult } from './useIdeStore'
+import type { PendingUnsafeQuery, QueryResult, TransactionState } from './useIdeStore'
 
 export type RecordHistoryInput = {
   sqlText: string
@@ -33,6 +33,7 @@ export type BatchExecutionDependencies = {
   setController: (tabId: string, controller: AbortController | null) => void
   setPendingConfirmation: (tabId: string, pending: PendingUnsafeQuery) => void
   recordHistory: (entry: RecordHistoryInput) => void
+  setTransactionState: (connectionId: number, state: TransactionState) => void
 }
 
 export type BatchExecutionRequest = {
@@ -81,6 +82,11 @@ export async function runStatementBatch(
           durationMs: result.duration_ms,
           sql,
           connectionId,
+        })
+        deps.setTransactionState(connectionId, {
+          mode: result.transaction.mode,
+          open: result.transaction.open,
+          pendingStatements: result.transaction.pending_statements,
         })
         deps.recordHistory({
           sqlText: sql,

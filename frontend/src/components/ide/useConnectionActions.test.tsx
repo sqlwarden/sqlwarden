@@ -77,6 +77,7 @@ describe('useConnectionActions', () => {
 
   it('disconnects with the owning session and clears local state', async () => {
     store.getState().setSession(7, 'session-7')
+    store.getState().setTransactionState(7, { mode: 'manual', open: true, pendingStatements: 1 })
     let requestSession = ''
     server.use(
       http.delete('/api/v1/orgs/acme/workspaces/3/connections/7/session', ({ request }) => {
@@ -89,6 +90,7 @@ describe('useConnectionActions', () => {
     act(() => result.current.disconnect(connection))
     await waitFor(() => expect(store.getState().sessions[7]).toBeUndefined())
     expect(requestSession).toBe('session-7')
+    expect(store.getState().transactions[7]).toBeUndefined()
   })
 
   it('does not issue a disconnect without a live session', async () => {
