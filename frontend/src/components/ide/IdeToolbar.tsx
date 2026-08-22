@@ -25,6 +25,7 @@ import { useDownloadNow } from './exports/useDownloadNow'
 import { Tip } from './schema-diagram/Tip'
 import { useSaveEditorTab } from './useSaveEditorTab'
 import { ConnectionSelector } from './ConnectionSelector'
+import { TransactionControls } from './TransactionControls'
 import { useToolbarQueryAction } from './useToolbarQueryAction'
 import { UnsafeQueryDialog } from './UnsafeQueryDialog'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
@@ -125,6 +126,9 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const connItems = connections.data?.items ?? []
   const activeConnection = connItems.find((c) => c.id === activeTab?.connectionId)
   const hasConnections = connItems.length > 0
+  const activeConnectionSessionId = useIde((s) =>
+    activeConnection ? s.sessions[activeConnection.id] : undefined,
+  )
   useEffect(() => {
     if (activeTab && activeConnection && activeTab.driver !== activeConnection.driver) {
       // Console tabs created before driver-aware completion retained only the
@@ -293,6 +297,16 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           isLoading={connections.isLoading}
           tabAvailable={Boolean(activeTab)}
           onSelect={selectConnection}
+        />
+
+        <TransactionControls
+          orgSlug={orgSlug}
+          workspaceId={workspace.id}
+          connectionId={activeConnection?.id}
+          sessionId={activeConnectionSessionId}
+          onSwitchToAutoBlocked={() =>
+            toast.info('Commit or roll back the open transaction before switching to Auto.')
+          }
         />
 
         {/* Maximize toggle */}
