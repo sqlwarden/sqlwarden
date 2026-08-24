@@ -79,6 +79,38 @@ func (s Spec) SupportsScopeKind(kind string) bool {
 	return contains(s.DroppableScopeKinds, kind)
 }
 
+// Summary renders a short, human-readable label for the request, for display
+// in places (e.g. the pending-statements list of an open transaction) that
+// show what ran without exposing the driver's generated SQL.
+func (r Request) Summary() string {
+	switch r.Operation {
+	case OperationCreateTable:
+		return fmt.Sprintf("CREATE TABLE %s", r.Name)
+	case OperationDropObject:
+		if r.Ref != nil {
+			return fmt.Sprintf("DROP %s %s", strings.ToUpper(r.Ref.Kind), r.Ref.Name)
+		}
+		return "DROP OBJECT"
+	case OperationDropScope:
+		last, _ := r.Scope.Last()
+		return fmt.Sprintf("DROP %s", last.Name)
+	case OperationRenameColumn:
+		if r.Ref != nil {
+			return fmt.Sprintf("RENAME COLUMN %s.%s TO %s", r.Ref.Name, r.Name, r.NewName)
+		}
+		return fmt.Sprintf("RENAME COLUMN %s TO %s", r.Name, r.NewName)
+	case OperationDropColumn:
+		if r.Ref != nil {
+			return fmt.Sprintf("DROP COLUMN %s.%s", r.Ref.Name, r.Name)
+		}
+		return fmt.Sprintf("DROP COLUMN %s", r.Name)
+	case OperationDropIndex:
+		return fmt.Sprintf("DROP INDEX %s", r.Name)
+	default:
+		return string(r.Operation)
+	}
+}
+
 // Validate checks the engine-independent shape and the advertised capability
 // contract. Engines remain responsible for dialect-specific validation.
 func Validate(request Request, spec Spec) error {

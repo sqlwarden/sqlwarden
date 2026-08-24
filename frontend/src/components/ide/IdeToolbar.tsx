@@ -27,6 +27,7 @@ import { useSaveEditorTab } from './useSaveEditorTab'
 import { ConnectionSelector } from './ConnectionSelector'
 import { TransactionControls } from './TransactionControls'
 import { TransactionGuardDialog } from './TransactionGuardDialog'
+import { useTransactionHydration } from './transactionState'
 import { useToolbarQueryAction } from './useToolbarQueryAction'
 import { useTransactionMode } from './useTransactionMode'
 import { UnsafeQueryDialog } from './UnsafeQueryDialog'
@@ -138,6 +139,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     activeConnection?.id,
     activeConnectionSessionId,
   )
+  useTransactionHydration(orgSlug, workspace.id, activeConnection?.id, activeConnectionSessionId)
   useEffect(() => {
     if (activeTab && activeConnection && activeTab.driver !== activeConnection.driver) {
       // Console tabs created before driver-aware completion retained only the
@@ -298,6 +300,18 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
 
         <div className="flex-1" />
 
+        {activeConnection && activeConnectionSessionId && (
+          <TransactionControls
+            state={transactionMode.state}
+            driver={activeConnection.driver}
+            switchToManual={transactionMode.switchToManual}
+            switchToAuto={transactionMode.switchToAuto}
+            commit={transactionMode.commit}
+            rollback={transactionMode.rollback}
+            onSwitchToAutoBlocked={() => setSwitchToAutoGuardOpen(true)}
+          />
+        )}
+
         <ConnectionSelector
           activeConnection={activeConnection}
           activeConnectionId={activeTab?.connectionId}
@@ -307,17 +321,6 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           tabAvailable={Boolean(activeTab)}
           onSelect={selectConnection}
         />
-
-        {activeConnection && activeConnectionSessionId && (
-          <TransactionControls
-            state={transactionMode.state}
-            switchToManual={transactionMode.switchToManual}
-            switchToAuto={transactionMode.switchToAuto}
-            commit={transactionMode.commit}
-            rollback={transactionMode.rollback}
-            onSwitchToAutoBlocked={() => setSwitchToAutoGuardOpen(true)}
-          />
-        )}
 
         {/* Maximize toggle */}
         <Tip label={maximizedPane === 'editor' ? 'Restore layout' : 'Maximize editor'}>

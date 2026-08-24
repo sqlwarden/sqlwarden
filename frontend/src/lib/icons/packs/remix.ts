@@ -1,11 +1,13 @@
 import type { AppIcon } from '../registry'
 
 const icons: Record<AppIcon, string> = {
+  'alert-triangle': 'ri:alert-line',
   'arrow-down-01': 'ri:arrow-down-line',
   'arrow-expand': 'ri:expand-diagonal-line',
   'arrow-left-01': 'ri:arrow-left-line',
   'arrow-right-01': 'ri:arrow-right-line',
   'arrow-shrink': 'ri:contract-line',
+  'arrow-turn-backward': 'ri:arrow-go-back-line',
   'arrow-up-01': 'ri:arrow-up-line',
   'arrow-up-down': 'ri:expand-up-down-line',
   'arrow-up-right-01': 'ri:arrow-right-up-line',

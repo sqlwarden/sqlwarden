@@ -44,6 +44,7 @@ describe('useSchemaEdit', () => {
           return HttpResponse.json({
             applied: true,
             schema: { status: 'ok', mode: 'persistent' },
+            transaction: { mode: 'auto', open: false, pending_statements: 0 },
           })
         },
       ),
@@ -83,6 +84,7 @@ describe('useSchemaEdit', () => {
         HttpResponse.json({
           applied: true,
           schema: { status: 'refresh_failed', mode: 'persistent' },
+          transaction: { mode: 'auto', open: false, pending_statements: 0 },
         }),
       ),
     )

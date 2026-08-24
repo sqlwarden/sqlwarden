@@ -9,7 +9,7 @@ import {
   AlertDialogTitle,
 } from '#/components/ui/alert-dialog'
 
-export type TransactionGuardReason = 'switch-to-auto' | 'close-connection'
+export type TransactionGuardReason = 'switch-to-auto' | 'close-connection' | 'close-tab'
 
 const REASON_COPY: Record<TransactionGuardReason, { title: string; description: string }> = {
   'switch-to-auto': {
@@ -21,6 +21,11 @@ const REASON_COPY: Record<TransactionGuardReason, { title: string; description: 
     title: 'Commit or roll back before closing?',
     description:
       'This connection has an open transaction. Closing without resolving it will roll back every uncommitted change.',
+  },
+  'close-tab': {
+    title: 'Commit or roll back before closing this tab?',
+    description:
+      'This is the last tab open on this connection. The transaction stays open on the connection either way — closing just leaves you without a tab to commit or roll it back from until you reopen one.',
   },
 }
 

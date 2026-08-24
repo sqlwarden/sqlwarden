@@ -38,6 +38,10 @@ type TransactionStatus struct {
 	Mode              TxMode
 	Open              bool
 	PendingStatements int
+	// Statements is a short human-readable label per statement run since the
+	// last commit/rollback, in execution order. In-memory only — never
+	// persisted or logged, since it may echo user-authored SQL.
+	Statements []string
 }
 
 // entropySource is a package-level entropy source for ULID generation.
@@ -55,18 +59,18 @@ func newULID() string {
 
 // Session is an open live connection to a target database.
 type Session struct {
-	ID           string // ULID
-	AccountID    string
-	ConnectionID string
-	OrgID        string
-	WorkspaceID  string
-	Conn         engine.Driver // open connection
-	mu           sync.Mutex    // serializes Query/Execute on this session
-	cursors      map[string]*QueryCursorHandle
-	lastUsed     time.Time
-	txMode       TxMode
-	txPending    int
-	savepointSeq int
+	ID                string // ULID
+	AccountID         string
+	ConnectionID      string
+	OrgID             string
+	WorkspaceID       string
+	Conn              engine.Driver // open connection
+	mu                sync.Mutex    // serializes Query/Execute on this session
+	cursors           map[string]*QueryCursorHandle
+	lastUsed          time.Time
+	txMode            TxMode
+	pendingStatements []string
+	savepointSeq      int
 }
 
 type QueryCursorHandle struct {
@@ -82,9 +86,19 @@ type SessionMetadata struct {
 
 // runInTransaction lazily begins a transaction on the first statement after
 // a switch to manual mode (or after the last commit/rollback), wraps the
-// statement in a savepoint when the driver supports one, and increments
-// txPending. Must be called with s.mu held.
-func (s *Session) runInTransaction(ctx context.Context, statement func() error) error {
+// statement in a savepoint when the driver supports one, and records
+// description in pendingStatements. Must be called with s.mu held.
+//
+// description is a short human-readable label for the statement (the SQL
+// text itself, or a DDL request's Summary()), shown to the user as the list
+// of statements pending commit/rollback. It is kept in memory only.
+//
+// In manual mode every cursor still open on this session is closed first: an
+// unexhausted cursor pins the transaction's single physical connection, so a
+// following statement on that same transaction would contend with it or fail.
+// Callers must expect an open cursor to die when another statement runs in
+// manual mode, the same way cursors die on commit/rollback.
+func (s *Session) runInTransaction(ctx context.Context, description string, statement func() error) error {
 	if s.txMode != TxModeManual {
 		return statement()
 	}
@@ -93,18 +107,26 @@ func (s *Session) runInTransaction(ctx context.Context, statement func() error) 
 		// Driver has no transaction support at all; manual mode behaves like auto.
 		return statement()
 	}
+	s.closeCursorsLocked()
 	if !controller.InTransaction() {
-		if err := controller.BeginTx(ctx); err != nil {
+		// A manual-mode transaction is meant to outlive the request that opens
+		// it — later statements arrive on separate HTTP requests until the
+		// user commits or rolls back. database/sql ties a BeginTx-created
+		// transaction's lifetime to the context passed here, silently rolling
+		// it back once that context is done; detach it from the triggering
+		// request's cancellation the same way query cursors already do (see
+		// queryCursorLifetimeContext in internal/web).
+		if err := controller.BeginTx(context.WithoutCancel(ctx)); err != nil {
 			return err
 		}
 	}
 	savepointController, hasSavepoints := s.Conn.(transaction.SavepointController)
 	if !hasSavepoints {
 		err := statement()
-		s.txPending++
+		s.pendingStatements = append(s.pendingStatements, description)
 		if err != nil {
 			_ = controller.Rollback(ctx)
-			s.txPending = 0
+			s.pendingStatements = nil
 		}
 		return err
 	}
@@ -114,9 +136,19 @@ func (s *Session) runInTransaction(ctx context.Context, statement func() error) 
 		return err
 	}
 	err := statement()
-	s.txPending++
+	s.pendingStatements = append(s.pendingStatements, description)
 	if err != nil {
-		_ = savepointController.RollbackToSavepoint(ctx, name)
+		if rbErr := savepointController.RollbackToSavepoint(ctx, name); rbErr != nil {
+			// The savepoint recovery itself failed — typically because the
+			// connection died underneath it — so there is no partial state
+			// left worth preserving. Fully discard the transaction client-side
+			// the same way Commit/Rollback already do on driver error, or the
+			// session would keep reporting Open=true with no working recovery
+			// path: neither another savepoint nor a plain commit/rollback can
+			// succeed against a connection that's already gone.
+			_ = controller.Rollback(ctx)
+			s.pendingStatements = nil
+		}
 	}
 	return err
 }
@@ -141,37 +173,43 @@ func (s *Session) SetTransactionMode(ctx context.Context, mode TxMode) error {
 // CommitTransaction commits the open transaction, closing any open cursors
 // first since their rows would otherwise become invalid mid-fetch.
 func (s *Session) CommitTransaction(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	controller, ok := s.Conn.(transaction.Controller)
 	if !ok {
 		return transaction.ErrNoOpenTransaction
 	}
-	s.CloseAllCursors()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := controller.Commit(ctx); err != nil {
-		return err
-	}
-	s.txPending = 0
+	s.closeCursorsLocked()
+	err := controller.Commit(ctx)
+	// database/sql consumes a *sql.Tx on Commit/Rollback regardless of outcome
+	// (see Tx.Commit godoc) — every engine here (postgres/mysql/sqlite) mirrors
+	// that by unsetting its own currentTx even on error, so the driver already
+	// considers the transaction gone. Clear local bookkeeping to match, or a
+	// commit that fails because the connection died leaves the session
+	// reporting a stale pending-statement count with no way to commit or roll
+	// back it away.
+	s.pendingStatements = nil
 	s.lastUsed = time.Now()
-	return nil
+	return err
 }
 
 // RollbackTransaction rolls back the open transaction, closing any open
 // cursors first.
 func (s *Session) RollbackTransaction(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	controller, ok := s.Conn.(transaction.Controller)
 	if !ok {
 		return transaction.ErrNoOpenTransaction
 	}
-	s.CloseAllCursors()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := controller.Rollback(ctx); err != nil {
-		return err
-	}
-	s.txPending = 0
+	s.closeCursorsLocked()
+	err := controller.Rollback(ctx)
+	// See the matching comment in CommitTransaction: the driver's own tx
+	// state is gone after this call regardless of error, so local bookkeeping
+	// must follow rather than leave a stale open/pending status behind.
+	s.pendingStatements = nil
 	s.lastUsed = time.Now()
-	return nil
+	return err
 }
 
 // TransactionStatus reports the session's current transaction mode, whether
@@ -188,7 +226,13 @@ func (s *Session) TransactionStatus() TransactionStatus {
 	if mode == "" {
 		mode = TxModeAuto
 	}
-	return TransactionStatus{Mode: mode, Open: open, PendingStatements: s.txPending}
+	statements := append([]string(nil), s.pendingStatements...)
+	return TransactionStatus{
+		Mode:              mode,
+		Open:              open,
+		PendingStatements: len(statements),
+		Statements:        statements,
+	}
 }
 
 // Query executes a query on the session, serialized via the session mutex.
@@ -197,7 +241,7 @@ func (s *Session) Query(ctx context.Context, sql string, args ...any) (*result.R
 	defer s.mu.Unlock()
 	s.lastUsed = time.Now()
 	var rs *result.ResultSet
-	err := s.runInTransaction(ctx, func() error {
+	err := s.runInTransaction(ctx, sql, func() error {
 		var innerErr error
 		rs, innerErr = s.Conn.Query(ctx, sql, args...)
 		return innerErr
@@ -210,7 +254,7 @@ func (s *Session) QueryWithOptions(ctx context.Context, sql string, opts cursor.
 	defer s.mu.Unlock()
 	s.lastUsed = time.Now()
 	var rs *result.ResultSet
-	err := s.runInTransaction(ctx, func() error {
+	err := s.runInTransaction(ctx, sql, func() error {
 		var innerErr error
 		if driver, ok := s.Conn.(cursor.ResultLimitDriver); ok {
 			rs, innerErr = driver.QueryWithOptions(ctx, sql, opts, args...)
@@ -228,7 +272,7 @@ func (s *Session) Execute(ctx context.Context, sql string, args ...any) (*result
 	defer s.mu.Unlock()
 	s.lastUsed = time.Now()
 	var rs *result.ResultSet
-	err := s.runInTransaction(ctx, func() error {
+	err := s.runInTransaction(ctx, sql, func() error {
 		var innerErr error
 		rs, innerErr = s.Conn.Execute(ctx, sql, args...)
 		return innerErr
@@ -241,7 +285,7 @@ func (s *Session) ExecuteWithOptions(ctx context.Context, sql string, opts curso
 	defer s.mu.Unlock()
 	s.lastUsed = time.Now()
 	var rs *result.ResultSet
-	err := s.runInTransaction(ctx, func() error {
+	err := s.runInTransaction(ctx, sql, func() error {
 		var innerErr error
 		if driver, ok := s.Conn.(cursor.ResultLimitDriver); ok {
 			rs, innerErr = driver.ExecuteWithOptions(ctx, sql, opts, args...)
@@ -263,26 +307,36 @@ func (s *Session) ApplyDDL(ctx context.Context, request ddl.Request) error {
 	if !ok {
 		return ddl.ErrUnsupported
 	}
-	return s.runInTransaction(ctx, func() error {
+	return s.runInTransaction(ctx, request.Summary(), func() error {
 		return executor.ApplyDDL(ctx, request)
 	})
 }
 
+// StartQueryCursor opens a cursor-backed query on the session. Like
+// Query/Execute it runs under the session mutex and through runInTransaction,
+// so a cursor-backed SELECT lazily opens a manual-mode transaction and is
+// savepoint-wrapped when the driver supports savepoints.
 func (s *Session) StartQueryCursor(ctx context.Context, sql string, args ...any) (*QueryCursorHandle, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	cursorDriver, ok := s.Conn.(cursor.QueryCursorDriver)
 	if !ok {
 		return nil, ErrQueryCursorsUnsupported
 	}
 
-	cursor, err := cursorDriver.StartQuery(ctx, cursor.QueryRequest{SQL: sql, Args: args})
+	var opened cursor.QueryCursor
+	err := s.runInTransaction(ctx, sql, func() error {
+		var innerErr error
+		opened, innerErr = cursorDriver.StartQuery(ctx, cursor.QueryRequest{SQL: sql, Args: args})
+		return innerErr
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	handle := &QueryCursorHandle{ID: newULID(), Cursor: cursor}
+	handle := &QueryCursorHandle{ID: newULID(), Cursor: opened}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.cursors == nil {
 		s.cursors = make(map[string]*QueryCursorHandle)
 	}
@@ -309,14 +363,30 @@ func (s *Session) CloseCursor(cursorID string) error {
 
 func (s *Session) CloseAllCursors() {
 	s.mu.Lock()
+	handles := s.takeCursorsLocked()
+	s.mu.Unlock()
+
+	for _, handle := range handles {
+		_ = handle.Close()
+	}
+}
+
+// takeCursorsLocked removes every tracked cursor from the session and returns
+// the handles. Must be called with s.mu held.
+func (s *Session) takeCursorsLocked() []*QueryCursorHandle {
 	handles := make([]*QueryCursorHandle, 0, len(s.cursors))
 	for id, handle := range s.cursors {
 		handles = append(handles, handle)
 		delete(s.cursors, id)
 	}
-	s.mu.Unlock()
+	return handles
+}
 
-	for _, handle := range handles {
+// closeCursorsLocked closes every tracked cursor while s.mu is held, used by
+// paths that must not release the session lock between resolving the
+// transaction and invalidating the cursors pinned to it.
+func (s *Session) closeCursorsLocked() {
+	for _, handle := range s.takeCursorsLocked() {
 		_ = handle.Close()
 	}
 }
@@ -672,9 +742,11 @@ func (m *Manager) notifyConnectionEmpty(connectionID string) {
 }
 
 func (s *Session) close() {
+	s.mu.Lock()
 	if controller, ok := s.Conn.(transaction.Controller); ok && controller.InTransaction() {
 		_ = controller.Rollback(context.Background())
 	}
-	s.CloseAllCursors()
+	s.closeCursorsLocked()
+	s.mu.Unlock()
 	_ = s.Conn.Close()
 }

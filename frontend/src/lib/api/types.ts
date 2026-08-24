@@ -122,6 +122,7 @@ export interface TransactionStatusResponse {
   mode: TransactionMode
   open: boolean
   pending_statements: number
+  statements: string[]
 }
 
 export interface ResultSet {
@@ -698,6 +699,7 @@ export interface SchemaEditStatus {
 export interface SchemaEditResponse {
   applied: boolean
   schema: SchemaEditStatus
+  transaction: TransactionStatusResponse
 }
 
 export interface SchemaSpecResponse {

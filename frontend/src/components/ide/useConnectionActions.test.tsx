@@ -77,7 +77,9 @@ describe('useConnectionActions', () => {
 
   it('disconnects with the owning session and clears local state', async () => {
     store.getState().setSession(7, 'session-7')
-    store.getState().setTransactionState(7, { mode: 'manual', open: true, pendingStatements: 1 })
+    store
+      .getState()
+      .setTransactionState(7, { mode: 'manual', open: true, pendingStatements: 1, statements: [] })
     let requestSession = ''
     server.use(
       http.delete('/api/v1/orgs/acme/workspaces/3/connections/7/session', ({ request }) => {

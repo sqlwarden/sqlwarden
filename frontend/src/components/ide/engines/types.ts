@@ -16,4 +16,8 @@ export interface FrontendEngine {
   objectDetail: ObjectDetailHooks
   diagram: DiagramHooks
   connection?: DriverDef
+  /** Set when this engine can silently end a manual transaction — e.g. an
+   *  implicit commit on DDL. Shown as a persistent warning in manual mode.
+   *  Leave unset for engines with fully transactional DDL. */
+  manualTransactionWarning?: string
 }

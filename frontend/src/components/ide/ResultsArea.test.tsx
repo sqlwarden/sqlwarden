@@ -128,7 +128,7 @@ describe('ResultsArea', () => {
         truncated: false,
         rows_returned: 0,
         bytes_returned: 0,
-        transaction: { mode: 'auto', open: false, pending_statements: 0 },
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
       },
     })
 
@@ -151,7 +151,7 @@ describe('ResultsArea', () => {
         truncated: false,
         rows_returned: 0,
         bytes_returned: 0,
-        transaction: { mode: 'auto', open: false, pending_statements: 0 },
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
       },
     })
 
@@ -172,7 +172,7 @@ describe('ResultsArea', () => {
         truncated: false,
         rows_returned: 0,
         bytes_returned: 0,
-        transaction: { mode: 'auto', open: false, pending_statements: 0 },
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
       },
     })
 
@@ -192,7 +192,7 @@ describe('ResultsArea', () => {
         truncated: false,
         rows_returned: 0,
         bytes_returned: 0,
-        transaction: { mode: 'auto', open: false, pending_statements: 0 },
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
       },
     })
 
@@ -214,7 +214,7 @@ describe('ResultsArea', () => {
         truncated: false,
         rows_returned: 0,
         bytes_returned: 0,
-        transaction: { mode: 'auto', open: false, pending_statements: 0 },
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
       },
     })
 
@@ -254,7 +254,7 @@ describe('ResultsArea', () => {
         truncated: false,
         rows_returned: 2,
         bytes_returned: 24,
-        transaction: { mode: 'auto', open: false, pending_statements: 0 },
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
       },
     }
   }
@@ -324,7 +324,7 @@ describe('ResultsArea', () => {
         truncated: false,
         rows_returned: 0,
         bytes_returned: 0,
-        transaction: { mode: 'auto', open: false, pending_statements: 0 },
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
         rows_affected: 2,
       },
     })
@@ -363,7 +363,7 @@ describe('ResultsArea', () => {
         truncated: false,
         rows_returned: 0,
         bytes_returned: 0,
-        transaction: { mode: 'auto', open: false, pending_statements: 0 },
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
         rows_affected: 2,
       },
     })
@@ -395,7 +395,7 @@ describe('ResultsArea', () => {
         truncated: false,
         rows_returned: 0,
         bytes_returned: 0,
-        transaction: { mode: 'auto', open: false, pending_statements: 0 },
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
         rows_affected: 1,
       },
     })
@@ -434,7 +434,7 @@ describe('ResultsArea', () => {
         truncated: false,
         rows_returned: 0,
         bytes_returned: 0,
-        transaction: { mode: 'auto', open: false, pending_statements: 0 },
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
         rows_affected: 1,
       },
     })
@@ -466,7 +466,7 @@ describe('ResultsArea', () => {
         truncated: false,
         rows_returned: 0,
         bytes_returned: 0,
-        transaction: { mode: 'auto', open: false, pending_statements: 0 },
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
         rows_affected: 1,
       },
     })
@@ -502,7 +502,7 @@ describe('ResultsArea', () => {
           truncated: false,
           rows_returned: 0,
           bytes_returned: 0,
-          transaction: { mode: 'auto', open: false, pending_statements: 0 },
+          transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
           rows_affected: 1,
         },
       },

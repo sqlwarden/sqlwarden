@@ -297,7 +297,12 @@ export type ConnectionState =
   | { kind: 'error'; message: string }
   | { kind: 'idle' }
 
-export type TransactionState = { mode: TransactionMode; open: boolean; pendingStatements: number }
+export type TransactionState = {
+  mode: TransactionMode
+  open: boolean
+  pendingStatements: number
+  statements: string[]
+}
 
 /** A node's expanded state: the stored value, or `fallback` when there's no record. */
 export function isNodeExpanded(
@@ -971,6 +976,16 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
 export function useIde<T>(selector: (state: IdeState & IdeActions) => T): T {
   const store = useContext(IdeStoreContext) ?? _contextFallback
   return useStore(store, selector)
+}
+
+/**
+ * The store instance itself, for reading the freshest state inside async
+ * callbacks. A value captured through useIde is the value of the render the
+ * callback was created in, which goes stale as soon as the callback awaits a
+ * mutation that updates the store.
+ */
+export function useIdeStoreApi(): IdeStore {
+  return useContext(IdeStoreContext) ?? (_contextFallback as unknown as IdeStore)
 }
 
 // ─── Tab factory functions ──────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react'
 import { runConnectionQuery } from '#/lib/api/query'
 import { runStatementBatch, type BatchExecutionDependencies } from './runStatementBatch'
 import { useEnsureSession } from './sessionErrors'
+import { useRefreshTransactionState } from './transactionState'
 import { useBeginRun } from './useBeginRun'
 import { useHistoryRecorder } from './useHistoryRecorder'
 import { useIde } from './useIdeStore'
@@ -26,6 +27,7 @@ export function useQueryExecution(
   const setController = useIde((state) => state.setTabController)
   const setPendingConfirmation = useIde((state) => state.setPendingConfirmation)
   const setTransactionState = useIde((state) => state.setTransactionState)
+  const refreshTransactionState = useRefreshTransactionState(orgSlug, workspaceId)
 
   const runIdRef = useRef('')
   const sqlRef = useRef('')
@@ -55,6 +57,7 @@ export function useQueryExecution(
         setPendingConfirmation,
         recordHistory,
         setTransactionState,
+        refreshTransactionState,
       }
       return runStatementBatch({ tabId, connectionId, sqls: [sql], controller, ...options }, deps)
     },
@@ -65,6 +68,7 @@ export function useQueryExecution(
       markRunRemainingSkipped,
       orgSlug,
       recordHistory,
+      refreshTransactionState,
       setController,
       setPendingConfirmation,
       setRunStatementResult,

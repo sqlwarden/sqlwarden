@@ -1,9 +1,11 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
 import type { Workspace } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
+import { server } from '#/test/server'
 import type { GroupNode } from './ideLayout'
 import { IdeTabBar, requiresCloseConfirmation } from './IdeTabBar'
 import { createIdeStore, IdeStoreContext, useIde, type EditorTab } from './useIdeStore'
@@ -136,7 +138,7 @@ describe('IdeTabBar', () => {
       },
       activeGroupId: { 3: 'main' },
       sessions: { 42: 'session-42' },
-      transactions: { 42: { mode: 'manual', open: true, pendingStatements: 2 } },
+      transactions: { 42: { mode: 'manual', open: true, pendingStatements: 2, statements: [] } },
     })
     const user = userEvent.setup()
     render(
@@ -152,6 +154,93 @@ describe('IdeTabBar', () => {
     expect(store.getState().tabs).toHaveLength(1)
 
     await user.click(screen.getByRole('button', { name: /cancel/i }))
+    expect(store.getState().tabs).toHaveLength(1)
+  })
+
+  it('does not guard closing one split-pane instance of a tab still open in another pane', async () => {
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const queryClient = createTestQueryClient()
+    const connTab = tab({ id: 'scratch:3:2', title: 'Console 2', connectionId: 42 })
+    store.setState({
+      tabs: [connTab],
+      layout: {
+        3: {
+          type: 'split',
+          id: 'root',
+          orientation: 'row',
+          children: [
+            { type: 'group', id: 'left', tabIds: [connTab.id], activeTabId: connTab.id },
+            { type: 'group', id: 'right', tabIds: [connTab.id], activeTabId: connTab.id },
+          ],
+        },
+      },
+      activeGroupId: { 3: 'left' },
+      sessions: { 42: 'session-42' },
+      transactions: { 42: { mode: 'manual', open: true, pendingStatements: 2, statements: [] } },
+    })
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <IdeStoreContext.Provider value={store}>
+          <IdeTabBar
+            orgSlug="acme"
+            workspace={workspace}
+            group={{ type: 'group', id: 'left', tabIds: [connTab.id], activeTabId: connTab.id }}
+            focused
+            onFocus={vi.fn()}
+          />
+        </IdeStoreContext.Provider>
+      </QueryClientProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Close Console 2' }))
+
+    expect(screen.queryByText(/commit or roll back before closing/i)).not.toBeInTheDocument()
+    // The tab still exists (open in the other pane); only this pane's instance closed.
+    expect(store.getState().tabs.map((t) => t.id)).toEqual([connTab.id])
+  })
+
+  it('routes through the unsaved-content confirmation after resolving the transaction guard, instead of closing unconditionally', async () => {
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const queryClient = createTestQueryClient()
+    const connTab = tab({
+      id: 'scratch:3:2',
+      title: 'Console 2',
+      connectionId: 42,
+      content: 'select 1',
+    })
+    store.setState({
+      tabs: [connTab],
+      layout: {
+        3: { type: 'group', id: 'main', tabIds: [connTab.id], activeTabId: connTab.id },
+      },
+      activeGroupId: { 3: 'main' },
+      sessions: { 42: 'session-42' },
+      transactions: { 42: { mode: 'manual', open: true, pendingStatements: 2, statements: [] } },
+    })
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/42/transaction/rollback', () =>
+        HttpResponse.json({ mode: 'manual', open: false, pending_statements: 0, statements: [] }),
+      ),
+    )
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <IdeStoreContext.Provider value={store}>
+          <TabBarHarness />
+        </IdeStoreContext.Provider>
+      </QueryClientProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Close Console 2' }))
+    const guard = await screen.findByText(/commit or roll back before closing this tab/i)
+    await user.click(
+      within(guard.closest('[role="alertdialog"]')!).getByRole('button', { name: 'Rollback' }),
+    )
+
+    // Transaction resolved, but the console still has unsaved content — the
+    // ordinary close-confirmation must still gate closing, not a silent close.
+    expect(await screen.findByText('Close console?')).toBeInTheDocument()
     expect(store.getState().tabs).toHaveLength(1)
   })
 })

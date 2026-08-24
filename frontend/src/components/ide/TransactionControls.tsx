@@ -1,10 +1,22 @@
+import { useState } from 'react'
+import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
-import { Toggle } from '#/components/ui/toggle'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '#/components/ui/dropdown-menu'
+import type { TransactionMode } from '#/lib/api/types'
+import { cn } from '#/lib/utils'
+import { getFrontendEngine } from './engines/registry'
 import { Tip } from './schema-diagram/Tip'
 import type { TransactionState } from './useIdeStore'
 
 export type TransactionControlsProps = {
   state: TransactionState
+  driver: string
   switchToManual: () => void
   switchToAuto: () => Promise<'ok' | 'blocked'>
   commit: () => Promise<void>
@@ -16,45 +28,152 @@ export type TransactionControlsProps = {
 
 export function TransactionControls({
   state,
+  driver,
   switchToManual,
   switchToAuto,
   commit,
   rollback,
   onSwitchToAutoBlocked,
 }: TransactionControlsProps) {
+  const manualTransactionWarning = getFrontendEngine(driver).manualTransactionWarning
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [selectedStatement, setSelectedStatement] = useState(0)
+
+  function openDetails() {
+    setSelectedStatement(0)
+    setDetailsOpen(true)
+  }
+
+  async function selectMode(mode: TransactionMode) {
+    if (mode === state.mode) return
+    if (mode === 'manual') {
+      switchToManual()
+      return
+    }
+    const result = await switchToAuto()
+    if (result === 'blocked') onSwitchToAutoBlocked()
+  }
+
   return (
     <div className="flex items-center gap-2">
-      <Tip label={state.mode === 'manual' ? 'Manual commit' : 'Auto-commit'}>
-        <Toggle
-          variant="outline"
-          size="sm"
-          aria-label="Manual transaction mode"
-          pressed={state.mode === 'manual'}
-          onPressedChange={async (pressed) => {
-            if (pressed) {
-              switchToManual()
-              return
-            }
-            const result = await switchToAuto()
-            if (result === 'blocked') onSwitchToAutoBlocked()
-          }}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-xs font-normal"
+            />
+          }
         >
-          Manual
-        </Toggle>
-      </Tip>
+          <span
+            className={cn(
+              'size-1.5 shrink-0 rounded-full',
+              state.mode === 'manual' ? 'bg-warning' : 'bg-muted-foreground/40',
+            )}
+          />
+          {state.mode === 'manual' ? 'Manual' : 'Auto-commit'}
+          <Icon name="arrow-down-01" size={10} className="ml-0.5 shrink-0 text-muted-foreground" />
+        </DropdownMenuTrigger>
+        {state.mode === 'manual' && manualTransactionWarning && (
+          <Tip label={manualTransactionWarning}>
+            <span className="shrink-0" data-testid="manual-transaction-warning">
+              <Icon name="alert-triangle" size={13} className="text-warning" />
+            </span>
+          </Tip>
+        )}
+        <DropdownMenuContent align="start">
+          <DropdownMenuItem onClick={() => void selectMode('auto')}>
+            <Icon name="refresh" size={13} data-icon="inline-start" />
+            Auto-commit
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => void selectMode('manual')}>
+            <Icon name="pencil-edit-02" size={13} data-icon="inline-start" />
+            Manual transaction
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
       {state.mode === 'manual' && state.open && (
         <>
-          <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={state.statements.length === 0}
+            className="h-7 px-2 text-xs font-normal text-muted-foreground"
+            onClick={openDetails}
+          >
             {state.pendingStatements} pending
-          </span>
-          <Button type="button" variant="outline" size="sm" onClick={() => void commit()}>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs font-normal"
+            onClick={() => void commit()}
+          >
+            <Icon name="checkmark-circle-02" size={12} data-icon="inline-start" />
             Commit
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => void rollback()}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs font-normal text-destructive hover:text-destructive"
+            onClick={() => void rollback()}
+          >
+            <Icon name="arrow-turn-backward" size={12} data-icon="inline-start" />
             Rollback
           </Button>
         </>
       )}
+
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="flex flex-col sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              Pending statement{state.statements.length === 1 ? '' : 's'} ({state.statements.length}
+              )
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex max-h-[60vh] min-h-40 overflow-hidden rounded-md border border-border">
+            <div
+              role="listbox"
+              aria-label="Pending statements"
+              className="flex w-52 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar"
+            >
+              {state.statements.map((statement, index) => {
+                const selected = index === selectedStatement
+                return (
+                  <button
+                    key={index}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => setSelectedStatement(index)}
+                    className={cn(
+                      'flex flex-col gap-0.5 border-b border-border px-2.5 py-2 text-left transition-colors hover:bg-accent/40',
+                      selected && 'bg-accent',
+                    )}
+                  >
+                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      #{index + 1}
+                    </span>
+                    <span className="min-w-0 truncate font-mono text-[11px] text-foreground">
+                      {statement.replace(/\s+/g, ' ').trim()}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            <pre className="min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-card p-3 font-mono text-xs text-foreground">
+              {state.statements[selectedStatement]}
+            </pre>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

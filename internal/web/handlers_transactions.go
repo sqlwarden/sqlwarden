@@ -16,16 +16,22 @@ import (
 // transactionStatusView is the JSON shape shared by the transaction endpoints
 // and embedded as "transaction" on /query and DDL-apply responses.
 type transactionStatusView struct {
-	Mode              string `json:"mode"`
-	Open              bool   `json:"open"`
-	PendingStatements int    `json:"pending_statements"`
+	Mode              string   `json:"mode"`
+	Open              bool     `json:"open"`
+	PendingStatements int      `json:"pending_statements"`
+	Statements        []string `json:"statements"`
 }
 
 func newTransactionStatusView(status connection.TransactionStatus) transactionStatusView {
+	statements := status.Statements
+	if statements == nil {
+		statements = []string{}
+	}
 	return transactionStatusView{
 		Mode:              string(status.Mode),
 		Open:              status.Open,
 		PendingStatements: status.PendingStatements,
+		Statements:        statements,
 	}
 }
 
