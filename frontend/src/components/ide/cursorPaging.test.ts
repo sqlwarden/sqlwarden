@@ -19,6 +19,7 @@ const initial: SuccessfulQueryResult = {
     query_cursor_id: 'cursor-1',
     exhausted: false,
     page_size: 20,
+    transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
   },
 }
 
@@ -33,6 +34,7 @@ describe('mergeCursorPage', () => {
       rows_returned: 1,
       bytes_returned: 15,
       exhausted: false,
+      transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
     }
 
     const merged = mergeCursorPage(initial, page, 'cursor-1')

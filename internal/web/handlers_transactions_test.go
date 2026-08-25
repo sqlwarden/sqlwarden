@@ -1,0 +1,226 @@
+package web
+
+import (
+	"fmt"
+	"net/http"
+	"strconv"
+	"testing"
+
+	"github.com/sqlwarden/internal/assert"
+)
+
+func setUpTransactionTestConnection(t *testing.T, emailPrefix string) (app *application, tok string, connURL string) {
+	t.Helper()
+	app = newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, emailPrefix+"@example.com", "Tx Test", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Tx WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "TxConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	connURL = orgConnectionURL(slug, wsIDInt, envID, connID)
+	return app, tok, connURL
+}
+
+func TestSetTransactionMode_RequiresSessionHeader(t *testing.T) {
+	t.Parallel()
+	app, tok, connURL := setUpTransactionTestConnection(t, "tx-mode-missing-session")
+
+	req := newAuthRequest(t, http.MethodPost, connURL+"/transaction/mode", map[string]any{"mode": "manual"}, tok)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusBadRequest)
+}
+
+func TestTransactionLifecycle_ModeCommitRollbackStatus(t *testing.T) {
+	t.Parallel()
+	app, tok, connURL := setUpTransactionTestConnection(t, "tx-lifecycle")
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost, connURL+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	// Switch to manual.
+	modeReq := newAuthRequest(t, http.MethodPost, connURL+"/transaction/mode", map[string]any{"mode": "manual"}, tok)
+	modeReq.Header.Set("X-Warden-Session", sessionID)
+	modeRes := send(t, modeReq, app.routes())
+	assert.Equal(t, modeRes.StatusCode, http.StatusOK)
+	assert.Equal(t, modeRes.BodyFields["mode"], any("manual"))
+
+	// Run a statement to open a transaction.
+	queryReq := newAuthRequest(t, http.MethodPost, connURL+"/query", map[string]any{"sql": "CREATE TABLE t (id INTEGER)"}, tok)
+	queryReq.Header.Set("X-Warden-Session", sessionID)
+	queryRes := send(t, queryReq, app.routes())
+	assert.Equal(t, queryRes.StatusCode, http.StatusOK)
+	txField, ok := queryRes.BodyFields["transaction"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected transaction field on query response, got %v", queryRes.BodyFields)
+	}
+	assert.Equal(t, txField["open"], any(true))
+	statements, ok := txField["statements"].([]any)
+	if !ok || len(statements) != 1 || statements[0] != "CREATE TABLE t (id INTEGER)" {
+		t.Fatalf("expected statements = [%q], got %v", "CREATE TABLE t (id INTEGER)", txField["statements"])
+	}
+
+	// Switching back to auto while open must 409.
+	autoReq := newAuthRequest(t, http.MethodPost, connURL+"/transaction/mode", map[string]any{"mode": "auto"}, tok)
+	autoReq.Header.Set("X-Warden-Session", sessionID)
+	autoRes := send(t, autoReq, app.routes())
+	assert.Equal(t, autoRes.StatusCode, http.StatusConflict)
+
+	// Commit.
+	commitReq := newAuthRequest(t, http.MethodPost, connURL+"/transaction/commit", nil, tok)
+	commitReq.Header.Set("X-Warden-Session", sessionID)
+	commitRes := send(t, commitReq, app.routes())
+	assert.Equal(t, commitRes.StatusCode, http.StatusOK)
+	assert.Equal(t, commitRes.BodyFields["open"], any(false))
+	if statements, ok := commitRes.BodyFields["statements"].([]any); !ok || len(statements) != 0 {
+		t.Fatalf("expected empty statements after commit, got %v", commitRes.BodyFields["statements"])
+	}
+
+	// Status reflects closed transaction.
+	statusReq := newAuthRequest(t, http.MethodGet, connURL+"/transaction", nil, tok)
+	statusReq.Header.Set("X-Warden-Session", sessionID)
+	statusRes := send(t, statusReq, app.routes())
+	assert.Equal(t, statusRes.StatusCode, http.StatusOK)
+	assert.Equal(t, statusRes.BodyFields["open"], any(false))
+
+	// No open transaction to roll back.
+	rollbackReq := newAuthRequest(t, http.MethodPost, connURL+"/transaction/rollback", nil, tok)
+	rollbackReq.Header.Set("X-Warden-Session", sessionID)
+	rollbackRes := send(t, rollbackReq, app.routes())
+	assert.Equal(t, rollbackRes.StatusCode, http.StatusConflict)
+}
+
+func TestSetTransactionMode_ValidatesMode(t *testing.T) {
+	t.Parallel()
+	app, tok, connURL := setUpTransactionTestConnection(t, "tx-mode-validate")
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost, connURL+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	req := newAuthRequest(t, http.MethodPost, connURL+"/transaction/mode", map[string]any{"mode": "bogus"}, tok)
+	req.Header.Set("X-Warden-Session", sessionID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+}
+
+// TestTransactionEndpoints_AfterSessionReaped exercises the connection-drop
+// safety net end to end over HTTP: the session backing an open manual
+// transaction disappears (idle-reap, admin revocation, or a dropped
+// connection all funnel through Manager.Remove), and the client's next
+// transaction call must fail cleanly rather than 5xx or resurrect stale
+// state. Reconnecting afterward must start from a fresh, closed transaction
+// rather than carrying over the old session's pending statements.
+func TestTransactionEndpoints_AfterSessionReaped(t *testing.T) {
+	t.Parallel()
+	app, tok, connURL := setUpTransactionTestConnection(t, "tx-after-reap")
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost, connURL+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	modeReq := newAuthRequest(t, http.MethodPost, connURL+"/transaction/mode", map[string]any{"mode": "manual"}, tok)
+	modeReq.Header.Set("X-Warden-Session", sessionID)
+	assert.Equal(t, send(t, modeReq, app.routes()).StatusCode, http.StatusOK)
+
+	queryReq := newAuthRequest(t, http.MethodPost, connURL+"/query", map[string]any{"sql": "CREATE TABLE t (id INTEGER)"}, tok)
+	queryReq.Header.Set("X-Warden-Session", sessionID)
+	assert.Equal(t, send(t, queryReq, app.routes()).StatusCode, http.StatusOK)
+
+	// Simulate the session going away out from under the client — the same
+	// path idle-reap and connection-drop cleanup both take.
+	app.connManager.Remove(sessionID)
+
+	commitReq := newAuthRequest(t, http.MethodPost, connURL+"/transaction/commit", nil, tok)
+	commitReq.Header.Set("X-Warden-Session", sessionID)
+	commitRes := send(t, commitReq, app.routes())
+	assert.Equal(t, commitRes.StatusCode, http.StatusGone)
+
+	rollbackReq := newAuthRequest(t, http.MethodPost, connURL+"/transaction/rollback", nil, tok)
+	rollbackReq.Header.Set("X-Warden-Session", sessionID)
+	rollbackRes := send(t, rollbackReq, app.routes())
+	assert.Equal(t, rollbackRes.StatusCode, http.StatusGone)
+
+	// Reconnecting must not resurrect the old session's pending transaction.
+	reconnectRes := send(t, newAuthRequest(t, http.MethodPost, connURL+"/connect", nil, tok), app.routes())
+	assert.Equal(t, reconnectRes.StatusCode, http.StatusOK)
+	newSessionID := reconnectRes.BodyFields["session_id"].(string)
+	if newSessionID == sessionID {
+		t.Fatal("expected a fresh session id after the old one was reaped")
+	}
+
+	statusReq := newAuthRequest(t, http.MethodGet, connURL+"/transaction", nil, tok)
+	statusReq.Header.Set("X-Warden-Session", newSessionID)
+	statusRes := send(t, statusReq, app.routes())
+	assert.Equal(t, statusRes.StatusCode, http.StatusOK)
+	assert.Equal(t, statusRes.BodyFields["mode"], any("auto"))
+	assert.Equal(t, statusRes.BodyFields["open"], any(false))
+}
+
+// TestTransactionEndpoints_RejectSessionFromDifferentConnection ensures a
+// session opened against one connection cannot be replayed against another
+// connection's transaction endpoints, even for the same account — the
+// X-Warden-Session header is client-supplied and must be checked against
+// both the account and the connection in context, not just the account.
+func TestTransactionEndpoints_RejectSessionFromDifferentConnection(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, slug := registerAndLogin(t, app, "tx-cross-conn@example.com", "Tx Cross", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Tx WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createOne := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "ConnOne", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createOne.StatusCode, http.StatusCreated)
+	connOneURL := orgConnectionURL(slug, wsIDInt, envID, fmt.Sprintf("%v", createOne.BodyFields["id"]))
+
+	createTwo := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "ConnTwo", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createTwo.StatusCode, http.StatusCreated)
+	connTwoURL := orgConnectionURL(slug, wsIDInt, envID, fmt.Sprintf("%v", createTwo.BodyFields["id"]))
+
+	connectOne := send(t, newAuthRequest(t, http.MethodPost, connOneURL+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectOne.StatusCode, http.StatusOK)
+	sessionOneID := connectOne.BodyFields["session_id"].(string)
+
+	// Reuse connection one's session against connection two's transaction endpoint.
+	statusReq := newAuthRequest(t, http.MethodGet, connTwoURL+"/transaction", nil, tok)
+	statusReq.Header.Set("X-Warden-Session", sessionOneID)
+	statusRes := send(t, statusReq, app.routes())
+	assert.Equal(t, statusRes.StatusCode, http.StatusForbidden)
+
+	commitReq := newAuthRequest(t, http.MethodPost, connTwoURL+"/transaction/commit", nil, tok)
+	commitReq.Header.Set("X-Warden-Session", sessionOneID)
+	commitRes := send(t, commitReq, app.routes())
+	assert.Equal(t, commitRes.StatusCode, http.StatusForbidden)
+}
+
+func TestGetTransactionStatus_ExpiredSession(t *testing.T) {
+	t.Parallel()
+	app, tok, connURL := setUpTransactionTestConnection(t, "tx-status-expired")
+
+	req := newAuthRequest(t, http.MethodGet, connURL+"/transaction", nil, tok)
+	req.Header.Set("X-Warden-Session", "missing-session")
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusGone)
+}

@@ -12,7 +12,7 @@ var _ cursor.QueryCursorDriver = (*mysqlDriver)(nil)
 func (d *mysqlDriver) StartQuery(ctx context.Context, req cursor.QueryRequest) (cursor.QueryCursor, error) {
 	// SQL is intentionally user-authored editor input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
-	rows, err := d.db.QueryContext(ctx, req.SQL, req.Args...)
+	rows, err := d.conn().QueryContext(ctx, req.SQL, req.Args...)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: start query: %w", err)
 	}

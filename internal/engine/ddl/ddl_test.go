@@ -70,3 +70,26 @@ func TestValidateIdentifierRejectsWhitespaceAndNUL(t *testing.T) {
 		}
 	}
 }
+
+func TestSummary(t *testing.T) {
+	table := metadata.ObjectRef{Scope: testScope(), Kind: "table", Name: "events"}
+	tests := []struct {
+		name    string
+		request Request
+		want    string
+	}{
+		{"create table", Request{Operation: OperationCreateTable, Name: "events"}, "CREATE TABLE events"},
+		{"drop object", Request{Operation: OperationDropObject, Ref: &table}, "DROP TABLE events"},
+		{"drop scope", Request{Operation: OperationDropScope, Scope: testScope()}, "DROP public"},
+		{"rename column", Request{Operation: OperationRenameColumn, Ref: &table, Name: "id", NewName: "customer_id"}, "RENAME COLUMN events.id TO customer_id"},
+		{"drop column", Request{Operation: OperationDropColumn, Ref: &table, Name: "id"}, "DROP COLUMN events.id"},
+		{"drop index", Request{Operation: OperationDropIndex, Name: "events_id_idx"}, "DROP INDEX events_id_idx"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.request.Summary(); got != tt.want {
+				t.Fatalf("Summary() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

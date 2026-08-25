@@ -14,11 +14,20 @@ import { copyWithToast } from './contextMenus/clipboard'
 import { buildTabMenu } from './contextMenus/tabMenu'
 import type { Workspace } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
-import { useIde, DEFAULT_CONSOLE_CONTENT, type EditorTab, type TabKind } from './useIdeStore'
+import {
+  useIde,
+  useIdeStoreApi,
+  DEFAULT_CONSOLE_CONTENT,
+  type EditorTab,
+  type TabKind,
+  type TransactionState,
+} from './useIdeStore'
 import { allGroups, tabsToClose, type GroupNode, type SplitDirection } from './ideLayout'
 import { DriverBadge } from './DriverBadge'
 import { Tip } from './schema-diagram/Tip'
+import { TransactionGuardDialog } from './TransactionGuardDialog'
 import { useTabStripOverflow } from './useTabStripOverflow'
+import { useTransactionMode } from './useTransactionMode'
 
 type IdeTabBarProps = {
   orgSlug: string
@@ -46,17 +55,15 @@ export function requiresCloseConfirmation(
   return running || (tab.kind === 'file' && Boolean(tab.isDirty)) || hasConsoleContent
 }
 
-export function IdeTabBar({
-  orgSlug: _orgSlug,
-  workspace,
-  group,
-  focused,
-  onFocus,
-}: IdeTabBarProps) {
+export function IdeTabBar({ orgSlug, workspace, group, focused, onFocus }: IdeTabBarProps) {
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null)
+  const [pendingTransactionCloseTabId, setPendingTransactionCloseTabId] = useState<string | null>(
+    null,
+  )
 
   const tabs = useIde((s) => s.tabs)
   const runningTabs = useIde((s) => s.runningTabs)
+  const store = useIdeStoreApi()
   const openConsole = useIde((s) => s.openConsole)
   const closeTabInstance = useIde((s) => s.closeTabInstance)
   const setActiveTab = useIde((s) => s.setActiveTab)
@@ -82,9 +89,36 @@ export function IdeTabBar({
     openConsole(workspace, yState)
   }
 
+  // A connection-backed tab (console or the connection's own tab) closing while
+  // it's the last tab referencing that connection would leave an open
+  // transaction with no tab left to commit/roll it back from — guard that
+  // case instead of closing directly. Closing one split-pane instance of a
+  // tab that's still shown in another pane doesn't lose the tab, so it isn't
+  // "last" until every pane instance is accounted for.
+  function isLastConnectionTabWithOpenTransaction(
+    tab: EditorTab,
+    instances: number,
+    txState: Record<number, TransactionState>,
+  ): boolean {
+    if (tab.connectionId === undefined) return false
+    if (tab.kind !== 'connection' && tab.kind !== 'scratch') return false
+    if (!txState[tab.connectionId]?.open) return false
+    if (instances > 1) return false
+    return tabs.filter((t) => t.connectionId === tab.connectionId).length === 1
+  }
+
   function handleCloseRequest(tab: EditorTab) {
-    // Closing one pane only loses content when it's the tab's last instance.
+    // Closing one pane only loses content/the tab when it's the tab's last instance.
     const instances = layout ? allGroups(layout).filter((g) => g.tabIds.includes(tab.id)).length : 1
+    // Reads live store state rather than the `transactions` this render closed
+    // over: the guard dialog's onCommit/onRollback call this right after
+    // resolving the transaction, and by then this component's last render is
+    // stale — checking the closed-over value would re-open the same guard.
+    const liveTransactions = store.getState().transactions
+    if (isLastConnectionTabWithOpenTransaction(tab, instances, liveTransactions)) {
+      setPendingTransactionCloseTabId(tab.id)
+      return
+    }
     if (requiresCloseConfirmation(tab, Boolean(runningTabs[tab.id]), instances)) {
       setPendingCloseTabId(tab.id)
     } else {
@@ -114,6 +148,20 @@ export function IdeTabBar({
   const pendingCloseTab = pendingCloseTabId ? tabs.find((t) => t.id === pendingCloseTabId) : null
   const pendingCloseRunning = pendingCloseTab ? !!runningTabs[pendingCloseTab.id] : false
   const pendingCloseIsConsole = !pendingCloseRunning && pendingCloseTab?.kind === 'scratch'
+
+  const pendingTransactionCloseTab = pendingTransactionCloseTabId
+    ? tabs.find((t) => t.id === pendingTransactionCloseTabId)
+    : null
+  const pendingTransactionConnectionId = pendingTransactionCloseTab?.connectionId
+  const pendingTransactionSessionId = useIde((s) =>
+    pendingTransactionConnectionId ? s.sessions[pendingTransactionConnectionId] : undefined,
+  )
+  const pendingTransaction = useTransactionMode(
+    orgSlug,
+    workspace.id,
+    pendingTransactionConnectionId,
+    pendingTransactionSessionId,
+  )
 
   return (
     <>
@@ -233,6 +281,31 @@ export function IdeTabBar({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+
+      {pendingTransactionCloseTab && (
+        <TransactionGuardDialog
+          open
+          reason="close-tab"
+          pendingStatements={pendingTransaction.state.pendingStatements}
+          onOpenChange={(open) => {
+            if (!open) setPendingTransactionCloseTabId(null)
+          }}
+          onCommit={() => {
+            void (async () => {
+              await pendingTransaction.commit()
+              setPendingTransactionCloseTabId(null)
+              handleCloseRequest(pendingTransactionCloseTab)
+            })()
+          }}
+          onRollback={() => {
+            void (async () => {
+              await pendingTransaction.rollback()
+              setPendingTransactionCloseTabId(null)
+              handleCloseRequest(pendingTransactionCloseTab)
+            })()
+          }}
+        />
       )}
     </>
   )

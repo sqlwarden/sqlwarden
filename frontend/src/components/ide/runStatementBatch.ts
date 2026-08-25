@@ -1,6 +1,6 @@
 import { errorMessage, isApiError } from '#/lib/api/errors'
 import type { ResultSet, UnsafeStatement } from '#/lib/api/types'
-import type { PendingUnsafeQuery, QueryResult } from './useIdeStore'
+import type { PendingUnsafeQuery, QueryResult, TransactionState } from './useIdeStore'
 
 export type RecordHistoryInput = {
   sqlText: string
@@ -33,6 +33,14 @@ export type BatchExecutionDependencies = {
   setController: (tabId: string, controller: AbortController | null) => void
   setPendingConfirmation: (tabId: string, pending: PendingUnsafeQuery) => void
   recordHistory: (entry: RecordHistoryInput) => void
+  setTransactionState: (connectionId: number, state: TransactionState) => void
+  /** Refetches transaction status from the backend. Called after a statement
+   *  fails or is cancelled — a failed statement may still have opened a
+   *  transaction backend-side before erroring, and a cancellation tears down
+   *  the session (rolling back any open transaction); the response envelope
+   *  used for the success path doesn't exist in either case, so the local
+   *  store can only be brought back in sync by asking the backend. */
+  refreshTransactionState: (connectionId: number) => Promise<void>
 }
 
 export type BatchExecutionRequest = {
@@ -82,6 +90,12 @@ export async function runStatementBatch(
           sql,
           connectionId,
         })
+        deps.setTransactionState(connectionId, {
+          mode: result.transaction.mode,
+          open: result.transaction.open,
+          pendingStatements: result.transaction.pending_statements,
+          statements: result.transaction.statements,
+        })
         deps.recordHistory({
           sqlText: sql,
           status: 'ok',
@@ -103,6 +117,7 @@ export async function runStatementBatch(
           deps.setRunStatementResult(tabId, runId, i, { status: 'cancelled', sql })
           deps.recordHistory({ sqlText: sql, status: 'cancelled', durationMs: 0, rowsAffected: 0 })
           deps.markRunRemainingSkipped(tabId, runId, i + 1)
+          void deps.refreshTransactionState(connectionId)
           return runId
         }
         const message = errorMessage(error, 'Query failed')
@@ -115,6 +130,7 @@ export async function runStatementBatch(
           rowsAffected: 0,
         })
         deps.markRunRemainingSkipped(tabId, runId, i + 1)
+        void deps.refreshTransactionState(connectionId)
         return runId
       }
     }

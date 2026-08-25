@@ -25,7 +25,11 @@ import { useDownloadNow } from './exports/useDownloadNow'
 import { Tip } from './schema-diagram/Tip'
 import { useSaveEditorTab } from './useSaveEditorTab'
 import { ConnectionSelector } from './ConnectionSelector'
+import { TransactionControls } from './TransactionControls'
+import { TransactionGuardDialog } from './TransactionGuardDialog'
+import { useTransactionHydration } from './transactionState'
 import { useToolbarQueryAction } from './useToolbarQueryAction'
+import { useTransactionMode } from './useTransactionMode'
 import { UnsafeQueryDialog } from './UnsafeQueryDialog'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { formatEditorSql, sqlFormatterForDriver } from './sqlFormatting'
@@ -47,6 +51,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const [exportToWorkspaceOpen, setExportToWorkspaceOpen] = useState(false)
   const [saveFavoriteOpen, setSaveFavoriteOpen] = useState(false)
   const [saveFavoriteSql, setSaveFavoriteSql] = useState('')
+  const [switchToAutoGuardOpen, setSwitchToAutoGuardOpen] = useState(false)
   const viewRegistry = useEditorViewRegistry()
 
   const activeTabId = useIde((s) => selectActiveTabId(s, workspace.id))
@@ -125,6 +130,16 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   const connItems = connections.data?.items ?? []
   const activeConnection = connItems.find((c) => c.id === activeTab?.connectionId)
   const hasConnections = connItems.length > 0
+  const activeConnectionSessionId = useIde((s) =>
+    activeConnection ? s.sessions[activeConnection.id] : undefined,
+  )
+  const transactionMode = useTransactionMode(
+    orgSlug,
+    workspace.id,
+    activeConnection?.id,
+    activeConnectionSessionId,
+  )
+  useTransactionHydration(orgSlug, workspace.id, activeConnection?.id, activeConnectionSessionId)
   useEffect(() => {
     if (activeTab && activeConnection && activeTab.driver !== activeConnection.driver) {
       // Console tabs created before driver-aware completion retained only the
@@ -285,6 +300,18 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
 
         <div className="flex-1" />
 
+        {activeConnection && activeConnectionSessionId && (
+          <TransactionControls
+            state={transactionMode.state}
+            driver={activeConnection.driver}
+            switchToManual={transactionMode.switchToManual}
+            switchToAuto={transactionMode.switchToAuto}
+            commit={transactionMode.commit}
+            rollback={transactionMode.rollback}
+            onSwitchToAutoBlocked={() => setSwitchToAutoGuardOpen(true)}
+          />
+        )}
+
         <ConnectionSelector
           activeConnection={activeConnection}
           activeConnectionId={activeTab?.connectionId}
@@ -357,6 +384,27 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
           getSql={queryAction.resolveSql}
         />
       )}
+
+      <TransactionGuardDialog
+        open={switchToAutoGuardOpen}
+        reason="switch-to-auto"
+        pendingStatements={transactionMode.state.pendingStatements}
+        onOpenChange={setSwitchToAutoGuardOpen}
+        onCommit={() => {
+          void (async () => {
+            await transactionMode.commit()
+            await transactionMode.switchToAuto()
+            setSwitchToAutoGuardOpen(false)
+          })()
+        }}
+        onRollback={() => {
+          void (async () => {
+            await transactionMode.rollback()
+            await transactionMode.switchToAuto()
+            setSwitchToAutoGuardOpen(false)
+          })()
+        }}
+      />
 
       {activeTab && pendingConfirmation && (
         <UnsafeQueryDialog

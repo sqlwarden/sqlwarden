@@ -12,6 +12,8 @@ import type {
   SchemaRefreshResponse,
   SchemaSpecResponse,
   StatementOperation,
+  TransactionMode,
+  TransactionStatusResponse,
 } from '#/lib/api/types'
 import { queryKeys } from '#/lib/api/query-keys'
 
@@ -326,6 +328,65 @@ export function runConnectionQuery(
       confirm_unsafe: options.confirmUnsafe,
     },
     { headers: { 'X-Warden-Session': sessionId }, signal: options.signal },
+  )
+}
+
+function transactionBase(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+) {
+  return `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/transaction`
+}
+
+export function getConnectionTransactionStatus(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string,
+) {
+  return api.get<TransactionStatusResponse>(transactionBase(slug, workspaceId, connectionId), {
+    headers: { 'X-Warden-Session': sessionId },
+  })
+}
+
+export function setConnectionTransactionMode(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string,
+  mode: TransactionMode,
+) {
+  return api.post<TransactionStatusResponse>(
+    `${transactionBase(slug, workspaceId, connectionId)}/mode`,
+    { mode },
+    { headers: { 'X-Warden-Session': sessionId } },
+  )
+}
+
+export function commitConnectionTransaction(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string,
+) {
+  return api.post<TransactionStatusResponse>(
+    `${transactionBase(slug, workspaceId, connectionId)}/commit`,
+    undefined,
+    { headers: { 'X-Warden-Session': sessionId } },
+  )
+}
+
+export function rollbackConnectionTransaction(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string,
+) {
+  return api.post<TransactionStatusResponse>(
+    `${transactionBase(slug, workspaceId, connectionId)}/rollback`,
+    undefined,
+    { headers: { 'X-Warden-Session': sessionId } },
   )
 }
 

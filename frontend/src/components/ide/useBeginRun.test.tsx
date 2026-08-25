@@ -69,6 +69,7 @@ describe('useBeginRun', () => {
         truncated: false,
         rows_returned: 0,
         bytes_returned: 0,
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
         query_cursor_id: 'cursor-1',
       },
     })

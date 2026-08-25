@@ -45,7 +45,7 @@ func (d *postgresDriver) ApplyDDL(ctx context.Context, request ddl.Request) erro
 	// Every dynamic value is an identifier escaped by pgQuoteIdent or a data
 	// type selected from postgresDDLSpec's closed allowlist.
 	// codeql[go/sql-injection]
-	if _, err := d.db.ExecContext(ctx, statement); err != nil {
+	if _, err := d.conn().ExecContext(ctx, statement); err != nil {
 		return fmt.Errorf("postgres: apply DDL: %w", err)
 	}
 	return nil

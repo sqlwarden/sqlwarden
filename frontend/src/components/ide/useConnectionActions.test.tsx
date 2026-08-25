@@ -77,6 +77,9 @@ describe('useConnectionActions', () => {
 
   it('disconnects with the owning session and clears local state', async () => {
     store.getState().setSession(7, 'session-7')
+    store
+      .getState()
+      .setTransactionState(7, { mode: 'manual', open: true, pendingStatements: 1, statements: [] })
     let requestSession = ''
     server.use(
       http.delete('/api/v1/orgs/acme/workspaces/3/connections/7/session', ({ request }) => {
@@ -86,9 +89,10 @@ describe('useConnectionActions', () => {
     )
     const { result } = renderHook(() => useConnectionActions('acme', workspace), { wrapper })
 
-    act(() => result.current.disconnect(connection))
+    act(() => result.current.disconnect(connection, false))
     await waitFor(() => expect(store.getState().sessions[7]).toBeUndefined())
     expect(requestSession).toBe('session-7')
+    expect(store.getState().transactions[7]).toBeUndefined()
   })
 
   it('does not issue a disconnect without a live session', async () => {
@@ -101,9 +105,29 @@ describe('useConnectionActions', () => {
     )
     const { result } = renderHook(() => useConnectionActions('acme', workspace), { wrapper })
 
-    act(() => result.current.disconnect(connection))
+    act(() => result.current.disconnect(connection, false))
     await Promise.resolve()
     expect(requests).toBe(0)
+  })
+
+  it('blocks disconnect and calls onBlocked when a transaction is open, without issuing a request', async () => {
+    store.getState().setSession(7, 'session-7')
+    let requests = 0
+    server.use(
+      http.delete('/api/v1/orgs/acme/workspaces/3/connections/7/session', () => {
+        requests += 1
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const { result } = renderHook(() => useConnectionActions('acme', workspace), { wrapper })
+    const onBlocked = vi.fn()
+
+    act(() => result.current.disconnect(connection, true, onBlocked))
+    await Promise.resolve()
+
+    expect(onBlocked).toHaveBeenCalledTimes(1)
+    expect(requests).toBe(0)
+    expect(store.getState().sessions[7]).toBe('session-7')
   })
 
   it('opens connection and console tabs through the editor store', () => {

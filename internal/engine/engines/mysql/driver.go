@@ -16,8 +16,21 @@ import (
 
 type mysqlDriver struct {
 	db           *sql.DB
+	currentTx    *sql.Tx
 	scanOptions  cursor.ScanOptions
 	defaultScope metadata.ScopePath
+}
+
+type execer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func (d *mysqlDriver) conn() execer {
+	if d.currentTx != nil {
+		return d.currentTx
+	}
+	return d.db
 }
 
 // ensureParams ensures parseTime=true is in the DSN.
@@ -104,7 +117,7 @@ func (d *mysqlDriver) Query(ctx context.Context, query string, args ...any) (*re
 func (d *mysqlDriver) QueryWithOptions(ctx context.Context, query string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
 	// SQL is intentionally user-authored editor input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.conn().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: query: %w", err)
 	}
@@ -118,7 +131,7 @@ func (d *mysqlDriver) Execute(ctx context.Context, query string, args ...any) (*
 func (d *mysqlDriver) ExecuteWithOptions(ctx context.Context, query string, _ cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
 	// SQL is intentionally user-authored editor input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
-	execResult, err := d.db.ExecContext(ctx, query, args...)
+	execResult, err := d.conn().ExecContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: execute: %w", err)
 	}

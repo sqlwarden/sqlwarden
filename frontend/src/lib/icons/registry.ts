@@ -1,9 +1,11 @@
 export type AppIcon =
+  | 'alert-triangle'
   | 'arrow-down-01'
   | 'arrow-expand'
   | 'arrow-left-01'
   | 'arrow-right-01'
   | 'arrow-shrink'
+  | 'arrow-turn-backward'
   | 'arrow-up-01'
   | 'arrow-up-down'
   | 'arrow-up-right-01'

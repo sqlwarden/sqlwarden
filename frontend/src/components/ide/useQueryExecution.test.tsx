@@ -27,6 +27,7 @@ const result: ResultSet = {
   truncated: false,
   rows_returned: 1,
   bytes_returned: 1,
+  transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
 }
 
 describe('useQueryExecution', () => {
@@ -76,6 +77,12 @@ describe('useQueryExecution', () => {
     )
     expect(store.getState().runningTabs.query).toBe(false)
     expect(store.getState().abortControllers.query).toBeUndefined()
+    expect(store.getState().transactions[7]).toEqual({
+      mode: 'auto',
+      open: false,
+      pendingStatements: 0,
+      statements: [],
+    })
   })
 
   it('cancels the active request and ignores unavailable or already-running tabs', async () => {

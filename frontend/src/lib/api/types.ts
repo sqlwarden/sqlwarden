@@ -116,6 +116,15 @@ export interface ResultValue {
 
 export type ResultRow = ResultValue[]
 
+export type TransactionMode = 'auto' | 'manual'
+
+export interface TransactionStatusResponse {
+  mode: TransactionMode
+  open: boolean
+  pending_statements: number
+  statements: string[]
+}
+
 export interface ResultSet {
   columns: ResultColumn[] | null
   rows: ResultRow[] | null
@@ -128,6 +137,7 @@ export interface ResultSet {
   query_cursor_id?: string
   exhausted?: boolean
   page_size?: number
+  transaction: TransactionStatusResponse
 }
 
 /** One statement flagged by the backend's unsafe-DML safety check (e.g. an
@@ -689,6 +699,7 @@ export interface SchemaEditStatus {
 export interface SchemaEditResponse {
   applied: boolean
   schema: SchemaEditStatus
+  transaction: TransactionStatusResponse
 }
 
 export interface SchemaSpecResponse {

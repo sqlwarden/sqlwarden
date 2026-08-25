@@ -3,6 +3,8 @@ import { toast } from 'sonner'
 import { errorMessage } from '#/lib/api/errors'
 import type { SchemaEditRequest } from '#/lib/api/types'
 import { applyConnectionSchemaEdit, invalidateConnectionSchemaQueries } from '#/lib/api/query'
+import { toTransactionState } from './transactionState'
+import { useIde } from './useIdeStore'
 
 /**
  * Applies a structured schema mutation and refreshes every cache the change
@@ -24,6 +26,7 @@ export function useSchemaEdit({
   sessionId?: string
 }) {
   const queryClient = useQueryClient()
+  const setTransactionState = useIde((state) => state.setTransactionState)
 
   return useMutation({
     mutationFn: (input: SchemaEditRequest) => {
@@ -33,6 +36,7 @@ export function useSchemaEdit({
       return applyConnectionSchemaEdit(orgSlug, workspaceId, connectionId, sessionId, input)
     },
     onSuccess: async (result) => {
+      setTransactionState(Number(connectionId), toTransactionState(result.transaction))
       await invalidateConnectionSchemaQueries(queryClient, orgSlug, workspaceId, connectionId)
       if (result.schema.status === 'refresh_failed') {
         toast.warning(

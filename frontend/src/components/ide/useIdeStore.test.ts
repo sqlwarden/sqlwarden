@@ -593,6 +593,7 @@ describe('query results', () => {
         truncated: false,
         rows_returned: 0,
         bytes_returned: 0,
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
       },
     })
     store.getState().markRunRemainingSkipped('tab-1', runId, 1)
@@ -669,5 +670,30 @@ describe('query results', () => {
     store.getState().closeTab('tab-1')
     expect(store.getState().resultRuns['tab-1']).toBeUndefined()
     expect(store.getState().selectedRunId['tab-1']).toBeUndefined()
+  })
+
+  describe('transaction state', () => {
+    it('starts with no transaction state for a connection', () => {
+      const store = createIdeStore('acme', 1, 'ephemeral')
+      expect(store.getState().transactions[7]).toBeUndefined()
+    })
+
+    it('sets and clears transaction state per connection', () => {
+      const store = createIdeStore('acme', 1, 'ephemeral')
+      store.getState().setTransactionState(7, {
+        mode: 'manual',
+        open: true,
+        pendingStatements: 2,
+        statements: [],
+      })
+      expect(store.getState().transactions[7]).toEqual({
+        mode: 'manual',
+        open: true,
+        pendingStatements: 2,
+        statements: [],
+      })
+      store.getState().clearTransactionState(7)
+      expect(store.getState().transactions[7]).toBeUndefined()
+    })
   })
 })

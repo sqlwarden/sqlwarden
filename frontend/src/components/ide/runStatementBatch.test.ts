@@ -11,6 +11,7 @@ function resultSet(durationMs: number): ResultSet {
     truncated: false,
     rows_returned: 0,
     bytes_returned: 0,
+    transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
   }
 }
 
@@ -27,6 +28,8 @@ function dependencies(
     setController: vi.fn(),
     setPendingConfirmation: vi.fn(),
     recordHistory: vi.fn(),
+    setTransactionState: vi.fn(),
+    refreshTransactionState: vi.fn(async () => undefined),
     ...overrides,
   }
 }
@@ -98,6 +101,27 @@ describe('runStatementBatch', () => {
     })
   })
 
+  it('syncs transaction state from the response on every successful statement', async () => {
+    const runStatement = vi.fn(async () => ({
+      ...resultSet(1),
+      transaction: { mode: 'manual' as const, open: true, pending_statements: 1, statements: [] },
+    }))
+    const deps = dependencies({ runStatement })
+    const controller = new AbortController()
+
+    await runStatementBatch(
+      { tabId: 'tab-1', connectionId: 7, sqls: ['select 1'], controller },
+      deps,
+    )
+
+    expect(deps.setTransactionState).toHaveBeenCalledWith(7, {
+      mode: 'manual',
+      open: true,
+      pendingStatements: 1,
+      statements: [],
+    })
+  })
+
   it('stops at the first error and marks every later statement skipped', async () => {
     const runStatement = vi.fn(async (_sessionId: string, sql: string) => {
       if (sql === 'select 2') throw new Error('boom')
@@ -131,6 +155,7 @@ describe('runStatementBatch', () => {
       durationMs: 0,
       rowsAffected: 0,
     })
+    expect(deps.refreshTransactionState).toHaveBeenCalledWith(7)
   })
 
   it('marks the in-flight statement cancelled and the rest skipped on abort', async () => {
@@ -158,6 +183,7 @@ describe('runStatementBatch', () => {
       durationMs: 0,
       rowsAffected: 0,
     })
+    expect(deps.refreshTransactionState).toHaveBeenCalledWith(7)
   })
 
   it('pauses on an unsafe-confirmation error without marking anything skipped', async () => {
@@ -221,6 +247,70 @@ describe('runStatementBatch', () => {
     expect(runId).toBe('existing-run')
     expect(deps.beginRun).not.toHaveBeenCalled()
     expect(confirmFlags).toEqual([true, false])
+  })
+
+  it('confirming an unsafe DML inside a manual transaction syncs the resulting pending count into the store', async () => {
+    const runStatement = vi.fn(
+      async (_sessionId: string, _sql: string, confirmUnsafe: boolean) => ({
+        ...resultSet(1),
+        transaction: {
+          mode: 'manual' as const,
+          open: true,
+          pending_statements: confirmUnsafe ? 1 : 0,
+          statements: confirmUnsafe ? ['DELETE FROM widgets'] : [],
+        },
+      }),
+    )
+    const deps = dependencies({ runStatement })
+    const controller = new AbortController()
+
+    await runStatementBatch(
+      {
+        tabId: 'tab-1',
+        connectionId: 7,
+        sqls: ['DELETE FROM widgets'],
+        controller,
+        runId: 'existing-run',
+        startAt: 0,
+        confirmUnsafeAt: 0,
+      },
+      deps,
+    )
+
+    expect(deps.setTransactionState).toHaveBeenCalledWith(7, {
+      mode: 'manual',
+      open: true,
+      pendingStatements: 1,
+      statements: ['DELETE FROM widgets'],
+    })
+  })
+
+  it('resyncs transaction state when a confirmed unsafe statement still fails (e.g. the connection died)', async () => {
+    const runStatement = vi.fn(async () => {
+      throw new Error('connection reset by peer')
+    })
+    const deps = dependencies({ runStatement })
+    const controller = new AbortController()
+
+    await runStatementBatch(
+      {
+        tabId: 'tab-1',
+        connectionId: 7,
+        sqls: ['DELETE FROM widgets'],
+        controller,
+        runId: 'existing-run',
+        startAt: 0,
+        confirmUnsafeAt: 0,
+      },
+      deps,
+    )
+
+    expect(deps.setRunStatementResult).toHaveBeenCalledWith('tab-1', 'existing-run', 0, {
+      status: 'error',
+      message: 'connection reset by peer',
+      sql: 'DELETE FROM widgets',
+    })
+    expect(deps.refreshTransactionState).toHaveBeenCalledWith(7)
   })
 
   it('runs a single statement (the Run button path) as a one-statement batch', async () => {

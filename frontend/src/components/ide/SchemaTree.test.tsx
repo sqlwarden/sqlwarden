@@ -260,6 +260,7 @@ describe('SchemaTree', () => {
           return HttpResponse.json({
             applied: true,
             schema: { status: 'available', mode: 'ephemeral' },
+            transaction: { mode: 'auto', open: false, pending_statements: 0 },
           })
         },
       ),
@@ -702,6 +703,7 @@ describe('SchemaTree', () => {
             return HttpResponse.json({
               applied: true,
               schema: { status: 'available', mode: 'ephemeral' },
+              transaction: { mode: 'auto', open: false, pending_statements: 0 },
             })
           },
         ),
@@ -770,6 +772,7 @@ describe('SchemaTree', () => {
             return HttpResponse.json({
               applied: true,
               schema: { status: 'available', mode: 'ephemeral' },
+              transaction: { mode: 'auto', open: false, pending_statements: 0 },
             })
           },
         ),
@@ -857,6 +860,7 @@ describe('SchemaTree', () => {
           return HttpResponse.json({
             applied: true,
             schema: { status: 'available', mode: 'ephemeral' },
+            transaction: { mode: 'auto', open: false, pending_statements: 0 },
           })
         }),
       )

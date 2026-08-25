@@ -38,7 +38,7 @@ func (d *sqliteDriver) ApplyDDL(ctx context.Context, request ddl.Request) error 
 	// Every dynamic value is escaped by sqliteQuoteIdent or selected from the
 	// closed data-type allowlist above.
 	// codeql[go/sql-injection]
-	if _, err := d.db.ExecContext(ctx, statement); err != nil {
+	if _, err := d.conn().ExecContext(ctx, statement); err != nil {
 		return fmt.Errorf("sqlite: apply DDL: %w", err)
 	}
 	return nil

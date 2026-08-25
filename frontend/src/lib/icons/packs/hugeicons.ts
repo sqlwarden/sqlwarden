@@ -1,11 +1,13 @@
 import type { AppIcon } from '../registry'
 
 const icons: Record<AppIcon, string> = {
+  'alert-triangle': 'hugeicons:alert-02',
   'arrow-down-01': 'hugeicons:arrow-down-01',
   'arrow-expand': 'hugeicons:arrow-expand',
   'arrow-left-01': 'hugeicons:arrow-left-01',
   'arrow-right-01': 'hugeicons:arrow-right-01',
   'arrow-shrink': 'hugeicons:arrow-shrink',
+  'arrow-turn-backward': 'hugeicons:arrow-turn-backward',
   'arrow-up-01': 'hugeicons:arrow-up-01',
   'arrow-up-down': 'hugeicons:arrow-up-down',
   'arrow-up-right-01': 'hugeicons:arrow-up-right-01',
