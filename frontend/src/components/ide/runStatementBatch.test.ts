@@ -250,15 +250,17 @@ describe('runStatementBatch', () => {
   })
 
   it('confirming an unsafe DML inside a manual transaction syncs the resulting pending count into the store', async () => {
-    const runStatement = vi.fn(async (_sessionId: string, _sql: string, confirmUnsafe: boolean) => ({
-      ...resultSet(1),
-      transaction: {
-        mode: 'manual' as const,
-        open: true,
-        pending_statements: confirmUnsafe ? 1 : 0,
-        statements: confirmUnsafe ? ['DELETE FROM widgets'] : [],
-      },
-    }))
+    const runStatement = vi.fn(
+      async (_sessionId: string, _sql: string, confirmUnsafe: boolean) => ({
+        ...resultSet(1),
+        transaction: {
+          mode: 'manual' as const,
+          open: true,
+          pending_statements: confirmUnsafe ? 1 : 0,
+          statements: confirmUnsafe ? ['DELETE FROM widgets'] : [],
+        },
+      }),
+    )
     const deps = dependencies({ runStatement })
     const controller = new AbortController()
 
