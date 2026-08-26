@@ -196,7 +196,7 @@ describe('IdeToolbar', () => {
     view.unmount()
   })
 
-  it('labels the Run button "Run selected" and offers Run All for a multi-statement selection', async () => {
+  it('keeps the Run label and offers Run All for a multi-statement selection', async () => {
     store.getState().openTab(scratchTab)
     const { rerender } = render(
       <QueryClientProvider client={createTestQueryClient()}>
@@ -208,7 +208,7 @@ describe('IdeToolbar', () => {
       </QueryClientProvider>,
     )
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /^Run selected/ })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled())
     expect(screen.getByRole('button', { name: 'Run all selected statements' })).toBeEnabled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Run all selected statements' }))
@@ -224,7 +224,7 @@ describe('IdeToolbar', () => {
       </QueryClientProvider>,
     )
 
-    expect(screen.getByRole('button', { name: /^Run selected/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Run all selected statements' }),
     ).not.toBeInTheDocument()

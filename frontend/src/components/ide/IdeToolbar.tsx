@@ -213,7 +213,7 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
               data-icon="inline-start"
               className={queryAction.isRunning ? 'animate-spin' : undefined}
             />
-            {queryAction.isRunning ? 'Running…' : hasSelection ? 'Run selected' : 'Run'}
+            {queryAction.isRunning ? 'Running…' : 'Run'}
           </Button>
 
           {isSqlTab &&
