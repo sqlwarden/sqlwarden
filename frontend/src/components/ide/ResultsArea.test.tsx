@@ -229,6 +229,52 @@ describe('ResultsArea', () => {
     expect(within(caption).queryByText('analytics-pg')).not.toBeInTheDocument()
   })
 
+  it('opens the full query in a dialog when the sql caption is clicked', async () => {
+    const user = userEvent.setup()
+    renderResult({
+      status: 'ok',
+      durationMs: 3,
+      sql: 'select id from users where false',
+      connectionId: 7,
+      data: {
+        columns: [{ name: 'id', type: 'integer', raw_type: 'int4', nullable: false }],
+        rows: [],
+        duration_ms: 3,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
+      },
+    })
+
+    await user.click(await screen.findByTitle('select id from users where false'))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('select id from users where false')).toBeInTheDocument()
+  })
+
+  it('does not open the query dialog when copying from the caption bar', async () => {
+    const user = userEvent.setup()
+    renderResult({
+      status: 'ok',
+      durationMs: 3,
+      sql: 'select id from users where false',
+      connectionId: 7,
+      data: {
+        columns: [{ name: 'id', type: 'integer', raw_type: 'int4', nullable: false }],
+        rows: [],
+        duration_ms: 3,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
+      },
+    })
+
+    await user.click(await screen.findByLabelText('Copy query'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   function populatedResult(): QueryResult {
     return {
       status: 'ok',

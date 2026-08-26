@@ -24,6 +24,7 @@ import { RUN_SHORTCUT } from './IdeToolbar'
 import { Tip } from './schema-diagram/Tip'
 import { DriverBadge } from './DriverBadge'
 import { ExportButton } from './exports/ExportButton'
+import { ViewQueryDialog } from './ViewQueryDialog'
 import { columnTypeIcon, columnTypeIconColor } from './columnTypeIcon'
 import { allOrgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
 import {
@@ -366,7 +367,7 @@ function RunTabStrip({
                 <DriverBadge driver={connection.driver} size="sm" className="size-3" />
               </span>
             )}
-            <span className="min-w-0 flex-1 truncate font-mono">{runTabLabel(run, index)}</span>
+            <span className="min-w-0 flex-1 truncate">{runTabLabel(run, index)}</span>
             <button
               type="button"
               aria-label={`Close run ${index + 1}`}
@@ -423,7 +424,7 @@ function ResultsSidebar({
               <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
                 #{index + 1}
               </span>
-              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
+              <span className="min-w-0 flex-1 truncate text-[11px] text-foreground">
                 {resultLabel(result, index)}
               </span>
             </div>
@@ -598,7 +599,7 @@ function ErrorState({
           <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-destructive" />
           <div className="flex min-w-0 flex-col gap-1">
             <span className="text-xs font-medium text-destructive">Query failed</span>
-            <pre className="whitespace-pre-wrap break-all font-mono text-xs text-destructive/90">
+            <pre className="whitespace-pre-wrap break-all text-xs text-destructive/90">
               {message}
             </pre>
           </div>
@@ -952,12 +953,12 @@ function ResultSetView({
         className="table-fixed border-separate border-spacing-0 text-xs"
         style={{ width: totalWidth }}
       >
-        <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm">
+        <thead className="sticky top-0 z-10 bg-muted shadow-[0_-1px_0_0_var(--color-muted)]">
           <tr role="row">
             <th
               role="columnheader"
               style={{ width: ROW_NUM_COL_WIDTH }}
-              className="sticky left-0 z-20 border-b border-r border-border bg-muted/80 px-2 py-1.5 text-right font-medium text-muted-foreground tabular-nums backdrop-blur-sm"
+              className="sticky left-0 z-20 border-b border-r border-border bg-muted px-2 py-1.5 text-right font-medium text-muted-foreground tabular-nums"
             />
             {columns.map((col, i) => (
               <ColumnHeader
@@ -1121,43 +1122,58 @@ function ResultSqlCaption({
   connection: Connection | undefined
   showConnection?: boolean
 }) {
+  const [viewQueryOpen, setViewQueryOpen] = useState(false)
+
   if (!sql) return null
   return (
-    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-muted/30 pl-3 pr-1.5">
-      <Icon name="terminal" size={11} className="shrink-0 text-muted-foreground" />
-      <span
-        className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground"
-        title={sql}
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setViewQueryOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setViewQueryOpen(true)
+          }
+        }}
+        className="flex h-7 shrink-0 cursor-pointer items-center gap-2 border-b border-border bg-muted/30 pl-3 pr-1.5 hover:bg-muted/50"
       >
-        {sql.replace(/\s+/g, ' ').trim()}
-      </span>
-      {showConnection && connection && (
-        <span
-          className="flex min-w-0 max-w-32 shrink-0 items-center gap-1 text-[11px] text-muted-foreground"
-          title={connection.name}
-        >
-          <DriverBadge driver={connection.driver} size="sm" className="size-3 shrink-0" />
-          <span className="min-w-0 truncate">{connection.name}</span>
+        <Icon name="terminal" size={11} className="shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={sql}>
+          {sql.replace(/\s+/g, ' ').trim()}
         </span>
-      )}
-      <ExportButton
-        orgSlug={orgSlug}
-        workspaceId={workspaceId}
-        connectionId={connection?.id}
-        getSql={() => sql}
-        className="scale-90"
-      />
-      <Tip label="Copy query">
-        <button
-          type="button"
-          aria-label="Copy query"
-          onClick={() => copyWithToast(sql)}
-          className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <Icon name="copy-01" size={11} />
-        </button>
-      </Tip>
-    </div>
+        {showConnection && connection && (
+          <span
+            className="flex min-w-0 max-w-32 shrink-0 items-center gap-1 text-[11px] text-muted-foreground"
+            title={connection.name}
+          >
+            <DriverBadge driver={connection.driver} size="sm" className="size-3 shrink-0" />
+            <span className="min-w-0 truncate">{connection.name}</span>
+          </span>
+        )}
+        <span onClick={(e) => e.stopPropagation()} className="flex shrink-0 items-center">
+          <ExportButton
+            orgSlug={orgSlug}
+            workspaceId={workspaceId}
+            connectionId={connection?.id}
+            getSql={() => sql}
+            className="scale-90"
+          />
+          <Tip label="Copy query">
+            <button
+              type="button"
+              aria-label="Copy query"
+              onClick={() => copyWithToast(sql)}
+              className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Icon name="copy-01" size={11} />
+            </button>
+          </Tip>
+        </span>
+      </div>
+      <ViewQueryDialog open={viewQueryOpen} onOpenChange={setViewQueryOpen} sql={sql} />
+    </>
   )
 }
 
@@ -1180,7 +1196,7 @@ function RowHeaderCell({
       onMouseDown={onMouseDown}
       onContextMenu={onContextMenu}
       className={cn(
-        'sticky left-0 z-[5] cursor-pointer border-b border-r border-border px-2 py-1 text-right font-mono text-muted-foreground tabular-nums',
+        'sticky left-0 z-[5] cursor-pointer border-b border-r border-border px-2 py-1 text-right text-muted-foreground tabular-nums',
         selected ? 'bg-primary/15' : 'bg-card',
       )}
     >
@@ -1311,7 +1327,7 @@ function DataCell({
       onMouseEnter={onMouseEnter}
       onContextMenu={onContextMenu}
       className={cn(
-        'max-w-0 cursor-default overflow-hidden border-b border-r border-border px-3 py-1 font-mono outline-none',
+        'max-w-0 cursor-default overflow-hidden border-b border-r border-border px-3 py-1 outline-none',
         isRightAlign ? 'text-right tabular-nums' : 'text-left',
         isNull ? 'text-muted-foreground/50' : '',
         isInRange ? 'bg-primary/15' : 'group-hover:bg-accent/30',
@@ -1425,11 +1441,11 @@ function CellContent({
   col: ResultColumn
 }) {
   if (isNull) {
-    return <span className="font-mono text-xs italic text-muted-foreground">NULL</span>
+    return <span className="text-xs italic text-muted-foreground">NULL</span>
   }
   // Future: switch on _col.type to add datetime parsed view, json pretty-print, etc.
   return (
-    <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground">
+    <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">
       {display}
     </pre>
   )
