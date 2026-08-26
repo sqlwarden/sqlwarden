@@ -323,6 +323,7 @@ jobs:
           lipo "$binary" -verify_arch x86_64 arm64
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = 'com.sqlwarden.desktop'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = '${{ needs.prepare.outputs.os_version }}'
+          go clean -cache -modcache
           codesign --force --options runtime --timestamp \
             --entitlements cmd/desktop/build/darwin/entitlements.plist \
             --sign "$APPLE_SIGNING_IDENTITY" "$app"

@@ -175,6 +175,7 @@ jobs:
           lipo "$binary" -verify_arch x86_64 arm64
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = 'com.sqlwarden.desktop'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = '0.0.0'
+          go clean -cache -modcache
           mkdir -p dist "$RUNNER_TEMP/sqlwarden-dmg"
           ditto "$app" "$RUNNER_TEMP/sqlwarden-dmg/SQLWarden.app"
           ln -s /Applications "$RUNNER_TEMP/sqlwarden-dmg/Applications"
