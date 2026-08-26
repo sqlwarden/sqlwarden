@@ -216,22 +216,6 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
             {queryAction.isRunning ? 'Running…' : hasSelection ? 'Run selected' : 'Run'}
           </Button>
 
-          {selectionStatements.length > 1 && (
-            <Tip label="Run every statement in the selection">
-              <Button
-                type="button"
-                variant="outline"
-                className="ml-1"
-                disabled={runDisabled}
-                aria-label="Run all selected statements"
-                onClick={handleRunSelectionAll}
-              >
-                <Icon name="play" size={13} data-icon="inline-start" />
-                Run All
-              </Button>
-            </Tip>
-          )}
-
           {isSqlTab &&
             (downloadNow.isDownloading ? (
               <Tip
@@ -282,6 +266,21 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
             ))}
         </div>
 
+        {selectionStatements.length > 1 && (
+          <Tip label="Run every statement in the selection">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={runDisabled}
+              aria-label="Run all selected statements"
+              onClick={handleRunSelectionAll}
+            >
+              <Icon name="play" size={13} data-icon="inline-start" />
+              Run All
+            </Button>
+          </Tip>
+        )}
+
         {/* Cancel button — appears only while a query is in flight */}
         {queryAction.isRunning && (
           <Button type="button" variant="outline" onClick={handleCancel}>
@@ -295,7 +294,7 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
           <Tip label="Save">
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="icon-sm"
               aria-label="Save file"
               disabled={saveDisabled}
@@ -310,7 +309,7 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
           <Tip label="Format SQL">
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="icon-sm"
               aria-label="Format SQL"
               onClick={handleFormat}
