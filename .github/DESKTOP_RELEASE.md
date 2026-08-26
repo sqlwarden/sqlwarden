@@ -46,11 +46,16 @@ Create the Developer ID certificate through the Apple Developer account, export 
 
 ## Credential validation
 
-For a same-repository pull request, add the `desktop-release-test` label to run the real signing pipeline against the pull request merge commit. The workflow uses a synthetic `0.0.0-pr.<number>` version, requires approval for the protected `desktop-release` environment, and cannot publish to a GitHub release. Fork pull requests are rejected before any signing job can access the environment. Remove and reapply the label to validate a newer commit.
+Before merging a desktop pull request, push a temporary tag named `desktop-test-v0.0.0-pr.<number>` at the commit to validate. For example:
 
-Before the first release, run **Signed Desktop Release** manually with an existing tag and leave `publish` disabled. This exercises Authenticode signing, silent Windows installation, universal macOS signing and notarization, Linux packaging, checksums, and attestations. The completed bundle remains a workflow artifact and is not added to the public release.
+```sh
+git tag desktop-test-v0.0.0-pr.56
+git push origin desktop-test-v0.0.0-pr.56
+```
 
-A tag push publishes automatically. Manual publication is available for recovery by running the workflow with an existing tag and enabling `publish`. Uploads use replacement semantics, so rerunning the same tag does not duplicate assets.
+The test tag runs the real Authenticode, silent Windows installation, macOS signing and notarization, Linux packaging, checksum, and manifest checks. It requires approval for the protected `desktop-release` environment, cannot publish to a GitHub release, and keeps the completed bundle as a workflow artifact. Delete the local and remote test tag after validation. Configure the environment's deployment rules to allow trusted maintainers to approve both release and `desktop-test-v*` tags.
+
+A `v*` tag push publishes automatically. If a release job fails after a transient external error, rerun the failed jobs from the original workflow run so the immutable tag and source commit remain unchanged. Uploads use replacement semantics, so rerunning the same tag does not duplicate assets.
 
 ## Verification
 
