@@ -33,6 +33,10 @@
 - **`.release-please-manifest.json`**: Current version tracker (starts at 0.1.0)
 - **`.commitlintrc.json`**: Commit message linting rules
 
+While SQLWarden is below `1.0.0`, fixes and features increment the patch
+version. Breaking changes increment the minor version. Mark a breaking change
+with `type(scope)!: description` or a `BREAKING CHANGE:` commit footer.
+
 ### Documentation
 
 - **`CONTRIBUTING.md`**: Complete guide to conventional commits and release process
