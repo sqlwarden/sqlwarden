@@ -305,7 +305,8 @@ jobs:
             --artifacts-dir dist \
             --manifest "dist/sqlwarden-desktop_${CI_VERSION}_release.json" \
             --checksums "dist/sqlwarden-desktop_${CI_VERSION}_checksums.txt"
-          sha256sum --check "dist/sqlwarden-desktop_${CI_VERSION}_checksums.txt"
+          cd dist
+          sha256sum --check "sqlwarden-desktop_${CI_VERSION}_checksums.txt"
 
       - name: Upload validation bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
