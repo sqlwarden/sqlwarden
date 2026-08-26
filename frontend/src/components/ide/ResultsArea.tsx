@@ -17,6 +17,8 @@ import { closeRunCursors } from './resultRunHistory'
 import { useContextMenuOpener } from '#/components/ui/context-menu'
 import { copyWithToast, rowToTsv, rowToJson, valuesToLines } from './contextMenus/clipboard'
 import { buildCellMenu, buildRowMenu, buildColumnHeaderMenu } from './contextMenus/resultMenu'
+import { buildResultTabMenu } from './contextMenus/resultTabMenu'
+import { tabsToClose, type TabCloseScope } from './ideLayout'
 import { nextCell } from './resultGridNav'
 import { RUN_SHORTCUT } from './IdeToolbar'
 import { Tip } from './schema-diagram/Tip'
@@ -50,6 +52,7 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
   const setSelectedRun = useIde((s) => s.setSelectedRun)
   const setSelectedIndexInRun = useIde((s) => s.setSelectedIndexInRun)
   const closeRunTab = useIde((s) => s.closeRunTab)
+  const toggleRunPin = useIde((s) => s.toggleRunPin)
 
   // Same query key the toolbar uses, so this is a cache hit, not a new request.
   const connectionsQuery = useQuery(allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id))
@@ -82,6 +85,14 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
     }
   }
 
+  function handleCloseRuns(runIds: string[]) {
+    runIds.forEach(handleCloseRun)
+  }
+
+  function handleTogglePin(runId: string) {
+    if (activeTabId) toggleRunPin(activeTabId, runId)
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-0">
       <div className="flex h-8 shrink-0 items-center bg-sidebar">
@@ -91,6 +102,8 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
           activeRunId={activeRun?.id}
           onSelect={handleSelectRun}
           onClose={handleCloseRun}
+          onCloseMany={handleCloseRuns}
+          onTogglePin={handleTogglePin}
         />
         <div className="flex shrink-0 items-center gap-0.5 border-l border-border px-1">
           <Tip
@@ -277,13 +290,48 @@ function RunTabStrip({
   activeRunId,
   onSelect,
   onClose,
+  onCloseMany,
+  onTogglePin,
 }: {
   runs: ResultRun[]
   connections: Connection[]
   activeRunId?: string
   onSelect: (runId: string) => void
   onClose: (runId: string) => void
+  onCloseMany: (runIds: string[]) => void
+  onTogglePin: (runId: string) => void
 }) {
+  const openContextMenu = useContextMenuOpener()
+  const allIds = runs.map((r) => r.id)
+  const pinnedIds = new Set(runs.filter((r) => r.pinned).map((r) => r.id))
+
+  // Bulk-close scopes exclude pinned runs — a pin protects a run from
+  // "close others"/"to the right"/"to the left" the same way it protects it
+  // from history-cap eviction (see resultRunHistory.ts).
+  function unpinnedScope(scope: TabCloseScope, runId: string): string[] {
+    return tabsToClose(scope, allIds, runId).filter((id) => !pinnedIds.has(id))
+  }
+
+  function openTabMenu(run: ResultRun, e: React.MouseEvent) {
+    const others = unpinnedScope('others', run.id)
+    const right = unpinnedScope('right', run.id)
+    const left = unpinnedScope('left', run.id)
+    openContextMenu(
+      buildResultTabMenu({
+        pinned: Boolean(run.pinned),
+        hasOthers: others.length > 0,
+        hasRight: right.length > 0,
+        hasLeft: left.length > 0,
+        onClose: () => onClose(run.id),
+        onCloseOthers: () => onCloseMany(others),
+        onCloseRight: () => onCloseMany(right),
+        onCloseLeft: () => onCloseMany(left),
+        onTogglePin: () => onTogglePin(run.id),
+      }),
+      e,
+    )
+  }
+
   return (
     <div
       role="tablist"
@@ -301,6 +349,7 @@ function RunTabStrip({
             role="tab"
             aria-selected={selected}
             onClick={() => onSelect(run.id)}
+            onContextMenu={(e) => openTabMenu(run, e)}
             className={cn(
               'group relative flex h-8 max-w-40 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-2.5 text-xs',
               selected
@@ -309,6 +358,9 @@ function RunTabStrip({
             )}
           >
             <Icon name={icon.name} size={11} className={cn('shrink-0', icon.className)} />
+            {run.pinned && (
+              <Icon name="pin-01" size={10} className="shrink-0 text-muted-foreground" />
+            )}
             {connection && (
               <span className="shrink-0" title={connection.name}>
                 <DriverBadge driver={connection.driver} size="sm" className="size-3" />

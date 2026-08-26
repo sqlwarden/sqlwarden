@@ -111,6 +111,7 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
                 width: 0,
                 height: 0,
                 pointerEvents: 'none',
+                outline: 'none',
               }}
             />
           }

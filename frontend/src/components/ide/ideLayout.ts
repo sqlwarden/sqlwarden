@@ -272,10 +272,10 @@ export function migrateToLayout(
   return createGroup(groupId, tabIds, activeTabId)
 }
 
-export type TabCloseScope = 'others' | 'right' | 'all'
+export type TabCloseScope = 'others' | 'right' | 'left' | 'all'
 
-/** Tab ids a "Close others / to the right / all" action should close, relative
- *  to `targetId` within the ordered `tabIds` of one group. */
+/** Tab ids a "Close others / to the right / to the left / all" action should
+ *  close, relative to `targetId` within the ordered `tabIds` of one group. */
 export function tabsToClose(scope: TabCloseScope, tabIds: string[], targetId: string): string[] {
   switch (scope) {
     case 'others':
@@ -285,6 +285,10 @@ export function tabsToClose(scope: TabCloseScope, tabIds: string[], targetId: st
     case 'right': {
       const i = tabIds.indexOf(targetId)
       return i === -1 ? [] : tabIds.slice(i + 1)
+    }
+    case 'left': {
+      const i = tabIds.indexOf(targetId)
+      return i === -1 ? [] : tabIds.slice(0, i)
     }
   }
 }

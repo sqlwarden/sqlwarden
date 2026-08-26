@@ -244,4 +244,13 @@ describe('tabsToClose', () => {
   it('right is empty when the target is absent', () => {
     expect(tabsToClose('right', ids, 'z')).toEqual([])
   })
+
+  it('left returns tabs before the target in order', () => {
+    expect(tabsToClose('left', ids, 'c')).toEqual(['a', 'b'])
+    expect(tabsToClose('left', ids, 'a')).toEqual([])
+  })
+
+  it('left is empty when the target is absent', () => {
+    expect(tabsToClose('left', ids, 'z')).toEqual([])
+  })
 })
