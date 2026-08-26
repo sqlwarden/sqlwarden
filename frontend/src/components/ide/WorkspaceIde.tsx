@@ -654,7 +654,7 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
   )
 }
 
-type CursorInfo = { line: number; col: number; sel: number }
+type CursorInfo = { line: number; col: number; sel: number; selectedText: string }
 
 function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
   const registry = useYDocRegistry()
@@ -707,14 +707,16 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   return (
     <>
       <section className="flex h-full min-h-0 flex-col bg-background">
-        <IdeToolbar orgSlug={orgSlug} workspace={workspace} />
+        <IdeToolbar orgSlug={orgSlug} workspace={workspace} selection={cursorInfo?.selectedText} />
         <div className="relative min-h-0 flex-1">
           {hasAnyTab && layout ? (
             <EditorLayout
               orgSlug={orgSlug}
               workspace={workspace}
               node={layout}
-              onCursorChange={(line, col, sel) => setCursorInfo({ line, col, sel })}
+              onCursorChange={(line, col, sel, selectedText) =>
+                setCursorInfo({ line, col, sel, selectedText })
+              }
             />
           ) : (
             <div className="h-full border-t border-border bg-card">

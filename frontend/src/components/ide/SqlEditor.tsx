@@ -58,7 +58,7 @@ type SqlEditorProps = {
   /** The Y.Doc backing this editor. Must have a Y.Text at key 'content'. */
   doc: Y.Doc
   className?: string
-  onCursorChange?: (line: number, col: number, selSize: number) => void
+  onCursorChange?: (line: number, col: number, selSize: number, selectedText: string) => void
   completion?: SQLCompletionConfig
   driver?: string
   contextMenu?: SqlEditorContextMenuConfig
@@ -158,13 +158,10 @@ export function SqlEditor({
             if (!update.selectionSet && !update.docChanged) return
             const cb = onCursorChangeRef.current
             if (!cb) return
+            const { from, to } = update.state.selection.main
             const head = update.state.selection.main.head
             const line = update.state.doc.lineAt(head)
-            cb(
-              line.number,
-              head - line.from + 1,
-              update.state.selection.main.to - update.state.selection.main.from,
-            )
+            cb(line.number, head - line.from + 1, to - from, update.state.sliceDoc(from, to))
           }),
         ],
       }),

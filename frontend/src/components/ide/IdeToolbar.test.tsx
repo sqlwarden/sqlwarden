@@ -196,6 +196,40 @@ describe('IdeToolbar', () => {
     view.unmount()
   })
 
+  it('labels the Run button "Run selected" and offers Run All for a multi-statement selection', async () => {
+    store.getState().openTab(scratchTab)
+    const { rerender } = render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <IdeStoreContext.Provider value={store}>
+          <EditorViewRegistryContext.Provider value={views}>
+            <IdeToolbar orgSlug="acme" workspace={workspace} selection="select 1; select 2;" />
+          </EditorViewRegistryContext.Provider>
+        </IdeStoreContext.Provider>
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Run selected/ })).toBeEnabled())
+    expect(screen.getByRole('button', { name: 'Run all selected statements' })).toBeEnabled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Run all selected statements' }))
+    expect(mocks.runAll).toHaveBeenCalledWith(['select 1', 'select 2'])
+
+    rerender(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <IdeStoreContext.Provider value={store}>
+          <EditorViewRegistryContext.Provider value={views}>
+            <IdeToolbar orgSlug="acme" workspace={workspace} selection="select 1;" />
+          </EditorViewRegistryContext.Provider>
+        </IdeStoreContext.Provider>
+      </QueryClientProvider>,
+    )
+
+    expect(screen.getByRole('button', { name: /^Run selected/ })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Run all selected statements' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('shows cancellation state while a query runs', async () => {
     store.getState().openTab(scratchTab)
     mocks.isRunning = true

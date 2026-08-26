@@ -9,7 +9,7 @@ type EditorLayoutProps = {
   orgSlug: string
   workspace: Workspace
   node: LayoutNode
-  onCursorChange?: (line: number, col: number, sel: number) => void
+  onCursorChange?: (line: number, col: number, sel: number, selectedText: string) => void
   /** True when this node is rendered inside a split (so groups show a focus ring). */
   withinSplit?: boolean
 }

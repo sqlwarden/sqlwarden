@@ -39,7 +39,7 @@ type EditorGroupProps = {
   focused: boolean
   /** Whether to render the focus ring (only meaningful when split into multiple groups). */
   showFocus?: boolean
-  onCursorChange?: (line: number, col: number, sel: number) => void
+  onCursorChange?: (line: number, col: number, sel: number, selectedText: string) => void
 }
 
 export function EditorGroup({

@@ -38,6 +38,7 @@ import { isSqlEditorTab, splitSqlStatements } from './sqlStatements'
 type IdeToolbarProps = {
   orgSlug: string
   workspace: Workspace
+  selection?: string
 }
 
 export const RUN_SHORTCUT =
@@ -45,7 +46,7 @@ export const RUN_SHORTCUT =
 export const FORMAT_SHORTCUT =
   typeof navigator !== 'undefined' && /mac/i.test(navigator.platform) ? '⇧⌥F' : 'Shift Alt F'
 
-export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
+export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
   const [saveAsTab, setSaveAsTab] = useState<EditorTab | null>(null)
   const [confirmExportSql, setConfirmExportSql] = useState<string | null>(null)
   const [exportToWorkspaceOpen, setExportToWorkspaceOpen] = useState(false)
@@ -77,6 +78,8 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
 
   const showSave = Boolean(activeTab)
   const saveDisabled = Boolean(activeTab?.etag !== undefined && !activeTab.isDirty)
+  const hasSelection = Boolean(selection)
+  const selectionStatements = hasSelection && isSqlTab ? splitSqlStatements(selection ?? '') : []
 
   async function handleSave() {
     if (!activeTab) return
@@ -187,6 +190,11 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     void queryAction.runAll(sqls)
   }
 
+  function handleRunSelectionAll() {
+    if (selectionStatements.length === 0) return
+    void queryAction.runAll(selectionStatements)
+  }
+
   const runDisabled = !activeTab || !activeConnection || queryAction.isRunning
   return (
     <>
@@ -205,8 +213,24 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
               data-icon="inline-start"
               className={queryAction.isRunning ? 'animate-spin' : undefined}
             />
-            {queryAction.isRunning ? 'Running…' : 'Run'}
+            {queryAction.isRunning ? 'Running…' : hasSelection ? 'Run selected' : 'Run'}
           </Button>
+
+          {selectionStatements.length > 1 && (
+            <Tip label="Run every statement in the selection">
+              <Button
+                type="button"
+                variant="outline"
+                className="ml-1"
+                disabled={runDisabled}
+                aria-label="Run all selected statements"
+                onClick={handleRunSelectionAll}
+              >
+                <Icon name="play" size={13} data-icon="inline-start" />
+                Run All
+              </Button>
+            </Tip>
+          )}
 
           {isSqlTab &&
             (downloadNow.isDownloading ? (

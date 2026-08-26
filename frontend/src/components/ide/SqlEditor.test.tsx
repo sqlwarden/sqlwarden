@@ -53,7 +53,7 @@ describe('SqlEditor', () => {
     act(() => {
       editor.dispatch({ selection: { anchor: 8 } })
     })
-    expect(onCursorChange).toHaveBeenLastCalledWith(1, 9, 0)
+    expect(onCursorChange).toHaveBeenLastCalledWith(1, 9, 0, '')
 
     act(() => {
       editor.dispatch({ changes: { from: 0, to: 6, insert: 'SELECT' } })
@@ -76,6 +76,49 @@ describe('SqlEditor', () => {
 
     act(() => rendered.unmount())
     expect(registry.get('left:query')).toBeUndefined()
+    doc.destroy()
+  })
+
+  it('passes the selected text to onCursorChange', async () => {
+    const registry = createEditorViewRegistry()
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const doc = new Y.Doc()
+    doc.getText('content').insert(0, 'select 1;\nselect 2;')
+    const onCursorChange = vi.fn()
+
+    function Providers({ children }: PropsWithChildren) {
+      return (
+        <ThemeProvider defaultTheme="light" disableTransitionOnChange={false}>
+          <EditorThemeProvider>
+            <EditorFontProvider>
+              <IdeStoreContext.Provider value={store}>
+                <EditorViewRegistryContext.Provider value={registry}>
+                  {children}
+                </EditorViewRegistryContext.Provider>
+              </IdeStoreContext.Provider>
+            </EditorFontProvider>
+          </EditorThemeProvider>
+        </ThemeProvider>
+      )
+    }
+
+    const rendered = render(
+      <SqlEditor tabId="query" groupId="left" doc={doc} onCursorChange={onCursorChange} />,
+      { wrapper: Providers },
+    )
+
+    const editor = await waitFor(() => {
+      const registered = registry.get('left:query')
+      expect(registered).toBeDefined()
+      return registered!
+    })
+
+    act(() => {
+      editor.dispatch({ selection: { anchor: 0, head: 9 } })
+    })
+    expect(onCursorChange).toHaveBeenLastCalledWith(1, 10, 9, 'select 1;')
+
+    act(() => rendered.unmount())
     doc.destroy()
   })
 
