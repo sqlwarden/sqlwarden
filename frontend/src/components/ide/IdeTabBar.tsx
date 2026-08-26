@@ -28,6 +28,7 @@ import { Tip } from './schema-diagram/Tip'
 import { TransactionGuardDialog } from './TransactionGuardDialog'
 import { useTabStripOverflow } from './useTabStripOverflow'
 import { useTransactionMode } from './useTransactionMode'
+import { workspaceFileIcon } from './workspaceFileIcon'
 
 type IdeTabBarProps = {
   orgSlug: string
@@ -43,6 +44,18 @@ const TAB_ICONS: Record<TabKind, AppIcon> = {
   connection: 'database',
   object: 'table',
   diagram: 'flow-connection',
+}
+
+/** Returns the icon shown for a tab in the tab strip. File tabs resolve a
+ *  type-specific icon (SQL, CSV, ...) from their name and metadata, same as
+ *  the Files explorer; other tab kinds use a fixed icon per kind. */
+export function tabIcon(tab: EditorTab): AppIcon {
+  if (tab.kind !== 'file') return TAB_ICONS[tab.kind]
+  return workspaceFileIcon({
+    name: tab.title,
+    media_type: tab.fileMediaType,
+    file_kind: tab.fileKind,
+  })
 }
 
 export function requiresCloseConfirmation(
@@ -367,7 +380,7 @@ function TabItem({
   onDragOverReorder: (position: 'before' | 'after') => void
   onDragEnd: () => void
 }) {
-  const icon = TAB_ICONS[tab.kind]
+  const icon = tabIcon(tab)
   const others = tabsToClose('others', tabIds, tab.id)
   const right = tabsToClose('right', tabIds, tab.id)
   const menuItems = buildTabMenu({
