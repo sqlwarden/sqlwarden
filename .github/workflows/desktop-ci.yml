@@ -1,0 +1,314 @@
+name: Desktop Build
+
+on:
+  pull_request:
+    branches:
+      - main
+      - 'release/**'
+    paths:
+      - '.github/workflows/desktop-*.yml'
+      - 'assets/**'
+      - 'cmd/desktop/**'
+      - 'frontend/**'
+      - 'internal/**'
+      - 'tools/desktop-release/**'
+      - 'go.mod'
+      - 'go.sum'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CI_VERSION: 0.0.0-ci.${{ github.run_number }}
+  CI_TAG: v0.0.0-ci.${{ github.run_number }}
+
+concurrency:
+  group: desktop-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Desktop frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.10
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Upload embedded frontend
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-ci-frontend
+          path: assets/static
+          if-no-files-found: error
+
+  windows:
+    name: Windows x64 package
+    needs: frontend
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          choco install nsis --yes --no-progress
+          $nsis = Join-Path ${env:ProgramFiles(x86)} 'NSIS'
+          if (-not (Test-Path (Join-Path $nsis 'makensis.exe'))) {
+            throw "makensis.exe was not installed under $nsis"
+          }
+          $nsis >> $env:GITHUB_PATH
+
+      - name: Download embedded frontend
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: desktop-ci-frontend
+          path: assets/static
+
+      - name: Set validation version
+        shell: pwsh
+        run: >-
+          go run ./tools/desktop-release prepare
+          --tag "$env:CI_TAG"
+          --wails-config cmd/desktop/wails.json
+
+      - name: Build unsigned installer
+        working-directory: cmd/desktop
+        shell: pwsh
+        run: >-
+          go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build
+          -platform windows/amd64 -nsis -installscope user -s -m -skipbindings -clean -trimpath
+
+      - name: Verify installer and installation
+        shell: pwsh
+        run: |
+          $app = Resolve-Path 'cmd/desktop/build/bin/sqlwarden-desktop.exe'
+          $installer = Resolve-Path 'cmd/desktop/build/bin/SQLWarden-amd64-installer.exe'
+          $productVersion = (Get-Item $app).VersionInfo.ProductVersion
+          if (-not $productVersion.StartsWith('0.0.0')) {
+            throw "Unexpected Windows product version $productVersion"
+          }
+          Start-Process -FilePath $installer -ArgumentList '/S' -Wait
+          $installDirectory = Join-Path $env:LOCALAPPDATA 'Programs\SQLWarden'
+          $installedApp = Join-Path $installDirectory 'sqlwarden-desktop.exe'
+          $uninstaller = Join-Path $installDirectory 'uninstall.exe'
+          if (-not (Test-Path $installedApp)) { throw 'Installed application was not found' }
+          if (-not (Test-Path $uninstaller)) { throw 'Uninstaller was not found' }
+          Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item $installer "dist/sqlwarden-desktop_$env:CI_VERSION`_windows_x86_64_setup.exe"
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-ci-native-windows
+          path: dist/*.exe
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal app
+    needs: frontend
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download embedded frontend
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: desktop-ci-frontend
+          path: assets/static
+
+      - name: Set validation version
+        run: >-
+          go run ./tools/desktop-release prepare
+          --tag "$CI_TAG"
+          --wails-config cmd/desktop/wails.json
+
+      - name: Build universal app
+        working-directory: cmd/desktop
+        env:
+          CGO_CFLAGS: -mmacosx-version-min=11.0
+          CGO_LDFLAGS: -mmacosx-version-min=11.0
+        run: >-
+          go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build
+          -platform darwin/universal -s -m -skipbindings -clean -trimpath
+
+      - name: Verify universal architectures
+        run: |
+          set -euo pipefail
+          app='cmd/desktop/build/bin/SQLWarden.app'
+          binary='cmd/desktop/build/bin/SQLWarden.app/Contents/MacOS/sqlwarden-desktop'
+          lipo -verify_arch x86_64 arm64 "$binary"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = 'com.sqlwarden.desktop'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = '0.0.0'
+          mkdir -p dist "$RUNNER_TEMP/sqlwarden-dmg"
+          ditto "$app" "$RUNNER_TEMP/sqlwarden-dmg/SQLWarden.app"
+          ln -s /Applications "$RUNNER_TEMP/sqlwarden-dmg/Applications"
+          dmg="dist/sqlwarden-desktop_${CI_VERSION}_darwin_universal.dmg"
+          hdiutil create -volname SQLWarden -srcfolder "$RUNNER_TEMP/sqlwarden-dmg" -ov -format UDZO "$dmg"
+          hdiutil verify "$dmg"
+
+      - name: Upload macOS package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-ci-native-macos
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  linux:
+    name: Linux x64 binary
+    needs: frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential gettext-base pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+
+      - name: Download embedded frontend
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: desktop-ci-frontend
+          path: assets/static
+
+      - name: Set validation version
+        run: >-
+          go run ./tools/desktop-release prepare
+          --tag "$CI_TAG"
+          --wails-config cmd/desktop/wails.json
+
+      - name: Build Linux binary
+        working-directory: cmd/desktop
+        run: >-
+          go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build
+          -platform linux/amd64 -tags webkit2_41 -s -m -skipbindings -clean -trimpath
+
+      - name: Build and verify Linux packages
+        run: |
+          set -euo pipefail
+          binary="$GITHUB_WORKSPACE/cmd/desktop/build/bin/sqlwarden-desktop"
+          test -x "$binary"
+          mkdir -p dist "$RUNNER_TEMP/sqlwarden-linux/THIRD_PARTY_NOTICES"
+          install -m 0755 "$binary" "$RUNNER_TEMP/sqlwarden-linux/sqlwarden-desktop"
+          install -m 0644 README.md "$RUNNER_TEMP/sqlwarden-linux/README.md"
+          install -m 0644 cmd/desktop/build/linux/README.md "$RUNNER_TEMP/sqlwarden-linux/LINUX_INSTALL.md"
+          install -m 0644 internal/engine/completioncore/LICENSE.bytebase "$RUNNER_TEMP/sqlwarden-linux/THIRD_PARTY_NOTICES/Bytebase-MIT.txt"
+          tar -C "$RUNNER_TEMP/sqlwarden-linux" -czf "dist/sqlwarden-desktop_${CI_VERSION}_linux_x86_64.tar.gz" .
+          VERSION="$CI_VERSION" DESKTOP_BINARY="$binary" envsubst \
+            < cmd/desktop/build/linux/nfpm.yaml \
+            > "$RUNNER_TEMP/sqlwarden-nfpm.yaml"
+          nfpm package \
+            --config "$RUNNER_TEMP/sqlwarden-nfpm.yaml" \
+            --packager deb \
+            --target "dist/sqlwarden-desktop_${CI_VERSION}_linux_x86_64.deb"
+          deb="dist/sqlwarden-desktop_${CI_VERSION}_linux_x86_64.deb"
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb" | grep -F './usr/bin/sqlwarden-desktop'
+          dpkg-deb --contents "$deb" | grep -F './usr/share/applications/com.sqlwarden.desktop.desktop'
+          sudo dpkg --install "$deb"
+          test -x /usr/bin/sqlwarden-desktop
+          test -f /usr/share/applications/com.sqlwarden.desktop.desktop
+          sudo dpkg --remove sqlwarden-desktop
+          tar -tzf "dist/sqlwarden-desktop_${CI_VERSION}_linux_x86_64.tar.gz" | grep -F './sqlwarden-desktop'
+
+      - name: Upload Linux packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-ci-native-linux
+          path: |
+            dist/*.deb
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  bundle:
+    name: Verify desktop bundle
+    needs:
+      - windows
+      - macos
+      - linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download native packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: desktop-ci-native-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate and verify bundle metadata
+        run: |
+          set -euo pipefail
+          published_at="$(git show -s --format=%cI HEAD)"
+          go run ./tools/desktop-release manifest \
+            --tag "$CI_TAG" \
+            --published-at "$published_at" \
+            --artifacts-dir dist \
+            --manifest "dist/sqlwarden-desktop_${CI_VERSION}_release.json" \
+            --checksums "dist/sqlwarden-desktop_${CI_VERSION}_checksums.txt"
+          sha256sum --check "dist/sqlwarden-desktop_${CI_VERSION}_checksums.txt"
+
+      - name: Upload validation bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sqlwarden-desktop-ci-${{ github.run_number }}
+          path: dist/*
+          if-no-files-found: error

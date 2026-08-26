@@ -1,14 +1,21 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "SQLWarden",
-  "outputfilename": "sqlwarden-desktop",
-  "frontend:dir": "../../frontend",
-  "frontend:install": "bun install --frozen-lockfile",
-  "frontend:build": "bun run build",
-  "frontend:dev:watcher": "bun run build -- --watch",
-  "reloaddirs": "../../assets/static",
-  "wailsjsdir": "../../frontend/src/wailsjs",
   "author": {
     "name": "SQLWarden"
-  }
+  },
+  "frontend:build": "bun run build",
+  "frontend:dev:watcher": "bun run build -- --watch",
+  "frontend:dir": "../../frontend",
+  "frontend:install": "bun install --frozen-lockfile",
+  "info": {
+    "comments": "SQLWarden desktop database workspace",
+    "companyName": "SQLWarden",
+    "copyright": "Copyright 2026 SQLWarden contributors",
+    "productName": "SQLWarden",
+    "productVersion": "0.0.0"
+  },
+  "name": "SQLWarden",
+  "outputfilename": "sqlwarden-desktop",
+  "reloaddirs": "../../assets/static",
+  "wailsjsdir": "../../frontend/src/wailsjs"
 }
