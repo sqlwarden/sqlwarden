@@ -12,6 +12,7 @@ frontend/coverage/
 frontend/package.json.md5
 frontend/src/wailsjs/
 cmd/desktop/build/bin/
+cmd/desktop/build/windows/installer/wails_tools.nsh
 
 # Environment files
 .env

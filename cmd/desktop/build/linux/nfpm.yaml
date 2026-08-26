@@ -1,0 +1,25 @@
+name: sqlwarden-desktop
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: database
+priority: optional
+maintainer: SQLWarden contributors
+description: Desktop database workspace for querying and exploring SQL databases.
+homepage: https://github.com/sqlwarden/sqlwarden
+depends:
+  - libgtk-3-0
+  - libwebkit2gtk-4.1-0
+contents:
+  - src: ${DESKTOP_BINARY}
+    dst: /usr/bin/sqlwarden-desktop
+    file_info:
+      mode: 0755
+  - src: cmd/desktop/build/linux/com.sqlwarden.desktop.desktop
+    dst: /usr/share/applications/com.sqlwarden.desktop.desktop
+    file_info:
+      mode: 0644
+  - src: cmd/desktop/build/appicon.png
+    dst: /usr/share/icons/hicolor/1024x1024/apps/com.sqlwarden.desktop.png
+    file_info:
+      mode: 0644
