@@ -171,7 +171,7 @@ describe('IdeToolbar', () => {
     editor.destroy()
   })
 
-  it('hides export for non-SQL files and only offers save when a file is dirty', async () => {
+  it('hides export for non-SQL files and disables save until a file is dirty', async () => {
     const csvTab: EditorTab = {
       id: 'file:11',
       workspaceId: 3,
@@ -188,11 +188,11 @@ describe('IdeToolbar', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: /^Run/ })).toBeEnabled())
     expect(screen.queryByRole('button', { name: 'More run options' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Save file' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save file' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Format SQL' })).not.toBeInTheDocument()
 
     store.setState({ tabs: [{ ...csvTab, isDirty: true }] })
-    expect(await screen.findByRole('button', { name: 'Save file' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Save file' })).toBeEnabled()
     view.unmount()
   })
 

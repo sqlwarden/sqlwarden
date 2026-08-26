@@ -75,7 +75,8 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   // object/diagram tab or a non-SQL file (e.g. a previously exported CSV).
   const isSqlTab = isSqlEditorTab(activeTab)
 
-  const showSave = Boolean(activeTab && (activeTab.kind !== 'file' || activeTab.isDirty))
+  const showSave = Boolean(activeTab)
+  const saveDisabled = Boolean(activeTab?.etag !== undefined && !activeTab.isDirty)
 
   async function handleSave() {
     if (!activeTab) return
@@ -205,11 +206,6 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
               className={queryAction.isRunning ? 'animate-spin' : undefined}
             />
             {queryAction.isRunning ? 'Running…' : 'Run'}
-            {!queryAction.isRunning && (
-              <kbd className="ml-0.5 hidden rounded bg-primary-foreground/20 px-1 font-sans text-[9px] font-medium leading-4 tracking-wide sm:inline">
-                {RUN_SHORTCUT}
-              </kbd>
-            )}
           </Button>
 
           {isSqlTab &&
@@ -272,26 +268,33 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
 
         {/* Save button */}
         {showSave && (
-          <Button type="button" variant="outline" aria-label="Save file" onClick={handleSave}>
-            <Icon name="floppy-disk" size={13} data-icon="inline-start" />
-            Save
-          </Button>
+          <Tip label="Save">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label="Save file"
+              disabled={saveDisabled}
+              onClick={handleSave}
+            >
+              <Icon name="floppy-disk" size={13} />
+            </Button>
+          </Tip>
         )}
 
         {isSqlTab && (
-          <Button
-            type="button"
-            variant="outline"
-            aria-label="Format SQL"
-            onClick={handleFormat}
-            disabled={!activeGroupId}
-          >
-            <Icon name="subject" size={13} data-icon="inline-start" />
-            Format
-            <kbd className="ml-0.5 hidden rounded bg-muted px-1 font-sans text-[9px] font-medium leading-4 tracking-wide text-muted-foreground sm:inline">
-              {FORMAT_SHORTCUT}
-            </kbd>
-          </Button>
+          <Tip label="Format SQL">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label="Format SQL"
+              onClick={handleFormat}
+              disabled={!activeGroupId}
+            >
+              <Icon name="subject" size={13} />
+            </Button>
+          </Tip>
         )}
 
         <div className="flex-1" />
