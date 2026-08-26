@@ -60,6 +60,7 @@ const icons: Record<AppIcon, string> = {
   'paste-01': 'ri:clipboard-line',
   'pencil-edit-02': 'ri:edit-line',
   'pie-chart': 'ri:pie-chart-line',
+  'pin-01': 'ri:pushpin-line',
   play: 'ri:play-line',
   'plus-sign': 'ri:add-line',
   policy: 'ri:shield-check-line',

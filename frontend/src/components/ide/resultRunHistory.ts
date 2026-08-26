@@ -4,10 +4,12 @@ import type { ResultRun } from './useIdeStore'
 /** Max runs kept per editor tab; the oldest run is evicted past this. */
 export const RUN_HISTORY_CAP = 50
 
-/** Returns the oldest runs that exceed `RUN_HISTORY_CAP`, oldest first. */
+/** Returns the oldest unpinned runs that exceed `RUN_HISTORY_CAP`, oldest
+ *  first. Pinned runs don't count against the cap and are never evicted. */
 export function runsToEvict(existing: ResultRun[]): ResultRun[] {
-  const excess = existing.length - RUN_HISTORY_CAP
-  return excess > 0 ? existing.slice(0, excess) : []
+  const unpinned = existing.filter((r) => !r.pinned)
+  const excess = unpinned.length - RUN_HISTORY_CAP
+  return excess > 0 ? unpinned.slice(0, excess) : []
 }
 
 /** Closes every open server-side query cursor an evicted run was holding, so

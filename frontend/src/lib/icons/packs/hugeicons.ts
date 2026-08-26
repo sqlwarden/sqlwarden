@@ -60,6 +60,7 @@ const icons: Record<AppIcon, string> = {
   'paste-01': 'hugeicons:clipboard-paste',
   'pencil-edit-02': 'hugeicons:pencil-edit-02',
   'pie-chart': 'hugeicons:pie-chart',
+  'pin-01': 'hugeicons:pin',
   play: 'hugeicons:play',
   'plus-sign': 'hugeicons:plus-sign',
   policy: 'hugeicons:policy',

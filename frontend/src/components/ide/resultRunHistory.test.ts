@@ -21,6 +21,15 @@ describe('runsToEvict', () => {
     const evicted = runsToEvict(runs)
     expect(evicted.map((r) => r.id)).toEqual(['run-0', 'run-1'])
   })
+
+  it('never evicts pinned runs, and does not count them against the cap', () => {
+    const runs = [
+      { ...run('pinned-0'), pinned: true },
+      ...Array.from({ length: RUN_HISTORY_CAP + 1 }, (_, i) => run(`run-${i}`)),
+    ]
+    const evicted = runsToEvict(runs)
+    expect(evicted.map((r) => r.id)).toEqual(['run-0'])
+  })
 })
 
 describe('closeRunCursors', () => {

@@ -60,6 +60,7 @@ const icons: Record<AppIcon, string> = {
   'paste-01': 'lucide:clipboard-paste',
   'pencil-edit-02': 'lucide:pencil',
   'pie-chart': 'lucide:pie-chart',
+  'pin-01': 'lucide:pin',
   play: 'lucide:play',
   'plus-sign': 'lucide:plus',
   policy: 'lucide:shield-check',

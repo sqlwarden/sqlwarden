@@ -58,6 +58,7 @@ export type AppIcon =
   | 'paste-01'
   | 'pencil-edit-02'
   | 'pie-chart'
+  | 'pin-01'
   | 'play'
   | 'plus-sign'
   | 'policy'

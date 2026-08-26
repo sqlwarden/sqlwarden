@@ -646,6 +646,17 @@ describe('query results', () => {
     expect(store.getState().selectedRunId['tab-1']).toBe(second)
   })
 
+  it('toggleRunPin flips the pinned flag on the target run only', () => {
+    const store = createIdeStore('test-org', 1)
+    const first = store.getState().beginRun('tab-1', ['select 1'])
+    const second = store.getState().beginRun('tab-1', ['select 2'])
+    store.getState().toggleRunPin('tab-1', first)
+    expect(store.getState().resultRuns['tab-1'].find((r) => r.id === first)?.pinned).toBe(true)
+    expect(store.getState().resultRuns['tab-1'].find((r) => r.id === second)?.pinned).toBeFalsy()
+    store.getState().toggleRunPin('tab-1', first)
+    expect(store.getState().resultRuns['tab-1'].find((r) => r.id === first)?.pinned).toBe(false)
+  })
+
   it('abandonPendingRunConfirmation clears the confirmation and skips from its statementIndex', () => {
     const store = createIdeStore('test-org', 1)
     const runId = store.getState().beginRun('tab-1', ['select 1', 'select 2', 'select 3'])

@@ -68,6 +68,9 @@ export type ResultRun = {
   selectedIndex: number
   createdAt: number
   connectionId?: number
+  /** Pinned runs are exempt from bulk-close actions (others/right/left) and
+   *  from history-cap eviction — see resultTabMenu.ts and resultRunHistory.ts. */
+  pinned?: boolean
 }
 
 const TERMINAL_STATUSES: ReadonlySet<QueryResult['status']> = new Set([
@@ -245,6 +248,7 @@ export type IdeActions = {
   setSelectedIndexInRun: (tabId: string, runId: string, index: number) => void
   /** Closes one run tab. Reselects the previous run, or the next one if the first closed. */
   closeRunTab: (tabId: string, runId: string) => void
+  toggleRunPin: (tabId: string, runId: string) => void
   /** Opens a new numbered console tab. Pass yState (encoded Y.Doc) so all windows
    *  that receive this tab share the same canonical Y.js initial history.
    *  Pass connectionId to pre-select a connection on the new tab. */
@@ -803,6 +807,20 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             return patch
           }),
 
+        toggleRunPin: (tabId, runId) =>
+          set((s) => {
+            const runs = s.resultRuns[tabId]
+            if (!runs) return {}
+            return {
+              resultRuns: {
+                ...s.resultRuns,
+                [tabId]: runs.map((run) =>
+                  run.id === runId ? { ...run, pinned: !run.pinned } : run,
+                ),
+              },
+            }
+          }),
+
         openConsole: (workspace, yState, connectionId, driver) =>
           set((s) => {
             const wsConsoleTabs = s.tabs.filter(
@@ -968,6 +986,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   setSelectedRun: _noop,
   setSelectedIndexInRun: _noop,
   closeRunTab: _noop,
+  toggleRunPin: _noop,
   openConsole: _noop,
   setTransactionState: _noop,
   clearTransactionState: _noop,
