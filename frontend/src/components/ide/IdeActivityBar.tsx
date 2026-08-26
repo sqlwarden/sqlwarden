@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { orgRuntimeSettingsQueryOptions } from '#/lib/api/query'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
+import type { SessionResponse, Workspace } from '#/lib/api/types'
 import { useIde } from './useIdeStore'
 import {
   visibleActivities,
@@ -9,12 +10,25 @@ import {
   type IdeActivity,
 } from './ideActivities'
 import { Tip } from './schema-diagram/Tip'
+import { WorkspaceSelector } from './WorkspaceSelector'
 
 type IdeActivityBarProps = {
   orgSlug: string
+  workspaces: Workspace[]
+  activeWorkspace: Workspace | undefined
+  onSelectWorkspace: (workspaceId: number) => void
+  session: SessionResponse | undefined
+  canAccessOrgSettings: boolean
 }
 
-export function IdeActivityBar({ orgSlug }: IdeActivityBarProps) {
+export function IdeActivityBar({
+  orgSlug,
+  workspaces,
+  activeWorkspace,
+  onSelectWorkspace,
+  session: _session,
+  canAccessOrgSettings: _canAccessOrgSettings,
+}: IdeActivityBarProps) {
   const activeActivityId = useIde((s) => s.activeActivityId)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
   const setActiveActivity = useIde((s) => s.setActiveActivity)
@@ -70,6 +84,13 @@ export function IdeActivityBar({ orgSlug }: IdeActivityBarProps) {
           </Tip>
         )
       })}
+      <div className="mt-auto">
+        <WorkspaceSelector
+          workspaces={workspaces}
+          activeWorkspace={activeWorkspace}
+          onSelect={onSelectWorkspace}
+        />
+      </div>
     </nav>
   )
 }

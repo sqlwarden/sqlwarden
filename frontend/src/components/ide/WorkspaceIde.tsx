@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
-import { useBrand } from '#/lib/brand/brand'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/components/ui/resizable'
 import { Button } from '#/components/ui/button'
@@ -23,7 +22,7 @@ import {
   EmptyTitle,
 } from '#/components/ui/empty'
 import { Skeleton } from '#/components/ui/skeleton'
-import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import {
   orgWorkspacesQueryOptions,
   orgEffectivePermissionsQueryOptions,
@@ -32,15 +31,13 @@ import {
 } from '#/lib/api/query'
 import { resolveDeepLink } from './ideDeepLink'
 import { hasAnyPermission, permission } from '#/lib/permissions'
-import { IdeTopBarControls } from './IdeTopBarControls'
 import { IdeActivityBar } from './IdeActivityBar'
 import { visibleActivities, type ActivityVisibilityContext } from './ideActivities'
 import type { Workspace } from '#/lib/api/types'
 import { useSession } from '#/hooks/use-session'
 import { cn } from '#/lib/utils'
 import { usePageTitle } from '#/lib/page-title'
-import { ContextMenu, ContextMenuProvider } from '#/components/ui/context-menu'
-import { buildWorkspaceMenu } from './contextMenus/workspaceMenu'
+import { ContextMenuProvider } from '#/components/ui/context-menu'
 import {
   createIdeStore,
   IdeStoreContext,
@@ -350,30 +347,16 @@ function WorkspaceIdeInnerContent({
   return (
     <ContextMenuProvider>
       <div className="flex h-dvh min-h-0 w-dvw max-w-dvw flex-col overflow-hidden bg-background">
-        {/* Top bar: brand + explorer toggle + workspace tabs + user controls */}
-        <div className="flex h-10 shrink-0 items-stretch border-b border-border bg-sidebar">
-          <IdeBrand />
-          <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {workspaces.map((ws) => (
-              <WorkspaceTab
-                key={ws.id}
-                orgSlug={orgSlug}
-                workspace={ws}
-                active={ws.id === activeWorkspace?.id}
-                onActivate={() => setActiveWorkspace(ws.id)}
-              />
-            ))}
-          </div>
-          {session ? (
-            <IdeTopBarControls
-              orgSlug={orgSlug}
-              session={session}
-              canAccessOrgSettings={canAccessOrgSettings}
-            />
-          ) : null}
-        </div>
-
-        {activeWorkspace && <WorkspaceIdeSurface orgSlug={orgSlug} workspace={activeWorkspace} />}
+        {activeWorkspace && (
+          <WorkspaceIdeSurface
+            orgSlug={orgSlug}
+            workspace={activeWorkspace}
+            workspaces={workspaces}
+            onSelectWorkspace={setActiveWorkspace}
+            session={session}
+            canAccessOrgSettings={canAccessOrgSettings}
+          />
+        )}
       </div>
     </ContextMenuProvider>
   )
@@ -447,73 +430,23 @@ function useIdeDeepLink(orgSlug: string, workspaces: Workspace[]) {
   ])
 }
 
-function IdeBrand() {
-  const brand = useBrand()
-  return (
-    <Tip label="Back to dashboard" side="bottom">
-      <Link
-        to="/"
-        className="flex w-11 shrink-0 items-center justify-center text-foreground transition-colors hover:bg-sidebar-accent/50"
-        aria-label={`${brand.productName} home`}
-      >
-        <brand.LogoMark size={20} className="shrink-0" />
-      </Link>
-    </Tip>
-  )
-}
+// ─── Surface ───────────────────────────────────────────────────────────────────
 
-function WorkspaceTab({
+function WorkspaceIdeSurface({
   orgSlug,
   workspace,
-  active,
-  onActivate,
+  workspaces,
+  onSelectWorkspace,
+  session,
+  canAccessOrgSettings,
 }: {
   orgSlug: string
   workspace: Workspace
-  active: boolean
-  onActivate: () => void
+  workspaces: Workspace[]
+  onSelectWorkspace: (id: number) => void
+  session: ReturnType<typeof useSession>['data']
+  canAccessOrgSettings: boolean
 }) {
-  const navigate = useNavigate()
-
-  const menuItems = buildWorkspaceMenu({
-    onOpenSettings: () =>
-      navigate({
-        to: '/orgs/$org_slug/workspaces/$workspace_id/settings',
-        params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
-      }),
-    onManageMembers: () =>
-      navigate({
-        to: '/orgs/$org_slug/workspaces/$workspace_id/users',
-        params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
-      }),
-    onManageAccess: () =>
-      navigate({
-        to: '/orgs/$org_slug/workspaces/$workspace_id/policies',
-        params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
-      }),
-  })
-
-  return (
-    <ContextMenu items={menuItems} className="h-full shrink-0">
-      <button
-        type="button"
-        onClick={onActivate}
-        className={cn(
-          'relative flex h-full shrink-0 items-center px-4 text-xs font-medium transition-colors',
-          active
-            ? 'bg-background text-foreground after:absolute after:inset-x-0 after:top-0 after:h-[2px] after:bg-primary'
-            : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
-        )}
-      >
-        {workspace.name}
-      </button>
-    </ContextMenu>
-  )
-}
-
-// ─── Surface ───────────────────────────────────────────────────────────────────
-
-function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
   const sidebarRef = useRef<PanelImperativeHandle>(null)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
@@ -574,7 +507,14 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
     const PageSurface = activeActivity.component
     return (
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <IdeActivityBar orgSlug={orgSlug} />
+        <IdeActivityBar
+          orgSlug={orgSlug}
+          workspaces={workspaces}
+          activeWorkspace={workspace}
+          onSelectWorkspace={onSelectWorkspace}
+          session={session}
+          canAccessOrgSettings={canAccessOrgSettings}
+        />
         <div className="min-w-0 flex-1 overflow-hidden">
           <PageSurface orgSlug={orgSlug} workspace={workspace} />
         </div>
@@ -585,7 +525,14 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
   if (isMobile) {
     return (
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <IdeActivityBar orgSlug={orgSlug} />
+        <IdeActivityBar
+          orgSlug={orgSlug}
+          workspaces={workspaces}
+          activeWorkspace={workspace}
+          onSelectWorkspace={onSelectWorkspace}
+          session={session}
+          canAccessOrgSettings={canAccessOrgSettings}
+        />
         <div className="min-w-0 flex-1 overflow-hidden">
           <IdeEditorAndResults orgSlug={orgSlug} workspace={workspace} />
         </div>
@@ -604,7 +551,14 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
-      <IdeActivityBar orgSlug={orgSlug} />
+      <IdeActivityBar
+        orgSlug={orgSlug}
+        workspaces={workspaces}
+        activeWorkspace={workspace}
+        onSelectWorkspace={onSelectWorkspace}
+        session={session}
+        canAccessOrgSettings={canAccessOrgSettings}
+      />
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 overflow-hidden">
         <ResizablePanel
           panelRef={sidebarRef}

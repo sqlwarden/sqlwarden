@@ -840,10 +840,7 @@ function ConnectionRow({
       <ContextMenu items={menuItems}>
         <div
           style={{ paddingLeft: connIndent }}
-          className={cn(
-            'flex items-center transition-colors',
-            sidebarActiveRowClass(isActive),
-          )}
+          className={cn('flex items-center transition-colors', sidebarActiveRowClass(isActive))}
         >
           {isConnected || expanded ? (
             <button
