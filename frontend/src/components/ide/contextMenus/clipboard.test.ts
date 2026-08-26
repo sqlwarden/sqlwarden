@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   columnList,
   qualifiedColumn,
+  readClipboardFallback,
   rowToTsv,
   rowToJson,
   selectionToTsv,
@@ -45,5 +46,36 @@ describe('result-grid producers', () => {
   })
   it('valuesToLines joins values with newlines', () => {
     expect(valuesToLines(['a', 'b', 'c'])).toBe('a\nb\nc')
+  })
+})
+
+describe('readClipboardFallback', () => {
+  // jsdom doesn't implement execCommand at all, so stub it directly rather
+  // than spying on a nonexistent method.
+  afterEach(() => {
+    // @ts-expect-error test-only cleanup of the stub
+    delete document.execCommand
+  })
+
+  it('returns the pasted text when execCommand succeeds', () => {
+    document.execCommand = vi.fn((command: string) => {
+      if (command !== 'paste') return false
+      const el = document.activeElement as HTMLTextAreaElement
+      el.value = 'select 1'
+      return true
+    })
+    expect(readClipboardFallback()).toBe('select 1')
+  })
+
+  it('returns null when execCommand is unsupported', () => {
+    document.execCommand = vi.fn(() => {
+      throw new Error('not supported')
+    })
+    expect(readClipboardFallback()).toBeNull()
+  })
+
+  it('returns null when the clipboard is empty', () => {
+    document.execCommand = vi.fn(() => true)
+    expect(readClipboardFallback()).toBeNull()
   })
 })

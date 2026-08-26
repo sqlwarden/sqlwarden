@@ -122,6 +122,27 @@ describe('runStatementBatch', () => {
     })
   })
 
+  it('does not crash when the response is missing transaction state', async () => {
+    const malformed = { ...resultSet(1), transaction: undefined } as unknown as ResultSet
+    const runStatement = vi.fn(async () => malformed)
+    const deps = dependencies({ runStatement })
+    const controller = new AbortController()
+
+    await runStatementBatch(
+      { tabId: 'tab-1', connectionId: 7, sqls: ['select 1'], controller },
+      deps,
+    )
+
+    expect(deps.setTransactionState).not.toHaveBeenCalled()
+    expect(deps.setRunStatementResult).toHaveBeenNthCalledWith(2, 'tab-1', 'run-1', 0, {
+      status: 'ok',
+      data: malformed,
+      durationMs: 1,
+      sql: 'select 1',
+      connectionId: 7,
+    })
+  })
+
   it('stops at the first error and marks every later statement skipped', async () => {
     const runStatement = vi.fn(async (_sessionId: string, sql: string) => {
       if (sql === 'select 2') throw new Error('boom')

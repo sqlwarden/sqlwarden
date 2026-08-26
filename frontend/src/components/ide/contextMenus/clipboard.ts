@@ -25,6 +25,25 @@ export function writeClipboard(text: string): void {
   document.body.removeChild(el)
 }
 
+/** Reads clipboard text without the async Clipboard API, for insecure
+ *  contexts (plain http on a non-localhost host) where `navigator.clipboard`
+ *  doesn't exist at all. Requires an active user gesture and a focused,
+ *  editable element to succeed; returns null if the browser can't do it. */
+export function readClipboardFallback(): string | null {
+  const el = document.createElement('textarea')
+  el.style.cssText = 'position:fixed;opacity:0'
+  document.body.appendChild(el)
+  el.focus()
+  let text: string | null = null
+  try {
+    if (document.execCommand('paste')) text = el.value || null
+  } catch {
+    /* unsupported in this browser */
+  }
+  document.body.removeChild(el)
+  return text
+}
+
 /** Copies text and shows a brief confirmation toast. */
 export function copyWithToast(text: string, label = 'Copied'): void {
   writeClipboard(text)

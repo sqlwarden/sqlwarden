@@ -1,10 +1,12 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import * as Y from 'yjs'
 import { toast } from 'sonner'
+import { useQuery } from '@tanstack/react-query'
 import { cn } from '#/lib/utils'
 import { formatBytesValue } from '#/lib/units'
 import type { Workspace } from '#/lib/api/types'
 import { downloadPrivateWorkspaceFile } from '#/lib/api/files'
+import { allOrgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
 import { Button } from '#/components/ui/button'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Icon } from '#/lib/icons'
@@ -13,11 +15,16 @@ import type { GroupNode } from './ideLayout'
 import { IdeTabBar } from './IdeTabBar'
 import { SqlEditor } from './SqlEditor'
 import { useYDocRegistry } from './useYDocRegistry'
+import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { useFileContent } from './useFileContent'
 import { ObjectDetailView } from './object-detail/ObjectDetailView'
 import { CsvViewer } from './csv/CsvViewer'
 import { isCsvFileTab, isCsvFileTooLarge, MAX_BROWSER_CSV_BYTES } from './csv/csvFile'
 import { saveBlobAs } from './saveFile'
+import { isSqlEditorTab, splitSqlStatements } from './sqlStatements'
+import { formatEditorSql, sqlFormatterForDriver } from './sqlFormatting'
+import { useToolbarQueryAction } from './useToolbarQueryAction'
+import { SaveFavoriteDialog } from './SaveFavoriteDialog'
 
 const SchemaDiagramView = lazy(() =>
   import('./schema-diagram/SchemaDiagramView').then((module) => ({
@@ -44,10 +51,13 @@ export function EditorGroup({
   onCursorChange,
 }: EditorGroupProps) {
   const registry = useYDocRegistry()
+  const viewRegistry = useEditorViewRegistry()
   const tabs = useIde((s) => s.tabs)
   const focusGroup = useIde((s) => s.focusGroup)
   const updateTabEtag = useIde((s) => s.updateTabEtag)
   const [downloadingFileId, setDownloadingFileId] = useState<number | null>(null)
+  const [saveFavoriteOpen, setSaveFavoriteOpen] = useState(false)
+  const [saveFavoriteSql, setSaveFavoriteSql] = useState('')
 
   const activeTab = useMemo(
     () => tabs.find((t) => t.id === group.activeTabId),
@@ -61,6 +71,51 @@ export function EditorGroup({
   const isDiagram = activeTab?.kind === 'diagram'
   const isCsv = isCsvFileTab(activeTab)
   const isCsvTooLarge = isCsvFileTooLarge(activeTab)
+  const isSqlTab = isSqlEditorTab(activeTab)
+
+  // Same query key IdeToolbar uses for the workspace-wide connection list —
+  // React Query dedupes the request, this just adds a subscriber.
+  const connections = useQuery(allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id))
+  const connItems = connections.data?.items ?? []
+  const activeConnection = connItems.find((c) => c.id === activeTab?.connectionId)
+
+  // Scoped to this group's own tab, with the Ctrl/Cmd+Enter shortcut left to
+  // the toolbar's instance — this one only backs the editor's context menu.
+  const queryAction = useToolbarQueryAction({
+    orgSlug,
+    workspace,
+    activeTab,
+    activeGroupId: group.id,
+    activeConnection,
+    hasConnections: connItems.length > 0,
+    bindShortcut: false,
+  })
+
+  function handleFormat() {
+    if (!activeTab) return
+    const view = viewRegistry.get(`${group.id}:${activeTab.id}`)
+    if (!view) return
+    try {
+      formatEditorSql(view, sqlFormatterForDriver(activeTab.driver))
+    } catch {
+      toast.error('Could not format SQL.', {
+        description: 'The query may contain unsupported or incomplete syntax.',
+      })
+    }
+  }
+
+  function handleRunAll() {
+    const sqls = splitSqlStatements(queryAction.resolveDocumentText())
+    if (sqls.length === 0) return
+    void queryAction.runAll(sqls)
+  }
+
+  function handleSaveFavoriteClick() {
+    const sql = queryAction.resolveSql()
+    if (!sql) return
+    setSaveFavoriteSql(sql)
+    setSaveFavoriteOpen(true)
+  }
 
   const { isLoading, isError, retry } = useFileContent({
     orgSlug,
@@ -179,6 +234,14 @@ export function EditorGroup({
                 driver: activeTab.driver,
                 sessionId,
               }}
+              contextMenu={{
+                isSqlTab,
+                canRun: Boolean(activeConnection) && !queryAction.isRunning,
+                onRunStatement: () => void queryAction.run(),
+                onRunAll: handleRunAll,
+                onFormat: handleFormat,
+                onSaveFavorite: handleSaveFavoriteClick,
+              }}
             />
           )
         ) : (
@@ -187,6 +250,17 @@ export function EditorGroup({
           </div>
         )}
       </div>
+
+      {saveFavoriteOpen && (
+        <SaveFavoriteDialog
+          open={saveFavoriteOpen}
+          onOpenChange={setSaveFavoriteOpen}
+          orgSlug={orgSlug}
+          workspaceId={workspace.id}
+          sqlText={saveFavoriteSql}
+          connectionId={activeConnection?.id ?? null}
+        />
+      )}
     </div>
   )
 }

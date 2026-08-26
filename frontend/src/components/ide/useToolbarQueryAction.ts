@@ -57,6 +57,7 @@ export function useToolbarQueryAction({
   activeGroupId,
   activeConnection,
   hasConnections,
+  bindShortcut = true,
 }: {
   orgSlug: string
   workspace: Workspace
@@ -64,6 +65,11 @@ export function useToolbarQueryAction({
   activeGroupId?: string
   activeConnection?: Connection
   hasConnections: boolean
+  /** Registers the Ctrl/Cmd+Enter run shortcut. A workspace has exactly one
+   *  "global" active tab, so only one caller (the toolbar) should bind it —
+   *  callers scoped to a single split pane (e.g. an editor context menu) pass
+   *  false to avoid double-registering the listener. */
+  bindShortcut?: boolean
 }) {
   const documentRegistry = useYDocRegistry()
   const viewRegistry = useEditorViewRegistry()
@@ -169,6 +175,7 @@ export function useToolbarQueryAction({
   )
 
   useEffect(() => {
+    if (!bindShortcut) return
     function onKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
         event.preventDefault()
@@ -178,7 +185,7 @@ export function useToolbarQueryAction({
     }
     window.addEventListener('keydown', onKeyDown, { capture: true })
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
-  }, [run])
+  }, [run, bindShortcut])
 
   return { cancel, confirmAt, isRunning, resolveDocumentText, resolveSql, run, runAll }
 }

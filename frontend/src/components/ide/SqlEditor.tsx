@@ -4,9 +4,11 @@ import { toast } from 'sonner'
 import { EditorView } from '@codemirror/view'
 import { EditorState, Compartment } from '@codemirror/state'
 import type { Extension } from '@codemirror/state'
+import { selectAll as selectAllCommand } from '@codemirror/commands'
 import { yCollab } from 'y-codemirror.next'
 import type * as Y from 'yjs'
 import { cn } from '#/lib/utils'
+import { ContextMenu } from '#/components/ui/context-menu'
 import { useTheme } from '#/components/theme-provider'
 import { useEditorTheme } from '#/lib/editor-themes/context'
 import { loadEditorTheme, getCachedTheme } from '#/lib/editor-themes'
@@ -19,6 +21,8 @@ import { useIde } from './useIdeStore'
 import { sqlCompletionExtension, type SQLCompletionConfig } from './sqlCompletion'
 import { useIconPack } from '#/lib/icons'
 import { sqlFormatterForDriver, sqlFormattingKeymap } from './sqlFormatting'
+import { buildSqlEditorMenu } from './contextMenus/editorMenu'
+import { readClipboardFallback, writeClipboard } from './contextMenus/clipboard'
 
 function makeBaseTheme(fontFamily: string, fontSize: number): Extension {
   return EditorView.theme({
@@ -38,6 +42,15 @@ function makeBaseTheme(fontFamily: string, fontSize: number): Extension {
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
+export type SqlEditorContextMenuConfig = {
+  isSqlTab: boolean
+  canRun: boolean
+  onRunStatement: () => void
+  onRunAll: () => void
+  onFormat: () => void
+  onSaveFavorite: () => void
+}
+
 type SqlEditorProps = {
   tabId: string
   /** Owning group id — distinguishes two panes showing the same tab in the view registry. */
@@ -48,6 +61,7 @@ type SqlEditorProps = {
   onCursorChange?: (line: number, col: number, selSize: number) => void
   completion?: SQLCompletionConfig
   driver?: string
+  contextMenu?: SqlEditorContextMenuConfig
 }
 
 export function SqlEditor({
@@ -58,6 +72,7 @@ export function SqlEditor({
   onCursorChange,
   completion,
   driver,
+  contextMenu,
 }: SqlEditorProps) {
   const viewKey = groupId ? `${groupId}:${tabId}` : tabId
   const containerRef = useRef<HTMLDivElement>(null)
@@ -244,9 +259,105 @@ export function SqlEditor({
     }
   }, [editorFont, editorFontSize])
 
+  const handleCut = useCallback(() => {
+    const view = viewRef.current
+    if (!view) return
+    const selection = view.state.selection.main
+    if (selection.empty) return
+    writeClipboard(view.state.sliceDoc(selection.from, selection.to))
+    view.dispatch({ changes: { from: selection.from, to: selection.to, insert: '' } })
+    view.focus()
+  }, [])
+
+  const handleCopy = useCallback(() => {
+    const view = viewRef.current
+    if (!view) return
+    const selection = view.state.selection.main
+    if (selection.empty) return
+    writeClipboard(view.state.sliceDoc(selection.from, selection.to))
+  }, [])
+
+  const handlePaste = useCallback(() => {
+    const view = viewRef.current
+    if (!view) return
+
+    function insert(text: string) {
+      const current = viewRef.current
+      if (!current || !text) return
+      const selection = current.state.selection.main
+      current.dispatch({
+        changes: { from: selection.from, to: selection.to, insert: text },
+        selection: { anchor: selection.from + text.length },
+      })
+      current.focus()
+    }
+
+    function pasteViaFallback() {
+      const text = readClipboardFallback()
+      if (text) {
+        insert(text)
+        return
+      }
+      toast.error('Could not paste.', {
+        description:
+          'Clipboard access requires HTTPS (or localhost) in this browser. Use Ctrl/Cmd+V instead.',
+      })
+    }
+
+    // The Clipboard API only exists in secure contexts (https, or localhost) —
+    // on a plain-http LAN/dev host `navigator.clipboard` is undefined and we
+    // fall back to the legacy execCommand path below.
+    if (!navigator.clipboard) {
+      view.focus()
+      pasteViaFallback()
+      return
+    }
+
+    // The context menu closing steals document focus for a frame; reading the
+    // clipboard while unfocused throws "Document is not focused" in Chromium.
+    // Refocus the editor first and defer the read to the next frame so focus
+    // has actually landed before the async Clipboard API call runs.
+    view.focus()
+    requestAnimationFrame(() => {
+      navigator.clipboard
+        .readText()
+        .then(insert)
+        .catch(() => {
+          view.focus()
+          pasteViaFallback()
+        })
+    })
+  }, [])
+
+  const handleSelectAll = useCallback(() => {
+    const view = viewRef.current
+    if (!view) return
+    selectAllCommand(view)
+    view.focus()
+  }, [])
+
+  const menuItems = useMemo(
+    () =>
+      buildSqlEditorMenu({
+        onCut: handleCut,
+        onCopy: handleCopy,
+        onPaste: handlePaste,
+        onSelectAll: handleSelectAll,
+        isSqlTab: contextMenu?.isSqlTab ?? false,
+        canRun: contextMenu?.canRun ?? false,
+        onRunStatement: contextMenu?.onRunStatement ?? (() => {}),
+        onRunAll: contextMenu?.onRunAll ?? (() => {}),
+        onFormat: contextMenu?.onFormat ?? (() => {}),
+        onSaveFavorite: contextMenu?.onSaveFavorite ?? (() => {}),
+      }),
+    [handleCut, handleCopy, handlePaste, handleSelectAll, contextMenu],
+  )
+
   return (
     <>
-      <div ref={containerRef} className={cn('h-full overflow-hidden', className)} />
+      <ContextMenu items={menuItems} className="h-full overflow-hidden">
+        <div ref={containerRef} className={cn('h-full overflow-hidden', className)} />
+      </ContextMenu>
       {findHost && createPortal(<FindPanel view={findHost.view} />, findHost.dom)}
     </>
   )
