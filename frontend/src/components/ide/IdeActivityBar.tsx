@@ -48,8 +48,10 @@ export function IdeActivityBar({
 }: IdeActivityBarProps) {
   const activeActivityId = useIde((s) => s.activeActivityId)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
+  const activityBarExpanded = useIde((s) => s.activityBarExpanded)
   const setActiveActivity = useIde((s) => s.setActiveActivity)
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
+  const setActivityBarExpanded = useIde((s) => s.setActivityBarExpanded)
 
   const runtimeSettings = useQuery(orgRuntimeSettingsQueryOptions(orgSlug))
   const visibilityContext: ActivityVisibilityContext = {
@@ -74,32 +76,49 @@ export function IdeActivityBar({
   return (
     <nav
       aria-label="Editor activities"
-      className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-border bg-sidebar py-2"
+      className={cn(
+        'flex shrink-0 flex-col gap-1 border-r border-border bg-sidebar py-2 transition-[width] duration-150',
+        activityBarExpanded ? 'w-56 items-stretch px-2' : 'w-11 items-center',
+      )}
     >
-      <IdeBrand />
+      <IdeBrand expanded={activityBarExpanded} />
 
       {activities.map((activity) => {
         const isActive = activity.id === activeActivityId
         const expanded = isActive && !(activity.mode === 'sidebar' && sidebarCollapsed)
-        return (
+        const button = (
+          <button
+            type="button"
+            onClick={() => handleClick(activity)}
+            aria-label={activity.label}
+            aria-pressed={isActive}
+            className={cn(
+              'relative flex items-center rounded-lg transition-colors',
+              activityBarExpanded ? 'h-8 w-full justify-start gap-2 px-3' : 'size-8 justify-center',
+              expanded
+                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+            )}
+          >
+            {expanded ? (
+              <span
+                className={cn(
+                  'absolute w-0.5 rounded-full bg-sidebar-primary',
+                  activityBarExpanded ? 'inset-y-1.5 left-0' : 'inset-y-1.5 -left-1.5',
+                )}
+              />
+            ) : null}
+            <Icon name={activity.icon} size={17} className="shrink-0" />
+            {activityBarExpanded ? (
+              <span className="truncate text-sm">{activity.label}</span>
+            ) : null}
+          </button>
+        )
+        return activityBarExpanded ? (
+          <div key={activity.id}>{button}</div>
+        ) : (
           <Tip key={activity.id} label={activity.label} side="right">
-            <button
-              type="button"
-              onClick={() => handleClick(activity)}
-              aria-label={activity.label}
-              aria-pressed={isActive}
-              className={cn(
-                'relative flex size-8 items-center justify-center rounded-lg transition-colors',
-                expanded
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                  : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
-              )}
-            >
-              {expanded ? (
-                <span className="absolute inset-y-1.5 -left-1.5 w-0.5 rounded-full bg-sidebar-primary" />
-              ) : null}
-              <Icon name={activity.icon} size={17} />
-            </button>
+            {button}
           </Tip>
         )
       })}
@@ -116,12 +135,37 @@ export function IdeActivityBar({
         session={session}
         canAccessOrgSettings={canAccessOrgSettings}
       />
+
+      <Tip label={activityBarExpanded ? 'Collapse sidebar' : 'Expand sidebar'} side="right">
+        <button
+          type="button"
+          onClick={() => setActivityBarExpanded(!activityBarExpanded)}
+          aria-label="Toggle activity bar"
+          className={cn(
+            'flex items-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground',
+            activityBarExpanded ? 'h-8 w-full justify-start gap-2 px-3' : 'size-8 justify-center',
+          )}
+        >
+          <Icon name="sidebar-left" size={17} className="shrink-0" />
+        </button>
+      </Tip>
     </nav>
   )
 }
 
-function IdeBrand() {
+function IdeBrand({ expanded }: { expanded: boolean }) {
   const brand = useBrand()
+  if (expanded) {
+    return (
+      <Link
+        to="/"
+        className="flex h-8 items-center rounded-lg px-3 text-foreground transition-colors hover:bg-sidebar-accent/60"
+        aria-label={`${brand.productName} home`}
+      >
+        <brand.LogoLockup size={20} className="shrink-0" />
+      </Link>
+    )
+  }
   return (
     <Tip label="Back to dashboard" side="right">
       <Link

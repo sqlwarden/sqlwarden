@@ -501,6 +501,19 @@ describe('activity state', () => {
   })
 })
 
+describe('activityBarExpanded', () => {
+  it('defaults to collapsed', () => {
+    const store = createIdeStore('test-org', 1)
+    expect(store.getState().activityBarExpanded).toBe(false)
+  })
+
+  it('setActivityBarExpanded updates the flag', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().setActivityBarExpanded(true)
+    expect(store.getState().activityBarExpanded).toBe(true)
+  })
+})
+
 describe('pendingJump', () => {
   it('setPendingJump stores a jump target and clearPendingJump resets it', () => {
     const store = createIdeStore('test-org', 1)

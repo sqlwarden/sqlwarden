@@ -59,7 +59,7 @@ export function AppShellHeader({ label, icon }: { label: string; icon: AppIcon |
           <Tip label={label} side="right">
             <SidebarMenuButton className="h-auto items-center gap-2.5 py-2.5 hover:bg-transparent">
               <span className="shrink-0 text-sidebar-foreground [&_svg]:size-5">{iconNode}</span>
-              <span className="min-w-0 flex-1 truncate text-left text-[15px] font-semibold tracking-tight">
+              <span className="min-w-0 flex-1 truncate text-left font-heading text-[15px] font-semibold tracking-tight">
                 {label}
               </span>
             </SidebarMenuButton>

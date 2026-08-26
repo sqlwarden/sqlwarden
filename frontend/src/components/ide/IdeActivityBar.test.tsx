@@ -117,6 +117,36 @@ describe('IdeActivityBar', () => {
     expect(screen.getByRole('link', { name: /home$/ })).toHaveAttribute('href', '/')
   })
 
+  it('is collapsed by default and expands to show activity labels via the toggle', async () => {
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const user = userEvent.setup()
+    const workspace = makeWorkspace(1, 'Analytics')
+    render(
+      <ThemeProvider disableTransitionOnChange={false}>
+        <QueryClientProvider client={createTestQueryClient()}>
+          <IdeStoreContext.Provider value={store}>
+            <IdeActivityBar
+              orgSlug="acme"
+              workspaces={[workspace]}
+              activeWorkspace={workspace}
+              onSelectWorkspace={vi.fn()}
+              session={undefined}
+              canAccessOrgSettings={false}
+            />
+          </IdeStoreContext.Provider>
+        </QueryClientProvider>
+      </ThemeProvider>,
+    )
+
+    expect(store.getState().activityBarExpanded).toBe(false)
+    expect(screen.queryByText('Explorer')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Toggle activity bar' }))
+
+    expect(store.getState().activityBarExpanded).toBe(true)
+    expect(screen.getByText('Explorer')).toBeInTheDocument()
+  })
+
   it('toggles the active sidebar and expands it when switching activities', async () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
     const user = userEvent.setup()

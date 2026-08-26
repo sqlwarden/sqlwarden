@@ -139,6 +139,8 @@ export type IdeState = {
   /** Active sidebar/page activity id (see ideActivities). */
   activeActivityId: string
   sidebarCollapsed: boolean
+  /** Whether the leftmost activity rail shows icon+label rows and the brand wordmark. Persisted. */
+  activityBarExpanded: boolean
   /** Per-workspace editor layout tree (split groups + their tab lists). */
   layout: Record<number, LayoutNode>
   /** Focused group id per workspace — drives which group Run/Save/results target. */
@@ -235,6 +237,7 @@ export type IdeActions = {
   setMaximizedPane: (pane: IdeState['maximizedPane']) => void
   setActiveActivity: (activityId: string) => void
   setSidebarCollapsed: (collapsed: boolean) => void
+  setActivityBarExpanded: (expanded: boolean) => void
   setSession: (connectionId: number, sessionId: string) => void
   clearSession: (connectionId: number) => void
   /** Reconcile the sessions map with authoritative backend data. When
@@ -373,6 +376,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         maximizedPane: null,
         activeActivityId: 'connections',
         sidebarCollapsed: false,
+        activityBarExpanded: false,
         layout: {},
         activeGroupId: {},
         draggingTab: null,
@@ -663,6 +667,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         setMaximizedPane: (pane) => set({ maximizedPane: pane }),
         setActiveActivity: (activityId) => set({ activeActivityId: activityId }),
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+        setActivityBarExpanded: (expanded) => set({ activityBarExpanded: expanded }),
 
         setSession: (connectionId, sessionId) =>
           set((s) => ({ sessions: { ...s.sessions, [connectionId]: sessionId } })),
@@ -966,6 +971,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   maximizedPane: null,
   activeActivityId: 'connections',
   sidebarCollapsed: false,
+  activityBarExpanded: false,
   layout: {},
   activeGroupId: {},
   draggingTab: null,
@@ -1010,6 +1016,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   setMaximizedPane: _noop,
   setActiveActivity: _noop,
   setSidebarCollapsed: _noop,
+  setActivityBarExpanded: _noop,
   setSession: _noop,
   clearSession: _noop,
   syncSessions: _noop,
