@@ -7,7 +7,7 @@ vi.mock('#/lib/api/query', () => ({ closeConnectionQueryCursor: mocks.closeCurso
 import { closeRunCursors, RUN_HISTORY_CAP, runsToEvict } from './resultRunHistory'
 
 function run(id: string, results: ResultRun['results'] = []): ResultRun {
-  return { id, results, selectedIndex: 0, createdAt: 0 }
+  return { id, tabId: 'tab-1', results, selectedIndex: 0, createdAt: 0 }
 }
 
 describe('runsToEvict', () => {

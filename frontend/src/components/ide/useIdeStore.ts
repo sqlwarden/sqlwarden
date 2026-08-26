@@ -64,6 +64,11 @@ export type PendingUnsafeQuery = {
  *  back to an earlier run's tab still shows its results. */
 export type ResultRun = {
   id: string
+  /** The tab this run was executed from. Runs are still stored per-tab in
+   *  `resultRuns`, but carry their own origin tab id so the results panel can
+   *  find/act on a run (select, close, pin) while showing a cross-tab view
+   *  (see resultsPanelMode / resultRunFilter.ts). */
+  tabId: string
   results: QueryResult[]
   selectedIndex: number
   createdAt: number
@@ -72,6 +77,10 @@ export type ResultRun = {
    *  from history-cap eviction — see resultTabMenu.ts and resultRunHistory.ts. */
   pinned?: boolean
 }
+
+/** How the results panel scopes which runs it shows relative to the focused
+ *  editor tab — see resultRunFilter.ts for the filtering logic. */
+export type ResultsPanelMode = 'shared' | 'per-connection' | 'per-editor'
 
 const TERMINAL_STATUSES: ReadonlySet<QueryResult['status']> = new Set([
   'ok',
@@ -152,6 +161,13 @@ export type IdeState = {
   resultRuns: Record<string, ResultRun[]>
   /** Which run's results the results pane shows, keyed by tabId. Not persisted. */
   selectedRunId: Record<string, string>
+  /** Which run to show in 'shared' mode. Not persisted (references ephemeral resultRuns). */
+  sharedSelectedRunId?: string
+  /** Which run to show in 'per-connection' mode, keyed by connectionId. Not persisted. */
+  connectionSelectedRunId: Record<number, string>
+  /** How the results panel scopes runs relative to the focused editor tab.
+   *  Persisted — this is a durable user preference, unlike the ephemeral run state above. */
+  resultsPanelMode: ResultsPanelMode
   /** Tabs with an in-flight query. Not persisted to IndexedDB. */
   runningTabs: Record<string, boolean>
   /** AbortControllers for in-flight fetch requests, keyed by tabId. Not persisted. */
@@ -244,6 +260,11 @@ export type IdeActions = {
   abandonPendingRunConfirmation: (tabId: string) => void
   /** Selects which run's results the results pane displays. */
   setSelectedRun: (tabId: string, runId: string) => void
+  /** Selects which run 'shared' mode shows. */
+  setSharedSelectedRun: (runId: string) => void
+  /** Selects which run 'per-connection' mode shows for a given connection. */
+  setConnectionSelectedRun: (connectionId: number, runId: string) => void
+  setResultsPanelMode: (mode: ResultsPanelMode) => void
   /** Selects which statement's result is shown within one run. */
   setSelectedIndexInRun: (tabId: string, runId: string, index: number) => void
   /** Closes one run tab. Reselects the previous run, or the next one if the first closed. */
@@ -363,6 +384,9 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         sessions: {},
         resultRuns: {},
         selectedRunId: {},
+        sharedSelectedRunId: undefined,
+        connectionSelectedRunId: {},
+        resultsPanelMode: 'shared',
         runningTabs: {},
         abortControllers: {},
         pendingConfirmations: {},
@@ -678,6 +702,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
                 ...(s.resultRuns[tabId] ?? []),
                 {
                   id: runId,
+                  tabId,
                   results: sqls.map((sql) => ({ status: 'pending' as const, sql })),
                   selectedIndex: 0,
                   createdAt: Date.now(),
@@ -776,6 +801,15 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
 
         setSelectedRun: (tabId, runId) =>
           set((s) => ({ selectedRunId: { ...s.selectedRunId, [tabId]: runId } })),
+
+        setSharedSelectedRun: (runId) => set({ sharedSelectedRunId: runId }),
+
+        setConnectionSelectedRun: (connectionId, runId) =>
+          set((s) => ({
+            connectionSelectedRunId: { ...s.connectionSelectedRunId, [connectionId]: runId },
+          })),
+
+        setResultsPanelMode: (mode) => set({ resultsPanelMode: mode }),
 
         setSelectedIndexInRun: (tabId, runId, index) =>
           set((s) => {
@@ -889,6 +923,8 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
           abortControllers: _ac,
           pendingConfirmations: _pc,
           selectedRunId: _sr,
+          sharedSelectedRunId: _ssr,
+          connectionSelectedRunId: _csr,
           draggingTab: _dt,
           focusEditorRequest: _fe,
           pendingJump: _pj,
@@ -941,6 +977,9 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   sessions: {},
   resultRuns: {},
   selectedRunId: {},
+  sharedSelectedRunId: undefined,
+  connectionSelectedRunId: {},
+  resultsPanelMode: 'shared',
   runningTabs: {},
   abortControllers: {},
   pendingConfirmations: {},
@@ -984,6 +1023,9 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   clearPendingConfirmation: _noop,
   abandonPendingRunConfirmation: _noop,
   setSelectedRun: _noop,
+  setSharedSelectedRun: _noop,
+  setConnectionSelectedRun: _noop,
+  setResultsPanelMode: _noop,
   setSelectedIndexInRun: _noop,
   closeRunTab: _noop,
   toggleRunPin: _noop,
