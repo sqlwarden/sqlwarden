@@ -624,7 +624,7 @@ function CancelledState({
         connection={connection}
       />
       <div className="min-h-0 flex-1 overflow-auto p-3">
-        <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 p-3">
+        <div className="flex items-start gap-2.5 rounded-lg bg-muted/40 p-3">
           <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
           <div className="flex flex-col gap-0.5">
             <span className="text-xs font-medium text-foreground">Query cancelled</span>
@@ -643,7 +643,7 @@ function EmptyState() {
     <div className="flex h-full min-h-0 flex-col bg-card">
       <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-muted/50">
+          <div className="flex size-10 items-center justify-center rounded-lg bg-muted/50">
             <Icon name="table" size={17} className="text-muted-foreground" />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -1030,7 +1030,7 @@ function ResultSetView({
           connection={connection}
         />
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <Icon name="checkmark-circle-02" size={14} className="text-green-500" />
             <span className="font-medium text-foreground">Query executed</span>
             {rowsAffected !== undefined && (
