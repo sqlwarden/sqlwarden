@@ -186,7 +186,7 @@ jobs:
               throw "Invalid Authenticode signature for $target`: $($signature.StatusMessage)"
             }
           }
-          $productVersion = (Get-Item $app).VersionInfo.ProductVersion
+          $productVersion = (Get-Item $app).VersionInfo.ProductVersionRaw.ToString()
           if (-not $productVersion.StartsWith('${{ needs.prepare.outputs.os_version }}')) {
             throw "Windows product version $productVersion does not match ${{ needs.prepare.outputs.os_version }}"
           }
