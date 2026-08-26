@@ -40,15 +40,34 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onKeyDown,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
 }) {
+  function handleKeyDown(
+    event: Parameters<NonNullable<DialogPrimitive.Popup.Props['onKeyDown']>>[0],
+  ) {
+    onKeyDown?.(event)
+    if (event.defaultPrevented) return
+    if (event.key !== 'Enter' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+      return
+    }
+    const target = event.target as HTMLElement
+    if (target.tagName === 'TEXTAREA' || target.tagName === 'BUTTON') return
+    if (target.closest('[role="listbox"], [role="menu"], [data-slot="select-trigger"]')) return
+    const form = target.closest('form')
+    if (!form) return
+    event.preventDefault()
+    form.requestSubmit()
+  }
+
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
+        onKeyDown={handleKeyDown}
         className={cn(
           'fixed top-1/2 left-1/2 z-50 flex w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 max-h-[calc(100svh-2rem)] flex-col overflow-hidden rounded-xl bg-popover text-xs/relaxed text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
           className,
