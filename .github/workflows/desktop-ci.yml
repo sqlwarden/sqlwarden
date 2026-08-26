@@ -108,7 +108,7 @@ jobs:
         run: |
           $app = Resolve-Path 'cmd/desktop/build/bin/sqlwarden-desktop.exe'
           $installer = Resolve-Path 'cmd/desktop/build/bin/SQLWarden-amd64-installer.exe'
-          $productVersion = (Get-Item $app).VersionInfo.ProductVersion
+          $productVersion = (Get-Item $app).VersionInfo.ProductVersionRaw.ToString()
           if (-not $productVersion.StartsWith('0.0.0')) {
             throw "Unexpected Windows product version $productVersion"
           }

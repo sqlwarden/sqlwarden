@@ -30,6 +30,15 @@ func TestDesktopReleaseMetadata(t *testing.T) {
 	if config.Info.ProductVersion != "0.0.0" {
 		t.Fatalf("development product version = %q", config.Info.ProductVersion)
 	}
+	windowsInfo := readReleaseAsset(t, "build/windows/info.json")
+	for _, value := range []string{
+		`"file_version": "{{.Info.ProductVersion}}.0"`,
+		`"product_version": "{{.Info.ProductVersion}}.0"`,
+	} {
+		if !strings.Contains(windowsInfo, value) {
+			t.Fatalf("Windows version metadata is missing %q", value)
+		}
+	}
 
 	plist := readReleaseAsset(t, "build/darwin/Info.plist")
 	for _, value := range []string{"com.sqlwarden.desktop", "<string>11.0</string>", "{{.Info.ProductVersion}}"} {
