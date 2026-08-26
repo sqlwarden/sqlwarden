@@ -94,6 +94,29 @@ describe('IdeActivityBar', () => {
     ])
   })
 
+  it('renders a brand link back to the dashboard', () => {
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const workspace = makeWorkspace(1, 'Analytics')
+    render(
+      <ThemeProvider disableTransitionOnChange={false}>
+        <QueryClientProvider client={createTestQueryClient()}>
+          <IdeStoreContext.Provider value={store}>
+            <IdeActivityBar
+              orgSlug="acme"
+              workspaces={[workspace]}
+              activeWorkspace={workspace}
+              onSelectWorkspace={vi.fn()}
+              session={undefined}
+              canAccessOrgSettings={false}
+            />
+          </IdeStoreContext.Provider>
+        </QueryClientProvider>
+      </ThemeProvider>,
+    )
+
+    expect(screen.getByRole('link', { name: /home$/ })).toHaveAttribute('href', '/')
+  })
+
   it('toggles the active sidebar and expands it when switching activities', async () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
     const user = userEvent.setup()

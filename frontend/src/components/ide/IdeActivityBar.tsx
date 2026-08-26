@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { orgRuntimeSettingsQueryOptions } from '#/lib/api/query'
+import { useBrand } from '#/lib/brand/brand'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { AppShellPreferencesPopover, useAppShellPreferences } from '#/components/app-shell'
@@ -75,6 +76,8 @@ export function IdeActivityBar({
       aria-label="Editor activities"
       className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-border bg-sidebar py-2"
     >
+      <IdeBrand />
+
       {activities.map((activity) => {
         const isActive = activity.id === activeActivityId
         const expanded = isActive && !(activity.mode === 'sidebar' && sidebarCollapsed)
@@ -114,6 +117,21 @@ export function IdeActivityBar({
         canAccessOrgSettings={canAccessOrgSettings}
       />
     </nav>
+  )
+}
+
+function IdeBrand() {
+  const brand = useBrand()
+  return (
+    <Tip label="Back to dashboard" side="right">
+      <Link
+        to="/"
+        className="flex size-8 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-sidebar-accent/60"
+        aria-label={`${brand.productName} home`}
+      >
+        <brand.LogoMark size={18} className="shrink-0" />
+      </Link>
+    </Tip>
   )
 }
 
