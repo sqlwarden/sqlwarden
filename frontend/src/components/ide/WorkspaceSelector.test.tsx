@@ -48,4 +48,16 @@ describe('WorkspaceSelector', () => {
 
     expect(onSelect).toHaveBeenCalledWith(2)
   })
+
+  it('shows a visible name label alongside the icon when expanded', () => {
+    render(
+      <WorkspaceSelector
+        workspaces={workspaces}
+        activeWorkspace={workspaces[0]}
+        onSelect={vi.fn()}
+        expanded
+      />,
+    )
+    expect(screen.getByText('Analytics')).toBeInTheDocument()
+  })
 })

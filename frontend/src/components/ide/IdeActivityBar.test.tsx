@@ -117,7 +117,7 @@ describe('IdeActivityBar', () => {
     expect(screen.getByRole('link', { name: /home$/ })).toHaveAttribute('href', '/')
   })
 
-  it('is collapsed by default and expands to show activity labels via the toggle', async () => {
+  it('is collapsed by default and expands to show activity labels, workspace, UI Lab, and account details via the toggle', async () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
     const user = userEvent.setup()
     const workspace = makeWorkspace(1, 'Analytics')
@@ -130,7 +130,7 @@ describe('IdeActivityBar', () => {
               workspaces={[workspace]}
               activeWorkspace={workspace}
               onSelectWorkspace={vi.fn()}
-              session={undefined}
+              session={session}
               canAccessOrgSettings={false}
             />
           </IdeStoreContext.Provider>
@@ -140,11 +140,18 @@ describe('IdeActivityBar', () => {
 
     expect(store.getState().activityBarExpanded).toBe(false)
     expect(screen.queryByText('Explorer')).not.toBeInTheDocument()
+    expect(screen.queryByText('Analytics')).not.toBeInTheDocument()
+    expect(screen.queryByText('UI Lab')).not.toBeInTheDocument()
+    expect(screen.queryByText('ada@example.com')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Toggle activity bar' }))
 
     expect(store.getState().activityBarExpanded).toBe(true)
     expect(screen.getByText('Explorer')).toBeInTheDocument()
+    expect(screen.getByText('Analytics')).toBeInTheDocument()
+    expect(screen.getByText('UI Lab')).toBeInTheDocument()
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
+    expect(screen.getByText('ada@example.com')).toBeInTheDocument()
   })
 
   it('toggles the active sidebar and expands it when switching activities', async () => {

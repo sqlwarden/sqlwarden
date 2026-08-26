@@ -93,8 +93,8 @@ export function IdeActivityBar({
             aria-label={activity.label}
             aria-pressed={isActive}
             className={cn(
-              'relative flex items-center rounded-lg transition-colors',
-              activityBarExpanded ? 'h-8 w-full justify-start gap-2 px-3' : 'size-8 justify-center',
+              'relative flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs transition-colors',
+              activityBarExpanded ? 'h-8 w-full justify-start gap-2 p-2' : 'size-8 justify-center',
               expanded
                 ? 'bg-sidebar-accent text-sidebar-accent-foreground'
                 : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
@@ -109,9 +109,7 @@ export function IdeActivityBar({
               />
             ) : null}
             <Icon name={activity.icon} size={17} className="shrink-0" />
-            {activityBarExpanded ? (
-              <span className="truncate text-sm">{activity.label}</span>
-            ) : null}
+            {activityBarExpanded ? <span className="truncate">{activity.label}</span> : null}
           </button>
         )
         return activityBarExpanded ? (
@@ -129,11 +127,13 @@ export function IdeActivityBar({
         workspaces={workspaces}
         activeWorkspace={activeWorkspace}
         onSelect={onSelectWorkspace}
+        expanded={activityBarExpanded}
       />
       <RailPreferencesAndAvatar
         orgSlug={orgSlug}
         session={session}
         canAccessOrgSettings={canAccessOrgSettings}
+        expanded={activityBarExpanded}
       />
 
       <Tip label={activityBarExpanded ? 'Collapse sidebar' : 'Expand sidebar'} side="right">
@@ -142,8 +142,8 @@ export function IdeActivityBar({
           onClick={() => setActivityBarExpanded(!activityBarExpanded)}
           aria-label="Toggle activity bar"
           className={cn(
-            'flex items-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground',
-            activityBarExpanded ? 'h-8 w-full justify-start gap-2 px-3' : 'size-8 justify-center',
+            'flex items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground',
+            activityBarExpanded ? 'h-8 w-full' : 'size-8',
           )}
         >
           <Icon name="sidebar-left" size={17} className="shrink-0" />
@@ -157,25 +157,29 @@ function IdeBrand({ expanded }: { expanded: boolean }) {
   const brand = useBrand()
   if (expanded) {
     return (
-      <Link
-        to="/"
-        className="flex h-8 items-center rounded-lg px-3 text-foreground transition-colors hover:bg-sidebar-accent/60"
-        aria-label={`${brand.productName} home`}
-      >
-        <brand.LogoLockup size={20} className="shrink-0" />
-      </Link>
+      <div className="mb-1 border-b border-border pb-2">
+        <Link
+          to="/"
+          className="flex items-center gap-2.5 rounded-[calc(var(--radius-sm)+2px)] p-2 py-2.5 text-foreground transition-colors hover:bg-sidebar-accent/60"
+          aria-label={`${brand.productName} home`}
+        >
+          <brand.LogoLockup size={16} className="shrink-0" />
+        </Link>
+      </div>
     )
   }
   return (
-    <Tip label="Back to dashboard" side="right">
-      <Link
-        to="/"
-        className="flex size-8 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-sidebar-accent/60"
-        aria-label={`${brand.productName} home`}
-      >
-        <brand.LogoMark size={18} className="shrink-0" />
-      </Link>
-    </Tip>
+    <div className="mb-1 border-b border-border pb-2">
+      <Tip label="Back to dashboard" side="right">
+        <Link
+          to="/"
+          className="flex size-8 items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-foreground transition-colors hover:bg-sidebar-accent/60"
+          aria-label={`${brand.productName} home`}
+        >
+          <brand.LogoMark size={18} className="shrink-0" />
+        </Link>
+      </Tip>
+    </div>
   )
 }
 
@@ -183,10 +187,12 @@ function RailPreferencesAndAvatar({
   orgSlug,
   session,
   canAccessOrgSettings,
+  expanded,
 }: {
   orgSlug: string
   session: SessionResponse | undefined
   canAccessOrgSettings: boolean
+  expanded: boolean
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -204,25 +210,45 @@ function RailPreferencesAndAvatar({
   if (!session) return null
   const menuItems = buildUserMenuItems({ session, orgSlug, canAccessOrgSettings })
 
+  const avatarTrigger = (
+    <DropdownMenuTrigger
+      aria-label={session.account.name}
+      className={cn(
+        'flex cursor-pointer items-center rounded-[calc(var(--radius-sm)+2px)] text-xs transition-colors',
+        'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        expanded ? 'h-12 w-full gap-2 p-2' : 'size-8 justify-center',
+      )}
+    >
+      <UserAvatar value={session.account.name} fallback="U" size={28} />
+      {expanded ? (
+        <div className="grid min-w-0 flex-1 text-left leading-tight">
+          <span className="truncate font-medium">{session.account.name}</span>
+          <span className="truncate text-muted-foreground">{session.account.email}</span>
+        </div>
+      ) : null}
+    </DropdownMenuTrigger>
+  )
+
   return (
     <>
       <AppShellPreferencesPopover
         preferences={preferences}
         setPreferences={setPreferences}
         isAdmin={session.is_instance_admin}
-        buttonLabel=""
-        buttonClassName="size-8 justify-center px-0"
+        buttonLabel={expanded ? 'UI Lab' : ''}
+        buttonClassName={
+          expanded ? 'h-8 w-full justify-start gap-2 p-2 text-xs' : 'size-8 justify-center px-0'
+        }
       />
 
       <DropdownMenu>
-        <Tip label={session.account.name} side="right">
-          <DropdownMenuTrigger
-            aria-label={session.account.name}
-            className="inline-flex cursor-pointer items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <UserAvatar value={session.account.name} fallback="U" size={28} />
-          </DropdownMenuTrigger>
-        </Tip>
+        {expanded ? (
+          avatarTrigger
+        ) : (
+          <Tip label={session.account.name} side="right">
+            {avatarTrigger}
+          </Tip>
+        )}
         <DropdownMenuContent align="start" side="right" className="w-64 min-w-64">
           <DropdownMenuGroup>
             <DropdownMenuLabel className="px-2 py-2">
