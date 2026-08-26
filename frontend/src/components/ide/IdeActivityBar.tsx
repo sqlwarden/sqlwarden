@@ -1,8 +1,24 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { orgRuntimeSettingsQueryOptions } from '#/lib/api/query'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
+import { AppShellPreferencesPopover, useAppShellPreferences } from '#/components/app-shell'
+import { InitialsAvatar } from '#/components/InitialsAvatar'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '#/components/ui/dropdown-menu'
+import { api } from '#/lib/api/client'
+import { clearAccessToken } from '#/lib/auth/access-token'
+import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import type { SessionResponse, Workspace } from '#/lib/api/types'
+import { buildUserMenuItems } from '#/lib/user-menu'
 import { useIde } from './useIdeStore'
 import {
   visibleActivities,
@@ -16,7 +32,7 @@ type IdeActivityBarProps = {
   orgSlug: string
   workspaces: Workspace[]
   activeWorkspace: Workspace | undefined
-  onSelectWorkspace: (workspaceId: number) => void
+  onSelectWorkspace: (id: number) => void
   session: SessionResponse | undefined
   canAccessOrgSettings: boolean
 }
@@ -26,8 +42,8 @@ export function IdeActivityBar({
   workspaces,
   activeWorkspace,
   onSelectWorkspace,
-  session: _session,
-  canAccessOrgSettings: _canAccessOrgSettings,
+  session,
+  canAccessOrgSettings,
 }: IdeActivityBarProps) {
   const activeActivityId = useIde((s) => s.activeActivityId)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
@@ -84,13 +100,109 @@ export function IdeActivityBar({
           </Tip>
         )
       })}
-      <div className="mt-auto">
-        <WorkspaceSelector
-          workspaces={workspaces}
-          activeWorkspace={activeWorkspace}
-          onSelect={onSelectWorkspace}
-        />
-      </div>
+
+      <div className="flex-1" />
+
+      <WorkspaceSelector
+        workspaces={workspaces}
+        activeWorkspace={activeWorkspace}
+        onSelect={onSelectWorkspace}
+      />
+      <RailPreferencesAndAvatar
+        orgSlug={orgSlug}
+        session={session}
+        canAccessOrgSettings={canAccessOrgSettings}
+      />
     </nav>
+  )
+}
+
+function RailPreferencesAndAvatar({
+  orgSlug,
+  session,
+  canAccessOrgSettings,
+}: {
+  orgSlug: string
+  session: SessionResponse | undefined
+  canAccessOrgSettings: boolean
+}) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { preferences, setPreferences } = useAppShellPreferences()
+
+  const logout = useMutation({
+    mutationFn: async () => api.post<void>('/api/v1/auth/logout'),
+    onSettled: async () => {
+      clearAccessToken()
+      clearAuthScopedQueryCache(queryClient)
+      await navigate({ to: '/login', replace: true })
+    },
+  })
+
+  if (!session) return null
+  const menuItems = buildUserMenuItems({ session, orgSlug, canAccessOrgSettings })
+
+  return (
+    <>
+      <AppShellPreferencesPopover
+        preferences={preferences}
+        setPreferences={setPreferences}
+        isAdmin={session.is_instance_admin}
+        buttonLabel=""
+        buttonClassName="size-8 justify-center px-0"
+      />
+
+      <DropdownMenu>
+        <Tip label={session.account.name} side="right">
+          <DropdownMenuTrigger
+            aria-label={session.account.name}
+            className="inline-flex cursor-pointer items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <InitialsAvatar
+              value={session.account.name}
+              fallback="U"
+              className="size-7 rounded-full"
+            />
+          </DropdownMenuTrigger>
+        </Tip>
+        <DropdownMenuContent align="start" side="right" className="w-64 min-w-64">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="px-2 py-2">
+              <div className="flex flex-col gap-0.5 normal-case tracking-normal">
+                <span className="truncate text-sm font-medium text-foreground">
+                  {session.account.name}
+                </span>
+                <span className="truncate text-xs font-normal text-muted-foreground">
+                  {session.account.email}
+                </span>
+              </div>
+            </DropdownMenuLabel>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            {menuItems.map((item) => (
+              <DropdownMenuItem
+                key={item.id}
+                render={<Link to={item.to as never} params={item.params as never} />}
+              >
+                <Icon name={item.icon} size={20} />
+                {item.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            variant="destructive"
+            disabled={logout.isPending}
+            onClick={() => {
+              logout.mutate()
+            }}
+          >
+            <Icon name="logout-03" size={20} />
+            {logout.isPending ? 'Signing out...' : 'Sign out'}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
   )
 }
