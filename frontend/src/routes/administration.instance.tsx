@@ -402,7 +402,7 @@ function SettingsInstancePage() {
                     />
                   </Field>
 
-                  <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-4">
+                  <label className="flex cursor-pointer items-start gap-3 py-2">
                     <Checkbox
                       checked={form.personal_spaces_enabled}
                       disabled={disabled}
@@ -458,7 +458,7 @@ function SettingsInstancePage() {
                     />
                   </Field>
 
-                  <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-4">
+                  <label className="flex cursor-pointer items-start gap-3 py-2">
                     <Checkbox
                       checked={form.sessions_revocation_enabled}
                       disabled={disabled}
@@ -651,7 +651,7 @@ function SettingsInstancePage() {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col gap-5">
-                  <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-4 has-disabled:cursor-not-allowed has-disabled:opacity-50">
+                  <label className="flex cursor-pointer items-start gap-3 py-2 has-disabled:cursor-not-allowed has-disabled:opacity-50">
                     <Checkbox
                       checked={form.file_revisions_enabled}
                       disabled={disabled || fileRevisionsUnsupported}

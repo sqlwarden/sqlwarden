@@ -286,7 +286,7 @@ function OrganizationGeneralSettingsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-4">
+                <label className="flex cursor-pointer items-start gap-3 py-2">
                   <Checkbox
                     checked={schemaSnapshotsEnabled}
                     disabled={!canWrite || updateOrg.isPending}
@@ -312,7 +312,7 @@ function OrganizationGeneralSettingsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-4">
+                <label className="flex cursor-pointer items-start gap-3 py-2">
                   <Checkbox
                     checked={maskConnectionCredentialsOnEdit}
                     disabled={!canWrite || updateOrg.isPending}
