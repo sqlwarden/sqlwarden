@@ -25,7 +25,7 @@ import {
   DialogTrigger,
 } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
-import { InitialsAvatar } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
@@ -302,7 +302,7 @@ function SettingsUsersPage() {
                 <TableRow key={user.id}>
                   <TableCell>
                     <div className="flex min-w-0 items-center gap-3">
-                      <InitialsAvatar value={user.name || user.email} />
+                      <UserAvatar value={user.name || user.email} />
                       <div className="min-w-0">
                         <div className="truncate font-medium text-foreground">{user.name}</div>
                         <div className="truncate text-muted-foreground">{user.email}</div>

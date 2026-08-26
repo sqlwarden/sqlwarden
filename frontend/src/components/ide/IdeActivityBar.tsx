@@ -5,7 +5,7 @@ import { useBrand } from '#/lib/brand/brand'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { AppShellPreferencesPopover, useAppShellPreferences } from '#/components/app-shell'
-import { InitialsAvatar } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -176,23 +176,22 @@ function RailPreferencesAndAvatar({
             aria-label={session.account.name}
             className="inline-flex cursor-pointer items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <InitialsAvatar
-              value={session.account.name}
-              fallback="U"
-              className="size-7 rounded-full"
-            />
+            <UserAvatar value={session.account.name} fallback="U" size={28} />
           </DropdownMenuTrigger>
         </Tip>
         <DropdownMenuContent align="start" side="right" className="w-64 min-w-64">
           <DropdownMenuGroup>
             <DropdownMenuLabel className="px-2 py-2">
-              <div className="flex flex-col gap-0.5 normal-case tracking-normal">
-                <span className="truncate text-sm font-medium text-foreground">
-                  {session.account.name}
-                </span>
-                <span className="truncate text-xs font-normal text-muted-foreground">
-                  {session.account.email}
-                </span>
+              <div className="flex items-center gap-2 normal-case tracking-normal">
+                <UserAvatar value={session.account.name} fallback="U" size={28} />
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate text-sm font-medium text-foreground">
+                    {session.account.name}
+                  </span>
+                  <span className="truncate text-xs font-normal text-muted-foreground">
+                    {session.account.email}
+                  </span>
+                </div>
               </div>
             </DropdownMenuLabel>
           </DropdownMenuGroup>

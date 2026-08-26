@@ -30,7 +30,8 @@ import {
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
 import { EmptyState } from '#/components/EmptyState'
-import { InitialsAvatar, getInitials } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
+import { getInitials } from '#/lib/initials'
 import { Skeleton } from '#/components/ui/skeleton'
 import { cn } from '#/lib/utils'
 import { usePageTitle } from '#/lib/page-title'
@@ -294,7 +295,7 @@ function LandingUserMenu({ session }: { session: SessionResponse }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="inline-flex cursor-pointer items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <InitialsAvatar value={session.account.name} fallback="U" className="size-9 rounded-full" />
+        <UserAvatar value={session.account.name} fallback="U" size={36} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64 min-w-64">
         <DropdownMenuGroup>

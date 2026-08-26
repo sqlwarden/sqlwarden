@@ -27,7 +27,7 @@ import {
 } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { EmptyState } from '#/components/EmptyState'
-import { getInitials } from '#/components/InitialsAvatar'
+import { getInitials } from '#/lib/initials'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'

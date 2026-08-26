@@ -47,10 +47,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '#/components/ui/dialog'
-import { getInitials } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
 import { SectionTabNav } from '#/components/SectionTabNav'
-import { entityColor } from '#/lib/entity-colors'
-import { cn } from '#/lib/utils'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
@@ -417,14 +415,7 @@ function UserPickerRow({
     <TableRow>
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div
-            className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
-              entityColor(member.name || member.email),
-            )}
-          >
-            {getInitials(member.name || member.email, '?')}
-          </div>
+          <UserAvatar value={member.name || member.email} fallback="?" />
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">
               {member.name || member.email}
@@ -495,14 +486,7 @@ function WorkspaceUserRow({
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div
-            className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
-              entityColor(member.name || member.email),
-            )}
-          >
-            {getInitials(member.name || member.email, '?')}
-          </div>
+          <UserAvatar value={member.name || member.email} fallback="?" />
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">
               {member.name || member.email}

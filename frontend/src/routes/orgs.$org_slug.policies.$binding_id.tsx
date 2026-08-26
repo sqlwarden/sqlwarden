@@ -49,7 +49,7 @@ import {
 } from '#/components/ui/breadcrumb'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
-import { InitialsAvatar } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
 import { RoutePending } from '#/components/RoutePending'
 import { Skeleton } from '#/components/ui/skeleton'
 import { cn } from '#/lib/utils'
@@ -344,7 +344,7 @@ function SubjectIconLarge({
   binding: { subject_type: string; subject_name: string }
 }) {
   if (binding.subject_type === 'account') {
-    return <InitialsAvatar value={binding.subject_name} size="lg" />
+    return <UserAvatar value={binding.subject_name} size="lg" />
   }
   if (binding.subject_type === 'team') {
     return (
@@ -376,7 +376,7 @@ function SubjectTypeBadge({ subjectType }: { subjectType: string }) {
 function TeamMemberRow({ member }: { member: TeamMember }) {
   return (
     <div className="flex items-center gap-3 py-3">
-      <InitialsAvatar value={member.name || member.email} size="sm" />
+      <UserAvatar value={member.name || member.email} size="sm" />
       <div className="min-w-0">
         <div className="truncate text-sm font-medium text-foreground">
           {member.name || member.email}

@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
+    "@blobatar/react": "^2.5.0",
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/lang-sql": "^6.10.0",
@@ -53,6 +54,7 @@
     "@uiw/codemirror-theme-gruvbox-dark": "^4.25.10",
     "@uiw/codemirror-theme-vscode": "^4.25.10",
     "@xyflow/react": "^12.11.1",
+    "blobatar": "^2.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "elkjs": "^0.11.1",

@@ -7,7 +7,7 @@ import type { SessionResponse } from '#/lib/api/types'
 import { api } from '#/lib/api/client'
 import { clearAccessToken } from '#/lib/auth/access-token'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
-import { InitialsAvatar } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
 import { Button } from '#/components/ui/button'
 import {
   DropdownMenu,
@@ -215,7 +215,7 @@ export function AppShellUserMenu({ session }: { session: SessionResponse }) {
               />
             }
           >
-            <InitialsAvatar value={session.account.name} className="rounded-lg" />
+            <UserAvatar value={session.account.name} />
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">{session.account.name}</span>
               <span className="truncate text-xs text-muted-foreground">
@@ -232,7 +232,7 @@ export function AppShellUserMenu({ session }: { session: SessionResponse }) {
             <DropdownMenuGroup>
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-2 py-1.5 text-left text-sm">
-                  <InitialsAvatar value={session.account.name} className="rounded-lg" />
+                  <UserAvatar value={session.account.name} />
                   <div className="grid flex-1 text-left text-sm leading-tight">
                     <span className="truncate font-medium text-foreground">
                       {session.account.name}

@@ -21,7 +21,7 @@ import {
   DialogTrigger,
 } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
-import { InitialsAvatar } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
@@ -248,7 +248,7 @@ function SettingsAdministratorsPage() {
                 <TableRow key={administrator.account_id}>
                   <TableCell>
                     <div className="flex min-w-0 items-center gap-3">
-                      <InitialsAvatar
+                      <UserAvatar
                         value={administrator.account?.name || administrator.account?.email || 'A'}
                       />
                       <div className="min-w-0">

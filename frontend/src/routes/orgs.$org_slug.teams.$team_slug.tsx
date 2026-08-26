@@ -18,6 +18,9 @@ import {
 } from '#/lib/api/query'
 import type { OrgMember, TeamMember } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
+import { entityColor } from '#/lib/entity-colors'
+import { getInitials } from '#/lib/initials'
+import { cn } from '#/lib/utils'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,7 +52,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '#/components/ui/dialog'
-import { InitialsAvatar } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
@@ -251,9 +254,16 @@ function OrganizationTeamContextPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             {team.data ? (
-              <InitialsAvatar value={team.data.name} fallback="T" size="lg" />
+              <div
+                className={cn(
+                  'flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold',
+                  entityColor(team.data.name),
+                )}
+              >
+                {getInitials(team.data.name, 'T')}
+              </div>
             ) : (
-              <Skeleton className="size-10 shrink-0 rounded-full" />
+              <Skeleton className="size-10 shrink-0 rounded-md" />
             )}
             <div className="min-w-0">
               <h1 className="font-heading text-2xl font-semibold tracking-tight">{displayName}</h1>
@@ -512,7 +522,7 @@ function MemberRow({
           params={{ org_slug: orgSlug, account_id: String(member.account_id) }}
           className="flex min-w-0 items-center gap-3"
         >
-          <InitialsAvatar value={displayName} />
+          <UserAvatar value={displayName} />
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{displayName}</div>
             <div className="truncate text-muted-foreground">{member.email}</div>
@@ -571,7 +581,7 @@ function OrgMemberPickerRow({
     <TableRow>
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <InitialsAvatar value={displayName} />
+          <UserAvatar value={displayName} />
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{displayName}</div>
             <div className="truncate text-muted-foreground">{member.email}</div>

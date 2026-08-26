@@ -1,6 +1,6 @@
 import type { PolicyBinding } from '#/lib/api/types'
 import { Icon } from '#/lib/icons'
-import { getInitials } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
 import { Badge } from '#/components/ui/badge'
 import { Skeleton } from '#/components/ui/skeleton'
 import { TableCell, TableRow } from '#/components/ui/table'
@@ -49,16 +49,7 @@ export function PolicySubjectCell({
 
 function PolicySubjectIcon({ binding }: { binding: PolicyBinding }) {
   if (binding.subject_type === 'account') {
-    return (
-      <div
-        className={cn(
-          'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
-          entityColor(binding.subject_name),
-        )}
-      >
-        {getInitials(binding.subject_name, '?')}
-      </div>
-    )
+    return <UserAvatar value={binding.subject_name} fallback="?" />
   }
   if (binding.subject_type === 'team') {
     return (

@@ -21,7 +21,7 @@ import {
   DialogTrigger,
 } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
-import { getInitials } from '#/components/InitialsAvatar'
+import { getInitials } from '#/lib/initials'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'

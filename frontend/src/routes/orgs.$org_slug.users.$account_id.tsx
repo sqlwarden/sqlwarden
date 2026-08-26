@@ -18,6 +18,9 @@ import {
 } from '#/lib/api/query'
 import type { Team } from '#/lib/api/types'
 import { builtinRole, hasPermission, permission } from '#/lib/permissions'
+import { entityColor } from '#/lib/entity-colors'
+import { getInitials } from '#/lib/initials'
+import { cn } from '#/lib/utils'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,7 +60,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
-import { InitialsAvatar } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
@@ -228,7 +231,7 @@ function OrganizationUserContextPage() {
 
         <div className="flex min-w-0 items-center gap-3">
           {member.data ? (
-            <InitialsAvatar value={member.data.name || member.data.email} size="lg" />
+            <UserAvatar value={member.data.name || member.data.email} size="lg" />
           ) : (
             <Skeleton className="size-10 shrink-0 rounded-full" />
           )}
@@ -464,7 +467,14 @@ function TeamPickerRow({
     <TableRow>
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <InitialsAvatar value={team.name} fallback="T" />
+          <div
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
+              entityColor(team.name),
+            )}
+          >
+            {getInitials(team.name, 'T')}
+          </div>
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{team.name}</div>
             <div className="truncate text-muted-foreground">@{team.slug}</div>
@@ -528,7 +538,14 @@ function TeamRow({
           params={{ org_slug: orgSlug, team_slug: team.slug }}
           className="flex min-w-0 items-center gap-3"
         >
-          <InitialsAvatar value={team.name} fallback="T" />
+          <div
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
+              entityColor(team.name),
+            )}
+          >
+            {getInitials(team.name, 'T')}
+          </div>
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">{team.name}</div>
             <div className="truncate text-muted-foreground">@{team.slug}</div>
