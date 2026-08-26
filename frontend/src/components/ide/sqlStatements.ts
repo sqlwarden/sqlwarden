@@ -1,3 +1,16 @@
+import type { EditorTab } from './useIdeStore'
+
+/** Whether `tab` holds runnable SQL — a console/scratch tab, or a .sql file —
+ *  as opposed to a database object/diagram tab or a non-SQL file. */
+export function isSqlEditorTab(tab: EditorTab | undefined): boolean {
+  return (
+    !!tab &&
+    (tab.kind === 'scratch' ||
+      tab.kind === 'connection' ||
+      (tab.kind === 'file' && tab.title.toLowerCase().endsWith('.sql')))
+  )
+}
+
 /**
  * Splits `text` into statement spans on semicolons that are not inside string
  * literals or comments. Spans are [inclusive_start, exclusive_end] and each

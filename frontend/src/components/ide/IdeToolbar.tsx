@@ -33,7 +33,7 @@ import { useTransactionMode } from './useTransactionMode'
 import { UnsafeQueryDialog } from './UnsafeQueryDialog'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { formatEditorSql, sqlFormatterForDriver } from './sqlFormatting'
-import { splitSqlStatements } from './sqlStatements'
+import { isSqlEditorTab, splitSqlStatements } from './sqlStatements'
 
 type IdeToolbarProps = {
   orgSlug: string
@@ -73,11 +73,7 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
 
   // Export only makes sense for a runnable SQL query — not for a database
   // object/diagram tab or a non-SQL file (e.g. a previously exported CSV).
-  const isSqlTab =
-    !!activeTab &&
-    (activeTab.kind === 'scratch' ||
-      activeTab.kind === 'connection' ||
-      (activeTab.kind === 'file' && activeTab.title.toLowerCase().endsWith('.sql')))
+  const isSqlTab = isSqlEditorTab(activeTab)
 
   const showSave = Boolean(activeTab && (activeTab.kind !== 'file' || activeTab.isDirty))
 

@@ -90,12 +90,17 @@ export async function runStatementBatch(
           sql,
           connectionId,
         })
-        deps.setTransactionState(connectionId, {
-          mode: result.transaction.mode,
-          open: result.transaction.open,
-          pendingStatements: result.transaction.pending_statements,
-          statements: result.transaction.statements,
-        })
+        // Defensive: a stale/mismatched backend build could omit `transaction`
+        // even though the current API always sends it — don't let that crash
+        // an otherwise-successful run.
+        if (result.transaction) {
+          deps.setTransactionState(connectionId, {
+            mode: result.transaction.mode,
+            open: result.transaction.open,
+            pendingStatements: result.transaction.pending_statements,
+            statements: result.transaction.statements,
+          })
+        }
         deps.recordHistory({
           sqlText: sql,
           status: 'ok',

@@ -1,11 +1,16 @@
+import { QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import type { Workspace } from '#/lib/api/types'
+import { createTestQueryClient } from '#/test/render'
+import { server } from '#/test/server'
 import type { GroupNode } from './ideLayout'
 import type { EditorTab } from './useIdeStore'
 import { createIdeStore, IdeStoreContext } from './useIdeStore'
+import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 import { EditorGroup } from './EditorGroup'
 import { MAX_BROWSER_CSV_BYTES } from './csv/csvFile'
 
@@ -17,6 +22,13 @@ const mocks = vi.hoisted(() => ({
   fileContentHook: vi.fn(),
   downloadFile: vi.fn(),
   saveBlobAs: vi.fn(),
+  cancel: vi.fn(),
+  confirmAt: vi.fn(() => Promise.resolve()),
+  resolveDocumentText: vi.fn(() => ''),
+  resolveSql: vi.fn(() => 'select 1'),
+  run: vi.fn(() => Promise.resolve()),
+  runAll: vi.fn(() => Promise.resolve()),
+  isRunning: false,
 }))
 
 vi.mock('./useFileContent', () => ({
@@ -34,7 +46,12 @@ vi.mock('./useYDocRegistry', () => ({
 }))
 vi.mock('./IdeTabBar', () => ({ IdeTabBar: () => <div data-testid="tab-bar" /> }))
 vi.mock('./SqlEditor', () => ({
-  SqlEditor: (props: { tabId: string; groupId: string; onCursorChange?: unknown }) => {
+  SqlEditor: (props: {
+    tabId: string
+    groupId: string
+    onCursorChange?: unknown
+    contextMenu?: unknown
+  }) => {
     mocks.sqlEditor(props)
     return <div data-testid="sql-editor">{props.tabId}</div>
   },
@@ -54,6 +71,17 @@ vi.mock('./csv/CsvViewer', () => ({
     <div data-testid="csv-viewer">{doc.getText('content').toString()}</div>
   ),
 }))
+vi.mock('./useToolbarQueryAction', () => ({
+  useToolbarQueryAction: () => ({
+    cancel: mocks.cancel,
+    confirmAt: mocks.confirmAt,
+    isRunning: mocks.isRunning,
+    resolveDocumentText: mocks.resolveDocumentText,
+    resolveSql: mocks.resolveSql,
+    run: mocks.run,
+    runAll: mocks.runAll,
+  }),
+}))
 
 const workspace: Workspace = {
   id: 3,
@@ -72,10 +100,34 @@ function tab(kind: EditorTab['kind']): EditorTab {
   return { id: `${kind}:1`, workspaceId: 3, title: kind, kind, content: 'select 1' }
 }
 
+function Providers({
+  store,
+  views,
+  children,
+}: {
+  store: ReturnType<typeof createIdeStore>
+  views: ReturnType<typeof createEditorViewRegistry>
+  children: React.ReactNode
+}) {
+  return (
+    <QueryClientProvider client={createTestQueryClient()}>
+      <IdeStoreContext.Provider value={store}>
+        <EditorViewRegistryContext.Provider value={views}>
+          {children}
+        </EditorViewRegistryContext.Provider>
+      </IdeStoreContext.Provider>
+    </QueryClientProvider>
+  )
+}
+
 describe('EditorGroup', () => {
+  let store: ReturnType<typeof createIdeStore>
+  let views: ReturnType<typeof createEditorViewRegistry>
+
   beforeEach(() => {
     mocks.fileState.isLoading = false
     mocks.fileState.isError = false
+    mocks.isRunning = false
     mocks.getOrCreate.mockReset().mockImplementation((_id: string, content?: string) => {
       const doc = new Y.Doc()
       if (content) doc.getText('content').insert(0, content)
@@ -86,14 +138,36 @@ describe('EditorGroup', () => {
     mocks.fileContentHook.mockReset()
     mocks.downloadFile.mockReset()
     mocks.saveBlobAs.mockReset()
+    store = createIdeStore('acme', 1, 'ephemeral')
+    views = createEditorViewRegistry()
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 7,
+              workspace_id: 3,
+              environment_id: 2,
+              name: 'primary-pg',
+              driver: 'postgres',
+              access_mode: 'open',
+              created_at: '',
+              updated_at: '',
+            },
+          ],
+          page: 1,
+          page_size: 100,
+          total: 1,
+        }),
+      ),
+    )
   })
 
   it('renders an empty group and focuses it on pointer interaction', () => {
-    const store = createIdeStore('acme', 1, 'ephemeral')
     const rendered = render(
-      <IdeStoreContext.Provider value={store}>
+      <Providers store={store} views={views}>
         <EditorGroup orgSlug="acme" workspace={workspace} group={group} focused={false} />
-      </IdeStoreContext.Provider>,
+      </Providers>,
     )
 
     expect(screen.getByText('No editor in this group')).toBeInTheDocument()
@@ -102,7 +176,6 @@ describe('EditorGroup', () => {
   })
 
   it('routes editor tabs through loading, error, and ready states', async () => {
-    const store = createIdeStore('acme', 1, 'ephemeral')
     const active = tab('file')
     active.fileId = 9
     store.setState({ tabs: [active] })
@@ -111,7 +184,7 @@ describe('EditorGroup', () => {
     mocks.fileState.isLoading = true
 
     const rendered = render(
-      <IdeStoreContext.Provider value={store}>
+      <Providers store={store} views={views}>
         <EditorGroup
           orgSlug="acme"
           workspace={workspace}
@@ -119,7 +192,7 @@ describe('EditorGroup', () => {
           focused
           onCursorChange={vi.fn()}
         />
-      </IdeStoreContext.Provider>,
+      </Providers>,
     )
     expect(screen.getByText('Loading…')).toBeInTheDocument()
     expect(mocks.getOrCreate).toHaveBeenCalledWith(active.id, undefined)
@@ -127,18 +200,18 @@ describe('EditorGroup', () => {
     mocks.fileState.isLoading = false
     mocks.fileState.isError = true
     rendered.rerender(
-      <IdeStoreContext.Provider value={store}>
+      <Providers store={store} views={views}>
         <EditorGroup orgSlug="acme" workspace={workspace} group={activeGroup} focused />
-      </IdeStoreContext.Provider>,
+      </Providers>,
     )
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     expect(mocks.retry).toHaveBeenCalled()
 
     mocks.fileState.isError = false
     rendered.rerender(
-      <IdeStoreContext.Provider value={store}>
+      <Providers store={store} views={views}>
         <EditorGroup orgSlug="acme" workspace={workspace} group={activeGroup} focused />
-      </IdeStoreContext.Provider>,
+      </Providers>,
     )
     expect(screen.getByTestId('sql-editor')).toHaveTextContent(active.id)
     expect(mocks.sqlEditor).toHaveBeenLastCalledWith(
@@ -150,7 +223,6 @@ describe('EditorGroup', () => {
   })
 
   it('routes CSV file tabs to CsvViewer and regular files to SqlEditor', () => {
-    const store = createIdeStore('acme', 1, 'ephemeral')
     const csvTab = tab('file')
     csvTab.id = 'file:csv'
     csvTab.title = 'export.csv'
@@ -163,34 +235,33 @@ describe('EditorGroup', () => {
     store.setState({ tabs: [csvTab, sqlTab] })
 
     const rendered = render(
-      <IdeStoreContext.Provider value={store}>
+      <Providers store={store} views={views}>
         <EditorGroup
           orgSlug="acme"
           workspace={workspace}
           group={{ ...group, tabIds: [csvTab.id, sqlTab.id], activeTabId: csvTab.id }}
           focused
         />
-      </IdeStoreContext.Provider>,
+      </Providers>,
     )
     expect(screen.getByTestId('csv-viewer')).toBeInTheDocument()
     expect(screen.queryByTestId('sql-editor')).not.toBeInTheDocument()
 
     rendered.rerender(
-      <IdeStoreContext.Provider value={store}>
+      <Providers store={store} views={views}>
         <EditorGroup
           orgSlug="acme"
           workspace={workspace}
           group={{ ...group, tabIds: [csvTab.id, sqlTab.id], activeTabId: sqlTab.id }}
           focused
         />
-      </IdeStoreContext.Provider>,
+      </Providers>,
     )
     expect(screen.getByTestId('sql-editor')).toBeInTheDocument()
     expect(screen.queryByTestId('csv-viewer')).not.toBeInTheDocument()
   })
 
   it('shows the CSV loading skeleton while a CSV tab hydrates', () => {
-    const store = createIdeStore('acme', 1, 'ephemeral')
     const csvTab = tab('file')
     csvTab.fileId = 12
     csvTab.title = 'export.csv'
@@ -198,20 +269,19 @@ describe('EditorGroup', () => {
     mocks.fileState.isLoading = true
 
     render(
-      <IdeStoreContext.Provider value={store}>
+      <Providers store={store} views={views}>
         <EditorGroup
           orgSlug="acme"
           workspace={workspace}
           group={{ ...group, tabIds: [csvTab.id], activeTabId: csvTab.id }}
           focused
         />
-      </IdeStoreContext.Provider>,
+      </Providers>,
     )
     expect(screen.getByLabelText('Loading CSV')).toBeInTheDocument()
   })
 
   it('does not hydrate oversized CSV files and offers a download instead', async () => {
-    const store = createIdeStore('acme', 1, 'ephemeral')
     const csvTab = tab('file')
     csvTab.fileId = 12
     csvTab.title = 'large-export.csv'
@@ -222,14 +292,14 @@ describe('EditorGroup', () => {
     const user = userEvent.setup()
 
     render(
-      <IdeStoreContext.Provider value={store}>
+      <Providers store={store} views={views}>
         <EditorGroup
           orgSlug="acme"
           workspace={workspace}
           group={{ ...group, tabIds: [csvTab.id], activeTabId: csvTab.id }}
           focused
         />
-      </IdeStoreContext.Provider>,
+      </Providers>,
     )
 
     expect(screen.getByText('CSV is too large to preview')).toBeInTheDocument()
@@ -247,33 +317,86 @@ describe('EditorGroup', () => {
   })
 
   it('routes object and diagram tabs without allocating editor documents', async () => {
-    const store = createIdeStore('acme', 1, 'ephemeral')
     const objectTab = tab('object')
     const diagramTab = tab('diagram')
     store.setState({ tabs: [objectTab, diagramTab] })
     const rendered = render(
-      <IdeStoreContext.Provider value={store}>
+      <Providers store={store} views={views}>
         <EditorGroup
           orgSlug="acme"
           workspace={workspace}
           group={{ ...group, tabIds: [objectTab.id, diagramTab.id], activeTabId: objectTab.id }}
           focused
         />
-      </IdeStoreContext.Provider>,
+      </Providers>,
     )
     expect(screen.getByTestId('object-detail')).toHaveTextContent(objectTab.id)
 
     rendered.rerender(
-      <IdeStoreContext.Provider value={store}>
+      <Providers store={store} views={views}>
         <EditorGroup
           orgSlug="acme"
           workspace={workspace}
           group={{ ...group, tabIds: [objectTab.id, diagramTab.id], activeTabId: diagramTab.id }}
           focused
         />
-      </IdeStoreContext.Provider>,
+      </Providers>,
     )
     expect(await screen.findByTestId('diagram')).toHaveTextContent(diagramTab.id)
     expect(mocks.getOrCreate).not.toHaveBeenCalled()
+  })
+
+  it('passes a context menu config that reflects tab type and connection state', async () => {
+    const sqlTab = tab('scratch')
+    sqlTab.connectionId = 7
+    const objectTab = tab('object')
+    store.setState({ tabs: [sqlTab, objectTab] })
+
+    const rendered = render(
+      <Providers store={store} views={views}>
+        <EditorGroup
+          orgSlug="acme"
+          workspace={workspace}
+          group={{ ...group, tabIds: [sqlTab.id], activeTabId: sqlTab.id }}
+          focused
+        />
+      </Providers>,
+    )
+
+    await waitFor(() => {
+      expect(mocks.sqlEditor).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          contextMenu: expect.objectContaining({
+            isSqlTab: true,
+            canRun: true,
+          }),
+        }),
+      )
+    })
+
+    const notSqlTab = tab('file')
+    notSqlTab.title = 'notes.txt'
+    notSqlTab.fileId = 20
+    store.setState({ tabs: [sqlTab, objectTab, notSqlTab] })
+    rendered.rerender(
+      <Providers store={store} views={views}>
+        <EditorGroup
+          orgSlug="acme"
+          workspace={workspace}
+          group={{ ...group, tabIds: [notSqlTab.id], activeTabId: notSqlTab.id }}
+          focused
+        />
+      </Providers>,
+    )
+
+    await waitFor(() => {
+      expect(mocks.sqlEditor).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          contextMenu: expect.objectContaining({
+            isSqlTab: false,
+          }),
+        }),
+      )
+    })
   })
 })
