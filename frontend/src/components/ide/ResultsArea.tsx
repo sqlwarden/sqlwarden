@@ -10,11 +10,20 @@ import type { Connection, ResultColumn, ResultValue, Workspace } from '#/lib/api
 import {
   useIde,
   activeTabId as selectActiveTabId,
+  type EditorTab,
   type QueryResult,
   type ResultRun,
+  type ResultsPanelMode,
 } from './useIdeStore'
 import { closeRunCursors } from './resultRunHistory'
+import { visibleRuns, resolveSelectedRunId } from './resultRunFilter'
 import { useContextMenuOpener } from '#/components/ui/context-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '#/components/ui/dropdown-menu'
 import { copyWithToast, rowToTsv, rowToJson, valuesToLines } from './contextMenus/clipboard'
 import { buildCellMenu, buildRowMenu, buildColumnHeaderMenu } from './contextMenus/resultMenu'
 import { buildResultTabMenu } from './contextMenus/resultTabMenu'
@@ -50,7 +59,13 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
   const tabs = useIde((s) => s.tabs)
   const resultRuns = useIde((s) => s.resultRuns)
   const selectedRunId = useIde((s) => s.selectedRunId)
+  const sharedSelectedRunId = useIde((s) => s.sharedSelectedRunId)
+  const connectionSelectedRunId = useIde((s) => s.connectionSelectedRunId)
+  const resultsPanelMode = useIde((s) => s.resultsPanelMode)
+  const setResultsPanelMode = useIde((s) => s.setResultsPanelMode)
   const setSelectedRun = useIde((s) => s.setSelectedRun)
+  const setSharedSelectedRun = useIde((s) => s.setSharedSelectedRun)
+  const setConnectionSelectedRun = useIde((s) => s.setConnectionSelectedRun)
   const setSelectedIndexInRun = useIde((s) => s.setSelectedIndexInRun)
   const closeRunTab = useIde((s) => s.closeRunTab)
   const toggleRunPin = useIde((s) => s.toggleRunPin)
@@ -59,11 +74,22 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
   const connectionsQuery = useQuery(allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id))
   const connections = connectionsQuery.data?.items ?? []
 
-  const runs: ResultRun[] = activeTabId ? (resultRuns[activeTabId] ?? []) : []
-  // The selected run may have been evicted; fall back to the latest one.
-  const activeRun =
-    runs.find((r) => r.id === (activeTabId ? selectedRunId[activeTabId] : undefined)) ??
-    runs[runs.length - 1]
+  const activeConnectionId = tabs.find((t) => t.id === activeTabId)?.connectionId
+
+  const runs: ResultRun[] = visibleRuns(
+    resultsPanelMode,
+    resultRuns,
+    activeTabId,
+    activeConnectionId,
+  )
+  const activeRunId = resolveSelectedRunId(
+    resultsPanelMode,
+    runs,
+    activeTabId ? selectedRunId[activeTabId] : undefined,
+    sharedSelectedRunId,
+    activeConnectionId !== undefined ? connectionSelectedRunId[activeConnectionId] : undefined,
+  )
+  const activeRun = runs.find((r) => r.id === activeRunId)
   const resultList: QueryResult[] = activeRun?.results ?? []
   const rawSelectedIndex = activeRun?.selectedIndex ?? 0
   const selectedIndex = Math.min(Math.max(rawSelectedIndex, 0), Math.max(resultList.length - 1, 0))
@@ -73,17 +99,24 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
   }
 
   function handleSelectRun(runId: string) {
-    if (activeTabId) setSelectedRun(activeTabId, runId)
+    if (resultsPanelMode === 'per-editor') {
+      if (activeTabId) setSelectedRun(activeTabId, runId)
+    } else if (resultsPanelMode === 'shared') {
+      setSharedSelectedRun(runId)
+    } else if (activeConnectionId !== undefined) {
+      setConnectionSelectedRun(activeConnectionId, runId)
+    }
   }
 
+  // Runs shown outside 'per-editor' mode may originate from a tab other than
+  // the focused one, so these act on the run's own tabId rather than assuming
+  // the focused tab owns it.
   function handleCloseRun(runId: string) {
-    if (!activeTabId) return
     const run = runs.find((r) => r.id === runId)
-    closeRunTab(activeTabId, runId)
-    if (run) {
-      const tab = tabs.find((t) => t.id === activeTabId)
-      void closeRunCursors(orgSlug, workspace.id, tab?.connectionId, run)
-    }
+    if (!run) return
+    closeRunTab(run.tabId, runId)
+    const tab = tabs.find((t) => t.id === run.tabId)
+    void closeRunCursors(orgSlug, workspace.id, tab?.connectionId, run)
   }
 
   function handleCloseRuns(runIds: string[]) {
@@ -91,7 +124,8 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
   }
 
   function handleTogglePin(runId: string) {
-    if (activeTabId) toggleRunPin(activeTabId, runId)
+    const run = runs.find((r) => r.id === runId)
+    if (run) toggleRunPin(run.tabId, runId)
   }
 
   return (
@@ -100,6 +134,8 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
         <RunTabStrip
           runs={runs}
           connections={connections}
+          tabs={tabs}
+          mode={resultsPanelMode}
           activeRunId={activeRun?.id}
           onSelect={handleSelectRun}
           onClose={handleCloseRun}
@@ -107,6 +143,7 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
           onTogglePin={handleTogglePin}
         />
         <div className="flex shrink-0 items-center gap-0.5 border-l border-border px-1">
+          <ResultsPanelModeMenu mode={resultsPanelMode} onChange={setResultsPanelMode} />
           <Tip
             label={maximizedPane === 'results' ? 'Restore results panel' : 'Maximize results panel'}
           >
@@ -146,7 +183,7 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
           connections={connections}
           runConnectionId={activeRun?.connectionId}
           onSelectIndex={(index) =>
-            activeTabId && activeRun && setSelectedIndexInRun(activeTabId, activeRun.id, index)
+            activeRun && setSelectedIndexInRun(activeRun.tabId, activeRun.id, index)
           }
         />
       </div>
@@ -285,9 +322,66 @@ function runTabLabel(run: ResultRun, index: number): string {
   return sql ? sql.replace(/\s+/g, ' ').trim() : `Run ${index + 1}`
 }
 
+const RESULTS_PANEL_MODE_LABEL: Record<ResultsPanelMode, string> = {
+  shared: 'Shared',
+  'per-connection': 'Per connection',
+  'per-editor': 'Per editor',
+}
+
+const RESULTS_PANEL_MODE_OPTIONS: { mode: ResultsPanelMode; label: string; hint: string }[] = [
+  { mode: 'shared', label: 'Shared', hint: 'One results list for every tab' },
+  { mode: 'per-connection', label: 'Per connection', hint: "Follows the focused tab's connection" },
+  { mode: 'per-editor', label: 'Per editor', hint: 'Follows the focused editor tab' },
+]
+
+function ResultsPanelModeMenu({
+  mode,
+  onChange,
+}: {
+  mode: ResultsPanelMode
+  onChange: (mode: ResultsPanelMode) => void
+}) {
+  return (
+    <DropdownMenu>
+      <Tip label={`Results scope: ${RESULTS_PANEL_MODE_LABEL[mode]}`}>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Change results panel scope"
+            />
+          }
+        >
+          <Icon name="settings-05" size={14} />
+        </DropdownMenuTrigger>
+      </Tip>
+      <DropdownMenuContent align="end" className="w-56">
+        {RESULTS_PANEL_MODE_OPTIONS.map((option) => (
+          <DropdownMenuItem key={option.mode} onClick={() => onChange(option.mode)}>
+            <Icon
+              name="tick-02"
+              size={13}
+              data-icon="inline-start"
+              className={cn(option.mode !== mode && 'invisible')}
+            />
+            <div className="flex min-w-0 flex-col">
+              <span>{option.label}</span>
+              <span className="truncate text-[10px] text-muted-foreground">{option.hint}</span>
+            </div>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 function RunTabStrip({
   runs,
   connections,
+  tabs,
+  mode,
   activeRunId,
   onSelect,
   onClose,
@@ -296,6 +390,8 @@ function RunTabStrip({
 }: {
   runs: ResultRun[]
   connections: Connection[]
+  tabs: EditorTab[]
+  mode: ResultsPanelMode
   activeRunId?: string
   onSelect: (runId: string) => void
   onClose: (runId: string) => void
@@ -344,11 +440,14 @@ function RunTabStrip({
         const icon = STATUS_ICON[status]
         const selected = run.id === activeRunId
         const connection = connections.find((c) => c.id === run.connectionId)
+        const sourceTabTitle =
+          mode !== 'per-editor' ? tabs.find((t) => t.id === run.tabId)?.title : undefined
         return (
           <div
             key={run.id}
             role="tab"
             aria-selected={selected}
+            title={sourceTabTitle}
             onClick={() => onSelect(run.id)}
             onContextMenu={(e) => openTabMenu(run, e)}
             className={cn(

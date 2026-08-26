@@ -561,4 +561,104 @@ describe('ResultsArea', () => {
     const runTabs = within(await screen.findByRole('tablist', { name: 'Runs' }))
     expect(await runTabs.findAllByRole('img', { name: 'PostgreSQL' })).toHaveLength(2)
   })
+
+  describe('results panel mode', () => {
+    function openSecondTab(connectionId: number) {
+      store.getState().openTab({
+        id: 'scratch-2',
+        workspaceId: workspace.id,
+        title: 'Console 2',
+        kind: 'scratch',
+        content: 'select 2',
+        connectionId,
+      })
+    }
+
+    function focusFirstTab() {
+      const groupId = store.getState().activeGroupId[workspace.id]
+      if (groupId) store.getState().setActiveTab(groupId, 'scratch-1')
+    }
+
+    async function selectMode(user: ReturnType<typeof userEvent.setup>, label: string) {
+      await user.click(screen.getByRole('button', { name: 'Change results panel scope' }))
+      await user.click(await screen.findByRole('menuitem', { name: new RegExp(label) }))
+    }
+
+    it('defaults to shared mode, showing runs from every tab', async () => {
+      openSecondTab(7)
+      const run1 = store.getState().beginRun('scratch-1', ['select 1'], 7)
+      store.getState().setRunStatementResult('scratch-1', run1, 0, { status: 'idle' })
+      const run2 = store.getState().beginRun('scratch-2', ['select 2'], 7)
+      store.getState().setRunStatementResult('scratch-2', run2, 0, { status: 'idle' })
+      focusFirstTab()
+
+      renderResultsArea()
+
+      const runTabs = within(await screen.findByRole('tablist', { name: 'Runs' }))
+      expect(await runTabs.findAllByRole('tab')).toHaveLength(2)
+    })
+
+    it('per-editor mode shows only the focused tab’s own runs', async () => {
+      const user = userEvent.setup()
+      openSecondTab(7)
+      const run1 = store.getState().beginRun('scratch-1', ['select 1'], 7)
+      store.getState().setRunStatementResult('scratch-1', run1, 0, { status: 'idle' })
+      const run2 = store.getState().beginRun('scratch-2', ['select 2'], 7)
+      store.getState().setRunStatementResult('scratch-2', run2, 0, { status: 'idle' })
+      focusFirstTab()
+
+      renderResultsArea()
+      await selectMode(user, 'Per editor')
+
+      const runTabs = within(await screen.findByRole('tablist', { name: 'Runs' }))
+      expect(await runTabs.findAllByRole('tab')).toHaveLength(1)
+    })
+
+    it('per-connection mode shows only runs against the focused tab’s connection', async () => {
+      server.use(
+        http.get('/api/v1/orgs/acme/workspaces/3/connections', () =>
+          HttpResponse.json({
+            items: [
+              {
+                id: 7,
+                workspace_id: 3,
+                environment_id: 2,
+                name: 'analytics-pg',
+                driver: 'postgres',
+                access_mode: 'open',
+                created_at: '',
+                updated_at: '',
+              },
+              {
+                id: 8,
+                workspace_id: 3,
+                environment_id: 2,
+                name: 'reporting-pg',
+                driver: 'postgres',
+                access_mode: 'open',
+                created_at: '',
+                updated_at: '',
+              },
+            ],
+            page: 1,
+            page_size: 100,
+            total: 2,
+          }),
+        ),
+      )
+      const user = userEvent.setup()
+      openSecondTab(8)
+      const run1 = store.getState().beginRun('scratch-1', ['select 1'], 7)
+      store.getState().setRunStatementResult('scratch-1', run1, 0, { status: 'idle' })
+      const run2 = store.getState().beginRun('scratch-2', ['select 2'], 8)
+      store.getState().setRunStatementResult('scratch-2', run2, 0, { status: 'idle' })
+      focusFirstTab()
+
+      renderResultsArea()
+      await selectMode(user, 'Per connection')
+
+      const runTabs = within(await screen.findByRole('tablist', { name: 'Runs' }))
+      expect(await runTabs.findAllByRole('tab')).toHaveLength(1)
+    })
+  })
 })
