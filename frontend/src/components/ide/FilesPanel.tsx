@@ -20,6 +20,7 @@ import { Tip } from './schema-diagram/Tip'
 import { CreateItemDialog } from './CreateItemDialog'
 import { useFileActions } from './useFileActions'
 import { workspaceFileIcon } from './workspaceFileIcon'
+import { sidebarActiveRowClass } from './sidebarRowStyles'
 
 type FilesPanelProps = {
   orgSlug: string
@@ -516,10 +517,8 @@ function FileTreeFile({
       onClick={() => onOpen(file)}
       style={{ paddingLeft: `${6 + depth * 11 + 14}px` }}
       className={cn(
-        'mx-1 flex h-6 w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-md pr-2 text-left text-xs transition-colors',
-        active
-          ? 'bg-primary/10 text-foreground hover:bg-primary/15'
-          : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+        'flex h-6 min-w-0 items-center gap-2 pr-2 text-left text-xs transition-colors',
+        sidebarActiveRowClass(Boolean(active)),
       )}
     >
       <Icon name={workspaceFileIcon(file)} size={13} className="shrink-0 text-muted-foreground" />

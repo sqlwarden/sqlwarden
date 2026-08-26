@@ -28,6 +28,7 @@ import { buildConnectionMenu } from './contextMenus/connectionMenu'
 import { buildEnvironmentMenu } from './contextMenus/environmentMenu'
 import { SidebarPane } from './SidebarPane'
 import { SchemaTree } from './SchemaTree'
+import { sidebarActiveRowClass } from './sidebarRowStyles'
 import { ConnectionDialog } from './ConnectionDialog'
 import { EditConnectionDialog } from './EditConnectionDialog'
 import { DriverBadge } from './DriverBadge'
@@ -840,10 +841,8 @@ function ConnectionRow({
         <div
           style={{ paddingLeft: connIndent }}
           className={cn(
-            'mx-1 flex items-center rounded-md transition-colors',
-            isActive
-              ? 'bg-primary/10 hover:bg-primary/15'
-              : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+            'flex items-center transition-colors',
+            sidebarActiveRowClass(isActive),
           )}
         >
           {isConnected || expanded ? (
