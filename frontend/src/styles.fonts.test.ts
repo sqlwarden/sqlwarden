@@ -43,8 +43,8 @@ describe('Cal Sans / Paper Mono self-hosting', () => {
     expect(existsSync(join(paperMonoDir, 'PaperMono-Regular.woff2'))).toBe(true)
   })
 
-  it('leaves Satoshi as the default interface font stack', () => {
-    expect(css).toContain("--font-interface: 'Satoshi', 'Geist Variable', system-ui, sans-serif;")
+  it('makes Inter the default interface font stack', () => {
+    expect(css).toContain("--font-interface: 'Inter Variable', system-ui, sans-serif;")
   })
 
   it('leaves Satoshi as the default heading font stack', () => {
@@ -53,10 +53,8 @@ describe('Cal Sans / Paper Mono self-hosting', () => {
     )
   })
 
-  it('makes Paper Mono the default data font stack', () => {
-    expect(css).toContain(
-      "--font-data: 'Paper Mono', 'JetBrains Mono Variable', ui-monospace, monospace;",
-    )
+  it('makes JetBrains Mono the default data font stack', () => {
+    expect(css).toContain("--font-data: 'JetBrains Mono Variable', ui-monospace, monospace;")
   })
 
   it('routes heading text through the heading font picker slot', () => {

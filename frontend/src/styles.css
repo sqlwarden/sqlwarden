@@ -94,8 +94,8 @@
   --accent-datatype: #6366f1;
   /* Runtime font slots — overridden from the heading/interface/editor font pickers. */
   --font-heading-face: 'Satoshi', 'Geist Variable', system-ui, sans-serif;
-  --font-interface: 'Satoshi', 'Geist Variable', system-ui, sans-serif;
-  --font-data: 'Paper Mono', 'JetBrains Mono Variable', ui-monospace, monospace;
+  --font-interface: 'Inter Variable', system-ui, sans-serif;
+  --font-data: 'JetBrains Mono Variable', ui-monospace, monospace;
 }
 
 .dark {
