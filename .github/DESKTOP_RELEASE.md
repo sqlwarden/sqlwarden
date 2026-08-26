@@ -46,6 +46,8 @@ Create the Developer ID certificate through the Apple Developer account, export 
 
 ## Credential validation
 
+For a same-repository pull request, add the `desktop-release-test` label to run the real signing pipeline against the pull request merge commit. The workflow uses a synthetic `0.0.0-pr.<number>` version, requires approval for the protected `desktop-release` environment, and cannot publish to a GitHub release. Fork pull requests are rejected before any signing job can access the environment. Remove and reapply the label to validate a newer commit.
+
 Before the first release, run **Signed Desktop Release** manually with an existing tag and leave `publish` disabled. This exercises Authenticode signing, silent Windows installation, universal macOS signing and notarization, Linux packaging, checksums, and attestations. The completed bundle remains a workflow artifact and is not added to the public release.
 
 A tag push publishes automatically. Manual publication is available for recovery by running the workflow with an existing tag and enabling `publish`. Uploads use replacement semantics, so rerunning the same tag does not duplicate assets.

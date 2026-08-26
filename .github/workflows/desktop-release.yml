@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - 'v*'
+  pull_request:
+    types:
+      - labeled
   workflow_dispatch:
     inputs:
       tag:
@@ -17,12 +20,16 @@ on:
         type: boolean
 
 concurrency:
-  group: desktop-release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  group: desktop-release-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && github.ref_name || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   prepare:
     name: Prepare release inputs
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.label.name == 'desktop-release-test' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -34,11 +41,12 @@ jobs:
       commit: ${{ steps.source.outputs.commit }}
       build_date: ${{ steps.source.outputs.build_date }}
       publish: ${{ steps.source.outputs.publish }}
+      validation: ${{ steps.source.outputs.validation }}
     steps:
       - name: Checkout release tag
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event_name == 'push' && github.ref || inputs.tag }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.merge_commit_sha || github.event_name == 'push' && github.ref || inputs.tag }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -51,7 +59,7 @@ jobs:
       - name: Validate release version
         id: release
         env:
-          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          RELEASE_TAG: ${{ github.event_name == 'pull_request' && format('v0.0.0-pr.{0}', github.event.pull_request.number) || github.event_name == 'push' && github.ref_name || inputs.tag }}
         run: >-
           go run ./tools/desktop-release prepare
           --tag "$RELEASE_TAG"
@@ -62,14 +70,20 @@ jobs:
         id: source
         env:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          SHOULD_PUBLISH: ${{ github.event_name == 'push' && 'true' || inputs.publish }}
+          IS_PR_VALIDATION: ${{ github.event_name == 'pull_request' }}
+          SHOULD_PUBLISH: ${{ github.event_name == 'pull_request' && 'false' || github.event_name == 'push' && 'true' || inputs.publish }}
         run: |
-          commit="$(git rev-list -n 1 "$RELEASE_TAG")"
+          if [ "$IS_PR_VALIDATION" = 'true' ]; then
+            commit="$(git rev-parse HEAD)"
+          else
+            commit="$(git rev-list -n 1 "$RELEASE_TAG")"
+          fi
           test -n "$commit"
           build_date="$(git show -s --format=%cI "$commit")"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "build_date=$build_date" >> "$GITHUB_OUTPUT"
           echo "publish=$SHOULD_PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "validation=$IS_PR_VALIDATION" >> "$GITHUB_OUTPUT"
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -104,10 +118,10 @@ jobs:
       BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
       WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
     steps:
-      - name: Checkout release tag
+      - name: Checkout release source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
 
       - name: Set up Go
@@ -247,10 +261,10 @@ jobs:
       APPLE_NOTARY_KEY_ID: ${{ vars.APPLE_NOTARY_KEY_ID }}
       APPLE_NOTARY_ISSUER_ID: ${{ vars.APPLE_NOTARY_ISSUER_ID }}
     steps:
-      - name: Checkout release tag
+      - name: Checkout release source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
 
       - name: Set up Go
@@ -373,10 +387,10 @@ jobs:
       RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
       BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
     steps:
-      - name: Checkout release tag
+      - name: Checkout release source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
 
       - name: Set up Go
@@ -478,10 +492,10 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
     steps:
-      - name: Checkout release tag
+      - name: Checkout release source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
 
       - name: Set up Go
@@ -509,6 +523,7 @@ jobs:
           sha256sum --check "sqlwarden-desktop_${VERSION}_checksums.txt"
 
       - name: Attest desktop artifacts
+        if: needs.prepare.outputs.validation != 'true'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: dist/*
