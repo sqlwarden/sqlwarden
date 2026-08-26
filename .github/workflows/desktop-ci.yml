@@ -1,19 +1,6 @@
 name: Desktop Build
 
 on:
-  pull_request:
-    branches:
-      - main
-      - 'release/**'
-    paths:
-      - '.github/workflows/desktop-*.yml'
-      - 'assets/**'
-      - 'cmd/desktop/**'
-      - 'frontend/**'
-      - 'internal/**'
-      - 'tools/desktop-release/**'
-      - 'go.mod'
-      - 'go.sum'
   workflow_dispatch:
 
 permissions:
@@ -24,7 +11,7 @@ env:
   CI_TAG: v0.0.0-ci.${{ github.run_number }}
 
 concurrency:
-  group: desktop-ci-${{ github.event.pull_request.number || github.ref }}
+  group: desktop-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
