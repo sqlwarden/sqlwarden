@@ -789,7 +789,7 @@ function EditorStatusBar({
   const resultsVisible = maximizedPane !== 'editor'
 
   return (
-    <div className="flex h-6 shrink-0 items-center gap-3 bg-sidebar pl-3 pr-1 text-[11px] text-muted-foreground">
+    <div className="flex h-6 shrink-0 items-center gap-3 bg-background pl-3 pr-1 text-[11px] text-muted-foreground">
       {hasActiveTab && cursorInfo && (
         <>
           <span className="tabular-nums">
