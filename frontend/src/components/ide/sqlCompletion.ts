@@ -112,8 +112,6 @@ const completionTheme = EditorView.theme({
     color: 'var(--popover-foreground)',
     border: '1px solid var(--border)',
     borderRadius: 'var(--radius)',
-    boxShadow:
-      '0 12px 32px color-mix(in oklab, var(--foreground) 12%, transparent), 0 2px 8px color-mix(in oklab, var(--foreground) 8%, transparent)',
     overflow: 'hidden',
     fontFamily: 'var(--font-interface)',
   },
