@@ -20,6 +20,7 @@ type scopeGroup struct {
 	groupSeen  map[string]bool
 	groupOrder []string
 	groups     map[string][]metadata.ObjectRef
+	rowCounts  map[string]map[string]int64 // kind -> name -> count
 }
 
 // NewDirectory returns an empty DirectoryBuilder.
@@ -56,6 +57,21 @@ func (b *DirectoryBuilder) AddRef(scope metadata.ScopePath, kind, name string) {
 	n.groups[kind] = append(n.groups[kind], metadata.ObjectRef{Scope: scope, Kind: kind, Name: name})
 }
 
+// SetRowCount records an approximate row count for a previously-added ref.
+// Optional: drivers call this only when a cheap catalog-stat count is
+// available for that kind (e.g. table, materialized_view).
+func (b *DirectoryBuilder) SetRowCount(scope metadata.ScopePath, kind, name string, count int64) {
+	b.AddScope(scope)
+	n := b.scopes[scope]
+	if n.rowCounts == nil {
+		n.rowCounts = map[string]map[string]int64{}
+	}
+	if n.rowCounts[kind] == nil {
+		n.rowCounts[kind] = map[string]int64{}
+	}
+	n.rowCounts[kind][name] = count
+}
+
 // Build finalizes the directory with the given header fields. Scope nodes are
 // assembled from their complete paths, so engines may expose arbitrary depth.
 func (b *DirectoryBuilder) Build(connection, engine string, defaultScope metadata.ScopePath) *metadata.Directory {
@@ -72,7 +88,7 @@ func (b *DirectoryBuilder) Build(connection, engine string, defaultScope metadat
 				return
 			}
 			emitted[kind] = true
-			node.Groups = append(node.Groups, metadata.ObjectGroup{Kind: kind, Objects: refs})
+			node.Groups = append(node.Groups, metadata.ObjectGroup{Kind: kind, Objects: refs, RowCounts: n.rowCounts[kind]})
 		}
 		for _, kind := range b.kindOrder {
 			emit(kind)

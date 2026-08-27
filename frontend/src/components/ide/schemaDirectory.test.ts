@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { SchemaDirectory, SchemaSpec } from '#/lib/api/types'
-import { filterDirectory, hasDirectoryObjects, kindLabel, sortedGroups } from './schemaDirectory'
+import {
+  filterDirectory,
+  formatRowCount,
+  hasDirectoryObjects,
+  kindLabel,
+  sortedGroups,
+} from './schemaDirectory'
 
 const spec: SchemaSpec = {
   dialect: 'postgres',
@@ -134,5 +140,18 @@ describe('hasDirectoryObjects', () => {
         },
       ]),
     ).toBe(true)
+  })
+})
+
+describe('formatRowCount', () => {
+  it('shows exact counts under 1000', () => {
+    expect(formatRowCount(0)).toBe('0')
+    expect(formatRowCount(1)).toBe('1')
+    expect(formatRowCount(999)).toBe('999')
+  })
+
+  it('compacts thousands and millions with one decimal', () => {
+    expect(formatRowCount(1200)).toBe('~1.2K')
+    expect(formatRowCount(2_500_000)).toBe('~2.5M')
   })
 })

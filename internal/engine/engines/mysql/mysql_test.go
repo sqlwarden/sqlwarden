@@ -583,6 +583,51 @@ func TestToValue(t *testing.T) {
 	}
 }
 
+func TestInspectDirectoryReportsTableRowCounts(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_, _ = d.Execute(ctx, "DROP VIEW IF EXISTS rc_v")
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS rc_users")
+	})
+	if _, err := d.Execute(ctx, `CREATE TABLE rc_users (id INT PRIMARY KEY)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if _, err := d.Execute(ctx, `INSERT INTO rc_users VALUES (1),(2),(3),(4),(5)`); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if _, err := d.Execute(ctx, `ANALYZE TABLE rc_users`); err != nil {
+		t.Fatalf("analyze: %v", err)
+	}
+	if _, err := d.Execute(ctx, `CREATE VIEW rc_v AS SELECT id FROM rc_users`); err != nil {
+		t.Fatalf("create view: %v", err)
+	}
+
+	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
+	if err != nil {
+		t.Fatalf("InspectDirectory: %v", err)
+	}
+	var tableGroup, viewGroup *metadata.ObjectGroup
+	for _, node := range directory.ScopeNodes() {
+		for i := range node.Groups {
+			switch node.Groups[i].Kind {
+			case "table":
+				tableGroup = &node.Groups[i]
+			case "view":
+				viewGroup = &node.Groups[i]
+			}
+		}
+	}
+	if tableGroup == nil || tableGroup.RowCounts["rc_users"] != 5 {
+		t.Fatalf("rc_users row count = %+v, want 5", tableGroup)
+	}
+	if viewGroup != nil {
+		if _, ok := viewGroup.RowCounts["rc_v"]; ok {
+			t.Fatalf("views must not report a row count, got %+v", viewGroup.RowCounts)
+		}
+	}
+}
+
 func TestMySQLObjectDefinitionsAndAttributes(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()

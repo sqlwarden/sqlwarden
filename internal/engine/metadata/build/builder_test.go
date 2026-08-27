@@ -31,6 +31,36 @@ func TestDirectoryBuilderOrdersGroupsByDeclaration(t *testing.T) {
 	}
 }
 
+func TestDirectoryBuilderAttachesRowCounts(t *testing.T) {
+	b := NewDirectory()
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"}, metadata.ScopeSegment{Kind: "schema", Name: "public"})
+	b.DeclareKind("table")
+	b.AddRef(scope, "table", "t1")
+	b.AddRef(scope, "table", "t2")
+	b.SetRowCount(scope, "table", "t1", 42)
+
+	directory := b.Build("conn", "postgres", scope)
+	group := directory.Roots[0].Groups[0]
+	if group.RowCounts["t1"] != 42 {
+		t.Fatalf("t1 row count = %+v, want 42", group.RowCounts)
+	}
+	if _, ok := group.RowCounts["t2"]; ok {
+		t.Fatalf("t2 must have no row count entry, got %+v", group.RowCounts)
+	}
+}
+
+func TestDirectoryBuilderOmitsRowCountsWhenUnset(t *testing.T) {
+	b := NewDirectory()
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"})
+	b.DeclareKind("table")
+	b.AddRef(scope, "table", "t1")
+
+	directory := b.Build("conn", "postgres", scope)
+	if directory.Roots[0].Groups[0].RowCounts != nil {
+		t.Fatalf("row counts must be nil when never set, got %+v", directory.Roots[0].Groups[0].RowCounts)
+	}
+}
+
 func TestDirectoryBuilderBuildsArbitraryScopeDepth(t *testing.T) {
 	b := NewDirectory()
 	root := metadata.NewScopePath(metadata.ScopeSegment{Kind: "cluster", Name: "primary"})

@@ -530,6 +530,9 @@ export interface ScopeNode {
 export interface ObjectGroup {
   kind: string
   objects: ObjectRef[]
+  /** Approximate row count per object name, keyed by name. Only present for
+   *  kinds the driver can report cheaply (e.g. table, materialized_view). */
+  row_counts?: Record<string, number>
 }
 
 export interface SchemaDirectory {

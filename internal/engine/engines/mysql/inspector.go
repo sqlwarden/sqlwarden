@@ -78,6 +78,10 @@ ORDER BY table_schema, table_name`
 	}
 	rows.Close()
 
+	if err := d.attachRowCounts(ctx, b, scope, database); err != nil {
+		return nil, fmt.Errorf("mysql: catalog row counts: %w", err)
+	}
+
 	const routineQ = `
 SELECT routine_schema, routine_name, routine_type
 FROM information_schema.routines
@@ -129,6 +133,31 @@ ORDER BY trigger_name`
 	triggerRows.Close()
 
 	return b.Build("", "mysql", scope), nil
+}
+
+// attachRowCounts sets the approximate row count (information_schema.tables.
+// table_rows) for every base table. It's an estimate refreshed by ANALYZE
+// TABLE/InnoDB statistics, not a live COUNT(*), which is what keeps this
+// query cheap regardless of table size.
+func (d *mysqlDriver) attachRowCounts(ctx context.Context, b *build.DirectoryBuilder, scope metadata.ScopePath, database string) error {
+	const q = `
+SELECT table_name, table_rows
+FROM information_schema.tables
+WHERE table_schema = ? AND table_type = 'BASE TABLE' AND table_rows IS NOT NULL`
+	rows, err := d.db.QueryContext(ctx, q, database)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		var rowCount int64
+		if err := rows.Scan(&name, &rowCount); err != nil {
+			return err
+		}
+		b.SetRowCount(scope, "table", name, rowCount)
+	}
+	return rows.Err()
 }
 
 func (d *mysqlDriver) DiscoverScopes(ctx context.Context, request metadata.ScopeDiscoveryRequest) (*metadata.ScopeDiscovery, error) {

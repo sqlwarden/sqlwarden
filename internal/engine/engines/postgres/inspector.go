@@ -80,6 +80,10 @@ ORDER BY n.nspname, c.relname`
 		return nil, fmt.Errorf("postgres: catalog matviews: %w", err)
 	}
 
+	if err := d.attachRowCounts(ctx, b, scope); err != nil {
+		return nil, fmt.Errorf("postgres: catalog row counts: %w", err)
+	}
+
 	const fnQ = `
 SELECT n.nspname, p.proname
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -180,6 +184,38 @@ ORDER BY schema_name`)
 		result.Scopes = append(result.Scopes, currentRoot.With("schema", name))
 	}
 	return result, schemaRows.Err()
+}
+
+// attachRowCounts sets the approximate row count (pg_class.reltuples) for
+// every table and materialized view. reltuples is a planner statistic
+// refreshed by ANALYZE/autovacuum, not a live COUNT(*), which is what keeps
+// this query cheap regardless of table size.
+func (d *postgresDriver) attachRowCounts(ctx context.Context, b *build.DirectoryBuilder, scope func(string) metadata.ScopePath) error {
+	const q = `
+SELECT n.nspname, c.relname, c.relkind, c.reltuples
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relkind IN ('r', 'm') AND n.nspname NOT IN ('pg_catalog', 'information_schema')`
+	rows, err := d.db.QueryContext(ctx, q)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ns, name, relkind string
+		var reltuples float64
+		if err := rows.Scan(&ns, &name, &relkind, &reltuples); err != nil {
+			return err
+		}
+		if reltuples < 0 {
+			continue
+		}
+		kind := "table"
+		if relkind == "m" {
+			kind = "materialized_view"
+		}
+		b.SetRowCount(scope(ns), kind, name, int64(reltuples))
+	}
+	return rows.Err()
 }
 
 // queryRefs runs a 2- or 3-column query (schema, name[, type]) and calls fn per
