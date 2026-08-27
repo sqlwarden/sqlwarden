@@ -33,6 +33,7 @@ import { OBJECT_REF_DND_MIME } from './schema-diagram/dnd'
 import {
   defaultCreateTableScope,
   filterDirectory,
+  formatRowCount,
   hasDirectoryObjects,
   kindLabel,
   kindLabelSingular,
@@ -664,6 +665,7 @@ function SchemaGroupNode({
               key={`${ref.kind}:${ref.name}`}
               objectRef={ref}
               forceOpen={forceOpen}
+              rowCount={group.row_counts?.[ref.name]}
             />
           ))}
         </GuideChildren>
@@ -672,7 +674,15 @@ function SchemaGroupNode({
   )
 }
 
-function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forceOpen: boolean }) {
+function SchemaObjectNode({
+  objectRef,
+  forceOpen,
+  rowCount,
+}: {
+  objectRef: ObjectRef
+  forceOpen: boolean
+  rowCount?: number
+}) {
   const ctx = useContext(SchemaTreeContext)
   const [open, setOpen] = useState<boolean | null>(null)
   const expandable = !NON_EXPANDABLE_OBJECT_KINDS.has(objectRef.kind)
@@ -704,7 +714,11 @@ function SchemaObjectNode({ objectRef, forceOpen }: { objectRef: ObjectRef; forc
     openGenerateStatement,
   } = useTreeCtx()
   const style = kindStyle(objectRef.kind)
-  const inlineMeta = inlineDetail ? sequenceDataType(detail) : undefined
+  const inlineMeta = inlineDetail
+    ? sequenceDataType(detail)
+    : rowCount !== undefined
+      ? formatRowCount(rowCount)
+      : undefined
   const isView = objectRef.kind === 'view' || objectRef.kind === 'materialized_view'
   const dropGate = canDropObject(editor, sessionId, canMutate, objectRef.kind)
   const objectMenu = buildObjectMenu({

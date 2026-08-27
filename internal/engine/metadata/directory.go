@@ -25,6 +25,12 @@ type ScopeNode struct {
 type ObjectGroup struct {
 	Kind    string      `json:"kind"`
 	Objects []ObjectRef `json:"objects"` // empty for `searched` kinds
+	// RowCounts is an optional, driver-supplied approximate row count per
+	// object name, populated only for kinds where it's cheap to obtain
+	// alongside the listing query (e.g. table/materialized_view via catalog
+	// stats). Nil when the driver doesn't support it; objects with no entry
+	// simply have no known count.
+	RowCounts map[string]int64 `json:"row_counts,omitempty"`
 }
 
 // ScopeNodes returns every scope node in stable depth-first directory order.

@@ -729,6 +729,46 @@ func TestPostgresInspectDirectory(t *testing.T) {
 	}
 }
 
+func TestPostgresInspectDirectoryReportsTableRowCounts(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_, _ = d.Execute(ctx, "DROP VIEW IF EXISTS rc_v")
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS rc_users")
+	})
+	mustExec(t, d, `CREATE TABLE rc_users (id bigint PRIMARY KEY)`)
+	mustExec(t, d, `INSERT INTO rc_users SELECT generate_series(1, 5)`)
+	mustExec(t, d, `ANALYZE rc_users`)
+	mustExec(t, d, `CREATE VIEW rc_v AS SELECT id FROM rc_users`)
+
+	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tableGroup, viewGroup *metadata.ObjectGroup
+	for _, node := range directory.ScopeNodes() {
+		if node.Path.Name("schema") != "public" {
+			continue
+		}
+		for i := range node.Groups {
+			switch node.Groups[i].Kind {
+			case "table":
+				tableGroup = &node.Groups[i]
+			case "view":
+				viewGroup = &node.Groups[i]
+			}
+		}
+	}
+	if tableGroup == nil || tableGroup.RowCounts["rc_users"] != 5 {
+		t.Fatalf("rc_users row count = %+v, want 5", tableGroup)
+	}
+	if viewGroup != nil {
+		if _, ok := viewGroup.RowCounts["rc_v"]; ok {
+			t.Fatalf("views must not report a row count, got %+v", viewGroup.RowCounts)
+		}
+	}
+}
+
 func TestPostgresInspectObjectsRelational(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()

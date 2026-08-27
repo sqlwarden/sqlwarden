@@ -41,6 +41,14 @@ export function sortedGroups(node: ScopeNode, spec: SchemaSpec | undefined): Obj
   )
 }
 
+/** Compact row-count label for the schema tree (e.g. "~1.2K"), matching the
+ *  tilde-prefixed convention DBeaver uses for catalog-derived estimates. */
+export function formatRowCount(count: number): string {
+  if (count < 1000) return `${count}`
+  const [divisor, suffix] = count < 1_000_000 ? [1_000, 'K'] : [1_000_000, 'M']
+  return `~${(count / divisor).toFixed(1)}${suffix}`
+}
+
 export function hasDirectoryObjects(nodes: ScopeNode[]): boolean {
   return nodes.some(
     (node) =>
