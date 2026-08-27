@@ -1,5 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SearchInput } from '#/components/SearchInput'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useNavigate } from '@tanstack/react-router'
@@ -767,6 +767,13 @@ function ConnectionRow({
   const storedExpanded = useIde((s) => s.expandedNodes[nodeKey])
   const setNodeExpanded = useIde((s) => s.setNodeExpanded)
   const expanded = storedExpanded ?? false
+  const wasConnectedRef = useRef(isConnected)
+  useEffect(() => {
+    if (wasConnectedRef.current && !isConnected) {
+      setNodeExpanded(nodeKey, false)
+    }
+    wasConnectedRef.current = isConnected
+  }, [isConnected, nodeKey, setNodeExpanded])
   const sessionId = useIde((s) => s.sessions[connection.id])
   const connStatus = useIde((s) => s.connectionStatus[connection.id])
   const connState = resolveConnectionState(Boolean(sessionId), connStatus)
@@ -887,9 +894,9 @@ function ConnectionRow({
         </div>
       </ContextMenu>
 
-      {/* Stays mounted while disconnected so an expanded tree can show its
-          "Not connected · Connect" hint instead of vanishing when the
-          server-side session expires. */}
+      {/* A live disconnect auto-collapses this (see the effect above), but a
+          row restored already-expanded from a prior session still renders
+          here so SchemaTree can show its own "Not connected · Connect" hint. */}
       {expanded && (
         <div style={{ marginLeft: connIndent + 14 }} className="border-l border-border/60">
           <SchemaTree
