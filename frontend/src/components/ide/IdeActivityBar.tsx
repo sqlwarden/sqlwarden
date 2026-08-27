@@ -77,7 +77,7 @@ export function IdeActivityBar({
     <nav
       aria-label="Editor activities"
       className={cn(
-        'flex shrink-0 flex-col gap-1 border-r border-border bg-sidebar py-2 transition-[width] duration-150',
+        'flex shrink-0 flex-col gap-1 border-r border-border bg-sidebar pb-2 transition-[width] duration-150',
         activityBarExpanded ? 'w-56 items-stretch px-2' : 'w-11 items-center',
       )}
     >
@@ -93,21 +93,13 @@ export function IdeActivityBar({
             aria-label={activity.label}
             aria-pressed={isActive}
             className={cn(
-              'relative flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs transition-colors',
+              'flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs transition-colors',
               activityBarExpanded ? 'h-8 w-full justify-start gap-2 p-2' : 'size-8 justify-center',
               expanded
-                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+                ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+                : 'text-foreground hover:bg-sidebar-accent/60',
             )}
           >
-            {expanded ? (
-              <span
-                className={cn(
-                  'absolute w-0.5 rounded-full bg-sidebar-primary',
-                  activityBarExpanded ? 'inset-y-1.5 left-0' : 'inset-y-1.5 -left-1.5',
-                )}
-              />
-            ) : null}
             <Icon name={activity.icon} size={17} className="shrink-0" />
             {activityBarExpanded ? <span className="truncate">{activity.label}</span> : null}
           </button>
@@ -142,7 +134,7 @@ export function IdeActivityBar({
           onClick={() => setActivityBarExpanded(!activityBarExpanded)}
           aria-label="Toggle activity bar"
           className={cn(
-            'flex items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground',
+            'flex items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-foreground transition-colors hover:bg-sidebar-accent/60',
             activityBarExpanded ? 'h-8 w-full' : 'size-8',
           )}
         >
@@ -157,26 +149,26 @@ function IdeBrand({ expanded }: { expanded: boolean }) {
   const brand = useBrand()
   if (expanded) {
     return (
-      <div className="mb-1 border-b border-border pb-2">
+      <div className="-mx-2 flex h-10 w-[calc(100%+1rem)] shrink-0 items-center border-b border-border px-2">
         <Link
           to="/"
-          className="flex items-center gap-2.5 rounded-[calc(var(--radius-sm)+2px)] p-2 py-2.5 text-foreground transition-colors hover:bg-sidebar-accent/60"
+          className="flex h-8 w-full items-center gap-2.5 rounded-[calc(var(--radius-sm)+2px)] px-2 text-foreground transition-colors hover:bg-sidebar-accent/60"
           aria-label={`${brand.productName} home`}
         >
-          <brand.LogoLockup size={16} className="shrink-0" />
+          <brand.LogoLockup size={20} className="shrink-0" />
         </Link>
       </div>
     )
   }
   return (
-    <div className="mb-1 border-b border-border pb-2">
+    <div className="flex h-10 w-full shrink-0 items-center justify-center border-b border-border">
       <Tip label="Back to dashboard" side="right">
         <Link
           to="/"
           className="flex size-8 items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-foreground transition-colors hover:bg-sidebar-accent/60"
           aria-label={`${brand.productName} home`}
         >
-          <brand.LogoMark size={18} className="shrink-0" />
+          <brand.LogoMark size={20} className="shrink-0" />
         </Link>
       </Tip>
     </div>

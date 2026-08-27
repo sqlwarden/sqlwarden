@@ -207,16 +207,24 @@ export function HistoryPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
         }))
 
   return (
-    <SidebarPane title="History" icon="history" scroll={false}>
+    <SidebarPane
+      title="History"
+      icon="history"
+      scroll={false}
+      headerContent={
+        <SearchInput
+          value={searchText}
+          onValueChange={setSearchText}
+          onClear={clearSearch}
+          placeholder="Search query history…"
+          className="w-full"
+          size="sm"
+          variant="muted"
+        />
+      }
+    >
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 flex-col gap-2 border-b border-border p-2">
-          <SearchInput
-            value={searchText}
-            onValueChange={setSearchText}
-            onClear={clearSearch}
-            placeholder="Search query history…"
-            className="w-full"
-          />
           <HistoryConnectionSelector
             connections={connections.data?.items ?? []}
             environments={environments.data?.items ?? []}

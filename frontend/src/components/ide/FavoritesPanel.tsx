@@ -104,18 +104,23 @@ export function FavoritesPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
       : allRows
 
   return (
-    <SidebarPane title="Favorites" icon="star" scroll={false}>
+    <SidebarPane
+      title="Favorites"
+      icon="star"
+      scroll={false}
+      headerContent={
+        <SearchInput
+          value={searchText}
+          onValueChange={setSearchText}
+          onClear={clearSearch}
+          placeholder="Search favorites…"
+          className="w-full"
+          size="sm"
+          variant="muted"
+        />
+      }
+    >
       <div className="flex h-full min-h-0 flex-col">
-        <div className="shrink-0 border-b border-border p-2">
-          <SearchInput
-            value={searchText}
-            onValueChange={setSearchText}
-            onClear={clearSearch}
-            placeholder="Search favorites…"
-            className="w-full"
-          />
-        </div>
-
         <div className="min-h-0 flex-1 overflow-y-auto">
           {rows.length === 0 ? (
             <div className="px-3 py-4 text-center text-xs text-muted-foreground">

@@ -30,8 +30,8 @@ export function WorkspaceSelector({
     <DropdownMenuTrigger
       aria-label={label}
       className={cn(
-        'flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-muted-foreground transition-colors',
-        'hover:bg-sidebar-accent/60 hover:text-foreground',
+        'flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors',
+        'hover:bg-sidebar-accent/60',
         expanded ? 'h-8 w-full justify-start gap-2 p-2' : 'size-8 justify-center',
       )}
     >
