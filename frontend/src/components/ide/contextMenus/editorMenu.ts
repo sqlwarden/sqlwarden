@@ -12,6 +12,14 @@ export type SqlEditorMenuCtx = {
   canRun: boolean
   onRunStatement: () => void
   onRunAll: () => void
+  /** Whether the active connection's engine implements EXPLAIN at all —
+   *  disables (not hides) the Explain item when false. */
+  canExplain: boolean
+  /** Whether the active connection's dialect supports EXPLAIN ANALYZE —
+   *  disables (not hides) the Explain Analyze item when false. */
+  canExplainAnalyze: boolean
+  onExplain: () => void
+  onExplainAnalyze: () => void
   onFormat: () => void
   onSaveFavorite: () => void
 }
@@ -53,6 +61,32 @@ export function buildSqlEditorMenu(ctx: SqlEditorMenuCtx): ContextMenuItem[] {
       disabled: !ctx.canRun,
       disabledReason: ctx.canRun ? undefined : 'No connection',
       onSelect: ctx.onRunAll,
+    },
+    {
+      kind: 'action',
+      id: 'explain',
+      label: 'Explain',
+      icon: 'search-01',
+      disabled: !ctx.canRun || !ctx.canExplain,
+      disabledReason: !ctx.canRun
+        ? 'No connection'
+        : ctx.canExplain
+          ? undefined
+          : 'This connection does not support EXPLAIN',
+      onSelect: ctx.onExplain,
+    },
+    {
+      kind: 'action',
+      id: 'explain-analyze',
+      label: 'Explain Analyze',
+      icon: 'search-01',
+      disabled: !ctx.canRun || !ctx.canExplainAnalyze,
+      disabledReason: !ctx.canRun
+        ? 'No connection'
+        : ctx.canExplainAnalyze
+          ? undefined
+          : 'This connection does not support EXPLAIN ANALYZE',
+      onSelect: ctx.onExplainAnalyze,
     },
     {
       kind: 'action',

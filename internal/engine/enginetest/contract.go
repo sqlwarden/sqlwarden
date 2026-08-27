@@ -22,6 +22,7 @@ var knownCapabilities = map[engine.Capability]bool{
 	engine.CapabilitySQLRewrite:      true,
 	engine.CapabilitySQLComplete:     true,
 	engine.CapabilitySQLGenerate:     true,
+	engine.CapabilitySQLExplain:      true,
 }
 
 // RunCapabilityContract asserts the static-capability invariants every engine

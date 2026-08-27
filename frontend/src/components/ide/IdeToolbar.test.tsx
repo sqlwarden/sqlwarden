@@ -18,20 +18,34 @@ vi.mock('./object-detail/ReadOnlySqlView', () => ({
 
 const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
+  closeExplainAnalyzeConfirm: vi.fn(),
   confirmAt: vi.fn(() => Promise.resolve()),
+  confirmExplainAnalyze: vi.fn(),
   download: vi.fn(),
+  handleExplainAnalyzeClick: vi.fn(),
+  handleExplainClick: vi.fn(),
   resolveDocumentText: vi.fn(() => ''),
   resolveSql: vi.fn(() => 'select 1'),
   run: vi.fn(() => Promise.resolve()),
   runAll: vi.fn(() => Promise.resolve()),
   save: vi.fn(() => Promise.resolve(undefined)),
   isRunning: false,
+  canExplain: true,
+  canExplainAnalyze: true,
+  explainAnalyzeConfirmSql: null as string | null,
 }))
 
 vi.mock('./useToolbarQueryAction', () => ({
   useToolbarQueryAction: () => ({
     cancel: mocks.cancel,
+    canExplain: mocks.canExplain,
+    canExplainAnalyze: mocks.canExplainAnalyze,
+    closeExplainAnalyzeConfirm: mocks.closeExplainAnalyzeConfirm,
     confirmAt: mocks.confirmAt,
+    confirmExplainAnalyze: mocks.confirmExplainAnalyze,
+    explainAnalyzeConfirmSql: mocks.explainAnalyzeConfirmSql,
+    handleExplainAnalyzeClick: mocks.handleExplainAnalyzeClick,
+    handleExplainClick: mocks.handleExplainClick,
     isRunning: mocks.isRunning,
     resolveDocumentText: mocks.resolveDocumentText,
     resolveSql: mocks.resolveSql,
@@ -79,6 +93,9 @@ describe('IdeToolbar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.isRunning = false
+    mocks.canExplain = true
+    mocks.canExplainAnalyze = true
+    mocks.explainAnalyzeConfirmSql = null
     store = createIdeStore('acme', 1, 'ephemeral')
     views = createEditorViewRegistry()
     server.use(
@@ -117,6 +134,22 @@ describe('IdeToolbar', () => {
           page: 1,
           page_size: 100,
           total: 2,
+        }),
+      ),
+      http.get('/api/v1/engines/postgres', () =>
+        HttpResponse.json({
+          id: 'postgres',
+          display_name: 'PostgreSQL',
+          capabilities: { 'sql.explain': true },
+          explain: { supports_analyze: true },
+        }),
+      ),
+      http.get('/api/v1/engines/mysql', () =>
+        HttpResponse.json({
+          id: 'mysql',
+          display_name: 'MySQL',
+          capabilities: { 'sql.explain': true },
+          explain: { supports_analyze: true },
         }),
       ),
     )
@@ -288,6 +321,34 @@ describe('IdeToolbar', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Run All' }))
 
     expect(mocks.runAll).toHaveBeenCalledWith(['select 1', 'select 2'])
+  })
+
+  it('enables Explain Analyze when the connected engine supports it', async () => {
+    mocks.canExplainAnalyze = true
+    store.getState().openTab(scratchTab)
+    const { user } = renderToolbar()
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Run/ })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'More run options' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'Explain Analyze' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+  })
+
+  it('disables Explain Analyze when the connected engine does not support it', async () => {
+    mocks.canExplainAnalyze = false
+    store.getState().openTab(scratchTab)
+    const { user } = renderToolbar()
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Run/ })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'More run options' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'Explain Analyze' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
   })
 
   it('resumes a paused run confirmation via confirmAt and clears it on confirm', async () => {

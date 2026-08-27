@@ -1,8 +1,11 @@
 import type { PropsWithChildren } from 'react'
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { EditorView } from '@codemirror/view'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Connection, Workspace } from '#/lib/api/types'
+import { queryKeys } from '#/lib/api/query-keys'
+import type { Connection, EngineView, Workspace } from '#/lib/api/types'
+import { createTestQueryClient } from '#/test/render'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 import { createIdeStore, IdeStoreContext, type EditorTab } from './useIdeStore'
 import { createYDocRegistry, YDocRegistryContext } from './useYDocRegistry'
@@ -112,6 +115,7 @@ describe('useToolbarQueryAction', () => {
   let store: ReturnType<typeof createIdeStore>
   let views: ReturnType<typeof createEditorViewRegistry>
   let docs: ReturnType<typeof createYDocRegistry>
+  let queryClient: QueryClient
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -119,15 +123,25 @@ describe('useToolbarQueryAction', () => {
     store.getState().setMaximizedPane('editor')
     views = createEditorViewRegistry()
     docs = createYDocRegistry(1, `toolbar-${Math.random()}`)
+    queryClient = createTestQueryClient()
+    queryClient.setQueryData<EngineView>(queryKeys.engine('postgres'), {
+      id: 'postgres',
+      display_name: 'PostgreSQL',
+      dialect: 'postgres',
+      capabilities: {},
+      explain: { supports_analyze: true },
+    })
   })
 
   function wrapper({ children }: PropsWithChildren) {
     return (
-      <IdeStoreContext.Provider value={store}>
-        <EditorViewRegistryContext.Provider value={views}>
-          <YDocRegistryContext.Provider value={docs}>{children}</YDocRegistryContext.Provider>
-        </EditorViewRegistryContext.Provider>
-      </IdeStoreContext.Provider>
+      <QueryClientProvider client={queryClient}>
+        <IdeStoreContext.Provider value={store}>
+          <EditorViewRegistryContext.Provider value={views}>
+            <YDocRegistryContext.Provider value={docs}>{children}</YDocRegistryContext.Provider>
+          </EditorViewRegistryContext.Provider>
+        </IdeStoreContext.Provider>
+      </QueryClientProvider>
     )
   }
 
@@ -187,5 +201,103 @@ describe('useToolbarQueryAction', () => {
     )
     second.unmount()
     docs.disposeAll()
+  })
+
+  it('sends the plain explain mode and lets the backend wrap the statement', async () => {
+    const { result } = renderHook(
+      () =>
+        useToolbarQueryAction({
+          orgSlug: 'acme',
+          workspace,
+          activeTab: { ...tab, content: 'select 1' },
+          activeConnection: connection,
+          hasConnections: true,
+        }),
+      { wrapper },
+    )
+
+    await act(() => result.current.explain(false))
+
+    expect(mocks.run).toHaveBeenCalledWith('select 1', 'plain')
+  })
+
+  it('sends the analyze explain mode when analyze is true and the engine supports it', async () => {
+    const { result } = renderHook(
+      () =>
+        useToolbarQueryAction({
+          orgSlug: 'acme',
+          workspace,
+          activeTab: { ...tab, content: 'select 1' },
+          activeConnection: connection,
+          hasConnections: true,
+        }),
+      { wrapper },
+    )
+
+    await act(() => result.current.explain(true))
+
+    expect(mocks.run).toHaveBeenCalledWith('select 1', 'analyze')
+  })
+
+  it('refuses to analyze when the engine does not support EXPLAIN ANALYZE', async () => {
+    queryClient.setQueryData<EngineView>(queryKeys.engine('postgres'), {
+      id: 'postgres',
+      display_name: 'PostgreSQL',
+      dialect: 'postgres',
+      capabilities: {},
+      explain: { supports_analyze: false },
+    })
+    const { result } = renderHook(
+      () =>
+        useToolbarQueryAction({
+          orgSlug: 'acme',
+          workspace,
+          activeTab: { ...tab, content: 'select 1' },
+          activeConnection: connection,
+          hasConnections: true,
+        }),
+      { wrapper },
+    )
+
+    await act(() => result.current.explain(true))
+
+    expect(mocks.run).not.toHaveBeenCalled()
+    expect(mocks.warning).toHaveBeenCalledWith('This connection does not support EXPLAIN ANALYZE.')
+  })
+
+  it('uses sqlOverride instead of re-resolving from the editor when given', async () => {
+    const { result } = renderHook(
+      () =>
+        useToolbarQueryAction({
+          orgSlug: 'acme',
+          workspace,
+          activeTab: { ...tab, content: 'select 1' },
+          activeConnection: connection,
+          hasConnections: true,
+        }),
+      { wrapper },
+    )
+
+    await act(() => result.current.explain(false, 'select 2'))
+
+    expect(mocks.run).toHaveBeenCalledWith('select 2', 'plain')
+  })
+
+  it('does nothing without an active connection', async () => {
+    const { result } = renderHook(
+      () =>
+        useToolbarQueryAction({
+          orgSlug: 'acme',
+          workspace,
+          activeTab: { ...tab, content: 'select 1' },
+          hasConnections: false,
+        }),
+      { wrapper },
+    )
+
+    await act(() => result.current.explain(false))
+
+    expect(mocks.run).not.toHaveBeenCalled()
+    expect(mocks.warning).toHaveBeenCalled()
   })
 })

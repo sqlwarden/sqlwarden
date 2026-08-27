@@ -16,6 +16,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/classifier"
+	"github.com/sqlwarden/internal/engine/explain"
 	metadata "github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/engine/safety"
 	"github.com/sqlwarden/internal/jobs"
@@ -243,6 +244,18 @@ func connectionSafetyChecker(driverName string) safety.Checker {
 		return c
 	}
 	return safety.NewHeuristic()
+}
+
+// registeredConnectionExplainer resolves an Explainer implemented by the
+// registered engine, mirroring registeredConnectionClassifier. There is no
+// heuristic fallback: an engine either has a real EXPLAIN form or it doesn't.
+func registeredConnectionExplainer(driverName string) (explain.Explainer, bool) {
+	d, err := engine.New(driverName)
+	if err != nil {
+		return nil, false
+	}
+	e, ok := d.(explain.Explainer)
+	return e, ok
 }
 
 func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
@@ -846,6 +859,7 @@ func (app *application) driverConnectionConfig(driverName, dsn string, settings 
 func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		SQL           string              `json:"sql"`
+		Explain       string              `json:"explain,omitempty"`
 		PageSize      *int                `json:"page_size"`
 		UseCursor     *bool               `json:"use_cursor"`
 		ConfirmUnsafe bool                `json:"confirm_unsafe"`
@@ -859,6 +873,10 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input.V.CheckField(input.SQL != "", "sql", "SQL is required.")
+	input.V.CheckField(
+		input.Explain == "" || input.Explain == string(explain.ModePlain) || input.Explain == string(explain.ModeAnalyze),
+		"explain", `Explain must be "plain" or "analyze".`,
+	)
 	if input.PageSize != nil {
 		input.V.CheckField(*input.PageSize > 0, "page_size", "Page size must be greater than 0.")
 	}
@@ -911,6 +929,40 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		app.logger.Debug("query classified", logAttrs...)
 	}
 
+	// execSQL is what actually reaches the target database. Permission and
+	// safety decisions above use classification, which is always derived from
+	// the caller's original, unwrapped input.SQL — EXPLAIN never changes what
+	// permission a statement requires or whether it needs unsafe confirmation.
+	execSQL := input.SQL
+	explainMode := explain.Mode(input.Explain)
+	if input.Explain != "" {
+		explainer, ok := registeredConnectionExplainer(conn.Driver)
+		if !ok {
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, "This connection does not support EXPLAIN.", nil)
+			return
+		}
+		if explainMode == explain.ModeAnalyze && !explainer.ExplainSpec().SupportsAnalyze {
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, "This connection does not support EXPLAIN ANALYZE.", nil)
+			return
+		}
+		// Explain validates sql itself (statement count, already-EXPLAIN) —
+		// callers don't pre-process it.
+		wrapped, explainErr := explainer.Explain(input.SQL, explainMode)
+		if explainErr != nil {
+			switch {
+			case errors.Is(explainErr, explain.ErrMultipleStatements):
+				app.logger.Warn("explain refused for multi-statement input", logAttrs...)
+				app.errorMessage(w, r, http.StatusUnprocessableEntity, "EXPLAIN requires exactly one statement.", nil)
+			case errors.Is(explainErr, explain.ErrAlreadyExplained):
+				app.errorMessage(w, r, http.StatusUnprocessableEntity, "This statement is already an EXPLAIN statement.", nil)
+			default:
+				app.serverError(w, r, explainErr)
+			}
+			return
+		}
+		execSQL = wrapped
+	}
+
 	var rs *result.ResultSet
 	var execErr error
 	start := time.Now()
@@ -926,7 +978,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = app.executeDQLQuery(r, session, input.SQL, input.UseCursor, input.PageSize, start, runtimeSettings)
+		rs, execErr = app.executeDQLQuery(r, session, execSQL, input.UseCursor, input.PageSize, start, runtimeSettings)
 	case classifier.KindDML:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
@@ -937,7 +989,10 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		if !input.ConfirmUnsafe {
+		// Plain EXPLAIN only plans the statement; it never runs it, so the
+		// no-WHERE confirmation gate (which exists to stop real mutations)
+		// does not apply. EXPLAIN ANALYZE does run it for real and stays gated.
+		if !input.ConfirmUnsafe && explainMode != explain.ModePlain {
 			safetyResult, safetyErr := app.checkConnectionSQLSafety(r, conn, input.SQL)
 			if safetyErr != nil {
 				app.serverError(w, r, safetyErr)
@@ -954,7 +1009,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		rs, execErr = session.ExecuteWithOptions(r.Context(), input.SQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
+		rs, execErr = session.ExecuteWithOptions(r.Context(), execSQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
 	case classifier.KindDDL:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
@@ -965,14 +1020,14 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = session.ExecuteWithOptions(r.Context(), input.SQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
+		rs, execErr = session.ExecuteWithOptions(r.Context(), execSQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
 	default:
 		if !hasBroadExecute {
 			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnExecute)...)
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = session.ExecuteWithOptions(r.Context(), input.SQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
+		rs, execErr = session.ExecuteWithOptions(r.Context(), execSQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
 	}
 
 	if execErr != nil {

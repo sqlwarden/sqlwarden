@@ -85,6 +85,70 @@ describe('useQueryExecution', () => {
     })
   })
 
+  it('passes the explain mode through to runConnectionQuery', async () => {
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const { result: hook } = renderHook(() => useQueryExecution('acme', 3, 'query', 7), {
+      wrapper: wrapper(store),
+    })
+
+    await act(async () => hook.current.run('select 1', 'plain'))
+    expect(mocks.runQuery).toHaveBeenLastCalledWith(
+      'acme',
+      3,
+      7,
+      'session-1',
+      'select 1',
+      expect.objectContaining({ explain: 'plain' }),
+    )
+
+    await act(async () => hook.current.run('select 1', 'analyze'))
+    expect(mocks.runQuery).toHaveBeenLastCalledWith(
+      'acme',
+      3,
+      7,
+      'session-1',
+      'select 1',
+      expect.objectContaining({ explain: 'analyze' }),
+    )
+
+    await act(async () => hook.current.run('select 1'))
+    expect(mocks.runQuery).toHaveBeenLastCalledWith(
+      'acme',
+      3,
+      7,
+      'session-1',
+      'select 1',
+      expect.objectContaining({ explain: undefined }),
+    )
+  })
+
+  it('confirmAt reuses the explain mode from the run it resumes', async () => {
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    mocks.runQuery.mockRejectedValueOnce(
+      new ApiError('Confirm to run it anyway.', 422, {
+        code: 'unsafe_query_confirmation_required',
+        details: [],
+      }),
+    )
+    const { result: hook } = renderHook(() => useQueryExecution('acme', 3, 'query', 7), {
+      wrapper: wrapper(store),
+    })
+
+    await act(async () => hook.current.run('DELETE FROM widgets', 'analyze'))
+    expect(store.getState().pendingConfirmations.query).toBeDefined()
+
+    await act(async () => hook.current.confirmAt(0))
+
+    expect(mocks.runQuery).toHaveBeenLastCalledWith(
+      'acme',
+      3,
+      7,
+      'session-1',
+      'DELETE FROM widgets',
+      expect.objectContaining({ confirmUnsafe: true, explain: 'analyze' }),
+    )
+  })
+
   it('cancels the active request and ignores unavailable or already-running tabs', async () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
     const controller = new AbortController()

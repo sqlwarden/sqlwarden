@@ -11,6 +11,7 @@ import { Button } from '#/components/ui/button'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Icon } from '#/lib/icons'
 import { useIde } from './useIdeStore'
+import { ExplainAnalyzeConfirmDialog } from './ExplainAnalyzeConfirmDialog'
 import type { GroupNode } from './ideLayout'
 import { IdeTabBar } from './IdeTabBar'
 import { SqlEditor } from './SqlEditor'
@@ -239,6 +240,10 @@ export function EditorGroup({
                 canRun: Boolean(activeConnection) && !queryAction.isRunning,
                 onRunStatement: () => void queryAction.run(),
                 onRunAll: handleRunAll,
+                canExplain: queryAction.canExplain,
+                canExplainAnalyze: queryAction.canExplainAnalyze,
+                onExplain: queryAction.handleExplainClick,
+                onExplainAnalyze: queryAction.handleExplainAnalyzeClick,
                 onFormat: handleFormat,
                 onSaveFavorite: handleSaveFavoriteClick,
               }}
@@ -259,6 +264,17 @@ export function EditorGroup({
           workspaceId={workspace.id}
           sqlText={saveFavoriteSql}
           connectionId={activeConnection?.id ?? null}
+        />
+      )}
+
+      {queryAction.explainAnalyzeConfirmSql !== null && (
+        <ExplainAnalyzeConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) queryAction.closeExplainAnalyzeConfirm()
+          }}
+          sql={queryAction.explainAnalyzeConfirmSql}
+          onConfirm={queryAction.confirmExplainAnalyze}
         />
       )}
     </div>

@@ -9,6 +9,7 @@ import (
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/ddl"
+	"github.com/sqlwarden/internal/engine/explain"
 	"github.com/sqlwarden/internal/engine/statement"
 	"github.com/sqlwarden/internal/response"
 )
@@ -21,6 +22,7 @@ type engineView struct {
 	Schema       *schemaSpecPayload         `json:"schema,omitempty"`
 	DDL          *ddl.Spec                  `json:"schema_edit,omitempty"`
 	Statements   *statement.Spec            `json:"statements,omitempty"`
+	Explain      *explain.Spec              `json:"explain,omitempty"`
 }
 
 // schemaSpecPayload mirrors schema.SchemaSpec but lives here so the engines API
@@ -42,6 +44,7 @@ func engineToView(set engine.CapabilitySet) engineView {
 		Capabilities: set.Capabilities,
 		DDL:          set.DDL,
 		Statements:   set.Statements,
+		Explain:      set.Explain,
 	}
 	if set.Schema != nil {
 		v.Schema = &schemaSpecPayload{Dialect: set.Schema.Dialect, Kinds: set.Schema.Kinds}

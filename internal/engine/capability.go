@@ -5,6 +5,7 @@ import (
 	"github.com/sqlwarden/internal/engine/completer"
 	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/internal/engine/ddl"
+	"github.com/sqlwarden/internal/engine/explain"
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/engine/parser"
 	"github.com/sqlwarden/internal/engine/rewriter"
@@ -51,6 +52,10 @@ const (
 	// which is why this capability can read false while confirmation gating
 	// still applies (see connectionSafetyChecker in internal/web).
 	CapabilitySQLSafetyCheck Capability = "sql.safety_check"
+	// CapabilitySQLExplain produces an EXPLAIN form of a single statement
+	// without executing it as-is. See explain.Explainer for the analyze-mode
+	// distinction reported alongside this capability.
+	CapabilitySQLExplain Capability = "sql.explain"
 )
 
 // CapabilitySet is an engine's static capability report. Safe to compute and
@@ -64,6 +69,8 @@ type CapabilitySet struct {
 	DDL *ddl.Spec `json:"schema_edit,omitempty"`
 	// Statements accompanies sql.generate.
 	Statements *statement.Spec `json:"statements,omitempty"`
+	// Explain accompanies sql.explain.
+	Explain *explain.Spec `json:"explain,omitempty"`
 }
 
 // capabilitiesOf derives an engine's capabilities by type-asserting a fresh,
@@ -71,7 +78,7 @@ type CapabilitySet struct {
 // DERIVED, never hand-declared, so a reported capability can never disagree with
 // what the engine actually implements. The probe is created but never connected,
 // which is why this works for the static /engines report.
-func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec, *ddl.Spec, *statement.Spec) {
+func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec, *ddl.Spec, *statement.Spec, *explain.Spec) {
 	probe := reg.New()
 	caps := map[Capability]bool{
 		CapabilitySchemaDirectory: false,
@@ -83,6 +90,7 @@ func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec
 	var spec *metadata.SchemaSpec
 	var ddlSpec *ddl.Spec
 	var statementSpec *statement.Spec
+	var explainSpec *explain.Spec
 	if si, ok := probe.(metadata.SchemaInspector); ok {
 		caps[CapabilitySchemaDirectory] = true
 		caps[CapabilitySchemaObjects] = true
@@ -99,24 +107,30 @@ func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec
 		s := generator.StatementSpec()
 		statementSpec = &s
 	}
+	if explainer, ok := probe.(explain.Explainer); ok {
+		caps[CapabilitySQLExplain] = true
+		s := explainer.ExplainSpec()
+		explainSpec = &s
+	}
 	_, caps[CapabilityQueryCursor] = probe.(cursor.QueryCursorDriver)
 	_, caps[CapabilitySQLClassify] = probe.(classifier.Classifier)
 	_, caps[CapabilitySQLSafetyCheck] = probe.(safety.Checker)
 	_, caps[CapabilitySQLParse] = probe.(parser.Parser)
 	_, caps[CapabilitySQLRewrite] = probe.(rewriter.Rewriter)
 	_, caps[CapabilitySQLComplete] = probe.(completer.Completer)
-	return caps, spec, ddlSpec, statementSpec
+	return caps, spec, ddlSpec, statementSpec, explainSpec
 }
 
 // capabilityReport builds the full static capability report for an engine: its
 // descriptor plus the derived capability map and schema spec.
 func capabilityReport(reg Registration) CapabilitySet {
-	caps, spec, ddlSpec, statementSpec := capabilitiesOf(reg)
+	caps, spec, ddlSpec, statementSpec, explainSpec := capabilitiesOf(reg)
 	return CapabilitySet{
 		Engine:       EngineDescriptor{ID: reg.ID, DisplayName: reg.DisplayName, Dialect: reg.Dialect},
 		Capabilities: caps,
 		Schema:       spec,
 		DDL:          ddlSpec,
 		Statements:   statementSpec,
+		Explain:      explainSpec,
 	}
 }

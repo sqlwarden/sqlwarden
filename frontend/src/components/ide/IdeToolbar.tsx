@@ -16,6 +16,7 @@ import {
 import type { Connection, Workspace, WorkspaceFile } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { useIde, activeTabId as selectActiveTabId, type EditorTab } from './useIdeStore'
+import { ExplainAnalyzeConfirmDialog } from './ExplainAnalyzeConfirmDialog'
 import { SaveAsDialog } from './SaveAsDialog'
 import { SaveFavoriteDialog } from './SaveFavoriteDialog'
 import { ExportConfirmDialog } from './exports/ExportConfirmDialog'
@@ -249,6 +250,20 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
                     <Icon name="play" size={13} data-icon="inline-start" />
                     Run All
                   </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={queryAction.handleExplainClick}
+                    disabled={runDisabled || !queryAction.canExplain}
+                  >
+                    <Icon name="search-01" size={13} data-icon="inline-start" />
+                    Explain
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={queryAction.handleExplainAnalyzeClick}
+                    disabled={runDisabled || !queryAction.canExplainAnalyze}
+                  >
+                    <Icon name="search-01" size={13} data-icon="inline-start" />
+                    Explain Analyze
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleExportClick}>
                     <Icon name="download-01" size={13} data-icon="inline-start" />
                     Export
@@ -393,6 +408,17 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
             void downloadNow.download(activeConnection.id, confirmExportSql)
             setConfirmExportSql(null)
           }}
+        />
+      )}
+
+      {activeConnection && queryAction.explainAnalyzeConfirmSql !== null && (
+        <ExplainAnalyzeConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) queryAction.closeExplainAnalyzeConfirm()
+          }}
+          sql={queryAction.explainAnalyzeConfirmSql}
+          onConfirm={queryAction.confirmExplainAnalyze}
         />
       )}
 

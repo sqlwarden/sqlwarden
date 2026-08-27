@@ -102,7 +102,7 @@ func TestMySQLClassify(t *testing.T) {
 		{name: "user administration is unknown", sql: "CREATE USER reader IDENTIFIED BY 'secret'", want: classifier.KindUnknown, wantCount: 1},
 		{name: "table lock is unknown", sql: "LOCK TABLES widgets WRITE", want: classifier.KindUnknown, wantCount: 1},
 		{name: "procedure call is unknown", sql: "CALL dangerous_proc()", want: classifier.KindUnknown, wantCount: 1},
-		{name: "plain explain does not execute", sql: "EXPLAIN UPDATE widgets SET active = false", want: classifier.KindDQL, wantCount: 1},
+		{name: "plain explain requires the wrapped statement's permission", sql: "EXPLAIN UPDATE widgets SET active = false", want: classifier.KindDML, wantCount: 1},
 		{name: "explain analyze executes", sql: "EXPLAIN ANALYZE UPDATE widgets SET active = false", want: classifier.KindDML, wantCount: 1},
 		{name: "read plus DML", sql: "SELECT 1; UPDATE widgets SET active = false", want: classifier.KindDML, wantCount: 2},
 		{name: "read plus DDL", sql: "SELECT 1; DROP TABLE widgets", want: classifier.KindDDL, wantCount: 2},

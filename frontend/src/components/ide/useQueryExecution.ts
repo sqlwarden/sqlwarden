@@ -31,6 +31,7 @@ export function useQueryExecution(
 
   const runIdRef = useRef('')
   const sqlRef = useRef('')
+  const explainRef = useRef<'plain' | 'analyze' | undefined>(undefined)
 
   const cancel = useCallback(() => previousController?.abort(), [previousController])
 
@@ -47,6 +48,7 @@ export function useQueryExecution(
           runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, statementSql, {
             useCursor: true,
             confirmUnsafe,
+            explain: explainRef.current,
             signal,
           }),
         beginRun: (_tabId, sqls) => beginRun(sqls),
@@ -80,11 +82,12 @@ export function useQueryExecution(
   )
 
   const run = useCallback(
-    async (sql: string) => {
+    async (sql: string, explain?: 'plain' | 'analyze') => {
       if (!tabId || !connectionId || isRunning) return
 
       previousController?.abort()
       sqlRef.current = sql
+      explainRef.current = explain
       const controller = new AbortController()
       const runId = beginRun([sql])
       runIdRef.current = runId
