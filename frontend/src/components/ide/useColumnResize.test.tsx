@@ -46,6 +46,31 @@ describe('useColumnResize', () => {
     expect(second.result.current.columnWidths).toEqual([100, 200, 300])
   })
 
+  it('evicts the least-recently-used shape once the cache exceeds its cap', () => {
+    const prefix = `evict-${Math.random()}`
+
+    // Fill the cache past its 200-entry cap with distinct shapes.
+    for (let i = 0; i < 200; i++) {
+      const hook = renderHook(() => useColumnResize(1, 100, 60, `${prefix}-${i}`))
+      act(() => hook.result.current.startResize(mouseEvent(0), 0))
+      act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 10 })))
+      hook.unmount()
+    }
+
+    // Touching one more shape should evict the oldest (`${prefix}-0`) rather
+    // than growing the cache unboundedly.
+    const overflow = renderHook(() => useColumnResize(1, 100, 60, `${prefix}-overflow`))
+    act(() => overflow.result.current.startResize(mouseEvent(0), 0))
+    act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 10 })))
+    overflow.unmount()
+
+    const evicted = renderHook(() => useColumnResize(1, 100, 60, `${prefix}-0`))
+    expect(evicted.result.current.columnWidths).toEqual([100])
+
+    const retained = renderHook(() => useColumnResize(1, 100, 60, `${prefix}-199`))
+    expect(retained.result.current.columnWidths).toEqual([110])
+  })
+
   it('restores document interaction styles after mouseup and unmount', () => {
     const { result, unmount } = renderHook(() => useColumnResize(1, 150, 60))
 

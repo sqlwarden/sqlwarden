@@ -11,7 +11,31 @@ type ResizeState = {
 // change, so this can't live in component state. Keyed by column shape
 // (names joined) rather than tab/run id, so the same query re-run in a new
 // run keeps its widths too.
+//
+// Capped LRU: a long session running many distinct ad-hoc queries would
+// otherwise grow this map forever. A Map iterates in insertion order, so
+// re-inserting an entry on every touch keeps it at the "most recent" end
+// and lets the oldest entry be evicted with a single `.next()` call.
+const MAX_CACHE_ENTRIES = 200
 const widthCache = new Map<string, number[]>()
+
+function cacheGet(key: string): number[] | undefined {
+  const value = widthCache.get(key)
+  if (value) {
+    widthCache.delete(key)
+    widthCache.set(key, value)
+  }
+  return value
+}
+
+function cacheSet(key: string, value: number[]): void {
+  widthCache.delete(key)
+  widthCache.set(key, value)
+  if (widthCache.size > MAX_CACHE_ENTRIES) {
+    const oldestKey = widthCache.keys().next().value
+    if (oldestKey !== undefined) widthCache.delete(oldestKey)
+  }
+}
 
 function resolveDefaults(defaultWidth: number | number[], columnCount: number): number[] {
   return Array.isArray(defaultWidth)
@@ -26,7 +50,7 @@ export function useColumnResize(
   cacheKey?: string,
 ) {
   const [columnWidths, setColumnWidths] = useState(() => {
-    const cached = cacheKey ? widthCache.get(cacheKey) : undefined
+    const cached = cacheKey ? cacheGet(cacheKey) : undefined
     return cached && cached.length === columnCount
       ? cached
       : resolveDefaults(defaultWidth, columnCount)
@@ -69,7 +93,7 @@ export function useColumnResize(
       setColumnWidths((current) => {
         const next = [...current]
         next[resizing.columnIndex] = width
-        if (cacheKey) widthCache.set(cacheKey, next)
+        if (cacheKey) cacheSet(cacheKey, next)
         return next
       })
     }
