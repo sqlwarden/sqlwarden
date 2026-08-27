@@ -709,9 +709,18 @@ function ErrorState({
 }
 
 const ROW_NUM_COL_WIDTH = 48
-const DEFAULT_COL_WIDTH = 150
 const MIN_COL_WIDTH = 60
+const MAX_NAME_COL_WIDTH = 320
+const NAME_CHAR_WIDTH_PX = 7
+const NAME_COL_PADDING_PX = 56
 const ROW_HEIGHT = 29
+
+/** Sizes a column from its name length (icon + type row need room too) so
+ *  columns start close to their content width instead of a flat default. */
+function columnWidthFromName(name: string): number {
+  const estimate = name.length * NAME_CHAR_WIDTH_PX + NAME_COL_PADDING_PX
+  return Math.min(MAX_NAME_COL_WIDTH, Math.max(MIN_COL_WIDTH, estimate))
+}
 
 function copyToClipboard(text: string) {
   try {
@@ -790,11 +799,20 @@ function ResultSetView({
   const columnNames = columns.map((c) => c.name)
   const cellText = (v: ResultValue) => formatValue(v).display
 
+  const columnDefaultWidths = columns.map((c) => columnWidthFromName(c.name))
+  const columnShapeKey = columnNames.join('')
+
   const { columnWidths: colWidths, startResize } = useColumnResize(
     columns.length,
-    DEFAULT_COL_WIDTH,
+    columnDefaultWidths,
     MIN_COL_WIDTH,
+    columnShapeKey || undefined,
   )
+
+  // A single-column result grows to fill the available width instead of
+  // sitting at its name-derived default; once the user drags it, it keeps
+  // whatever width they chose like any other column.
+  const singleColumnFill = columns.length === 1 && colWidths[0] === columnDefaultWidths[0]
 
   const [selection, setSelection] = useState<CellSelection | null>(null)
   const [rowSelectionMode, setRowSelectionMode] = useState(false)
@@ -1050,7 +1068,7 @@ function ResultSetView({
       <table
         role="grid"
         className="table-fixed border-separate border-spacing-0 text-xs"
-        style={{ width: totalWidth }}
+        style={{ width: singleColumnFill ? '100%' : totalWidth }}
       >
         <thead className="sticky top-0 z-10 bg-muted shadow-[0_-1px_0_0_var(--color-muted)]">
           <tr role="row">
@@ -1063,8 +1081,16 @@ function ResultSetView({
               <ColumnHeader
                 key={i}
                 col={col}
-                width={colWidths[i]}
-                onResizeStart={(e) => startResize(e, i)}
+                width={singleColumnFill ? undefined : colWidths[i]}
+                onResizeStart={(e) =>
+                  startResize(
+                    e,
+                    i,
+                    singleColumnFill
+                      ? e.currentTarget.parentElement?.getBoundingClientRect().width
+                      : undefined,
+                  )
+                }
                 onContextMenu={(e) => openColumnMenu(i, e)}
               />
             ))}
@@ -1360,7 +1386,7 @@ function ColumnHeader({
   onContextMenu,
 }: {
   col: ResultColumn
-  width: number
+  width: number | undefined
   onResizeStart: (e: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent) => void
 }) {

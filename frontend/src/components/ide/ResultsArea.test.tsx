@@ -201,6 +201,29 @@ describe('ResultsArea', () => {
     expect(await screen.findByText('analytics-pg')).toBeInTheDocument()
   })
 
+  it('grows a single-column result to fill the available width instead of its name-derived default', async () => {
+    renderResult({
+      status: 'ok',
+      durationMs: 3,
+      sql: 'select id from users',
+      connectionId: 7,
+      data: {
+        columns: [{ name: 'id', type: 'integer', raw_type: 'int4', nullable: false }],
+        rows: [[{ type: 'integer', integer: 1 }]],
+        duration_ms: 3,
+        truncated: false,
+        rows_returned: 1,
+        bytes_returned: 0,
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
+      },
+    })
+
+    const table = await screen.findByRole('grid')
+    expect(table).toHaveStyle({ width: '100%' })
+    const header = screen.getByRole('columnheader', { name: /id/ })
+    expect(header.style.width).toBe('')
+  })
+
   it('shows the connection name in the bottom status bar, before the row count, not in the sql caption', async () => {
     renderResult({
       status: 'ok',

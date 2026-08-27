@@ -716,6 +716,11 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
               ],
             },
             selectedRunId: { ...s.selectedRunId, [tabId]: runId },
+            sharedSelectedRunId: runId,
+            connectionSelectedRunId:
+              connectionId !== undefined
+                ? { ...s.connectionSelectedRunId, [connectionId]: runId }
+                : s.connectionSelectedRunId,
           }))
           return runId
         },
