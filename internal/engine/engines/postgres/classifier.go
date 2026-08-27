@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"errors"
-	"strings"
 
 	"github.com/bytebase/omni/pg/ast"
 
@@ -46,10 +45,7 @@ func classifyPostgresNode(node ast.Node) classifier.Kind {
 	case *ast.VariableShowStmt:
 		return classifier.KindDQL
 	case *ast.ExplainStmt:
-		if postgresExplainAnalyze(n) {
-			return classifyPostgresNode(n.Query)
-		}
-		return classifier.KindDQL
+		return classifyPostgresNode(n.Query)
 	case *ast.InsertStmt, *ast.UpdateStmt, *ast.DeleteStmt, *ast.MergeStmt,
 		*ast.CopyStmt, *ast.RefreshMatViewStmt:
 		return classifier.KindDML
@@ -105,18 +101,6 @@ func classifyPostgresSelect(statement *ast.SelectStmt) classifier.Kind {
 		return kind != classifier.KindUnknown
 	})
 	return kind
-}
-
-func postgresExplainAnalyze(statement *ast.ExplainStmt) bool {
-	if statement == nil || statement.Options == nil {
-		return false
-	}
-	for _, item := range statement.Options.Items {
-		if option, ok := item.(*ast.DefElem); ok && strings.EqualFold(option.Defname, "analyze") {
-			return true
-		}
-	}
-	return false
 }
 
 func combineKinds(left, right classifier.Kind) classifier.Kind {

@@ -1,5 +1,7 @@
-import { useCallback, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { engineDetailQueryOptions } from '#/lib/api/queries/database'
 import type { Connection, Workspace } from '#/lib/api/types'
 import { sqlStatementAtCursor } from './sqlStatements'
 import type { EditorTab } from './useIdeStore'
@@ -142,6 +144,68 @@ export function useToolbarQueryAction({
     execute,
   ])
 
+  const { data: activeEngine } = useQuery({
+    ...engineDetailQueryOptions(activeConnection?.driver ?? ''),
+    enabled: !!activeConnection,
+  })
+  const canExplain = Boolean(activeConnection && activeEngine?.explain)
+  const canExplainAnalyze = Boolean(activeConnection && activeEngine?.explain?.supports_analyze)
+
+  const explain = useCallback(
+    async (analyze: boolean, sqlOverride?: string) => {
+      if (!activeTab || isRunning) return
+      if (!activeConnection) {
+        toast.warning(
+          hasConnections
+            ? 'Select a connection to run this query.'
+            : 'No connection available. Add a connection to run queries.',
+        )
+        return
+      }
+      const sql = sqlOverride ?? resolveSql()
+      if (!sql) return
+      if (analyze && !canExplainAnalyze) {
+        toast.warning('This connection does not support EXPLAIN ANALYZE.')
+        return
+      }
+      if (maximizedPane === 'editor') setMaximizedPane(null)
+      // The backend wraps `sql` in its EXPLAIN form and validates it is a
+      // single statement — see POST .../query's `explain` field.
+      await execute(sql, analyze ? 'analyze' : 'plain')
+    },
+    [
+      activeTab,
+      activeConnection,
+      canExplainAnalyze,
+      hasConnections,
+      isRunning,
+      maximizedPane,
+      resolveSql,
+      setMaximizedPane,
+      execute,
+    ],
+  )
+
+  const [explainAnalyzeConfirmSql, setExplainAnalyzeConfirmSql] = useState<string | null>(null)
+
+  const handleExplainClick = useCallback(() => {
+    void explain(false)
+  }, [explain])
+
+  const handleExplainAnalyzeClick = useCallback(() => {
+    const sql = resolveSql()
+    if (!sql) return
+    setExplainAnalyzeConfirmSql(sql)
+  }, [resolveSql])
+
+  const closeExplainAnalyzeConfirm = useCallback(() => setExplainAnalyzeConfirmSql(null), [])
+
+  const confirmExplainAnalyze = useCallback(() => {
+    const sql = explainAnalyzeConfirmSql
+    setExplainAnalyzeConfirmSql(null)
+    if (sql) void explain(true, sql)
+  }, [explainAnalyzeConfirmSql, explain])
+
   const confirmAt = useCallback(
     async (index: number) => {
       await Promise.all([confirmAtPlain(index), confirmAtBatch(index)])
@@ -187,5 +251,21 @@ export function useToolbarQueryAction({
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
   }, [run, bindShortcut])
 
-  return { cancel, confirmAt, isRunning, resolveDocumentText, resolveSql, run, runAll }
+  return {
+    cancel,
+    canExplain,
+    canExplainAnalyze,
+    closeExplainAnalyzeConfirm,
+    confirmAt,
+    confirmExplainAnalyze,
+    explain,
+    explainAnalyzeConfirmSql,
+    handleExplainAnalyzeClick,
+    handleExplainClick,
+    isRunning,
+    resolveDocumentText,
+    resolveSql,
+    run,
+    runAll,
+  }
 }

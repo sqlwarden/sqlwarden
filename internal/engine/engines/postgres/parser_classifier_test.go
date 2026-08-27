@@ -69,7 +69,7 @@ func TestPostgresClassify(t *testing.T) {
 		{name: "set is unknown", sql: "SET search_path = public", want: classifier.KindUnknown, wantCount: 1},
 		{name: "privilege statement is unknown", sql: "GRANT SELECT ON widgets TO reader", want: classifier.KindUnknown, wantCount: 1},
 		{name: "role administration is unknown", sql: "CREATE ROLE reader", want: classifier.KindUnknown, wantCount: 1},
-		{name: "plain explain does not execute", sql: "EXPLAIN DELETE FROM widgets", want: classifier.KindDQL, wantCount: 1},
+		{name: "plain explain requires the wrapped statement's permission", sql: "EXPLAIN DELETE FROM widgets", want: classifier.KindDML, wantCount: 1},
 		{name: "explain analyze executes", sql: "EXPLAIN ANALYZE DELETE FROM widgets", want: classifier.KindDML, wantCount: 1},
 		{name: "read plus DML", sql: "SELECT 1; UPDATE widgets SET active = false", want: classifier.KindDML, wantCount: 2},
 		{name: "read plus DDL", sql: "SELECT 1; DROP TABLE widgets", want: classifier.KindDDL, wantCount: 2},

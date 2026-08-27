@@ -2,6 +2,7 @@ import { queryOptions, type QueryClient } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
 import type {
   DirectoryResponse,
+  EngineView,
   GenerateStatementResponse,
   ObjectRef,
   ObjectsResponse,
@@ -92,19 +93,33 @@ export function completeConnectionSQL(
   )
 }
 
+/** Connection drivers use their driver library's name; the engine registry
+ *  keys capabilities by SQLWarden's own engine id. */
+function normalizeEngineID(driver: string): string {
+  return driver === 'postgresql'
+    ? 'postgres'
+    : driver === 'mariadb'
+      ? 'mysql'
+      : driver === 'sqlite3'
+        ? 'sqlite'
+        : driver
+}
+
 export function getSQLCompletionVocabulary(driver: string, signal?: AbortSignal) {
-  const normalized =
-    driver === 'postgresql'
-      ? 'postgres'
-      : driver === 'mariadb'
-        ? 'mysql'
-        : driver === 'sqlite3'
-          ? 'sqlite'
-          : driver
   return api.get<SQLCompletionVocabulary>(
-    `/api/v1/engines/${normalized}/completion-vocabulary`,
+    `/api/v1/engines/${normalizeEngineID(driver)}/completion-vocabulary`,
     signal ? { signal } : undefined,
   )
+}
+
+export function engineDetailQueryOptions(driver: string) {
+  const engineID = normalizeEngineID(driver)
+  return queryOptions({
+    queryKey: queryKeys.engine(engineID),
+    queryFn: () => api.get<EngineView>(`/api/v1/engines/${engineID}`),
+    // Static per build: an engine's reported capabilities never change at runtime.
+    staleTime: Infinity,
+  })
 }
 
 export function orgConnectionDirectoryQueryOptions(
@@ -308,6 +323,10 @@ export type RunConnectionQueryOptions = {
   /** Re-submits a statement the backend flagged as unsafe (e.g. missing
    *  WHERE) with explicit user confirmation to run it anyway. */
   confirmUnsafe?: boolean
+  /** When set, the backend wraps `sql` in its EXPLAIN (or EXPLAIN ANALYZE)
+   *  form for the connection's engine before executing it. The engine's
+   *  EXPLAIN support is reported by GET /engines, not decided client-side. */
+  explain?: 'plain' | 'analyze'
   signal?: AbortSignal
 }
 
@@ -326,6 +345,7 @@ export function runConnectionQuery(
       use_cursor: options.useCursor,
       page_size: options.pageSize,
       confirm_unsafe: options.confirmUnsafe,
+      explain: options.explain,
     },
     { headers: { 'X-Warden-Session': sessionId }, signal: options.signal },
   )

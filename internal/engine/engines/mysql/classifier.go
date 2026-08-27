@@ -45,13 +45,10 @@ func classifyMySQLNode(node ast.Node) classifier.Kind {
 	case *ast.TableStmt, *ast.ValuesStmt, *ast.ShowStmt:
 		return classifier.KindDQL
 	case *ast.ExplainStmt:
-		if n.Analyze {
-			if n.Stmt == nil {
-				return classifier.KindUnknown
-			}
-			return classifyMySQLNode(n.Stmt)
+		if n.Stmt == nil {
+			return classifier.KindUnknown
 		}
-		return classifier.KindDQL
+		return classifyMySQLNode(n.Stmt)
 	case *ast.InsertStmt, *ast.UpdateStmt, *ast.DeleteStmt, *ast.LoadDataStmt:
 		return classifier.KindDML
 	case *ast.CreateDatabaseStmt, *ast.CreateTableStmt, *ast.CreateIndexStmt,

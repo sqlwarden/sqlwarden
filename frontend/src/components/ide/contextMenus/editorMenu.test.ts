@@ -16,6 +16,10 @@ describe('buildSqlEditorMenu', () => {
     onSelectAll: noop,
     onRunStatement: noop,
     onRunAll: noop,
+    canExplain: true,
+    canExplainAnalyze: true,
+    onExplain: noop,
+    onExplainAnalyze: noop,
     onFormat: noop,
     onSaveFavorite: noop,
   }
@@ -58,5 +62,53 @@ describe('buildSqlEditorMenu', () => {
   it('does not offer export — that lives in the main toolbar', () => {
     const items = buildSqlEditorMenu({ ...base, isSqlTab: true, canRun: true })
     expect(action(items, 'export')).toBeUndefined()
+  })
+
+  it('includes Explain and Explain Analyze actions for a runnable SQL tab', () => {
+    const onExplain = () => {}
+    const onExplainAnalyze = () => {}
+    const items = buildSqlEditorMenu({
+      ...base,
+      isSqlTab: true,
+      canRun: true,
+      canExplainAnalyze: true,
+      onExplain,
+      onExplainAnalyze,
+    })
+    expect(action(items, 'explain')?.onSelect).toBe(onExplain)
+    expect(action(items, 'explain')?.disabled).toBeFalsy()
+    expect(action(items, 'explain-analyze')?.onSelect).toBe(onExplainAnalyze)
+    expect(action(items, 'explain-analyze')?.disabled).toBeFalsy()
+  })
+
+  it('disables Explain Analyze when canExplainAnalyze is false', () => {
+    const items = buildSqlEditorMenu({
+      ...base,
+      isSqlTab: true,
+      canRun: true,
+      canExplainAnalyze: false,
+    })
+    expect(action(items, 'explain-analyze')?.disabled).toBe(true)
+    expect(action(items, 'explain')?.disabled).toBeFalsy()
+  })
+
+  it('disables Explain when canExplain is false', () => {
+    const items = buildSqlEditorMenu({
+      ...base,
+      isSqlTab: true,
+      canRun: true,
+      canExplain: false,
+    })
+    expect(action(items, 'explain')?.disabled).toBe(true)
+    expect(action(items, 'explain')?.disabledReason).toBe(
+      'This connection does not support EXPLAIN',
+    )
+  })
+
+  it('disables Explain and Explain Analyze with a reason when there is no connection', () => {
+    const items = buildSqlEditorMenu({ ...base, isSqlTab: true, canRun: false })
+    expect(action(items, 'explain')?.disabled).toBe(true)
+    expect(action(items, 'explain')?.disabledReason).toBe('No connection')
+    expect(action(items, 'explain-analyze')?.disabled).toBe(true)
   })
 })

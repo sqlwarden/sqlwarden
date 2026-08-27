@@ -37,6 +37,48 @@ func TestListEngines(t *testing.T) {
 	assert.Equal(t, caps["sql.complete"], true)
 	assert.Equal(t, byID["mysql"]["capabilities"].(map[string]any)["sql.complete"], true)
 	assert.Equal(t, byID["sqlite"]["capabilities"].(map[string]any)["sql.complete"], false)
+
+	assert.Equal(t, caps["sql.explain"], true)
+	pgExplain, ok := pg["explain"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected postgres explain spec in %v", pg)
+	}
+	assert.Equal(t, pgExplain["supports_analyze"], true)
+
+	mysqlExplain, ok := byID["mysql"]["explain"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected mysql explain spec in %v", byID["mysql"])
+	}
+	assert.Equal(t, mysqlExplain["supports_analyze"], true)
+
+	sqliteExplain, ok := byID["sqlite"]["explain"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected sqlite explain spec in %v", byID["sqlite"])
+	}
+	assert.Equal(t, sqliteExplain["supports_analyze"], false)
+}
+
+func TestGetEngineIncludesExplainSpec(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, _ := seedOrgOwner(t, app, uniqueEmail(t, "engine-explain"), "Explain", "Explain Org")
+
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/engines/postgres", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["capabilities"].(map[string]any)["sql.explain"], true)
+	explainSpec, ok := res.BodyFields["explain"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected explain spec in %v", res.BodyFields)
+	}
+	assert.Equal(t, explainSpec["supports_analyze"], true)
+
+	sqliteRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/engines/sqlite", nil, tok), app.routes())
+	assert.Equal(t, sqliteRes.StatusCode, http.StatusOK)
+	sqliteExplainSpec, ok := sqliteRes.BodyFields["explain"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected explain spec in %v", sqliteRes.BodyFields)
+	}
+	assert.Equal(t, sqliteExplainSpec["supports_analyze"], false)
 }
 
 func TestGetEngineUnknownReturns404(t *testing.T) {

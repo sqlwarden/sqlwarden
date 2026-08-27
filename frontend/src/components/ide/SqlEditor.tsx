@@ -48,6 +48,10 @@ export type SqlEditorContextMenuConfig = {
   canRun: boolean
   onRunStatement: () => void
   onRunAll: () => void
+  canExplain: boolean
+  canExplainAnalyze: boolean
+  onExplain: () => void
+  onExplainAnalyze: () => void
   onFormat: () => void
   onSaveFavorite: () => void
 }
@@ -345,6 +349,10 @@ export function SqlEditor({
         canRun: contextMenu?.canRun ?? false,
         onRunStatement: contextMenu?.onRunStatement ?? (() => {}),
         onRunAll: contextMenu?.onRunAll ?? (() => {}),
+        canExplain: contextMenu?.canExplain ?? false,
+        canExplainAnalyze: contextMenu?.canExplainAnalyze ?? false,
+        onExplain: contextMenu?.onExplain ?? (() => {}),
+        onExplainAnalyze: contextMenu?.onExplainAnalyze ?? (() => {}),
         onFormat: contextMenu?.onFormat ?? (() => {}),
         onSaveFavorite: contextMenu?.onSaveFavorite ?? (() => {}),
       }),

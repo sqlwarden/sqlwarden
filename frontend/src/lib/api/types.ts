@@ -118,6 +118,22 @@ export type ResultRow = ResultValue[]
 
 export type TransactionMode = 'auto' | 'manual'
 
+export interface EngineExplainSpec {
+  supports_analyze: boolean
+}
+
+/** A registered engine's static capability report, as served by GET
+ *  /api/v1/engines/{engine_id}. Capability facts (e.g. whether the engine
+ *  supports EXPLAIN ANALYZE) are derived backend-side from what the engine's
+ *  driver actually implements — never hand-declared client-side. */
+export interface EngineView {
+  id: string
+  display_name: string
+  dialect: string
+  capabilities: Record<string, boolean>
+  explain?: EngineExplainSpec
+}
+
 export interface TransactionStatusResponse {
   mode: TransactionMode
   open: boolean

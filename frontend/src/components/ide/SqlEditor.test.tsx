@@ -203,6 +203,10 @@ describe('SqlEditor', () => {
           canRun: true,
           onRunStatement,
           onRunAll: vi.fn(),
+          canExplain: true,
+          canExplainAnalyze: true,
+          onExplain: vi.fn(),
+          onExplainAnalyze: vi.fn(),
           onFormat,
           onSaveFavorite: vi.fn(),
         }}

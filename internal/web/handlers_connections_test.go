@@ -861,6 +861,117 @@ func TestExecuteQueryExecuteBranch(t *testing.T) {
 	assert.Equal(t, updateRes.BodyFields["rows_affected"], any(float64(0)))
 }
 
+func TestExecuteQueryExplainWrapsSQLServerSide(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "query-explain@example.com", "Query Explain", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Explain WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "ExplainConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+	queryURL := orgConnectionURL(slug, wsIDInt, envID, connID) + "/query"
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	createTableReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "CREATE TABLE t (id INTEGER)"}, tok)
+	createTableReq.Header.Set("X-Warden-Session", sessionID)
+	createTableRes := send(t, createTableReq, app.routes())
+	assert.Equal(t, createTableRes.StatusCode, http.StatusOK)
+
+	// sqlite does not support EXPLAIN ANALYZE.
+	analyzeReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT 1", "explain": "analyze"}, tok)
+	analyzeReq.Header.Set("X-Warden-Session", sessionID)
+	analyzeRes := send(t, analyzeReq, app.routes())
+	assert.Equal(t, analyzeRes.StatusCode, http.StatusUnprocessableEntity)
+
+	// Multi-statement input is refused before wrapping.
+	multiReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT 1; SELECT 2", "explain": "plain"}, tok)
+	multiReq.Header.Set("X-Warden-Session", sessionID)
+	multiRes := send(t, multiReq, app.routes())
+	assert.Equal(t, multiRes.StatusCode, http.StatusUnprocessableEntity)
+
+	// A plain EXPLAIN of a DELETE with no WHERE clause skips the unsafe
+	// confirmation gate: it only plans the statement, never executes it.
+	explainDeleteReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "DELETE FROM t", "explain": "plain"}, tok)
+	explainDeleteReq.Header.Set("X-Warden-Session", sessionID)
+	explainDeleteRes := send(t, explainDeleteReq, app.routes())
+	assert.Equal(t, explainDeleteRes.StatusCode, http.StatusOK)
+
+	// A plain EXPLAIN of a valid SELECT succeeds and returns a plan, not the
+	// query's own result shape.
+	explainSelectReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT 1", "explain": "plain"}, tok)
+	explainSelectReq.Header.Set("X-Warden-Session", sessionID)
+	explainSelectRes := send(t, explainSelectReq, app.routes())
+	assert.Equal(t, explainSelectRes.StatusCode, http.StatusOK)
+
+	// Explaining a statement that is already an EXPLAIN is refused rather
+	// than producing invalid nested-EXPLAIN syntax at the target database.
+	alreadyExplainedReq := newAuthRequest(t, http.MethodPost, queryURL,
+		map[string]any{"sql": "EXPLAIN SELECT 1", "explain": "plain"}, tok)
+	alreadyExplainedReq.Header.Set("X-Warden-Session", sessionID)
+	alreadyExplainedRes := send(t, alreadyExplainedReq, app.routes())
+	assert.Equal(t, alreadyExplainedRes.StatusCode, http.StatusUnprocessableEntity)
+}
+
+func TestExecuteQueryExplainRejectsInvalidMode(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "query-explain-invalid@example.com", "Query Explain Invalid", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Explain Invalid WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{"name": "ExplainInvalidConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+	queryURL := orgConnectionURL(slug, wsIDInt, envID, connID) + "/query"
+
+	connectRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(slug, wsIDInt, envID, connID)+"/connect", nil, tok), app.routes())
+	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
+	sessionID := connectRes.BodyFields["session_id"].(string)
+
+	// An unrecognized explain mode is rejected as a field validation error,
+	// before classification, safety checks, or the engine's Explainer ever run.
+	req := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT 1", "explain": "bogus"}, tok)
+	req.Header.Set("X-Warden-Session", sessionID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	fieldErrors := res.BodyFields["error"].(map[string]any)["field_errors"].(map[string]any)
+	if _, ok := fieldErrors["explain"]; !ok {
+		t.Fatalf("expected explain field error, got %+v", fieldErrors)
+	}
+}
+
+func TestRegisteredConnectionExplainerUnknownDriverReturnsNotOK(t *testing.T) {
+	t.Parallel()
+	if _, ok := registeredConnectionExplainer("not-a-real-driver"); ok {
+		t.Fatal("expected an unregistered driver to report no Explainer")
+	}
+}
+
 func TestExecuteQueryUnsafeDeleteRequiresConfirmation(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

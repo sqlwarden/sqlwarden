@@ -6,6 +6,7 @@ import (
 
 	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/internal/engine/ddl"
+	"github.com/sqlwarden/internal/engine/explain"
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/engine/safety"
 	"github.com/sqlwarden/internal/engine/statement"
@@ -38,6 +39,10 @@ func (capabilityDriver) Generate(statement.Request) (string, error) { return "SE
 func (capabilityDriver) Check(context.Context, safety.Request) (safety.Result, error) {
 	return safety.Result{Source: "omni"}, nil
 }
+func (capabilityDriver) ExplainSpec() explain.Spec { return explain.Spec{SupportsAnalyze: true} }
+func (capabilityDriver) Explain(sql string, mode explain.Mode) (string, error) {
+	return "EXPLAIN " + sql, nil
+}
 
 func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	resetRegistry(t)
@@ -68,6 +73,9 @@ func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	if !set.Capabilities[CapabilitySQLSafetyCheck] {
 		t.Errorf("sql.safety_check should be true (driver implements Check): %+v", set.Capabilities)
 	}
+	if !set.Capabilities[CapabilitySQLExplain] || set.Explain == nil || !set.Explain.SupportsAnalyze {
+		t.Errorf("sql.explain and its spec should be derived from Explainer: %+v", set)
+	}
 	if set.Schema == nil || len(set.Schema.Kinds) != 1 {
 		t.Errorf("schema spec should be populated from SchemaSpec(): %+v", set.Schema)
 	}
@@ -87,6 +95,9 @@ func TestCapabilitiesAbsentWhenInterfacesNotImplemented(t *testing.T) {
 	}
 	if set.Capabilities[CapabilitySQLSafetyCheck] {
 		t.Errorf("plain driver must not report sql.safety_check: %+v", set.Capabilities)
+	}
+	if set.Capabilities[CapabilitySQLExplain] || set.Explain != nil {
+		t.Errorf("plain driver must not report sql.explain: %+v", set.Capabilities)
 	}
 	if set.Schema != nil {
 		t.Errorf("plain driver must not carry a schema spec: %+v", set.Schema)

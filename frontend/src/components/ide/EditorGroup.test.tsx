@@ -23,12 +23,19 @@ const mocks = vi.hoisted(() => ({
   downloadFile: vi.fn(),
   saveBlobAs: vi.fn(),
   cancel: vi.fn(),
+  closeExplainAnalyzeConfirm: vi.fn(),
   confirmAt: vi.fn(() => Promise.resolve()),
+  confirmExplainAnalyze: vi.fn(),
+  handleExplainAnalyzeClick: vi.fn(),
+  handleExplainClick: vi.fn(),
   resolveDocumentText: vi.fn(() => ''),
   resolveSql: vi.fn(() => 'select 1'),
   run: vi.fn(() => Promise.resolve()),
   runAll: vi.fn(() => Promise.resolve()),
   isRunning: false,
+  canExplain: true,
+  canExplainAnalyze: true,
+  explainAnalyzeConfirmSql: null as string | null,
 }))
 
 vi.mock('./useFileContent', () => ({
@@ -74,7 +81,14 @@ vi.mock('./csv/CsvViewer', () => ({
 vi.mock('./useToolbarQueryAction', () => ({
   useToolbarQueryAction: () => ({
     cancel: mocks.cancel,
+    canExplain: mocks.canExplain,
+    canExplainAnalyze: mocks.canExplainAnalyze,
+    closeExplainAnalyzeConfirm: mocks.closeExplainAnalyzeConfirm,
     confirmAt: mocks.confirmAt,
+    confirmExplainAnalyze: mocks.confirmExplainAnalyze,
+    explainAnalyzeConfirmSql: mocks.explainAnalyzeConfirmSql,
+    handleExplainAnalyzeClick: mocks.handleExplainAnalyzeClick,
+    handleExplainClick: mocks.handleExplainClick,
     isRunning: mocks.isRunning,
     resolveDocumentText: mocks.resolveDocumentText,
     resolveSql: mocks.resolveSql,
@@ -128,6 +142,9 @@ describe('EditorGroup', () => {
     mocks.fileState.isLoading = false
     mocks.fileState.isError = false
     mocks.isRunning = false
+    mocks.canExplain = true
+    mocks.canExplainAnalyze = true
+    mocks.explainAnalyzeConfirmSql = null
     mocks.getOrCreate.mockReset().mockImplementation((_id: string, content?: string) => {
       const doc = new Y.Doc()
       if (content) doc.getText('content').insert(0, content)
@@ -158,6 +175,14 @@ describe('EditorGroup', () => {
           page: 1,
           page_size: 100,
           total: 1,
+        }),
+      ),
+      http.get('/api/v1/engines/postgres', () =>
+        HttpResponse.json({
+          id: 'postgres',
+          display_name: 'PostgreSQL',
+          capabilities: { 'sql.explain': true },
+          explain: { supports_analyze: true },
         }),
       ),
     )
@@ -369,6 +394,7 @@ describe('EditorGroup', () => {
           contextMenu: expect.objectContaining({
             isSqlTab: true,
             canRun: true,
+            canExplainAnalyze: true,
           }),
         }),
       )
@@ -394,6 +420,35 @@ describe('EditorGroup', () => {
         expect.objectContaining({
           contextMenu: expect.objectContaining({
             isSqlTab: false,
+          }),
+        }),
+      )
+    })
+  })
+
+  it('disables canExplainAnalyze when the connected engine does not support EXPLAIN ANALYZE', async () => {
+    mocks.canExplainAnalyze = false
+    const sqlTab = tab('scratch')
+    sqlTab.connectionId = 7
+    store.setState({ tabs: [sqlTab] })
+
+    render(
+      <Providers store={store} views={views}>
+        <EditorGroup
+          orgSlug="acme"
+          workspace={workspace}
+          group={{ ...group, tabIds: [sqlTab.id], activeTabId: sqlTab.id }}
+          focused
+        />
+      </Providers>,
+    )
+
+    await waitFor(() => {
+      expect(mocks.sqlEditor).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          contextMenu: expect.objectContaining({
+            isSqlTab: true,
+            canExplainAnalyze: false,
           }),
         }),
       )
