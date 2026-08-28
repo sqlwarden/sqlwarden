@@ -40,6 +40,20 @@ const sqlwardenSearchTheme = EditorView.theme({
   '.cm-searchMatch-selected': {
     backgroundColor: 'color-mix(in oklab, var(--ring) 55%, transparent)',
   },
+  // highlightSelectionMatches() defaults to a hardcoded #99ff7780 green wash
+  // that clashes with same-hue syntax tokens (e.g. string literals) and is
+  // barely visible on a light background. A low-alpha neutral fill (no
+  // border — VS Code's word-highlight is a plain filled box) keeps text
+  // readable under every token color while staying visible against the
+  // editor background. A plain theme() extension overrides the library's
+  // baseTheme rule at equal specificity, same as .cm-searchMatch above.
+  // .cm-selectionMatch-main (the exact selected occurrence) inherits the
+  // same fill rather than being left transparent — otherwise the cursor's
+  // own line reads as unhighlighted next to every other matching line.
+  '.cm-selectionMatch': {
+    backgroundColor: 'color-mix(in oklab, var(--color-foreground) 14%, transparent)',
+    borderRadius: '2px',
+  },
 })
 
 // Inserts a dragged schema identifier at the drop position. Returns false for any
