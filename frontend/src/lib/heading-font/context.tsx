@@ -10,8 +10,8 @@ export const HEADING_FONTS: HeadingFont[] = [
   // Satoshi is the brand default — self-hosted via hand-written @font-face
   // rules in styles.css, same pattern as the other self-hosted faces below.
   { label: 'Satoshi', fontFamily: "'Satoshi', 'Geist Variable', system-ui, sans-serif" },
-  // Cal Sans Heading: also self-hosted; the distinctive display face Kaneo
-  // uses for headings.
+  // Cal Sans Heading: also self-hosted; a distinctive display face for
+  // headings.
   {
     label: 'Cal Sans Heading',
     fontFamily: "'Cal Sans Heading', 'Satoshi', system-ui, sans-serif",

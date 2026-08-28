@@ -153,7 +153,10 @@ const DEFAULT_LIGHT_RAMP: LightSurfaceRamp = {
   foreground: 0.21,
   secondary: 0.966,
   secondaryForeground: 0.26,
-  mutedForeground: 0.545,
+  // 0.545 sits right at the 4.5:1 AA floor against `secondary` (muted) with
+  // no margin — this preset's chroma tips it just under. 0.52 matches the
+  // shipped Default ramp's safety margin (~4.95:1).
+  mutedForeground: 0.52,
   accent: 0.955,
   border: 0.916,
   sidebar: 0.974,
@@ -190,22 +193,32 @@ const MONO_LIGHT_RAMP: LightSurfaceRamp = {
   sidebarAccent: 0.98,
 }
 
-/** The "Mono" ramp: card/popover sit almost flush against the page background
- *  (elevation comes from the border, not a lightness jump), and secondary/
- *  muted/accent share one flat, barely-there wash. */
-const KANEO_DARK_RAMP: DarkSurfaceRamp = {
+/** The "Default" ramp — matches the shipped styles.css lightness steps.
+ *  Card/popover sit almost flush against the page background (elevation
+ *  comes from the border, not a lightness jump), and secondary/muted/accent
+ *  share one flat, barely-there wash. This preset uses `tint: 0`, so it
+ *  doesn't carry the faint steel-blue chroma styles.css adds to `.dark`
+ *  directly — lightness steps match, hue/chroma is a separate axis the
+ *  Theme Lab already exposes per-preset. */
+const FLUSH_DARK_RAMP: DarkSurfaceRamp = {
   background: 0.19,
-  foreground: 0.97,
+  // 0.86, not 0.97 — dimmed to match the shipped styles.css .dark override,
+  // which keeps body-text contrast in the ~11-13:1 band soft dark themes
+  // (VS Code, Postman) use instead of a harsh ~17:1 near-white-on-near-black.
+  foreground: 0.86,
   card: 0.21,
   secondary: 0.23,
-  mutedForeground: 0.6,
+  // 0.66, not 0.6 — matches the shipped styles.css .dark override, which
+  // lifted this for AA margin against --muted (was 4.28:1, under the 4.5:1
+  // floor).
+  mutedForeground: 0.66,
   accent: 0.23,
-  accentForeground: 0.97,
+  accentForeground: 0.86,
   border: 0.65,
   sidebar: 0.16,
 }
 
-const KANEO_LIGHT_RAMP: LightSurfaceRamp = {
+const FLUSH_LIGHT_RAMP: LightSurfaceRamp = {
   background: 1,
   foreground: 0.27,
   secondary: 0.97,
@@ -230,13 +243,12 @@ export type SurfacePreset = {
 
 export const SURFACE_PRESETS: SurfacePreset[] = [
   {
-    id: 'kaneo',
-    label: 'Mono',
+    id: 'default',
+    label: 'Default',
     hue: 0,
     tint: 0,
-    ramp: { dark: KANEO_DARK_RAMP, light: KANEO_LIGHT_RAMP },
+    ramp: { dark: FLUSH_DARK_RAMP, light: FLUSH_LIGHT_RAMP },
   },
-  { id: 'default', label: 'Default', hue: 256, tint: 2.5 },
   { id: 'graphite', label: 'Graphite', hue: 240, tint: 1 },
   { id: 'neutral', label: 'Neutral', hue: 240, tint: 0 },
   { id: 'slate', label: 'Slate', hue: 255, tint: 3 },
@@ -252,11 +264,13 @@ export const SURFACE_PRESETS: SurfacePreset[] = [
   },
 ]
 
-export const DEFAULT_SURFACE = 'kaneo'
+export const DEFAULT_SURFACE = 'default'
 
 /** Neutral lightness/chroma ramps matching the styles.css defaults; chroma is
- *  scaled by the preset tint and re-hued. Foregrounds follow at low chroma. */
-function surfaceTokens(preset: SurfacePreset, isDark: boolean): Record<string, string> {
+ *  scaled by the preset tint and re-hued. Foregrounds follow at low chroma.
+ *  Exported so tests can compute contrast ratios against the real generated
+ *  tokens instead of duplicating the ramp constants. */
+export function surfaceTokens(preset: SurfacePreset, isDark: boolean): Record<string, string> {
   const { hue: h, tint } = preset
   const c = (base: number) => Math.min(base * tint, 0.045)
   const t = (l: number, base: number) => `oklch(${l} ${c(base)} ${h})`
