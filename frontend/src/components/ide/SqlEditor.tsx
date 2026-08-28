@@ -12,7 +12,8 @@ import { ContextMenu } from '#/components/ui/context-menu'
 import { useTheme } from '#/components/theme-provider'
 import { useEditorTheme } from '#/lib/editor-themes/context'
 import { loadEditorTheme, getCachedTheme } from '#/lib/editor-themes'
-import { useEditorFont, loadEditorFont } from '#/lib/editor-font/context'
+import { useEditorFont, loadEditorFont, editorFontSizeRem } from '#/lib/editor-font/context'
+import type { EditorFontSize } from '#/lib/editor-font/context'
 import { sqlwardenBasicSetup } from './codemirrorSetup'
 import { findPanelHost, type FindPanelHost } from './findPanelBridge'
 import { FindPanel } from './FindPanel'
@@ -24,12 +25,12 @@ import { sqlFormatterForDriver, sqlFormattingKeymap } from './sqlFormatting'
 import { buildSqlEditorMenu } from './contextMenus/editorMenu'
 import { readClipboardFallback, writeClipboard } from './contextMenus/clipboard'
 
-function makeBaseTheme(fontFamily: string, fontSize: number): Extension {
+function makeBaseTheme(fontFamily: string, fontSize: EditorFontSize): Extension {
   return EditorView.theme({
     '&': { height: '100%' },
     '.cm-scroller': {
       fontFamily,
-      fontSize: `${fontSize}px`,
+      fontSize: editorFontSizeRem(fontSize),
       lineHeight: '1.65',
       overflow: 'auto',
     },

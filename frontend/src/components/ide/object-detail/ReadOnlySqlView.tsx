@@ -7,12 +7,18 @@ import { cn } from '#/lib/utils'
 import { useTheme } from '#/components/theme-provider'
 import { useEditorTheme } from '#/lib/editor-themes/context'
 import { loadEditorTheme, getCachedTheme } from '#/lib/editor-themes'
-import { useEditorFont, loadEditorFont } from '#/lib/editor-font/context'
+import { useEditorFont, loadEditorFont, editorFontSizeRem } from '#/lib/editor-font/context'
+import type { EditorFontSize } from '#/lib/editor-font/context'
 
-function baseTheme(fontFamily: string, fontSize: number): Extension {
+function baseTheme(fontFamily: string, fontSize: EditorFontSize): Extension {
   return EditorView.theme({
     '&': { height: '100%' },
-    '.cm-scroller': { fontFamily, fontSize: `${fontSize}px`, lineHeight: '1.65', overflow: 'auto' },
+    '.cm-scroller': {
+      fontFamily,
+      fontSize: editorFontSizeRem(fontSize),
+      lineHeight: '1.65',
+      overflow: 'auto',
+    },
     '.cm-content': { padding: '8px 0' },
     '.cm-lineNumbers .cm-gutterElement': { minWidth: '3.5ch', textAlign: 'right' },
   })
