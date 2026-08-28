@@ -53,9 +53,9 @@
 :root {
   /* SQLWarden brand palette. --primary/--ring/--sidebar-* match the Theme
        Lab's "Default" accent preset (id 'blue'). Surface neutrals match the
-       Theme Lab's "Mono" surface preset (id 'kaneo', zero chroma) — card/
-       popover sit almost flush against the page background, elevation comes
-       from the border rather than a lightness jump. */
+       Theme Lab's "Default" surface preset (id 'default', zero chroma) —
+       card/popover sit almost flush against the page background, elevation
+       comes from the border rather than a lightness jump. */
   --background: oklch(1 0 0);
   --foreground: oklch(0.27 0 0);
   --card: oklch(1 0 0);
@@ -70,7 +70,7 @@
   --muted-foreground: oklch(0.52 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.27 0 0);
-  --destructive: #ef4444;
+  --destructive: #e31313;
   --border: oklch(0.94 0 0);
   --input: oklch(0.94 0 0);
   --ring: oklch(0.55 0.19 255);
@@ -88,10 +88,14 @@
   --sidebar-accent-foreground: oklch(0.27 0 0);
   --sidebar-border: oklch(0.94 0 0);
   --sidebar-ring: oklch(0.55 0.19 255);
-  --success: #10b981;
-  --warning: #f59e0b;
-  --accent-link: #38bdf8;
-  --accent-datatype: #6366f1;
+  /* success/warning/accent-link/accent-datatype/destructive are darkened here
+     relative to .dark — the dark-mode hex values read as ~2:1 contrast on a
+     white background, so light mode needs its own darker step of each hue
+     to clear 4.5:1 as text. */
+  --success: #0b7f59;
+  --warning: #9b6406;
+  --accent-link: #0677a9;
+  --accent-datatype: #595cf0;
   /* Runtime font slots — overridden from the heading/interface/editor font pickers. */
   --font-heading-face: 'Satoshi', 'Geist Variable', system-ui, sans-serif;
   --font-interface: 'Inter Variable', system-ui, sans-serif;
@@ -102,40 +106,54 @@
   /* SQLWarden brand palette, dark mode. --primary/--ring/--sidebar-* match
        the Theme Lab's "Default" accent preset (id 'blue') — lightened
        relative to light mode so the primary button reads as an inverted,
-       high-contrast surface rather than a dim one. Surface neutrals match
-       the Theme Lab's "Mono" surface preset (id 'kaneo', zero chroma), same
-       rationale as :root above. */
-  --background: oklch(0.19 0 0);
-  --foreground: oklch(0.97 0 0);
-  --card: oklch(0.21 0 0);
-  --card-foreground: oklch(0.97 0 0);
-  --popover: oklch(0.21 0 0);
-  --popover-foreground: oklch(0.97 0 0);
+       high-contrast surface rather than a dim one. Surface neutrals carry a
+       faint steel-blue chroma (hue 235) instead of pure gray — the subtle
+       coolness VSCode/JetBrains-style dark themes use so grays don't read as
+       flat/clinical. --foreground is dimmed from nearly-white to keep
+       body-text contrast in the same ~11-13:1 band those editors use,
+       instead of the ~17:1 a pure white/near-black pairing produces, which
+       reads as harsh "high-contrast mode" rather than a soft dark theme. */
+  --background: oklch(0.19 0.006 235);
+  --foreground: oklch(0.86 0.006 235);
+  --card: oklch(0.21 0.006 235);
+  --card-foreground: oklch(0.86 0.006 235);
+  --popover: oklch(0.21 0.006 235);
+  --popover-foreground: oklch(0.86 0.006 235);
   --primary: oklch(0.68 0.15 250);
   --primary-foreground: oklch(0.16 0.015 240);
-  --secondary: oklch(0.23 0 0);
-  --secondary-foreground: oklch(0.97 0 0);
-  --muted: oklch(0.23 0 0);
-  --muted-foreground: oklch(0.6 0 0);
-  --accent: oklch(0.23 0 0);
-  --accent-foreground: oklch(0.97 0 0);
+  --secondary: oklch(0.23 0.006 235);
+  --secondary-foreground: oklch(0.86 0.006 235);
+  --muted: oklch(0.23 0.006 235);
+  --muted-foreground: oklch(0.66 0.008 235);
+  --accent: oklch(0.23 0.006 235);
+  --accent-foreground: oklch(0.86 0.006 235);
   --destructive: #ef4444;
-  --border: oklch(0.65 0 0 / 12%);
-  --input: oklch(0.65 0 0 / 15%);
+  --border: oklch(0.65 0.006 235 / 12%);
+  --input: oklch(0.65 0.006 235 / 15%);
   --ring: oklch(0.68 0.15 250);
   --chart-1: oklch(0.68 0.15 250);
   --chart-2: oklch(0.68 0.15 255);
   --chart-3: oklch(0.72 0.14 155);
   --chart-4: oklch(0.8 0.13 78);
   --chart-5: oklch(0.68 0.17 20);
-  --sidebar: oklch(0.16 0 0);
-  --sidebar-foreground: oklch(0.97 0 0);
+  --sidebar: oklch(0.16 0.006 235);
+  --sidebar-foreground: oklch(0.86 0.006 235);
   --sidebar-primary: oklch(0.68 0.15 250);
   --sidebar-primary-foreground: oklch(0.16 0.015 240);
-  --sidebar-accent: oklch(0.23 0 0);
-  --sidebar-accent-foreground: oklch(0.97 0 0);
-  --sidebar-border: oklch(0.65 0 0 / 12%);
+  --sidebar-accent: oklch(0.23 0.006 235);
+  --sidebar-accent-foreground: oklch(0.86 0.006 235);
+  --sidebar-border: oklch(0.65 0.006 235 / 12%);
   --sidebar-ring: oklch(0.68 0.15 250);
+  /* success/warning/accent-link were previously shared with :root; :root is
+     now darkened for light-mode AA text contrast, so dark mode needs its own
+     override restoring the original bright values (already 7-8.6:1 here).
+     accent-datatype is lightened relative to :root — the shared hex used to
+     read at ~4.1:1 here, just under AA text contrast against this
+     background. */
+  --success: #10b981;
+  --warning: #f59e0b;
+  --accent-link: #38bdf8;
+  --accent-datatype: #7577f3;
 }
 
 @theme inline {
