@@ -64,3 +64,18 @@ export function contrastRatio(a: Srgb, b: Srgb): number {
 export function tokenContrastRatio(a: string, b: string): number {
   return contrastRatio(parseColorToSrgb(a), parseColorToSrgb(b))
 }
+
+function parseAlpha(value: string): number {
+  const match = /\/\s*([\d.]+)%/.exec(value)
+  return match ? Number(match[1]) / 100 : 1
+}
+
+/** Alpha-composites a token (e.g. a semi-transparent `--border`) over a solid
+ *  background token, for checking non-text contrast (WCAG 1.4.11) of colors
+ *  that are only visible blended with what's behind them. */
+export function compositeOverBackground(foreground: string, background: string): Srgb {
+  const alpha = parseAlpha(foreground)
+  const fg = parseColorToSrgb(foreground)
+  const bg = parseColorToSrgb(background)
+  return [0, 1, 2].map((i) => bg[i] * (1 - alpha) + fg[i] * alpha) as Srgb
+}

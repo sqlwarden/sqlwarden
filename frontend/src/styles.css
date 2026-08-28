@@ -54,9 +54,9 @@
   /* SQLWarden brand palette. --primary/--ring/--sidebar-* match the Theme
        Lab's "Default" accent preset (id 'blue'). Surface neutrals match the
        Theme Lab's "Default" surface preset (id 'default', zero chroma) —
-       card/popover sit almost flush against the page background, elevation
-       comes from the border rather than a lightness jump. */
-  --background: oklch(1 0 0);
+       background sits one step below the pure-white card so the two read as
+       distinct surfaces without relying on the border alone. */
+  --background: oklch(0.985 0 0);
   --foreground: oklch(0.27 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.27 0 0);
@@ -115,9 +115,12 @@
        reads as harsh "high-contrast mode" rather than a soft dark theme. */
   --background: oklch(0.19 0.006 235);
   --foreground: oklch(0.86 0.006 235);
-  --card: oklch(0.21 0.006 235);
+  /* 0.24, not 0.21 — the previous step only lifted card 0.02 above
+     background, which read as no separation at all on pages with large flat
+     card areas (e.g. organization pages). */
+  --card: oklch(0.24 0.006 235);
   --card-foreground: oklch(0.86 0.006 235);
-  --popover: oklch(0.21 0.006 235);
+  --popover: oklch(0.24 0.006 235);
   --popover-foreground: oklch(0.86 0.006 235);
   --primary: oklch(0.68 0.15 250);
   --primary-foreground: oklch(0.16 0.015 240);

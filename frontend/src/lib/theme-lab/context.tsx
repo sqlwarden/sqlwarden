@@ -120,6 +120,11 @@ type DarkSurfaceRamp = {
   accentForeground: number
   border: number
   sidebar: number
+  /** Border alpha as a 0-1 fraction over `background`. Every preset but
+   *  "High Contrast" relies on the 12%/15% default baked into
+   *  `surfaceTokens` — low-chroma dark borders need real opacity to clear
+   *  the 3:1 non-text contrast WCAG 1.4.11 asks for. */
+  borderAlpha?: number
 }
 
 type LightSurfaceRamp = {
@@ -134,68 +139,10 @@ type LightSurfaceRamp = {
   sidebarAccent: number
 }
 
-/** Lightness ramp matching the styles.css defaults. Every preset uses this
- *  unless it defines its own `ramp` override. */
-const DEFAULT_DARK_RAMP: DarkSurfaceRamp = {
-  background: 0.165,
-  foreground: 0.94,
-  card: 0.205,
-  secondary: 0.252,
-  mutedForeground: 0.7,
-  accent: 0.29,
-  accentForeground: 0.955,
-  border: 0.85,
-  sidebar: 0.14,
-}
-
-const DEFAULT_LIGHT_RAMP: LightSurfaceRamp = {
-  background: 0.99,
-  foreground: 0.21,
-  secondary: 0.966,
-  secondaryForeground: 0.26,
-  // 0.545 sits right at the 4.5:1 AA floor against `secondary` (muted) with
-  // no margin — this preset's chroma tips it just under. 0.52 matches the
-  // shipped Default ramp's safety margin (~4.95:1).
-  mutedForeground: 0.52,
-  accent: 0.955,
-  border: 0.916,
-  sidebar: 0.974,
-  sidebarAccent: 0.948,
-}
-
-/** Dark: wide lightness steps between surfaces carry elevation now that
- *  there's no hue/chroma left to do it. Near-black background. */
-const MONO_DARK_RAMP: DarkSurfaceRamp = {
-  background: 0.085,
-  foreground: 0.96,
-  card: 0.15,
-  secondary: 0.2,
-  mutedForeground: 0.62,
-  accent: 0.25,
-  accentForeground: 0.97,
-  border: 0.85,
-  sidebar: 0.06,
-}
-
-/** Light: the inverse isn't a mirrored high-contrast ramp — a stark near-black
- *  reads as "true black," but the same jump near white reads as flat gray
- *  blocking, not "pure white." Surfaces stay close to background instead,
- *  separated by faint steps and a soft border. */
-const MONO_LIGHT_RAMP: LightSurfaceRamp = {
-  background: 1,
-  foreground: 0.15,
-  secondary: 0.99,
-  secondaryForeground: 0.2,
-  mutedForeground: 0.5,
-  accent: 0.985,
-  border: 0.96,
-  sidebar: 0.995,
-  sidebarAccent: 0.98,
-}
-
 /** The "Default" ramp — matches the shipped styles.css lightness steps.
- *  Card/popover sit almost flush against the page background (elevation
- *  comes from the border, not a lightness jump), and secondary/muted/accent
+ *  Card/popover sit one lightness step above the page background — enough
+ *  to read as a distinct surface on large flat card areas — plus the
+ *  border most of the elevation still relies on. Secondary/muted/accent
  *  share one flat, barely-there wash. This preset uses `tint: 0`, so it
  *  doesn't carry the faint steel-blue chroma styles.css adds to `.dark`
  *  directly — lightness steps match, hue/chroma is a separate axis the
@@ -206,7 +153,10 @@ const FLUSH_DARK_RAMP: DarkSurfaceRamp = {
   // which keeps body-text contrast in the ~11-13:1 band soft dark themes
   // (VS Code, Postman) use instead of a harsh ~17:1 near-white-on-near-black.
   foreground: 0.86,
-  card: 0.21,
+  // 0.24, not 0.21 — matches the shipped styles.css .dark override, which
+  // lifted card lightness for visible separation from --background (was
+  // only a 0.02 step, indistinguishable on large flat card areas).
+  card: 0.24,
   secondary: 0.23,
   // 0.66, not 0.6 — matches the shipped styles.css .dark override, which
   // lifted this for AA margin against --muted (was 4.28:1, under the 4.5:1
@@ -219,7 +169,10 @@ const FLUSH_DARK_RAMP: DarkSurfaceRamp = {
 }
 
 const FLUSH_LIGHT_RAMP: LightSurfaceRamp = {
-  background: 1,
+  // 0.985, not 1 — matches the shipped styles.css :root override. `--card`
+  // is hardcoded to pure white below (see surfaceTokens), so background
+  // needs to sit one step under it or the two are visually identical.
+  background: 0.985,
   foreground: 0.27,
   secondary: 0.97,
   secondaryForeground: 0.27,
@@ -230,15 +183,47 @@ const FLUSH_LIGHT_RAMP: LightSurfaceRamp = {
   sidebarAccent: 0.97,
 }
 
+/** Dark: targets WCAG AAA (7:1) body text instead of the AA floor every
+ *  other preset uses, for users who need maximum separation regardless of
+ *  softness. Border needs real opacity (not the 12% default) to clear the
+ *  3:1 WCAG 1.4.11 floor for non-text UI contrast against a near-black
+ *  background — verified at ~4.2:1 with borderAlpha 0.7. */
+const HIGH_CONTRAST_DARK_RAMP: DarkSurfaceRamp = {
+  background: 0.04,
+  foreground: 0.98,
+  card: 0.08,
+  secondary: 0.13,
+  mutedForeground: 0.75,
+  accent: 0.15,
+  accentForeground: 0.98,
+  border: 0.7,
+  borderAlpha: 0.7,
+  sidebar: 0.02,
+}
+
+/** Light: mirrors the dark ramp's AAA target. Border stays fully opaque
+ *  (light mode never applies alpha) at a lightness verified ~4.9:1 against
+ *  white, clear of the 3:1 floor. */
+const HIGH_CONTRAST_LIGHT_RAMP: LightSurfaceRamp = {
+  background: 1,
+  foreground: 0.05,
+  secondary: 0.94,
+  secondaryForeground: 0.05,
+  mutedForeground: 0.32,
+  accent: 0.92,
+  border: 0.55,
+  sidebar: 0.97,
+  sidebarAccent: 0.92,
+}
+
 export type SurfacePreset = {
   id: string
   label: string
   hue: number
   /** Multiplier on the base neutral chroma ramp (0 = pure gray). */
   tint: number
-  /** Overrides the default lightness ramp (background/card/sidebar/... steps)
-   *  for presets whose contrast profile diverges from the shared default. */
-  ramp?: { dark: DarkSurfaceRamp; light: LightSurfaceRamp }
+  /** Lightness ramp (background/card/sidebar/... steps) for this preset. */
+  ramp: { dark: DarkSurfaceRamp; light: LightSurfaceRamp }
 }
 
 export const SURFACE_PRESETS: SurfacePreset[] = [
@@ -249,18 +234,12 @@ export const SURFACE_PRESETS: SurfacePreset[] = [
     tint: 0,
     ramp: { dark: FLUSH_DARK_RAMP, light: FLUSH_LIGHT_RAMP },
   },
-  { id: 'graphite', label: 'Graphite', hue: 240, tint: 1 },
-  { id: 'neutral', label: 'Neutral', hue: 240, tint: 0 },
-  { id: 'slate', label: 'Slate', hue: 255, tint: 3 },
-  { id: 'mist', label: 'Mist', hue: 210, tint: 2 },
-  { id: 'warm', label: 'Warm', hue: 75, tint: 1.5 },
-  { id: 'dusk', label: 'Dusk', hue: 285, tint: 3 },
   {
-    id: 'mono',
-    label: 'Deep Mono',
-    hue: 240,
+    id: 'high-contrast',
+    label: 'High Contrast',
+    hue: 0,
     tint: 0,
-    ramp: { dark: MONO_DARK_RAMP, light: MONO_LIGHT_RAMP },
+    ramp: { dark: HIGH_CONTRAST_DARK_RAMP, light: HIGH_CONTRAST_LIGHT_RAMP },
   },
 ]
 
@@ -276,7 +255,9 @@ export function surfaceTokens(preset: SurfacePreset, isDark: boolean): Record<st
   const t = (l: number, base: number) => `oklch(${l} ${c(base)} ${h})`
 
   if (isDark) {
-    const r = preset.ramp?.dark ?? DEFAULT_DARK_RAMP
+    const r = preset.ramp.dark
+    const borderAlpha = r.borderAlpha ?? 0.12
+    const inputAlpha = r.borderAlpha ?? 0.15
     return {
       '--background': t(r.background, 0.008),
       '--foreground': t(r.foreground, 0.006),
@@ -290,16 +271,16 @@ export function surfaceTokens(preset: SurfacePreset, isDark: boolean): Record<st
       '--muted-foreground': t(r.mutedForeground, 0.014),
       '--accent': t(r.accent, 0.018),
       '--accent-foreground': t(r.accentForeground, 0.008),
-      '--border': `oklch(${r.border} ${c(0.015)} ${h} / 12%)`,
-      '--input': `oklch(${r.border} ${c(0.015)} ${h} / 15%)`,
+      '--border': `oklch(${r.border} ${c(0.015)} ${h} / ${borderAlpha * 100}%)`,
+      '--input': `oklch(${r.border} ${c(0.015)} ${h} / ${inputAlpha * 100}%)`,
       '--sidebar': t(r.sidebar, 0.008),
       '--sidebar-foreground': t(r.foreground, 0.006),
       '--sidebar-accent': t(r.accent, 0.018),
       '--sidebar-accent-foreground': t(r.accentForeground, 0.008),
-      '--sidebar-border': `oklch(${r.border} ${c(0.015)} ${h} / 12%)`,
+      '--sidebar-border': `oklch(${r.border} ${c(0.015)} ${h} / ${borderAlpha * 100}%)`,
     }
   }
-  const r = preset.ramp?.light ?? DEFAULT_LIGHT_RAMP
+  const r = preset.ramp.light
   return {
     '--background': t(r.background, 0.002),
     '--foreground': t(r.foreground, 0.012),
@@ -331,7 +312,7 @@ export const RADIUS_RANGE = { min: 0, max: 1, step: 0.125 } as const
 export const DEFAULT_RADIUS = 0.5
 
 export const UI_SCALE_RANGE = { min: 90, max: 115, step: 5 } as const
-export const DEFAULT_UI_SCALE = 110
+export const DEFAULT_UI_SCALE = 100
 
 // ─── Persistence ───────────────────────────────────────────────────────────────
 
