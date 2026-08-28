@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { formatExactTime, formatRelativeTime } from './relativeTime'
+import { formatDateGroup, formatExactTime, formatRelativeTime } from './relativeTime'
 
 describe('formatRelativeTime', () => {
   const now = new Date('2026-08-20T12:00:00.000Z')
@@ -51,5 +51,34 @@ describe('formatExactTime', () => {
 
   it('returns a placeholder for an invalid timestamp', () => {
     expect(formatExactTime('not-a-date')).toBe('Unknown')
+  })
+})
+
+describe('formatDateGroup', () => {
+  const now = new Date('2026-08-20T09:00:00.000Z')
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('labels timestamps from today as "Today", even earlier in the day', () => {
+    expect(formatDateGroup('2026-08-20T01:00:00.000Z')).toBe('Today')
+  })
+
+  it('labels timestamps from the calendar day before as "Yesterday"', () => {
+    expect(formatDateGroup('2026-08-19T23:00:00.000Z')).toBe('Yesterday')
+  })
+
+  it('falls back to a short date for anything older', () => {
+    expect(formatDateGroup('2026-08-01T12:00:00.000Z')).toBe('Aug 1, 2026')
+  })
+
+  it('returns a placeholder for an invalid timestamp', () => {
+    expect(formatDateGroup('not-a-date')).toBe('Unknown')
   })
 })

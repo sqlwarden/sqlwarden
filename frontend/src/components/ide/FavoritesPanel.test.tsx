@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -15,6 +15,29 @@ import { createIdeStore, IdeStoreContext, type EditorTab } from './useIdeStore'
 
 const { copyWithToastMock } = vi.hoisted(() => ({
   copyWithToastMock: vi.fn(),
+}))
+
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({
+    count,
+    estimateSize,
+  }: {
+    count: number
+    estimateSize: (index: number) => number
+  }) => {
+    let offset = 0
+    const items = Array.from({ length: count }, (_, index) => {
+      const size = estimateSize(index)
+      const item = { index, start: offset, end: offset + size, size, key: index, lane: 0 }
+      offset += size
+      return item
+    })
+    return {
+      getTotalSize: () => offset,
+      getVirtualItems: () => items,
+      scrollToIndex: vi.fn(),
+    }
+  },
 }))
 
 vi.mock('./contextMenus/clipboard', () => ({ copyWithToast: copyWithToastMock }))
@@ -86,6 +109,25 @@ describe('FavoritesPanel', () => {
     server.use(
       http.get('/api/v1/orgs/acme/runtime-settings', () =>
         HttpResponse.json(organizationRuntimeSettingsFixture()),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 42,
+              workspace_id: 3,
+              environment_id: 2,
+              name: 'primary-pg',
+              driver: 'postgres',
+              access_mode: 'open',
+              created_at: '',
+              updated_at: '',
+            },
+          ],
+          page: 1,
+          page_size: 100,
+          total: 1,
+        }),
       ),
     )
   })
@@ -253,6 +295,34 @@ describe('FavoritesPanel', () => {
 
     await waitFor(() => expect(screen.queryByText('Top orders')).not.toBeInTheDocument())
     expect(await screen.findByText('Top customers')).toBeInTheDocument()
+  })
+
+  it('opens a dialog with the full query and actions when the query is clicked', async () => {
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/query-favorites', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 1,
+              workspace_id: 3,
+              account_id: 1,
+              connection_id: 42,
+              name: 'Top customers',
+              sql_text: 'select 1 from widgets',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ],
+        }),
+      ),
+    )
+
+    const { user } = renderPanel()
+    await user.click(await screen.findByRole('button', { name: 'select 1 from widgets' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Top customers')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Copy query' })).toBeInTheDocument()
   })
 
   it('shows a no-results empty state when search matches nothing', async () => {

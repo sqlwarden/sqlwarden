@@ -33,3 +33,18 @@ export function formatExactTime(iso: string): string {
   if (Number.isNaN(date.getTime())) return 'Unknown'
   return exactTimeFormatter.format(date)
 }
+
+function startOfDay(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+}
+
+/** Groups an ISO timestamp into "Today" / "Yesterday" / a short date, for sectioning lists by day. */
+export function formatDateGroup(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return 'Unknown'
+
+  const dayDiff = Math.round((startOfDay(new Date()) - startOfDay(date)) / DAY)
+  if (dayDiff === 0) return 'Today'
+  if (dayDiff === 1) return 'Yesterday'
+  return shortDateFormatter.format(date)
+}
