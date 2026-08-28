@@ -9,6 +9,7 @@ import {
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { DriverBadge } from './DriverBadge'
+import { ReadOnlySqlView } from './object-detail/ReadOnlySqlView'
 import { formatExactTime } from './relativeTime'
 import { Tip } from './schema-diagram/Tip'
 
@@ -85,9 +86,9 @@ export function HistoryQueryDialog({
               <span>{formatExactTime(row.executedAt)}</span>
             </div>
 
-            <pre className="max-h-80 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words text-foreground">
-              {row.sqlText}
-            </pre>
+            <div className="h-80 overflow-hidden rounded-md bg-muted/40">
+              <ReadOnlySqlView value={row.sqlText} />
+            </div>
           </>
         )}
 

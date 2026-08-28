@@ -19,6 +19,10 @@ const { copyWithToastMock, createFavoriteMock, removeFavoriteMock } = vi.hoisted
   removeFavoriteMock: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock('./object-detail/ReadOnlySqlView', () => ({
+  ReadOnlySqlView: ({ value }: { value: string }) => <pre>{value}</pre>,
+}))
+
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({
     count,

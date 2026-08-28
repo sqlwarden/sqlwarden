@@ -12,6 +12,10 @@ import { IdeToolbar } from './IdeToolbar'
 import { createIdeStore, IdeStoreContext, type EditorTab } from './useIdeStore'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 
+vi.mock('./object-detail/ReadOnlySqlView', () => ({
+  ReadOnlySqlView: ({ value }: { value: string }) => <pre>{value}</pre>,
+}))
+
 const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
   confirmAt: vi.fn(() => Promise.resolve()),

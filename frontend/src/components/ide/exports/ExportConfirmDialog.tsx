@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from '#/components/ui/dialog'
 import { Icon } from '#/lib/icons'
+import { ReadOnlySqlView } from '../object-detail/ReadOnlySqlView'
 import { countSqlStatements } from '../sqlStatements'
 
 type ExportConfirmDialogProps = {
@@ -35,9 +36,9 @@ export function ExportConfirmDialog({
           <p className="text-xs text-muted-foreground">
             This query will run and the results will export as a file.
           </p>
-          <pre className="max-h-40 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px] whitespace-pre-wrap text-foreground">
-            {sql}
-          </pre>
+          <div className="h-40 overflow-hidden rounded-md border border-border bg-muted/40">
+            <ReadOnlySqlView value={sql} />
+          </div>
           {isMultiStatement && (
             <p className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">
               Multiple queries were selected. Only a single query can be exported right now — select

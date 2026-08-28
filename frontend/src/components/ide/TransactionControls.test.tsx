@@ -4,6 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TransactionState } from './useIdeStore'
 import { TransactionControls } from './TransactionControls'
 
+vi.mock('./object-detail/ReadOnlySqlView', () => ({
+  ReadOnlySqlView: ({ value }: { value: string }) => (
+    <pre data-testid="pending-statement-preview">{value}</pre>
+  ),
+}))
+
 describe('TransactionControls', () => {
   let switchToManual: ReturnType<typeof vi.fn>
   let switchToAuto: ReturnType<typeof vi.fn>
@@ -71,8 +77,9 @@ describe('TransactionControls', () => {
       'aria-selected',
       'true',
     )
-    const pre = dialog.querySelector('pre')
-    expect(pre).toHaveTextContent("UPDATE customer SET name = 'x'")
+    expect(within(dialog).getByTestId('pending-statement-preview')).toHaveTextContent(
+      "UPDATE customer SET name = 'x'",
+    )
   })
 
   it('clicking a tab shows that statement in full on the right, and wraps/scrolls long queries', async () => {
@@ -90,9 +97,7 @@ describe('TransactionControls', () => {
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('option', { name: /#2/ }))
 
-    const pre = dialog.querySelector('pre')
-    expect(pre).toHaveTextContent(longStatement)
-    expect(pre).toHaveClass('overflow-auto')
+    expect(within(dialog).getByTestId('pending-statement-preview')).toHaveTextContent(longStatement)
   })
 
   it('disables the pending badge when there are no statements to show', () => {

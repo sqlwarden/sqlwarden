@@ -10,6 +10,10 @@ import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
 import { ContextMenuProvider } from '#/components/ui/context-menu'
 
+vi.mock('./object-detail/ReadOnlySqlView', () => ({
+  ReadOnlySqlView: ({ value }: { value: string }) => <pre>{value}</pre>,
+}))
+
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
     getTotalSize: () => count * 29,

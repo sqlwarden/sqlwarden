@@ -17,6 +17,10 @@ const { copyWithToastMock } = vi.hoisted(() => ({
   copyWithToastMock: vi.fn(),
 }))
 
+vi.mock('./object-detail/ReadOnlySqlView', () => ({
+  ReadOnlySqlView: ({ value }: { value: string }) => <pre>{value}</pre>,
+}))
+
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({
     count,

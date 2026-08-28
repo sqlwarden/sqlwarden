@@ -2,6 +2,7 @@ import { Button } from '#/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog'
 import { Icon } from '#/lib/icons'
 import { copyWithToast } from './contextMenus/clipboard'
+import { ReadOnlySqlView } from './object-detail/ReadOnlySqlView'
 
 export type ViewQueryDialogProps = {
   open: boolean
@@ -17,9 +18,9 @@ export function ViewQueryDialog({ open, onOpenChange, sql }: ViewQueryDialogProp
         <DialogHeader>
           <DialogTitle>Query</DialogTitle>
         </DialogHeader>
-        <pre className="max-h-96 overflow-auto rounded-md border border-border bg-muted p-2.5 text-xs whitespace-pre-wrap break-words text-foreground">
-          {sql}
-        </pre>
+        <div className="h-96 overflow-hidden rounded-md border border-border bg-muted">
+          <ReadOnlySqlView value={sql} />
+        </div>
         <Button variant="outline" size="sm" className="self-end" onClick={() => copyWithToast(sql)}>
           <Icon name="copy-01" size={12} />
           Copy

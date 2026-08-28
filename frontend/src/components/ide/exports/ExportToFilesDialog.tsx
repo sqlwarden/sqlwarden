@@ -23,6 +23,7 @@ import { ApiError } from '#/lib/api/errors'
 import { createExport } from '#/lib/api/exports'
 import { EXPORT_FORMATS } from './exportFormats'
 import { rememberExportRetry } from './exportRetryCache'
+import { ReadOnlySqlView } from '../object-detail/ReadOnlySqlView'
 import { countSqlStatements } from '../sqlStatements'
 
 type ExportToFilesDialogProps = {
@@ -108,9 +109,9 @@ export function ExportToFilesDialog({
 
           <div className="flex flex-col gap-1.5">
             <Label>Query</Label>
-            <pre className="max-h-32 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px] whitespace-pre-wrap text-foreground">
-              {sql}
-            </pre>
+            <div className="h-32 overflow-hidden rounded-md border border-border bg-muted/40">
+              <ReadOnlySqlView value={sql} />
+            </div>
             {isMultiStatement && (
               <p className="text-xs text-destructive">
                 Multiple queries were selected. Only a single query can be exported right now —

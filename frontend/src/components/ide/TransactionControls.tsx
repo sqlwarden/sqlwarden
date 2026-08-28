@@ -11,6 +11,7 @@ import {
 import type { TransactionMode } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { getFrontendEngine } from './engines/registry'
+import { ReadOnlySqlView } from './object-detail/ReadOnlySqlView'
 import { Tip } from './schema-diagram/Tip'
 import type { TransactionState } from './useIdeStore'
 
@@ -168,9 +169,9 @@ export function TransactionControls({
                 )
               })}
             </div>
-            <pre className="min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-card p-3 font-mono text-xs text-foreground">
-              {state.statements[selectedStatement]}
-            </pre>
+            <div className="min-w-0 flex-1 overflow-hidden bg-card">
+              <ReadOnlySqlView value={state.statements[selectedStatement] ?? ''} />
+            </div>
           </div>
         </DialogContent>
       </Dialog>
