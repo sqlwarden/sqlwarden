@@ -16,9 +16,9 @@ import {
 } from './context'
 
 describe('interface font defaults', () => {
-  it('defaults to Satoshi as the brand UI font', () => {
-    expect(DEFAULT_INTERFACE_FONT.label).toBe('Satoshi')
-    expect(INTERFACE_FONTS[0].label).toBe('Satoshi')
+  it('defaults to Inter as the brand UI font', () => {
+    expect(DEFAULT_INTERFACE_FONT.label).toBe('Inter')
+    expect(INTERFACE_FONTS[0].label).toBe('Inter')
   })
 
   it('lazy-loads Geist now that it is no longer the eager default', async () => {
@@ -40,9 +40,9 @@ describe('InterfaceFontProvider', () => {
     document.documentElement.style.removeProperty('--font-interface')
   })
 
-  it('applies the default Satoshi stack to --font-interface on mount', async () => {
+  it('applies the default Inter stack to --font-interface on mount', async () => {
     const { result } = renderHook(() => useInterfaceFont(), { wrapper: InterfaceFontProvider })
-    expect(result.current.interfaceFont.label).toBe('Satoshi')
+    expect(result.current.interfaceFont.label).toBe('Inter')
     await waitFor(() =>
       expect(document.documentElement.style.getPropertyValue('--font-interface')).toBe(
         DEFAULT_INTERFACE_FONT.fontFamily,
