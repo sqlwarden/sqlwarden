@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '#/lib/api/errors'
-import { ensureSession, isSessionGone, type EnsureSessionDeps } from './sessionErrors'
+import {
+  ensureSession,
+  isSessionGone,
+  TransactionSessionLostError,
+  type EnsureSessionDeps,
+} from './sessionErrors'
 
 describe('isSessionGone', () => {
   it('matches a plain 410 (expired/unknown session)', () => {
@@ -27,6 +32,8 @@ function makeDeps(overrides: Partial<EnsureSessionDeps> = {}): EnsureSessionDeps
     clearSession: vi.fn(),
     setConnectionStatus: vi.fn(),
     connect: vi.fn(async () => 'new-session-id'),
+    wasManualTransaction: vi.fn(() => false),
+    resetTransactionState: vi.fn(),
     ...overrides,
   }
 }
@@ -78,5 +85,33 @@ describe('ensureSession', () => {
 
     await expect(ensureSession(deps, 7, run)).rejects.toBe(err)
     expect(deps.clearSession).not.toHaveBeenCalled()
+  })
+
+  it('does not retry when the dead session was in manual transaction mode', async () => {
+    const deps = makeDeps({
+      getSession: vi.fn(() => 'dead-session'),
+      wasManualTransaction: vi.fn(() => true),
+    })
+    const goneError = new ApiError('gone', 410)
+    const run = vi.fn().mockRejectedValue(goneError)
+
+    await expect(ensureSession(deps, 7, run)).rejects.toBeInstanceOf(TransactionSessionLostError)
+    expect(deps.clearSession).toHaveBeenCalledWith(7)
+    expect(deps.resetTransactionState).toHaveBeenCalledWith(7)
+    expect(deps.connect).not.toHaveBeenCalled()
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses to silently connect when no session is cached but stale state says manual', async () => {
+    const deps = makeDeps({
+      getSession: vi.fn(() => undefined),
+      wasManualTransaction: vi.fn(() => true),
+    })
+    const run = vi.fn()
+
+    await expect(ensureSession(deps, 7, run)).rejects.toBeInstanceOf(TransactionSessionLostError)
+    expect(deps.resetTransactionState).toHaveBeenCalledWith(7)
+    expect(deps.connect).not.toHaveBeenCalled()
+    expect(run).not.toHaveBeenCalled()
   })
 })
