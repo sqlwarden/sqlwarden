@@ -1,4 +1,4 @@
-import { Icon } from '#/lib/icons'
+import { FileTypeIcon } from '#/lib/icons'
 import { SearchInput } from '#/components/SearchInput'
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '#/components/ui/resizable'
 import type {
@@ -172,11 +172,7 @@ function SearchResultRow({
   return (
     <div className="border-b border-border/50 py-1.5">
       <div className="flex items-center gap-1.5 px-3">
-        <Icon
-          name={workspaceFileIcon(result.file)}
-          size={13}
-          className="shrink-0 text-muted-foreground"
-        />
+        <FileTypeIcon name={workspaceFileIcon(result.file)} size={13} className="shrink-0" />
         <span className="min-w-0 flex-1 truncate text-xs font-medium" title={result.file.name}>
           {result.file.name}
         </span>

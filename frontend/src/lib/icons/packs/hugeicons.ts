@@ -11,7 +11,6 @@ const icons: Record<AppIcon, string> = {
   'arrow-up-01': 'hugeicons:arrow-up-01',
   'arrow-up-down': 'hugeicons:arrow-up-down',
   'arrow-up-right-01': 'hugeicons:arrow-up-right-01',
-  'audio-wave-01': 'hugeicons:audio-wave-01',
   'book-open-02': 'hugeicons:book-open-02',
   box: 'hugeicons:cube',
   'briefcase-01': 'hugeicons:briefcase-01',

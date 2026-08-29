@@ -9,7 +9,6 @@ export type AppIcon =
   | 'arrow-up-01'
   | 'arrow-up-down'
   | 'arrow-up-right-01'
-  | 'audio-wave-01'
   | 'book-open-02'
   | 'box'
   | 'briefcase-01'

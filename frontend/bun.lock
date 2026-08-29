@@ -65,6 +65,7 @@
         "@iconify-json/hugeicons": "^1.2.29",
         "@iconify-json/lucide": "^1.2.111",
         "@iconify-json/ri": "^1.2.10",
+        "@iconify-json/vscode-icons": "^1.2.75",
         "@iconify/utils": "^3.1.3",
         "@tailwindcss/typography": "^0.5.16",
         "@tanstack/devtools-vite": "latest",
@@ -341,6 +342,8 @@
     "@iconify-json/lucide": ["@iconify-json/lucide@1.2.111", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-S6oXom2YOKuXFxWofhHa2oq++Z3WeZ78dRFDA7aEEJqyNCJlQd1UGAfN8u2gD2NzvYotmm+j5kH678viWfZbGQ=="],
 
     "@iconify-json/ri": ["@iconify-json/ri@1.2.10", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-WWMhoncVVM+Xmu9T5fgu2lhYRrKTEWhKk3Com0KiM111EeEsRLiASjpsFKnC/SrB6covhUp95r2mH8tGxhgd5Q=="],
+
+    "@iconify-json/vscode-icons": ["@iconify-json/vscode-icons@1.2.75", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-9nPLpK9cd35iCEZYRSPOmhZ7S2IK4np8Vf/tXdswe5rKhV9Twt+oJ2y+tKfRlugJQavhTJBvejvCpj7Aukki5A=="],
 
     "@iconify/react": ["@iconify/react@6.0.2", "", { "dependencies": { "@iconify/types": "^2.0.0" }, "peerDependencies": { "react": ">=16" } }, "sha512-SMmC2sactfpJD427WJEDN6PMyznTFMhByK9yLW0gOTtnjzzbsi/Ke/XqsumsavFPwNiXs8jSiYeZTmLCLwO+Fg=="],
 

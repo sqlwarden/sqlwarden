@@ -17,6 +17,7 @@ vi.mock('idb-keyval', () => ({
 
 vi.mock('#/lib/icons', () => ({
   Icon: ({ name }: { name: string }) => <span data-icon-name={name} />,
+  FileTypeIcon: ({ name }: { name: string }) => <span data-file-type-icon-name={name} />,
 }))
 
 const workspace: Workspace = {
@@ -120,12 +121,12 @@ describe('FilesPanel', () => {
 
     const sqlRow = await screen.findByRole('button', { name: 'query.sql' })
     const csvRow = screen.getByRole('button', { name: 'results.csv' })
-    expect(sqlRow.querySelector('[data-icon-name="database"]')).toBeInTheDocument()
-    expect(csvRow.querySelector('[data-icon-name="table"]')).toBeInTheDocument()
+    expect(sqlRow.querySelector('[data-file-type-icon-name="sql"]')).toBeInTheDocument()
+    expect(csvRow.querySelector('[data-file-type-icon-name="csv"]')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Queries' }))
     const nestedRow = await screen.findByRole('button', { name: 'nested.sql' })
-    expect(nestedRow.querySelector('[data-icon-name="database"]')).toBeInTheDocument()
+    expect(nestedRow.querySelector('[data-file-type-icon-name="sql"]')).toBeInTheDocument()
   })
 
   it('offers rename and duplicate only for private explorer items', async () => {

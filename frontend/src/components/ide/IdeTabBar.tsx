@@ -1,6 +1,6 @@
 import { useState, type DragEvent } from 'react'
 import * as Y from 'yjs'
-import { Icon, type AppIcon } from '#/lib/icons'
+import { Icon, FileTypeIcon, type AppIcon, type FileTypeIconName } from '#/lib/icons'
 import {
   Dialog,
   DialogContent,
@@ -46,16 +46,21 @@ const TAB_ICONS: Record<TabKind, AppIcon> = {
   diagram: 'flow-connection',
 }
 
+export type TabIcon = { kind: 'app'; name: AppIcon } | { kind: 'file-type'; name: FileTypeIconName }
+
 /** Returns the icon shown for a tab in the tab strip. File tabs resolve a
  *  type-specific icon (SQL, CSV, ...) from their name and metadata, same as
  *  the Files explorer; other tab kinds use a fixed icon per kind. */
-export function tabIcon(tab: EditorTab): AppIcon {
-  if (tab.kind !== 'file') return TAB_ICONS[tab.kind]
-  return workspaceFileIcon({
-    name: tab.title,
-    media_type: tab.fileMediaType,
-    file_kind: tab.fileKind,
-  })
+export function tabIcon(tab: EditorTab): TabIcon {
+  if (tab.kind !== 'file') return { kind: 'app', name: TAB_ICONS[tab.kind] }
+  return {
+    kind: 'file-type',
+    name: workspaceFileIcon({
+      name: tab.title,
+      media_type: tab.fileMediaType,
+      file_kind: tab.fileKind,
+    }),
+  }
 }
 
 export function requiresCloseConfirmation(
@@ -432,8 +437,10 @@ function TabItem({
           <Icon name="loading-03" size={13} className="shrink-0 animate-spin text-primary" />
         ) : (tab.kind === 'connection' || tab.kind === 'scratch') && tab.driver ? (
           <DriverBadge driver={tab.driver} size="sm" className="shrink-0 opacity-70" />
+        ) : icon.kind === 'app' ? (
+          <Icon name={icon.name} size={13} className="shrink-0 opacity-60" />
         ) : (
-          <Icon name={icon} size={13} className="shrink-0 opacity-60" />
+          <FileTypeIcon name={icon.name} size={13} className="shrink-0 opacity-60" />
         )}
         {/* Native title keeps per-tab hover hints cheap — no tooltip component per tab. */}
         <span className="min-w-0 flex-1 truncate text-xs" title={tab.subtitle ?? tab.title}>

@@ -11,7 +11,6 @@ const icons: Record<AppIcon, string> = {
   'arrow-up-01': 'ri:arrow-up-line',
   'arrow-up-down': 'ri:expand-up-down-line',
   'arrow-up-right-01': 'ri:arrow-right-up-line',
-  'audio-wave-01': 'ri:equalizer-line',
   'book-open-02': 'ri:book-open-line',
   box: 'ri:box-3-line',
   'briefcase-01': 'ri:briefcase-line',

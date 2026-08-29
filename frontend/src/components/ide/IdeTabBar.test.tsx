@@ -25,16 +25,25 @@ function tab(overrides: Partial<EditorTab> = {}): EditorTab {
 
 describe('tabIcon', () => {
   it('uses the kind-based icon for non-file tabs', () => {
-    expect(tabIcon(tab({ kind: 'scratch' }))).toBe('terminal')
-    expect(tabIcon(tab({ kind: 'connection' }))).toBe('database')
-    expect(tabIcon(tab({ kind: 'object' }))).toBe('table')
-    expect(tabIcon(tab({ kind: 'diagram' }))).toBe('flow-connection')
+    expect(tabIcon(tab({ kind: 'scratch' }))).toEqual({ kind: 'app', name: 'terminal' })
+    expect(tabIcon(tab({ kind: 'connection' }))).toEqual({ kind: 'app', name: 'database' })
+    expect(tabIcon(tab({ kind: 'object' }))).toEqual({ kind: 'app', name: 'table' })
+    expect(tabIcon(tab({ kind: 'diagram' }))).toEqual({ kind: 'app', name: 'flow-connection' })
   })
 
   it('derives a file tab icon from its name and metadata instead of a generic file icon', () => {
-    expect(tabIcon(tab({ kind: 'file', title: 'query.sql' }))).toBe('database')
-    expect(tabIcon(tab({ kind: 'file', title: 'export.csv' }))).toBe('table')
-    expect(tabIcon(tab({ kind: 'file', title: 'archive.custom' }))).toBe('file-01')
+    expect(tabIcon(tab({ kind: 'file', title: 'query.sql' }))).toEqual({
+      kind: 'file-type',
+      name: 'sql',
+    })
+    expect(tabIcon(tab({ kind: 'file', title: 'export.csv' }))).toEqual({
+      kind: 'file-type',
+      name: 'csv',
+    })
+    expect(tabIcon(tab({ kind: 'file', title: 'archive.custom' }))).toEqual({
+      kind: 'file-type',
+      name: 'default',
+    })
   })
 })
 
