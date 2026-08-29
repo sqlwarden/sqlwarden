@@ -233,6 +233,7 @@ function ResultsContent({
     return (
       <div className="flex h-full min-h-0 flex-col">
         <ResultEntry
+          key={`${runId}:0`}
           orgSlug={orgSlug}
           workspace={workspace}
           activeTabId={activeTabId}
@@ -249,7 +250,12 @@ function ResultsContent({
     <div className="flex h-full min-h-0">
       <ResultsSidebar results={results} selectedIndex={selectedIndex} onSelect={onSelectIndex} />
       <div className="min-w-0 flex-1">
+        {/* Keyed per statement so switching the selected statement remounts
+            the grid instead of reusing the scroll container — otherwise the
+            new statement's rows render at whatever scrollTop the previous
+            statement left behind rather than always starting at the top. */}
         <ResultEntry
+          key={`${runId}:${selectedIndex}`}
           orgSlug={orgSlug}
           workspace={workspace}
           activeTabId={activeTabId}
