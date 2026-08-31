@@ -29,7 +29,7 @@ function ComboboxTrigger({ className, ...props }: ComboboxPrimitive.Trigger.Prop
     <ComboboxPrimitive.Trigger
       data-slot="combobox-trigger"
       className={cn(
-        'flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors hover:bg-sidebar-accent/60',
+        'flex cursor-pointer items-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors hover:bg-sidebar-accent/60',
         className,
       )}
       {...props}

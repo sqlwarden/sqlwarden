@@ -248,9 +248,72 @@ describe('IdeActivityBar', () => {
     expect(screen.queryByRole('button', { name: 'Workspace settings' })).not.toBeInTheDocument()
   })
 
-  it('expands the workspace settings menu on click, showing only sub-items the user can access', async () => {
+  it('pops the workspace settings menu over the collapsed rail, showing only sub-items the user can access', async () => {
     const user = userEvent.setup()
     const store = createIdeStore('acme', 1, 'ephemeral')
+    const workspace = makeWorkspace(1, 'Analytics')
+    render(
+      <ThemeProvider disableTransitionOnChange={false}>
+        <QueryClientProvider client={createTestQueryClient()}>
+          <IdeStoreContext.Provider value={store}>
+            <IdeActivityBar
+              orgSlug="acme"
+              workspaces={[workspace]}
+              activeWorkspace={workspace}
+              onSelectWorkspace={vi.fn()}
+              session={undefined}
+              canAccessOrgSettings={false}
+              canAccessWorkspaceGeneralSettings
+              canAccessWorkspaceAccessControl={false}
+            />
+          </IdeStoreContext.Provider>
+        </QueryClientProvider>
+      </ThemeProvider>,
+    )
+
+    expect(screen.queryByRole('menuitem', { name: 'General' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Workspace settings' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'General' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Manage members' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Manage access' })).not.toBeInTheDocument()
+  })
+
+  it('shows manage members and manage access together when the access-control permission is granted', async () => {
+    const user = userEvent.setup()
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const workspace = makeWorkspace(1, 'Analytics')
+    render(
+      <ThemeProvider disableTransitionOnChange={false}>
+        <QueryClientProvider client={createTestQueryClient()}>
+          <IdeStoreContext.Provider value={store}>
+            <IdeActivityBar
+              orgSlug="acme"
+              workspaces={[workspace]}
+              activeWorkspace={workspace}
+              onSelectWorkspace={vi.fn()}
+              session={undefined}
+              canAccessOrgSettings={false}
+              canAccessWorkspaceGeneralSettings={false}
+              canAccessWorkspaceAccessControl
+            />
+          </IdeStoreContext.Provider>
+        </QueryClientProvider>
+      </ThemeProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Workspace settings' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'Manage members' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'General' })).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Manage access' })).toBeInTheDocument()
+  })
+
+  it('expands the workspace settings menu in place on an expanded rail', async () => {
+    const user = userEvent.setup()
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    store.getState().setActivityBarExpanded(true)
     const workspace = makeWorkspace(1, 'Analytics')
     render(
       <ThemeProvider disableTransitionOnChange={false}>
@@ -279,38 +342,6 @@ describe('IdeActivityBar', () => {
 
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('link', { name: 'General' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Manage members' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Manage access' })).not.toBeInTheDocument()
-  })
-
-  it('shows manage members and manage access together when the access-control permission is granted', async () => {
-    const user = userEvent.setup()
-    const store = createIdeStore('acme', 1, 'ephemeral')
-    const workspace = makeWorkspace(1, 'Analytics')
-    render(
-      <ThemeProvider disableTransitionOnChange={false}>
-        <QueryClientProvider client={createTestQueryClient()}>
-          <IdeStoreContext.Provider value={store}>
-            <IdeActivityBar
-              orgSlug="acme"
-              workspaces={[workspace]}
-              activeWorkspace={workspace}
-              onSelectWorkspace={vi.fn()}
-              session={undefined}
-              canAccessOrgSettings={false}
-              canAccessWorkspaceGeneralSettings={false}
-              canAccessWorkspaceAccessControl
-            />
-          </IdeStoreContext.Provider>
-        </QueryClientProvider>
-      </ThemeProvider>,
-    )
-
-    await user.click(screen.getByRole('button', { name: 'Workspace settings' }))
-
-    expect(screen.queryByRole('link', { name: 'General' })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Manage members' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Manage access' })).toBeInTheDocument()
   })
 
   it('shows the session account in the avatar menu and clears authentication state and redirects even when logout fails', async () => {

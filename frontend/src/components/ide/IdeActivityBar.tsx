@@ -211,62 +211,70 @@ function WorkspaceSettingsMenu({
       : []),
   ]
 
-  const toggle = (
-    <button
-      type="button"
-      onClick={() => setOpen(!open)}
-      aria-label="Workspace settings"
-      aria-expanded={open}
-      className={cn(
-        'flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors hover:bg-sidebar-accent/60',
-        expanded ? 'h-8 w-full justify-start gap-2 p-2' : 'size-8 justify-center',
-      )}
-    >
-      <Icon name="settings-02" size={17} className="shrink-0" />
-      {expanded ? (
-        <>
-          <span className="min-w-0 flex-1 truncate text-left">Workspace settings</span>
-          <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} className="shrink-0" />
-        </>
-      ) : null}
-    </button>
-  )
+  if (!expanded) {
+    return (
+      <DropdownMenu>
+        <Tip label="Workspace settings" side="right">
+          <DropdownMenuTrigger
+            aria-label="Workspace settings"
+            className="flex size-8 cursor-pointer items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors hover:bg-sidebar-accent/60"
+          >
+            <Icon name="settings-02" size={17} className="shrink-0" />
+          </DropdownMenuTrigger>
+        </Tip>
+        <DropdownMenuContent align="start" side="right" className="w-64 min-w-64">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Workspace settings</DropdownMenuLabel>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            {items.map((item) => (
+              <DropdownMenuItem
+                key={item.label}
+                render={
+                  <Link
+                    to={item.to}
+                    params={{ org_slug: orgSlug, workspace_id: String(workspace.id) }}
+                  />
+                }
+              >
+                <Icon name={item.icon} size={15} />
+                {item.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
 
   return (
-    <div className={expanded ? undefined : 'flex flex-col items-center gap-1'}>
-      {expanded ? (
-        toggle
-      ) : (
-        <Tip label="Workspace settings" side="right">
-          {toggle}
-        </Tip>
-      )}
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-label="Workspace settings"
+        aria-expanded={open}
+        className="flex h-8 w-full items-center justify-start gap-2 rounded-[calc(var(--radius-sm)+2px)] p-2 text-xs text-foreground transition-colors hover:bg-sidebar-accent/60"
+      >
+        <Icon name="settings-02" size={17} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-left">Workspace settings</span>
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} className="shrink-0" />
+      </button>
       {open
-        ? items.map((item) => {
-            const link = (
+        ? items.map((item) => (
+            <div key={item.label}>
               <Link
                 to={item.to}
                 params={{ org_slug: orgSlug, workspace_id: String(workspace.id) }}
                 aria-label={item.label}
-                className={cn(
-                  'flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors hover:bg-sidebar-accent/60',
-                  expanded
-                    ? 'h-8 w-full justify-start gap-2 py-2 ps-6 pe-2'
-                    : 'size-8 justify-center',
-                )}
+                className="flex h-8 w-full items-center justify-start gap-2 rounded-[calc(var(--radius-sm)+2px)] py-2 ps-6 pe-2 text-xs text-foreground transition-colors hover:bg-sidebar-accent/60"
               >
                 <Icon name={item.icon} size={15} className="shrink-0" />
-                {expanded ? <span className="truncate">{item.label}</span> : null}
+                <span className="truncate">{item.label}</span>
               </Link>
-            )
-            return expanded ? (
-              <div key={item.label}>{link}</div>
-            ) : (
-              <Tip key={item.label} label={item.label} side="right">
-                {link}
-              </Tip>
-            )
-          })
+            </div>
+          ))
         : null}
     </div>
   )
