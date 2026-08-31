@@ -163,12 +163,15 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
 
       <div className="flex flex-col gap-6 pt-6">
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              {!members.isLoading && total > 0
-                ? `${total} member${total !== 1 ? 's' : ''} in this organization`
-                : 'Members of this organization.'}
-            </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-1.5">
+              <h1 className="font-heading text-2xl font-semibold tracking-tight">Users</h1>
+              <p className="text-sm text-muted-foreground">
+                {!members.isLoading && total > 0
+                  ? `${total} member${total !== 1 ? 's' : ''} in this organization`
+                  : 'Members of this organization.'}
+              </p>
+            </div>
 
             {canAddUser ? (
               <Dialog

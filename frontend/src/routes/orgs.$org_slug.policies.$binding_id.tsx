@@ -23,7 +23,6 @@ import {
   permissionDefinitionMap,
   permissionDescription,
   permissionDisplayName,
-  permissionGroupName,
   protectedOrgPolicyMessage,
   type Permission,
 } from '#/lib/permissions'
@@ -52,6 +51,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import { UserAvatar } from '#/components/UserAvatar'
 import { RoutePending } from '#/components/RoutePending'
 import { Skeleton } from '#/components/ui/skeleton'
+import { InfoBlock } from '#/components/InfoBlock'
+import {
+  groupPermissions,
+  PermissionGroupsSkeleton,
+} from '#/components/access-control/PermissionGroups'
 import { cn } from '#/lib/utils'
 import { roleColor, subjectDisplayName } from './orgs.$org_slug.policies'
 
@@ -450,23 +454,6 @@ function PermissionGroups({
   )
 }
 
-function PermissionGroupsSkeleton() {
-  return (
-    <div className="grid gap-6 sm:grid-cols-2">
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div key={index} className="flex flex-col gap-3">
-          <Skeleton className="h-3 w-24" />
-          <div className="flex flex-col gap-3">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-4 w-36" />
-            <Skeleton className="h-4 w-44" />
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 function ContextMessage({ message }: { message: string }) {
   return (
     <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
@@ -474,27 +461,4 @@ function ContextMessage({ message }: { message: string }) {
       <p className="font-medium text-foreground">{message}</p>
     </div>
   )
-}
-
-function InfoBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5 border-l-2 border-border pl-3">
-      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-        {label}
-      </span>
-      <span className="text-sm font-medium text-foreground">{value}</span>
-    </div>
-  )
-}
-
-function groupPermissions(
-  permissions: readonly Permission[],
-  definitions: ReadonlyMap<string, PermissionDefinition>,
-) {
-  const groups = new Map<string, Permission[]>()
-  for (const item of permissions) {
-    const group = permissionGroupName(item, definitions)
-    groups.set(group, [...(groups.get(group) ?? []), item])
-  }
-  return Array.from(groups.entries()).map(([name, items]) => ({ name, permissions: items }))
 }
