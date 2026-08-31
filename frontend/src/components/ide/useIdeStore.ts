@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
 import { createStore, useStore } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import { get as idbGet } from 'idb-keyval'
 import type {
   Connection,
   ObjectRef,
@@ -362,8 +363,30 @@ export function connectionState(s: IdeState, connectionId: number): ConnectionSt
 
 // ─── Store factory ─────────────────────────────────────────────────────────────
 
+function ideStoreStorageKey(orgSlug: string, accountId: number) {
+  return `sqlwarden.ide.${orgSlug}.${accountId}`
+}
+
+/** Reads the last-active workspace id straight out of IndexedDB, without
+ *  instantiating a live store — creating one competes for the primary-window
+ *  lock, which is unwanted for a one-shot redirect decision. */
+export async function peekLastActiveWorkspaceId(
+  orgSlug: string,
+  accountId: number,
+): Promise<number | undefined> {
+  try {
+    const raw = await idbGet<string>(ideStoreStorageKey(orgSlug, accountId))
+    if (!raw) return undefined
+    const parsed = JSON.parse(raw) as { state?: { activeWorkspaceId?: unknown } }
+    const id = parsed.state?.activeWorkspaceId
+    return typeof id === 'number' ? id : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function createIdeStore(orgSlug: string, accountId: number, role: WindowRole = 'managed') {
-  const storageKey = `sqlwarden.ide.${orgSlug}.${accountId}`
+  const storageKey = ideStoreStorageKey(orgSlug, accountId)
   // Ephemeral windows never persist; managed windows persist only while they hold
   // the primary lock (one window at a time).
   let isPrimary = false

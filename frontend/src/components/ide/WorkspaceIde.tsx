@@ -68,9 +68,9 @@ import {
 
 // ─── Root ──────────────────────────────────────────────────────────────────────
 
-type WorkspaceIdeProps = { orgSlug: string }
+type WorkspaceIdeProps = { orgSlug: string; workspaceId: number }
 
-export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
+export function WorkspaceIde({ orgSlug, workspaceId }: WorkspaceIdeProps) {
   // Parent route guards that session is loaded before rendering this component,
   // so session.data is always available here (cache hit, no network request).
   // Fall back to 0 defensively so hooks are never called with undefined deps.
@@ -115,6 +115,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
         <EditorViewRegistryContext.Provider value={viewRegistry}>
           <WorkspaceIdeContent
             orgSlug={orgSlug}
+            requestedWorkspaceId={workspaceId}
             isLoading={workspaces.isLoading}
             isError={workspaces.isError}
             isRetrying={workspaces.isFetching}
@@ -131,6 +132,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
 
 type WorkspaceIdeContentProps = {
   orgSlug: string
+  requestedWorkspaceId: number
   isLoading: boolean
   isError: boolean
   isRetrying: boolean
@@ -140,6 +142,7 @@ type WorkspaceIdeContentProps = {
 
 export function WorkspaceIdeContent({
   orgSlug,
+  requestedWorkspaceId,
   isLoading,
   isError,
   isRetrying,
@@ -149,7 +152,13 @@ export function WorkspaceIdeContent({
   if (isLoading) return <WorkspaceIdeSkeleton />
   if (isError) return <WorkspaceLoadError isRetrying={isRetrying} onRetry={onRetry} />
   if (workspaces.length === 0) return <NoWorkspaceAccess />
-  return <WorkspaceIdeInner orgSlug={orgSlug} workspaces={workspaces} />
+  return (
+    <WorkspaceIdeInner
+      orgSlug={orgSlug}
+      requestedWorkspaceId={requestedWorkspaceId}
+      workspaces={workspaces}
+    />
+  )
 }
 
 export function WorkspaceIdeSkeleton() {
@@ -232,7 +241,7 @@ export function WorkspaceIdeSkeleton() {
   )
 }
 
-function NoWorkspaceAccess() {
+export function NoWorkspaceAccess() {
   usePageTitle('Editor')
 
   return (
@@ -255,7 +264,13 @@ function NoWorkspaceAccess() {
   )
 }
 
-function WorkspaceLoadError({ isRetrying, onRetry }: { isRetrying: boolean; onRetry: () => void }) {
+export function WorkspaceLoadError({
+  isRetrying,
+  onRetry,
+}: {
+  isRetrying: boolean
+  onRetry: () => void
+}) {
   usePageTitle('Editor')
 
   return (
@@ -294,8 +309,20 @@ function WorkspaceStateFrame({ children }: { children: React.ReactNode }) {
 
 // ─── Inner ─────────────────────────────────────────────────────────────────────
 
-function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspaces: Workspace[] }) {
-  const { activeWorkspace, setActiveWorkspace } = useWorkspaceSelection(workspaces)
+function WorkspaceIdeInner({
+  orgSlug,
+  requestedWorkspaceId,
+  workspaces,
+}: {
+  orgSlug: string
+  requestedWorkspaceId: number
+  workspaces: Workspace[]
+}) {
+  const { activeWorkspace, setActiveWorkspace } = useWorkspaceSelection(
+    workspaces,
+    requestedWorkspaceId,
+    orgSlug,
+  )
   const { data: session } = useSession()
 
   return (
@@ -334,7 +361,7 @@ function WorkspaceIdeInnerContent({
 }: {
   orgSlug: string
   workspaces: Workspace[]
-  activeWorkspace?: Workspace
+  activeWorkspace: Workspace
   setActiveWorkspace: (workspaceId: number) => void
   session: ReturnType<typeof useSession>['data']
 }) {
@@ -346,8 +373,8 @@ function WorkspaceIdeInnerContent({
     permission.orgRead,
   ])
   const workspacePermissions = useQuery({
-    ...orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', activeWorkspace?.id),
-    enabled: Boolean(session && activeWorkspace),
+    ...orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', activeWorkspace.id),
+    enabled: Boolean(session),
   })
   const canAccessWorkspaceGeneralSettings = hasAnyPermission(
     workspacePermissions.data?.permissions,
@@ -358,93 +385,107 @@ function WorkspaceIdeInnerContent({
     workspacePolicyPagePermissions,
   )
 
-  useIdeDeepLink(orgSlug, workspaces)
+  useIdeDeepLink(orgSlug, activeWorkspace)
 
   return (
     <ContextMenuProvider>
       <div className="flex h-dvh min-h-0 w-dvw max-w-dvw flex-col overflow-hidden bg-background">
-        {activeWorkspace && (
-          <WorkspaceIdeSurface
-            orgSlug={orgSlug}
-            workspace={activeWorkspace}
-            workspaces={workspaces}
-            onSelectWorkspace={setActiveWorkspace}
-            session={session}
-            canAccessOrgSettings={canAccessOrgSettings}
-            canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
-            canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
-          />
-        )}
+        <WorkspaceIdeSurface
+          orgSlug={orgSlug}
+          workspace={activeWorkspace}
+          workspaces={workspaces}
+          onSelectWorkspace={setActiveWorkspace}
+          session={session}
+          canAccessOrgSettings={canAccessOrgSettings}
+          canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
+          canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
+        />
       </div>
     </ContextMenuProvider>
   )
 }
 
-export function useWorkspaceSelection(workspaces: Workspace[]) {
-  const activeWorkspaceId = useIde((s) => s.activeWorkspaceId)
-  const setActiveWorkspace = useIde((s) => s.setActiveWorkspace)
+/** The active workspace is the URL's `workspace_id` param — the route is the
+ *  source of truth. If it names a workspace the account no longer has access
+ *  to (stale bookmark, revoked membership), fall back to the first accessible
+ *  workspace and correct the URL with a replace navigation. Every resolution
+ *  also updates the store's `activeWorkspaceId`, which only serves as "last
+ *  active workspace in this org" for the workspace-less `/ide/$org_slug`
+ *  redirect — it is never read back to decide what renders here. */
+export function useWorkspaceSelection(
+  workspaces: Workspace[],
+  requestedWorkspaceId: number,
+  orgSlug: string,
+) {
+  const navigate = useNavigate()
+  const setStoreActiveWorkspace = useIde((s) => s.setActiveWorkspace)
+
+  const activeWorkspace =
+    workspaces.find((workspace) => workspace.id === requestedWorkspaceId) ?? workspaces[0]
 
   useEffect(() => {
-    if (
-      workspaces.length > 0 &&
-      !workspaces.some((workspace) => workspace.id === activeWorkspaceId)
-    ) {
-      setActiveWorkspace(workspaces[0].id)
-    }
-  }, [activeWorkspaceId, workspaces, setActiveWorkspace])
+    setStoreActiveWorkspace(activeWorkspace.id)
+  }, [activeWorkspace.id, setStoreActiveWorkspace])
+
+  useEffect(() => {
+    if (activeWorkspace.id === requestedWorkspaceId) return
+    void navigate({
+      to: '/orgs/$org_slug/workspaces/$workspace_id/ide',
+      params: { org_slug: orgSlug, workspace_id: String(activeWorkspace.id) },
+      replace: true,
+    })
+  }, [activeWorkspace.id, requestedWorkspaceId, navigate, orgSlug])
 
   return {
-    activeWorkspace:
-      workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0],
-    setActiveWorkspace,
+    activeWorkspace,
+    setActiveWorkspace: (workspaceId: number) => {
+      void navigate({
+        to: '/orgs/$org_slug/workspaces/$workspace_id/ide',
+        params: { org_slug: orgSlug, workspace_id: String(workspaceId) },
+      })
+    },
   }
 }
 
-/** Applies ?ws=&conn= once on mount, then strips the params with a replace
- *  navigation so refreshes and cross-window sync don't re-force the
- *  selection. Called after the default-workspace effect in WorkspaceIdeInner
- *  so its setActiveWorkspace wins the initial render. */
-function useIdeDeepLink(orgSlug: string, workspaces: Workspace[]) {
-  const search = useSearch({ from: '/ide/$org_slug' })
+/** Applies ?conn= once on mount, then strips it with a replace navigation so
+ *  refreshes and cross-window sync don't re-force the selection. Workspace
+ *  identity comes from the route, not this hook — it only expands the
+ *  explorer node for the requested connection once it loads. */
+function useIdeDeepLink(orgSlug: string, workspace: Workspace) {
+  const search = useSearch({ from: '/orgs/$org_slug_/workspaces/$workspace_id/ide' })
   const navigate = useNavigate()
-  const setActiveWorkspace = useIde((s) => s.setActiveWorkspace)
   const setNodeExpanded = useIde((s) => s.setNodeExpanded)
 
-  const hasParams = search.ws !== undefined || search.conn !== undefined
-  const needsConnections = search.ws !== undefined && search.conn !== undefined
+  const hasParams = search.conn !== undefined
   const connections = useQuery({
-    ...allOrgWorkspaceConnectionsQueryOptions(orgSlug, search.ws ?? 0),
-    enabled: needsConnections,
+    ...allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id),
+    enabled: hasParams,
   })
 
   useEffect(() => {
     if (!hasParams) return
 
-    const resolution = resolveDeepLink(search, workspaces, connections.data?.items)
+    const resolution = resolveDeepLink(search, connections.data?.items)
     if (!resolution.ready && !connections.isError) return
 
-    if (resolution.activateWorkspaceId !== undefined) {
-      setActiveWorkspace(resolution.activateWorkspaceId)
-    }
     for (const key of resolution.expandKeys) {
       setNodeExpanded(key, true)
     }
     void navigate({
-      to: '/ide/$org_slug',
-      params: { org_slug: orgSlug },
+      to: '/orgs/$org_slug/workspaces/$workspace_id/ide',
+      params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
       search: {},
       replace: true,
     })
   }, [
     hasParams,
     search,
-    workspaces,
     connections.data,
     connections.isError,
-    setActiveWorkspace,
     setNodeExpanded,
     navigate,
     orgSlug,
+    workspace.id,
   ])
 }
 

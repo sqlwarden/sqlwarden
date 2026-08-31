@@ -144,9 +144,8 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
           nativeButton={false}
           render={
             <Link
-              to="/ide/$org_slug"
-              params={{ org_slug: orgSlug }}
-              search={{ ws: Number(workspaceId) }}
+              to="/orgs/$org_slug/workspaces/$workspace_id/ide"
+              params={{ org_slug: orgSlug, workspace_id: workspaceId }}
             />
           }
         >
