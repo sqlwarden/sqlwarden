@@ -74,4 +74,41 @@ describe('workspace overview route', () => {
     expect(screen.getByText('Something broke.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /back to workspaces/i })).toBeInTheDocument()
   })
+
+  it('shows stat tiles and a nav list, filtered by permission', async () => {
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/1', () =>
+        HttpResponse.json({
+          id: 1,
+          owner_type: 'org',
+          owner_id: 1,
+          name: 'Analytics',
+          description: 'Reporting workspace.',
+          environment_count: 3,
+          connection_count: 5,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/permissions/effective', () =>
+        HttpResponse.json({
+          resource_type: 'workspace',
+          resource_id: 1,
+          permissions: ['env:read', 'conn:read', 'ws:read'],
+        }),
+      ),
+    )
+
+    renderRoute('/orgs/acme/workspaces/1')
+
+    expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
+
+    expect(screen.getByRole('link', { name: /environments\s*3/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /connections\s*5/i })).toBeInTheDocument()
+    expect(screen.getByText('Workspace name and configuration.')).toBeInTheDocument()
+    expect(screen.queryByText('People and teams with workspace access.')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Roles and access policies in this workspace.'),
+    ).not.toBeInTheDocument()
+  })
 })

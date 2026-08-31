@@ -32,12 +32,20 @@ function WorkspaceRoute() {
   return <WorkspaceOverviewPage orgSlug={orgSlug} workspaceId={workspaceId} />
 }
 
-type OverviewCard = {
+type StatTile = {
   section: string
   label: string
   description: string
   icon: AppIcon
   count?: number
+  required: readonly Permission[]
+}
+
+type NavItem = {
+  section: string
+  label: string
+  description: string
+  icon: AppIcon
   required: readonly Permission[]
 }
 
@@ -49,7 +57,7 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
   )
   const permissions = effectivePermissions.data?.permissions
 
-  const allCards: OverviewCard[] = [
+  const allStatTiles: StatTile[] = [
     {
       section: 'environments',
       label: 'Environments',
@@ -66,6 +74,8 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
       count: workspace.data?.connection_count,
       required: workspaceConnectionPagePermissions,
     },
+  ]
+  const allNavItems: NavItem[] = [
     {
       section: 'users',
       label: 'Members',
@@ -88,17 +98,18 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
       required: workspaceSettingsPagePermissions,
     },
   ]
-  const cards = allCards.filter((card) => hasAnyPermission(permissions, card.required))
+  const statTiles = allStatTiles.filter((tile) => hasAnyPermission(permissions, tile.required))
+  const navItems = allNavItems.filter((item) => hasAnyPermission(permissions, item.required))
 
   if (workspace.isLoading || effectivePermissions.isLoading) {
     return (
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-8">
         <Skeleton className="h-8 w-64" />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-28" />
-          ))}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Skeleton className="h-28" />
+          <Skeleton className="h-28" />
         </div>
+        <Skeleton className="h-40" />
       </div>
     )
   }
@@ -142,6 +153,7 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
         </div>
         <Button
           nativeButton={false}
+          className="bg-primary text-primary-foreground hover:bg-primary/90"
           render={
             <Link
               to="/orgs/$org_slug/workspaces/$workspace_id/ide"
@@ -154,35 +166,62 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
         </Button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {cards.map((card) => (
-          <Link
-            key={card.section}
-            to={`/orgs/$org_slug/workspaces/$workspace_id/${card.section}` as never}
-            params={{ org_slug: orgSlug, workspace_id: workspaceId } as never}
-            className="group flex flex-col rounded-lg border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:bg-muted/20 hover:shadow-sm"
-          >
-            <div className="flex flex-1 items-start gap-3 p-5">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                <Icon name={card.icon} size={20} />
+      {statTiles.length > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {statTiles.map((tile) => (
+            <Link
+              key={tile.section}
+              to={`/orgs/$org_slug/workspaces/$workspace_id/${tile.section}` as never}
+              params={{ org_slug: orgSlug, workspace_id: workspaceId } as never}
+              className="group relative flex flex-col gap-4 overflow-hidden rounded-lg border border-border bg-card p-5 text-card-foreground transition-all hover:border-foreground/20 hover:shadow-sm"
+            >
+              <span className="absolute inset-y-0 left-0 w-0.5 scale-y-0 bg-primary transition-transform group-hover:scale-y-100" />
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-muted-foreground">{tile.label}</p>
+                <Icon
+                  name={tile.icon}
+                  size={18}
+                  className="text-muted-foreground transition-colors group-hover:text-primary"
+                />
               </div>
-              <div className="min-w-0 flex-1 pt-0.5">
-                <div className="flex items-center gap-2">
-                  <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
-                    {card.label}
-                  </p>
-                  {card.count !== undefined ? (
-                    <span className="text-xs tabular-nums text-muted-foreground">{card.count}</span>
-                  ) : null}
-                </div>
-                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                  {card.description}
+              <p className="font-heading text-4xl font-semibold tracking-tight tabular-nums">
+                {tile.count ?? '—'}
+              </p>
+              <p className="text-xs leading-relaxed text-muted-foreground">{tile.description}</p>
+            </Link>
+          ))}
+        </div>
+      ) : null}
+
+      {navItems.length > 0 ? (
+        <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
+          {navItems.map((item) => (
+            <Link
+              key={item.section}
+              to={`/orgs/$org_slug/workspaces/$workspace_id/${item.section}` as never}
+              params={{ org_slug: orgSlug, workspace_id: workspaceId } as never}
+              className="group flex items-center gap-3 p-4 text-card-foreground transition-colors first:rounded-t-lg last:rounded-b-lg hover:bg-muted/40"
+            >
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                <Icon name={item.icon} size={18} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium leading-tight tracking-tight transition-colors group-hover:text-primary">
+                  {item.label}
+                </p>
+                <p className="mt-0.5 truncate text-xs leading-relaxed text-muted-foreground">
+                  {item.description}
                 </p>
               </div>
-            </div>
-          </Link>
-        ))}
-      </div>
+              <Icon
+                name="arrow-right-01"
+                size={16}
+                className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+              />
+            </Link>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
