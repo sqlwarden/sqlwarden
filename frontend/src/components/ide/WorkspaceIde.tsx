@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
-import { useBrand } from '#/lib/brand/brand'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#/components/ui/resizable'
 import { Button } from '#/components/ui/button'
@@ -23,7 +22,7 @@ import {
   EmptyTitle,
 } from '#/components/ui/empty'
 import { Skeleton } from '#/components/ui/skeleton'
-import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import {
   orgWorkspacesQueryOptions,
   orgEffectivePermissionsQueryOptions,
@@ -32,15 +31,17 @@ import {
 } from '#/lib/api/query'
 import { resolveDeepLink } from './ideDeepLink'
 import { hasAnyPermission, permission } from '#/lib/permissions'
-import { IdeTopBarControls } from './IdeTopBarControls'
+import {
+  workspacePolicyPagePermissions,
+  workspaceSettingsPagePermissions,
+} from '#/lib/workspace-page-permissions'
 import { IdeActivityBar } from './IdeActivityBar'
 import { visibleActivities, type ActivityVisibilityContext } from './ideActivities'
 import type { Workspace } from '#/lib/api/types'
 import { useSession } from '#/hooks/use-session'
 import { cn } from '#/lib/utils'
 import { usePageTitle } from '#/lib/page-title'
-import { ContextMenu, ContextMenuProvider } from '#/components/ui/context-menu'
-import { buildWorkspaceMenu } from './contextMenus/workspaceMenu'
+import { ContextMenuProvider } from '#/components/ui/context-menu'
 import {
   createIdeStore,
   IdeStoreContext,
@@ -67,9 +68,9 @@ import {
 
 // ─── Root ──────────────────────────────────────────────────────────────────────
 
-type WorkspaceIdeProps = { orgSlug: string }
+type WorkspaceIdeProps = { orgSlug: string; workspaceId: number }
 
-export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
+export function WorkspaceIde({ orgSlug, workspaceId }: WorkspaceIdeProps) {
   // Parent route guards that session is loaded before rendering this component,
   // so session.data is always available here (cache hit, no network request).
   // Fall back to 0 defensively so hooks are never called with undefined deps.
@@ -114,6 +115,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
         <EditorViewRegistryContext.Provider value={viewRegistry}>
           <WorkspaceIdeContent
             orgSlug={orgSlug}
+            requestedWorkspaceId={workspaceId}
             isLoading={workspaces.isLoading}
             isError={workspaces.isError}
             isRetrying={workspaces.isFetching}
@@ -130,6 +132,7 @@ export function WorkspaceIde({ orgSlug }: WorkspaceIdeProps) {
 
 type WorkspaceIdeContentProps = {
   orgSlug: string
+  requestedWorkspaceId: number
   isLoading: boolean
   isError: boolean
   isRetrying: boolean
@@ -139,6 +142,7 @@ type WorkspaceIdeContentProps = {
 
 export function WorkspaceIdeContent({
   orgSlug,
+  requestedWorkspaceId,
   isLoading,
   isError,
   isRetrying,
@@ -148,7 +152,13 @@ export function WorkspaceIdeContent({
   if (isLoading) return <WorkspaceIdeSkeleton />
   if (isError) return <WorkspaceLoadError isRetrying={isRetrying} onRetry={onRetry} />
   if (workspaces.length === 0) return <NoWorkspaceAccess />
-  return <WorkspaceIdeInner orgSlug={orgSlug} workspaces={workspaces} />
+  return (
+    <WorkspaceIdeInner
+      orgSlug={orgSlug}
+      requestedWorkspaceId={requestedWorkspaceId}
+      workspaces={workspaces}
+    />
+  )
 }
 
 export function WorkspaceIdeSkeleton() {
@@ -231,7 +241,7 @@ export function WorkspaceIdeSkeleton() {
   )
 }
 
-function NoWorkspaceAccess() {
+export function NoWorkspaceAccess() {
   usePageTitle('Editor')
 
   return (
@@ -254,7 +264,13 @@ function NoWorkspaceAccess() {
   )
 }
 
-function WorkspaceLoadError({ isRetrying, onRetry }: { isRetrying: boolean; onRetry: () => void }) {
+export function WorkspaceLoadError({
+  isRetrying,
+  onRetry,
+}: {
+  isRetrying: boolean
+  onRetry: () => void
+}) {
   usePageTitle('Editor')
 
   return (
@@ -293,8 +309,20 @@ function WorkspaceStateFrame({ children }: { children: React.ReactNode }) {
 
 // ─── Inner ─────────────────────────────────────────────────────────────────────
 
-function WorkspaceIdeInner({ orgSlug, workspaces }: { orgSlug: string; workspaces: Workspace[] }) {
-  const { activeWorkspace, setActiveWorkspace } = useWorkspaceSelection(workspaces)
+function WorkspaceIdeInner({
+  orgSlug,
+  requestedWorkspaceId,
+  workspaces,
+}: {
+  orgSlug: string
+  requestedWorkspaceId: number
+  workspaces: Workspace[]
+}) {
+  const { activeWorkspace, setActiveWorkspace } = useWorkspaceSelection(
+    workspaces,
+    requestedWorkspaceId,
+    orgSlug,
+  )
   const { data: session } = useSession()
 
   return (
@@ -333,7 +361,7 @@ function WorkspaceIdeInnerContent({
 }: {
   orgSlug: string
   workspaces: Workspace[]
-  activeWorkspace?: Workspace
+  activeWorkspace: Workspace
   setActiveWorkspace: (workspaceId: number) => void
   session: ReturnType<typeof useSession>['data']
 }) {
@@ -344,176 +372,144 @@ function WorkspaceIdeInnerContent({
   const canAccessOrgSettings = hasAnyPermission(orgPermissions.data?.permissions, [
     permission.orgRead,
   ])
+  const workspacePermissions = useQuery({
+    ...orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', activeWorkspace.id),
+    enabled: Boolean(session),
+  })
+  const canAccessWorkspaceGeneralSettings = hasAnyPermission(
+    workspacePermissions.data?.permissions,
+    workspaceSettingsPagePermissions,
+  )
+  const canAccessWorkspaceAccessControl = hasAnyPermission(
+    workspacePermissions.data?.permissions,
+    workspacePolicyPagePermissions,
+  )
 
-  useIdeDeepLink(orgSlug, workspaces)
+  useIdeDeepLink(orgSlug, activeWorkspace)
 
   return (
     <ContextMenuProvider>
       <div className="flex h-dvh min-h-0 w-dvw max-w-dvw flex-col overflow-hidden bg-background">
-        {/* Top bar: brand + explorer toggle + workspace tabs + user controls */}
-        <div className="flex h-10 shrink-0 items-stretch border-b border-border bg-sidebar">
-          <IdeBrand />
-          <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {workspaces.map((ws) => (
-              <WorkspaceTab
-                key={ws.id}
-                orgSlug={orgSlug}
-                workspace={ws}
-                active={ws.id === activeWorkspace?.id}
-                onActivate={() => setActiveWorkspace(ws.id)}
-              />
-            ))}
-          </div>
-          {session ? (
-            <IdeTopBarControls
-              orgSlug={orgSlug}
-              session={session}
-              canAccessOrgSettings={canAccessOrgSettings}
-            />
-          ) : null}
-        </div>
-
-        {activeWorkspace && <WorkspaceIdeSurface orgSlug={orgSlug} workspace={activeWorkspace} />}
+        <WorkspaceIdeSurface
+          orgSlug={orgSlug}
+          workspace={activeWorkspace}
+          workspaces={workspaces}
+          onSelectWorkspace={setActiveWorkspace}
+          session={session}
+          canAccessOrgSettings={canAccessOrgSettings}
+          canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
+          canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
+        />
       </div>
     </ContextMenuProvider>
   )
 }
 
-export function useWorkspaceSelection(workspaces: Workspace[]) {
-  const activeWorkspaceId = useIde((s) => s.activeWorkspaceId)
-  const setActiveWorkspace = useIde((s) => s.setActiveWorkspace)
+/** The active workspace is the URL's `workspace_id` param — the route is the
+ *  source of truth. If it names a workspace the account no longer has access
+ *  to (stale bookmark, revoked membership), fall back to the first accessible
+ *  workspace and correct the URL with a replace navigation. Every resolution
+ *  also updates the store's `activeWorkspaceId`, which only serves as "last
+ *  active workspace in this org" for the workspace-less `/ide/$org_slug`
+ *  redirect — it is never read back to decide what renders here. */
+export function useWorkspaceSelection(
+  workspaces: Workspace[],
+  requestedWorkspaceId: number,
+  orgSlug: string,
+) {
+  const navigate = useNavigate()
+  const setStoreActiveWorkspace = useIde((s) => s.setActiveWorkspace)
+
+  const activeWorkspace =
+    workspaces.find((workspace) => workspace.id === requestedWorkspaceId) ?? workspaces[0]
 
   useEffect(() => {
-    if (
-      workspaces.length > 0 &&
-      !workspaces.some((workspace) => workspace.id === activeWorkspaceId)
-    ) {
-      setActiveWorkspace(workspaces[0].id)
-    }
-  }, [activeWorkspaceId, workspaces, setActiveWorkspace])
+    setStoreActiveWorkspace(activeWorkspace.id)
+  }, [activeWorkspace.id, setStoreActiveWorkspace])
+
+  useEffect(() => {
+    if (activeWorkspace.id === requestedWorkspaceId) return
+    void navigate({
+      to: '/orgs/$org_slug/workspaces/$workspace_id/ide',
+      params: { org_slug: orgSlug, workspace_id: String(activeWorkspace.id) },
+      replace: true,
+    })
+  }, [activeWorkspace.id, requestedWorkspaceId, navigate, orgSlug])
 
   return {
-    activeWorkspace:
-      workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0],
-    setActiveWorkspace,
+    activeWorkspace,
+    setActiveWorkspace: (workspaceId: number) => {
+      void navigate({
+        to: '/orgs/$org_slug/workspaces/$workspace_id/ide',
+        params: { org_slug: orgSlug, workspace_id: String(workspaceId) },
+      })
+    },
   }
 }
 
-/** Applies ?ws=&conn= once on mount, then strips the params with a replace
- *  navigation so refreshes and cross-window sync don't re-force the
- *  selection. Called after the default-workspace effect in WorkspaceIdeInner
- *  so its setActiveWorkspace wins the initial render. */
-function useIdeDeepLink(orgSlug: string, workspaces: Workspace[]) {
-  const search = useSearch({ from: '/ide/$org_slug' })
+/** Applies ?conn= once on mount, then strips it with a replace navigation so
+ *  refreshes and cross-window sync don't re-force the selection. Workspace
+ *  identity comes from the route, not this hook — it only expands the
+ *  explorer node for the requested connection once it loads. */
+function useIdeDeepLink(orgSlug: string, workspace: Workspace) {
+  const search = useSearch({ from: '/orgs/$org_slug_/workspaces/$workspace_id/ide' })
   const navigate = useNavigate()
-  const setActiveWorkspace = useIde((s) => s.setActiveWorkspace)
   const setNodeExpanded = useIde((s) => s.setNodeExpanded)
 
-  const hasParams = search.ws !== undefined || search.conn !== undefined
-  const needsConnections = search.ws !== undefined && search.conn !== undefined
+  const hasParams = search.conn !== undefined
   const connections = useQuery({
-    ...allOrgWorkspaceConnectionsQueryOptions(orgSlug, search.ws ?? 0),
-    enabled: needsConnections,
+    ...allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id),
+    enabled: hasParams,
   })
 
   useEffect(() => {
     if (!hasParams) return
 
-    const resolution = resolveDeepLink(search, workspaces, connections.data?.items)
+    const resolution = resolveDeepLink(search, connections.data?.items)
     if (!resolution.ready && !connections.isError) return
 
-    if (resolution.activateWorkspaceId !== undefined) {
-      setActiveWorkspace(resolution.activateWorkspaceId)
-    }
     for (const key of resolution.expandKeys) {
       setNodeExpanded(key, true)
     }
     void navigate({
-      to: '/ide/$org_slug',
-      params: { org_slug: orgSlug },
+      to: '/orgs/$org_slug/workspaces/$workspace_id/ide',
+      params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
       search: {},
       replace: true,
     })
   }, [
     hasParams,
     search,
-    workspaces,
     connections.data,
     connections.isError,
-    setActiveWorkspace,
     setNodeExpanded,
     navigate,
     orgSlug,
+    workspace.id,
   ])
-}
-
-function IdeBrand() {
-  const brand = useBrand()
-  return (
-    <Tip label="Back to dashboard" side="bottom">
-      <Link
-        to="/"
-        className="flex w-11 shrink-0 items-center justify-center text-foreground transition-colors hover:bg-sidebar-accent/50"
-        aria-label={`${brand.productName} home`}
-      >
-        <brand.LogoMark size={20} className="shrink-0" />
-      </Link>
-    </Tip>
-  )
-}
-
-function WorkspaceTab({
-  orgSlug,
-  workspace,
-  active,
-  onActivate,
-}: {
-  orgSlug: string
-  workspace: Workspace
-  active: boolean
-  onActivate: () => void
-}) {
-  const navigate = useNavigate()
-
-  const menuItems = buildWorkspaceMenu({
-    onOpenSettings: () =>
-      navigate({
-        to: '/orgs/$org_slug/workspaces/$workspace_id/settings',
-        params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
-      }),
-    onManageMembers: () =>
-      navigate({
-        to: '/orgs/$org_slug/workspaces/$workspace_id/users',
-        params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
-      }),
-    onManageAccess: () =>
-      navigate({
-        to: '/orgs/$org_slug/workspaces/$workspace_id/policies',
-        params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
-      }),
-  })
-
-  return (
-    <ContextMenu items={menuItems} className="h-full shrink-0">
-      <button
-        type="button"
-        onClick={onActivate}
-        className={cn(
-          'relative flex h-full shrink-0 items-center px-4 text-xs font-medium transition-colors',
-          active
-            ? 'bg-background text-foreground after:absolute after:inset-x-0 after:top-0 after:h-[2px] after:bg-primary'
-            : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground',
-        )}
-      >
-        {workspace.name}
-      </button>
-    </ContextMenu>
-  )
 }
 
 // ─── Surface ───────────────────────────────────────────────────────────────────
 
-function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
+function WorkspaceIdeSurface({
+  orgSlug,
+  workspace,
+  workspaces,
+  onSelectWorkspace,
+  session,
+  canAccessOrgSettings,
+  canAccessWorkspaceGeneralSettings,
+  canAccessWorkspaceAccessControl,
+}: {
+  orgSlug: string
+  workspace: Workspace
+  workspaces: Workspace[]
+  onSelectWorkspace: (id: number) => void
+  session: ReturnType<typeof useSession>['data']
+  canAccessOrgSettings: boolean
+  canAccessWorkspaceGeneralSettings: boolean
+  canAccessWorkspaceAccessControl: boolean
+}) {
   const sidebarRef = useRef<PanelImperativeHandle>(null)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
@@ -574,7 +570,16 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
     const PageSurface = activeActivity.component
     return (
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <IdeActivityBar orgSlug={orgSlug} />
+        <IdeActivityBar
+          orgSlug={orgSlug}
+          workspaces={workspaces}
+          activeWorkspace={workspace}
+          onSelectWorkspace={onSelectWorkspace}
+          session={session}
+          canAccessOrgSettings={canAccessOrgSettings}
+          canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
+          canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
+        />
         <div className="min-w-0 flex-1 overflow-hidden">
           <PageSurface orgSlug={orgSlug} workspace={workspace} />
         </div>
@@ -585,7 +590,16 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
   if (isMobile) {
     return (
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <IdeActivityBar orgSlug={orgSlug} />
+        <IdeActivityBar
+          orgSlug={orgSlug}
+          workspaces={workspaces}
+          activeWorkspace={workspace}
+          onSelectWorkspace={onSelectWorkspace}
+          session={session}
+          canAccessOrgSettings={canAccessOrgSettings}
+          canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
+          canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
+        />
         <div className="min-w-0 flex-1 overflow-hidden">
           <IdeEditorAndResults orgSlug={orgSlug} workspace={workspace} />
         </div>
@@ -604,7 +618,16 @@ function WorkspaceIdeSurface({ orgSlug, workspace }: { orgSlug: string; workspac
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
-      <IdeActivityBar orgSlug={orgSlug} />
+      <IdeActivityBar
+        orgSlug={orgSlug}
+        workspaces={workspaces}
+        activeWorkspace={workspace}
+        onSelectWorkspace={onSelectWorkspace}
+        session={session}
+        canAccessOrgSettings={canAccessOrgSettings}
+        canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
+        canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
+      />
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 overflow-hidden">
         <ResizablePanel
           panelRef={sidebarRef}
@@ -700,7 +723,7 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
   )
 }
 
-type CursorInfo = { line: number; col: number; sel: number }
+type CursorInfo = { line: number; col: number; sel: number; selectedText: string }
 
 function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
   const registry = useYDocRegistry()
@@ -753,14 +776,16 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   return (
     <>
       <section className="flex h-full min-h-0 flex-col bg-background">
-        <IdeToolbar orgSlug={orgSlug} workspace={workspace} />
+        <IdeToolbar orgSlug={orgSlug} workspace={workspace} selection={cursorInfo?.selectedText} />
         <div className="relative min-h-0 flex-1">
           {hasAnyTab && layout ? (
             <EditorLayout
               orgSlug={orgSlug}
               workspace={workspace}
               node={layout}
-              onCursorChange={(line, col, sel) => setCursorInfo({ line, col, sel })}
+              onCursorChange={(line, col, sel, selectedText) =>
+                setCursorInfo({ line, col, sel, selectedText })
+              }
             />
           ) : (
             <div className="h-full border-t border-border bg-card">
@@ -833,7 +858,7 @@ function EditorStatusBar({
   const resultsVisible = maximizedPane !== 'editor'
 
   return (
-    <div className="flex h-6 shrink-0 items-center gap-3 border-t border-border bg-sidebar pl-3 pr-1 text-[11px] text-muted-foreground">
+    <div className="flex h-6 shrink-0 items-center gap-3 bg-background pl-3 pr-1 text-[11px] text-muted-foreground">
       {hasActiveTab && cursorInfo && (
         <>
           <span className="tabular-nums">

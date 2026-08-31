@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/lib/api/exports', () => ({ createExport: mocks.createExport }))
 vi.mock('./exportRetryCache', () => ({ rememberExportRetry: mocks.rememberRetry }))
 vi.mock('sonner', () => ({ toast: { success: mocks.toastSuccess } }))
+vi.mock('../object-detail/ReadOnlySqlView', () => ({
+  ReadOnlySqlView: ({ value }: { value: string }) => <pre>{value}</pre>,
+}))
 
 const job: JobRecord = {
   id: 'job-1',

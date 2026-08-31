@@ -1,5 +1,5 @@
-import { Icon } from '#/lib/icons'
-import { Input } from '#/components/ui/input'
+import { FileTypeIcon } from '#/lib/icons'
+import { SearchInput } from '#/components/SearchInput'
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '#/components/ui/resizable'
 import type {
   Workspace,
@@ -51,18 +51,19 @@ export function SearchPanel({
       maximized={maximized}
       onMaximizedChange={onMaximizedChange}
       scroll={false}
+      headerContent={
+        <SearchInput
+          value={search.searchText}
+          onValueChange={search.setSearchText}
+          onClear={search.clearSearch}
+          placeholder="Search file content..."
+          className="w-full"
+          size="sm"
+          variant="muted"
+        />
+      }
     >
       <div className="flex h-full min-h-0 flex-col">
-        <div className="border-b border-border p-2">
-          <Input
-            value={search.searchText}
-            onChange={(e) => search.setSearchText(e.target.value)}
-            placeholder="Search file content..."
-            className="h-7 text-xs"
-            autoComplete="off"
-          />
-        </div>
-
         {showTooShortHint ? (
           <div className="px-3 py-2 text-xs text-muted-foreground">
             Type at least 2 characters to search.
@@ -171,11 +172,7 @@ function SearchResultRow({
   return (
     <div className="border-b border-border/50 py-1.5">
       <div className="flex items-center gap-1.5 px-3">
-        <Icon
-          name={workspaceFileIcon(result.file)}
-          size={13}
-          className="shrink-0 text-muted-foreground"
-        />
+        <FileTypeIcon name={workspaceFileIcon(result.file)} size={13} className="shrink-0" />
         <span className="min-w-0 flex-1 truncate text-xs font-medium" title={result.file.name}>
           {result.file.name}
         </span>

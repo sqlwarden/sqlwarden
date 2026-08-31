@@ -15,6 +15,7 @@ import { createIdeStore, IdeStoreContext } from './useIdeStore'
 import { DatabasePanel } from './DatabasePanel'
 import { ContextMenuProvider } from '#/components/ui/context-menu'
 import { ConnectionLayoutProvider } from './useConnectionLayout'
+import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 
 vi.mock('idb-keyval', () => ({
   get: vi.fn(() => Promise.resolve(null)),
@@ -97,11 +98,13 @@ describe('DatabasePanel', () => {
     const rootRoute = createRootRoute({
       component: () => (
         <IdeStoreContext.Provider value={store}>
-          <ConnectionLayoutProvider>
-            <ContextMenuProvider>
-              <DatabasePanel orgSlug="acme" workspace={workspace} />
-            </ContextMenuProvider>
-          </ConnectionLayoutProvider>
+          <EditorViewRegistryContext.Provider value={createEditorViewRegistry()}>
+            <ConnectionLayoutProvider>
+              <ContextMenuProvider>
+                <DatabasePanel orgSlug="acme" workspace={workspace} />
+              </ContextMenuProvider>
+            </ConnectionLayoutProvider>
+          </EditorViewRegistryContext.Provider>
         </IdeStoreContext.Provider>
       ),
     })
@@ -195,6 +198,31 @@ describe('DatabasePanel', () => {
     await user.click(screen.getByRole('button', { name: 'Refresh schema' }))
 
     await waitFor(() => expect(refreshes).toBe(1))
+  })
+
+  it('collapses an expanded connection schema tree when the connection disconnects', async () => {
+    handlers('populated')
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+        HttpResponse.json({ groups: [] }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({ scopes: [] }),
+      ),
+    )
+    store.getState().setSession(7, 'session-7')
+    const { user } = renderPanel()
+
+    await screen.findByText('analytics-pg')
+    await user.click(screen.getByRole('button', { name: 'Expand schema' }))
+    expect(await screen.findByRole('button', { name: 'Collapse schema' })).toBeInTheDocument()
+
+    store.getState().clearSession(7)
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Collapse schema' })).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByRole('button', { name: 'Expand schema' })).not.toBeInTheDocument()
   })
 
   it('opens connection creation from an environment quick action', async () => {

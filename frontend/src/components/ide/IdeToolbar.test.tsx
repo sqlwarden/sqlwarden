@@ -12,6 +12,10 @@ import { IdeToolbar } from './IdeToolbar'
 import { createIdeStore, IdeStoreContext, type EditorTab } from './useIdeStore'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 
+vi.mock('./object-detail/ReadOnlySqlView', () => ({
+  ReadOnlySqlView: ({ value }: { value: string }) => <pre>{value}</pre>,
+}))
+
 const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
   confirmAt: vi.fn(() => Promise.resolve()),
@@ -171,7 +175,7 @@ describe('IdeToolbar', () => {
     editor.destroy()
   })
 
-  it('hides export for non-SQL files and only offers save when a file is dirty', async () => {
+  it('hides export for non-SQL files and disables save until a file is dirty', async () => {
     const csvTab: EditorTab = {
       id: 'file:11',
       workspaceId: 3,
@@ -188,12 +192,46 @@ describe('IdeToolbar', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: /^Run/ })).toBeEnabled())
     expect(screen.queryByRole('button', { name: 'More run options' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Save file' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save file' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Format SQL' })).not.toBeInTheDocument()
 
     store.setState({ tabs: [{ ...csvTab, isDirty: true }] })
-    expect(await screen.findByRole('button', { name: 'Save file' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Save file' })).toBeEnabled()
     view.unmount()
+  })
+
+  it('keeps the Run label and offers Run All for a multi-statement selection', async () => {
+    store.getState().openTab(scratchTab)
+    const { rerender } = render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <IdeStoreContext.Provider value={store}>
+          <EditorViewRegistryContext.Provider value={views}>
+            <IdeToolbar orgSlug="acme" workspace={workspace} selection="select 1; select 2;" />
+          </EditorViewRegistryContext.Provider>
+        </IdeStoreContext.Provider>
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled())
+    expect(screen.getByRole('button', { name: 'Run all selected statements' })).toBeEnabled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Run all selected statements' }))
+    expect(mocks.runAll).toHaveBeenCalledWith(['select 1', 'select 2'])
+
+    rerender(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <IdeStoreContext.Provider value={store}>
+          <EditorViewRegistryContext.Provider value={views}>
+            <IdeToolbar orgSlug="acme" workspace={workspace} selection="select 1;" />
+          </EditorViewRegistryContext.Provider>
+        </IdeStoreContext.Provider>
+      </QueryClientProvider>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Run all selected statements' }),
+    ).not.toBeInTheDocument()
   })
 
   it('shows cancellation state while a query runs', async () => {

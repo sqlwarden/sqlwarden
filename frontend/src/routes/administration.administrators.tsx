@@ -21,12 +21,13 @@ import {
   DialogTrigger,
 } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
-import { InitialsAvatar } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
+import { Skeleton } from '#/components/ui/skeleton'
 import { usePageTitle } from '#/lib/page-title'
 import {
   Table,
@@ -227,9 +228,7 @@ function SettingsAdministratorsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {administrators.isLoading ? (
-                <TableEmptyState colSpan={4} compact message="Loading administrators…" />
-              ) : null}
+              {administrators.isLoading ? <AdministratorsTableSkeleton /> : null}
               {administrators.isError ? (
                 <TableEmptyState colSpan={4} compact message="Failed to load administrators." />
               ) : null}
@@ -248,7 +247,7 @@ function SettingsAdministratorsPage() {
                 <TableRow key={administrator.account_id}>
                   <TableCell>
                     <div className="flex min-w-0 items-center gap-3">
-                      <InitialsAvatar
+                      <UserAvatar
                         value={administrator.account?.name || administrator.account?.email || 'A'}
                       />
                       <div className="min-w-0">
@@ -308,5 +307,34 @@ function SettingsAdministratorsPage() {
         />
       ) : null}
     </div>
+  )
+}
+
+function AdministratorsTableSkeleton() {
+  return (
+    <>
+      {Array.from({ length: 5 }).map((_, index) => (
+        <TableRow key={index}>
+          <TableCell>
+            <div className="flex items-center gap-3">
+              <Skeleton className="size-8 rounded-full" />
+              <div className="flex flex-col gap-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-40" />
+              </div>
+            </div>
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-24" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-24" />
+          </TableCell>
+          <TableCell className="text-right">
+            <Skeleton className="ml-auto h-8 w-8 rounded-md" />
+          </TableCell>
+        </TableRow>
+      ))}
+    </>
   )
 }

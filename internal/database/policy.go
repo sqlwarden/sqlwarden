@@ -323,6 +323,12 @@ func (db *DB) policyListItems(ctx context.Context, orgID int64, roleBindings []R
 	return items, nil
 }
 
+// GetPolicyBindingItem builds the list-item representation for a single role binding.
+func (db *DB) GetPolicyBindingItem(ctx context.Context, orgID int64, binding RoleBinding) (WorkspacePolicyListItem, error) {
+	item, _, err := db.roleBindingListItem(ctx, orgID, binding)
+	return item, err
+}
+
 func (db *DB) roleBindingListItem(ctx context.Context, orgID int64, binding RoleBinding) (WorkspacePolicyListItem, []string, error) {
 	item := WorkspacePolicyListItem{
 		BindingKind:  "role",

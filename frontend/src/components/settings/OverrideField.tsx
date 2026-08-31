@@ -32,7 +32,7 @@ export function OverrideField({
   children: React.ReactNode
 }) {
   return (
-    <Field data-invalid={Boolean(error)} className="gap-3 rounded-md border border-border p-4">
+    <Field data-invalid={Boolean(error)} className="gap-3 py-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <FieldContent className="min-w-0">
           <FieldTitle>{label}</FieldTitle>

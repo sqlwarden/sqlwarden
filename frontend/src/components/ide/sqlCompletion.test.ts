@@ -189,7 +189,7 @@ describe('SQL completion', () => {
     rendered.destroy()
   })
 
-  it('indents with Tab when no completion is active instead of moving browser focus', () => {
+  it('inserts a tab character at a bare cursor instead of moving browser focus', () => {
     const parent = document.createElement('div')
     document.body.append(parent)
     const view = new EditorView({
@@ -197,6 +197,32 @@ describe('SQL completion', () => {
       state: EditorState.create({
         doc: 'SELECT 1',
         selection: { anchor: 8 },
+        extensions: [sqlCompletionExtension({})],
+      }),
+    })
+    const event = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      code: 'Tab',
+      bubbles: true,
+      cancelable: true,
+    })
+    Object.defineProperty(event, 'keyCode', { value: 9 })
+
+    view.contentDOM.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(view.state.doc.toString()).toBe('SELECT 1\t')
+
+    view.destroy()
+  })
+
+  it('indents the covered lines with Tab when there is a selection', () => {
+    const parent = document.createElement('div')
+    document.body.append(parent)
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc: 'SELECT 1',
+        selection: { anchor: 0, head: 8 },
         extensions: [sqlCompletionExtension({})],
       }),
     })

@@ -47,10 +47,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '#/components/ui/dialog'
-import { getInitials } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
 import { SectionTabNav } from '#/components/SectionTabNav'
-import { entityColor } from '#/lib/entity-colors'
-import { cn } from '#/lib/utils'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
@@ -194,14 +192,17 @@ function WorkspaceUsersPage() {
 
       <div className="flex flex-col gap-6 pt-6">
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              {!activeMembers.isLoading && total > 0
-                ? `${total} user${total !== 1 ? 's' : ''} in this workspace`
-                : includeInheritedUsers
-                  ? 'Direct and inherited members of this workspace.'
-                  : 'Users explicitly added to this workspace.'}
-            </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-1.5">
+              <h1 className="font-heading text-2xl font-semibold tracking-tight">Users</h1>
+              <p className="text-sm text-muted-foreground">
+                {!activeMembers.isLoading && total > 0
+                  ? `${total} user${total !== 1 ? 's' : ''} in this workspace`
+                  : includeInheritedUsers
+                    ? 'Direct and inherited members of this workspace.'
+                    : 'Users explicitly added to this workspace.'}
+              </p>
+            </div>
             {canModifyUsers ? (
               <Dialog
                 open={isAddingUser}
@@ -417,14 +418,7 @@ function UserPickerRow({
     <TableRow>
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div
-            className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
-              entityColor(member.name || member.email),
-            )}
-          >
-            {getInitials(member.name || member.email, '?')}
-          </div>
+          <UserAvatar value={member.name || member.email} fallback="?" />
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">
               {member.name || member.email}
@@ -495,14 +489,7 @@ function WorkspaceUserRow({
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div
-            className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
-              entityColor(member.name || member.email),
-            )}
-          >
-            {getInitials(member.name || member.email, '?')}
-          </div>
+          <UserAvatar value={member.name || member.email} fallback="?" />
           <div className="min-w-0">
             <div className="truncate font-medium text-foreground">
               {member.name || member.email}

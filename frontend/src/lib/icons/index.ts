@@ -1,4 +1,6 @@
 export { Icon } from './icon'
+export { FileTypeIcon } from './fileTypeIcon'
 export { IconPackProvider, useIconPack, DEFAULT_ICON_PACK } from './context'
 export type { AppIcon } from './registry'
 export type { IconPackName } from './context'
+export type { FileTypeIconName } from './fileTypeIcon'

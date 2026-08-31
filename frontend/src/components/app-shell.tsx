@@ -7,7 +7,7 @@ import type { SessionResponse } from '#/lib/api/types'
 import { api } from '#/lib/api/client'
 import { clearAccessToken } from '#/lib/auth/access-token'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
-import { InitialsAvatar } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
 import { Button } from '#/components/ui/button'
 import {
   DropdownMenu,
@@ -59,7 +59,7 @@ export function AppShellHeader({ label, icon }: { label: string; icon: AppIcon |
           <Tip label={label} side="right">
             <SidebarMenuButton className="h-auto items-center gap-2.5 py-2.5 hover:bg-transparent">
               <span className="shrink-0 text-sidebar-foreground [&_svg]:size-5">{iconNode}</span>
-              <span className="min-w-0 flex-1 truncate text-left text-[15px] font-semibold tracking-tight">
+              <span className="min-w-0 flex-1 truncate text-left font-heading text-[15px] font-semibold tracking-tight">
                 {label}
               </span>
             </SidebarMenuButton>
@@ -215,7 +215,7 @@ export function AppShellUserMenu({ session }: { session: SessionResponse }) {
               />
             }
           >
-            <InitialsAvatar value={session.account.name} className="rounded-lg" />
+            <UserAvatar value={session.account.name} />
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">{session.account.name}</span>
               <span className="truncate text-xs text-muted-foreground">
@@ -232,7 +232,7 @@ export function AppShellUserMenu({ session }: { session: SessionResponse }) {
             <DropdownMenuGroup>
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-2 py-1.5 text-left text-sm">
-                  <InitialsAvatar value={session.account.name} className="rounded-lg" />
+                  <UserAvatar value={session.account.name} />
                   <div className="grid flex-1 text-left text-sm leading-tight">
                     <span className="truncate font-medium text-foreground">
                       {session.account.name}

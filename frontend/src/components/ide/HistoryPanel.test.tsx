@@ -19,6 +19,33 @@ const { copyWithToastMock, createFavoriteMock, removeFavoriteMock } = vi.hoisted
   removeFavoriteMock: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock('./object-detail/ReadOnlySqlView', () => ({
+  ReadOnlySqlView: ({ value }: { value: string }) => <pre>{value}</pre>,
+}))
+
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({
+    count,
+    estimateSize,
+  }: {
+    count: number
+    estimateSize: (index: number) => number
+  }) => {
+    let offset = 0
+    const items = Array.from({ length: count }, (_, index) => {
+      const size = estimateSize(index)
+      const item = { index, start: offset, end: offset + size, size, key: index, lane: 0 }
+      offset += size
+      return item
+    })
+    return {
+      getTotalSize: () => offset,
+      getVirtualItems: () => items,
+      scrollToIndex: vi.fn(),
+    }
+  },
+}))
+
 vi.mock('./contextMenus/clipboard', () => ({ copyWithToast: copyWithToastMock }))
 vi.mock('./useFavoritesMutations', () => ({
   useFavoritesMutations: () => ({
@@ -417,6 +444,28 @@ describe('HistoryPanel', () => {
     const unfavoritedRow = within(rows[1]!).getByRole('button', { name: 'Save as favorite' })
     expect(favoritedRow).toBeInTheDocument()
     expect(unfavoritedRow).toBeInTheDocument()
+  })
+
+  it('opens a dialog with the full query and actions when a history row is clicked', async () => {
+    store.getState().openTab(scratchTab)
+    mockWorkspaceHistory([{ id: 1, connectionId: 42, sqlText: 'select 1 from widgets' }])
+
+    const { user } = renderPanel()
+    await user.click(await screen.findByRole('button', { name: 'select 1 from widgets' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('primary-pg')).toBeInTheDocument()
+    expect(within(dialog).getByText('select 1 from widgets')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Copy query' })).toBeInTheDocument()
+  })
+
+  it('groups history entries under a "Today" heading', async () => {
+    mockWorkspaceHistory([{ id: 1, connectionId: 42, sqlText: 'select 1' }])
+
+    renderPanel()
+
+    expect(await screen.findByText('select 1')).toBeInTheDocument()
+    expect(screen.getByText('Today')).toBeInTheDocument()
   })
 
   it('removes a favorite when its already-favorited button is clicked', async () => {

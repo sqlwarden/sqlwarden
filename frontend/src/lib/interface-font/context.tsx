@@ -7,8 +7,9 @@ export type InterfaceFont = {
 }
 
 export const INTERFACE_FONTS: InterfaceFont[] = [
-  { label: 'Satoshi', fontFamily: "'Satoshi', 'Geist Variable', system-ui, sans-serif" },
+  // Inter is the brand default — matches the shipped styles.css --font-interface.
   { label: 'Inter', fontFamily: "'Inter Variable', system-ui, sans-serif" },
+  { label: 'Satoshi', fontFamily: "'Satoshi', 'Geist Variable', system-ui, sans-serif" },
   { label: 'Cal Sans UI', fontFamily: "'Cal Sans UI', 'Geist Variable', system-ui, sans-serif" },
   { label: 'Geist', fontFamily: "'Geist Variable', 'Inter Variable', system-ui, sans-serif" },
   { label: 'IBM Plex Sans', fontFamily: "'IBM Plex Sans Variable', system-ui, sans-serif" },

@@ -36,6 +36,7 @@ export type IdeActivity = {
 }
 
 export const IDE_ACTIVITIES: IdeActivity[] = [
+  { id: 'search', label: 'Search', icon: 'search-01', mode: 'sidebar', component: SearchPanel },
   {
     id: 'connections',
     label: 'Explorer',
@@ -44,14 +45,6 @@ export const IDE_ACTIVITIES: IdeActivity[] = [
     component: DatabasePanel,
   },
   { id: 'files', label: 'Files', icon: 'file-01', mode: 'sidebar', component: FilesPanel },
-  { id: 'search', label: 'Search', icon: 'search-01', mode: 'sidebar', component: SearchPanel },
-  {
-    id: 'exports',
-    label: 'Exports',
-    icon: 'download-01',
-    mode: 'sidebar',
-    component: ExportsPanel,
-  },
   {
     id: 'history',
     label: 'History',
@@ -67,6 +60,13 @@ export const IDE_ACTIVITIES: IdeActivity[] = [
     mode: 'sidebar',
     component: FavoritesPanel,
     requires: (ctx) => ctx.queryFavoritesMode !== 'off',
+  },
+  {
+    id: 'exports',
+    label: 'Exports',
+    icon: 'download-01',
+    mode: 'sidebar',
+    component: ExportsPanel,
   },
 ]
 

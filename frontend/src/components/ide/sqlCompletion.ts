@@ -12,7 +12,7 @@ import {
   type CompletionResult,
   type CompletionSource,
 } from '@codemirror/autocomplete'
-import { indentLess, indentMore } from '@codemirror/commands'
+import { indentLess, insertTab } from '@codemirror/commands'
 import {
   MySQL,
   PostgreSQL,
@@ -112,8 +112,6 @@ const completionTheme = EditorView.theme({
     color: 'var(--popover-foreground)',
     border: '1px solid var(--border)',
     borderRadius: 'var(--radius)',
-    boxShadow:
-      '0 12px 32px color-mix(in oklab, var(--foreground) 12%, transparent), 0 2px 8px color-mix(in oklab, var(--foreground) 8%, transparent)',
     overflow: 'hidden',
     fontFamily: 'var(--font-interface)',
   },
@@ -195,7 +193,9 @@ const completionTheme = EditorView.theme({
 })
 
 // Keep Tab inside the SQL editor: accept a highlighted completion when one is
-// active, otherwise apply CodeMirror's standard line indentation.
+// active, otherwise fall back to standard Tab behavior — insertTab indents
+// selected lines but inserts a literal tab/spaces at a bare cursor, unlike
+// indentMore which always shifts the current line regardless of selection.
 export function acceptCompletionOnTab(view: EditorView, event: KeyboardEvent): boolean {
   if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey) {
     return false
@@ -208,7 +208,7 @@ export function acceptCompletionOnTab(view: EditorView, event: KeyboardEvent): b
     acceptCompletion(view)
     return true
   }
-  return indentMore(view)
+  return insertTab(view)
 }
 
 function closeCompletionAndKeepFocus(view: EditorView): boolean {

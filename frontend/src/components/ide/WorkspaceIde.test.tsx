@@ -73,6 +73,7 @@ describe('WorkspaceIdeContent', () => {
     const view = render(
       <WorkspaceIdeContent
         orgSlug="acme"
+        requestedWorkspaceId={3}
         isLoading
         isError={false}
         isRetrying={false}
@@ -92,6 +93,7 @@ describe('WorkspaceIdeContent', () => {
     const view = render(
       <WorkspaceIdeContent
         orgSlug="acme"
+        requestedWorkspaceId={3}
         isLoading={false}
         isError
         isRetrying={false}
@@ -108,6 +110,7 @@ describe('WorkspaceIdeContent', () => {
     view.rerender(
       <WorkspaceIdeContent
         orgSlug="acme"
+        requestedWorkspaceId={3}
         isLoading={false}
         isError
         isRetrying
@@ -122,6 +125,7 @@ describe('WorkspaceIdeContent', () => {
     render(
       <WorkspaceIdeContent
         orgSlug="acme"
+        requestedWorkspaceId={3}
         isLoading={false}
         isError={false}
         isRetrying={false}
@@ -179,30 +183,44 @@ describe('WorkspaceDocumentTitle', () => {
 })
 
 describe('useWorkspaceSelection', () => {
-  it('selects the first accessible workspace and follows explicit selection', async () => {
-    const store = createIdeStore('acme', 1, 'ephemeral')
-    function wrapper({ children }: PropsWithChildren) {
-      return <IdeStoreContext.Provider value={store}>{children}</IdeStoreContext.Provider>
-    }
-
-    const { result } = renderHook(() => useWorkspaceSelection(workspaces), { wrapper })
-    expect(result.current.activeWorkspace).toEqual(workspaces[0])
-    await waitFor(() => expect(store.getState().activeWorkspaceId).toBe(3))
-
-    await act(async () => result.current.setActiveWorkspace(4))
-    expect(result.current.activeWorkspace).toEqual(workspaces[1])
+  beforeEach(() => {
+    routerMocks.navigate.mockClear()
   })
 
-  it('recovers when a persisted workspace is no longer accessible', async () => {
+  it('follows the requested workspace and pushes a navigation on explicit selection', async () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
-    store.getState().setActiveWorkspace(99)
     function wrapper({ children }: PropsWithChildren) {
       return <IdeStoreContext.Provider value={store}>{children}</IdeStoreContext.Provider>
     }
 
-    const { result } = renderHook(() => useWorkspaceSelection(workspaces), { wrapper })
+    const { result } = renderHook(() => useWorkspaceSelection(workspaces, 3, 'acme'), { wrapper })
     expect(result.current.activeWorkspace).toEqual(workspaces[0])
     await waitFor(() => expect(store.getState().activeWorkspaceId).toBe(3))
+    expect(routerMocks.navigate).not.toHaveBeenCalled()
+
+    act(() => result.current.setActiveWorkspace(4))
+    expect(routerMocks.navigate).toHaveBeenCalledWith({
+      to: '/orgs/$org_slug/workspaces/$workspace_id/ide',
+      params: { org_slug: 'acme', workspace_id: '4' },
+    })
+  })
+
+  it('replaces the URL when the requested workspace_id is no longer accessible', async () => {
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    function wrapper({ children }: PropsWithChildren) {
+      return <IdeStoreContext.Provider value={store}>{children}</IdeStoreContext.Provider>
+    }
+
+    const { result } = renderHook(() => useWorkspaceSelection(workspaces, 99, 'acme'), { wrapper })
+    expect(result.current.activeWorkspace).toEqual(workspaces[0])
+    await waitFor(() => expect(store.getState().activeWorkspaceId).toBe(3))
+    await waitFor(() =>
+      expect(routerMocks.navigate).toHaveBeenCalledWith({
+        to: '/orgs/$org_slug/workspaces/$workspace_id/ide',
+        params: { org_slug: 'acme', workspace_id: '3' },
+        replace: true,
+      }),
+    )
   })
 })
 
@@ -250,6 +268,7 @@ describe('WorkspaceIdeSurface responsive sidebar', () => {
               <EditorViewRegistryContext.Provider value={viewRegistry}>
                 <WorkspaceIdeContent
                   orgSlug="acme"
+                  requestedWorkspaceId={3}
                   isLoading={false}
                   isError={false}
                   isRetrying={false}

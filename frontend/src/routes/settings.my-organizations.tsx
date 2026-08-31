@@ -9,12 +9,10 @@ import { accountOrganizationsQueryOptions } from '#/lib/api/query'
 import { Badge } from '#/components/ui/badge'
 import { Card, CardContent } from '#/components/ui/card'
 import { EmptyState } from '#/components/EmptyState'
-import { getInitials } from '#/components/InitialsAvatar'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
 import { Skeleton } from '#/components/ui/skeleton'
-import { cn } from '#/lib/utils'
 import { usePageTitle } from '#/lib/page-title'
 
 export const Route = createFileRoute('/settings/my-organizations')({
@@ -74,7 +72,7 @@ function SettingsMyOrganizationsPage() {
             <div key={index} className="flex flex-col rounded-lg border border-border bg-card">
               <div className="flex flex-col gap-3 p-5">
                 <div className="flex items-start gap-3">
-                  <Skeleton className="size-10 shrink-0" />
+                  <Skeleton className="size-9 shrink-0 rounded-md" />
                   <div className="flex flex-1 flex-col gap-2 pt-1">
                     <div className="flex items-center gap-2">
                       <Skeleton className="h-4 w-28" />
@@ -84,7 +82,7 @@ function SettingsMyOrganizationsPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-5 border-t border-border/60 px-5 py-3">
+              <div className="flex items-center gap-4 border-t border-border/60 px-5 py-3">
                 <Skeleton className="h-3 w-20" />
                 <Skeleton className="h-3 w-16" />
               </div>
@@ -129,47 +127,38 @@ function SettingsMyOrganizationsPage() {
                 key={organization.id}
                 to="/orgs/$org_slug/workspaces"
                 params={{ org_slug: organization.slug }}
-                className="group flex flex-col rounded-lg border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:bg-muted/20 hover:shadow-sm"
+                className="group relative flex flex-col overflow-hidden rounded-lg border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:shadow-sm"
               >
-                <div className="flex flex-1 flex-col gap-3 p-5">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={cn(
-                        'flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold',
-                        organizationColor(organization.name),
-                      )}
-                    >
-                      {getInitials(organization.name, 'O')}
+                <span className="absolute inset-y-0 left-0 w-0.5 scale-y-0 bg-primary transition-transform group-hover:scale-y-100" />
+                <div className="flex flex-1 items-start gap-3 p-5">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors group-hover:text-primary">
+                    <Icon name="building-04" size={18} />
+                  </div>
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
+                        {organization.name}
+                      </p>
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 capitalize text-[10px] px-1.5 h-4 py-0"
+                      >
+                        {organization.role}
+                      </Badge>
                     </div>
-                    <div className="min-w-0 flex-1 pt-0.5">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
-                          {organization.name}
-                        </p>
-                        <Badge
-                          variant="outline"
-                          className="shrink-0 capitalize text-[10px] px-1.5 h-4 py-0"
-                        >
-                          {organization.role}
-                        </Badge>
-                      </div>
-                      <p className="mt-1.5 text-xs text-muted-foreground">@{organization.slug}</p>
-                    </div>
+                    <p className="mt-1.5 text-xs text-muted-foreground">@{organization.slug}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-5 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
-                    <Icon name="user-multiple" size={20} />
-                    <span>
-                      {organization.member_count}{' '}
-                      {organization.member_count === 1 ? 'member' : 'members'}
-                    </span>
+                <div className="flex items-center gap-4 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <Icon name="user-multiple" size={14} />
+                    <span className="tabular-nums">{organization.member_count}</span>
+                    <span>{organization.member_count === 1 ? 'member' : 'members'}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
-                    <Icon name="user-group" size={20} />
-                    <span>
-                      {organization.team_count} {organization.team_count === 1 ? 'team' : 'teams'}
-                    </span>
+                  <div className="flex items-center gap-1.5">
+                    <Icon name="user-group" size={14} />
+                    <span className="tabular-nums">{organization.team_count}</span>
+                    <span>{organization.team_count === 1 ? 'team' : 'teams'}</span>
                   </div>
                 </div>
               </Link>
@@ -191,19 +180,4 @@ function SettingsMyOrganizationsPage() {
       ) : null}
     </div>
   )
-}
-
-const ORGANIZATION_COLORS = [
-  'bg-orange-500/10 text-orange-600',
-  'bg-blue-500/10 text-blue-600',
-  'bg-emerald-500/10 text-emerald-600',
-  'bg-violet-500/10 text-violet-600',
-  'bg-rose-500/10 text-rose-600',
-  'bg-amber-500/10 text-amber-600',
-  'bg-cyan-500/10 text-cyan-600',
-]
-
-function organizationColor(name: string): string {
-  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-  return ORGANIZATION_COLORS[hash % ORGANIZATION_COLORS.length]
 }

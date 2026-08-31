@@ -1,34 +1,37 @@
 import type { WorkspaceFile } from '#/lib/api/types'
-import type { AppIcon } from '#/lib/icons'
+import type { FileTypeIconName } from '#/lib/icons'
 
-const ICON_BY_EXTENSION: Readonly<Record<string, AppIcon>> = {
-  sql: 'database',
-  csv: 'table',
-  tsv: 'table',
-  json: 'type-json',
-  jsonl: 'type-json',
-  ndjson: 'type-json',
-  yaml: 'type-json',
-  yml: 'type-json',
-  toml: 'type-json',
-  xml: 'type-json',
-  md: 'book-open-02',
-  mdx: 'book-open-02',
-  sh: 'terminal',
-  bash: 'terminal',
-  zsh: 'terminal',
-  ps1: 'terminal',
-  txt: 'subject',
-  log: 'subject',
-  bin: 'type-binary',
+const ICON_BY_EXTENSION: Readonly<Record<string, FileTypeIconName>> = {
+  sql: 'sql',
+  csv: 'csv',
+  tsv: 'csv',
+  xlsx: 'excel',
+  xls: 'excel',
+  parquet: 'parquet',
+  json: 'json',
+  jsonl: 'json',
+  ndjson: 'json',
+  xml: 'xml',
+  yaml: 'yaml',
+  yml: 'yaml',
+  toml: 'toml',
+  md: 'markdown',
+  mdx: 'markdown',
+  sh: 'shell',
+  bash: 'shell',
+  zsh: 'shell',
+  ps1: 'shell',
+  txt: 'text',
+  log: 'log',
+  bin: 'binary',
 }
 
-const ICON_BY_FILE_KIND: Readonly<Record<string, AppIcon>> = {
-  sql: 'database',
-  csv: 'table',
-  json: 'type-json',
-  markdown: 'book-open-02',
-  text: 'subject',
+const ICON_BY_FILE_KIND: Readonly<Record<string, FileTypeIconName>> = {
+  sql: 'sql',
+  csv: 'csv',
+  json: 'json',
+  markdown: 'markdown',
+  text: 'text',
 }
 
 function filenameExtension(name: string): string | undefined {
@@ -38,10 +41,10 @@ function filenameExtension(name: string): string | undefined {
   return basename.slice(dot + 1)
 }
 
-/** Returns the semantic icon used for a file in the workspace explorer. */
+/** Returns the file-type icon used for a file in the workspace explorer. */
 export function workspaceFileIcon(
   file: Pick<WorkspaceFile, 'name' | 'media_type' | 'file_kind'>,
-): AppIcon {
+): FileTypeIconName {
   const extension = filenameExtension(file.name)
   if (extension && ICON_BY_EXTENSION[extension]) return ICON_BY_EXTENSION[extension]
 
@@ -49,10 +52,10 @@ export function workspaceFileIcon(
   if (kind && ICON_BY_FILE_KIND[kind]) return ICON_BY_FILE_KIND[kind]
 
   const mediaType = file.media_type?.split(';', 1)[0]?.trim().toLowerCase()
-  if (mediaType === 'text/csv' || mediaType === 'text/tab-separated-values') return 'table'
-  if (mediaType === 'text/markdown') return 'book-open-02'
-  if (mediaType?.includes('json')) return 'type-json'
-  if (mediaType?.startsWith('audio/')) return 'audio-wave-01'
+  if (mediaType === 'text/csv' || mediaType === 'text/tab-separated-values') return 'csv'
+  if (mediaType === 'text/markdown') return 'markdown'
+  if (mediaType?.includes('json')) return 'json'
+  if (mediaType?.startsWith('audio/')) return 'audio'
 
-  return 'file-01'
+  return 'default'
 }

@@ -38,6 +38,7 @@ import { isSqlEditorTab, splitSqlStatements } from './sqlStatements'
 type IdeToolbarProps = {
   orgSlug: string
   workspace: Workspace
+  selection?: string
 }
 
 export const RUN_SHORTCUT =
@@ -45,7 +46,7 @@ export const RUN_SHORTCUT =
 export const FORMAT_SHORTCUT =
   typeof navigator !== 'undefined' && /mac/i.test(navigator.platform) ? '⇧⌥F' : 'Shift Alt F'
 
-export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
+export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
   const [saveAsTab, setSaveAsTab] = useState<EditorTab | null>(null)
   const [confirmExportSql, setConfirmExportSql] = useState<string | null>(null)
   const [exportToWorkspaceOpen, setExportToWorkspaceOpen] = useState(false)
@@ -75,7 +76,10 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
   // object/diagram tab or a non-SQL file (e.g. a previously exported CSV).
   const isSqlTab = isSqlEditorTab(activeTab)
 
-  const showSave = Boolean(activeTab && (activeTab.kind !== 'file' || activeTab.isDirty))
+  const showSave = Boolean(activeTab)
+  const saveDisabled = Boolean(activeTab?.etag !== undefined && !activeTab.isDirty)
+  const hasSelection = Boolean(selection)
+  const selectionStatements = hasSelection && isSqlTab ? splitSqlStatements(selection ?? '') : []
 
   async function handleSave() {
     if (!activeTab) return
@@ -186,6 +190,11 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
     void queryAction.runAll(sqls)
   }
 
+  function handleRunSelectionAll() {
+    if (selectionStatements.length === 0) return
+    void queryAction.runAll(selectionStatements)
+  }
+
   const runDisabled = !activeTab || !activeConnection || queryAction.isRunning
   return (
     <>
@@ -205,11 +214,6 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
               className={queryAction.isRunning ? 'animate-spin' : undefined}
             />
             {queryAction.isRunning ? 'Running…' : 'Run'}
-            {!queryAction.isRunning && (
-              <kbd className="ml-0.5 hidden rounded bg-primary-foreground/20 px-1 font-sans text-[9px] font-medium leading-4 tracking-wide sm:inline">
-                {RUN_SHORTCUT}
-              </kbd>
-            )}
           </Button>
 
           {isSqlTab &&
@@ -262,6 +266,21 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
             ))}
         </div>
 
+        {selectionStatements.length > 1 && (
+          <Tip label="Run every statement in the selection">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={runDisabled}
+              aria-label="Run all selected statements"
+              onClick={handleRunSelectionAll}
+            >
+              <Icon name="play" size={13} data-icon="inline-start" />
+              Run All
+            </Button>
+          </Tip>
+        )}
+
         {/* Cancel button — appears only while a query is in flight */}
         {queryAction.isRunning && (
           <Button type="button" variant="outline" onClick={handleCancel}>
@@ -272,26 +291,33 @@ export function IdeToolbar({ orgSlug, workspace }: IdeToolbarProps) {
 
         {/* Save button */}
         {showSave && (
-          <Button type="button" variant="outline" aria-label="Save file" onClick={handleSave}>
-            <Icon name="floppy-disk" size={13} data-icon="inline-start" />
-            Save
-          </Button>
+          <Tip label="Save">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Save file"
+              disabled={saveDisabled}
+              onClick={handleSave}
+            >
+              <Icon name="floppy-disk" size={13} />
+            </Button>
+          </Tip>
         )}
 
         {isSqlTab && (
-          <Button
-            type="button"
-            variant="outline"
-            aria-label="Format SQL"
-            onClick={handleFormat}
-            disabled={!activeGroupId}
-          >
-            <Icon name="subject" size={13} data-icon="inline-start" />
-            Format
-            <kbd className="ml-0.5 hidden rounded bg-muted px-1 font-sans text-[9px] font-medium leading-4 tracking-wide text-muted-foreground sm:inline">
-              {FORMAT_SHORTCUT}
-            </kbd>
-          </Button>
+          <Tip label="Format SQL">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Format SQL"
+              onClick={handleFormat}
+              disabled={!activeGroupId}
+            >
+              <Icon name="subject" size={13} />
+            </Button>
+          </Tip>
         )}
 
         <div className="flex-1" />

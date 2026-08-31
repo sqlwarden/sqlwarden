@@ -44,6 +44,7 @@ import {
 } from './resultValues'
 import { useResultCursorPaging } from './useResultCursorPaging'
 import { useColumnResize } from './useColumnResize'
+import { columnWidthFromName, distributeColumnWidths } from './resultColumnWidths'
 
 type ResultsAreaProps = {
   orgSlug: string
@@ -232,6 +233,7 @@ function ResultsContent({
     return (
       <div className="flex h-full min-h-0 flex-col">
         <ResultEntry
+          key={`${runId}:0`}
           orgSlug={orgSlug}
           workspace={workspace}
           activeTabId={activeTabId}
@@ -248,7 +250,12 @@ function ResultsContent({
     <div className="flex h-full min-h-0">
       <ResultsSidebar results={results} selectedIndex={selectedIndex} onSelect={onSelectIndex} />
       <div className="min-w-0 flex-1">
+        {/* Keyed per statement so switching the selected statement remounts
+            the grid instead of reusing the scroll container — otherwise the
+            new statement's rows render at whatever scrollTop the previous
+            statement left behind rather than always starting at the top. */}
         <ResultEntry
+          key={`${runId}:${selectedIndex}`}
           orgSlug={orgSlug}
           workspace={workspace}
           activeTabId={activeTabId}
@@ -624,7 +631,7 @@ function CancelledState({
         connection={connection}
       />
       <div className="min-h-0 flex-1 overflow-auto p-3">
-        <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 p-3">
+        <div className="flex items-start gap-2.5 rounded-lg bg-muted/40 p-3">
           <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
           <div className="flex flex-col gap-0.5">
             <span className="text-xs font-medium text-foreground">Query cancelled</span>
@@ -643,7 +650,7 @@ function EmptyState() {
     <div className="flex h-full min-h-0 flex-col bg-card">
       <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-muted/50">
+          <div className="flex size-10 items-center justify-center rounded-lg bg-muted/50">
             <Icon name="table" size={17} className="text-muted-foreground" />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -709,7 +716,6 @@ function ErrorState({
 }
 
 const ROW_NUM_COL_WIDTH = 48
-const DEFAULT_COL_WIDTH = 150
 const MIN_COL_WIDTH = 60
 const ROW_HEIGHT = 29
 
@@ -790,12 +796,19 @@ function ResultSetView({
   const columnNames = columns.map((c) => c.name)
   const cellText = (v: ResultValue) => formatValue(v).display
 
+  const columnDefaultWidths = columns.map((c) => columnWidthFromName(c.name))
+  const columnShapeKey = columnNames.join('')
+
   const { columnWidths: colWidths, startResize } = useColumnResize(
     columns.length,
-    DEFAULT_COL_WIDTH,
+    columnDefaultWidths,
     MIN_COL_WIDTH,
+    columnShapeKey || undefined,
   )
 
+  // A single-column result grows to fill the available width instead of
+  // sitting at its name-derived default; once the user drags it, it keeps
+  // whatever width they chose like any other column.
   const [selection, setSelection] = useState<CellSelection | null>(null)
   const [rowSelectionMode, setRowSelectionMode] = useState(false)
   const [tableCollapsed, setTableCollapsed] = useState(false)
@@ -842,6 +855,20 @@ function ResultSetView({
         autoScrollRafRef.current = null
       }
     }
+  }, [])
+
+  // Grid width so unresized columns can grow to fill it instead of leaving a
+  // gap after the last column, for any column count (not just one).
+  const [containerWidth, setContainerWidth] = useState(0)
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width
+      if (width !== undefined) setContainerWidth(width)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [])
 
   // Focus anchor cell after keyboard navigation (skip during mouse drag).
@@ -1013,7 +1040,13 @@ function ResultSetView({
     })
   }
 
-  const totalWidth = ROW_NUM_COL_WIDTH + colWidths.reduce((a, b) => a + b, 0)
+  const { displayWidths, columnGrew } = distributeColumnWidths(
+    colWidths,
+    columnDefaultWidths,
+    ROW_NUM_COL_WIDTH,
+    containerWidth,
+  )
+  const totalWidth = ROW_NUM_COL_WIDTH + displayWidths.reduce((a, b) => a + b, 0)
 
   const panelValue = selection
     ? rows[selection.anchor.rowIdx]?.[selection.anchor.colIdx]
@@ -1030,7 +1063,7 @@ function ResultSetView({
           connection={connection}
         />
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <Icon name="checkmark-circle-02" size={14} className="text-green-500" />
             <span className="font-medium text-foreground">Query executed</span>
             {rowsAffected !== undefined && (
@@ -1063,8 +1096,10 @@ function ResultSetView({
               <ColumnHeader
                 key={i}
                 col={col}
-                width={colWidths[i]}
-                onResizeStart={(e) => startResize(e, i)}
+                width={displayWidths[i]}
+                onResizeStart={(e) =>
+                  startResize(e, i, e.currentTarget.parentElement?.getBoundingClientRect().width)
+                }
                 onContextMenu={(e) => openColumnMenu(i, e)}
               />
             ))}
@@ -1084,6 +1119,10 @@ function ResultSetView({
               rowIdx={vr.index}
               selection={selection}
               rowSelectionMode={rowSelectionMode}
+              // A grown numeric column left-aligns its values — right-aligned
+              // short values (e.g. an id) would sit far from the row start
+              // and read poorly once the column has stretched to fill space.
+              columnGrew={columnGrew}
               onRowHeaderMouseDown={(e) => handleRowHeaderMouseDown(vr.index, e)}
               onRowHeaderContextMenu={(e) => openRowMenu(vr.index, e)}
               onCellMouseDown={(ci, e) => handleCellMouseDown(vr.index, ci, e)}
@@ -1310,6 +1349,7 @@ function DataRow({
   rowIdx,
   selection,
   rowSelectionMode,
+  columnGrew,
   onRowHeaderMouseDown,
   onRowHeaderContextMenu,
   onCellMouseDown,
@@ -1321,6 +1361,7 @@ function DataRow({
   rowIdx: number
   selection: CellSelection | null
   rowSelectionMode: boolean
+  columnGrew: boolean[]
   onRowHeaderMouseDown: (e: React.MouseEvent) => void
   onRowHeaderContextMenu: (e: React.MouseEvent) => void
   onCellMouseDown: (ci: number, e: React.MouseEvent) => void
@@ -1342,6 +1383,7 @@ function DataRow({
           col={columns[ci]}
           rowIdx={rowIdx}
           colIdx={ci}
+          grew={columnGrew[ci] ?? false}
           isAnchor={selection?.anchor.rowIdx === rowIdx && selection?.anchor.colIdx === ci}
           isInRange={cellInRange(rowIdx, ci, selection)}
           onMouseDown={(e) => onCellMouseDown(ci, e)}
@@ -1398,6 +1440,7 @@ function DataCell({
   col,
   rowIdx,
   colIdx,
+  grew,
   isAnchor,
   isInRange,
   onMouseDown,
@@ -1408,6 +1451,7 @@ function DataCell({
   col: ResultColumn
   rowIdx: number
   colIdx: number
+  grew: boolean
   isAnchor: boolean
   isInRange: boolean
   onMouseDown: (e: React.MouseEvent) => void
@@ -1415,7 +1459,10 @@ function DataCell({
   onContextMenu: (e: React.MouseEvent) => void
 }) {
   const { display, isNull, isNumeric } = formatValue(value)
-  const isRightAlign = isNumeric || col.type === 'integer' || col.type === 'decimal'
+  // A column that grew to fill leftover space left-aligns even numeric
+  // values — right-aligning a short value in a wide, auto-grown column
+  // strands it far from the row start and away from its header.
+  const isRightAlign = (isNumeric || col.type === 'integer' || col.type === 'decimal') && !grew
 
   return (
     <td
@@ -1427,7 +1474,8 @@ function DataCell({
       onContextMenu={onContextMenu}
       className={cn(
         'max-w-0 cursor-default overflow-hidden border-b border-r border-border px-3 py-1 outline-none',
-        isRightAlign ? 'text-right tabular-nums' : 'text-left',
+        isRightAlign ? 'text-right' : 'text-left',
+        isNumeric || col.type === 'integer' || col.type === 'decimal' ? 'tabular-nums' : '',
         isNull ? 'text-muted-foreground/50' : '',
         isInRange ? 'bg-primary/15' : 'group-hover:bg-accent/30',
         isAnchor && 'ring-1 ring-inset ring-primary/60',

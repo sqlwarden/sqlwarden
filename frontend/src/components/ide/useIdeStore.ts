@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
 import { createStore, useStore } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import { get as idbGet } from 'idb-keyval'
 import type {
   Connection,
   ObjectRef,
@@ -139,6 +140,8 @@ export type IdeState = {
   /** Active sidebar/page activity id (see ideActivities). */
   activeActivityId: string
   sidebarCollapsed: boolean
+  /** Whether the leftmost activity rail shows icon+label rows and the brand wordmark. Persisted. */
+  activityBarExpanded: boolean
   /** Per-workspace editor layout tree (split groups + their tab lists). */
   layout: Record<number, LayoutNode>
   /** Focused group id per workspace — drives which group Run/Save/results target. */
@@ -235,6 +238,7 @@ export type IdeActions = {
   setMaximizedPane: (pane: IdeState['maximizedPane']) => void
   setActiveActivity: (activityId: string) => void
   setSidebarCollapsed: (collapsed: boolean) => void
+  setActivityBarExpanded: (expanded: boolean) => void
   setSession: (connectionId: number, sessionId: string) => void
   clearSession: (connectionId: number) => void
   /** Reconcile the sessions map with authoritative backend data. When
@@ -359,8 +363,30 @@ export function connectionState(s: IdeState, connectionId: number): ConnectionSt
 
 // ─── Store factory ─────────────────────────────────────────────────────────────
 
+function ideStoreStorageKey(orgSlug: string, accountId: number) {
+  return `sqlwarden.ide.${orgSlug}.${accountId}`
+}
+
+/** Reads the last-active workspace id straight out of IndexedDB, without
+ *  instantiating a live store — creating one competes for the primary-window
+ *  lock, which is unwanted for a one-shot redirect decision. */
+export async function peekLastActiveWorkspaceId(
+  orgSlug: string,
+  accountId: number,
+): Promise<number | undefined> {
+  try {
+    const raw = await idbGet<string>(ideStoreStorageKey(orgSlug, accountId))
+    if (!raw) return undefined
+    const parsed = JSON.parse(raw) as { state?: { activeWorkspaceId?: unknown } }
+    const id = parsed.state?.activeWorkspaceId
+    return typeof id === 'number' ? id : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function createIdeStore(orgSlug: string, accountId: number, role: WindowRole = 'managed') {
-  const storageKey = `sqlwarden.ide.${orgSlug}.${accountId}`
+  const storageKey = ideStoreStorageKey(orgSlug, accountId)
   // Ephemeral windows never persist; managed windows persist only while they hold
   // the primary lock (one window at a time).
   let isPrimary = false
@@ -373,6 +399,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         maximizedPane: null,
         activeActivityId: 'connections',
         sidebarCollapsed: false,
+        activityBarExpanded: false,
         layout: {},
         activeGroupId: {},
         draggingTab: null,
@@ -663,6 +690,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         setMaximizedPane: (pane) => set({ maximizedPane: pane }),
         setActiveActivity: (activityId) => set({ activeActivityId: activityId }),
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+        setActivityBarExpanded: (expanded) => set({ activityBarExpanded: expanded }),
 
         setSession: (connectionId, sessionId) =>
           set((s) => ({ sessions: { ...s.sessions, [connectionId]: sessionId } })),
@@ -711,6 +739,11 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
               ],
             },
             selectedRunId: { ...s.selectedRunId, [tabId]: runId },
+            sharedSelectedRunId: runId,
+            connectionSelectedRunId:
+              connectionId !== undefined
+                ? { ...s.connectionSelectedRunId, [connectionId]: runId }
+                : s.connectionSelectedRunId,
           }))
           return runId
         },
@@ -966,6 +999,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   maximizedPane: null,
   activeActivityId: 'connections',
   sidebarCollapsed: false,
+  activityBarExpanded: false,
   layout: {},
   activeGroupId: {},
   draggingTab: null,
@@ -1010,6 +1044,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   setMaximizedPane: _noop,
   setActiveActivity: _noop,
   setSidebarCollapsed: _noop,
+  setActivityBarExpanded: _noop,
   setSession: _noop,
   clearSession: _noop,
   syncSessions: _noop,

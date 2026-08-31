@@ -1,5 +1,6 @@
 import { errorMessage } from '#/lib/api/errors'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { SearchInput } from '#/components/SearchInput'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -28,6 +29,7 @@ import { buildConnectionMenu } from './contextMenus/connectionMenu'
 import { buildEnvironmentMenu } from './contextMenus/environmentMenu'
 import { SidebarPane } from './SidebarPane'
 import { SchemaTree } from './SchemaTree'
+import { sidebarActiveRowClass } from './sidebarRowStyles'
 import { ConnectionDialog } from './ConnectionDialog'
 import { EditConnectionDialog } from './EditConnectionDialog'
 import { DriverBadge } from './DriverBadge'
@@ -299,31 +301,15 @@ export function DatabasePanel({
         scroll={false}
       >
         <div className="flex items-center gap-1.5 border-b border-border p-2">
-          <div className="relative min-w-0 flex-1">
-            <Icon
-              name="search-01"
-              size={12}
-              className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter schema…"
-              className="h-7 border-transparent bg-muted/60 pl-7 text-xs focus-visible:bg-background dark:bg-muted/40 dark:focus-visible:bg-input/30"
-            />
-            {filter && (
-              <Tip label="Clear filter">
-                <button
-                  type="button"
-                  aria-label="Clear filter"
-                  onClick={() => setFilter('')}
-                  className="absolute right-1.5 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <Icon name="cancel-01" size={10} />
-                </button>
-              </Tip>
-            )}
-          </div>
+          <SearchInput
+            value={filter}
+            onValueChange={setFilter}
+            onClear={() => setFilter('')}
+            placeholder="Filter schema…"
+            className="min-w-0 flex-1"
+            size="sm"
+            variant="muted"
+          />
           {connLayout === 'flat' && envItems.length > 0 && (
             <DropdownMenu>
               <Tip
@@ -781,6 +767,13 @@ function ConnectionRow({
   const storedExpanded = useIde((s) => s.expandedNodes[nodeKey])
   const setNodeExpanded = useIde((s) => s.setNodeExpanded)
   const expanded = storedExpanded ?? false
+  const wasConnectedRef = useRef(isConnected)
+  useEffect(() => {
+    if (wasConnectedRef.current && !isConnected) {
+      setNodeExpanded(nodeKey, false)
+    }
+    wasConnectedRef.current = isConnected
+  }, [isConnected, nodeKey, setNodeExpanded])
   const sessionId = useIde((s) => s.sessions[connection.id])
   const connStatus = useIde((s) => s.connectionStatus[connection.id])
   const connState = resolveConnectionState(Boolean(sessionId), connStatus)
@@ -839,12 +832,7 @@ function ConnectionRow({
       <ContextMenu items={menuItems}>
         <div
           style={{ paddingLeft: connIndent }}
-          className={cn(
-            'mx-1 flex items-center rounded-md transition-colors',
-            isActive
-              ? 'bg-primary/10 hover:bg-primary/15'
-              : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-          )}
+          className={cn('flex items-center transition-colors', sidebarActiveRowClass(isActive))}
         >
           {isConnected || expanded ? (
             <button
@@ -906,9 +894,9 @@ function ConnectionRow({
         </div>
       </ContextMenu>
 
-      {/* Stays mounted while disconnected so an expanded tree can show its
-          "Not connected · Connect" hint instead of vanishing when the
-          server-side session expires. */}
+      {/* A live disconnect auto-collapses this (see the effect above), but a
+          row restored already-expanded from a prior session still renders
+          here so SchemaTree can show its own "Not connected · Connect" hint. */}
       {expanded && (
         <div style={{ marginLeft: connIndent + 14 }} className="border-l border-border/60">
           <SchemaTree

@@ -1,7 +1,7 @@
 import { useCallback, useEffect } from 'react'
 import { api } from '#/lib/api/client'
 import { isApiError } from '#/lib/api/errors'
-import { useIde } from './useIdeStore'
+import { useIde, useIdeStoreApi } from './useIdeStore'
 
 /**
  * True when the target-database session behind X-Warden-Session is gone —
@@ -12,6 +12,23 @@ import { useIde } from './useIdeStore'
  */
 export function isSessionGone(error: unknown): boolean {
   return isApiError(error) && error.status === 410 && error.code !== 'query_cursor_unavailable'
+}
+
+/**
+ * Thrown by ensureSession instead of transparently retrying when the dead
+ * session's connection was in manual transaction mode — silently rerunning
+ * the statement on a fresh session would auto-commit it, which is exactly
+ * the outcome manual mode exists to prevent.
+ */
+export class TransactionSessionLostError extends Error {
+  constructor() {
+    super(
+      'Your connection session expired while a manual transaction was open. ' +
+        'The transaction was rolled back and the connection is back in auto-commit mode. ' +
+        'Reconnect and re-run your statement if needed.',
+    )
+    this.name = 'TransactionSessionLostError'
+  }
 }
 
 /**
@@ -39,6 +56,10 @@ export interface EnsureSessionDeps {
     status: 'connecting' | { error: string } | null,
   ) => void
   connect: (connectionId: number, signal?: AbortSignal) => Promise<string>
+  /** True if the last known transaction state for this connection was manual mode. */
+  wasManualTransaction: (connectionId: number) => boolean
+  /** Resets stale transaction state (e.g. back to auto/closed) once its session is confirmed gone. */
+  resetTransactionState: (connectionId: number) => void
 }
 
 /**
@@ -47,6 +68,12 @@ export interface EnsureSessionDeps {
  * server-side (410), clears it, reconnects once, and retries `run` — the same
  * transparent-reconnect behavior Run has always had, now shared with any other
  * caller that needs a live session (e.g. Download Now).
+ *
+ * Exception: if the dead session's connection was in manual transaction mode,
+ * this does NOT retry. Reconnecting silently would run the statement on a
+ * fresh auto-commit session, auto-committing what the user believes is still
+ * inside an open transaction. Instead it resets the stale transaction state
+ * and throws TransactionSessionLostError so the caller sees a clear error.
  */
 export async function ensureSession<T>(
   deps: EnsureSessionDeps,
@@ -55,6 +82,10 @@ export async function ensureSession<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   let sessionId = deps.getSession(connectionId)
+  if (!sessionId && deps.wasManualTransaction(connectionId)) {
+    deps.resetTransactionState(connectionId)
+    throw new TransactionSessionLostError()
+  }
   for (let attempt = 0; ; attempt++) {
     if (!sessionId) {
       deps.setConnectionStatus(connectionId, 'connecting')
@@ -69,7 +100,12 @@ export async function ensureSession<T>(
       return await run(sessionId)
     } catch (err) {
       if (attempt === 0 && isSessionGone(err)) {
+        const hadManualTransaction = deps.wasManualTransaction(connectionId)
         deps.clearSession(connectionId)
+        if (hadManualTransaction) {
+          deps.resetTransactionState(connectionId)
+          throw new TransactionSessionLostError()
+        }
         sessionId = undefined
         continue
       }
@@ -80,10 +116,12 @@ export async function ensureSession<T>(
 
 /** Wires ensureSession's dependencies to the editor store and the connect endpoint. */
 export function useEnsureSession(orgSlug: string, workspaceId: number) {
+  const store = useIdeStoreApi()
   const sessions = useIde((s) => s.sessions)
   const setSession = useIde((s) => s.setSession)
   const clearSession = useIde((s) => s.clearSession)
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
+  const clearTransactionState = useIde((s) => s.clearTransactionState)
 
   return useCallback(
     <T>(connectionId: number, run: (sessionId: string) => Promise<T>, signal?: AbortSignal) =>
@@ -101,11 +139,24 @@ export function useEnsureSession(orgSlug: string, workspaceId: number) {
             )
             return data.session_id
           },
+          // Read live rather than subscribe: this only matters at the moment a
+          // session dies, not on every transaction-state change.
+          wasManualTransaction: (id) => store.getState().transactions[id]?.mode === 'manual',
+          resetTransactionState: clearTransactionState,
         },
         connectionId,
         run,
         signal,
       ),
-    [sessions, setSession, clearSession, setConnectionStatus, orgSlug, workspaceId],
+    [
+      sessions,
+      setSession,
+      clearSession,
+      setConnectionStatus,
+      clearTransactionState,
+      store,
+      orgSlug,
+      workspaceId,
+    ],
   )
 }

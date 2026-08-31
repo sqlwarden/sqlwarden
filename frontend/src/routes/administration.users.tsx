@@ -25,12 +25,13 @@ import {
   DialogTrigger,
 } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
-import { InitialsAvatar } from '#/components/InitialsAvatar'
+import { UserAvatar } from '#/components/UserAvatar'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
+import { Skeleton } from '#/components/ui/skeleton'
 import { usePageTitle } from '#/lib/page-title'
 import {
   Table,
@@ -285,9 +286,7 @@ function SettingsUsersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.isLoading ? (
-                <TableEmptyState colSpan={4} compact message="Loading users..." />
-              ) : null}
+              {users.isLoading ? <UsersTableSkeleton /> : null}
               {users.isError ? (
                 <TableEmptyState colSpan={4} compact message="Failed to load users." />
               ) : null}
@@ -302,7 +301,7 @@ function SettingsUsersPage() {
                 <TableRow key={user.id}>
                   <TableCell>
                     <div className="flex min-w-0 items-center gap-3">
-                      <InitialsAvatar value={user.name || user.email} />
+                      <UserAvatar value={user.name || user.email} />
                       <div className="min-w-0">
                         <div className="truncate font-medium text-foreground">{user.name}</div>
                         <div className="truncate text-muted-foreground">{user.email}</div>
@@ -338,6 +337,35 @@ function SettingsUsersPage() {
         />
       ) : null}
     </div>
+  )
+}
+
+function UsersTableSkeleton() {
+  return (
+    <>
+      {Array.from({ length: 5 }).map((_, index) => (
+        <TableRow key={index}>
+          <TableCell>
+            <div className="flex items-center gap-3">
+              <Skeleton className="size-8 rounded-full" />
+              <div className="flex flex-col gap-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-40" />
+              </div>
+            </div>
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-16" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-24" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-24" />
+          </TableCell>
+        </TableRow>
+      ))}
+    </>
   )
 }
 

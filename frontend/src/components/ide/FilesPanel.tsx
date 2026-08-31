@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { UseQueryOptions } from '@tanstack/react-query'
-import { Icon, type AppIcon } from '#/lib/icons'
+import { Icon, FileTypeIcon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '#/components/ui/resizable'
@@ -20,6 +21,7 @@ import { Tip } from './schema-diagram/Tip'
 import { CreateItemDialog } from './CreateItemDialog'
 import { useFileActions } from './useFileActions'
 import { workspaceFileIcon } from './workspaceFileIcon'
+import { sidebarActiveRowClass } from './sidebarRowStyles'
 
 type FilesPanelProps = {
   orgSlug: string
@@ -388,7 +390,13 @@ function FileTreeFolder({
     <FileTreeRenameRow
       file={file}
       depth={depth}
-      iconName={expanded ? 'folder-open' : 'folder'}
+      icon={
+        <Icon
+          name={expanded ? 'folder-open' : 'folder'}
+          size={13}
+          className="shrink-0 text-muted-foreground"
+        />
+      }
       chevronName={expanded ? 'chevron-down' : 'chevron-right'}
       indentExtra={0}
       renameControls={renameControls}
@@ -503,7 +511,7 @@ function FileTreeFile({
       <FileTreeRenameRow
         file={file}
         depth={depth}
-        iconName={workspaceFileIcon(file)}
+        icon={<FileTypeIcon name={workspaceFileIcon(file)} size={13} className="shrink-0" />}
         indentExtra={14}
         renameControls={renameControls}
       />
@@ -516,13 +524,11 @@ function FileTreeFile({
       onClick={() => onOpen(file)}
       style={{ paddingLeft: `${6 + depth * 11 + 14}px` }}
       className={cn(
-        'mx-1 flex h-6 w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-md pr-2 text-left text-xs transition-colors',
-        active
-          ? 'bg-primary/10 text-foreground hover:bg-primary/15'
-          : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+        'flex h-6 min-w-0 items-center gap-2 pr-2 text-left text-xs transition-colors',
+        sidebarActiveRowClass(Boolean(active)),
       )}
     >
-      <Icon name={workspaceFileIcon(file)} size={13} className="shrink-0 text-muted-foreground" />
+      <FileTypeIcon name={workspaceFileIcon(file)} size={13} className="shrink-0" />
       <span className="min-w-0 flex-1 truncate" title={file.name}>
         {file.name}
       </span>
@@ -535,14 +541,14 @@ function FileTreeFile({
 function FileTreeRenameRow({
   file,
   depth,
-  iconName,
+  icon,
   chevronName,
   indentExtra,
   renameControls,
 }: {
   file: WorkspaceFile
   depth: number
-  iconName: AppIcon
+  icon: ReactNode
   chevronName?: 'chevron-down' | 'chevron-right' | undefined
   indentExtra: number
   renameControls: RenameControls | undefined
@@ -560,7 +566,7 @@ function FileTreeRenameRow({
       {chevronName ? (
         <Icon name={chevronName} size={11} className="shrink-0 text-muted-foreground" />
       ) : null}
-      <Icon name={iconName} size={13} className="shrink-0 text-muted-foreground" />
+      {icon}
       <InlineRenameInput
         file={file}
         pending={renameControls.renamePending}

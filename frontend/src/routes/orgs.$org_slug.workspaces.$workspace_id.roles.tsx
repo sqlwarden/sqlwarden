@@ -303,12 +303,15 @@ function WorkspaceRolesPage({ orgSlug, workspaceId }: { orgSlug: string; workspa
 
       <div className="flex flex-col gap-6 pt-6">
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              {!roles.isLoading && total > 0
-                ? `${total} workspace role${total !== 1 ? 's' : ''}`
-                : 'Workspace-scoped permission sets available for policies.'}
-            </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-1.5">
+              <h1 className="font-heading text-2xl font-semibold tracking-tight">Roles</h1>
+              <p className="text-sm text-muted-foreground">
+                {!roles.isLoading && total > 0
+                  ? `${total} workspace role${total !== 1 ? 's' : ''}`
+                  : 'Workspace-scoped permission sets available for policies.'}
+              </p>
+            </div>
 
             {canModifyRoles ? (
               <Dialog

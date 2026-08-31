@@ -501,6 +501,19 @@ describe('activity state', () => {
   })
 })
 
+describe('activityBarExpanded', () => {
+  it('defaults to collapsed', () => {
+    const store = createIdeStore('test-org', 1)
+    expect(store.getState().activityBarExpanded).toBe(false)
+  })
+
+  it('setActivityBarExpanded updates the flag', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().setActivityBarExpanded(true)
+    expect(store.getState().activityBarExpanded).toBe(true)
+  })
+})
+
 describe('pendingJump', () => {
   it('setPendingJump stores a jump target and clearPendingJump resets it', () => {
     const store = createIdeStore('test-org', 1)
@@ -556,6 +569,20 @@ describe('query results', () => {
     const runId = store.getState().beginRun('tab-1', ['select 1'], 7)
     const runs = store.getState().resultRuns['tab-1']
     expect(runs[0]).toEqual(expect.objectContaining({ id: runId, connectionId: 7 }))
+  })
+
+  it('beginRun focuses the new run in shared and per-connection scopes, not just per-editor', () => {
+    const store = createIdeStore('test-org', 1)
+    const runId = store.getState().beginRun('tab-1', ['select 1'], 7)
+    expect(store.getState().sharedSelectedRunId).toBe(runId)
+    expect(store.getState().connectionSelectedRunId[7]).toBe(runId)
+  })
+
+  it('beginRun without a connection id leaves connectionSelectedRunId untouched', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().beginRun('tab-1', ['select 1'], 7)
+    const second = store.getState().beginRun('tab-2', ['select 2'])
+    expect(store.getState().connectionSelectedRunId[7]).not.toBe(second)
   })
 
   it('beginRun appends a new run without touching earlier runs', () => {

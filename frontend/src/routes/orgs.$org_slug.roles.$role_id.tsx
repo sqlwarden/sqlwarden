@@ -20,9 +20,13 @@ import {
   permissionDefinitionMap,
   permissionDescription,
   permissionDisplayName,
-  permissionGroupName,
   type Permission,
 } from '#/lib/permissions'
+import { InfoBlock } from '#/components/InfoBlock'
+import {
+  groupPermissions,
+  PermissionGroupsSkeleton,
+} from '#/components/access-control/PermissionGroups'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,6 +67,7 @@ import { Textarea } from '#/components/ui/textarea'
 import { PermissionPicker } from '#/components/access-control/PermissionPicker'
 import { cn } from '#/lib/utils'
 import { roleScopeLabel } from '#/components/access-control/roleScope'
+import { entityColor } from '#/lib/entity-colors'
 
 export const Route = createFileRoute('/orgs/$org_slug/roles/$role_id')({
   component: OrganizationRoleContextPage,
@@ -241,11 +246,11 @@ function OrganizationRoleContextPage() {
             {role.data ? (
               <div
                 className={cn(
-                  'flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold',
-                  roleColor(role.data.name),
+                  'flex size-10 shrink-0 items-center justify-center rounded-md',
+                  entityColor(role.data.name),
                 )}
               >
-                {displayName.slice(0, 2).toUpperCase()}
+                <Icon name="user-shield-01" size={18} />
               </div>
             ) : (
               <Skeleton className="size-10 shrink-0 rounded-md" />
@@ -482,46 +487,6 @@ function PermissionGroups({
   )
 }
 
-function PermissionGroupsSkeleton() {
-  return (
-    <div className="grid gap-6 sm:grid-cols-2">
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div key={index} className="flex flex-col gap-3">
-          <Skeleton className="h-3 w-24" />
-          <div className="flex flex-col gap-3">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-4 w-36" />
-            <Skeleton className="h-4 w-44" />
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function groupPermissions(
-  permissions: readonly Permission[],
-  definitions: ReadonlyMap<string, PermissionDefinition>,
-) {
-  const groups = new Map<string, Permission[]>()
-  for (const item of permissions) {
-    const group = permissionGroupName(item, definitions)
-    groups.set(group, [...(groups.get(group) ?? []), item])
-  }
-  return Array.from(groups.entries()).map(([name, items]) => ({ name, permissions: items }))
-}
-
-function InfoBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5 border-l-2 border-border pl-3">
-      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-        {label}
-      </span>
-      <span className="text-sm font-medium text-foreground">{value}</span>
-    </div>
-  )
-}
-
 function ContextMessage({ message }: { message: string }) {
   return (
     <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
@@ -529,19 +494,4 @@ function ContextMessage({ message }: { message: string }) {
       <p className="font-medium text-foreground">{message}</p>
     </div>
   )
-}
-
-const ROLE_COLORS = [
-  'bg-violet-500/10 text-violet-600',
-  'bg-blue-500/10 text-blue-600',
-  'bg-emerald-500/10 text-emerald-600',
-  'bg-orange-500/10 text-orange-600',
-  'bg-rose-500/10 text-rose-600',
-  'bg-amber-500/10 text-amber-600',
-  'bg-cyan-500/10 text-cyan-600',
-]
-
-function roleColor(name: string): string {
-  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-  return ROLE_COLORS[hash % ROLE_COLORS.length]
 }

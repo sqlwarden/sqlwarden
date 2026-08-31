@@ -1,11 +1,16 @@
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { renderWithProviders } from '#/test/render'
 import { UnsafeQueryDialog } from './UnsafeQueryDialog'
+
+vi.mock('./object-detail/ReadOnlySqlView', () => ({
+  ReadOnlySqlView: ({ value }: { value: string }) => <pre>{value}</pre>,
+}))
 
 describe('UnsafeQueryDialog', () => {
   it('renders the submitted SQL', () => {
-    render(
+    renderWithProviders(
       <UnsafeQueryDialog
         open
         onOpenChange={vi.fn()}
@@ -21,7 +26,7 @@ describe('UnsafeQueryDialog', () => {
     const user = userEvent.setup()
     const onOpenChange = vi.fn()
     const onConfirm = vi.fn()
-    render(
+    renderWithProviders(
       <UnsafeQueryDialog
         open
         onOpenChange={onOpenChange}
@@ -37,7 +42,7 @@ describe('UnsafeQueryDialog', () => {
   it('calls onConfirm when Run Anyway is clicked', async () => {
     const user = userEvent.setup()
     const onConfirm = vi.fn()
-    render(
+    renderWithProviders(
       <UnsafeQueryDialog
         open
         onOpenChange={vi.fn()}

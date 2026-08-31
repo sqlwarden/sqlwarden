@@ -29,6 +29,15 @@ export type EditorFontSize = (typeof EDITOR_FONT_SIZES)[number]
 export const DEFAULT_EDITOR_FONT = EDITOR_FONTS[0]
 export const DEFAULT_EDITOR_FONT_SIZE: EditorFontSize = 12
 
+/** Sizes in `EDITOR_FONT_SIZES` are nominal px at 100% UI scale. Converting
+ *  to rem (against the browser's 16px base) instead of setting `px` directly
+ *  lets the editor track the UI scale slider, which scales the root
+ *  font-size — every other font in the app already scales through rem-based
+ *  Tailwind utilities; the editor was the one holdout still hardcoding px. */
+export function editorFontSizeRem(size: EditorFontSize): string {
+  return `${size / 16}rem`
+}
+
 // Module-level cache — once a font's CSS is injected it persists in the document.
 const _loadedFonts = new Set<string>()
 

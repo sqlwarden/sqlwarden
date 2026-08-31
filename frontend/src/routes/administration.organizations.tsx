@@ -21,12 +21,12 @@ import {
   DialogTrigger,
 } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
-import { getInitials } from '#/components/InitialsAvatar'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
+import { Skeleton } from '#/components/ui/skeleton'
 import {
   Table,
   TableBody,
@@ -35,7 +35,6 @@ import {
   TableHeader,
   TableRow,
 } from '#/components/ui/table'
-import { cn } from '#/lib/utils'
 import { MAX_SLUG_LENGTH, slugify } from '#/lib/strings'
 import { usePageTitle } from '#/lib/page-title'
 
@@ -264,9 +263,7 @@ function SettingsOrganizationsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {organizations.isLoading ? (
-                <TableEmptyState colSpan={2} compact message="Loading organizations…" />
-              ) : null}
+              {organizations.isLoading ? <OrganizationsTableSkeleton /> : null}
               {organizations.isError ? (
                 <TableEmptyState colSpan={2} compact message="Failed to load organizations." />
               ) : null}
@@ -285,13 +282,8 @@ function SettingsOrganizationsPage() {
                 <TableRow key={organization.id}>
                   <TableCell>
                     <div className="flex min-w-0 items-center gap-3">
-                      <div
-                        className={cn(
-                          'flex size-8 shrink-0 items-center justify-center text-xs font-semibold',
-                          orgColor(organization.name),
-                        )}
-                      >
-                        {getInitials(organization.name, 'O')}
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                        <Icon name="building-04" size={16} />
                       </div>
                       <div className="min-w-0">
                         <div className="truncate font-medium text-foreground">
@@ -331,17 +323,25 @@ function SettingsOrganizationsPage() {
   )
 }
 
-const ORG_COLORS = [
-  'bg-orange-500/10 text-orange-600',
-  'bg-blue-500/10 text-blue-600',
-  'bg-emerald-500/10 text-emerald-600',
-  'bg-violet-500/10 text-violet-600',
-  'bg-rose-500/10 text-rose-600',
-  'bg-amber-500/10 text-amber-600',
-  'bg-cyan-500/10 text-cyan-600',
-]
-
-function orgColor(name: string): string {
-  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-  return ORG_COLORS[hash % ORG_COLORS.length]
+function OrganizationsTableSkeleton() {
+  return (
+    <>
+      {Array.from({ length: 5 }).map((_, index) => (
+        <TableRow key={index}>
+          <TableCell>
+            <div className="flex items-center gap-3">
+              <Skeleton className="size-8 rounded-md" />
+              <div className="flex flex-col gap-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+            </div>
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-24" />
+          </TableCell>
+        </TableRow>
+      ))}
+    </>
+  )
 }

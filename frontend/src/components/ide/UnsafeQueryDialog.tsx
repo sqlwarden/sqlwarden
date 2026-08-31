@@ -8,6 +8,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '#/components/ui/alert-dialog'
+import { ReadOnlySqlView } from './object-detail/ReadOnlySqlView'
 
 export type UnsafeQueryDialogProps = {
   open: boolean
@@ -29,9 +30,9 @@ export function UnsafeQueryDialog({ open, onOpenChange, sql, onConfirm }: Unsafe
             This statement has no WHERE clause and will affect every row in the table.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <pre className="max-h-40 overflow-auto rounded-md border border-border bg-muted p-2.5 font-mono text-xs text-foreground">
-          {sql}
-        </pre>
+        <div className="h-40 overflow-hidden rounded-md border border-border bg-muted">
+          <ReadOnlySqlView value={sql} />
+        </div>
         <AlertDialogFooter>
           <AlertDialogCancel variant="ghost">Cancel</AlertDialogCancel>
           <AlertDialogAction variant="destructive" onClick={onConfirm}>

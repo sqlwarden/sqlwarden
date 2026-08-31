@@ -1,12 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { orgRuntimeSettingsQueryOptions } from '#/lib/api/query'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import {
+  allOrgWorkspaceConnectionsQueryOptions,
+  orgRuntimeSettingsQueryOptions,
+} from '#/lib/api/query'
 import { orgWorkspaceQueryFavoritesQueryOptions } from '#/lib/api/queries/query-favorites'
 import { SearchInput } from '#/components/SearchInput'
 import { Button } from '#/components/ui/button'
 import { useDebouncedQueryText } from '#/hooks/use-debounced-query-text'
 import { Icon } from '#/lib/icons'
 import { copyWithToast } from './contextMenus/clipboard'
+import { DriverBadge } from './DriverBadge'
+import { FavoriteQueryDialog } from './FavoriteQueryDialog'
 import type { IdeSidebarPanelProps } from './ideActivities'
 import { insertAtCursor } from './insertAtCursor'
 import { listLocalFavorites, type LocalFavorite } from './localQueryStore'
@@ -19,9 +25,107 @@ import { useIde, activeTabId as selectActiveTabId } from './useIdeStore'
 
 type FavoriteRow = {
   id: number | string
+  connectionId: number | null
   name: string
   sqlText: string
   createdAt: string
+}
+
+// Rows render at a fixed height (name/SQL lines are single-line truncated, so
+// content height doesn't vary) so the virtualizer can size items without
+// measuring the DOM.
+const ROW_HEIGHT = 84
+
+type FavoriteRowItemProps = {
+  row: FavoriteRow
+  connectionName: string | undefined
+  driver: string | undefined
+  onView: () => void
+  onCopy: () => void
+  onInsert: () => void
+  onDelete: () => void
+}
+
+function FavoriteRowItem({
+  row,
+  connectionName,
+  driver,
+  onView,
+  onCopy,
+  onInsert,
+  onDelete,
+}: FavoriteRowItemProps) {
+  return (
+    <div
+      data-testid="favorite-row"
+      className="flex h-full flex-col gap-1 border-l-2 border-transparent py-1.5 pl-2.5 pr-2 transition-colors hover:bg-muted/20"
+    >
+      <div className="flex shrink-0 items-center gap-1.5">
+        <span className="min-w-0 flex-1 truncate text-[10px] font-normal text-muted-foreground">
+          {row.name}
+        </span>
+      </div>
+
+      <button
+        type="button"
+        onClick={onView}
+        className="block shrink-0 truncate rounded-sm text-left font-mono text-xs leading-snug text-foreground hover:text-foreground/80"
+      >
+        {row.sqlText}
+      </button>
+
+      <div className="flex shrink-0 items-center justify-between gap-1">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Tip label={formatExactTime(row.createdAt)}>
+            <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+              {formatRelativeTime(row.createdAt)}
+            </span>
+          </Tip>
+          {connectionName && (
+            <span className="flex min-w-0 items-center gap-1 truncate text-[10px] text-muted-foreground">
+              {driver && <DriverBadge driver={driver} size="sm" className="size-3" />}
+              <span className="truncate">{connectionName}</span>
+            </span>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <Tip label="Copy query">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Copy query"
+              onClick={onCopy}
+            >
+              <Icon name="copy-01" size={12} />
+            </Button>
+          </Tip>
+          <Tip label="Insert at cursor">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Insert query at cursor"
+              onClick={onInsert}
+            >
+              <Icon name="text-cursor" size={12} />
+            </Button>
+          </Tip>
+          <Tip label="Delete favorite">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Delete favorite"
+              onClick={onDelete}
+            >
+              <Icon name="delete-01" size={12} />
+            </Button>
+          </Tip>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function FavoritesPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
@@ -30,9 +134,13 @@ export function FavoritesPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
   const viewRegistry = useEditorViewRegistry()
   const { searchText, setSearchText, debouncedQuery, clearSearch } = useDebouncedQueryText()
 
+  const [viewRow, setViewRow] = useState<FavoriteRow | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
   const runtimeSettings = useQuery(orgRuntimeSettingsQueryOptions(orgSlug))
   const mode = runtimeSettings.data?.effective.query_favorites_mode ?? 'backend'
   const mutations = useFavoritesMutations(orgSlug, workspace.id)
+  const connections = useQuery(allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id))
 
   const backendQuery = useQuery({
     ...orgWorkspaceQueryFavoritesQueryOptions(orgSlug, workspace.id, debouncedQuery || undefined),
@@ -68,28 +176,21 @@ export function FavoritesPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
   async function handleDelete(id: number | string) {
     await mutations.remove(id)
     if (mode === 'backend') await backendQuery.refetch()
-  }
-
-  if (mode === 'off') {
-    return (
-      <SidebarPane title="Favorites" icon="star">
-        <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-          Query favorites are turned off for this organization.
-        </div>
-      </SidebarPane>
-    )
+    setViewRow((current) => (current?.id === id ? null : current))
   }
 
   const allRows: FavoriteRow[] =
     mode === 'backend'
       ? (backendQuery.data ?? []).map((fav) => ({
           id: fav.id,
+          connectionId: fav.connection_id,
           name: fav.name,
           sqlText: fav.sql_text,
           createdAt: fav.created_at,
         }))
       : localFavorites.map((fav) => ({
           id: fav.id,
+          connectionId: fav.connectionId,
           name: fav.name,
           sqlText: fav.sqlText,
           createdAt: fav.createdAt,
@@ -103,20 +204,45 @@ export function FavoritesPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
         })
       : allRows
 
-  return (
-    <SidebarPane title="Favorites" icon="star" scroll={false}>
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="shrink-0 border-b border-border p-2">
-          <SearchInput
-            value={searchText}
-            onValueChange={setSearchText}
-            onClear={clearSearch}
-            placeholder="Search favorites…"
-            className="w-full"
-          />
-        </div>
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 10,
+  })
+  const virtualItems = rowVirtualizer.getVirtualItems()
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+  if (mode === 'off') {
+    return (
+      <SidebarPane title="Favorites" icon="star">
+        <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+          Query favorites are turned off for this organization.
+        </div>
+      </SidebarPane>
+    )
+  }
+
+  const viewRowConnection = connections.data?.items.find((c) => c.id === viewRow?.connectionId)
+
+  return (
+    <SidebarPane
+      title="Favorites"
+      icon="star"
+      scroll={false}
+      headerContent={
+        <SearchInput
+          value={searchText}
+          onValueChange={setSearchText}
+          onClear={clearSearch}
+          placeholder="Search favorites…"
+          className="w-full"
+          size="sm"
+          variant="muted"
+        />
+      }
+    >
+      <div className="flex h-full min-h-0 flex-col">
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
           {rows.length === 0 ? (
             <div className="px-3 py-4 text-center text-xs text-muted-foreground">
               {debouncedQuery ? (
@@ -132,73 +258,51 @@ export function FavoritesPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
               )}
             </div>
           ) : (
-            <div className="flex flex-col gap-2 p-2">
-              {rows.map((row) => (
-                <div
-                  key={row.id}
-                  data-testid="favorite-row"
-                  className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card/40 p-2.5 transition-colors hover:border-border hover:bg-muted/20"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-                      {row.name}
-                    </span>
+            <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
+              {virtualItems.map((vr) => {
+                const row = rows[vr.index]
+                if (!row) return null
+                const connection = connections.data?.items.find((c) => c.id === row.connectionId)
+                return (
+                  <div
+                    key={row.id}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: vr.size,
+                      transform: `translateY(${vr.start}px)`,
+                    }}
+                  >
+                    <FavoriteRowItem
+                      row={row}
+                      connectionName={connection?.name}
+                      driver={connection?.driver}
+                      onView={() => setViewRow(row)}
+                      onCopy={() => handleCopy(row.sqlText)}
+                      onInsert={() => handleInsert(row.sqlText)}
+                      onDelete={() => void handleDelete(row.id)}
+                    />
                   </div>
-
-                  <div className="max-h-16 overflow-y-auto rounded-md bg-muted/40 px-2 py-1.5">
-                    <code className="block whitespace-pre-wrap break-words font-mono text-xs leading-snug text-foreground">
-                      {row.sqlText}
-                    </code>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-1">
-                    <Tip label={formatExactTime(row.createdAt)}>
-                      <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
-                        {formatRelativeTime(row.createdAt)}
-                      </span>
-                    </Tip>
-                    <div className="flex items-center gap-1">
-                      <Tip label="Copy query">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label="Copy query"
-                          onClick={() => handleCopy(row.sqlText)}
-                        >
-                          <Icon name="copy-01" size={12} />
-                        </Button>
-                      </Tip>
-                      <Tip label="Insert at cursor">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label="Insert query at cursor"
-                          onClick={() => handleInsert(row.sqlText)}
-                        >
-                          <Icon name="text-cursor" size={12} />
-                        </Button>
-                      </Tip>
-                      <Tip label="Delete favorite">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label="Delete favorite"
-                          onClick={() => void handleDelete(row.id)}
-                        >
-                          <Icon name="delete-01" size={12} />
-                        </Button>
-                      </Tip>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
       </div>
+
+      <FavoriteQueryDialog
+        row={viewRow}
+        connectionName={viewRowConnection?.name}
+        driver={viewRowConnection?.driver}
+        onOpenChange={(open) => {
+          if (!open) setViewRow(null)
+        }}
+        onCopy={() => viewRow && handleCopy(viewRow.sqlText)}
+        onInsert={() => viewRow && handleInsert(viewRow.sqlText)}
+        onDelete={() => viewRow && void handleDelete(viewRow.id)}
+      />
     </SidebarPane>
   )
 }

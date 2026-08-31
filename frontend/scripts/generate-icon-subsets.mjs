@@ -21,13 +21,24 @@ const packs = {
   hugeicons: '@iconify-json/hugeicons/icons.json',
   lucide: '@iconify-json/lucide/icons.json',
   remix: '@iconify-json/ri/icons.json',
+  'vscode-file-icons': '@iconify-json/vscode-icons/icons.json',
+}
+
+// Some upstream icon colors clash with our theme (e.g. vscode-icons' SQL disc
+// is bright yellow, unreadable on light backgrounds). Recolor those specific
+// icons post-fetch rather than forking the whole upstream collection.
+/** @type {Record<string, Record<string, Record<string, string>>>} */
+const recolors = {
+  'vscode-file-icons': {
+    'file-type-sql': { '#ffda44': '#0f5fa8' },
+  },
 }
 
 // Pull the "<prefix>:<name>" string literals out of a pack .ts map.
 function readPackNames(packFile) {
   const src = readFileSync(resolve(packsDir, `${packFile}.ts`), 'utf8')
   const names = new Set()
-  for (const match of src.matchAll(/'[^']+'\s*:\s*'([^':]+):([^']+)'/g)) {
+  for (const match of src.matchAll(/(?:'[^']+'|\w+)\s*:\s*'([^':]+):([^']+)'/g)) {
     names.add(match[2])
   }
   return [...names]
@@ -44,6 +55,14 @@ for (const [packFile, collectionModule] of Object.entries(packs)) {
   const missing = names.filter((n) => !subset.icons[n] && !subset.aliases?.[n])
   if (missing.length) {
     throw new Error(`${packFile}: icons not found in ${collectionModule}: ${missing.join(', ')}`)
+  }
+
+  for (const [iconName, colorMap] of Object.entries(recolors[packFile] ?? {})) {
+    const icon = subset.icons[iconName]
+    if (!icon) throw new Error(`${packFile}: recolor target not found: ${iconName}`)
+    for (const [from, to] of Object.entries(colorMap)) {
+      icon.body = icon.body.replaceAll(from, to)
+    }
   }
 
   const outPath = resolve(packsDir, `${packFile}.subset.json`)

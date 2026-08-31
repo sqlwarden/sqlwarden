@@ -136,9 +136,8 @@ function WorkspaceConnectionsPage() {
             nativeButton={false}
             render={
               <Link
-                to="/ide/$org_slug"
-                params={{ org_slug: orgSlug }}
-                search={{ ws: Number(workspaceId) }}
+                to="/orgs/$org_slug/workspaces/$workspace_id/ide"
+                params={{ org_slug: orgSlug, workspace_id: workspaceId }}
               />
             }
           >
@@ -311,9 +310,9 @@ export function ConnectionRow({
             nativeButton={false}
             render={
               <Link
-                to="/ide/$org_slug"
-                params={{ org_slug: orgSlug }}
-                search={{ ws: Number(workspaceId), conn: connection.id }}
+                to="/orgs/$org_slug/workspaces/$workspace_id/ide"
+                params={{ org_slug: orgSlug, workspace_id: workspaceId }}
+                search={{ conn: connection.id }}
               />
             }
           >

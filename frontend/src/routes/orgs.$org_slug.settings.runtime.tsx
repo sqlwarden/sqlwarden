@@ -261,7 +261,7 @@ export function OrganizationRuntimeSettingsPanel({
               Bound how much data a query or export can return for this organization.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+          <CardContent className="flex flex-col divide-y divide-border">
             <OverrideField
               label="Query row limit"
               description="Maximum rows returned by a single query."
@@ -504,7 +504,7 @@ export function OrganizationRuntimeSettingsPanel({
               Keep prior revisions of saved workspace files for this organization.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+          <CardContent className="flex flex-col divide-y divide-border">
             <OverrideField
               label="Enable file revisions"
               description="Organizations can only further restrict this; it cannot be enabled here if disabled at the instance level."
@@ -583,7 +583,7 @@ export function OrganizationRuntimeSettingsPanel({
               Control how run queries and saved favorites are stored for this organization.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+          <CardContent className="flex flex-col divide-y divide-border">
             <OverrideField
               label="Query history mode"
               description="Where executed queries are recorded: backend (persisted), local (browser only), or off."

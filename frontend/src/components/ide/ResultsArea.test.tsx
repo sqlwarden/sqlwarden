@@ -10,6 +10,10 @@ import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
 import { ContextMenuProvider } from '#/components/ui/context-menu'
 
+vi.mock('./object-detail/ReadOnlySqlView', () => ({
+  ReadOnlySqlView: ({ value }: { value: string }) => <pre>{value}</pre>,
+}))
+
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
     getTotalSize: () => count * 29,
@@ -199,6 +203,56 @@ describe('ResultsArea', () => {
     expect(await screen.findByText('No rows returned')).toBeInTheDocument()
     expect(screen.getByText('0 rows')).toBeInTheDocument()
     expect(await screen.findByText('analytics-pg')).toBeInTheDocument()
+  })
+
+  it('grows an unresized column to fill a wide container and left-aligns its numeric values', async () => {
+    // The default ResizeObserver mock never fires its callback, so nothing
+    // grows under it. Swap in one that reports a container much wider than
+    // the grid needs, to exercise the real fill-and-realign wiring.
+    const RealResizeObserver = globalThis.ResizeObserver
+    class WideResizeObserverMock implements ResizeObserver {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe(target: Element) {
+        // Other ResizeObserver consumers on the page (react-resizable-panels)
+        // expect a richer entry shape than this stub provides; ignore their
+        // failures so only the grid's own width-measuring effect matters.
+        try {
+          this.callback([{ target, contentRect: { width: 1000 } } as ResizeObserverEntry], this)
+        } catch {
+          // ignore - unrelated observer expected a fuller ResizeObserverEntry
+        }
+      }
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', WideResizeObserverMock)
+
+    try {
+      renderResult({
+        status: 'ok',
+        durationMs: 3,
+        sql: 'select id from users',
+        connectionId: 7,
+        data: {
+          columns: [{ name: 'id', type: 'integer', raw_type: 'int4', nullable: false }],
+          rows: [[{ type: 'integer', integer: 1 }]],
+          duration_ms: 3,
+          truncated: false,
+          rows_returned: 1,
+          bytes_returned: 0,
+          transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
+        },
+      })
+
+      const header = await screen.findByRole('columnheader', { name: /id/ })
+      expect(parseInt(header.style.width, 10)).toBeGreaterThan(300)
+
+      const cell = screen.getByRole('gridcell')
+      expect(cell.className).toContain('text-left')
+      expect(cell.className).not.toContain('text-right')
+    } finally {
+      vi.stubGlobal('ResizeObserver', RealResizeObserver)
+    }
   })
 
   it('shows the connection name in the bottom status bar, before the row count, not in the sql caption', async () => {

@@ -27,12 +27,10 @@ import {
 } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { EmptyState } from '#/components/EmptyState'
-import { getInitials } from '#/components/InitialsAvatar'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
 import { Skeleton } from '#/components/ui/skeleton'
-import { cn } from '#/lib/utils'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces')({
   component: OrganizationWorkspacesRoute,
@@ -251,15 +249,14 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
             <div key={index} className="flex flex-col rounded-lg border border-border bg-card">
               <div className="flex flex-col gap-3 p-5">
                 <div className="flex items-start gap-3">
-                  <Skeleton className="size-10 shrink-0 rounded-md" />
+                  <Skeleton className="size-9 shrink-0 rounded-md" />
                   <div className="flex flex-1 flex-col gap-2 pt-1">
                     <Skeleton className="h-4 w-28" />
                     <Skeleton className="h-3 w-44" />
-                    <Skeleton className="h-3 w-36" />
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-5 border-t border-border/60 px-5 py-3">
+              <div className="flex items-center gap-4 border-t border-border/60 px-5 py-3">
                 <Skeleton className="h-3 w-20" />
                 <Skeleton className="h-3 w-20" />
               </div>
@@ -304,44 +301,36 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
                 key={workspace.id}
                 to="/orgs/$org_slug/workspaces/$workspace_id"
                 params={{ org_slug: orgSlug, workspace_id: String(workspace.id) }}
-                className="group flex flex-col rounded-lg border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:bg-muted/20 hover:shadow-sm"
+                className="group relative flex flex-col overflow-hidden rounded-lg border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:shadow-sm"
               >
-                <div className="flex flex-1 flex-col gap-3 p-5">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={cn(
-                        'flex size-10 shrink-0 items-center justify-center rounded-md text-sm font-semibold',
-                        workspaceColor(workspace.name),
-                      )}
-                    >
-                      {getInitials(workspace.name, 'W')}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
-                        {workspace.name}
+                <span className="absolute inset-y-0 left-0 w-0.5 scale-y-0 bg-primary transition-transform group-hover:scale-y-100" />
+                <div className="flex flex-1 items-start gap-3 p-5">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors group-hover:text-primary">
+                    <Icon name="briefcase-01" size={18} />
+                  </div>
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
+                      {workspace.name}
+                    </p>
+                    {workspace.description ? (
+                      <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                        {workspace.description}
                       </p>
-                      {workspace.description ? (
-                        <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                          {workspace.description}
-                        </p>
-                      ) : null}
-                    </div>
+                    ) : null}
                   </div>
                 </div>
-                <div className="flex items-center gap-5 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
-                    <Icon name="database" size={20} />
+                <div className="flex items-center gap-4 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <Icon name="database" size={14} />
+                    <span className="tabular-nums">{workspace.environment_count}</span>
                     <span>
-                      {workspace.environment_count}{' '}
                       {workspace.environment_count === 1 ? 'environment' : 'environments'}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5 [&_svg]:size-3.5">
-                    <Icon name="flow-connection" size={20} />
-                    <span>
-                      {workspace.connection_count}{' '}
-                      {workspace.connection_count === 1 ? 'connection' : 'connections'}
-                    </span>
+                  <div className="flex items-center gap-1.5">
+                    <Icon name="flow-connection" size={14} />
+                    <span className="tabular-nums">{workspace.connection_count}</span>
+                    <span>{workspace.connection_count === 1 ? 'connection' : 'connections'}</span>
                   </div>
                 </div>
               </Link>
@@ -363,19 +352,4 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
       ) : null}
     </div>
   )
-}
-
-const WORKSPACE_COLORS = [
-  'bg-orange-500/10 text-orange-600',
-  'bg-blue-500/10 text-blue-600',
-  'bg-emerald-500/10 text-emerald-600',
-  'bg-violet-500/10 text-violet-600',
-  'bg-rose-500/10 text-rose-600',
-  'bg-amber-500/10 text-amber-600',
-  'bg-cyan-500/10 text-cyan-600',
-]
-
-function workspaceColor(name: string): string {
-  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-  return WORKSPACE_COLORS[hash % WORKSPACE_COLORS.length]
 }

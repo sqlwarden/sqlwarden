@@ -7,7 +7,7 @@ import type { Workspace } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
 import type { GroupNode } from './ideLayout'
-import { IdeTabBar, requiresCloseConfirmation } from './IdeTabBar'
+import { IdeTabBar, requiresCloseConfirmation, tabIcon } from './IdeTabBar'
 import { createIdeStore, IdeStoreContext, useIde, type EditorTab } from './useIdeStore'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), info: vi.fn() } }))
@@ -22,6 +22,30 @@ function tab(overrides: Partial<EditorTab> = {}): EditorTab {
     ...overrides,
   }
 }
+
+describe('tabIcon', () => {
+  it('uses the kind-based icon for non-file tabs', () => {
+    expect(tabIcon(tab({ kind: 'scratch' }))).toEqual({ kind: 'app', name: 'terminal' })
+    expect(tabIcon(tab({ kind: 'connection' }))).toEqual({ kind: 'app', name: 'database' })
+    expect(tabIcon(tab({ kind: 'object' }))).toEqual({ kind: 'app', name: 'table' })
+    expect(tabIcon(tab({ kind: 'diagram' }))).toEqual({ kind: 'app', name: 'flow-connection' })
+  })
+
+  it('derives a file tab icon from its name and metadata instead of a generic file icon', () => {
+    expect(tabIcon(tab({ kind: 'file', title: 'query.sql' }))).toEqual({
+      kind: 'file-type',
+      name: 'sql',
+    })
+    expect(tabIcon(tab({ kind: 'file', title: 'export.csv' }))).toEqual({
+      kind: 'file-type',
+      name: 'csv',
+    })
+    expect(tabIcon(tab({ kind: 'file', title: 'archive.custom' }))).toEqual({
+      kind: 'file-type',
+      name: 'default',
+    })
+  })
+})
 
 describe('requiresCloseConfirmation', () => {
   it('allows clean and duplicated tab instances to close immediately', () => {
