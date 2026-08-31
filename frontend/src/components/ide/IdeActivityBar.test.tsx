@@ -9,6 +9,7 @@ import { getAccessToken, setAccessToken } from '#/lib/auth/access-token'
 import { organizationRuntimeSettingsFixture } from '#/test/fixtures'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
+import { setupStatusHandler } from '#/test/handlers'
 import { IdeActivityBar } from './IdeActivityBar'
 import { createIdeStore, IdeStoreContext } from './useIdeStore'
 
@@ -55,6 +56,7 @@ describe('IdeActivityBar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     server.use(
+      setupStatusHandler(),
       http.get('/api/v1/orgs/acme/runtime-settings', () =>
         HttpResponse.json(organizationRuntimeSettingsFixture()),
       ),
@@ -385,5 +387,42 @@ describe('IdeActivityBar', () => {
     )
     expect(getAccessToken()).toBeNull()
     expect(queryClient.getQueryData(['permissions', 'acme'])).toBeUndefined()
+  })
+
+  it('shows desktop settings instead of the account menu in desktop mode', async () => {
+    server.use(
+      setupStatusHandler({
+        configured: true,
+        access_mode: 'single_user',
+        deployment_mode: 'desktop',
+      }),
+    )
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const workspace = makeWorkspace(1, 'Analytics')
+
+    render(
+      <ThemeProvider disableTransitionOnChange={false}>
+        <QueryClientProvider client={createTestQueryClient()}>
+          <IdeStoreContext.Provider value={store}>
+            <IdeActivityBar
+              orgSlug="acme"
+              workspaces={[workspace]}
+              activeWorkspace={workspace}
+              onSelectWorkspace={vi.fn()}
+              session={session}
+              canAccessOrgSettings={false}
+              canAccessWorkspaceGeneralSettings={false}
+              canAccessWorkspaceAccessControl={false}
+            />
+          </IdeStoreContext.Provider>
+        </QueryClientProvider>
+      </ThemeProvider>,
+    )
+
+    expect(await screen.findByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/desktop/settings',
+    )
+    expect(screen.queryByRole('button', { name: 'Ada Lovelace' })).not.toBeInTheDocument()
   })
 })

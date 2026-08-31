@@ -94,7 +94,7 @@ describe('desktop organization navigation', () => {
     expect(homeLinks[0]).toHaveAttribute('href', '/')
 
     await user.click(screen.getByText('Open Editor'))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/ide/local'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/orgs/local/workspaces/3/ide'))
   })
 
   it('hides access-control overview cards and preserves workspace context in the editor link', async () => {
@@ -108,12 +108,14 @@ describe('desktop organization navigation', () => {
       .getAllByText('Open in Editor')
       .map((label) => label.closest('a'))
       .filter((link): link is HTMLAnchorElement => link !== null)
-    const workspaceEditorLink = editorLinks.find((link) => link.href.includes('ws=3'))
+    const workspaceEditorLink = editorLinks.find((link) =>
+      link.href.endsWith('/orgs/local/workspaces/3/ide'),
+    )
     expect(workspaceEditorLink).toBeDefined()
 
     await user.click(workspaceEditorLink!)
     await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/ide/local')
+      expect(router.state.location.pathname).toBe('/orgs/local/workspaces/3/ide')
       expect(router.state.location.search).toEqual({})
       expect(document.title).toBe('Analytics | Editor | SQLWarden')
     })
