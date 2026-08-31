@@ -325,6 +325,38 @@ func (app *application) listOrgPolicies(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+func (app *application) getOrgPolicy(w http.ResponseWriter, r *http.Request) {
+	bindingIDStr := chi.URLParam(r, "binding_id")
+	bindingID, err := strconv.ParseInt(bindingIDStr, 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
+	}
+
+	org := contextGetOrg(r)
+
+	rb, found, err := app.db.GetRoleBinding(r.Context(), bindingID, org.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found || rb.ResourceType != "org" || rb.ResourceID != org.ID {
+		app.notFound(w, r)
+		return
+	}
+
+	item, err := app.db.GetPolicyBindingItem(r.Context(), org.ID, rb)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = response.JSON(w, http.StatusOK, item)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 func (app *application) grantOrgPolicy(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		RoleID      int64               `json:"role_id"`

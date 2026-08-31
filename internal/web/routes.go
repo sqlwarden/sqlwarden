@@ -262,6 +262,7 @@ func (app *application) routes() http.Handler {
 			r.Route("/policies", func(r chi.Router) {
 				r.With(app.requireOrgPermission("policy:read")).Get("/", app.listOrgPolicies)
 				r.With(app.requireOrgPermission("policy:modify")).Post("/", app.grantOrgPolicy)
+				r.With(app.requireOrgPermission("policy:read")).Get("/{binding_id}", app.getOrgPolicy)
 				r.With(app.requireOrgPermission("policy:modify")).Delete("/{binding_id}", app.revokeOrgPolicy)
 			})
 
