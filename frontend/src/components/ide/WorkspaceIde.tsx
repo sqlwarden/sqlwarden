@@ -31,6 +31,10 @@ import {
 } from '#/lib/api/query'
 import { resolveDeepLink } from './ideDeepLink'
 import { hasAnyPermission, permission } from '#/lib/permissions'
+import {
+  workspacePolicyPagePermissions,
+  workspaceSettingsPagePermissions,
+} from '#/lib/workspace-page-permissions'
 import { IdeActivityBar } from './IdeActivityBar'
 import { visibleActivities, type ActivityVisibilityContext } from './ideActivities'
 import type { Workspace } from '#/lib/api/types'
@@ -341,6 +345,18 @@ function WorkspaceIdeInnerContent({
   const canAccessOrgSettings = hasAnyPermission(orgPermissions.data?.permissions, [
     permission.orgRead,
   ])
+  const workspacePermissions = useQuery({
+    ...orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', activeWorkspace?.id),
+    enabled: Boolean(session && activeWorkspace),
+  })
+  const canAccessWorkspaceGeneralSettings = hasAnyPermission(
+    workspacePermissions.data?.permissions,
+    workspaceSettingsPagePermissions,
+  )
+  const canAccessWorkspaceAccessControl = hasAnyPermission(
+    workspacePermissions.data?.permissions,
+    workspacePolicyPagePermissions,
+  )
 
   useIdeDeepLink(orgSlug, workspaces)
 
@@ -355,6 +371,8 @@ function WorkspaceIdeInnerContent({
             onSelectWorkspace={setActiveWorkspace}
             session={session}
             canAccessOrgSettings={canAccessOrgSettings}
+            canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
+            canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
           />
         )}
       </div>
@@ -439,6 +457,8 @@ function WorkspaceIdeSurface({
   onSelectWorkspace,
   session,
   canAccessOrgSettings,
+  canAccessWorkspaceGeneralSettings,
+  canAccessWorkspaceAccessControl,
 }: {
   orgSlug: string
   workspace: Workspace
@@ -446,6 +466,8 @@ function WorkspaceIdeSurface({
   onSelectWorkspace: (id: number) => void
   session: ReturnType<typeof useSession>['data']
   canAccessOrgSettings: boolean
+  canAccessWorkspaceGeneralSettings: boolean
+  canAccessWorkspaceAccessControl: boolean
 }) {
   const sidebarRef = useRef<PanelImperativeHandle>(null)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
@@ -514,6 +536,8 @@ function WorkspaceIdeSurface({
           onSelectWorkspace={onSelectWorkspace}
           session={session}
           canAccessOrgSettings={canAccessOrgSettings}
+          canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
+          canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
         />
         <div className="min-w-0 flex-1 overflow-hidden">
           <PageSurface orgSlug={orgSlug} workspace={workspace} />
@@ -532,6 +556,8 @@ function WorkspaceIdeSurface({
           onSelectWorkspace={onSelectWorkspace}
           session={session}
           canAccessOrgSettings={canAccessOrgSettings}
+          canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
+          canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
         />
         <div className="min-w-0 flex-1 overflow-hidden">
           <IdeEditorAndResults orgSlug={orgSlug} workspace={workspace} />
@@ -558,6 +584,8 @@ function WorkspaceIdeSurface({
         onSelectWorkspace={onSelectWorkspace}
         session={session}
         canAccessOrgSettings={canAccessOrgSettings}
+        canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
+        canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
       />
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 overflow-hidden">
         <ResizablePanel

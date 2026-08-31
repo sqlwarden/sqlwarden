@@ -1,8 +1,9 @@
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { orgRuntimeSettingsQueryOptions } from '#/lib/api/query'
 import { useBrand } from '#/lib/brand/brand'
-import { Icon } from '#/lib/icons'
+import { Icon, type AppIcon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { AppShellPreferencesPopover, useAppShellPreferences } from '#/components/app-shell'
 import { UserAvatar } from '#/components/UserAvatar'
@@ -36,6 +37,8 @@ type IdeActivityBarProps = {
   onSelectWorkspace: (id: number) => void
   session: SessionResponse | undefined
   canAccessOrgSettings: boolean
+  canAccessWorkspaceGeneralSettings: boolean
+  canAccessWorkspaceAccessControl: boolean
 }
 
 export function IdeActivityBar({
@@ -45,6 +48,8 @@ export function IdeActivityBar({
   onSelectWorkspace,
   session,
   canAccessOrgSettings,
+  canAccessWorkspaceGeneralSettings,
+  canAccessWorkspaceAccessControl,
 }: IdeActivityBarProps) {
   const activeActivityId = useIde((s) => s.activeActivityId)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
@@ -115,6 +120,15 @@ export function IdeActivityBar({
 
       <div className="flex-1" />
 
+      {activeWorkspace && (canAccessWorkspaceGeneralSettings || canAccessWorkspaceAccessControl) ? (
+        <WorkspaceSettingsMenu
+          orgSlug={orgSlug}
+          workspace={activeWorkspace}
+          expanded={activityBarExpanded}
+          canAccessGeneralSettings={canAccessWorkspaceGeneralSettings}
+          canAccessAccessControl={canAccessWorkspaceAccessControl}
+        />
+      ) : null}
       <WorkspaceSelector
         workspaces={workspaces}
         activeWorkspace={activeWorkspace}
@@ -142,6 +156,119 @@ export function IdeActivityBar({
         </button>
       </Tip>
     </nav>
+  )
+}
+
+type WorkspaceSettingsSubItem = {
+  label: string
+  icon: AppIcon
+  to:
+    | '/orgs/$org_slug/workspaces/$workspace_id/settings'
+    | '/orgs/$org_slug/workspaces/$workspace_id/users'
+    | '/orgs/$org_slug/workspaces/$workspace_id/policies'
+}
+
+/** Collapsed by default so the rail stays compact; expands in place to reveal
+ *  the workspace's admin pages rather than jumping straight to one. */
+function WorkspaceSettingsMenu({
+  orgSlug,
+  workspace,
+  expanded,
+  canAccessGeneralSettings,
+  canAccessAccessControl,
+}: {
+  orgSlug: string
+  workspace: Workspace
+  expanded: boolean
+  canAccessGeneralSettings: boolean
+  canAccessAccessControl: boolean
+}) {
+  const [open, setOpen] = useState(false)
+
+  const items: WorkspaceSettingsSubItem[] = [
+    ...(canAccessGeneralSettings
+      ? [
+          {
+            label: 'General',
+            icon: 'settings-02',
+            to: '/orgs/$org_slug/workspaces/$workspace_id/settings',
+          } as const,
+        ]
+      : []),
+    ...(canAccessAccessControl
+      ? [
+          {
+            label: 'Manage members',
+            icon: 'user-multiple',
+            to: '/orgs/$org_slug/workspaces/$workspace_id/users',
+          } as const,
+          {
+            label: 'Manage access',
+            icon: 'shield-user',
+            to: '/orgs/$org_slug/workspaces/$workspace_id/policies',
+          } as const,
+        ]
+      : []),
+  ]
+
+  const toggle = (
+    <button
+      type="button"
+      onClick={() => setOpen(!open)}
+      aria-label="Workspace settings"
+      aria-expanded={open}
+      className={cn(
+        'flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors hover:bg-sidebar-accent/60',
+        expanded ? 'h-8 w-full justify-start gap-2 p-2' : 'size-8 justify-center',
+      )}
+    >
+      <Icon name="settings-02" size={17} className="shrink-0" />
+      {expanded ? (
+        <>
+          <span className="min-w-0 flex-1 truncate text-left">Workspace settings</span>
+          <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} className="shrink-0" />
+        </>
+      ) : null}
+    </button>
+  )
+
+  return (
+    <div className={expanded ? undefined : 'flex flex-col items-center gap-1'}>
+      {expanded ? (
+        toggle
+      ) : (
+        <Tip label="Workspace settings" side="right">
+          {toggle}
+        </Tip>
+      )}
+      {open
+        ? items.map((item) => {
+            const link = (
+              <Link
+                to={item.to}
+                params={{ org_slug: orgSlug, workspace_id: String(workspace.id) }}
+                aria-label={item.label}
+                className={cn(
+                  'flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors hover:bg-sidebar-accent/60',
+                  expanded
+                    ? 'h-8 w-full justify-start gap-2 py-2 ps-6 pe-2'
+                    : 'size-8 justify-center',
+                )}
+              >
+                <Icon name={item.icon} size={15} className="shrink-0" />
+                {expanded ? <span className="truncate">{item.label}</span> : null}
+              </Link>
+            )
+            return expanded ? (
+              <div key={item.label}>{link}</div>
+            ) : (
+              <Tip key={item.label} label={item.label} side="right">
+                {link}
+              </Tip>
+            )
+          })
+        : null}
+    </div>
   )
 }
 
