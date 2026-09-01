@@ -8,9 +8,11 @@ application database, files, and logs. Cookie, JWT, and encryption secrets are g
 reused on later launches. If the database exists but this configuration is missing, desktop startup
 fails instead of generating keys that could make existing encrypted data unreadable.
 
-Desktop accepts `--data-dir` for development and portable test installations. It always uses
-`deployment_mode=desktop`, `access_mode=single_user`, local SQLite application storage, and the
-local filesystem backend. These topology settings are not editable in the desktop UI.
+Desktop accepts `--data-dir` for development and portable test installations. The desktop
+executable always selects `mode=desktop`, a single local identity, local SQLite application
+storage, and the local filesystem backend. The server executable always selects `mode=server`.
+Mode is owned by the executable rather than config files, environment variables, CLI flags, or the
+desktop UI.
 
 SQLWarden separates deployment-managed bootstrap configuration from database-backed runtime settings.
 
@@ -22,12 +24,11 @@ Bootstrap loading is implemented in `internal/web/config.go`. Runtime ownership 
 
 The following settings remain bootstrap-only:
 
-- HTTP listener, deployment mode, access mode, and log format.
+- HTTP listener and log format.
 - Application database driver, DSN, and startup migration behavior.
 - Cookie, JWT-signing, and encryption keys.
 - TLS certificate configuration.
 - File-storage mode, active backend, backend definitions, and filesystem roots.
-- Desktop backend topology.
 - Allowed host-local SQLite sources.
 
 Changing a bootstrap setting requires a restart. Changing the application DSN selects another SQLWarden instance database; changing storage configuration does not move stored files. Secret rotation must use the documented key/session rotation behavior. SQLWarden does not perform these migrations automatically.
