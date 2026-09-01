@@ -2,17 +2,22 @@
 
 This reference applies to the SQLWarden server.
 
-The Wails desktop application owns its bootstrap configuration. On first launch it creates
-`desktop.json` with mode `0600` in the platform application-data directory, alongside the SQLite
-application database, files, and logs. Cookie, JWT, and encryption secrets are generated once and
-reused on later launches. If the database exists but this configuration is missing, desktop startup
-fails instead of generating keys that could make existing encrypted data unreadable.
+The Wails desktop application owns its bootstrap configuration. It stores non-secret metadata in
+`desktop.json`, application state in the platform data directory, disposable state in the platform
+cache directory, and logs in the platform log directory. Cookie, JWT, and encryption secrets are
+generated once and stored in the operating-system credential store. If that service is unavailable,
+desktop uses a mode-`0600` protected secret file in the data directory and reports the fallback in
+Settings. If an existing database loses its configured secret store, startup fails instead of
+generating keys that could make encrypted data unreadable.
 
 Desktop accepts `--data-dir` for development and portable test installations. The desktop
 executable always selects `mode=desktop`, a single local identity, local SQLite application
 storage, and the local filesystem backend. The server executable always selects `mode=server`.
 Mode is owned by the executable rather than config files, environment variables, CLI flags, or the
 desktop UI.
+
+See [Desktop operations](desktop.md) for exact paths, migration, backup, recovery, and uninstall
+behavior.
 
 SQLWarden separates deployment-managed bootstrap configuration from database-backed runtime settings.
 

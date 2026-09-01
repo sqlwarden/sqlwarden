@@ -870,15 +870,16 @@ Current model:
 - The setup/status and instance-configuration APIs expose mode plus derived product capabilities
   for frontend routing and visibility. Backend route gates remain authoritative.
 - First launch transactionally creates a passwordless local account, instance-admin record, Local
-  organization, Default workspace, Default environment, and desktop installation anchor.
+  organization, and desktop installation anchor. Workspaces are user-created; a zero-workspace
+  installation opens an editor empty state rather than manufacturing product data.
 - Desktop does not bypass RBAC for org-owned resources.
 - Native sessions use the normal JWT and revocable session middleware. The Wails bridge issues and
   refreshes them without exposing a login flow.
-- Desktop configuration secrets are generated once in a protected file. Missing secrets beside an
-  existing database are a startup error.
+- Desktop configuration secrets are generated once in the OS credential store, with a protected
+  local file fallback and migration from the legacy plaintext configuration.
 - The UI hides identity, organization administration, and RBAC surfaces while retaining the editor,
   workspace/environment/connection management, files, exports, schema tools, and diagrams.
-- Multiple workspaces are supported, but the final workspace cannot be deleted.
+- Multiple workspaces and zero workspaces are supported. The last workspace may be deleted.
 - Wails-specific code stays in `cmd/desktop`, `internal/desktop`, and the small frontend bridge.
 
 Personal spaces remain optional sandboxes for server deployments, not the desktop security model.

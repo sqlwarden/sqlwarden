@@ -43,9 +43,11 @@ For desktop development, install the platform dependencies required by Wails, th
 make desktop/dev
 ```
 
-The desktop application creates a protected local installation automatically. It seeds a local
-account, organization, workspace, and environment without exposing server setup or login screens.
-Use `make desktop/build` to produce a native development build.
+The desktop application creates a protected local installation automatically. It seeds its local
+identity and organization without exposing server setup or login screens; the editor then guides the
+user to create their first workspace. Use `make desktop/build` to produce a native development build.
+Storage, backup, restore, and uninstall behavior is documented in
+[Desktop operations](docs/desktop.md).
 
 For development with API query logging enabled:
 
