@@ -20,7 +20,8 @@ func TestDesktopReleaseMetadata(t *testing.T) {
 			ProductName      string `json:"productName"`
 			ProductVersion   string `json:"productVersion"`
 			FileAssociations []struct {
-				Ext string `json:"ext"`
+				Ext      string `json:"ext"`
+				IconName string `json:"iconName"`
 			} `json:"fileAssociations"`
 		} `json:"info"`
 	}
@@ -35,6 +36,15 @@ func TestDesktopReleaseMetadata(t *testing.T) {
 	}
 	if len(config.Info.FileAssociations) != 4 {
 		t.Fatalf("desktop file associations = %+v", config.Info.FileAssociations)
+	}
+	for _, association := range config.Info.FileAssociations {
+		if association.IconName == "" {
+			t.Fatalf("desktop file association %q has no icon name", association.Ext)
+		}
+		iconSource := "build/" + association.IconName + ".png"
+		if _, err := os.Stat(iconSource); err != nil {
+			t.Fatalf("desktop file association %q icon source %q: %v", association.Ext, iconSource, err)
+		}
 	}
 	windowsInfo := readReleaseAsset(t, "build/windows/info.json")
 	for _, value := range []string{
