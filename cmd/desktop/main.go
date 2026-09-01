@@ -7,9 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"io/fs"
-	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -22,6 +20,8 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func main() {
@@ -37,6 +37,7 @@ func run(args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	openPaths := append([]string(nil), flags.Args()...)
 
 	cfg, paths, configErr := desktopconfig.LoadWebConfig(*dataDir)
 	logger, closeLog, logErr := desktopLogger(paths)
@@ -65,6 +66,7 @@ func run(args []string) error {
 		return fmt.Errorf("load desktop assets: %w", err)
 	}
 	bridge := newDesktopBridge(app, paths, startupErr)
+	window := loadWindowState(paths)
 	apiHandler := unavailableAPI(startupErr)
 	if app != nil && startupErr == nil {
 		apiHandler = app.Handler()
@@ -72,23 +74,62 @@ func run(args []string) error {
 
 	appOptions := &options.App{
 		Title:       "SQLWarden",
-		Width:       1440,
-		Height:      900,
+		Width:       window.Width,
+		Height:      window.Height,
 		MinWidth:    1024,
 		MinHeight:   680,
 		AssetServer: &assetserver.Options{Assets: staticFiles, Middleware: desktopRoutingMiddleware(apiHandler)},
 		OnStartup:   bridge.startup,
-		OnShutdown:  bridge.shutdown,
-		Bind:        []interface{}{bridge},
+		OnDomReady: func(ctx context.Context) {
+			applyWindowPosition(ctx, window)
+			wailsruntime.OnFileDrop(ctx, func(_, _ int, paths []string) {
+				for _, path := range paths {
+					handleNativeOpenPath(bridge, path)
+				}
+			})
+			for _, path := range openPaths {
+				handleNativeOpenPath(bridge, path)
+			}
+		},
+		OnShutdown: func(ctx context.Context) {
+			saveWindowState(ctx, paths)
+			bridge.shutdown(ctx)
+		},
+		OnBeforeClose: func(ctx context.Context) bool {
+			if !bridge.hasUnsavedChanges() {
+				return false
+			}
+			choice, err := wailsruntime.MessageDialog(ctx, wailsruntime.MessageDialogOptions{
+				Type:          wailsruntime.QuestionDialog,
+				Title:         "Quit SQLWarden?",
+				Message:       "You have unsaved SQL changes. Quit and discard them?",
+				Buttons:       []string{"Cancel", "Quit"},
+				DefaultButton: "Cancel",
+				CancelButton:  "Cancel",
+			})
+			return err != nil || choice != "Quit"
+		},
+		Bind:             []interface{}{bridge},
+		Menu:             desktopMenu(bridge),
+		WindowStartState: window.startState(),
+		DragAndDrop:      &options.DragAndDrop{EnableFileDrop: true, DisableWebViewDrop: true},
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "com.sqlwarden.desktop",
-			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
+			OnSecondInstanceLaunch: func(data options.SecondInstanceData) {
 				bridge.focusWindow()
+				for _, path := range data.Args {
+					handleNativeOpenPath(bridge, path)
+				}
 			},
 		},
 		BackgroundColour: options.NewRGB(10, 10, 12),
 	}
 	applyDesktopBranding(appOptions)
+	appOptions.Windows.WebviewUserDataPath = filepath.Join(paths.Cache, "webview")
+	if appOptions.Mac == nil {
+		appOptions.Mac = &mac.Options{}
+	}
+	appOptions.Mac.OnFileOpen = func(path string) { handleNativeOpenPath(bridge, path) }
 	err = wails.Run(appOptions)
 	if err != nil {
 		return fmt.Errorf("run desktop window: %w", err)
@@ -96,26 +137,12 @@ func run(args []string) error {
 	return nil
 }
 
-func desktopLogger(paths desktopconfig.Paths) (*slog.Logger, func(), error) {
-	writers := []io.Writer{os.Stderr}
-	closeLog := func() {}
-	if paths.Logs != "" {
-		if err := os.MkdirAll(paths.Logs, 0o700); err != nil {
-			return nil, closeLog, fmt.Errorf("create desktop log directory: %w", err)
-		}
-		file, err := os.OpenFile(filepath.Join(paths.Logs, "sqlwarden.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-		if err != nil {
-			return nil, closeLog, fmt.Errorf("open desktop log: %w", err)
-		}
-		writers = append(writers, file)
-		closeLog = func() { _ = file.Close() }
-	}
-	return slog.New(slog.NewTextHandler(io.MultiWriter(writers...), &slog.HandlerOptions{Level: slog.LevelInfo})), closeLog, nil
-}
-
 func desktopRoutingMiddleware(api http.Handler) assetserver.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Referrer-Policy", "no-referrer")
 			if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
 				api.ServeHTTP(w, r)
 				return

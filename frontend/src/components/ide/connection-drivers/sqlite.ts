@@ -15,6 +15,7 @@ export const sqliteDriver: DriverDef = {
       placeholder: '/path/to/database.db',
       required: true,
       section: 'Database file',
+      nativeFilePicker: 'sqlite',
     },
   ],
   buildDSN: (values) => `file:${values.path}`,

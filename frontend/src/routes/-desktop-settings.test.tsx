@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setAccessToken } from '#/lib/auth/access-token'
 import {
   desktopCapabilitiesFixture,
+  instanceConfigurationFixture,
   instanceSettingsFixture,
   organizationFixture,
 } from '#/test/fixtures'
@@ -25,6 +26,12 @@ describe('desktop settings', () => {
         mode: 'desktop',
         capabilities: desktopCapabilitiesFixture(),
       }),
+      http.get('/api/v1/instance/configuration', () =>
+        HttpResponse.json(instanceConfigurationFixture({ mode: 'desktop' })),
+      ),
+      http.get('/api/v1/orgs/local/workspaces', () =>
+        HttpResponse.json({ items: [], page: 1, page_size: 100, total: 0 }),
+      ),
     )
     window.go = {
       main: {
@@ -77,11 +84,21 @@ describe('desktop settings', () => {
     expect(screen.queryByText('SMTP')).not.toBeInTheDocument()
     expect(screen.queryByText('Users')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('tab', { name: 'About & Storage' }))
+    await user.click(screen.getByRole('tab', { name: 'Appearance & Editor' }))
+    expect(screen.getByRole('combobox', { name: 'Theme' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Editor font' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Workspaces' }))
+    await user.click(screen.getByRole('button', { name: 'New workspace' }))
+    expect(screen.getByRole('dialog', { name: 'Create workspace' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await user.click(screen.getByRole('tab', { name: 'Storage & Recovery' }))
     expect(await screen.findByText('/desktop/data/sqlwarden.db')).toBeInTheDocument()
-    expect(screen.getByText('0.9.0')).toBeInTheDocument()
     await user.click(screen.getAllByRole('button', { name: 'Reveal' })[0])
     expect(window.go?.main?.DesktopBridge?.RevealDataDirectory).toHaveBeenCalledOnce()
+    await user.click(screen.getByRole('tab', { name: 'About' }))
+    expect(screen.getByText('0.9.0')).toBeInTheDocument()
   })
 
   it('patches only changed organization and instance fields', async () => {

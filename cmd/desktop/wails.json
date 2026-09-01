@@ -11,6 +11,36 @@
     "comments": "SQLWarden desktop database workspace",
     "companyName": "SQLWarden",
     "copyright": "Copyright 2026 SQLWarden contributors",
+    "fileAssociations": [
+      {
+        "description": "SQL file",
+        "ext": "sql",
+        "iconName": "icon",
+        "name": "SQLWarden.SQL",
+        "role": "Editor"
+      },
+      {
+        "description": "SQLite database",
+        "ext": "sqlite",
+        "iconName": "icon",
+        "name": "SQLWarden.SQLite",
+        "role": "Viewer"
+      },
+      {
+        "description": "SQLite database",
+        "ext": "db",
+        "iconName": "icon",
+        "name": "SQLWarden.Database",
+        "role": "Viewer"
+      },
+      {
+        "description": "SQLite database",
+        "ext": "sqlite3",
+        "iconName": "icon",
+        "name": "SQLWarden.SQLite3",
+        "role": "Viewer"
+      }
+    ],
     "productName": "SQLWarden",
     "productVersion": "0.0.0"
   },

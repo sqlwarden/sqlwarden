@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	stdsql "database/sql"
 	"errors"
 	"fmt"
 	"strconv"
@@ -14,10 +15,9 @@ import (
 )
 
 const (
-	desktopAccountEmail  = "local@sqlwarden.invalid"
-	desktopAccountName   = "Local User"
-	desktopWorkspaceName = "Default"
-	desktopSessionTTL    = 7 * 24 * time.Hour
+	desktopAccountEmail = "local@sqlwarden.invalid"
+	desktopAccountName  = "Local User"
+	desktopSessionTTL   = 7 * 24 * time.Hour
 )
 
 var (
@@ -31,7 +31,7 @@ type DesktopIdentity struct {
 	AccountID   int64  `json:"account_id"`
 	OrgID       int64  `json:"org_id"`
 	OrgSlug     string `json:"org_slug"`
-	WorkspaceID int64  `json:"workspace_id"`
+	WorkspaceID *int64 `json:"workspace_id,omitempty"`
 }
 
 // DesktopSession is returned to the native bridge and never exposed over HTTP.
@@ -50,7 +50,7 @@ func (app *application) BootstrapDesktop(ctx context.Context) (DesktopIdentity, 
 	}
 
 	var installation database.DesktopInstallation
-	var workspace database.Workspace
+	var workspaceID *int64
 	err := app.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		var found bool
 		var err error
@@ -82,19 +82,18 @@ func (app *application) BootstrapDesktop(ctx context.Context) (DesktopIdentity, 
 			if !accountValid || !orgValid || !adminValid || !memberValid {
 				return ErrDesktopIdentityInvalid
 			}
-			workspaces := make([]database.Workspace, 0, 1)
-			err = tx.NewSelect().Model(&workspaces).
+			var workspace database.Workspace
+			err = tx.NewSelect().Model(&workspace).
 				Where("owner_type = ? AND owner_id = ?", "org", installation.OrgID).
 				OrderExpr("id ASC").Limit(1).Scan(ctx)
-			if err == nil && len(workspaces) > 0 {
-				workspace = workspaces[0]
+			if err == nil {
+				workspaceID = &workspace.ID
 				return nil
 			}
-			if err != nil {
+			if !errors.Is(err, stdsql.ErrNoRows) {
 				return err
 			}
-			workspace, err = app.createOwnedWorkspaceWithExecutor(ctx, tx, installation.OrgID, installation.AccountID, desktopWorkspaceName, "")
-			return err
+			return nil
 		}
 
 		pristine, err := database.IsDesktopBootstrapPristineWithExecutor(ctx, tx)
@@ -112,10 +111,6 @@ func (app *application) BootstrapDesktop(ctx context.Context) (DesktopIdentity, 
 			return err
 		}
 		org, err := app.createOwnedOrganizationWithExecutor(ctx, tx, singleUserDefaultOrgSlug, singleUserDefaultOrgName, account.ID)
-		if err != nil {
-			return err
-		}
-		workspace, err = app.createOwnedWorkspaceWithExecutor(ctx, tx, org.ID, account.ID, desktopWorkspaceName, "")
 		if err != nil {
 			return err
 		}
@@ -146,7 +141,7 @@ func (app *application) BootstrapDesktop(ctx context.Context) (DesktopIdentity, 
 	if !app.enforcer.Can(ctx, account.ID, org.ID, "org", "org", org.ID, access.PermOrgRead) {
 		return DesktopIdentity{}, fmt.Errorf("%w: local account lacks organization access", ErrDesktopIdentityInvalid)
 	}
-	return DesktopIdentity{AccountID: account.ID, OrgID: org.ID, OrgSlug: org.Slug, WorkspaceID: workspace.ID}, nil
+	return DesktopIdentity{AccountID: account.ID, OrgID: org.ID, OrgSlug: org.Slug, WorkspaceID: workspaceID}, nil
 }
 
 // NewDesktopSession creates a native-only auth session for the local account.
@@ -217,4 +212,20 @@ func (app *application) RevokeDesktopSession(ctx context.Context, authSessionID 
 		return err
 	}
 	return app.db.RevokeAuthSession(ctx, authSessionID, &installation.AccountID, "desktop_shutdown")
+}
+
+// BackupDesktopDatabase asks SQLite to produce a transactionally consistent
+// snapshot without stopping the in-process application.
+func (app *application) BackupDesktopDatabase(ctx context.Context, destination string) error {
+	if !app.config.isDesktop() {
+		return ErrDesktopModeRequired
+	}
+	if destination == "" {
+		return errors.New("desktop backup destination is required")
+	}
+	_, err := app.db.ExecContext(ctx, "VACUUM INTO ?", destination)
+	if err != nil {
+		return fmt.Errorf("create desktop database snapshot: %w", err)
+	}
+	return nil
 }

@@ -3,9 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '#/test/render'
 import { useDesktopRuntime } from '#/lib/desktop/context'
 import { DesktopStartupGate } from './DesktopStartupGate'
+import { configurePersistentAccessTokens, getAccessToken } from '#/lib/auth/access-token'
 
 afterEach(() => {
   delete window.go
+  configurePersistentAccessTokens()
 })
 
 function desktopSession() {
@@ -57,7 +59,8 @@ describe('DesktopStartupGate', () => {
 
     resolveSession(desktopSession())
     expect(await screen.findByText('local')).toBeInTheDocument()
-    expect(localStorage.getItem('sqlwarden.access_token')).toBe('desktop-token')
+    expect(getAccessToken()).toBe('desktop-token')
+    expect(localStorage.getItem('sqlwarden.access_token')).toBeNull()
   })
 
   it('shows actionable native startup errors', async () => {

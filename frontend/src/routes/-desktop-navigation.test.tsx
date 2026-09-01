@@ -86,16 +86,11 @@ describe('desktop organization navigation', () => {
     )
   })
 
-  it('opens the editor from organization navigation and links the brand home', async () => {
-    const { router, user } = renderRoute('/orgs/local/workspaces')
+  it('redirects the desktop organization workspace list into the editor', async () => {
+    const { router } = renderRoute('/orgs/local/workspaces')
 
-    expect(await screen.findByRole('heading', { name: 'Workspaces' })).toBeInTheDocument()
-    const homeLinks = screen.getAllByRole('link', { name: 'Go to home' })
-    expect(homeLinks.length).toBeGreaterThan(0)
-    expect(homeLinks[0]).toHaveAttribute('href', '/')
-
-    await user.click(screen.getByText('Open Editor'))
     await waitFor(() => expect(router.state.location.pathname).toBe('/orgs/local/workspaces/3/ide'))
+    expect(screen.queryByRole('heading', { name: 'Workspaces' })).not.toBeInTheDocument()
   })
 
   it('hides access-control overview cards and preserves workspace context in the editor link', async () => {

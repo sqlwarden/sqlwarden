@@ -43,3 +43,21 @@ func TestDesktopBridgeReturnsRevealFailure(t *testing.T) {
 		t.Fatalf("error = %v, want %v", err, want)
 	}
 }
+
+func TestDesktopBridgeQueuesOpenRequestsUntilFrontendIsReady(t *testing.T) {
+	bridge := newDesktopBridge(nil, desktopconfig.Paths{}, nil)
+	file := NativeTextFile{Path: "/tmp/query.sql", Name: "query.sql", Content: "select 1"}
+	bridge.dispatchFileOpened(file)
+	bridge.dispatchSQLiteSelected("/tmp/local.db")
+
+	requests := bridge.DrainOpenRequests()
+	if len(requests.Files) != 1 || requests.Files[0] != file {
+		t.Fatalf("queued SQL files = %+v", requests.Files)
+	}
+	if len(requests.SQLiteFiles) != 1 || requests.SQLiteFiles[0] != "/tmp/local.db" {
+		t.Fatalf("queued SQLite files = %+v", requests.SQLiteFiles)
+	}
+	if next := bridge.DrainOpenRequests(); len(next.Files) != 0 || len(next.SQLiteFiles) != 0 {
+		t.Fatalf("open requests were not drained: %+v", next)
+	}
+}

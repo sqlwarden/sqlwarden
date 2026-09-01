@@ -117,6 +117,8 @@ export type EditorTab = {
   fileMediaType?: string
   fileKind?: string
   fileSizeBytes?: number
+  /** Native disk path for a SQL file opened by the desktop shell. */
+  nativePath?: string
   /** Set for `object` tabs: the qualified database object this tab views. */
   objectRef?: ObjectRef
   /** Set for `diagram` tabs: what the ER diagram is anchored to. */
@@ -234,6 +236,7 @@ export type IdeActions = {
   clearPendingJump: () => void
   updateTabContent: (tabId: string, content: string, ySnapshot?: number[]) => void
   updateTabEtag: (tabId: string, etag: string) => void
+  markTabClean: (tabId: string) => void
   setTabConnection: (tabId: string, connectionId: number, driver?: string) => void
   setMaximizedPane: (pane: IdeState['maximizedPane']) => void
   setActiveActivity: (activityId: string) => void
@@ -669,7 +672,10 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
                     ...t,
                     content,
                     ...(ySnapshot !== undefined ? { ySnapshot } : {}),
-                    isDirty: t.etag !== undefined && content !== t.content ? true : t.isDirty,
+                    isDirty:
+                      (t.etag !== undefined || t.nativePath !== undefined) && content !== t.content
+                        ? true
+                        : t.isDirty,
                   }
                 : t,
             ),
@@ -678,6 +684,11 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         updateTabEtag: (tabId, etag) =>
           set((s) => ({
             tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, etag, isDirty: false } : t)),
+          })),
+
+        markTabClean: (tabId) =>
+          set((s) => ({
+            tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, isDirty: false } : t)),
           })),
 
         setTabConnection: (tabId, connectionId, driver?) =>
@@ -1040,6 +1051,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   collapseAllNodes: _noop,
   updateTabContent: _noop,
   updateTabEtag: _noop,
+  markTabClean: _noop,
   setTabConnection: _noop,
   setMaximizedPane: _noop,
   setActiveActivity: _noop,

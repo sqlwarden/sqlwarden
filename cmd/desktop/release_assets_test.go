@@ -16,9 +16,12 @@ func TestDesktopReleaseMetadata(t *testing.T) {
 	}
 	var config struct {
 		Info struct {
-			CompanyName    string `json:"companyName"`
-			ProductName    string `json:"productName"`
-			ProductVersion string `json:"productVersion"`
+			CompanyName      string `json:"companyName"`
+			ProductName      string `json:"productName"`
+			ProductVersion   string `json:"productVersion"`
+			FileAssociations []struct {
+				Ext string `json:"ext"`
+			} `json:"fileAssociations"`
 		} `json:"info"`
 	}
 	if err := json.Unmarshal(data, &config); err != nil {
@@ -29,6 +32,9 @@ func TestDesktopReleaseMetadata(t *testing.T) {
 	}
 	if config.Info.ProductVersion != "0.0.0" {
 		t.Fatalf("development product version = %q", config.Info.ProductVersion)
+	}
+	if len(config.Info.FileAssociations) != 4 {
+		t.Fatalf("desktop file associations = %+v", config.Info.FileAssociations)
 	}
 	windowsInfo := readReleaseAsset(t, "build/windows/info.json")
 	for _, value := range []string{
@@ -44,6 +50,11 @@ func TestDesktopReleaseMetadata(t *testing.T) {
 	for _, value := range []string{"com.sqlwarden.desktop", "<string>11.0</string>", "{{.Info.ProductVersion}}"} {
 		if !strings.Contains(plist, value) {
 			t.Fatalf("macOS Info.plist is missing %q", value)
+		}
+	}
+	for _, association := range []string{"<string>sql</string>", "<string>sqlite3</string>"} {
+		if !strings.Contains(plist, association) {
+			t.Fatalf("macOS file associations are missing %q", association)
 		}
 	}
 }
@@ -63,9 +74,10 @@ func TestWindowsInstallerSignsEveryExecutable(t *testing.T) {
 func TestLinuxPackageMetadata(t *testing.T) {
 	desktopEntry := readReleaseAsset(t, "build/linux/com.sqlwarden.desktop.desktop")
 	for _, value := range []string{
-		"Exec=sqlwarden-desktop",
+		"Exec=sqlwarden-desktop %F",
 		"Icon=com.sqlwarden.desktop",
 		"Categories=Development;Database;",
+		"MimeType=application/sql;application/vnd.sqlite3;application/x-sqlite3;",
 	} {
 		if !strings.Contains(desktopEntry, value) {
 			t.Fatalf("Linux desktop entry is missing %q", value)

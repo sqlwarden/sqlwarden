@@ -44,6 +44,31 @@ function WorkspaceSettingsPage() {
   useWorkspacePageTitle('Settings')
   const { org_slug: orgSlug, workspace_id: workspaceId } = Route.useParams()
   const navigate = useNavigate()
+
+  return (
+    <WorkspaceSettingsContent
+      orgSlug={orgSlug}
+      workspaceId={workspaceId}
+      onDeleted={() =>
+        navigate({
+          to: '/orgs/$org_slug/workspaces',
+          params: { org_slug: orgSlug },
+          replace: true,
+        })
+      }
+    />
+  )
+}
+
+export function WorkspaceSettingsContent({
+  orgSlug,
+  workspaceId,
+  onDeleted,
+}: {
+  orgSlug: string
+  workspaceId: string
+  onDeleted: () => void | Promise<void>
+}) {
   const queryClient = useQueryClient()
   const workspace = useQuery(orgWorkspaceQueryOptions(orgSlug, workspaceId))
   const effectivePermissions = useQuery(
@@ -95,11 +120,7 @@ function WorkspaceSettingsPage() {
     onSuccess: async () => {
       toast.success('Workspace deleted')
       await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspaces(orgSlug) })
-      await navigate({
-        to: '/orgs/$org_slug/workspaces',
-        params: { org_slug: orgSlug },
-        replace: true,
-      })
+      await onDeleted()
     },
     onError: (error) => {
       toast.error(errorMessage(error, 'Failed to delete workspace'))

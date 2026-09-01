@@ -26,6 +26,12 @@ func TestDesktopRoutingMiddlewareRoutesAPIAndSPAFallback(t *testing.T) {
 		if response.Code != http.StatusNoContent {
 			t.Fatalf("%s status = %d, want %d", path, response.Code, http.StatusNoContent)
 		}
+		if got := response.Header().Get("Content-Security-Policy"); got == "" {
+			t.Fatalf("%s is missing the desktop content security policy", path)
+		}
+		if got := response.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Fatalf("%s content type protection = %q", path, got)
+		}
 	}
 	assets := []struct {
 		path   string
