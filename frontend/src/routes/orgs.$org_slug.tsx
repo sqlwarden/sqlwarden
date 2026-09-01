@@ -64,7 +64,7 @@ function OrganizationLayout() {
     const cookie = document.cookie.split('; ').find((row) => row.startsWith('sidebar_state='))
     return cookie ? cookie.split('=')[1] === 'true' : true
   })
-  const desktopMode = setupStatus.data?.deployment_mode === 'desktop'
+  const desktopMode = setupStatus.data?.capabilities.native_shell === true
 
   if (setupStatus.isLoading || (hasToken && session.isLoading)) {
     return (

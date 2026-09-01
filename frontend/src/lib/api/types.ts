@@ -171,7 +171,6 @@ export interface Connection {
   environment_id: number
   name: string
   driver: string
-  access_mode: 'open' | 'restricted'
   default_scope?: ScopePath
   schema_snapshot_policy?: 'inherit' | 'disabled'
   created_at: string
@@ -433,8 +432,8 @@ export interface InstanceConfiguration {
   deployment_managed: boolean
   restart_required: boolean
   http_port: number
-  deployment_mode: 'server' | 'desktop'
-  access_mode: 'multi_user' | 'single_user'
+  mode: ProductMode
+  capabilities: ProductCapabilities
   log_format: 'json' | 'text'
   database_driver: string
   database_automigrate: boolean
@@ -509,8 +508,23 @@ export interface SessionResponse {
 
 export interface SetupStatusResponse {
   configured: boolean
-  access_mode: 'multi_user' | 'single_user'
-  deployment_mode: 'server' | 'desktop'
+  mode: ProductMode
+  capabilities: ProductCapabilities
+}
+
+export type ProductMode = 'server' | 'desktop'
+
+export interface ProductCapabilities {
+  mode: ProductMode
+  native_shell: boolean
+  multi_user: boolean
+  organization_management: boolean
+  user_management: boolean
+  invitations: boolean
+  rbac_administration: boolean
+  workspace_management: boolean
+  native_file_dialogs: boolean
+  local_sqlite_files: boolean
 }
 
 export interface SetupResponse {

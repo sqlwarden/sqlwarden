@@ -5,7 +5,11 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setAccessToken } from '#/lib/auth/access-token'
-import { instanceSettingsFixture, organizationFixture } from '#/test/fixtures'
+import {
+  desktopCapabilitiesFixture,
+  instanceSettingsFixture,
+  organizationFixture,
+} from '#/test/fixtures'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
 import { setupStatusHandler } from '#/test/handlers'
@@ -18,8 +22,8 @@ describe('desktop settings', () => {
     server.use(
       setupStatusHandler({
         configured: true,
-        access_mode: 'single_user',
-        deployment_mode: 'desktop',
+        mode: 'desktop',
+        capabilities: desktopCapabilitiesFixture(),
       }),
     )
     window.go = {

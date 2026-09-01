@@ -64,7 +64,7 @@ function DesktopSettingsPage() {
   const orgSlug = desktop.session?.identity.org_slug ?? ''
 
   if (setup.isLoading) return <RoutePending />
-  if (setup.data?.deployment_mode !== 'desktop' || !desktop.native || !orgSlug) {
+  if (setup.data?.mode !== 'desktop' || !desktop.native || !orgSlug) {
     return <Navigate to="/" replace />
   }
   return <DesktopSettingsContent orgSlug={orgSlug} />

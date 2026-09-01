@@ -9,7 +9,6 @@ function connection(id: number, environmentId: number): Connection {
     environment_id: environmentId,
     name: `conn-${id}`,
     driver: 'postgres',
-    access_mode: 'open',
     created_at: '',
     updated_at: '',
   }

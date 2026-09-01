@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ThemeProvider } from '#/components/theme-provider'
 import type { SessionResponse, Workspace } from '#/lib/api/types'
 import { getAccessToken, setAccessToken } from '#/lib/auth/access-token'
-import { organizationRuntimeSettingsFixture } from '#/test/fixtures'
+import { desktopCapabilitiesFixture, organizationRuntimeSettingsFixture } from '#/test/fixtures'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
 import { setupStatusHandler } from '#/test/handlers'
@@ -393,8 +393,8 @@ describe('IdeActivityBar', () => {
     server.use(
       setupStatusHandler({
         configured: true,
-        access_mode: 'single_user',
-        deployment_mode: 'desktop',
+        mode: 'desktop',
+        capabilities: desktopCapabilitiesFixture(),
       }),
     )
     const store = createIdeStore('acme', 1, 'ephemeral')

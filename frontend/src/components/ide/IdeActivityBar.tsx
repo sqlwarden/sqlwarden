@@ -326,7 +326,7 @@ function RailPreferencesAndAvatar({
   const queryClient = useQueryClient()
   const { preferences, setPreferences } = useAppShellPreferences()
   const setupStatus = useSetupStatus()
-  const desktopMode = setupStatus.data?.deployment_mode === 'desktop'
+  const desktopMode = setupStatus.data?.capabilities.native_shell === true
 
   const logout = useMutation({
     mutationFn: async () => api.post<void>('/api/v1/auth/logout'),

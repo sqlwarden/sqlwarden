@@ -5,6 +5,7 @@ import type {
   Organization,
   OrganizationRuntimeSettings,
   Paginated,
+  ProductCapabilities,
   SessionResponse,
   SetupStatusResponse,
 } from '#/lib/api/types'
@@ -51,10 +52,46 @@ export function setupStatusFixture(
 ): SetupStatusResponse {
   return {
     configured: true,
-    access_mode: 'multi_user',
-    deployment_mode: 'server',
+    mode: 'server',
+    capabilities: productCapabilitiesFixture(),
     ...overrides,
   }
+}
+
+export function productCapabilitiesFixture(
+  overrides: Partial<ProductCapabilities> = {},
+): ProductCapabilities {
+  return {
+    mode: 'server',
+    native_shell: false,
+    multi_user: true,
+    organization_management: true,
+    user_management: true,
+    invitations: true,
+    rbac_administration: true,
+    workspace_management: true,
+    native_file_dialogs: false,
+    local_sqlite_files: false,
+    ...overrides,
+  }
+}
+
+export function desktopCapabilitiesFixture(
+  overrides: Partial<ProductCapabilities> = {},
+): ProductCapabilities {
+  return productCapabilitiesFixture({
+    mode: 'desktop',
+    native_shell: true,
+    multi_user: false,
+    organization_management: false,
+    user_management: false,
+    invitations: false,
+    rbac_administration: false,
+    workspace_management: true,
+    native_file_dialogs: true,
+    local_sqlite_files: true,
+    ...overrides,
+  })
 }
 
 export function instanceSettingsFixture(
@@ -105,8 +142,8 @@ export function instanceConfigurationFixture(
     deployment_managed: true,
     restart_required: true,
     http_port: 8080,
-    deployment_mode: 'server',
-    access_mode: 'multi_user',
+    mode: 'server',
+    capabilities: productCapabilitiesFixture(),
     log_format: 'json',
     database_driver: 'sqlite',
     database_automigrate: true,

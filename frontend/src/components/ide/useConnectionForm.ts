@@ -226,7 +226,6 @@ export function useConnectionForm({
         driver: driverId,
         dsn: buildDSN(),
         environment_id: Number(environmentId),
-        access_mode: 'open',
         default_scope: defaultScope,
       }),
     onSuccess: async () => {

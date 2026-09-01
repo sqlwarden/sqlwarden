@@ -58,7 +58,7 @@ function SettingsLayout() {
     return <NavigateToLogin />
   }
 
-  if (setupStatus.data?.deployment_mode === 'desktop') {
+  if (setupStatus.data?.capabilities.native_shell) {
     return desktop.session?.identity.org_slug ? <Navigate to="/desktop/settings" replace /> : null
   }
 

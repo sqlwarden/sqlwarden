@@ -7,6 +7,7 @@ import { renderRoute } from '#/test/render'
 import { server } from '#/test/server'
 import { sessionHandler, setupStatusHandler } from '#/test/handlers'
 import {
+  desktopCapabilitiesFixture,
   organizationFixture,
   organizationRuntimeSettingsFixture,
   sessionFixture,
@@ -47,8 +48,8 @@ describe('desktop organization navigation', () => {
     server.use(
       setupStatusHandler({
         configured: true,
-        access_mode: 'single_user',
-        deployment_mode: 'desktop',
+        mode: 'desktop',
+        capabilities: desktopCapabilitiesFixture(),
       }),
       sessionHandler(sessionFixture({ organizations: [organization] })),
       http.get('/api/v1/orgs/local', () => HttpResponse.json(organization)),
