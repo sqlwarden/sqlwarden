@@ -310,7 +310,7 @@ func (app *application) acceptOrganizationInvitation(w http.ResponseWriter, r *h
 }
 
 func (app *application) organizationInvitationsAvailable(w http.ResponseWriter, r *http.Request) bool {
-	if app.config.AccessMode == AccessModeSingleUser {
+	if !app.config.productCapabilities().Invitations {
 		app.notFound(w, r)
 		return false
 	}

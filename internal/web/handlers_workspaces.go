@@ -231,7 +231,7 @@ func (app *application) updateWorkspace(w http.ResponseWriter, r *http.Request) 
 
 func (app *application) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	ws := contextGetWorkspace(r)
-	if app.config.DeploymentMode == DeploymentModeDesktop && ws.OrgID != nil {
+	if app.config.isDesktop() && ws.OrgID != nil {
 		app.desktopWorkspaceMu.Lock()
 		defer app.desktopWorkspaceMu.Unlock()
 		count, err := app.db.CountOrganizationWorkspaces(r.Context(), *ws.OrgID)

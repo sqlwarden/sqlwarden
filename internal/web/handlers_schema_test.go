@@ -139,7 +139,7 @@ func TestGetConnectionSchemaRelationships(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-rel"), "Schema Rel", "Schema Rel Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaRelDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
@@ -167,7 +167,7 @@ func TestGetConnectionSchemaRelationships_Unsupported(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-rel-unsup"), "Schema Rel U", "Schema Rel U Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
@@ -183,7 +183,7 @@ func TestGetConnectionDirectory_RequiresSession(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-owner"), "Schema Owner", "Schema Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	disableSchemaSnapshots(t, app, conn.ID)
 
 	req := newAuthRequest(t, http.MethodGet,
@@ -198,7 +198,7 @@ func TestGetConnectionDirectory_InspectsAndCaches(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-owner2"), "Schema Owner2", "Schema Org2")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
@@ -230,7 +230,7 @@ func TestGetConnectionSchemaSpec(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-spec"), "Schema Spec", "Schema Spec Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
@@ -258,7 +258,7 @@ func TestGenerateConnectionStatement(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "statement-generate"), "Statement", "Statement Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Statement WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Statement Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Statement Conn")
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
 	ref := map[string]any{
 		"scope": []map[string]any{{"kind": "database", "name": "main"}},
@@ -308,7 +308,7 @@ func TestApplyConnectionDDL(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-edit"), "Schema Edit", "Schema Edit Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	driver := &ddlFakeDriver{}
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, driver)
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
@@ -336,7 +336,7 @@ func TestApplyConnectionDDLRejectsInvalidInput(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-edit-invalid"), "Schema Edit", "Schema Edit Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	driver := &ddlFakeDriver{}
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, driver)
 
@@ -358,7 +358,7 @@ func TestPostConnectionObjects(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-objects"), "Schema Objects", "Schema Objects Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
 
 	req := newAuthRequest(t, http.MethodPost,
@@ -385,7 +385,7 @@ func TestGetConnectionSchemaObjectDefinition_Ephemeral(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-def"), "Schema Def", "Schema Def Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaDefDriver{})
 
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
@@ -411,7 +411,7 @@ func TestGetConnectionSchemaObjectDefinition_MissingParams(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-def-bad"), "Schema Def Bad", "Schema Def Bad Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaDefDriver{})
 
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
@@ -430,7 +430,7 @@ func TestGetConnectionSchemaObjectDefinition_Unsupported(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-def-501"), "Schema Def 501", "Schema Def 501 Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
 
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
@@ -449,7 +449,7 @@ func TestRefreshConnectionSchema(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-refresh"), "Schema Refresh", "Schema Refresh Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
 
 	req := newAuthRequest(t, http.MethodPost,
@@ -475,7 +475,7 @@ func TestGetConnectionDirectory_SessionExpired(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-expired"), "Schema Expired", "Schema Expired Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	disableSchemaSnapshots(t, app, conn.ID)
 
 	req := newAuthRequest(t, http.MethodGet,
@@ -491,8 +491,8 @@ func TestGetConnectionDirectory_SessionConnectionMismatch(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-mismatch"), "Schema Mismatch", "Schema Mismatch Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	connA := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Conn A", "open")
-	connB := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Conn B", "open")
+	connA := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Conn A")
+	connB := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Conn B")
 	disableSchemaSnapshots(t, app, connA.ID)
 	sess := openSchemaSession(t, app, owner.ID, connB.ID, schemaFakeDriver{})
 
@@ -525,7 +525,7 @@ func TestGetConnectionDirectory_UnsupportedDriver(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-unsupported"), "Schema Unsupported", "Schema Unsupported Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	sess := openSchemaSession(t, app, owner.ID, conn.ID, nonSchemaInspectableDriver{})
 
 	req := newAuthRequest(t, http.MethodGet,
@@ -560,7 +560,7 @@ func disableSchemaSnapshots(t *testing.T, app *application, connectionID int64) 
 	if err != nil || !found {
 		t.Fatalf("get schema test connection: found=%v err=%v", found, err)
 	}
-	if err := app.db.UpdateConnectionWithPolicy(context.Background(), conn.ID, conn.Name, conn.DSNEncrypted, conn.AccessMode, database.SchemaSnapshotPolicyDisabled); err != nil {
+	if err := app.db.UpdateConnectionWithPolicy(context.Background(), conn.ID, conn.Name, conn.DSNEncrypted, database.SchemaSnapshotPolicyDisabled); err != nil {
 		t.Fatalf("disable snapshots for ephemeral schema test: %v", err)
 	}
 }
@@ -581,7 +581,7 @@ func TestApplyConnectionTableEditPayloads(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "table-edit"), "Table Edit", "Table Edit Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn")
 	driver := &tableEditFakeDriver{}
 	session := openSchemaSession(t, app, owner.ID, conn.ID, driver)
 	ref := metadata.ObjectRef{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"}), Kind: "table", Name: "events"}

@@ -45,7 +45,7 @@ type DesktopSession struct {
 // identity. All normal authorization records are seeded so desktop mode uses
 // the same permission checks as server mode.
 func (app *application) BootstrapDesktop(ctx context.Context) (DesktopIdentity, error) {
-	if app.config.DeploymentMode != DeploymentModeDesktop || app.config.AccessMode != AccessModeSingleUser {
+	if !app.config.isDesktop() {
 		return DesktopIdentity{}, ErrDesktopModeRequired
 	}
 

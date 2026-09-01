@@ -23,7 +23,7 @@ func TestConnectionExportsUnavailableWithoutRegisteredClassifier(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	// Every registered engine ships a classifier, so exercise the unavailable
 	// path with a connection whose driver name resolves to no engine.
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "driver-with-no-engine", "ExportUnavailableConn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "driver-with-no-engine", "ExportUnavailableConn")
 	baseURL := orgConnectionURL(org.Slug, ws.ID, envID, fmt.Sprintf("%d", conn.ID))
 
 	for _, path := range []string{"/exports", "/exports/download"} {
@@ -46,7 +46,7 @@ func TestHandleExportJobFailsBeforeTargetAccessWithoutRegisteredClassifier(t *te
 	account, _, org := seedOrgOwner(t, app, uniqueEmail(t, "export-worker-unavailable"), "Export Worker Unavailable", "Export Worker Unavailable Org")
 	ws := seedWorkspaceForAccount(t, app, org, account, "Export Worker Unavailable WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "driver-with-no-engine", "Export Worker Unavailable Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "driver-with-no-engine", "Export Worker Unavailable Conn")
 
 	inputJSON, err := json.Marshal(exportJobInput{
 		AccountID:    account.ID,

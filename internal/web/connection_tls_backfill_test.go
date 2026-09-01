@@ -31,7 +31,7 @@ func seedRawConnection(t *testing.T, app *application, driver, dsn string) int64
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := app.db.InsertConnection(ctx, ws.ID, &env.ID, "Conn", driver, enc, "open")
+	conn, err := app.db.InsertConnection(ctx, ws.ID, &env.ID, "Conn", driver, enc)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -22,8 +22,7 @@ func newDesktopTestApp(t *testing.T) *application {
 		t.Fatal(err)
 	}
 	app.enforcer = enforcer
-	app.config.DeploymentMode = DeploymentModeDesktop
-	app.config.AccessMode = AccessModeSingleUser
+	app.config.Mode = ModeDesktop
 	return app
 }
 
@@ -105,9 +104,9 @@ func TestDesktopSessionReusesValidNativeSession(t *testing.T) {
 	}
 }
 
-func TestBootstrapDesktopRequiresDesktopSingleUserTopology(t *testing.T) {
+func TestBootstrapDesktopRequiresDesktopMode(t *testing.T) {
 	app := newDesktopTestApp(t)
-	app.config.DeploymentMode = DeploymentModeServer
+	app.config.Mode = ModeServer
 	_, err := app.BootstrapDesktop(context.Background())
 	if !errors.Is(err, ErrDesktopModeRequired) {
 		t.Fatalf("error = %v, want ErrDesktopModeRequired", err)
@@ -172,5 +171,60 @@ func TestDesktopCanDeleteWorkspaceWhenAnotherRemains(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("workspace count = %d, want 1", count)
+	}
+}
+
+func TestDesktopServerOnlyRoutesAreNotRoutable(t *testing.T) {
+	app := newDesktopTestApp(t)
+	session, err := app.NewDesktopSession(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/api/setup"},
+		{http.MethodPost, "/api/v1/auth/register"},
+		{http.MethodPost, "/api/v1/auth/login"},
+		{http.MethodPost, "/api/v1/orgs"},
+		{http.MethodGet, "/api/v1/instance/admins"},
+		{http.MethodPatch, "/api/v1/account/password"},
+		{http.MethodGet, "/api/v1/me/workspaces"},
+		{http.MethodGet, "/api/v1/orgs/" + session.Identity.OrgSlug + "/members"},
+		{http.MethodGet, "/api/v1/orgs/" + session.Identity.OrgSlug + "/invitations"},
+		{http.MethodGet, "/api/v1/orgs/" + session.Identity.OrgSlug + "/teams"},
+		{http.MethodGet, "/api/v1/orgs/" + session.Identity.OrgSlug + "/roles"},
+		{http.MethodGet, "/api/v1/orgs/" + session.Identity.OrgSlug + "/policies"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			response := send(t, newAuthRequest(t, tt.method, tt.path, nil, session.AccessToken), app.routes())
+			if response.StatusCode != http.StatusNotFound {
+				t.Fatalf("status = %d, want %d; body=%s", response.StatusCode, http.StatusNotFound, response.BodyBytes)
+			}
+		})
+	}
+}
+
+func TestDesktopSharedSettingsAndWorkspaceRoutesRemainAvailable(t *testing.T) {
+	app := newDesktopTestApp(t)
+	session, err := app.NewDesktopSession(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	paths := []string{
+		"/api/v1/instance/settings",
+		"/api/v1/orgs/" + session.Identity.OrgSlug,
+		"/api/v1/orgs/" + session.Identity.OrgSlug + "/workspaces",
+	}
+	for _, path := range paths {
+		response := send(t, newAuthRequest(t, http.MethodGet, path, nil, session.AccessToken), app.routes())
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want %d; body=%s", path, response.StatusCode, http.StatusOK, response.BodyBytes)
+		}
 	}
 }

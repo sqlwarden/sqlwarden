@@ -23,7 +23,7 @@ func TestResourceBelongsToWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := app.db.InsertConnection(context.Background(), ws2.ID, &env.ID, "db", "sqlite", ":memory:", "open")
+	conn, err := app.db.InsertConnection(context.Background(), ws2.ID, &env.ID, "db", "sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -777,7 +777,7 @@ func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *te
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "policy-list-owner"), "Policy List Owner", "Policy List Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Policy Workspace", "")
 	env := seedEnvironment(t, app, ws.ID, org.ID, "prod")
-	conn := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Primary DB", "open")
+	conn := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Primary DB")
 	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:execute")
 
 	team, err := app.db.InsertTeam(context.Background(), org.ID, "qa-team", "QA Team")
@@ -905,7 +905,7 @@ func TestListWorkspacePolicies_ReturnsRenderableSubjectAndResourceMetadata(t *te
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "policy-render-owner"), "Policy Render Owner", "Policy Render Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Policy Workspace", "")
 	env := seedEnvironment(t, app, ws.ID, org.ID, "prod")
-	conn := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Primary DB", "open")
+	conn := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Primary DB")
 	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:read")
 
 	res := send(t, newAuthRequest(t, http.MethodPost,
@@ -944,8 +944,8 @@ func TestListWorkspacePolicies_SupportsSubjectIDAndResourceIDFilters(t *testing.
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "policy-id-list-owner"), "Policy ID Owner", "Policy ID Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Policy Workspace", "")
 	env := seedEnvironment(t, app, ws.ID, org.ID, "prod")
-	connA := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Primary DB", "open")
-	connB := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Replica DB", "open")
+	connA := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Primary DB")
+	connB := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Replica DB")
 	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "policy-id-member"), "Member User")
 	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
