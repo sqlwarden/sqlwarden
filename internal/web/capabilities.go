@@ -31,7 +31,7 @@ func (cfg Config) productCapabilities() ProductCapabilities {
 		RBACAdministration:     server,
 		WorkspaceManagement:    true,
 		NativeFileDialogs:      desktop,
-		LocalSQLiteFiles:       true,
+		LocalSQLiteFiles:       desktop,
 	}
 }
 

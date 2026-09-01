@@ -57,7 +57,7 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
     orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId),
   )
   const setupStatus = useSetupStatus()
-  const desktopMode = setupStatus.data?.deployment_mode === 'desktop'
+  const desktopMode = setupStatus.data?.capabilities.native_shell === true
   const permissions = effectivePermissions.data?.permissions
 
   const allStatTiles: StatTile[] = [

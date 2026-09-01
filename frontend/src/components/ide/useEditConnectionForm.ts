@@ -277,7 +277,6 @@ export function useEditConnectionForm({
       api.patch(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections/${connection?.id}`, {
         name: name.trim(),
         dsn: buildDSN(),
-        access_mode: connection?.access_mode ?? 'open',
         default_scope: defaultScope,
         show_system_schemas: showSystemSchemas,
         tls: tlsStateToPayload(tls),

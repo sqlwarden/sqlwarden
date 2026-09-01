@@ -260,7 +260,6 @@ export function useConnectionForm({
         driver: driverId,
         dsn: buildDSN(),
         environment_id: Number(environmentId),
-        access_mode: 'open',
         default_scope: defaultScope,
         show_system_schemas: showSystemSchemas,
         tls: tlsStateToPayload(tls),

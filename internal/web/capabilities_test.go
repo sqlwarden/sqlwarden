@@ -38,7 +38,7 @@ func TestProductCapabilitiesAreDerivedFromMode(t *testing.T) {
 			cfg := DefaultConfig()
 			cfg.Mode = tt.mode
 			got := cfg.productCapabilities()
-			tt.want.LocalSQLiteFiles = true
+			tt.want.LocalSQLiteFiles = tt.mode == ModeDesktop
 			if got != tt.want {
 				t.Fatalf("capabilities = %+v, want %+v", got, tt.want)
 			}

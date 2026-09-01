@@ -33,7 +33,6 @@ const mockConnection = {
   environment_id: 5,
   name: 'billing-pg',
   driver: 'postgres',
-  access_mode: 'open' as const,
   show_system_schemas: false,
   created_at: '',
   updated_at: '',

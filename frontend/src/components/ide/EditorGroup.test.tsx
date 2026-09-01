@@ -167,7 +167,6 @@ describe('EditorGroup', () => {
               environment_id: 2,
               name: 'primary-pg',
               driver: 'postgres',
-              access_mode: 'open',
               created_at: '',
               updated_at: '',
             },

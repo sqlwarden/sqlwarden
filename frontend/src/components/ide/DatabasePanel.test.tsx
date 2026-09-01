@@ -78,7 +78,6 @@ describe('DatabasePanel', () => {
                     environment_id: 2,
                     name: 'analytics-pg',
                     driver: 'postgres',
-                    access_mode: 'open',
                     created_at: '',
                     updated_at: '',
                   },

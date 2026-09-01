@@ -16,7 +16,6 @@ const connection: Connection = {
   environment_id: 2,
   name: 'analytics-pg',
   driver: 'postgres',
-  access_mode: 'open',
   show_system_schemas: false,
   created_at: '',
   updated_at: '',
