@@ -293,7 +293,7 @@ export function WorkspaceEmptyState({
 function DesktopNoWorkspaces({ orgSlug }: { orgSlug: string }) {
   usePageTitle('Editor')
   const navigate = useNavigate()
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState(true)
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
   const canCreate = hasPermission(effectivePermissions.data?.permissions, permission.wsCreate)
 

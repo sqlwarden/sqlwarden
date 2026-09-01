@@ -8,7 +8,7 @@ import (
 )
 
 func applyDesktopBranding(app *options.App) {
-	app.Windows = &windows.Options{DisableWindowIcon: false}
+	app.Windows = &windows.Options{DisableWindowIcon: false, Theme: windows.SystemDefault}
 	app.Mac = &mac.Options{
 		About: &mac.AboutInfo{
 			Title: "SQLWarden",

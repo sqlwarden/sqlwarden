@@ -36,16 +36,20 @@ import { Skeleton } from '#/components/ui/skeleton'
 import { cn } from '#/lib/utils'
 import { usePageTitle } from '#/lib/page-title'
 import { NavigateToLogin } from '#/components/auth/NavigateToLogin'
+import { useDesktopRuntime } from '#/lib/desktop/context'
 
 export const Route = createFileRoute('/')({ component: LandingPage })
 
 function LandingPage() {
   usePageTitle('Organizations')
   const setupStatus = useSetupStatus()
+  const desktop = useDesktopRuntime()
   const brand = useBrand()
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
+  const nativeShell = setupStatus.data?.capabilities.native_shell === true
   const shouldLoadOrganizations = Boolean(
+    !nativeShell &&
     hasToken &&
     session.data &&
     (session.data.personal_spaces_enabled || session.data.organizations.length !== 1),
@@ -79,6 +83,15 @@ function LandingPage() {
 
   if (!hasToken || !session.data) {
     return <NavigateToLogin />
+  }
+
+  if (nativeShell) {
+    const orgSlug = desktop.session?.identity.org_slug ?? session.data.organizations[0]?.slug
+    return orgSlug ? (
+      <Navigate to="/ide/$org_slug" params={{ org_slug: orgSlug }} replace />
+    ) : (
+      <LandingLoading />
+    )
   }
 
   if (!session.data.personal_spaces_enabled && session.data.organizations.length === 1) {

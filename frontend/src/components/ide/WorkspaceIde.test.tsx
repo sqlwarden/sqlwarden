@@ -8,6 +8,7 @@ import { ThemeProvider } from '#/components/theme-provider'
 import { queryKeys } from '#/lib/api/query-keys'
 import type { Workspace } from '#/lib/api/types'
 import { organizationRuntimeSettingsFixture, sessionFixture } from '#/test/fixtures'
+import { setupStatusHandler } from '#/test/handlers'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
 import { WorkspaceDocumentTitle, WorkspaceIdeContent, useWorkspaceSelection } from './WorkspaceIde'
@@ -140,6 +141,37 @@ describe('WorkspaceIdeContent', () => {
     ).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
+
+  it('prompts for first-workspace creation immediately in the desktop shell', async () => {
+    const queryClient = createTestQueryClient()
+    server.use(
+      http.get('/api/v1/orgs/acme/permissions/effective', () =>
+        HttpResponse.json({
+          resource_type: 'org',
+          resource_id: 1,
+          permissions: ['ws:create'],
+        }),
+      ),
+    )
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WorkspaceIdeContent
+          orgSlug="acme"
+          requestedWorkspaceId={0}
+          isLoading={false}
+          isError={false}
+          isRetrying={false}
+          workspaces={[]}
+          nativeShell
+          onRetry={() => {}}
+        />
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByRole('dialog', { name: 'Create workspace' })).toBeInTheDocument()
+    expect(screen.getByText('Create your first workspace')).toBeInTheDocument()
+  })
 })
 
 describe('WorkspaceDocumentTitle', () => {
@@ -236,6 +268,7 @@ describe('WorkspaceIdeSurface responsive sidebar', () => {
     queryClient.setQueryData(queryKeys.session(), sessionFixture())
 
     server.use(
+      setupStatusHandler(),
       http.get('/api/v1/orgs/acme/runtime-settings', () =>
         HttpResponse.json(organizationRuntimeSettingsFixture()),
       ),

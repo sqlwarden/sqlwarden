@@ -213,6 +213,33 @@ func (b *DesktopBridge) ChooseDirectory() (string, error) {
 	return wailsruntime.OpenDirectoryDialog(b.context(), wailsruntime.OpenDialogOptions{Title: "Choose folder"})
 }
 
+// SetTheme keeps native window chrome aligned with the React theme. The
+// preference controls whether Wails follows the OS while resolvedTheme keeps
+// the native window background consistent during WebView redraws.
+func (b *DesktopBridge) SetTheme(theme, resolvedTheme string) error {
+	ctx := b.context()
+	switch theme {
+	case "system":
+		wailsruntime.WindowSetSystemDefaultTheme(ctx)
+	case "light":
+		wailsruntime.WindowSetLightTheme(ctx)
+	case "dark":
+		wailsruntime.WindowSetDarkTheme(ctx)
+	default:
+		return errors.New("unsupported desktop theme")
+	}
+
+	switch resolvedTheme {
+	case "light":
+		wailsruntime.WindowSetBackgroundColour(ctx, 249, 249, 249, 255)
+	case "dark":
+		wailsruntime.WindowSetBackgroundColour(ctx, 22, 24, 25, 255)
+	default:
+		return errors.New("unsupported resolved desktop theme")
+	}
+	return nil
+}
+
 func (b *DesktopBridge) OpenExternalURL(url string) error {
 	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
 		return errors.New("only http and https links can be opened externally")

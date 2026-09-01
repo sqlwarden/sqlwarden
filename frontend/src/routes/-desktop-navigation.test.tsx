@@ -13,8 +13,10 @@ import {
   sessionFixture,
 } from '#/test/fixtures'
 
+const { mockIDBGet } = vi.hoisted(() => ({ mockIDBGet: vi.fn(async () => undefined as unknown) }))
+
 vi.mock('idb-keyval', () => ({
-  get: vi.fn(async () => undefined),
+  get: mockIDBGet,
   set: vi.fn(async () => undefined),
   del: vi.fn(async () => undefined),
 }))
@@ -40,10 +42,13 @@ const workspace = {
   created_at: '',
   updated_at: '',
 }
+const secondWorkspace = { ...workspace, id: 4, name: 'Operations' }
 const permissions = Object.values(permission)
 
 describe('desktop organization navigation', () => {
   beforeEach(() => {
+    mockIDBGet.mockReset()
+    mockIDBGet.mockResolvedValue(undefined)
     setAccessToken('desktop-token')
     server.use(
       setupStatusHandler({
@@ -51,7 +56,9 @@ describe('desktop organization navigation', () => {
         mode: 'desktop',
         capabilities: desktopCapabilitiesFixture(),
       }),
-      sessionHandler(sessionFixture({ organizations: [organization] })),
+      sessionHandler(
+        sessionFixture({ organizations: [organization], personal_spaces_enabled: true }),
+      ),
       http.get('/api/v1/orgs/local', () => HttpResponse.json(organization)),
       http.get('/api/v1/orgs/local/runtime-settings', () =>
         HttpResponse.json(organizationRuntimeSettingsFixture()),
@@ -84,6 +91,48 @@ describe('desktop organization navigation', () => {
         })
       }),
     )
+  })
+
+  it('never renders the web landing hub and enters the only desktop workspace', async () => {
+    const { router } = renderRoute('/')
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/orgs/local/workspaces/3/ide'))
+    expect(screen.queryByText('Choose where to continue')).not.toBeInTheDocument()
+    expect(screen.queryByText('Personal Workspace')).not.toBeInTheDocument()
+    expect(screen.queryByText('Administration')).not.toBeInTheDocument()
+  })
+
+  it('uses the last active workspace when more than one desktop workspace exists', async () => {
+    mockIDBGet.mockResolvedValue(JSON.stringify({ state: { activeWorkspaceId: 4 } }))
+    server.use(
+      http.get('/api/v1/orgs/local/workspaces', () =>
+        HttpResponse.json({
+          items: [workspace, secondWorkspace],
+          page: 1,
+          page_size: 100,
+          total: 2,
+        }),
+      ),
+      http.get('/api/v1/orgs/local/workspaces/4', () => HttpResponse.json(secondWorkspace)),
+      http.get('/api/v1/orgs/local/workspaces/4/environments', () =>
+        HttpResponse.json({ items: [], page: 1, page_size: 100, total: 0 }),
+      ),
+      http.get('/api/v1/orgs/local/workspaces/4/connections', () =>
+        HttpResponse.json({ items: [], page: 1, page_size: 100, total: 0 }),
+      ),
+      http.get('/api/v1/orgs/local/workspaces/4/files/private/browser', () =>
+        HttpResponse.json({ file: null, path: [], children: [] }),
+      ),
+      http.get('/api/v1/orgs/local/workspaces/4/files/shared/browser', () =>
+        HttpResponse.json({ file: null, path: [], children: [] }),
+      ),
+      http.get('/api/v1/orgs/local/workspaces/4/sessions', () =>
+        HttpResponse.json({ sessions: [] }),
+      ),
+    )
+
+    const { router } = renderRoute('/')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/orgs/local/workspaces/4/ide'))
   })
 
   it('redirects the desktop organization workspace list into the editor', async () => {
