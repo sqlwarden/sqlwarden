@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/engine/completer"
+	"github.com/sqlwarden/internal/engine/completioncore"
 	"github.com/sqlwarden/internal/engine/metadata"
 )
 
@@ -43,6 +44,35 @@ func TestPostgresCompleteKeywordsAndSchema(t *testing.T) {
 	suggestion := requireCompletion(t, result, "Order Items", "table")
 	if suggestion.InsertText != `"Order Items"` {
 		t.Fatalf("quoted insert text = %q", suggestion.InsertText)
+	}
+}
+
+func TestPostgresCompleteClassifiesCursorContext(t *testing.T) {
+	driver := &postgresDriver{}
+	catalog := completionTestCatalog("postgres", "public")
+	objects := completionTestObjects("public")
+	schema := &metadata.MetadataSet{Directory: catalog, Objects: objects}
+
+	fromSQL := "SELECT * FROM "
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: fromSQL, CursorOffset: len(fromSQL), Schema: schema,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Context != completioncore.PositionRelation {
+		t.Fatalf("Context = %q, want %q", result.Context, completioncore.PositionRelation)
+	}
+
+	keywordSQL := `SELECT * FROM users `
+	result, err = driver.Complete(context.Background(), completer.Request{
+		SQL: keywordSQL, CursorOffset: len(keywordSQL), Schema: schema,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Context != completioncore.PositionKeyword {
+		t.Fatalf("Context = %q, want %q", result.Context, completioncore.PositionKeyword)
 	}
 }
 

@@ -51,6 +51,7 @@ const (
 // Result is the ranked list of suggestions for the cursor position.
 type Result struct {
 	Suggestions []Suggestion `json:"suggestions"`
+	Context     string       `json:"context,omitempty"`
 }
 
 // Suggestion is a single completion candidate. ReplaceStart/ReplaceEnd delimit

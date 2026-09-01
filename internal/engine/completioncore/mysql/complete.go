@@ -5,6 +5,7 @@ package mysql
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -37,15 +38,16 @@ func Complete(
 	cursor int,
 	nativeCatalog *catalog.Catalog,
 	metadata completioncore.MetadataResolver,
-) ([]completioncore.Candidate, error) {
+) ([]completioncore.Candidate, completioncore.Context, error) {
 	if err := completioncore.CheckContext(ctx); err != nil {
-		return nil, err
+		return nil, completioncore.Context{}, err
 	}
 	native := omnicompletion.Complete(sql, cursor, nativeCatalog)
 	candidateSet := parser.Collect(sql, cursor)
 	qualifier := qualifierAt(sql, cursor)
 	valueContext := isInsertValueContext(sql, cursor)
-	columnContext := !valueContext && (qualifier != "" || hasRule(candidateSet, "columnref") || isDMLColumnContext(sql, cursor))
+	columnContext := !valueContext && (qualifier != "" || hasRule(candidateSet, "columnref") ||
+		isDMLColumnContext(sql, cursor) || isSelectProjectionContext(sql, cursor))
 	suppressNativeColumns := columnContext || valueContext
 
 	result := make([]completioncore.Candidate, 0, len(native)+32)
@@ -60,10 +62,60 @@ func Complete(
 	}
 	result = append(result, cteRelationCandidates(sql, cursor)...)
 	result = append(result, selectAliasCandidates(sql, cursor)...)
-	if continuation, ok := relationContinuationAt(sql, cursor); ok {
+	continuation, isRelationContinuation := relationContinuationAt(sql, cursor)
+	if isRelationContinuation {
 		result = relationContinuationCandidates(continuation)
 	}
-	return filterByPrefix(deduplicate(result), prefixAt(sql, cursor)), completioncore.CheckContext(ctx)
+	final := filterByPrefix(deduplicate(result), prefixAt(sql, cursor))
+
+	position := completioncore.PositionAny
+	switch {
+	case valueContext:
+		position = completioncore.PositionValue
+	case isRelationContinuation:
+		// A completed, unqualified relation reference: only trailing
+		// keywords (AS, WHERE, JOIN, ...) are valid next.
+		position = completioncore.PositionKeyword
+	case columnContext:
+		position = completioncore.PositionColumn
+	case hasCandidateOfKind(final, relationCandidateKinds) && !hasCandidateOfKind(final, columnCandidateKinds):
+		position = completioncore.PositionRelation
+	case onlyKeywordCandidates(final):
+		position = completioncore.PositionKeyword
+	}
+
+	return final, completioncore.Context{Position: position}, completioncore.CheckContext(ctx)
+}
+
+var relationCandidateKinds = []completioncore.CandidateType{
+	completioncore.CandidateTable, completioncore.CandidateView,
+	completioncore.CandidateDatabase,
+}
+
+var columnCandidateKinds = []completioncore.CandidateType{completioncore.CandidateColumn}
+
+func hasCandidateOfKind(candidates []completioncore.Candidate, kinds []completioncore.CandidateType) bool {
+	for _, candidate := range candidates {
+		if slices.Contains(kinds, candidate.Type) {
+			return true
+		}
+	}
+	return false
+}
+
+// onlyKeywordCandidates reports whether every candidate is a bare keyword, so
+// the cursor position can be classified without dialect-specific grammar
+// inspection — a request with schema/object candidates never counts.
+func onlyKeywordCandidates(candidates []completioncore.Candidate) bool {
+	if len(candidates) == 0 {
+		return false
+	}
+	for _, candidate := range candidates {
+		if candidate.Type != completioncore.CandidateKeyword {
+			return false
+		}
+	}
+	return true
 }
 
 func cteRelationCandidates(sql string, cursor int) []completioncore.Candidate {
@@ -108,6 +160,13 @@ func mysqlRelationPosition(sql string, tokens []token, selectIndex, cursor, dept
 	last := tokens[indices[len(indices)-1]]
 	if last.Type == parser.FROM || last.Type == parser.JOIN {
 		return true
+	}
+	// A trailing comma opens the next slot of a relation list, so long as the
+	// clause the cursor sits in is a FROM/JOIN and not, say, the SELECT list.
+	if last.Type == ',' {
+		return slices.ContainsFunc(indices, func(index int) bool {
+			return tokens[index].Type == parser.FROM || tokens[index].Type == parser.JOIN
+		})
 	}
 	if len(indices) < 2 || prefixAt(sql, cursor) == "" {
 		return false
@@ -847,6 +906,35 @@ func isDMLColumnContext(sql string, cursor int) bool {
 	default:
 		return false
 	}
+}
+
+// isSelectProjectionContext reports whether the cursor sits in a SELECT
+// projection list, before that SELECT's own FROM/WHERE/GROUP/... clause. The
+// grammar caret covers this when the projection parses, but a half-typed
+// identifier immediately followed by a real FROM clause defeats error
+// recovery, so the token scan keeps column resolution working there.
+func isSelectProjectionContext(sql string, cursor int) bool {
+	tokens := completionTokens(parser.Tokenize(sql))
+	if len(tokens) == 0 {
+		return false
+	}
+	start, _ := statementBounds(tokens, cursor)
+	cursorDepth := depthAt(tokens, cursor)
+	selectIndex, selectDepth := activeSelect(tokens, start, cursor, cursorDepth)
+	if selectIndex < 0 || selectDepth != cursorDepth {
+		return false
+	}
+	for i := selectIndex + 1; i < len(tokens) && tokens[i].Loc < cursor; i++ {
+		if tokens[i].depth != selectDepth {
+			continue
+		}
+		switch tokens[i].Type {
+		case parser.FROM, parser.WHERE, parser.GROUP, parser.HAVING,
+			parser.ORDER, parser.LIMIT, parser.UNION, parser.INTO:
+			return false
+		}
+	}
+	return true
 }
 
 func isInsertValueContext(sql string, cursor int) bool {

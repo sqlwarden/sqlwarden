@@ -82,7 +82,7 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 	}
 
 	completionSQL, completionCursor := postgresCompletionStatement(req.SQL, req.CursorOffset)
-	candidates, err := corepostgres.Complete(
+	candidates, cursorContext, err := corepostgres.Complete(
 		ctx,
 		completionSQL,
 		completionCursor,
@@ -97,7 +97,7 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 			completionSQL,
 			completionCursor,
 		); ok {
-			candidates, err = corepostgres.Complete(
+			recoveryCandidates, recoveryContext, err := corepostgres.Complete(
 				ctx,
 				recoverySQL,
 				recoveryCursor,
@@ -107,7 +107,8 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 			if err != nil {
 				return completer.Result{}, err
 			}
-			if len(candidates) > 0 {
+			if len(recoveryCandidates) > 0 {
+				candidates, cursorContext = recoveryCandidates, recoveryContext
 				completionSQL, completionCursor = recoverySQL, recoveryCursor
 			}
 		}
@@ -146,7 +147,11 @@ func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (c
 	if err := ctx.Err(); err != nil {
 		return completer.Result{}, err
 	}
-	return completer.Result{Suggestions: suggestions}, nil
+	position := cursorContext.Position
+	if position == "" {
+		position = completioncore.PositionAny
+	}
+	return completer.Result{Suggestions: suggestions, Context: position}, nil
 }
 
 func postgresCompletionStatement(sql string, cursor int) (string, int) {

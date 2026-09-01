@@ -51,6 +51,27 @@ export type SQLCompletionSuggestion = {
   replace_start: number
   replace_end: number
   score?: number
+  namespace?: string
+  qualifier?: string
+  data_type?: string
+}
+
+export type SQLCompletionIndexObject = { schema: string; name: string; kind: string }
+
+export type SQLCompletionIndexColumn = {
+  schema: string
+  table: string
+  name: string
+  type?: string
+  nullable: boolean
+}
+
+export type SQLCompletionIndexResponse = {
+  version: string
+  default_schema: string
+  schemas: string[]
+  objects: SQLCompletionIndexObject[]
+  columns: SQLCompletionIndexColumn[]
 }
 
 export type SQLCompletionVocabulary = {
@@ -65,6 +86,7 @@ export type SQLCompletionResponse = {
   metadata_available: boolean
   metadata_status: string
   snapshot_id?: string
+  context?: 'column' | 'relation' | 'keyword' | 'value' | 'any'
 }
 
 export function completeConnectionSQL(
@@ -103,6 +125,22 @@ function normalizeEngineID(driver: string): string {
       : driver === 'sqlite3'
         ? 'sqlite'
         : driver
+}
+
+export function getConnectionCompletionIndex(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string | undefined,
+  signal?: AbortSignal,
+) {
+  return api.get<SQLCompletionIndexResponse>(
+    `${schemaBase(slug, workspaceId, connectionId)}/completion-index`,
+    {
+      ...(signal ? { signal } : {}),
+      ...(sessionId ? { headers: { 'X-Warden-Session': sessionId } } : {}),
+    },
+  )
 }
 
 export function getSQLCompletionVocabulary(driver: string, signal?: AbortSignal) {

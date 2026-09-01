@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Connection, Workspace } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
+import * as completion from './completion'
 import { createIdeStore, IdeStoreContext } from './useIdeStore'
 import { useConnectionActions } from './useConnectionActions'
 
@@ -93,6 +94,24 @@ describe('useConnectionActions', () => {
     await waitFor(() => expect(store.getState().sessions[7]).toBeUndefined())
     expect(requestSession).toBe('session-7')
     expect(store.getState().transactions[7]).toBeUndefined()
+  })
+
+  it('invalidates the completion index when a connection is disconnected', async () => {
+    const spy = vi.spyOn(completion, 'invalidateCompletionIndex')
+    store.getState().setSession(7, 'session-7')
+    server.use(
+      http.delete(
+        '/api/v1/orgs/acme/workspaces/3/connections/7/session',
+        () => new HttpResponse(null, { status: 204 }),
+      ),
+    )
+    const { result } = renderHook(() => useConnectionActions('acme', workspace), { wrapper })
+
+    act(() => result.current.disconnect(connection, false))
+    await waitFor(() => expect(store.getState().sessions[7]).toBeUndefined())
+
+    expect(spy).toHaveBeenCalledWith(7)
+    spy.mockRestore()
   })
 
   it('does not issue a disconnect without a live session', async () => {

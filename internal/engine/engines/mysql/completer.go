@@ -64,7 +64,7 @@ func (d *mysqlDriver) Complete(ctx context.Context, req completer.Request) (comp
 		resolver = completioncore.NewSchemaResolver(index, "")
 	}
 
-	candidates, err := coremysql.Complete(ctx, req.SQL, req.CursorOffset, catalog, resolver)
+	candidates, cursorContext, err := coremysql.Complete(ctx, req.SQL, req.CursorOffset, catalog, resolver)
 	if err != nil {
 		return completer.Result{}, err
 	}
@@ -94,7 +94,11 @@ func (d *mysqlDriver) Complete(ctx context.Context, req completer.Request) (comp
 	if err := ctx.Err(); err != nil {
 		return completer.Result{}, err
 	}
-	return completer.Result{Suggestions: suggestions}, nil
+	position := cursorContext.Position
+	if position == "" {
+		position = completioncore.PositionAny
+	}
+	return completer.Result{Suggestions: suggestions, Context: position}, nil
 }
 
 func (d *mysqlDriver) CompletionVocabulary() completer.Vocabulary {

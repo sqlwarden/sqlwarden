@@ -33,6 +33,7 @@ type completionResponse struct {
 	MetadataAvailable bool                   `json:"metadata_available"`
 	MetadataStatus    string                 `json:"metadata_status"`
 	SnapshotID        string                 `json:"snapshot_id,omitempty"`
+	Context           string                 `json:"context,omitempty"`
 }
 
 func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Request) {
@@ -139,6 +140,10 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 		result.Suggestions[i].ReplaceEnd = byteOffsetToUTF16Offset(input.SQL, result.Suggestions[i].ReplaceEnd)
 	}
 	out.Suggestions = result.Suggestions
+	out.Context = result.Context
+	if out.Context == "" {
+		out.Context = "any"
+	}
 	app.logDebug(r, "SQL completion returned",
 		slog.Int64("connection_id", conn.ID),
 		slog.String("driver", conn.Driver),

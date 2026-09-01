@@ -5,6 +5,7 @@ import { api } from '#/lib/api/client'
 import { errorMessage } from '#/lib/api/errors'
 import { queryKeys } from '#/lib/api/query-keys'
 import type { Connection, Workspace } from '#/lib/api/types'
+import { invalidateCompletionIndex } from './completion'
 import { DEFAULT_CONSOLE_CONTENT, newConnectionTab, useIde } from './useIdeStore'
 
 export function useConnectionActions(orgSlug: string, workspace: Workspace) {
@@ -46,6 +47,7 @@ export function useConnectionActions(orgSlug: string, workspace: Workspace) {
       clearSession(connection.id)
       clearTransactionState(connection.id)
       setConnectionStatus(connection.id, null)
+      invalidateCompletionIndex(connection.id)
       void queryClient.invalidateQueries({ queryKey: sessionsQueryKey })
     },
     onError: (error) => toast.error(errorMessage(error, 'Failed to disconnect')),
