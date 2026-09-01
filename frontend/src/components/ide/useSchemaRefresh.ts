@@ -7,6 +7,7 @@ import {
   invalidateConnectionSchemaQueries,
   refreshConnectionSchema,
 } from '#/lib/api/query'
+import { invalidateCompletionIndex } from './completion'
 
 export function useSchemaRefresh({
   orgSlug,
@@ -35,6 +36,7 @@ export function useSchemaRefresh({
       } else {
         await invalidateConnectionSchemaQueries(queryClient, orgSlug, workspaceId, connectionId)
       }
+      invalidateCompletionIndex(Number(connectionId))
       toast.success('Schema refreshed')
     },
     onError: (error) => {

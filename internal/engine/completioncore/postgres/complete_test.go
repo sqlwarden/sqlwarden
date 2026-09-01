@@ -16,7 +16,8 @@ func TestScopeScenarios(t *testing.T) {
 	catalog := completiontest.Metadata("postgres", "app", "public")
 	column := completioncore.CandidateColumn
 	completiontest.Run(t, func(ctx context.Context, sql string, cursor int, metadata completioncore.MetadataResolver) ([]completioncore.Candidate, error) {
-		return corepostgres.Complete(ctx, sql, cursor, nil, metadata)
+		candidates, _, err := corepostgres.Complete(ctx, sql, cursor, nil, metadata)
+		return candidates, err
 	}, catalog, []completiontest.Scenario{
 		{
 			Name: "qualified join alias",
@@ -77,6 +78,13 @@ func TestScopeScenarios(t *testing.T) {
 			},
 		},
 		{
+			Name: "CTE name in a second comma-separated relation slot",
+			SQL:  "WITH picked AS (SELECT film_id FROM film) SELECT * FROM film, |",
+			Require: []completiontest.Expected{
+				{Text: "picked", Type: completioncore.CandidateTable},
+			},
+		},
+		{
 			Name: "CTE name in join relation position",
 			SQL:  "WITH picked AS (SELECT film_id FROM film) SELECT * FROM film JOIN |",
 			Require: []completiontest.Expected{
@@ -115,6 +123,20 @@ func TestScopeScenarios(t *testing.T) {
 				{Text: "film_id", Type: column}, {Text: "amt", Type: column},
 			},
 			Exclude: []completiontest.Expected{{Text: "title", Type: column}},
+		},
+		{
+			Name: "CTE columns from a partial projection prefix before FROM",
+			SQL:  "WITH picked AS (SELECT film_id, title AS amount FROM film) SELECT amo| FROM picked",
+			Require: []completiontest.Expected{
+				{Text: "amount", Type: column},
+			},
+		},
+		{
+			Name: "CTE columns from an empty projection slot before FROM",
+			SQL:  "WITH picked AS (SELECT film_id, title AS amount FROM film) SELECT | FROM picked",
+			Require: []completiontest.Expected{
+				{Text: "film_id", Type: column}, {Text: "amount", Type: column},
+			},
 		},
 		{
 			Name:    "CTE name does not cross statement boundary",
@@ -289,6 +311,31 @@ func TestScopeScenarios(t *testing.T) {
 	})
 }
 
+func TestCompleteClassifiesCursorContext(t *testing.T) {
+	catalog := completiontest.Metadata("postgres", "app", "public")
+	cases := []struct {
+		name   string
+		sql    string
+		cursor int
+		want   string
+	}{
+		{"column position", "SELECT  FROM orders", len("SELECT "), completioncore.PositionColumn},
+		{"value position", "INSERT INTO orders VALUES (", len("INSERT INTO orders VALUES ("), completioncore.PositionValue},
+		{"keyword position", "SELECT id FROM orders ", len("SELECT id FROM orders "), completioncore.PositionKeyword},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ctx, err := corepostgres.Complete(context.Background(), tc.sql, tc.cursor, nil, catalog)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ctx.Position != tc.want {
+				t.Fatalf("Position = %q, want %q", ctx.Position, tc.want)
+			}
+		})
+	}
+}
+
 func TestCompletionWithBrokenTrailingStatementScalesLinearly(t *testing.T) {
 	catalog := completiontest.Metadata("postgres", "app", "public")
 	var sheet strings.Builder
@@ -298,7 +345,7 @@ func TestCompletionWithBrokenTrailingStatementScalesLinearly(t *testing.T) {
 		fmt.Fprintf(&sheet, "SELECT col_a, col_b FROM table_%04d WHERE col_a = %d;\n", i, i)
 	}
 	started := time.Now()
-	candidates, err := corepostgres.Complete(context.Background(), sheet.String(), len("SELECT "), nil, catalog)
+	candidates, _, err := corepostgres.Complete(context.Background(), sheet.String(), len("SELECT "), nil, catalog)
 	if err != nil {
 		t.Fatal(err)
 	}

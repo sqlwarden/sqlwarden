@@ -11,6 +11,7 @@ import {
 } from '#/lib/api/query'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
+import * as completion from './completion'
 import { useSchemaRefresh } from './useSchemaRefresh'
 
 const toastSuccess = vi.fn()
@@ -134,5 +135,35 @@ describe('useSchemaRefresh', () => {
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(queryClient.getQueryState(directoryKey)?.isInvalidated).toBe(false)
     expect(toastError).toHaveBeenCalledWith('Schema refresh timed out.')
+  })
+
+  it('invalidates the completion index after a successful schema refresh', async () => {
+    const spy = vi.spyOn(completion, 'invalidateCompletionIndex')
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', () =>
+        HttpResponse.json({
+          status: 'ok',
+          mode: 'persistent',
+          snapshot_id: 'snapshot-3',
+          generated_at: '2026-08-06T00:00:00Z',
+        }),
+      ),
+    )
+
+    const { result } = renderHook(
+      () =>
+        useSchemaRefresh({
+          orgSlug: 'acme',
+          workspaceId: 3,
+          connectionId: 7,
+          sessionId: 'session-7',
+        }),
+      { wrapper },
+    )
+    act(() => result.current.mutate())
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(spy).toHaveBeenCalledWith(7)
+    spy.mockRestore()
   })
 })

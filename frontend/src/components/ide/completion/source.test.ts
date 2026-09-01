@@ -11,15 +11,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   acceptCompletionOnTab,
   automaticSQLCompletionTrigger,
-  clearSQLCompletionVocabularyCache,
+  clearSQLCompletionCaches,
   dialectForDriver,
   remoteSQLCompletionSource,
   sqlCompletionExtension,
-} from './sqlCompletion'
+} from './index'
 import { MySQL, PostgreSQL, SQLite, StandardSQL } from '@codemirror/lang-sql'
 
 afterEach(() => {
-  clearSQLCompletionVocabularyCache()
+  clearSQLCompletionCaches()
   vi.unstubAllGlobals()
 })
 
@@ -69,13 +69,13 @@ describe('SQL completion', () => {
       driver: 'postgres',
     })
     const result = await source(new CompletionContext(state, state.doc.length, true))
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(semanticCallCount(fetchMock)).toBe(1)
     expect(result?.from).toBe(15)
     expect(result?.options[0]).toMatchObject({
       label: 'widgets',
       apply: 'widgets',
       type: 'table',
-      boost: 4080,
+      boost: 5080,
     })
   })
 
@@ -340,7 +340,7 @@ describe('SQL completion', () => {
     })
     const result = await source(new CompletionContext(state, 2, false))
     expect(result?.options.map((option) => option.label)).toEqual(['SELECT'])
-    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(semanticCallCount(fetchMock)).toBe(0)
   })
 
   it('ranks exact and prefix vocabulary matches ahead of broader matches', async () => {
@@ -553,7 +553,7 @@ describe('SQL completion', () => {
         type: contextualKind,
       })
       expect(result?.options.map((option) => option.label)).not.toContain('COUNT')
-      expect(fetchMock).toHaveBeenCalledOnce()
+      expect(semanticCallCount(fetchMock)).toBe(1)
     },
   )
 
@@ -574,7 +574,7 @@ describe('SQL completion', () => {
 
     const result = await source(new CompletionContext(state, state.doc.length, true))
     expect(result?.options.map((option) => option.label)).toEqual(['COUNT'])
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(semanticCallCount(fetchMock)).toBe(1)
   })
 
   it.each(['postgres', 'mysql'])(
@@ -605,7 +605,7 @@ describe('SQL completion', () => {
 
       const result = await source(new CompletionContext(state, state.doc.length, true))
       expect(result?.options.map((option) => option.label)).toEqual(['ADD'])
-      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(semanticCallCount(fetchMock)).toBe(1)
     },
   )
 
@@ -660,14 +660,14 @@ describe('SQL completion', () => {
     expect(
       await source(new CompletionContext(completedRelation, completedRelation.doc.length, false)),
     ).toBeNull()
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(semanticCallCount(fetchMock)).toBe(0)
 
     const relationPosition = EditorState.create({ doc: 'SELECT * FROM ' })
     const result = await source(
       new CompletionContext(relationPosition, relationPosition.doc.length, false),
     )
     expect(result?.options.map((option) => option.label)).toContain('actor')
-    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(semanticCallCount(fetchMock)).toBe(1)
   })
 
   it.each(['postgres', 'mysql'])(
@@ -721,7 +721,7 @@ describe('SQL completion', () => {
       const initialResult = source(
         new CompletionContext(initialState, initialState.doc.length, false),
       )
-      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      await vi.waitFor(() => expect(semanticCallCount(fetchMock)).toBe(1))
 
       const finalState = EditorState.create({ doc: finalSQL })
       const finalResult = await source(
@@ -731,7 +731,7 @@ describe('SQL completion', () => {
       expect(initialRequestAborted).toBe(true)
       expect(await initialResult).toBeNull()
       expect(finalResult?.options.map((option) => option.label)).toEqual(['very_long_table_name'])
-      expect(fetchMock).toHaveBeenCalledTimes(3)
+      expect(semanticCallCount(fetchMock)).toBe(2)
     },
   )
 
@@ -777,7 +777,7 @@ SELECT * FROM customer_total_spent`
       expect(result?.options).toEqual(
         expect.arrayContaining([expect.objectContaining({ label: 'customer_id', type: 'column' })]),
       )
-      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(semanticCallCount(fetchMock)).toBe(1)
     },
   )
 
@@ -834,13 +834,13 @@ SELECT * FROM customer_total_spent`
       expect(result?.options).toEqual(
         expect.arrayContaining([expect.objectContaining({ label: 'customer_id', type: 'column' })]),
       )
-      expect(fetchMock).toHaveBeenCalledTimes(explicit ? 1 : 2)
+      expect(semanticCallCount(fetchMock)).toBe(1)
     },
   )
 
   it('calls semantic completion on a dot and preserves display labels', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).not.toContain('completion-vocabulary')
+      if (String(input).includes('completion-vocabulary')) return vocabularyResponse()
       expect(JSON.parse(String(init?.body))).toMatchObject({
         sql: 'SELECT * FROM inventory i JOIN store s WHERE s.',
         trigger_kind: 'automatic',
@@ -877,7 +877,7 @@ SELECT * FROM customer_total_spent`
     })
     const result = await source(new CompletionContext(state, sql.length, false))
     expect(result?.options[0]).toMatchObject({ label: 'id', displayLabel: 'id (2)', apply: 'id' })
-    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(semanticCallCount(fetchMock)).toBe(1)
   })
 
   it.each([
@@ -928,7 +928,7 @@ SELECT * FROM customer_total_spent`
 
       const firstState = EditorState.create({ doc: firstSQL })
       const firstResult = source(new CompletionContext(firstState, firstSQL.length, false))
-      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      await vi.waitFor(() => expect(semanticCallCount(fetchMock)).toBe(1))
 
       const finalState = EditorState.create({ doc: finalSQL })
       const finalResult = await source(new CompletionContext(finalState, finalSQL.length, false))
@@ -936,9 +936,182 @@ SELECT * FROM customer_total_spent`
       expect(firstRequestAborted).toBe(true)
       expect(await firstResult).toBeNull()
       expect(finalResult?.options.map((option) => option.label)).toEqual(['actor_id'])
-      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(semanticCallCount(fetchMock)).toBe(2)
     },
   )
+
+  it('serves a relation-position completion entirely from the local index with zero POST /completion calls', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('completion-index')) {
+        return new Response(
+          JSON.stringify({
+            version: 'v1',
+            default_schema: 'public',
+            schemas: ['public'],
+            objects: [{ schema: 'public', name: 'orders', kind: 'table' }],
+            columns: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (String(input).includes('completion-vocabulary')) return vocabularyResponse()
+      throw new Error(`unexpected fetch: ${String(input)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'postgres',
+    })
+    const state = EditorState.create({ doc: 'SELECT id FROM ord' })
+    const result = await source(new CompletionContext(state, 18, true))
+
+    expect(result?.options.map((o) => o.label)).toContain('orders')
+    expect(semanticCallCount(fetchMock)).toBe(0)
+  })
+
+  it('falls back to POST /completion for an unresolved qualified reference', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('completion-index')) {
+        return new Response(
+          JSON.stringify({
+            version: 'v1',
+            default_schema: 'public',
+            schemas: [],
+            objects: [],
+            columns: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (String(input).includes('completion-vocabulary')) return vocabularyResponse()
+      return new Response(
+        JSON.stringify({
+          suggestions: [
+            {
+              label: 'total',
+              kind: 'column',
+              insert_text: 'total',
+              replace_start: 20,
+              replace_end: 20,
+              score: 90,
+            },
+          ],
+          mode: 'persistent',
+          metadata_available: true,
+          metadata_status: 'ready',
+          context: 'column',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'postgres',
+    })
+    const state = EditorState.create({ doc: 'SELECT z. FROM orders o' })
+    const result = await source(new CompletionContext(state, 9, true))
+
+    expect(result?.options.map((o) => o.label)).toContain('total')
+    expect(semanticCallCount(fetchMock)).toBe(1)
+  })
+
+  it('consults the backend and merges local rows for an explicit column completion on a warm index', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('completion-index')) {
+        return new Response(
+          JSON.stringify({
+            version: 'v1',
+            default_schema: 'public',
+            schemas: ['public'],
+            objects: [{ schema: 'public', name: 'orders', kind: 'table' }],
+            columns: [
+              { schema: 'public', table: 'orders', name: 'total', type: 'numeric' },
+              { schema: 'public', table: 'orders', name: 'token', type: 'text' },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (String(input).includes('completion-vocabulary')) return vocabularyResponse()
+      expect((JSON.parse(String(init?.body)) as { trigger_kind: string }).trigger_kind).toBe(
+        'invoked',
+      )
+      return semanticCompletionResponse([
+        {
+          label: 'total_owed',
+          kind: 'column',
+          insert_text: 'total_owed',
+          replace_start: 7,
+          replace_end: 9,
+          score: 100,
+        },
+      ])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'postgres',
+    })
+    const state = EditorState.create({ doc: 'SELECT to FROM orders' })
+    const result = await source(new CompletionContext(state, 9, true))
+
+    const labels = result?.options.map((o) => o.label) ?? []
+    expect(labels).toContain('total_owed')
+    expect(labels).toContain('total')
+    expect(semanticCallCount(fetchMock)).toBe(1)
+  })
+
+  it('consults the backend for an explicit qualified completion even when the alias resolves locally', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('completion-index')) {
+        return new Response(
+          JSON.stringify({
+            version: 'v1',
+            default_schema: 'public',
+            schemas: ['public'],
+            objects: [{ schema: 'public', name: 'orders', kind: 'table' }],
+            columns: [{ schema: 'public', table: 'orders', name: 'total', type: 'numeric' }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (String(input).includes('completion-vocabulary')) return vocabularyResponse()
+      return semanticCompletionResponse([
+        {
+          label: 'discount',
+          kind: 'column',
+          insert_text: 'discount',
+          replace_start: 9,
+          replace_end: 9,
+          score: 100,
+        },
+      ])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'postgres',
+    })
+    const state = EditorState.create({ doc: 'SELECT o. FROM orders o' })
+    const result = await source(new CompletionContext(state, 9, true))
+
+    const labels = result?.options.map((o) => o.label) ?? []
+    expect(labels).toContain('discount')
+    expect(semanticCallCount(fetchMock)).toBe(1)
+  })
 
   it('loads one vocabulary promise for concurrent editors', async () => {
     const fetchMock = vi.fn(async () => vocabularyResponse())
@@ -953,6 +1126,10 @@ SELECT * FROM customer_total_spent`
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 })
+
+function semanticCallCount(fetchMock: ReturnType<typeof vi.fn>): number {
+  return fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/completion')).length
+}
 
 function vocabularyResponse() {
   return new Response(
