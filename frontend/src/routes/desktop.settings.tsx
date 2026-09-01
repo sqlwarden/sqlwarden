@@ -51,16 +51,6 @@ import {
   DialogTitle,
 } from '#/components/ui/dialog'
 import { WorkspaceSettingsContent } from './orgs.$org_slug.workspaces.$workspace_id.settings'
-import { useAppShellPreferences } from '#/components/app-shell'
-import { appShellPreferenceKeys, type AppShellTheme } from '#/components/app-shell-preferences'
-import { EDITOR_THEME_LABELS, VALID_EDITOR_THEMES, type EditorThemeName } from '#/lib/editor-themes'
-import { useEditorTheme } from '#/lib/editor-themes/context'
-import {
-  EDITOR_FONTS,
-  EDITOR_FONT_SIZES,
-  useEditorFont,
-  type EditorFontSize,
-} from '#/lib/editor-font/context'
 
 export const Route = createFileRoute('/desktop/settings')({ component: DesktopSettingsPage })
 
@@ -243,7 +233,6 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
       <Tabs defaultValue="data" className="min-h-0 gap-5">
         <TabsList aria-label="Settings sections" className="max-w-full overflow-x-auto">
           <TabsTrigger value="data">Data</TabsTrigger>
-          <TabsTrigger value="appearance">Appearance &amp; Editor</TabsTrigger>
           <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
           <TabsTrigger value="storage">Storage &amp; Recovery</TabsTrigger>
           <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
@@ -370,9 +359,6 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
             </div>
           </SettingsSection>
         </TabsContent>
-        <TabsContent value="appearance">
-          <DesktopAppearanceSection />
-        </TabsContent>
         <TabsContent value="workspaces">
           <DesktopWorkspacesSection orgSlug={orgSlug} />
         </TabsContent>
@@ -498,70 +484,6 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
         </TabsContent>
       </Tabs>
     </DesktopSettingsFrame>
-  )
-}
-
-function DesktopAppearanceSection() {
-  const { preferences, setPreferences } = useAppShellPreferences()
-  const { editorThemeDark, editorThemeLight, setEditorThemeDark, setEditorThemeLight } =
-    useEditorTheme()
-  const { editorFont, editorFontSize, setEditorFont, setEditorFontSize } = useEditorFont()
-
-  function setTheme(themeMode: AppShellTheme) {
-    localStorage.setItem(appShellPreferenceKeys.themeMode, themeMode)
-    setPreferences((current) => ({ ...current, themeMode }))
-  }
-
-  return (
-    <div className="space-y-8">
-      <SettingsSection title="Appearance" description="Personalize the desktop interface.">
-        <div className="grid gap-4 pt-4 sm:grid-cols-2">
-          <ChoiceField
-            label="Theme"
-            value={preferences.themeMode}
-            options={['system', 'light', 'dark']}
-            onChange={(value) => setTheme(value as AppShellTheme)}
-          />
-        </div>
-      </SettingsSection>
-      <SettingsSection title="SQL editor" description="Choose editor colors and typography.">
-        <div className="grid gap-4 pt-4 sm:grid-cols-2">
-          <ChoiceField
-            label="Dark theme"
-            value={editorThemeDark}
-            options={VALID_EDITOR_THEMES}
-            labels={EDITOR_THEME_LABELS}
-            onChange={(value) => setEditorThemeDark(value as EditorThemeName)}
-          />
-          <ChoiceField
-            label="Light theme"
-            value={editorThemeLight}
-            options={VALID_EDITOR_THEMES}
-            labels={EDITOR_THEME_LABELS}
-            onChange={(value) => setEditorThemeLight(value as EditorThemeName)}
-          />
-          <ChoiceField
-            label="Editor font"
-            value={editorFont.fontFamily}
-            options={EDITOR_FONTS.map((font) => font.fontFamily)}
-            labels={Object.fromEntries(EDITOR_FONTS.map((font) => [font.fontFamily, font.label]))}
-            onChange={(value) => {
-              const font = EDITOR_FONTS.find((candidate) => candidate.fontFamily === value)
-              if (font) setEditorFont(font)
-            }}
-          />
-          <ChoiceField
-            label="Editor font size"
-            value={String(editorFontSize)}
-            options={EDITOR_FONT_SIZES.map(String)}
-            labels={Object.fromEntries(
-              EDITOR_FONT_SIZES.map((size) => [String(size), `${size}px`]),
-            )}
-            onChange={(value) => setEditorFontSize(Number(value) as EditorFontSize)}
-          />
-        </div>
-      </SettingsSection>
-    </div>
   )
 }
 

@@ -373,17 +373,15 @@ function RailPreferencesAndAvatar({
 
   return (
     <>
-      {!desktopMode ? (
-        <AppShellPreferencesPopover
-          preferences={preferences}
-          setPreferences={setPreferences}
-          isAdmin={session.is_instance_admin}
-          buttonLabel={expanded ? 'UI Lab' : ''}
-          buttonClassName={
-            expanded ? 'h-8 w-full justify-start gap-2 p-2 text-xs' : 'size-8 justify-center px-0'
-          }
-        />
-      ) : null}
+      <AppShellPreferencesPopover
+        preferences={preferences}
+        setPreferences={setPreferences}
+        isAdmin={session.is_instance_admin}
+        buttonLabel={expanded ? 'UI Lab' : ''}
+        buttonClassName={
+          expanded ? 'h-8 w-full justify-start gap-2 p-2 text-xs' : 'size-8 justify-center px-0'
+        }
+      />
 
       {desktopMode ? (
         <Tip label="Settings" side="right">
