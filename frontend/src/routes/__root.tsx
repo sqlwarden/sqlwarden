@@ -15,7 +15,7 @@ import { ConnectionLayoutProvider } from '#/components/ide/useConnectionLayout'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { AUTH_INVALIDATED_EVENT } from '#/lib/auth/invalidation'
 import { loginSearchFor } from '#/lib/auth/login-redirect'
-import { isNativeDesktop, startDesktopSession } from '#/lib/desktop/runtime'
+import { isNativeDesktop } from '#/lib/desktop/runtime'
 import '../styles.css'
 import { DesktopNativeEvents } from '#/components/desktop/DesktopNativeEvents'
 
@@ -38,14 +38,9 @@ function RootComponent() {
     async function handleAuthInvalidated() {
       clearAuthScopedQueryCache(queryClient)
       if (isNativeDesktop()) {
-        try {
-          await startDesktopSession()
-          await queryClient.invalidateQueries()
-          await router.invalidate()
-          return
-        } catch {
-          // The next request will retain the startup error rather than exposing login.
-        }
+        // DesktopStartupGate owns native session renewal and its failure state.
+        // Never fall through to the server-only login route.
+        return
       }
       void router.navigate({
         to: '/login',

@@ -15,6 +15,8 @@ import { LoginForm } from '#/components/auth/LoginForm'
 import { LoginSurface } from '#/components/auth/LoginSurface'
 import { usePageTitle } from '#/lib/page-title'
 import { parseLoginSearch } from '#/lib/auth/login-redirect'
+import { useDesktopRuntime } from '#/lib/desktop/context'
+import { isNativeDesktop } from '#/lib/desktop/runtime'
 
 export const Route = createFileRoute('/login')({
   validateSearch: parseLoginSearch,
@@ -26,6 +28,7 @@ function LoginPage() {
   const navigate = useNavigate()
   const { redirect } = Route.useSearch()
   const queryClient = useQueryClient()
+  const desktop = useDesktopRuntime()
   const setupStatus = useSetupStatus()
   const [values, setValues] = useState({ email: '', password: '' })
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({})
@@ -69,6 +72,10 @@ function LoginPage() {
   const formErrors = {
     ...(isApiError(mutation.error) ? (mutation.error.fieldErrors ?? {}) : {}),
     ...localErrors,
+  }
+
+  if (desktop.native || isNativeDesktop()) {
+    return <Navigate to="/" replace />
   }
 
   if (setupStatus.isLoading || (hasToken && session.isLoading)) {

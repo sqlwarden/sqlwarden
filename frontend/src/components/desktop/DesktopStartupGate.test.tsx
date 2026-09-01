@@ -3,7 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '#/test/render'
 import { useDesktopRuntime } from '#/lib/desktop/context'
 import { DesktopStartupGate } from './DesktopStartupGate'
-import { configurePersistentAccessTokens, getAccessToken } from '#/lib/auth/access-token'
+import {
+  configurePersistentAccessTokens,
+  getAccessToken,
+  setAccessToken,
+} from '#/lib/auth/access-token'
+import { AUTH_INVALIDATED_EVENT } from '#/lib/auth/invalidation'
 
 afterEach(() => {
   delete window.go
@@ -95,6 +100,37 @@ describe('DesktopStartupGate', () => {
       expect(revealData).toHaveBeenCalledOnce()
       expect(revealLogs).toHaveBeenCalledOnce()
     })
+  })
+
+  it('returns to the native startup flow when authentication is invalidated', async () => {
+    const startSession = vi
+      .fn()
+      .mockResolvedValueOnce(desktopSession())
+      .mockRejectedValueOnce(new Error('session renewal failed'))
+    window.go = {
+      main: {
+        DesktopBridge: {
+          StartSession: startSession,
+          GetInfo: vi.fn(async () => ({ version: 'test', paths: emptyPaths() })),
+          RevealDataDirectory: vi.fn(async () => undefined),
+          RevealLogDirectory: vi.fn(async () => undefined),
+        },
+      },
+    }
+
+    renderWithProviders(
+      <DesktopStartupGate>
+        <RuntimeConsumer />
+      </DesktopStartupGate>,
+    )
+
+    expect(await screen.findByText('local')).toBeInTheDocument()
+    setAccessToken('expired-token')
+    window.dispatchEvent(new Event(AUTH_INVALIDATED_EVENT))
+
+    expect(await screen.findByText('SQLWarden could not start')).toBeInTheDocument()
+    expect(screen.getByText('session renewal failed')).toBeInTheDocument()
+    expect(startSession).toHaveBeenCalledTimes(2)
   })
 })
 

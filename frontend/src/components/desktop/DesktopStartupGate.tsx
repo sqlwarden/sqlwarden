@@ -3,6 +3,7 @@ import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Skeleton } from '#/components/ui/skeleton'
 import { useBrand } from '#/lib/brand/brand'
+import { AUTH_INVALIDATED_EVENT } from '#/lib/auth/invalidation'
 import { DesktopRuntimeContext } from '#/lib/desktop/context'
 import {
   getDesktopInfo,
@@ -25,6 +26,17 @@ export function DesktopStartupGate({ children }: PropsWithChildren) {
   const [state, setState] = useState<StartupState>(() =>
     isNativeDesktop() ? { status: 'loading' } : { status: 'server' },
   )
+
+  useEffect(() => {
+    if (state.status === 'server') return
+
+    function restartDesktopSession() {
+      setState({ status: 'loading' })
+    }
+
+    window.addEventListener(AUTH_INVALIDATED_EVENT, restartDesktopSession)
+    return () => window.removeEventListener(AUTH_INVALIDATED_EVENT, restartDesktopSession)
+  }, [state.status])
 
   useEffect(() => {
     if (state.status !== 'loading') return
