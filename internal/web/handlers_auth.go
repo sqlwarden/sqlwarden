@@ -18,6 +18,10 @@ import (
 )
 
 func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) {
+	if !app.config.productCapabilities().MultiUser {
+		app.notFound(w, r)
+		return
+	}
 	var input struct {
 		Email    string              `json:"email"`
 		Name     string              `json:"name"`
@@ -87,6 +91,10 @@ func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) 
 }
 
 func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
+	if !app.config.productCapabilities().MultiUser {
+		app.notFound(w, r)
+		return
+	}
 	var input struct {
 		Email    string              `json:"email"`
 		Password string              `json:"password"`

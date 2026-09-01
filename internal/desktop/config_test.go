@@ -22,8 +22,8 @@ func TestLoadWebConfigCreatesAndReusesProtectedSecrets(t *testing.T) {
 	if first.JWT.SecretKey != second.JWT.SecretKey || first.Encryption.Key != second.Encryption.Key || first.Cookie.SecretKey != second.Cookie.SecretKey {
 		t.Fatal("desktop secrets changed between launches")
 	}
-	if first.DeploymentMode != web.DeploymentModeDesktop || first.AccessMode != web.AccessModeSingleUser {
-		t.Fatalf("unexpected topology: %s/%s", first.DeploymentMode, first.AccessMode)
+	if first.Mode != web.ModeDesktop {
+		t.Fatalf("unexpected mode: %s", first.Mode)
 	}
 	if first.DB.DSN != paths.Database || first.Files.StorageBackends["local"].RootDir != paths.Files {
 		t.Fatal("desktop paths were not applied to web configuration")

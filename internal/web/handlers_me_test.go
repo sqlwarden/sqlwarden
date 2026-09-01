@@ -490,7 +490,7 @@ func TestListMyConnections_SupportsPaginationSearchFilterAndSort(t *testing.T) {
 		body  map[string]any
 	}{
 		{envID: envAID, body: map[string]any{"name": "Primary DB", "driver": "sqlite", "dsn": "file::memory:?cache=shared"}},
-		{envID: fmt.Sprintf("%v", envBRes.BodyFields["id"]), body: map[string]any{"name": "Replica DB", "driver": "sqlite", "dsn": "file::memory:?cache=shared", "access_mode": "restricted"}},
+		{envID: fmt.Sprintf("%v", envBRes.BodyFields["id"]), body: map[string]any{"name": "Replica DB", "driver": "sqlite", "dsn": "file::memory:?cache=shared"}},
 	} {
 		res := send(t, newAuthRequest(t, http.MethodPost, meEnvConnectionsURL(wsID, tc.envID), tc.body, tok), app.routes())
 		assert.Equal(t, res.StatusCode, http.StatusCreated)

@@ -15,7 +15,7 @@ func TestConnectionCRUD(t *testing.T) {
 	org, _ := db.InsertOrg(context.Background(), "conn-test-org", "Conn Test Org")
 	ws, _ := db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "Main", "")
 
-	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "my-db", "postgres", "encrypted-dsn", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "my-db", "postgres", "encrypted-dsn")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestConnectionCRUD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	connInEnv, err := db.InsertConnection(context.Background(), ws.ID, &env.ID, "reporting-db", "postgres", "env-dsn", "open")
+	connInEnv, err := db.InsertConnection(context.Background(), ws.ID, &env.ID, "reporting-db", "postgres", "env-dsn")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestConnectionCRUD(t *testing.T) {
 		t.Fatalf("expected only env-tagged connection ID %d, got %v", connInEnv.ID, ids)
 	}
 
-	err = db.UpdateConnection(context.Background(), conn.ID, "my-db-updated", "new-encrypted-dsn", "restricted")
+	err = db.UpdateConnection(context.Background(), conn.ID, "my-db-updated", "new-encrypted-dsn")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,9 +77,6 @@ func TestConnectionCRUD(t *testing.T) {
 	}
 	if updated.Driver != "postgres" {
 		t.Fatalf("expected original driver to remain unchanged, got %s", updated.Driver)
-	}
-	if updated.AccessMode != "restricted" {
-		t.Fatalf("expected updated access mode, got %s", updated.AccessMode)
 	}
 	if updated.EnvironmentID != conn.EnvironmentID {
 		t.Fatal("expected environment_id to remain unchanged")
@@ -116,8 +113,8 @@ func TestConnectionDefaultScopeRoundTrips(t *testing.T) {
 		metadata.ScopeSegment{Kind: "schema", Name: "reporting"},
 	)
 	conn, err := db.InsertConnectionWithScope(
-		ctx, ws.ID, nil, "analytics", "postgres", "encrypted", "open", initial,
-	)
+		ctx, ws.ID, nil, "analytics", "postgres", "encrypted", initial)
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +127,7 @@ func TestConnectionDefaultScopeRoundTrips(t *testing.T) {
 	}
 
 	// The compatibility update path must not silently erase the selected scope.
-	if err := db.UpdateConnection(ctx, conn.ID, "renamed", "encrypted-2", "restricted"); err != nil {
+	if err := db.UpdateConnection(ctx, conn.ID, "renamed", "encrypted-2"); err != nil {
 		t.Fatal(err)
 	}
 	stored, _, err = db.GetConnection(ctx, conn.ID)
@@ -143,9 +140,8 @@ func TestConnectionDefaultScopeRoundTrips(t *testing.T) {
 
 	replacement := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "warehouse"})
 	if err := db.UpdateConnectionWithScopeAndPolicy(
-		ctx, conn.ID, "renamed", "encrypted-2", "restricted",
-		SchemaSnapshotPolicyInherit, replacement,
-	); err != nil {
+		ctx, conn.ID, "renamed", "encrypted-2",
+		SchemaSnapshotPolicyInherit, replacement); err != nil {
 		t.Fatal(err)
 	}
 	stored, _, err = db.GetConnection(ctx, conn.ID)
@@ -177,10 +173,10 @@ func TestListConnections_SupportsSearchFilterSortAndPagination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := db.InsertConnection(context.Background(), ws.ID, &envA.ID, "Primary DB", "postgres", "dsn-a", "open"); err != nil {
+	if _, err := db.InsertConnection(context.Background(), ws.ID, &envA.ID, "Primary DB", "postgres", "dsn-a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.InsertConnection(context.Background(), ws.ID, &envB.ID, "Replica DB", "mysql", "dsn-b", "restricted"); err != nil {
+	if _, err := db.InsertConnection(context.Background(), ws.ID, &envB.ID, "Replica DB", "mysql", "dsn-b"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -227,7 +223,7 @@ func TestInsertConnectionWithExecutor_RollsBackConnectionAndHierarchy(t *testing
 			var conn Connection
 			err = db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 				var err error
-				conn, err = db.InsertConnectionWithExecutor(ctx, tx, ws.ID, nil, "Rolled Back", "postgres", "dsn", "open")
+				conn, err = db.InsertConnectionWithExecutor(ctx, tx, ws.ID, nil, "Rolled Back", "postgres", "dsn")
 				if err != nil {
 					return err
 				}
@@ -262,7 +258,7 @@ func TestDeleteConnection_RemovesHierarchyAtomically(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			conn, err := db.InsertConnection(ctx, ws.ID, nil, "Primary", "postgres", "dsn", "open")
+			conn, err := db.InsertConnection(ctx, ws.ID, nil, "Primary", "postgres", "dsn")
 			if err != nil {
 				t.Fatal(err)
 			}

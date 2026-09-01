@@ -40,6 +40,7 @@ func run(args []string) error {
 		fmt.Printf("version: %s\n", version.Get())
 		return nil
 	}
+	cfg.Mode = web.ModeServer
 
 	logger, err := web.NewLogger(cfg, os.Stdout)
 	if err != nil {
@@ -71,6 +72,7 @@ func runRotateKeys(args []string) error {
 	if err != nil {
 		return err
 	}
+	cfg.Mode = web.ModeServer
 
 	logger, err := web.NewLogger(cfg, os.Stdout)
 	if err != nil {

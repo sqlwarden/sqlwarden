@@ -81,8 +81,7 @@ func LoadWebConfig(dataDir string) (web.Config, Paths, error) {
 
 	cfg := web.DefaultConfig()
 	cfg.BootstrapBaseURL = "http://localhost"
-	cfg.DeploymentMode = web.DeploymentModeDesktop
-	cfg.AccessMode = web.AccessModeSingleUser
+	cfg.Mode = web.ModeDesktop
 	cfg.DB.Driver = "sqlite"
 	cfg.DB.DSN = paths.Database
 	cfg.DB.Automigrate = true
@@ -97,13 +96,6 @@ func LoadWebConfig(dataDir string) (web.Config, Paths, error) {
 	cfg.Files.StorageBackends = map[string]web.FileStorageBackend{
 		"local": {Type: web.FilesStorageBackendFilesystem, RootDir: paths.Files},
 	}
-	cfg.Desktop.AppDir = paths.DataDir
-	cfg.Desktop.ActiveBackend = "local"
-	cfg.Desktop.AllowUserBackends = false
-	cfg.Desktop.Backends = []web.DesktopBackend{{
-		ID: "local", Name: "Local", Kind: web.DesktopBackendKindLocal,
-		AccessMode: web.AccessModeSingleUser, Locked: true,
-	}}
 	return cfg, paths, nil
 }
 

@@ -12,43 +12,31 @@ import (
 )
 
 const (
-	defaultBaseURL              = "http://localhost:6020"
-	defaultHTTPPort             = 6020
-	defaultDeploymentMode       = DeploymentModeServer
-	defaultAccessMode           = AccessModeMultiUser
-	defaultLogFormat            = LogFormatJSON
-	defaultCookieSecretKey      = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
-	defaultDBDriver             = "sqlite"
-	defaultDBDSN                = "~/.sqlwarden/sqlwarden.db"
-	defaultDBAutomigrate        = true
-	defaultEncryptionKey        = "dev-insecure-key-32byteslong!!"
-	defaultJWTSecretKey         = "fb57i5hiud5mzmykaquqsln5gcmolbac"
-	defaultTLSEnabled           = false
-	defaultTLSCertFile          = ""
-	defaultTLSKeyFile           = ""
-	defaultFilesStorageMode     = FilesStorageModeObject
-	defaultFilesActiveBackend   = "local"
-	defaultFilesRootDir         = "~/.sqlwarden/files"
-	defaultDesktopAppDir        = ""
-	defaultDesktopActiveBackend = "local"
-	defaultAllowUserBackends    = true
+	defaultBaseURL            = "http://localhost:6020"
+	defaultHTTPPort           = 6020
+	defaultMode               = ModeServer
+	defaultLogFormat          = LogFormatJSON
+	defaultCookieSecretKey    = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
+	defaultDBDriver           = "sqlite"
+	defaultDBDSN              = "~/.sqlwarden/sqlwarden.db"
+	defaultDBAutomigrate      = true
+	defaultEncryptionKey      = "dev-insecure-key-32byteslong!!"
+	defaultJWTSecretKey       = "fb57i5hiud5mzmykaquqsln5gcmolbac"
+	defaultTLSEnabled         = false
+	defaultTLSCertFile        = ""
+	defaultTLSKeyFile         = ""
+	defaultFilesStorageMode   = FilesStorageModeObject
+	defaultFilesActiveBackend = "local"
+	defaultFilesRootDir       = "~/.sqlwarden/files"
 )
 
 var defaultSQLiteDriverSources = []string{}
 
-const (
-	DeploymentModeServer  = "server"
-	DeploymentModeDesktop = "desktop"
-)
+type Mode string
 
 const (
-	AccessModeMultiUser  = "multi_user"
-	AccessModeSingleUser = "single_user"
-)
-
-const (
-	DesktopBackendKindLocal  = "local"
-	DesktopBackendKindRemote = "remote"
+	ModeServer  Mode = "server"
+	ModeDesktop Mode = "desktop"
 )
 
 const (
@@ -77,8 +65,7 @@ const (
 type Config struct {
 	BootstrapBaseURL string
 	HTTPPort         int
-	DeploymentMode   string
-	AccessMode       string
+	Mode             Mode
 	Log              struct {
 		Format string
 	}
@@ -114,12 +101,6 @@ type Config struct {
 		ActiveStorageBackend string
 		StorageBackends      map[string]FileStorageBackend
 	}
-	Desktop struct {
-		AppDir            string
-		ActiveBackend     string
-		AllowUserBackends bool
-		Backends          []DesktopBackend
-	}
 }
 
 type FileStorageBackend struct {
@@ -127,22 +108,11 @@ type FileStorageBackend struct {
 	RootDir string `mapstructure:"root_dir"`
 }
 
-type DesktopBackend struct {
-	ID          string `mapstructure:"id"`
-	Name        string `mapstructure:"name"`
-	Kind        string `mapstructure:"kind"`
-	URL         string `mapstructure:"url"`
-	Environment string `mapstructure:"environment"`
-	AccessMode  string `mapstructure:"access_mode"`
-	Locked      bool   `mapstructure:"locked"`
-}
-
 func DefaultConfig() Config {
 	cfg := Config{}
 	cfg.BootstrapBaseURL = defaultBaseURL
 	cfg.HTTPPort = defaultHTTPPort
-	cfg.DeploymentMode = defaultDeploymentMode
-	cfg.AccessMode = defaultAccessMode
+	cfg.Mode = defaultMode
 	cfg.Log.Format = defaultLogFormat
 	cfg.Cookie.SecretKey = defaultCookieSecretKey
 	cfg.DB.Driver = defaultDBDriver
@@ -157,10 +127,6 @@ func DefaultConfig() Config {
 	cfg.Files.StorageMode = defaultFilesStorageMode
 	cfg.Files.ActiveStorageBackend = defaultFilesActiveBackend
 	cfg.Files.StorageBackends = defaultFileStorageBackends()
-	cfg.Desktop.AppDir = defaultDesktopAppDir
-	cfg.Desktop.ActiveBackend = defaultDesktopActiveBackend
-	cfg.Desktop.AllowUserBackends = defaultAllowUserBackends
-	cfg.Desktop.Backends = defaultDesktopBackends()
 	return cfg
 }
 
@@ -169,17 +135,6 @@ func defaultFileStorageBackends() map[string]FileStorageBackend {
 		defaultFilesActiveBackend: {
 			Type:    FilesStorageBackendFilesystem,
 			RootDir: defaultFilesRootDir,
-		},
-	}
-}
-
-func defaultDesktopBackends() []DesktopBackend {
-	return []DesktopBackend{
-		{
-			ID:         "local",
-			Name:       "Local",
-			Kind:       DesktopBackendKindLocal,
-			AccessMode: AccessModeSingleUser,
 		},
 	}
 }
@@ -313,11 +268,8 @@ func validateConfig(cfg Config) error {
 	if strings.TrimSpace(cfg.BootstrapBaseURL) == "" || !validator.IsURL(cfg.BootstrapBaseURL) {
 		return fmt.Errorf("base_url must be a valid URL")
 	}
-	if cfg.DeploymentMode != DeploymentModeServer && cfg.DeploymentMode != DeploymentModeDesktop {
-		return fmt.Errorf("deployment_mode must be %q or %q", DeploymentModeServer, DeploymentModeDesktop)
-	}
-	if cfg.AccessMode != AccessModeMultiUser && cfg.AccessMode != AccessModeSingleUser {
-		return fmt.Errorf("access_mode must be %q or %q", AccessModeMultiUser, AccessModeSingleUser)
+	if cfg.Mode != ModeServer && cfg.Mode != ModeDesktop {
+		return fmt.Errorf("mode must be %q or %q", ModeServer, ModeDesktop)
 	}
 	if !isSupportedLogFormat(cfg.Log.Format) {
 		return fmt.Errorf("log.format must be %q or %q", LogFormatJSON, LogFormatText)
@@ -346,44 +298,6 @@ func validateConfig(cfg Config) error {
 	if err := validateFileStorageBackends(cfg); err != nil {
 		return err
 	}
-	if strings.TrimSpace(cfg.Desktop.ActiveBackend) == "" {
-		return fmt.Errorf("desktop.active_backend is required")
-	}
-
-	seenBackendIDs := map[string]struct{}{}
-	activeBackendFound := false
-	for _, backend := range cfg.Desktop.Backends {
-		if strings.TrimSpace(backend.ID) == "" {
-			return fmt.Errorf("desktop.backends[].id is required")
-		}
-		if _, exists := seenBackendIDs[backend.ID]; exists {
-			return fmt.Errorf("desktop backend %q is duplicated", backend.ID)
-		}
-		seenBackendIDs[backend.ID] = struct{}{}
-
-		if strings.TrimSpace(backend.Name) == "" {
-			return fmt.Errorf("desktop backend %q name is required", backend.ID)
-		}
-		if backend.Kind != DesktopBackendKindLocal && backend.Kind != DesktopBackendKindRemote {
-			return fmt.Errorf("desktop backend %q kind must be %q or %q", backend.ID, DesktopBackendKindLocal, DesktopBackendKindRemote)
-		}
-		if backend.Kind == DesktopBackendKindRemote && strings.TrimSpace(backend.URL) == "" {
-			return fmt.Errorf("desktop remote backend %q url is required", backend.ID)
-		}
-		if backend.Kind == DesktopBackendKindLocal && strings.TrimSpace(backend.URL) != "" {
-			return fmt.Errorf("desktop local backend %q must not set url", backend.ID)
-		}
-		if backend.AccessMode != "" && backend.AccessMode != AccessModeMultiUser && backend.AccessMode != AccessModeSingleUser {
-			return fmt.Errorf("desktop backend %q access_mode must be %q or %q", backend.ID, AccessModeMultiUser, AccessModeSingleUser)
-		}
-		if backend.ID == cfg.Desktop.ActiveBackend {
-			activeBackendFound = true
-		}
-	}
-	if !activeBackendFound {
-		return fmt.Errorf("desktop.active_backend %q must reference a configured backend", cfg.Desktop.ActiveBackend)
-	}
-
 	return nil
 }
 

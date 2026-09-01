@@ -69,7 +69,7 @@ func TestConnectionInheritsOrgRoleViaHierarchy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "MyConn", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "MyConn", "postgres", "enc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestWorkspaceRoleBindingFlowsToConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "C", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "C", "postgres", "enc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestDirectPermissionOnWorkspaceFlowsToConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "C", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "C", "postgres", "enc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,11 +271,11 @@ func TestConnectionBindingDoesNotLeakToSibling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn1, err := db.InsertConnection(context.Background(), ws.ID, nil, "C1", "postgres", "enc", "open")
+	conn1, err := db.InsertConnection(context.Background(), ws.ID, nil, "C1", "postgres", "enc")
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn2, err := db.InsertConnection(context.Background(), ws.ID, nil, "C2", "postgres", "enc", "open")
+	conn2, err := db.InsertConnection(context.Background(), ws.ID, nil, "C2", "postgres", "enc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +363,7 @@ func TestChildBindingDoesNotPropagateToParent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "C", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "C", "postgres", "enc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1041,7 +1041,7 @@ func TestAncestoryCacheInvalidatedAfterDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "C", "postgres", "enc", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "C", "postgres", "enc")
 	if err != nil {
 		t.Fatal(err)
 	}

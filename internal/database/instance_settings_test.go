@@ -277,11 +277,11 @@ func TestListPersonalConnectionIDs(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			orgConn, err := db.InsertConnection(context.Background(), orgWS.ID, &orgDefault, "org-db", "sqlite", "enc", "open")
+			orgConn, err := db.InsertConnection(context.Background(), orgWS.ID, &orgDefault, "org-db", "sqlite", "enc")
 			if err != nil {
 				t.Fatal(err)
 			}
-			spaceConn, err := db.InsertConnection(context.Background(), spaceWS.ID, &spaceDefault, "space-db", "sqlite", "enc", "open")
+			spaceConn, err := db.InsertConnection(context.Background(), spaceWS.ID, &spaceDefault, "space-db", "sqlite", "enc")
 			if err != nil {
 				t.Fatal(err)
 			}

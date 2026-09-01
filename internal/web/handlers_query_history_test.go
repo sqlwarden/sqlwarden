@@ -19,7 +19,7 @@ func setupQueryHistoryTestConnection(t *testing.T, app *application) (database.O
 	account, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "query-history"), "Query History Owner", "Query History Org")
 	ws := seedWorkspaceForAccount(t, app, org, account, "Query History WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Query History Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Query History Conn")
 
 	return org, conn, tok, orgConnectionURL(org.Slug, ws.ID, envID, fmt.Sprintf("%d", conn.ID))
 }
@@ -109,7 +109,7 @@ func TestListWorkspaceQueryHistory_AcrossConnectionsAndFilter(t *testing.T) {
 	app := newTestApp(t)
 	org, conn, tok, baseURL := setupQueryHistoryTestConnection(t, app)
 	envID := defaultEnvironmentID(t, app, conn.WorkspaceID)
-	otherConn := seedConnection(t, app, conn.WorkspaceID, &envID, org.ID, "sqlite", "Query History Conn 2", "open")
+	otherConn := seedConnection(t, app, conn.WorkspaceID, &envID, org.ID, "sqlite", "Query History Conn 2")
 	otherConnURL := orgConnectionURL(org.Slug, conn.WorkspaceID, envID, fmt.Sprintf("%d", otherConn.ID))
 	workspaceHistoryURL := fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/history", org.Slug, conn.WorkspaceID)
 

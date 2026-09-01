@@ -54,8 +54,7 @@ func newTestApplication(t *testing.T) *application {
 
 	app.config.JWT.SecretKey = "k7mp29rf4qxhwn8vbtaj6pgucmve53y9"
 	app.config.BootstrapBaseURL = "https://www.example.com"
-	app.config.DeploymentMode = DeploymentModeServer
-	app.config.AccessMode = AccessModeMultiUser
+	app.config.Mode = ModeServer
 	app.config.Files.StorageMode = FilesStorageModeObject
 	app.config.Files.ActiveStorageBackend = defaultFilesActiveBackend
 	app.config.Files.StorageBackends = map[string]FileStorageBackend{
@@ -484,10 +483,10 @@ func seedEnvironment(t *testing.T, app *application, workspaceID int64, orgID in
 	return env
 }
 
-func seedConnection(t *testing.T, app *application, workspaceID int64, environmentID *int64, orgID int64, driver, name, accessMode string) database.Connection {
+func seedConnection(t *testing.T, app *application, workspaceID int64, environmentID *int64, orgID int64, driver, name string) database.Connection {
 	t.Helper()
 
-	conn, err := app.db.InsertConnection(context.Background(), workspaceID, environmentID, name, driver, "dsn", accessMode)
+	conn, err := app.db.InsertConnection(context.Background(), workspaceID, environmentID, name, driver, "dsn")
 	if err != nil {
 		t.Fatal(err)
 	}

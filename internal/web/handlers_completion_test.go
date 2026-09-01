@@ -18,7 +18,7 @@ func TestCompleteConnectionSQLFromPersistentSnapshot(t *testing.T) {
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion"), "Completion", "Completion Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Completion WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Completion DB", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Completion DB")
 
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"}, metadata.ScopeSegment{Kind: "schema", Name: "public"})
 	directory := &metadata.Directory{
@@ -69,8 +69,8 @@ func TestCompleteConnectionSQLKeywordOnlyWithoutEphemeralSession(t *testing.T) {
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-ephemeral"), "Completion", "Completion Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Completion WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Completion DB", "open")
-	if err := app.db.UpdateConnectionWithPolicy(context.Background(), conn.ID, conn.Name, conn.DSNEncrypted, conn.AccessMode, database.SchemaSnapshotPolicyDisabled); err != nil {
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Completion DB")
+	if err := app.db.UpdateConnectionWithPolicy(context.Background(), conn.ID, conn.Name, conn.DSNEncrypted, database.SchemaSnapshotPolicyDisabled); err != nil {
 		t.Fatal(err)
 	}
 
@@ -106,7 +106,7 @@ func TestCompleteConnectionSQLFromEphemeralSessionMetadata(t *testing.T) {
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-ephemeral-ready"), "Completion", "Completion Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Completion WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Completion DB", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Completion DB")
 	session := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
 
 	sql := "SELECT * FROM wid"
@@ -131,8 +131,8 @@ func TestCompleteConnectionSQLRejectsInvalidOffsetsAndUnsupportedSQLite(t *testi
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-invalid"), "Completion", "Completion Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Completion WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	pg := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "PG", "open")
-	sqlite := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "SQLite", "open")
+	pg := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "PG")
+	sqlite := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "SQLite")
 
 	for _, offset := range []int{-1, 1, 99} {
 		req := newAuthRequest(t, http.MethodPost,
@@ -155,8 +155,8 @@ func TestCompleteConnectionSQLRejectsSessionFromAnotherConnection(t *testing.T) 
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-scope"), "Completion", "Completion Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Completion WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	target := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Target", "open")
-	other := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Other", "open")
+	target := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Target")
+	other := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Other")
 	disableSchemaSnapshots(t, app, target.ID)
 	session := openSchemaSession(t, app, owner.ID, other.ID, schemaFakeDriver{})
 
