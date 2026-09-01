@@ -84,9 +84,9 @@ describe('desktop settings', () => {
     expect(screen.queryByText('SMTP')).not.toBeInTheDocument()
     expect(screen.queryByText('Users')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('tab', { name: 'Appearance & Editor' }))
-    expect(screen.getByRole('combobox', { name: 'Theme' })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Editor font' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Appearance & Editor' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Theme' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Editor font' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: 'Workspaces' }))
     await user.click(screen.getByRole('button', { name: 'New workspace' }))

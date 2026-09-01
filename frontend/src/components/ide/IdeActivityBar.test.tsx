@@ -389,7 +389,7 @@ describe('IdeActivityBar', () => {
     expect(queryClient.getQueryData(['permissions', 'acme'])).toBeUndefined()
   })
 
-  it('shows desktop settings instead of the account menu in desktop mode', async () => {
+  it('shows UI Lab and desktop settings instead of the account menu in desktop mode', async () => {
     server.use(
       setupStatusHandler({
         configured: true,
@@ -423,6 +423,7 @@ describe('IdeActivityBar', () => {
       'href',
       '/desktop/settings',
     )
+    expect(screen.getByRole('button', { name: 'UI Lab' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Ada Lovelace' })).not.toBeInTheDocument()
   })
 })
