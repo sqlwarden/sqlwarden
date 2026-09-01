@@ -60,6 +60,7 @@ interface DesktopBridge {
   CreateBackup?(): Promise<string>
   RestoreBackup?(): Promise<string>
   SetUnsavedChanges?(unsaved: boolean): Promise<void>
+  SetTheme?(theme: 'dark' | 'light' | 'system', resolvedTheme: 'dark' | 'light'): Promise<void>
   DrainOpenRequests?(): Promise<NativeOpenRequests>
 }
 
@@ -124,4 +125,11 @@ export async function restoreDesktopBackup() {
 
 export async function drainDesktopOpenRequests() {
   return desktopBridge()?.DrainOpenRequests?.()
+}
+
+export async function syncDesktopTheme(
+  theme: 'dark' | 'light' | 'system',
+  resolvedTheme: 'dark' | 'light',
+) {
+  await desktopBridge()?.SetTheme?.(theme, resolvedTheme)
 }

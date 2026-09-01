@@ -85,6 +85,9 @@ export function DesktopNativeEvents() {
         on('desktop:command', (command) => {
           if (typeof command === 'string') void executeCommand(command as CommandId)
         }),
+        on('desktop:edit', (action) => {
+          if (typeof action === 'string') void executeNativeEditAction(action)
+        }),
         on('desktop:file-opened', (file) => {
           pendingFiles.push(file as NativeTextFile)
           window.dispatchEvent(
@@ -116,7 +119,7 @@ export function DesktopNativeEvents() {
       const anchor = (event.target as Element | null)?.closest(
         'a[href]',
       ) as HTMLAnchorElement | null
-      if (!anchor || !/^https?:/.test(anchor.href)) return
+      if (!anchor || !isExternalHttpURL(anchor.href)) return
       event.preventDefault()
       void platformService().openExternalURL(anchor.href)
     }
@@ -175,4 +178,49 @@ export function DesktopNativeEvents() {
       </DialogContent>
     </Dialog>
   )
+}
+
+export function isExternalHttpURL(href: string, currentHref = window.location.href) {
+  try {
+    const current = new URL(currentHref)
+    const target = new URL(href, current)
+    if (target.hostname === 'wails.localhost') return false
+    return (
+      (target.protocol === 'http:' || target.protocol === 'https:') &&
+      target.origin !== current.origin
+    )
+  } catch {
+    return false
+  }
+}
+
+const nativeEditCommands = new Set(['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll'])
+
+export async function executeNativeEditAction(action: string) {
+  if (!nativeEditCommands.has(action) || typeof document.execCommand !== 'function') return
+
+  if (action !== 'paste') {
+    document.execCommand(action)
+    return
+  }
+
+  if (document.execCommand('paste')) return
+  if (!navigator.clipboard?.readText) return
+
+  const target = document.activeElement
+  const text = await navigator.clipboard.readText().catch(() => '')
+  if (!text || !(target instanceof HTMLElement)) return
+  target.focus()
+
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+    const start = target.selectionStart ?? target.value.length
+    const end = target.selectionEnd ?? start
+    target.setRangeText(text, start, end, 'end')
+    target.dispatchEvent(
+      new InputEvent('input', { bubbles: true, data: text, inputType: 'insertFromPaste' }),
+    )
+    return
+  }
+
+  if (target.isContentEditable) document.execCommand('insertText', false, text)
 }

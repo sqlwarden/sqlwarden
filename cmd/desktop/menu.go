@@ -40,7 +40,7 @@ func desktopMenu(bridge *DesktopBridge) *menu.Menu {
 		})
 	}
 
-	root.Append(menu.EditMenu())
+	appendEditMenu(root, bridge)
 	view := root.AddSubmenu("View")
 	view.AddText("Command Palette…", keys.Combo("p", keys.CmdOrCtrlKey, keys.ShiftKey), commandCallback(bridge, "view.command-palette"))
 	view.AddText("Toggle Sidebar", keys.CmdOrCtrl("b"), commandCallback(bridge, "view.toggle-sidebar"))
@@ -55,6 +55,31 @@ func desktopMenu(bridge *DesktopBridge) *menu.Menu {
 	help.AddText("Open Logs", nil, func(*menu.CallbackData) { _ = bridge.RevealLogDirectory() })
 	help.AddText("Check for Updates…", nil, func(*menu.CallbackData) { bridge.OpenReleasePage() })
 	return root
+}
+
+func appendEditMenu(root *menu.Menu, bridge *DesktopBridge) {
+	if stdruntime.GOOS == "darwin" {
+		edit := menu.EditMenu()
+		edit.SetLabel("Edit")
+		root.Append(edit)
+		return
+	}
+
+	edit := root.AddSubmenu("Edit")
+	edit.AddText("Undo", keys.CmdOrCtrl("z"), nativeEditCallback(bridge, "undo"))
+	edit.AddText("Redo", keys.Combo("z", keys.CmdOrCtrlKey, keys.ShiftKey), nativeEditCallback(bridge, "redo"))
+	edit.AddSeparator()
+	edit.AddText("Cut", keys.CmdOrCtrl("x"), nativeEditCallback(bridge, "cut"))
+	edit.AddText("Copy", keys.CmdOrCtrl("c"), nativeEditCallback(bridge, "copy"))
+	edit.AddText("Paste", keys.CmdOrCtrl("v"), nativeEditCallback(bridge, "paste"))
+	edit.AddSeparator()
+	edit.AddText("Select All", keys.CmdOrCtrl("a"), nativeEditCallback(bridge, "selectAll"))
+}
+
+func nativeEditCallback(bridge *DesktopBridge, action string) menu.Callback {
+	return func(*menu.CallbackData) {
+		wailsruntime.EventsEmit(bridge.context(), "desktop:edit", action)
+	}
 }
 
 func commandCallback(bridge *DesktopBridge, command string) menu.Callback {
