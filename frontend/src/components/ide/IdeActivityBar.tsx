@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { orgRuntimeSettingsQueryOptions } from '#/lib/api/query'
@@ -30,6 +30,7 @@ import {
 import { Tip } from './schema-diagram/Tip'
 import { WorkspaceSelector } from './WorkspaceSelector'
 import { useSetupStatus } from '#/hooks/use-setup-status'
+import { registerCommand } from '#/lib/commands/registry'
 
 type IdeActivityBarProps = {
   orgSlug: string
@@ -38,6 +39,7 @@ type IdeActivityBarProps = {
   onSelectWorkspace: (id: number) => void
   session: SessionResponse | undefined
   canAccessOrgSettings: boolean
+  canCreateWorkspace?: boolean
   canAccessWorkspaceGeneralSettings: boolean
   canAccessWorkspaceAccessControl: boolean
 }
@@ -49,6 +51,7 @@ export function IdeActivityBar({
   onSelectWorkspace,
   session,
   canAccessOrgSettings,
+  canCreateWorkspace = false,
   canAccessWorkspaceGeneralSettings,
   canAccessWorkspaceAccessControl,
 }: IdeActivityBarProps) {
@@ -58,6 +61,7 @@ export function IdeActivityBar({
   const setActiveActivity = useIde((s) => s.setActiveActivity)
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
   const setActivityBarExpanded = useIde((s) => s.setActivityBarExpanded)
+  const setupStatus = useSetupStatus()
 
   const runtimeSettings = useQuery(orgRuntimeSettingsQueryOptions(orgSlug))
   const visibilityContext: ActivityVisibilityContext = {
@@ -65,6 +69,11 @@ export function IdeActivityBar({
     queryFavoritesMode: runtimeSettings.data?.effective.query_favorites_mode ?? 'backend',
   }
   const activities = visibleActivities(visibilityContext)
+
+  useEffect(
+    () => registerCommand('view.toggle-sidebar', () => setSidebarCollapsed(!sidebarCollapsed)),
+    [setSidebarCollapsed, sidebarCollapsed],
+  )
 
   function handleClick(activity: IdeActivity) {
     const isActive = activity.id === activeActivityId
@@ -131,9 +140,12 @@ export function IdeActivityBar({
         />
       ) : null}
       <WorkspaceSelector
+        orgSlug={orgSlug}
         workspaces={workspaces}
         activeWorkspace={activeWorkspace}
         onSelect={onSelectWorkspace}
+        canCreate={canCreateWorkspace}
+        nativeShell={setupStatus.data?.capabilities.native_shell === true}
         expanded={activityBarExpanded}
       />
       <RailPreferencesAndAvatar
@@ -361,15 +373,17 @@ function RailPreferencesAndAvatar({
 
   return (
     <>
-      <AppShellPreferencesPopover
-        preferences={preferences}
-        setPreferences={setPreferences}
-        isAdmin={session.is_instance_admin}
-        buttonLabel={expanded ? 'UI Lab' : ''}
-        buttonClassName={
-          expanded ? 'h-8 w-full justify-start gap-2 p-2 text-xs' : 'size-8 justify-center px-0'
-        }
-      />
+      {!desktopMode ? (
+        <AppShellPreferencesPopover
+          preferences={preferences}
+          setPreferences={setPreferences}
+          isAdmin={session.is_instance_admin}
+          buttonLabel={expanded ? 'UI Lab' : ''}
+          buttonClassName={
+            expanded ? 'h-8 w-full justify-start gap-2 p-2 text-xs' : 'size-8 justify-center px-0'
+          }
+        />
+      ) : null}
 
       {desktopMode ? (
         <Tip label="Settings" side="right">

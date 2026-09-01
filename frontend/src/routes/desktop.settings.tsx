@@ -5,7 +5,6 @@ import { toast } from 'sonner'
 import { RoutePending } from '#/components/RoutePending'
 import { Alert, AlertDescription, AlertTitle } from '#/components/ui/alert'
 import { Button } from '#/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Checkbox } from '#/components/ui/checkbox'
 import {
   Field,
@@ -21,17 +20,47 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { api } from '#/lib/api/client'
 import { errorMessage, isApiError } from '#/lib/api/errors'
-import { instanceSettingsQueryOptions, orgQueryOptions, queryKeys } from '#/lib/api/query'
+import {
+  instanceConfigurationQueryOptions,
+  instanceSettingsQueryOptions,
+  orgQueryOptions,
+  orgWorkspacesQueryOptions,
+  queryKeys,
+} from '#/lib/api/query'
 import type { InstanceSettings, Organization } from '#/lib/api/types'
 import { useDesktopRuntime } from '#/lib/desktop/context'
 import {
   getDesktopInfo,
+  createDesktopBackup,
+  openDesktopReleasePage,
+  revealDesktopBackupDirectory,
   revealDesktopDataDirectory,
   revealDesktopLogDirectory,
+  saveDesktopDiagnostics,
+  restoreDesktopBackup,
   type DesktopInfo,
 } from '#/lib/desktop/runtime'
 import { Icon } from '#/lib/icons'
 import { usePageTitle } from '#/lib/page-title'
+import { CreateWorkspaceDialog } from '#/components/workspaces/CreateWorkspaceDialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '#/components/ui/dialog'
+import { WorkspaceSettingsContent } from './orgs.$org_slug.workspaces.$workspace_id.settings'
+import { useAppShellPreferences } from '#/components/app-shell'
+import { appShellPreferenceKeys, type AppShellTheme } from '#/components/app-shell-preferences'
+import { EDITOR_THEME_LABELS, VALID_EDITOR_THEMES, type EditorThemeName } from '#/lib/editor-themes'
+import { useEditorTheme } from '#/lib/editor-themes/context'
+import {
+  EDITOR_FONTS,
+  EDITOR_FONT_SIZES,
+  useEditorFont,
+  type EditorFontSize,
+} from '#/lib/editor-font/context'
 
 export const Route = createFileRoute('/desktop/settings')({ component: DesktopSettingsPage })
 
@@ -42,6 +71,13 @@ interface DesktopSettingsForm {
   queryMaxResultBytes: string
   queryCursorPageSize: string
   schemaSnapshotFreshnessSeconds: string
+  exportsSyncMaxBytes: string
+  exportsBackgroundMaxBytes: string
+  fileRevisionsEnabled: boolean
+  fileRevisionsKeepLatest: string
+  queryHistoryMode: InstanceSettings['query_history_mode']
+  queryHistoryRetentionCount: string
+  queryFavoritesMode: InstanceSettings['query_favorites_mode']
 }
 
 type FormErrors = Partial<Record<keyof DesktopSettingsForm, string>>
@@ -54,6 +90,13 @@ function formFrom(org: Organization, settings: InstanceSettings): DesktopSetting
     queryMaxResultBytes: String(settings.query_max_result_bytes),
     queryCursorPageSize: String(settings.query_cursor_page_size),
     schemaSnapshotFreshnessSeconds: String(settings.schema_snapshot_freshness_seconds),
+    exportsSyncMaxBytes: String(settings.exports_sync_max_bytes),
+    exportsBackgroundMaxBytes: String(settings.exports_background_max_bytes),
+    fileRevisionsEnabled: settings.file_revisions_enabled,
+    fileRevisionsKeepLatest: String(settings.file_revisions_keep_latest),
+    queryHistoryMode: settings.query_history_mode,
+    queryHistoryRetentionCount: String(settings.query_history_retention_count),
+    queryFavoritesMode: settings.query_favorites_mode,
   }
 }
 
@@ -74,6 +117,7 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
   const queryClient = useQueryClient()
   const org = useQuery(orgQueryOptions(orgSlug))
   const settings = useQuery(instanceSettingsQueryOptions())
+  const configuration = useQuery(instanceConfigurationQueryOptions())
   const [form, setForm] = useState<DesktopSettingsForm | null>(null)
   const [original, setOriginal] = useState<DesktopSettingsForm | null>(null)
   const [fieldErrors, setFieldErrors] = useState<FormErrors>({})
@@ -116,10 +160,20 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
         ['queryMaxResultBytes', 'query_max_result_bytes'],
         ['queryCursorPageSize', 'query_cursor_page_size'],
         ['schemaSnapshotFreshnessSeconds', 'schema_snapshot_freshness_seconds'],
+        ['exportsSyncMaxBytes', 'exports_sync_max_bytes'],
+        ['exportsBackgroundMaxBytes', 'exports_background_max_bytes'],
+        ['fileRevisionsKeepLatest', 'file_revisions_keep_latest'],
+        ['queryHistoryRetentionCount', 'query_history_retention_count'],
       ] as const
       for (const [formKey, apiKey] of numericFields) {
         if (form[formKey] !== original[formKey]) instancePatch[apiKey] = Number(form[formKey])
       }
+      if (form.fileRevisionsEnabled !== original.fileRevisionsEnabled)
+        instancePatch.file_revisions_enabled = form.fileRevisionsEnabled
+      if (form.queryHistoryMode !== original.queryHistoryMode)
+        instancePatch.query_history_mode = form.queryHistoryMode
+      if (form.queryFavoritesMode !== original.queryFavoritesMode)
+        instancePatch.query_favorites_mode = form.queryFavoritesMode
 
       await Promise.all([
         Object.keys(orgPatch).length
@@ -155,7 +209,7 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
   if (org.isLoading || settings.isLoading || !form || !original) return <RoutePending />
   if (unavailable) {
     return (
-      <DesktopSettingsFrame orgSlug={orgSlug} saveDisabled>
+      <DesktopSettingsFrame orgSlug={orgSlug}>
         <Alert variant="destructive">
           <AlertTitle>Settings unavailable</AlertTitle>
           <AlertDescription>Settings are temporarily unavailable.</AlertDescription>
@@ -165,7 +219,7 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
   }
   if (org.isError || settings.isError) {
     return (
-      <DesktopSettingsFrame orgSlug={orgSlug} saveDisabled>
+      <DesktopSettingsFrame orgSlug={orgSlug}>
         <p className="text-sm text-muted-foreground">Failed to load settings.</p>
       </DesktopSettingsFrame>
     )
@@ -185,26 +239,22 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
   }
 
   return (
-    <DesktopSettingsFrame
-      orgSlug={orgSlug}
-      saveDisabled={!changed || save.isPending}
-      savePending={save.isPending}
-      onSave={() => save.mutate()}
-    >
-      <Tabs defaultValue="data" className="gap-5">
-        <TabsList aria-label="Settings sections">
+    <DesktopSettingsFrame orgSlug={orgSlug}>
+      <Tabs defaultValue="data" className="min-h-0 gap-5">
+        <TabsList aria-label="Settings sections" className="max-w-full overflow-x-auto">
           <TabsTrigger value="data">Data</TabsTrigger>
-          <TabsTrigger value="about">About &amp; Storage</TabsTrigger>
+          <TabsTrigger value="appearance">Appearance &amp; Editor</TabsTrigger>
+          <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
+          <TabsTrigger value="storage">Storage &amp; Recovery</TabsTrigger>
+          <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
+          <TabsTrigger value="about">About</TabsTrigger>
         </TabsList>
-        <TabsContent value="data" className="space-y-4">
-          <Card>
-            <CardHeader className="border-b border-border">
-              <CardTitle>Schema metadata</CardTitle>
-              <CardDescription>
-                Control metadata retained for local editor features.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+        <TabsContent value="data" className="space-y-8">
+          <SettingsSection
+            title="Schema metadata"
+            description="Control metadata retained for local editor features."
+          >
+            <div className="pt-4">
               <FieldGroup>
                 <CheckboxField
                   id="schema-snapshots"
@@ -221,16 +271,18 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
                   onChange={(checked) => update('maskConnectionCredentialsOnEdit', checked)}
                 />
               </FieldGroup>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="border-b border-border">
-              <CardTitle>Query limits</CardTitle>
-              <CardDescription>
-                Bound local query results and schema refresh behavior.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+            </div>
+          </SettingsSection>
+          <SettingsSection
+            title="Query limits"
+            description="Bound local query results and schema refresh behavior."
+            action={
+              <Button onClick={() => save.mutate()} disabled={!changed || save.isPending}>
+                {save.isPending ? 'Saving…' : 'Save changes'}
+              </Button>
+            }
+          >
+            <div className="pt-4">
               <FieldGroup className="grid gap-4 sm:grid-cols-2">
                 <NumberField
                   label="Maximum result rows"
@@ -257,17 +309,79 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
                   onChange={(value) => update('schemaSnapshotFreshnessSeconds', value)}
                 />
               </FieldGroup>
-            </CardContent>
-          </Card>
+            </div>
+          </SettingsSection>
+          <SettingsSection
+            title="History, files & exports"
+            description="Choose what is retained locally and how large exported results may be."
+          >
+            <div className="pt-4">
+              <FieldGroup className="grid gap-4 sm:grid-cols-2">
+                <NumberField
+                  label="Synchronous export bytes"
+                  value={form.exportsSyncMaxBytes}
+                  error={fieldErrors.exportsSyncMaxBytes}
+                  onChange={(value) => update('exportsSyncMaxBytes', value)}
+                />
+                <NumberField
+                  label="Background export bytes"
+                  value={form.exportsBackgroundMaxBytes}
+                  error={fieldErrors.exportsBackgroundMaxBytes}
+                  onChange={(value) => update('exportsBackgroundMaxBytes', value)}
+                />
+                <NumberField
+                  label="File revisions retained"
+                  value={form.fileRevisionsKeepLatest}
+                  error={fieldErrors.fileRevisionsKeepLatest}
+                  onChange={(value) => update('fileRevisionsKeepLatest', value)}
+                />
+                <NumberField
+                  label="Query history entries retained"
+                  value={form.queryHistoryRetentionCount}
+                  error={fieldErrors.queryHistoryRetentionCount}
+                  onChange={(value) => update('queryHistoryRetentionCount', value)}
+                />
+                <ChoiceField
+                  label="Query history"
+                  value={form.queryHistoryMode}
+                  options={['backend', 'local', 'off']}
+                  onChange={(value) =>
+                    update('queryHistoryMode', value as typeof form.queryHistoryMode)
+                  }
+                />
+                <ChoiceField
+                  label="Query favorites"
+                  value={form.queryFavoritesMode}
+                  options={['backend', 'local', 'off']}
+                  onChange={(value) =>
+                    update('queryFavoritesMode', value as typeof form.queryFavoritesMode)
+                  }
+                />
+              </FieldGroup>
+              <div className="mt-4">
+                <CheckboxField
+                  id="file-revisions"
+                  checked={form.fileRevisionsEnabled}
+                  title="Keep file revisions"
+                  description="Retain prior versions of saved SQL files for local recovery."
+                  onChange={(checked) => update('fileRevisionsEnabled', checked)}
+                />
+              </div>
+            </div>
+          </SettingsSection>
         </TabsContent>
-        <TabsContent value="about">
-          <Card>
-            <CardHeader className="border-b border-border">
-              <CardTitle>Application &amp; storage</CardTitle>
-              <CardDescription>Native version and local data locations.</CardDescription>
-            </CardHeader>
-            <CardContent className="divide-y divide-border">
-              <PathRow label="Version" value={info?.version ?? 'Unknown'} />
+        <TabsContent value="appearance">
+          <DesktopAppearanceSection />
+        </TabsContent>
+        <TabsContent value="workspaces">
+          <DesktopWorkspacesSection orgSlug={orgSlug} />
+        </TabsContent>
+        <TabsContent value="storage" className="space-y-8">
+          <SettingsSection
+            title="Local storage"
+            description="SQLWarden keeps application data in platform-specific local folders."
+          >
+            <div className="divide-y divide-border pt-3">
               <PathRow
                 label="Data directory"
                 value={info?.paths.data_dir}
@@ -277,58 +391,337 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
               <PathRow label="Database" value={info?.paths.database} />
               <PathRow label="Files" value={info?.paths.files} />
               <PathRow
+                label="Credential storage"
+                value={
+                  info?.secret_store === 'keyring'
+                    ? 'Operating system credential store'
+                    : info?.secret_store === 'protected-file'
+                      ? 'Protected local file (fallback)'
+                      : 'Unavailable'
+                }
+              />
+              <PathRow
+                label="Backup directory"
+                value={info?.paths.backups}
+                action="Reveal"
+                onAction={() =>
+                  void revealDirectory(revealDesktopBackupDirectory, 'backup directory')
+                }
+              />
+            </div>
+          </SettingsSection>
+          <SettingsSection
+            title="Backup & recovery"
+            description="Create a portable backup or restore one after validating its contents."
+          >
+            <div className="flex flex-wrap gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() =>
+                  void createDesktopBackup()
+                    .then((path) => {
+                      if (path) toast.success('Backup created')
+                    })
+                    .catch((error) => toast.error(errorMessage(error, 'Failed to create backup')))
+                }
+              >
+                <Icon name="download-01" size={18} /> Create backup
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  void restoreDesktopBackup().catch((error) =>
+                    toast.error(errorMessage(error, 'Failed to restore backup')),
+                  )
+                }
+              >
+                <Icon name="refresh" size={18} /> Restore backup
+              </Button>
+            </div>
+          </SettingsSection>
+        </TabsContent>
+        <TabsContent value="diagnostics" className="space-y-8">
+          <SettingsSection
+            title="Runtime"
+            description="Details useful when diagnosing this local installation."
+          >
+            <div className="divide-y divide-border pt-3">
+              <PathRow label="Mode" value={configuration.data?.mode} />
+              <PathRow label="Database driver" value={configuration.data?.database_driver} />
+              <PathRow label="File storage" value={configuration.data?.file_storage_mode} />
+              <PathRow
+                label="Restart required"
+                value={configuration.data?.restart_required ? 'Yes' : 'No'}
+              />
+              <PathRow
                 label="Logs"
                 value={info?.paths.logs}
                 action="Reveal"
                 onAction={() => void revealDirectory(revealDesktopLogDirectory, 'log directory')}
               />
+            </div>
+          </SettingsSection>
+          {info?.startup_error ? (
+            <Alert variant="destructive">
+              <AlertTitle>Startup warning</AlertTitle>
+              <AlertDescription>{info.startup_error}</AlertDescription>
+            </Alert>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() =>
+                void saveDesktopDiagnostics().catch((error) =>
+                  toast.error(errorMessage(error, 'Failed to save diagnostics')),
+                )
+              }
+            >
+              <Icon name="download-01" size={18} /> Save diagnostics
+            </Button>
+          </div>
+        </TabsContent>
+        <TabsContent value="about">
+          <SettingsSection
+            title="SQLWarden Desktop"
+            description="A local-first SQL workspace powered by the shared SQLWarden server core."
+          >
+            <div className="divide-y divide-border pt-3">
+              <PathRow label="Version" value={info?.version ?? 'Unknown'} />
               <PathRow label="Configuration" value={info?.paths.config_file} />
-            </CardContent>
-          </Card>
+            </div>
+            <div className="pt-4">
+              <Button variant="outline" onClick={() => void openDesktopReleasePage()}>
+                <Icon name="arrow-up-right-01" size={18} /> Check for updates
+              </Button>
+            </div>
+          </SettingsSection>
         </TabsContent>
       </Tabs>
     </DesktopSettingsFrame>
   )
 }
 
-function DesktopSettingsFrame({
-  orgSlug,
+function DesktopAppearanceSection() {
+  const { preferences, setPreferences } = useAppShellPreferences()
+  const { editorThemeDark, editorThemeLight, setEditorThemeDark, setEditorThemeLight } =
+    useEditorTheme()
+  const { editorFont, editorFontSize, setEditorFont, setEditorFontSize } = useEditorFont()
+
+  function setTheme(themeMode: AppShellTheme) {
+    localStorage.setItem(appShellPreferenceKeys.themeMode, themeMode)
+    setPreferences((current) => ({ ...current, themeMode }))
+  }
+
+  return (
+    <div className="space-y-8">
+      <SettingsSection title="Appearance" description="Personalize the desktop interface.">
+        <div className="grid gap-4 pt-4 sm:grid-cols-2">
+          <ChoiceField
+            label="Theme"
+            value={preferences.themeMode}
+            options={['system', 'light', 'dark']}
+            onChange={(value) => setTheme(value as AppShellTheme)}
+          />
+        </div>
+      </SettingsSection>
+      <SettingsSection title="SQL editor" description="Choose editor colors and typography.">
+        <div className="grid gap-4 pt-4 sm:grid-cols-2">
+          <ChoiceField
+            label="Dark theme"
+            value={editorThemeDark}
+            options={VALID_EDITOR_THEMES}
+            labels={EDITOR_THEME_LABELS}
+            onChange={(value) => setEditorThemeDark(value as EditorThemeName)}
+          />
+          <ChoiceField
+            label="Light theme"
+            value={editorThemeLight}
+            options={VALID_EDITOR_THEMES}
+            labels={EDITOR_THEME_LABELS}
+            onChange={(value) => setEditorThemeLight(value as EditorThemeName)}
+          />
+          <ChoiceField
+            label="Editor font"
+            value={editorFont.fontFamily}
+            options={EDITOR_FONTS.map((font) => font.fontFamily)}
+            labels={Object.fromEntries(EDITOR_FONTS.map((font) => [font.fontFamily, font.label]))}
+            onChange={(value) => {
+              const font = EDITOR_FONTS.find((candidate) => candidate.fontFamily === value)
+              if (font) setEditorFont(font)
+            }}
+          />
+          <ChoiceField
+            label="Editor font size"
+            value={String(editorFontSize)}
+            options={EDITOR_FONT_SIZES.map(String)}
+            labels={Object.fromEntries(
+              EDITOR_FONT_SIZES.map((size) => [String(size), `${size}px`]),
+            )}
+            onChange={(value) => setEditorFontSize(Number(value) as EditorFontSize)}
+          />
+        </div>
+      </SettingsSection>
+    </div>
+  )
+}
+
+function SettingsSection({
+  title,
+  description,
+  action,
   children,
-  saveDisabled = false,
-  savePending = false,
-  onSave,
 }: {
-  orgSlug: string
+  title: string
+  description: string
+  action?: React.ReactNode
   children: React.ReactNode
-  saveDisabled?: boolean
-  savePending?: boolean
-  onSave?: () => void
 }) {
   return (
-    <main className="min-h-svh bg-background px-4 py-6 md:px-6">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
-        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
-          <div className="space-y-1">
+    <section className="border-t border-border pt-5 first:border-t-0 first:pt-0">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-heading text-base font-semibold tracking-tight">{title}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function DesktopWorkspacesSection({ orgSlug }: { orgSlug: string }) {
+  const workspaces = useQuery(
+    orgWorkspacesQueryOptions(orgSlug, { page_size: 100, sort: 'name', order: 'asc' }),
+  )
+  const [creating, setCreating] = useState(false)
+  const [managingWorkspaceId, setManagingWorkspaceId] = useState<string>()
+  const items = workspaces.data?.items ?? []
+
+  return (
+    <SettingsSection
+      title="Workspaces"
+      description="Organize connections and saved queries into separate local work areas."
+      action={
+        <Button onClick={() => setCreating(true)}>
+          <Icon name="plus-sign" size={18} /> New workspace
+        </Button>
+      }
+    >
+      <div className="mt-4 divide-y divide-border border-y border-border">
+        {workspaces.isLoading ? (
+          <p className="py-6 text-sm text-muted-foreground">Loading workspaces…</p>
+        ) : null}
+        {workspaces.isError ? (
+          <div className="flex items-center justify-between gap-3 py-4">
+            <p className="text-sm text-muted-foreground">Couldn&apos;t load workspaces.</p>
+            <Button variant="outline" size="sm" onClick={() => void workspaces.refetch()}>
+              Retry
+            </Button>
+          </div>
+        ) : null}
+        {!workspaces.isLoading && !workspaces.isError && items.length === 0 ? (
+          <p className="py-6 text-sm text-muted-foreground">
+            No workspaces yet. Create one to start connecting to databases.
+          </p>
+        ) : null}
+        {items.map((workspace) => (
+          <div key={workspace.id} className="flex flex-wrap items-center gap-3 py-3">
+            <Icon name="briefcase-01" size={17} className="text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{workspace.name}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {workspace.description || 'No description'}
+              </p>
+            </div>
             <Button
               variant="ghost"
               size="sm"
-              className="-ml-2"
-              nativeButton={false}
-              render={<Link to="/ide/$org_slug" params={{ org_slug: orgSlug }} />}
+              onClick={() => setManagingWorkspaceId(String(workspace.id))}
             >
-              <Icon name="arrow-left-01" size={20} /> Back to editor
+              Manage
             </Button>
-            <h1 className="font-heading text-xl font-semibold tracking-tight">Settings</h1>
-            <p className="text-sm text-muted-foreground">
-              Configure this local SQLWarden installation.
-            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              nativeButton={false}
+              render={
+                <Link
+                  to="/orgs/$org_slug/workspaces/$workspace_id/ide"
+                  params={{ org_slug: orgSlug, workspace_id: String(workspace.id) }}
+                />
+              }
+            >
+              Open
+            </Button>
           </div>
-          {onSave ? (
-            <Button onClick={onSave} disabled={saveDisabled}>
-              {savePending ? 'Saving…' : 'Save changes'}
-            </Button>
+        ))}
+      </div>
+      {creating ? (
+        <CreateWorkspaceDialog
+          orgSlug={orgSlug}
+          open={creating}
+          onOpenChange={setCreating}
+          onCreated={() => undefined}
+        />
+      ) : null}
+      <Dialog
+        open={Boolean(managingWorkspaceId)}
+        onOpenChange={(open) => {
+          if (!open) setManagingWorkspaceId(undefined)
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Manage workspace</DialogTitle>
+            <DialogDescription>Update this local workspace or remove it.</DialogDescription>
+          </DialogHeader>
+          {managingWorkspaceId ? (
+            <WorkspaceSettingsContent
+              orgSlug={orgSlug}
+              workspaceId={managingWorkspaceId}
+              onDeleted={() => setManagingWorkspaceId(undefined)}
+            />
           ) : null}
-        </header>
+        </DialogContent>
+      </Dialog>
+    </SettingsSection>
+  )
+}
+
+function DesktopSettingsFrame({
+  orgSlug,
+  children,
+}: {
+  orgSlug: string
+  children: React.ReactNode
+}) {
+  return (
+    <main className="min-h-svh bg-background">
+      <header className="sticky top-0 z-10 flex h-14 items-center border-b border-border bg-background px-4 md:px-6">
+        <div className="mx-auto flex w-full max-w-5xl items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            nativeButton={false}
+            render={<Link to="/ide/$org_slug" params={{ org_slug: orgSlug }} />}
+            aria-label="Back to editor"
+          >
+            <Icon name="arrow-left-01" size={18} />
+          </Button>
+          <div className="space-y-1">
+            <h1 className="font-heading text-base font-semibold tracking-tight">Settings</h1>
+            <p className="hidden text-xs text-muted-foreground sm:block">Local installation</p>
+          </div>
+        </div>
+      </header>
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6 md:px-6">
+        <div>
+          <h2 className="font-heading text-xl font-semibold tracking-tight">Desktop settings</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Configure this local SQLWarden installation.
+          </p>
+        </div>
         {children}
       </div>
     </main>
@@ -387,6 +780,38 @@ function NumberField({
   )
 }
 
+function ChoiceField({
+  label,
+  value,
+  options,
+  labels,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: readonly string[]
+  labels?: Record<string, string>
+  onChange: (value: string) => void
+}) {
+  return (
+    <Field>
+      <FieldLabel>{label}</FieldLabel>
+      <select
+        aria-label={label}
+        className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {labels?.[option] ?? option}
+          </option>
+        ))}
+      </select>
+    </Field>
+  )
+}
+
 function PathRow({
   label,
   value,
@@ -424,10 +849,17 @@ function validate(form: DesktopSettingsForm): FormErrors {
     'queryMaxResultBytes',
     'queryCursorPageSize',
     'schemaSnapshotFreshnessSeconds',
+    'exportsSyncMaxBytes',
+    'queryHistoryRetentionCount',
   ] as const) {
     const value = Number(form[key])
     if (!Number.isSafeInteger(value) || value < 1)
       errors[key] = 'Enter a whole number greater than zero.'
+  }
+  for (const key of ['exportsBackgroundMaxBytes', 'fileRevisionsKeepLatest'] as const) {
+    const value = Number(form[key])
+    if (!Number.isSafeInteger(value) || value < 0)
+      errors[key] = 'Enter a whole number of zero or greater.'
   }
   return errors
 }
@@ -438,6 +870,10 @@ function apiFieldErrors(errors: Record<string, string>): FormErrors {
     queryMaxResultBytes: errors.query_max_result_bytes,
     queryCursorPageSize: errors.query_cursor_page_size,
     schemaSnapshotFreshnessSeconds: errors.schema_snapshot_freshness_seconds,
+    exportsSyncMaxBytes: errors.exports_sync_max_bytes,
+    exportsBackgroundMaxBytes: errors.exports_background_max_bytes,
+    fileRevisionsKeepLatest: errors.file_revisions_keep_latest,
+    queryHistoryRetentionCount: errors.query_history_retention_count,
   }
 }
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sqlwarden/internal/web"
@@ -46,7 +47,48 @@ func TestLoadWebConfigRejectsExistingDatabaseWithoutSecrets(t *testing.T) {
 	if !errors.Is(err, ErrSecretsMissing) {
 		t.Fatalf("error = %v, want ErrSecretsMissing", err)
 	}
-	if paths.DataDir != dataDir || paths.Database == "" || paths.Logs == "" {
+	if paths.DataDir != filepath.Join(dataDir, "data") || paths.Database == "" || paths.Logs == "" {
 		t.Fatalf("startup failure did not preserve diagnostic paths: %+v", paths)
+	}
+}
+
+func TestLoadWebConfigSeparatesSecretsFromApplicationDatabase(t *testing.T) {
+	root := t.TempDir()
+	_, paths, err := LoadWebConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(paths.Database) == filepath.Dir(paths.ConfigFile) {
+		t.Fatalf("database and configuration share a directory: %+v", paths)
+	}
+	contents, err := os.ReadFile(paths.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secretField := range []string{"cookie_secret", "encryption_key", "jwt_secret"} {
+		if strings.Contains(string(contents), secretField) {
+			t.Fatalf("configuration contains plaintext secret field %q", secretField)
+		}
+	}
+}
+
+func TestLoadWebConfigMigratesLegacyFlatLayout(t *testing.T) {
+	root := t.TempDir()
+	legacy := `{"version":1,"cookie_secret":"cookie","encryption_key":"encryption","jwt_secret":"jwt"}`
+	if err := os.WriteFile(filepath.Join(root, "desktop.json"), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "sqlwarden.db"), []byte("database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, paths, err := LoadWebConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(paths.Database); err != nil {
+		t.Fatalf("migrated database: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "sqlwarden.db")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("legacy database still exists: %v", err)
 	}
 }

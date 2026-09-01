@@ -276,6 +276,15 @@ describe('useIdeStore', () => {
     expect(store.getState().tabs[0].isDirty).toBeUndefined()
   })
 
+  it('tracks unsaved changes for a native SQL tab and can mark it clean', () => {
+    const tab = { ...scratchTabFixture(mockWorkspace), nativePath: '/tmp/query.sql' }
+    store.getState().openTab(tab)
+    store.getState().updateTabContent(tab.id, 'SELECT 2;')
+    expect(store.getState().tabs[0].isDirty).toBe(true)
+    store.getState().markTabClean(tab.id)
+    expect(store.getState().tabs[0].isDirty).toBe(false)
+  })
+
   it('updateTabEtag clears isDirty after content was edited', () => {
     const tab = newFileTab(mockFile, mockWorkspace)
     store.getState().openTab(tab)

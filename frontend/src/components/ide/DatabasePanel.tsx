@@ -1,5 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { SearchInput } from '#/components/SearchInput'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useNavigate } from '@tanstack/react-router'
@@ -68,12 +68,22 @@ import { useConnectionActions } from './useConnectionActions'
 import { useSchemaRefresh } from './useSchemaRefresh'
 import { TransactionGuardDialog } from './TransactionGuardDialog'
 import { useTransactionMode } from './useTransactionMode'
+import {
+  NATIVE_SQLITE_SELECTED_EVENT,
+  claimPendingSQLiteFile,
+  takePendingSQLiteFiles,
+} from '#/components/desktop/DesktopNativeEvents'
 
 type DatabasePanelProps = {
   orgSlug: string
   workspace: Workspace
   maximized?: boolean
   onMaximizedChange?: (maximized: boolean) => void
+}
+
+function nativeSQLiteName(path: string) {
+  const filename = path.split(/[\\/]/).pop() || 'SQLite database'
+  return filename.replace(/\.(?:db|sqlite|sqlite3)$/i, '') || 'SQLite database'
 }
 
 export function DatabasePanel({
@@ -91,6 +101,11 @@ export function DatabasePanel({
   const [addEnvOpen, setAddEnvOpen] = useState(false)
   const [addConnEnvironmentId, setAddConnEnvironmentId] = useState<number | null>(null)
   const [addConnOpen, setAddConnOpen] = useState(false)
+  const [nativeSQLite, setNativeSQLite] = useState<{
+    path: string
+    environmentId: number
+    initialFields: Record<string, string>
+  } | null>(null)
   const [envName, setEnvName] = useState('')
   const [envDescription, setEnvDescription] = useState('')
   const [envNameError, setEnvNameError] = useState<string | undefined>(undefined)
@@ -147,7 +162,7 @@ export function DatabasePanel({
   )
   const connections = useQuery(allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id))
 
-  const envItems = environments.data?.items ?? []
+  const envItems = useMemo(() => environments.data?.items ?? [], [environments.data?.items])
   const connItems = connections.data?.items ?? []
   const envNameById = (id: number) => envItems.find((e) => e.id === id)?.name ?? ''
 
@@ -254,6 +269,51 @@ export function DatabasePanel({
   // Connection creation is available from the panel header regardless of the
   // grouped/flat layout; per-environment permissions are enforced server-side.
   const canAddConnection = envItems.length > 0 && canCreateConnectionInWorkspace
+
+  useEffect(() => {
+    async function openSQLiteConnection(path: string) {
+      if (!canCreateConnectionInWorkspace) {
+        toast.error('You do not have permission to create connections in this workspace.')
+        return
+      }
+      let environment = envItems[0]
+      if (!environment) {
+        if (!canCreateEnvironment) {
+          toast.error('Create an environment before adding a SQLite database.')
+          return
+        }
+        try {
+          environment = await api.post<Environment>(
+            `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/environments`,
+            { name: 'Local', description: 'Local desktop databases' },
+          )
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.orgEnvironmentsScope(orgSlug, workspace.id),
+          })
+        } catch (error) {
+          toast.error(errorMessage(error, 'Failed to prepare a local environment'))
+          return
+        }
+      }
+      setNativeSQLite({ path, environmentId: environment.id, initialFields: { path } })
+    }
+
+    for (const path of takePendingSQLiteFiles()) void openSQLiteConnection(path)
+    const listener = (event: Event) => {
+      const path = (event as CustomEvent<string>).detail
+      claimPendingSQLiteFile(path)
+      void openSQLiteConnection(path)
+    }
+    window.addEventListener(NATIVE_SQLITE_SELECTED_EVENT, listener)
+    return () => window.removeEventListener(NATIVE_SQLITE_SELECTED_EVENT, listener)
+  }, [
+    canCreateConnectionInWorkspace,
+    canCreateEnvironment,
+    envItems,
+    orgSlug,
+    queryClient,
+    workspace.id,
+  ])
   const actions =
     canAddConnection || canCreateEnvironment ? (
       <DropdownMenu>
@@ -574,17 +634,21 @@ export function DatabasePanel({
       </AlertDialog>
 
       <ConnectionDialog
-        open={addConnOpen || addConnEnvironmentId !== null}
+        open={addConnOpen || addConnEnvironmentId !== null || nativeSQLite !== null}
         onOpenChange={(open) => {
           if (!open) {
             setAddConnOpen(false)
             setAddConnEnvironmentId(null)
+            setNativeSQLite(null)
           }
         }}
         orgSlug={orgSlug}
         workspaceId={workspace.id}
         environments={envItems}
-        lockedEnvironmentId={addConnEnvironmentId ?? undefined}
+        lockedEnvironmentId={nativeSQLite?.environmentId ?? addConnEnvironmentId ?? undefined}
+        initialDriverId={nativeSQLite ? 'sqlite' : undefined}
+        initialFields={nativeSQLite?.initialFields}
+        initialName={nativeSQLite ? nativeSQLiteName(nativeSQLite.path) : undefined}
       />
 
       <TransactionGuardDialog

@@ -231,19 +231,6 @@ func (app *application) updateWorkspace(w http.ResponseWriter, r *http.Request) 
 
 func (app *application) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	ws := contextGetWorkspace(r)
-	if app.config.isDesktop() && ws.OrgID != nil {
-		app.desktopWorkspaceMu.Lock()
-		defer app.desktopWorkspaceMu.Unlock()
-		count, err := app.db.CountOrganizationWorkspaces(r.Context(), *ws.OrgID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if count <= 1 {
-			app.apiError(w, r, http.StatusConflict, apiErrorConflict, "The last desktop workspace cannot be deleted.", response.APIError{}, nil)
-			return
-		}
-	}
 	err := app.db.DeleteWorkspace(r.Context(), ws.ID)
 	if err != nil {
 		app.serverError(w, r, err)

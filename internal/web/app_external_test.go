@@ -4,12 +4,45 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/web"
 )
+
+func TestDesktopDatabaseBackupCreatesSQLiteSnapshot(t *testing.T) {
+	directory := t.TempDir()
+	cfg := web.DefaultConfig()
+	cfg.Mode = web.ModeDesktop
+	cfg.DB.Driver = "sqlite"
+	cfg.DB.DSN = filepath.Join(directory, "sqlwarden.db")
+	cfg.DB.Automigrate = true
+	cfg.Files.StorageBackends["local"] = web.FileStorageBackend{
+		Type:    web.FilesStorageBackendFilesystem,
+		RootDir: filepath.Join(directory, "files"),
+	}
+
+	app, err := web.New(cfg, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+
+	destination := filepath.Join(directory, "snapshot.db")
+	if err := app.BackupDesktopDatabase(context.Background(), destination); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() == 0 {
+		t.Fatal("desktop database snapshot is empty")
+	}
+}
 
 func TestAppCanBeConstructedFromExternalPackage(t *testing.T) {
 	cfg := web.DefaultConfig()

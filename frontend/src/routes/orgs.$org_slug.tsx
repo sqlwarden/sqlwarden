@@ -82,8 +82,12 @@ function OrganizationLayout() {
     return <NavigateToLogin />
   }
 
+  if (desktopMode && isDesktopOrganizationSettingsPath(pathname, orgSlug, workspaceId)) {
+    return <Navigate to="/desktop/settings" replace />
+  }
+
   if (desktopMode && isDesktopHiddenOrganizationPath(pathname, orgSlug, workspaceId)) {
-    return <Navigate to="/orgs/$org_slug/workspaces" params={{ org_slug: orgSlug }} replace />
+    return <Navigate to="/ide/$org_slug" params={{ org_slug: orgSlug }} replace />
   }
 
   const workspacePermissions = workspaceEffectivePermissions.data?.permissions
@@ -427,11 +431,21 @@ function isDesktopHiddenOrganizationPath(
     return false
   }
   if (!workspaceId) {
-    const allowed = [orgBase, `${orgBase}/workspaces`]
-    return !allowed.includes(path)
+    return true
   }
   const base = `/orgs/${orgSlug}/workspaces/${workspaceId}`
   return ['users', 'teams', 'roles', 'policies'].some((section) =>
     isPathInSection(path, base, section),
   )
+}
+
+function isDesktopOrganizationSettingsPath(
+  pathname: string,
+  orgSlug: string,
+  workspaceId: string | undefined,
+) {
+  if (workspaceId) return false
+  const path = trimTrailingSlash(pathname)
+  const settingsBase = `/orgs/${orgSlug}/settings`
+  return path === settingsBase || path.startsWith(`${settingsBase}/`)
 }

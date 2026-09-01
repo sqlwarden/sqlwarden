@@ -20,7 +20,7 @@ describe('frontend engine registry', () => {
   })
 
   it('only exposes drivers with connection forms as connectable', () => {
-    expect(connectableEngines.map((engine) => engine.id)).toEqual(['postgres', 'mysql'])
+    expect(connectableEngines.map((engine) => engine.id)).toEqual(['postgres', 'mysql', 'sqlite'])
   })
 
   it('offers explicit strict and optional lookup APIs', () => {

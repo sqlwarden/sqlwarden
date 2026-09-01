@@ -23,6 +23,25 @@
     <string>11.0</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.developer-tools</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array><string>sql</string></array>
+            <key>CFBundleTypeName</key>
+            <string>SQL file</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+        </dict>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array><string>db</string><string>sqlite</string><string>sqlite3</string></array>
+            <key>CFBundleTypeName</key>
+            <string>SQLite database</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+        </dict>
+    </array>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>

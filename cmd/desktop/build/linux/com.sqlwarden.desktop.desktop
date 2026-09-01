@@ -2,8 +2,9 @@
 Type=Application
 Name=SQLWarden
 Comment=Desktop database workspace
-Exec=sqlwarden-desktop
+Exec=sqlwarden-desktop %F
 Icon=com.sqlwarden.desktop
 Terminal=false
 Categories=Development;Database;
+MimeType=application/sql;application/vnd.sqlite3;application/x-sqlite3;
 StartupWMClass=SQLWarden

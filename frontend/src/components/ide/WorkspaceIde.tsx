@@ -30,7 +30,7 @@ import {
   allOrgWorkspaceConnectionsQueryOptions,
 } from '#/lib/api/query'
 import { resolveDeepLink } from './ideDeepLink'
-import { hasAnyPermission, permission } from '#/lib/permissions'
+import { hasAnyPermission, hasPermission, permission } from '#/lib/permissions'
 import {
   workspacePolicyPagePermissions,
   workspaceSettingsPagePermissions,
@@ -65,6 +65,14 @@ import {
   useEditorSaveShortcut,
   useEditorSnapshotPersistence,
 } from './useEditorDocumentLifecycle'
+import { useSetupStatus } from '#/hooks/use-setup-status'
+import { CreateWorkspaceDialog } from '#/components/workspaces/CreateWorkspaceDialog'
+import {
+  NATIVE_FILE_OPENED_EVENT,
+  claimPendingNativeFile,
+  takePendingNativeFiles,
+} from '#/components/desktop/DesktopNativeEvents'
+import { desktopBridge, type NativeTextFile } from '#/lib/desktop/runtime'
 
 // ─── Root ──────────────────────────────────────────────────────────────────────
 
@@ -80,6 +88,7 @@ export function WorkspaceIde({ orgSlug, workspaceId }: WorkspaceIdeProps) {
   const store = useMemo(() => createIdeStore(orgSlug, accountId), [orgSlug, accountId])
   const registry = useMemo(() => createYDocRegistry(accountId, orgSlug), [orgSlug, accountId])
   const viewRegistry = useMemo(() => createEditorViewRegistry(), [])
+  const setup = useSetupStatus()
 
   // Release the primary lock when this editor window unmounts so another window can
   // take over persistence.
@@ -120,6 +129,7 @@ export function WorkspaceIde({ orgSlug, workspaceId }: WorkspaceIdeProps) {
             isError={workspaces.isError}
             isRetrying={workspaces.isFetching}
             workspaces={workspaces.data?.items ?? []}
+            nativeShell={setup.data?.capabilities.native_shell === true}
             onRetry={() => {
               void workspaces.refetch()
             }}
@@ -137,6 +147,7 @@ type WorkspaceIdeContentProps = {
   isError: boolean
   isRetrying: boolean
   workspaces: Workspace[]
+  nativeShell?: boolean
   onRetry: () => void
 }
 
@@ -147,11 +158,13 @@ export function WorkspaceIdeContent({
   isError,
   isRetrying,
   workspaces,
+  nativeShell = false,
   onRetry,
 }: WorkspaceIdeContentProps) {
   if (isLoading) return <WorkspaceIdeSkeleton />
   if (isError) return <WorkspaceLoadError isRetrying={isRetrying} onRetry={onRetry} />
-  if (workspaces.length === 0) return <NoWorkspaceAccess />
+  if (workspaces.length === 0)
+    return <WorkspaceEmptyState orgSlug={orgSlug} nativeShell={nativeShell} />
   return (
     <WorkspaceIdeInner
       orgSlug={orgSlug}
@@ -264,6 +277,66 @@ export function NoWorkspaceAccess() {
   )
 }
 
+export function WorkspaceEmptyState({
+  orgSlug,
+  nativeShell = false,
+}: {
+  orgSlug: string
+  nativeShell?: boolean
+}) {
+  if (nativeShell) {
+    return <DesktopNoWorkspaces orgSlug={orgSlug} />
+  }
+  return <NoWorkspaceAccess />
+}
+
+function DesktopNoWorkspaces({ orgSlug }: { orgSlug: string }) {
+  usePageTitle('Editor')
+  const navigate = useNavigate()
+  const [creating, setCreating] = useState(false)
+  const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
+  const canCreate = hasPermission(effectivePermissions.data?.permissions, permission.wsCreate)
+
+  return (
+    <WorkspaceStateFrame>
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Icon name="briefcase-01" size={16} />
+          </EmptyMedia>
+          <EmptyTitle aria-level={1} role="heading">
+            Create your first workspace
+          </EmptyTitle>
+          <EmptyDescription>
+            Workspaces group the database connections and saved queries you work with. Everything
+            stays on this device.
+          </EmptyDescription>
+        </EmptyHeader>
+        {canCreate ? (
+          <EmptyContent>
+            <Button onClick={() => setCreating(true)}>
+              <Icon name="plus-sign" size={16} data-icon="inline-start" />
+              New workspace
+            </Button>
+          </EmptyContent>
+        ) : null}
+      </Empty>
+      <CreateWorkspaceDialog
+        orgSlug={orgSlug}
+        open={creating}
+        onOpenChange={setCreating}
+        onCreated={(workspace) =>
+          navigate({
+            to: '/orgs/$org_slug/workspaces/$workspace_id/ide',
+            params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
+            replace: true,
+          })
+        }
+      />
+    </WorkspaceStateFrame>
+  )
+}
+
 export function WorkspaceLoadError({
   isRetrying,
   onRetry,
@@ -372,6 +445,7 @@ function WorkspaceIdeInnerContent({
   const canAccessOrgSettings = hasAnyPermission(orgPermissions.data?.permissions, [
     permission.orgRead,
   ])
+  const canCreateWorkspace = hasPermission(orgPermissions.data?.permissions, permission.wsCreate)
   const workspacePermissions = useQuery({
     ...orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', activeWorkspace.id),
     enabled: Boolean(session),
@@ -390,6 +464,7 @@ function WorkspaceIdeInnerContent({
   return (
     <ContextMenuProvider>
       <div className="flex h-dvh min-h-0 w-dvw max-w-dvw flex-col overflow-hidden bg-background">
+        <NativeIdeBridge workspace={activeWorkspace} />
         <WorkspaceIdeSurface
           orgSlug={orgSlug}
           workspace={activeWorkspace}
@@ -397,12 +472,53 @@ function WorkspaceIdeInnerContent({
           onSelectWorkspace={setActiveWorkspace}
           session={session}
           canAccessOrgSettings={canAccessOrgSettings}
+          canCreateWorkspace={canCreateWorkspace}
           canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
           canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
         />
       </div>
     </ContextMenuProvider>
   )
+}
+
+function NativeIdeBridge({ workspace }: { workspace: Workspace }) {
+  const openTab = useIde((state) => state.openTab)
+  const hasUnsavedChanges = useIde((state) => state.tabs.some((tab) => tab.isDirty))
+
+  useEffect(() => {
+    function openNativeFile(file: NativeTextFile) {
+      const doc = new Y.Doc()
+      doc.getText('content').insert(0, file.content)
+      const yState = Array.from(Y.encodeStateAsUpdate(doc))
+      doc.destroy()
+      openTab({
+        id: `native:${workspace.id}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+        workspaceId: workspace.id,
+        title: file.name,
+        subtitle: file.path || file.name,
+        nativePath: file.path || undefined,
+        kind: 'scratch',
+        content: file.content,
+        yState,
+        ySnapshot: yState,
+      })
+    }
+
+    takePendingNativeFiles().forEach(openNativeFile)
+    const listener = (event: Event) => {
+      const file = (event as CustomEvent<NativeTextFile>).detail
+      claimPendingNativeFile(file)
+      openNativeFile(file)
+    }
+    window.addEventListener(NATIVE_FILE_OPENED_EVENT, listener)
+    return () => window.removeEventListener(NATIVE_FILE_OPENED_EVENT, listener)
+  }, [openTab, workspace.id])
+
+  useEffect(() => {
+    void desktopBridge()?.SetUnsavedChanges?.(hasUnsavedChanges)
+  }, [hasUnsavedChanges])
+
+  return null
 }
 
 /** The active workspace is the URL's `workspace_id` param — the route is the
@@ -498,6 +614,7 @@ function WorkspaceIdeSurface({
   onSelectWorkspace,
   session,
   canAccessOrgSettings,
+  canCreateWorkspace,
   canAccessWorkspaceGeneralSettings,
   canAccessWorkspaceAccessControl,
 }: {
@@ -507,6 +624,7 @@ function WorkspaceIdeSurface({
   onSelectWorkspace: (id: number) => void
   session: ReturnType<typeof useSession>['data']
   canAccessOrgSettings: boolean
+  canCreateWorkspace: boolean
   canAccessWorkspaceGeneralSettings: boolean
   canAccessWorkspaceAccessControl: boolean
 }) {
@@ -577,6 +695,7 @@ function WorkspaceIdeSurface({
           onSelectWorkspace={onSelectWorkspace}
           session={session}
           canAccessOrgSettings={canAccessOrgSettings}
+          canCreateWorkspace={canCreateWorkspace}
           canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
           canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
         />
@@ -597,6 +716,7 @@ function WorkspaceIdeSurface({
           onSelectWorkspace={onSelectWorkspace}
           session={session}
           canAccessOrgSettings={canAccessOrgSettings}
+          canCreateWorkspace={canCreateWorkspace}
           canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
           canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
         />
@@ -625,6 +745,7 @@ function WorkspaceIdeSurface({
         onSelectWorkspace={onSelectWorkspace}
         session={session}
         canAccessOrgSettings={canAccessOrgSettings}
+        canCreateWorkspace={canCreateWorkspace}
         canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
         canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
       />

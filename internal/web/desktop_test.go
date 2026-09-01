@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"testing"
@@ -41,7 +42,7 @@ func TestBootstrapDesktopCreatesStableAuthorizedIdentity(t *testing.T) {
 	if first != second {
 		t.Fatalf("identity changed across bootstrap: first=%+v second=%+v", first, second)
 	}
-	if first.OrgSlug != singleUserDefaultOrgSlug || first.WorkspaceID == 0 {
+	if first.OrgSlug != singleUserDefaultOrgSlug || first.WorkspaceID != nil {
 		t.Fatalf("unexpected desktop resources: %+v", first)
 	}
 	account, found, err := app.db.GetAccount(ctx, first.AccountID)
@@ -55,8 +56,8 @@ func TestBootstrapDesktopCreatesStableAuthorizedIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if count != 1 {
-		t.Fatalf("workspace count = %d, want 1", count)
+	if count != 0 {
+		t.Fatalf("workspace count = %d, want 0", count)
 	}
 	if !app.enforcer.Can(ctx, first.AccountID, first.OrgID, "org", "org", first.OrgID, access.PermOrgRead) {
 		t.Fatal("desktop account was not granted organization access")
@@ -130,23 +131,27 @@ func TestBootstrapDesktopRejectsTamperedIdentity(t *testing.T) {
 	}
 }
 
-func TestDesktopCannotDeleteLastWorkspace(t *testing.T) {
+func TestDesktopCanDeleteLastWorkspace(t *testing.T) {
 	app := newDesktopTestApp(t)
 	session, err := app.NewDesktopSession(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := "/api/v1/orgs/" + session.Identity.OrgSlug + "/workspaces/" + strconv.FormatInt(session.Identity.WorkspaceID, 10)
+	workspace, err := app.createOwnedWorkspace(context.Background(), session.Identity.OrgID, session.Identity.AccountID, "Only workspace", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d", session.Identity.OrgSlug, workspace.ID)
 	response := send(t, newAuthRequest(t, http.MethodDelete, path, nil, session.AccessToken), app.routes())
-	if response.StatusCode != http.StatusConflict {
-		t.Fatalf("status = %d, want %d; body=%s", response.StatusCode, http.StatusConflict, response.BodyBytes)
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d; body=%s", response.StatusCode, http.StatusNoContent, response.BodyBytes)
 	}
 	count, err := app.db.CountOrganizationWorkspaces(context.Background(), session.Identity.OrgID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if count != 1 {
-		t.Fatalf("workspace count = %d, want 1", count)
+	if count != 0 {
+		t.Fatalf("workspace count = %d, want 0", count)
 	}
 }
 
@@ -154,6 +159,9 @@ func TestDesktopCanDeleteWorkspaceWhenAnotherRemains(t *testing.T) {
 	app := newDesktopTestApp(t)
 	session, err := app.NewDesktopSession(context.Background())
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.createOwnedWorkspace(context.Background(), session.Identity.OrgID, session.Identity.AccountID, "First", ""); err != nil {
 		t.Fatal(err)
 	}
 	second, err := app.createOwnedWorkspace(context.Background(), session.Identity.OrgID, session.Identity.AccountID, "Other", "")
