@@ -2,6 +2,9 @@ bin/
 tmp/
 build-errors.log
 
+# Default output from `go build ./cmd/desktop`
+/desktop
+
 # GoReleaser build artifacts
 dist/
 
