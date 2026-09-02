@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { orgRuntimeSettingsQueryOptions } from '#/lib/api/query'
 import { useBrand } from '#/lib/brand/brand'
-import { Icon, type AppIcon } from '#/lib/icons'
+import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { AppearanceTrigger } from '#/components/appearance'
 import { UserAvatar } from '#/components/UserAvatar'
@@ -40,8 +40,6 @@ type IdeActivityBarProps = {
   session: SessionResponse | undefined
   canAccessOrgSettings: boolean
   canCreateWorkspace?: boolean
-  canAccessWorkspaceGeneralSettings: boolean
-  canAccessWorkspaceAccessControl: boolean
 }
 
 export function IdeActivityBar({
@@ -52,8 +50,6 @@ export function IdeActivityBar({
   session,
   canAccessOrgSettings,
   canCreateWorkspace = false,
-  canAccessWorkspaceGeneralSettings,
-  canAccessWorkspaceAccessControl,
 }: IdeActivityBarProps) {
   const activeActivityId = useIde((s) => s.activeActivityId)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
@@ -92,7 +88,7 @@ export function IdeActivityBar({
     <nav
       aria-label="Editor activities"
       className={cn(
-        'flex shrink-0 flex-col gap-1 border-r border-border bg-sidebar pb-2 transition-[width] duration-150 ease-out',
+        'flex shrink-0 flex-col gap-1 border-r border-border bg-sidebar pb-2 transition-[width] duration-150',
         activityBarExpanded ? 'w-56 items-stretch px-2' : 'w-11 items-center',
       )}
     >
@@ -109,7 +105,7 @@ export function IdeActivityBar({
             aria-pressed={isActive}
             className={cn(
               'flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs transition-colors',
-              activityBarExpanded ? 'h-8 w-full justify-start gap-2 p-2' : 'size-9 justify-center',
+              activityBarExpanded ? 'h-8 w-full justify-start gap-2 p-2' : 'size-8 justify-center',
               expanded
                 ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
                 : 'text-foreground hover:bg-sidebar-accent/60',
@@ -130,15 +126,6 @@ export function IdeActivityBar({
 
       <div className="flex-1" />
 
-      {activeWorkspace && (canAccessWorkspaceGeneralSettings || canAccessWorkspaceAccessControl) ? (
-        <WorkspaceSettingsMenu
-          orgSlug={orgSlug}
-          workspace={activeWorkspace}
-          expanded={activityBarExpanded}
-          canAccessGeneralSettings={canAccessWorkspaceGeneralSettings}
-          canAccessAccessControl={canAccessWorkspaceAccessControl}
-        />
-      ) : null}
       <WorkspaceSelector
         orgSlug={orgSlug}
         workspaces={workspaces}
@@ -162,7 +149,7 @@ export function IdeActivityBar({
           aria-label="Toggle activity bar"
           className={cn(
             'flex items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-foreground transition-colors hover:bg-sidebar-accent/60',
-            activityBarExpanded ? 'h-8 w-full' : 'size-9',
+            activityBarExpanded ? 'h-8 w-full' : 'size-8',
           )}
         >
           <Icon name="sidebar-left" size={17} className="shrink-0" />
@@ -172,153 +159,22 @@ export function IdeActivityBar({
   )
 }
 
-type WorkspaceSettingsSubItem = {
-  label: string
-  icon: AppIcon
-  to:
-    | '/orgs/$org_slug/workspaces/$workspace_id/settings'
-    | '/orgs/$org_slug/workspaces/$workspace_id/users'
-    | '/orgs/$org_slug/workspaces/$workspace_id/policies'
-}
-
-/** Collapsed by default so the rail stays compact; expands in place to reveal
- *  the workspace's admin pages rather than jumping straight to one. */
-function WorkspaceSettingsMenu({
-  orgSlug,
-  workspace,
-  expanded,
-  canAccessGeneralSettings,
-  canAccessAccessControl,
-}: {
-  orgSlug: string
-  workspace: Workspace
-  expanded: boolean
-  canAccessGeneralSettings: boolean
-  canAccessAccessControl: boolean
-}) {
-  const [open, setOpen] = useState(false)
-
-  const items: WorkspaceSettingsSubItem[] = [
-    ...(canAccessGeneralSettings
-      ? [
-          {
-            label: 'General',
-            icon: 'settings-02',
-            to: '/orgs/$org_slug/workspaces/$workspace_id/settings',
-          } as const,
-        ]
-      : []),
-    ...(canAccessAccessControl
-      ? [
-          {
-            label: 'Manage members',
-            icon: 'user-multiple',
-            to: '/orgs/$org_slug/workspaces/$workspace_id/users',
-          } as const,
-          {
-            label: 'Manage access',
-            icon: 'shield-user',
-            to: '/orgs/$org_slug/workspaces/$workspace_id/policies',
-          } as const,
-        ]
-      : []),
-  ]
-
-  if (!expanded) {
-    return (
-      <DropdownMenu>
-        <Tip label="Workspace settings" side="right">
-          <DropdownMenuTrigger
-            aria-label="Workspace settings"
-            className="flex size-9 cursor-pointer items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors hover:bg-sidebar-accent/60"
-          >
-            <Icon name="settings-02" size={17} className="shrink-0" />
-          </DropdownMenuTrigger>
-        </Tip>
-        <DropdownMenuContent align="start" side="right" className="w-64 min-w-64">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel>Workspace settings</DropdownMenuLabel>
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            {items.map((item) => (
-              <DropdownMenuItem
-                key={item.label}
-                render={
-                  <Link
-                    to={item.to}
-                    params={{ org_slug: orgSlug, workspace_id: String(workspace.id) }}
-                  />
-                }
-              >
-                <Icon name={item.icon} size={15} />
-                {item.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    )
-  }
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-label="Workspace settings"
-        aria-expanded={open}
-        className="flex h-8 w-full items-center justify-start gap-2 rounded-[calc(var(--radius-sm)+2px)] p-2 text-xs text-foreground transition-colors hover:bg-sidebar-accent/60"
-      >
-        <Icon name="settings-02" size={17} className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-left">Workspace settings</span>
-        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} className="shrink-0" />
-      </button>
-      {open
-        ? items.map((item) => (
-            <div key={item.label}>
-              <Link
-                to={item.to}
-                params={{ org_slug: orgSlug, workspace_id: String(workspace.id) }}
-                aria-label={item.label}
-                className="flex h-8 w-full items-center justify-start gap-2 rounded-[calc(var(--radius-sm)+2px)] py-2 ps-6 pe-2 text-xs text-foreground transition-colors hover:bg-sidebar-accent/60"
-              >
-                <Icon name={item.icon} size={15} className="shrink-0" />
-                <span className="truncate">{item.label}</span>
-              </Link>
-            </div>
-          ))
-        : null}
-    </div>
-  )
-}
-
 function IdeBrand({ expanded }: { expanded: boolean }) {
   const brand = useBrand()
   if (expanded) {
     return (
       <div className="-mx-2 flex h-10 w-[calc(100%+1rem)] shrink-0 items-center border-b border-border px-2">
-        <Link
-          to="/"
-          className="flex h-8 w-full items-center gap-2.5 rounded-[calc(var(--radius-sm)+2px)] px-2 text-foreground transition-colors hover:bg-sidebar-accent/60"
-          aria-label={`${brand.productName} home`}
-        >
+        <div className="flex h-8 w-full items-center gap-2.5 px-2 text-foreground">
           <brand.LogoLockup size={20} className="shrink-0" />
-        </Link>
+        </div>
       </div>
     )
   }
   return (
     <div className="flex h-10 w-full shrink-0 items-center justify-center border-b border-border">
-      <Tip label="Back to dashboard" side="right">
-        <Link
-          to="/"
-          className="flex size-9 items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-foreground transition-colors hover:bg-sidebar-accent/60"
-          aria-label={`${brand.productName} home`}
-        >
-          <brand.LogoMark size={20} className="shrink-0" />
-        </Link>
-      </Tip>
+      <div className="flex size-8 items-center justify-center text-foreground">
+        <brand.LogoMark size={20} className="shrink-0" />
+      </div>
     </div>
   )
 }
