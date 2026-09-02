@@ -149,3 +149,39 @@ func TestListEnginesRequiresAuth(t *testing.T) {
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
 }
+
+func TestGetEngineOracleOmitsExplain(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, _ := seedOrgOwner(t, app, uniqueEmail(t, "engine-oracle"), "Oracle", "Oracle Org")
+
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/engines/oracle", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["capabilities"].(map[string]any)["sql.explain"], false)
+	if _, ok := res.BodyFields["explain"]; ok {
+		t.Fatalf("oracle response must not include an explain spec: %v", res.BodyFields)
+	}
+	assert.Equal(t, res.BodyFields["capabilities"].(map[string]any)["sql.complete"], true)
+}
+
+func TestGetEngineOracleCompletionVocabulary(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, _ := seedOrgOwner(t, app, uniqueEmail(t, "oracle-vocab"), "OV", "OV Org")
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		"/api/v1/engines/oracle/completion-vocabulary", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["dialect"], "oracle")
+	suggestions := res.BodyFields["suggestions"].([]any)
+	foundSelect := false
+	for _, raw := range suggestions {
+		s := raw.(map[string]any)
+		if s["label"] == "SELECT" && s["kind"] == "keyword" {
+			foundSelect = true
+		}
+	}
+	if !foundSelect {
+		t.Fatal("oracle vocabulary missing SELECT keyword")
+	}
+}
