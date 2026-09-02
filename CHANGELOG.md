@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.9.0](https://github.com/sqlwarden/sqlwarden/compare/v0.8.0...v0.9.0) (2026-09-02)
+
+
+### Features
+
+* **auth:** match setup page design and copy to login ([2732286](https://github.com/sqlwarden/sqlwarden/commit/2732286560029a351bb80df753e8498fb1a1b214))
+* **editor:** add structured DDL actions, SQL generation, and DML row counts ([#47](https://github.com/sqlwarden/sqlwarden/issues/47)) ([ee87430](https://github.com/sqlwarden/sqlwarden/commit/ee87430f9412b2bbf66ffaebdf47652f39faa66d))
+* **engine:** add support for Oracle database engine (SQLW-103) ([#61](https://github.com/sqlwarden/sqlwarden/issues/61)) ([2151993](https://github.com/sqlwarden/sqlwarden/commit/215199323d07956ff5b771f89df3699ef252759d))
+* **ide:** add EXPLAIN/EXPLAIN ANALYZE with backend-validated wrapping (SQLW-93) ([a0e26f0](https://github.com/sqlwarden/sqlwarden/commit/a0e26f0264c62c696f73b6cc97b1081512407b5c))
+* **ide:** add query history and favorites (SQLW-19) ([7b8a4d8](https://github.com/sqlwarden/sqlwarden/commit/7b8a4d8b921c935c41368e2403fa2bfcd9dc3094))
+* **ide:** add results panel scope modes (shared/per-connection/per-editor) (SQLW-90) ([40d221b](https://github.com/sqlwarden/sqlwarden/commit/40d221b81a332ddbc496e37927e52b41daeb603f))
+* **ide:** add results tab context menu with pin and close-scope actions (SQLW-86) ([2042866](https://github.com/sqlwarden/sqlwarden/commit/2042866311d12eca4d6d8ac9d4080a8ac367b42f))
+* **ide:** add SQL editor context menu with clipboard, run, and favorite actions (SQLW-82) ([3b836f4](https://github.com/sqlwarden/sqlwarden/commit/3b836f4c519eaf79dddb62cfd547fdc3534cc0ab))
+* **ide:** add two transaction modes - auto vs manual - for supported drivers when running query from IDE (SQLW-62) ([5226759](https://github.com/sqlwarden/sqlwarden/commit/52267596cf162f9b1443fa096ea3a85710fa939a))
+* **ide:** add workspace file content search ([bddbc62](https://github.com/sqlwarden/sqlwarden/commit/bddbc62ef5efdb43e70969f4f0286016f7bf03a7))
+* **ide:** autocomplete enhancements (SQLW-99) ([a26e5b5](https://github.com/sqlwarden/sqlwarden/commit/a26e5b54517f7a018f0d24ac8d38daf46665f86d))
+* **ide:** drop monospace font in results view, fix header seam, add query dialog (SQLW-87) ([f36591f](https://github.com/sqlwarden/sqlwarden/commit/f36591f833c5a5bc08eb22f48a0e1404a54fbe64))
+* **ide:** IDE UI/UX overhaul and polish (SQLW-89) ([#58](https://github.com/sqlwarden/sqlwarden/issues/58)) ([365bf13](https://github.com/sqlwarden/sqlwarden/commit/365bf1399e1ad25f45a04082fcdc71b30e3f0c62))
+* **ide:** show approximate row count beside tables in schema explorer (SQLW-92) ([c25b431](https://github.com/sqlwarden/sqlwarden/commit/c25b431ed761e01d0166c94a2255817e426944d3))
+* **ide:** support running all statements in the SQL console (SQLW-2) ([50b6923](https://github.com/sqlwarden/sqlwarden/commit/50b69235ac387e80c32af3fc4b3a9e8ceb168d4b))
+* **ide:** tab query results by run (SQLW-81) ([0498a7b](https://github.com/sqlwarden/sqlwarden/commit/0498a7bdbcaf86baa821edf2df3b54a029756ec7))
+* **ide:** warn before running unsafe UPDATE/DELETE queries ([e6198d5](https://github.com/sqlwarden/sqlwarden/commit/e6198d5ae0c7633c8f43252f0c3ce0b474ca58b9))
+
+
+### Bug Fixes
+
+* **autocomplete:** improve ranking, aliases, and CTE completion ([#49](https://github.com/sqlwarden/sqlwarden/issues/49)) ([0a6ba89](https://github.com/sqlwarden/sqlwarden/commit/0a6ba89040c615234c682d8ea9fddb1da05aa452))
+* **build:** bump Go toolchain to 1.26.6 to resolve govulncheck failures ([7acb61e](https://github.com/sqlwarden/sqlwarden/commit/7acb61eab07b2029e5144467cda591259f239d04))
+* **docker:** build and serve the SQLWarden frontend ([#50](https://github.com/sqlwarden/sqlwarden/issues/50)) ([dc8ff07](https://github.com/sqlwarden/sqlwarden/commit/dc8ff0713a08eebbe13a68040612d6952ba83800))
+* **docker:** embed frontend assets in image ([dc8ff07](https://github.com/sqlwarden/sqlwarden/commit/dc8ff0713a08eebbe13a68040612d6952ba83800))
+* **ui:** resolve design audit findings across IDE, admin, and workspace screens (SQLW-84) ([fe76090](https://github.com/sqlwarden/sqlwarden/commit/fe760904df2e6cb9dc8697f741ea4100b6047cf1))
+
 ## [0.8.0](https://github.com/sqlwarden/sqlwarden/compare/v0.7.0...v0.8.0) (2026-08-13)
 
 
