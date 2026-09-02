@@ -80,13 +80,30 @@ describe('desktop settings', () => {
 
     const { user } = renderDesktopSettings()
     expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument()
-    expect(screen.getByRole('spinbutton', { name: 'Cursor page size' })).toHaveValue(200)
+    expect(screen.getByRole('tablist', { name: 'Settings sections' })).toHaveAttribute(
+      'data-variant',
+      'line',
+    )
+    expect(screen.getByRole('tab', { name: 'Workspaces' })).toHaveAttribute('data-active', '')
+    expect(screen.getByRole('button', { name: 'New workspace' })).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton', { name: 'Cursor page size' })).not.toBeInTheDocument()
     expect(screen.queryByText('SMTP')).not.toBeInTheDocument()
     expect(screen.queryByText('Users')).not.toBeInTheDocument()
 
     expect(screen.queryByRole('tab', { name: 'Appearance & Editor' })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Theme' })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Editor font' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Data' }))
+    expect(screen.getByRole('spinbutton', { name: 'Cursor page size' })).toHaveValue(200)
+    expect(screen.getByRole('combobox', { name: 'Query history' })).toHaveAttribute(
+      'data-slot',
+      'select-trigger',
+    )
+    expect(screen.getByRole('combobox', { name: 'Query favorites' })).toHaveAttribute(
+      'data-slot',
+      'select-trigger',
+    )
 
     await user.click(screen.getByRole('tab', { name: 'Workspaces' }))
     await user.click(screen.getByRole('button', { name: 'New workspace' }))
@@ -126,6 +143,7 @@ describe('desktop settings', () => {
     )
 
     const { user } = renderDesktopSettings()
+    await user.click(await screen.findByRole('tab', { name: 'Data' }))
     const mask = await screen.findByRole('checkbox', {
       name: 'Mask connection credentials on edit',
     })

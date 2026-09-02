@@ -16,6 +16,14 @@ import {
   FieldTitle,
 } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '#/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { useSetupStatus } from '#/hooks/use-setup-status'
 import { api } from '#/lib/api/client'
@@ -230,14 +238,19 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
 
   return (
     <DesktopSettingsFrame orgSlug={orgSlug}>
-      <Tabs defaultValue="data" className="min-h-0 gap-5">
-        <TabsList aria-label="Settings sections" className="max-w-full overflow-x-auto">
-          <TabsTrigger value="data">Data</TabsTrigger>
-          <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
-          <TabsTrigger value="storage">Storage &amp; Recovery</TabsTrigger>
-          <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
-          <TabsTrigger value="about">About</TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue="workspaces" className="min-h-0 gap-6">
+        <div className="min-w-0 overflow-x-auto overflow-y-hidden border-b border-border">
+          <TabsList variant="line" aria-label="Settings sections" className="min-w-max">
+            <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
+            <TabsTrigger value="data">Data</TabsTrigger>
+            <TabsTrigger value="storage">Storage &amp; Recovery</TabsTrigger>
+            <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
+            <TabsTrigger value="about">About</TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent value="workspaces">
+          <DesktopWorkspacesSection orgSlug={orgSlug} />
+        </TabsContent>
         <TabsContent value="data" className="space-y-8">
           <SettingsSection
             title="Schema metadata"
@@ -358,9 +371,6 @@ export function DesktopSettingsContent({ orgSlug }: { orgSlug: string }) {
               </div>
             </div>
           </SettingsSection>
-        </TabsContent>
-        <TabsContent value="workspaces">
-          <DesktopWorkspacesSection orgSlug={orgSlug} />
         </TabsContent>
         <TabsContent value="storage" className="space-y-8">
           <SettingsSection
@@ -718,18 +728,20 @@ function ChoiceField({
   return (
     <Field>
       <FieldLabel>{label}</FieldLabel>
-      <select
-        aria-label={label}
-        className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {labels?.[option] ?? option}
-          </option>
-        ))}
-      </select>
+      <Select value={value} onValueChange={(next) => next && onChange(next)}>
+        <SelectTrigger aria-label={label} className="w-full">
+          <SelectValue>{labels?.[value] ?? value}</SelectValue>
+        </SelectTrigger>
+        <SelectContent align="start">
+          <SelectGroup>
+            {options.map((option) => (
+              <SelectItem key={option} value={option}>
+                {labels?.[option] ?? option}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
     </Field>
   )
 }

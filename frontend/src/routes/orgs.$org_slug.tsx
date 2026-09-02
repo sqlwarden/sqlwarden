@@ -444,8 +444,13 @@ function isDesktopOrganizationSettingsPath(
   orgSlug: string,
   workspaceId: string | undefined,
 ) {
-  if (workspaceId) return false
   const path = trimTrailingSlash(pathname)
+  if (workspaceId) {
+    const workspaceBase = `/orgs/${orgSlug}/workspaces/${workspaceId}`
+    return ['settings', 'users', 'teams', 'roles', 'policies'].some((section) =>
+      isPathInSection(path, workspaceBase, section),
+    )
+  }
   const settingsBase = `/orgs/${orgSlug}/settings`
   return path === settingsBase || path.startsWith(`${settingsBase}/`)
 }

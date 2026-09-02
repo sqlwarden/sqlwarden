@@ -77,8 +77,6 @@ describe('IdeActivityBar', () => {
               onSelectWorkspace={vi.fn()}
               session={undefined}
               canAccessOrgSettings={false}
-              canAccessWorkspaceGeneralSettings={false}
-              canAccessWorkspaceAccessControl={false}
             />
           </IdeStoreContext.Provider>
         </QueryClientProvider>
@@ -98,7 +96,7 @@ describe('IdeActivityBar', () => {
     ])
   })
 
-  it('renders a brand link back to the dashboard', () => {
+  it('renders the brand without dashboard navigation', () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
     const workspace = makeWorkspace(1, 'Analytics')
     render(
@@ -112,15 +110,13 @@ describe('IdeActivityBar', () => {
               onSelectWorkspace={vi.fn()}
               session={undefined}
               canAccessOrgSettings={false}
-              canAccessWorkspaceGeneralSettings={false}
-              canAccessWorkspaceAccessControl={false}
             />
           </IdeStoreContext.Provider>
         </QueryClientProvider>
       </ThemeProvider>,
     )
 
-    expect(screen.getByRole('link', { name: /home$/ })).toHaveAttribute('href', '/')
+    expect(screen.queryByRole('link', { name: /home$/ })).not.toBeInTheDocument()
   })
 
   it('is collapsed by default and expands to show activity labels, workspace, UI Lab, and account details via the toggle', async () => {
@@ -138,8 +134,6 @@ describe('IdeActivityBar', () => {
               onSelectWorkspace={vi.fn()}
               session={session}
               canAccessOrgSettings={false}
-              canAccessWorkspaceGeneralSettings={false}
-              canAccessWorkspaceAccessControl={false}
             />
           </IdeStoreContext.Provider>
         </QueryClientProvider>
@@ -177,8 +171,6 @@ describe('IdeActivityBar', () => {
               onSelectWorkspace={vi.fn()}
               session={undefined}
               canAccessOrgSettings={false}
-              canAccessWorkspaceGeneralSettings={false}
-              canAccessWorkspaceAccessControl={false}
             />
           </IdeStoreContext.Provider>
         </QueryClientProvider>
@@ -212,8 +204,6 @@ describe('IdeActivityBar', () => {
               onSelectWorkspace={onSelectWorkspace}
               session={undefined}
               canAccessOrgSettings={false}
-              canAccessWorkspaceGeneralSettings={false}
-              canAccessWorkspaceAccessControl={false}
             />
           </IdeStoreContext.Provider>
         </QueryClientProvider>
@@ -226,7 +216,7 @@ describe('IdeActivityBar', () => {
     expect(onSelectWorkspace).toHaveBeenCalledWith(2)
   })
 
-  it('hides the workspace settings menu entirely when the user has neither permission', () => {
+  it('does not expose workspace management from the IDE rail', () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
     const workspace = makeWorkspace(1, 'Analytics')
     render(
@@ -240,110 +230,15 @@ describe('IdeActivityBar', () => {
               onSelectWorkspace={vi.fn()}
               session={undefined}
               canAccessOrgSettings={false}
-              canAccessWorkspaceGeneralSettings={false}
-              canAccessWorkspaceAccessControl={false}
             />
           </IdeStoreContext.Provider>
         </QueryClientProvider>
       </ThemeProvider>,
     )
     expect(screen.queryByRole('button', { name: 'Workspace settings' })).not.toBeInTheDocument()
-  })
-
-  it('pops the workspace settings menu over the collapsed rail, showing only sub-items the user can access', async () => {
-    const user = userEvent.setup()
-    const store = createIdeStore('acme', 1, 'ephemeral')
-    const workspace = makeWorkspace(1, 'Analytics')
-    render(
-      <ThemeProvider disableTransitionOnChange={false}>
-        <QueryClientProvider client={createTestQueryClient()}>
-          <IdeStoreContext.Provider value={store}>
-            <IdeActivityBar
-              orgSlug="acme"
-              workspaces={[workspace]}
-              activeWorkspace={workspace}
-              onSelectWorkspace={vi.fn()}
-              session={undefined}
-              canAccessOrgSettings={false}
-              canAccessWorkspaceGeneralSettings
-              canAccessWorkspaceAccessControl={false}
-            />
-          </IdeStoreContext.Provider>
-        </QueryClientProvider>
-      </ThemeProvider>,
-    )
-
-    expect(screen.queryByRole('menuitem', { name: 'General' })).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Workspace settings' }))
-
-    expect(await screen.findByRole('menuitem', { name: 'General' })).toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: 'Manage members' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: 'Manage access' })).not.toBeInTheDocument()
-  })
-
-  it('shows manage members and manage access together when the access-control permission is granted', async () => {
-    const user = userEvent.setup()
-    const store = createIdeStore('acme', 1, 'ephemeral')
-    const workspace = makeWorkspace(1, 'Analytics')
-    render(
-      <ThemeProvider disableTransitionOnChange={false}>
-        <QueryClientProvider client={createTestQueryClient()}>
-          <IdeStoreContext.Provider value={store}>
-            <IdeActivityBar
-              orgSlug="acme"
-              workspaces={[workspace]}
-              activeWorkspace={workspace}
-              onSelectWorkspace={vi.fn()}
-              session={undefined}
-              canAccessOrgSettings={false}
-              canAccessWorkspaceGeneralSettings={false}
-              canAccessWorkspaceAccessControl
-            />
-          </IdeStoreContext.Provider>
-        </QueryClientProvider>
-      </ThemeProvider>,
-    )
-
-    await user.click(screen.getByRole('button', { name: 'Workspace settings' }))
-
-    expect(await screen.findByRole('menuitem', { name: 'Manage members' })).toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: 'General' })).not.toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: 'Manage access' })).toBeInTheDocument()
-  })
-
-  it('expands the workspace settings menu in place on an expanded rail', async () => {
-    const user = userEvent.setup()
-    const store = createIdeStore('acme', 1, 'ephemeral')
-    store.getState().setActivityBarExpanded(true)
-    const workspace = makeWorkspace(1, 'Analytics')
-    render(
-      <ThemeProvider disableTransitionOnChange={false}>
-        <QueryClientProvider client={createTestQueryClient()}>
-          <IdeStoreContext.Provider value={store}>
-            <IdeActivityBar
-              orgSlug="acme"
-              workspaces={[workspace]}
-              activeWorkspace={workspace}
-              onSelectWorkspace={vi.fn()}
-              session={undefined}
-              canAccessOrgSettings={false}
-              canAccessWorkspaceGeneralSettings
-              canAccessWorkspaceAccessControl={false}
-            />
-          </IdeStoreContext.Provider>
-        </QueryClientProvider>
-      </ThemeProvider>,
-    )
-
-    const toggle = screen.getByRole('button', { name: 'Workspace settings' })
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('link', { name: 'General' })).not.toBeInTheDocument()
-
-    await user.click(toggle)
-
-    expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('link', { name: 'General' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Manage members' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Manage access' })).not.toBeInTheDocument()
   })
 
   it('shows the session account in the avatar menu and clears authentication state and redirects even when logout fails', async () => {
@@ -370,8 +265,6 @@ describe('IdeActivityBar', () => {
               onSelectWorkspace={vi.fn()}
               session={session}
               canAccessOrgSettings
-              canAccessWorkspaceGeneralSettings={false}
-              canAccessWorkspaceAccessControl={false}
             />
           </IdeStoreContext.Provider>
         </QueryClientProvider>
@@ -411,8 +304,6 @@ describe('IdeActivityBar', () => {
               onSelectWorkspace={vi.fn()}
               session={session}
               canAccessOrgSettings={false}
-              canAccessWorkspaceGeneralSettings={false}
-              canAccessWorkspaceAccessControl={false}
             />
           </IdeStoreContext.Provider>
         </QueryClientProvider>

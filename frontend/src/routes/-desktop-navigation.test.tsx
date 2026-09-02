@@ -1,17 +1,23 @@
-import { screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { RouterProvider, createMemoryHistory } from '@tanstack/react-router'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setAccessToken } from '#/lib/auth/access-token'
 import { permission } from '#/lib/permissions'
-import { renderRoute } from '#/test/render'
+import { createTestQueryClient, renderRoute } from '#/test/render'
 import { server } from '#/test/server'
 import { sessionHandler, setupStatusHandler } from '#/test/handlers'
 import {
   desktopCapabilitiesFixture,
+  instanceConfigurationFixture,
+  instanceSettingsFixture,
   organizationFixture,
   organizationRuntimeSettingsFixture,
   sessionFixture,
 } from '#/test/fixtures'
+import { DesktopRuntimeContext } from '#/lib/desktop/context'
+import { getRouter } from '#/router'
 
 const { mockIDBGet } = vi.hoisted(() => ({ mockIDBGet: vi.fn(async () => undefined as unknown) }))
 
@@ -60,6 +66,10 @@ describe('desktop organization navigation', () => {
         sessionFixture({ organizations: [organization], personal_spaces_enabled: true }),
       ),
       http.get('/api/v1/orgs/local', () => HttpResponse.json(organization)),
+      http.get('/api/v1/instance/configuration', () =>
+        HttpResponse.json(instanceConfigurationFixture({ mode: 'desktop' })),
+      ),
+      http.get('/api/v1/instance/settings', () => HttpResponse.json(instanceSettingsFixture())),
       http.get('/api/v1/orgs/local/runtime-settings', () =>
         HttpResponse.json(organizationRuntimeSettingsFixture()),
       ),
@@ -142,6 +152,17 @@ describe('desktop organization navigation', () => {
     expect(screen.queryByRole('heading', { name: 'Workspaces' })).not.toBeInTheDocument()
   })
 
+  it('redirects legacy workspace management routes to desktop settings', async () => {
+    const { router } = renderDesktopRoute('/orgs/local/workspaces/3/settings')
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/desktop/settings'))
+    expect(await screen.findByRole('tab', { name: 'Workspaces' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(screen.queryByRole('heading', { name: 'Workspace settings' })).not.toBeInTheDocument()
+  })
+
   it('hides access-control overview cards and preserves workspace context in the editor link', async () => {
     const { router, user } = renderRoute('/orgs/local/workspaces/3')
 
@@ -166,3 +187,24 @@ describe('desktop organization navigation', () => {
     })
   })
 })
+
+function renderDesktopRoute(initialEntry: string) {
+  const queryClient = createTestQueryClient()
+  const router = getRouter({ history: createMemoryHistory({ initialEntries: [initialEntry] }) })
+  const session = {
+    access_token: 'desktop-token',
+    auth_session_id: 'session-1',
+    identity: { account_id: 1, org_id: 1, org_slug: 'local', workspace_id: 3 },
+  }
+
+  return {
+    router,
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <DesktopRuntimeContext.Provider value={{ native: true, session }}>
+          <RouterProvider router={router} />
+        </DesktopRuntimeContext.Provider>
+      </QueryClientProvider>,
+    ),
+  }
+}
