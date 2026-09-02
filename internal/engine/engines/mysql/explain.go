@@ -15,17 +15,17 @@ var mysqlExplainSpec = explain.Spec{SupportsAnalyze: true}
 
 func (*mysqlDriver) ExplainSpec() explain.Spec { return mysqlExplainSpec }
 
-func (*mysqlDriver) Explain(sql string, mode explain.Mode) (string, error) {
+func (*mysqlDriver) Explain(sql string, mode explain.Mode) (explain.Plan, error) {
 	if err := validateExplainable(sql); err != nil {
-		return "", err
+		return explain.Plan{}, err
 	}
 	switch mode {
 	case explain.ModePlain:
-		return fmt.Sprintf("EXPLAIN %s", sql), nil
+		return explain.Plan{Statement: fmt.Sprintf("EXPLAIN %s", sql)}, nil
 	case explain.ModeAnalyze:
-		return fmt.Sprintf("EXPLAIN ANALYZE %s", sql), nil
+		return explain.Plan{Statement: fmt.Sprintf("EXPLAIN ANALYZE %s", sql)}, nil
 	default:
-		return "", explain.ErrUnsupported
+		return explain.Plan{}, explain.ErrUnsupported
 	}
 }
 

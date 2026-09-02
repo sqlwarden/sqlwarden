@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/sqlwarden/internal/engine/explain"
@@ -18,8 +19,8 @@ func TestSQLiteExplain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "EXPLAIN QUERY PLAN SELECT 1"; plain != want {
-		t.Fatalf("plain explain = %q, want %q", plain, want)
+	if want := (explain.Plan{Statement: "EXPLAIN QUERY PLAN SELECT 1"}); !reflect.DeepEqual(plain, want) {
+		t.Fatalf("plain explain = %+v, want %+v", plain, want)
 	}
 
 	if _, err := driver.Explain("SELECT 1", explain.ModeAnalyze); !errors.Is(err, explain.ErrAnalyzeUnsupported) {

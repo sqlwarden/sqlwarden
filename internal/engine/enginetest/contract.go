@@ -56,6 +56,9 @@ func RunCapabilityContract(t *testing.T, name string) {
 	if set.Capabilities[engine.CapabilitySQLGenerate] != (set.Statements != nil) {
 		t.Fatal("sql.generate capability and statement spec disagree")
 	}
+	if set.Capabilities[engine.CapabilitySQLExplain] != (set.Explain != nil) {
+		t.Fatal("sql.explain capability and explain spec disagree")
+	}
 }
 
 // RunConnectionContract opens a real connection — New + Connect — and verifies a

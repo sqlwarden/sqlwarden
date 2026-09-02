@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/sqlwarden/internal/engine/explain"
@@ -18,16 +19,16 @@ func TestPostgresExplain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "EXPLAIN (FORMAT TEXT) SELECT 1"; plain != want {
-		t.Fatalf("plain explain = %q, want %q", plain, want)
+	if want := (explain.Plan{Statement: "EXPLAIN (FORMAT TEXT) SELECT 1"}); !reflect.DeepEqual(plain, want) {
+		t.Fatalf("plain explain = %+v, want %+v", plain, want)
 	}
 
 	analyze, err := driver.Explain("SELECT 1", explain.ModeAnalyze)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "EXPLAIN (ANALYZE, FORMAT TEXT) SELECT 1"; analyze != want {
-		t.Fatalf("analyze explain = %q, want %q", analyze, want)
+	if want := (explain.Plan{Statement: "EXPLAIN (ANALYZE, FORMAT TEXT) SELECT 1"}); !reflect.DeepEqual(analyze, want) {
+		t.Fatalf("analyze explain = %+v, want %+v", analyze, want)
 	}
 }
 
