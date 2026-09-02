@@ -21,6 +21,15 @@ func TestOracleEngineContract(t *testing.T) {
 	if set.Engine.Dialect != engine.DialectOracle {
 		t.Errorf("Dialect = %q, want %q", set.Engine.Dialect, engine.DialectOracle)
 	}
+	for _, capability := range []engine.Capability{
+		engine.CapabilitySQLParse,
+		engine.CapabilitySQLClassify,
+		engine.CapabilitySQLComplete,
+	} {
+		if !set.Capabilities[capability] {
+			t.Errorf("%s must be true", capability)
+		}
+	}
 	if set.Capabilities[engine.CapabilitySQLExplain] {
 		t.Error("sql.explain must remain false for oracle")
 	}
