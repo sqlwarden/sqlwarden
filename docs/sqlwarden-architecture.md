@@ -583,6 +583,10 @@ Implemented target drivers:
 - PostgreSQL
 - MySQL
 - SQLite
+- Oracle
+
+Bringing a new engine to capability parity is a fixed checklist; see
+`docs/adding-a-database-engine.md`.
 
 Each engine registers through the `engine` registry and advertises implemented capabilities. Current capability packages include:
 
