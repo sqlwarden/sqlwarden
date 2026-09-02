@@ -76,6 +76,58 @@ func TestOraclePairFilter(t *testing.T) {
 	}
 }
 
+func TestOracleDictViewAndOwner(t *testing.T) {
+	all := oracleDict{}
+	user := oracleDict{user: true}
+
+	if all.view("all_tab_columns") != "all_tab_columns" {
+		t.Errorf("all.view = %q", all.view("all_tab_columns"))
+	}
+	if user.view("all_tab_columns") != "user_tab_columns" {
+		t.Errorf("user.view = %q", user.view("all_tab_columns"))
+	}
+	if all.ownerCol("cc.owner") != "cc.owner" {
+		t.Errorf("all.ownerCol = %q", all.ownerCol("cc.owner"))
+	}
+	if user.ownerCol("cc.owner") != "USER" {
+		t.Errorf("user.ownerCol = %q", user.ownerCol("cc.owner"))
+	}
+	if all.ownerJoin("cc.owner", "c.owner") != "cc.owner = c.owner AND " {
+		t.Errorf("all.ownerJoin = %q", all.ownerJoin("cc.owner", "c.owner"))
+	}
+	if user.ownerJoin("cc.owner", "c.owner") != "" {
+		t.Errorf("user.ownerJoin = %q", user.ownerJoin("cc.owner", "c.owner"))
+	}
+}
+
+func TestOracleDictObjFilter(t *testing.T) {
+	refs := []metadata.ObjectRef{
+		{Scope: oracleSchemaScope("HR"), Kind: "table", Name: "EMP"},
+		{Scope: oracleSchemaScope("HR"), Kind: "table", Name: "DEPT"},
+	}
+
+	allPred, allArgs := oracleDict{}.objFilter("owner", "table_name", refs, 1)
+	if allPred != "(owner, table_name) IN ((:1,:2),(:3,:4))" {
+		t.Fatalf("all pred = %q", allPred)
+	}
+	if len(allArgs) != 4 || allArgs[0] != "HR" || allArgs[1] != "EMP" || allArgs[3] != "DEPT" {
+		t.Fatalf("all args = %v", allArgs)
+	}
+
+	userPred, userArgs := oracleDict{user: true}.objFilter("owner", "table_name", refs, 1)
+	if userPred != "table_name IN (:1,:2)" {
+		t.Fatalf("user pred = %q", userPred)
+	}
+	if len(userArgs) != 2 || userArgs[0] != "EMP" || userArgs[1] != "DEPT" {
+		t.Fatalf("user args = %v", userArgs)
+	}
+
+	offsetPred, _ := oracleDict{user: true}.objFilter("owner", "sequence_name", refs[:1], 5)
+	if offsetPred != "sequence_name IN (:5)" {
+		t.Fatalf("offset pred = %q", offsetPred)
+	}
+}
+
 func TestOracleSystemSchemasExcludesUserSchema(t *testing.T) {
 	if _, isSystem := oracleSystemSchemas["SYS"]; !isSystem {
 		t.Error("SYS should be a system schema")
@@ -100,8 +152,11 @@ func TestOracleSetAttrHelpers(t *testing.T) {
 	if col.Attributes["comment"] != "c" {
 		t.Errorf("column attributes = %v", col.Attributes)
 	}
-	appendSource(obj, "DDL", "create table t")
-	if len(obj.Descriptors) != 1 || obj.Descriptors[0].Kind != "source" || !strings.Contains(obj.Descriptors[0].Source.Body, "create table") {
-		t.Errorf("descriptors = %+v", obj.Descriptors)
+	if oracleSourceDescriptor("DDL", "") != nil {
+		t.Error("empty body must yield a nil descriptor")
+	}
+	desc := oracleSourceDescriptor("DDL", "create table t")
+	if desc == nil || desc.Kind != "source" || desc.Title != "DDL" || !strings.Contains(desc.Source.Body, "create table") {
+		t.Errorf("descriptor = %+v", desc)
 	}
 }

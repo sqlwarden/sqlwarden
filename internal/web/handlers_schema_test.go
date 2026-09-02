@@ -95,6 +95,22 @@ func (schemaRelDriver) InspectRelationshipsInScope(_ context.Context, scope meta
 	}, nil
 }
 
+// schemaDefDriver is schemaFakeDriver plus the optional DefinitionInspector
+// capability. schemaFakeDriver deliberately omits it so the plain driver drives
+// the 501 path for the definition endpoint.
+type schemaDefDriver struct{ schemaFakeDriver }
+
+func (schemaDefDriver) InspectDefinition(_ context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
+	if ref.Kind != "table" {
+		return nil, nil
+	}
+	return &metadata.Descriptor{
+		Kind:   "source",
+		Title:  "DDL",
+		Source: &metadata.Source{Language: "sql", Body: "CREATE TABLE " + ref.Name + " (id INTEGER)"},
+	}, nil
+}
+
 type ddlFakeDriver struct {
 	schemaFakeDriver
 	mu      sync.Mutex
@@ -361,6 +377,70 @@ func TestPostConnectionObjects(t *testing.T) {
 	columns := rel["columns"].([]any)
 	column := columns[0].(map[string]any)
 	assert.Equal(t, column["name"], "id")
+}
+
+func TestGetConnectionSchemaObjectDefinition_Ephemeral(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-def"), "Schema Def", "Schema Def Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaDefDriver{})
+
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	req := newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+
+			"/schema/object/definition?scope="+schemaScopeParam(scope)+"&kind=table&name=widgets",
+		nil, tok)
+	req.Header.Set("X-Warden-Session", sess.ID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	descriptor := res.BodyFields["descriptor"].(map[string]any)
+	assert.Equal(t, descriptor["title"], "DDL")
+	source := descriptor["source"].(map[string]any)
+	if body, _ := source["body"].(string); !strings.Contains(body, "CREATE TABLE widgets") {
+		t.Fatalf("unexpected definition body: %v", source["body"])
+	}
+}
+
+func TestGetConnectionSchemaObjectDefinition_MissingParams(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-def-bad"), "Schema Def Bad", "Schema Def Bad Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaDefDriver{})
+
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	req := newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+
+			"/schema/object/definition?scope="+schemaScopeParam(scope)+"&kind=table",
+		nil, tok)
+	req.Header.Set("X-Warden-Session", sess.ID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusBadRequest)
+}
+
+func TestGetConnectionSchemaObjectDefinition_Unsupported(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-def-501"), "Schema Def 501", "Schema Def 501 Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
+
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	req := newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+
+			"/schema/object/definition?scope="+schemaScopeParam(scope)+"&kind=table&name=widgets",
+		nil, tok)
+	req.Header.Set("X-Warden-Session", sess.ID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusNotImplemented)
 }
 
 func TestRefreshConnectionSchema(t *testing.T) {

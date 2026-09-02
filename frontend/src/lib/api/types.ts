@@ -731,6 +731,10 @@ export interface ObjectsResponse {
   objects: ObjectDetail[]
 }
 
+export interface ObjectDefinitionResponse {
+  descriptor: ObjectDescriptor | null
+}
+
 export interface Relationship {
   name: string
   source: ObjectRef

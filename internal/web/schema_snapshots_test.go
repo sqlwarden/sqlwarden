@@ -329,6 +329,107 @@ func TestDisablingOrganizationSnapshotsPurgesStoredMetadata(t *testing.T) {
 	assert.Equal(t, enabled, false)
 }
 
+type fakeBatchInspector struct {
+	failOnCall int
+	calls      int
+	batchSizes []int
+}
+
+func (f *fakeBatchInspector) SchemaSpec() metadata.SchemaSpec { return metadata.SchemaSpec{} }
+
+func (f *fakeBatchInspector) InspectDirectory(context.Context, metadata.DirectoryOptions) (*metadata.Directory, error) {
+	return &metadata.Directory{}, nil
+}
+
+func (f *fakeBatchInspector) InspectObjects(_ context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	f.calls++
+	f.batchSizes = append(f.batchSizes, len(refs))
+	if f.failOnCall != 0 && f.calls == f.failOnCall {
+		return nil, errors.New("inspect failed")
+	}
+	out := make([]metadata.Object, 0, len(refs))
+	for _, ref := range refs {
+		out = append(out, metadata.Object{
+			Ref:        ref,
+			Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{Name: "id", DataType: "INTEGER", Ordinal: 1}}},
+		})
+	}
+	return out, nil
+}
+
+func batchInspectorRefs(n int) (metadata.ScopePath, []metadata.ObjectRef) {
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	refs := make([]metadata.ObjectRef, n)
+	for i := range refs {
+		refs[i] = metadata.ObjectRef{Scope: scope, Kind: "table", Name: fmt.Sprintf("t_%d", i)}
+	}
+	return scope, refs
+}
+
+func TestInspectAndStoreObjectsPersistsEveryBatch(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, _, org := seedOrgOwner(t, app, uniqueEmail(t, "batch-store"), "Batch Store", "Batch Store Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Batch WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Batch Conn", "open")
+
+	total := schemaObjectBatchSize*2 + 7
+	scope, refs := batchInspectorRefs(total)
+	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID,
+		&metadata.Directory{Engine: "sqlite", DefaultScope: scope, GeneratedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inspector := &fakeBatchInspector{}
+	count, err := app.inspectAndStoreObjects(context.Background(), inspector, snapshot.ID, refs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, count, total)
+	assert.Equal(t, inspector.calls, 3)
+	assert.Equal(t, inspector.batchSizes[0], schemaObjectBatchSize)
+	assert.Equal(t, inspector.batchSizes[2], 7)
+
+	all, err := app.schemaSnapshots.AllObjects(context.Background(), snapshot.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, len(all), total)
+}
+
+func TestInspectAndStoreObjectsAbortsOnMidLoopInspectError(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, _, org := seedOrgOwner(t, app, uniqueEmail(t, "batch-err"), "Batch Err", "Batch Err Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Batch WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Batch Conn", "open")
+
+	total := schemaObjectBatchSize*3 + 1
+	scope, refs := batchInspectorRefs(total)
+	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID,
+		&metadata.Directory{Engine: "sqlite", DefaultScope: scope, GeneratedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = app.inspectAndStoreObjects(context.Background(), &fakeBatchInspector{failOnCall: 2}, snapshot.ID, refs)
+	var coded jobs.CodedError
+	if !errors.As(err, &coded) || coded.Code != "schema_objects_failed" || !coded.Retryable {
+		t.Fatalf("expected retryable schema_objects_failed coded error, got %v", err)
+	}
+
+	all, err := app.schemaSnapshots.AllObjects(context.Background(), snapshot.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) > schemaObjectBatchSize {
+		t.Fatalf("expected at most one batch persisted before the failure, got %d", len(all))
+	}
+}
+
 func snapshotDirectory(objectName string, generatedAt time.Time) *metadata.Directory {
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
 	return &metadata.Directory{
