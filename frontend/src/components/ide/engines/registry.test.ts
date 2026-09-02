@@ -42,6 +42,15 @@ describe('frontend engine registry', () => {
     }
   })
 
+  it('network engines declare a tls spec, sqlite does not', () => {
+    const byId = Object.fromEntries(frontendEngines.map((e) => [e.id, e]))
+    for (const id of ['postgres', 'mysql', 'oracle']) {
+      expect(byId[id].tls, id).toBeDefined()
+      expect(byId[id].tls!.modes.length).toBe(4)
+    }
+    expect(byId['sqlite'].tls).toBeUndefined()
+  })
+
   it('only exposes drivers with connection forms as connectable', () => {
     expect(connectableEngines.map((engine) => engine.id)).toEqual(['postgres', 'mysql', 'oracle'])
   })

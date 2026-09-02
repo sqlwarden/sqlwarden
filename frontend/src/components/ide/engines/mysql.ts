@@ -2,6 +2,7 @@ import mysqlIcon from '#/assets/drivers/mysql.svg'
 import { mysqlDriver } from '../connection-drivers/mysql'
 import { mysqlHooks } from '../object-detail/drivers/mysql'
 import { mysqlDialect } from './mysql/dialect'
+import { standardTlsSpec } from './tls'
 import type { FrontendEngine } from './types'
 
 export const mysqlEngine: FrontendEngine = {
@@ -12,6 +13,7 @@ export const mysqlEngine: FrontendEngine = {
   objectDetail: mysqlHooks,
   diagram: {},
   connection: mysqlDriver,
+  tls: standardTlsSpec,
   manualTransactionWarning:
     'MySQL implicitly commits the transaction on DDL statements (CREATE, ALTER, DROP, TRUNCATE) — those changes cannot be rolled back, and any pending DML commits with them.',
 }

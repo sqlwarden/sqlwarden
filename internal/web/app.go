@@ -188,6 +188,9 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 	app.configureConnectionCacheInvalidation()
+	if _, err := app.backfillConnectionTLSConfig(context.Background()); err != nil {
+		logger.Warn("connection tls backfill failed; will retry next boot", slog.Any("error", err))
+	}
 	app.jobRegistry = app.defaultJobRegistry()
 	app.startRuntimeSupervisor(initialSettings)
 	app.startFileContentDeletionReaper()

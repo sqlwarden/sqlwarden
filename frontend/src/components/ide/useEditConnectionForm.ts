@@ -4,9 +4,16 @@ import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
 import { errorMessage, isApiError } from '#/lib/api/errors'
 import { queryKeys } from '#/lib/api/query-keys'
-import { connectionDsnQueryOptions, orgQueryOptions } from '#/lib/api/query'
+import {
+  connectionDsnQueryOptions,
+  connectionTlsQueryOptions,
+  orgQueryOptions,
+} from '#/lib/api/query'
 import type { Connection, ScopePath } from '#/lib/api/types'
 import { defaultFieldValues, driverMap, drivers } from './connection-drivers'
+import { emptyTlsState, type TlsFormState } from './ConnectionTlsFields'
+import { tlsRevealToState, tlsStateToPayload } from './connectionTlsPayload'
+import { findFrontendEngine } from './engines/registry'
 import {
   scopeSegmentName,
   type ConnectionTestState,
@@ -43,6 +50,8 @@ export function useEditConnectionForm({
   const [conflict, setConflict] = useState(false)
   const [scopeDiscovery, setScopeDiscovery] = useState<ScopeDiscovery>()
   const [defaultScope, setDefaultScope] = useState<ScopePath>([])
+  const [tls, setTls] = useState<TlsFormState>(emptyTlsState)
+  const tlsSpec = findFrontendEngine(connection?.driver ?? '')?.tls
 
   const org = useQuery({ ...orgQueryOptions(orgSlug), enabled: open })
   const revealDsnAllowed =
@@ -50,6 +59,11 @@ export function useEditConnectionForm({
 
   const revealDsn = useQuery({
     ...connectionDsnQueryOptions(orgSlug, workspaceId, connection?.id ?? ''),
+    enabled: open && revealDsnAllowed && connection !== undefined,
+  })
+
+  const revealTls = useQuery({
+    ...connectionTlsQueryOptions(orgSlug, workspaceId, connection?.id ?? ''),
     enabled: open && revealDsnAllowed && connection !== undefined,
   })
 
@@ -62,6 +76,7 @@ export function useEditConnectionForm({
     setConflict(false)
     setScopeDiscovery(undefined)
     setDefaultScope(connection.default_scope ?? [])
+    setTls(emptyTlsState)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when the dialog opens for a given connection
   }, [open, connection?.id])
 
@@ -70,6 +85,11 @@ export function useEditConnectionForm({
     setFields((current) => ({ ...current, ...driver.parseDSN(revealDsn.data.dsn) }))
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-apply on every successful fetch, even if the DSN value is unchanged (structural sharing keeps `data` referentially equal)
   }, [open, revealDsn.data, revealDsn.dataUpdatedAt])
+
+  useEffect(() => {
+    if (!open || !revealTls.data) return
+    setTls(tlsRevealToState(revealTls.data))
+  }, [open, revealTls.data, revealTls.dataUpdatedAt])
 
   function changeField(key: string, value: string) {
     setFields((current) => ({ ...current, [key]: value }))
@@ -90,6 +110,12 @@ export function useEditConnectionForm({
     setErrors((current) => ({ ...current, name: undefined }))
   }
 
+  function changeTls(next: TlsFormState) {
+    setTls(next)
+    setTestState({ status: 'idle' })
+    setConflict(false)
+  }
+
   function reset() {
     setName('')
     setFields(defaultFieldValues(driver))
@@ -98,9 +124,13 @@ export function useEditConnectionForm({
     setConflict(false)
     setScopeDiscovery(undefined)
     setDefaultScope([])
+    setTls(emptyTlsState)
     if (connection) {
       queryClient.removeQueries({
         queryKey: queryKeys.connectionDsn(orgSlug, workspaceId, connection.id),
+      })
+      queryClient.removeQueries({
+        queryKey: queryKeys.connectionTls(orgSlug, workspaceId, connection.id),
       })
     }
   }
@@ -137,6 +167,7 @@ export function useEditConnectionForm({
       }>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections/test`, {
         driver: driver.id,
         dsn: buildDSN(),
+        tls: tlsStateToPayload(tls),
       }),
     onMutate: () => setTestState({ status: 'pending' }),
     onSuccess: (data) => {
@@ -212,6 +243,7 @@ export function useEditConnectionForm({
         dsn: buildDSN(),
         access_mode: connection?.access_mode ?? 'open',
         default_scope: defaultScope,
+        tls: tlsStateToPayload(tls),
         force,
       }),
     onSuccess: async () => {
@@ -260,12 +292,16 @@ export function useEditConnectionForm({
     requiredFieldsFilled,
     revealDsnAllowed,
     revealDsnPending: revealDsn.isFetching,
+    revealTlsPending: revealTls.isFetching,
     scopeDiscovery,
     selectDatabase,
     selectSchema,
     submit,
     testConnection,
     testState,
+    tls,
+    tlsSpec,
+    changeTls,
     updateConnection,
   }
 }

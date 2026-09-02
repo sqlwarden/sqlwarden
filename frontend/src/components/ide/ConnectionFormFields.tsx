@@ -304,15 +304,17 @@ export function SectionDivider({ label }: { label: string }) {
 export function FormField({
   label,
   error,
+  disabled,
   children,
 }: {
   label: string
   error?: string
+  disabled?: boolean
   children: React.ReactNode
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <Label>{label}</Label>
+    <div className="group/field flex flex-col gap-1.5" data-disabled={disabled || undefined}>
+      <Label className="group-data-[disabled]/field:opacity-50">{label}</Label>
       {children}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>

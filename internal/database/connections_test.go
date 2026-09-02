@@ -282,3 +282,34 @@ func TestDeleteConnection_RemovesHierarchyAtomically(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateConnectionTLSConfigRoundTrips(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	org, _ := db.InsertOrg(ctx, "tls-org", "TLS Org")
+	ws, _ := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Main", "")
+	conn, err := db.InsertConnection(ctx, ws.ID, nil, "tls-db", "postgres", "dsn", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.UpdateConnectionTLSConfig(ctx, conn.ID, "k2.key.blob"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := db.GetConnection(ctx, conn.ID)
+	if err != nil || !ok {
+		t.Fatalf("get: %v ok=%v", err, ok)
+	}
+	if got.TLSConfigEncrypted != "k2.key.blob" {
+		t.Fatalf("TLSConfigEncrypted=%q", got.TLSConfigEncrypted)
+	}
+
+	if err := db.UpdateConnectionTLSConfig(ctx, conn.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ = db.GetConnection(ctx, conn.ID)
+	if got.TLSConfigEncrypted != "" {
+		t.Fatalf("after clear TLSConfigEncrypted=%q", got.TLSConfigEncrypted)
+	}
+}

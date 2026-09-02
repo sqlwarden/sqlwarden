@@ -9,8 +9,10 @@ import {
   DialogTitle,
 } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { driverBrands } from './connection-drivers/index'
 import { TestStatusIndicator } from './ConnectionTestStatus'
+import { ConnectionTlsFields } from './ConnectionTlsFields'
 import { DriverBadge } from './DriverBadge'
 import { DriverFields, FormField } from './ConnectionFormFields'
 import { useEditConnectionForm } from './useEditConnectionForm'
@@ -50,13 +52,13 @@ export function EditConnectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={form.handleOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Edit Connection</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col">
-          <div className="flex max-h-[min(560px,calc(100svh-14rem))] flex-col gap-4 overflow-y-auto pb-1">
+          <div className="flex max-h-[min(680px,calc(100svh-10rem))] flex-col gap-4 overflow-y-auto pb-1">
             <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 p-3">
               <DriverBadge driver={form.driver.id} size="md" className="size-8 shrink-0" />
               <div className="min-w-0 flex-1">
@@ -67,37 +69,57 @@ export function EditConnectionDialog({
               </div>
             </div>
 
-            <p className="text-xs text-muted-foreground">
-              {form.revealDsnAllowed
-                ? 'Connection credentials are shown below because you can manage this connection.'
-                : "For security, connection credentials are never shown after they're saved. Re-enter the full connection details below to update this connection."}
-            </p>
+            <Tabs defaultValue="general" className="gap-3">
+              <TabsList variant="line">
+                <TabsTrigger value="general">General</TabsTrigger>
+                {form.tlsSpec ? <TabsTrigger value="tls">TLS / SSL</TabsTrigger> : null}
+              </TabsList>
 
-            <div className="grid grid-cols-6 gap-3">
-              <div className="col-span-6">
-                <FormField label="Name" error={form.errors.name}>
-                  <Input
-                    value={form.name}
-                    disabled={isPending}
-                    placeholder={`My ${form.driver.label}`}
-                    aria-invalid={form.errors.name ? true : undefined}
-                    onChange={(e) => form.changeName(e.target.value)}
+              <TabsContent value="general" className="flex flex-col gap-4">
+                <p className="text-xs text-muted-foreground">
+                  {form.revealDsnAllowed
+                    ? 'Connection credentials are shown below because you can manage this connection.'
+                    : "For security, connection credentials are never shown after they're saved. Re-enter the full connection details below to update this connection."}
+                </p>
+
+                <div className="grid grid-cols-6 gap-3">
+                  <div className="col-span-6">
+                    <FormField label="Name" error={form.errors.name}>
+                      <Input
+                        value={form.name}
+                        disabled={isPending}
+                        placeholder={`My ${form.driver.label}`}
+                        aria-invalid={form.errors.name ? true : undefined}
+                        onChange={(e) => form.changeName(e.target.value)}
+                      />
+                    </FormField>
+                  </div>
+
+                  <DriverFields
+                    driver={form.driver}
+                    values={form.fields}
+                    errors={form.errors.fields}
+                    disabled={fieldsDisabled}
+                    onChange={form.changeField}
+                    scopeDiscovery={form.scopeDiscovery}
+                    defaultScope={form.defaultScope}
+                    onDatabaseChange={form.selectDatabase}
+                    onSchemaChange={form.selectSchema}
                   />
-                </FormField>
-              </div>
+                </div>
+              </TabsContent>
 
-              <DriverFields
-                driver={form.driver}
-                values={form.fields}
-                errors={form.errors.fields}
-                disabled={fieldsDisabled}
-                onChange={form.changeField}
-                scopeDiscovery={form.scopeDiscovery}
-                defaultScope={form.defaultScope}
-                onDatabaseChange={form.selectDatabase}
-                onSchemaChange={form.selectSchema}
-              />
-            </div>
+              {form.tlsSpec ? (
+                <TabsContent value="tls">
+                  <ConnectionTlsFields
+                    spec={form.tlsSpec}
+                    value={form.tls}
+                    disabled={fieldsDisabled}
+                    onChange={form.changeTls}
+                  />
+                </TabsContent>
+              ) : null}
+            </Tabs>
 
             {form.errors._form ? (
               <p className="text-xs text-destructive">{form.errors._form}</p>

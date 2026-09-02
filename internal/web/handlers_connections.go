@@ -266,6 +266,7 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		EnvironmentID *int64              `json:"environment_id"`
 		AccessMode    string              `json:"access_mode"`
 		DefaultScope  metadata.ScopePath  `json:"default_scope,omitempty"`
+		TLS           *tlsConfigDocument  `json:"tls"`
 		V             validator.Validator `json:"-"`
 	}
 
@@ -278,6 +279,12 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 	input.V.CheckField(input.Name != "", "name", "Name is required.")
 	input.V.CheckField(input.Driver != "", "driver", "Driver is required.")
 	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
+
+	var tlsDoc tlsConfigDocument
+	if input.TLS != nil {
+		tlsDoc = *input.TLS
+		app.validateTLSDocument(input.Driver, tlsDoc, &input.V)
+	}
 	if input.Driver != "" {
 		if err := app.validateTargetConnection(input.Driver, input.DSN); err != nil {
 			if errors.Is(err, errSQLiteTargetDisabled) {
@@ -300,6 +307,12 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 	}
 
 	dsnEncrypted, err := app.keyring.Encrypt(input.DSN)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	tlsEncrypted, err := app.sealTLSDocument(tlsDoc)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -330,6 +343,15 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
+	}
+
+	if tlsEncrypted != "" {
+		if err := app.db.UpdateConnectionTLSConfig(context.Background(), conn.ID, tlsEncrypted); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		conn.TLSConfigEncrypted = tlsEncrypted
+		app.logInfo(r, "connection tls configured", slog.Int64("connection_id", conn.ID))
 	}
 
 	app.logInfo(r, "connection created", slog.Int64("workspace_id", ws.ID), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver), slog.String("access_mode", conn.AccessMode))
@@ -384,6 +406,38 @@ func (app *application) getConnectionDSN(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+// getConnectionTLS reveals the stored TLS config, minus the private key, so the
+// edit form can pre-fill it. Gated by conn:update like getConnectionDSN.
+func (app *application) getConnectionTLS(w http.ResponseWriter, r *http.Request) {
+	org := contextGetOrg(r)
+	if org.MaskConnectionCredentialsOnEdit {
+		app.notPermitted(w, r)
+		return
+	}
+
+	conn := contextGetConnection(r)
+	doc, has, err := app.decodeTLSDocument(conn.TLSConfigEncrypted)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	mode := doc.Mode
+	if !has || mode == "" {
+		mode = string(engine.TLSModeDisable)
+	}
+	app.logInfo(r, "connection tls revealed", slog.Int64("connection_id", conn.ID))
+	err = response.JSON(w, http.StatusOK, map[string]any{
+		"mode":            mode,
+		"server_name":     doc.ServerName,
+		"ca_pem":          doc.CAPEM,
+		"client_cert_pem": doc.ClientCertPEM,
+		"client_key_set":  doc.ClientKeyPEM != "",
+	})
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 func (app *application) updateConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name                 *string             `json:"name"`
@@ -392,6 +446,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		AccessMode           *string             `json:"access_mode"`
 		SchemaSnapshotPolicy *string             `json:"schema_snapshot_policy"`
 		DefaultScope         *metadata.ScopePath `json:"default_scope"`
+		TLS                  *tlsConfigDocument  `json:"tls"`
 		Force                bool                `json:"force"`
 		V                    validator.Validator `json:"-"`
 	}
@@ -420,7 +475,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			*input.SchemaSnapshotPolicy == database.SchemaSnapshotPolicyDisabled,
 			"schema_snapshot_policy", "Schema snapshot policy must be inherit or disabled.")
 	}
-	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil || input.DefaultScope != nil,
+	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil || input.DefaultScope != nil || input.TLS != nil,
 		"request", "At least one setting is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -428,6 +483,33 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	}
 
 	conn := contextGetConnection(r)
+
+	tlsEncrypted := ""
+	tlsChanged := false
+	if input.TLS != nil {
+		next := *input.TLS
+		current, hasCurrent, decodeErr := app.decodeTLSDocument(conn.TLSConfigEncrypted)
+		if decodeErr != nil {
+			app.serverError(w, r, decodeErr)
+			return
+		}
+		if next.ClientKeyPEM == "" && hasCurrent {
+			next.ClientKeyPEM = current.ClientKeyPEM
+		}
+		tlsV := validator.Validator{}
+		app.validateTLSDocument(conn.Driver, next, &tlsV)
+		if tlsV.HasErrors() {
+			app.failedValidation(w, r, tlsV)
+			return
+		}
+		tlsEncrypted, err = app.sealTLSDocument(next)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		tlsChanged = true
+	}
+
 	currentDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -524,6 +606,14 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	}
+	if tlsChanged {
+		if err := app.db.UpdateConnectionTLSConfig(r.Context(), conn.ID, tlsEncrypted); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		app.logInfo(r, "connection tls updated", slog.Int64("connection_id", conn.ID))
+	}
+
 	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.Bool("scope_changed", scopeChanged), slog.String("access_mode", nextAccessMode), slog.String("schema_snapshot_policy", nextSnapshotPolicy))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -545,6 +635,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		Driver      string              `json:"driver"`
 		DSN         string              `json:"dsn"`
 		ParentScope metadata.ScopePath  `json:"parent_scope,omitempty"`
+		TLS         *tlsConfigDocument  `json:"tls"`
 		V           validator.Validator `json:"-"`
 	}
 
@@ -556,6 +647,11 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 
 	input.V.CheckField(input.Driver != "", "driver", "Driver is required.")
 	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
+	var tlsCfg *engine.TLSConfig
+	if input.TLS != nil {
+		app.validateTLSDocument(input.Driver, *input.TLS, &input.V)
+		tlsCfg = input.TLS.toEngine()
+	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -593,7 +689,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		app.serverError(w, r, err)
 		return
 	}
-	err = d.Connect(ctx, app.driverConnectionConfig(input.Driver, input.DSN, settings))
+	err = d.Connect(ctx, app.driverConnectionConfig(input.Driver, input.DSN, settings, tlsCfg))
 	if err != nil {
 		latency := time.Since(start).Milliseconds()
 		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "connect"), slog.String("error_category", connectionTestErrorCategory(err)))
@@ -688,7 +784,11 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		if err := d.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, settings, conn.DefaultScope)); err != nil {
+		tlsCfg, err := app.openTLSConfig(conn)
+		if err != nil {
+			return nil, err
+		}
+		if err := d.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, settings, tlsCfg, conn.DefaultScope)); err != nil {
 			return nil, err
 		}
 		return d, nil
@@ -843,12 +943,13 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) driverConnectionConfig(driverName, dsn string, settings effectiveRuntimeSettings, defaultScopes ...metadata.ScopePath) engine.ConnectionConfig {
+func (app *application) driverConnectionConfig(driverName, dsn string, settings effectiveRuntimeSettings, tls *engine.TLSConfig, defaultScopes ...metadata.ScopePath) engine.ConnectionConfig {
 	config := engine.ConnectionConfig{
 		DSN:            dsn,
 		Driver:         driverName,
 		MaxResultRows:  settings.QueryMaxResultRows,
 		MaxResultBytes: settings.QueryMaxResultBytes,
+		TLS:            tls,
 	}
 	if len(defaultScopes) > 0 {
 		config.DefaultScope = defaultScopes[0]

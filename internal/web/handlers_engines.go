@@ -23,6 +23,7 @@ type engineView struct {
 	DDL          *ddl.Spec                  `json:"schema_edit,omitempty"`
 	Statements   *statement.Spec            `json:"statements,omitempty"`
 	Explain      *explain.Spec              `json:"explain,omitempty"`
+	TLS          *engine.TLSSpec            `json:"connection_tls,omitempty"`
 }
 
 // schemaSpecPayload mirrors schema.SchemaSpec but lives here so the engines API
@@ -45,6 +46,7 @@ func engineToView(set engine.CapabilitySet) engineView {
 		DDL:          set.DDL,
 		Statements:   set.Statements,
 		Explain:      set.Explain,
+		TLS:          set.TLS,
 	}
 	if set.Schema != nil {
 		v.Schema = &schemaSpecPayload{Dialect: set.Schema.Dialect, Kinds: set.Schema.Kinds}

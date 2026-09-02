@@ -40,6 +40,9 @@ type ConnectionConfig struct {
 	MaxResultRows  int
 	MaxResultBytes int64
 	DefaultScope   metadata.ScopePath
+	// TLS carries structured TLS material for network engines. Nil means no
+	// explicit TLS configuration.
+	TLS *TLSConfig
 }
 
 // NormalizeName returns the canonical engine name for a user-facing name or

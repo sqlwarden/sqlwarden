@@ -153,6 +153,41 @@ describe('useConnectionForm', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['org-workspace-connections', 'acme', 3] })
   })
 
+  it('sends the TLS configuration in the create payload', async () => {
+    let body: Record<string, unknown> = {}
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ id: 8 }, { status: 201 })
+      }),
+    )
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.environmentId).toBe('4'))
+    act(() => result.current.pickDriver(drivers[0].id))
+    fillRequiredFields(result)
+    act(() =>
+      result.current.changeTls({
+        mode: 'verify-full',
+        serverName: 'db.internal',
+        caPem: '-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----',
+        clientCertPem: '',
+        clientKeyPem: '',
+        clientKeySet: false,
+      }),
+    )
+
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(body.tls).toEqual({
+      mode: 'verify-full',
+      server_name: 'db.internal',
+      ca_pem: '-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----',
+      client_cert_pem: '',
+      client_key_pem: '',
+    })
+  })
+
   it('allows an explicitly unscoped connection after discovery', async () => {
     server.use(
       http.post('/api/v1/orgs/acme/workspaces/3/connections/test', () =>

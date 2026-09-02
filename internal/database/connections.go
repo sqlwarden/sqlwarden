@@ -21,6 +21,7 @@ type Connection struct {
 	Name                 string             `bun:",notnull"          json:"name"`
 	Driver               string             `bun:",notnull"          json:"driver"`
 	DSNEncrypted         string             `bun:",notnull"          json:"-"`
+	TLSConfigEncrypted   string             `bun:",nullzero"         json:"-"`
 	AccessMode           string             `bun:",notnull,default:'open'" json:"access_mode"`
 	SchemaSnapshotPolicy string             `bun:",notnull,default:'inherit'" json:"schema_snapshot_policy"`
 	DefaultScope         metadata.ScopePath `bun:",notnull,default:''" json:"default_scope,omitempty"`
@@ -233,6 +234,21 @@ func (db *DB) UpdateConnectionDSN(ctx context.Context, id int64, dsnEncrypted st
 
 	_, err := db.NewUpdate().Model((*Connection)(nil)).
 		Set("dsn_encrypted = ?", dsnEncrypted).
+		Where("id = ?", id).
+		Exec(ctx)
+	return err
+}
+
+// UpdateConnectionTLSConfig replaces only the encrypted TLS configuration blob
+// for a connection. An empty string clears the column back to NULL. Like
+// UpdateConnectionDSN it leaves all other fields, including updated_at,
+// untouched so key rotation stays invisible to consumers.
+func (db *DB) UpdateConnectionTLSConfig(ctx context.Context, id int64, tlsConfigEncrypted string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	_, err := db.NewUpdate().Model((*Connection)(nil)).
+		Set("tls_config_encrypted = ?", sql.NullString{String: tlsConfigEncrypted, Valid: tlsConfigEncrypted != ""}).
 		Where("id = ?", id).
 		Exec(ctx)
 	return err

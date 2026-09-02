@@ -56,6 +56,9 @@ const (
 	// without executing it as-is. See explain.Explainer for the analyze-mode
 	// distinction reported alongside this capability.
 	CapabilitySQLExplain Capability = "sql.explain"
+	// CapabilityTLS accepts structured TLS material (CA bundle, client cert,
+	// verification mode, server name) through engine.TLSCapable.TLSSpec.
+	CapabilityTLS Capability = "connection.tls"
 )
 
 // CapabilitySet is an engine's static capability report. Safe to compute and
@@ -71,6 +74,8 @@ type CapabilitySet struct {
 	Statements *statement.Spec `json:"statements,omitempty"`
 	// Explain accompanies sql.explain.
 	Explain *explain.Spec `json:"explain,omitempty"`
+	// TLS accompanies connection.tls.
+	TLS *TLSSpec `json:"connection_tls,omitempty"`
 }
 
 // capabilitiesOf derives an engine's capabilities by type-asserting a fresh,
@@ -78,7 +83,7 @@ type CapabilitySet struct {
 // DERIVED, never hand-declared, so a reported capability can never disagree with
 // what the engine actually implements. The probe is created but never connected,
 // which is why this works for the static /engines report.
-func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec, *ddl.Spec, *statement.Spec, *explain.Spec) {
+func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec, *ddl.Spec, *statement.Spec, *explain.Spec, *TLSSpec) {
 	probe := reg.New()
 	caps := map[Capability]bool{
 		CapabilitySchemaDirectory: false,
@@ -87,11 +92,13 @@ func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec
 		CapabilityQueryCursor:     false,
 		CapabilitySQLGenerate:     false,
 		CapabilitySQLExplain:      false,
+		CapabilityTLS:             false,
 	}
 	var spec *metadata.SchemaSpec
 	var ddlSpec *ddl.Spec
 	var statementSpec *statement.Spec
 	var explainSpec *explain.Spec
+	var tlsSpec *TLSSpec
 	if si, ok := probe.(metadata.SchemaInspector); ok {
 		caps[CapabilitySchemaDirectory] = true
 		caps[CapabilitySchemaObjects] = true
@@ -113,19 +120,24 @@ func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec
 		s := explainer.ExplainSpec()
 		explainSpec = &s
 	}
+	if tc, ok := probe.(TLSCapable); ok {
+		caps[CapabilityTLS] = true
+		s := tc.TLSSpec()
+		tlsSpec = &s
+	}
 	_, caps[CapabilityQueryCursor] = probe.(cursor.QueryCursorDriver)
 	_, caps[CapabilitySQLClassify] = probe.(classifier.Classifier)
 	_, caps[CapabilitySQLSafetyCheck] = probe.(safety.Checker)
 	_, caps[CapabilitySQLParse] = probe.(parser.Parser)
 	_, caps[CapabilitySQLRewrite] = probe.(rewriter.Rewriter)
 	_, caps[CapabilitySQLComplete] = probe.(completer.Completer)
-	return caps, spec, ddlSpec, statementSpec, explainSpec
+	return caps, spec, ddlSpec, statementSpec, explainSpec, tlsSpec
 }
 
 // capabilityReport builds the full static capability report for an engine: its
 // descriptor plus the derived capability map and schema spec.
 func capabilityReport(reg Registration) CapabilitySet {
-	caps, spec, ddlSpec, statementSpec, explainSpec := capabilitiesOf(reg)
+	caps, spec, ddlSpec, statementSpec, explainSpec, tlsSpec := capabilitiesOf(reg)
 	return CapabilitySet{
 		Engine:       EngineDescriptor{ID: reg.ID, DisplayName: reg.DisplayName, Dialect: reg.Dialect},
 		Capabilities: caps,
@@ -133,5 +145,6 @@ func capabilityReport(reg Registration) CapabilitySet {
 		DDL:          ddlSpec,
 		Statements:   statementSpec,
 		Explain:      explainSpec,
+		TLS:          tlsSpec,
 	}
 }

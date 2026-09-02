@@ -35,15 +35,40 @@ func (d *postgresDriver) conn() execer {
 	return d.db
 }
 
-func (d *postgresDriver) Connect(ctx context.Context, cfg engine.ConnectionConfig) error {
+// buildPgxConfig parses the DSN and folds in the default schema and the
+// structured TLS material. When TLS material is present it becomes the single
+// source of truth: pgx's own libpq-style ssl* knobs are dropped so a stale DSN
+// value cannot override the configured verification mode.
+func buildPgxConfig(cfg engine.ConnectionConfig) (*pgx.ConnConfig, error) {
 	config, err := pgx.ParseConfig(cfg.DSN)
 	if err != nil {
-		return fmt.Errorf("postgres: parse config: %w", err)
+		return nil, fmt.Errorf("postgres: parse config: %w", err)
 	}
 	if selectedSchema := cfg.DefaultScope.Name("schema"); selectedSchema != "" {
 		// search_path is a PostgreSQL identifier list, not a query parameter.
 		// Quote it as one identifier so punctuation cannot alter the path.
 		config.RuntimeParams["search_path"] = `"` + strings.ReplaceAll(selectedSchema, `"`, `""`) + `"`
+	}
+	tlsCfg, err := cfg.TLS.Build()
+	if err != nil {
+		return nil, fmt.Errorf("postgres: tls config: %w", err)
+	}
+	if tlsCfg != nil {
+		if tlsCfg.ServerName == "" {
+			tlsCfg.ServerName = config.Host
+		}
+		config.TLSConfig = tlsCfg
+		for _, k := range []string{"sslmode", "sslrootcert", "sslcert", "sslkey", "sslpassword"} {
+			delete(config.RuntimeParams, k)
+		}
+	}
+	return config, nil
+}
+
+func (d *postgresDriver) Connect(ctx context.Context, cfg engine.ConnectionConfig) error {
+	config, err := buildPgxConfig(cfg)
+	if err != nil {
+		return err
 	}
 	db := stdlib.OpenDB(*config)
 	if err := db.PingContext(ctx); err != nil {

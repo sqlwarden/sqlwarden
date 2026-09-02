@@ -10,7 +10,6 @@ describe('postgresDriver.parseDSN', () => {
       database: 'analytics',
       username: 'reader',
       password: 'p@ss w/ord',
-      sslmode: 'require',
     }
     const dsn = postgresDriver.buildDSN(fields)
     expect(postgresDriver.parseDSN(dsn)).toEqual(fields)
@@ -23,7 +22,6 @@ describe('postgresDriver.parseDSN', () => {
       database: 'app',
       username: 'postgres',
       password: '',
-      sslmode: 'prefer',
     })
     expect(postgresDriver.parseDSN(dsn)).toEqual({
       host: 'localhost',
@@ -31,8 +29,21 @@ describe('postgresDriver.parseDSN', () => {
       database: 'app',
       username: 'postgres',
       password: '',
-      sslmode: 'prefer',
     })
+  })
+
+  it('does not emit or parse an sslmode query parameter', () => {
+    const dsn = postgresDriver.buildDSN({
+      host: 'h',
+      port: '5432',
+      database: 'db',
+      username: 'u',
+      password: 'p',
+    })
+    expect(dsn).not.toContain('sslmode')
+    expect(
+      postgresDriver.parseDSN('postgresql://u:p@h:5432/db?sslmode=verify-full'),
+    ).not.toHaveProperty('sslmode')
   })
 
   it('returns an empty object for an unparseable DSN', () => {

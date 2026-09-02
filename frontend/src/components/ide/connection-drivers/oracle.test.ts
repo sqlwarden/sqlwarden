@@ -10,12 +10,11 @@ describe('oracle connection driver', () => {
         serviceName: 'ORCLPDB1',
         username: 'hr',
         password: 's3cr3t',
-        ssl: 'disable',
       }),
     ).toBe('oracle://hr:s3cr3t@db.example.com:1521/ORCLPDB1')
   })
 
-  it('adds SSL=true when ssl is require', () => {
+  it('does not emit an SSL query parameter', () => {
     expect(
       oracleDriver.buildDSN({
         host: 'h',
@@ -23,9 +22,8 @@ describe('oracle connection driver', () => {
         serviceName: 'S',
         username: 'u',
         password: '',
-        ssl: 'require',
       }),
-    ).toBe('oracle://u@h:1521/S?SSL=true')
+    ).toBe('oracle://u@h:1521/S')
   })
 
   it('round-trips through parseDSN', () => {
@@ -35,7 +33,6 @@ describe('oracle connection driver', () => {
       serviceName: 'PDB',
       username: 'u',
       password: 'p',
-      ssl: 'require',
     }
     const parsed = oracleDriver.parseDSN(oracleDriver.buildDSN(values))
     expect(parsed).toEqual(values)
