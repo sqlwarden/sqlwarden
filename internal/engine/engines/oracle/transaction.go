@@ -66,6 +66,7 @@ func (d *oracleDriver) RollbackToSavepoint(ctx context.Context, name string) err
 	if d.currentTx == nil {
 		return transaction.ErrNoOpenTransaction
 	}
+	// name always comes from transaction.NewSavepointName, never user input.
 	// codeql[go/sql-injection]
 	if _, err := d.currentTx.ExecContext(ctx, "ROLLBACK TO "+oracleQuoteIdent(name)); err != nil {
 		return fmt.Errorf("oracle: rollback to savepoint: %w", err)

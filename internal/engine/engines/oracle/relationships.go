@@ -30,34 +30,60 @@ func (d *oracleDriver) InspectRelationshipsInScope(ctx context.Context, scope me
 	}
 	defer rows.Close()
 
-	graph := &metadata.RelationshipGraph{Scope: scope}
-	index := map[string]int{}
+	var scanned []oracleForeignKeyRow
 	for rows.Next() {
-		var table, name, column, refOwner, refTable, refColumn string
-		if err := rows.Scan(&table, &name, &column, &refOwner, &refTable, &refColumn); err != nil {
+		var r oracleForeignKeyRow
+		if err := rows.Scan(&r.Table, &r.Name, &r.Column, &r.RefOwner, &r.RefTable, &r.RefColumn); err != nil {
 			return nil, fmt.Errorf("oracle: relationships scan: %w", err)
 		}
-		key := table + "\x00" + name
-		pos, ok := index[key]
-		if !ok {
-			graph.Relationships = append(graph.Relationships, metadata.Relationship{
-				Kind:   "foreign_key",
-				Name:   name,
-				Source: metadata.ObjectRef{Scope: scope, Kind: "table", Name: table},
-				References: metadata.ObjectRef{
-					Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: refOwner}),
-					Kind:  "table",
-					Name:  refTable,
-				},
-			})
-			pos = len(graph.Relationships) - 1
-			index[key] = pos
-		}
-		graph.Relationships[pos].Columns = append(graph.Relationships[pos].Columns, column)
-		graph.Relationships[pos].ReferencedColumns = append(graph.Relationships[pos].ReferencedColumns, refColumn)
+		scanned = append(scanned, r)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("oracle: relationships rows: %w", err)
 	}
-	return graph, nil
+
+	return &metadata.RelationshipGraph{
+		Scope:         scope,
+		Relationships: foldOracleForeignKeys(scope, scanned),
+	}, nil
+}
+
+// oracleForeignKeyRow is one (constraint, column) row of oracleRelationshipsQuery,
+// already ordered by (table, constraint, position).
+type oracleForeignKeyRow struct {
+	Table     string
+	Name      string
+	Column    string
+	RefOwner  string
+	RefTable  string
+	RefColumn string
+}
+
+// foldOracleForeignKeys groups the per-column rows into one Relationship per
+// constraint, accumulating Columns/ReferencedColumns in the row order (which the
+// query fixes to constraint column position).
+func foldOracleForeignKeys(scope metadata.ScopePath, rows []oracleForeignKeyRow) []metadata.Relationship {
+	var out []metadata.Relationship
+	index := map[string]int{}
+	for _, r := range rows {
+		key := r.Table + "\x00" + r.Name
+		pos, ok := index[key]
+		if !ok {
+			out = append(out, metadata.Relationship{
+				Kind:   "foreign_key",
+				Name:   r.Name,
+				Source: metadata.ObjectRef{Scope: scope, Kind: "table", Name: r.Table},
+				References: metadata.ObjectRef{
+					Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: r.RefOwner}),
+					Kind:  "table",
+					Name:  r.RefTable,
+				},
+			})
+			pos = len(out) - 1
+			index[key] = pos
+		}
+		out[pos].Columns = append(out[pos].Columns, r.Column)
+		out[pos].ReferencedColumns = append(out[pos].ReferencedColumns, r.RefColumn)
+	}
+	return out
 }

@@ -3,9 +3,10 @@ package oracle
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 
-	_ "github.com/sijms/go-ora/v2"
+	go_ora "github.com/sijms/go-ora/v2"
 
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/cursor"
@@ -34,23 +35,51 @@ func (d *oracleDriver) conn() execer {
 	return d.db
 }
 
-func (d *oracleDriver) Connect(ctx context.Context, cfg engine.ConnectionConfig) error {
-	db, err := sql.Open("oracle", cfg.DSN)
+// schemaConnector wraps a go-ora driver.Connector so that the configured
+// default schema is an invariant of every session in the pool: sql.DB opens
+// connections lazily and recycles them, so a one-off ALTER SESSION on a single
+// connection would leave later connections resolving unqualified names against
+// the login user's schema. quotedSchema is empty when no default schema is
+// configured, in which case Connect is a passthrough.
+type schemaConnector struct {
+	inner        driver.Connector
+	quotedSchema string
+}
+
+func (c schemaConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	conn, err := c.inner.Connect(ctx)
 	if err != nil {
-		return fmt.Errorf("oracle: open: %w", err)
+		return nil, err
 	}
+	if c.quotedSchema == "" {
+		return conn, nil
+	}
+	execer, ok := conn.(driver.ExecerContext)
+	if !ok {
+		_ = conn.Close()
+		return nil, fmt.Errorf("oracle: connection does not support session initialization")
+	}
+	// quotedSchema is oracle-quoted and sourced only from validated stored
+	// connection config, so punctuation cannot alter the statement.
+	// codeql[go/sql-injection]
+	if _, err := execer.ExecContext(ctx, `ALTER SESSION SET CURRENT_SCHEMA = `+c.quotedSchema, nil); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("oracle: set current schema: %w", err)
+	}
+	return conn, nil
+}
+
+func (c schemaConnector) Driver() driver.Driver { return c.inner.Driver() }
+
+func (d *oracleDriver) Connect(ctx context.Context, cfg engine.ConnectionConfig) error {
+	connector := schemaConnector{inner: go_ora.NewConnector(cfg.DSN)}
+	if schema := cfg.DefaultScope.Name("schema"); schema != "" {
+		connector.quotedSchema = oracleQuoteIdent(schema)
+	}
+	db := sql.OpenDB(connector)
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
 		return fmt.Errorf("oracle: ping: %w", err)
-	}
-	if schema := cfg.DefaultScope.Name("schema"); schema != "" {
-		// schema is an identifier from stored connection config, quoted here so
-		// punctuation cannot alter the statement.
-		// codeql[go/sql-injection]
-		if _, err := db.ExecContext(ctx, "ALTER SESSION SET CURRENT_SCHEMA = "+oracleQuoteIdent(schema)); err != nil {
-			db.Close()
-			return fmt.Errorf("oracle: set current schema: %w", err)
-		}
 	}
 	d.db = db
 	d.scanOptions = cursor.ScanOptions{MaxRows: cfg.MaxResultRows, MaxBytes: cfg.MaxResultBytes}

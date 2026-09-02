@@ -79,6 +79,43 @@ func TestOracleCompletePrefixFilter(t *testing.T) {
 	}
 }
 
+// schemaAwareResolver has a default schema of APP and distinct relations per
+// schema so a completion can be checked against the qualifier that was used.
+type schemaAwareResolver struct{}
+
+func (schemaAwareResolver) DefaultDatabase() string     { return "" }
+func (schemaAwareResolver) DefaultSchema() string       { return "APP" }
+func (schemaAwareResolver) DatabaseNames() []string     { return nil }
+func (schemaAwareResolver) SchemaNames(string) []string { return []string{"APP", "HR"} }
+func (schemaAwareResolver) Relations(_, schema string) []completioncore.Relation {
+	switch strings.ToUpper(schema) {
+	case "HR":
+		return []completioncore.Relation{{Schema: "HR", Name: "EMPLOYEES", Kind: completioncore.CandidateTable}}
+	case "APP":
+		return []completioncore.Relation{{Schema: "APP", Name: "ACCOUNTS", Kind: completioncore.CandidateTable}}
+	default:
+		return nil
+	}
+}
+func (schemaAwareResolver) FindRelation(_, _, _ string) (completioncore.Relation, bool) {
+	return completioncore.Relation{}, false
+}
+
+func TestOracleCompleteSchemaQualifiedRelations(t *testing.T) {
+	const sql = "SELECT * FROM HR."
+	cands, _, err := Complete(context.Background(), sql, len(sql), schemaAwareResolver{})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	got := labels(cands)
+	if got["EMPLOYEES"] != completioncore.CandidateTable {
+		t.Fatalf("expected HR.EMPLOYEES from the qualifier schema, got %v", got)
+	}
+	if _, leaked := got["ACCOUNTS"]; leaked {
+		t.Fatalf("default-schema relation leaked past the qualifier: %v", got)
+	}
+}
+
 func TestOracleCompleteCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

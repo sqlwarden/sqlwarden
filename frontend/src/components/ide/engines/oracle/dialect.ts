@@ -5,6 +5,9 @@ import { oracleSqlFormatter } from '../../sqlFormatter'
 
 class OracleDialect extends BaseSqlDialect {
   protected override readonly formatter = oracleSqlFormatter
+  // createIdentifierQuoter is deliberately not reused: Oracle folds unquoted
+  // identifiers to upper case, so the shared quoter's bare-identifier fast path
+  // would resolve to a different identifier than the one stored.
   private quoteIdentifier = (name: string) => `"${name.split('"').join('""')}"`
 
   formatObject(scope: ScopePath, name: string): string {
@@ -18,7 +21,7 @@ class OracleDialect extends BaseSqlDialect {
   }
 
   override boundedCountQuery(ref: ObjectRef, limit: number): string {
-    return `SELECT COUNT(*) FROM (SELECT 1 FROM ${this.formatObject(ref.scope, ref.name)} FETCH FIRST ${limit} ROWS ONLY) _warden_count`
+    return `SELECT COUNT(*) FROM (SELECT 1 FROM ${this.formatObject(ref.scope, ref.name)} FETCH FIRST ${limit} ROWS ONLY)`
   }
 }
 

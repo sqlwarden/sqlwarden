@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -31,13 +32,24 @@ var oracleSystemSchemas = map[string]struct{}{
 
 const oracleObjectKindTable = "table"
 
+// oracleSystemSchemaList is the sorted form of oracleSystemSchemas, used to bind
+// the owner exclusion set into dictionary queries.
+func oracleSystemSchemaList() []string {
+	out := make([]string, 0, len(oracleSystemSchemas))
+	for name := range oracleSystemSchemas {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (d *oracleDriver) SchemaSpec() metadata.SchemaSpec {
 	return metadata.SchemaSpec{
 		Dialect: "oracle",
 		Kinds: []metadata.SchemaObjectKind{
 			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
 			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
-			{Kind: "materialized_view", Label: "Materialized View", PluralLabel: "Materialized Views", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "materialized_view", Label: "Materialized View", PluralLabel: "Materialized Views", Order: 3, Relational: true, SupportsDiagram: false, Listing: "enumerated"},
 			{Kind: "sequence", Label: "Sequence", PluralLabel: "Sequences", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
 			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
 			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 6, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
@@ -165,7 +177,16 @@ func (d *oracleDriver) DiscoverScopes(ctx context.Context, request metadata.Scop
 	if request.Parent != "" {
 		return result, nil
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT DISTINCT owner FROM all_objects ORDER BY owner`)
+	systemOwners := oracleSystemSchemaList()
+	placeholders := make([]string, len(systemOwners))
+	args := make([]any, len(systemOwners))
+	for i, owner := range systemOwners {
+		placeholders[i] = ":" + strconv.Itoa(i+1)
+		args[i] = owner
+	}
+	query := `SELECT DISTINCT owner FROM all_objects WHERE owner NOT IN (` +
+		strings.Join(placeholders, ",") + `) ORDER BY owner`
+	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("oracle: discover schemas: %w", err)
 	}
@@ -174,9 +195,6 @@ func (d *oracleDriver) DiscoverScopes(ctx context.Context, request metadata.Scop
 		var owner string
 		if err := rows.Scan(&owner); err != nil {
 			return nil, fmt.Errorf("oracle: discover schemas scan: %w", err)
-		}
-		if _, system := oracleSystemSchemas[owner]; system {
-			continue
 		}
 		result.Scopes = append(result.Scopes, metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: owner}))
 	}
@@ -411,7 +429,11 @@ SELECT i.owner, i.table_name, i.index_name, i.uniqueness, ic.column_name, ic.col
 FROM all_indexes i
 JOIN all_ind_columns ic ON ic.index_owner = i.owner AND ic.index_name = i.index_name
 WHERE (i.table_owner, i.table_name) IN (` + pairs + `)
-  AND i.index_name NOT IN (SELECT constraint_name FROM all_constraints WHERE constraint_type = 'P' AND owner = i.owner)
+  AND i.index_name NOT IN (
+    SELECT index_name FROM all_constraints
+    WHERE constraint_type = 'P' AND owner = i.table_owner
+      AND table_name = i.table_name AND index_name IS NOT NULL
+  )
 ORDER BY i.owner, i.table_name, i.index_name, ic.column_position`
 	irows, err := d.db.QueryContext(ctx, idxQ, args...)
 	if err != nil {

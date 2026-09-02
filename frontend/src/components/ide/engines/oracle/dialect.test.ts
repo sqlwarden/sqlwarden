@@ -24,10 +24,10 @@ describe('oracle dialect', () => {
     expect(oracleDialect.exactCountQuery(ref)).toBe('SELECT COUNT(*) FROM "HR"."EMPLOYEES"')
   })
 
-  it('bounds the count query with FETCH FIRST and no AS alias', () => {
+  it('bounds the count query with FETCH FIRST and no alias', () => {
     const ref = { scope: [{ kind: 'schema', name: 'HR' }], kind: 'table', name: 'EMPLOYEES' }
     expect(oracleDialect.boundedCountQuery(ref, 1000)).toBe(
-      'SELECT COUNT(*) FROM (SELECT 1 FROM "HR"."EMPLOYEES" FETCH FIRST 1000 ROWS ONLY) _warden_count',
+      'SELECT COUNT(*) FROM (SELECT 1 FROM "HR"."EMPLOYEES" FETCH FIRST 1000 ROWS ONLY)',
     )
   })
 })

@@ -4,4 +4,8 @@
 // the full Postgres-tier capability surface except explain.Explainer: Oracle
 // EXPLAIN requires a two-statement script, which the single-string Explainer
 // contract cannot express (tracked in SQLW-107).
+//
+// The supported baseline is Oracle 12.1+: row-limiting clauses
+// (FETCH FIRST ... ROWS ONLY / OFFSET) are used for bounded previews and counts,
+// and 11g (which requires ROWNUM predicates) is not supported.
 package oracle

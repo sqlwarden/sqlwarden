@@ -68,6 +68,9 @@ func classifyOracleSelect(statement *ast.SelectStmt) classifier.Kind {
 	if statement == nil {
 		return classifier.KindUnknown
 	}
+	// Oracle has no data-modifying CTE (WITH cannot contain INSERT/UPDATE/DELETE),
+	// so the SELECT->DML fold that postgres/classifier.go performs is unnecessary
+	// here; only FOR UPDATE needs to downgrade a SELECT.
 	kind := classifier.KindDQL
 	ast.Inspect(statement, func(node ast.Node) bool {
 		if nested, ok := node.(*ast.SelectStmt); ok && nested.ForUpdate != nil {

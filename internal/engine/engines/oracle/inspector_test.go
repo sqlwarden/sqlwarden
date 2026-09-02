@@ -1,11 +1,37 @@
 package oracle
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 
 	"github.com/sqlwarden/internal/engine/metadata"
 )
+
+func i64(v int64) sql.NullInt64 { return sql.NullInt64{Int64: v, Valid: true} }
+
+func TestOracleColumnType(t *testing.T) {
+	null := sql.NullInt64{}
+	cases := []struct {
+		name                     string
+		dataType                 string
+		length, precision, scale sql.NullInt64
+		want                     string
+	}{
+		{"number no precision", "NUMBER", null, null, null, "NUMBER"},
+		{"number precision only", "NUMBER", null, i64(10), null, "NUMBER(10)"},
+		{"number precision and scale", "NUMBER", null, i64(10), i64(2), "NUMBER(10,2)"},
+		{"varchar2 with length", "VARCHAR2", i64(100), null, null, "VARCHAR2(100)"},
+		{"passthrough", "CLOB", null, null, null, "CLOB"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := oracleColumnType(tc.dataType, tc.length, tc.precision, tc.scale); got != tc.want {
+				t.Fatalf("oracleColumnType = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
 
 func TestOracleSchemaSpec(t *testing.T) {
 	spec := (&oracleDriver{}).SchemaSpec()
@@ -26,6 +52,9 @@ func TestOracleSchemaSpec(t *testing.T) {
 	}
 	if got["sequence"].Relational {
 		t.Errorf("sequence must not be relational")
+	}
+	if !got["materialized_view"].Relational {
+		t.Errorf("materialized_view must be relational")
 	}
 }
 

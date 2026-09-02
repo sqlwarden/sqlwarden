@@ -35,7 +35,7 @@ func Complete(
 	cc := oracleparser.CollectCompletion(sql, cursor)
 	prefix := cc.Prefix
 
-	wantColumns, wantRelations, wantSchemas, wantRoutines := intentClasses(cc.Intent)
+	wantColumns, wantRelations, wantSchemas := intentClasses(cc.Intent)
 	qualifier := ""
 	if cc.Intent != nil {
 		qualifier = cc.Intent.Qualifier.Object
@@ -62,15 +62,12 @@ func Complete(
 			out = append(out, columnCandidates(cc.Scope, qualifier, meta)...)
 		}
 		if wantRelations {
-			out = append(out, relationCandidates(meta)...)
+			out = append(out, relationCandidates(meta, qualifier)...)
 		}
 		if wantSchemas {
 			for _, schema := range meta.SchemaNames(meta.DefaultDatabase()) {
 				out = append(out, completioncore.Candidate{Text: schema, Type: completioncore.CandidateSchema})
 			}
-		}
-		if wantRoutines {
-			out = append(out, routineCandidates(meta)...)
 		}
 	}
 
@@ -91,9 +88,11 @@ func Complete(
 
 // intentClasses maps omni ObjectKinds onto the catalog classes to emit. With no
 // intent, default to relations + keywords (a conservative FROM-ish position).
-func intentClasses(intent *oracleparser.CompletionIntent) (columns, relations, schemas, routines bool) {
+// Routine/package completion (function/procedure/package kinds) is a follow-up:
+// the shared completioncore metadata boundary does not expose routine objects.
+func intentClasses(intent *oracleparser.CompletionIntent) (columns, relations, schemas bool) {
 	if intent == nil || len(intent.ObjectKinds) == 0 {
-		return false, true, true, false
+		return false, true, true
 	}
 	for _, kind := range intent.ObjectKinds {
 		switch kind {
@@ -103,11 +102,9 @@ func intentClasses(intent *oracleparser.CompletionIntent) (columns, relations, s
 			relations = true
 		case oracleparser.ObjectKindSchema, oracleparser.ObjectKindUser:
 			schemas = true
-		case oracleparser.ObjectKindFunction, oracleparser.ObjectKindProcedure, oracleparser.ObjectKindPackage:
-			routines = true
 		}
 	}
-	return columns, relations, schemas, routines
+	return columns, relations, schemas
 }
 
 func columnCandidates(scope *oracleparser.ScopeSnapshot, qualifier string, meta completioncore.MetadataResolver) []completioncore.Candidate {
@@ -157,24 +154,18 @@ func columnCandidates(scope *oracleparser.ScopeSnapshot, qualifier string, meta 
 	return out
 }
 
-func relationCandidates(meta completioncore.MetadataResolver) []completioncore.Candidate {
+func relationCandidates(meta completioncore.MetadataResolver, qualifier string) []completioncore.Candidate {
+	schema := meta.DefaultSchema()
+	if qualifier != "" {
+		schema = qualifier
+	}
 	var out []completioncore.Candidate
-	for _, relation := range meta.Relations(meta.DefaultDatabase(), meta.DefaultSchema()) {
+	for _, relation := range meta.Relations(meta.DefaultDatabase(), schema) {
 		kind := relation.Kind
 		if kind == "" {
 			kind = completioncore.CandidateTable
 		}
 		out = append(out, completioncore.Candidate{Text: relation.Name, Type: kind, Definition: relation.Definition})
-	}
-	return out
-}
-
-func routineCandidates(meta completioncore.MetadataResolver) []completioncore.Candidate {
-	var out []completioncore.Candidate
-	for _, relation := range meta.Relations(meta.DefaultDatabase(), meta.DefaultSchema()) {
-		if relation.Kind == completioncore.CandidateFunction || relation.Kind == completioncore.CandidateProcedure {
-			out = append(out, completioncore.Candidate{Text: relation.Name, Type: relation.Kind})
-		}
 	}
 	return out
 }
