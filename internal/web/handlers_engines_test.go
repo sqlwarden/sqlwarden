@@ -71,6 +71,48 @@ func TestListEngines(t *testing.T) {
 	assert.Equal(t, oracleExplain["supports_analyze"], true)
 }
 
+func TestListEnginesReportsTLSSpec(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, _ := seedOrgOwner(t, app, uniqueEmail(t, "engine-tls"), "EngineTLS", "EngineTLS Org")
+
+	req := newAuthRequest(t, http.MethodGet, "/api/v1/engines", nil, tok)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	engines := res.BodyFields["engines"].([]any)
+	byID := make(map[string]map[string]any)
+	for _, e := range engines {
+		m := e.(map[string]any)
+		byID[m["id"].(string)] = m
+	}
+
+	for _, id := range []string{"postgres", "mysql", "oracle"} {
+		eng := byID[id]
+		if eng == nil {
+			t.Fatalf("%s engine missing from %v", id, engines)
+		}
+		assert.Equal(t, eng["capabilities"].(map[string]any)["connection.tls"], true)
+		spec, ok := eng["connection_tls"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected %s connection_tls spec in %v", id, eng)
+		}
+		modes, ok := spec["modes"].([]any)
+		if !ok || len(modes) != 4 {
+			t.Fatalf("expected 4 TLS modes for %s, got %v", id, spec["modes"])
+		}
+	}
+
+	sqlite := byID["sqlite"]
+	if sqlite == nil {
+		t.Fatalf("sqlite engine missing from %v", engines)
+	}
+	assert.Equal(t, sqlite["capabilities"].(map[string]any)["connection.tls"], false)
+	if _, present := sqlite["connection_tls"]; present {
+		t.Fatalf("sqlite should not report a connection_tls spec, got %v", sqlite["connection_tls"])
+	}
+}
+
 func TestGetEngineIncludesExplainSpec(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

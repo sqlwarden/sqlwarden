@@ -43,6 +43,12 @@ func (capabilityDriver) ExplainSpec() explain.Spec { return explain.Spec{Support
 func (capabilityDriver) Explain(sql string, mode explain.Mode) (explain.Plan, error) {
 	return explain.Plan{Statement: "EXPLAIN " + sql}, nil
 }
+func (capabilityDriver) TLSSpec() TLSSpec {
+	return TLSSpec{
+		Modes:            []TLSMode{TLSModeRequire, TLSModeVerifyFull},
+		SupportsCABundle: true,
+	}
+}
 
 func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	resetRegistry(t)
@@ -83,6 +89,9 @@ func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	if set.Capabilities[CapabilitySQLClassify] || set.Capabilities[CapabilitySQLParse] || set.Capabilities[CapabilitySQLRewrite] {
 		t.Errorf("sql caps should be false for a driver implementing no SQL feature: %+v", set.Capabilities)
 	}
+	if !set.Capabilities[CapabilityTLS] || set.TLS == nil || len(set.TLS.Modes) != 2 {
+		t.Errorf("connection.tls and its spec should be derived from TLSCapable: %+v", set)
+	}
 }
 
 func TestCapabilitiesAbsentWhenInterfacesNotImplemented(t *testing.T) {
@@ -98,6 +107,9 @@ func TestCapabilitiesAbsentWhenInterfacesNotImplemented(t *testing.T) {
 	}
 	if set.Capabilities[CapabilitySQLExplain] || set.Explain != nil {
 		t.Errorf("plain driver must not report sql.explain: %+v", set.Capabilities)
+	}
+	if set.Capabilities[CapabilityTLS] || set.TLS != nil {
+		t.Errorf("plain driver must not report connection.tls: %+v", set.Capabilities)
 	}
 	if set.Schema != nil {
 		t.Errorf("plain driver must not carry a schema spec: %+v", set.Schema)

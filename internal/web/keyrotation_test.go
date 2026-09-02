@@ -187,6 +187,56 @@ func TestRotateEncryptionKeys(t *testing.T) {
 	}
 }
 
+func TestRotateEncryptionKeysRotatesTLSConfig(t *testing.T) {
+	ctx := context.Background()
+	app := newTestApplication(t)
+
+	keyring, err := encrypt.NewKeyring("new-tls-primary-key", "old-tls-retired-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.keyring = keyring
+
+	oldKeyring, err := encrypt.NewKeyring("old-tls-retired-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id := seedRawConnection(t, app, "postgres", "postgres://u:p@h:5432/db")
+	blob, err := oldKeyring.Encrypt(`{"mode":"require"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.db.UpdateConnectionTLSConfig(ctx, id, blob); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := app.RotateEncryptionKeys(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.ConnectionTLSConfigsScanned == 0 || rep.ConnectionTLSConfigsRotated != 1 {
+		t.Fatalf("report: %+v", rep)
+	}
+
+	c, _, _ := app.db.GetConnection(ctx, id)
+	if app.keyring.NeedsRotation(c.TLSConfigEncrypted) {
+		t.Fatal("tls blob still needs rotation")
+	}
+	doc, _, _ := app.decodeTLSDocument(c.TLSConfigEncrypted)
+	if doc.Mode != "require" {
+		t.Fatalf("tls blob corrupted by rotation: %+v", doc)
+	}
+
+	rep2, err := app.RotateEncryptionKeys(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep2.ConnectionTLSConfigsRotated != 0 {
+		t.Fatalf("second rotation rotated %d tls configs; want 0", rep2.ConnectionTLSConfigsRotated)
+	}
+}
+
 func TestRotateEncryptionKeysIncludesSMTPPassword(t *testing.T) {
 	app := newTestApplication(t)
 	oldKeyring, err := encrypt.NewKeyring("old-smtp-key")

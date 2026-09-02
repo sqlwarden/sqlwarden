@@ -261,7 +261,11 @@ func (app *application) openTargetDriver(ctx context.Context, conn database.Conn
 	if err != nil {
 		return nil, err
 	}
-	if err := driver.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, settings, conn.DefaultScope)); err != nil {
+	tlsCfg, err := app.openTLSConfig(conn)
+	if err != nil {
+		return nil, err
+	}
+	if err := driver.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, settings, tlsCfg, conn.DefaultScope)); err != nil {
 		return nil, jobs.Retryable("schema_sync_connect_failed", "Could not connect to the target database.")
 	}
 	return driver, nil

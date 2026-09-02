@@ -13,6 +13,15 @@ import type {
   WorkspaceTeam,
 } from '#/lib/api/types'
 import { queryKeys } from '#/lib/api/query-keys'
+import type { TlsMode } from '#/components/ide/engines/types'
+
+export interface ConnectionTlsReveal {
+  mode: TlsMode
+  server_name: string
+  ca_pem: string
+  client_cert_pem: string
+  client_key_set: boolean
+}
 
 export function orgWorkspacesQueryOptions(slug: string, query?: ListQuery) {
   return queryOptions({
@@ -179,6 +188,22 @@ export function connectionDsnQueryOptions(
     queryFn: () =>
       api.get<{ dsn: string }>(
         `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/dsn`,
+      ),
+    staleTime: 0,
+    gcTime: 0,
+  })
+}
+
+export function connectionTlsQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+) {
+  return queryOptions({
+    queryKey: queryKeys.connectionTls(slug, workspaceId, connectionId),
+    queryFn: () =>
+      api.get<ConnectionTlsReveal>(
+        `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/tls`,
       ),
     staleTime: 0,
     gcTime: 0,

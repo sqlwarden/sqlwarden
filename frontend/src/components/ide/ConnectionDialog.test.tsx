@@ -142,7 +142,7 @@ describe('ConnectionDialog', () => {
         ],
       }),
     )
-    expect(createBody?.dsn).toContain('/analytics?')
+    expect(createBody?.dsn).toContain('/analytics')
   })
 
   it('toggles password field visibility', async () => {

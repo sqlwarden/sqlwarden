@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"net/url"
+	"strings"
 
 	go_ora "github.com/sijms/go-ora/v2"
 
@@ -71,10 +73,56 @@ func (c schemaConnector) Connect(ctx context.Context) (driver.Conn, error) {
 
 func (c schemaConnector) Driver() driver.Driver { return c.inner.Driver() }
 
-func (d *oracleDriver) Connect(ctx context.Context, cfg engine.ConnectionConfig) error {
-	connector := schemaConnector{inner: go_ora.NewConnector(cfg.DSN)}
+// ensureOracleSSL forces the tcps protocol on an oracle:// URL by setting
+// SSL=true. go-ora only negotiates TLS when the connect string selects it, so
+// structured TLS material is inert without this even though WithTLSConfig is
+// also set.
+func ensureOracleSSL(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return dsn
+	}
+	q := u.Query()
+	if strings.EqualFold(q.Get("SSL"), "true") {
+		return dsn
+	}
+	q.Set("SSL", "true")
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// buildOracleConnector assembles the go-ora connector, folding in the default
+// schema and the structured TLS material. When TLS is configured the connect
+// string is switched to tcps and the *tls.Config is handed to go-ora, which
+// uses it verbatim for the handshake.
+func buildOracleConnector(cfg engine.ConnectionConfig) (driver.Connector, error) {
+	dsn := cfg.DSN
+	tlsCfg, err := cfg.TLS.Build()
+	if err != nil {
+		return nil, fmt.Errorf("oracle: tls config: %w", err)
+	}
+	if tlsCfg != nil {
+		dsn = ensureOracleSSL(dsn)
+	}
+	inner := go_ora.NewConnector(dsn)
+	if tlsCfg != nil {
+		oc, ok := inner.(*go_ora.OracleConnector)
+		if !ok {
+			return nil, fmt.Errorf("oracle: connector type %T does not accept TLS config", inner)
+		}
+		oc.WithTLSConfig(tlsCfg)
+	}
+	connector := schemaConnector{inner: inner}
 	if schema := cfg.DefaultScope.Name("schema"); schema != "" {
 		connector.quotedSchema = oracleQuoteIdent(schema)
+	}
+	return connector, nil
+}
+
+func (d *oracleDriver) Connect(ctx context.Context, cfg engine.ConnectionConfig) error {
+	connector, err := buildOracleConnector(cfg)
+	if err != nil {
+		return err
 	}
 	db := sql.OpenDB(connector)
 	if err := db.PingContext(ctx); err != nil {

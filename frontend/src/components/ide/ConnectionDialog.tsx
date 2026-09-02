@@ -20,8 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { drivers, driverBrands } from './connection-drivers/index'
 import { TestStatusIndicator } from './ConnectionTestStatus'
+import { ConnectionTlsFields } from './ConnectionTlsFields'
 import { DriverFields, FormField } from './ConnectionFormFields'
 import { DriverBadge } from './DriverBadge'
 import { useConnectionForm } from './useConnectionForm'
@@ -65,7 +67,7 @@ export function ConnectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={form.handleOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
             {form.stage === 'driver' ? 'Choose a database' : 'New Connection'}
@@ -73,7 +75,7 @@ export function ConnectionDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col">
-          <div className="flex max-h-[min(560px,calc(100svh-14rem))] flex-col gap-4 overflow-y-auto pb-1">
+          <div className="flex max-h-[min(680px,calc(100svh-10rem))] flex-col gap-4 overflow-y-auto pb-1">
             {form.stage === 'driver' ? (
               <DriverGallery onPick={form.pickDriver} />
             ) : (
@@ -100,62 +102,82 @@ export function ConnectionDialog({
                   </Button>
                 </div>
 
-                <div className="grid grid-cols-6 gap-3">
-                  <div className={cn('col-span-6', environments.length > 0 && 'sm:col-span-3')}>
-                    <FormField label="Name" error={form.errors.name}>
-                      <Input
-                        value={form.name}
+                <Tabs defaultValue="general" className="gap-3">
+                  <TabsList variant="line">
+                    <TabsTrigger value="general">General</TabsTrigger>
+                    {form.tlsSpec ? <TabsTrigger value="tls">TLS / SSL</TabsTrigger> : null}
+                  </TabsList>
+
+                  <TabsContent value="general">
+                    <div className="grid grid-cols-6 gap-3">
+                      <div className={cn('col-span-6', environments.length > 0 && 'sm:col-span-3')}>
+                        <FormField label="Name" error={form.errors.name}>
+                          <Input
+                            value={form.name}
+                            disabled={isPending}
+                            placeholder={`My ${form.currentDriver.label}`}
+                            aria-invalid={form.errors.name ? true : undefined}
+                            onChange={(e) => form.changeName(e.target.value)}
+                          />
+                        </FormField>
+                      </div>
+
+                      {environments.length > 0 ? (
+                        <div className="col-span-6 sm:col-span-3">
+                          <FormField label="Environment" error={form.errors.environmentId}>
+                            <Select
+                              value={form.environmentId}
+                              onValueChange={(v) => {
+                                if (!v) return
+                                form.changeEnvironment(v)
+                              }}
+                              disabled={isPending || !!lockedEnvironmentId}
+                            >
+                              <SelectTrigger
+                                aria-invalid={form.errors.environmentId ? true : undefined}
+                                className="w-full"
+                              >
+                                <SelectValue>{form.selectedEnvironmentName}</SelectValue>
+                              </SelectTrigger>
+                              <SelectContent className="min-w-[180px]">
+                                <SelectGroup>
+                                  {environments.map((env) => (
+                                    <SelectItem key={env.id} value={String(env.id)}>
+                                      {env.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                          </FormField>
+                        </div>
+                      ) : null}
+
+                      <DriverFields
+                        driver={form.currentDriver}
+                        values={form.fields}
+                        errors={form.errors.fields}
                         disabled={isPending}
-                        placeholder={`My ${form.currentDriver.label}`}
-                        aria-invalid={form.errors.name ? true : undefined}
-                        onChange={(e) => form.changeName(e.target.value)}
+                        onChange={form.changeField}
+                        scopeDiscovery={form.scopeDiscovery}
+                        defaultScope={form.defaultScope}
+                        onDatabaseChange={form.selectDatabase}
+                        onSchemaChange={form.selectSchema}
                       />
-                    </FormField>
-                  </div>
-
-                  {environments.length > 0 ? (
-                    <div className="col-span-6 sm:col-span-3">
-                      <FormField label="Environment" error={form.errors.environmentId}>
-                        <Select
-                          value={form.environmentId}
-                          onValueChange={(v) => {
-                            if (!v) return
-                            form.changeEnvironment(v)
-                          }}
-                          disabled={isPending || !!lockedEnvironmentId}
-                        >
-                          <SelectTrigger
-                            aria-invalid={form.errors.environmentId ? true : undefined}
-                            className="w-full"
-                          >
-                            <SelectValue>{form.selectedEnvironmentName}</SelectValue>
-                          </SelectTrigger>
-                          <SelectContent className="min-w-[180px]">
-                            <SelectGroup>
-                              {environments.map((env) => (
-                                <SelectItem key={env.id} value={String(env.id)}>
-                                  {env.name}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </FormField>
                     </div>
-                  ) : null}
+                  </TabsContent>
 
-                  <DriverFields
-                    driver={form.currentDriver}
-                    values={form.fields}
-                    errors={form.errors.fields}
-                    disabled={isPending}
-                    onChange={form.changeField}
-                    scopeDiscovery={form.scopeDiscovery}
-                    defaultScope={form.defaultScope}
-                    onDatabaseChange={form.selectDatabase}
-                    onSchemaChange={form.selectSchema}
-                  />
-                </div>
+                  {form.tlsSpec ? (
+                    <TabsContent value="tls">
+                      <ConnectionTlsFields
+                        spec={form.tlsSpec}
+                        value={form.tls}
+                        disabled={isPending}
+                        onChange={form.changeTls}
+                      />
+                    </TabsContent>
+                  ) : null}
+                </Tabs>
 
                 {form.errors._form ? (
                   <p className="text-xs text-destructive">{form.errors._form}</p>

@@ -14,12 +14,14 @@ import (
 // EncryptionRotationReport summarizes a key-rotation pass over all
 // application-encrypted data.
 type EncryptionRotationReport struct {
-	ConnectionsScanned   int `json:"connections_scanned"`
-	ConnectionsRotated   int `json:"connections_rotated"`
-	FileContentsScanned  int `json:"file_contents_scanned"`
-	FileContentsRotated  int `json:"file_contents_rotated"`
-	SMTPPasswordsScanned int `json:"smtp_passwords_scanned"`
-	SMTPPasswordsRotated int `json:"smtp_passwords_rotated"`
+	ConnectionsScanned          int `json:"connections_scanned"`
+	ConnectionsRotated          int `json:"connections_rotated"`
+	ConnectionTLSConfigsScanned int `json:"connection_tls_configs_scanned"`
+	ConnectionTLSConfigsRotated int `json:"connection_tls_configs_rotated"`
+	FileContentsScanned         int `json:"file_contents_scanned"`
+	FileContentsRotated         int `json:"file_contents_rotated"`
+	SMTPPasswordsScanned        int `json:"smtp_passwords_scanned"`
+	SMTPPasswordsRotated        int `json:"smtp_passwords_rotated"`
 }
 
 // rotateEncryptionKeysHandler re-encrypts all application-encrypted data with
@@ -60,6 +62,8 @@ func (app *application) RotateEncryptionKeys(ctx context.Context) (EncryptionRot
 	app.logger.InfoContext(ctx, "encryption key rotation complete",
 		slog.Int("connections_scanned", report.ConnectionsScanned),
 		slog.Int("connections_rotated", report.ConnectionsRotated),
+		slog.Int("connection_tls_configs_scanned", report.ConnectionTLSConfigsScanned),
+		slog.Int("connection_tls_configs_rotated", report.ConnectionTLSConfigsRotated),
 		slog.Int("file_contents_scanned", report.FileContentsScanned),
 		slog.Int("file_contents_rotated", report.FileContentsRotated),
 	)
@@ -103,25 +107,44 @@ func (app *application) rotateConnectionDSNs(ctx context.Context, report *Encryp
 	}
 	for _, conn := range conns {
 		report.ConnectionsScanned++
-		if !app.keyring.NeedsRotation(conn.DSNEncrypted) {
-			continue
+		if app.keyring.NeedsRotation(conn.DSNEncrypted) {
+			plaintext, err := app.keyring.Decrypt(conn.DSNEncrypted)
+			if err != nil {
+				return fmt.Errorf("rotate dsn: decrypt connection %d: %w", conn.ID, err)
+			}
+			reencrypted, err := app.keyring.Encrypt(plaintext)
+			if err != nil {
+				return fmt.Errorf("rotate dsn: encrypt connection %d: %w", conn.ID, err)
+			}
+			if err := app.db.UpdateConnectionDSN(ctx, conn.ID, reencrypted); err != nil {
+				return fmt.Errorf("rotate dsn: update connection %d: %w", conn.ID, err)
+			}
+			report.ConnectionsRotated++
 		}
-		plaintext, err := app.keyring.Decrypt(conn.DSNEncrypted)
-		if err != nil {
-			return fmt.Errorf("rotate dsn: decrypt connection %d: %w", conn.ID, err)
+
+		if conn.TLSConfigEncrypted != "" {
+			report.ConnectionTLSConfigsScanned++
+			if app.keyring.NeedsRotation(conn.TLSConfigEncrypted) {
+				plain, err := app.keyring.Decrypt(conn.TLSConfigEncrypted)
+				if err != nil {
+					return fmt.Errorf("rotate tls: decrypt connection %d: %w", conn.ID, err)
+				}
+				reSealed, err := app.keyring.Encrypt(plain)
+				if err != nil {
+					return fmt.Errorf("rotate tls: encrypt connection %d: %w", conn.ID, err)
+				}
+				if err := app.db.UpdateConnectionTLSConfig(ctx, conn.ID, reSealed); err != nil {
+					return fmt.Errorf("rotate tls: update connection %d: %w", conn.ID, err)
+				}
+				report.ConnectionTLSConfigsRotated++
+			}
 		}
-		reencrypted, err := app.keyring.Encrypt(plaintext)
-		if err != nil {
-			return fmt.Errorf("rotate dsn: encrypt connection %d: %w", conn.ID, err)
-		}
-		if err := app.db.UpdateConnectionDSN(ctx, conn.ID, reencrypted); err != nil {
-			return fmt.Errorf("rotate dsn: update connection %d: %w", conn.ID, err)
-		}
-		report.ConnectionsRotated++
 	}
 	app.logger.InfoContext(ctx, "connection dsn rotation pass complete",
 		slog.Int("connections_scanned", report.ConnectionsScanned),
 		slog.Int("connections_rotated", report.ConnectionsRotated),
+		slog.Int("connection_tls_configs_scanned", report.ConnectionTLSConfigsScanned),
+		slog.Int("connection_tls_configs_rotated", report.ConnectionTLSConfigsRotated),
 	)
 	return nil
 }

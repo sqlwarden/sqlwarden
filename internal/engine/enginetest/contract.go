@@ -23,6 +23,7 @@ var knownCapabilities = map[engine.Capability]bool{
 	engine.CapabilitySQLComplete:     true,
 	engine.CapabilitySQLGenerate:     true,
 	engine.CapabilitySQLExplain:      true,
+	engine.CapabilityTLS:             true,
 }
 
 // RunCapabilityContract asserts the static-capability invariants every engine
@@ -58,6 +59,9 @@ func RunCapabilityContract(t *testing.T, name string) {
 	}
 	if set.Capabilities[engine.CapabilitySQLExplain] != (set.Explain != nil) {
 		t.Fatal("sql.explain capability and explain spec disagree")
+	}
+	if set.Capabilities[engine.CapabilityTLS] != (set.TLS != nil) {
+		t.Fatal("connection.tls capability and TLS spec disagree")
 	}
 }
 

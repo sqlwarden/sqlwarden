@@ -2586,3 +2586,204 @@ func (d *cursorUnsupportedQueryDriver) Query(context.Context, string, ...any) (*
 func (d *cursorUnsupportedQueryDriver) Execute(ctx context.Context, sql string, args ...any) (*result.ResultSet, error) {
 	return d.Query(ctx, sql, args...)
 }
+
+func TestCreateConnectionWithTLS(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-tls-create@example.com", "Conn TLS Create", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn TLS WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "tls-pg",
+			"driver": "postgres",
+			"dsn":    "postgres://u:p@localhost:5432/db",
+			"tls": map[string]any{
+				"mode":        "verify-full",
+				"server_name": "db.internal",
+				"ca_pem":      "-----BEGIN CERTIFICATE-----\nx\n-----END CERTIFICATE-----",
+			},
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	if bytes.Contains(createRes.BodyBytes, []byte("ca_pem")) || bytes.Contains(createRes.BodyBytes, []byte("tls_config")) {
+		t.Fatal("connection response leaked TLS material")
+	}
+
+	connID := int64(0)
+	if v, ok := createRes.BodyFields["id"].(float64); ok {
+		connID = int64(v)
+	}
+	stored, _, err := app.db.GetConnection(context.Background(), connID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.TLSConfigEncrypted == "" {
+		t.Fatal("tls_config_encrypted not persisted")
+	}
+	doc, has, err := app.decodeTLSDocument(stored.TLSConfigEncrypted)
+	if err != nil || !has || doc.Mode != "verify-full" || doc.ServerName != "db.internal" {
+		t.Fatalf("stored doc wrong: %+v has=%v err=%v", doc, has, err)
+	}
+}
+
+func TestCreateConnectionRejectsUnknownTLSMode(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-tls-badmode@example.com", "Conn TLS Bad", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn TLS Bad WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsIDInt, _ := strconv.ParseInt(fmt.Sprintf("%v", wsRes.BodyFields["id"]), 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "bad",
+			"driver": "postgres",
+			"dsn":    "postgres://u:p@localhost:5432/db",
+			"tls":    map[string]any{"mode": "totally-not-a-mode"},
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusUnprocessableEntity)
+	assertValidationField(t, createRes, "tls")
+}
+
+func TestUpdateConnectionKeepsStoredClientKey(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-tls-merge@example.com", "Conn TLS Merge", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn TLS Merge WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsIDInt, _ := strconv.ParseInt(fmt.Sprintf("%v", wsRes.BodyFields["id"]), 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "merge-pg",
+			"driver": "postgres",
+			"dsn":    "postgres://u:p@localhost:5432/db",
+			"tls": map[string]any{
+				"mode":            "verify-full",
+				"client_cert_pem": "CERT",
+				"client_key_pem":  "KEY",
+			},
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := int64(createRes.BodyFields["id"].(float64))
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		orgConnectionURL(slug, wsIDInt, envID, fmt.Sprintf("%d", connID)),
+		map[string]any{
+			"tls": map[string]any{"mode": "verify-full", "client_cert_pem": "CERT2"},
+		}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusNoContent)
+
+	stored, _, _ := app.db.GetConnection(context.Background(), connID)
+	doc, _, _ := app.decodeTLSDocument(stored.TLSConfigEncrypted)
+	if doc.ClientCertPEM != "CERT2" || doc.ClientKeyPEM != "KEY" {
+		t.Fatalf("merge wrong: %+v", doc)
+	}
+}
+
+func TestRevealConnectionTLSOmitsPrivateKey(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, org := seedOrgOwner(t, app, "conn-tls-reveal-owner@example.com", "Conn TLS Reveal Owner", "Conn TLS Reveal Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Conn TLS Reveal WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{
+			"name":   "Primary",
+			"driver": "postgres",
+			"dsn":    "postgres://u:p@localhost:5432/db",
+			"tls": map[string]any{
+				"mode":            "verify-full",
+				"server_name":     "db.internal",
+				"ca_pem":          "CA",
+				"client_cert_pem": "CERT",
+				"client_key_pem":  "SECRET-KEY",
+			},
+		}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/tls", nil, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	if bytes.Contains(res.BodyBytes, []byte("SECRET-KEY")) || bytes.Contains(res.BodyBytes, []byte("client_key_pem")) {
+		t.Fatal("reveal leaked the private key")
+	}
+	assert.Equal(t, res.BodyFields["mode"], "verify-full")
+	assert.Equal(t, res.BodyFields["ca_pem"], "CA")
+	assert.Equal(t, res.BodyFields["client_cert_pem"], "CERT")
+	assert.Equal(t, res.BodyFields["client_key_set"], true)
+}
+
+func TestRevealConnectionTLSNoConfig(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, org := seedOrgOwner(t, app, "conn-tls-reveal-none@example.com", "Conn TLS None Owner", "Conn TLS None Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Conn TLS None WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "Primary", "driver": "postgres", "dsn": "postgres://u:p@localhost:5432/db"},
+		ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/tls", nil, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["mode"], "disable")
+	assert.Equal(t, res.BodyFields["client_key_set"], false)
+}
+
+func TestRevealConnectionTLSMaskedByOrgSetting(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, org := seedOrgOwner(t, app, "conn-tls-reveal-mask@example.com", "Conn TLS Mask Owner", "Conn TLS Mask Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Conn TLS Mask WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{
+			"name": "Primary", "driver": "postgres", "dsn": "postgres://u:p@localhost:5432/db",
+			"tls": map[string]any{"mode": "require"},
+		}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	masked := true
+	if err := app.db.UpdateOrgSettings(context.Background(), org.ID, nil, nil, &masked); err != nil {
+		t.Fatal(err)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/tls", nil, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+}

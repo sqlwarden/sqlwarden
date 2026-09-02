@@ -6,6 +6,9 @@ import { errorMessage, isApiError } from '#/lib/api/errors'
 import { queryKeys } from '#/lib/api/query-keys'
 import type { Environment, ScopePath } from '#/lib/api/types'
 import { defaultFieldValues, driverMap, drivers } from './connection-drivers'
+import { emptyTlsState, type TlsFormState } from './ConnectionTlsFields'
+import { tlsStateToPayload } from './connectionTlsPayload'
+import { findFrontendEngine } from './engines/registry'
 
 export type ConnectionFormStage = 'driver' | 'form'
 export type ScopeDiscovery = {
@@ -50,7 +53,9 @@ export function useConnectionForm({
   const [testState, setTestState] = useState<ConnectionTestState>({ status: 'idle' })
   const [scopeDiscovery, setScopeDiscovery] = useState<ScopeDiscovery>()
   const [defaultScope, setDefaultScope] = useState<ScopePath>([])
+  const [tls, setTls] = useState<TlsFormState>(emptyTlsState)
   const currentDriver = driverMap.get(driverId) ?? drivers[0]
+  const tlsSpec = findFrontendEngine(driverId)?.tls
 
   useEffect(() => {
     if (!open) return
@@ -70,6 +75,7 @@ export function useConnectionForm({
       setTestState({ status: 'idle' })
       setScopeDiscovery(undefined)
       setDefaultScope([])
+      setTls(emptyTlsState)
     }
     setDriverId(nextDriverId)
     setStage('form')
@@ -86,6 +92,11 @@ export function useConnectionForm({
     if (key === 'database') {
       setDefaultScope(value ? [{ kind: 'database', name: value }] : [])
     }
+  }
+
+  function changeTls(next: TlsFormState) {
+    setTls(next)
+    setTestState({ status: 'idle' })
   }
 
   function changeName(value: string) {
@@ -114,6 +125,7 @@ export function useConnectionForm({
     setTestState({ status: 'idle' })
     setScopeDiscovery(undefined)
     setDefaultScope([])
+    setTls(emptyTlsState)
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -151,6 +163,7 @@ export function useConnectionForm({
       }>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections/test`, {
         driver: driverId,
         dsn: buildDSN(),
+        tls: tlsStateToPayload(tls),
       }),
     onMutate: () => setTestState({ status: 'pending' }),
     onSuccess: (data) => {
@@ -228,6 +241,7 @@ export function useConnectionForm({
         environment_id: Number(environmentId),
         access_mode: 'open',
         default_scope: defaultScope,
+        tls: tlsStateToPayload(tls),
       }),
     onSuccess: async () => {
       onOpenChange(false)
@@ -286,6 +300,9 @@ export function useConnectionForm({
     submit,
     testConnection,
     testState,
+    tls,
+    tlsSpec,
+    changeTls,
   }
 }
 

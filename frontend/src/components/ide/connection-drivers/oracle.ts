@@ -47,26 +47,13 @@ export const oracleDriver: DriverDef = {
       section: 'Credentials',
       span: 'half',
     },
-    {
-      key: 'ssl',
-      label: 'SSL',
-      type: 'select',
-      default: 'disable',
-      section: 'Security',
-      span: 'half',
-      options: [
-        { label: 'Disable', value: 'disable' },
-        { label: 'Require', value: 'require' },
-      ],
-    },
   ],
   buildDSN: (values) => {
-    const { host, port, serviceName, username, password, ssl } = values
+    const { host, port, serviceName, username, password } = values
     const userPart = password
       ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}`
       : encodeURIComponent(username)
-    const query = ssl === 'require' ? '?SSL=true' : ''
-    return `oracle://${userPart}@${host}:${port || '1521'}/${serviceName}${query}`
+    return `oracle://${userPart}@${host}:${port || '1521'}/${serviceName}`
   },
   parseDSN: (dsn): Record<string, string> => {
     try {
@@ -77,7 +64,6 @@ export const oracleDriver: DriverDef = {
         serviceName: decodeURIComponent(url.pathname.replace(/^\//, '')),
         username: decodeURIComponent(url.username),
         password: decodeURIComponent(url.password),
-        ssl: url.searchParams.get('SSL') === 'true' ? 'require' : 'disable',
       }
     } catch {
       return {}

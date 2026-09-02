@@ -12,6 +12,7 @@ import (
 	"github.com/sqlwarden/pkg/result"
 
 	mysqlconfig "github.com/go-sql-driver/mysql"
+	"github.com/oklog/ulid/v2"
 )
 
 type mysqlDriver struct {
@@ -19,6 +20,48 @@ type mysqlDriver struct {
 	currentTx    *sql.Tx
 	scanOptions  cursor.ScanOptions
 	defaultScope metadata.ScopePath
+	// tlsName is the process-unique key this connection registered with the
+	// mysql driver's global TLS registry; non-empty means Close must release it.
+	tlsName string
+}
+
+// applyTLS registers a process-unique *tls.Config with the mysql driver and
+// rewrites the DSN to reference it by name. The name is recorded on the driver
+// so releaseTLS (called from Close) can deregister it. A nil or "disable"
+// config is a passthrough.
+func (d *mysqlDriver) applyTLS(dsn string, tc *engine.TLSConfig) (string, error) {
+	tlsCfg, err := tc.Build()
+	if err != nil {
+		return "", fmt.Errorf("mysql: tls config: %w", err)
+	}
+	if tlsCfg == nil {
+		return dsn, nil
+	}
+	config, err := mysqlconfig.ParseDSN(dsn)
+	if err != nil {
+		return "", fmt.Errorf("mysql: parse config: %w", err)
+	}
+	if tlsCfg.ServerName == "" {
+		if host, _, ok := strings.Cut(config.Addr, ":"); ok {
+			tlsCfg.ServerName = host
+		} else {
+			tlsCfg.ServerName = config.Addr
+		}
+	}
+	name := "warden-tls-" + ulid.Make().String()
+	if err := mysqlconfig.RegisterTLSConfig(name, tlsCfg); err != nil {
+		return "", fmt.Errorf("mysql: register tls: %w", err)
+	}
+	d.tlsName = name
+	config.TLSConfig = name
+	return config.FormatDSN(), nil
+}
+
+func (d *mysqlDriver) releaseTLS() {
+	if d.tlsName != "" {
+		mysqlconfig.DeregisterTLSConfig(d.tlsName)
+		d.tlsName = ""
+	}
 }
 
 type execer interface {
@@ -88,6 +131,10 @@ func (d *mysqlDriver) Connect(ctx context.Context, cfg engine.ConnectionConfig) 
 		config.DBName = selectedDatabase
 		dsn = config.FormatDSN()
 	}
+	dsn, err := d.applyTLS(dsn, cfg.TLS)
+	if err != nil {
+		return err
+	}
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return fmt.Errorf("mysql: open: %w", err)
@@ -107,6 +154,7 @@ func (d *mysqlDriver) Ping(ctx context.Context) error {
 }
 
 func (d *mysqlDriver) Close() error {
+	defer d.releaseTLS()
 	return d.db.Close()
 }
 

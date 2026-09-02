@@ -63,7 +63,16 @@ describe('useEditConnectionForm DSN reveal', () => {
       ),
       http.get('/api/v1/orgs/acme/workspaces/3/connections/7/dsn', () =>
         HttpResponse.json({
-          dsn: 'postgresql://reader:secret@db.internal:5433/analytics?sslmode=require',
+          dsn: 'postgresql://reader:secret@db.internal:5433/analytics',
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/tls', () =>
+        HttpResponse.json({
+          mode: 'disable',
+          server_name: '',
+          ca_pem: '',
+          client_cert_pem: '',
+          client_key_set: false,
         }),
       ),
     )
@@ -77,9 +86,65 @@ describe('useEditConnectionForm DSN reveal', () => {
         database: 'analytics',
         username: 'reader',
         password: 'secret',
-        sslmode: 'require',
       }),
     )
+  })
+
+  it('hydrates TLS state from the reveal endpoint and sends it in the update payload', async () => {
+    server.use(
+      http.get('/api/v1/orgs/acme', () =>
+        HttpResponse.json({
+          id: 1,
+          slug: 'acme',
+          name: 'Acme',
+          mask_connection_credentials_on_edit: false,
+          created_at: '',
+          updated_at: '',
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/dsn', () =>
+        HttpResponse.json({ dsn: 'postgresql://reader:secret@db.internal:5433/analytics' }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/tls', () =>
+        HttpResponse.json({
+          mode: 'verify-ca',
+          server_name: 'db.internal',
+          ca_pem: '-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----',
+          client_cert_pem: '',
+          client_key_set: true,
+        }),
+      ),
+    )
+    let body: Record<string, unknown> = {}
+    server.use(
+      http.patch('/api/v1/orgs/acme/workspaces/3/connections/7', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ id: 7 })
+      }),
+    )
+    const { result } = renderForm(true)
+
+    await waitFor(() => expect(result.current.tls.mode).toBe('verify-ca'))
+    expect(result.current.tls.serverName).toBe('db.internal')
+    expect(result.current.tls.clientKeySet).toBe(true)
+    expect(result.current.tls.clientKeyPem).toBe('')
+
+    act(() => {
+      result.current.changeName('analytics-pg')
+      for (const field of result.current.driver.fields.filter((f) => f.required)) {
+        result.current.changeField(field.key, field.default ?? `${field.key}-value`)
+      }
+    })
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(body.tls).toEqual({
+      mode: 'verify-ca',
+      server_name: 'db.internal',
+      ca_pem: '-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----',
+      client_cert_pem: '',
+      client_key_pem: '',
+    })
   })
 
   it('does not fetch the DSN when canRevealDsn is false', async () => {
@@ -147,6 +212,15 @@ describe('useEditConnectionForm DSN reveal', () => {
       http.get('/api/v1/orgs/acme/workspaces/3/connections/7/dsn', () =>
         HttpResponse.json({
           dsn: 'postgresql://reader:secret@db.internal:5433/analytics',
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/tls', () =>
+        HttpResponse.json({
+          mode: 'disable',
+          server_name: '',
+          ca_pem: '',
+          client_cert_pem: '',
+          client_key_set: false,
         }),
       ),
     )

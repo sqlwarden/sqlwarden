@@ -218,6 +218,7 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 		DSN           string              `json:"dsn"`
 		EnvironmentID *int64              `json:"environment_id"`
 		AccessMode    string              `json:"access_mode"`
+		TLS           *tlsConfigDocument  `json:"tls"`
 		V             validator.Validator `json:"-"`
 	}
 
@@ -230,6 +231,12 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 	input.V.CheckField(input.Name != "", "name", "Name is required.")
 	input.V.CheckField(input.Driver != "", "driver", "Driver is required.")
 	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
+
+	var tlsDoc tlsConfigDocument
+	if input.TLS != nil {
+		tlsDoc = *input.TLS
+		app.validateTLSDocument(input.Driver, tlsDoc, &input.V)
+	}
 	if input.Driver != "" {
 		if err := app.validateTargetConnection(input.Driver, input.DSN); err != nil {
 			input.V.CheckField(false, "driver", targetConnectionFieldError(err))
@@ -248,6 +255,12 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 	}
 
 	dsnEncrypted, err := app.keyring.Encrypt(input.DSN)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	tlsEncrypted, err := app.sealTLSDocument(tlsDoc)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -282,6 +295,15 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 		}
 		app.serverError(w, r, err)
 		return
+	}
+
+	if tlsEncrypted != "" {
+		if err := app.db.UpdateConnectionTLSConfig(context.Background(), conn.ID, tlsEncrypted); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		conn.TLSConfigEncrypted = tlsEncrypted
+		app.logInfo(r, "connection tls configured", slog.Int64("connection_id", conn.ID))
 	}
 
 	app.logInfo(r, "personal workspace connection created",
