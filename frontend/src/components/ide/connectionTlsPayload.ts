@@ -9,6 +9,7 @@ export function tlsStateToPayload(tls: TlsFormState) {
     ca_pem: tls.caPem,
     client_cert_pem: tls.clientCertPem,
     client_key_pem: tls.clientKeyPem,
+    clear_client_key: tls.clearClientKey,
   }
 }
 
@@ -23,5 +24,6 @@ export function tlsRevealToState(r: ConnectionTlsReveal): TlsFormState {
     clientCertPem: r.client_cert_pem ?? '',
     clientKeyPem: '',
     clientKeySet: r.client_key_set,
+    clearClientKey: false,
   }
 }

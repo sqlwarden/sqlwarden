@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -267,6 +268,7 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		AccessMode    string              `json:"access_mode"`
 		DefaultScope  metadata.ScopePath  `json:"default_scope,omitempty"`
 		TLS           *tlsConfigDocument  `json:"tls"`
+		SSH           *sshConfigDocument  `json:"ssh"`
 		V             validator.Validator `json:"-"`
 	}
 
@@ -284,6 +286,12 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 	if input.TLS != nil {
 		tlsDoc = *input.TLS
 		app.validateTLSDocument(input.Driver, tlsDoc, &input.V)
+	}
+
+	var sshDoc sshConfigDocument
+	if input.SSH != nil {
+		sshDoc = *input.SSH
+		app.validateSSHDocument(input.Driver, sshDoc, &input.V)
 	}
 	if input.Driver != "" {
 		if err := app.validateTargetConnection(input.Driver, input.DSN); err != nil {
@@ -313,6 +321,12 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 	}
 
 	tlsEncrypted, err := app.sealTLSDocument(tlsDoc)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	sshEncrypted, err := app.sealSSHDocument(sshDoc)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -352,6 +366,15 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		}
 		conn.TLSConfigEncrypted = tlsEncrypted
 		app.logInfo(r, "connection tls configured", slog.Int64("connection_id", conn.ID))
+	}
+
+	if sshEncrypted != "" {
+		if err := app.db.UpdateConnectionSSHConfig(context.Background(), conn.ID, sshEncrypted); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		conn.SSHConfigEncrypted = sshEncrypted
+		app.logInfo(r, "connection ssh configured", slog.Int64("connection_id", conn.ID))
 	}
 
 	app.logInfo(r, "connection created", slog.Int64("workspace_id", ws.ID), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver), slog.String("access_mode", conn.AccessMode))
@@ -427,6 +450,7 @@ func (app *application) getConnectionTLS(w http.ResponseWriter, r *http.Request)
 	}
 	app.logInfo(r, "connection tls revealed", slog.Int64("connection_id", conn.ID))
 	err = response.JSON(w, http.StatusOK, map[string]any{
+		"configured":      has,
 		"mode":            mode,
 		"server_name":     doc.ServerName,
 		"ca_pem":          doc.CAPEM,
@@ -447,6 +471,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		SchemaSnapshotPolicy *string             `json:"schema_snapshot_policy"`
 		DefaultScope         *metadata.ScopePath `json:"default_scope"`
 		TLS                  *tlsConfigDocument  `json:"tls"`
+		SSH                  *sshConfigDocument  `json:"ssh"`
 		Force                bool                `json:"force"`
 		V                    validator.Validator `json:"-"`
 	}
@@ -475,7 +500,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			*input.SchemaSnapshotPolicy == database.SchemaSnapshotPolicyDisabled,
 			"schema_snapshot_policy", "Schema snapshot policy must be inherit or disabled.")
 	}
-	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil || input.DefaultScope != nil || input.TLS != nil,
+	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil || input.DefaultScope != nil || input.TLS != nil || input.SSH != nil,
 		"request", "At least one setting is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -488,12 +513,14 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	tlsChanged := false
 	if input.TLS != nil {
 		next := *input.TLS
+		clearClientKey := next.ClearClientKey
+		next.ClearClientKey = false
 		current, hasCurrent, decodeErr := app.decodeTLSDocument(conn.TLSConfigEncrypted)
 		if decodeErr != nil {
 			app.serverError(w, r, decodeErr)
 			return
 		}
-		if next.ClientKeyPEM == "" && hasCurrent {
+		if next.ClientKeyPEM == "" && hasCurrent && !clearClientKey {
 			next.ClientKeyPEM = current.ClientKeyPEM
 		}
 		tlsV := validator.Validator{}
@@ -508,6 +535,44 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		tlsChanged = true
+	}
+
+	sshEncrypted := ""
+	sshChanged := false
+	if input.SSH != nil {
+		next := *input.SSH
+		clearPassword := next.ClearPassword
+		clearPrivateKey := next.ClearPrivateKey
+		clearPassphrase := next.ClearPassphrase
+		next.ClearPassword, next.ClearPrivateKey, next.ClearPassphrase = false, false, false
+		current, hasCurrent, decodeErr := app.decodeSSHDocument(conn.SSHConfigEncrypted)
+		if decodeErr != nil {
+			app.serverError(w, r, decodeErr)
+			return
+		}
+		if hasCurrent {
+			if next.Password == "" && !clearPassword {
+				next.Password = current.Password
+			}
+			if next.PrivateKeyPEM == "" && !clearPrivateKey {
+				next.PrivateKeyPEM = current.PrivateKeyPEM
+			}
+			if next.Passphrase == "" && !clearPassphrase {
+				next.Passphrase = current.Passphrase
+			}
+		}
+		sshV := validator.Validator{}
+		app.validateSSHDocument(conn.Driver, next, &sshV)
+		if sshV.HasErrors() {
+			app.failedValidation(w, r, sshV)
+			return
+		}
+		sshEncrypted, err = app.sealSSHDocument(next)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		sshChanged = true
 	}
 
 	currentDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
@@ -613,6 +678,13 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		}
 		app.logInfo(r, "connection tls updated", slog.Int64("connection_id", conn.ID))
 	}
+	if sshChanged {
+		if err := app.db.UpdateConnectionSSHConfig(r.Context(), conn.ID, sshEncrypted); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		app.logInfo(r, "connection ssh updated", slog.Int64("connection_id", conn.ID))
+	}
 
 	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.Bool("scope_changed", scopeChanged), slog.String("access_mode", nextAccessMode), slog.String("schema_snapshot_policy", nextSnapshotPolicy))
 	w.WriteHeader(http.StatusNoContent)
@@ -636,6 +708,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		DSN         string              `json:"dsn"`
 		ParentScope metadata.ScopePath  `json:"parent_scope,omitempty"`
 		TLS         *tlsConfigDocument  `json:"tls"`
+		SSH         *sshConfigDocument  `json:"ssh"`
 		V           validator.Validator `json:"-"`
 	}
 
@@ -651,6 +724,11 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 	if input.TLS != nil {
 		app.validateTLSDocument(input.Driver, *input.TLS, &input.V)
 		tlsCfg = input.TLS.toEngine()
+	}
+	var sshCfg *connection.SSHConfig
+	if input.SSH != nil {
+		app.validateSSHDocument(input.Driver, *input.SSH, &input.V)
+		sshCfg = input.SSH.toConnection()
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -689,7 +767,22 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		app.serverError(w, r, err)
 		return
 	}
-	err = d.Connect(ctx, app.driverConnectionConfig(input.Driver, input.DSN, settings, tlsCfg))
+	var tunnel *connection.Tunnel
+	if sshCfg != nil {
+		tunnel, err = connection.OpenTunnel(ctx, *sshCfg)
+		if err != nil {
+			latency := time.Since(start).Milliseconds()
+			app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "ssh_tunnel"), slog.String("error_category", connectionTestErrorCategory(err)))
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, "SSH tunnel: "+err.Error(), nil)
+			return
+		}
+		defer tunnel.Close()
+	}
+	cc := app.driverConnectionConfig(input.Driver, input.DSN, settings, tlsCfg)
+	if tunnel != nil {
+		cc.SSHDialer = tunnel.DialContext
+	}
+	err = d.Connect(ctx, cc)
 	if err != nil {
 		latency := time.Since(start).Milliseconds()
 		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "connect"), slog.String("error_category", connectionTestErrorCategory(err)))
@@ -774,28 +867,57 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	var tunnel *connection.Tunnel
 	session, created, err := app.connManager.GetOrCreateWithMetadata(accountID, connID, connection.SessionMetadata{
 		OrgID:       strconv.FormatInt(org.ID, 10),
 		WorkspaceID: strconv.FormatInt(ws.ID, 10),
-	}, func() (engine.Driver, error) {
-		d, err := engine.New(conn.Driver)
-		if err != nil {
-			return nil, err
-		}
+	}, func() (engine.Driver, func(), error) {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
+
 		tlsCfg, err := app.openTLSConfig(conn)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if err := d.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, settings, tlsCfg, conn.DefaultScope)); err != nil {
-			return nil, err
+		sshCfg, err := app.openSSHConfig(conn)
+		if err != nil {
+			return nil, nil, err
 		}
-		return d, nil
+
+		if sshCfg != nil {
+			tunnel, err = connection.OpenTunnel(ctx, *sshCfg)
+			if err != nil {
+				return nil, nil, fmt.Errorf("ssh tunnel: %w", err)
+			}
+		}
+		teardown := func() {}
+		if tunnel != nil {
+			teardown = func() { _ = tunnel.Close() }
+		}
+
+		d, err := engine.New(conn.Driver)
+		if err != nil {
+			teardown()
+			return nil, nil, err
+		}
+		cc := app.driverConnectionConfig(conn.Driver, plainDSN, settings, tlsCfg, conn.DefaultScope)
+		if tunnel != nil {
+			cc.SSHDialer = tunnel.DialContext
+		}
+		if err := d.Connect(ctx, cc); err != nil {
+			teardown()
+			return nil, nil, err
+		}
+		return d, teardown, nil
 	})
 	if err != nil {
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 		return
+	}
+
+	if created && tunnel != nil {
+		t := tunnel
+		session.SetTunnelHealth(func() *bool { h := t.Healthy(); return &h })
 	}
 
 	app.logInfo(r, "database session opened", slog.Int64("connection_id", conn.ID), slog.String("session_id", session.ID), slog.Bool("reused", !created))
@@ -833,9 +955,10 @@ func (app *application) listActiveSessions(w http.ResponseWriter, r *http.Reques
 	workspaceID := strconv.FormatInt(ws.ID, 10)
 
 	type sessionInfo struct {
-		ConnectionID int64  `json:"connection_id"`
-		AccountID    int64  `json:"account_id"`
-		SessionID    string `json:"session_id"`
+		ConnectionID  int64  `json:"connection_id"`
+		AccountID     int64  `json:"account_id"`
+		SessionID     string `json:"session_id"`
+		TunnelHealthy *bool  `json:"tunnel_healthy,omitempty"`
 	}
 	result := make([]sessionInfo, 0)
 
@@ -857,9 +980,10 @@ func (app *application) listActiveSessions(w http.ResponseWriter, r *http.Reques
 			continue
 		}
 		result = append(result, sessionInfo{
-			ConnectionID: connIDInt,
-			AccountID:    accountIDInt,
-			SessionID:    ref.SessionID,
+			ConnectionID:  connIDInt,
+			AccountID:     accountIDInt,
+			SessionID:     ref.SessionID,
+			TunnelHealthy: ref.TunnelHealthy,
 		})
 	}
 

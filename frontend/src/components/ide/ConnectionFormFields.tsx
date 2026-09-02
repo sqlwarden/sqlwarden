@@ -265,18 +265,45 @@ function PasswordFieldControl({
   disabled: boolean
   onChange: (key: string, value: string) => void
 }) {
+  return (
+    <PasswordInput
+      value={value}
+      placeholder={field.placeholder}
+      invalid={invalid}
+      disabled={disabled}
+      onChange={(next) => onChange(field.key, next)}
+    />
+  )
+}
+
+export function PasswordInput({
+  value,
+  placeholder,
+  invalid,
+  disabled,
+  onChange,
+  'aria-label': ariaLabel,
+}: {
+  value: string
+  placeholder?: string
+  invalid?: boolean
+  disabled?: boolean
+  onChange: (value: string) => void
+  'aria-label'?: string
+}) {
   const [visible, setVisible] = useState(false)
 
   return (
     <div className="relative">
       <Input
         type={visible ? 'text' : 'password'}
+        aria-label={ariaLabel}
         value={value}
-        placeholder={field.placeholder}
+        placeholder={placeholder}
         disabled={disabled}
         aria-invalid={invalid ? true : undefined}
         className="pe-9"
-        onChange={(e) => onChange(field.key, e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
       />
       <button
         type="button"
@@ -286,6 +313,53 @@ function PasswordFieldControl({
       >
         <Icon name={visible ? 'eye-off' : 'eye'} size={20} className="size-4" />
       </button>
+    </div>
+  )
+}
+
+/** Edit-form control for a secret that is already stored server-side: the input
+ *  stays visible so a replacement can be typed, and this row toggles an explicit
+ *  "drop the stored value on save" request. */
+export function StoredSecretRow({
+  noun,
+  cleared,
+  disabled,
+  onClear,
+  onRestore,
+}: {
+  noun: string
+  cleared: boolean
+  disabled?: boolean
+  onClear: () => void
+  onRestore: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+      {cleared ? (
+        <>
+          <span className="text-destructive">Stored {noun} will be removed on save.</span>
+          <button
+            type="button"
+            className="font-medium underline underline-offset-2 hover:text-foreground disabled:opacity-50"
+            disabled={disabled}
+            onClick={onRestore}
+          >
+            Keep it
+          </button>
+        </>
+      ) : (
+        <>
+          <span>A {noun} is stored. Leave blank to keep it.</span>
+          <button
+            type="button"
+            className="font-medium text-destructive underline underline-offset-2 hover:opacity-80 disabled:opacity-50"
+            disabled={disabled}
+            onClick={onClear}
+          >
+            Remove stored {noun}
+          </button>
+        </>
+      )}
     </div>
   )
 }

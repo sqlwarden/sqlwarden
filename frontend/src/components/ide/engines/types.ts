@@ -29,6 +29,9 @@ export interface FrontendEngine {
    *  verification mode, server name). Unset for engines with no network TLS
    *  surface, e.g. SQLite. */
   tls?: EngineTlsSpec
+  /** Set when this engine can route its transport through an SSH bastion.
+   *  Uniform across network engines; SQLite leaves it unset. */
+  sshTunnel?: boolean
   /** Set when this engine can silently end a manual transaction — e.g. an
    *  implicit commit on DDL. Shown as a persistent warning in manual mode.
    *  Leave unset for engines with fully transactional DDL. */

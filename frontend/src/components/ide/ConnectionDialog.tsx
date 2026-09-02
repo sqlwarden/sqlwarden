@@ -23,6 +23,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { drivers, driverBrands } from './connection-drivers/index'
 import { TestStatusIndicator } from './ConnectionTestStatus'
+import { ConnectionSshFields } from './ConnectionSshFields'
 import { ConnectionTlsFields } from './ConnectionTlsFields'
 import { DriverFields, FormField } from './ConnectionFormFields'
 import { DriverBadge } from './DriverBadge'
@@ -106,6 +107,7 @@ export function ConnectionDialog({
                   <TabsList variant="line">
                     <TabsTrigger value="general">General</TabsTrigger>
                     {form.tlsSpec ? <TabsTrigger value="tls">TLS / SSL</TabsTrigger> : null}
+                    {form.sshSupported ? <TabsTrigger value="ssh">SSH tunnel</TabsTrigger> : null}
                   </TabsList>
 
                   <TabsContent value="general">
@@ -174,6 +176,16 @@ export function ConnectionDialog({
                         value={form.tls}
                         disabled={isPending}
                         onChange={form.changeTls}
+                      />
+                    </TabsContent>
+                  ) : null}
+
+                  {form.sshSupported ? (
+                    <TabsContent value="ssh">
+                      <ConnectionSshFields
+                        value={form.ssh}
+                        disabled={isPending}
+                        onChange={form.changeSsh}
                       />
                     </TabsContent>
                   ) : null}

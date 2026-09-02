@@ -51,6 +51,14 @@ describe('frontend engine registry', () => {
     expect(byId['sqlite'].tls).toBeUndefined()
   })
 
+  it('network engines support SSH tunneling, sqlite does not', () => {
+    const byId = Object.fromEntries(frontendEngines.map((e) => [e.id, e]))
+    for (const id of ['postgres', 'mysql', 'oracle']) {
+      expect(byId[id].sshTunnel, id).toBe(true)
+    }
+    expect(byId['sqlite'].sshTunnel).toBeFalsy()
+  })
+
   it('only exposes drivers with connection forms as connectable', () => {
     expect(connectableEngines.map((engine) => engine.id)).toEqual(['postgres', 'mysql', 'oracle'])
   })

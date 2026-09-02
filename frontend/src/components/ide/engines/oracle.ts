@@ -14,6 +14,7 @@ export const oracleEngine: FrontendEngine = {
   diagram: {},
   connection: oracleDriver,
   tls: standardTlsSpec,
+  sshTunnel: true,
   manualTransactionWarning:
     'Oracle commits the current transaction automatically when a DDL statement (CREATE, ALTER, DROP, TRUNCATE) runs — those changes cannot be rolled back, and any pending DML commits with them.',
 }

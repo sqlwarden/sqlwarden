@@ -14,8 +14,12 @@ import type {
 } from '#/lib/api/types'
 import { queryKeys } from '#/lib/api/query-keys'
 import type { TlsMode } from '#/components/ide/engines/types'
+import type { ConnectionSshReveal } from '#/components/ide/connectionSshPayload'
+
+export type { ConnectionSshReveal }
 
 export interface ConnectionTlsReveal {
+  configured: boolean
   mode: TlsMode
   server_name: string
   ca_pem: string
@@ -204,6 +208,22 @@ export function connectionTlsQueryOptions(
     queryFn: () =>
       api.get<ConnectionTlsReveal>(
         `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/tls`,
+      ),
+    staleTime: 0,
+    gcTime: 0,
+  })
+}
+
+export function connectionSshQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+) {
+  return queryOptions({
+    queryKey: queryKeys.connectionSsh(slug, workspaceId, connectionId),
+    queryFn: () =>
+      api.get<ConnectionSshReveal>(
+        `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/ssh`,
       ),
     staleTime: 0,
     gcTime: 0,

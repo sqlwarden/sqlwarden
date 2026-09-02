@@ -49,6 +49,7 @@ func (capabilityDriver) TLSSpec() TLSSpec {
 		SupportsCABundle: true,
 	}
 }
+func (capabilityDriver) SupportsSSHTunnel() bool { return true }
 
 func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	resetRegistry(t)
@@ -92,6 +93,9 @@ func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	if !set.Capabilities[CapabilityTLS] || set.TLS == nil || len(set.TLS.Modes) != 2 {
 		t.Errorf("connection.tls and its spec should be derived from TLSCapable: %+v", set)
 	}
+	if !set.Capabilities[CapabilitySSHTunnel] {
+		t.Errorf("connection.ssh_tunnel should be derived from SSHTunnelCapable: %+v", set.Capabilities)
+	}
 }
 
 func TestCapabilitiesAbsentWhenInterfacesNotImplemented(t *testing.T) {
@@ -110,6 +114,9 @@ func TestCapabilitiesAbsentWhenInterfacesNotImplemented(t *testing.T) {
 	}
 	if set.Capabilities[CapabilityTLS] || set.TLS != nil {
 		t.Errorf("plain driver must not report connection.tls: %+v", set.Capabilities)
+	}
+	if set.Capabilities[CapabilitySSHTunnel] {
+		t.Errorf("plain driver must not report connection.ssh_tunnel: %+v", set.Capabilities)
 	}
 	if set.Schema != nil {
 		t.Errorf("plain driver must not carry a schema spec: %+v", set.Schema)

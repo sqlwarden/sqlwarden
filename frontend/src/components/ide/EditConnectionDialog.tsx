@@ -12,6 +12,7 @@ import { Input } from '#/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { driverBrands } from './connection-drivers/index'
 import { TestStatusIndicator } from './ConnectionTestStatus'
+import { ConnectionSshFields } from './ConnectionSshFields'
 import { ConnectionTlsFields } from './ConnectionTlsFields'
 import { DriverBadge } from './DriverBadge'
 import { DriverFields, FormField } from './ConnectionFormFields'
@@ -73,6 +74,7 @@ export function EditConnectionDialog({
               <TabsList variant="line">
                 <TabsTrigger value="general">General</TabsTrigger>
                 {form.tlsSpec ? <TabsTrigger value="tls">TLS / SSL</TabsTrigger> : null}
+                {form.sshSupported ? <TabsTrigger value="ssh">SSH tunnel</TabsTrigger> : null}
               </TabsList>
 
               <TabsContent value="general" className="flex flex-col gap-4">
@@ -110,13 +112,39 @@ export function EditConnectionDialog({
               </TabsContent>
 
               {form.tlsSpec ? (
-                <TabsContent value="tls">
+                <TabsContent value="tls" className="flex flex-col gap-3">
                   <ConnectionTlsFields
                     spec={form.tlsSpec}
                     value={form.tls}
                     disabled={fieldsDisabled}
                     onChange={form.changeTls}
                   />
+                  {form.tlsConfigured ? (
+                    <RemoveConfigRow
+                      label="Remove TLS configuration"
+                      pending={form.removeTls.isPending}
+                      disabled={fieldsDisabled || form.removeTls.isPending}
+                      onRemove={() => void form.removeTls.mutateAsync().catch(() => {})}
+                    />
+                  ) : null}
+                </TabsContent>
+              ) : null}
+
+              {form.sshSupported ? (
+                <TabsContent value="ssh" className="flex flex-col gap-3">
+                  <ConnectionSshFields
+                    value={form.ssh}
+                    disabled={fieldsDisabled}
+                    onChange={form.changeSsh}
+                  />
+                  {form.sshConfigured ? (
+                    <RemoveConfigRow
+                      label="Remove SSH configuration"
+                      pending={form.removeSsh.isPending}
+                      disabled={fieldsDisabled || form.removeSsh.isPending}
+                      onRemove={() => void form.removeSsh.mutateAsync().catch(() => {})}
+                    />
+                  ) : null}
                 </TabsContent>
               ) : null}
             </Tabs>
@@ -169,5 +197,37 @@ export function EditConnectionDialog({
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** Prunes a stored SSH/TLS document from the connection outright, distinct from
+ *  toggling it off (which keeps the document for later re-enable). */
+function RemoveConfigRow({
+  label,
+  pending,
+  disabled,
+  onRemove,
+}: {
+  label: string
+  pending: boolean
+  disabled: boolean
+  onRemove: () => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3">
+      <p className="text-[11px] text-muted-foreground">
+        Deletes the saved configuration from this connection.
+      </p>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="shrink-0 text-destructive hover:text-destructive"
+        disabled={disabled}
+        onClick={onRemove}
+      >
+        {pending ? 'Removing…' : label}
+      </Button>
+    </div>
   )
 }

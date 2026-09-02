@@ -14,4 +14,5 @@ export const postgresEngine: FrontendEngine = {
   diagram: {},
   connection: postgresDriver,
   tls: standardTlsSpec,
+  sshTunnel: true,
 }

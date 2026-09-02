@@ -53,10 +53,10 @@ func TestReuse(t *testing.T) {
 	defer m.Close()
 
 	calls := 0
-	open := func() (engine.Driver, error) {
+	open := func() (engine.Driver, func(), error) {
 		calls++
 		d := &mockDriver{}
-		return d, nil
+		return d, nil, nil
 	}
 
 	sess1, created1, err := m.GetOrCreate("alice", "conn1", open)
@@ -89,8 +89,8 @@ func TestIsolation(t *testing.T) {
 	m := New(5 * time.Minute)
 	defer m.Close()
 
-	open := func() (engine.Driver, error) {
-		return &mockDriver{}, nil
+	open := func() (engine.Driver, func(), error) {
+		return &mockDriver{}, nil, nil
 	}
 
 	sessAlice, _, err := m.GetOrCreate("alice", "conn1", open)
@@ -113,8 +113,8 @@ func TestGetByID(t *testing.T) {
 	m := New(5 * time.Minute)
 	defer m.Close()
 
-	open := func() (engine.Driver, error) {
-		return &mockDriver{}, nil
+	open := func() (engine.Driver, func(), error) {
+		return &mockDriver{}, nil, nil
 	}
 
 	sess, _, err := m.GetOrCreate("alice", "conn1", open)
@@ -151,8 +151,8 @@ func TestReapIdle(t *testing.T) {
 	defer m.Close()
 
 	md := &mockDriver{}
-	open := func() (engine.Driver, error) {
-		return md, nil
+	open := func() (engine.Driver, func(), error) {
+		return md, nil, nil
 	}
 
 	sess, _, err := m.GetOrCreate("alice", "conn1", open)
@@ -186,8 +186,8 @@ func TestClose(t *testing.T) {
 	m := New(5 * time.Minute)
 
 	md := &mockDriver{}
-	open := func() (engine.Driver, error) {
-		return md, nil
+	open := func() (engine.Driver, func(), error) {
+		return md, nil, nil
 	}
 
 	sess, _, err := m.GetOrCreate("alice", "conn1", open)
@@ -218,8 +218,8 @@ func TestRemove(t *testing.T) {
 	defer m.Close()
 
 	md := &mockDriver{}
-	open := func() (engine.Driver, error) {
-		return md, nil
+	open := func() (engine.Driver, func(), error) {
+		return md, nil, nil
 	}
 
 	sess, _, err := m.GetOrCreate("alice", "conn1", open)
@@ -248,8 +248,8 @@ func TestCountAndRemoveForConnection(t *testing.T) {
 	m := New(5 * time.Minute)
 	defer m.Close()
 
-	open := func() (engine.Driver, error) {
-		return &mockDriver{}, nil
+	open := func() (engine.Driver, func(), error) {
+		return &mockDriver{}, nil, nil
 	}
 
 	sessAlice, _, err := m.GetOrCreate("alice", "conn1", open)
@@ -296,8 +296,8 @@ func TestSessionQueryAndExecuteUpdateLastUsed(t *testing.T) {
 	defer m.Close()
 
 	md := &mockDriver{}
-	open := func() (engine.Driver, error) {
-		return md, nil
+	open := func() (engine.Driver, func(), error) {
+		return md, nil, nil
 	}
 
 	sess, _, err := m.GetOrCreate("alice", "conn1", open)
@@ -387,8 +387,8 @@ func TestRemoveClosesActiveCursorsBeforeDriver(t *testing.T) {
 	defer m.Close()
 
 	md := &mockCursorDriver{}
-	sess, _, err := m.GetOrCreate("alice", "conn1", func() (engine.Driver, error) {
-		return md, nil
+	sess, _, err := m.GetOrCreate("alice", "conn1", func() (engine.Driver, func(), error) {
+		return md, nil, nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -412,14 +412,14 @@ func TestConnectionEmptyHookRunsOnlyAfterLastSession(t *testing.T) {
 	defer m.Close()
 	var notified []string
 	m.SetOnConnectionEmpty(func(connectionID string) { notified = append(notified, connectionID) })
-	first, _, err := m.GetOrCreate("alice", "conn1", func() (engine.Driver, error) {
-		return &mockDriver{}, nil
+	first, _, err := m.GetOrCreate("alice", "conn1", func() (engine.Driver, func(), error) {
+		return &mockDriver{}, nil, nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, _, err := m.GetOrCreate("bob", "conn1", func() (engine.Driver, error) {
-		return &mockDriver{}, nil
+	second, _, err := m.GetOrCreate("bob", "conn1", func() (engine.Driver, func(), error) {
+		return &mockDriver{}, nil, nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -431,6 +431,72 @@ func TestConnectionEmptyHookRunsOnlyAfterLastSession(t *testing.T) {
 	m.Remove(second.ID)
 	if len(notified) != 1 || notified[0] != "conn1" {
 		t.Fatalf("hook notifications = %v", notified)
+	}
+}
+
+func TestSessionCloseRunsTeardown(t *testing.T) {
+	m := New(5 * time.Minute)
+	defer m.Close()
+
+	var teardownCalls int
+	_, created, err := m.GetOrCreate("acct", "conn", func() (engine.Driver, func(), error) {
+		return &mockDriver{}, func() { teardownCalls++ }, nil
+	})
+	if err != nil || !created {
+		t.Fatalf("GetOrCreate: created=%v err=%v", created, err)
+	}
+
+	refs := m.AllForAccount("acct")
+	if len(refs) != 1 {
+		t.Fatalf("want 1 session, got %d", len(refs))
+	}
+	m.Remove(refs[0].SessionID)
+
+	if teardownCalls != 1 {
+		t.Fatalf("teardown called %d times, want 1", teardownCalls)
+	}
+}
+
+func TestSessionCloseWithNilTeardownIsSafe(t *testing.T) {
+	m := New(5 * time.Minute)
+	defer m.Close()
+	_, _, err := m.GetOrCreate("a", "c", func() (engine.Driver, func(), error) {
+		return &mockDriver{}, nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := m.AllForAccount("a")
+	m.Remove(refs[0].SessionID) // must not panic
+}
+
+func TestSessionRefReportsTunnelHealth(t *testing.T) {
+	m := New(5 * time.Minute)
+	defer m.Close()
+
+	sess, _, err := m.GetOrCreate("a", "c", func() (engine.Driver, func(), error) {
+		return &mockDriver{}, nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	healthy := true
+	sess.SetTunnelHealth(func() *bool { return &healthy })
+
+	refs := m.AllForAccount("a")
+	if len(refs) != 1 || refs[0].TunnelHealthy == nil || *refs[0].TunnelHealthy != true {
+		t.Fatalf("want TunnelHealthy=true, got %+v", refs[0].TunnelHealthy)
+	}
+
+	if _, _, err := m.GetOrCreate("a", "c2", func() (engine.Driver, func(), error) {
+		return &mockDriver{}, nil, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range m.AllForAccount("a") {
+		if r.ConnectionID == "c2" && r.TunnelHealthy != nil {
+			t.Fatal("want nil TunnelHealthy for session without a tunnel")
+		}
 	}
 }
 

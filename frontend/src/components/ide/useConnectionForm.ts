@@ -6,7 +6,9 @@ import { errorMessage, isApiError } from '#/lib/api/errors'
 import { queryKeys } from '#/lib/api/query-keys'
 import type { Environment, ScopePath } from '#/lib/api/types'
 import { defaultFieldValues, driverMap, drivers } from './connection-drivers'
+import { emptySshState, type SshFormState } from './ConnectionSshFields'
 import { emptyTlsState, type TlsFormState } from './ConnectionTlsFields'
+import { sshStateToPayload } from './connectionSshPayload'
 import { tlsStateToPayload } from './connectionTlsPayload'
 import { findFrontendEngine } from './engines/registry'
 
@@ -54,8 +56,10 @@ export function useConnectionForm({
   const [scopeDiscovery, setScopeDiscovery] = useState<ScopeDiscovery>()
   const [defaultScope, setDefaultScope] = useState<ScopePath>([])
   const [tls, setTls] = useState<TlsFormState>(emptyTlsState)
+  const [ssh, setSsh] = useState<SshFormState>(emptySshState)
   const currentDriver = driverMap.get(driverId) ?? drivers[0]
   const tlsSpec = findFrontendEngine(driverId)?.tls
+  const sshSupported = findFrontendEngine(driverId)?.sshTunnel ?? false
 
   useEffect(() => {
     if (!open) return
@@ -76,6 +80,7 @@ export function useConnectionForm({
       setScopeDiscovery(undefined)
       setDefaultScope([])
       setTls(emptyTlsState)
+      setSsh(emptySshState)
     }
     setDriverId(nextDriverId)
     setStage('form')
@@ -96,6 +101,11 @@ export function useConnectionForm({
 
   function changeTls(next: TlsFormState) {
     setTls(next)
+    setTestState({ status: 'idle' })
+  }
+
+  function changeSsh(next: SshFormState) {
+    setSsh(next)
     setTestState({ status: 'idle' })
   }
 
@@ -126,6 +136,7 @@ export function useConnectionForm({
     setScopeDiscovery(undefined)
     setDefaultScope([])
     setTls(emptyTlsState)
+    setSsh(emptySshState)
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -164,6 +175,7 @@ export function useConnectionForm({
         driver: driverId,
         dsn: buildDSN(),
         tls: tlsStateToPayload(tls),
+        ...(ssh.enabled ? { ssh: sshStateToPayload(ssh) } : {}),
       }),
     onMutate: () => setTestState({ status: 'pending' }),
     onSuccess: (data) => {
@@ -242,6 +254,7 @@ export function useConnectionForm({
         access_mode: 'open',
         default_scope: defaultScope,
         tls: tlsStateToPayload(tls),
+        ssh: sshStateToPayload(ssh),
       }),
     onSuccess: async () => {
       onOpenChange(false)
@@ -303,6 +316,9 @@ export function useConnectionForm({
     tls,
     tlsSpec,
     changeTls,
+    ssh,
+    sshSupported,
+    changeSsh,
   }
 }
 

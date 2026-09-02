@@ -32,13 +32,13 @@ func TestMySQLApplyTLSRegistersUniqueNameAndRelease(t *testing.T) {
 		t.Fatalf("DSN TLSConfig=%q, want %q", cfg.TLSConfig, d.tlsName)
 	}
 	name := d.tlsName
-	d.releaseTLS()
+	d.releaseRegistrations()
 	if d.tlsName != "" {
-		t.Fatal("releaseTLS should clear the recorded name")
+		t.Fatal("releaseRegistrations should clear the recorded name")
 	}
 	// Name is free again after release: re-registering it must not error.
 	if err := mysqlconfig.RegisterTLSConfig(name, &tls.Config{InsecureSkipVerify: true}); err != nil { //nolint:gosec // test-only
-		t.Fatalf("name still registered after releaseTLS: %v", err)
+		t.Fatalf("name still registered after releaseRegistrations: %v", err)
 	}
 	mysqlconfig.DeregisterTLSConfig(name)
 }
