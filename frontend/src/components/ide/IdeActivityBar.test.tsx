@@ -96,7 +96,7 @@ describe('IdeActivityBar', () => {
     ])
   })
 
-  it('renders the brand without dashboard navigation', () => {
+  it('keeps the brand link back to the dashboard in server mode', () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
     const workspace = makeWorkspace(1, 'Analytics')
     render(
@@ -116,7 +116,7 @@ describe('IdeActivityBar', () => {
       </ThemeProvider>,
     )
 
-    expect(screen.queryByRole('link', { name: /home$/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /home$/ })).toHaveAttribute('href', '/')
   })
 
   it('is collapsed by default and expands to show activity labels, workspace, UI Lab, and account details via the toggle', async () => {
@@ -216,7 +216,8 @@ describe('IdeActivityBar', () => {
     expect(onSelectWorkspace).toHaveBeenCalledWith(2)
   })
 
-  it('does not expose workspace management from the IDE rail', () => {
+  it('keeps workspace management in the server IDE rail', async () => {
+    const user = userEvent.setup()
     const store = createIdeStore('acme', 1, 'ephemeral')
     const workspace = makeWorkspace(1, 'Analytics')
     render(
@@ -230,15 +231,17 @@ describe('IdeActivityBar', () => {
               onSelectWorkspace={vi.fn()}
               session={undefined}
               canAccessOrgSettings={false}
+              canAccessWorkspaceGeneralSettings
+              canAccessWorkspaceAccessControl
             />
           </IdeStoreContext.Provider>
         </QueryClientProvider>
       </ThemeProvider>,
     )
-    expect(screen.queryByRole('button', { name: 'Workspace settings' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'General' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Manage members' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Manage access' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Workspace settings' }))
+    expect(await screen.findByRole('menuitem', { name: 'General' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Manage members' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Manage access' })).toBeInTheDocument()
   })
 
   it('shows the session account in the avatar menu and clears authentication state and redirects even when logout fails', async () => {
@@ -304,6 +307,8 @@ describe('IdeActivityBar', () => {
               onSelectWorkspace={vi.fn()}
               session={session}
               canAccessOrgSettings={false}
+              canAccessWorkspaceGeneralSettings
+              canAccessWorkspaceAccessControl
             />
           </IdeStoreContext.Provider>
         </QueryClientProvider>
@@ -315,6 +320,8 @@ describe('IdeActivityBar', () => {
       '/desktop/settings',
     )
     expect(screen.getByRole('button', { name: 'UI Lab' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Workspace settings' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /home$/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Ada Lovelace' })).not.toBeInTheDocument()
   })
 })
