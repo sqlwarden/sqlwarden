@@ -62,6 +62,10 @@ func parseOracle(ctx context.Context, sql string) ([]oracle.Statement, []parser.
 		if end > len(sql) {
 			end = len(sql)
 		}
+		// omni's ByteStart on non-first statements includes the leading
+		// inter-statement separator; trim both ends so the span covers only
+		// statement text. None of these characters can open a real statement
+		// (a bare ";" is caught by stmt.Empty above).
 		for start < end && (sql[start] == ';' || sql[start] == '\n' || sql[start] == '\r' || sql[start] == '\t' || sql[start] == ' ') {
 			start++
 		}
