@@ -12,6 +12,7 @@ require (
 	github.com/lmittmann/tint v1.1.3
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/pascaldekloe/jwt v1.12.0
+	github.com/sijms/go-ora/v2 v2.9.0
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1

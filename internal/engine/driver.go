@@ -30,6 +30,7 @@ const (
 	DialectPostgres Dialect = "postgres"
 	DialectMySQL    Dialect = "mysql"
 	DialectSQLite   Dialect = "sqlite"
+	DialectOracle   Dialect = "oracle"
 )
 
 // ConnectionConfig holds the configuration an engine needs to open a connection.

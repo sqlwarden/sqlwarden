@@ -72,7 +72,7 @@ func TestTestConnectionUnknownDriver(t *testing.T) {
 
 	// Test connection with unknown driver returns 422.
 	req := newTestRequest(t, http.MethodPost, orgEnvConnectionsURL(slug, wsIDInt, envID)+"/test", map[string]any{
-		"driver": "oracle",
+		"driver": "db2",
 		"dsn":    "some-dsn",
 	})
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -284,7 +284,7 @@ func TestCreateConnectionUnknownDriverReturns422(t *testing.T) {
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
 		orgEnvConnectionsURL(slug, wsIDInt, envID),
-		map[string]any{"name": "Bad Driver", "driver": "oracle", "dsn": "ignored"}, tok), app.routes())
+		map[string]any{"name": "Bad Driver", "driver": "db2", "dsn": "ignored"}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusUnprocessableEntity)
 	assertValidationField(t, createRes, "driver")
 }

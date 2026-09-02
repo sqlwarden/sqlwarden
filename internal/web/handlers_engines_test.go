@@ -7,6 +7,7 @@ import (
 	"github.com/sqlwarden/internal/assert"
 
 	_ "github.com/sqlwarden/internal/engine/engines/mysql"
+	_ "github.com/sqlwarden/internal/engine/engines/oracle"
 	_ "github.com/sqlwarden/internal/engine/engines/postgres"
 	_ "github.com/sqlwarden/internal/engine/engines/sqlite"
 )
@@ -56,6 +57,16 @@ func TestListEngines(t *testing.T) {
 		t.Fatalf("expected sqlite explain spec in %v", byID["sqlite"])
 	}
 	assert.Equal(t, sqliteExplain["supports_analyze"], false)
+
+	oracle := byID["oracle"]
+	if oracle == nil {
+		t.Fatalf("oracle engine missing from %v", engines)
+	}
+	assert.Equal(t, oracle["display_name"], "Oracle")
+	assert.Equal(t, oracle["capabilities"].(map[string]any)["sql.explain"], false)
+	if _, hasExplain := oracle["explain"]; hasExplain {
+		t.Fatalf("oracle must not carry an explain spec: %v", oracle)
+	}
 }
 
 func TestGetEngineIncludesExplainSpec(t *testing.T) {

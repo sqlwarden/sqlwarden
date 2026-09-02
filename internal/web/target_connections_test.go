@@ -60,7 +60,7 @@ func TestValidateTargetConnectionSQLiteFilePolicy(t *testing.T) {
 		},
 		{
 			name:       "unknown driver remains unsupported",
-			driverName: "oracle",
+			driverName: "db2",
 			dsn:        "example",
 			wantErr:    true,
 		},

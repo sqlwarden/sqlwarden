@@ -86,6 +86,7 @@ func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec
 		CapabilityDDL:             false,
 		CapabilityQueryCursor:     false,
 		CapabilitySQLGenerate:     false,
+		CapabilitySQLExplain:      false,
 	}
 	var spec *metadata.SchemaSpec
 	var ddlSpec *ddl.Spec
