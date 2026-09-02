@@ -190,10 +190,7 @@ function OrganizationLayout() {
               </>
             )}
           </SidebarContent>
-          <AppShellSidebarFooter
-            session={session.data}
-            hideUserMenu={desktopMode}
-          />
+          <AppShellSidebarFooter session={session.data} hideUserMenu={desktopMode} />
           <AppShellRail />
         </Sidebar>
         <SidebarInset className="min-w-0 bg-background">

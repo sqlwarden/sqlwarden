@@ -319,7 +319,7 @@ describe('IdeActivityBar', () => {
       'href',
       '/desktop/settings',
     )
-    expect(screen.getByRole('button', { name: 'UI Lab' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Appearance' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Workspace settings' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /home$/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Ada Lovelace' })).not.toBeInTheDocument()

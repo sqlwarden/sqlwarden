@@ -89,6 +89,9 @@ func commandCallback(bridge *DesktopBridge, command string) menu.Callback {
 }
 
 func handleNativeOpenPath(bridge *DesktopBridge, path string) {
+	if absolutePath, err := filepath.Abs(path); err == nil {
+		path = absolutePath
+	}
 	extension := strings.ToLower(filepath.Ext(path))
 	switch extension {
 	case ".sql":

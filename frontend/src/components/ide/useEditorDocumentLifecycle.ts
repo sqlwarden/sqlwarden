@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
 import * as Y from 'yjs'
 import { queryKeys } from '#/lib/api/query-keys'
+import { executeCommand } from '#/lib/commands/registry'
 import type { EditorTab } from './useIdeStore'
 import type { YDocRegistry } from './useYDocRegistry'
 
@@ -116,6 +117,10 @@ export function useEditorSaveShortcut(
       }
 
       event.preventDefault()
+      if (activeTab?.nativePath) {
+        void executeCommand('file.save')
+        return
+      }
       if (activeTab?.kind === 'file' && activeTab.etag && activeTab.fileId) {
         void saveEditorTab(activeTab)
       }
