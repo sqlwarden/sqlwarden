@@ -4,6 +4,8 @@ import type {
   DirectoryResponse,
   EngineView,
   GenerateStatementResponse,
+  ObjectDefinitionResponse,
+  ObjectDescriptor,
   ObjectRef,
   ObjectsResponse,
   RelationshipsResponse,
@@ -281,6 +283,56 @@ export function orgConnectionObjectQueryOptions(
       return res.objects[0] ?? null
     },
     staleTime: 3 * 60_000,
+  })
+}
+
+export function connectionObjectDefinitionQueryKey(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  ref: ObjectRef,
+) {
+  return [
+    'connection-object-definition',
+    slug,
+    String(workspaceId),
+    String(connectionId),
+    JSON.stringify(ref.scope),
+    ref.kind,
+    ref.name,
+  ] as const
+}
+
+/** Fetches one object's canonical text definition on demand. Engines that omit
+ *  the definition from bulk object inspection for cost reasons (Oracle) serve it
+ *  here; the object-detail DDL view falls back to this when no inline source
+ *  descriptor is present. Persistent snapshots resolve it without a live session,
+ *  so sessionId is optional. */
+export function orgConnectionObjectDefinitionQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string | undefined,
+  ref: ObjectRef,
+  enabled: boolean,
+) {
+  const params = new URLSearchParams({
+    scope: JSON.stringify(ref.scope),
+    kind: ref.kind,
+    name: ref.name,
+  })
+  return queryOptions({
+    queryKey: connectionObjectDefinitionQueryKey(slug, workspaceId, connectionId, ref),
+    queryFn: async (): Promise<ObjectDescriptor | null> => {
+      const res = await api.get<ObjectDefinitionResponse>(
+        `${schemaBase(slug, workspaceId, connectionId)}/object/definition?${params.toString()}`,
+        schemaRequestOptions(sessionId),
+      )
+      return res.descriptor
+    },
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
   })
 }
 

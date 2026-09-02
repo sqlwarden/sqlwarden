@@ -16,17 +16,17 @@ func (*sqliteDriver) ExplainSpec() explain.Spec { return sqliteExplainSpec }
 
 // Explain wraps sql with SQLite's EXPLAIN QUERY PLAN. SQLite has no ANALYZE
 // variant that reports execution timing per plan node.
-func (*sqliteDriver) Explain(sql string, mode explain.Mode) (string, error) {
+func (*sqliteDriver) Explain(sql string, mode explain.Mode) (explain.Plan, error) {
 	if err := validateExplainable(sql); err != nil {
-		return "", err
+		return explain.Plan{}, err
 	}
 	switch mode {
 	case explain.ModePlain:
-		return fmt.Sprintf("EXPLAIN QUERY PLAN %s", sql), nil
+		return explain.Plan{Statement: fmt.Sprintf("EXPLAIN QUERY PLAN %s", sql)}, nil
 	case explain.ModeAnalyze:
-		return "", explain.ErrAnalyzeUnsupported
+		return explain.Plan{}, explain.ErrAnalyzeUnsupported
 	default:
-		return "", explain.ErrUnsupported
+		return explain.Plan{}, explain.ErrUnsupported
 	}
 }
 

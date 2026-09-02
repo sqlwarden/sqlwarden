@@ -8,9 +8,32 @@ import {
   UnsupportedFrontendEngineError,
 } from './registry'
 
+describe('frontend engine registry — oracle', () => {
+  it('resolves the oracle engine', () => {
+    expect(findFrontendEngine('oracle')?.label).toBe('Oracle')
+  })
+
+  it('exposes oracle as connectable', () => {
+    expect(connectableEngines.some((engine) => engine.id === 'oracle')).toBe(true)
+  })
+
+  it('returns the oracle dialect', () => {
+    expect(dialectFor('oracle').formatColumn('X')).toBe('"X"')
+  })
+
+  it('carries a manual-transaction warning for oracle', () => {
+    expect(getFrontendEngine('oracle').manualTransactionWarning).toMatch(/DDL/)
+  })
+})
+
 describe('frontend engine registry', () => {
   it('registers every bundled backend driver explicitly', () => {
-    expect(frontendEngines.map((engine) => engine.id)).toEqual(['postgres', 'mysql', 'sqlite'])
+    expect(frontendEngines.map((engine) => engine.id)).toEqual([
+      'postgres',
+      'mysql',
+      'oracle',
+      'sqlite',
+    ])
     for (const engine of frontendEngines) {
       expect(engine.label).not.toBe('')
       expect(engine.dialect).toBeDefined()
@@ -20,7 +43,7 @@ describe('frontend engine registry', () => {
   })
 
   it('only exposes drivers with connection forms as connectable', () => {
-    expect(connectableEngines.map((engine) => engine.id)).toEqual(['postgres', 'mysql'])
+    expect(connectableEngines.map((engine) => engine.id)).toEqual(['postgres', 'mysql', 'oracle'])
   })
 
   it('offers explicit strict and optional lookup APIs', () => {

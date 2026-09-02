@@ -935,6 +935,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	// permission a statement requires or whether it needs unsafe confirmation.
 	execSQL := input.SQL
 	explainMode := explain.Mode(input.Explain)
+	var explainPlan explain.Plan
 	if input.Explain != "" {
 		explainer, ok := registeredConnectionExplainer(conn.Driver)
 		if !ok {
@@ -947,7 +948,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		}
 		// Explain validates sql itself (statement count, already-EXPLAIN) —
 		// callers don't pre-process it.
-		wrapped, explainErr := explainer.Explain(input.SQL, explainMode)
+		plan, explainErr := explainer.Explain(input.SQL, explainMode)
 		if explainErr != nil {
 			switch {
 			case errors.Is(explainErr, explain.ErrMultipleStatements):
@@ -960,12 +961,33 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		execSQL = wrapped
+		explainPlan = plan
+		execSQL = plan.Statement
 	}
 
 	var rs *result.ResultSet
 	var execErr error
 	start := time.Now()
+
+	// For an EXPLAIN request, explainPlan.Statement is always a query whose
+	// result set is the plan output, no matter how the underlying statement
+	// classifies. Preparatory statements (Oracle's EXPLAIN PLAN FOR, the
+	// ALTER SESSION pair for ANALYZE) run first for their side effects and
+	// their result sets are discarded. Setup runs after the per-class
+	// permission check below so planning a statement still requires permission
+	// to run that class of statement.
+	executeExplainPlan := func() (*result.ResultSet, error) {
+		for _, stmt := range explainPlan.Setup {
+			if _, err := session.Execute(r.Context(), stmt); err != nil {
+				return nil, err
+			}
+		}
+		buffered := false
+		return app.executeDQLQuery(r, session, explainPlan.Statement, &buffered, input.PageSize, start, runtimeSettings)
+	}
+	execStatement := func() (*result.ResultSet, error) {
+		return session.ExecuteWithOptions(r.Context(), execSQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
+	}
 
 	switch classification.Kind {
 	case classifier.KindDQL:
@@ -978,7 +1000,11 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = app.executeDQLQuery(r, session, execSQL, input.UseCursor, input.PageSize, start, runtimeSettings)
+		if input.Explain != "" {
+			rs, execErr = executeExplainPlan()
+		} else {
+			rs, execErr = app.executeDQLQuery(r, session, execSQL, input.UseCursor, input.PageSize, start, runtimeSettings)
+		}
 	case classifier.KindDML:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
@@ -1009,7 +1035,11 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		rs, execErr = session.ExecuteWithOptions(r.Context(), execSQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
+		if input.Explain != "" {
+			rs, execErr = executeExplainPlan()
+		} else {
+			rs, execErr = execStatement()
+		}
 	case classifier.KindDDL:
 		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
 			account.ID, org.ID,
@@ -1020,14 +1050,28 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = session.ExecuteWithOptions(r.Context(), execSQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
+		if input.Explain != "" {
+			rs, execErr = executeExplainPlan()
+		} else {
+			rs, execErr = execStatement()
+		}
 	default:
 		if !hasBroadExecute {
 			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnExecute)...)
 			app.notPermitted(w, r)
 			return
 		}
-		rs, execErr = session.ExecuteWithOptions(r.Context(), execSQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
+		if input.Explain != "" {
+			rs, execErr = executeExplainPlan()
+		} else {
+			rs, execErr = execStatement()
+		}
+	}
+
+	for _, stmt := range explainPlan.Teardown {
+		if _, tdErr := session.Execute(context.WithoutCancel(r.Context()), stmt); tdErr != nil {
+			app.logger.Warn("explain teardown failed", append(logAttrs, "error", tdErr.Error())...)
+		}
 	}
 
 	if execErr != nil {

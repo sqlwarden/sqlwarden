@@ -17,6 +17,19 @@ type SchemaInspector interface {
 	InspectObjects(ctx context.Context, refs []ObjectRef) ([]Object, error)
 }
 
+// DefinitionInspector is the OPTIONAL capability to fetch a single object's
+// canonical text definition (a table/view DDL, a routine body) on demand. Engines
+// whose bulk InspectObjects already embeds a "DDL"/"Definition" source descriptor
+// do not need it; engines that omit the definition from bulk inspection because
+// producing it per object is expensive expose it here for lazy retrieval. Callers
+// report 501 via the same type-assertion path used for SchemaInspector.
+type DefinitionInspector interface {
+	// InspectDefinition returns a single "source" descriptor for the object, or
+	// nil when no definition is available (unsupported kind, insufficient
+	// privilege). A nil error with a nil descriptor is a valid "not available".
+	InspectDefinition(ctx context.Context, ref ObjectRef) (*Descriptor, error)
+}
+
 // RelationshipInspector is the OPTIONAL capability to report a scope's
 // foreign-key edges cheaply (no column detail). Relational engines implement it;
 // engines without a foreign-key concept do not, and callers report 501 via the

@@ -1,4 +1,5 @@
 import { mysqlEngine } from './mysql'
+import { oracleEngine } from './oracle'
 import { postgresEngine } from './postgres'
 import { sqliteEngine } from './sqlite'
 import type { FrontendEngine } from './types'
@@ -13,6 +14,7 @@ export class UnsupportedFrontendEngineError extends Error {
 export const frontendEngines: readonly FrontendEngine[] = [
   postgresEngine,
   mysqlEngine,
+  oracleEngine,
   sqliteEngine,
 ]
 

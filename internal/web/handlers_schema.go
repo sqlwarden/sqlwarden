@@ -22,6 +22,10 @@ import (
 
 const manualSchemaSyncTimeout = 2 * time.Minute
 
+// lazyDefinitionTimeout bounds the on-demand object-definition fetch, which in
+// persistent mode opens a short-lived target connection of its own.
+const lazyDefinitionTimeout = 30 * time.Second
+
 type schemaSpecResponse struct {
 	Spec       metadata.SchemaSpec `json:"spec"`
 	DDL        *ddl.Spec           `json:"editor,omitempty"`
@@ -38,6 +42,10 @@ type objectsRequest struct {
 
 type objectsResponse struct {
 	Objects []metadata.Object `json:"objects"`
+}
+
+type objectDefinitionResponse struct {
+	Descriptor *metadata.Descriptor `json:"descriptor"`
 }
 
 type refreshRequest struct {
@@ -538,6 +546,81 @@ func (app *application) getConnectionSchemaObjects(w http.ResponseWriter, r *htt
 	}
 }
 
+// getConnectionSchemaObjectDefinition returns one object's canonical text
+// definition on demand. Engines that omit the definition from bulk inspection for
+// cost reasons (Oracle: one DBMS_METADATA.GET_DDL round trip per object) expose
+// it here via metadata.DefinitionInspector. In persistent mode there is no live
+// session, so the fetch opens a short-lived target connection of its own.
+func (app *application) getConnectionSchemaObjectDefinition(w http.ResponseWriter, r *http.Request) {
+	ref, err := schemaObjectRefQuery(r)
+	if err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+	persistent, err := app.persistentSchemaMode(r)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if persistent {
+		if !app.authorizeSchemaAccess(w, r) {
+			return
+		}
+		conn := contextGetConnection(r)
+		ctx, cancel := context.WithTimeout(r.Context(), lazyDefinitionTimeout)
+		defer cancel()
+		driver, err := app.openTargetDriver(ctx, conn, contextGetWorkspace(r))
+		if err != nil {
+			app.schemaSyncHTTPError(w, r, err)
+			return
+		}
+		defer driver.Close()
+		inspector, ok := driver.(metadata.DefinitionInspector)
+		if !ok {
+			app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support on-demand object definitions.", nil)
+			return
+		}
+		descriptor, err := inspector.InspectDefinition(ctx, ref)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		app.logDebug(r, "schema object definition returned",
+			slog.Int64("connection_id", conn.ID),
+			slog.String("kind", ref.Kind),
+			slog.String("scope", string(ref.Scope)),
+			slog.Bool("found", descriptor != nil),
+		)
+		if err := response.JSON(w, http.StatusOK, objectDefinitionResponse{Descriptor: descriptor}); err != nil {
+			app.serverError(w, r, err)
+		}
+		return
+	}
+	session, ok := app.resolveSchemaSession(w, r)
+	if !ok {
+		return
+	}
+	inspector, ok := session.Conn.(metadata.DefinitionInspector)
+	if !ok {
+		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support on-demand object definitions.", nil)
+		return
+	}
+	descriptor, err := inspector.InspectDefinition(r.Context(), ref)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	app.logDebug(r, "schema object definition returned",
+		slog.String("session_id", session.ID),
+		slog.String("kind", ref.Kind),
+		slog.String("scope", string(ref.Scope)),
+		slog.Bool("found", descriptor != nil),
+	)
+	if err := response.JSON(w, http.StatusOK, objectDefinitionResponse{Descriptor: descriptor}); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.Request) {
 	persistent, err := app.persistentSchemaMode(r)
 	if err != nil {
@@ -637,6 +720,21 @@ func (app *application) schemaSyncHTTPError(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	app.apiError(w, r, status, coded.Code, coded.Message, response.APIError{}, nil)
+}
+
+// schemaObjectRefQuery reads a full object ref from scope/kind/name query
+// parameters, used by GET endpoints that address a single object.
+func schemaObjectRefQuery(r *http.Request) (metadata.ObjectRef, error) {
+	scope, err := schemaScopeQuery(r)
+	if err != nil {
+		return metadata.ObjectRef{}, err
+	}
+	kind := r.URL.Query().Get("kind")
+	name := r.URL.Query().Get("name")
+	if kind == "" || name == "" {
+		return metadata.ObjectRef{}, errors.New("kind and name query parameters are required")
+	}
+	return metadata.ObjectRef{Scope: scope, Kind: kind, Name: name}, nil
 }
 
 func schemaScopeQuery(r *http.Request) (metadata.ScopePath, error) {

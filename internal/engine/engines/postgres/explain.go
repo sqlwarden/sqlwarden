@@ -15,17 +15,17 @@ var postgresExplainSpec = explain.Spec{SupportsAnalyze: true}
 
 func (*postgresDriver) ExplainSpec() explain.Spec { return postgresExplainSpec }
 
-func (*postgresDriver) Explain(sql string, mode explain.Mode) (string, error) {
+func (*postgresDriver) Explain(sql string, mode explain.Mode) (explain.Plan, error) {
 	if err := validateExplainable(sql); err != nil {
-		return "", err
+		return explain.Plan{}, err
 	}
 	switch mode {
 	case explain.ModePlain:
-		return fmt.Sprintf("EXPLAIN (FORMAT TEXT) %s", sql), nil
+		return explain.Plan{Statement: fmt.Sprintf("EXPLAIN (FORMAT TEXT) %s", sql)}, nil
 	case explain.ModeAnalyze:
-		return fmt.Sprintf("EXPLAIN (ANALYZE, FORMAT TEXT) %s", sql), nil
+		return explain.Plan{Statement: fmt.Sprintf("EXPLAIN (ANALYZE, FORMAT TEXT) %s", sql)}, nil
 	default:
-		return "", explain.ErrUnsupported
+		return explain.Plan{}, explain.ErrUnsupported
 	}
 }
 

@@ -583,6 +583,10 @@ Implemented target drivers:
 - PostgreSQL
 - MySQL
 - SQLite
+- Oracle
+
+Bringing a new engine to capability parity is a fixed checklist; see
+`docs/adding-a-database-engine.md`.
 
 Each engine registers through the `engine` registry and advertises implemented capabilities. Current capability packages include:
 
@@ -744,6 +748,49 @@ separate distributed session design is introduced. Completion should consume
 the same snapshot reader through a transport-neutral service; WebSocket/LSP
 transport can be added later for collaboration without changing snapshot
 storage.
+
+### Directory Loading Strategy (eager vs. lazy)
+
+The current `schema_sync` orchestration is **eager**: one job crawls the full
+directory, calls `InspectObjects` for every ref, inspects all relationships,
+and publishes a complete generation. For PostgreSQL, MySQL, Oracle, and SQLite
+this is the right trade — a single crawl buys an instant object tree, an
+offline-capable catalog, and full schema-aware autocomplete that never pays
+per-keystroke latency.
+
+For cloud data warehouses (Snowflake, BigQuery, Redshift) the eager crawl does
+not scale:
+
+- `INFORMATION_SCHEMA` access is slow and metered (warehouse credits are billed
+  for the crawl itself).
+- Accounts routinely hold thousands of schemas and objects, so a full crawl is
+  minutes-to-hours and recurs on every freshness interval.
+- Metadata churn is unpredictable, so periodic full re-sync is largely wasted
+  spend.
+
+The metadata interfaces are already lazy-capable — `InspectDirectory` accepts a
+`Root` scope, `InspectObjects` filters to requested refs, `DefinitionInspector`
+defers DDL text, and `SchemaObjectKind.Listing = "searched"` marks kinds that
+must not be enumerated. What is eager is only the orchestration. The planned
+direction is a **per-engine strategy selected by a capability flag on
+`SchemaSpec`** (e.g. `directory_loading: "eager" | "lazy"`), not a driver-name
+branch:
+
+1. Lazy sync performs a shallow crawl only — scopes via `ScopeDiscoverer`,
+   optionally top-level object names per scope, no object detail, no
+   relationships.
+2. The frontend tree fetches a scope's children on expand via
+   `InspectDirectory{Root: scope}`; object detail loads on open through the
+   existing `InspectObjects` path.
+3. High-cardinality kinds are marked `Listing: "searched"` and backed by a
+   "search objects in scope" endpoint (the flag exists; the endpoint does not
+   yet).
+4. Autocomplete is the main cost of lazy loading: the completion catalog is
+   partial until objects are visited. Mitigation is on-demand hydration for
+   touched scopes plus an optional rate/credit-budgeted background fill crawl
+   that hydrates the completion index progressively. Pure lazy (as in DBeaver)
+   is cheaper but incompatible with catalog-wide completion, so cloud-warehouse
+   engines need the hybrid.
 
 ## Frontend Architecture
 

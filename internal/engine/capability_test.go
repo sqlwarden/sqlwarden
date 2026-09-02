@@ -40,8 +40,8 @@ func (capabilityDriver) Check(context.Context, safety.Request) (safety.Result, e
 	return safety.Result{Source: "omni"}, nil
 }
 func (capabilityDriver) ExplainSpec() explain.Spec { return explain.Spec{SupportsAnalyze: true} }
-func (capabilityDriver) Explain(sql string, mode explain.Mode) (string, error) {
-	return "EXPLAIN " + sql, nil
+func (capabilityDriver) Explain(sql string, mode explain.Mode) (explain.Plan, error) {
+	return explain.Plan{Statement: "EXPLAIN " + sql}, nil
 }
 
 func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {

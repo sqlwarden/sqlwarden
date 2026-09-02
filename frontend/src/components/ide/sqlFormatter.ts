@@ -1,6 +1,7 @@
 import {
   formatDialect,
   mysql,
+  plsql,
   postgresql,
   sql as standardSql,
   sqlite,
@@ -23,5 +24,6 @@ function formatterFor(dialect: DialectOptions): SqlTextFormatter {
 export const defaultSqlFormatter = formatterFor(standardSql)
 
 export const mysqlSqlFormatter = formatterFor(mysql)
+export const oracleSqlFormatter = formatterFor(plsql)
 export const postgresSqlFormatter = formatterFor(postgresql)
 export const sqliteSqlFormatter = formatterFor(sqlite)

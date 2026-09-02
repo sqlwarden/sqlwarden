@@ -108,23 +108,9 @@ func (app *application) syncSchemaSnapshot(ctx context.Context, connectionID int
 		return schemaSyncOutput{}, jobs.Permanent("workspace_not_found", "Workspace was not found.")
 	}
 
-	plainDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
+	driver, err := app.openTargetDriver(ctx, conn, ws)
 	if err != nil {
 		return schemaSyncOutput{}, err
-	}
-	if err := app.validateTargetConnection(conn.Driver, plainDSN); err != nil {
-		return schemaSyncOutput{}, jobs.Permanent("schema_sync_target_blocked", "The target database is blocked by policy.")
-	}
-	driver, err := engine.New(conn.Driver)
-	if err != nil {
-		return schemaSyncOutput{}, jobs.Permanent("schema_sync_driver_unavailable", "The target driver is unavailable.")
-	}
-	settings, err := app.effectiveRuntimeSettingsForWorkspace(ctx, ws)
-	if err != nil {
-		return schemaSyncOutput{}, err
-	}
-	if err := driver.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, settings, conn.DefaultScope)); err != nil {
-		return schemaSyncOutput{}, jobs.Retryable("schema_sync_connect_failed", "Could not connect to the target database.")
 	}
 	defer driver.Close()
 
@@ -132,10 +118,12 @@ func (app *application) syncSchemaSnapshot(ctx context.Context, connectionID int
 	if !ok {
 		return schemaSyncOutput{}, jobs.Permanent("schema_sync_unsupported", "Schema inspection is not supported for this driver.")
 	}
+	directoryStartedAt := time.Now()
 	directory, err := inspector.InspectDirectory(ctx, metadata.DirectoryOptions{Root: conn.DefaultScope})
 	if err != nil {
 		return schemaSyncOutput{}, jobs.Retryable("schema_directory_failed", "Could not inspect the schema directory.")
 	}
+	directoryElapsed := time.Since(directoryStartedAt)
 	directory.Connection = strconv.FormatInt(conn.ID, 10)
 	// Ordering by operation start prevents a slower, older concurrent refresh
 	// from replacing a newer generation that finishes first.
@@ -153,22 +141,14 @@ func (app *application) syncSchemaSnapshot(ctx context.Context, connectionID int
 	}()
 
 	refs := directoryObjectRefs(directory)
-	objectCount := 0
-	for start := 0; start < len(refs); start += schemaObjectBatchSize {
-		end := start + schemaObjectBatchSize
-		if end > len(refs) {
-			end = len(refs)
-		}
-		objects, inspectErr := inspector.InspectObjects(ctx, refs[start:end])
-		if inspectErr != nil {
-			return schemaSyncOutput{}, jobs.Retryable("schema_objects_failed", "Could not inspect schema object details.")
-		}
-		if err := app.schemaSnapshots.PutObjects(ctx, snapshot.ID, objects); err != nil {
-			return schemaSyncOutput{}, err
-		}
-		objectCount += len(objects)
+	objectsStartedAt := time.Now()
+	objectCount, err := app.inspectAndStoreObjects(ctx, inspector, snapshot.ID, refs)
+	if err != nil {
+		return schemaSyncOutput{}, err
 	}
+	objectsElapsed := time.Since(objectsStartedAt)
 
+	relationshipsStartedAt := time.Now()
 	if relationshipInspector, ok := driver.(metadata.RelationshipInspector); ok {
 		for _, scope := range directoryObjectScopes(directory) {
 			graph, inspectErr := relationshipInspector.InspectRelationshipsInScope(ctx, scope)
@@ -180,6 +160,8 @@ func (app *application) syncSchemaSnapshot(ctx context.Context, connectionID int
 			}
 		}
 	}
+	relationshipsElapsed := time.Since(relationshipsStartedAt)
+	publishStartedAt := time.Now()
 
 	if err := app.schemaSnapshots.Publish(ctx, snapshot.ID); err != nil {
 		if errors.Is(err, schemaapp.ErrSnapshotSuperseded) {
@@ -205,8 +187,84 @@ func (app *application) syncSchemaSnapshot(ctx context.Context, connectionID int
 		"engine", directory.Engine,
 		"scopes", len(directoryObjectScopes(directory)),
 		"objects", objectCount,
+		"directory_ms", directoryElapsed.Milliseconds(),
+		"objects_ms", objectsElapsed.Milliseconds(),
+		"relationships_ms", relationshipsElapsed.Milliseconds(),
+		"publish_ms", time.Since(publishStartedAt).Milliseconds(),
+		"total_ms", time.Since(startedAt).Milliseconds(),
 	)
 	return schemaSyncOutput{SnapshotID: snapshot.ID, GeneratedAt: directory.GeneratedAt, Objects: objectCount}, nil
+}
+
+// inspectAndStoreObjects walks refs in schemaObjectBatchSize batches, overlapping
+// each batch's target-database inspection with the previous batch's write to the
+// snapshot store. Inspection stays strictly sequential against the single target
+// connection; only the local PutObjects write runs concurrently with the next
+// InspectObjects call, so a slow metadata store no longer stalls target reads.
+func (app *application) inspectAndStoreObjects(ctx context.Context, inspector metadata.SchemaInspector, snapshotID string, refs []metadata.ObjectRef) (int, error) {
+	type batch struct {
+		objects []metadata.Object
+		err     error
+	}
+	// Depth 1: the inspector may run at most one batch ahead of the writer.
+	batches := make(chan batch, 1)
+	inspectCtx, cancelInspect := context.WithCancel(ctx)
+	defer cancelInspect()
+
+	go func() {
+		defer close(batches)
+		for start := 0; start < len(refs); start += schemaObjectBatchSize {
+			end := min(start+schemaObjectBatchSize, len(refs))
+			objects, inspectErr := inspector.InspectObjects(inspectCtx, refs[start:end])
+			select {
+			case batches <- batch{objects: objects, err: inspectErr}:
+			case <-inspectCtx.Done():
+				return
+			}
+			if inspectErr != nil {
+				return
+			}
+		}
+	}()
+
+	objectCount := 0
+	for b := range batches {
+		if b.err != nil {
+			return 0, jobs.Retryable("schema_objects_failed", "Could not inspect schema object details.")
+		}
+		if err := app.schemaSnapshots.PutObjects(ctx, snapshotID, b.objects); err != nil {
+			return 0, err
+		}
+		objectCount += len(b.objects)
+	}
+	return objectCount, nil
+}
+
+// openTargetDriver connects a fresh engine driver to conn's target database for a
+// one-off inspection outside the pooled live-session path (schema sync, lazy
+// definition fetch). The caller owns the returned driver and must Close it. Error
+// results are jobs.CodedError values so both the job runner and HTTP callers can
+// classify them.
+func (app *application) openTargetDriver(ctx context.Context, conn database.Connection, ws database.Workspace) (engine.Driver, error) {
+	plainDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
+	if err != nil {
+		return nil, err
+	}
+	if err := app.validateTargetConnection(conn.Driver, plainDSN); err != nil {
+		return nil, jobs.Permanent("schema_sync_target_blocked", "The target database is blocked by policy.")
+	}
+	driver, err := engine.New(conn.Driver)
+	if err != nil {
+		return nil, jobs.Permanent("schema_sync_driver_unavailable", "The target driver is unavailable.")
+	}
+	settings, err := app.effectiveRuntimeSettingsForWorkspace(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	if err := driver.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, settings, conn.DefaultScope)); err != nil {
+		return nil, jobs.Retryable("schema_sync_connect_failed", "Could not connect to the target database.")
+	}
+	return driver, nil
 }
 
 func directoryObjectRefs(directory *metadata.Directory) []metadata.ObjectRef {
