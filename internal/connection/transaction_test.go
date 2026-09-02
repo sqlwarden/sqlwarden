@@ -462,7 +462,7 @@ func TestManager_ReapIdle_RollsBackOpenManualTransaction(t *testing.T) {
 	defer m.Close()
 
 	driver := &mockTxDriver{}
-	open := func() (engine.Driver, error) { return driver, nil }
+	open := func() (engine.Driver, func(), error) { return driver, nil, nil }
 
 	sess, _, err := m.GetOrCreate("alice", "conn1", open)
 	if err != nil {

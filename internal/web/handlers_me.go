@@ -219,6 +219,7 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 		EnvironmentID *int64              `json:"environment_id"`
 		AccessMode    string              `json:"access_mode"`
 		TLS           *tlsConfigDocument  `json:"tls"`
+		SSH           *sshConfigDocument  `json:"ssh"`
 		V             validator.Validator `json:"-"`
 	}
 
@@ -236,6 +237,11 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 	if input.TLS != nil {
 		tlsDoc = *input.TLS
 		app.validateTLSDocument(input.Driver, tlsDoc, &input.V)
+	}
+	var sshDoc sshConfigDocument
+	if input.SSH != nil {
+		sshDoc = *input.SSH
+		app.validateSSHDocument(input.Driver, sshDoc, &input.V)
 	}
 	if input.Driver != "" {
 		if err := app.validateTargetConnection(input.Driver, input.DSN); err != nil {
@@ -261,6 +267,12 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 	}
 
 	tlsEncrypted, err := app.sealTLSDocument(tlsDoc)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	sshEncrypted, err := app.sealSSHDocument(sshDoc)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -304,6 +316,15 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 		}
 		conn.TLSConfigEncrypted = tlsEncrypted
 		app.logInfo(r, "connection tls configured", slog.Int64("connection_id", conn.ID))
+	}
+
+	if sshEncrypted != "" {
+		if err := app.db.UpdateConnectionSSHConfig(context.Background(), conn.ID, sshEncrypted); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		conn.SSHConfigEncrypted = sshEncrypted
+		app.logInfo(r, "connection ssh configured", slog.Int64("connection_id", conn.ID))
 	}
 
 	app.logInfo(r, "personal workspace connection created",

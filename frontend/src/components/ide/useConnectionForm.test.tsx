@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Environment } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
+import { emptySshState } from './ConnectionSshFields'
 import { drivers } from './connection-drivers'
 import { useConnectionForm } from './useConnectionForm'
 
@@ -173,6 +174,7 @@ describe('useConnectionForm', () => {
         clientCertPem: '',
         clientKeyPem: '',
         clientKeySet: false,
+        clearClientKey: false,
       }),
     )
 
@@ -185,7 +187,67 @@ describe('useConnectionForm', () => {
       ca_pem: '-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----',
       client_cert_pem: '',
       client_key_pem: '',
+      clear_client_key: false,
     })
+  })
+
+  it('includes ssh in the create payload when enabled', async () => {
+    let body: Record<string, unknown> = {}
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ id: 9 }, { status: 201 })
+      }),
+    )
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.environmentId).toBe('4'))
+    act(() => result.current.pickDriver(drivers[0].id))
+    fillRequiredFields(result)
+    act(() =>
+      result.current.changeSsh({
+        ...emptySshState,
+        enabled: true,
+        host: 'bastion.internal',
+        user: 'jump',
+        authMethod: 'password',
+        password: 'pw',
+        insecureSkipHostKey: true,
+      }),
+    )
+
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(body.ssh).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        host: 'bastion.internal',
+        user: 'jump',
+        auth_method: 'password',
+        password: 'pw',
+        port: 22,
+        insecure_skip_host_key: true,
+      }),
+    )
+  })
+
+  it('sends ssh disabled when the tunnel was never enabled', async () => {
+    let body: Record<string, unknown> = {}
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ id: 10 }, { status: 201 })
+      }),
+    )
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.environmentId).toBe('4'))
+    act(() => result.current.pickDriver(drivers[0].id))
+    fillRequiredFields(result)
+
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(body.ssh).toMatchObject({ enabled: false })
   })
 
   it('allows an explicitly unscoped connection after discovery', async () => {

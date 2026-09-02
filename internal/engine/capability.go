@@ -59,7 +59,19 @@ const (
 	// CapabilityTLS accepts structured TLS material (CA bundle, client cert,
 	// verification mode, server name) through engine.TLSCapable.TLSSpec.
 	CapabilityTLS Capability = "connection.tls"
+	// CapabilitySSHTunnel accepts a caller-supplied context dialer so the
+	// connection's transport can be routed through an SSH bastion. Behavior is
+	// uniform across engines, so there is no accompanying spec.
+	CapabilitySSHTunnel Capability = "connection.ssh_tunnel"
 )
+
+// SSHTunnelCapable is implemented by drivers that can route their transport
+// through a caller-supplied context dialer (engine.ConnectionConfig.SSHDialer).
+// Resolved by type assertion on an unconnected probe, like TLSCapable. There is
+// no spec: tunnelling behaves the same for every engine.
+type SSHTunnelCapable interface {
+	SupportsSSHTunnel() bool
+}
 
 // CapabilitySet is an engine's static capability report. Safe to compute and
 // serialize without opening a target connection.
@@ -93,6 +105,7 @@ func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec
 		CapabilitySQLGenerate:     false,
 		CapabilitySQLExplain:      false,
 		CapabilityTLS:             false,
+		CapabilitySSHTunnel:       false,
 	}
 	var spec *metadata.SchemaSpec
 	var ddlSpec *ddl.Spec
@@ -124,6 +137,9 @@ func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec
 		caps[CapabilityTLS] = true
 		s := tc.TLSSpec()
 		tlsSpec = &s
+	}
+	if sc, ok := probe.(SSHTunnelCapable); ok {
+		caps[CapabilitySSHTunnel] = sc.SupportsSSHTunnel()
 	}
 	_, caps[CapabilityQueryCursor] = probe.(cursor.QueryCursorDriver)
 	_, caps[CapabilitySQLClassify] = probe.(classifier.Classifier)

@@ -3,6 +3,8 @@ package web
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"net/http"
 	"slices"
 	"strings"
 
@@ -20,6 +22,11 @@ type tlsConfigDocument struct {
 	CAPEM         string `json:"ca_pem,omitempty"`
 	ClientCertPEM string `json:"client_cert_pem,omitempty"`
 	ClientKeyPEM  string `json:"client_key_pem,omitempty"`
+
+	// ClearClientKey is a request-only signal on update: drop the stored client
+	// key instead of inheriting it when client_key_pem is blank. updateConnection
+	// zeroes it before sealing, so it never reaches the encrypted document.
+	ClearClientKey bool `json:"clear_client_key,omitempty"`
 }
 
 func (d tlsConfigDocument) isEmpty() bool {
@@ -108,4 +115,17 @@ func (app *application) validateTLSDocument(driver string, doc tlsConfigDocument
 	if doc.ClientCertPEM == "" && doc.ClientKeyPEM != "" {
 		v.AddFieldError("tls", "A client key requires a client certificate.")
 	}
+}
+
+// deleteConnectionTLS removes the stored TLS configuration outright, so an
+// operator can prune the encrypted document rather than only setting mode to
+// disable. Gated by conn:update like the reveal and patch routes.
+func (app *application) deleteConnectionTLS(w http.ResponseWriter, r *http.Request) {
+	conn := contextGetConnection(r)
+	if err := app.db.UpdateConnectionTLSConfig(r.Context(), conn.ID, ""); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	app.logInfo(r, "connection tls configuration removed", slog.Int64("connection_id", conn.ID))
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -18,6 +18,8 @@ type EncryptionRotationReport struct {
 	ConnectionsRotated          int `json:"connections_rotated"`
 	ConnectionTLSConfigsScanned int `json:"connection_tls_configs_scanned"`
 	ConnectionTLSConfigsRotated int `json:"connection_tls_configs_rotated"`
+	ConnectionSSHConfigsScanned int `json:"connection_ssh_configs_scanned"`
+	ConnectionSSHConfigsRotated int `json:"connection_ssh_configs_rotated"`
 	FileContentsScanned         int `json:"file_contents_scanned"`
 	FileContentsRotated         int `json:"file_contents_rotated"`
 	SMTPPasswordsScanned        int `json:"smtp_passwords_scanned"`
@@ -64,6 +66,8 @@ func (app *application) RotateEncryptionKeys(ctx context.Context) (EncryptionRot
 		slog.Int("connections_rotated", report.ConnectionsRotated),
 		slog.Int("connection_tls_configs_scanned", report.ConnectionTLSConfigsScanned),
 		slog.Int("connection_tls_configs_rotated", report.ConnectionTLSConfigsRotated),
+		slog.Int("connection_ssh_configs_scanned", report.ConnectionSSHConfigsScanned),
+		slog.Int("connection_ssh_configs_rotated", report.ConnectionSSHConfigsRotated),
 		slog.Int("file_contents_scanned", report.FileContentsScanned),
 		slog.Int("file_contents_rotated", report.FileContentsRotated),
 	)
@@ -139,12 +143,32 @@ func (app *application) rotateConnectionDSNs(ctx context.Context, report *Encryp
 				report.ConnectionTLSConfigsRotated++
 			}
 		}
+
+		if conn.SSHConfigEncrypted != "" {
+			report.ConnectionSSHConfigsScanned++
+			if app.keyring.NeedsRotation(conn.SSHConfigEncrypted) {
+				plain, err := app.keyring.Decrypt(conn.SSHConfigEncrypted)
+				if err != nil {
+					return fmt.Errorf("rotate ssh: decrypt connection %d: %w", conn.ID, err)
+				}
+				reSealed, err := app.keyring.Encrypt(plain)
+				if err != nil {
+					return fmt.Errorf("rotate ssh: encrypt connection %d: %w", conn.ID, err)
+				}
+				if err := app.db.UpdateConnectionSSHConfig(ctx, conn.ID, reSealed); err != nil {
+					return fmt.Errorf("rotate ssh: update connection %d: %w", conn.ID, err)
+				}
+				report.ConnectionSSHConfigsRotated++
+			}
+		}
 	}
 	app.logger.InfoContext(ctx, "connection dsn rotation pass complete",
 		slog.Int("connections_scanned", report.ConnectionsScanned),
 		slog.Int("connections_rotated", report.ConnectionsRotated),
 		slog.Int("connection_tls_configs_scanned", report.ConnectionTLSConfigsScanned),
 		slog.Int("connection_tls_configs_rotated", report.ConnectionTLSConfigsRotated),
+		slog.Int("connection_ssh_configs_scanned", report.ConnectionSSHConfigsScanned),
+		slog.Int("connection_ssh_configs_rotated", report.ConnectionSSHConfigsRotated),
 	)
 	return nil
 }

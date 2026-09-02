@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/cursor"
@@ -35,10 +36,12 @@ func (d *postgresDriver) conn() execer {
 	return d.db
 }
 
-// buildPgxConfig parses the DSN and folds in the default schema and the
-// structured TLS material. When TLS material is present it becomes the single
-// source of truth: pgx's own libpq-style ssl* knobs are dropped so a stale DSN
-// value cannot override the configured verification mode.
+// buildPgxConfig parses the DSN and folds in the default schema, the structured
+// TLS material, and an optional SSH tunnel dialer. When TLS material is present
+// it becomes the single source of truth: pgx's own libpq-style ssl* knobs are
+// dropped so a stale DSN value cannot override the configured verification mode.
+// pgx runs DialFunc before the TLS handshake, so an SSH tunnel and DB TLS
+// compose: the handshake still targets the real ServerName, not the bastion.
 func buildPgxConfig(cfg engine.ConnectionConfig) (*pgx.ConnConfig, error) {
 	config, err := pgx.ParseConfig(cfg.DSN)
 	if err != nil {
@@ -61,6 +64,9 @@ func buildPgxConfig(cfg engine.ConnectionConfig) (*pgx.ConnConfig, error) {
 		for _, k := range []string{"sslmode", "sslrootcert", "sslcert", "sslkey", "sslpassword"} {
 			delete(config.RuntimeParams, k)
 		}
+	}
+	if cfg.SSHDialer != nil {
+		config.DialFunc = pgconn.DialFunc(cfg.SSHDialer)
 	}
 	return config, nil
 }

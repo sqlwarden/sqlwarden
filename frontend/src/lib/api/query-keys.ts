@@ -180,6 +180,8 @@ export const queryKeys = {
     ['connection-dsn', slug, workspaceId, connectionId] as const,
   connectionTls: (slug: string, workspaceId: string | number, connectionId: string | number) =>
     ['connection-tls', slug, workspaceId, connectionId] as const,
+  connectionSsh: (slug: string, workspaceId: string | number, connectionId: string | number) =>
+    ['connection-ssh', slug, workspaceId, connectionId] as const,
   connectionPreviewCount: (
     slug: string,
     workspaceId: string | number,

@@ -313,3 +313,34 @@ func TestUpdateConnectionTLSConfigRoundTrips(t *testing.T) {
 		t.Fatalf("after clear TLSConfigEncrypted=%q", got.TLSConfigEncrypted)
 	}
 }
+
+func TestUpdateConnectionSSHConfigRoundTrips(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	org, _ := db.InsertOrg(ctx, "ssh-org", "SSH Org")
+	ws, _ := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Main", "")
+	conn, err := db.InsertConnection(ctx, ws.ID, nil, "ssh-db", "postgres", "dsn", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.UpdateConnectionSSHConfig(ctx, conn.ID, "sealed-blob"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := db.GetConnection(ctx, conn.ID)
+	if err != nil || !ok {
+		t.Fatalf("get: %v ok=%v", err, ok)
+	}
+	if got.SSHConfigEncrypted != "sealed-blob" {
+		t.Fatalf("SSHConfigEncrypted=%q", got.SSHConfigEncrypted)
+	}
+
+	if err := db.UpdateConnectionSSHConfig(ctx, conn.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ = db.GetConnection(ctx, conn.ID)
+	if got.SSHConfigEncrypted != "" {
+		t.Fatalf("after clear SSHConfigEncrypted=%q", got.SSHConfigEncrypted)
+	}
+}

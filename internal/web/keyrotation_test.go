@@ -237,6 +237,56 @@ func TestRotateEncryptionKeysRotatesTLSConfig(t *testing.T) {
 	}
 }
 
+func TestRotateEncryptionKeysRotatesSSHConfig(t *testing.T) {
+	ctx := context.Background()
+	app := newTestApplication(t)
+
+	keyring, err := encrypt.NewKeyring("new-ssh-primary-key", "old-ssh-retired-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.keyring = keyring
+
+	oldKeyring, err := encrypt.NewKeyring("old-ssh-retired-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id := seedRawConnection(t, app, "postgres", "postgres://u:p@h:5432/db")
+	blob, err := oldKeyring.Encrypt(`{"enabled":true,"host":"bastion","user":"jump","auth_method":"password","password":"pw","insecure_skip_host_key":true}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.db.UpdateConnectionSSHConfig(ctx, id, blob); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := app.RotateEncryptionKeys(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.ConnectionSSHConfigsScanned == 0 || rep.ConnectionSSHConfigsRotated != 1 {
+		t.Fatalf("report: %+v", rep)
+	}
+
+	c, _, _ := app.db.GetConnection(ctx, id)
+	if app.keyring.NeedsRotation(c.SSHConfigEncrypted) {
+		t.Fatal("ssh blob still needs rotation")
+	}
+	doc, _, _ := app.decodeSSHDocument(c.SSHConfigEncrypted)
+	if !doc.Enabled || doc.Host != "bastion" || doc.Password != "pw" {
+		t.Fatalf("ssh blob corrupted by rotation: %+v", doc)
+	}
+
+	rep2, err := app.RotateEncryptionKeys(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep2.ConnectionSSHConfigsRotated != 0 {
+		t.Fatalf("second rotation rotated %d ssh configs; want 0", rep2.ConnectionSSHConfigsRotated)
+	}
+}
+
 func TestRotateEncryptionKeysIncludesSMTPPassword(t *testing.T) {
 	app := newTestApplication(t)
 	oldKeyring, err := encrypt.NewKeyring("old-smtp-key")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/sqlwarden/internal/engine"
@@ -23,6 +24,10 @@ type mysqlDriver struct {
 	// tlsName is the process-unique key this connection registered with the
 	// mysql driver's global TLS registry; non-empty means Close must release it.
 	tlsName string
+	// netName is the process-unique custom-network key this connection
+	// registered with the mysql driver for SSH-tunnel dialing; non-empty means
+	// Close must deregister it.
+	netName string
 }
 
 // applyTLS registers a process-unique *tls.Config with the mysql driver and
@@ -57,10 +62,36 @@ func (d *mysqlDriver) applyTLS(dsn string, tc *engine.TLSConfig) (string, error)
 	return config.FormatDSN(), nil
 }
 
-func (d *mysqlDriver) releaseTLS() {
+// applySSHDialer registers a process-unique DialContext with the mysql driver
+// and rewrites the DSN's network to reference it by name, so the connection's
+// TCP transport is dialed through the SSH tunnel. A nil dialer is a passthrough.
+func (d *mysqlDriver) applySSHDialer(dsn string, dialer func(ctx context.Context, network, addr string) (net.Conn, error)) (string, error) {
+	if dialer == nil {
+		return dsn, nil
+	}
+	config, err := mysqlconfig.ParseDSN(dsn)
+	if err != nil {
+		return "", fmt.Errorf("mysql: parse config: %w", err)
+	}
+	name := "warden-ssh-" + ulid.Make().String()
+	mysqlconfig.RegisterDialContext(name, func(ctx context.Context, addr string) (net.Conn, error) {
+		return dialer(ctx, "tcp", addr)
+	})
+	d.netName = name
+	config.Net = name
+	return config.FormatDSN(), nil
+}
+
+// releaseRegistrations deregisters every process-global entry this connection
+// created (TLS config, SSH custom network). Called from Close.
+func (d *mysqlDriver) releaseRegistrations() {
 	if d.tlsName != "" {
 		mysqlconfig.DeregisterTLSConfig(d.tlsName)
 		d.tlsName = ""
+	}
+	if d.netName != "" {
+		mysqlconfig.DeregisterDialContext(d.netName)
+		d.netName = ""
 	}
 }
 
@@ -135,6 +166,11 @@ func (d *mysqlDriver) Connect(ctx context.Context, cfg engine.ConnectionConfig) 
 	if err != nil {
 		return err
 	}
+	dsn, err = d.applySSHDialer(dsn, cfg.SSHDialer)
+	if err != nil {
+		d.releaseRegistrations()
+		return err
+	}
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return fmt.Errorf("mysql: open: %w", err)
@@ -154,7 +190,7 @@ func (d *mysqlDriver) Ping(ctx context.Context) error {
 }
 
 func (d *mysqlDriver) Close() error {
-	defer d.releaseTLS()
+	defer d.releaseRegistrations()
 	return d.db.Close()
 }
 

@@ -1882,14 +1882,21 @@ func TestListActiveSessions_ShowsSessionAfterConnect(t *testing.T) {
 
 	var payload struct {
 		Sessions []struct {
-			ConnectionID float64 `json:"connection_id"`
-			SessionID    string  `json:"session_id"`
+			ConnectionID  float64 `json:"connection_id"`
+			SessionID     string  `json:"session_id"`
+			TunnelHealthy *bool   `json:"tunnel_healthy"`
 		} `json:"sessions"`
 	}
 	decodeJSONResponse(t, listRes.BodyBytes, &payload)
 	assert.Equal(t, len(payload.Sessions), 1)
 	assert.Equal(t, int64(payload.Sessions[0].ConnectionID), connIDInt)
 	assert.Equal(t, payload.Sessions[0].SessionID, sessionID)
+	if payload.Sessions[0].TunnelHealthy != nil {
+		t.Fatalf("want tunnel_healthy absent for a session without an SSH tunnel, got %v", *payload.Sessions[0].TunnelHealthy)
+	}
+	if bytes.Contains(listRes.BodyBytes, []byte("tunnel_healthy")) {
+		t.Fatal("tunnel_healthy should be omitted when there is no tunnel")
+	}
 }
 
 func TestListActiveSessions_ClearedAfterDisconnect(t *testing.T) {
@@ -2057,7 +2064,7 @@ func TestRevokeWorkspaceDatabaseSession_OwnerCanRevokeOwnSession(t *testing.T) {
 			OrgID:       strconv.FormatInt(org.ID, 10),
 			WorkspaceID: strconv.FormatInt(ws.ID, 10),
 		},
-		func() (engine.Driver, error) { return newIdleQueryDriver(), nil },
+		func() (engine.Driver, func(), error) { return newIdleQueryDriver(), nil, nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -2089,7 +2096,7 @@ func TestRevokeWorkspaceDatabaseSession_AdminCanRevokeWorkspaceSession(t *testin
 			OrgID:       strconv.FormatInt(org.ID, 10),
 			WorkspaceID: strconv.FormatInt(ws.ID, 10),
 		},
-		func() (engine.Driver, error) { return newIdleQueryDriver(), nil },
+		func() (engine.Driver, func(), error) { return newIdleQueryDriver(), nil, nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -2119,7 +2126,7 @@ func TestRevokeWorkspaceDatabaseSession_CrossWorkspaceHidden(t *testing.T) {
 			OrgID:       strconv.FormatInt(org.ID, 10),
 			WorkspaceID: strconv.FormatInt(wsB.ID, 10),
 		},
-		func() (engine.Driver, error) { return newIdleQueryDriver(), nil },
+		func() (engine.Driver, func(), error) { return newIdleQueryDriver(), nil, nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -2206,7 +2213,7 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 	cancelledSession, _, err := app.connManager.GetOrCreate(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(connA.ID, 10),
-		func() (engine.Driver, error) { return blockingDriver, nil },
+		func() (engine.Driver, func(), error) { return blockingDriver, nil, nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -2215,7 +2222,7 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 	unrelatedSession, _, err := app.connManager.GetOrCreate(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(connB.ID, 10),
-		func() (engine.Driver, error) { return newIdleQueryDriver(), nil },
+		func() (engine.Driver, func(), error) { return newIdleQueryDriver(), nil, nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -2701,6 +2708,87 @@ func TestUpdateConnectionKeepsStoredClientKey(t *testing.T) {
 	}
 }
 
+func TestUpdateConnectionTLSClearsClientKeyOnRequest(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-tls-clear@example.com", "Conn TLS Clear", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn TLS Clear WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsIDInt, _ := strconv.ParseInt(fmt.Sprintf("%v", wsRes.BodyFields["id"]), 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "clear-tls",
+			"driver": "postgres",
+			"dsn":    "postgres://u:p@localhost:5432/db",
+			"tls": map[string]any{
+				"mode":            "verify-full",
+				"client_cert_pem": "CERT",
+				"client_key_pem":  "KEY",
+			},
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := int64(createRes.BodyFields["id"].(float64))
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		orgConnectionURL(slug, wsIDInt, envID, fmt.Sprintf("%d", connID)),
+		map[string]any{
+			"tls": map[string]any{
+				"mode": "verify-full", "client_cert_pem": "CERT", "clear_client_key": true,
+			},
+		}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusNoContent)
+
+	stored, _, _ := app.db.GetConnection(context.Background(), connID)
+	doc, _, _ := app.decodeTLSDocument(stored.TLSConfigEncrypted)
+	if doc.ClientKeyPEM != "" || doc.ClientCertPEM != "CERT" {
+		t.Fatalf("expected client key cleared, got %+v", doc)
+	}
+	if doc.ClearClientKey {
+		t.Fatal("clear flag leaked into the persisted document")
+	}
+}
+
+func TestDeleteConnectionTLSRemovesConfig(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-tls-delete@example.com", "Conn TLS Delete", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn TLS Delete WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsIDInt, _ := strconv.ParseInt(fmt.Sprintf("%v", wsRes.BodyFields["id"]), 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "delete-tls",
+			"driver": "postgres",
+			"dsn":    "postgres://u:p@localhost:5432/db",
+			"tls": map[string]any{
+				"mode": "verify-full", "client_cert_pem": "CERT", "client_key_pem": "KEY",
+			},
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := int64(createRes.BodyFields["id"].(float64))
+
+	delRes := send(t, newAuthRequest(t, http.MethodDelete,
+		orgConnectionURL(slug, wsIDInt, envID, fmt.Sprintf("%d", connID))+"/tls", nil, tok), app.routes())
+	assert.Equal(t, delRes.StatusCode, http.StatusNoContent)
+
+	stored, _, _ := app.db.GetConnection(context.Background(), connID)
+	if stored.TLSConfigEncrypted != "" {
+		t.Fatalf("expected tls config removed, got %q", stored.TLSConfigEncrypted)
+	}
+}
+
 func TestRevealConnectionTLSOmitsPrivateKey(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -2786,4 +2874,287 @@ func TestRevealConnectionTLSMaskedByOrgSetting(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodGet,
 		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/tls", nil, ownerTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+}
+
+func TestCreateConnectionWithSSHConfigPersistsEncrypted(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-ssh-create@example.com", "Conn SSH Create", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn SSH WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsIDInt, _ := strconv.ParseInt(fmt.Sprintf("%v", wsRes.BodyFields["id"]), 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "ssh-pg",
+			"driver": "postgres",
+			"dsn":    "postgres://u:p@localhost:5432/db",
+			"ssh": map[string]any{
+				"enabled":                true,
+				"host":                   "bastion.internal",
+				"user":                   "jump",
+				"auth_method":            "password",
+				"password":               "s3cret-pw",
+				"insecure_skip_host_key": true,
+			},
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	if bytes.Contains(createRes.BodyBytes, []byte("s3cret-pw")) || bytes.Contains(createRes.BodyBytes, []byte("ssh_config")) {
+		t.Fatal("connection response leaked SSH material")
+	}
+
+	connID := int64(createRes.BodyFields["id"].(float64))
+	stored, _, err := app.db.GetConnection(context.Background(), connID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.SSHConfigEncrypted == "" {
+		t.Fatal("ssh_config_encrypted not persisted")
+	}
+	doc, has, err := app.decodeSSHDocument(stored.SSHConfigEncrypted)
+	if err != nil || !has || !doc.Enabled || doc.Host != "bastion.internal" || doc.Password != "s3cret-pw" {
+		t.Fatalf("stored doc wrong: %+v has=%v err=%v", doc, has, err)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(slug, wsIDInt, envID, fmt.Sprintf("%d", connID))+"/ssh", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	if bytes.Contains(res.BodyBytes, []byte("s3cret-pw")) {
+		t.Fatal("reveal leaked SSH password")
+	}
+	assert.Equal(t, res.BodyFields["enabled"], true)
+	assert.Equal(t, res.BodyFields["password_set"], true)
+}
+
+func TestGetConnectionSSHRedactsSecrets(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, org := seedOrgOwner(t, app, "conn-ssh-reveal@example.com", "Conn SSH Reveal Owner", "Conn SSH Reveal Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Conn SSH Reveal WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{
+			"name":   "Primary",
+			"driver": "postgres",
+			"dsn":    "postgres://u:p@localhost:5432/db",
+		}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+	connIDInt := int64(createRes.BodyFields["id"].(float64))
+
+	sealed, err := app.sealSSHDocument(sshConfigDocument{
+		Enabled: true, Host: "bastion", User: "jump",
+		AuthMethod:          "private_key",
+		PrivateKeyPEM:       "SECRET-KEY-MATERIAL",
+		Passphrase:          "SECRET-PASS",
+		InsecureSkipHostKey: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.db.UpdateConnectionSSHConfig(context.Background(), connIDInt, sealed); err != nil {
+		t.Fatal(err)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/ssh", nil, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	if bytes.Contains(res.BodyBytes, []byte("SECRET-KEY-MATERIAL")) ||
+		bytes.Contains(res.BodyBytes, []byte("SECRET-PASS")) ||
+		bytes.Contains(res.BodyBytes, []byte("private_key_pem")) {
+		t.Fatal("reveal leaked SSH secret material")
+	}
+	assert.Equal(t, res.BodyFields["private_key_set"], true)
+	assert.Equal(t, res.BodyFields["auth_method"], "private_key")
+}
+
+func TestGetConnectionSSHBlockedWhenMaskOnEdit(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, ownerTok, org := seedOrgOwner(t, app, "conn-ssh-mask@example.com", "Conn SSH Mask Owner", "Conn SSH Mask Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Conn SSH Mask WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{
+			"name": "Primary", "driver": "postgres", "dsn": "postgres://u:p@localhost:5432/db",
+			"ssh": map[string]any{
+				"enabled": true, "host": "bastion", "user": "jump",
+				"auth_method": "password", "password": "pw", "insecure_skip_host_key": true,
+			},
+		}, ownerTok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
+
+	masked := true
+	if err := app.db.UpdateOrgSettings(context.Background(), org.ID, nil, nil, &masked); err != nil {
+		t.Fatal(err)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodGet,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/ssh", nil, ownerTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+}
+
+func TestUpdateConnectionSSHCarriesSecretsForward(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-ssh-merge@example.com", "Conn SSH Merge", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn SSH Merge WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsIDInt, _ := strconv.ParseInt(fmt.Sprintf("%v", wsRes.BodyFields["id"]), 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "merge-ssh",
+			"driver": "postgres",
+			"dsn":    "postgres://u:p@localhost:5432/db",
+			"ssh": map[string]any{
+				"enabled": true, "host": "bastion-old", "user": "jump",
+				"auth_method": "password", "password": "orig-pw", "insecure_skip_host_key": true,
+			},
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := int64(createRes.BodyFields["id"].(float64))
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		orgConnectionURL(slug, wsIDInt, envID, fmt.Sprintf("%d", connID)),
+		map[string]any{
+			"ssh": map[string]any{
+				"enabled": true, "host": "bastion-new", "user": "jump",
+				"auth_method": "password", "insecure_skip_host_key": true,
+			},
+		}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusNoContent)
+
+	stored, _, _ := app.db.GetConnection(context.Background(), connID)
+	doc, _, _ := app.decodeSSHDocument(stored.SSHConfigEncrypted)
+	if doc.Host != "bastion-new" || doc.Password != "orig-pw" {
+		t.Fatalf("merge wrong: %+v", doc)
+	}
+}
+
+func TestUpdateConnectionSSHClearsSecretOnRequest(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-ssh-clear@example.com", "Conn SSH Clear", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn SSH Clear WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsIDInt, _ := strconv.ParseInt(fmt.Sprintf("%v", wsRes.BodyFields["id"]), 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "clear-ssh",
+			"driver": "postgres",
+			"dsn":    "postgres://u:p@localhost:5432/db",
+			"ssh": map[string]any{
+				"enabled": true, "host": "bastion", "user": "jump",
+				"auth_method": "password", "password": "orig-pw", "insecure_skip_host_key": true,
+			},
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := int64(createRes.BodyFields["id"].(float64))
+
+	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
+		orgConnectionURL(slug, wsIDInt, envID, fmt.Sprintf("%d", connID)),
+		map[string]any{
+			"ssh": map[string]any{
+				"enabled": false, "host": "bastion", "user": "jump",
+				"auth_method": "password", "insecure_skip_host_key": true,
+				"clear_password": true,
+			},
+		}, tok), app.routes())
+	assert.Equal(t, updateRes.StatusCode, http.StatusNoContent)
+
+	stored, _, _ := app.db.GetConnection(context.Background(), connID)
+	doc, _, _ := app.decodeSSHDocument(stored.SSHConfigEncrypted)
+	if doc.Password != "" {
+		t.Fatalf("expected password cleared, got %+v", doc)
+	}
+	if doc.ClearPassword {
+		t.Fatal("clear flag leaked into the persisted document")
+	}
+}
+
+func TestDeleteConnectionSSHRemovesConfig(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-ssh-delete@example.com", "Conn SSH Delete", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn SSH Delete WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsIDInt, _ := strconv.ParseInt(fmt.Sprintf("%v", wsRes.BodyFields["id"]), 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "delete-ssh",
+			"driver": "postgres",
+			"dsn":    "postgres://u:p@localhost:5432/db",
+			"ssh": map[string]any{
+				"enabled": true, "host": "bastion", "user": "jump",
+				"auth_method": "password", "password": "pw", "insecure_skip_host_key": true,
+			},
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+	connID := int64(createRes.BodyFields["id"].(float64))
+
+	delRes := send(t, newAuthRequest(t, http.MethodDelete,
+		orgConnectionURL(slug, wsIDInt, envID, fmt.Sprintf("%d", connID))+"/ssh", nil, tok), app.routes())
+	assert.Equal(t, delRes.StatusCode, http.StatusNoContent)
+
+	stored, _, _ := app.db.GetConnection(context.Background(), connID)
+	if stored.SSHConfigEncrypted != "" {
+		t.Fatalf("expected ssh config removed, got %q", stored.SSHConfigEncrypted)
+	}
+}
+
+func TestTestConnectionSurfacesSSHFailure(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, tok, slug := registerAndLogin(t, app, "conn-ssh-testfail@example.com", "Conn SSH TestFail", "securepass99")
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "Conn SSH TestFail WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsIDInt, _ := strconv.ParseInt(fmt.Sprintf("%v", wsRes.BodyFields["id"]), 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	req := newTestRequest(t, http.MethodPost, orgEnvConnectionsURL(slug, wsIDInt, envID)+"/test", map[string]any{
+		"driver": "postgres",
+		"dsn":    "postgres://u:p@localhost:5432/db",
+		"ssh": map[string]any{
+			"enabled": true, "host": "127.0.0.1", "port": 1, "user": "jump",
+			"auth_method": "password", "password": "pw", "insecure_skip_host_key": true,
+		},
+	})
+	req.Header.Set("Authorization", "Bearer "+tok)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
 }

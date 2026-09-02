@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { ConnectionTlsFields, emptyTlsState } from './ConnectionTlsFields'
+import { ConnectionTlsFields, emptyTlsState, type TlsFormState } from './ConnectionTlsFields'
 import { standardTlsSpec } from './engines/tls'
 
 describe('ConnectionTlsFields', () => {
@@ -58,5 +60,29 @@ describe('ConnectionTlsFields', () => {
       />,
     )
     expect(screen.getByPlaceholderText(/leave blank to keep/i)).toBeInTheDocument()
+  })
+
+  it('removes a stored client key on request and lets it be restored', async () => {
+    function Harness() {
+      const [value, setValue] = useState<TlsFormState>({
+        ...emptyTlsState,
+        mode: 'verify-full',
+        clientKeySet: true,
+      })
+      return (
+        <ConnectionTlsFields
+          spec={standardTlsSpec}
+          value={value}
+          disabled={false}
+          onChange={setValue}
+        />
+      )
+    }
+    render(<Harness />)
+    await userEvent.click(screen.getByRole('button', { name: /remove stored client key/i }))
+    expect(screen.getByLabelText(/client key/i)).toBeDisabled()
+    expect(screen.getByText(/stored client key will be removed on save/i)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /keep it/i }))
+    expect(screen.getByLabelText(/client key/i)).toBeEnabled()
   })
 })

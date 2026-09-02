@@ -6,12 +6,15 @@ import { errorMessage, isApiError } from '#/lib/api/errors'
 import { queryKeys } from '#/lib/api/query-keys'
 import {
   connectionDsnQueryOptions,
+  connectionSshQueryOptions,
   connectionTlsQueryOptions,
   orgQueryOptions,
 } from '#/lib/api/query'
 import type { Connection, ScopePath } from '#/lib/api/types'
 import { defaultFieldValues, driverMap, drivers } from './connection-drivers'
+import { emptySshState, type SshFormState } from './ConnectionSshFields'
 import { emptyTlsState, type TlsFormState } from './ConnectionTlsFields'
+import { sshRevealToState, sshStateToPayload } from './connectionSshPayload'
 import { tlsRevealToState, tlsStateToPayload } from './connectionTlsPayload'
 import { findFrontendEngine } from './engines/registry'
 import {
@@ -51,7 +54,9 @@ export function useEditConnectionForm({
   const [scopeDiscovery, setScopeDiscovery] = useState<ScopeDiscovery>()
   const [defaultScope, setDefaultScope] = useState<ScopePath>([])
   const [tls, setTls] = useState<TlsFormState>(emptyTlsState)
+  const [ssh, setSsh] = useState<SshFormState>(emptySshState)
   const tlsSpec = findFrontendEngine(connection?.driver ?? '')?.tls
+  const sshSupported = findFrontendEngine(connection?.driver ?? '')?.sshTunnel ?? false
 
   const org = useQuery({ ...orgQueryOptions(orgSlug), enabled: open })
   const revealDsnAllowed =
@@ -67,6 +72,11 @@ export function useEditConnectionForm({
     enabled: open && revealDsnAllowed && connection !== undefined,
   })
 
+  const revealSsh = useQuery({
+    ...connectionSshQueryOptions(orgSlug, workspaceId, connection?.id ?? ''),
+    enabled: open && revealDsnAllowed && connection !== undefined,
+  })
+
   useEffect(() => {
     if (!open || !connection) return
     setName(connection.name)
@@ -77,6 +87,7 @@ export function useEditConnectionForm({
     setScopeDiscovery(undefined)
     setDefaultScope(connection.default_scope ?? [])
     setTls(emptyTlsState)
+    setSsh(emptySshState)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when the dialog opens for a given connection
   }, [open, connection?.id])
 
@@ -90,6 +101,11 @@ export function useEditConnectionForm({
     if (!open || !revealTls.data) return
     setTls(tlsRevealToState(revealTls.data))
   }, [open, revealTls.data, revealTls.dataUpdatedAt])
+
+  useEffect(() => {
+    if (!open || !revealSsh.data) return
+    setSsh(sshRevealToState(revealSsh.data))
+  }, [open, revealSsh.data, revealSsh.dataUpdatedAt])
 
   function changeField(key: string, value: string) {
     setFields((current) => ({ ...current, [key]: value }))
@@ -116,6 +132,12 @@ export function useEditConnectionForm({
     setConflict(false)
   }
 
+  function changeSsh(next: SshFormState) {
+    setSsh(next)
+    setTestState({ status: 'idle' })
+    setConflict(false)
+  }
+
   function reset() {
     setName('')
     setFields(defaultFieldValues(driver))
@@ -125,12 +147,16 @@ export function useEditConnectionForm({
     setScopeDiscovery(undefined)
     setDefaultScope([])
     setTls(emptyTlsState)
+    setSsh(emptySshState)
     if (connection) {
       queryClient.removeQueries({
         queryKey: queryKeys.connectionDsn(orgSlug, workspaceId, connection.id),
       })
       queryClient.removeQueries({
         queryKey: queryKeys.connectionTls(orgSlug, workspaceId, connection.id),
+      })
+      queryClient.removeQueries({
+        queryKey: queryKeys.connectionSsh(orgSlug, workspaceId, connection.id),
       })
     }
   }
@@ -168,6 +194,7 @@ export function useEditConnectionForm({
         driver: driver.id,
         dsn: buildDSN(),
         tls: tlsStateToPayload(tls),
+        ...(ssh.enabled ? { ssh: sshStateToPayload(ssh) } : {}),
       }),
     onMutate: () => setTestState({ status: 'pending' }),
     onSuccess: (data) => {
@@ -244,6 +271,7 @@ export function useEditConnectionForm({
         access_mode: connection?.access_mode ?? 'open',
         default_scope: defaultScope,
         tls: tlsStateToPayload(tls),
+        ssh: sshStateToPayload(ssh),
         force,
       }),
     onSuccess: async () => {
@@ -270,6 +298,48 @@ export function useEditConnectionForm({
     },
   })
 
+  const removeTls = useMutation({
+    mutationFn: () =>
+      api.delete(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections/${connection?.id}/tls`,
+      ),
+    onSuccess: async () => {
+      setTls(emptyTlsState)
+      setConflict(false)
+      toast.success('TLS configuration removed')
+      if (connection) {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.connectionTls(orgSlug, workspaceId, connection.id),
+        })
+      }
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgWorkspaceConnectionsScope(orgSlug, workspaceId),
+      })
+    },
+    onError: (error) => toast.error(errorMessage(error, 'Failed to remove TLS configuration')),
+  })
+
+  const removeSsh = useMutation({
+    mutationFn: () =>
+      api.delete(
+        `/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections/${connection?.id}/ssh`,
+      ),
+    onSuccess: async () => {
+      setSsh(emptySshState)
+      setConflict(false)
+      toast.success('SSH configuration removed')
+      if (connection) {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.connectionSsh(orgSlug, workspaceId, connection.id),
+        })
+      }
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.orgWorkspaceConnectionsScope(orgSlug, workspaceId),
+      })
+    },
+    onError: (error) => toast.error(errorMessage(error, 'Failed to remove SSH configuration')),
+  })
+
   function submit(force = false) {
     if (!validate()) return
     void updateConnection.mutateAsync(force).catch(() => {})
@@ -293,6 +363,7 @@ export function useEditConnectionForm({
     revealDsnAllowed,
     revealDsnPending: revealDsn.isFetching,
     revealTlsPending: revealTls.isFetching,
+    revealSshPending: revealSsh.isFetching,
     scopeDiscovery,
     selectDatabase,
     selectSchema,
@@ -301,7 +372,14 @@ export function useEditConnectionForm({
     testState,
     tls,
     tlsSpec,
+    tlsConfigured: revealTls.data?.configured ?? false,
     changeTls,
+    removeTls,
+    ssh,
+    sshSupported,
+    sshConfigured: revealSsh.data?.configured ?? false,
+    changeSsh,
+    removeSsh,
     updateConnection,
   }
 }

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"net"
 
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/pkg/result"
@@ -43,6 +44,10 @@ type ConnectionConfig struct {
 	// TLS carries structured TLS material for network engines. Nil means no
 	// explicit TLS configuration.
 	TLS *TLSConfig
+	// SSHDialer, when non-nil, is the context dialer a network engine must
+	// route its TCP transport through (SSH tunnel). It composes with TLS: the
+	// DB TLS handshake still targets the real ServerName, never the bastion.
+	SSHDialer func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
 // NormalizeName returns the canonical engine name for a user-facing name or

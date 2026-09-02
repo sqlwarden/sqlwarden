@@ -65,6 +65,8 @@ type Session struct {
 	OrgID             string
 	WorkspaceID       string
 	Conn              engine.Driver // open connection
+	teardown          func()        // released after Conn.Close(); nil when nothing to tear down
+	tunnelHealth      func() *bool  // SSH tunnel health probe; nil when the session has no tunnel
 	mu                sync.Mutex    // serializes Query/Execute on this session
 	cursors           map[string]*QueryCursorHandle
 	lastUsed          time.Time
@@ -442,13 +444,13 @@ func New(idleTimeout time.Duration) *Manager {
 
 // GetOrCreate returns the existing session for (accountID, connID) or creates one using open().
 // Returns: (session, created, error) where created=true means a new session was opened.
-func (m *Manager) GetOrCreate(accountID, connID string, open func() (engine.Driver, error)) (*Session, bool, error) {
+func (m *Manager) GetOrCreate(accountID, connID string, open func() (engine.Driver, func(), error)) (*Session, bool, error) {
 	return m.GetOrCreateWithMetadata(accountID, connID, SessionMetadata{}, open)
 }
 
 // GetOrCreateWithMetadata returns an existing session or creates one with
 // resource metadata used for workspace-scoped admin visibility and revocation.
-func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata SessionMetadata, open func() (engine.Driver, error)) (*Session, bool, error) {
+func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata SessionMetadata, open func() (engine.Driver, func(), error)) (*Session, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -464,7 +466,7 @@ func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata Ses
 		return sess, false, nil
 	}
 
-	d, err := open()
+	d, teardown, err := open()
 	if err != nil {
 		return nil, false, err
 	}
@@ -476,6 +478,7 @@ func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata Ses
 		OrgID:        metadata.OrgID,
 		WorkspaceID:  metadata.WorkspaceID,
 		Conn:         d,
+		teardown:     teardown,
 		lastUsed:     time.Now(),
 		txMode:       TxModeAuto,
 	}
@@ -494,6 +497,18 @@ type SessionRef struct {
 	OrgID        string
 	WorkspaceID  string
 	LastUsedAt   time.Time
+	// TunnelHealthy is nil when the session has no SSH tunnel; otherwise it
+	// points to the tunnel's current health.
+	TunnelHealthy *bool
+}
+
+// SetTunnelHealth registers a probe for this session's SSH tunnel health.
+// fn returns nil when there is no tunnel. Safe to call once, right after the
+// session is created.
+func (s *Session) SetTunnelHealth(fn func() *bool) {
+	s.mu.Lock()
+	s.tunnelHealth = fn
+	s.mu.Unlock()
 }
 
 // AllForAccount returns a SessionRef for every active session owned by accountID.
@@ -504,17 +519,29 @@ func (m *Manager) AllForAccount(accountID string) []SessionRef {
 	var refs []SessionRef
 	for _, sess := range m.byID {
 		if sess.AccountID == accountID {
-			refs = append(refs, SessionRef{
-				SessionID:    sess.ID,
-				AccountID:    sess.AccountID,
-				ConnectionID: sess.ConnectionID,
-				OrgID:        sess.OrgID,
-				WorkspaceID:  sess.WorkspaceID,
-				LastUsedAt:   sess.lastUsed,
-			})
+			refs = append(refs, sess.ref())
 		}
 	}
 	return refs
+}
+
+// ref builds a SessionRef snapshot, probing tunnel health under s.mu.
+func (s *Session) ref() SessionRef {
+	s.mu.Lock()
+	var tunnelHealthy *bool
+	if s.tunnelHealth != nil {
+		tunnelHealthy = s.tunnelHealth()
+	}
+	s.mu.Unlock()
+	return SessionRef{
+		SessionID:     s.ID,
+		AccountID:     s.AccountID,
+		ConnectionID:  s.ConnectionID,
+		OrgID:         s.OrgID,
+		WorkspaceID:   s.WorkspaceID,
+		LastUsedAt:    s.lastUsed,
+		TunnelHealthy: tunnelHealthy,
+	}
 }
 
 // AllForWorkspace returns active sessions known to belong to workspaceID.
@@ -524,14 +551,7 @@ func (m *Manager) AllForWorkspace(workspaceID string) []SessionRef {
 	var refs []SessionRef
 	for _, sess := range m.byID {
 		if sess.WorkspaceID == workspaceID {
-			refs = append(refs, SessionRef{
-				SessionID:    sess.ID,
-				AccountID:    sess.AccountID,
-				ConnectionID: sess.ConnectionID,
-				OrgID:        sess.OrgID,
-				WorkspaceID:  sess.WorkspaceID,
-				LastUsedAt:   sess.lastUsed,
-			})
+			refs = append(refs, sess.ref())
 		}
 	}
 	return refs
@@ -747,6 +767,10 @@ func (s *Session) close() {
 		_ = controller.Rollback(context.Background())
 	}
 	s.closeCursorsLocked()
+	teardown := s.teardown
 	s.mu.Unlock()
 	_ = s.Conn.Close()
+	if teardown != nil {
+		teardown()
+	}
 }

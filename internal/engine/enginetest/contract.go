@@ -24,6 +24,7 @@ var knownCapabilities = map[engine.Capability]bool{
 	engine.CapabilitySQLGenerate:     true,
 	engine.CapabilitySQLExplain:      true,
 	engine.CapabilityTLS:             true,
+	engine.CapabilitySSHTunnel:       true,
 }
 
 // RunCapabilityContract asserts the static-capability invariants every engine
@@ -62,6 +63,15 @@ func RunCapabilityContract(t *testing.T, name string) {
 	}
 	if set.Capabilities[engine.CapabilityTLS] != (set.TLS != nil) {
 		t.Fatal("connection.tls capability and TLS spec disagree")
+	}
+	if set.Capabilities[engine.CapabilitySSHTunnel] {
+		d, err := engine.New(name)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if _, ok := d.(engine.SSHTunnelCapable); !ok {
+			t.Fatal("connection.ssh_tunnel reported but engine does not implement SSHTunnelCapable")
+		}
 	}
 }
 

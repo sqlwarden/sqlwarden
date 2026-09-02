@@ -5,16 +5,30 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 
 	go_ora "github.com/sijms/go-ora/v2"
+	"github.com/sijms/go-ora/v2/configurations"
 
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/pkg/result"
 )
+
+// sshDialerAdapter adapts engine.ConnectionConfig.SSHDialer to go-ora's
+// configurations.DialerContext so the connection is dialed through the tunnel.
+type sshDialerAdapter struct {
+	dial func(ctx context.Context, network, addr string) (net.Conn, error)
+}
+
+func (a sshDialerAdapter) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return a.dial(ctx, network, address)
+}
+
+var _ configurations.DialerContext = sshDialerAdapter{}
 
 type oracleDriver struct {
 	db           *sql.DB
@@ -92,9 +106,10 @@ func ensureOracleSSL(dsn string) string {
 }
 
 // buildOracleConnector assembles the go-ora connector, folding in the default
-// schema and the structured TLS material. When TLS is configured the connect
-// string is switched to tcps and the *tls.Config is handed to go-ora, which
-// uses it verbatim for the handshake.
+// schema, the structured TLS material, and an optional SSH tunnel dialer. When
+// TLS is configured the connect string is switched to tcps and the *tls.Config
+// is handed to go-ora, which uses it verbatim for the handshake. A plain SSH
+// tunnel does NOT force tcps/SSL: only TLS material does.
 func buildOracleConnector(cfg engine.ConnectionConfig) (driver.Connector, error) {
 	dsn := cfg.DSN
 	tlsCfg, err := cfg.TLS.Build()
@@ -105,12 +120,17 @@ func buildOracleConnector(cfg engine.ConnectionConfig) (driver.Connector, error)
 		dsn = ensureOracleSSL(dsn)
 	}
 	inner := go_ora.NewConnector(dsn)
-	if tlsCfg != nil {
+	if tlsCfg != nil || cfg.SSHDialer != nil {
 		oc, ok := inner.(*go_ora.OracleConnector)
 		if !ok {
-			return nil, fmt.Errorf("oracle: connector type %T does not accept TLS config", inner)
+			return nil, fmt.Errorf("oracle: connector type %T does not accept TLS/dialer config", inner)
 		}
-		oc.WithTLSConfig(tlsCfg)
+		if tlsCfg != nil {
+			oc.WithTLSConfig(tlsCfg)
+		}
+		if cfg.SSHDialer != nil {
+			oc.Dialer(sshDialerAdapter{dial: cfg.SSHDialer})
+		}
 	}
 	connector := schemaConnector{inner: inner}
 	if schema := cfg.DefaultScope.Name("schema"); schema != "" {

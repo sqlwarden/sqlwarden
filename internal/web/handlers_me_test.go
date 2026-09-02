@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -464,6 +466,51 @@ func TestMyWorkspaceConnectionCRUD(t *testing.T) {
 	// Gone after delete.
 	getAfterDel := send(t, newAuthRequest(t, http.MethodGet, connsURL+"/"+connID, nil, tok), app.routes())
 	assert.Equal(t, getAfterDel.StatusCode, http.StatusNotFound)
+}
+
+func TestCreateMyConnectionWithSSHConfig(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok := setupMeTest(t, app, "meconn-ssh@example.com")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",
+		map[string]any{"name": "Me SSH WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := strconv.FormatInt(defaultEnvironmentID(t, app, wsIDInt), 10)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost, meEnvConnectionsURL(wsID, envID), map[string]any{
+		"name":   "me-ssh-pg",
+		"driver": "postgres",
+		"dsn":    "postgres://u:p@localhost:5432/db",
+		"ssh": map[string]any{
+			"enabled":                true,
+			"host":                   "bastion.internal",
+			"user":                   "jump",
+			"auth_method":            "password",
+			"password":               "s3cret-pw",
+			"insecure_skip_host_key": true,
+		},
+	}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
+
+	if bytes.Contains(createRes.BodyBytes, []byte("s3cret-pw")) {
+		t.Fatal("connection response leaked SSH material")
+	}
+
+	connID := int64(createRes.BodyFields["id"].(float64))
+	stored, _, err := app.db.GetConnection(context.Background(), connID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.SSHConfigEncrypted == "" {
+		t.Fatal("ssh_config_encrypted not persisted")
+	}
+	doc, has, err := app.decodeSSHDocument(stored.SSHConfigEncrypted)
+	if err != nil || !has || !doc.Enabled || doc.Host != "bastion.internal" || doc.Password != "s3cret-pw" {
+		t.Fatalf("stored doc wrong: %+v has=%v err=%v", doc, has, err)
+	}
 }
 
 func TestListMyConnections_SupportsPaginationSearchFilterAndSort(t *testing.T) {
