@@ -51,7 +51,6 @@ const connection: Connection = {
   environment_id: 1,
   name: 'warehouse',
   driver: 'postgres',
-  access_mode: 'open',
   created_at: '',
   updated_at: '',
 }

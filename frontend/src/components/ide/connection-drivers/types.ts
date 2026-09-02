@@ -10,6 +10,8 @@ export type FieldDef = {
   span?: 'full' | 'wide' | 'half' | 'compact'
   /** Section heading; a divider renders whenever it differs from the previous field's. */
   section?: string
+  /** Requests a platform-native file picker next to this field when available. */
+  nativeFilePicker?: 'sqlite'
 }
 
 export type DriverDef = {

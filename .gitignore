@@ -2,6 +2,9 @@ bin/
 tmp/
 build-errors.log
 
+# Default output from `go build ./cmd/desktop`
+/desktop
+
 # GoReleaser build artifacts
 dist/
 
@@ -9,6 +12,10 @@ dist/
 assets/static/*
 !assets/static/.gitkeep
 frontend/coverage/
+frontend/package.json.md5
+frontend/src/wailsjs/
+cmd/desktop/build/bin/
+cmd/desktop/build/windows/installer/wails_tools.nsh
 
 # Environment files
 .env

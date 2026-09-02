@@ -44,8 +44,7 @@ func TestValidateTargetConnectionSQLiteFilePolicy(t *testing.T) {
 		{
 			name: "sqlite file targets are rejected when local source is not allowed",
 			configure: func(app *application) {
-				app.config.DeploymentMode = DeploymentModeDesktop
-				app.config.AccessMode = AccessModeSingleUser
+				app.config.Mode = ModeDesktop
 				app.config.Drivers.SQLite.AllowedSources = nil
 			},
 			driverName: "sqlite",

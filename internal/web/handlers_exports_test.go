@@ -48,7 +48,7 @@ func TestHandleExportJobFailsBeforeTargetAccessWithoutRegisteredClassifier(t *te
 	account, _, org := seedOrgOwner(t, app, uniqueEmail(t, "export-worker-unavailable"), "Export Worker Unavailable", "Export Worker Unavailable Org")
 	ws := seedWorkspaceForAccount(t, app, org, account, "Export Worker Unavailable WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Export Worker Unavailable Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Export Worker Unavailable Conn")
 
 	inputJSON, err := json.Marshal(exportJobInput{
 		AccountID:    account.ID,

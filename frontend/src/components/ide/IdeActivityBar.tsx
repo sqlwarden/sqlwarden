@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { orgRuntimeSettingsQueryOptions } from '#/lib/api/query'
@@ -29,6 +29,8 @@ import {
 } from './ideActivities'
 import { Tip } from './schema-diagram/Tip'
 import { WorkspaceSelector } from './WorkspaceSelector'
+import { useSetupStatus } from '#/hooks/use-setup-status'
+import { registerCommand } from '#/lib/commands/registry'
 
 type IdeActivityBarProps = {
   orgSlug: string
@@ -37,8 +39,9 @@ type IdeActivityBarProps = {
   onSelectWorkspace: (id: number) => void
   session: SessionResponse | undefined
   canAccessOrgSettings: boolean
-  canAccessWorkspaceGeneralSettings: boolean
-  canAccessWorkspaceAccessControl: boolean
+  canCreateWorkspace?: boolean
+  canAccessWorkspaceGeneralSettings?: boolean
+  canAccessWorkspaceAccessControl?: boolean
 }
 
 export function IdeActivityBar({
@@ -48,8 +51,9 @@ export function IdeActivityBar({
   onSelectWorkspace,
   session,
   canAccessOrgSettings,
-  canAccessWorkspaceGeneralSettings,
-  canAccessWorkspaceAccessControl,
+  canCreateWorkspace = false,
+  canAccessWorkspaceGeneralSettings = false,
+  canAccessWorkspaceAccessControl = false,
 }: IdeActivityBarProps) {
   const activeActivityId = useIde((s) => s.activeActivityId)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
@@ -57,6 +61,8 @@ export function IdeActivityBar({
   const setActiveActivity = useIde((s) => s.setActiveActivity)
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
   const setActivityBarExpanded = useIde((s) => s.setActivityBarExpanded)
+  const setupStatus = useSetupStatus()
+  const desktopMode = setupStatus.data?.capabilities.native_shell === true
 
   const runtimeSettings = useQuery(orgRuntimeSettingsQueryOptions(orgSlug))
   const visibilityContext: ActivityVisibilityContext = {
@@ -64,6 +70,11 @@ export function IdeActivityBar({
     queryFavoritesMode: runtimeSettings.data?.effective.query_favorites_mode ?? 'backend',
   }
   const activities = visibleActivities(visibilityContext)
+
+  useEffect(
+    () => registerCommand('view.toggle-sidebar', () => setSidebarCollapsed(!sidebarCollapsed)),
+    [setSidebarCollapsed, sidebarCollapsed],
+  )
 
   function handleClick(activity: IdeActivity) {
     const isActive = activity.id === activeActivityId
@@ -86,7 +97,7 @@ export function IdeActivityBar({
         activityBarExpanded ? 'w-56 items-stretch px-2' : 'w-11 items-center',
       )}
     >
-      <IdeBrand expanded={activityBarExpanded} />
+      <IdeBrand expanded={activityBarExpanded} desktopMode={desktopMode} />
 
       {activities.map((activity) => {
         const isActive = activity.id === activeActivityId
@@ -120,7 +131,9 @@ export function IdeActivityBar({
 
       <div className="flex-1" />
 
-      {activeWorkspace && (canAccessWorkspaceGeneralSettings || canAccessWorkspaceAccessControl) ? (
+      {!desktopMode &&
+      activeWorkspace &&
+      (canAccessWorkspaceGeneralSettings || canAccessWorkspaceAccessControl) ? (
         <WorkspaceSettingsMenu
           orgSlug={orgSlug}
           workspace={activeWorkspace}
@@ -130,9 +143,12 @@ export function IdeActivityBar({
         />
       ) : null}
       <WorkspaceSelector
+        orgSlug={orgSlug}
         workspaces={workspaces}
         activeWorkspace={activeWorkspace}
         onSelect={onSelectWorkspace}
+        canCreate={canCreateWorkspace}
+        nativeShell={desktopMode}
         expanded={activityBarExpanded}
       />
       <RailPreferencesAndAvatar
@@ -168,8 +184,6 @@ type WorkspaceSettingsSubItem = {
     | '/orgs/$org_slug/workspaces/$workspace_id/policies'
 }
 
-/** Collapsed by default so the rail stays compact; expands in place to reveal
- *  the workspace's admin pages rather than jumping straight to one. */
 function WorkspaceSettingsMenu({
   orgSlug,
   workspace,
@@ -184,7 +198,6 @@ function WorkspaceSettingsMenu({
   canAccessAccessControl: boolean
 }) {
   const [open, setOpen] = useState(false)
-
   const items: WorkspaceSettingsSubItem[] = [
     ...(canAccessGeneralSettings
       ? [
@@ -280,32 +293,44 @@ function WorkspaceSettingsMenu({
   )
 }
 
-function IdeBrand({ expanded }: { expanded: boolean }) {
+function IdeBrand({ expanded, desktopMode }: { expanded: boolean; desktopMode: boolean }) {
   const brand = useBrand()
   if (expanded) {
     return (
       <div className="-mx-2 flex h-10 w-[calc(100%+1rem)] shrink-0 items-center border-b border-border px-2">
-        <Link
-          to="/"
-          className="flex h-8 w-full items-center gap-2.5 rounded-[calc(var(--radius-sm)+2px)] px-2 text-foreground transition-colors hover:bg-sidebar-accent/60"
-          aria-label={`${brand.productName} home`}
-        >
-          <brand.LogoLockup size={20} className="shrink-0" />
-        </Link>
+        {desktopMode ? (
+          <div className="flex h-8 w-full items-center gap-2.5 px-2 text-foreground">
+            <brand.LogoLockup size={20} className="shrink-0" />
+          </div>
+        ) : (
+          <Link
+            to="/"
+            className="flex h-8 w-full items-center gap-2.5 rounded-[calc(var(--radius-sm)+2px)] px-2 text-foreground transition-colors hover:bg-sidebar-accent/60"
+            aria-label={`${brand.productName} home`}
+          >
+            <brand.LogoLockup size={20} className="shrink-0" />
+          </Link>
+        )}
       </div>
     )
   }
   return (
     <div className="flex h-10 w-full shrink-0 items-center justify-center border-b border-border">
-      <Tip label="Back to dashboard" side="right">
-        <Link
-          to="/"
-          className="flex size-8 items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-foreground transition-colors hover:bg-sidebar-accent/60"
-          aria-label={`${brand.productName} home`}
-        >
+      {desktopMode ? (
+        <div className="flex size-8 items-center justify-center text-foreground">
           <brand.LogoMark size={20} className="shrink-0" />
-        </Link>
-      </Tip>
+        </div>
+      ) : (
+        <Tip label="Back to dashboard" side="right">
+          <Link
+            to="/"
+            className="flex size-8 items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-foreground transition-colors hover:bg-sidebar-accent/60"
+            aria-label={`${brand.productName} home`}
+          >
+            <brand.LogoMark size={20} className="shrink-0" />
+          </Link>
+        </Tip>
+      )}
     </div>
   )
 }
@@ -324,6 +349,8 @@ function RailPreferencesAndAvatar({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { preferences, setPreferences } = useAppShellPreferences()
+  const setupStatus = useSetupStatus()
+  const desktopMode = setupStatus.data?.capabilities.native_shell === true
 
   const logout = useMutation({
     mutationFn: async () => api.post<void>('/api/v1/auth/logout'),
@@ -368,55 +395,71 @@ function RailPreferencesAndAvatar({
         }
       />
 
-      <DropdownMenu>
-        {expanded ? (
-          avatarTrigger
-        ) : (
-          <Tip label={session.account.name} side="right">
-            {avatarTrigger}
-          </Tip>
-        )}
-        <DropdownMenuContent align="start" side="right" className="w-64 min-w-64">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel className="px-2 py-2">
-              <div className="flex items-center gap-2 normal-case tracking-normal">
-                <UserAvatar value={session.account.name} fallback="U" size={28} />
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate text-sm font-medium text-foreground">
-                    {session.account.name}
-                  </span>
-                  <span className="truncate text-xs font-normal text-muted-foreground">
-                    {session.account.email}
-                  </span>
-                </div>
-              </div>
-            </DropdownMenuLabel>
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            {menuItems.map((item) => (
-              <DropdownMenuItem
-                key={item.id}
-                render={<Link to={item.to as never} params={item.params as never} />}
-              >
-                <Icon name={item.icon} size={20} />
-                {item.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            variant="destructive"
-            disabled={logout.isPending}
-            onClick={() => {
-              logout.mutate()
-            }}
+      {desktopMode ? (
+        <Tip label="Settings" side="right">
+          <Link
+            to="/desktop/settings"
+            aria-label="Settings"
+            className={cn(
+              'flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors hover:bg-sidebar-accent/60',
+              expanded ? 'h-8 w-full justify-start gap-2 p-2' : 'size-8 justify-center',
+            )}
           >
-            <Icon name="logout-03" size={20} />
-            {logout.isPending ? 'Signing out...' : 'Sign out'}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <Icon name="settings-02" size={17} className="shrink-0" />
+            {expanded ? <span>Settings</span> : null}
+          </Link>
+        </Tip>
+      ) : (
+        <DropdownMenu>
+          {expanded ? (
+            avatarTrigger
+          ) : (
+            <Tip label={session.account.name} side="right">
+              {avatarTrigger}
+            </Tip>
+          )}
+          <DropdownMenuContent align="start" side="right" className="w-64 min-w-64">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="px-2 py-2">
+                <div className="flex items-center gap-2 normal-case tracking-normal">
+                  <UserAvatar value={session.account.name} fallback="U" size={28} />
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {session.account.name}
+                    </span>
+                    <span className="truncate text-xs font-normal text-muted-foreground">
+                      {session.account.email}
+                    </span>
+                  </div>
+                </div>
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              {menuItems.map((item) => (
+                <DropdownMenuItem
+                  key={item.id}
+                  render={<Link to={item.to as never} params={item.params as never} />}
+                >
+                  <Icon name={item.icon} size={20} />
+                  {item.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={logout.isPending}
+              onClick={() => {
+                logout.mutate()
+              }}
+            >
+              <Icon name="logout-03" size={20} />
+              {logout.isPending ? 'Signing out...' : 'Sign out'}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </>
   )
 }

@@ -1,11 +1,15 @@
 import { screen, waitFor } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { setAccessToken } from '#/lib/auth/access-token'
 import { renderRoute } from '#/test/render'
 import { server } from '#/test/server'
 import { setupStatusHandler } from '#/test/handlers'
 import { setupStatusFixture } from '#/test/fixtures'
+
+afterEach(() => {
+  delete window.go
+})
 
 describe('authentication route behavior', () => {
   it('renders the login form for a configured instance', async () => {
@@ -17,6 +21,25 @@ describe('authentication route behavior', () => {
     expect(screen.getByRole('textbox')).toHaveAttribute('type', 'email')
     expect(document.querySelector('input[type="password"]')).toBeInTheDocument()
     expect(document.title).toBe('Login | SQLWarden')
+  })
+
+  it('never renders the login form in the native desktop shell', async () => {
+    window.go = {
+      main: {
+        DesktopBridge: {
+          StartSession: vi.fn(),
+          GetInfo: vi.fn(),
+          RevealDataDirectory: vi.fn(),
+          RevealLogDirectory: vi.fn(),
+        },
+      },
+    }
+    server.use(setupStatusHandler())
+
+    const { router } = renderRoute('/login')
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+    expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument()
   })
 
   it('redirects an unconfigured instance from login to setup', async () => {

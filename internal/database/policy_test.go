@@ -162,7 +162,7 @@ func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *te
 			if err != nil {
 				t.Fatal(err)
 			}
-			conn, err := db.InsertConnection(ctx, ws.ID, &env.ID, "Primary DB", "postgres", "dsn", "open")
+			conn, err := db.InsertConnection(ctx, ws.ID, &env.ID, "Primary DB", "postgres", "dsn")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -222,11 +222,11 @@ func TestListWorkspacePolicies_SupportsSubjectIDAndResourceIDFilters(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			connA, err := db.InsertConnection(ctx, ws.ID, &env.ID, "Primary DB", "postgres", "dsn", "open")
+			connA, err := db.InsertConnection(ctx, ws.ID, &env.ID, "Primary DB", "postgres", "dsn")
 			if err != nil {
 				t.Fatal(err)
 			}
-			connB, err := db.InsertConnection(ctx, ws.ID, &env.ID, "Replica DB", "postgres", "dsn", "open")
+			connB, err := db.InsertConnection(ctx, ws.ID, &env.ID, "Replica DB", "postgres", "dsn")
 			if err != nil {
 				t.Fatal(err)
 			}

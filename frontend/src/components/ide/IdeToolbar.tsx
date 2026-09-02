@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Icon } from '#/lib/icons'
@@ -35,6 +35,8 @@ import { UnsafeQueryDialog } from './UnsafeQueryDialog'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { formatEditorSql, sqlFormatterForDriver } from './sqlFormatting'
 import { isSqlEditorTab, splitSqlStatements } from './sqlStatements'
+import { registerCommand } from '#/lib/commands/registry'
+import { platformService } from '#/lib/platform/service'
 
 type IdeToolbarProps = {
   orgSlug: string
@@ -62,6 +64,8 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
   const openTab = useIde((s) => s.openTab)
   const closeTab = useIde((s) => s.closeTab)
   const setTabConnection = useIde((s) => s.setTabConnection)
+  const markTabClean = useIde((s) => s.markTabClean)
+  const updateTabNativePath = useIde((s) => s.updateTabNativePath)
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
   const clearPendingConfirmation = useIde((s) => s.clearPendingConfirmation)
@@ -82,11 +86,56 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
   const hasSelection = Boolean(selection)
   const selectionStatements = hasSelection && isSqlTab ? splitSqlStatements(selection ?? '') : []
 
-  async function handleSave() {
+  const handleSave = useCallback(async () => {
     if (!activeTab) return
+    if (activeTab.nativePath) {
+      const content =
+        (activeGroupId
+          ? viewRegistry.get(`${activeGroupId}:${activeTab.id}`)?.state.doc.toString()
+          : undefined) ?? activeTab.content
+      try {
+        await platformService().writeSQLFile(activeTab.nativePath, content)
+        markTabClean(activeTab.id)
+      } catch {
+        toast.error('Failed to save file.')
+      }
+      return
+    }
     const result = await saveEditorTab(activeTab)
     if (result?.kind === 'save-as') setSaveAsTab(result.tab)
-  }
+  }, [activeGroupId, activeTab, markTabClean, saveEditorTab, viewRegistry])
+
+  const handleNativeSaveAs = useCallback(async () => {
+    if (!activeTab?.nativePath) return
+    const content =
+      (activeGroupId
+        ? viewRegistry.get(`${activeGroupId}:${activeTab.id}`)?.state.doc.toString()
+        : undefined) ?? activeTab.content
+    try {
+      const path = await platformService().saveSQLFile(activeTab.title, content)
+      if (!path) return
+      const name = path.split(/[\\/]/).pop() || activeTab.title
+      updateTabNativePath(activeTab.id, path, name)
+    } catch {
+      toast.error('Failed to save file.')
+    }
+  }, [activeGroupId, activeTab, updateTabNativePath, viewRegistry])
+
+  useEffect(() => {
+    const unregisterSave = registerCommand('file.save', handleSave)
+    const unregisterSaveAs = registerCommand('file.save-as', () => {
+      if (!activeTab) return
+      if (activeTab.nativePath) {
+        void handleNativeSaveAs()
+      } else {
+        setSaveAsTab(activeTab)
+      }
+    })
+    return () => {
+      unregisterSave()
+      unregisterSaveAs()
+    }
+  }, [activeTab, handleNativeSaveAs, handleSave])
 
   function handleFormat() {
     if (!activeTab || !activeGroupId) return

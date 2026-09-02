@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => ({
   run: vi.fn(() => Promise.resolve()),
   runAll: vi.fn(() => Promise.resolve()),
   save: vi.fn(() => Promise.resolve(undefined)),
+  saveSQLFile: vi.fn(() => Promise.resolve('/tmp/saved.sql')),
+  writeSQLFile: vi.fn(() => Promise.resolve()),
   isRunning: false,
   canExplain: true,
   canExplainAnalyze: true,
@@ -55,6 +57,12 @@ vi.mock('./useToolbarQueryAction', () => ({
 }))
 
 vi.mock('./useSaveEditorTab', () => ({ useSaveEditorTab: () => mocks.save }))
+vi.mock('#/lib/platform/service', () => ({
+  platformService: () => ({
+    saveSQLFile: mocks.saveSQLFile,
+    writeSQLFile: mocks.writeSQLFile,
+  }),
+}))
 vi.mock('./exports/useDownloadNow', () => ({
   useDownloadNow: () => ({
     bytesDownloaded: 0,
@@ -116,7 +124,6 @@ describe('IdeToolbar', () => {
               environment_id: 2,
               name: 'primary-pg',
               driver: 'postgres',
-              access_mode: 'open',
               created_at: '',
               updated_at: '',
             },
@@ -126,7 +133,6 @@ describe('IdeToolbar', () => {
               environment_id: 2,
               name: 'warehouse',
               driver: 'mysql',
-              access_mode: 'open',
               created_at: '',
               updated_at: '',
             },
@@ -191,6 +197,33 @@ describe('IdeToolbar', () => {
     expect(mocks.save).toHaveBeenCalledWith(scratchTab)
     expect(screen.getByRole('button', { name: 'More run options' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Format SQL' })).toBeEnabled()
+  })
+
+  it('saves a native desktop file directly to its opened path', async () => {
+    const nativeTab: EditorTab = {
+      ...scratchTab,
+      id: 'native:3:query',
+      title: 'query.sql',
+      subtitle: '/tmp/query.sql',
+      nativePath: '/tmp/query.sql',
+      content: 'select 1',
+      isDirty: true,
+    }
+    store.getState().openTab(nativeTab)
+    const groupId = store.getState().activeGroupId[workspace.id]!
+    const editor = new EditorView({ state: EditorState.create({ doc: 'select 2' }) })
+    views.register(`${groupId}:${nativeTab.id}`, editor)
+    const { user } = renderToolbar()
+
+    await user.click(screen.getByRole('button', { name: 'Save file' }))
+
+    await waitFor(() =>
+      expect(mocks.writeSQLFile).toHaveBeenCalledWith('/tmp/query.sql', 'select 2'),
+    )
+    expect(mocks.saveSQLFile).not.toHaveBeenCalled()
+    expect(mocks.save).not.toHaveBeenCalled()
+    expect(store.getState().tabs[0].isDirty).toBe(false)
+    editor.destroy()
   })
 
   it('formats the active editor using its connection dialect', async () => {

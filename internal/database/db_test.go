@@ -119,6 +119,18 @@ func TestMigrateUp(t *testing.T) {
 	}
 }
 
+func TestMigrateUpDoesNotParseSQLiteDSNAsURL(t *testing.T) {
+	db, err := New("sqlite", ":memory:", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	assert.Nil(t, err)
+	assert.NotNil(t, db)
+	defer db.Close()
+
+	// Migrations must use the existing connection. Treating this Windows path
+	// as a sqlite:// URL would fail by interpreting the drive path as a port.
+	db.dsn = `C:\Users\sqlwarden\AppData\Roaming\SQLWarden\sqlwarden.db`
+	assert.Nil(t, db.MigrateUp())
+}
+
 func TestMigrateUpAddsQueryCursorPageSizeAfterVersion29(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "version-29.db")
 	db, err := New("sqlite", dsn, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -141,6 +153,8 @@ func TestMigrateUpAddsQueryCursorPageSizeAfterVersion29(t *testing.T) {
 		ALTER TABLE organization_runtime_settings DROP COLUMN query_favorites_mode;
 		DROP TABLE query_history;
 		DROP TABLE query_favorites;
+		DROP TABLE desktop_installation;
+		ALTER TABLE connections ADD COLUMN access_mode TEXT NOT NULL DEFAULT 'open';
 	`)
 	assert.Nil(t, err)
 	_, err = db.ExecContext(context.Background(), "UPDATE schema_migrations SET version = 29, dirty = 0")
@@ -151,6 +165,39 @@ func TestMigrateUpAddsQueryCursorPageSizeAfterVersion29(t *testing.T) {
 	err = db.NewSelect().TableExpr("instance_settings").ColumnExpr("query_cursor_page_size").Where("id = 1").Scan(context.Background(), &pageSize)
 	assert.Nil(t, err)
 	assert.Equal(t, pageSize, DefaultQueryCursorPageSize)
+}
+
+func TestMigrateUpRemovesConnectionAccessModeWithoutLosingConnections(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "version-33.db")
+	db, err := New("sqlite", dsn, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	assert.Nil(t, err)
+	assert.NotNil(t, db)
+	defer db.Close()
+
+	assert.Nil(t, db.MigrateUp())
+	_, err = db.ExecContext(context.Background(), "ALTER TABLE connections ADD COLUMN access_mode TEXT NOT NULL DEFAULT 'open'")
+	assert.Nil(t, err)
+
+	org, err := db.InsertOrg(context.Background(), "mode-migration", "Mode Migration")
+	assert.Nil(t, err)
+	ws, err := db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "Main", "")
+	assert.Nil(t, err)
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "database", "sqlite", "encrypted")
+	assert.Nil(t, err)
+	_, err = db.ExecContext(context.Background(), "UPDATE connections SET access_mode = 'restricted' WHERE id = ?", conn.ID)
+	assert.Nil(t, err)
+	_, err = db.ExecContext(context.Background(), "UPDATE schema_migrations SET version = 33, dirty = 0")
+	assert.Nil(t, err)
+
+	assert.Nil(t, db.MigrateUp())
+	found, ok, err := db.GetConnection(context.Background(), conn.ID)
+	assert.Nil(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, found.Name, "database")
+
+	var legacy string
+	err = db.NewSelect().TableExpr("connections").ColumnExpr("access_mode").Limit(1).Scan(context.Background(), &legacy)
+	assert.NotNil(t, err)
 }
 
 func TestSQLSortDirectionUsesOnlyLiteralTokens(t *testing.T) {

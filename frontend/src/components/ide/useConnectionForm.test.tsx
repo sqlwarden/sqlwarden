@@ -146,7 +146,6 @@ describe('useConnectionForm', () => {
         name: 'Warehouse',
         driver: drivers[0].id,
         environment_id: 4,
-        access_mode: 'open',
         dsn: expectedDsn,
       }),
     )

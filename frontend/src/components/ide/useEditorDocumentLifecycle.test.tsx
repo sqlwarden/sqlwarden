@@ -4,6 +4,7 @@ import * as Y from 'yjs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { EditorTab } from './useIdeStore'
 import type { YDocRegistry } from './useYDocRegistry'
+import { registerCommand } from '#/lib/commands/registry'
 import {
   useClosedFileCacheCleanup,
   useEditorDocumentLifecycle,
@@ -158,5 +159,20 @@ describe('editor cleanup and shortcuts', () => {
     renderHook(() => useEditorSaveShortcut(tab(), save))
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true }))
     expect(save).not.toHaveBeenCalled()
+  })
+
+  it('routes the save shortcut for a native file through the desktop save command', () => {
+    const saveWorkspaceFile = vi.fn().mockResolvedValue(undefined)
+    const saveNativeFile = vi.fn()
+    const unregister = registerCommand('file.save', saveNativeFile)
+    const nativeFile = tab({ nativePath: '/tmp/query.sql' })
+    const { unmount } = renderHook(() => useEditorSaveShortcut(nativeFile, saveWorkspaceFile))
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true }))
+
+    expect(saveNativeFile).toHaveBeenCalledOnce()
+    expect(saveWorkspaceFile).not.toHaveBeenCalled()
+    unmount()
+    unregister()
   })
 })

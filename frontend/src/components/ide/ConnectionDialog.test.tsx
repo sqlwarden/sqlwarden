@@ -2,12 +2,14 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Environment } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
 import { drivers } from './connection-drivers'
 import { ConnectionDialog } from './ConnectionDialog'
+import { setupStatusHandler } from '#/test/handlers'
+import { desktopCapabilitiesFixture, productCapabilitiesFixture } from '#/test/fixtures'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
@@ -37,17 +39,40 @@ function renderDialog(overrides: { lockedEnvironmentId?: number } = {}) {
 }
 
 describe('ConnectionDialog', () => {
+  beforeEach(() => {
+    server.use(
+      setupStatusHandler({
+        configured: true,
+        mode: 'server',
+        capabilities: productCapabilitiesFixture(),
+      }),
+    )
+  })
+
   it('filters the build-time driver registry without a fallback option', async () => {
     const user = userEvent.setup()
     renderDialog()
 
     expect(screen.getByRole('heading', { name: 'Choose a database' })).toBeInTheDocument()
-    for (const driver of drivers) {
+    for (const driver of drivers.filter((driver) => driver.id !== 'sqlite')) {
       expect(screen.getByRole('button', { name: new RegExp(driver.label) })).toBeInTheDocument()
     }
+    expect(screen.queryByRole('button', { name: /SQLite/ })).not.toBeInTheDocument()
 
     await user.type(screen.getByPlaceholderText('Search databases…'), 'not-a-real-engine')
     expect(screen.getByText(/No databases match/)).toBeInTheDocument()
+  })
+
+  it('offers local SQLite only when the capability contract enables it', async () => {
+    server.use(
+      setupStatusHandler({
+        configured: true,
+        mode: 'desktop',
+        capabilities: desktopCapabilitiesFixture(),
+      }),
+    )
+    renderDialog()
+    expect(await screen.findByRole('button', { name: /SQLite/ })).toBeInTheDocument()
   })
 
   it('renders registry-driven fields and can return to driver selection', () => {

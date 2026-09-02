@@ -16,7 +16,7 @@ func seedQueryHistoryFixtures(t *testing.T, db *DB) (Connection, Account) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "history-db", "postgres", "encrypted-dsn", "open")
+	conn, err := db.InsertConnection(context.Background(), ws.ID, nil, "history-db", "postgres", "encrypted-dsn")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestListQueryHistoryForWorkspace_AcrossConnections(t *testing.T) {
 	db := newTestDB(t)
 	conn, account := seedQueryHistoryFixtures(t, db)
 
-	otherConn, err := db.InsertConnection(context.Background(), conn.WorkspaceID, nil, "history-db-2", "postgres", "encrypted-dsn", "open")
+	otherConn, err := db.InsertConnection(context.Background(), conn.WorkspaceID, nil, "history-db-2", "postgres", "encrypted-dsn")
 	if err != nil {
 		t.Fatalf("InsertConnection: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestListQueryHistoryForWorkspace_AcrossConnections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InsertWorkspace: %v", err)
 	}
-	foreignConn, err := db.InsertConnection(context.Background(), otherWs.ID, nil, "foreign-db", "postgres", "encrypted-dsn", "open")
+	foreignConn, err := db.InsertConnection(context.Background(), otherWs.ID, nil, "foreign-db", "postgres", "encrypted-dsn")
 	if err != nil {
 		t.Fatalf("InsertConnection: %v", err)
 	}

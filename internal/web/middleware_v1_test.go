@@ -512,7 +512,7 @@ func TestConnCtxBranches(t *testing.T) {
 	if err != nil || !found {
 		t.Fatal("expected default environment for ws1")
 	}
-	conn, err := app.db.InsertConnection(context.Background(), ws2.ID, nil, "db", "sqlite", ":memory:", "open")
+	conn, err := app.db.InsertConnection(context.Background(), ws2.ID, nil, "db", "sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -571,7 +571,7 @@ func TestRequireConcreteResourcePermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := app.db.InsertConnection(ctx, ws.ID, &env.ID, "primary", "sqlite", "dsn", "open")
+	conn, err := app.db.InsertConnection(ctx, ws.ID, &env.ID, "primary", "sqlite", "dsn")
 	if err != nil {
 		t.Fatal(err)
 	}

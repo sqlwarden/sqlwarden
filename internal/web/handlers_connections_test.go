@@ -402,8 +402,8 @@ func TestListConnections_SupportsSearchFilterSortAndPagination(t *testing.T) {
 	app, org, ws, token := setupWorkspaceOwner(t)
 	envA := seedEnvironment(t, app, ws.ID, org.ID, "prod")
 	envB := seedEnvironment(t, app, ws.ID, org.ID, "staging")
-	seedConnection(t, app, ws.ID, &envA.ID, org.ID, "postgres", "Primary DB", "open")
-	seedConnection(t, app, ws.ID, &envB.ID, org.ID, "mysql", "Replica DB", "restricted")
+	seedConnection(t, app, ws.ID, &envA.ID, org.ID, "postgres", "Primary DB")
+	seedConnection(t, app, ws.ID, &envB.ID, org.ID, "mysql", "Replica DB")
 
 	req := newOrgRequest(t, http.MethodGet,
 		orgEnvConnectionsURL(org.Slug, ws.ID, envA.ID)+"?q=db&driver=postgres&sort=name&order=asc&page=1&page_size=10",
@@ -460,9 +460,8 @@ func TestUpdateConnection(t *testing.T) {
 	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
 		orgConnectionURL(slug, wsIDInt, envIDInt, connID),
 		map[string]any{
-			"name":        "Primary Updated",
-			"dsn":         ":memory:",
-			"access_mode": "restricted",
+			"name": "Primary Updated",
+			"dsn":  ":memory:",
 		}, tok), app.routes())
 	assert.Equal(t, updateRes.StatusCode, http.StatusNoContent)
 
@@ -471,7 +470,6 @@ func TestUpdateConnection(t *testing.T) {
 		nil, tok), app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
 	assert.Equal(t, getRes.BodyFields["name"], "Primary Updated")
-	assert.Equal(t, getRes.BodyFields["access_mode"], "restricted")
 	assert.Equal(t, fmt.Sprintf("%v", getRes.BodyFields["environment_id"]), envID)
 }
 
@@ -569,9 +567,8 @@ func TestUpdateConnectionRejectsSQLiteFileTargetInServerMode(t *testing.T) {
 	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
 		orgConnectionURL(slug, wsIDInt, envID, connID),
 		map[string]any{
-			"name":        "Primary",
-			"dsn":         filepath.Join(t.TempDir(), "host.db"),
-			"access_mode": "open",
+			"name": "Primary",
+			"dsn":  filepath.Join(t.TempDir(), "host.db"),
 		}, tok), app.routes())
 	assert.Equal(t, updateRes.StatusCode, http.StatusUnprocessableEntity)
 	assertValidationField(t, updateRes, "driver")
@@ -644,9 +641,8 @@ func TestUpdateConnectionBlocksDSNChangeWhileSessionActive(t *testing.T) {
 	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
 		orgConnectionURL(slug, wsIDInt, envID, connID),
 		map[string]any{
-			"name":        "Primary Rotated",
-			"dsn":         "file::memory:?cache=shared",
-			"access_mode": "open",
+			"name": "Primary Rotated",
+			"dsn":  "file::memory:?cache=shared",
 		}, tok), app.routes())
 	assert.Equal(t, updateRes.StatusCode, http.StatusConflict)
 }
@@ -679,10 +675,9 @@ func TestUpdateConnectionForceDropsActiveSessionsOnDSNChange(t *testing.T) {
 	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
 		orgConnectionURL(slug, wsIDInt, envID, connID),
 		map[string]any{
-			"name":        "Primary Rotated",
-			"dsn":         "file::memory:?cache=shared",
-			"access_mode": "open",
-			"force":       true,
+			"name":  "Primary Rotated",
+			"dsn":   "file::memory:?cache=shared",
+			"force": true,
 		}, tok), app.routes())
 	assert.Equal(t, updateRes.StatusCode, http.StatusNoContent)
 
@@ -721,9 +716,8 @@ func TestUpdateConnectionAllowsNonDSNChangesWithActiveSession(t *testing.T) {
 	updateRes := send(t, newAuthRequest(t, http.MethodPatch,
 		orgConnectionURL(slug, wsIDInt, envID, connID),
 		map[string]any{
-			"name":        "Primary Updated",
-			"dsn":         ":memory:",
-			"access_mode": "restricted",
+			"name": "Primary Updated",
+			"dsn":  ":memory:",
 		}, tok), app.routes())
 	assert.Equal(t, updateRes.StatusCode, http.StatusNoContent)
 }
@@ -2023,7 +2017,7 @@ func TestRevokeWorkspaceDatabaseSession_OwnerCanRevokeOwnSession(t *testing.T) {
 	t.Parallel()
 	app, org, ws, tok := setupWorkspaceOwner(t)
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Revoke Own Session", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Revoke Own Session")
 
 	claims, err := token.Verify(tok, app.config.JWT.SecretKey)
 	if err != nil {
@@ -2055,7 +2049,7 @@ func TestRevokeWorkspaceDatabaseSession_AdminCanRevokeWorkspaceSession(t *testin
 	t.Parallel()
 	app, org, ws, ownerTok := setupWorkspaceOwner(t)
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Revoke Other Session", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Revoke Other Session")
 	member := seedAccount(t, app, uniqueEmail(t, "db-session-member"), "DB Session Member")
 	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
@@ -2089,7 +2083,7 @@ func TestRevokeWorkspaceDatabaseSession_CrossWorkspaceHidden(t *testing.T) {
 	owner, _, _ := seedOrgOwner(t, app, uniqueEmail(t, "db-session-other-owner"), "Other Owner", "Other Org")
 	wsB := seedWorkspaceForAccount(t, app, org, owner, "Other Workspace", "")
 	envID := defaultEnvironmentID(t, app, wsB.ID)
-	conn := seedConnection(t, app, wsB.ID, &envID, org.ID, "sqlite", "Cross WS Session", "open")
+	conn := seedConnection(t, app, wsB.ID, &envID, org.ID, "sqlite", "Cross WS Session")
 
 	session, _, err := app.connManager.GetOrCreateWithMetadata(
 		strconv.FormatInt(owner.ID, 10),
@@ -2178,8 +2172,8 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "query-cancel-owner"), "Query Cancel Owner", "Query Cancel Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Query Cancel WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	connA := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Cancelled Conn", "open")
-	connB := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Unrelated Conn", "open")
+	connA := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Cancelled Conn")
+	connB := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Unrelated Conn")
 
 	blockingDriver := newBlockingQueryDriver()
 	cancelledSession, _, err := app.connManager.GetOrCreate(
@@ -2494,7 +2488,7 @@ func TestConnectToDatabaseRejectsPersistedSQLiteFileTargetInServerMode(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, err := app.db.InsertConnection(context.Background(), wsIDInt, &envID, "Seeded Host SQLite", "sqlite", encryptedDSN, "open")
+	conn, err := app.db.InsertConnection(context.Background(), wsIDInt, &envID, "Seeded Host SQLite", "sqlite", encryptedDSN)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -60,15 +60,10 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 		WorkspaceID: ws.ID,
 		Search:      q.Search,
 		Driver:      strings.TrimSpace(r.URL.Query().Get("driver")),
-		AccessMode:  strings.TrimSpace(r.URL.Query().Get("access_mode")),
 		Sort:        q.Sort,
 		Order:       q.Order,
 		Page:        q.Page,
 		PageSize:    q.PageSize,
-	}
-	if params.AccessMode != "" && params.AccessMode != "open" && params.AccessMode != "restricted" {
-		app.failedValidation(w, r, fieldErrors(map[string]string{"access_mode": "Access mode must be open or restricted."}))
-		return
 	}
 	if env.ID != 0 {
 		params.EnvironmentID = &env.ID
@@ -108,9 +103,6 @@ func filterAccessibleConnections(conns []database.Connection, params database.Li
 			}
 		}
 		if params.Driver != "" && conn.Driver != params.Driver {
-			continue
-		}
-		if params.AccessMode != "" && conn.AccessMode != params.AccessMode {
 			continue
 		}
 		filtered = append(filtered, conn)
@@ -264,7 +256,6 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		Driver        string              `json:"driver"`
 		DSN           string              `json:"dsn"`
 		EnvironmentID *int64              `json:"environment_id"`
-		AccessMode    string              `json:"access_mode"`
 		DefaultScope  metadata.ScopePath  `json:"default_scope,omitempty"`
 		V             validator.Validator `json:"-"`
 	}
@@ -286,14 +277,6 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 			input.V.CheckField(false, "driver", targetConnectionFieldError(err))
 		}
 	}
-	if input.AccessMode == "" {
-		input.AccessMode = "open"
-	}
-	input.V.CheckField(
-		input.AccessMode == "open" || input.AccessMode == "restricted",
-		"access_mode", "Access mode must be open or restricted.",
-	)
-
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -325,14 +308,14 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 
 	conn, err := app.db.InsertConnectionWithScope(context.Background(),
 		ws.ID, targetEnvID,
-		input.Name, input.Driver, dsnEncrypted, input.AccessMode, input.DefaultScope,
+		input.Name, input.Driver, dsnEncrypted, input.DefaultScope,
 	)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	app.logInfo(r, "connection created", slog.Int64("workspace_id", ws.ID), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver), slog.String("access_mode", conn.AccessMode))
+	app.logInfo(r, "connection created", slog.Int64("workspace_id", ws.ID), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver))
 	err = response.JSON(w, http.StatusCreated, conn)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -389,7 +372,6 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		Name                 *string             `json:"name"`
 		Driver               *string             `json:"driver"`
 		DSN                  *string             `json:"dsn"`
-		AccessMode           *string             `json:"access_mode"`
 		SchemaSnapshotPolicy *string             `json:"schema_snapshot_policy"`
 		DefaultScope         *metadata.ScopePath `json:"default_scope"`
 		Force                bool                `json:"force"`
@@ -411,16 +393,12 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	if input.DSN != nil {
 		input.V.CheckField(strings.TrimSpace(*input.DSN) != "", "dsn", "DSN must not be empty.")
 	}
-	if input.AccessMode != nil {
-		input.V.CheckField(*input.AccessMode == "open" || *input.AccessMode == "restricted",
-			"access_mode", "Access mode must be open or restricted.")
-	}
 	if input.SchemaSnapshotPolicy != nil {
 		input.V.CheckField(*input.SchemaSnapshotPolicy == database.SchemaSnapshotPolicyInherit ||
 			*input.SchemaSnapshotPolicy == database.SchemaSnapshotPolicyDisabled,
 			"schema_snapshot_policy", "Schema snapshot policy must be inherit or disabled.")
 	}
-	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil || input.DefaultScope != nil,
+	input.V.CheckField(input.Name != nil || input.DSN != nil || input.SchemaSnapshotPolicy != nil || input.DefaultScope != nil,
 		"request", "At least one setting is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -472,10 +450,6 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	if input.Name != nil {
 		nextName = *input.Name
 	}
-	nextAccessMode := conn.AccessMode
-	if input.AccessMode != nil {
-		nextAccessMode = *input.AccessMode
-	}
 	nextSnapshotPolicy := conn.SchemaSnapshotPolicy
 	if nextSnapshotPolicy == "" {
 		nextSnapshotPolicy = database.SchemaSnapshotPolicyInherit
@@ -498,7 +472,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			app.connManager.RemoveForConnection(strconv.FormatInt(conn.ID, 10))
 		}
 	}
-	err = app.db.UpdateConnectionWithScopeAndPolicy(r.Context(), conn.ID, nextName, dsnEncrypted, nextAccessMode, nextSnapshotPolicy, nextDefaultScope)
+	err = app.db.UpdateConnectionWithScopeAndPolicy(r.Context(), conn.ID, nextName, dsnEncrypted, nextSnapshotPolicy, nextDefaultScope)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -524,7 +498,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	}
-	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.Bool("scope_changed", scopeChanged), slog.String("access_mode", nextAccessMode), slog.String("schema_snapshot_policy", nextSnapshotPolicy))
+	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.Bool("scope_changed", scopeChanged), slog.String("schema_snapshot_policy", nextSnapshotPolicy))
 	w.WriteHeader(http.StatusNoContent)
 }
 

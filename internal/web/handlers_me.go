@@ -178,15 +178,10 @@ func (app *application) listMyConnections(w http.ResponseWriter, r *http.Request
 		EnvironmentID: &env.ID,
 		Search:        q.Search,
 		Driver:        strings.TrimSpace(r.URL.Query().Get("driver")),
-		AccessMode:    strings.TrimSpace(r.URL.Query().Get("access_mode")),
 		Sort:          q.Sort,
 		Order:         q.Order,
 		Page:          q.Page,
 		PageSize:      q.PageSize,
-	}
-	if params.AccessMode != "" && params.AccessMode != "open" && params.AccessMode != "restricted" {
-		app.failedValidation(w, r, fieldErrors(map[string]string{"access_mode": "Access mode must be open or restricted."}))
-		return
 	}
 	if env.ID == 0 {
 		if rawEnvID := strings.TrimSpace(r.URL.Query().Get("environment_id")); rawEnvID != "" {
@@ -217,7 +212,6 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 		Driver        string              `json:"driver"`
 		DSN           string              `json:"dsn"`
 		EnvironmentID *int64              `json:"environment_id"`
-		AccessMode    string              `json:"access_mode"`
 		V             validator.Validator `json:"-"`
 	}
 
@@ -235,13 +229,6 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 			input.V.CheckField(false, "driver", targetConnectionFieldError(err))
 		}
 	}
-	if input.AccessMode == "" {
-		input.AccessMode = "open"
-	}
-	input.V.CheckField(
-		input.AccessMode == "open" || input.AccessMode == "restricted",
-		"access_mode", "Access mode must be open or restricted.",
-	)
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
@@ -273,7 +260,7 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 
 	conn, err := app.db.InsertConnection(context.Background(),
 		ws.ID, targetEnvID,
-		input.Name, input.Driver, dsnEncrypted, input.AccessMode,
+		input.Name, input.Driver, dsnEncrypted,
 	)
 	if err != nil {
 		if isForeignKeyViolation(err) {
@@ -288,7 +275,6 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 		slog.Int64("workspace_id", ws.ID),
 		slog.Int64("connection_id", conn.ID),
 		slog.String("driver", conn.Driver),
-		slog.String("access_mode", conn.AccessMode),
 	)
 	err = response.JSON(w, http.StatusCreated, conn)
 	if err != nil {

@@ -15,6 +15,7 @@ import { getAccessToken } from '#/lib/auth/access-token'
 import { useBrand } from '#/lib/brand/brand'
 import { Sidebar, SidebarContent, SidebarInset, SidebarProvider } from '#/components/ui/sidebar'
 import { NavigateToLogin } from '#/components/auth/NavigateToLogin'
+import { useDesktopRuntime } from '#/lib/desktop/context'
 
 export const Route = createFileRoute('/administration')({
   component: AdministrationLayout,
@@ -43,6 +44,7 @@ function AdministrationLayout() {
     const cookie = document.cookie.split('; ').find((row) => row.startsWith('sidebar_state='))
     return cookie ? cookie.split('=')[1] === 'true' : true
   })
+  const desktop = useDesktopRuntime()
 
   if (setupStatus.isLoading || (hasToken && session.isLoading)) {
     return (
@@ -58,6 +60,10 @@ function AdministrationLayout() {
 
   if (!hasToken || !session.data) {
     return <NavigateToLogin />
+  }
+
+  if (setupStatus.data?.capabilities.native_shell) {
+    return desktop.session?.identity.org_slug ? <Navigate to="/desktop/settings" replace /> : null
   }
 
   if (!session.data.is_instance_admin) {

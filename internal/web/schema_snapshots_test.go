@@ -24,7 +24,7 @@ func TestSchemaSnapshotStorePublishesAndRetainsTwoGenerations(t *testing.T) {
 	owner, _, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-store"), "Snapshot Store", "Snapshot Store Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn")
 
 	var last schemaapp.Snapshot
 	for generation := 1; generation <= 3; generation++ {
@@ -109,7 +109,7 @@ func TestSchemaSnapshotStoreRejectsSupersededGeneration(t *testing.T) {
 	owner, _, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-order"), "Snapshot Order", "Snapshot Order Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn")
 
 	older, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotDirectory("older", time.Now()))
 	if err != nil {
@@ -204,13 +204,13 @@ func TestSchemaSnapshotPublishRechecksPolicy(t *testing.T) {
 	owner, _, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-policy"), "Snapshot Policy", "Snapshot Policy Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn")
 
 	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotDirectory("widgets", time.Now()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.UpdateConnectionWithPolicy(context.Background(), conn.ID, conn.Name, conn.DSNEncrypted, conn.AccessMode, database.SchemaSnapshotPolicyDisabled); err != nil {
+	if err := app.db.UpdateConnectionWithPolicy(context.Background(), conn.ID, conn.Name, conn.DSNEncrypted, database.SchemaSnapshotPolicyDisabled); err != nil {
 		t.Fatal(err)
 	}
 	err = app.schemaSnapshots.Publish(context.Background(), snapshot.ID)
@@ -229,7 +229,7 @@ func TestPersistentSchemaDirectoryDoesNotRequireSession(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-http"), "Snapshot HTTP", "Snapshot HTTP Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn")
 
 	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotDirectory("widgets", time.Now()))
 	if err != nil {
@@ -257,12 +257,12 @@ func TestDisablingConnectionSnapshotsPurgesStoredMetadata(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-disable"), "Snapshot Disable", "Snapshot Disable Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn")
 	encryptedDSN, err := app.keyring.Encrypt(":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.UpdateConnectionWithPolicy(context.Background(), conn.ID, conn.Name, encryptedDSN, conn.AccessMode, database.SchemaSnapshotPolicyInherit); err != nil {
+	if err := app.db.UpdateConnectionWithPolicy(context.Background(), conn.ID, conn.Name, encryptedDSN, database.SchemaSnapshotPolicyInherit); err != nil {
 		t.Fatal(err)
 	}
 
@@ -301,7 +301,7 @@ func TestDisablingOrganizationSnapshotsPurgesStoredMetadata(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-org-disable"), "Snapshot Org Disable", "Snapshot Org Disable")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn")
 
 	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, snapshotDirectory("widgets", time.Now()))
 	if err != nil {

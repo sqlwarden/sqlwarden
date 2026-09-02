@@ -1,0 +1,550 @@
+name: Signed Desktop Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - 'desktop-test-v*'
+
+concurrency:
+  group: desktop-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      os_version: ${{ steps.release.outputs.os_version }}
+      commit: ${{ steps.source.outputs.commit }}
+      build_date: ${{ steps.source.outputs.build_date }}
+      publish: ${{ steps.mode.outputs.publish }}
+      validation: ${{ steps.mode.outputs.validation }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Resolve release mode
+        id: mode
+        env:
+          SOURCE_TAG: ${{ github.ref_name }}
+        run: |
+          case "$SOURCE_TAG" in
+            desktop-test-v*)
+              release_tag="${SOURCE_TAG#desktop-test-}"
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "validation=true" >> "$GITHUB_OUTPUT"
+              ;;
+            v*)
+              release_tag="$SOURCE_TAG"
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+              echo "validation=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported desktop release tag: $SOURCE_TAG" >&2
+              exit 1
+              ;;
+          esac
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release version
+        id: release
+        env:
+          RELEASE_TAG: ${{ steps.mode.outputs.tag }}
+        run: >-
+          go run ./tools/desktop-release prepare
+          --tag "$RELEASE_TAG"
+          --wails-config cmd/desktop/wails.json
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Resolve immutable source metadata
+        id: source
+        env:
+          SOURCE_TAG: ${{ github.ref_name }}
+        run: |
+          commit="$(git rev-list -n 1 "$SOURCE_TAG")"
+          test -n "$commit"
+          build_date="$(git show -s --format=%cI "$commit")"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "build_date=$build_date" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.10
+
+      - name: Build embedded frontend
+        working-directory: frontend
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Upload embedded frontend
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-frontend
+          path: assets/static
+          if-no-files-found: error
+
+  windows:
+    name: Sign Windows x64 installer
+    needs: prepare
+    runs-on: windows-2022
+    timeout-minutes: 40
+    environment: desktop-release
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+      BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+      WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          choco install nsis --yes --no-progress
+          $nsis = Join-Path ${env:ProgramFiles(x86)} 'NSIS'
+          if (-not (Test-Path (Join-Path $nsis 'makensis.exe'))) {
+            throw "makensis.exe was not installed under $nsis"
+          }
+          $nsis >> $env:GITHUB_PATH
+
+      - name: Download embedded frontend
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: desktop-frontend
+          path: assets/static
+
+      - name: Set release version
+        shell: pwsh
+        run: >-
+          go run ./tools/desktop-release prepare
+          --tag "$env:RELEASE_TAG"
+          --wails-config cmd/desktop/wails.json
+
+      - name: Import Authenticode certificate
+        shell: pwsh
+        env:
+          SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_PFX_BASE64)) {
+            throw 'WINDOWS_SIGNING_PFX_BASE64 is not configured in the desktop-release environment'
+          }
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'sqlwarden-signing.pfx'
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
+          $password = ConvertTo-SecureString $env:SIGNING_PFX_PASSWORD -AsPlainText -Force
+          $certificates = @(Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password)
+          $certificate = $certificates | Where-Object { $_.HasPrivateKey } | Select-Object -First 1
+          if ($null -eq $certificate) {
+            throw 'The imported PFX does not contain a private key'
+          }
+          "SQLWARDEN_SIGNING_THUMBPRINT=$($certificate.Thumbprint)" >> $env:GITHUB_ENV
+          "SQLWARDEN_PFX_PATH=$pfxPath" >> $env:GITHUB_ENV
+
+      - name: Build and sign installer
+        working-directory: cmd/desktop
+        shell: pwsh
+        run: |
+          $ldflags = "-s -w -X github.com/sqlwarden/internal/version.version=$env:VERSION -X github.com/sqlwarden/internal/version.commit=$env:RELEASE_COMMIT -X github.com/sqlwarden/internal/version.date=$env:BUILD_DATE"
+          go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build `
+            -platform windows/amd64 `
+            -nsis `
+            -installscope user `
+            -s `
+            -m `
+            -skipbindings `
+            -clean `
+            -trimpath `
+            -ldflags $ldflags
+
+      - name: Verify signed installation
+        shell: pwsh
+        run: |
+          $app = Resolve-Path 'cmd/desktop/build/bin/sqlwarden-desktop.exe'
+          $installer = Resolve-Path 'cmd/desktop/build/bin/SQLWarden-amd64-installer.exe'
+          foreach ($target in @($app, $installer)) {
+            $signature = Get-AuthenticodeSignature -FilePath $target
+            if ($signature.Status -ne 'Valid') {
+              throw "Invalid Authenticode signature for $target`: $($signature.StatusMessage)"
+            }
+          }
+          $productVersion = (Get-Item $app).VersionInfo.ProductVersionRaw.ToString()
+          if (-not $productVersion.StartsWith('${{ needs.prepare.outputs.os_version }}')) {
+            throw "Windows product version $productVersion does not match ${{ needs.prepare.outputs.os_version }}"
+          }
+          Start-Process -FilePath $installer -ArgumentList '/S' -Wait
+          $installDirectory = Join-Path $env:LOCALAPPDATA 'Programs\SQLWarden'
+          foreach ($target in @(
+            (Join-Path $installDirectory 'sqlwarden-desktop.exe'),
+            (Join-Path $installDirectory 'uninstall.exe')
+          )) {
+            $signature = Get-AuthenticodeSignature -FilePath $target
+            if ($signature.Status -ne 'Valid') {
+              throw "Invalid installed signature for $target`: $($signature.StatusMessage)"
+            }
+          }
+          Start-Process -FilePath (Join-Path $installDirectory 'uninstall.exe') -ArgumentList '/S' -Wait
+
+      - name: Stage Windows artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item `
+            'cmd/desktop/build/bin/SQLWarden-amd64-installer.exe' `
+            "dist/sqlwarden-desktop_$env:VERSION`_windows_x86_64_setup.exe"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-release-windows
+          path: dist/*.exe
+          if-no-files-found: error
+
+      - name: Remove signing certificate
+        if: always()
+        shell: pwsh
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:SQLWARDEN_SIGNING_THUMBPRINT)) {
+            Remove-Item "Cert:\CurrentUser\My\$env:SQLWARDEN_SIGNING_THUMBPRINT" -Force -ErrorAction SilentlyContinue
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:SQLWARDEN_PFX_PATH)) {
+            Remove-Item $env:SQLWARDEN_PFX_PATH -Force -ErrorAction SilentlyContinue
+          }
+
+  macos:
+    name: Sign and notarize macOS universal DMG
+    needs: prepare
+    runs-on: macos-14
+    timeout-minutes: 60
+    environment: desktop-release
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+      BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+      APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      APPLE_NOTARY_KEY_ID: ${{ vars.APPLE_NOTARY_KEY_ID }}
+      APPLE_NOTARY_ISSUER_ID: ${{ vars.APPLE_NOTARY_ISSUER_ID }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Download embedded frontend
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: desktop-frontend
+          path: assets/static
+
+      - name: Set release version
+        run: >-
+          go run ./tools/desktop-release prepare
+          --tag "$RELEASE_TAG"
+          --wails-config cmd/desktop/wails.json
+
+      - name: Import Developer ID certificate
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          NOTARY_PRIVATE_KEY_BASE64: ${{ secrets.APPLE_NOTARY_PRIVATE_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          for value in DEVELOPER_ID_P12_BASE64 DEVELOPER_ID_P12_PASSWORD NOTARY_PRIVATE_KEY_BASE64 APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_NOTARY_KEY_ID APPLE_NOTARY_ISSUER_ID; do
+            test -n "${!value:-}" || { echo "$value is not configured in the desktop-release environment" >&2; exit 1; }
+          done
+          keychain="$RUNNER_TEMP/sqlwarden-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          certificate="$RUNNER_TEMP/sqlwarden-developer-id.p12"
+          notary_key="$RUNNER_TEMP/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
+          printf '%s' "$DEVELOPER_ID_P12_BASE64" | base64 -D > "$certificate"
+          printf '%s' "$NOTARY_PRIVATE_KEY_BASE64" | base64 -D > "$notary_key"
+          chmod 600 "$certificate" "$notary_key"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security find-identity -v -p codesigning "$keychain" | grep -F "$APPLE_SIGNING_IDENTITY"
+          echo "SQLWARDEN_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          echo "SQLWARDEN_NOTARY_KEY=$notary_key" >> "$GITHUB_ENV"
+          echo "SQLWARDEN_CERTIFICATE=$certificate" >> "$GITHUB_ENV"
+
+      - name: Build universal application
+        working-directory: cmd/desktop
+        env:
+          CGO_CFLAGS: -mmacosx-version-min=11.0
+          CGO_LDFLAGS: -mmacosx-version-min=11.0
+        run: |
+          ldflags="-s -w -X github.com/sqlwarden/internal/version.version=$VERSION -X github.com/sqlwarden/internal/version.commit=$RELEASE_COMMIT -X github.com/sqlwarden/internal/version.date=$BUILD_DATE"
+          go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build \
+            -platform darwin/universal \
+            -s \
+            -m \
+            -skipbindings \
+            -clean \
+            -trimpath \
+            -ldflags "$ldflags"
+
+      - name: Sign, package, and notarize
+        run: |
+          set -euo pipefail
+          app="$GITHUB_WORKSPACE/cmd/desktop/build/bin/SQLWarden.app"
+          binary="$app/Contents/MacOS/sqlwarden-desktop"
+          lipo "$binary" -verify_arch x86_64 arm64
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = 'com.sqlwarden.desktop'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = '${{ needs.prepare.outputs.os_version }}'
+          go clean -cache -modcache
+          codesign --force --options runtime --timestamp \
+            --entitlements cmd/desktop/build/darwin/entitlements.plist \
+            --sign "$APPLE_SIGNING_IDENTITY" "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+          mkdir -p dist "$RUNNER_TEMP/sqlwarden-dmg"
+          ditto "$app" "$RUNNER_TEMP/sqlwarden-dmg/SQLWarden.app"
+          ln -s /Applications "$RUNNER_TEMP/sqlwarden-dmg/Applications"
+          dmg="$GITHUB_WORKSPACE/dist/sqlwarden-desktop_${VERSION}_darwin_universal.dmg"
+          hdiutil create -volname SQLWarden -srcfolder "$RUNNER_TEMP/sqlwarden-dmg" -ov -format UDZO "$dmg"
+          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$dmg"
+          xcrun notarytool submit "$dmg" \
+            --key "$SQLWARDEN_NOTARY_KEY" \
+            --key-id "$APPLE_NOTARY_KEY_ID" \
+            --issuer "$APPLE_NOTARY_ISSUER_ID" \
+            --wait
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          codesign --verify --verbose=2 "$dmg"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-release-macos
+          path: dist/*.dmg
+          if-no-files-found: error
+
+      - name: Remove Apple signing material
+        if: always()
+        run: |
+          if [ -n "${SQLWARDEN_KEYCHAIN:-}" ]; then
+            security delete-keychain "$SQLWARDEN_KEYCHAIN" || true
+          fi
+          rm -f "${SQLWARDEN_NOTARY_KEY:-}" "${SQLWARDEN_CERTIFICATE:-}"
+
+  linux:
+    name: Package Linux x64
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+      BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential gettext-base pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+
+      - name: Download embedded frontend
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: desktop-frontend
+          path: assets/static
+
+      - name: Set release version
+        run: >-
+          go run ./tools/desktop-release prepare
+          --tag "$RELEASE_TAG"
+          --wails-config cmd/desktop/wails.json
+
+      - name: Build Linux application
+        working-directory: cmd/desktop
+        run: |
+          ldflags="-s -w -X github.com/sqlwarden/internal/version.version=$VERSION -X github.com/sqlwarden/internal/version.commit=$RELEASE_COMMIT -X github.com/sqlwarden/internal/version.date=$BUILD_DATE"
+          go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build \
+            -platform linux/amd64 \
+            -tags webkit2_41 \
+            -s \
+            -m \
+            -skipbindings \
+            -clean \
+            -trimpath \
+            -ldflags "$ldflags"
+
+      - name: Build DEB and tarball
+        run: |
+          set -euo pipefail
+          binary="$GITHUB_WORKSPACE/cmd/desktop/build/bin/sqlwarden-desktop"
+          test -x "$binary"
+          mkdir -p dist "$RUNNER_TEMP/sqlwarden-linux/THIRD_PARTY_NOTICES"
+          install -m 0755 "$binary" "$RUNNER_TEMP/sqlwarden-linux/sqlwarden-desktop"
+          install -m 0644 README.md "$RUNNER_TEMP/sqlwarden-linux/README.md"
+          install -m 0644 cmd/desktop/build/linux/README.md "$RUNNER_TEMP/sqlwarden-linux/LINUX_INSTALL.md"
+          install -m 0644 internal/engine/completioncore/LICENSE.bytebase "$RUNNER_TEMP/sqlwarden-linux/THIRD_PARTY_NOTICES/Bytebase-MIT.txt"
+          tar -C "$RUNNER_TEMP/sqlwarden-linux" -czf "dist/sqlwarden-desktop_${VERSION}_linux_x86_64.tar.gz" .
+          VERSION="$VERSION" DESKTOP_BINARY="$binary" envsubst \
+            < cmd/desktop/build/linux/nfpm.yaml \
+            > "$RUNNER_TEMP/sqlwarden-nfpm.yaml"
+          nfpm package \
+            --config "$RUNNER_TEMP/sqlwarden-nfpm.yaml" \
+            --packager deb \
+            --target "dist/sqlwarden-desktop_${VERSION}_linux_x86_64.deb"
+
+      - name: Verify Linux packages
+        run: |
+          set -euo pipefail
+          deb="dist/sqlwarden-desktop_${VERSION}_linux_x86_64.deb"
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb" | grep -F './usr/bin/sqlwarden-desktop'
+          dpkg-deb --contents "$deb" | grep -F './usr/share/applications/com.sqlwarden.desktop.desktop'
+          sudo dpkg --install "$deb"
+          test -x /usr/bin/sqlwarden-desktop
+          test -f /usr/share/applications/com.sqlwarden.desktop.desktop
+          sudo dpkg --remove sqlwarden-desktop
+          tar -tzf "dist/sqlwarden-desktop_${VERSION}_linux_x86_64.tar.gz" | grep -F './sqlwarden-desktop'
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-release-linux
+          path: |
+            dist/*.deb
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Verify and publish desktop release
+    needs:
+      - prepare
+      - windows
+      - macos
+      - linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Download native artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: desktop-release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate release metadata
+        run: |
+          go run ./tools/desktop-release manifest \
+            --tag "$RELEASE_TAG" \
+            --published-at "$BUILD_DATE" \
+            --artifacts-dir dist \
+            --manifest "dist/sqlwarden-desktop_${VERSION}_release.json" \
+            --checksums "dist/sqlwarden-desktop_${VERSION}_checksums.txt"
+          cd dist
+          sha256sum --check "sqlwarden-desktop_${VERSION}_checksums.txt"
+
+      - name: Attest desktop artifacts
+        if: needs.prepare.outputs.validation != 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: dist/*
+
+      - name: Upload complete release bundle to workflow
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sqlwarden-desktop-${{ needs.prepare.outputs.version }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Wait for GitHub release
+        if: needs.prepare.outputs.publish == 'true'
+        run: |
+          for attempt in $(seq 1 10); do
+            if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "GitHub release $RELEASE_TAG was not found" >&2
+          exit 1
+
+      - name: Publish verified desktop artifacts
+        if: needs.prepare.outputs.publish == 'true'
+        run: gh release upload "$RELEASE_TAG" dist/* --clobber

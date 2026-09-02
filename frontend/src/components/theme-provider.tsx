@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { syncDesktopTheme } from '#/lib/desktop/runtime'
 
 type Theme = 'dark' | 'light' | 'system'
 type ResolvedTheme = 'dark' | 'light'
@@ -111,6 +112,7 @@ export function ThemeProvider({
 
       root.classList.remove('light', 'dark')
       root.classList.add(resolvedTheme)
+      void syncDesktopTheme(nextTheme, resolvedTheme)
 
       if (restoreTransitions) {
         restoreTransitions()

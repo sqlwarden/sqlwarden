@@ -2,6 +2,23 @@
 
 This reference applies to the SQLWarden server.
 
+The Wails desktop application owns its bootstrap configuration. It stores non-secret metadata in
+`desktop.json`, application state in the platform data directory, disposable state in the platform
+cache directory, and logs in the platform log directory. Cookie, JWT, and encryption secrets are
+generated once and stored in the operating-system credential store. If that service is unavailable,
+desktop uses a mode-`0600` protected secret file in the data directory and reports the fallback in
+Settings. If an existing database loses its configured secret store, startup fails instead of
+generating keys that could make encrypted data unreadable.
+
+Desktop accepts `--data-dir` for development and portable test installations. The desktop
+executable always selects `mode=desktop`, a single local identity, local SQLite application
+storage, and the local filesystem backend. The server executable always selects `mode=server`.
+Mode is owned by the executable rather than config files, environment variables, CLI flags, or the
+desktop UI.
+
+See [Desktop operations](desktop.md) for exact paths, migration, backup, recovery, and uninstall
+behavior.
+
 SQLWarden separates deployment-managed bootstrap configuration from database-backed runtime settings.
 
 Bootstrap configuration is read from defaults, config files, environment variables, and CLI flags. It is validated before listeners and workers start, and changes require a restart. Runtime settings are stored in the application database and changed through the administration API. They are read directly from the database for each request or background operation.
@@ -12,12 +29,11 @@ Bootstrap loading is implemented in `internal/web/config.go`. Runtime ownership 
 
 The following settings remain bootstrap-only:
 
-- HTTP listener, deployment mode, access mode, and log format.
+- HTTP listener and log format.
 - Application database driver, DSN, and startup migration behavior.
 - Cookie, JWT-signing, and encryption keys.
 - TLS certificate configuration.
 - File-storage mode, active backend, backend definitions, and filesystem roots.
-- Desktop backend topology.
 - Allowed host-local SQLite sources.
 
 Changing a bootstrap setting requires a restart. Changing the application DSN selects another SQLWarden instance database; changing storage configuration does not move stored files. Secret rotation must use the documented key/session rotation behavior. SQLWarden does not perform these migrations automatically.

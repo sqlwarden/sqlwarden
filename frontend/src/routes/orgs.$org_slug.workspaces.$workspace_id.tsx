@@ -15,6 +15,7 @@ import { Button } from '#/components/ui/button'
 import { Skeleton } from '#/components/ui/skeleton'
 import { EmptyState } from '#/components/EmptyState'
 import { errorMessage, isApiError } from '#/lib/api/errors'
+import { useSetupStatus } from '#/hooks/use-setup-status'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id')({
   component: WorkspaceRoute,
@@ -55,6 +56,8 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
   const effectivePermissions = useQuery(
     orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId),
   )
+  const setupStatus = useSetupStatus()
+  const desktopMode = setupStatus.data?.capabilities.native_shell === true
   const permissions = effectivePermissions.data?.permissions
 
   const allStatTiles: StatTile[] = [
@@ -99,7 +102,11 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
     },
   ]
   const statTiles = allStatTiles.filter((tile) => hasAnyPermission(permissions, tile.required))
-  const navItems = allNavItems.filter((item) => hasAnyPermission(permissions, item.required))
+  const navItems = allNavItems.filter(
+    (item) =>
+      (!desktopMode || (item.section !== 'users' && item.section !== 'policies')) &&
+      hasAnyPermission(permissions, item.required),
+  )
 
   if (workspace.isLoading || effectivePermissions.isLoading) {
     return (

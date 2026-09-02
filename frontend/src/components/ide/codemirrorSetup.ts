@@ -29,7 +29,7 @@ import {
 } from '@codemirror/view'
 import { indentationMarkers } from '@replit/codemirror-indentation-markers'
 import { showMinimap } from '@replit/codemirror-minimap'
-import { createFindPanel } from './findPanel'
+import { createFindPanel } from './codemirrorFindPanel'
 import { IDENTIFIER_DND_MIME } from './sqlDialect'
 
 // A common convention for formatted SQL line width; matches no specific

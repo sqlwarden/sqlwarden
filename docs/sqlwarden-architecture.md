@@ -105,8 +105,9 @@ Configuration is loaded by `internal/web` using spf13/viper. Supported sources a
 
 Important concepts:
 
-- `deployment_mode` describes runtime packaging and operating context, such as server or future desktop.
-- `access_mode` describes account/authorization behavior, such as multi-user or single-user.
+- One executable-owned `mode` describes the product context: `server` or `desktop`.
+- Product capabilities are derived from mode and concrete policy; they are not independently
+  configurable topology switches.
 - `personal_spaces_enabled` gates `/api/v1/me/workspaces...`.
 - Session revocation can be enabled/disabled for deployments that do not need account session management overhead.
 - File storage currently supports local filesystem storage. Config names are designed around active backend plus future backend registry.
@@ -114,7 +115,10 @@ Important concepts:
 
 Configuration ownership is split deliberately:
 
-- Bootstrap configuration is deployment-managed and must be available before the application database opens. It covers listeners, deployment/access mode, application database connectivity, secrets, TLS, storage topology, desktop topology, log format, and host-local SQLite access.
+- Bootstrap configuration is deployment-managed and must be available before the application
+  database opens. It covers listeners, application database connectivity, secrets, TLS, storage
+  topology, log format, and host-local SQLite access. The executable selects product mode before
+  startup.
 - Runtime instance settings are typed columns in the singleton `instance_settings` row. They cover product policy, limits, log level, database query tracing, job-runner tuning, and SMTP delivery without restarting.
 - Organizations store typed nullable overrides for the small set of policies they may tighten. Effective settings are the instance values plus valid organization overrides. Personal spaces use instance settings.
 The current consistency model intentionally performs a database read when an operation resolves policy settings. Live operational adapters additionally reconcile the singleton row every two seconds so all replicas converge after an update. A request uses one immutable resolved value set; background jobs capture policy settings when execution begins. Running jobs finish or cancel through the normal runner shutdown path when worker tuning changes.
@@ -211,7 +215,7 @@ Shared query parameters:
 - `order`
 - `q`
 
-Resource-specific filters stay as flat query params, for example `driver`, `access_mode`, `role`, `slug`, or `name`.
+Resource-specific filters stay as flat query params, for example `driver`, `role`, `slug`, or `name`.
 
 Small non-paginated list endpoints must still avoid top-level arrays. Workspace file list/recent endpoints return:
 
@@ -230,8 +234,9 @@ Many current create/update/get endpoints still return the raw resource directly.
 Implemented auth flow:
 
 - First-run setup creates the initial account and instance admin.
-- In multi-user mode, setup also requires creation of the first organization.
-- In single-user mode, setup seeds a local organization and grants the account owner-level access through normal RBAC.
+- Server setup requires creation of the first organization.
+- Desktop bootstrap seeds a local organization and grants the local account owner-level access
+  through normal RBAC.
 - Login creates a refresh token, JWT access token, and auth session.
 - Refresh-token rotation issues new access tokens.
 - Auth sessions and org access sessions are database-backed and revocable when session revocation is enabled.
@@ -312,7 +317,11 @@ Important identity tables:
 - `org_members`: account membership in an organization.
 - `teams` and `team_members`: org-scoped team principals.
 
-`POST /api/setup` is self-sealing. In multi-user server mode it creates the first account, makes that account an instance admin, creates the first organization, adds the account to that organization, and grants the account the builtin `Owner` role through a normal role binding. In single-user mode it still creates a real local account and local organization; it does not bypass RBAC for org-owned resources.
+`POST /api/setup` is a self-sealing server-only endpoint. It creates the first account, makes that
+account an instance admin, creates the first organization, adds the account to that organization,
+and grants the account the builtin `Owner` role through a normal role binding. Desktop uses its
+native bootstrap flow to create a real local account and local organization; it does not bypass
+RBAC for org-owned resources.
 
 Register/login flows are separate from authorization. An account may exist without meaningful access until it is an org member and receives policy-derived permissions.
 
@@ -551,10 +560,10 @@ Properties:
 - Gated by the persisted personal-spaces feature setting.
 - `owner_type = "space"` and `owner_id = account.id`.
 - Use `/me` owner middleware instead of org RBAC.
-- Intended for user-owned personal database workspaces in multi-user deployments.
-- Not the desktop/single-user authorization model.
+- Intended for user-owned personal database workspaces in server deployments.
+- Not the desktop authorization model.
 
-Single-user/local mode should use the seeded local organization and normal org routes for managed resources.
+Desktop mode uses the seeded local organization and normal org routes for managed resources.
 
 ## Workspace Membership
 
@@ -848,18 +857,32 @@ Important open gaps:
 
 SQLWarden is primarily self-hosted. Any future hosted/cloud offering needs stronger controls around SSRF, target network egress, tenant isolation, audit integrity, and managed identity lifecycle before it is safe.
 
-## Desktop/Wails Direction
+## Desktop/Wails Application
 
-Future Wails support should reuse `internal/web` instead of importing `cmd/api`.
+The Wails v2 application in `cmd/desktop` embeds the same frontend and constructs `internal/web`
+in-process. Its asset middleware sends `/api` requests directly to the HTTP handler, so production
+desktop mode does not open a localhost listener.
 
-Recommended model:
+Current model:
 
-- `deployment_mode=desktop` controls runtime packaging and local loopback behavior.
-- `access_mode=single_user` controls bootstrap and account behavior.
-- Desktop still creates a real local account and local organization.
+- `cmd/desktop` selects `mode=desktop`; `cmd/api` selects `mode=server`. Config cannot create an
+  unsupported hybrid.
+- The setup/status and instance-configuration APIs expose mode plus derived product capabilities
+  for frontend routing and visibility. Backend route gates remain authoritative.
+- First launch transactionally creates a passwordless local account, instance-admin record, Local
+  organization, and desktop installation anchor. Workspaces are user-created; a zero-workspace
+  installation opens an editor empty state rather than manufacturing product data.
 - Desktop does not bypass RBAC for org-owned resources.
-- Personal spaces remain optional sandboxes for multi-user deployments, not the desktop security model.
-- Wails-specific code should be isolated behind a small bridge layer in the frontend and a future `cmd/desktop` entrypoint.
+- Native sessions use the normal JWT and revocable session middleware. The Wails bridge issues and
+  refreshes them without exposing a login flow.
+- Desktop configuration secrets are generated once in the OS credential store, with a protected
+  local file fallback and migration from the legacy plaintext configuration.
+- The UI hides identity, organization administration, and RBAC surfaces while retaining the editor,
+  workspace/environment/connection management, files, exports, schema tools, and diagrams.
+- Multiple workspaces and zero workspaces are supported. The last workspace may be deleted.
+- Wails-specific code stays in `cmd/desktop`, `internal/desktop`, and the small frontend bridge.
+
+Personal spaces remain optional sandboxes for server deployments, not the desktop security model.
 
 Future desktop may support multiple remote SQLWarden backends, such as separate prod and non-prod enterprise instances. That should be modeled as a client-side backend registry, not as a change to the server authorization model.
 

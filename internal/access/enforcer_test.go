@@ -657,13 +657,13 @@ func TestCanEnvironmentScopeCoversTaggedConnections(t *testing.T) {
 	}
 
 	// Create a connection tagged to that environment.
-	taggedConn, err := db.InsertConnection(ctx, ws.ID, &env.ID, "tagged-db", "sqlite", "enc", "open")
+	taggedConn, err := db.InsertConnection(ctx, ws.ID, &env.ID, "tagged-db", "sqlite", "enc")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create a connection NOT tagged to any environment.
-	untaggedConn, err := db.InsertConnection(ctx, ws.ID, nil, "untagged-db", "sqlite", "enc", "open")
+	untaggedConn, err := db.InsertConnection(ctx, ws.ID, nil, "untagged-db", "sqlite", "enc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -713,11 +713,11 @@ func TestCanEnvironmentScopeIsolatesAcrossEnvironments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	connA, err := db.InsertConnection(ctx, ws.ID, &envA.ID, "conn-a", "sqlite", "enc", "open")
+	connA, err := db.InsertConnection(ctx, ws.ID, &envA.ID, "conn-a", "sqlite", "enc")
 	if err != nil {
 		t.Fatal(err)
 	}
-	connB, err := db.InsertConnection(ctx, ws.ID, &envB.ID, "conn-b", "sqlite", "enc", "open")
+	connB, err := db.InsertConnection(ctx, ws.ID, &envB.ID, "conn-b", "sqlite", "enc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -762,7 +762,7 @@ func TestCanWorkspaceScopeStillCoversEnvTaggedConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	conn, err := db.InsertConnection(ctx, ws.ID, &env.ID, "prod-db", "sqlite", "enc", "open")
+	conn, err := db.InsertConnection(ctx, ws.ID, &env.ID, "prod-db", "sqlite", "enc")
 	if err != nil {
 		t.Fatal(err)
 	}

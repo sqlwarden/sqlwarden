@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
   {
-    ignores: ['coverage/**', 'dist/**', 'src/routeTree.gen.ts'],
+    ignores: ['coverage/**', 'dist/**', 'src/routeTree.gen.ts', 'src/wailsjs/**'],
   },
   {
     files: ['**/*.{js,mjs,ts,tsx}'],

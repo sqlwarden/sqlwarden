@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Icon } from '#/lib/icons'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
+import { Button } from '#/components/ui/button'
 import {
   Select,
   SelectContent,
@@ -14,6 +15,7 @@ import type { ScopePath } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import type { DriverDef, FieldDef } from './connection-drivers/index'
 import { scopeSegmentName, type ScopeDiscovery } from './useConnectionForm'
+import { platformService } from '#/lib/platform/service'
 
 // Fields, sections, and layout all come from the driver definition, so adding a
 // new database means writing one driver def — no form changes.
@@ -238,6 +240,34 @@ function DriverFieldControl({
         disabled={disabled}
         onChange={onChange}
       />
+    )
+  }
+  if (field.nativeFilePicker === 'sqlite' && platformService().native) {
+    return (
+      <div className="flex gap-2">
+        <Input
+          type="text"
+          value={value}
+          placeholder={field.placeholder}
+          disabled={disabled}
+          aria-invalid={invalid ? true : undefined}
+          onChange={(e) => onChange(field.key, e.target.value)}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          disabled={disabled}
+          onClick={() => {
+            void platformService()
+              .chooseSQLiteFile()
+              .then((path) => {
+                if (path) onChange(field.key, path)
+              })
+          }}
+        >
+          <Icon name="folder-open" size={16} /> Browse…
+        </Button>
+      </div>
     )
   }
   return (

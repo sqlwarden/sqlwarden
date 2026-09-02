@@ -145,7 +145,7 @@ func TestOrganizationInvitationsUnavailableInSingleUserMode(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	_, ownerToken, slug := registerAndLogin(t, app, uniqueEmail(t, "invite-single-owner"), "Invite Owner", "securepass99")
-	app.config.AccessMode = AccessModeSingleUser
+	app.config.Mode = ModeDesktop
 	res := createInvitationForTest(t, app, slug, uniqueEmail(t, "invite-single"), ownerToken)
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }

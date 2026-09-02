@@ -95,6 +95,16 @@ frontend/dev:
 frontend/dev-expose:
 	cd frontend && bun run dev-expose
 
+## desktop/dev: run the Wails desktop application with frontend rebuilds
+.PHONY: desktop/dev
+desktop/dev:
+	cd cmd/desktop && go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev
+
+## desktop/build: build the native Wails desktop application
+.PHONY: desktop/build
+desktop/build:
+	cd cmd/desktop && go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build
+
 ## build: build the cmd/api application (builds frontend first)
 .PHONY: build
 build: frontend/build
