@@ -641,19 +641,10 @@ function DesktopSettingsFrame({
           >
             <Icon name="arrow-left-01" size={18} />
           </Button>
-          <div className="space-y-1">
-            <h1 className="font-heading text-base font-semibold tracking-tight">Settings</h1>
-            <p className="hidden text-xs text-muted-foreground sm:block">Local installation</p>
-          </div>
+          <h1 className="font-heading text-base font-semibold tracking-tight">Settings</h1>
         </div>
       </header>
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6 md:px-6">
-        <div>
-          <h2 className="font-heading text-xl font-semibold tracking-tight">Desktop settings</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Configure this local SQLWarden installation.
-          </p>
-        </div>
         {children}
       </div>
     </main>

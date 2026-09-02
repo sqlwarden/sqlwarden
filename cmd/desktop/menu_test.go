@@ -3,11 +3,31 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
 	desktopconfig "github.com/sqlwarden/internal/desktop"
 )
+
+func TestNativeSQLLaunchPathIsQueuedBeforeFrontendStartup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "startup.sql")
+	if err := os.WriteFile(path, []byte("select 1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bridge := newDesktopBridge(nil, desktopconfig.Paths{}, nil)
+
+	handleNativeOpenPath(bridge, path)
+
+	requests := bridge.DrainOpenRequests()
+	if len(requests.Files) != 1 {
+		t.Fatalf("queued files = %+v", requests.Files)
+	}
+	if requests.Files[0].Path != path || requests.Files[0].Content != "select 1" {
+		t.Fatalf("queued file = %+v", requests.Files[0])
+	}
+}
 
 func TestDesktopMenuHasNamedPrimaryMenus(t *testing.T) {
 	root := desktopMenu(newDesktopBridge(nil, desktopconfig.Paths{}, nil))

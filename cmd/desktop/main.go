@@ -66,6 +66,11 @@ func run(args []string) error {
 		return fmt.Errorf("load desktop assets: %w", err)
 	}
 	bridge := newDesktopBridge(app, paths, startupErr)
+	// Queue file-association launch arguments before Wails starts. Waiting for
+	// OnDomReady creates a race with the frontend's first DrainOpenRequests call.
+	for _, openPath := range openPaths {
+		handleNativeOpenPath(bridge, openPath)
+	}
 	window := loadWindowState(paths)
 	apiHandler := unavailableAPI(startupErr)
 	if app != nil && startupErr == nil {
@@ -87,9 +92,6 @@ func run(args []string) error {
 					handleNativeOpenPath(bridge, path)
 				}
 			})
-			for _, path := range openPaths {
-				handleNativeOpenPath(bridge, path)
-			}
 		},
 		OnShutdown: func(ctx context.Context) {
 			saveWindowState(ctx, paths)
