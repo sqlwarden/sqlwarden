@@ -4,11 +4,11 @@ import "testing"
 
 func TestOracleQuoteIdent(t *testing.T) {
 	cases := map[string]string{
-		"EMP":       `"EMP"`,
-		"my col":    `"my col"`,
-		`a"b`:       `"a""b"`,
-		"lower":     `"lower"`,
-		"":          `""`,
+		"EMP":    `"EMP"`,
+		"my col": `"my col"`,
+		`a"b`:    `"a""b"`,
+		"lower":  `"lower"`,
+		"":       `""`,
 	}
 	for in, want := range cases {
 		if got := oracleQuoteIdent(in); got != want {
