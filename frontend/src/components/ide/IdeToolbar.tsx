@@ -65,6 +65,7 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
   const closeTab = useIde((s) => s.closeTab)
   const setTabConnection = useIde((s) => s.setTabConnection)
   const markTabClean = useIde((s) => s.markTabClean)
+  const updateTabNativePath = useIde((s) => s.updateTabNativePath)
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
   const clearPendingConfirmation = useIde((s) => s.clearPendingConfirmation)
@@ -92,20 +93,40 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
         (activeGroupId
           ? viewRegistry.get(`${activeGroupId}:${activeTab.id}`)?.state.doc.toString()
           : undefined) ?? activeTab.content
-      const path = await platformService().saveSQLFile(activeTab.title, content)
-      if (path) markTabClean(activeTab.id)
+      try {
+        await platformService().writeSQLFile(activeTab.nativePath, content)
+        markTabClean(activeTab.id)
+      } catch {
+        toast.error('Failed to save file.')
+      }
       return
     }
     const result = await saveEditorTab(activeTab)
     if (result?.kind === 'save-as') setSaveAsTab(result.tab)
   }, [activeGroupId, activeTab, markTabClean, saveEditorTab, viewRegistry])
 
+  const handleNativeSaveAs = useCallback(async () => {
+    if (!activeTab?.nativePath) return
+    const content =
+      (activeGroupId
+        ? viewRegistry.get(`${activeGroupId}:${activeTab.id}`)?.state.doc.toString()
+        : undefined) ?? activeTab.content
+    try {
+      const path = await platformService().saveSQLFile(activeTab.title, content)
+      if (!path) return
+      const name = path.split(/[\\/]/).pop() || activeTab.title
+      updateTabNativePath(activeTab.id, path, name)
+    } catch {
+      toast.error('Failed to save file.')
+    }
+  }, [activeGroupId, activeTab, updateTabNativePath, viewRegistry])
+
   useEffect(() => {
     const unregisterSave = registerCommand('file.save', handleSave)
     const unregisterSaveAs = registerCommand('file.save-as', () => {
       if (!activeTab) return
       if (activeTab.nativePath) {
-        void handleSave()
+        void handleNativeSaveAs()
       } else {
         setSaveAsTab(activeTab)
       }
@@ -114,7 +135,7 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
       unregisterSave()
       unregisterSaveAs()
     }
-  }, [activeTab, handleSave])
+  }, [activeTab, handleNativeSaveAs, handleSave])
 
   function handleFormat() {
     if (!activeTab || !activeGroupId) return

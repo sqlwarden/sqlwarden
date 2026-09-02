@@ -71,12 +71,12 @@ describe('FilesPanel', () => {
     )
   }
 
-  function renderPanel() {
+  function renderPanel(nativeShell = false) {
     return render(
       <QueryClientProvider client={createTestQueryClient()}>
         <IdeStoreContext.Provider value={store}>
           <ContextMenuProvider>
-            <FilesPanel orgSlug="acme" workspace={workspace} />
+            <FilesPanel orgSlug="acme" workspace={workspace} nativeShell={nativeShell} />
           </ContextMenuProvider>
         </IdeStoreContext.Provider>
       </QueryClientProvider>,
@@ -89,6 +89,15 @@ describe('FilesPanel', () => {
 
     await waitFor(() => expect(screen.getAllByText('No files yet.')).toHaveLength(2))
     expect(screen.getByText('Shared Files')).toBeInTheDocument()
+  })
+
+  it('removes the shared-files split in the desktop shell', async () => {
+    respondWith([file(7, 'local.sql')], [file(8, 'shared.sql')])
+    renderPanel(true)
+
+    expect(await screen.findByRole('button', { name: 'local.sql' })).toBeInTheDocument()
+    expect(screen.queryByText('Shared Files')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'shared.sql' })).not.toBeInTheDocument()
   })
 
   it('opens a private file and preserves shared files as a separate section', async () => {

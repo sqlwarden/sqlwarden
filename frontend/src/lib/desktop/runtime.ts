@@ -51,6 +51,7 @@ interface DesktopBridge {
   RevealBackupDirectory?(): Promise<void>
   OpenSQLFile?(): Promise<NativeTextFile>
   SaveSQLFile?(suggestedName: string, content: string): Promise<string>
+  WriteSQLFile?(path: string, content: string): Promise<void>
   SaveExportFile?(suggestedName: string, content: string): Promise<string>
   ChooseSQLiteFile?(): Promise<string>
   ChooseDirectory?(): Promise<string>

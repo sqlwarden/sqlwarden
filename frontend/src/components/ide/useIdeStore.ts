@@ -236,6 +236,7 @@ export type IdeActions = {
   clearPendingJump: () => void
   updateTabContent: (tabId: string, content: string, ySnapshot?: number[]) => void
   updateTabEtag: (tabId: string, etag: string) => void
+  updateTabNativePath: (tabId: string, path: string, name: string) => void
   markTabClean: (tabId: string) => void
   setTabConnection: (tabId: string, connectionId: number, driver?: string) => void
   setMaximizedPane: (pane: IdeState['maximizedPane']) => void
@@ -686,6 +687,15 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, etag, isDirty: false } : t)),
           })),
 
+        updateTabNativePath: (tabId, path, name) =>
+          set((s) => ({
+            tabs: s.tabs.map((t) =>
+              t.id === tabId
+                ? { ...t, title: name, subtitle: path, nativePath: path, isDirty: false }
+                : t,
+            ),
+          })),
+
         markTabClean: (tabId) =>
           set((s) => ({
             tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, isDirty: false } : t)),
@@ -1051,6 +1061,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   collapseAllNodes: _noop,
   updateTabContent: _noop,
   updateTabEtag: _noop,
+  updateTabNativePath: _noop,
   markTabClean: _noop,
   setTabConnection: _noop,
   setMaximizedPane: _noop,

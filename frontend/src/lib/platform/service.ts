@@ -4,6 +4,7 @@ export interface PlatformService {
   native: boolean
   openSQLFile(): Promise<NativeTextFile | undefined>
   saveSQLFile(name: string, content: string): Promise<string | undefined>
+  writeSQLFile(path: string, content: string): Promise<void>
   saveExport(name: string, content: string): Promise<string | undefined>
   chooseSQLiteFile(): Promise<string | undefined>
   chooseDirectory(): Promise<string | undefined>
@@ -38,6 +39,9 @@ const browserService: PlatformService = {
     download(name, content)
     return undefined
   },
+  async writeSQLFile(path, content) {
+    download(path.split(/[\\/]/).pop() || 'query.sql', content)
+  },
   async saveExport(name, content) {
     download(name, content)
     return undefined
@@ -57,6 +61,11 @@ const nativeService: PlatformService = {
   native: true,
   openSQLFile: async () => desktopBridge()?.OpenSQLFile?.(),
   saveSQLFile: async (name, content) => desktopBridge()?.SaveSQLFile?.(name, content),
+  writeSQLFile: async (path, content) => {
+    const bridge = desktopBridge()
+    if (!bridge?.WriteSQLFile) throw new Error('Native file saving is unavailable.')
+    await bridge.WriteSQLFile(path, content)
+  },
   saveExport: async (name, content) => desktopBridge()?.SaveExportFile?.(name, content),
   chooseSQLiteFile: async () => desktopBridge()?.ChooseSQLiteFile?.(),
   chooseDirectory: async () => desktopBridge()?.ChooseDirectory?.(),
