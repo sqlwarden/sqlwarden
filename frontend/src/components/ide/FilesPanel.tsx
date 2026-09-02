@@ -26,6 +26,7 @@ import { sidebarActiveRowClass } from './sidebarRowStyles'
 type FilesPanelProps = {
   orgSlug: string
   workspace: Workspace
+  nativeShell?: boolean
   maximized?: boolean
   onMaximizedChange?: (maximized: boolean) => void
 }
@@ -45,7 +46,13 @@ type RenameControls = {
   onClearRenameError: () => void
 }
 
-export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }: FilesPanelProps) {
+export function FilesPanel({
+  orgSlug,
+  workspace,
+  nativeShell = false,
+  maximized,
+  onMaximizedChange,
+}: FilesPanelProps) {
   const [dialogState, setDialogState] = useState<DialogState>(null)
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [duplicateState, setDuplicateState] = useState<DuplicateState>(null)
@@ -142,7 +149,11 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
         scroll={false}
       >
         <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
-          <ResizablePanel defaultSize="60%" minSize="15%" className="overflow-hidden">
+          <ResizablePanel
+            defaultSize={nativeShell ? '100%' : '60%'}
+            minSize="15%"
+            className="overflow-hidden"
+          >
             <FilesSection
               orgSlug={orgSlug}
               workspace={workspace}
@@ -156,21 +167,25 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
               renameControls={renameControls}
             />
           </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize="40%" minSize="15%" className="overflow-hidden">
-            <FilesSection
-              orgSlug={orgSlug}
-              workspace={workspace}
-              visibility="shared"
-              title="Shared Files"
-              actions={sharedActions}
-              onCreateFile={undefined}
-              onCreateFolder={undefined}
-              onRename={undefined}
-              onDuplicate={undefined}
-              renameControls={undefined}
-            />
-          </ResizablePanel>
+          {!nativeShell ? (
+            <>
+              <ResizableHandle withHandle />
+              <ResizablePanel defaultSize="40%" minSize="15%" className="overflow-hidden">
+                <FilesSection
+                  orgSlug={orgSlug}
+                  workspace={workspace}
+                  visibility="shared"
+                  title="Shared Files"
+                  actions={sharedActions}
+                  onCreateFile={undefined}
+                  onCreateFolder={undefined}
+                  onRename={undefined}
+                  onDuplicate={undefined}
+                  renameControls={undefined}
+                />
+              </ResizablePanel>
+            </>
+          ) : null}
         </ResizablePanelGroup>
       </SidebarPane>
 

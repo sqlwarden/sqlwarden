@@ -476,6 +476,7 @@ function WorkspaceIdeInnerContent({
           canCreateWorkspace={canCreateWorkspace}
           canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
           canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
+          nativeShell={desktopMode}
         />
       </div>
     </ContextMenuProvider>
@@ -618,6 +619,7 @@ function WorkspaceIdeSurface({
   canCreateWorkspace,
   canAccessWorkspaceGeneralSettings,
   canAccessWorkspaceAccessControl,
+  nativeShell,
 }: {
   orgSlug: string
   workspace: Workspace
@@ -628,6 +630,7 @@ function WorkspaceIdeSurface({
   canCreateWorkspace: boolean
   canAccessWorkspaceGeneralSettings: boolean
   canAccessWorkspaceAccessControl: boolean
+  nativeShell: boolean
 }) {
   const sidebarRef = useRef<PanelImperativeHandle>(null)
   const sidebarCollapsed = useIde((s) => s.sidebarCollapsed)
@@ -701,7 +704,7 @@ function WorkspaceIdeSurface({
           canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
         />
         <div className="min-w-0 flex-1 overflow-hidden">
-          <PageSurface orgSlug={orgSlug} workspace={workspace} />
+          <PageSurface orgSlug={orgSlug} workspace={workspace} nativeShell={nativeShell} />
         </div>
       </div>
     )
@@ -730,7 +733,7 @@ function WorkspaceIdeSurface({
               <SheetTitle>{activeActivity?.label ?? 'Explorer'}</SheetTitle>
               <SheetDescription>Editor sidebar panel</SheetDescription>
             </SheetHeader>
-            <IdeSidebar orgSlug={orgSlug} workspace={workspace} />
+            <IdeSidebar orgSlug={orgSlug} workspace={workspace} nativeShell={nativeShell} />
           </SheetContent>
         </Sheet>
       </div>
@@ -761,7 +764,7 @@ function WorkspaceIdeSurface({
           className="overflow-hidden"
           onResize={(size) => setSidebarCollapsed(size.asPercentage === 0)}
         >
-          <IdeSidebar orgSlug={orgSlug} workspace={workspace} />
+          <IdeSidebar orgSlug={orgSlug} workspace={workspace} nativeShell={nativeShell} />
         </ResizablePanel>
 
         <ResizableHandle withHandle />
@@ -776,7 +779,15 @@ function WorkspaceIdeSurface({
 
 // ─── Sidebar ───────────────────────────────────────────────────────────────────
 
-function IdeSidebar({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
+function IdeSidebar({
+  orgSlug,
+  workspace,
+  nativeShell,
+}: {
+  orgSlug: string
+  workspace: Workspace
+  nativeShell: boolean
+}) {
   const activeActivityId = useIde((s) => s.activeActivityId)
   const runtimeSettings = useQuery(orgRuntimeSettingsQueryOptions(orgSlug))
   const visibilityContext: ActivityVisibilityContext = {
@@ -793,7 +804,7 @@ function IdeSidebar({ orgSlug, workspace }: { orgSlug: string; workspace: Worksp
 
   return (
     <aside className="flex h-full min-h-0 flex-col border-r border-border bg-sidebar">
-      <Panel orgSlug={orgSlug} workspace={workspace} />
+      <Panel orgSlug={orgSlug} workspace={workspace} nativeShell={nativeShell} />
     </aside>
   )
 }

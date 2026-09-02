@@ -184,6 +184,27 @@ func (b *DesktopBridge) SaveSQLFile(suggestedName, content string) (string, erro
 	return path, writeAtomic(path, []byte(content), 0o600)
 }
 
+// WriteSQLFile saves a native editor tab back to the file it was opened from.
+// Unlike SaveSQLFile, it intentionally does not show a dialog or involve the
+// SQLWarden workspace-file service.
+func (b *DesktopBridge) WriteSQLFile(path, content string) error {
+	if len(content) > 20<<20 {
+		return errors.New("SQL file exceeds the 20 MiB desktop limit")
+	}
+	path = filepath.Clean(strings.TrimSpace(path))
+	if path == "." || !filepath.IsAbs(path) {
+		return errors.New("SQL file path must be absolute")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("SQL file path is not a regular file")
+	}
+	return writeAtomic(path, []byte(content), info.Mode().Perm())
+}
+
 func (b *DesktopBridge) SaveExportFile(suggestedName, content string) (string, error) {
 	if len(content) > 100<<20 {
 		return "", errors.New("export exceeds the 100 MiB desktop limit")

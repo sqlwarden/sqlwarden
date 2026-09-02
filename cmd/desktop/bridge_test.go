@@ -4,10 +4,38 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	desktopconfig "github.com/sqlwarden/internal/desktop"
 )
+
+func TestDesktopBridgeWritesOpenedSQLFileInPlace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "query.sql")
+	if err := os.WriteFile(path, []byte("select 1"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	bridge := newDesktopBridge(nil, desktopconfig.Paths{}, nil)
+	if err := bridge.WriteSQLFile(path, "select 2"); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != "select 2" {
+		t.Fatalf("contents = %q", contents)
+	}
+}
+
+func TestDesktopBridgeRejectsRelativeSQLFilePath(t *testing.T) {
+	bridge := newDesktopBridge(nil, desktopconfig.Paths{}, nil)
+	if err := bridge.WriteSQLFile("query.sql", "select 1"); err == nil {
+		t.Fatal("expected relative path to be rejected")
+	}
+}
 
 func TestDesktopBridgeRevealsConfiguredDirectories(t *testing.T) {
 	original := openDirectory

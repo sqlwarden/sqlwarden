@@ -12,6 +12,7 @@ import { SearchPanel } from './SearchPanel'
 export type IdeSidebarPanelProps = {
   orgSlug: string
   workspace: Workspace
+  nativeShell?: boolean
 }
 
 /** Org runtime settings relevant to which activities `requires` should show. */
