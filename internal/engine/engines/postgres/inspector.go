@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 
 var _ metadata.SchemaInspector = (*postgresDriver)(nil)
 var _ metadata.ScopeDiscoverer = (*postgresDriver)(nil)
+var _ metadata.DefinitionInspector = (*postgresDriver)(nil)
 
 func (d *postgresDriver) SchemaSpec() metadata.SchemaSpec {
 	return metadata.SchemaSpec{
@@ -466,18 +468,14 @@ ORDER BY ns.nspname, t.relname, i.relname, g.n`
 	if err := d.attachPostgresComments(ctx, out, pairs, args); err != nil {
 		return nil, err
 	}
-	if err := d.attachPostgresViewDefinitions(ctx, out); err != nil {
-		return nil, err
-	}
-	if err := d.attachPostgresTableDDL(ctx, out); err != nil {
-		return nil, err
-	}
 	return out, nil
 }
 
-// attachPostgresTableDDL reconstructs a CREATE TABLE statement from the catalog
-// (Postgres has no SHOW CREATE TABLE) and attaches it as a "DDL" source
-// descriptor.
+// InspectDefinition serves one object's canonical text definition on demand so
+// bulk InspectObjects (and every schema snapshot) skips the per-object cost:
+// table DDL is reconstructed from the catalog, views come from pg_get_viewdef,
+// and functions from pg_get_functiondef. Unsupported kinds, or an object that no
+// longer exists, yield a nil descriptor with a nil error.
 //
 // TODO: revisit Postgres table DDL generation. It currently covers columns
 // (types, NOT NULL, defaults, identity), table constraints (PK/UNIQUE/FK/CHECK),
@@ -485,24 +483,61 @@ ORDER BY ns.nspname, t.relname, i.relname, g.n`
 // (START/INCREMENT), generated/stored columns, partitioning, inheritance,
 // storage/WITH params, collations, EXCLUDE constraints, or comments. Output
 // stays valid SQL, but is not a full pg_dump-fidelity reproduction.
-func (d *postgresDriver) attachPostgresTableDDL(ctx context.Context, objs []metadata.Object) error {
-	for i := range objs {
-		if objs[i].Ref.Kind != "table" {
-			continue
-		}
-		ddl, err := d.buildPostgresTableDDL(ctx, objs[i].Ref)
+func (d *postgresDriver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
+	switch ref.Kind {
+	case "table":
+		ddl, err := d.buildPostgresTableDDL(ctx, ref)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if ddl != "" {
-			objs[i].Descriptors = append(objs[i].Descriptors, metadata.Descriptor{
-				Kind:   "source",
-				Title:  "DDL",
-				Source: &metadata.Source{Language: "sql", Body: ddl},
-			})
+		return postgresSourceDescriptor("DDL", "sql", ddl), nil
+	case "view":
+		var def sql.NullString
+		err := d.db.QueryRowContext(ctx,
+			`SELECT pg_get_viewdef(format('%I.%I', $1::text, $2::text)::regclass, true)`,
+			ref.Scope.Name("schema"), ref.Name).Scan(&def)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
 		}
+		if err != nil {
+			return nil, fmt.Errorf("postgres: view definition: %w", err)
+		}
+		return postgresSourceDescriptor("Definition", "sql", def.String), nil
+	case "function":
+		var lang, def sql.NullString
+		err := d.db.QueryRowContext(ctx, `
+SELECT l.lanname, pg_get_functiondef(p.oid)
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+JOIN pg_language l ON l.oid = p.prolang
+WHERE p.prokind = 'f' AND n.nspname = $1 AND p.proname = $2
+ORDER BY p.oid
+LIMIT 1`, ref.Scope.Name("schema"), ref.Name).Scan(&lang, &def)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("postgres: function definition: %w", err)
+		}
+		language := lang.String
+		if language == "" {
+			language = "sql"
+		}
+		return postgresSourceDescriptor("Definition", language, def.String), nil
+	default:
+		return nil, nil
 	}
-	return nil
+}
+
+func postgresSourceDescriptor(title, language, body string) *metadata.Descriptor {
+	if body == "" {
+		return nil
+	}
+	return &metadata.Descriptor{
+		Kind:   "source",
+		Title:  title,
+		Source: &metadata.Source{Language: language, Body: body},
+	}
 }
 
 func (d *postgresDriver) buildPostgresTableDDL(ctx context.Context, ref metadata.ObjectRef) (string, error) {
@@ -512,6 +547,17 @@ func (d *postgresDriver) buildPostgresTableDDL(ctx context.Context, ref metadata
 	var qualified string
 	if err := d.db.QueryRowContext(ctx, `SELECT format('%I.%I', $1::text, $2::text)`, args...).Scan(&qualified); err != nil {
 		return "", fmt.Errorf("postgres: ddl qualified name: %w", err)
+	}
+
+	// to_regclass yields NULL (not an error) for a relation that no longer
+	// exists, so a stale ref resolves to an empty definition rather than the
+	// hard error a bare ::regclass cast would raise.
+	var exists sql.NullString
+	if err := d.db.QueryRowContext(ctx, `SELECT to_regclass(format('%I.%I', $1::text, $2::text))`, args...).Scan(&exists); err != nil {
+		return "", fmt.Errorf("postgres: ddl relation lookup: %w", err)
+	}
+	if !exists.Valid {
+		return "", nil
 	}
 
 	var lines []string
@@ -685,31 +731,6 @@ WHERE (n.nspname, c.relname) IN (`+pairs+`)`, args...)
 	return nil
 }
 
-// attachPostgresViewDefinitions appends each view's definition as a "source"
-// descriptor via pg_get_viewdef.
-func (d *postgresDriver) attachPostgresViewDefinitions(ctx context.Context, objs []metadata.Object) error {
-	for i := range objs {
-		if objs[i].Ref.Kind != "view" {
-			continue
-		}
-		var def sql.NullString
-		err := d.db.QueryRowContext(ctx,
-			`SELECT pg_get_viewdef(format('%I.%I', $1::text, $2::text)::regclass, true)`,
-			objs[i].Ref.Scope.Name("schema"), objs[i].Ref.Name).Scan(&def)
-		if err != nil {
-			return fmt.Errorf("postgres: view definition: %w", err)
-		}
-		if def.Valid && def.String != "" {
-			objs[i].Descriptors = append(objs[i].Descriptors, metadata.Descriptor{
-				Kind:   "source",
-				Title:  "Definition",
-				Source: &metadata.Source{Language: "sql", Body: def.String},
-			})
-		}
-	}
-	return nil
-}
-
 func setObjectAttr(o *metadata.Object, key, value string) {
 	if value == "" {
 		return
@@ -774,8 +795,7 @@ func (d *postgresDriver) inspectFunctions(ctx context.Context, refs []metadata.O
 SELECT n.nspname, p.proname,
        pg_get_function_arguments(p.oid),
        pg_get_function_result(p.oid),
-       l.lanname,
-       pg_get_functiondef(p.oid)
+       l.lanname
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
 JOIN pg_language l ON l.oid = p.prolang
@@ -788,9 +808,9 @@ ORDER BY n.nspname, p.proname`
 	defer rows.Close()
 	var out []metadata.Object
 	for rows.Next() {
-		var ns, name, fnArgs, lang, def string
+		var ns, name, fnArgs, lang string
 		var ret sql.NullString
-		if err := rows.Scan(&ns, &name, &fnArgs, &ret, &lang, &def); err != nil {
+		if err := rows.Scan(&ns, &name, &fnArgs, &ret, &lang); err != nil {
 			return nil, fmt.Errorf("postgres: function detail scan: %w", err)
 		}
 		fields := []metadata.Field{
@@ -804,7 +824,6 @@ ORDER BY n.nspname, p.proname`
 			Ref: postgresRequestedRef(refs, ns, name, "function"),
 			Descriptors: []metadata.Descriptor{
 				{Kind: "fields", Title: "Signature", Fields: fields},
-				{Kind: "source", Title: "Definition", Source: &metadata.Source{Language: lang, Body: def}},
 			},
 		})
 	}
