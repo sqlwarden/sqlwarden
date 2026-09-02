@@ -13,6 +13,7 @@ import (
 
 var _ metadata.SchemaInspector = (*mysqlDriver)(nil)
 var _ metadata.ScopeDiscoverer = (*mysqlDriver)(nil)
+var _ metadata.DefinitionInspector = (*mysqlDriver)(nil)
 
 func (d *mysqlDriver) SchemaSpec() metadata.SchemaSpec {
 	return metadata.SchemaSpec{
@@ -389,9 +390,6 @@ ORDER BY s.table_schema, s.table_name, s.index_name, s.seq_in_index`
 	if err := d.attachMySQLTableAttributes(ctx, out, pairs, args); err != nil {
 		return nil, err
 	}
-	if err := d.attachMySQLDefinitions(ctx, out, pairs, args); err != nil {
-		return nil, err
-	}
 	return out, nil
 }
 
@@ -442,53 +440,67 @@ WHERE (table_schema, table_name) IN (` + pairs + `)`
 	return nil
 }
 
-// attachMySQLDefinitions appends a "source" descriptor per object: views get
-// their definition from information_schema.views; tables get DDL from SHOW
-// CREATE TABLE.
-func (d *mysqlDriver) attachMySQLDefinitions(ctx context.Context, objs []metadata.Object, pairs string, args []any) error {
-	viewDefs := map[string]string{}
-	vrows, err := d.db.QueryContext(ctx, `
-SELECT table_schema, table_name, view_definition
-FROM information_schema.views
-WHERE (table_schema, table_name) IN (`+pairs+`)`, args...)
-	if err != nil {
-		return fmt.Errorf("mysql: view definitions: %w", err)
+// InspectDefinition serves one object's canonical text definition on demand via
+// SHOW CREATE, so bulk InspectObjects (and every schema snapshot) skips the
+// per-object SHOW CREATE TABLE round trip and the routine-body column it used to
+// carry. Tables yield a "DDL" descriptor; views and routines yield "Definition".
+// Unsupported kinds (e.g. triggers), or an object that no longer exists, yield a
+// nil descriptor with a nil error.
+func (d *mysqlDriver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
+	var stmt, title string
+	switch ref.Kind {
+	case "table":
+		stmt, title = "SHOW CREATE TABLE ", "DDL"
+	case "view":
+		stmt, title = "SHOW CREATE VIEW ", "Definition"
+	case "function":
+		stmt, title = "SHOW CREATE FUNCTION ", "Definition"
+	case "procedure":
+		stmt, title = "SHOW CREATE PROCEDURE ", "Definition"
+	default:
+		return nil, nil
 	}
-	for vrows.Next() {
-		var ns, name string
-		var def sql.NullString
-		if err := vrows.Scan(&ns, &name, &def); err != nil {
-			vrows.Close()
-			return fmt.Errorf("mysql: view definitions scan: %w", err)
-		}
-		if def.Valid {
-			viewDefs[ns+"\x00"+name] = def.String
-		}
-	}
-	if err := vrows.Err(); err != nil {
-		vrows.Close()
-		return fmt.Errorf("mysql: view definitions rows: %w", err)
-	}
-	vrows.Close()
 
-	for i := range objs {
-		switch objs[i].Ref.Kind {
-		case "view":
-			if def := viewDefs[objs[i].Ref.Scope.Name("database")+"\x00"+objs[i].Ref.Name]; def != "" {
-				appendSource(&objs[i], "Definition", def)
-			}
-		case "table":
-			// MySQL cannot bind identifiers; mysqlQuoteQualified escapes both components.
-			// codeql[go/sql-injection]
-			row := d.db.QueryRowContext(ctx, "SHOW CREATE TABLE "+mysqlQuoteQualified(objs[i].Ref.Scope.Name("database"), objs[i].Ref.Name))
-			var name, ddl string
-			if err := row.Scan(&name, &ddl); err != nil {
-				return fmt.Errorf("mysql: show create table: %w", err)
-			}
-			appendSource(&objs[i], "DDL", ddl)
+	// MySQL cannot bind identifiers; mysqlQuoteQualified escapes both components.
+	// codeql[go/sql-injection]
+	rows, err := d.db.QueryContext(ctx, stmt+mysqlQuoteQualified(ref.Scope.Name("database"), ref.Name))
+	if err != nil {
+		// A dropped object, or an account without privileges on it, is reported
+		// as "not available" rather than a hard error, matching the other
+		// engines' lazy-definition contract.
+		return nil, nil
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("mysql: show create %s columns: %w", ref.Kind, err)
+	}
+	createIdx := -1
+	for i, name := range cols {
+		if strings.HasPrefix(name, "Create ") {
+			createIdx = i
+			break
 		}
 	}
-	return nil
+	if createIdx < 0 {
+		return nil, fmt.Errorf("mysql: show create %s: no Create column in %v", ref.Kind, cols)
+	}
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("mysql: show create %s rows: %w", ref.Kind, err)
+		}
+		return nil, nil
+	}
+	cells := make([]sql.NullString, len(cols))
+	dest := make([]any, len(cols))
+	for i := range cells {
+		dest[i] = &cells[i]
+	}
+	if err := rows.Scan(dest...); err != nil {
+		return nil, fmt.Errorf("mysql: show create %s scan: %w", ref.Kind, err)
+	}
+	return mysqlSourceDescriptor(title, cells[createIdx].String), nil
 }
 
 func mysqlQuoteQualified(namespace, name string) string {
@@ -519,15 +531,15 @@ func setObjectAttr(o *metadata.Object, key, value string) {
 	o.Attributes[key] = value
 }
 
-func appendSource(o *metadata.Object, title, body string) {
+func mysqlSourceDescriptor(title, body string) *metadata.Descriptor {
 	if body == "" {
-		return
+		return nil
 	}
-	o.Descriptors = append(o.Descriptors, metadata.Descriptor{
+	return &metadata.Descriptor{
 		Kind:   "source",
 		Title:  title,
 		Source: &metadata.Source{Language: "sql", Body: body},
-	})
+	}
 }
 
 func (d *mysqlDriver) inspectRoutines(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
@@ -537,7 +549,7 @@ func (d *mysqlDriver) inspectRoutines(ctx context.Context, refs []metadata.Objec
 	}
 	pairs, args := mysqlPairFilter(refs)
 	q := `
-SELECT routine_schema, routine_name, routine_type, data_type, routine_definition,
+SELECT routine_schema, routine_name, routine_type, data_type,
        external_language, sql_data_access, is_deterministic
 FROM information_schema.routines
 WHERE (routine_schema, routine_name) IN (` + pairs + `)
@@ -551,8 +563,8 @@ ORDER BY routine_schema, routine_name`
 	var out []metadata.Object
 	for rows.Next() {
 		var ns, name, routineType, sqlAccess, deterministic string
-		var dataType, definition, language sql.NullString
-		if err := rows.Scan(&ns, &name, &routineType, &dataType, &definition, &language, &sqlAccess, &deterministic); err != nil {
+		var dataType, language sql.NullString
+		if err := rows.Scan(&ns, &name, &routineType, &dataType, &language, &sqlAccess, &deterministic); err != nil {
 			return nil, fmt.Errorf("mysql: routine detail scan: %w", err)
 		}
 		kind := kindOf[ns+"\x00"+name]
@@ -570,20 +582,12 @@ ORDER BY routine_schema, routine_name`
 		if language.Valid && language.String != "" {
 			fields = append(fields, metadata.Field{Name: "Language", Value: language.String})
 		}
-		obj := metadata.Object{
+		out = append(out, metadata.Object{
 			Ref: mysqlRequestedRef(refs, ns, name, kind),
 			Descriptors: []metadata.Descriptor{
 				{Kind: "fields", Title: "Routine", Fields: fields},
 			},
-		}
-		if definition.Valid && definition.String != "" {
-			obj.Descriptors = append(obj.Descriptors, metadata.Descriptor{
-				Kind:   "source",
-				Title:  "Definition",
-				Source: &metadata.Source{Language: "sql", Body: definition.String},
-			})
-		}
-		out = append(out, obj)
+		})
 	}
 	return out, rows.Err()
 }

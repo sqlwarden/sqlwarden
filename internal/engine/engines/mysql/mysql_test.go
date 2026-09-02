@@ -663,16 +663,91 @@ func TestMySQLObjectDefinitionsAndAttributes(t *testing.T) {
 	if got := attrString(idCol.Attributes, "extra"); !strings.Contains(got, "auto_increment") {
 		t.Fatalf("id extra = %q, want it to contain auto_increment", got)
 	}
-	if ddl := descriptorByTitle(tbl[0].Descriptors, "DDL"); ddl == nil || !strings.Contains(ddl.Body, "CREATE TABLE") {
-		t.Fatalf("table DDL descriptor missing/blank: %+v", tbl[0].Descriptors)
+	if descriptorByTitle(tbl[0].Descriptors, "DDL") != nil {
+		t.Fatalf("bulk InspectObjects must not inline table DDL: %+v", tbl[0].Descriptors)
 	}
 
 	view, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "testdb"}), Kind: "view", Name: "defs_v"}})
 	if err != nil {
 		t.Fatalf("InspectObjects view: %v", err)
 	}
-	if def := descriptorByTitle(view[0].Descriptors, "Definition"); def == nil || !strings.Contains(strings.ToUpper(def.Body), "SELECT") {
-		t.Fatalf("view definition descriptor missing/blank: %+v", view[0].Descriptors)
+	if descriptorByTitle(view[0].Descriptors, "Definition") != nil {
+		t.Fatalf("bulk InspectObjects must not inline the view definition: %+v", view[0].Descriptors)
+	}
+}
+
+func TestMySQLInspectDefinition(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "testdb"})
+
+	exec := func(stmt string) {
+		t.Helper()
+		if _, err := d.Execute(ctx, stmt); err != nil {
+			t.Fatalf("exec %q: %v", stmt, err)
+		}
+	}
+	for _, stmt := range []string{
+		`DROP TRIGGER IF EXISTS idef_bi`,
+		`DROP VIEW IF EXISTS idef_v`,
+		`DROP FUNCTION IF EXISTS idef_fn`,
+		`DROP PROCEDURE IF EXISTS idef_proc`,
+		`DROP TABLE IF EXISTS idef_t`,
+	} {
+		exec(stmt)
+	}
+	exec("CREATE TABLE idef_t (id INT PRIMARY KEY, label VARCHAR(40)) ENGINE=InnoDB")
+	exec("CREATE VIEW idef_v AS SELECT id, label FROM idef_t")
+	exec("CREATE FUNCTION idef_fn(n INT) RETURNS INT DETERMINISTIC RETURN n + 1")
+	exec("CREATE PROCEDURE idef_proc() BEGIN SELECT 1; END")
+	exec("CREATE TRIGGER idef_bi BEFORE INSERT ON idef_t FOR EACH ROW SET NEW.label = COALESCE(NEW.label, 'x')")
+	t.Cleanup(func() {
+		for _, stmt := range []string{
+			`DROP TRIGGER IF EXISTS idef_bi`, `DROP VIEW IF EXISTS idef_v`,
+			`DROP FUNCTION IF EXISTS idef_fn`, `DROP PROCEDURE IF EXISTS idef_proc`,
+			`DROP TABLE IF EXISTS idef_t`,
+		} {
+			_, _ = d.Execute(ctx, stmt)
+		}
+	})
+
+	cases := []struct {
+		kind, name, title, want string
+	}{
+		{"table", "idef_t", "DDL", "CREATE TABLE"},
+		{"view", "idef_v", "Definition", "CREATE"},
+		{"function", "idef_fn", "Definition", "CREATE"},
+		{"procedure", "idef_proc", "Definition", "CREATE"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			desc, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: tc.kind, Name: tc.name})
+			if err != nil {
+				t.Fatalf("InspectDefinition(%s): %v", tc.kind, err)
+			}
+			if desc == nil || desc.Kind != "source" || desc.Title != tc.title {
+				t.Fatalf("%s descriptor = %+v", tc.kind, desc)
+			}
+			if !strings.Contains(strings.ToUpper(desc.Source.Body), tc.want) {
+				t.Fatalf("%s body missing %q:\n%s", tc.kind, tc.want, desc.Source.Body)
+			}
+		})
+	}
+
+	trigger, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "trigger", Name: "idef_bi"})
+	if err != nil {
+		t.Fatalf("InspectDefinition(trigger): %v", err)
+	}
+	if trigger != nil {
+		t.Errorf("unsupported kind should yield a nil descriptor, got %+v", trigger)
+	}
+
+	missing, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "table", Name: "idef_gone"})
+	if err != nil {
+		t.Fatalf("InspectDefinition(missing): %v", err)
+	}
+	if missing != nil {
+		t.Errorf("missing object should yield a nil descriptor, got %+v", missing)
 	}
 }
 
