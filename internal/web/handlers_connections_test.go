@@ -861,6 +861,25 @@ func TestExecuteQueryExecuteBranch(t *testing.T) {
 	assert.Equal(t, updateRes.BodyFields["rows_affected"], any(float64(0)))
 }
 
+// assertExplainPlanBody fails when an EXPLAIN response carries no result grid.
+// A plan is always a query result: the handler must run the plan-output
+// statement through the query path, never the execute path (which returns only
+// rows_affected and would surface in the UI as a bare "query executed"). Some
+// statements legitimately plan to zero rows (sqlite's truncate optimization for
+// an unqualified DELETE), so requireRows is only set where the plan is
+// guaranteed non-empty.
+func assertExplainPlanBody(t *testing.T, body map[string]any, requireRows bool) {
+	t.Helper()
+	columns, _ := body["columns"].([]any)
+	rows, _ := body["rows"].([]any)
+	if len(columns) == 0 {
+		t.Fatalf("expected EXPLAIN to return plan columns, got body=%+v", body)
+	}
+	if requireRows && len(rows) == 0 {
+		t.Fatalf("expected EXPLAIN to return plan rows, got body=%+v", body)
+	}
+}
+
 func TestExecuteQueryExplainWrapsSQLServerSide(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -910,6 +929,7 @@ func TestExecuteQueryExplainWrapsSQLServerSide(t *testing.T) {
 	explainDeleteReq.Header.Set("X-Warden-Session", sessionID)
 	explainDeleteRes := send(t, explainDeleteReq, app.routes())
 	assert.Equal(t, explainDeleteRes.StatusCode, http.StatusOK)
+	assertExplainPlanBody(t, explainDeleteRes.BodyFields, false)
 
 	// A plain EXPLAIN of a valid SELECT succeeds and returns a plan, not the
 	// query's own result shape.
@@ -917,6 +937,7 @@ func TestExecuteQueryExplainWrapsSQLServerSide(t *testing.T) {
 	explainSelectReq.Header.Set("X-Warden-Session", sessionID)
 	explainSelectRes := send(t, explainSelectReq, app.routes())
 	assert.Equal(t, explainSelectRes.StatusCode, http.StatusOK)
+	assertExplainPlanBody(t, explainSelectRes.BodyFields, true)
 
 	// Explaining a statement that is already an EXPLAIN is refused rather
 	// than producing invalid nested-EXPLAIN syntax at the target database.

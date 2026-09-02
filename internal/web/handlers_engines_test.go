@@ -63,10 +63,12 @@ func TestListEngines(t *testing.T) {
 		t.Fatalf("oracle engine missing from %v", engines)
 	}
 	assert.Equal(t, oracle["display_name"], "Oracle")
-	assert.Equal(t, oracle["capabilities"].(map[string]any)["sql.explain"], false)
-	if _, hasExplain := oracle["explain"]; hasExplain {
-		t.Fatalf("oracle must not carry an explain spec: %v", oracle)
+	assert.Equal(t, oracle["capabilities"].(map[string]any)["sql.explain"], true)
+	oracleExplain, ok := oracle["explain"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected oracle explain spec in %v", oracle)
 	}
+	assert.Equal(t, oracleExplain["supports_analyze"], true)
 }
 
 func TestGetEngineIncludesExplainSpec(t *testing.T) {
@@ -150,17 +152,19 @@ func TestListEnginesRequiresAuth(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
 }
 
-func TestGetEngineOracleOmitsExplain(t *testing.T) {
+func TestGetEngineOracleIncludesExplain(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	_, tok, _ := seedOrgOwner(t, app, uniqueEmail(t, "engine-oracle"), "Oracle", "Oracle Org")
 
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/engines/oracle", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
-	assert.Equal(t, res.BodyFields["capabilities"].(map[string]any)["sql.explain"], false)
-	if _, ok := res.BodyFields["explain"]; ok {
-		t.Fatalf("oracle response must not include an explain spec: %v", res.BodyFields)
+	assert.Equal(t, res.BodyFields["capabilities"].(map[string]any)["sql.explain"], true)
+	explainSpec, ok := res.BodyFields["explain"].(map[string]any)
+	if !ok {
+		t.Fatalf("oracle response must include an explain spec: %v", res.BodyFields)
 	}
+	assert.Equal(t, explainSpec["supports_analyze"], true)
 	assert.Equal(t, res.BodyFields["capabilities"].(map[string]any)["sql.complete"], true)
 }
 

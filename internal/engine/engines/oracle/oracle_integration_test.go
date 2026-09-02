@@ -20,6 +20,7 @@ import (
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/internal/engine/ddl"
+	"github.com/sqlwarden/internal/engine/explain"
 	"github.com/sqlwarden/internal/engine/metadata"
 )
 
@@ -79,8 +80,10 @@ func TestMain(m *testing.M) {
 	sysDSN := fmt.Sprintf("oracle://system:%s@%s:%s/%s", sysPassword, host, mapped.Port(), service)
 
 	// RESOURCE (granted to APP_USER by the image) covers tables, sequences and
-	// PL/SQL, but not views or materialized views. Grant those so every schema
-	// object kind the inspector reports can be created from the tests.
+	// PL/SQL, but not views, materialized views, or the V$ fixed views that
+	// DBMS_XPLAN.DISPLAY_CURSOR (EXPLAIN ANALYZE) reads. Grant those so every
+	// schema object kind the inspector reports can be created from the tests
+	// and the analyze-mode explain plan can be resolved.
 	if err := grantPrivileges(ctx, sysDSN, appUser); err != nil {
 		fmt.Fprintf(os.Stderr, "grant privileges: %v\n", err)
 		_ = container.Terminate(ctx)
@@ -98,7 +101,7 @@ func grantPrivileges(ctx context.Context, sysDSN, user string) error {
 		return err
 	}
 	defer db.Close()
-	for _, priv := range []string{"CREATE VIEW", "CREATE MATERIALIZED VIEW"} {
+	for _, priv := range []string{"CREATE VIEW", "CREATE MATERIALIZED VIEW", "SELECT ANY DICTIONARY"} {
 		if _, err := db.ExecContext(ctx, "GRANT "+priv+" TO "+user); err != nil {
 			return fmt.Errorf("grant %q: %w", priv, err)
 		}
@@ -907,5 +910,90 @@ func TestOracleInspectRelationshipsInScope(t *testing.T) {
 	}
 	if found.References.Scope.Name("schema") != oracleITSchema || found.References.Kind != "table" {
 		t.Errorf("edge reference not qualified: %+v", found.References)
+	}
+}
+
+// TestOracleExplainPlanRoundTrips runs the two-statement Plan the Explainer
+// produces against a live instance: EXPLAIN PLAN FOR ... then the DBMS_XPLAN
+// query must return a readable plan that names the target table.
+func TestOracleExplainPlanRoundTrips(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+	t.Cleanup(func() { dropQuietly(d, "DROP TABLE explain_plan_test") })
+
+	mustExec(t, d, `CREATE TABLE explain_plan_test (id NUMBER PRIMARY KEY, name VARCHAR2(32))`)
+
+	plan, err := (&oracleDriver{}).Explain("SELECT id, name FROM explain_plan_test WHERE id = 1", explain.ModePlain)
+	if err != nil {
+		t.Fatalf("Explain: %v", err)
+	}
+	for _, stmt := range plan.Setup {
+		if _, err := d.Execute(ctx, stmt); err != nil {
+			t.Fatalf("setup %q: %v", stmt, err)
+		}
+	}
+	rs, err := d.Query(ctx, plan.Statement)
+	if err != nil {
+		t.Fatalf("plan query: %v", err)
+	}
+	if len(rs.Rows) == 0 {
+		t.Fatal("expected plan output rows")
+	}
+	var b strings.Builder
+	for _, row := range rs.Rows {
+		b.WriteString(row[0].Text)
+		b.WriteByte('\n')
+	}
+	out := b.String()
+	if !strings.Contains(out, "EXPLAIN_PLAN_TEST") {
+		t.Fatalf("plan output does not mention the table:\n%s", out)
+	}
+}
+
+// TestOracleExplainAnalyzePlanRoundTrips exercises the ModeAnalyze Plan: it
+// runs the statement for real with row-source statistics, reads the actual
+// plan via DISPLAY_CURSOR, then restores STATISTICS_LEVEL via Teardown.
+func TestOracleExplainAnalyzePlanRoundTrips(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+	t.Cleanup(func() { dropQuietly(d, "DROP TABLE explain_analyze_test") })
+
+	mustExec(t, d, `CREATE TABLE explain_analyze_test (id NUMBER PRIMARY KEY, name VARCHAR2(32))`)
+	mustExec(t, d, `INSERT INTO explain_analyze_test
+		SELECT LEVEL, 'row-' || LEVEL FROM DUAL CONNECT BY LEVEL <= 25`)
+
+	plan, err := (&oracleDriver{}).Explain("SELECT COUNT(*) FROM explain_analyze_test", explain.ModeAnalyze)
+	if err != nil {
+		t.Fatalf("Explain: %v", err)
+	}
+	for _, stmt := range plan.Setup {
+		if _, err := d.Execute(ctx, stmt); err != nil {
+			t.Fatalf("setup %q: %v", stmt, err)
+		}
+	}
+	rs, err := d.Query(ctx, plan.Statement)
+	if err != nil {
+		t.Fatalf("plan query: %v", err)
+	}
+	for _, stmt := range plan.Teardown {
+		if _, err := d.Execute(ctx, stmt); err != nil {
+			t.Fatalf("teardown %q: %v", stmt, err)
+		}
+	}
+	if len(rs.Rows) == 0 {
+		t.Fatal("expected plan output rows")
+	}
+	var b strings.Builder
+	for _, row := range rs.Rows {
+		b.WriteString(row[0].Text)
+		b.WriteByte('\n')
+	}
+	if out := b.String(); !strings.Contains(out, "EXPLAIN_ANALYZE_TEST") && !strings.Contains(strings.ToUpper(out), "SQL_ID") {
+		t.Fatalf("plan output not a DISPLAY_CURSOR plan:\n%s", out)
+	}
+
+	rs, err = d.Query(ctx, "SELECT value FROM v$parameter WHERE name = 'statistics_level'")
+	if err == nil && len(rs.Rows) == 1 && !strings.EqualFold(rs.Rows[0][0].Text, "TYPICAL") {
+		t.Errorf("statistics_level = %q after teardown, want TYPICAL", rs.Rows[0][0].Text)
 	}
 }

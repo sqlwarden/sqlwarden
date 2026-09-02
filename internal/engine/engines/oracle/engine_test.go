@@ -31,13 +31,14 @@ func TestOracleEngineContract(t *testing.T) {
 		engine.CapabilitySQLParse,
 		engine.CapabilitySQLClassify,
 		engine.CapabilitySQLComplete,
+		engine.CapabilitySQLExplain,
 	} {
 		if !set.Capabilities[capability] {
 			t.Errorf("%s must be true", capability)
 		}
 	}
-	if set.Capabilities[engine.CapabilitySQLExplain] {
-		t.Error("sql.explain must remain false for oracle")
+	if set.Explain == nil || !set.Explain.SupportsAnalyze {
+		t.Errorf("oracle explain spec must report supports_analyze: %+v", set.Explain)
 	}
 	if set.Capabilities[engine.CapabilitySQLRewrite] {
 		t.Error("sql.rewrite must remain false for oracle")
@@ -46,7 +47,7 @@ func TestOracleEngineContract(t *testing.T) {
 
 func TestOracleDriverImplementsCapabilities(t *testing.T) {
 	var d engine.Driver = &oracleDriver{}
-	if _, ok := d.(explain.Explainer); ok {
-		t.Error("oracle must NOT implement explain.Explainer")
+	if _, ok := d.(explain.Explainer); !ok {
+		t.Error("oracle must implement explain.Explainer")
 	}
 }
