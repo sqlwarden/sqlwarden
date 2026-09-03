@@ -38,7 +38,7 @@ function AdministrationLayout() {
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
   const pathname = useRouterState({ select: (state) => state.location.pathname })
-  const { preferences, setPreferences } = useAppShellPreferences()
+  const { preferences } = useAppShellPreferences()
   const [initialOpen] = useState(() => {
     const cookie = document.cookie.split('; ').find((row) => row.startsWith('sidebar_state='))
     return cookie ? cookie.split('=')[1] === 'true' : true
@@ -80,11 +80,7 @@ function AdministrationLayout() {
           <AppShellNavSection items={homeItems} pathname={pathname} />
           <AppShellNavSection label="Instance" items={adminItems} pathname={pathname} />
         </SidebarContent>
-        <AppShellSidebarFooter
-          session={session.data}
-          preferences={preferences}
-          setPreferences={setPreferences}
-        />
+        <AppShellSidebarFooter session={session.data} />
         <AppShellRail />
       </Sidebar>
       <SidebarInset className="min-w-0 bg-background">

@@ -177,6 +177,22 @@ describe('DatabasePanel', () => {
     ])
   })
 
+  it('toggles the connection layout from the Explorer options menu', async () => {
+    handlers('populated')
+    const { user } = renderPanel('flat')
+    await screen.findByText('analytics-pg')
+
+    await user.click(screen.getByRole('button', { name: /explorer options/i }))
+    const groupItem = await screen.findByRole('menuitemcheckbox', {
+      name: /group by environment/i,
+    })
+    expect(groupItem).toHaveAttribute('aria-checked', 'false')
+    await user.click(groupItem)
+
+    expect(localStorage.getItem('sqlwarden.preference.connection_layout')).toBe('grouped')
+    expect(await screen.findByText('Production')).toBeInTheDocument()
+  })
+
   it('runs a connection schema refresh through the backend endpoint', async () => {
     handlers('populated')
     store.getState().setSession(7, 'session-7')

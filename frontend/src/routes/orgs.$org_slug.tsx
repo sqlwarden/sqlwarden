@@ -59,7 +59,7 @@ function OrganizationLayout() {
     ...orgEffectivePermissionsQueryOptions(orgSlug, 'workspace', workspaceId ?? ''),
     enabled: Boolean(workspaceId && hasToken),
   })
-  const { preferences, setPreferences } = useAppShellPreferences()
+  const { preferences } = useAppShellPreferences()
   const [initialOpen] = useState(() => {
     const cookie = document.cookie.split('; ').find((row) => row.startsWith('sidebar_state='))
     return cookie ? cookie.split('=')[1] === 'true' : true
@@ -177,11 +177,7 @@ function OrganizationLayout() {
               </>
             )}
           </SidebarContent>
-          <AppShellSidebarFooter
-            session={session.data}
-            preferences={preferences}
-            setPreferences={setPreferences}
-          />
+          <AppShellSidebarFooter session={session.data} />
           <AppShellRail />
         </Sidebar>
         <SidebarInset className="min-w-0 bg-background">

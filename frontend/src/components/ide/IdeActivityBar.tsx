@@ -5,7 +5,7 @@ import { orgRuntimeSettingsQueryOptions } from '#/lib/api/query'
 import { useBrand } from '#/lib/brand/brand'
 import { Icon, type AppIcon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
-import { AppShellPreferencesPopover, useAppShellPreferences } from '#/components/app-shell'
+import { AppearanceTrigger } from '#/components/appearance'
 import { UserAvatar } from '#/components/UserAvatar'
 import {
   DropdownMenu,
@@ -323,7 +323,6 @@ function RailPreferencesAndAvatar({
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { preferences, setPreferences } = useAppShellPreferences()
 
   const logout = useMutation({
     mutationFn: async () => api.post<void>('/api/v1/auth/logout'),
@@ -358,14 +357,12 @@ function RailPreferencesAndAvatar({
 
   return (
     <>
-      <AppShellPreferencesPopover
-        preferences={preferences}
-        setPreferences={setPreferences}
-        isAdmin={session.is_instance_admin}
-        buttonLabel={expanded ? 'UI Lab' : ''}
+      <AppearanceTrigger
+        buttonLabel={expanded ? 'Appearance' : undefined}
         buttonClassName={
           expanded ? 'h-8 w-full justify-start gap-2 p-2 text-xs' : 'size-8 justify-center px-0'
         }
+        iconClassName="size-[17px]"
       />
 
       <DropdownMenu>

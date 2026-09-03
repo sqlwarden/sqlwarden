@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import type { Dispatch, ReactElement, ReactNode, SetStateAction } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Icon, type AppIcon } from '#/lib/icons'
@@ -8,7 +7,6 @@ import { api } from '#/lib/api/client'
 import { clearAccessToken } from '#/lib/auth/access-token'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { UserAvatar } from '#/components/UserAvatar'
-import { Button } from '#/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +27,7 @@ import {
   SidebarTrigger,
 } from '#/components/ui/sidebar'
 import { Tip } from '#/components/ide/schema-diagram/Tip'
+import { AppearanceTrigger } from '#/components/appearance'
 import { sectionCaptionClass } from '#/lib/typography'
 import { buildUserMenuItems } from '#/lib/user-menu'
 import { cn } from '#/lib/utils'
@@ -39,7 +38,6 @@ import {
   type AppShellTheme,
 } from './app-shell-preferences'
 import { isNavItemActive, navItemKey, type AppShellNavItem } from './app-shell-navigation'
-import { UiLabPanel } from './ui-lab-panel'
 
 export { useAppShellPreferences }
 export type { AppShellPreferences, AppShellNavItem, AppShellSidebarStyle, AppShellTheme }
@@ -105,22 +103,10 @@ export function AppShellNavSection({
   )
 }
 
-export function AppShellSidebarFooter({
-  session,
-  preferences,
-  setPreferences,
-}: {
-  session: SessionResponse
-  preferences: AppShellPreferences
-  setPreferences: Dispatch<SetStateAction<AppShellPreferences>>
-}) {
+export function AppShellSidebarFooter({ session }: { session: SessionResponse }) {
   return (
     <SidebarFooter className="border-t border-sidebar-border">
-      <AppShellPreferencesPopover
-        preferences={preferences}
-        setPreferences={setPreferences}
-        isAdmin={session.is_instance_admin}
-      />
+      <AppearanceTrigger buttonLabel="Appearance" />
       <AppShellUserMenu session={session} />
       <div className="flex justify-center px-2 pb-1">
         <SidebarTrigger
@@ -271,55 +257,5 @@ export function AppShellUserMenu({ session }: { session: SessionResponse }) {
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
-  )
-}
-
-export function AppShellPreferencesPopover({
-  preferences,
-  setPreferences,
-  isAdmin,
-  buttonLabel = 'UI Lab',
-  buttonClassName,
-}: {
-  preferences: AppShellPreferences
-  setPreferences: Dispatch<SetStateAction<AppShellPreferences>>
-  isAdmin: boolean
-  buttonLabel?: string
-  buttonClassName?: string
-}) {
-  const [open, setOpen] = useState(false)
-
-  const trigger = (
-    <Button
-      type="button"
-      variant="ghost"
-      aria-label={buttonLabel || 'UI Lab'}
-      aria-pressed={open}
-      onClick={() => setOpen((v) => !v)}
-      className={cn(
-        'w-full justify-start gap-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0',
-        open && 'bg-muted text-foreground',
-        buttonClassName,
-      )}
-    >
-      <Icon name="paint-board" size={20} />
-      {buttonLabel ? (
-        <span className="group-data-[collapsible=icon]:hidden">{buttonLabel}</span>
-      ) : null}
-    </Button>
-  )
-
-  return (
-    <>
-      {buttonLabel ? trigger : <Tip label="UI Lab">{trigger}</Tip>}
-      {open && (
-        <UiLabPanel
-          preferences={preferences}
-          setPreferences={setPreferences}
-          onClose={() => setOpen(false)}
-          isAdmin={isAdmin}
-        />
-      )}
-    </>
   )
 }
