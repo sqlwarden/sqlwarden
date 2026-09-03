@@ -54,9 +54,11 @@ import {
 } from '#/components/ui/dialog'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
 import { Tip } from './schema-diagram/Tip'
@@ -86,7 +88,7 @@ export function DatabasePanel({
   const connectionActions = useConnectionActions(orgSlug, workspace)
 
   const [filter, setFilter] = useState('')
-  const { connectionLayout: connLayout } = useConnectionLayout()
+  const { connectionLayout: connLayout, setConnectionLayout } = useConnectionLayout()
   const [envFilter, setEnvFilter] = useState<number | 'all'>('all')
   const [addEnvOpen, setAddEnvOpen] = useState(false)
   const [addConnEnvironmentId, setAddConnEnvironmentId] = useState<number | null>(null)
@@ -254,41 +256,46 @@ export function DatabasePanel({
   // Connection creation is available from the panel header regardless of the
   // grouped/flat layout; per-environment permissions are enforced server-side.
   const canAddConnection = envItems.length > 0 && canCreateConnectionInWorkspace
-  const actions =
-    canAddConnection || canCreateEnvironment ? (
-      <DropdownMenu>
-        <Tip label="New connection or environment">
-          <DropdownMenuTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Add connection or environment"
-              >
-                <Icon name="plus-sign" size={14} />
-              </Button>
-            }
-          />
-        </Tip>
-        <DropdownMenuContent align="end" className="min-w-48">
-          <DropdownMenuGroup>
-            {canAddConnection && (
-              <DropdownMenuItem onClick={() => setAddConnOpen(true)}>
-                <Icon name="database" size={16} />
-                New Connection…
-              </DropdownMenuItem>
-            )}
-            {canCreateEnvironment && (
-              <DropdownMenuItem onClick={() => setAddEnvOpen(true)}>
-                <Icon name="server-stack-01" size={16} />
-                New Environment…
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    ) : undefined
+  const actions = (
+    <DropdownMenu>
+      <Tip label="Explorer options">
+        <DropdownMenuTrigger
+          render={
+            <Button type="button" variant="ghost" size="icon-sm" aria-label="Explorer options">
+              <Icon name="plus-sign" size={14} />
+            </Button>
+          }
+        />
+      </Tip>
+      <DropdownMenuContent align="end" className="min-w-52">
+        {(canAddConnection || canCreateEnvironment) && (
+          <>
+            <DropdownMenuGroup>
+              {canAddConnection && (
+                <DropdownMenuItem onClick={() => setAddConnOpen(true)}>
+                  <Icon name="database" size={16} />
+                  New Connection…
+                </DropdownMenuItem>
+              )}
+              {canCreateEnvironment && (
+                <DropdownMenuItem onClick={() => setAddEnvOpen(true)}>
+                  <Icon name="server-stack-01" size={16} />
+                  New Environment…
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        <DropdownMenuCheckboxItem
+          checked={connLayout === 'grouped'}
+          onCheckedChange={(checked) => setConnectionLayout(checked ? 'grouped' : 'flat')}
+        >
+          Group by environment
+        </DropdownMenuCheckboxItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 
   return (
     <>
