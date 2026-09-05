@@ -25,9 +25,10 @@ export const neonDriver: DriverDef = {
     },
     {
       key: 'database',
-      label: 'Database (optional)',
+      label: 'Database',
       type: 'text',
-      placeholder: 'Optional',
+      placeholder: 'neondb',
+      required: true,
       section: 'Server',
     },
     {

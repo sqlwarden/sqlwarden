@@ -111,6 +111,34 @@ func TestCatalogFunctionsComposesStandalone(t *testing.T) {
 	}
 }
 
+func TestCatalogFunctionsDedupesOverloads(t *testing.T) {
+	ctx := context.Background()
+	d := newConnectedDriver(t)
+	if _, err := d.DB().ExecContext(ctx, `CREATE FUNCTION catalog_fn_overload_pg_test(a int) RETURNS int LANGUAGE sql AS 'SELECT a'`); err != nil {
+		t.Fatalf("create function overload 1: %v", err)
+	}
+	if _, err := d.DB().ExecContext(ctx, `CREATE FUNCTION catalog_fn_overload_pg_test(a text) RETURNS text LANGUAGE sql AS 'SELECT a'`); err != nil {
+		t.Fatalf("create function overload 2: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.DB().ExecContext(ctx, `DROP FUNCTION IF EXISTS catalog_fn_overload_pg_test(int)`)
+		_, _ = d.DB().ExecContext(ctx, `DROP FUNCTION IF EXISTS catalog_fn_overload_pg_test(text)`)
+	})
+
+	var count int
+	err := CatalogFunctions(ctx, d.DB(), func(schema, name string) {
+		if name == "catalog_fn_overload_pg_test" {
+			count++
+		}
+	})
+	if err != nil {
+		t.Fatalf("CatalogFunctions: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("want a single entry for an overloaded function name, got %d", count)
+	}
+}
+
 func TestCatalogSequencesComposesStandalone(t *testing.T) {
 	ctx := context.Background()
 	d := newConnectedDriver(t)
