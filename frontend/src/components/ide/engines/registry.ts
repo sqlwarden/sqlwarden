@@ -1,4 +1,5 @@
 import { mysqlEngine } from './mysql'
+import { neonEngine } from './neon'
 import { oracleEngine } from './oracle'
 import { postgresEngine } from './postgres'
 import { sqliteEngine } from './sqlite'
@@ -16,6 +17,7 @@ export const frontendEngines: readonly FrontendEngine[] = [
   mysqlEngine,
   oracleEngine,
   sqliteEngine,
+  neonEngine,
 ]
 
 const engineMap = new Map(frontendEngines.map((engine) => [engine.id, engine]))

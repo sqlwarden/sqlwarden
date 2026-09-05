@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -38,18 +39,17 @@ func (app *application) backfillConnectionTLSConfig(ctx context.Context) (backfi
 		}
 		mode, newDSN, changed := extractTLSModeFromDSN(conn.Driver, plainDSN)
 
-		doc := tlsConfigDocument{Mode: string(mode)}
-		sealed, err := app.sealTLSDocument(doc)
+		var doc tlsConfigDocument
+		if changed {
+			doc = tlsConfigDocument{Mode: string(mode)}
+		}
+		raw, err := json.Marshal(doc)
+		if err != nil {
+			return rep, fmt.Errorf("tls backfill: marshal connection %d: %w", conn.ID, err)
+		}
+		sealed, err := app.keyring.Encrypt(string(raw))
 		if err != nil {
 			return rep, fmt.Errorf("tls backfill: seal connection %d: %w", conn.ID, err)
-		}
-		if sealed == "" {
-			// mode disable + nothing else: still record an explicit blob so the
-			// row is not re-scanned every boot.
-			sealed, err = app.keyring.Encrypt(`{"mode":"disable"}`)
-			if err != nil {
-				return rep, fmt.Errorf("tls backfill: seal disable %d: %w", conn.ID, err)
-			}
 		}
 		if err := app.db.UpdateConnectionTLSConfig(ctx, conn.ID, sealed); err != nil {
 			return rep, fmt.Errorf("tls backfill: write tls %d: %w", conn.ID, err)

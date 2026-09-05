@@ -30,8 +30,7 @@ type tlsConfigDocument struct {
 }
 
 func (d tlsConfigDocument) isEmpty() bool {
-	mode := strings.TrimSpace(d.Mode)
-	return (mode == "" || mode == string(engine.TLSModeDisable)) &&
+	return strings.TrimSpace(d.Mode) == "" &&
 		d.ServerName == "" && d.CAPEM == "" && d.ClientCertPEM == "" && d.ClientKeyPEM == ""
 }
 

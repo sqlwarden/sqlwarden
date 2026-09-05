@@ -75,11 +75,18 @@ func buildPgxConfig(cfg engine.ConnectionConfig) (*pgx.ConnConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("postgres: tls config: %w", err)
 	}
-	if tlsCfg != nil {
+	switch {
+	case tlsCfg != nil:
 		if tlsCfg.ServerName == "" {
 			tlsCfg.ServerName = config.Host
 		}
 		config.TLSConfig = tlsCfg
+		for _, k := range []string{"sslmode", "sslrootcert", "sslcert", "sslkey", "sslpassword"} {
+			delete(config.RuntimeParams, k)
+		}
+	case cfg.TLS != nil && cfg.TLS.Mode == engine.TLSModeDisable:
+		config.TLSConfig = nil
+		config.Fallbacks = nil
 		for _, k := range []string{"sslmode", "sslrootcert", "sslcert", "sslkey", "sslpassword"} {
 			delete(config.RuntimeParams, k)
 		}
