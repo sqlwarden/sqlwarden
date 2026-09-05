@@ -7,7 +7,7 @@ import (
 )
 
 func TestPostgresTLSSpec(t *testing.T) {
-	spec := (&postgresDriver{}).TLSSpec()
+	spec := (&Driver{}).TLSSpec()
 	if len(spec.Modes) != 4 || !spec.SupportsCABundle || !spec.SupportsClientCert || !spec.SupportsServerName {
 		t.Fatalf("unexpected spec: %+v", spec)
 	}

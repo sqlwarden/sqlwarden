@@ -10,9 +10,9 @@ import (
 	"github.com/sqlwarden/internal/engine/parser"
 )
 
-var _ classifier.Classifier = (*postgresDriver)(nil)
+var _ classifier.Classifier = (*Driver)(nil)
 
-func (d *postgresDriver) Classify(ctx context.Context, req classifier.Request) (classifier.Result, error) {
+func (d *Driver) Classify(ctx context.Context, req classifier.Request) (classifier.Result, error) {
 	statements, _, err := parsePostgres(ctx, req.SQL)
 	if err != nil {
 		var syntaxErr *parser.SyntaxError

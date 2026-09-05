@@ -9,13 +9,13 @@ import (
 	"github.com/sqlwarden/internal/engine/explain"
 )
 
-var _ explain.Explainer = (*mysqlDriver)(nil)
+var _ explain.Explainer = (*Driver)(nil)
 
 var mysqlExplainSpec = explain.Spec{SupportsAnalyze: true}
 
-func (*mysqlDriver) ExplainSpec() explain.Spec { return mysqlExplainSpec }
+func (*Driver) ExplainSpec() explain.Spec { return mysqlExplainSpec }
 
-func (*mysqlDriver) Explain(sql string, mode explain.Mode) (explain.Plan, error) {
+func (*Driver) Explain(sql string, mode explain.Mode) (explain.Plan, error) {
 	if err := validateExplainable(sql); err != nil {
 		return explain.Plan{}, err
 	}

@@ -24,7 +24,7 @@ func postgresStatementObject(kind string) metadata.Object {
 }
 
 func TestPostgresGenerateStatement(t *testing.T) {
-	driver := &postgresDriver{}
+	driver := &Driver{}
 	object := postgresStatementObject("table")
 	generated, err := driver.Generate(statement.Request{Operation: statement.OperationInsert, Object: object})
 	if err != nil {

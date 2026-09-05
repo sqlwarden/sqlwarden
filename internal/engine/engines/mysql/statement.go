@@ -4,16 +4,16 @@ import (
 	"github.com/sqlwarden/internal/engine/statement"
 )
 
-var _ statement.Generator = (*mysqlDriver)(nil)
+var _ statement.Generator = (*Driver)(nil)
 
 var mysqlStatementSpec = statement.Spec{Objects: []statement.ObjectSpec{
 	{Kind: "table", Operations: []statement.Operation{statement.OperationSelect, statement.OperationInsert, statement.OperationUpdate, statement.OperationDelete}},
 	{Kind: "view", Operations: []statement.Operation{statement.OperationSelect}},
 }}
 
-func (*mysqlDriver) StatementSpec() statement.Spec { return mysqlStatementSpec }
+func (*Driver) StatementSpec() statement.Spec { return mysqlStatementSpec }
 
-func (*mysqlDriver) Generate(request statement.Request) (string, error) {
+func (*Driver) Generate(request statement.Request) (string, error) {
 	if err := statement.Validate(request, mysqlStatementSpec); err != nil {
 		return "", err
 	}

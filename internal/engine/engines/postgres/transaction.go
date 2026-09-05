@@ -10,9 +10,9 @@ import (
 
 var errAlreadyInTransaction = errors.New("transaction already open")
 
-var _ transaction.SavepointController = (*postgresDriver)(nil)
+var _ transaction.SavepointController = (*Driver)(nil)
 
-func (d *postgresDriver) BeginTx(ctx context.Context) error {
+func (d *Driver) BeginTx(ctx context.Context) error {
 	if d.currentTx != nil {
 		return fmt.Errorf("postgres: begin tx: %w", errAlreadyInTransaction)
 	}
@@ -24,7 +24,7 @@ func (d *postgresDriver) BeginTx(ctx context.Context) error {
 	return nil
 }
 
-func (d *postgresDriver) Commit(ctx context.Context) error {
+func (d *Driver) Commit(ctx context.Context) error {
 	if d.currentTx == nil {
 		return transaction.ErrNoOpenTransaction
 	}
@@ -36,7 +36,7 @@ func (d *postgresDriver) Commit(ctx context.Context) error {
 	return nil
 }
 
-func (d *postgresDriver) Rollback(ctx context.Context) error {
+func (d *Driver) Rollback(ctx context.Context) error {
 	if d.currentTx == nil {
 		return transaction.ErrNoOpenTransaction
 	}
@@ -48,11 +48,11 @@ func (d *postgresDriver) Rollback(ctx context.Context) error {
 	return nil
 }
 
-func (d *postgresDriver) InTransaction() bool {
+func (d *Driver) InTransaction() bool {
 	return d.currentTx != nil
 }
 
-func (d *postgresDriver) Savepoint(ctx context.Context, name string) error {
+func (d *Driver) Savepoint(ctx context.Context, name string) error {
 	if d.currentTx == nil {
 		return transaction.ErrNoOpenTransaction
 	}
@@ -63,7 +63,7 @@ func (d *postgresDriver) Savepoint(ctx context.Context, name string) error {
 	return nil
 }
 
-func (d *postgresDriver) RollbackToSavepoint(ctx context.Context, name string) error {
+func (d *Driver) RollbackToSavepoint(ctx context.Context, name string) error {
 	if d.currentTx == nil {
 		return transaction.ErrNoOpenTransaction
 	}

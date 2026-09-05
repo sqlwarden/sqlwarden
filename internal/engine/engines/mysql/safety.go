@@ -10,9 +10,9 @@ import (
 	"github.com/sqlwarden/internal/engine/safety"
 )
 
-var _ safety.Checker = (*mysqlDriver)(nil)
+var _ safety.Checker = (*Driver)(nil)
 
-func (d *mysqlDriver) Check(ctx context.Context, req safety.Request) (safety.Result, error) {
+func (d *Driver) Check(ctx context.Context, req safety.Request) (safety.Result, error) {
 	tree, spans, err := parseMySQL(ctx, req.SQL)
 	if err != nil {
 		var syntaxErr *parser.SyntaxError

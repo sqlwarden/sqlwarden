@@ -8,7 +8,7 @@ import (
 )
 
 func TestPostgresTransactionCommitAndRollback(t *testing.T) {
-	d := &postgresDriver{}
+	d := &Driver{}
 	ctx := context.Background()
 	if err := d.Connect(ctx, engine.ConnectionConfig{DSN: testDSN, Driver: "postgres"}); err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -48,7 +48,7 @@ func TestPostgresTransactionCommitAndRollback(t *testing.T) {
 }
 
 func TestPostgresSavepointRollback(t *testing.T) {
-	d := &postgresDriver{}
+	d := &Driver{}
 	ctx := context.Background()
 	if err := d.Connect(ctx, engine.ConnectionConfig{DSN: testDSN, Driver: "postgres"}); err != nil {
 		t.Fatalf("Connect: %v", err)

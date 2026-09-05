@@ -16,7 +16,11 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-type mysqlDriver struct {
+// Driver is the MySQL engine.Driver implementation. Fields are unexported;
+// compatible engines (e.g. a future MariaDB/TiDB/Vitess/PlanetScale package)
+// embed Driver by value and reach the live connection through DB(), never
+// through the field directly.
+type Driver struct {
 	db           *sql.DB
 	currentTx    *sql.Tx
 	scanOptions  cursor.ScanOptions
@@ -30,11 +34,26 @@ type mysqlDriver struct {
 	netName string
 }
 
+// DB returns the underlying connection pool. Catalog/DDL introspection always
+// runs directly against it (never through an open transaction), so this is
+// the handle compatible engines pass into the exported catalog.go functions.
+func (d *Driver) DB() *sql.DB {
+	return d.db
+}
+
+// DefaultScope returns the connection's configured default scope (e.g. the
+// selected database). Compatible engines that override InspectDirectory or
+// InspectObjects need this to reproduce the same default-scope resolution
+// the embedded implementation performs.
+func (d *Driver) DefaultScope() metadata.ScopePath {
+	return d.defaultScope
+}
+
 // applyTLS registers a process-unique *tls.Config with the mysql driver and
 // rewrites the DSN to reference it by name. The name is recorded on the driver
 // so releaseTLS (called from Close) can deregister it. A nil or "disable"
 // config is a passthrough.
-func (d *mysqlDriver) applyTLS(dsn string, tc *engine.TLSConfig) (string, error) {
+func (d *Driver) applyTLS(dsn string, tc *engine.TLSConfig) (string, error) {
 	tlsCfg, err := tc.Build()
 	if err != nil {
 		return "", fmt.Errorf("mysql: tls config: %w", err)
@@ -65,7 +84,7 @@ func (d *mysqlDriver) applyTLS(dsn string, tc *engine.TLSConfig) (string, error)
 // applySSHDialer registers a process-unique DialContext with the mysql driver
 // and rewrites the DSN's network to reference it by name, so the connection's
 // TCP transport is dialed through the SSH tunnel. A nil dialer is a passthrough.
-func (d *mysqlDriver) applySSHDialer(dsn string, dialer func(ctx context.Context, network, addr string) (net.Conn, error)) (string, error) {
+func (d *Driver) applySSHDialer(dsn string, dialer func(ctx context.Context, network, addr string) (net.Conn, error)) (string, error) {
 	if dialer == nil {
 		return dsn, nil
 	}
@@ -84,7 +103,7 @@ func (d *mysqlDriver) applySSHDialer(dsn string, dialer func(ctx context.Context
 
 // releaseRegistrations deregisters every process-global entry this connection
 // created (TLS config, SSH custom network). Called from Close.
-func (d *mysqlDriver) releaseRegistrations() {
+func (d *Driver) releaseRegistrations() {
 	if d.tlsName != "" {
 		mysqlconfig.DeregisterTLSConfig(d.tlsName)
 		d.tlsName = ""
@@ -100,7 +119,7 @@ type execer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
-func (d *mysqlDriver) conn() execer {
+func (d *Driver) conn() execer {
 	if d.currentTx != nil {
 		return d.currentTx
 	}
@@ -152,7 +171,7 @@ func ensureParams(dsn string) string {
 	return base + "?" + query + "&" + addition
 }
 
-func (d *mysqlDriver) Connect(ctx context.Context, cfg engine.ConnectionConfig) error {
+func (d *Driver) Connect(ctx context.Context, cfg engine.ConnectionConfig) error {
 	dsn := ensureParams(cfg.DSN)
 	if selectedDatabase := cfg.DefaultScope.Name("database"); selectedDatabase != "" {
 		config, err := mysqlconfig.ParseDSN(dsn)
@@ -185,20 +204,20 @@ func (d *mysqlDriver) Connect(ctx context.Context, cfg engine.ConnectionConfig) 
 	return nil
 }
 
-func (d *mysqlDriver) Ping(ctx context.Context) error {
+func (d *Driver) Ping(ctx context.Context) error {
 	return d.db.PingContext(ctx)
 }
 
-func (d *mysqlDriver) Close() error {
+func (d *Driver) Close() error {
 	defer d.releaseRegistrations()
 	return d.db.Close()
 }
 
-func (d *mysqlDriver) Query(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
+func (d *Driver) Query(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
 	return d.QueryWithOptions(ctx, query, d.scanOptions, args...)
 }
 
-func (d *mysqlDriver) QueryWithOptions(ctx context.Context, query string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
+func (d *Driver) QueryWithOptions(ctx context.Context, query string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
 	// SQL is intentionally user-authored editor input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
 	rows, err := d.conn().QueryContext(ctx, query, args...)
@@ -208,11 +227,11 @@ func (d *mysqlDriver) QueryWithOptions(ctx context.Context, query string, opts c
 	return cursor.ScanRows(rows, opts)
 }
 
-func (d *mysqlDriver) Execute(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
+func (d *Driver) Execute(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
 	return d.ExecuteWithOptions(ctx, query, d.scanOptions, args...)
 }
 
-func (d *mysqlDriver) ExecuteWithOptions(ctx context.Context, query string, _ cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
+func (d *Driver) ExecuteWithOptions(ctx context.Context, query string, _ cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
 	// SQL is intentionally user-authored editor input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
 	execResult, err := d.conn().ExecContext(ctx, query, args...)
@@ -226,6 +245,6 @@ func (d *mysqlDriver) ExecuteWithOptions(ctx context.Context, query string, _ cu
 	return result.NewExecutionResult(rowsAffected), nil
 }
 
-func (d *mysqlDriver) Dialect() engine.Dialect {
+func (d *Driver) Dialect() engine.Dialect {
 	return engine.DialectMySQL
 }

@@ -9,14 +9,14 @@ import (
 )
 
 func TestMySQLTLSSpec(t *testing.T) {
-	spec := (&mysqlDriver{}).TLSSpec()
+	spec := (&Driver{}).TLSSpec()
 	if len(spec.Modes) != 4 || !spec.SupportsClientCert || !spec.SupportsCABundle || !spec.SupportsServerName {
 		t.Fatalf("unexpected spec: %+v", spec)
 	}
 }
 
 func TestMySQLApplyTLSRegistersUniqueNameAndRelease(t *testing.T) {
-	d := &mysqlDriver{}
+	d := &Driver{}
 	dsn, err := d.applyTLS("u:p@tcp(127.0.0.1:3306)/db?parseTime=true", &engine.TLSConfig{Mode: engine.TLSModeRequire})
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestMySQLApplyTLSRegistersUniqueNameAndRelease(t *testing.T) {
 }
 
 func TestMySQLApplyTLSNoop(t *testing.T) {
-	d := &mysqlDriver{}
+	d := &Driver{}
 	in := "u:p@tcp(127.0.0.1:3306)/db?parseTime=true"
 	out, err := d.applyTLS(in, nil)
 	if err != nil {

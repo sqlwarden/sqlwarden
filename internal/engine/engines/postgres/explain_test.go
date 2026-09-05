@@ -9,7 +9,7 @@ import (
 )
 
 func TestPostgresExplain(t *testing.T) {
-	driver := &postgresDriver{}
+	driver := &Driver{}
 
 	if !driver.ExplainSpec().SupportsAnalyze {
 		t.Fatal("expected postgres to support EXPLAIN ANALYZE")
@@ -33,7 +33,7 @@ func TestPostgresExplain(t *testing.T) {
 }
 
 func TestPostgresExplainRejectsMultipleStatements(t *testing.T) {
-	driver := &postgresDriver{}
+	driver := &Driver{}
 
 	cases := []string{
 		"SELECT 1; SELECT 2",
@@ -48,7 +48,7 @@ func TestPostgresExplainRejectsMultipleStatements(t *testing.T) {
 }
 
 func TestPostgresExplainRejectsAlreadyExplainedStatement(t *testing.T) {
-	driver := &postgresDriver{}
+	driver := &Driver{}
 
 	cases := []string{
 		"EXPLAIN SELECT 1",

@@ -10,7 +10,7 @@ import (
 )
 
 func TestPostgresParse(t *testing.T) {
-	d := &postgresDriver{}
+	d := &Driver{}
 	sql := "  SELECT 'é';\nUPDATE widgets SET active = false"
 	got, err := d.Parse(context.Background(), parser.Request{SQL: sql})
 	if err != nil {
@@ -29,7 +29,7 @@ func TestPostgresParse(t *testing.T) {
 }
 
 func TestPostgresParseSyntaxError(t *testing.T) {
-	d := &postgresDriver{}
+	d := &Driver{}
 	_, err := d.Parse(context.Background(), parser.Request{SQL: "SELECT é\nFROM"})
 	var syntaxErr *parser.SyntaxError
 	if !errors.As(err, &syntaxErr) {
@@ -43,7 +43,7 @@ func TestPostgresParseSyntaxError(t *testing.T) {
 func TestPostgresParseCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := (&postgresDriver{}).Parse(ctx, parser.Request{SQL: "SELECT 1"})
+	_, err := (&Driver{}).Parse(ctx, parser.Request{SQL: "SELECT 1"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Parse error = %v, want context.Canceled", err)
 	}
@@ -86,7 +86,7 @@ func TestPostgresClassify(t *testing.T) {
 		{name: "invalid syntax", sql: "SELECT FROM", want: classifier.KindUnknown, wantCount: 0},
 		{name: "empty", sql: "-- only a comment", want: classifier.KindUnknown, wantCount: 0},
 	}
-	d := &postgresDriver{}
+	d := &Driver{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := d.Classify(context.Background(), classifier.Request{SQL: tt.sql})

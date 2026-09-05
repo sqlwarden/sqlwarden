@@ -6,7 +6,7 @@ import (
 	"github.com/sqlwarden/internal/engine/statement"
 )
 
-var _ statement.Generator = (*postgresDriver)(nil)
+var _ statement.Generator = (*Driver)(nil)
 
 var postgresStatementSpec = statement.Spec{Objects: []statement.ObjectSpec{
 	{Kind: "table", Operations: []statement.Operation{statement.OperationSelect, statement.OperationInsert, statement.OperationUpdate, statement.OperationDelete}},
@@ -14,9 +14,9 @@ var postgresStatementSpec = statement.Spec{Objects: []statement.ObjectSpec{
 	{Kind: "materialized_view", Operations: []statement.Operation{statement.OperationSelect}},
 }}
 
-func (*postgresDriver) StatementSpec() statement.Spec { return postgresStatementSpec }
+func (*Driver) StatementSpec() statement.Spec { return postgresStatementSpec }
 
-func (*postgresDriver) Generate(request statement.Request) (string, error) {
+func (*Driver) Generate(request statement.Request) (string, error) {
 	if err := statement.Validate(request, postgresStatementSpec); err != nil {
 		return "", err
 	}

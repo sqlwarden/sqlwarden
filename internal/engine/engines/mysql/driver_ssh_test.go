@@ -10,7 +10,7 @@ import (
 
 func TestApplySSHDialerRegistersNetAndDelegates(t *testing.T) {
 	sentinel := errors.New("dialer invoked")
-	d := &mysqlDriver{}
+	d := &Driver{}
 	dsn, err := d.applySSHDialer("u:p@tcp(db.internal:3306)/app", func(_ context.Context, network, addr string) (net.Conn, error) {
 		_ = network
 		_ = addr
@@ -29,7 +29,7 @@ func TestApplySSHDialerRegistersNetAndDelegates(t *testing.T) {
 }
 
 func TestApplySSHDialerNilIsPassthrough(t *testing.T) {
-	d := &mysqlDriver{}
+	d := &Driver{}
 	dsn, err := d.applySSHDialer("u:p@tcp(127.0.0.1:3306)/app", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +43,7 @@ func TestApplySSHDialerNilIsPassthrough(t *testing.T) {
 }
 
 func TestReleaseRegistrationsDeregistersNet(t *testing.T) {
-	d := &mysqlDriver{}
+	d := &Driver{}
 	_, err := d.applySSHDialer("u:p@tcp(127.0.0.1:3306)/app", func(_ context.Context, _, _ string) (net.Conn, error) {
 		return nil, errors.New("x")
 	})
