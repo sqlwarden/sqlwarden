@@ -885,6 +885,41 @@ func TestPostgresInspectObjectsFunctionDescriptors(t *testing.T) {
 	}
 }
 
+func TestPostgresInspectObjectsHandlesOverloadedFunctions(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_, _ = d.Execute(ctx, "DROP FUNCTION IF EXISTS intro_overload(int)")
+		_, _ = d.Execute(ctx, "DROP FUNCTION IF EXISTS intro_overload(text)")
+	})
+	mustExec(t, d, `CREATE FUNCTION intro_overload(a int) RETURNS int LANGUAGE sql AS 'SELECT a'`)
+	mustExec(t, d, `CREATE FUNCTION intro_overload(a text) RETURNS text LANGUAGE sql AS 'SELECT a'`)
+
+	ref := metadata.ObjectRef{Scope: pgTestScope("public"), Kind: "function", Name: "intro_overload"}
+	objs, err := d.InspectObjects(ctx, []metadata.ObjectRef{ref})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(objs) != 1 {
+		t.Fatalf("overloads must collapse into a single object (schema+name identity), got %d", len(objs))
+	}
+	if len(objs[0].Descriptors) != 2 {
+		t.Fatalf("want one descriptor per overload, got %+v", objs[0].Descriptors)
+	}
+
+	def, err := d.InspectDefinition(ctx, ref)
+	if err != nil {
+		t.Fatalf("InspectDefinition: %v", err)
+	}
+	if def == nil || def.Kind != "source" {
+		t.Fatalf("expected a source descriptor, got %+v", def)
+	}
+	body := strings.ToUpper(def.Source.Body)
+	if strings.Count(body, "CREATE") != 2 {
+		t.Fatalf("expected both overload definitions inlined, got %q", def.Source.Body)
+	}
+}
+
 func TestPostgresInspectDefinition(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()

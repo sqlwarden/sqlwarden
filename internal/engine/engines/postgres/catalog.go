@@ -42,10 +42,13 @@ ORDER BY n.nspname, c.relname`
 }
 
 // CatalogFunctions enumerates every plain function visible to the current
-// database (procedures and aggregates are excluded via prokind = 'f').
+// database (procedures and aggregates are excluded via prokind = 'f'). A
+// schema+name pair is emitted once even when Postgres overloads it with
+// multiple signatures; FunctionObjects and FunctionDefinition surface every
+// overload under that single entry.
 func CatalogFunctions(ctx context.Context, db *sql.DB, add func(schema, name string)) error {
 	const q = `
-SELECT n.nspname, p.proname
+SELECT DISTINCT n.nspname, p.proname
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE p.prokind = 'f' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
 ORDER BY n.nspname, p.proname`
@@ -434,7 +437,10 @@ ORDER BY n.nspname, c.relname, a.attnum`
 	return b.Build(), nil
 }
 
-// FunctionObjects fetches signature detail for functions named in refs.
+// FunctionObjects fetches signature detail for functions named in refs. A
+// schema+name pair may resolve to multiple overloads (ObjectRef identity is
+// schema+name only, matching CatalogFunctions); every overload is emitted as
+// its own "Signature" descriptor on the one Object for that name.
 func FunctionObjects(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	pairs, args := pairFilter(refs, 1)
 	q := `
@@ -446,18 +452,43 @@ FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
 JOIN pg_language l ON l.oid = p.prolang
 WHERE p.prokind = 'f' AND (n.nspname, p.proname) IN (` + pairs + `)
-ORDER BY n.nspname, p.proname`
+ORDER BY n.nspname, p.proname, p.oid`
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: function detail: %w", err)
 	}
 	defer rows.Close()
+
 	var out []metadata.Object
+	var ns, name string
+	var overloads [][]metadata.Field // one entry per overload of the current (ns, name)
+	flush := func() {
+		if len(overloads) == 0 {
+			return
+		}
+		descriptors := make([]metadata.Descriptor, 0, len(overloads))
+		for i, fields := range overloads {
+			title := "Signature"
+			if len(overloads) > 1 {
+				title = fmt.Sprintf("Signature (overload %d of %d)", i+1, len(overloads))
+			}
+			descriptors = append(descriptors, metadata.Descriptor{Kind: "fields", Title: title, Fields: fields})
+		}
+		out = append(out, metadata.Object{
+			Ref:         postgresRequestedRef(refs, ns, name, "function"),
+			Descriptors: descriptors,
+		})
+		overloads = nil
+	}
 	for rows.Next() {
-		var ns, name, fnArgs, lang string
+		var rowNS, rowName, fnArgs, lang string
 		var ret sql.NullString
-		if err := rows.Scan(&ns, &name, &fnArgs, &ret, &lang); err != nil {
+		if err := rows.Scan(&rowNS, &rowName, &fnArgs, &ret, &lang); err != nil {
 			return nil, fmt.Errorf("postgres: function detail scan: %w", err)
+		}
+		if rowNS != ns || rowName != name {
+			flush()
+			ns, name = rowNS, rowName
 		}
 		fields := []metadata.Field{
 			{Name: "Arguments", Value: fnArgs},
@@ -466,13 +497,9 @@ ORDER BY n.nspname, p.proname`
 		if ret.Valid {
 			fields = append(fields, metadata.Field{Name: "Returns", Value: ret.String})
 		}
-		out = append(out, metadata.Object{
-			Ref: postgresRequestedRef(refs, ns, name, "function"),
-			Descriptors: []metadata.Descriptor{
-				{Kind: "fields", Title: "Signature", Fields: fields},
-			},
-		})
+		overloads = append(overloads, fields)
 	}
+	flush()
 	return out, rows.Err()
 }
 
@@ -672,26 +699,54 @@ func ViewDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (st
 }
 
 // FunctionDefinition returns ref's language and body via pg_get_functiondef,
-// or ("", "", nil) if ref no longer exists.
+// or ("", "", nil) if ref no longer exists. A schema+name pair may resolve to
+// multiple overloads (ObjectRef identity is schema+name only); every
+// overload's definition is included, banner-separated when there is more
+// than one, so no overload is silently dropped.
 func FunctionDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (language, body string, err error) {
-	var lang, def sql.NullString
-	e := db.QueryRowContext(ctx, `
+	rows, err := db.QueryContext(ctx, `
 SELECT l.lanname, pg_get_functiondef(p.oid)
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
 JOIN pg_language l ON l.oid = p.prolang
 WHERE p.prokind = 'f' AND n.nspname = $1 AND p.proname = $2
-ORDER BY p.oid
-LIMIT 1`, ref.Scope.Name("schema"), ref.Name).Scan(&lang, &def)
-	if errors.Is(e, sql.ErrNoRows) {
+ORDER BY p.oid`, ref.Scope.Name("schema"), ref.Name)
+	if err != nil {
+		return "", "", fmt.Errorf("postgres: function definition: %w", err)
+	}
+	defer rows.Close()
+
+	var lang string
+	var defs []string
+	for rows.Next() {
+		var rowLang, def sql.NullString
+		if err := rows.Scan(&rowLang, &def); err != nil {
+			return "", "", fmt.Errorf("postgres: function definition scan: %w", err)
+		}
+		if lang == "" {
+			lang = rowLang.String
+		}
+		defs = append(defs, def.String)
+	}
+	if err := rows.Err(); err != nil {
+		return "", "", fmt.Errorf("postgres: function definition: %w", err)
+	}
+	if len(defs) == 0 {
 		return "", "", nil
 	}
-	if e != nil {
-		return "", "", fmt.Errorf("postgres: function definition: %w", e)
-	}
-	language = lang.String
+	language = lang
 	if language == "" {
 		language = "sql"
 	}
-	return language, def.String, nil
+	if len(defs) == 1 {
+		return language, defs[0], nil
+	}
+	var sb strings.Builder
+	for i, def := range defs {
+		if i > 0 {
+			sb.WriteString("\n\n")
+		}
+		fmt.Fprintf(&sb, "-- Overload %d of %d\n%s", i+1, len(defs), def)
+	}
+	return language, sb.String(), nil
 }
