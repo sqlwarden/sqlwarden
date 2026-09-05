@@ -3,6 +3,7 @@ import { postgresDriver } from './postgres'
 import { mysqlDriver } from './mysql'
 import { neonDriver } from './neon'
 import { sqliteDriver } from './sqlite'
+import { supabaseDriver } from './supabase'
 
 describe('postgresDriver.parseDSN', () => {
   it('round-trips fields built by buildDSN', () => {
@@ -120,6 +121,41 @@ describe('neonDriver.parseDSN', () => {
 
   it('returns an empty object for an unparseable DSN', () => {
     expect(neonDriver.parseDSN('not-a-url')).toEqual({})
+  })
+})
+
+describe('supabaseDriver.parseDSN', () => {
+  it('round-trips fields built by buildDSN', () => {
+    const fields = {
+      host: 'db.xxxxxxxxxxxx.supabase.co',
+      port: '5432',
+      database: 'postgres',
+      username: 'postgres',
+      password: 'p@ss w/ord',
+    }
+    const dsn = supabaseDriver.buildDSN(fields)
+    expect(supabaseDriver.parseDSN(dsn)).toEqual(fields)
+  })
+
+  it('parses a DSN without a password', () => {
+    const dsn = supabaseDriver.buildDSN({
+      host: 'db.xxxxxxxxxxxx.supabase.co',
+      port: '5432',
+      database: 'postgres',
+      username: 'postgres',
+      password: '',
+    })
+    expect(supabaseDriver.parseDSN(dsn)).toEqual({
+      host: 'db.xxxxxxxxxxxx.supabase.co',
+      port: '5432',
+      database: 'postgres',
+      username: 'postgres',
+      password: '',
+    })
+  })
+
+  it('returns an empty object for an unparseable DSN', () => {
+    expect(supabaseDriver.parseDSN('not-a-url')).toEqual({})
   })
 })
 

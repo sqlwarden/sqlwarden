@@ -11,6 +11,7 @@ import (
 	_ "github.com/sqlwarden/internal/engine/engines/oracle"
 	_ "github.com/sqlwarden/internal/engine/engines/postgres"
 	_ "github.com/sqlwarden/internal/engine/engines/sqlite"
+	_ "github.com/sqlwarden/internal/engine/engines/supabase"
 )
 
 func TestListEngines(t *testing.T) {
@@ -88,6 +89,17 @@ func TestListEngines(t *testing.T) {
 	neonCaps := neon["capabilities"].(map[string]any)
 	for _, capID := range []string{"schema.directory", "schema.objects", "sql.complete", "sql.explain", "connection.tls", "connection.ssh_tunnel"} {
 		assert.Equal(t, neonCaps[capID], caps[capID])
+	}
+
+	supabase := byID["supabase"]
+	if supabase == nil {
+		t.Fatalf("supabase engine missing from %v", engines)
+	}
+	assert.Equal(t, supabase["display_name"], "Supabase")
+	assert.Equal(t, supabase["dialect"], "postgres")
+	supabaseCaps := supabase["capabilities"].(map[string]any)
+	for _, capID := range []string{"schema.directory", "schema.objects", "sql.complete", "sql.explain", "connection.tls", "connection.ssh_tunnel"} {
+		assert.Equal(t, supabaseCaps[capID], caps[capID])
 	}
 }
 
