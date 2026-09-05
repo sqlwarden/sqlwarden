@@ -51,7 +51,6 @@ Explicitly future or incomplete:
 - Distributed RBAC cache invalidation.
 - Shared-file collaborative editing through WebSockets.
 - File uploads, revision browsing UX, S3-compatible file storage, and storage migration tooling.
-- SQLite SQL parsing/classification and SQL autocomplete.
 - PWA service worker setup.
 
 ## Repository Layout
@@ -367,11 +366,11 @@ Query permissions:
 - `conn:execute` allows all query classes.
 
 PostgreSQL and MySQL use strict Omni parsing and fail-closed AST classification.
-Only proven read-only statements receive `conn:dql`; ambiguous constructs
-require `conn:execute`. Engines without a registered dialect classifier, which
-currently means SQLite, use the conservative keyword heuristic for runtime
-authorization. SQL export never uses that fallback and is unavailable for such
-engines.
+SQLite implements strict parsing via `github.com/rqlite/sql` and fail-closed AST
+classification. Only proven read-only statements receive `conn:dql`; ambiguous
+constructs require `conn:execute`. Engines without a registered dialect classifier
+use the conservative keyword heuristic for runtime authorization. SQL export never
+uses that fallback and is unavailable for such engines.
 
 ### Roles
 
@@ -599,17 +598,21 @@ Each engine registers through the `engine` registry and advertises implemented c
 
 Each concrete engine keeps optional capability implementations in separate
 files alongside its driver. PostgreSQL and MySQL implement strict parsing and
-AST classification with Omni. SQLite intentionally implements neither and uses
-the runtime heuristic fallback. Capabilities are derived from the interfaces
-the engine actually implements, so rewriting and completion remain false
-instead of being backed by placeholder methods.
+AST classification with Omni. SQLite implements `parser`, `classifier`, `safety`,
+and `completer` via `github.com/rqlite/sql` and the `completioncore/sqlite`
+boundary; `rewriter` remains unimplemented. Capabilities are derived from the
+interfaces the engine actually implements, so unimplemented capabilities remain
+false instead of being backed by placeholder methods.
 
 PostgreSQL and MySQL completion use the SQLWarden-owned
 `internal/engine/completioncore` boundary, adapted from Bytebase's
 MIT-licensed completion design. Omni supplies grammar candidates and
 PostgreSQL parser-native scope snapshots. Until Omni exposes the equivalent
 MySQL scope API, the MySQL adapter owns its isolated reference collector.
-Both dialects resolve semantic candidates through the reusable immutable
+SQLite completion uses the same `completioncore` boundary; rqlite/sql supplies
+the scanner from which cursor intent is derived (no ANTLR candidate collector),
+and names resolve from the SQLWarden metadata index.
+All dialects resolve semantic candidates through the reusable immutable
 `metadata.Index`, adapted by completioncore's `SchemaResolver`; no completer
 opens or queries a live connection. `metadata.MetadataSet` keeps a lightweight
 catalog, independently inspected object details, optional relationship graphs,
@@ -888,7 +891,6 @@ Important open gaps:
 - Tamper-evident audit logs.
 - SSO/SCIM identity lifecycle.
 - SSRF-safe cloud deployment model.
-- SQLite dialect parsing/classification and SQL autocomplete.
 - Distributed cache invalidation.
 - Binding expiry enforcement.
 - Service accounts/API tokens.

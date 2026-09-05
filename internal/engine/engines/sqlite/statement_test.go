@@ -26,7 +26,7 @@ func TestSQLiteGeneratedStatementsExecuteSafely(t *testing.T) {
 			{Name: `order"note`, DataType: "text", Ordinal: 2},
 		}},
 	}
-	qualified := sqliteDDLQualified("main", object.Ref.Name)
+	qualified := sqliteQualify("main", object.Ref.Name)
 	if _, err := driver.db.ExecContext(ctx, "CREATE TABLE "+qualified+" (id integer, \"order\"\"note\" text)"); err != nil {
 		t.Fatal(err)
 	}

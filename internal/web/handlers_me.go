@@ -244,7 +244,7 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 		app.validateSSHDocument(input.Driver, sshDoc, &input.V)
 	}
 	if input.Driver != "" {
-		if err := app.validateTargetConnection(input.Driver, input.DSN); err != nil {
+		if err := app.validateTargetConnection(r.Context(), input.Driver, input.DSN); err != nil {
 			input.V.CheckField(false, "driver", targetConnectionFieldError(err))
 		}
 	}

@@ -250,7 +250,7 @@ func (app *application) openTargetDriver(ctx context.Context, conn database.Conn
 	if err != nil {
 		return nil, err
 	}
-	if err := app.validateTargetConnection(conn.Driver, plainDSN); err != nil {
+	if err := app.validateTargetConnection(ctx, conn.Driver, plainDSN); err != nil {
 		return nil, jobs.Permanent("schema_sync_target_blocked", "The target database is blocked by policy.")
 	}
 	driver, err := engine.New(conn.Driver)

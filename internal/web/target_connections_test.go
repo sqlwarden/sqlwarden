@@ -1,8 +1,11 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"testing"
+
+	"github.com/sqlwarden/internal/database"
 )
 
 func TestValidateTargetConnectionSQLiteFilePolicy(t *testing.T) {
@@ -10,48 +13,82 @@ func TestValidateTargetConnectionSQLiteFilePolicy(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		configure  func(*application)
+		configure  func(*testing.T, *application)
 		driverName string
 		dsn        string
 		wantErr    bool
 		wantErrIs  error
 	}{
 		{
-			name:       "server mode rejects sqlite file targets",
+			name:       "default instance allows sqlite file targets",
+			driverName: "sqlite",
+			dsn:        "/tmp/customer.db",
+		},
+		{
+			name: "disabled instance rejects sqlite file targets",
+			configure: func(t *testing.T, app *application) {
+				updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+					settings.SQLiteLocalTargetsEnabled = false
+				})
+			},
 			driverName: "sqlite",
 			dsn:        "/tmp/customer.db",
 			wantErr:    true,
 			wantErrIs:  errSQLiteTargetDisabled,
 		},
 		{
-			name:       "server mode allows in-memory sqlite targets",
+			name: "in-memory sqlite targets allowed when file targets are disabled",
+			configure: func(t *testing.T, app *application) {
+				updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+					settings.SQLiteLocalTargetsEnabled = false
+				})
+			},
 			driverName: "sqlite",
 			dsn:        ":memory:",
 		},
 		{
-			name:       "server mode allows sqlite shared in-memory targets",
+			name:       "in-memory sqlite targets are allowed when enabled",
+			driverName: "sqlite",
+			dsn:        ":memory:",
+		},
+		{
+			name:       "shared in-memory sqlite targets are allowed when enabled",
 			driverName: "sqlite",
 			dsn:        "file::memory:?cache=shared",
 		},
 		{
-			name: "local source allows sqlite file targets",
-			configure: func(app *application) {
-				app.config.Drivers.SQLite.AllowedSources = []string{SQLiteDriverSourceLocal}
+			name: "disabled instance rejects in-memory sqlite targets",
+			configure: func(t *testing.T, app *application) {
+				updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+					settings.SQLiteInMemoryTargetsEnabled = false
+				})
 			},
 			driverName: "sqlite",
-			dsn:        "/tmp/customer.db",
+			dsn:        ":memory:",
+			wantErr:    true,
+			wantErrIs:  errSQLiteInMemoryTargetDisabled,
 		},
 		{
-			name: "sqlite file targets are rejected when local source is not allowed",
-			configure: func(app *application) {
-				app.config.DeploymentMode = DeploymentModeDesktop
-				app.config.AccessMode = AccessModeSingleUser
-				app.config.Drivers.SQLite.AllowedSources = nil
+			name: "disabled instance rejects shared in-memory sqlite targets",
+			configure: func(t *testing.T, app *application) {
+				updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+					settings.SQLiteInMemoryTargetsEnabled = false
+				})
+			},
+			driverName: "sqlite",
+			dsn:        "file::memory:?cache=shared",
+			wantErr:    true,
+			wantErrIs:  errSQLiteInMemoryTargetDisabled,
+		},
+		{
+			name: "file targets still allowed when in-memory targets are disabled",
+			configure: func(t *testing.T, app *application) {
+				updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+					settings.SQLiteInMemoryTargetsEnabled = false
+				})
 			},
 			driverName: "sqlite",
 			dsn:        "/tmp/customer.db",
-			wantErr:    true,
-			wantErrIs:  errSQLiteTargetDisabled,
 		},
 		{
 			name:       "non-sqlite registered drivers are unaffected",
@@ -71,10 +108,10 @@ func TestValidateTargetConnectionSQLiteFilePolicy(t *testing.T) {
 			t.Parallel()
 			app := newTestApp(t)
 			if tt.configure != nil {
-				tt.configure(app)
+				tt.configure(t, app)
 			}
 
-			err := app.validateTargetConnection(tt.driverName, tt.dsn)
+			err := app.validateTargetConnection(context.Background(), tt.driverName, tt.dsn)
 			if !tt.wantErr {
 				if err != nil {
 					t.Fatalf("validateTargetConnection returned error: %v", err)

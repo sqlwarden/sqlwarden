@@ -125,7 +125,7 @@ func TestCompleteConnectionSQLFromEphemeralSessionMetadata(t *testing.T) {
 	}
 }
 
-func TestCompleteConnectionSQLRejectsInvalidOffsetsAndUnsupportedSQLite(t *testing.T) {
+func TestCompleteConnectionSQLRejectsInvalidOffsetsAndSupportsSQLite(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-invalid"), "Completion", "Completion Org")
@@ -146,7 +146,10 @@ func TestCompleteConnectionSQLRejectsInvalidOffsetsAndUnsupportedSQLite(t *testi
 		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(sqlite.ID, 10))+"/completion",
 		map[string]any{"sql": "SEL", "cursor_offset": 3}, token)
 	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusNotImplemented)
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	if !responseHasCompletionLabel(res.BodyFields, "SELECT") {
+		t.Fatalf("expected SELECT keyword completion for sqlite, got %s", res.BodyBytes)
+	}
 }
 
 func TestCompleteConnectionSQLRejectsSessionFromAnotherConnection(t *testing.T) {

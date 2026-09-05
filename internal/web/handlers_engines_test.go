@@ -37,7 +37,15 @@ func TestListEngines(t *testing.T) {
 	assert.Equal(t, caps["query.cursor"], true)
 	assert.Equal(t, caps["sql.complete"], true)
 	assert.Equal(t, byID["mysql"]["capabilities"].(map[string]any)["sql.complete"], true)
-	assert.Equal(t, byID["sqlite"]["capabilities"].(map[string]any)["sql.complete"], false)
+	assert.Equal(t, byID["sqlite"]["capabilities"].(map[string]any)["sql.complete"], true)
+	sqliteCaps := byID["sqlite"]["capabilities"].(map[string]any)
+	assert.Equal(t, sqliteCaps["sql.parse"], true)
+	assert.Equal(t, sqliteCaps["sql.classify"], true)
+	assert.Equal(t, sqliteCaps["sql.safety_check"], true)
+	assert.Equal(t, sqliteCaps["sql.explain"], true)
+	assert.Equal(t, sqliteCaps["sql.rewrite"], false)
+	assert.Equal(t, sqliteCaps["connection.tls"], false)
+	assert.Equal(t, sqliteCaps["connection.ssh_tunnel"], false)
 
 	assert.Equal(t, caps["sql.explain"], true)
 	pgExplain, ok := pg["explain"].(map[string]any)
@@ -175,7 +183,25 @@ func TestGetEngineCompletionVocabulary(t *testing.T) {
 
 	sqlite := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/engines/sqlite/completion-vocabulary", nil, tok), app.routes())
-	assert.Equal(t, sqlite.StatusCode, http.StatusNotImplemented)
+	assert.Equal(t, sqlite.StatusCode, http.StatusOK)
+	assert.Equal(t, sqlite.BodyFields["dialect"], "sqlite")
+	if sqlite.BodyFields["version"] == "" {
+		t.Fatal("expected deterministic sqlite vocabulary version")
+	}
+	sqliteSuggestions := sqlite.BodyFields["suggestions"].([]any)
+	foundSqliteSelect, foundSqliteCount := false, false
+	for _, raw := range sqliteSuggestions {
+		suggestion := raw.(map[string]any)
+		if suggestion["label"] == "SELECT" && suggestion["kind"] == "keyword" {
+			foundSqliteSelect = true
+		}
+		if suggestion["label"] == "count" && suggestion["kind"] == "function" {
+			foundSqliteCount = true
+		}
+	}
+	if !foundSqliteSelect || !foundSqliteCount {
+		t.Fatalf("representative sqlite vocabulary missing: SELECT=%v count=%v", foundSqliteSelect, foundSqliteCount)
+	}
 
 	unknown := send(t, newAuthRequest(t, http.MethodGet,
 		"/api/v1/engines/unknown/completion-vocabulary", nil, tok), app.routes())

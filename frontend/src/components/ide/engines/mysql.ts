@@ -17,4 +17,5 @@ export const mysqlEngine: FrontendEngine = {
   sshTunnel: true,
   manualTransactionWarning:
     'MySQL implicitly commits the transaction on DDL statements (CREATE, ALTER, DROP, TRUNCATE) — those changes cannot be rolled back, and any pending DML commits with them.',
+  semanticCompletion: true,
 }

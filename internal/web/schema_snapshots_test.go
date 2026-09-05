@@ -139,7 +139,6 @@ func TestSchemaSnapshotStoreRejectsSupersededGeneration(t *testing.T) {
 func TestManualPersistentSchemaRefreshRunsSynchronously(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.Drivers.SQLite.AllowedSources = []string{SQLiteDriverSourceLocal}
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-manual"), "Snapshot Manual", "Snapshot Manual Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)

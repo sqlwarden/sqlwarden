@@ -60,9 +60,6 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if len(cfg.Desktop.Backends) != 1 || cfg.Desktop.Backends[0].ID != "local" || cfg.Desktop.Backends[0].Kind != DesktopBackendKindLocal {
 		t.Fatalf("unexpected default desktop backends: %+v", cfg.Desktop.Backends)
 	}
-	if len(cfg.Drivers.SQLite.AllowedSources) != 0 {
-		t.Fatalf("drivers.sqlite.allowed_sources = %v, want empty", cfg.Drivers.SQLite.AllowedSources)
-	}
 }
 
 func TestLoadConfigDefaultsHaveNoPreviousEncryptionKeys(t *testing.T) {
@@ -293,18 +290,6 @@ func TestLoadConfigRejectsUnsupportedLogConfiguration(t *testing.T) {
 	_, _, err = loadConfig([]string{"--log-format", "xml"})
 	if err == nil {
 		t.Fatal("expected unsupported log format to fail")
-	}
-}
-
-func TestLoadConfigRejectsUnsupportedSQLiteTargetConfiguration(t *testing.T) {
-	_, _, err := loadConfig([]string{"--drivers-sqlite-allowed-sources", "workspace_file"})
-	if err == nil {
-		t.Fatal("expected unimplemented sqlite target source to fail")
-	}
-
-	_, _, err = loadConfig([]string{"--drivers-sqlite-allowed-sources", "local,local"})
-	if err == nil {
-		t.Fatal("expected duplicate sqlite target source to fail")
 	}
 }
 

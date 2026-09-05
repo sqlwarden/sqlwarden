@@ -404,6 +404,8 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		QueryHistoryRetentionCount     *int                  `json:"query_history_retention_count"`
 		QueryHistoryRetentionCountMax  *int                  `json:"query_history_retention_count_max"`
 		QueryFavoritesMode             *string               `json:"query_favorites_mode"`
+		SQLiteLocalTargetsEnabled      *bool                 `json:"sqlite_local_targets_enabled"`
+		SQLiteInMemoryTargetsEnabled   *bool                 `json:"sqlite_memory_targets_enabled"`
 		V                              validator.Validator   `json:"-"`
 	}
 
@@ -435,7 +437,9 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		input.SMTPHost != nil || input.SMTPPort != nil || input.SMTPUsername != nil ||
 		input.SMTPPassword.Set || input.SMTPFrom != nil ||
 		input.QueryHistoryMode != nil || input.QueryHistoryRetentionCount != nil ||
-		input.QueryHistoryRetentionCountMax != nil || input.QueryFavoritesMode != nil
+		input.QueryHistoryRetentionCountMax != nil || input.QueryFavoritesMode != nil ||
+		input.SQLiteLocalTargetsEnabled != nil ||
+		input.SQLiteInMemoryTargetsEnabled != nil
 	input.V.Check(hasPatch, "At least one setting is required.")
 	if input.InstanceName != nil {
 		*input.InstanceName = strings.TrimSpace(*input.InstanceName)
@@ -645,6 +649,12 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	}
 	if input.QueryFavoritesMode != nil {
 		nextSettings.QueryFavoritesMode = *input.QueryFavoritesMode
+	}
+	if input.SQLiteLocalTargetsEnabled != nil {
+		nextSettings.SQLiteLocalTargetsEnabled = *input.SQLiteLocalTargetsEnabled
+	}
+	if input.SQLiteInMemoryTargetsEnabled != nil {
+		nextSettings.SQLiteInMemoryTargetsEnabled = *input.SQLiteInMemoryTargetsEnabled
 	}
 	if err := validateInstanceSettings(nextSettings); err != nil {
 		input.V.AddError(err.Error())

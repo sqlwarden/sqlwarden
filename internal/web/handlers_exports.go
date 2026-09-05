@@ -257,7 +257,7 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 	if err != nil {
 		return nil, err
 	}
-	if err := app.validateTargetConnection(conn.Driver, plainDSN); err != nil {
+	if err := app.validateTargetConnection(ctx, conn.Driver, plainDSN); err != nil {
 		return nil, jobs.Permanent("export_target_blocked", targetConnectionFieldError(err))
 	}
 	driver, err := engine.New(conn.Driver)

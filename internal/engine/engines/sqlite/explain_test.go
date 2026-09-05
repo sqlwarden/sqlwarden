@@ -68,3 +68,21 @@ func TestSQLiteExplainAllowsExplainAsIdentifierPrefix(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestSQLiteExplainRejectsAlreadyExplained(t *testing.T) {
+	_, err := (&sqliteDriver{}).Explain("EXPLAIN QUERY PLAN SELECT 1", explain.ModePlain)
+	if !errors.Is(err, explain.ErrAlreadyExplained) {
+		t.Fatalf("err = %v, want ErrAlreadyExplained", err)
+	}
+}
+
+func TestSQLiteExplainUnparseablePassesThrough(t *testing.T) {
+	// Not this layer's job to reject; DB reports it.
+	p, err := (&sqliteDriver{}).Explain("SELCT bogus", explain.ModePlain)
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if p.Statement == "" {
+		t.Fatalf("expected a plan statement")
+	}
+}

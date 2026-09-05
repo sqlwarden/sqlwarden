@@ -36,4 +36,8 @@ export interface FrontendEngine {
    *  implicit commit on DDL. Shown as a persistent warning in manual mode.
    *  Leave unset for engines with fully transactional DDL. */
   manualTransactionWarning?: string
+  /** Set when this engine has a backend semantic-completion capability
+   *  (`sql.complete`): the IDE calls `/completion` for schema-aware suggestions
+   *  instead of falling back to lexical vocabulary only. */
+  semanticCompletion?: boolean
 }

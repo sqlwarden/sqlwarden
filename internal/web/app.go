@@ -109,9 +109,6 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			"storage_mode", cfg.Files.StorageMode,
 			"active_backend", cfg.Files.ActiveStorageBackend,
 		),
-		slog.Group("drivers",
-			"sqlite_allowed_sources", cfg.Drivers.SQLite.AllowedSources,
-		),
 	)
 
 	logger.Info("initializing database", slog.Group("database", "driver", cfg.DB.Driver, "automigrate", cfg.DB.Automigrate))

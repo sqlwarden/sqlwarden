@@ -124,6 +124,56 @@ describe('instance settings route', () => {
     ).toBeInTheDocument()
   })
 
+  it('renders the local SQLite target toggle from the API and saves a disabled value', async () => {
+    let capturedBody: Record<string, unknown> | undefined
+    server.use(
+      instanceSettingsHandler(),
+      instanceConfigurationHandler(),
+      http.patch('/api/v1/instance/settings', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(instanceSettingsFixture({ sqlite_local_targets_enabled: false }))
+      }),
+    )
+    const { user } = renderRoute('/administration/instance')
+
+    await screen.findByRole('heading', { name: 'Settings' })
+    await user.click(screen.getByRole('tab', { name: 'Data' }))
+    const toggle = screen.getByRole('checkbox', {
+      name: /Allow local SQLite file connections/,
+    })
+    expect(toggle).toBeChecked()
+
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: 'Save settings' }))
+
+    await waitFor(() => expect(capturedBody?.sqlite_local_targets_enabled).toBe(false))
+  })
+
+  it('renders the in-memory SQLite target toggle from the API and saves an enabled value', async () => {
+    let capturedBody: Record<string, unknown> | undefined
+    server.use(
+      instanceSettingsHandler(),
+      instanceConfigurationHandler(),
+      http.patch('/api/v1/instance/settings', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(instanceSettingsFixture({ sqlite_memory_targets_enabled: true }))
+      }),
+    )
+    const { user } = renderRoute('/administration/instance')
+
+    await screen.findByRole('heading', { name: 'Settings' })
+    await user.click(screen.getByRole('tab', { name: 'Data' }))
+    const toggle = screen.getByRole('checkbox', {
+      name: /Allow in-memory SQLite connections/,
+    })
+    expect(toggle).not.toBeChecked()
+
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: 'Save settings' }))
+
+    await waitFor(() => expect(capturedBody?.sqlite_memory_targets_enabled).toBe(true))
+  })
+
   it('shows a distinct message when runtime settings are unavailable', async () => {
     server.use(
       apiErrorHandler(

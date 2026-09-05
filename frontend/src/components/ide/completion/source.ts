@@ -25,6 +25,7 @@ import {
 import { Prec, type EditorState, type Extension } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { completeConnectionSQL } from '#/lib/api/queries/database'
+import { findFrontendEngine } from '../engines/registry'
 import {
   automaticSQLCompletionTrigger,
   classifyCursorContext,
@@ -159,8 +160,8 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
     const automaticTrigger = context.explicit
       ? undefined
       : automaticSQLCompletionTrigger(source, context.pos)
-    const driver = normalizedDriver(config.driver)
-    const supportsSemanticCompletion = driver !== 'sqlite' && driver !== 'standard'
+    const supportsSemanticCompletion =
+      findFrontendEngine(normalizedDriver(config.driver))?.semanticCompletion === true
     const hasRemote =
       supportsSemanticCompletion &&
       config.orgSlug !== undefined &&
@@ -224,13 +225,21 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
     ).map(suggestionToCompletion)
     const local = mergeRankedCompletions(localRanked, lexical)
 
+    // Below the lexical threshold the local result is deliberately incomplete
+    // (dialect vocabulary is withheld until the prefix settles), so CodeMirror
+    // must re-invoke the source as the word grows rather than fuzzy-filter the
+    // object-only rows it already has. Once vocabulary is in play the result is
+    // complete for the word and cheap identifier refiltering is correct.
+    const localValidFor = shouldCompleteLexically
+      ? IDENTIFIER_VALID_FOR
+      : (text: string) => text === prefix
     const localResult = (options: Completion[]): CompletionResult | null => {
       if (options.length === 0) return null
       return {
         from,
         to: context.pos,
         options,
-        validFor: IDENTIFIER_VALID_FOR,
+        validFor: localValidFor,
       }
     }
 

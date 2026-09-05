@@ -74,6 +74,8 @@ const dataSettingsFields = new Set<string>([
   'schema_snapshot_freshness_seconds',
   'file_revisions_enabled',
   'file_revisions_keep_latest',
+  'sqlite_local_targets_enabled',
+  'sqlite_memory_targets_enabled',
 ])
 
 const operationsSettingsFields = new Set<string>([
@@ -141,6 +143,8 @@ const emptyForm: InstanceSettingsForm = {
   smtp_username: '',
   smtp_password_configured: false,
   smtp_from: '',
+  sqlite_local_targets_enabled: true,
+  sqlite_memory_targets_enabled: false,
 }
 
 const logLevelOptions: { value: LogLevel; label: string }[] = [
@@ -697,6 +701,53 @@ function SettingsInstancePage() {
                 </div>
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader className="border-b border-border">
+                <CardTitle>Database Drivers</CardTitle>
+                <CardDescription>
+                  Control which target database sources users may connect to.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <label className="flex cursor-pointer items-start gap-3 py-2">
+                  <Checkbox
+                    checked={form.sqlite_local_targets_enabled}
+                    disabled={disabled}
+                    onCheckedChange={(checked) =>
+                      updateField('sqlite_local_targets_enabled', checked === true)
+                    }
+                  />
+                  <span className="flex flex-col gap-1">
+                    <span className="font-medium text-foreground">
+                      Allow local SQLite file connections
+                    </span>
+                    <span className="text-muted-foreground">
+                      Let users create connections to SQLite database files on the server host.
+                      Disabling this does not affect existing connections.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-3 py-2">
+                  <Checkbox
+                    checked={form.sqlite_memory_targets_enabled}
+                    disabled={disabled}
+                    onCheckedChange={(checked) =>
+                      updateField('sqlite_memory_targets_enabled', checked === true)
+                    }
+                  />
+                  <span className="flex flex-col gap-1">
+                    <span className="font-medium text-foreground">
+                      Allow in-memory SQLite connections
+                    </span>
+                    <span className="text-muted-foreground">
+                      Let users create in-memory SQLite connections. Each one still creates a
+                      connection record. Disabling this does not affect existing connections.
+                    </span>
+                  </span>
+                </label>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="operations" className="flex flex-col gap-6">
@@ -1156,10 +1207,6 @@ function DeploymentConfiguration({
               <ConfigurationRow
                 label="File storage backend"
                 value={configuration.file_storage_backend}
-              />
-              <ConfigurationRow
-                label="Local SQLite sources"
-                value={configuration.sqlite_local_enabled ? 'Allowed' : 'Disabled'}
               />
             </dl>
           </CardContent>

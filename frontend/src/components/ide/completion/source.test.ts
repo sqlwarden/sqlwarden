@@ -79,6 +79,43 @@ describe('SQL completion', () => {
     })
   })
 
+  it('issues the remote completion call for sqlite', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('completion-vocabulary')) {
+        return vocabularyResponse()
+      }
+      return new Response(
+        JSON.stringify({
+          suggestions: [
+            {
+              label: 'widgets',
+              kind: 'table',
+              insert_text: 'widgets',
+              replace_start: 15,
+              replace_end: 18,
+              score: 80,
+            },
+          ],
+          mode: 'persistent',
+          metadata_available: true,
+          metadata_status: 'ready',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const state = EditorState.create({ doc: 'SELECT x FROM wid' })
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'sqlite',
+    })
+    const result = await source(new CompletionContext(state, state.doc.length, true))
+    expect(semanticCallCount(fetchMock)).toBe(1)
+    expect(result?.options[0]).toMatchObject({ label: 'widgets', type: 'table' })
+  })
+
   it('renders a semantic kind icon and accepts the first soft item with Tab', async () => {
     stubSingleCompletionFetch()
     const parent = document.createElement('div')
@@ -341,6 +378,57 @@ describe('SQL completion', () => {
     const result = await source(new CompletionContext(state, 2, false))
     expect(result?.options.map((option) => option.label)).toEqual(['SELECT'])
     expect(semanticCallCount(fetchMock)).toBe(0)
+  })
+
+  it('re-invokes the source as a word grows past the lexical threshold instead of filtering an object-only result', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('completion-index')) {
+        return new Response(
+          JSON.stringify({
+            version: 'v1',
+            default_schema: 'main',
+            schemas: ['main'],
+            objects: [{ schema: 'main', name: 'customers', kind: 'table' }],
+            columns: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (String(input).includes('completion-vocabulary')) {
+        return new Response(
+          JSON.stringify({
+            dialect: 'sqlite',
+            version: 'threshold-test',
+            suggestions: [{ label: 'ORDER', kind: 'keyword', score: 40 }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      throw new Error(`unexpected fetch: ${String(input)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'sqlite',
+    })
+
+    const short = EditorState.create({ doc: 'c' })
+    const shortResult = await source(new CompletionContext(short, 1, false))
+    expect(shortResult?.options.map((option) => option.label)).toEqual(['customers'])
+    if (typeof shortResult?.validFor !== 'function') {
+      throw new Error('expected a prefix-bound validFor function below the lexical threshold')
+    }
+    expect(
+      shortResult.validFor('cu', shortResult.from, shortResult.to ?? shortResult.from, short),
+    ).toBe(false)
+
+    const settled = EditorState.create({ doc: 'or' })
+    const settledResult = await source(new CompletionContext(settled, 2, false))
+    expect(settledResult?.options.map((option) => option.label)).toContain('ORDER')
+    expect(settledResult?.validFor).toBeInstanceOf(RegExp)
   })
 
   it('ranks exact and prefix vocabulary matches ahead of broader matches', async () => {

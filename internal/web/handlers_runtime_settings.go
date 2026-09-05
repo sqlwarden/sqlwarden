@@ -43,20 +43,10 @@ func (app *application) getInstanceConfiguration(w http.ResponseWriter, r *http.
 		"tls_enabled":          app.config.TLS.Enabled,
 		"file_storage_mode":    app.config.Files.StorageMode,
 		"file_storage_backend": app.config.Files.ActiveStorageBackend,
-		"sqlite_local_enabled": containsString(app.config.Drivers.SQLite.AllowedSources, SQLiteDriverSourceLocal),
 	})
 	if err != nil {
 		app.serverError(w, r, err)
 	}
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 func (app *application) getOrganizationRuntimeSettings(w http.ResponseWriter, r *http.Request) {
