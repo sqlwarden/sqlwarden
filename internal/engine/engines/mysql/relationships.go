@@ -7,9 +7,9 @@ import (
 	"github.com/sqlwarden/internal/engine/metadata"
 )
 
-var _ metadata.RelationshipInspector = (*mysqlDriver)(nil)
+var _ metadata.RelationshipInspector = (*Driver)(nil)
 
-func (d *mysqlDriver) InspectRelationshipsInScope(ctx context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
+func (d *Driver) InspectRelationshipsInScope(ctx context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
 	namespace := scope.Name("database")
 	q := `
 SELECT table_schema, table_name, constraint_name, column_name,

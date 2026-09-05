@@ -11,7 +11,7 @@ import (
 )
 
 func TestMySQLCompleteKeywordsAndSchema(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	keywordResult, err := driver.Complete(context.Background(), completer.Request{
 		SQL: "SEL", CursorOffset: 3,
 	})
@@ -48,7 +48,7 @@ func TestMySQLCompleteKeywordsAndSchema(t *testing.T) {
 }
 
 func TestMySQLCompleteClassifiesCursorContext(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	catalog := mysqlCompletionTestCatalog()
 	objects := mysqlCompletionTestObjects()
 	schema := &metadata.MetadataSet{Directory: catalog, Objects: objects}
@@ -77,7 +77,7 @@ func TestMySQLCompleteClassifiesCursorContext(t *testing.T) {
 }
 
 func TestMySQLCompleteRejectsInvalidCursorAndCancellation(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	if _, err := driver.Complete(context.Background(), completer.Request{SQL: "x", CursorOffset: 2}); err == nil {
 		t.Fatal("expected invalid cursor error")
 	}
@@ -98,7 +98,7 @@ func TestMySQLCompletionQuotesReservedIdentifier(t *testing.T) {
 }
 
 func TestMySQLCompleteCuratesCompletedRelationContext(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	catalog := mysqlCompletionTestCatalog()
 	objects := mysqlCompletionTestObjects()
 
@@ -134,7 +134,7 @@ func TestMySQLCompleteCuratesCompletedRelationContext(t *testing.T) {
 }
 
 func TestMySQLCompleteUsesStatementAtCursor(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	catalog := mysqlCompletionTestCatalog()
 	objects := mysqlCompletionTestObjects()
 	sql := `select s.first_name, s.last_name, a.address from staff s
@@ -157,7 +157,7 @@ select * from `
 }
 
 func TestMySQLCompleteRecoversNewSelectWithoutSemicolon(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	catalog := mysqlCompletionTestCatalog()
 	objects := mysqlCompletionTestObjects()
 	sql := `select s.first_name, s.last_name, a.address from staff s
@@ -182,7 +182,7 @@ select * from `
 }
 
 func TestMySQLCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	catalog := mysqlCompletionTestCatalog()
 	objects := []metadata.Object{
 		{
@@ -224,7 +224,7 @@ func TestMySQLCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 }
 
 func TestMySQLCompleteUsesFinalAliasAfterEarlierQualifiedColumn(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	catalog := mysqlCompletionTestCatalog()
 	objects := []metadata.Object{
 		{
@@ -260,7 +260,7 @@ func TestMySQLCompleteUsesFinalAliasAfterEarlierQualifiedColumn(t *testing.T) {
 }
 
 func TestMySQLAutomaticBareSelectIsCurated(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	sql := "SELECT "
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql), TriggerKind: completer.TriggerAutomatic,
@@ -277,7 +277,7 @@ func TestMySQLAutomaticBareSelectIsCurated(t *testing.T) {
 }
 
 func TestMySQLCompletionVocabulary(t *testing.T) {
-	vocabulary := (&mysqlDriver{}).CompletionVocabulary()
+	vocabulary := (&Driver{}).CompletionVocabulary()
 	if vocabulary.Dialect != "mysql" || vocabulary.Version == "" {
 		t.Fatalf("invalid vocabulary metadata: %+v", vocabulary)
 	}
@@ -305,7 +305,7 @@ func TestMySQLCompleteRefreshesFunctionPrefix(t *testing.T) {
 	for _, prefix := range []string{"su", "sum"} {
 		t.Run(prefix, func(t *testing.T) {
 			sql := "SELECT customer_id, SUM(amount) AS total_amount FROM payment GROUP BY customer_id HAVING " + prefix
-			result, err := (&mysqlDriver{}).Complete(context.Background(), completer.Request{
+			result, err := (&Driver{}).Complete(context.Background(), completer.Request{
 				SQL: sql, CursorOffset: len(sql), TriggerKind: completer.TriggerAutomatic,
 			})
 			if err != nil {
@@ -322,7 +322,7 @@ func TestMySQLCompleteRefreshesFunctionPrefix(t *testing.T) {
 }
 
 func TestMySQLCompleteSelectAliasesByClause(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	tests := []struct {
 		name string
 		sql  string
@@ -351,7 +351,7 @@ func TestMySQLCompleteSelectAliasesByClause(t *testing.T) {
 }
 
 func TestMySQLCompleteInsideStandaloneCTE(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	set := &metadata.MetadataSet{
 		Directory: mysqlCompletionTestCatalog(), Objects: mysqlCompletionTestObjects(),
 	}
@@ -379,7 +379,7 @@ func TestMySQLCompleteInsideStandaloneCTE(t *testing.T) {
 }
 
 func TestMySQLCompleteCTERelationsAndProjectedColumns(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	set := &metadata.MetadataSet{
 		Directory: mysqlCompletionTestCatalog(), Objects: mysqlCompletionTestObjects(),
 	}
@@ -416,7 +416,7 @@ func TestMySQLCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
 	directory := mysqlCompletionTestCatalog()
 	objects := mysqlCompletionTestObjects()
 	sql := "SELECT * FROM veraxasdwadqwd"
-	result, err := (&mysqlDriver{}).Complete(context.Background(), completer.Request{
+	result, err := (&Driver{}).Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
 		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
 	})
@@ -427,7 +427,7 @@ func TestMySQLCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
 }
 
 func TestMySQLCompletionContextMatrix(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	directory := mysqlCompletionTestCatalog()
 	metadata := &metadata.MetadataSet{Directory: directory, Objects: mysqlCompletionTestObjects()}
 	tests := []struct {

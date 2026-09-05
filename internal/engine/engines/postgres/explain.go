@@ -9,13 +9,13 @@ import (
 	"github.com/sqlwarden/internal/engine/explain"
 )
 
-var _ explain.Explainer = (*postgresDriver)(nil)
+var _ explain.Explainer = (*Driver)(nil)
 
 var postgresExplainSpec = explain.Spec{SupportsAnalyze: true}
 
-func (*postgresDriver) ExplainSpec() explain.Spec { return postgresExplainSpec }
+func (*Driver) ExplainSpec() explain.Spec { return postgresExplainSpec }
 
-func (*postgresDriver) Explain(sql string, mode explain.Mode) (explain.Plan, error) {
+func (*Driver) Explain(sql string, mode explain.Mode) (explain.Plan, error) {
 	if err := validateExplainable(sql); err != nil {
 		return explain.Plan{}, err
 	}

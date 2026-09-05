@@ -10,9 +10,9 @@ import (
 	"github.com/sqlwarden/internal/engine/parser"
 )
 
-var _ parser.Parser = (*mysqlDriver)(nil)
+var _ parser.Parser = (*Driver)(nil)
 
-func (d *mysqlDriver) Parse(ctx context.Context, req parser.Request) (parser.Result, error) {
+func (d *Driver) Parse(ctx context.Context, req parser.Request) (parser.Result, error) {
 	tree, spans, err := parseMySQL(ctx, req.SQL)
 	if err != nil {
 		return parser.Result{}, err

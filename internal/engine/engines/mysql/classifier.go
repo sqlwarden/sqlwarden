@@ -10,9 +10,9 @@ import (
 	"github.com/sqlwarden/internal/engine/parser"
 )
 
-var _ classifier.Classifier = (*mysqlDriver)(nil)
+var _ classifier.Classifier = (*Driver)(nil)
 
-func (d *mysqlDriver) Classify(ctx context.Context, req classifier.Request) (classifier.Result, error) {
+func (d *Driver) Classify(ctx context.Context, req classifier.Request) (classifier.Result, error) {
 	tree, _, err := parseMySQL(ctx, req.SQL)
 	if err != nil {
 		var syntaxErr *parser.SyntaxError

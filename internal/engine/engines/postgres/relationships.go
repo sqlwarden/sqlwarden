@@ -7,9 +7,9 @@ import (
 	"github.com/sqlwarden/internal/engine/metadata"
 )
 
-var _ metadata.RelationshipInspector = (*postgresDriver)(nil)
+var _ metadata.RelationshipInspector = (*Driver)(nil)
 
-func (d *postgresDriver) InspectRelationshipsInScope(ctx context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
+func (d *Driver) InspectRelationshipsInScope(ctx context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
 	namespace := scope.Name("schema")
 	q := `
 SELECT tc.table_schema, tc.table_name, tc.constraint_name, kcu.column_name,

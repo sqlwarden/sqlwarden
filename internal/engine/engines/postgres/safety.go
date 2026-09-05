@@ -10,9 +10,9 @@ import (
 	"github.com/sqlwarden/internal/engine/safety"
 )
 
-var _ safety.Checker = (*postgresDriver)(nil)
+var _ safety.Checker = (*Driver)(nil)
 
-func (d *postgresDriver) Check(ctx context.Context, req safety.Request) (safety.Result, error) {
+func (d *Driver) Check(ctx context.Context, req safety.Request) (safety.Result, error) {
 	statements, spans, err := parsePostgres(ctx, req.SQL)
 	if err != nil {
 		var syntaxErr *parser.SyntaxError

@@ -10,7 +10,7 @@ import (
 )
 
 func TestMySQLParse(t *testing.T) {
-	d := &mysqlDriver{}
+	d := &Driver{}
 	sql := "  SELECT 'é';\nUPDATE widgets SET active = false"
 	got, err := d.Parse(context.Background(), parser.Request{SQL: sql})
 	if err != nil {
@@ -30,7 +30,7 @@ func TestMySQLParse(t *testing.T) {
 
 func TestMySQLParseDelimiter(t *testing.T) {
 	sql := "DELIMITER //\nCREATE PROCEDURE p() BEGIN SELECT 1; END//\nDELIMITER ;\nSELECT 2;"
-	got, err := (&mysqlDriver{}).Parse(context.Background(), parser.Request{SQL: sql})
+	got, err := (&Driver{}).Parse(context.Background(), parser.Request{SQL: sql})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestMySQLParseDelimiter(t *testing.T) {
 
 func TestMySQLParseExecutableVersionComment(t *testing.T) {
 	sql := "SELECT 1 /*!50000; DROP TABLE widgets */"
-	got, err := (&mysqlDriver{}).Parse(context.Background(), parser.Request{SQL: sql})
+	got, err := (&Driver{}).Parse(context.Background(), parser.Request{SQL: sql})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestMySQLParseExecutableVersionComment(t *testing.T) {
 }
 
 func TestMySQLParseSyntaxError(t *testing.T) {
-	_, err := (&mysqlDriver{}).Parse(context.Background(), parser.Request{SQL: "SELECT é\nFROM"})
+	_, err := (&Driver{}).Parse(context.Background(), parser.Request{SQL: "SELECT é\nFROM"})
 	var syntaxErr *parser.SyntaxError
 	if !errors.As(err, &syntaxErr) {
 		t.Fatalf("Parse error = %v, want *parser.SyntaxError", err)
@@ -69,7 +69,7 @@ func TestMySQLParseSyntaxError(t *testing.T) {
 func TestMySQLParseCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := (&mysqlDriver{}).Parse(ctx, parser.Request{SQL: "SELECT 1"})
+	_, err := (&Driver{}).Parse(ctx, parser.Request{SQL: "SELECT 1"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Parse error = %v, want context.Canceled", err)
 	}
@@ -113,7 +113,7 @@ func TestMySQLClassify(t *testing.T) {
 		{name: "invalid syntax", sql: "SELECT FROM", want: classifier.KindUnknown, wantCount: 0},
 		{name: "empty", sql: "# only a comment", want: classifier.KindUnknown, wantCount: 0},
 	}
-	d := &mysqlDriver{}
+	d := &Driver{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := d.Classify(context.Background(), classifier.Request{SQL: tt.sql})

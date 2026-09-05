@@ -8,7 +8,7 @@ import (
 	"github.com/sqlwarden/internal/engine/ddl"
 )
 
-var _ ddl.Executor = (*mysqlDriver)(nil)
+var _ ddl.Executor = (*Driver)(nil)
 
 var mysqlDDLSpec = ddl.Spec{
 	Operations: []ddl.Operation{
@@ -29,11 +29,11 @@ var mysqlDDLSpec = ddl.Spec{
 	DroppableScopeKinds:      []string{"database"},
 }
 
-func (d *mysqlDriver) DDLSpec() ddl.Spec {
+func (d *Driver) DDLSpec() ddl.Spec {
 	return mysqlDDLSpec
 }
 
-func (d *mysqlDriver) ApplyDDL(ctx context.Context, request ddl.Request) error {
+func (d *Driver) ApplyDDL(ctx context.Context, request ddl.Request) error {
 	if err := ddl.Validate(request, mysqlDDLSpec); err != nil {
 		return err
 	}

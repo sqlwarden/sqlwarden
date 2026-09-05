@@ -9,7 +9,7 @@ import (
 )
 
 func TestMySQLExplain(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 
 	if !driver.ExplainSpec().SupportsAnalyze {
 		t.Fatal("expected mysql to support EXPLAIN ANALYZE")
@@ -33,7 +33,7 @@ func TestMySQLExplain(t *testing.T) {
 }
 
 func TestMySQLExplainRejectsMultipleStatements(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 
 	cases := []string{
 		"SELECT 1; SELECT 2",
@@ -48,7 +48,7 @@ func TestMySQLExplainRejectsMultipleStatements(t *testing.T) {
 }
 
 func TestMySQLExplainRejectsAlreadyExplainedStatement(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 
 	cases := []string{
 		"EXPLAIN SELECT 1",

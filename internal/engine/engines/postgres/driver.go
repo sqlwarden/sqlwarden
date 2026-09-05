@@ -15,11 +15,30 @@ import (
 	"github.com/sqlwarden/pkg/result"
 )
 
-type postgresDriver struct {
+// Driver is the PostgreSQL engine.Driver implementation. Fields are
+// unexported; compatible engines (e.g. a future Supabase/Neon/CockroachDB
+// package) embed Driver by value and reach the live connection through DB(),
+// never through the field directly.
+type Driver struct {
 	db           *sql.DB
 	currentTx    *sql.Tx
 	scanOptions  cursor.ScanOptions
 	defaultScope metadata.ScopePath
+}
+
+// DB returns the underlying connection pool. Catalog/DDL introspection always
+// runs directly against it (never through an open transaction), so this is
+// the handle compatible engines pass into the exported catalog.go functions.
+func (d *Driver) DB() *sql.DB {
+	return d.db
+}
+
+// DefaultScope returns the connection's configured default scope (e.g. the
+// selected schema). Compatible engines that override InspectDirectory or
+// InspectObjects need this to reproduce the same default-scope resolution
+// the embedded implementation performs.
+func (d *Driver) DefaultScope() metadata.ScopePath {
+	return d.defaultScope
 }
 
 // execer is satisfied by both *sql.DB and *sql.Tx, letting every statement
@@ -29,7 +48,7 @@ type execer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
-func (d *postgresDriver) conn() execer {
+func (d *Driver) conn() execer {
 	if d.currentTx != nil {
 		return d.currentTx
 	}
@@ -71,7 +90,7 @@ func buildPgxConfig(cfg engine.ConnectionConfig) (*pgx.ConnConfig, error) {
 	return config, nil
 }
 
-func (d *postgresDriver) Connect(ctx context.Context, cfg engine.ConnectionConfig) error {
+func (d *Driver) Connect(ctx context.Context, cfg engine.ConnectionConfig) error {
 	config, err := buildPgxConfig(cfg)
 	if err != nil {
 		return err
@@ -87,19 +106,19 @@ func (d *postgresDriver) Connect(ctx context.Context, cfg engine.ConnectionConfi
 	return nil
 }
 
-func (d *postgresDriver) Ping(ctx context.Context) error {
+func (d *Driver) Ping(ctx context.Context) error {
 	return d.db.PingContext(ctx)
 }
 
-func (d *postgresDriver) Close() error {
+func (d *Driver) Close() error {
 	return d.db.Close()
 }
 
-func (d *postgresDriver) Query(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
+func (d *Driver) Query(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
 	return d.QueryWithOptions(ctx, query, d.scanOptions, args...)
 }
 
-func (d *postgresDriver) QueryWithOptions(ctx context.Context, query string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
+func (d *Driver) QueryWithOptions(ctx context.Context, query string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
 	// SQL is intentionally user-authored editor input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
 	rows, err := d.conn().QueryContext(ctx, query, args...)
@@ -109,11 +128,11 @@ func (d *postgresDriver) QueryWithOptions(ctx context.Context, query string, opt
 	return cursor.ScanRows(rows, opts)
 }
 
-func (d *postgresDriver) Execute(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
+func (d *Driver) Execute(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {
 	return d.ExecuteWithOptions(ctx, query, d.scanOptions, args...)
 }
 
-func (d *postgresDriver) ExecuteWithOptions(ctx context.Context, query string, _ cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
+func (d *Driver) ExecuteWithOptions(ctx context.Context, query string, _ cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
 	// SQL is intentionally user-authored editor input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
 	execResult, err := d.conn().ExecContext(ctx, query, args...)
@@ -127,6 +146,6 @@ func (d *postgresDriver) ExecuteWithOptions(ctx context.Context, query string, _
 	return result.NewExecutionResult(rowsAffected), nil
 }
 
-func (d *postgresDriver) Dialect() engine.Dialect {
+func (d *Driver) Dialect() engine.Dialect {
 	return engine.DialectPostgres
 }

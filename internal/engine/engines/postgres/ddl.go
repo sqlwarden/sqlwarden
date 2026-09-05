@@ -8,7 +8,7 @@ import (
 	"github.com/sqlwarden/internal/engine/ddl"
 )
 
-var _ ddl.Executor = (*postgresDriver)(nil)
+var _ ddl.Executor = (*Driver)(nil)
 
 var postgresDDLSpec = ddl.Spec{
 	Operations: []ddl.Operation{
@@ -30,11 +30,11 @@ var postgresDDLSpec = ddl.Spec{
 	SupportsCascade:          true,
 }
 
-func (d *postgresDriver) DDLSpec() ddl.Spec {
+func (d *Driver) DDLSpec() ddl.Spec {
 	return postgresDDLSpec
 }
 
-func (d *postgresDriver) ApplyDDL(ctx context.Context, request ddl.Request) error {
+func (d *Driver) ApplyDDL(ctx context.Context, request ddl.Request) error {
 	if err := ddl.Validate(request, postgresDDLSpec); err != nil {
 		return err
 	}

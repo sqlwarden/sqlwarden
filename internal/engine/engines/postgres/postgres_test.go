@@ -49,9 +49,9 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func newConnectedDriver(t *testing.T) *postgresDriver {
+func newConnectedDriver(t *testing.T) *Driver {
 	t.Helper()
-	d := &postgresDriver{}
+	d := &Driver{}
 	ctx := context.Background()
 	if err := d.Connect(ctx, engine.ConnectionConfig{DSN: testDSN, Driver: "postgres"}); err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -78,7 +78,7 @@ func heapGrowth(before, after uint64) uint64 {
 
 func TestConnect(t *testing.T) {
 	t.Run("valid DSN", func(t *testing.T) {
-		d := &postgresDriver{}
+		d := &Driver{}
 		ctx := context.Background()
 		if err := d.Connect(ctx, engine.ConnectionConfig{DSN: testDSN, Driver: "postgres"}); err != nil {
 			t.Fatalf("expected connect to succeed, got: %v", err)
@@ -91,7 +91,7 @@ func TestConnect(t *testing.T) {
 		if _, err := setup.db.ExecContext(context.Background(), `CREATE SCHEMA IF NOT EXISTS selected_scope`); err != nil {
 			t.Fatal(err)
 		}
-		d := &postgresDriver{}
+		d := &Driver{}
 		scope := metadata.NewScopePath(
 			metadata.ScopeSegment{Kind: "database", Name: "testdb"},
 			metadata.ScopeSegment{Kind: "schema", Name: "selected_scope"},
@@ -112,7 +112,7 @@ func TestConnect(t *testing.T) {
 	})
 
 	t.Run("invalid DSN", func(t *testing.T) {
-		d := &postgresDriver{}
+		d := &Driver{}
 		ctx := context.Background()
 		err := d.Connect(ctx, engine.ConnectionConfig{DSN: "postgres://invalid:5432/nonexistent?sslmode=disable", Driver: "postgres"})
 		if err == nil {
@@ -429,7 +429,7 @@ func TestToValue(t *testing.T) {
 }
 
 func TestDialect(t *testing.T) {
-	d := &postgresDriver{}
+	d := &Driver{}
 	if d.Dialect() != engine.DialectPostgres {
 		t.Errorf("expected dialect %q, got %q", engine.DialectPostgres, d.Dialect())
 	}
@@ -676,7 +676,7 @@ func contains(s []string, v string) bool {
 }
 
 func TestPostgresSchemaSpec(t *testing.T) {
-	spec := (&postgresDriver{}).SchemaSpec()
+	spec := (&Driver{}).SchemaSpec()
 	if spec.Dialect != "postgres" {
 		t.Fatalf("dialect: %s", spec.Dialect)
 	}

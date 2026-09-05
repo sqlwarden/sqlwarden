@@ -8,11 +8,11 @@ import (
 	"github.com/sqlwarden/internal/engine/transaction"
 )
 
-var _ transaction.SavepointController = (*mysqlDriver)(nil)
+var _ transaction.SavepointController = (*Driver)(nil)
 
 var errAlreadyInTransaction = errors.New("transaction already open")
 
-func (d *mysqlDriver) BeginTx(ctx context.Context) error {
+func (d *Driver) BeginTx(ctx context.Context) error {
 	if d.currentTx != nil {
 		return fmt.Errorf("mysql: begin tx: %w", errAlreadyInTransaction)
 	}
@@ -24,7 +24,7 @@ func (d *mysqlDriver) BeginTx(ctx context.Context) error {
 	return nil
 }
 
-func (d *mysqlDriver) Commit(ctx context.Context) error {
+func (d *Driver) Commit(ctx context.Context) error {
 	if d.currentTx == nil {
 		return transaction.ErrNoOpenTransaction
 	}
@@ -36,7 +36,7 @@ func (d *mysqlDriver) Commit(ctx context.Context) error {
 	return nil
 }
 
-func (d *mysqlDriver) Rollback(ctx context.Context) error {
+func (d *Driver) Rollback(ctx context.Context) error {
 	if d.currentTx == nil {
 		return transaction.ErrNoOpenTransaction
 	}
@@ -48,11 +48,11 @@ func (d *mysqlDriver) Rollback(ctx context.Context) error {
 	return nil
 }
 
-func (d *mysqlDriver) InTransaction() bool {
+func (d *Driver) InTransaction() bool {
 	return d.currentTx != nil
 }
 
-func (d *mysqlDriver) Savepoint(ctx context.Context, name string) error {
+func (d *Driver) Savepoint(ctx context.Context, name string) error {
 	if d.currentTx == nil {
 		return transaction.ErrNoOpenTransaction
 	}
@@ -63,7 +63,7 @@ func (d *mysqlDriver) Savepoint(ctx context.Context, name string) error {
 	return nil
 }
 
-func (d *mysqlDriver) RollbackToSavepoint(ctx context.Context, name string) error {
+func (d *Driver) RollbackToSavepoint(ctx context.Context, name string) error {
 	if d.currentTx == nil {
 		return transaction.ErrNoOpenTransaction
 	}

@@ -21,7 +21,7 @@ func mysqlStatementObject(kind string) metadata.Object {
 }
 
 func TestMySQLGenerateStatement(t *testing.T) {
-	driver := &mysqlDriver{}
+	driver := &Driver{}
 	object := mysqlStatementObject("table")
 	generated, err := driver.Generate(statement.Request{Operation: statement.OperationInsert, Object: object})
 	if err != nil {

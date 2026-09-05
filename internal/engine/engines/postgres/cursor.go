@@ -7,9 +7,9 @@ import (
 	"github.com/sqlwarden/internal/engine/cursor"
 )
 
-var _ cursor.QueryCursorDriver = (*postgresDriver)(nil)
+var _ cursor.QueryCursorDriver = (*Driver)(nil)
 
-func (d *postgresDriver) StartQuery(ctx context.Context, req cursor.QueryRequest) (cursor.QueryCursor, error) {
+func (d *Driver) StartQuery(ctx context.Context, req cursor.QueryRequest) (cursor.QueryCursor, error) {
 	// SQL is intentionally user-authored editor input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
 	rows, err := d.conn().QueryContext(ctx, req.SQL, req.Args...)

@@ -20,9 +20,9 @@ import (
 const preparedCompletionCatalogs = 32
 
 var (
-	_                               completer.Completer          = (*postgresDriver)(nil)
-	_                               completer.CatalogInvalidator = (*postgresDriver)(nil)
-	_                               completer.VocabularyProvider = (*postgresDriver)(nil)
+	_                               completer.Completer          = (*Driver)(nil)
+	_                               completer.CatalogInvalidator = (*Driver)(nil)
+	_                               completer.VocabularyProvider = (*Driver)(nil)
 	pgCompletionCatalogCache                                     = completer.NewPreparedCache[*pgcatalog.Catalog](preparedCompletionCatalogs)
 	pgSchemaIndexCache                                           = completer.NewPreparedCache[*metadata.Index](preparedCompletionCatalogs)
 	pgVocabularyOnce                sync.Once
@@ -47,7 +47,7 @@ var (
 	}
 )
 
-func (d *postgresDriver) Complete(ctx context.Context, req completer.Request) (completer.Result, error) {
+func (d *Driver) Complete(ctx context.Context, req completer.Request) (completer.Result, error) {
 	if req.CursorOffset < 0 || req.CursorOffset > len(req.SQL) {
 		return completer.Result{}, fmt.Errorf("postgres completion cursor offset %d is out of range", req.CursorOffset)
 	}
@@ -416,7 +416,7 @@ func completionHasQualifier(sql string, cursor int) bool {
 	return index > 0 && sql[index-1] == '.'
 }
 
-func (d *postgresDriver) CompletionVocabulary() completer.Vocabulary {
+func (d *Driver) CompletionVocabulary() completer.Vocabulary {
 	pgVocabularyOnce.Do(func() {
 		items := make([]completer.Suggestion, 0, len(pgparser.Keywords)+256)
 		for _, keyword := range pgparser.Keywords {
@@ -457,7 +457,7 @@ func curatedSelectSuggestions(start, end int) []completer.Suggestion {
 	return result
 }
 
-func (d *postgresDriver) InvalidateCompletionCatalog(connectionID string) {
+func (d *Driver) InvalidateCompletionCatalog(connectionID string) {
 	pgCompletionCatalogCache.InvalidatePrefix(connectionID + ":")
 	pgSchemaIndexCache.InvalidatePrefix(connectionID + ":")
 }

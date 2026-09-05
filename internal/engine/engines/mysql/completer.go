@@ -21,9 +21,9 @@ import (
 const preparedCompletionCatalogs = 32
 
 var (
-	_                           completer.Completer          = (*mysqlDriver)(nil)
-	_                           completer.CatalogInvalidator = (*mysqlDriver)(nil)
-	_                           completer.VocabularyProvider = (*mysqlDriver)(nil)
+	_                           completer.Completer          = (*Driver)(nil)
+	_                           completer.CatalogInvalidator = (*Driver)(nil)
+	_                           completer.VocabularyProvider = (*Driver)(nil)
 	mysqlCompletionCatalogCache                              = completer.NewPreparedCache[*mysqlcatalog.Catalog](preparedCompletionCatalogs)
 	mysqlSchemaIndexCache                                    = completer.NewPreparedCache[*metadata.Index](preparedCompletionCatalogs)
 	mysqlVocabularyOnce         sync.Once
@@ -31,7 +31,7 @@ var (
 	mysqlSafeType               = regexp.MustCompile(`^[A-Za-z0-9_ (),.'"]+$`)
 )
 
-func (d *mysqlDriver) Complete(ctx context.Context, req completer.Request) (completer.Result, error) {
+func (d *Driver) Complete(ctx context.Context, req completer.Request) (completer.Result, error) {
 	if req.CursorOffset < 0 || req.CursorOffset > len(req.SQL) {
 		return completer.Result{}, fmt.Errorf("mysql completion cursor offset %d is out of range", req.CursorOffset)
 	}
@@ -101,7 +101,7 @@ func (d *mysqlDriver) Complete(ctx context.Context, req completer.Request) (comp
 	return completer.Result{Suggestions: suggestions, Context: position}, nil
 }
 
-func (d *mysqlDriver) CompletionVocabulary() completer.Vocabulary {
+func (d *Driver) CompletionVocabulary() completer.Vocabulary {
 	mysqlVocabularyOnce.Do(func() {
 		var items []completer.Suggestion
 		for token := 0; token < 10000; token++ {
@@ -146,7 +146,7 @@ func mysqlCuratedSelectSuggestions(start, end int) []completer.Suggestion {
 	return result
 }
 
-func (d *mysqlDriver) InvalidateCompletionCatalog(connectionID string) {
+func (d *Driver) InvalidateCompletionCatalog(connectionID string) {
 	mysqlCompletionCatalogCache.InvalidatePrefix(connectionID + ":")
 	mysqlSchemaIndexCache.InvalidatePrefix(connectionID + ":")
 }

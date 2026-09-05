@@ -33,7 +33,7 @@ func TestPostgresSafetyCheck(t *testing.T) {
 			wantCount: 2,
 		},
 	}
-	d := &postgresDriver{}
+	d := &Driver{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := d.Check(context.Background(), safety.Request{SQL: tt.sql})
@@ -56,7 +56,7 @@ func TestPostgresSafetyCheck(t *testing.T) {
 }
 
 func TestPostgresSafetyCheckSyntaxError(t *testing.T) {
-	d := &postgresDriver{}
+	d := &Driver{}
 	got, err := d.Check(context.Background(), safety.Request{SQL: "UPDATE widgets SET"})
 	if err != nil {
 		t.Fatalf("Check: %v, want nil error on syntax error", err)

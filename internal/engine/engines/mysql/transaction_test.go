@@ -8,7 +8,7 @@ import (
 )
 
 func TestMySQLTransactionCommitAndRollback(t *testing.T) {
-	d := &mysqlDriver{}
+	d := &Driver{}
 	ctx := context.Background()
 	if err := d.Connect(ctx, engine.ConnectionConfig{DSN: testDSN, Driver: "mysql"}); err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -48,7 +48,7 @@ func TestMySQLTransactionCommitAndRollback(t *testing.T) {
 }
 
 func TestMySQLSavepointRollback(t *testing.T) {
-	d := &mysqlDriver{}
+	d := &Driver{}
 	ctx := context.Background()
 	if err := d.Connect(ctx, engine.ConnectionConfig{DSN: testDSN, Driver: "mysql"}); err != nil {
 		t.Fatalf("Connect: %v", err)

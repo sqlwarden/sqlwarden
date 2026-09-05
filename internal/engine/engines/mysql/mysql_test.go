@@ -62,9 +62,9 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func newConnectedDriver(t *testing.T) *mysqlDriver {
+func newConnectedDriver(t *testing.T) *Driver {
 	t.Helper()
-	d := &mysqlDriver{}
+	d := &Driver{}
 	ctx := context.Background()
 	if err := d.Connect(ctx, engine.ConnectionConfig{DSN: testDSN, Driver: "mysql"}); err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -91,7 +91,7 @@ func heapGrowth(before, after uint64) uint64 {
 
 func TestConnect(t *testing.T) {
 	t.Run("valid DSN", func(t *testing.T) {
-		d := &mysqlDriver{}
+		d := &Driver{}
 		ctx := context.Background()
 		if err := d.Connect(ctx, engine.ConnectionConfig{DSN: testDSN, Driver: "mysql"}); err != nil {
 			t.Fatalf("expected connect to succeed, got: %v", err)
@@ -105,7 +105,7 @@ func TestConnect(t *testing.T) {
 			t.Fatal(err)
 		}
 		config.DBName = ""
-		d := &mysqlDriver{}
+		d := &Driver{}
 		scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "testdb"})
 		if err := d.Connect(context.Background(), engine.ConnectionConfig{
 			DSN: config.FormatDSN(), Driver: "mysql", DefaultScope: scope,
@@ -128,7 +128,7 @@ func TestConnect(t *testing.T) {
 			t.Fatal(err)
 		}
 		config.DBName = ""
-		d := &mysqlDriver{}
+		d := &Driver{}
 		if err := d.Connect(context.Background(), engine.ConnectionConfig{
 			DSN: config.FormatDSN(), Driver: "mysql",
 		}); err != nil {
@@ -145,7 +145,7 @@ func TestConnect(t *testing.T) {
 	})
 
 	t.Run("invalid DSN", func(t *testing.T) {
-		d := &mysqlDriver{}
+		d := &Driver{}
 		ctx := context.Background()
 		err := d.Connect(ctx, engine.ConnectionConfig{DSN: "testuser:testpass@tcp(127.0.0.1:19999)/nonexistent", Driver: "mysql"})
 		if err == nil {
@@ -829,7 +829,7 @@ func hasIndex(indexes []metadata.SecondaryIndex, name, column string) bool {
 }
 
 func TestDialect(t *testing.T) {
-	d := &mysqlDriver{}
+	d := &Driver{}
 	if d.Dialect() != engine.DialectMySQL {
 		t.Errorf("expected dialect %q, got %q", engine.DialectMySQL, d.Dialect())
 	}
