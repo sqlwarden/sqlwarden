@@ -627,9 +627,12 @@ func TestMyWorkspaceConnectionValidationAndEnvironmentChecks(t *testing.T) {
 	assert.Equal(t, crossEnvCreate.StatusCode, http.StatusNotFound)
 }
 
-func TestMyWorkspaceConnectionRejectsSQLiteFileTargetInServerMode(t *testing.T) {
+func TestMyWorkspaceConnectionRejectsSQLiteFileTargetWhenInstanceDisablesLocalTargets(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
+	updateInstanceSettingsForTest(t, app, func(s *database.InstanceSettings) {
+		s.SQLiteLocalTargetsEnabled = false
+	})
 	_, tok := setupMeTest(t, app, "meconn-sqlite-file@example.com")
 
 	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/me/workspaces",

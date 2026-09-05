@@ -21,12 +21,10 @@ func TestConnectionExportsUnavailableWithoutRegisteredClassifier(t *testing.T) {
 	account, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "export-unavailable"), "Export Unavailable", "Export Unavailable Org")
 	ws := seedWorkspaceForAccount(t, app, org, account, "Export Unavailable WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	createRes := send(t, newAuthRequest(t, http.MethodPost,
-		orgEnvConnectionsURL(org.Slug, ws.ID, envID),
-		map[string]any{"name": "ExportUnavailableConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
-	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
-	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
-	baseURL := orgConnectionURL(org.Slug, ws.ID, envID, connID)
+	// Every registered engine ships a classifier, so exercise the unavailable
+	// path with a connection whose driver name resolves to no engine.
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "driver-with-no-engine", "ExportUnavailableConn", "open")
+	baseURL := orgConnectionURL(org.Slug, ws.ID, envID, fmt.Sprintf("%d", conn.ID))
 
 	for _, path := range []string{"/exports", "/exports/download"} {
 		res := send(t, newAuthRequest(t, http.MethodPost, baseURL+path,
@@ -48,7 +46,7 @@ func TestHandleExportJobFailsBeforeTargetAccessWithoutRegisteredClassifier(t *te
 	account, _, org := seedOrgOwner(t, app, uniqueEmail(t, "export-worker-unavailable"), "Export Worker Unavailable", "Export Worker Unavailable Org")
 	ws := seedWorkspaceForAccount(t, app, org, account, "Export Worker Unavailable WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Export Worker Unavailable Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "driver-with-no-engine", "Export Worker Unavailable Conn", "open")
 
 	inputJSON, err := json.Marshal(exportJobInput{
 		AccountID:    account.ID,
@@ -87,7 +85,7 @@ func TestRegisteredClassifierIsRequiredForExportValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ok := app.validateExportSQL(recorder, req, database.Connection{Driver: "sqlite"}, "SELECT 1")
+	ok := app.validateExportSQL(recorder, req, database.Connection{Driver: "driver-with-no-engine"}, "SELECT 1")
 	assert.Equal(t, ok, false)
 	assert.Equal(t, recorder.Code, http.StatusNotImplemented)
 }
@@ -110,6 +108,10 @@ func TestOmniClassifierExportValidation(t *testing.T) {
 		{name: "mysql locking read", driver: "mysql", sql: "SELECT * FROM widgets FOR UPDATE", wantStatus: http.StatusUnprocessableEntity},
 		{name: "postgres multi query", driver: "postgres", sql: "SELECT 1; SELECT 2", wantStatus: http.StatusUnprocessableEntity},
 		{name: "mysql invalid", driver: "mysql", sql: "SELECT FROM", wantStatus: http.StatusUnprocessableEntity},
+		{name: "sqlite read", driver: "sqlite", sql: "SELECT 1", wantOK: true},
+		{name: "sqlite read CTE", driver: "sqlite", sql: "WITH value AS (SELECT 1 AS n) SELECT n FROM value", wantOK: true},
+		{name: "sqlite mutation", driver: "sqlite", sql: "DELETE FROM widgets", wantStatus: http.StatusUnprocessableEntity},
+		{name: "sqlite multi query", driver: "sqlite", sql: "SELECT 1; SELECT 2", wantStatus: http.StatusUnprocessableEntity},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

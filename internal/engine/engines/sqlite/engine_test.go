@@ -24,11 +24,15 @@ func TestSQLiteEngineRegisteredAndConforms(t *testing.T) {
 	for _, capability := range []engine.Capability{
 		engine.CapabilitySQLParse,
 		engine.CapabilitySQLClassify,
-		engine.CapabilitySQLRewrite,
 		engine.CapabilitySQLComplete,
+		engine.CapabilitySQLSafetyCheck,
+		engine.CapabilitySQLExplain,
 	} {
-		if caps[capability] {
-			t.Errorf("%s must be false until implemented", capability)
+		if !caps[capability] {
+			t.Errorf("%s must be true", capability)
 		}
+	}
+	if caps[engine.CapabilitySQLRewrite] {
+		t.Errorf("sql.rewrite must be false until implemented")
 	}
 }

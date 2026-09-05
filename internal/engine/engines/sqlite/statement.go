@@ -17,7 +17,7 @@ func (*sqliteDriver) Generate(request statement.Request) (string, error) {
 	if err := statement.Validate(request, sqliteStatementSpec); err != nil {
 		return "", err
 	}
-	qualified := sqliteDDLQualified(request.Object.Ref.Scope.Name("database"), request.Object.Ref.Name)
+	qualified := sqliteQualify(request.Object.Ref.Scope.Name("database"), request.Object.Ref.Name)
 	columns := request.Object.Relational.Columns
 	quoted := make([]string, len(columns))
 	values := make([]string, len(columns))

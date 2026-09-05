@@ -31,10 +31,30 @@ describe('getObjectRenderer', () => {
     )
   })
 
-  it('base renderer shows no header badges or column extras', () => {
+  it('sqlite renderer shows no header badges and Generated/Collation/Check column extras', () => {
     const r = getObjectRenderer('sqlite')
     expect(r.headerBadges(vm(tableDetail, 'sqlite'))).toEqual([])
-    expect(r.columnExtras(vm(tableDetail, 'sqlite'))).toEqual([])
+    expect(r.columnExtras(vm(tableDetail, 'sqlite')).map((c) => c.header)).toEqual([
+      'Generated',
+      'Collation',
+      'Check',
+    ])
+  })
+
+  it('sqlite column extras read per-column generated/collation/check attributes', () => {
+    const [generated, collation, check] = getObjectRenderer('sqlite').columnExtras(
+      vm(tableDetail, 'sqlite'),
+    )
+    const col = {
+      name: 'id',
+      data_type: 'int',
+      nullable: false,
+      ordinal: 1,
+      attributes: { generated: 'stored', collation: 'NOCASE', check: 'id > 0' },
+    }
+    expect(generated.cell(col)).toBe('stored')
+    expect(collation.cell(col)).toBe('NOCASE')
+    expect(check.cell(col)).toBe('id > 0')
   })
 
   it('renders a single Overview section for non-relational objects without source', () => {

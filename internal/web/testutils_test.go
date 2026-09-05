@@ -72,6 +72,7 @@ func newTestApplication(t *testing.T) *application {
 	}
 	settings.BaseURL = app.config.BootstrapBaseURL
 	settings.FileRevisionsEnabled = false
+	settings.SQLiteInMemoryTargetsEnabled = true
 	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
 		t.Fatal(err)
 	}

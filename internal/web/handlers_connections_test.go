@@ -28,11 +28,13 @@ import (
 )
 
 func TestConnectionClassifierFallsBackToHeuristic(t *testing.T) {
-	if _, ok := registeredConnectionClassifier("sqlite"); ok {
-		t.Fatal("sqlite must not advertise a registered classifier")
+	// Every registered engine now ships a real classifier, so the heuristic
+	// fallback is only reachable for a driver name that resolves to no engine.
+	if _, ok := registeredConnectionClassifier("driver-with-no-engine"); ok {
+		t.Fatal("an unregistered driver must not advertise a registered classifier")
 	}
 
-	c := connectionClassifier("sqlite")
+	c := connectionClassifier("driver-with-no-engine")
 	tests := []struct {
 		sql  string
 		want classifier.Kind
@@ -49,6 +51,31 @@ func TestConnectionClassifierFallsBackToHeuristic(t *testing.T) {
 		}
 		if got.Kind != test.want || got.Source != "heuristic" {
 			t.Errorf("Classify(%q) = %+v, want kind=%q source=heuristic", test.sql, got, test.want)
+		}
+	}
+}
+
+func TestConnectionClassifierUsesRegisteredSQLiteEngine(t *testing.T) {
+	c, ok := registeredConnectionClassifier("sqlite")
+	if !ok {
+		t.Fatal("sqlite must advertise a registered classifier")
+	}
+
+	tests := []struct {
+		sql  string
+		want classifier.Kind
+	}{
+		{sql: "SELECT 1", want: classifier.KindDQL},
+		{sql: "DELETE FROM t", want: classifier.KindDML},
+		{sql: "PRAGMA foreign_keys", want: classifier.KindUnknown},
+	}
+	for _, test := range tests {
+		got, err := c.Classify(context.Background(), classifier.Request{SQL: test.sql})
+		if err != nil {
+			t.Fatalf("Classify(%q): %v", test.sql, err)
+		}
+		if got.Kind != test.want {
+			t.Errorf("Classify(%q) kind = %q, want %q", test.sql, got.Kind, test.want)
 		}
 	}
 }
@@ -171,9 +198,12 @@ func TestTestConnectionSuccessLogsOutcome(t *testing.T) {
 	assert.False(t, strings.Contains(logs.String(), ":memory:"))
 }
 
-func TestTestConnectionRejectsSQLiteFileTargetInServerMode(t *testing.T) {
+func TestTestConnectionRejectsSQLiteFileTargetWhenInstanceDisablesLocalTargets(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
+	updateInstanceSettingsForTest(t, app, func(s *database.InstanceSettings) {
+		s.SQLiteLocalTargetsEnabled = false
+	})
 
 	_, tok, slug := registerAndLogin(t, app, "conn-test-sqlite-file@example.com", "Conn Test SQLite File", "securepass99")
 
@@ -289,46 +319,9 @@ func TestCreateConnectionUnknownDriverReturns422(t *testing.T) {
 	assertValidationField(t, createRes, "driver")
 }
 
-func TestCreateConnectionRejectsSQLiteFileTargetInServerMode(t *testing.T) {
+func TestCreateConnectionAllowsSQLiteFileTargetByDefault(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-
-	_, tok, slug := registerAndLogin(t, app, "conn-create-sqlite-file@example.com", "Conn Create SQLite File", "securepass99")
-
-	wsRes := send(t, newAuthRequest(t, http.MethodPost,
-		"/api/v1/orgs/"+slug+"/workspaces",
-		map[string]any{"name": "Conn SQLite File WS"}, tok), app.routes())
-	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
-	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
-	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
-	envID := defaultEnvironmentID(t, app, wsIDInt)
-
-	createRes := send(t, newAuthRequest(t, http.MethodPost,
-		orgEnvConnectionsURL(slug, wsIDInt, envID),
-		map[string]any{
-			"name":   "Host SQLite",
-			"driver": "sqlite",
-			"dsn":    filepath.Join(t.TempDir(), "host.db"),
-		}, tok), app.routes())
-	assert.Equal(t, createRes.StatusCode, http.StatusUnprocessableEntity)
-	assertValidationField(t, createRes, "driver")
-
-	listRes := send(t, newAuthRequest(t, http.MethodGet,
-		orgEnvConnectionsURL(slug, wsIDInt, envID), nil, tok), app.routes())
-	assert.Equal(t, listRes.StatusCode, http.StatusOK)
-	var payload struct {
-		Items []map[string]any `json:"items"`
-		Total int              `json:"total"`
-	}
-	decodeJSONResponse(t, listRes.BodyBytes, &payload)
-	assert.Equal(t, payload.Total, 0)
-	assert.Equal(t, len(payload.Items), 0)
-}
-
-func TestCreateConnectionAllowsSQLiteFileTargetWhenLocalSourceAllowed(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	app.config.Drivers.SQLite.AllowedSources = []string{SQLiteDriverSourceLocal}
 
 	_, tok, slug := registerAndLogin(t, app, "conn-create-desktop-sqlite-file@example.com", "Conn Create Desktop SQLite File", "securepass99")
 
@@ -349,6 +342,42 @@ func TestCreateConnectionAllowsSQLiteFileTargetWhenLocalSourceAllowed(t *testing
 		}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 	assert.Equal(t, createRes.BodyFields["driver"], "sqlite")
+}
+
+func TestCreateConnectionRejectsSQLiteFileTargetWhenInstanceDisablesIt(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+		settings.SQLiteLocalTargetsEnabled = false
+	})
+
+	_, tok, slug := registerAndLogin(t, app, "conn-sqlite-file-disabled@example.com", "Conn SQLite File Disabled", "securepass99")
+
+	wsRes := send(t, newAuthRequest(t, http.MethodPost,
+		"/api/v1/orgs/"+slug+"/workspaces",
+		map[string]any{"name": "SQLite File Disabled WS"}, tok), app.routes())
+	assert.Equal(t, wsRes.StatusCode, http.StatusCreated)
+	wsID := fmt.Sprintf("%v", wsRes.BodyFields["id"])
+	wsIDInt, _ := strconv.ParseInt(wsID, 10, 64)
+	envID := defaultEnvironmentID(t, app, wsIDInt)
+
+	createRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "Local SQLite",
+			"driver": "sqlite",
+			"dsn":    filepath.Join(t.TempDir(), "local.db"),
+		}, tok), app.routes())
+	assert.Equal(t, createRes.StatusCode, http.StatusUnprocessableEntity)
+
+	memRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgEnvConnectionsURL(slug, wsIDInt, envID),
+		map[string]any{
+			"name":   "Memory SQLite",
+			"driver": "sqlite",
+			"dsn":    ":memory:",
+		}, tok), app.routes())
+	assert.Equal(t, memRes.StatusCode, http.StatusCreated)
 }
 
 func TestListConnections(t *testing.T) {
@@ -542,9 +571,12 @@ func TestGetConnectionDSNMaskedByOrgSetting(t *testing.T) {
 	assert.Equal(t, ownerRes.StatusCode, http.StatusForbidden)
 }
 
-func TestUpdateConnectionRejectsSQLiteFileTargetInServerMode(t *testing.T) {
+func TestUpdateConnectionRejectsSQLiteFileTargetWhenInstanceDisablesLocalTargets(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
+	updateInstanceSettingsForTest(t, app, func(s *database.InstanceSettings) {
+		s.SQLiteLocalTargetsEnabled = false
+	})
 
 	_, tok, slug := registerAndLogin(t, app, "conn-update-sqlite-file@example.com", "Conn Update SQLite File", "securepass99")
 
@@ -1833,6 +1865,20 @@ func TestConnectionRuntimePermissionClasses(t *testing.T) {
 	execSelectReq.Header.Set("X-Warden-Session", execSession)
 	assert.Equal(t, send(t, execSelectReq, app.routes()).StatusCode, http.StatusOK)
 
+	// PRAGMA classifies as unknown, so it needs conn:execute and is denied to
+	// the DQL-only member.
+	dqlPragmaReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "PRAGMA foreign_keys"}, dqlTok)
+	dqlPragmaReq.Header.Set("X-Warden-Session", dqlSession)
+	assert.Equal(t, send(t, dqlPragmaReq, app.routes()).StatusCode, http.StatusForbidden)
+
+	execPragmaReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
+		map[string]any{"sql": "PRAGMA foreign_keys"}, execTok)
+	execPragmaReq.Header.Set("X-Warden-Session", execSession)
+	assert.Equal(t, send(t, execPragmaReq, app.routes()).StatusCode, http.StatusOK)
+
 	execDDLReq := newAuthRequest(t, http.MethodPost,
 		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/query",
 		map[string]any{"sql": "CREATE TABLE exec_only (id INTEGER)"}, execTok)
@@ -2504,9 +2550,12 @@ func TestConnectToDatabaseReturns422ForTargetDatabaseError(t *testing.T) {
 	assert.Equal(t, connectRes.StatusCode, http.StatusUnprocessableEntity)
 }
 
-func TestConnectToDatabaseRejectsPersistedSQLiteFileTargetInServerMode(t *testing.T) {
+func TestConnectToDatabaseRejectsPersistedSQLiteFileTargetWhenInstanceDisablesLocalTargets(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
+	updateInstanceSettingsForTest(t, app, func(s *database.InstanceSettings) {
+		s.SQLiteLocalTargetsEnabled = false
+	})
 
 	_, tok, slug := registerAndLogin(t, app, "conn-connect-sqlite-file@example.com", "Conn Connect SQLite File", "securepass99")
 

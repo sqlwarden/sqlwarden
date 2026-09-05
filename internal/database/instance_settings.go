@@ -62,6 +62,8 @@ type InstanceSettings struct {
 	QueryHistoryRetentionCount     int       `bun:",notnull" json:"query_history_retention_count"`
 	QueryHistoryRetentionCountMax  int       `bun:",notnull" json:"query_history_retention_count_max"`
 	QueryFavoritesMode             string    `bun:",notnull" json:"query_favorites_mode"`
+	SQLiteLocalTargetsEnabled      bool      `bun:"sqlite_local_targets_enabled,notnull" json:"sqlite_local_targets_enabled"`
+	SQLiteInMemoryTargetsEnabled   bool      `bun:"sqlite_memory_targets_enabled,notnull" json:"sqlite_memory_targets_enabled"`
 	CreatedAt                      time.Time `bun:",notnull" json:"created_at"`
 	UpdatedAt                      time.Time `bun:",notnull" json:"updated_at"`
 }
@@ -109,6 +111,7 @@ func DefaultInstanceSettings() InstanceSettings {
 		QueryHistoryRetentionCount:     DefaultQueryHistoryRetentionCount,
 		QueryHistoryRetentionCountMax:  DefaultQueryHistoryRetentionCountMax,
 		QueryFavoritesMode:             "backend",
+		SQLiteLocalTargetsEnabled:      true,
 	}
 }
 
@@ -172,6 +175,8 @@ func (db *DB) UpsertInstanceSettings(ctx context.Context, settings InstanceSetti
 		Set("query_history_retention_count = EXCLUDED.query_history_retention_count").
 		Set("query_history_retention_count_max = EXCLUDED.query_history_retention_count_max").
 		Set("query_favorites_mode = EXCLUDED.query_favorites_mode").
+		Set("sqlite_local_targets_enabled = EXCLUDED.sqlite_local_targets_enabled").
+		Set("sqlite_memory_targets_enabled = EXCLUDED.sqlite_memory_targets_enabled").
 		Set("updated_at = EXCLUDED.updated_at").
 		Exec(ctx)
 	if err != nil {

@@ -93,6 +93,8 @@ export function instanceSettingsFixture(
     smtp_username: '',
     smtp_password_configured: false,
     smtp_from: '',
+    sqlite_local_targets_enabled: true,
+    sqlite_memory_targets_enabled: false,
     ...overrides,
   }
 }
@@ -112,7 +114,6 @@ export function instanceConfigurationFixture(
     tls_enabled: false,
     file_storage_mode: 'file',
     file_storage_backend: 'local',
-    sqlite_local_enabled: true,
     ...overrides,
   }
 }

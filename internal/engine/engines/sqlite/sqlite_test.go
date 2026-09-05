@@ -3,12 +3,15 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"fmt"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/completer"
 	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/pkg/result"
@@ -336,22 +339,22 @@ func TestSQLiteObjectDefinitions(t *testing.T) {
 		t.Fatalf("create view: %v", err)
 	}
 
-	tbl, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"}), Kind: "table", Name: "defs_t"}})
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+
+	tbl, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "table", Name: "defs_t"})
 	if err != nil {
-		t.Fatalf("InspectObjects table: %v", err)
+		t.Fatalf("InspectDefinition table: %v", err)
 	}
-	ddl := descriptorByTitle(tbl[0].Descriptors, "DDL")
-	if ddl == nil || !strings.Contains(ddl.Body, "CREATE TABLE") {
-		t.Fatalf("table DDL descriptor missing/blank: %+v", tbl[0].Descriptors)
+	if tbl == nil || tbl.Title != "DDL" || tbl.Source == nil || !strings.Contains(tbl.Source.Body, "CREATE TABLE") {
+		t.Fatalf("table DDL descriptor missing/blank: %+v", tbl)
 	}
 
-	view, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"}), Kind: "view", Name: "defs_v"}})
+	view, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "view", Name: "defs_v"})
 	if err != nil {
-		t.Fatalf("InspectObjects view: %v", err)
+		t.Fatalf("InspectDefinition view: %v", err)
 	}
-	def := descriptorByTitle(view[0].Descriptors, "Definition")
-	if def == nil || !strings.Contains(strings.ToUpper(def.Body), "SELECT") {
-		t.Fatalf("view definition descriptor missing/blank: %+v", view[0].Descriptors)
+	if view == nil || view.Title != "Definition" || view.Source == nil || !strings.Contains(strings.ToUpper(view.Source.Body), "SELECT") {
+		t.Fatalf("view definition descriptor missing/blank: %+v", view)
 	}
 }
 
@@ -386,15 +389,6 @@ func TestSQLiteInspectRelationships(t *testing.T) {
 	}
 }
 
-func descriptorByTitle(ds []metadata.Descriptor, title string) *metadata.Source {
-	for _, d := range ds {
-		if d.Title == title && d.Source != nil {
-			return d.Source
-		}
-	}
-	return nil
-}
-
 func directoryHasRef(directory *metadata.Directory, ref metadata.ObjectRef) bool {
 	for _, got := range directory.ObjectRefs() {
 		if got == ref {
@@ -411,6 +405,119 @@ func hasIndex(indexes []metadata.SecondaryIndex, name, column string) bool {
 		}
 	}
 	return false
+}
+
+func TestSQLiteSchemaBackedCompletionRoundTrip(t *testing.T) {
+	d := connectedSQLite(t,
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`,
+		`CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL)`,
+	)
+	ctx := context.Background()
+
+	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
+	if err != nil {
+		t.Fatalf("InspectDirectory: %v", err)
+	}
+	objects, err := d.InspectObjects(ctx, directory.ObjectRefs())
+	if err != nil {
+		t.Fatalf("InspectObjects: %v", err)
+	}
+	schema := &metadata.MetadataSet{Directory: directory, Objects: objects, Version: "snapshot-1"}
+
+	columnSQL := "SELECT  FROM users"
+	columnResult, err := d.Complete(ctx, completer.Request{
+		SQL:          columnSQL,
+		CursorOffset: len("SELECT "),
+		Schema:       schema,
+		ConnectionID: "conn-roundtrip",
+	})
+	if err != nil {
+		t.Fatalf("Complete columns: %v", err)
+	}
+	assertHasSuggestion(t, columnResult, "id", "column")
+	assertHasSuggestion(t, columnResult, "name", "column")
+
+	tableSQL := "SELECT * FROM "
+	tableResult, err := d.Complete(ctx, completer.Request{
+		SQL:          tableSQL,
+		CursorOffset: len(tableSQL),
+		Schema:       schema,
+		ConnectionID: "conn-roundtrip",
+	})
+	if err != nil {
+		t.Fatalf("Complete tables: %v", err)
+	}
+	assertHasSuggestion(t, tableResult, "users", "table")
+	assertHasSuggestion(t, tableResult, "orders", "table")
+}
+
+func assertHasSuggestion(t *testing.T, res completer.Result, label, kind string) {
+	t.Helper()
+	for _, s := range res.Suggestions {
+		if strings.EqualFold(s.Label, label) {
+			if s.Kind != kind {
+				t.Fatalf("suggestion %q kind = %q, want %q", label, s.Kind, kind)
+			}
+			return
+		}
+	}
+	t.Fatalf("expected %s suggestion %q among %d suggestions", kind, label, len(res.Suggestions))
+}
+
+func TestSQLiteQueryCursorDoesNotMaterializeLargeResultSet(t *testing.T) {
+	d := connectedSQLite(t)
+
+	const (
+		totalRows        = 200_000
+		pageSize         = 10
+		maxHeapGrowthMiB = 64
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	before := currentHeapAlloc()
+	qc, err := d.StartQuery(ctx, cursor.QueryRequest{SQL: fmt.Sprintf(`
+		WITH RECURSIVE c(x) AS (
+			SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < %d
+		)
+		SELECT x, randomblob(512) FROM c`, totalRows)})
+	if err != nil {
+		t.Fatalf("StartQuery: %v", err)
+	}
+	defer qc.Close()
+
+	rs, state, err := qc.Fetch(ctx, cursor.ScanOptions{MaxRows: pageSize})
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if state.Exhausted {
+		t.Fatal("expected cursor to remain open after first page")
+	}
+	if rs.RowsReturned != pageSize {
+		t.Fatalf("rows = %d, want %d", rs.RowsReturned, pageSize)
+	}
+
+	after := currentHeapAlloc()
+	if growth := heapGrowth(before, after); growth > maxHeapGrowthMiB*1024*1024 {
+		t.Fatalf("heap grew by %.2f MiB after fetching %d of %d rows; driver may be materializing the full result set",
+			float64(growth)/(1024*1024), pageSize, totalRows)
+	}
+}
+
+func currentHeapAlloc() uint64 {
+	runtime.GC()
+	runtime.GC()
+	var stats runtime.MemStats
+	runtime.ReadMemStats(&stats)
+	return stats.HeapAlloc
+}
+
+func heapGrowth(before, after uint64) uint64 {
+	if after <= before {
+		return 0
+	}
+	return after - before
 }
 
 func TestSQLiteQuoteIdentEscapesDoubleQuotes(t *testing.T) {

@@ -294,7 +294,7 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		app.validateSSHDocument(input.Driver, sshDoc, &input.V)
 	}
 	if input.Driver != "" {
-		if err := app.validateTargetConnection(input.Driver, input.DSN); err != nil {
+		if err := app.validateTargetConnection(r.Context(), input.Driver, input.DSN); err != nil {
 			if errors.Is(err, errSQLiteTargetDisabled) {
 				app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "create_connection"), slog.String("driver", input.Driver))
 			}
@@ -584,7 +584,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	if input.DSN != nil {
 		nextDSN = *input.DSN
 	}
-	if err := app.validateTargetConnection(conn.Driver, nextDSN); err != nil {
+	if err := app.validateTargetConnection(r.Context(), conn.Driver, nextDSN); err != nil {
 		if errors.Is(err, errSQLiteTargetDisabled) {
 			app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "update_connection"), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver))
 		}
@@ -734,7 +734,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		app.failedValidation(w, r, input.V)
 		return
 	}
-	if err := app.validateTargetConnection(input.Driver, input.DSN); err != nil {
+	if err := app.validateTargetConnection(r.Context(), input.Driver, input.DSN); err != nil {
 		if errors.Is(err, errSQLiteTargetDisabled) {
 			app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "test_connection"), slog.String("driver", input.Driver))
 		}
@@ -854,7 +854,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		app.serverError(w, r, err)
 		return
 	}
-	if err := app.validateTargetConnection(conn.Driver, plainDSN); err != nil {
+	if err := app.validateTargetConnection(r.Context(), conn.Driver, plainDSN); err != nil {
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, targetConnectionFieldError(err), nil)
 		return
 	}

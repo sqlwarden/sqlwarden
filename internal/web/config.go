@@ -34,8 +34,6 @@ const (
 	defaultAllowUserBackends    = true
 )
 
-var defaultSQLiteDriverSources = []string{}
-
 const (
 	DeploymentModeServer  = "server"
 	DeploymentModeDesktop = "desktop"
@@ -49,10 +47,6 @@ const (
 const (
 	DesktopBackendKindLocal  = "local"
 	DesktopBackendKindRemote = "remote"
-)
-
-const (
-	SQLiteDriverSourceLocal = "local"
 )
 
 const (
@@ -104,11 +98,6 @@ type Config struct {
 		CertFile string
 		KeyFile  string
 	}
-	Drivers struct {
-		SQLite struct {
-			AllowedSources []string
-		}
-	}
 	Files struct {
 		StorageMode          string
 		ActiveStorageBackend string
@@ -153,7 +142,6 @@ func DefaultConfig() Config {
 	cfg.TLS.Enabled = defaultTLSEnabled
 	cfg.TLS.CertFile = defaultTLSCertFile
 	cfg.TLS.KeyFile = defaultTLSKeyFile
-	cfg.Drivers.SQLite.AllowedSources = append([]string(nil), defaultSQLiteDriverSources...)
 	cfg.Files.StorageMode = defaultFilesStorageMode
 	cfg.Files.ActiveStorageBackend = defaultFilesActiveBackend
 	cfg.Files.StorageBackends = defaultFileStorageBackends()
@@ -206,7 +194,6 @@ var configOptions = []configOption{
 	{key: "tls.enabled", env: "TLS_ENABLED", flagName: "tls-enabled", defaultValue: defaultTLSEnabled, usage: "Serve HTTPS using configured TLS certificate and key files"},
 	{key: "tls.cert_file", env: "TLS_CERT_FILE", flagName: "tls-cert-file", defaultValue: defaultTLSCertFile, usage: "Path to PEM encoded TLS certificate file"},
 	{key: "tls.key_file", env: "TLS_KEY_FILE", flagName: "tls-key-file", defaultValue: defaultTLSKeyFile, usage: "Path to PEM encoded TLS private key file"},
-	{key: "drivers.sqlite.allowed_sources", env: "DRIVERS_SQLITE_ALLOWED_SOURCES", flagName: "drivers-sqlite-allowed-sources", defaultValue: defaultSQLiteDriverSources, usage: "Comma-separated SQLite target sources to allow (currently: local)"},
 	{key: "files.root_dir", env: "FILES_ROOT_DIR", flagName: "files-root-dir", defaultValue: defaultFilesRootDir, usage: "Filesystem root directory for stored workspace files"},
 }
 
@@ -290,7 +277,6 @@ func loadConfig(args []string) (Config, bool, error) {
 	cfg.TLS.Enabled = v.GetBool("tls.enabled")
 	cfg.TLS.CertFile = v.GetString("tls.cert_file")
 	cfg.TLS.KeyFile = v.GetString("tls.key_file")
-	cfg.Drivers.SQLite.AllowedSources = splitConfigStringList(v.GetStringSlice("drivers.sqlite.allowed_sources"))
 	cfg.Files.StorageBackends = defaultFileStorageBackends()
 	localBackend := cfg.Files.StorageBackends[defaultFilesActiveBackend]
 	localBackend.RootDir = v.GetString("files.root_dir")
@@ -329,16 +315,6 @@ func validateConfig(cfg Config) error {
 		if strings.TrimSpace(cfg.TLS.KeyFile) == "" {
 			return fmt.Errorf("tls.key_file is required when tls.enabled is true")
 		}
-	}
-	seenSQLiteSources := make(map[string]struct{}, len(cfg.Drivers.SQLite.AllowedSources))
-	for _, source := range cfg.Drivers.SQLite.AllowedSources {
-		if source != SQLiteDriverSourceLocal {
-			return fmt.Errorf("drivers.sqlite.allowed_sources currently supports only %q", SQLiteDriverSourceLocal)
-		}
-		if _, ok := seenSQLiteSources[source]; ok {
-			return fmt.Errorf("drivers.sqlite.allowed_sources contains duplicate source %q", source)
-		}
-		seenSQLiteSources[source] = struct{}{}
 	}
 	if cfg.Files.StorageMode != FilesStorageModeFile && cfg.Files.StorageMode != FilesStorageModeObject {
 		return fmt.Errorf("files.storage_mode must be %q or %q", FilesStorageModeFile, FilesStorageModeObject)

@@ -15,4 +15,5 @@ export const postgresEngine: FrontendEngine = {
   connection: postgresDriver,
   tls: standardTlsSpec,
   sshTunnel: true,
+  semanticCompletion: true,
 }

@@ -1,0 +1,1 @@
+ALTER TABLE instance_settings DROP COLUMN sqlite_memory_targets_enabled;

@@ -29,8 +29,16 @@ func TestInstanceSettingsMigrationCreatesCanonicalDefaults(t *testing.T) {
 				settings.JobsPollIntervalSeconds != want.JobsPollIntervalSeconds ||
 				settings.JobsClaimLeaseSeconds != want.JobsClaimLeaseSeconds ||
 				settings.JobsCompletedRetentionSeconds != want.JobsCompletedRetentionSeconds ||
-				settings.SMTPEnabled || settings.SMTPPort != want.SMTPPort || settings.SMTPPasswordEncrypted != "" {
+				settings.SMTPEnabled || settings.SMTPPort != want.SMTPPort || settings.SMTPPasswordEncrypted != "" ||
+				settings.SQLiteLocalTargetsEnabled != want.SQLiteLocalTargetsEnabled ||
+				settings.SQLiteInMemoryTargetsEnabled != want.SQLiteInMemoryTargetsEnabled {
 				t.Fatalf("unexpected migration defaults: %+v", settings)
+			}
+			if !settings.SQLiteLocalTargetsEnabled {
+				t.Fatal("expected sqlite local targets to be enabled by default")
+			}
+			if settings.SQLiteInMemoryTargetsEnabled {
+				t.Fatal("expected sqlite in-memory targets to be disabled by default")
 			}
 		})
 	}
@@ -120,6 +128,8 @@ func TestInstanceSettingsUpsert(t *testing.T) {
 			settings.SupportEmail = "support@example.com"
 			settings.BaseURL = "https://sqlwarden.example.com"
 			settings.PersonalSpacesEnabled = false
+			settings.SQLiteLocalTargetsEnabled = false
+			settings.SQLiteInMemoryTargetsEnabled = true
 			settings.LogLevel = "debug"
 			settings.DatabaseQueryTracingEnabled = true
 			settings.AccessLogsEnabled = true
@@ -151,12 +161,18 @@ func TestInstanceSettingsUpsert(t *testing.T) {
 			if settings.LogLevel != "debug" || !settings.DatabaseQueryTracingEnabled || !settings.AccessLogsEnabled || settings.QueryCursorPageSize != 75 || settings.JobsWorkerCount != 4 || settings.SMTPPasswordEncrypted != "encrypted-secret" {
 				t.Fatalf("expected runtime operations to persist, got %+v", settings)
 			}
+			if settings.SQLiteLocalTargetsEnabled {
+				t.Fatal("expected sqlite local targets to be disabled")
+			}
+			if !settings.SQLiteInMemoryTargetsEnabled {
+				t.Fatal("expected sqlite in-memory targets to be enabled")
+			}
 
 			settings, found, err = db.GetInstanceSettings(context.Background())
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !found || settings.PersonalSpacesEnabled {
+			if !found || settings.PersonalSpacesEnabled || settings.SQLiteLocalTargetsEnabled || !settings.SQLiteInMemoryTargetsEnabled {
 				t.Fatalf("expected persisted disabled settings, got %+v found=%v", settings, found)
 			}
 

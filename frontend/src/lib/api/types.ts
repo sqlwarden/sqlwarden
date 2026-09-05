@@ -418,6 +418,8 @@ export interface InstanceSettings {
   /** Response-only: whether a secret is stored server-side. Never send this back in a PATCH. */
   smtp_password_configured: boolean
   smtp_from: string
+  sqlite_local_targets_enabled: boolean
+  sqlite_memory_targets_enabled: boolean
 }
 
 /**
@@ -441,7 +443,6 @@ export interface InstanceConfiguration {
   tls_enabled: boolean
   file_storage_mode: 'file' | 'object'
   file_storage_backend: string
-  sqlite_local_enabled: boolean
 }
 
 export interface OrganizationRuntimeOverrideValues {

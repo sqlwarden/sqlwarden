@@ -483,6 +483,49 @@ func TestUpdateInstanceSettings(t *testing.T) {
 	assert.Equal(t, getRes.BodyFields["personal_spaces_enabled"], false)
 }
 
+func TestUpdateInstanceSettingsSQLiteLocalTargets(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	assert.Equal(t, getRes.BodyFields["sqlite_local_targets_enabled"], true)
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"sqlite_local_targets_enabled": false,
+	}, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["sqlite_local_targets_enabled"], false)
+
+	reGetRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
+	assert.Equal(t, reGetRes.StatusCode, http.StatusOK)
+	assert.Equal(t, reGetRes.BodyFields["sqlite_local_targets_enabled"], false)
+}
+
+func TestUpdateInstanceSettingsSQLiteInMemoryTargets(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+	updateInstanceSettingsForTest(t, app, func(s *database.InstanceSettings) {
+		s.SQLiteInMemoryTargetsEnabled = false
+	})
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	assert.Equal(t, getRes.BodyFields["sqlite_memory_targets_enabled"], false)
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"sqlite_memory_targets_enabled": true,
+	}, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["sqlite_memory_targets_enabled"], true)
+
+	reGetRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
+	assert.Equal(t, reGetRes.StatusCode, http.StatusOK)
+	assert.Equal(t, reGetRes.BodyFields["sqlite_memory_targets_enabled"], true)
+}
+
 func TestUpdateInstanceSettingsQueryHistoryFields(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)

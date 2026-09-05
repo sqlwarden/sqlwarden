@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { postgresDriver } from './postgres'
 import { mysqlDriver } from './mysql'
+import { sqliteDriver } from './sqlite'
 
 describe('postgresDriver.parseDSN', () => {
   it('round-trips fields built by buildDSN', () => {
@@ -83,5 +84,25 @@ describe('mysqlDriver.parseDSN', () => {
 
   it('returns an empty object for an unparseable DSN', () => {
     expect(mysqlDriver.parseDSN('not-a-dsn')).toEqual({})
+  })
+})
+
+describe('sqliteDriver', () => {
+  it('builds and parses a file-path DSN', () => {
+    const dsn = sqliteDriver.buildDSN({ path: '/data/app.db' })
+    expect(dsn).toContain('/data/app.db')
+    expect(sqliteDriver.parseDSN(dsn)).toMatchObject({ path: '/data/app.db' })
+  })
+
+  it('round-trips fields built by buildDSN', () => {
+    const fields = { path: '/var/lib/sqlwarden/example.db' }
+    const dsn = sqliteDriver.buildDSN(fields)
+    expect(sqliteDriver.parseDSN(dsn)).toEqual(fields)
+  })
+
+  it('drops query pragmas when parsing', () => {
+    expect(
+      sqliteDriver.parseDSN('file:/data/app.db?cache=shared&_pragma=busy_timeout(5000)'),
+    ).toEqual({ path: '/data/app.db' })
   })
 })

@@ -333,6 +333,8 @@ func (app *application) instanceSettingsResponse(settings database.InstanceSetti
 		"query_history_retention_count":     settings.QueryHistoryRetentionCount,
 		"query_history_retention_count_max": settings.QueryHistoryRetentionCountMax,
 		"query_favorites_mode":              settings.QueryFavoritesMode,
+		"sqlite_local_targets_enabled":      settings.SQLiteLocalTargetsEnabled,
+		"sqlite_memory_targets_enabled":     settings.SQLiteInMemoryTargetsEnabled,
 	}
 }
 

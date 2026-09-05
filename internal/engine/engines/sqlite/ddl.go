@@ -47,16 +47,16 @@ func (d *sqliteDriver) ApplyDDL(ctx context.Context, request ddl.Request) error 
 func sqliteDDLSQL(request ddl.Request) (string, error) {
 	switch request.Operation {
 	case ddl.OperationCreateTable:
-		return "CREATE TABLE " + sqliteDDLQualified(request.Scope.Name("database"), request.Name) + " (" + sqliteDDLColumns(request.Columns) + ")", nil
+		return "CREATE TABLE " + sqliteQualify(request.Scope.Name("database"), request.Name) + " (" + sqliteDDLColumns(request.Columns) + ")", nil
 	case ddl.OperationDropObject:
 		verb := map[string]string{"table": "DROP TABLE", "view": "DROP VIEW"}[request.Ref.Kind]
-		return verb + " " + sqliteDDLQualified(request.Ref.Scope.Name("database"), request.Ref.Name), nil
+		return verb + " " + sqliteQualify(request.Ref.Scope.Name("database"), request.Ref.Name), nil
 	case ddl.OperationRenameColumn:
 		return "ALTER TABLE " + sqliteDDLRef(request) + " RENAME COLUMN " + sqliteQuoteIdent(request.Name) + " TO " + sqliteQuoteIdent(request.NewName), nil
 	case ddl.OperationDropColumn:
 		return "ALTER TABLE " + sqliteDDLRef(request) + " DROP COLUMN " + sqliteQuoteIdent(request.Name), nil
 	case ddl.OperationDropIndex:
-		return "DROP INDEX " + sqliteDDLQualified(request.Ref.Scope.Name("database"), request.Name), nil
+		return "DROP INDEX " + sqliteQualify(request.Ref.Scope.Name("database"), request.Name), nil
 	default:
 		return "", fmt.Errorf("%w: operation %q", ddl.ErrUnsupported, request.Operation)
 	}
@@ -83,9 +83,5 @@ func sqliteDDLColumns(columns []ddl.ColumnDefinition) string {
 }
 
 func sqliteDDLRef(request ddl.Request) string {
-	return sqliteDDLQualified(request.Ref.Scope.Name("database"), request.Ref.Name)
-}
-
-func sqliteDDLQualified(database, name string) string {
-	return sqliteQuoteIdent(database) + "." + sqliteQuoteIdent(name)
+	return sqliteQualify(request.Ref.Scope.Name("database"), request.Ref.Name)
 }

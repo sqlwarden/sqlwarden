@@ -51,6 +51,12 @@ describe('frontend engine registry', () => {
     expect(byId['sqlite'].tls).toBeUndefined()
   })
 
+  it('every bundled engine declares backend semantic completion', () => {
+    for (const engine of frontendEngines) {
+      expect(engine.semanticCompletion, engine.id).toBe(true)
+    }
+  })
+
   it('network engines support SSH tunneling, sqlite does not', () => {
     const byId = Object.fromEntries(frontendEngines.map((e) => [e.id, e]))
     for (const id of ['postgres', 'mysql', 'oracle']) {
@@ -60,7 +66,12 @@ describe('frontend engine registry', () => {
   })
 
   it('only exposes drivers with connection forms as connectable', () => {
-    expect(connectableEngines.map((engine) => engine.id)).toEqual(['postgres', 'mysql', 'oracle'])
+    expect(connectableEngines.map((engine) => engine.id)).toEqual([
+      'postgres',
+      'mysql',
+      'oracle',
+      'sqlite',
+    ])
   })
 
   it('offers explicit strict and optional lookup APIs', () => {
