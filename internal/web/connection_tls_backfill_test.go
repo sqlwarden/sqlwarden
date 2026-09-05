@@ -45,14 +45,15 @@ func TestBackfillConnectionTLSConfig(t *testing.T) {
 	pgID := seedRawConnection(t, app, "postgres", "postgres://u:p@h:5432/db?sslmode=verify-full&application_name=x")
 	preferID := seedRawConnection(t, app, "postgres", "postgres://u:p@h:5432/db?sslmode=prefer")
 	oraID := seedRawConnection(t, app, "oracle", "oracle://u:p@h:1521/ORCLPDB1?SSL=true")
+	unspecifiedID := seedRawConnection(t, app, "postgres", "postgres://u:p@h:5432/db")
 	plainID := seedRawConnection(t, app, "sqlite", "file:/tmp/x.db")
 
 	rep, err := app.backfillConnectionTLSConfig(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.Migrated != 3 {
-		t.Fatalf("migrated=%d want 3", rep.Migrated)
+	if rep.Migrated != 4 {
+		t.Fatalf("migrated=%d want 4", rep.Migrated)
 	}
 
 	assertMode := func(id int64, want string) {
@@ -69,6 +70,15 @@ func TestBackfillConnectionTLSConfig(t *testing.T) {
 	assertMode(pgID, "verify-full")
 	assertMode(preferID, "require")
 	assertMode(oraID, "require")
+
+	unspecified, _, _ := app.db.GetConnection(ctx, unspecifiedID)
+	doc, has, err := app.decodeTLSDocument(unspecified.TLSConfigEncrypted)
+	if err != nil || !has || doc.Mode != "" {
+		t.Fatalf("unspecified conn: mode=%q has=%v err=%v want empty", doc.Mode, has, err)
+	}
+	if eng := doc.toEngine(); eng != nil {
+		t.Fatalf("unspecified conn: toEngine=%+v, want nil", eng)
+	}
 
 	plain, _, _ := app.db.GetConnection(ctx, plainID)
 	if plain.TLSConfigEncrypted != "" {

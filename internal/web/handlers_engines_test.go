@@ -7,6 +7,7 @@ import (
 	"github.com/sqlwarden/internal/assert"
 
 	_ "github.com/sqlwarden/internal/engine/engines/mysql"
+	_ "github.com/sqlwarden/internal/engine/engines/neon"
 	_ "github.com/sqlwarden/internal/engine/engines/oracle"
 	_ "github.com/sqlwarden/internal/engine/engines/postgres"
 	_ "github.com/sqlwarden/internal/engine/engines/sqlite"
@@ -77,6 +78,17 @@ func TestListEngines(t *testing.T) {
 		t.Fatalf("expected oracle explain spec in %v", oracle)
 	}
 	assert.Equal(t, oracleExplain["supports_analyze"], true)
+
+	neon := byID["neon"]
+	if neon == nil {
+		t.Fatalf("neon engine missing from %v", engines)
+	}
+	assert.Equal(t, neon["display_name"], "Neon")
+	assert.Equal(t, neon["dialect"], "postgres")
+	neonCaps := neon["capabilities"].(map[string]any)
+	for _, capID := range []string{"schema.directory", "schema.objects", "sql.complete", "sql.explain", "connection.tls", "connection.ssh_tunnel"} {
+		assert.Equal(t, neonCaps[capID], caps[capID])
+	}
 }
 
 func TestListEnginesReportsTLSSpec(t *testing.T) {

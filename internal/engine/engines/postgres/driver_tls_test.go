@@ -56,3 +56,22 @@ func TestPostgresBuildPgxConfigNoTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPostgresBuildPgxConfigExplicitDisableForcesPlaintext(t *testing.T) {
+	pgxCfg, err := buildPgxConfig(engine.ConnectionConfig{
+		DSN: "postgres://u:p@127.0.0.1:5432/db",
+		TLS: &engine.TLSConfig{Mode: engine.TLSModeDisable},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pgxCfg.TLSConfig != nil {
+		t.Fatalf("want TLSConfig nil for explicit disable, got %+v", pgxCfg.TLSConfig)
+	}
+	if len(pgxCfg.Fallbacks) != 0 {
+		t.Fatalf("want no TLS fallbacks for explicit disable, got %+v", pgxCfg.Fallbacks)
+	}
+	if _, ok := pgxCfg.RuntimeParams["sslmode"]; ok {
+		t.Fatal("want sslmode stripped from RuntimeParams")
+	}
+}

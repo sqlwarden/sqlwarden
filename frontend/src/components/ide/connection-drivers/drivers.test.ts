@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { postgresDriver } from './postgres'
 import { mysqlDriver } from './mysql'
+import { neonDriver } from './neon'
 import { sqliteDriver } from './sqlite'
 
 describe('postgresDriver.parseDSN', () => {
@@ -84,6 +85,41 @@ describe('mysqlDriver.parseDSN', () => {
 
   it('returns an empty object for an unparseable DSN', () => {
     expect(mysqlDriver.parseDSN('not-a-dsn')).toEqual({})
+  })
+})
+
+describe('neonDriver.parseDSN', () => {
+  it('round-trips fields built by buildDSN', () => {
+    const fields = {
+      host: 'ep-cool-lab-12345.us-east-2.aws.neon.tech',
+      port: '5432',
+      database: 'neondb',
+      username: 'neondb_owner',
+      password: 'p@ss w/ord',
+    }
+    const dsn = neonDriver.buildDSN(fields)
+    expect(neonDriver.parseDSN(dsn)).toEqual(fields)
+  })
+
+  it('parses a DSN without a password', () => {
+    const dsn = neonDriver.buildDSN({
+      host: 'ep-cool-lab-12345.us-east-2.aws.neon.tech',
+      port: '5432',
+      database: 'neondb',
+      username: 'neondb_owner',
+      password: '',
+    })
+    expect(neonDriver.parseDSN(dsn)).toEqual({
+      host: 'ep-cool-lab-12345.us-east-2.aws.neon.tech',
+      port: '5432',
+      database: 'neondb',
+      username: 'neondb_owner',
+      password: '',
+    })
+  })
+
+  it('returns an empty object for an unparseable DSN', () => {
+    expect(neonDriver.parseDSN('not-a-url')).toEqual({})
   })
 })
 

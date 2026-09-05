@@ -9,13 +9,30 @@ import (
 func TestTLSConfigDocumentRoundTrip(t *testing.T) {
 	app := newTestApplication(t)
 
-	empty := tlsConfigDocument{Mode: "disable"}
-	if !empty.isEmpty() {
-		t.Fatal("disable + blank should be empty")
+	blank := tlsConfigDocument{}
+	if !blank.isEmpty() {
+		t.Fatal("blank mode should be empty")
 	}
-	sealed, err := app.sealTLSDocument(empty)
+	sealed, err := app.sealTLSDocument(blank)
 	if err != nil || sealed != "" {
 		t.Fatalf("empty seal: %q %v", sealed, err)
+	}
+
+	disable := tlsConfigDocument{Mode: "disable"}
+	if disable.isEmpty() {
+		t.Fatal("explicit disable should not be empty")
+	}
+	sealed, err = app.sealTLSDocument(disable)
+	if err != nil || sealed == "" {
+		t.Fatalf("disable seal: %q %v", sealed, err)
+	}
+	got, has, err := app.decodeTLSDocument(sealed)
+	if err != nil || !has || got.Mode != "disable" {
+		t.Fatalf("disable round trip: has=%v err=%v got=%+v", has, err, got)
+	}
+	eng := disable.toEngine()
+	if eng == nil || eng.Mode != engine.TLSModeDisable {
+		t.Fatalf("disable toEngine: %+v", eng)
 	}
 
 	doc := tlsConfigDocument{
@@ -27,7 +44,7 @@ func TestTLSConfigDocumentRoundTrip(t *testing.T) {
 	if err != nil || sealed == "" {
 		t.Fatalf("seal: %q %v", sealed, err)
 	}
-	got, has, err := app.decodeTLSDocument(sealed)
+	got, has, err = app.decodeTLSDocument(sealed)
 	if err != nil || !has {
 		t.Fatalf("decode: has=%v err=%v", has, err)
 	}
@@ -35,7 +52,7 @@ func TestTLSConfigDocumentRoundTrip(t *testing.T) {
 		t.Fatalf("round trip mismatch: %+v", got)
 	}
 
-	eng := doc.toEngine()
+	eng = doc.toEngine()
 	if eng == nil || eng.Mode != engine.TLSModeVerifyFull {
 		t.Fatalf("toEngine: %+v", eng)
 	}
