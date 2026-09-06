@@ -8,6 +8,7 @@ import { sqliteEngine } from './sqlite'
 import { supabaseEngine } from './supabase'
 import { tidbEngine } from './tidb'
 import type { FrontendEngine } from './types'
+import { yugabyteEngine } from './yugabyte'
 
 export class UnsupportedFrontendEngineError extends Error {
   constructor(readonly driver: string) {
@@ -26,6 +27,7 @@ export const frontendEngines: readonly FrontendEngine[] = [
   supabaseEngine,
   cockroachdbEngine,
   tidbEngine,
+  yugabyteEngine,
 ]
 
 const engineMap = new Map(frontendEngines.map((engine) => [engine.id, engine]))

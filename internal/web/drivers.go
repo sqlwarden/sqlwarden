@@ -10,4 +10,5 @@ import (
 	_ "github.com/sqlwarden/internal/engine/engines/sqlite"
 	_ "github.com/sqlwarden/internal/engine/engines/supabase"
 	_ "github.com/sqlwarden/internal/engine/engines/tidb"
+	_ "github.com/sqlwarden/internal/engine/engines/yugabyte"
 )
