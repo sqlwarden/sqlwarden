@@ -1,3 +1,4 @@
+import { cockroachdbEngine } from './cockroachdb'
 import { mariadbEngine } from './mariadb'
 import { mysqlEngine } from './mysql'
 import { neonEngine } from './neon'
@@ -22,6 +23,7 @@ export const frontendEngines: readonly FrontendEngine[] = [
   sqliteEngine,
   neonEngine,
   supabaseEngine,
+  cockroachdbEngine,
 ]
 
 const engineMap = new Map(frontendEngines.map((engine) => [engine.id, engine]))

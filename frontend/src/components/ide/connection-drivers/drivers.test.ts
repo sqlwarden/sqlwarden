@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { postgresDriver } from './postgres'
+import { cockroachdbDriver } from './cockroachdb'
 import { mariadbDriver } from './mariadb'
 import { mysqlDriver } from './mysql'
 import { neonDriver } from './neon'
@@ -157,6 +158,41 @@ describe('neonDriver.parseDSN', () => {
 
   it('returns an empty object for an unparseable DSN', () => {
     expect(neonDriver.parseDSN('not-a-url')).toEqual({})
+  })
+})
+
+describe('cockroachdbDriver.parseDSN', () => {
+  it('round-trips fields built by buildDSN', () => {
+    const fields = {
+      host: 'localhost',
+      port: '26257',
+      database: 'defaultdb',
+      username: 'root',
+      password: 'p@ss w/ord',
+    }
+    const dsn = cockroachdbDriver.buildDSN(fields)
+    expect(cockroachdbDriver.parseDSN(dsn)).toEqual(fields)
+  })
+
+  it('parses a DSN without a password', () => {
+    const dsn = cockroachdbDriver.buildDSN({
+      host: 'localhost',
+      port: '26257',
+      database: 'defaultdb',
+      username: 'root',
+      password: '',
+    })
+    expect(cockroachdbDriver.parseDSN(dsn)).toEqual({
+      host: 'localhost',
+      port: '26257',
+      database: 'defaultdb',
+      username: 'root',
+      password: '',
+    })
+  })
+
+  it('returns an empty object for an unparseable DSN', () => {
+    expect(cockroachdbDriver.parseDSN('not-a-url')).toEqual({})
   })
 })
 
