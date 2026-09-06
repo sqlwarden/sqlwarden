@@ -31,6 +31,7 @@ describe('frontend engine registry', () => {
     expect(frontendEngines.map((engine) => engine.id)).toEqual([
       'postgres',
       'mysql',
+      'mariadb',
       'oracle',
       'sqlite',
       'neon',
@@ -46,7 +47,7 @@ describe('frontend engine registry', () => {
 
   it('network engines declare a tls spec, sqlite does not', () => {
     const byId = Object.fromEntries(frontendEngines.map((e) => [e.id, e]))
-    for (const id of ['postgres', 'mysql', 'oracle', 'neon', 'supabase']) {
+    for (const id of ['postgres', 'mysql', 'mariadb', 'oracle', 'neon', 'supabase']) {
       expect(byId[id].tls, id).toBeDefined()
       expect(byId[id].tls!.modes.length).toBe(4)
     }
@@ -61,7 +62,7 @@ describe('frontend engine registry', () => {
 
   it('network engines support SSH tunneling, sqlite does not', () => {
     const byId = Object.fromEntries(frontendEngines.map((e) => [e.id, e]))
-    for (const id of ['postgres', 'mysql', 'oracle', 'neon', 'supabase']) {
+    for (const id of ['postgres', 'mysql', 'mariadb', 'oracle', 'neon', 'supabase']) {
       expect(byId[id].sshTunnel, id).toBe(true)
     }
     expect(byId['sqlite'].sshTunnel).toBeFalsy()
@@ -71,6 +72,7 @@ describe('frontend engine registry', () => {
     expect(connectableEngines.map((engine) => engine.id)).toEqual([
       'postgres',
       'mysql',
+      'mariadb',
       'oracle',
       'sqlite',
       'neon',

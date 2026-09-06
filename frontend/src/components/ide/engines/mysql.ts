@@ -8,7 +8,7 @@ import type { FrontendEngine } from './types'
 export const mysqlEngine: FrontendEngine = {
   id: 'mysql',
   label: 'MySQL',
-  brand: { icon: mysqlIcon, description: 'MySQL / MariaDB database' },
+  brand: { icon: mysqlIcon, description: 'MySQL database' },
   dialect: mysqlDialect,
   objectDetail: mysqlHooks,
   diagram: {},

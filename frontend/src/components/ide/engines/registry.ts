@@ -1,3 +1,4 @@
+import { mariadbEngine } from './mariadb'
 import { mysqlEngine } from './mysql'
 import { neonEngine } from './neon'
 import { oracleEngine } from './oracle'
@@ -16,6 +17,7 @@ export class UnsupportedFrontendEngineError extends Error {
 export const frontendEngines: readonly FrontendEngine[] = [
   postgresEngine,
   mysqlEngine,
+  mariadbEngine,
   oracleEngine,
   sqliteEngine,
   neonEngine,

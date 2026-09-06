@@ -1,5 +1,6 @@
 import {
   formatDialect,
+  mariadb,
   mysql,
   plsql,
   postgresql,
@@ -23,6 +24,7 @@ function formatterFor(dialect: DialectOptions): SqlTextFormatter {
 /** Used when an editor has no connection or its engine has no custom formatter. */
 export const defaultSqlFormatter = formatterFor(standardSql)
 
+export const mariadbSqlFormatter = formatterFor(mariadb)
 export const mysqlSqlFormatter = formatterFor(mysql)
 export const oracleSqlFormatter = formatterFor(plsql)
 export const postgresSqlFormatter = formatterFor(postgresql)

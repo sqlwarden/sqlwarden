@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { postgresDriver } from './postgres'
+import { mariadbDriver } from './mariadb'
 import { mysqlDriver } from './mysql'
 import { neonDriver } from './neon'
 import { sqliteDriver } from './sqlite'
@@ -86,6 +87,41 @@ describe('mysqlDriver.parseDSN', () => {
 
   it('returns an empty object for an unparseable DSN', () => {
     expect(mysqlDriver.parseDSN('not-a-dsn')).toEqual({})
+  })
+})
+
+describe('mariadbDriver.parseDSN', () => {
+  it('round-trips fields built by buildDSN', () => {
+    const fields = {
+      host: 'db.internal',
+      port: '3307',
+      database: 'analytics',
+      username: 'reader',
+      password: 'secret',
+    }
+    const dsn = mariadbDriver.buildDSN(fields)
+    expect(mariadbDriver.parseDSN(dsn)).toEqual(fields)
+  })
+
+  it('parses a DSN without a password', () => {
+    const dsn = mariadbDriver.buildDSN({
+      host: 'localhost',
+      port: '3306',
+      database: 'app',
+      username: 'root',
+      password: '',
+    })
+    expect(mariadbDriver.parseDSN(dsn)).toEqual({
+      host: 'localhost',
+      port: '3306',
+      database: 'app',
+      username: 'root',
+      password: '',
+    })
+  })
+
+  it('returns an empty object for an unparseable DSN', () => {
+    expect(mariadbDriver.parseDSN('not-a-dsn')).toEqual({})
   })
 })
 
