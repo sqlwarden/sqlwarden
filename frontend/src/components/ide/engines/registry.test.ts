@@ -37,6 +37,7 @@ describe('frontend engine registry', () => {
       'neon',
       'supabase',
       'cockroachdb',
+      'tidb',
     ])
     for (const engine of frontendEngines) {
       expect(engine.label).not.toBe('')
@@ -56,6 +57,7 @@ describe('frontend engine registry', () => {
       'neon',
       'supabase',
       'cockroachdb',
+      'tidb',
     ]) {
       expect(byId[id].tls, id).toBeDefined()
       expect(byId[id].tls!.modes.length).toBe(4)
@@ -79,6 +81,7 @@ describe('frontend engine registry', () => {
       'neon',
       'supabase',
       'cockroachdb',
+      'tidb',
     ]) {
       expect(byId[id].sshTunnel, id).toBe(true)
     }
@@ -95,6 +98,7 @@ describe('frontend engine registry', () => {
       'neon',
       'supabase',
       'cockroachdb',
+      'tidb',
     ])
   })
 
