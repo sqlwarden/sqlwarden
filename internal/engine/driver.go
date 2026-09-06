@@ -28,11 +28,12 @@ type Dialect string
 
 // The dialects SQLWarden ships engines for.
 const (
-	DialectPostgres Dialect = "postgres"
-	DialectMySQL    Dialect = "mysql"
-	DialectMariaDB  Dialect = "mariadb"
-	DialectSQLite   Dialect = "sqlite"
-	DialectOracle   Dialect = "oracle"
+	DialectPostgres    Dialect = "postgres"
+	DialectMySQL       Dialect = "mysql"
+	DialectMariaDB     Dialect = "mariadb"
+	DialectCockroachDB Dialect = "cockroachdb"
+	DialectSQLite      Dialect = "sqlite"
+	DialectOracle      Dialect = "oracle"
 )
 
 // ConnectionConfig holds the configuration an engine needs to open a connection.

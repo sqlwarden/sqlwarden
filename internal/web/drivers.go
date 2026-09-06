@@ -1,6 +1,7 @@
 package web
 
 import (
+	_ "github.com/sqlwarden/internal/engine/engines/cockroachdb"
 	_ "github.com/sqlwarden/internal/engine/engines/mariadb"
 	_ "github.com/sqlwarden/internal/engine/engines/mysql"
 	_ "github.com/sqlwarden/internal/engine/engines/neon"
