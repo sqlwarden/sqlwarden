@@ -30,6 +30,7 @@ type Dialect string
 const (
 	DialectPostgres Dialect = "postgres"
 	DialectMySQL    Dialect = "mysql"
+	DialectMariaDB  Dialect = "mariadb"
 	DialectSQLite   Dialect = "sqlite"
 	DialectOracle   Dialect = "oracle"
 )
@@ -51,16 +52,17 @@ type ConnectionConfig struct {
 }
 
 // NormalizeName returns the canonical engine name for a user-facing name or
-// known alias ("postgresql" -> "postgres", "sqlite3" -> "sqlite", "mariadb" ->
-// "mysql").
+// known alias ("postgresql" -> "postgres", "sqlite3" -> "sqlite"). MariaDB is
+// its own registered engine, not an alias of "mysql" — a connection
+// configured with the "mysql" engine against a MariaDB server keeps working
+// (MariaDB is MySQL-wire-compatible), but only the "mariadb" engine reports
+// MariaDB's own capabilities (native sequences, branding).
 func NormalizeName(name string) string {
 	switch name {
 	case "postgresql":
 		return "postgres"
 	case "sqlite3":
 		return "sqlite"
-	case "mariadb":
-		return "mysql"
 	default:
 		return name
 	}
