@@ -7,6 +7,7 @@ import { neonDriver } from './neon'
 import { sqliteDriver } from './sqlite'
 import { supabaseDriver } from './supabase'
 import { tidbDriver } from './tidb'
+import { yugabyteDriver } from './yugabyte'
 
 describe('postgresDriver.parseDSN', () => {
   it('round-trips fields built by buildDSN', () => {
@@ -264,6 +265,41 @@ describe('tidbDriver.parseDSN', () => {
 
   it('returns an empty object for an unparseable DSN', () => {
     expect(tidbDriver.parseDSN('not-a-dsn')).toEqual({})
+  })
+})
+
+describe('yugabyteDriver.parseDSN', () => {
+  it('round-trips fields built by buildDSN', () => {
+    const fields = {
+      host: 'localhost',
+      port: '5433',
+      database: 'yugabyte',
+      username: 'yugabyte',
+      password: 'p@ss w/ord',
+    }
+    const dsn = yugabyteDriver.buildDSN(fields)
+    expect(yugabyteDriver.parseDSN(dsn)).toEqual(fields)
+  })
+
+  it('parses a DSN without a password', () => {
+    const dsn = yugabyteDriver.buildDSN({
+      host: 'localhost',
+      port: '5433',
+      database: 'yugabyte',
+      username: 'yugabyte',
+      password: '',
+    })
+    expect(yugabyteDriver.parseDSN(dsn)).toEqual({
+      host: 'localhost',
+      port: '5433',
+      database: 'yugabyte',
+      username: 'yugabyte',
+      password: '',
+    })
+  })
+
+  it('returns an empty object for an unparseable DSN', () => {
+    expect(yugabyteDriver.parseDSN('not-a-url')).toEqual({})
   })
 })
 
