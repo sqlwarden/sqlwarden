@@ -5,6 +5,7 @@ import { mariadbDriver } from './mariadb'
 import { mysqlDriver } from './mysql'
 import { neonDriver } from './neon'
 import { sqliteDriver } from './sqlite'
+import { sqlserverDriver } from './sqlserver'
 import { supabaseDriver } from './supabase'
 import { tidbDriver } from './tidb'
 import { yugabyteDriver } from './yugabyte'
@@ -300,6 +301,59 @@ describe('yugabyteDriver.parseDSN', () => {
 
   it('returns an empty object for an unparseable DSN', () => {
     expect(yugabyteDriver.parseDSN('not-a-url')).toEqual({})
+  })
+})
+
+describe('sqlserverDriver.parseDSN', () => {
+  it('round-trips fields built by buildDSN', () => {
+    const fields = {
+      host: 'db.internal',
+      port: '1434',
+      database: 'analytics',
+      username: 'reader',
+      password: 'p@ss w/ord',
+    }
+    const dsn = sqlserverDriver.buildDSN(fields)
+    expect(sqlserverDriver.parseDSN(dsn)).toEqual(fields)
+  })
+
+  it('parses a DSN without a password', () => {
+    const dsn = sqlserverDriver.buildDSN({
+      host: 'localhost',
+      port: '1433',
+      database: 'master',
+      username: 'sa',
+      password: '',
+    })
+    expect(sqlserverDriver.parseDSN(dsn)).toEqual({
+      host: 'localhost',
+      port: '1433',
+      database: 'master',
+      username: 'sa',
+      password: '',
+    })
+  })
+
+  it('omits the database query parameter when unset', () => {
+    const dsn = sqlserverDriver.buildDSN({
+      host: 'localhost',
+      port: '1433',
+      database: '',
+      username: 'sa',
+      password: '',
+    })
+    expect(dsn).not.toContain('database=')
+    expect(sqlserverDriver.parseDSN(dsn)).toEqual({
+      host: 'localhost',
+      port: '1433',
+      database: '',
+      username: 'sa',
+      password: '',
+    })
+  })
+
+  it('returns an empty object for an unparseable DSN', () => {
+    expect(sqlserverDriver.parseDSN('not-a-dsn')).toEqual({})
   })
 })
 

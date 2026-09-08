@@ -7,9 +7,11 @@ func TestNormalizeName(t *testing.T) {
 		"postgresql": "postgres",
 		"sqlite3":    "sqlite",
 		// MariaDB is its own registered engine, not an alias of "mysql".
-		"mariadb": "mariadb",
-		"mysql":   "mysql",
-		"oracle":  "oracle",
+		"mariadb":   "mariadb",
+		"mysql":     "mysql",
+		"oracle":    "oracle",
+		"mssql":     "sqlserver",
+		"sqlserver": "sqlserver",
 	}
 	for input, want := range cases {
 		if got := NormalizeName(input); got != want {

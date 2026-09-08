@@ -26,6 +26,20 @@ describe('frontend engine registry — oracle', () => {
   })
 })
 
+describe('frontend engine registry — sqlserver', () => {
+  it('resolves the sqlserver engine', () => {
+    expect(findFrontendEngine('sqlserver')?.label).toBe('SQL Server')
+  })
+
+  it('exposes sqlserver as connectable', () => {
+    expect(connectableEngines.some((engine) => engine.id === 'sqlserver')).toBe(true)
+  })
+
+  it('returns the sqlserver dialect', () => {
+    expect(dialectFor('sqlserver').formatColumn('UserId')).toBe('[UserId]')
+  })
+})
+
 describe('frontend engine registry', () => {
   it('registers every bundled backend driver explicitly', () => {
     expect(frontendEngines.map((engine) => engine.id)).toEqual([
@@ -34,6 +48,7 @@ describe('frontend engine registry', () => {
       'mariadb',
       'oracle',
       'sqlite',
+      'sqlserver',
       'neon',
       'supabase',
       'cockroachdb',
@@ -55,6 +70,7 @@ describe('frontend engine registry', () => {
       'mysql',
       'mariadb',
       'oracle',
+      'sqlserver',
       'neon',
       'supabase',
       'cockroachdb',
@@ -80,6 +96,7 @@ describe('frontend engine registry', () => {
       'mysql',
       'mariadb',
       'oracle',
+      'sqlserver',
       'neon',
       'supabase',
       'cockroachdb',
@@ -98,6 +115,7 @@ describe('frontend engine registry', () => {
       'mariadb',
       'oracle',
       'sqlite',
+      'sqlserver',
       'neon',
       'supabase',
       'cockroachdb',
