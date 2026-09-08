@@ -12,6 +12,7 @@ import (
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/internal/engine/ddl"
+	"github.com/sqlwarden/internal/engine/explain"
 	"github.com/sqlwarden/internal/engine/transaction"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -264,6 +265,68 @@ func (s *Session) QueryWithOptions(ctx context.Context, sql string, opts cursor.
 			rs, innerErr = s.Conn.Query(ctx, sql, args...)
 		}
 		return innerErr
+	})
+	return rs, err
+}
+
+// RunPinned runs fn with a driver guaranteed to execute every statement fn
+// issues on the same physical connection — needed when a sequence of
+// statements depends on connection-scoped state set by an earlier statement
+// in the sequence (SQL Server's SET SHOWPLAN_XML, Oracle's ALTER SESSION for
+// EXPLAIN). Session.Execute/Query pull from the driver's own connection pool
+// independently per call and give no such guarantee.
+//
+// fn must call the pinned driver directly, not the session's own
+// Execute/Query methods — RunPinned holds the session mutex for its whole
+// duration, and those methods re-lock it.
+//
+// If a manual transaction is already open, its statements already share
+// that transaction's pinned connection, so fn runs directly. Otherwise
+// RunPinned opens a driver transaction for fn's duration and always rolls
+// it back afterward: the pinning exists for session-scoped toggles, not
+// data changes, so there is nothing to commit.
+func (s *Session) RunPinned(ctx context.Context, fn func(pinned engine.Driver) error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastUsed = time.Now()
+
+	controller, ok := s.Conn.(transaction.Controller)
+	if !ok || controller.InTransaction() {
+		return fn(s.Conn)
+	}
+	if err := controller.BeginTx(ctx); err != nil {
+		return err
+	}
+	defer func() { _ = controller.Rollback(ctx) }()
+	return fn(s.Conn)
+}
+
+// ExecuteExplainPlan runs plan's Setup, Statement, and Teardown against a
+// single pinned connection (see RunPinned) and returns the Statement's
+// result set, row-limited the same way QueryWithOptions limits an ordinary
+// query. Teardown always runs, even if Statement fails, so a session-scoped
+// explain toggle a driver sets in Setup is never left on for later
+// statements on the same connection.
+func (s *Session) ExecuteExplainPlan(ctx context.Context, plan explain.Plan, opts cursor.ScanOptions) (*result.ResultSet, error) {
+	var rs *result.ResultSet
+	err := s.RunPinned(ctx, func(pinned engine.Driver) error {
+		for _, stmt := range plan.Setup {
+			if _, err := pinned.Execute(ctx, stmt); err != nil {
+				return err
+			}
+		}
+		var err error
+		if driver, ok := pinned.(cursor.ResultLimitDriver); ok {
+			rs, err = driver.QueryWithOptions(ctx, plan.Statement, opts)
+		} else {
+			rs, err = pinned.Query(ctx, plan.Statement)
+		}
+		for _, stmt := range plan.Teardown {
+			if _, tErr := pinned.Execute(ctx, stmt); err == nil && tErr != nil {
+				err = tErr
+			}
+		}
+		return err
 	})
 	return rs, err
 }

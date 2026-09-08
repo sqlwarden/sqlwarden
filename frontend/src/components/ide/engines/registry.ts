@@ -5,6 +5,7 @@ import { neonEngine } from './neon'
 import { oracleEngine } from './oracle'
 import { postgresEngine } from './postgres'
 import { sqliteEngine } from './sqlite'
+import { sqlServerEngine } from './sqlserver'
 import { supabaseEngine } from './supabase'
 import { tidbEngine } from './tidb'
 import type { FrontendEngine } from './types'
@@ -23,6 +24,7 @@ export const frontendEngines: readonly FrontendEngine[] = [
   mariadbEngine,
   oracleEngine,
   sqliteEngine,
+  sqlServerEngine,
   neonEngine,
   supabaseEngine,
   cockroachdbEngine,

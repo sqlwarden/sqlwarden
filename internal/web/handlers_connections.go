@@ -1202,13 +1202,13 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	// permission check below so planning a statement still requires permission
 	// to run that class of statement.
 	executeExplainPlan := func() (*result.ResultSet, error) {
-		for _, stmt := range explainPlan.Setup {
-			if _, err := session.Execute(r.Context(), stmt); err != nil {
-				return nil, err
-			}
+		rs, err := session.ExecuteExplainPlan(r.Context(), explainPlan,
+			queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
+		if err != nil {
+			return nil, err
 		}
-		buffered := false
-		return app.executeDQLQuery(r, session, explainPlan.Statement, &buffered, input.PageSize, start, runtimeSettings)
+		rs.DurationMs = time.Since(start).Milliseconds()
+		return rs, nil
 	}
 	execStatement := func() (*result.ResultSet, error) {
 		return session.ExecuteWithOptions(r.Context(), execSQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))

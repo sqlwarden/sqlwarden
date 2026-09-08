@@ -34,6 +34,7 @@ const (
 	DialectCockroachDB Dialect = "cockroachdb"
 	DialectSQLite      Dialect = "sqlite"
 	DialectOracle      Dialect = "oracle"
+	DialectSQLServer   Dialect = "sqlserver"
 )
 
 // ConnectionConfig holds the configuration an engine needs to open a connection.
@@ -64,6 +65,8 @@ func NormalizeName(name string) string {
 		return "postgres"
 	case "sqlite3":
 		return "sqlite"
+	case "mssql":
+		return "sqlserver"
 	default:
 		return name
 	}

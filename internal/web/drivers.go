@@ -8,6 +8,7 @@ import (
 	_ "github.com/sqlwarden/internal/engine/engines/oracle"
 	_ "github.com/sqlwarden/internal/engine/engines/postgres"
 	_ "github.com/sqlwarden/internal/engine/engines/sqlite"
+	_ "github.com/sqlwarden/internal/engine/engines/sqlserver"
 	_ "github.com/sqlwarden/internal/engine/engines/supabase"
 	_ "github.com/sqlwarden/internal/engine/engines/tidb"
 	_ "github.com/sqlwarden/internal/engine/engines/yugabyte"

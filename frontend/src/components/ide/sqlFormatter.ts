@@ -7,6 +7,7 @@ import {
   sql as standardSql,
   sqlite,
   tidb,
+  transactsql,
   type DialectOptions,
 } from 'sql-formatter'
 
@@ -31,3 +32,4 @@ export const oracleSqlFormatter = formatterFor(plsql)
 export const postgresSqlFormatter = formatterFor(postgresql)
 export const sqliteSqlFormatter = formatterFor(sqlite)
 export const tidbSqlFormatter = formatterFor(tidb)
+export const sqlServerSqlFormatter = formatterFor(transactsql)
