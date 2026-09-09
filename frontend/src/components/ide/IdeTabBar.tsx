@@ -264,7 +264,7 @@ export function IdeTabBar({ orgSlug, workspace, group, focused, onFocus }: IdeTa
                     : 'Close without saving?'}
               </DialogTitle>
             </DialogHeader>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-pretty text-muted-foreground">
               {pendingCloseRunning ? (
                 <>
                   A query is still running in{' '}
@@ -345,7 +345,7 @@ function ScrollChevron({
       onClick={onClick}
       aria-label={direction === 'left' ? 'Scroll tabs left' : 'Scroll tabs right'}
       className={cn(
-        'flex h-9 w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors',
+        'flex h-9 w-7 shrink-0 items-center justify-center text-muted-foreground transition-colors',
         disabled ? 'opacity-35' : 'hover:bg-card/50 hover:text-foreground',
       )}
     >
@@ -456,7 +456,8 @@ function TabItem({
           title="Close tab"
           aria-label={`Close ${tab.title}`}
           className={cn(
-            'flex size-5 shrink-0 items-center justify-center rounded transition-colors',
+            'relative flex size-5 shrink-0 items-center justify-center rounded transition-colors',
+            'before:absolute before:-inset-1 before:content-[""]',
             'hover:bg-muted hover:text-foreground',
             active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
           )}

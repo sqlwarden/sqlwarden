@@ -275,7 +275,7 @@ const STATUS_ICON: Record<QueryResult['status'], { name: AppIcon; className: str
   idle: { name: 'loading-03', className: 'text-muted-foreground/50' },
   pending: { name: 'loading-03', className: 'text-muted-foreground/50' },
   running: { name: 'loading-03', className: 'animate-spin text-primary' },
-  ok: { name: 'checkmark-circle-02', className: 'text-green-500' },
+  ok: { name: 'checkmark-circle-02', className: 'text-success' },
   error: { name: 'cancel-01', className: 'text-destructive' },
   cancelled: { name: 'cancel-01', className: 'text-muted-foreground' },
   skipped: { name: 'cancel-01', className: 'text-muted-foreground/60' },
@@ -1064,7 +1064,7 @@ function ResultSetView({
         />
         <div className="flex min-h-0 flex-1 items-center justify-center">
           <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            <Icon name="checkmark-circle-02" size={14} className="text-green-500" />
+            <Icon name="checkmark-circle-02" size={14} className="text-success" />
             <span className="font-medium text-foreground">Query executed</span>
             {rowsAffected !== undefined && (
               <span className="tabular-nums">

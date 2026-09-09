@@ -53,9 +53,8 @@ export function SearchInput({
           type="button"
           aria-label="Clear search"
           className={cn(
-            'absolute top-1/2 inline-flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground',
-            isSm ? 'end-1.5' : 'end-3',
-            isMuted && 'rounded hover:bg-muted',
+            'absolute top-1/2 inline-flex -translate-y-1/2 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground hover:bg-muted',
+            isSm ? 'end-0.5 size-5' : 'end-1.5 size-6',
           )}
           onClick={onClear}
         >
