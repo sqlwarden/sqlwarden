@@ -7,6 +7,7 @@ import type {
   ObjectDefinitionResponse,
   ObjectDescriptor,
   ObjectRef,
+  ScopePath,
   ObjectsResponse,
   RelationshipsResponse,
   ResultSet,
@@ -167,12 +168,15 @@ export function orgConnectionDirectoryQueryOptions(
   workspaceId: string | number,
   connectionId: string | number,
   sessionId?: string,
+  scope?: ScopePath,
 ) {
+  const key = connectionDirectoryQueryKey(slug, workspaceId, connectionId)
+  const suffix = scope ? `?${new URLSearchParams({ scope: JSON.stringify(scope) })}` : ''
   return queryOptions({
-    queryKey: connectionDirectoryQueryKey(slug, workspaceId, connectionId),
+    queryKey: scope ? [...key, JSON.stringify(scope)] : key,
     queryFn: () =>
       api.get<DirectoryResponse>(
-        `${schemaBase(slug, workspaceId, connectionId)}/directory`,
+        `${schemaBase(slug, workspaceId, connectionId)}/directory${suffix}`,
         schemaRequestOptions(sessionId),
       ),
     staleTime: 60_000,

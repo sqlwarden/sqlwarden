@@ -93,3 +93,30 @@ func TestSummary(t *testing.T) {
 		})
 	}
 }
+
+func TestTableEditsRespectCapabilities(t *testing.T) {
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "APP"})
+	ref := &metadata.ObjectRef{Scope: scope, Kind: "table", Name: "T"}
+	spec := Spec{Operations: []Operation{OperationCreateTable, OperationAddColumn, OperationAlterColumn, OperationCreateIndex}, ColumnTypes: []string{"INTEGER"}, CreatableTableScopeKinds: []string{"schema"}}
+	value := "0"
+	requests := []Request{
+		{Operation: OperationCreateTable, Scope: scope, Name: "T", Columns: []ColumnDefinition{{Name: "A", DataType: "INTEGER", Default: &value}}},
+		{Operation: OperationAddColumn, Ref: ref, Column: &ColumnDefinition{Name: "A", DataType: "INTEGER", Default: &value}},
+		{Operation: OperationAlterColumn, Ref: ref, Name: "A", Changes: &ColumnChanges{Default: &value}},
+	}
+	for _, request := range requests {
+		if err := Validate(request, spec); !errors.Is(err, ErrUnsupported) {
+			t.Errorf("%s must reject defaults without capability: %v", request.Operation, err)
+		}
+		enabled := spec
+		enabled.SupportsColumnDefaults = true
+		if err := Validate(request, enabled); err != nil {
+			t.Errorf("%s with defaults enabled: %v", request.Operation, err)
+		}
+		disabled := enabled
+		disabled.Operations = nil
+		if err := Validate(request, disabled); !errors.Is(err, ErrUnsupported) {
+			t.Errorf("%s must reject unadvertised operations: %v", request.Operation, err)
+		}
+	}
+}

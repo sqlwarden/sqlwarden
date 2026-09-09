@@ -155,3 +155,19 @@ describe('formatRowCount', () => {
     expect(formatRowCount(2_500_000)).toBe('~2.5M')
   })
 })
+
+it('filters scope names by query, leaving system-schema visibility to the backend', () => {
+  const current = [{ kind: 'schema', name: 'SYS' }]
+  const source: SchemaDirectory = {
+    ...directory,
+    default_scope: current,
+    roots: [
+      { path: current, groups: [], system: true },
+      { path: [{ kind: 'schema', name: 'REPORTING' }], groups: [], lazy: true },
+    ],
+  }
+  expect(filterDirectory(source, 'report').roots.map((node) => node.path[0].name)).toEqual([
+    'REPORTING',
+  ])
+  expect(source.roots).toHaveLength(2)
+})

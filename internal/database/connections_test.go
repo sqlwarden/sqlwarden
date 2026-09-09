@@ -116,7 +116,7 @@ func TestConnectionDefaultScopeRoundTrips(t *testing.T) {
 		metadata.ScopeSegment{Kind: "schema", Name: "reporting"},
 	)
 	conn, err := db.InsertConnectionWithScope(
-		ctx, ws.ID, nil, "analytics", "postgres", "encrypted", "open", initial,
+		ctx, ws.ID, nil, "analytics", "postgres", "encrypted", "open", initial, false,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestConnectionDefaultScopeRoundTrips(t *testing.T) {
 	replacement := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "warehouse"})
 	if err := db.UpdateConnectionWithScopeAndPolicy(
 		ctx, conn.ID, "renamed", "encrypted-2", "restricted",
-		SchemaSnapshotPolicyInherit, replacement,
+		SchemaSnapshotPolicyInherit, replacement, false,
 	); err != nil {
 		t.Fatal(err)
 	}

@@ -13,16 +13,10 @@ import { Field, FieldError, FieldGroup, FieldLabel } from '#/components/ui/field
 import { Icon } from '#/lib/icons'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '#/components/ui/select'
+import { ColumnTypeInput } from './ColumnTypeInput'
+import { canonicalColumnType } from './columnTypes'
 import { scopeLabel } from '#/lib/api/scope'
-import type { ScopePath, SchemaEditColumn } from '#/lib/api/types'
+import type { ScopePath, SchemaEditColumn, ParameterizedColumnType } from '#/lib/api/types'
 
 type ColumnRow = {
   id: number
@@ -30,12 +24,13 @@ type ColumnRow = {
   dataType: string
   nullable: boolean
   primaryKey: boolean
+  defaultValue: string
 }
 
 let nextRowId = 0
 function emptyRow(dataType: string): ColumnRow {
   nextRowId += 1
-  return { id: nextRowId, name: '', dataType, nullable: true, primaryKey: false }
+  return { id: nextRowId, name: '', dataType, nullable: true, primaryKey: false, defaultValue: '' }
 }
 
 export type CreateTableDialogProps = {
@@ -43,6 +38,8 @@ export type CreateTableDialogProps = {
   onOpenChange: (open: boolean) => void
   scope: ScopePath
   columnTypes: string[]
+  parameterizedColumnTypes?: ParameterizedColumnType[]
+  supportsColumnDefaults?: boolean
   pending: boolean
   onSubmit: (name: string, columns: SchemaEditColumn[]) => void
 }
@@ -62,17 +59,20 @@ function toValidColumns(rows: ColumnRow[]): SchemaEditColumn[] | null {
     data_type: r.dataType,
     nullable: r.primaryKey ? false : r.nullable,
     primary_key: r.primaryKey,
+    ...(r.defaultValue.trim() ? { default: r.defaultValue.trim() } : {}),
   }))
 }
 
 /** Create table dialog: table name plus at least one column, each with a
- *  name, a data type drawn only from the driver's advertised column types,
+ *  name, a data type validated against the driver's advertised type grammar,
  *  nullability, and primary key. */
 export function CreateTableDialog({
   open,
   onOpenChange,
   scope,
   columnTypes,
+  parameterizedColumnTypes = [],
+  supportsColumnDefaults = false,
   pending,
   onSubmit,
 }: CreateTableDialogProps) {
@@ -107,7 +107,10 @@ export function CreateTableDialog({
     touched && columns === null && rows.every((r) => r.name.trim() !== '')
       ? 'Column names must be unique.'
       : null
-  const disabled = pending || trimmedName === '' || columns === null
+  const invalidTypes = rows.some(
+    (row) => canonicalColumnType(row.dataType, columnTypes, parameterizedColumnTypes) === null,
+  )
+  const disabled = pending || trimmedName === '' || columns === null || invalidTypes
 
   function updateRow(id: number, patch: Partial<ColumnRow>) {
     setRows((current) => current.map((r) => (r.id === id ? { ...r, ...patch } : r)))
@@ -130,12 +133,18 @@ export function CreateTableDialog({
     e.preventDefault()
     setTouched(true)
     if (disabled) return
-    onSubmit(trimmedName, columns!)
+    onSubmit(
+      trimmedName,
+      columns!.map((column) => ({
+        ...column,
+        data_type: canonicalColumnType(column.data_type, columnTypes, parameterizedColumnTypes)!,
+      })),
+    )
   }
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next || !pending) && onOpenChange(next)}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Create table</DialogTitle>
           <DialogDescription>In {scopeLabel(scope) || 'this scope'}</DialogDescription>
@@ -173,70 +182,79 @@ export function CreateTableDialog({
             </div>
             <div className="flex flex-col gap-2">
               {rows.map((row) => (
-                <div key={row.id} className="flex items-center gap-2">
-                  <Input
-                    ref={row.id === rows[rows.length - 1].id ? lastRowNameRef : undefined}
-                    value={row.name}
-                    disabled={pending}
-                    onChange={(e) => updateRow(row.id, { name: e.target.value })}
-                    placeholder="column name"
-                    autoComplete="off"
-                    aria-label="Column name"
-                    className="min-w-0 flex-1"
-                  />
-                  <Select
-                    items={columnTypes.map((t) => ({ label: t, value: t }))}
-                    value={row.dataType}
-                    disabled={pending}
-                    onValueChange={(value) => value && updateRow(row.id, { dataType: value })}
-                  >
-                    <SelectTrigger aria-label="Column type" className="w-32 shrink-0">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {columnTypes.map((t) => (
-                          <SelectItem key={t} value={t}>
-                            {t}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                    <Checkbox
-                      checked={row.primaryKey ? false : row.nullable}
-                      disabled={pending || row.primaryKey}
-                      onCheckedChange={(checked) =>
-                        updateRow(row.id, { nullable: Boolean(checked) })
-                      }
-                    />
-                    Null
-                  </label>
-                  <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                    <Checkbox
-                      checked={row.primaryKey}
+                <FieldGroup key={row.id}>
+                  <div className="flex flex-wrap items-start gap-2">
+                    <Input
+                      ref={row.id === rows[rows.length - 1].id ? lastRowNameRef : undefined}
+                      value={row.name}
                       disabled={pending}
-                      onCheckedChange={(checked) =>
-                        updateRow(row.id, {
-                          primaryKey: Boolean(checked),
-                          nullable: checked ? false : row.nullable,
-                        })
-                      }
+                      onChange={(e) => updateRow(row.id, { name: e.target.value })}
+                      placeholder="column name"
+                      autoComplete="off"
+                      aria-label="Column name"
+                      className="min-w-0 flex-1"
                     />
-                    PK
-                  </label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    disabled={pending || rows.length <= 1}
-                    aria-label="Remove column"
-                    onClick={() => removeRow(row.id)}
-                  >
-                    <Icon name="delete-02" size={13} />
-                  </Button>
-                </div>
+                    <div className="w-48 shrink-0">
+                      <ColumnTypeInput
+                        value={row.dataType}
+                        onChange={(dataType) => updateRow(row.id, { dataType })}
+                        columnTypes={columnTypes}
+                        rules={parameterizedColumnTypes}
+                        disabled={pending}
+                      />
+                    </div>
+                    <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                      <Checkbox
+                        checked={row.primaryKey ? false : row.nullable}
+                        disabled={pending || row.primaryKey}
+                        onCheckedChange={(checked) =>
+                          updateRow(row.id, { nullable: Boolean(checked) })
+                        }
+                      />
+                      Null
+                    </label>
+                    <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                      <Checkbox
+                        checked={row.primaryKey}
+                        disabled={pending}
+                        onCheckedChange={(checked) =>
+                          updateRow(row.id, {
+                            primaryKey: Boolean(checked),
+                            nullable: checked ? false : row.nullable,
+                          })
+                        }
+                      />
+                      PK
+                    </label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={pending || rows.length <= 1}
+                      aria-label="Remove column"
+                      onClick={() => removeRow(row.id)}
+                    >
+                      <Icon name="delete-02" size={13} />
+                    </Button>
+                  </div>
+                  {supportsColumnDefaults && (
+                    <Field>
+                      <FieldLabel htmlFor={'column-default-' + row.id}>
+                        Default expression
+                      </FieldLabel>
+                      <Input
+                        id={'column-default-' + row.id}
+                        value={row.defaultValue}
+                        onChange={(event) =>
+                          updateRow(row.id, { defaultValue: event.target.value })
+                        }
+                        disabled={pending}
+                        placeholder="No default"
+                        autoComplete="off"
+                      />
+                    </Field>
+                  )}
+                </FieldGroup>
               ))}
             </div>
             {duplicateColumns && <p className="text-xs text-destructive">{duplicateColumns}</p>}

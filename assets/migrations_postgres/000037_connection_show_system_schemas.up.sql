@@ -1,0 +1,1 @@
+ALTER TABLE connections ADD COLUMN show_system_schemas BOOLEAN NOT NULL DEFAULT FALSE;

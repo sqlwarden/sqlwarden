@@ -564,3 +564,52 @@ func disableSchemaSnapshots(t *testing.T, app *application, connectionID int64) 
 		t.Fatalf("disable snapshots for ephemeral schema test: %v", err)
 	}
 }
+
+type tableEditFakeDriver struct{ ddlFakeDriver }
+
+func (*tableEditFakeDriver) DDLSpec() ddl.Spec {
+	return ddl.Spec{
+		Operations:               []ddl.Operation{ddl.OperationAddColumn, ddl.OperationAlterColumn, ddl.OperationCreateIndex},
+		ColumnTypes:              []string{"integer", "text"},
+		CreatableTableScopeKinds: []string{"database"},
+		SupportsColumnDefaults:   true,
+	}
+}
+
+func TestApplyConnectionTableEditPayloads(t *testing.T) {
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "table-edit"), "Table Edit", "Table Edit Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	driver := &tableEditFakeDriver{}
+	session := openSchemaSession(t, app, owner.ID, conn.ID, driver)
+	ref := metadata.ObjectRef{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"}), Kind: "table", Name: "events"}
+	for _, payload := range []map[string]any{
+		{"operation": "add_column", "ref": ref, "column": map[string]any{"name": "count", "data_type": "integer", "nullable": false, "default": "0"}},
+		{"operation": "alter_column", "ref": ref, "name": "count", "changes": map[string]any{"nullable": true}},
+		{"operation": "create_index", "ref": ref, "name": "ix_events", "unique": true, "index_columns": []map[string]any{{"name": "count", "descending": true}, {"name": "id"}}},
+	} {
+		req := newAuthRequest(t, http.MethodPost, orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/mutations", payload, tok)
+		req.Header.Set("X-Warden-Session", session.ID)
+		res := send(t, req, app.routes())
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %d %+v", payload["operation"], res.StatusCode, res.BodyFields)
+		}
+	}
+	driver.mu.Lock()
+	defer driver.mu.Unlock()
+	if len(driver.applied) != 3 {
+		t.Fatalf("applied %d edits", len(driver.applied))
+	}
+	if column := driver.applied[0].Column; column == nil || column.Default == nil || *column.Default != "0" || column.Nullable {
+		t.Fatalf("column payload: %+v", column)
+	}
+	if changes := driver.applied[1].Changes; changes == nil || changes.Nullable == nil || !*changes.Nullable || changes.Default != nil || changes.DataType != nil {
+		t.Fatalf("patch payload: %+v", changes)
+	}
+	index := driver.applied[2]
+	if !index.Unique || len(index.IndexColumns) != 2 || index.IndexColumns[0].Name != "count" || !index.IndexColumns[0].Descending || index.IndexColumns[1].Name != "id" {
+		t.Fatalf("index payload: %+v", index)
+	}
+}

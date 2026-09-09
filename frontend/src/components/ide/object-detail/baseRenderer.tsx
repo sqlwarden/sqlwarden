@@ -1,7 +1,7 @@
 import type { ObjectDetail } from '#/lib/api/types'
 import type { DriverHooks, ObjectViewModel, SectionDef } from './registry'
 import { ColumnsSection } from './sections/ColumnsSection'
-import { KeysSection } from './sections/KeysSection'
+import { DescriptorList, KeysSection } from './sections/KeysSection'
 import { DdlSection } from './sections/DdlSection'
 import { ObjectDataPreview } from './ObjectDataPreview'
 import { ReadOnlySqlView } from './ReadOnlySqlView'
@@ -22,7 +22,7 @@ export function isRelational(detail: ObjectDetail): boolean {
  *  `source` descriptor (function/procedure/trigger SQL), labeled by its title. */
 export function buildBaseSections(vm: ObjectViewModel, hooks: DriverHooks): SectionDef[] {
   if (isRelational(vm.detail)) {
-    return [
+    const sections: SectionDef[] = [
       {
         id: 'columns',
         label: 'Columns',
@@ -38,6 +38,15 @@ export function buildBaseSections(vm: ObjectViewModel, hooks: DriverHooks): Sect
       { id: 'ddl', label: 'DDL', icon: 'terminal', render: (m) => <DdlSection vm={m} /> },
       { id: 'data', label: 'Data', icon: 'database', render: (m) => <ObjectDataPreview vm={m} /> },
     ]
+    if (vm.detail.descriptors?.some((descriptor) => descriptor.kind !== 'source')) {
+      sections.splice(2, 0, {
+        id: 'details',
+        label: 'Details',
+        icon: 'box',
+        render: (m) => <DescriptorList vm={m} />,
+      })
+    }
+    return sections
   }
 
   const descriptors = vm.detail.descriptors ?? []

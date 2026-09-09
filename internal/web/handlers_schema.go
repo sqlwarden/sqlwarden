@@ -211,13 +211,17 @@ func (app *application) getConnectionSchemaRelationships(w http.ResponseWriter, 
 		if !app.authorizeSchemaAccess(w, r) {
 			return
 		}
-		snapshot, _, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
+		snapshot, directory, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
 		}
 		if !found {
 			app.writeSnapshotPending(w, r)
+			return
+		}
+		if lazySchemaScope(directory, scope) {
+			app.getLiveSchemaRelationships(w, r, scope)
 			return
 		}
 		graph, found, err := app.schemaSnapshots.Relationship(r.Context(), snapshot.ID, scope)
@@ -311,7 +315,7 @@ func (app *application) generateConnectionStatement(w http.ResponseWriter, r *ht
 		return
 	}
 
-	objects, ok := app.objectsForStatement(w, r, []metadata.ObjectRef{input.Ref})
+	objects, ok := app.resolveSchemaObjects(w, r, []metadata.ObjectRef{input.Ref})
 	if !ok {
 		return
 	}
@@ -329,7 +333,11 @@ func (app *application) generateConnectionStatement(w http.ResponseWriter, r *ht
 	}
 }
 
-func (app *application) objectsForStatement(w http.ResponseWriter, r *http.Request, refs []metadata.ObjectRef) ([]metadata.Object, bool) {
+// resolveSchemaObjects supplies metadata to object inspection and SQL generation.
+// It authorizes snapshot access, inspects lazy scopes on demand, and otherwise
+// requires a valid live session. A false result means a response (including
+// snapshot-pending status) has already been written and the caller must stop.
+func (app *application) resolveSchemaObjects(w http.ResponseWriter, r *http.Request, refs []metadata.ObjectRef) ([]metadata.Object, bool) {
 	persistent, err := app.persistentSchemaMode(r)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -339,7 +347,7 @@ func (app *application) objectsForStatement(w http.ResponseWriter, r *http.Reque
 		if !app.authorizeSchemaAccess(w, r) {
 			return nil, false
 		}
-		snapshot, _, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
+		snapshot, directory, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return nil, false
@@ -347,6 +355,11 @@ func (app *application) objectsForStatement(w http.ResponseWriter, r *http.Reque
 		if !found {
 			app.writeSnapshotPending(w, r)
 			return nil, false
+		}
+		for _, ref := range refs {
+			if lazySchemaScope(directory, ref.Scope) {
+				return app.liveSchemaObjects(w, r, refs)
+			}
 		}
 		objects, err := app.schemaSnapshots.Objects(r.Context(), snapshot.ID, refs)
 		if err != nil {
@@ -364,6 +377,11 @@ func (app *application) objectsForStatement(w http.ResponseWriter, r *http.Reque
 		app.serverError(w, r, err)
 		return nil, false
 	}
+	app.logDebug(r, "schema objects returned",
+		slog.String("session_id", session.ID),
+		slog.Int("requested_ref_count", len(refs)),
+		slog.Int("object_count", len(objects)),
+	)
 	return objects, true
 }
 
@@ -457,6 +475,15 @@ func (app *application) getConnectionSchemaDirectory(w http.ResponseWriter, r *h
 		app.serverError(w, r, err)
 		return
 	}
+	if r.URL.Query().Has("scope") {
+		scope, scopeErr := schemaScopeQuery(r)
+		if scopeErr != nil {
+			app.badRequest(w, r, scopeErr)
+			return
+		}
+		app.getConnectionSchemaScopeDirectory(w, r, scope, persistent)
+		return
+	}
 	if persistent {
 		if !app.authorizeSchemaAccess(w, r) {
 			return
@@ -470,6 +497,7 @@ func (app *application) getConnectionSchemaDirectory(w http.ResponseWriter, r *h
 			app.writeSnapshotPending(w, r)
 			return
 		}
+		directory = directory.WithSystemScopes(contextGetConnection(r).ShowSystemSchemas)
 		if err := response.JSON(w, http.StatusOK, directoryResponse{Directory: directory}); err != nil {
 			app.serverError(w, r, err)
 		}
@@ -488,6 +516,7 @@ func (app *application) getConnectionSchemaDirectory(w http.ResponseWriter, r *h
 		slog.String("session_id", session.ID),
 		slog.String("engine", directory.Engine),
 	)
+	directory = directory.WithSystemScopes(contextGetConnection(r).ShowSystemSchemas)
 	if err := response.JSON(w, http.StatusOK, directoryResponse{Directory: directory}); err != nil {
 		app.serverError(w, r, err)
 	}
@@ -499,48 +528,10 @@ func (app *application) getConnectionSchemaObjects(w http.ResponseWriter, r *htt
 		app.badRequest(w, r, err)
 		return
 	}
-	persistent, err := app.persistentSchemaMode(r)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if persistent {
-		if !app.authorizeSchemaAccess(w, r) {
-			return
-		}
-		snapshot, _, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !found {
-			app.writeSnapshotPending(w, r)
-			return
-		}
-		objects, err := app.schemaSnapshots.Objects(r.Context(), snapshot.ID, input.Refs)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if err := response.JSON(w, http.StatusOK, objectsResponse{Objects: objects}); err != nil {
-			app.serverError(w, r, err)
-		}
-		return
-	}
-	session, inspector, ok := app.resolveSchemaInspector(w, r)
+	objects, ok := app.resolveSchemaObjects(w, r, input.Refs)
 	if !ok {
 		return
 	}
-	objects, err := app.schemaService.Objects(r.Context(), session.ConnectionID, input.Refs, inspector)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	app.logDebug(r, "schema objects returned",
-		slog.String("session_id", session.ID),
-		slog.Int("requested_ref_count", len(input.Refs)),
-		slog.Int("object_count", len(objects)),
-	)
 	if err := response.JSON(w, http.StatusOK, objectsResponse{Objects: objects}); err != nil {
 		app.serverError(w, r, err)
 	}

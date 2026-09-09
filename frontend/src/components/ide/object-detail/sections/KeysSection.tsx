@@ -50,7 +50,7 @@ export function KeysSection({ vm }: { vm: ObjectViewModel }) {
   )
 }
 
-function DescriptorList({ vm }: { vm: ObjectViewModel }) {
+export function DescriptorList({ vm }: { vm: ObjectViewModel }) {
   const descriptors = (vm.detail.descriptors ?? []).filter((d) => d.kind !== 'source')
   if (descriptors.length === 0) {
     return <Empty>No details.</Empty>

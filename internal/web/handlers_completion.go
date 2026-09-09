@@ -1,7 +1,10 @@
 package web
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -102,7 +105,8 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 				app.serverError(w, r, objectErr)
 				return
 			}
-			req.Schema = &metadata.MetadataSet{Directory: directory, Objects: objects, Version: snapshot.ID}
+			directory, objects, version := app.completionWithCachedScopes(connID, directory, objects, snapshot.ID)
+			req.Schema = &metadata.MetadataSet{Directory: directory, Objects: objects, Version: version}
 			out.MetadataAvailable, out.MetadataStatus, out.SnapshotID = true, "ready", snapshot.ID
 		}
 	} else {
@@ -156,6 +160,39 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 	if err := response.JSON(w, http.StatusOK, out); err != nil {
 		app.serverError(w, r, err)
 	}
+}
+
+// completionWithCachedScopes augments a saved snapshot with schema listings and
+// object details already cached by on-demand browsing. Both completion endpoints
+// use it without opening a target connection or modifying the saved snapshot.
+// The returned version includes a content hash so newly cached metadata rebuilds
+// prepared completion indexes.
+func (app *application) completionWithCachedScopes(connID string, directory *metadata.Directory, objects []metadata.Object, version string) (*metadata.Directory, []metadata.Object, string) {
+	lazy := false
+	for _, node := range directory.ScopeNodes() {
+		lazy = lazy || node.Lazy
+	}
+	if !lazy {
+		return directory, objects, version
+	}
+	merged := app.schemaService.WithCachedScopes(connID, directory)
+	seen := make(map[metadata.ObjectRef]bool, len(objects))
+	for _, object := range objects {
+		seen[object.Ref] = true
+	}
+	var refs []metadata.ObjectRef
+	for _, ref := range merged.ObjectRefs() {
+		if !seen[ref] {
+			refs = append(refs, ref)
+		}
+	}
+	extra := app.schemaService.CachedObjects(connID, refs)
+	result := append(append([]metadata.Object(nil), objects...), extra...)
+	data, _ := json.Marshal(struct {
+		Directory *metadata.Directory
+		Objects   []metadata.Object
+	}{merged, extra})
+	return merged, result, fmt.Sprintf("%s:%x", version, sha256.Sum256(data))
 }
 
 // addEphemeralCompletionMetadata returns true only when an existing session is

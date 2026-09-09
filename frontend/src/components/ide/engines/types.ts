@@ -40,4 +40,9 @@ export interface FrontendEngine {
    *  (`sql.complete`): the IDE calls `/completion` for schema-aware suggestions
    *  instead of falling back to lexical vocabulary only. */
   semanticCompletion?: boolean
+  /** Set when this engine marks built-in/system schemas in its directory
+   *  output (e.g. Oracle's SYS/SYSTEM). Gates the "Show system schemas"
+   *  connection setting; engines that never populate `ScopeNode.system`
+   *  leave it unset since the setting would have no effect. */
+  systemSchemaVisibility?: boolean
 }

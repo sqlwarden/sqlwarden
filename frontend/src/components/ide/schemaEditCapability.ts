@@ -69,7 +69,7 @@ export function canDropObject(
 
 /** rename_column/drop_column/drop_index only accept table references; views
  *  (and other relational objects) show columns/indexes but cannot be edited. */
-function tableOnlyGate(
+export function tableOnlyGate(
   editor: SchemaEditSpec | undefined,
   sessionId: string | undefined,
   canMutate: boolean,

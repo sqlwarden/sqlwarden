@@ -57,9 +57,12 @@ export function useConnectionForm({
   const [defaultScope, setDefaultScope] = useState<ScopePath>([])
   const [tls, setTls] = useState<TlsFormState>(emptyTlsState)
   const [ssh, setSsh] = useState<SshFormState>(emptySshState)
+  const [showSystemSchemas, setShowSystemSchemas] = useState(false)
   const currentDriver = driverMap.get(driverId) ?? drivers[0]
   const tlsSpec = findFrontendEngine(driverId)?.tls
   const sshSupported = findFrontendEngine(driverId)?.sshTunnel ?? false
+  const systemSchemaVisibilitySupported =
+    findFrontendEngine(driverId)?.systemSchemaVisibility ?? false
 
   useEffect(() => {
     if (!open) return
@@ -81,6 +84,7 @@ export function useConnectionForm({
       setDefaultScope([])
       setTls(emptyTlsState)
       setSsh(emptySshState)
+      setShowSystemSchemas(false)
     }
     setDriverId(nextDriverId)
     setStage('form')
@@ -107,6 +111,10 @@ export function useConnectionForm({
   function changeSsh(next: SshFormState) {
     setSsh(next)
     setTestState({ status: 'idle' })
+  }
+
+  function changeShowSystemSchemas(value: boolean) {
+    setShowSystemSchemas(value)
   }
 
   function changeName(value: string) {
@@ -137,6 +145,7 @@ export function useConnectionForm({
     setDefaultScope([])
     setTls(emptyTlsState)
     setSsh(emptySshState)
+    setShowSystemSchemas(false)
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -253,6 +262,7 @@ export function useConnectionForm({
         environment_id: Number(environmentId),
         access_mode: 'open',
         default_scope: defaultScope,
+        show_system_schemas: showSystemSchemas,
         tls: tlsStateToPayload(tls),
         ssh: sshStateToPayload(ssh),
       }),
@@ -319,6 +329,9 @@ export function useConnectionForm({
     ssh,
     sshSupported,
     changeSsh,
+    showSystemSchemas,
+    systemSchemaVisibilitySupported,
+    changeShowSystemSchemas,
   }
 }
 

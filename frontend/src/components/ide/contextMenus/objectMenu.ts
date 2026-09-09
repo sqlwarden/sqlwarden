@@ -25,6 +25,8 @@ export type ObjectMenuCtx = {
   onCopyQualifiedName: () => void
   onCopyColumnList: () => void
   onDrop?: () => void
+  onAddColumn?: () => void
+  onCreateIndex?: () => void
   dropDisabledReason?: string
   /** Operations the backend advertises for this object's kind, in display
    *  order. Empty/undefined omits the Generate submenu entirely. */
@@ -109,5 +111,21 @@ export function buildObjectMenu(ctx: ObjectMenuCtx): ContextMenuItem[] {
       soon: true,
     })
   }
+  if (ctx.onAddColumn)
+    items.push({
+      kind: 'action',
+      id: 'add-column',
+      label: 'Add column',
+      icon: 'plus-sign',
+      onSelect: ctx.onAddColumn,
+    })
+  if (ctx.onCreateIndex)
+    items.push({
+      kind: 'action',
+      id: 'create-index',
+      label: 'Create index',
+      icon: 'plus-sign',
+      onSelect: ctx.onCreateIndex,
+    })
   return items
 }

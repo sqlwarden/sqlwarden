@@ -55,8 +55,11 @@ export function useEditConnectionForm({
   const [defaultScope, setDefaultScope] = useState<ScopePath>([])
   const [tls, setTls] = useState<TlsFormState>(emptyTlsState)
   const [ssh, setSsh] = useState<SshFormState>(emptySshState)
+  const [showSystemSchemas, setShowSystemSchemas] = useState(false)
   const tlsSpec = findFrontendEngine(connection?.driver ?? '')?.tls
   const sshSupported = findFrontendEngine(connection?.driver ?? '')?.sshTunnel ?? false
+  const systemSchemaVisibilitySupported =
+    findFrontendEngine(connection?.driver ?? '')?.systemSchemaVisibility ?? false
 
   const org = useQuery({ ...orgQueryOptions(orgSlug), enabled: open })
   const revealDsnAllowed =
@@ -88,6 +91,7 @@ export function useEditConnectionForm({
     setDefaultScope(connection.default_scope ?? [])
     setTls(emptyTlsState)
     setSsh(emptySshState)
+    setShowSystemSchemas(connection.show_system_schemas)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when the dialog opens for a given connection
   }, [open, connection?.id])
 
@@ -138,6 +142,10 @@ export function useEditConnectionForm({
     setConflict(false)
   }
 
+  function changeShowSystemSchemas(value: boolean) {
+    setShowSystemSchemas(value)
+  }
+
   function reset() {
     setName('')
     setFields(defaultFieldValues(driver))
@@ -148,6 +156,7 @@ export function useEditConnectionForm({
     setDefaultScope([])
     setTls(emptyTlsState)
     setSsh(emptySshState)
+    setShowSystemSchemas(false)
     if (connection) {
       queryClient.removeQueries({
         queryKey: queryKeys.connectionDsn(orgSlug, workspaceId, connection.id),
@@ -270,6 +279,7 @@ export function useEditConnectionForm({
         dsn: buildDSN(),
         access_mode: connection?.access_mode ?? 'open',
         default_scope: defaultScope,
+        show_system_schemas: showSystemSchemas,
         tls: tlsStateToPayload(tls),
         ssh: sshStateToPayload(ssh),
         force,
@@ -381,5 +391,8 @@ export function useEditConnectionForm({
     changeSsh,
     removeSsh,
     updateConnection,
+    showSystemSchemas,
+    systemSchemaVisibilitySupported,
+    changeShowSystemSchemas,
   }
 }

@@ -42,7 +42,7 @@ func TestOracleSchemaSpec(t *testing.T) {
 	for _, k := range spec.Kinds {
 		got[k.Kind] = k
 	}
-	for _, want := range []string{"table", "view", "materialized_view", "sequence", "function", "procedure", "package"} {
+	for _, want := range []string{"table", "view", "materialized_view", "sequence", "function", "procedure", "package", "package_body", "trigger", "type", "type_body", "synonym", "db_link", "index", "constraint"} {
 		if _, ok := got[want]; !ok {
 			t.Errorf("SchemaSpec missing kind %q", want)
 		}
@@ -53,8 +53,8 @@ func TestOracleSchemaSpec(t *testing.T) {
 	if got["sequence"].Relational {
 		t.Errorf("sequence must not be relational")
 	}
-	if !got["materialized_view"].Relational {
-		t.Errorf("materialized_view must be relational")
+	if !got["materialized_view"].Relational || !got["materialized_view"].SupportsDiagram {
+		t.Errorf("materialized_view must be relational and support diagrams")
 	}
 }
 

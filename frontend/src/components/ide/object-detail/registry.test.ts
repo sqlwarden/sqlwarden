@@ -25,6 +25,46 @@ const tableDetail: ObjectDetail = {
 }
 
 describe('getObjectRenderer', () => {
+  it('shows relational descriptors in a Details section', () => {
+    const detail: ObjectDetail = {
+      ...tableDetail,
+      descriptors: [
+        { kind: 'fields', title: 'Storage', fields: [{ name: 'Tablespace', value: 'USERS' }] },
+        { kind: 'rows', title: 'Partitions', rows: { columns: ['Name'], rows: [['P1']] } },
+      ],
+    }
+    expect(
+      getObjectRenderer('oracle')
+        .sections(vm(detail, 'oracle'))
+        .map((section) => section.id),
+    ).toEqual(['columns', 'keys', 'details', 'ddl', 'data'])
+    expect(
+      getObjectRenderer('oracle')
+        .sections(vm(tableDetail, 'oracle'))
+        .map((section) => section.id),
+    ).toEqual(['columns', 'keys', 'ddl', 'data'])
+  })
+
+  it('shows Oracle storage badges and identity generation metadata', () => {
+    const detail: ObjectDetail = {
+      ...tableDetail,
+      attributes: { comment: 'People', tablespace: 'USERS', partitioned: 'YES' },
+    }
+    const renderer = getObjectRenderer('oracle')
+    expect(renderer.headerBadges(vm(detail, 'oracle')).map((badge) => badge.value)).toEqual([
+      'People',
+      'USERS',
+      'YES',
+    ])
+    const identity = renderer
+      .columnExtras(vm(detail, 'oracle'))
+      .find((extra) => extra.id === 'identity')!
+    expect(
+      identity.cell({ ...tableDetail.relational!.columns[0], attributes: { identity: 'ALWAYS' } }),
+    ).toBe('ALWAYS')
+    expect(identity.cell(tableDetail.relational!.columns[0])).toBe('')
+  })
+
   it('rejects drivers without a bundled frontend implementation', () => {
     expect(() => getObjectRenderer('does-not-exist')).toThrow(
       'Unsupported frontend database driver: does-not-exist',

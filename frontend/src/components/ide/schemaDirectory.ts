@@ -113,6 +113,7 @@ function normalizeGroups(groups: ObjectGroup[] | null | undefined): ObjectGroup[
 function filterNodes(nodes: ScopeNode[], query: string): ScopeNode[] {
   return nodes
     .map((node) => {
+      if (node.path.some((segment) => segment.name.toLowerCase().includes(query))) return node
       const groups = node.groups
         .map((group) => ({
           ...group,
@@ -122,5 +123,10 @@ function filterNodes(nodes: ScopeNode[], query: string): ScopeNode[] {
       const children = filterNodes(node.children ?? [], query)
       return { ...node, groups, children }
     })
-    .filter((node) => node.groups.length > 0 || (node.children?.length ?? 0) > 0)
+    .filter(
+      (node) =>
+        node.groups.length > 0 ||
+        (node.children?.length ?? 0) > 0 ||
+        node.path.some((segment) => segment.name.toLowerCase().includes(query)),
+    )
 }

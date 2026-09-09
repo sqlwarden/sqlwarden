@@ -59,13 +59,15 @@ func (d *oracleDriver) Complete(ctx context.Context, req completer.Request) (com
 		return completer.Result{}, err
 	}
 
-	start := oracleCompletionReplaceStart(req.SQL, req.CursorOffset)
+	start, end, prefix, _ := oraclecompletion.CursorWord(req.SQL, req.CursorOffset)
 	suggestions := make([]completer.Suggestion, 0, len(candidates))
 	for _, candidate := range candidates {
 		kind, score := oracleCandidateKind(candidate.Type)
 		insertText := candidate.Text
-		if kind != "keyword" {
-			insertText = oracleQuoteCompletionPath(candidate.Text)
+		if candidate.InsertText != "" {
+			insertText = candidate.InsertText
+		} else if kind != "keyword" && !isSafeOracleIdentifier(candidate.Text) {
+			insertText = oracleQuoteIdent(candidate.Text)
 		}
 		suggestions = append(suggestions, completer.Suggestion{
 			Label:        candidate.Text,
@@ -74,11 +76,11 @@ func (d *oracleDriver) Complete(ctx context.Context, req completer.Request) (com
 			Detail:       firstNonEmpty(candidate.Definition, candidate.Comment),
 			InsertText:   insertText,
 			ReplaceStart: start,
-			ReplaceEnd:   req.CursorOffset,
+			ReplaceEnd:   end,
 			Score:        score,
 		})
 	}
-	oracleSortSuggestions(suggestions, req.SQL[start:req.CursorOffset])
+	oracleSortSuggestions(suggestions, prefix)
 
 	position := cursorContext.Position
 	if position == "" {
@@ -109,11 +111,8 @@ func (d *oracleDriver) CompletionVocabulary() completer.Vocabulary {
 		) {
 			items = append(items, completer.Suggestion{Label: name, Kind: "type", Score: 35})
 		}
-		for _, name := range strings.Fields(
-			"COUNT SUM AVG MIN MAX NVL NVL2 COALESCE DECODE TO_CHAR TO_DATE TO_NUMBER " +
-				"TRUNC ROUND SYSDATE SYSTIMESTAMP ROWNUM LISTAGG RANK ROW_NUMBER",
-		) {
-			items = append(items, completer.Suggestion{Label: name, Kind: "function", Score: 45})
+		for _, function := range oraclecompletion.BuiltinFunctions() {
+			items = append(items, completer.Suggestion{Label: function.Name, InsertText: function.Name, Detail: function.Detail, Kind: "function", Score: 45})
 		}
 		oracleVocabulary = completer.NewVocabulary("oracle", items)
 	})
@@ -154,34 +153,6 @@ func oracleCandidateKind(t completioncore.CandidateType) (string, int) {
 	default:
 		return "text", 20
 	}
-}
-
-func oracleCompletionReplaceStart(sql string, cursor int) int {
-	start := cursor
-	for start > 0 {
-		c := sql[start-1]
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '$' || c == '#' {
-			start--
-			continue
-		}
-		break
-	}
-	if start > 0 && sql[start-1] == '"' {
-		start--
-	}
-	return start
-}
-
-func oracleQuoteCompletionPath(identifier string) string {
-	parts := strings.Split(identifier, ".")
-	for i, part := range parts {
-		if isSafeOracleIdentifier(part) {
-			parts[i] = part
-			continue
-		}
-		parts[i] = oracleQuoteIdent(part)
-	}
-	return strings.Join(parts, ".")
 }
 
 func isSafeOracleIdentifier(identifier string) bool {

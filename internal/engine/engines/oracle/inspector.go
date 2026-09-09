@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -18,43 +17,29 @@ var (
 	_ metadata.DefinitionInspector = (*oracleDriver)(nil)
 )
 
-// oracleSystemSchemas are Oracle-maintained schema owners excluded from
-// listings. The canonical runtime source is
-// SELECT username FROM all_users WHERE oracle_maintained = 'Y' (12.2+);
-// this static set is the fallback and the ALL_* query filter.
-var oracleSystemSchemas = map[string]struct{}{
-	"SYS": {}, "SYSTEM": {}, "XDB": {}, "CTXSYS": {}, "MDSYS": {}, "OUTLN": {},
-	"DBSNMP": {}, "APPQOSSYS": {}, "GSMADMIN_INTERNAL": {}, "AUDSYS": {},
-	"LBACSYS": {}, "DVSYS": {}, "ORDSYS": {}, "ORDDATA": {}, "WMSYS": {},
-	"OJVMSYS": {}, "DBSFWUSER": {}, "REMOTE_SCHEDULER_AGENT": {}, "SYS$UMF": {},
-	"ANONYMOUS": {}, "APEX_PUBLIC_USER": {}, "FLOWS_FILES": {}, "OLAPSYS": {},
-	"SI_INFORMTN_SCHEMA": {}, "DIP": {}, "ORACLE_OCM": {}, "XS$NULL": {},
-}
-
 const oracleObjectKindTable = "table"
-
-// oracleSystemSchemaList is the sorted form of oracleSystemSchemas, used to bind
-// the owner exclusion set into dictionary queries.
-func oracleSystemSchemaList() []string {
-	out := make([]string, 0, len(oracleSystemSchemas))
-	for name := range oracleSystemSchemas {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
-}
 
 func (d *oracleDriver) SchemaSpec() metadata.SchemaSpec {
 	return metadata.SchemaSpec{
-		Dialect: "oracle",
+		Dialect:       "oracle",
+		BrowseScopes:  true,
+		SystemSchemas: true,
 		Kinds: []metadata.SchemaObjectKind{
 			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
 			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
-			{Kind: "materialized_view", Label: "Materialized View", PluralLabel: "Materialized Views", Order: 3, Relational: true, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "materialized_view", Label: "Materialized View", PluralLabel: "Materialized Views", Order: 3, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
 			{Kind: "sequence", Label: "Sequence", PluralLabel: "Sequences", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
 			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
 			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 6, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
 			{Kind: "package", Label: "Package", PluralLabel: "Packages", Order: 7, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "package_body", Label: "Package Body", PluralLabel: "Package Bodies", Order: 8, Listing: "enumerated"},
+			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 9, Listing: "enumerated"},
+			{Kind: "type", Label: "Type", PluralLabel: "Types", Order: 10, Listing: "enumerated"},
+			{Kind: "type_body", Label: "Type Body", PluralLabel: "Type Bodies", Order: 11, Listing: "enumerated"},
+			{Kind: "synonym", Label: "Synonym", PluralLabel: "Synonyms", Order: 12, Listing: "enumerated"},
+			{Kind: "db_link", Label: "Database Link", PluralLabel: "Database Links", Order: 13, Listing: "enumerated"},
+			{Kind: "index", Label: "Index", PluralLabel: "Indexes", Order: 14, Listing: "enumerated"},
+			{Kind: "constraint", Label: "Constraint", PluralLabel: "Constraints", Order: 15, Listing: "enumerated"},
 		},
 	}
 }
@@ -68,6 +53,12 @@ func (d *oracleDriver) currentSchema(ctx context.Context) (string, error) {
 }
 
 func (d *oracleDriver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOptions) (*metadata.Directory, error) {
+	if opts.Root != "" {
+		segments, err := opts.Root.Segments()
+		if err != nil || len(segments) != 1 || segments[0].Kind != "schema" {
+			return nil, fmt.Errorf("oracle: expected a schema scope")
+		}
+	}
 	owner := opts.Root.Name("schema")
 	if owner == "" {
 		owner = d.defaultScope.Name("schema")
@@ -85,8 +76,8 @@ func (d *oracleDriver) InspectDirectory(ctx context.Context, opts metadata.Direc
 
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: owner})
 	b := build.NewDirectory()
-	for _, kind := range []string{"table", "view", "materialized_view", "sequence", "function", "procedure", "package"} {
-		b.DeclareKind(kind)
+	for _, kind := range d.SchemaSpec().Kinds {
+		b.DeclareKind(kind.Kind)
 	}
 	b.AddScope(scope)
 
@@ -99,6 +90,10 @@ func (d *oracleDriver) InspectDirectory(ctx context.Context, opts metadata.Direc
 		{"view", `SELECT view_name FROM all_views WHERE owner = :1 ORDER BY view_name`},
 		{"materialized_view", `SELECT mview_name FROM all_mviews WHERE owner = :1 ORDER BY mview_name`},
 		{"sequence", `SELECT sequence_name FROM all_sequences WHERE sequence_owner = :1 ORDER BY sequence_name`},
+		{"synonym", `SELECT synonym_name FROM all_synonyms WHERE owner = :1 ORDER BY synonym_name`},
+		{"db_link", `SELECT db_link FROM all_db_links WHERE owner = :1 ORDER BY db_link`},
+		{"index", `SELECT index_name FROM all_indexes WHERE owner = :1 ORDER BY index_name`},
+		{"constraint", `SELECT constraint_name FROM all_constraints WHERE owner = :1 ORDER BY constraint_name`},
 	} {
 		if err := d.listInto(ctx, b, scope, l.kind, l.sql, owner); err != nil {
 			return nil, err
@@ -108,7 +103,7 @@ func (d *oracleDriver) InspectDirectory(ctx context.Context, opts metadata.Direc
 	routineRows, err := d.db.QueryContext(ctx, `
 SELECT object_name, object_type
 FROM all_objects
-WHERE owner = :1 AND object_type IN ('FUNCTION','PROCEDURE','PACKAGE') AND subobject_name IS NULL
+WHERE owner = :1 AND object_type IN ('FUNCTION','PROCEDURE','PACKAGE','PACKAGE BODY','TRIGGER','TYPE','TYPE BODY') AND subobject_name IS NULL
 ORDER BY object_type, object_name`, owner)
 	if err != nil {
 		return nil, fmt.Errorf("oracle: catalog routines: %w", err)
@@ -119,7 +114,7 @@ ORDER BY object_type, object_name`, owner)
 			routineRows.Close()
 			return nil, fmt.Errorf("oracle: catalog routines scan: %w", err)
 		}
-		b.AddRef(scope, strings.ToLower(objectType), name)
+		b.AddRef(scope, strings.ReplaceAll(strings.ToLower(objectType), " ", "_"), name)
 	}
 	if err := routineRows.Err(); err != nil {
 		routineRows.Close()
@@ -147,7 +142,21 @@ SELECT table_name, num_rows FROM all_tables WHERE owner = :1 AND num_rows IS NOT
 	}
 	countRows.Close()
 
-	return b.Build("", "oracle", scope), nil
+	directory := b.Build("", "oracle", scope)
+	if opts.Root == "" {
+		nodes, err := d.visibleSchemas(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for i := range nodes {
+			if nodes[i].Path == scope {
+				nodes[i].Groups = directory.Roots[0].Groups
+				nodes[i].Lazy = false
+			}
+		}
+		directory.Roots = nodes
+	}
+	return directory, nil
 }
 
 func (d *oracleDriver) listInto(ctx context.Context, b *build.DirectoryBuilder, scope metadata.ScopePath, kind, query, owner string) error {
@@ -164,42 +173,6 @@ func (d *oracleDriver) listInto(ctx context.Context, b *build.DirectoryBuilder, 
 		b.AddRef(scope, kind, name)
 	}
 	return rows.Err()
-}
-
-func (d *oracleDriver) DiscoverScopes(ctx context.Context, request metadata.ScopeDiscoveryRequest) (*metadata.ScopeDiscovery, error) {
-	current, err := d.currentSchema(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result := &metadata.ScopeDiscovery{Scopes: []metadata.ScopePath{}}
-	if current != "" {
-		result.Current = metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: current})
-	}
-	if request.Parent != "" {
-		return result, nil
-	}
-	systemOwners := oracleSystemSchemaList()
-	placeholders := make([]string, len(systemOwners))
-	args := make([]any, len(systemOwners))
-	for i, owner := range systemOwners {
-		placeholders[i] = ":" + strconv.Itoa(i+1)
-		args[i] = owner
-	}
-	query := `SELECT DISTINCT owner FROM all_objects WHERE owner NOT IN (` +
-		strings.Join(placeholders, ",") + `) ORDER BY owner`
-	rows, err := d.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("oracle: discover schemas: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var owner string
-		if err := rows.Scan(&owner); err != nil {
-			return nil, fmt.Errorf("oracle: discover schemas scan: %w", err)
-		}
-		result.Scopes = append(result.Scopes, metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: owner}))
-	}
-	return result, rows.Err()
 }
 
 // oraclePairFilter builds an "(:s,:s+1),(:s+2,:s+3),..." predicate body for an
@@ -238,8 +211,9 @@ func (d *oracleDriver) objectDict(ctx context.Context, refs []metadata.ObjectRef
 			return oracleDict{}
 		}
 	}
-	current, err := d.currentSchema(ctx)
-	if err != nil || current == "" || !strings.EqualFold(current, owner) {
+	var login string
+	err := d.db.QueryRowContext(ctx, `SELECT USER FROM DUAL`).Scan(&login)
+	if err != nil || login == "" || login != owner {
 		return oracleDict{}
 	}
 	return oracleDict{user: true}
@@ -327,7 +301,7 @@ func oracleSourceDescriptor(title, body string) *metadata.Descriptor {
 }
 
 func (d *oracleDriver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
-	var relational, mviews, sequences, routines []metadata.ObjectRef
+	var relational, mviews, sequences, routines, catalog []metadata.ObjectRef
 	for _, ref := range refs {
 		switch ref.Kind {
 		case "table", "view":
@@ -336,8 +310,10 @@ func (d *oracleDriver) InspectObjects(ctx context.Context, refs []metadata.Objec
 			mviews = append(mviews, ref)
 		case "sequence":
 			sequences = append(sequences, ref)
-		case "function", "procedure", "package":
+		case "function", "procedure", "package", "package_body", "trigger", "type", "type_body":
 			routines = append(routines, ref)
+		case "synonym", "db_link", "index", "constraint":
+			catalog = append(catalog, ref)
 		}
 	}
 
@@ -367,6 +343,13 @@ func (d *oracleDriver) InspectObjects(ctx context.Context, refs []metadata.Objec
 	}
 	if len(routines) > 0 {
 		objs, err := d.inspectRoutines(ctx, dict, routines)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(catalog) > 0 {
+		objs, err := d.inspectCatalogObjects(ctx, catalog)
 		if err != nil {
 			return nil, err
 		}
@@ -567,6 +550,9 @@ ORDER BY i.table_name, i.index_name, ic.column_position`
 
 	out := b.Build()
 	if err := d.attachOracleComments(ctx, out, dict, refs); err != nil {
+		return nil, err
+	}
+	if err := d.attachOracleTableDetails(ctx, out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -923,12 +909,13 @@ WHERE `+statusFilter, statusArgs...)
 
 	out := make([]metadata.Object, 0, len(refs))
 	for _, ref := range refs {
-		key := ref.Scope.Name("schema") + "\x00" + ref.Name + "\x00" + strings.ToUpper(ref.Kind)
+		objectType := strings.ReplaceAll(strings.ToUpper(ref.Kind), "_", " ")
+		key := ref.Scope.Name("schema") + "\x00" + ref.Name + "\x00" + objectType
 		obj := metadata.Object{
 			Ref: ref,
 			Descriptors: []metadata.Descriptor{
 				{Kind: "fields", Title: "Routine", Fields: []metadata.Field{
-					{Name: "Type", Value: strings.ToUpper(ref.Kind)},
+					{Name: "Type", Value: objectType},
 					{Name: "Status", Value: statuses[key]},
 				}},
 			},
