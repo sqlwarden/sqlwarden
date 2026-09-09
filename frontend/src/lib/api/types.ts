@@ -174,6 +174,7 @@ export interface Connection {
   access_mode: 'open' | 'restricted'
   default_scope?: ScopePath
   schema_snapshot_policy?: 'inherit' | 'disabled'
+  show_system_schemas: boolean
   created_at: string
   updated_at: string
 }
@@ -542,6 +543,8 @@ export interface ScopeNode {
   path: ScopePath
   groups: ObjectGroup[]
   children?: ScopeNode[]
+  lazy?: boolean
+  system?: boolean
 }
 
 export interface ObjectGroup {
@@ -573,6 +576,7 @@ export interface SchemaObjectKind {
 export interface SchemaSpec {
   dialect: string
   kinds: SchemaObjectKind[]
+  browse_scopes?: boolean
 }
 
 export interface DbColumn {
@@ -679,13 +683,39 @@ export interface GenerateStatementResponse {
 }
 
 export type SchemaEditOperation =
-  'create_table' | 'drop_object' | 'drop_scope' | 'rename_column' | 'drop_column' | 'drop_index'
+  | 'create_table'
+  | 'drop_object'
+  | 'drop_scope'
+  | 'rename_column'
+  | 'drop_column'
+  | 'drop_index'
+  | 'add_column'
+  | 'alter_column'
+  | 'create_index'
 
 export interface SchemaEditColumn {
   name: string
   data_type: string
   nullable: boolean
   primary_key: boolean
+  default?: string
+}
+
+export interface ParameterizedColumnType {
+  name: string
+  suffix?: string
+  parameters: { name: string; min: number; max: number; optional?: boolean }[]
+}
+
+export interface SchemaEditColumnChanges {
+  data_type?: string
+  nullable?: boolean
+  default?: string
+}
+
+export interface SchemaEditIndexColumn {
+  name: string
+  descending?: boolean
 }
 
 /** Static, driver-advertised schema-editing capabilities. Never infer these in the UI. */
@@ -696,6 +726,8 @@ export interface SchemaEditSpec {
   droppable_object_kinds: string[]
   droppable_scope_kinds: string[]
   supports_cascade: boolean
+  supports_column_defaults?: boolean
+  parameterized_column_types?: ParameterizedColumnType[]
 }
 
 export interface SchemaEditRequest {
@@ -706,6 +738,10 @@ export interface SchemaEditRequest {
   new_name?: string
   columns?: SchemaEditColumn[]
   cascade?: boolean
+  column?: SchemaEditColumn
+  changes?: SchemaEditColumnChanges
+  index_columns?: SchemaEditIndexColumn[]
+  unique?: boolean
 }
 
 export interface SchemaEditStatus {

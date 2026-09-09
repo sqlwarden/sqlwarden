@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	metadata "github.com/sqlwarden/internal/engine/metadata"
@@ -67,7 +68,8 @@ func (app *application) getConnectionCompletionIndex(w http.ResponseWriter, r *h
 			app.serverError(w, r, objErr)
 			return
 		}
-		directory, objects, version, mode = dir, objs, snapshot.ID, "persistent"
+		directory, objects, version = app.completionWithCachedScopes(strconv.FormatInt(conn.ID, 10), dir, objs, snapshot.ID)
+		mode = "persistent"
 	} else {
 		session, inspector, ok := app.resolveSchemaInspector(w, r)
 		if !ok {
@@ -109,9 +111,20 @@ func projectCompletionIndex(directory *metadata.Directory, objects []metadata.Ob
 		Schemas: []string{},
 	}
 	schemaSet := map[string]struct{}{}
+	seen := map[metadata.ObjectRef]bool{}
+	addObject := func(ref metadata.ObjectRef) {
+		if seen[ref] {
+			return
+		}
+		seen[ref] = true
+		out.Objects = append(out.Objects, completionIndexObject{Schema: ref.Scope.Name("schema"), Name: ref.Name, Kind: ref.Kind})
+	}
 
 	if directory != nil {
 		out.DefaultSchema = directory.DefaultScope.Name("schema")
+		for _, ref := range directory.ObjectRefs() {
+			addObject(ref)
+		}
 		for _, node := range directory.ScopeNodes() {
 			if schema := node.Path.Name("schema"); schema != "" {
 				schemaSet[schema] = struct{}{}
@@ -124,9 +137,7 @@ func projectCompletionIndex(directory *metadata.Directory, objects []metadata.Ob
 		if schema != "" {
 			schemaSet[schema] = struct{}{}
 		}
-		out.Objects = append(out.Objects, completionIndexObject{
-			Schema: schema, Name: obj.Ref.Name, Kind: obj.Ref.Kind,
-		})
+		addObject(obj.Ref)
 		if obj.Relational != nil {
 			for _, col := range obj.Relational.Columns {
 				out.Columns = append(out.Columns, completionIndexColumn{

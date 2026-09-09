@@ -2,10 +2,12 @@ package oracle
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/sqlwarden/internal/engine/completioncore"
+	"github.com/sqlwarden/internal/engine/metadata"
 )
 
 // fakeResolver is a minimal MetadataResolver with one schema and one table.
@@ -121,5 +123,108 @@ func TestOracleCompleteCancelled(t *testing.T) {
 	cancel()
 	if _, _, err := Complete(ctx, "SELECT 1 FROM dual", 3, fakeResolver{}); err == nil {
 		t.Fatal("expected cancellation error")
+	}
+}
+
+func TestBuiltinFunctionContexts(t *testing.T) {
+	for _, sql := range []string{"SELECT NV| FROM EMP", "SELECT * FROM EMP WHERE NV|", "SELECT * FROM EMP ORDER BY NV|", "SELECT COALESCE(NV|, 0) FROM EMP"} {
+		cursor := strings.IndexByte(sql, '|')
+		query := strings.Replace(sql, "|", "", 1)
+		candidates, _, err := Complete(context.Background(), query, cursor, fakeResolver{})
+		if err != nil || labels(candidates)["NVL"] != completioncore.CandidateFunction {
+			t.Errorf("%s: %v, %v", sql, labels(candidates), err)
+		}
+		for _, candidate := range candidates {
+			if candidate.Text == "NVL" && candidate.InsertText != "NVL" {
+				t.Errorf("builtin insertion: %+v", candidate)
+			}
+		}
+	}
+	for _, sql := range []string{"SELECT * FROM NV|", "SELECT e.NV| FROM EMP e", "DROP FUNCTION NV|", "SELECT 'NV|' FROM EMP", "SELECT q'[NV|]' FROM EMP", "SELECT 1 -- NV|", "SELECT /* NV| */ 1 FROM EMP"} {
+		cursor := strings.IndexByte(sql, '|')
+		candidates, _, err := Complete(context.Background(), strings.Replace(sql, "|", "", 1), cursor, fakeResolver{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if labels(candidates)["NVL"] == completioncore.CandidateFunction {
+			t.Errorf("builtin leaked into %s", sql)
+		}
+	}
+}
+
+func TestDerivedColumnsAndCTENames(t *testing.T) {
+	for _, tt := range []struct{ sql, want, absent string }{
+		{"WITH emp AS (SELECT 1 AS local_id FROM dual) SELECT e.| FROM emp e", "LOCAL_ID", "EMPLOYEE_ID"},
+		{"SELECT s.| FROM (SELECT 1 AS local_id FROM dual) s", "LOCAL_ID", "EMPLOYEE_ID"},
+		{"WITH recent AS (SELECT 1 AS local_id FROM dual) SELECT * FROM rec|", "RECENT", "EMPLOYEE_ID"},
+		{"WITH \"Recent Jobs\" AS (SELECT 1 AS \"Job No\" FROM dual) SELECT r.| FROM \"Recent Jobs\" r", "JOB NO", "EMPLOYEE_ID"},
+	} {
+		cursor := strings.IndexByte(tt.sql, '|')
+		candidates, _, err := Complete(context.Background(), strings.Replace(tt.sql, "|", "", 1), cursor, fakeResolver{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := labels(candidates)
+		if _, ok := got[tt.want]; !ok {
+			t.Errorf("%s: missing %s: %v", tt.sql, tt.want, got)
+		}
+		if _, ok := got[tt.absent]; ok {
+			t.Errorf("%s: leaked %s", tt.sql, tt.absent)
+		}
+	}
+}
+
+type catalogResolver struct{ fakeResolver }
+
+func (catalogResolver) CatalogObjects(_, schema string, kinds ...string) []metadata.ObjectRef {
+	if schema != "" && !strings.EqualFold(schema, "HR") {
+		return nil
+	}
+	var result []metadata.ObjectRef
+	for kind, name := range map[string]string{"function": "CALCULATE_TAX", "procedure": "REBUILD_TOTALS", "sequence": "ORDER_SEQ"} {
+		if slices.Contains(kinds, kind) {
+			result = append(result, metadata.ObjectRef{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "HR"}), Kind: kind, Name: name})
+		}
+	}
+	return result
+}
+
+func TestCatalogRoutineAndSequenceCompletion(t *testing.T) {
+	for _, tt := range []struct{ sql, want string }{
+		{"SELECT CALC| FROM EMP", "CALCULATE_TAX"},
+		{"SELECT HR.CALC| FROM EMP", "CALCULATE_TAX"},
+		{"DROP PROCEDURE REB|", "REBUILD_TOTALS"},
+		{"SELECT ORDER_SEQ.| FROM EMP", "NEXTVAL"},
+	} {
+		cursor := strings.IndexByte(tt.sql, '|')
+		candidates, _, err := Complete(context.Background(), strings.Replace(tt.sql, "|", "", 1), cursor, catalogResolver{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := labels(candidates)[tt.want]; !ok {
+			t.Errorf("%s: missing %s: %v", tt.sql, tt.want, labels(candidates))
+		}
+	}
+}
+
+func TestCursorWord(t *testing.T) {
+	for _, tt := range []struct {
+		sql                string
+		cursor, start, end int
+		prefix             string
+		suppressed         bool
+	}{
+		{"SELECT NAME FROM EMP", 9, 7, 11, "NA", false},
+		{"SELECT \"Job No\" FROM EMP", 12, 7, 15, "Job ", false},
+		{"SELECT \"Job No", 14, 7, 14, "Job No", false},
+		{"SELECT 'NVL' FROM EMP", 10, 10, 10, "", true},
+		{"SELECT -- NV", 12, 12, 12, "", true},
+		{"SELECT /* done */ NV", 20, 18, 20, "NV", false},
+		{"SELECT", 0, 0, 0, "", false},
+	} {
+		start, end, prefix, suppressed := CursorWord(tt.sql, tt.cursor)
+		if start != tt.start || end != tt.end || prefix != tt.prefix || suppressed != tt.suppressed {
+			t.Errorf("%q @ %d: %d %d %q %v; want %d %d %q %v", tt.sql, tt.cursor, start, end, prefix, suppressed, tt.start, tt.end, tt.prefix, tt.suppressed)
+		}
 	}
 }

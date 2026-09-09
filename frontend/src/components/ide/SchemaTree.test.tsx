@@ -35,9 +35,13 @@ describe('SchemaTree', () => {
     mockPermissions([])
   })
 
-  function renderTree(filter = '', onConnect = vi.fn()) {
-    return render(
-      <QueryClientProvider client={createTestQueryClient()}>
+  function treeElement(
+    queryClient: ReturnType<typeof createTestQueryClient>,
+    filter: string,
+    onConnect: () => void,
+  ) {
+    return (
+      <QueryClientProvider client={queryClient}>
         <IdeStoreContext.Provider value={store}>
           <EditorViewRegistryContext.Provider value={editorViews}>
             <ContextMenuProvider>
@@ -52,8 +56,14 @@ describe('SchemaTree', () => {
             </ContextMenuProvider>
           </EditorViewRegistryContext.Provider>
         </IdeStoreContext.Provider>
-      </QueryClientProvider>,
+      </QueryClientProvider>
     )
+  }
+
+  function renderTree(filter = '', onConnect = vi.fn()) {
+    const queryClient = createTestQueryClient()
+    const result = render(treeElement(queryClient, filter, onConnect))
+    return { ...result, queryClient, onConnect }
   }
 
   function respondReady() {
@@ -110,6 +120,64 @@ describe('SchemaTree', () => {
       ),
     )
   }
+
+  it('browses schemas lazily, marks current, and applies the explorer name filter', async () => {
+    // System-schema visibility is a per-connection setting the backend applies
+    // before returning the directory, so this fixture already omits SYS.
+    const other = [{ kind: 'schema', name: 'REPORTING' }]
+    let loads = 0
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({
+          spec: {
+            dialect: 'oracle',
+            browse_scopes: true,
+            kinds: [{ kind: 'table', label: 'Table', plural_label: 'Tables' }],
+          },
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', ({ request }) => {
+        if (new URL(request.url).searchParams.has('scope')) {
+          loads++
+          const requested = JSON.parse(new URL(request.url).searchParams.get('scope')!)
+          expect(requested).toEqual(other)
+          return HttpResponse.json({
+            directory: {
+              roots: [
+                {
+                  path: other,
+                  groups: [
+                    { kind: 'table', objects: [{ scope: other, kind: 'table', name: 'REPORTS' }] },
+                  ],
+                },
+              ],
+            },
+          })
+        }
+        return HttpResponse.json({
+          directory: {
+            default_scope: scope,
+            roots: [
+              { path: scope, groups: [] },
+              { path: other, groups: [], lazy: true },
+            ],
+          },
+        })
+      }),
+    )
+    const { rerender, queryClient } = renderTree()
+    expect(await screen.findByText('Current')).toBeInTheDocument()
+    expect(screen.getByText('public')).toBeInTheDocument()
+    expect(loads).toBe(0)
+    fireEvent.click(screen.getByText('REPORTING'))
+    expect(await screen.findByText('Tables')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Tables'))
+    expect(await screen.findByText('REPORTS')).toBeInTheDocument()
+    expect(loads).toBe(1)
+    rerender(treeElement(queryClient, 'report', vi.fn()))
+    expect(screen.queryByText('public')).not.toBeInTheDocument()
+    expect(await screen.findByText('REPORTING')).toBeInTheDocument()
+  })
 
   const createTableEditor: SchemaEditSpec = {
     operations: ['create_table'],

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { editor } from './schemaEdit.fixtures'
 import { CreateTableDialog } from './CreateTableDialog'
 
 /** The submit button is disabled while the form is invalid, so validation
@@ -131,4 +132,32 @@ describe('CreateTableDialog', () => {
     await user.click(screen.getAllByLabelText('Remove column')[0])
     expect(screen.getAllByLabelText('Column name')).toHaveLength(1)
   })
+})
+
+it('creates a table with a parameterized type and default expression', async () => {
+  const onSubmit = vi.fn()
+  render(
+    <CreateTableDialog
+      open
+      onOpenChange={vi.fn()}
+      scope={scope}
+      columnTypes={editor.column_types}
+      parameterizedColumnTypes={editor.parameterized_column_types}
+      supportsColumnDefaults
+      pending={false}
+      onSubmit={onSubmit}
+    />,
+  )
+  fireEvent.change(screen.getByLabelText('Table name'), { target: { value: 'ORDERS' } })
+  fireEvent.change(screen.getByLabelText('Column name'), { target: { value: 'AMOUNT' } })
+  await userEvent.click(screen.getByLabelText('Column type'))
+  await userEvent.click(await screen.findByRole('option', { name: 'Custom type…' }))
+  fireEvent.change(screen.getByLabelText('Custom column type'), {
+    target: { value: 'NUMBER(10, 2)' },
+  })
+  fireEvent.change(screen.getByLabelText('Default expression'), { target: { value: '0' } })
+  await userEvent.click(screen.getByRole('button', { name: 'Create table' }))
+  expect(onSubmit).toHaveBeenCalledWith('ORDERS', [
+    { name: 'AMOUNT', data_type: 'NUMBER(10,2)', nullable: true, primary_key: false, default: '0' },
+  ])
 })

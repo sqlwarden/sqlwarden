@@ -15,7 +15,7 @@ import { TestStatusIndicator } from './ConnectionTestStatus'
 import { ConnectionSshFields } from './ConnectionSshFields'
 import { ConnectionTlsFields } from './ConnectionTlsFields'
 import { DriverBadge } from './DriverBadge'
-import { DriverFields, FormField } from './ConnectionFormFields'
+import { DriverFields, FormField, ShowSystemSchemasField } from './ConnectionFormFields'
 import { useEditConnectionForm } from './useEditConnectionForm'
 
 type Props = {
@@ -108,6 +108,16 @@ export function EditConnectionDialog({
                     onDatabaseChange={form.selectDatabase}
                     onSchemaChange={form.selectSchema}
                   />
+
+                  {form.systemSchemaVisibilitySupported ? (
+                    <div className="col-span-6">
+                      <ShowSystemSchemasField
+                        checked={form.showSystemSchemas}
+                        disabled={fieldsDisabled}
+                        onChange={form.changeShowSystemSchemas}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </TabsContent>
 

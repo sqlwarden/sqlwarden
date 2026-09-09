@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SchemaEditSpec } from '#/lib/api/types'
 import {
   canCreateTable,
+  tableOnlyGate,
   canDropColumn,
   canDropIndex,
   canDropObject,
@@ -91,3 +92,16 @@ describe('schemaEditCapability', () => {
     expect(cascadeAvailable(postgresEditor, 'index')).toBe(false)
   })
 })
+
+it.each(['add_column', 'alter_column', 'create_index'] as const)(
+  'gates %s by driver, connection, permission, and table kind',
+  (operation) => {
+    const editor: SchemaEditSpec = { ...postgresEditor, operations: [operation] }
+    expect(tableOnlyGate(editor, 'session', true, 'table', operation).allowed).toBe(true)
+    expect(tableOnlyGate(undefined, 'session', true, 'table', operation).allowed).toBe(false)
+    expect(tableOnlyGate(postgresEditor, 'session', true, 'table', operation).allowed).toBe(false)
+    expect(tableOnlyGate(editor, undefined, true, 'table', operation).allowed).toBe(false)
+    expect(tableOnlyGate(editor, 'session', false, 'table', operation).allowed).toBe(false)
+    expect(tableOnlyGate(editor, 'session', true, 'view', operation).allowed).toBe(false)
+  },
+)

@@ -100,3 +100,51 @@ func TestOracleCompleteColumnsFromSchema(t *testing.T) {
 		t.Fatalf("expected EMPLOYEES columns, got suggestions %+v", res.Suggestions)
 	}
 }
+
+func TestOracleCompletionCatalogAndIdentifierInsertion(t *testing.T) {
+	scope := oracleSchemaScope("HR")
+	table := metadata.ObjectRef{Scope: scope, Kind: "table", Name: "EMP"}
+	set := &metadata.MetadataSet{
+		Directory: &metadata.Directory{DefaultScope: scope, Roots: []metadata.ScopeNode{{Path: scope, Groups: []metadata.ObjectGroup{
+			{Kind: "table", Objects: []metadata.ObjectRef{table, {Scope: scope, Kind: "table", Name: "UNINSPECTED"}}},
+			{Kind: "function", Objects: []metadata.ObjectRef{{Scope: scope, Kind: "function", Name: "CALCULATE_TAX"}}},
+			{Kind: "sequence", Objects: []metadata.ObjectRef{{Scope: scope, Kind: "sequence", Name: "ORDER_SEQ"}}},
+		}}}},
+		Objects: []metadata.Object{{Ref: table, Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{Name: "Job No"}, {Name: "account.Total"}}}}},
+	}
+	for _, tt := range []struct{ sql, label, insert string }{
+		{"SELECT * FROM UNI|", "UNINSPECTED", "UNINSPECTED"},
+		{"SELECT HR.CALC| FROM EMP", "CALCULATE_TAX", "CALCULATE_TAX"},
+		{"SELECT ORDER_SEQ.| FROM EMP", "NEXTVAL", "NEXTVAL"},
+		{"SELECT e.\"Job |No\" FROM EMP e", "Job No", `"Job No"`},
+		{"SELECT e.\"account.|Total\" FROM EMP e", "account.Total", `"account.Total"`},
+		{"WITH recent AS (SELECT 1 AS local_id FROM dual) SELECT r.| FROM recent r", "LOCAL_ID", "LOCAL_ID"},
+		{"WITH \"Recent Jobs\" AS (SELECT 1 AS \"Job No\" FROM dual) SELECT r.| FROM \"Recent Jobs\" r", "Job No", `"Job No"`},
+	} {
+		cursor := strings.IndexByte(tt.sql, '|')
+		query := strings.Replace(tt.sql, "|", "", 1)
+		result, err := (&oracleDriver{}).Complete(context.Background(), completer.Request{SQL: query, CursorOffset: cursor, Schema: set})
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, candidate := range result.Suggestions {
+			if candidate.Label != tt.label {
+				continue
+			}
+			found = true
+			if candidate.InsertText != tt.insert {
+				t.Errorf("%s: insert %q, want %q", tt.sql, candidate.InsertText, tt.insert)
+			}
+			if strings.Contains(tt.sql, "e.\"") {
+				applied := query[:candidate.ReplaceStart] + candidate.InsertText + query[candidate.ReplaceEnd:]
+				if applied != "SELECT e."+tt.insert+" FROM EMP e" {
+					t.Errorf("quoted replacement: %s", applied)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s: missing %s: %+v", tt.sql, tt.label, result.Suggestions)
+		}
+	}
+}

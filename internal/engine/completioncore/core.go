@@ -45,7 +45,9 @@ const (
 // Candidate is the transport-neutral result produced by a dialect completion
 // engine. Priority follows Bytebase's convention: smaller values rank first.
 type Candidate struct {
-	Text         string
+	Text string
+	// InsertText, when present, is engine-generated SQL rather than an identifier.
+	InsertText   string
 	DisplayText  string
 	Type         CandidateType
 	Definition   string
@@ -84,6 +86,30 @@ type MetadataResolver interface {
 	SchemaNames(database string) []string
 	Relations(database, schema string) []Relation
 	FindRelation(database, schema, name string) (Relation, bool)
+}
+
+// CatalogResolver optionally exposes non-relational names from the same
+// immutable index used for tables and columns.
+type CatalogResolver interface {
+	CatalogObjects(database, schema string, kinds ...string) []metadata.ObjectRef
+}
+
+func (r *SchemaResolver) CatalogObjects(database, namespace string, kinds ...string) []metadata.ObjectRef {
+	if r == nil || r.index == nil {
+		return nil
+	}
+	if namespace == "" {
+		namespace = r.defaultSchema
+	}
+	scope, ok := r.resolveScope(database, namespace)
+	if !ok {
+		return nil
+	}
+	var result []metadata.ObjectRef
+	for _, kind := range kinds {
+		result = append(result, r.index.ObjectRefsInScope(scope, kind)...)
+	}
+	return result
 }
 
 // SchemaResolver adapts metadata.Index to the completion metadata boundary.

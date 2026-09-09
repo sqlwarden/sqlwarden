@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Icon } from '#/lib/icons'
+import { Checkbox } from '#/components/ui/checkbox'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import {
@@ -361,6 +362,28 @@ export function StoredSecretRow({
         </>
       )}
     </div>
+  )
+}
+
+export function ShowSystemSchemasField({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean
+  disabled?: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-3 py-1">
+      <Checkbox
+        aria-label="Show system schemas"
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(next) => onChange(next === true)}
+      />
+      <span className="text-xs font-medium text-foreground">Show system schemas</span>
+    </label>
   )
 }
 

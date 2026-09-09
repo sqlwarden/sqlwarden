@@ -5,13 +5,14 @@ export type ColumnMenuCtx = {
   onCopyQualifiedName: () => void
   onCopyType: () => void
   onRename?: () => void
+  onAlter?: () => void
   renameDisabledReason?: string
   onDrop?: () => void
   dropDisabledReason?: string
 }
 
 export function buildColumnMenu(ctx: ColumnMenuCtx): ContextMenuItem[] {
-  return [
+  const items: ContextMenuItem[] = [
     {
       kind: 'action',
       id: 'copy-column-name',
@@ -54,6 +55,15 @@ export function buildColumnMenu(ctx: ColumnMenuCtx): ContextMenuItem[] {
       onSelect: ctx.onDrop,
     },
   ]
+  if (ctx.onAlter)
+    items.push({
+      kind: 'action',
+      id: 'alter-column',
+      label: 'Alter column',
+      icon: 'pencil-edit-02',
+      onSelect: ctx.onAlter,
+    })
+  return items
 }
 
 export type IndexMenuCtx = {

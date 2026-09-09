@@ -7,12 +7,21 @@ function attr(obj: Record<string, unknown> | undefined, key: string): string | u
 
 export const oracleHooks: ObjectDetailHooks = {
   headerBadges(vm: ObjectViewModel): HeaderBadge[] {
-    const comment = attr(vm.detail.attributes, 'comment')
-    return comment ? [{ id: 'comment', label: 'Comment', value: comment }] : []
+    const badges: HeaderBadge[] = []
+    for (const [id, label] of [
+      ['comment', 'Comment'],
+      ['tablespace', 'Tablespace'],
+      ['partitioned', 'Partitioned'],
+    ]) {
+      const value = attr(vm.detail.attributes, id)
+      if (value) badges.push({ id, label, value })
+    }
+    return badges
   },
   columnExtras(): ColumnExtra[] {
     return [
       { id: 'comment', header: 'Comment', cell: (col) => attr(col.attributes, 'comment') ?? '' },
+      { id: 'identity', header: 'Identity', cell: (col) => attr(col.attributes, 'identity') ?? '' },
     ]
   },
 }

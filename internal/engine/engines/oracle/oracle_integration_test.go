@@ -101,7 +101,7 @@ func grantPrivileges(ctx context.Context, sysDSN, user string) error {
 		return err
 	}
 	defer db.Close()
-	for _, priv := range []string{"CREATE VIEW", "CREATE MATERIALIZED VIEW", "SELECT ANY DICTIONARY"} {
+	for _, priv := range []string{"CREATE VIEW", "CREATE MATERIALIZED VIEW", "SELECT ANY DICTIONARY", "CREATE SYNONYM", "CREATE DATABASE LINK"} {
 		if _, err := db.ExecContext(ctx, "GRANT "+priv+" TO "+user); err != nil {
 			return fmt.Errorf("grant %q: %w", priv, err)
 		}

@@ -17,6 +17,8 @@ type ScopeNode struct {
 	Path     ScopePath     `json:"path"`
 	Groups   []ObjectGroup `json:"groups"`
 	Children []ScopeNode   `json:"children,omitempty"`
+	Lazy     bool          `json:"lazy,omitempty"`
+	System   bool          `json:"system,omitempty"`
 }
 
 // ObjectGroup is the set of objects of one kind within a scope.
@@ -50,6 +52,36 @@ func (d *Directory) ScopeNodes() []ScopeNode {
 	return result
 }
 
+// WithSystemScopes returns a copy of the directory with system scopes
+// removed when show is false. The current default scope is always kept,
+// even if it is a system scope, so a connection scoped into a system schema
+// doesn't lose its own view.
+func (d *Directory) WithSystemScopes(show bool) *Directory {
+	if d == nil || show {
+		return d
+	}
+	filtered := *d
+	filtered.Roots = filterSystemScopes(d.Roots, d.DefaultScope)
+	return &filtered
+}
+
+func filterSystemScopes(nodes []ScopeNode, current ScopePath) []ScopeNode {
+	if len(nodes) == 0 {
+		return nodes
+	}
+	kept := make([]ScopeNode, 0, len(nodes))
+	for _, node := range nodes {
+		if node.System && node.Path != current {
+			continue
+		}
+		if node.Children != nil {
+			node.Children = filterSystemScopes(node.Children, current)
+		}
+		kept = append(kept, node)
+	}
+	return kept
+}
+
 // ObjectRefs returns every lightweight object reference in directory order.
 func (d *Directory) ObjectRefs() []ObjectRef {
 	var refs []ObjectRef
@@ -65,8 +97,14 @@ func (d *Directory) ObjectRefs() []ObjectRef {
 // exposes, mirroring the permission model as the backend source of truth for
 // labels/ordering/flags. The frontend renders generically from it.
 type SchemaSpec struct {
-	Dialect string             `json:"dialect"`
-	Kinds   []SchemaObjectKind `json:"kinds"`
+	Dialect      string             `json:"dialect"`
+	Kinds        []SchemaObjectKind `json:"kinds"`
+	BrowseScopes bool               `json:"browse_scopes,omitempty"`
+	// SystemSchemas is set when the driver marks built-in/system scopes via
+	// ScopeNode.System, so the connection-level "show system schemas" setting
+	// has an effect. Drivers that exclude system schemas at the query level
+	// instead of flagging them leave this unset.
+	SystemSchemas bool `json:"system_schemas,omitempty"`
 }
 
 // SchemaObjectKind describes one object kind an engine exposes: its labels and

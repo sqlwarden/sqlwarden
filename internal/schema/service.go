@@ -78,7 +78,22 @@ func (s *Service) Spec(inspector metadata.SchemaInspector) metadata.SchemaSpec {
 
 // Directory returns the cached directory for connID, or inspects on a miss.
 func (s *Service) Directory(ctx context.Context, connID string, inspector metadata.SchemaInspector) (*metadata.Directory, error) {
+	directory, err := s.directory(ctx, connID, inspector, metadata.DirectoryOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return s.WithCachedScopes(connID, directory), nil
+}
+
+func (s *Service) DirectoryInScope(ctx context.Context, connID string, scope metadata.ScopePath, inspector metadata.SchemaInspector) (*metadata.Directory, error) {
+	return s.directory(ctx, connID, inspector, metadata.DirectoryOptions{Root: scope})
+}
+
+func (s *Service) directory(ctx context.Context, connID string, inspector metadata.SchemaInspector, opts metadata.DirectoryOptions) (*metadata.Directory, error) {
 	key := directoryKey(connID)
+	if opts.Root != "" {
+		key += sep + string(opts.Root)
+	}
 	start := time.Now()
 	if data, ok := s.cache.Get(key); ok {
 		var directory metadata.Directory
@@ -117,7 +132,7 @@ func (s *Service) Directory(ctx context.Context, connID string, inspector metada
 
 	v, err, shared := s.group.Do(key, func() (any, error) {
 		inspectStart := time.Now()
-		directory, err := inspector.InspectDirectory(ctx, metadata.DirectoryOptions{})
+		directory, err := inspector.InspectDirectory(ctx, opts)
 		if err != nil {
 			s.logger.Warn("schema directory inspection failed",
 				slog.Group("schema",
@@ -319,6 +334,7 @@ func (s *Service) RefreshObject(connID string, ref metadata.ObjectRef) {
 // RefreshConnection drops the directory and all object detail for the connection.
 func (s *Service) RefreshConnection(connID string) {
 	s.cache.Invalidate(directoryKey(connID))
+	s.cache.InvalidatePrefix(directoryKey(connID) + sep)
 	s.cache.InvalidatePrefix(connObjectPrefix(connID))
 	s.cache.InvalidatePrefix(connRelationshipsPrefix(connID))
 	s.logger.Info("schema connection cache invalidated",

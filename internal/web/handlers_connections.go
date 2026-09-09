@@ -247,6 +247,18 @@ func connectionSafetyChecker(driverName string) safety.Checker {
 	return safety.NewHeuristic()
 }
 
+// driverSupportsSystemSchemas reports whether a driver's SchemaSpec flags
+// system scopes (metadata.ScopeNode.System) — the only drivers where the
+// "show system schemas" connection setting has any effect.
+func driverSupportsSystemSchemas(driverName string) bool {
+	d, err := engine.New(driverName)
+	if err != nil {
+		return false
+	}
+	si, ok := d.(metadata.SchemaInspector)
+	return ok && si.SchemaSpec().SystemSchemas
+}
+
 // registeredConnectionExplainer resolves an Explainer implemented by the
 // registered engine, mirroring registeredConnectionClassifier. There is no
 // heuristic fallback: an engine either has a real EXPLAIN form or it doesn't.
@@ -261,15 +273,16 @@ func registeredConnectionExplainer(driverName string) (explain.Explainer, bool) 
 
 func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name          string              `json:"name"`
-		Driver        string              `json:"driver"`
-		DSN           string              `json:"dsn"`
-		EnvironmentID *int64              `json:"environment_id"`
-		AccessMode    string              `json:"access_mode"`
-		DefaultScope  metadata.ScopePath  `json:"default_scope,omitempty"`
-		TLS           *tlsConfigDocument  `json:"tls"`
-		SSH           *sshConfigDocument  `json:"ssh"`
-		V             validator.Validator `json:"-"`
+		Name              string              `json:"name"`
+		Driver            string              `json:"driver"`
+		DSN               string              `json:"dsn"`
+		EnvironmentID     *int64              `json:"environment_id"`
+		AccessMode        string              `json:"access_mode"`
+		DefaultScope      metadata.ScopePath  `json:"default_scope,omitempty"`
+		ShowSystemSchemas bool                `json:"show_system_schemas"`
+		TLS               *tlsConfigDocument  `json:"tls"`
+		SSH               *sshConfigDocument  `json:"ssh"`
+		V                 validator.Validator `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -350,9 +363,12 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	showSystemSchemas := input.ShowSystemSchemas && driverSupportsSystemSchemas(input.Driver)
+
 	conn, err := app.db.InsertConnectionWithScope(context.Background(),
 		ws.ID, targetEnvID,
 		input.Name, input.Driver, dsnEncrypted, input.AccessMode, input.DefaultScope,
+		showSystemSchemas,
 	)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -470,6 +486,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		AccessMode           *string             `json:"access_mode"`
 		SchemaSnapshotPolicy *string             `json:"schema_snapshot_policy"`
 		DefaultScope         *metadata.ScopePath `json:"default_scope"`
+		ShowSystemSchemas    *bool               `json:"show_system_schemas"`
 		TLS                  *tlsConfigDocument  `json:"tls"`
 		SSH                  *sshConfigDocument  `json:"ssh"`
 		Force                bool                `json:"force"`
@@ -500,7 +517,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			*input.SchemaSnapshotPolicy == database.SchemaSnapshotPolicyDisabled,
 			"schema_snapshot_policy", "Schema snapshot policy must be inherit or disabled.")
 	}
-	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil || input.DefaultScope != nil || input.TLS != nil || input.SSH != nil,
+	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil || input.DefaultScope != nil || input.ShowSystemSchemas != nil || input.TLS != nil || input.SSH != nil,
 		"request", "At least one setting is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -634,6 +651,11 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	if input.DefaultScope != nil {
 		nextDefaultScope = *input.DefaultScope
 	}
+	nextShowSystemSchemas := conn.ShowSystemSchemas
+	if input.ShowSystemSchemas != nil {
+		nextShowSystemSchemas = *input.ShowSystemSchemas
+	}
+	nextShowSystemSchemas = nextShowSystemSchemas && driverSupportsSystemSchemas(conn.Driver)
 	scopeChanged := nextDefaultScope != conn.DefaultScope
 	if scopeChanged && !dsnChanged {
 		activeSessions := app.connManager.CountForConnection(strconv.FormatInt(conn.ID, 10))
@@ -645,7 +667,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			app.connManager.RemoveForConnection(strconv.FormatInt(conn.ID, 10))
 		}
 	}
-	err = app.db.UpdateConnectionWithScopeAndPolicy(r.Context(), conn.ID, nextName, dsnEncrypted, nextAccessMode, nextSnapshotPolicy, nextDefaultScope)
+	err = app.db.UpdateConnectionWithScopeAndPolicy(r.Context(), conn.ID, nextName, dsnEncrypted, nextAccessMode, nextSnapshotPolicy, nextDefaultScope, nextShowSystemSchemas)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
