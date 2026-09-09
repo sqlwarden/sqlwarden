@@ -82,7 +82,7 @@ export function IdeActivityBar({
     <nav
       aria-label="Editor activities"
       className={cn(
-        'flex shrink-0 flex-col gap-1 border-r border-border bg-sidebar pb-2 transition-[width] duration-150',
+        'flex shrink-0 flex-col gap-1 border-r border-border bg-sidebar pb-2 transition-[width] duration-150 ease-out',
         activityBarExpanded ? 'w-56 items-stretch px-2' : 'w-11 items-center',
       )}
     >
@@ -99,7 +99,7 @@ export function IdeActivityBar({
             aria-pressed={isActive}
             className={cn(
               'flex items-center rounded-[calc(var(--radius-sm)+2px)] text-xs transition-colors',
-              activityBarExpanded ? 'h-8 w-full justify-start gap-2 p-2' : 'size-8 justify-center',
+              activityBarExpanded ? 'h-8 w-full justify-start gap-2 p-2' : 'size-9 justify-center',
               expanded
                 ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
                 : 'text-foreground hover:bg-sidebar-accent/60',
@@ -149,7 +149,7 @@ export function IdeActivityBar({
           aria-label="Toggle activity bar"
           className={cn(
             'flex items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-foreground transition-colors hover:bg-sidebar-accent/60',
-            activityBarExpanded ? 'h-8 w-full' : 'size-8',
+            activityBarExpanded ? 'h-8 w-full' : 'size-9',
           )}
         >
           <Icon name="sidebar-left" size={17} className="shrink-0" />
@@ -217,7 +217,7 @@ function WorkspaceSettingsMenu({
         <Tip label="Workspace settings" side="right">
           <DropdownMenuTrigger
             aria-label="Workspace settings"
-            className="flex size-8 cursor-pointer items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors hover:bg-sidebar-accent/60"
+            className="flex size-9 cursor-pointer items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors hover:bg-sidebar-accent/60"
           >
             <Icon name="settings-02" size={17} className="shrink-0" />
           </DropdownMenuTrigger>
@@ -300,7 +300,7 @@ function IdeBrand({ expanded }: { expanded: boolean }) {
       <Tip label="Back to dashboard" side="right">
         <Link
           to="/"
-          className="flex size-8 items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-foreground transition-colors hover:bg-sidebar-accent/60"
+          className="flex size-9 items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-foreground transition-colors hover:bg-sidebar-accent/60"
           aria-label={`${brand.productName} home`}
         >
           <brand.LogoMark size={20} className="shrink-0" />
@@ -342,7 +342,7 @@ function RailPreferencesAndAvatar({
       className={cn(
         'flex cursor-pointer items-center rounded-[calc(var(--radius-sm)+2px)] text-xs transition-colors',
         'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        expanded ? 'h-12 w-full gap-2 p-2' : 'size-8 justify-center',
+        expanded ? 'h-12 w-full gap-2 p-2' : 'size-9 justify-center',
       )}
     >
       <UserAvatar value={session.account.name} fallback="U" size={28} />
@@ -360,7 +360,7 @@ function RailPreferencesAndAvatar({
       <AppearanceTrigger
         buttonLabel={expanded ? 'Appearance' : undefined}
         buttonClassName={
-          expanded ? 'h-8 w-full justify-start gap-2 p-2 text-xs' : 'size-8 justify-center px-0'
+          expanded ? 'h-8 w-full justify-start gap-2 p-2 text-xs' : 'size-9 justify-center px-0'
         }
         iconClassName="size-[17px]"
       />

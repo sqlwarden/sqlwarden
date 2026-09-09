@@ -161,7 +161,9 @@ function PolicyContextPage() {
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-col gap-1.5">
-            <h1 className="font-heading text-2xl font-semibold tracking-tight">{pageTitle}</h1>
+            <h1 className="font-heading text-2xl font-semibold tracking-tight text-balance">
+              {pageTitle}
+            </h1>
             <p className="text-sm text-muted-foreground">
               Policy binding granting{' '}
               <span className="font-medium text-foreground">

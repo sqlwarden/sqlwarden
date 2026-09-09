@@ -238,7 +238,9 @@ function OrganizationUserContextPage() {
           )}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-heading text-2xl font-semibold tracking-tight">{displayName}</h1>
+              <h1 className="font-heading text-2xl font-semibold tracking-tight text-balance">
+                {displayName}
+              </h1>
               {member.data && canManageMemberRole ? (
                 <Select
                   value={member.data.role}

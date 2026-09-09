@@ -76,7 +76,7 @@ export function ConnectionDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col">
-          <div className="flex max-h-[min(680px,calc(100svh-10rem))] flex-col gap-4 overflow-y-auto pb-1">
+          <div className="flex max-h-[min(680px,calc(100svh-10rem))] flex-col gap-4 overflow-y-auto px-1 pb-1 -mx-1">
             {form.stage === 'driver' ? (
               <DriverGallery onPick={form.pickDriver} />
             ) : (
@@ -287,7 +287,7 @@ function DriverGallery({ onPick }: { onPick: (driverId: string) => void }) {
               onClick={() => onPick(d.id)}
               className={cn(
                 'group flex flex-col items-start gap-2.5 rounded-xl border border-border bg-card p-3 text-left',
-                'transition-all hover:border-primary/50 hover:bg-accent/40 hover:shadow-sm',
+                'transition hover:border-primary/50 hover:bg-accent/40 hover:shadow-sm',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               )}
             >

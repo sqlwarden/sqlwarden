@@ -983,7 +983,7 @@ function EmptyStateCard({
       onClick={onClick}
       className={cn(
         'group flex w-48 flex-col items-center gap-3 rounded-xl border border-border bg-background/60 p-5 text-center',
-        'transition-all hover:border-primary/40 hover:bg-accent/50 hover:shadow-sm',
+        'transition hover:border-primary/40 hover:bg-accent/50 hover:shadow-sm',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
       )}
     >
